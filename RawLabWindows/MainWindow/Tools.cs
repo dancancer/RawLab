@@ -190,7 +190,11 @@ public partial class MainWindow
         var draftRows=transform.Active && transform.Tool==TransformTool.Geometry ? ParameterRows(GeometryEditor).ToHashSet() : [];
         foreach(var row in ParameterRows(AdjustmentPanel))if(!draftRows.Contains(row))row.CancelInput();
     }
-    private void ParameterNavigationPressed(object sender,MouseButtonEventArgs e)=>CancelParameterInputs();
+    private void ParameterNavigationPressed(object sender,MouseButtonEventArgs e)
+    {
+        if(ReferenceEquals(sender,MainMenu) && IsUpdateMenuNavigation(e.OriginalSource as DependencyObject)){PreserveUpdateNavigation();return;}
+        CancelParameterInputs();
+    }
     private SavedEdit? WorkspaceEdit()
     {
         if(file==null)return null;

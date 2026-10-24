@@ -227,6 +227,8 @@ public partial class MainWindow
         Path.GetFullPath(Path.GetDirectoryName(path) ?? ""), Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "LUTs")));
     private void WindowClosing(object? sender,CancelEventArgs e)
     {
+        if(!updateQuitApproved){e.Cancel=true;Dispatcher.BeginInvoke(new Action(()=>_=PrepareUpdateQuitAsync()));return;}
+        updateQuitApproved=false;
         CancelParameterInputs();CancelViewingInput();
         if(!ResolveTransformDraft() || !SaveEdits()){e.Cancel=true;return;}
         closing=true;
@@ -234,6 +236,7 @@ public partial class MainWindow
         previewResize.Stop();
         if(batchWindow is {} batch)
         {
+            batch.PreserveOnUpdateExit=UpdateInstallationActive;
             batch.Close();
             if(batch.IsVisible && !batch.Busy){e.Cancel=true;RecoverFailedClose(batch);return;}
         }

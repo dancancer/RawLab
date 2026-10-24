@@ -17,6 +17,7 @@ final class BatchExportModel: ObservableObject {
     @Published private(set) var preview: RenderedImage?
     @Published private(set) var previewing = false
     @Published private(set) var validating = false
+    private(set) var updateJournalFailed = false
     @Published var previewFile: URL?
     @Published var sourceEditingGeometry = false
     var onActivity: (Bool) -> Void = { _ in }
@@ -140,8 +141,14 @@ final class BatchExportModel: ObservableObject {
     }
 
     private func saveDraft() {
-        do { try journal.save(job); error = nil }
-        catch { self.error = L10n.format("任务未保存：%@", String(describing: error.localizedDescription)) }
+        do { try journal.save(job); error = nil; updateJournalFailed = false }
+        catch { updateJournalFailed = true; self.error = L10n.format("任务未保存：%@", String(describing: error.localizedDescription)) }
+    }
+
+    func prepareForUpdate() -> Bool {
+        guard !running, !stopping, !validating, !previewing else { return false }
+        saveDraft()
+        return !updateJournalFailed
     }
 
     func start(_ scope: BatchRunScope = .unfinished) {

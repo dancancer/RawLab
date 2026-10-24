@@ -6,6 +6,8 @@
   <ItemGroup>
     <Compile Remove="denoise/**/*.cs" />
     <Compile Remove="updates/**/*.cs" />
+    <Compile Remove="updates-sdk/**/*.cs" />
+    <Compile Remove="update-fixture/**/*.cs" />
     <Compile Remove="editing/**/*.cs" />
     <Compile Remove="looks/**/*.cs" />
     <Compile Remove="localization/**/*.cs" />

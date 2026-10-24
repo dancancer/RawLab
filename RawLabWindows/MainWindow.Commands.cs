@@ -24,11 +24,11 @@ public partial class MainWindow
     }
     private void SettingsClicked(object sender,RoutedEventArgs e)
     {
-        if(exporting)return;
+        PreserveUpdateNavigation();
         var focus=Keyboard.FocusedElement;
-        var dialog=new SettingsWindow(GpuMode.SelectedIndex){Owner=this};
+        var dialog=new SettingsWindow(GpuMode.SelectedIndex,()=>ShowSoftwareUpdates(true)){Owner=this};
         if(dialog.ShowDialog()==true && GpuMode.SelectedIndex!=dialog.Backend)GpuMode.SelectedIndex=dialog.Backend;
-        if(focus is UIElement control && control.IsVisible)control.Focus();
+        if(softwareUpdateWindow?.IsVisible!=true && focus is UIElement control && control.IsVisible)control.Focus();
     }
     private void ResetCurrentToolClicked(object sender,RoutedEventArgs e) => RequestReset(new(EditorResetKind.Tool,Tool:CurrentTool));
     private bool resetMenuInitialized;

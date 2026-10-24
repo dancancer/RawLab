@@ -239,6 +239,7 @@ final class EditorModel: ObservableObject {
     var presetStore: AdjustmentPresetStore
     let editDirectory: URL
     let batchJournal: BatchJournal
+    var updateJournalLoadFailed = false
     var saveWork: DispatchWorkItem?
     var dirty = false
     var lookLibrary: LookLibrary?
@@ -279,7 +280,7 @@ final class EditorModel: ObservableObject {
         catch { saveError = L10n.format("无法读取调整记录：%@", String(describing: error.localizedDescription)) }
         do {
             if let job = try batchJournal.load() { attachBatch(job) }
-        } catch { self.error = L10n.format("无法读取上次批量任务：%@", String(describing: error.localizedDescription)) }
+        } catch { updateJournalLoadFailed = true; self.error = L10n.format("无法读取上次批量任务：%@", String(describing: error.localizedDescription)) }
         let timer = DispatchSource.makeTimerSource(queue: debounceQueue)
         timer.setEventHandler { [weak self] in
             DispatchQueue.main.async { [weak self] in self?.launchNextRender() }

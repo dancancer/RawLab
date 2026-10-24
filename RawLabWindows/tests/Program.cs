@@ -39,6 +39,7 @@ static class Program
             if(args.Length==1 && args[0]=="--white-balance") { WhiteBalanceChecks.Run(Check);Console.WriteLine($"PASS {checks} white balance checks");return 0; }
             if(args.Length==3 && args[0]=="--histogram") { ViewComparisonChecks.NeutralChecks(args[1],args[2],Check);Console.WriteLine($"PASS {checks} histogram checks");return 0; }
             if(args.Length==3 && args[0]=="--atmosphere-ui") { AtmosphereUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} atmosphere UI checks");return 0; }
+            if(args.Length==3 && args[0]=="--update-ui") { SoftwareUpdateUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} update UI checks");return 0; }
             if(args.Length==4 && args[0]=="--atmosphere-render") { AtmosphereRenderChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} atmosphere render checks");return 0; }
             if(args.Length==4 && args[0]=="--tone-render") { ToneControlsRenderChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} tone render checks");return 0; }
             if(args.Length==4 && args[0]=="--grading-render") { ColorGradingRenderChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} grading render checks");return 0; }

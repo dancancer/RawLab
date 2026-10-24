@@ -5334,5 +5334,381 @@
     "ja": "明瞭度またはかすみの除去の値が無効です",
     "es": "Valores de claridad o borrado de neblina no válidos",
     "zh-Hans": "无效的清晰度或去朦胧参数"
+  },
+  "Mac 需要同架构、已签名并公证的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。": {
+    "de": "Für Mac ist eine signierte und notarisierte App derselben Architektur erforderlich. Für Windows ist ein x64-Setup-Installationsprogramm für den aktuellen Benutzer erforderlich. Migrieren Sie alte ZIP-Installationen zuerst über die offizielle Release-Seite auf eine updatefähige Version.",
+    "en": "Mac requires a signed and notarized app for the same architecture. Windows requires an x64 per-user Setup installer. Migrate old ZIP installations from the official release page to a version that supports updates first.",
+    "es": "En Mac se necesita una aplicación firmada y notarizada de la misma arquitectura. En Windows se necesita un instalador Setup x64 para el usuario actual. Migra primero las instalaciones antiguas en ZIP desde la página oficial de versiones a una versión compatible con actualizaciones.",
+    "fr": "Sur Mac, l’application doit être signée, notarisée et utiliser la même architecture. Sous Windows, un programme d’installation Setup x64 pour l’utilisateur actuel est requis. Migrez d’abord les anciennes installations ZIP depuis la page officielle des versions vers une version compatible avec les mises à jour.",
+    "ja": "Mac では同じアーキテクチャの署名・公証済みアプリが必要です。Windows では x64 の現在のユーザー用 Setup インストーラーが必要です。古い ZIP 版は、まず公式リリースページからアップデート対応版へ移行してください。",
+    "zh-Hans": "Mac 需要同架构、已签名并公证的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。"
+  },
+  "RawLab 更新": {
+    "de": "RawLab-Update",
+    "en": "RawLab Update",
+    "es": "Actualización de RawLab",
+    "fr": "Mise à jour de RawLab",
+    "ja": "RawLab アップデート",
+    "zh-Hans": "RawLab 更新"
+  },
+  "下次退出时安装": {
+    "de": "Beim nächsten Beenden installieren",
+    "en": "Install on next quit",
+    "es": "Instalar al salir la próxima vez",
+    "fr": "Installer à la prochaine fermeture",
+    "ja": "次回終了時にインストール",
+    "zh-Hans": "下次退出时安装"
+  },
+  "任务结束后安装": {
+    "de": "Nach Abschluss der Aufgaben installieren",
+    "en": "Install after tasks finish",
+    "es": "Instalar cuando terminen las tareas",
+    "fr": "Installer après la fin des tâches",
+    "ja": "タスクの完了後にインストール",
+    "zh-Hans": "任务结束后安装"
+  },
+  "取消更新": {
+    "de": "Update abbrechen",
+    "en": "Cancel update",
+    "es": "Cancelar actualización",
+    "fr": "Annuler la mise à jour",
+    "ja": "アップデートをキャンセル",
+    "zh-Hans": "取消更新"
+  },
+  "安装支持与恢复说明": {
+    "de": "Installationshilfe und Wiederherstellungsanleitung",
+    "en": "Installation support and recovery instructions",
+    "es": "Asistencia para la instalación e instrucciones de recuperación",
+    "fr": "Assistance à l’installation et instructions de récupération",
+    "ja": "インストールのサポートと復旧手順",
+    "zh-Hans": "安装支持与恢复说明"
+  },
+  "安装更新": {
+    "de": "Update installieren",
+    "en": "Install update",
+    "es": "Instalar actualización",
+    "fr": "Installer la mise à jour",
+    "ja": "アップデートをインストール",
+    "zh-Hans": "安装更新"
+  },
+  "官方手动下载": {
+    "de": "Manuell von der offiziellen Seite herunterladen",
+    "en": "Download manually from the official site",
+    "es": "Descargar manualmente desde el sitio oficial",
+    "fr": "Télécharger manuellement depuis le site officiel",
+    "ja": "公式サイトから手動でダウンロード",
+    "zh-Hans": "官方手动下载"
+  },
+  "将在下次正常退出时重新检查并安装": {
+    "de": "Beim nächsten regulären Beenden wird erneut nach dem Update gesucht und es wird installiert",
+    "en": "The update will be checked again and installed the next time you quit normally",
+    "es": "La actualización se comprobará de nuevo y se instalará la próxima vez que salgas normalmente",
+    "fr": "La mise à jour sera vérifiée à nouveau et installée lors de la prochaine fermeture normale",
+    "ja": "次回、通常終了時にアップデートを再確認してインストールします",
+    "zh-Hans": "将在下次正常退出时重新检查并安装"
+  },
+  "尚未发现可安装的更新": {
+    "de": "Kein installierbares Update gefunden",
+    "en": "No installable update found",
+    "es": "No se encontró ninguna actualización instalable",
+    "fr": "Aucune mise à jour installable trouvée",
+    "ja": "インストール可能なアップデートは見つかりません",
+    "zh-Hans": "尚未发现可安装的更新"
+  },
+  "已具备安装条件": {
+    "de": "Installationsbereit",
+    "en": "Ready to install",
+    "es": "Lista para instalar",
+    "fr": "Prêt à installer",
+    "ja": "インストールの準備ができました",
+    "zh-Hans": "已具备安装条件"
+  },
+  "批量任务记录尚未安全保存": {
+    "de": "Der Batch-Aufgabenverlauf wurde noch nicht sicher gespeichert",
+    "en": "The batch task record has not been saved safely yet",
+    "es": "El registro de la tarea por lotes aún no se ha guardado de forma segura",
+    "fr": "L’enregistrement de la tâche par lots n’est pas encore enregistré en toute sécurité",
+    "ja": "バッチタスクの記録はまだ安全に保存されていません",
+    "zh-Hans": "批量任务记录尚未安全保存"
+  },
+  "更新失败": {
+    "de": "Update fehlgeschlagen",
+    "en": "Update failed",
+    "es": "Actualización fallida",
+    "fr": "Échec de la mise à jour",
+    "ja": "アップデートに失敗しました",
+    "zh-Hans": "更新失败"
+  },
+  "更新已完成": {
+    "de": "Update abgeschlossen",
+    "en": "Update complete",
+    "es": "Actualización completada",
+    "fr": "Mise à jour terminée",
+    "ja": "アップデートが完了しました",
+    "zh-Hans": "更新已完成"
+  },
+  "更新已校验，请选择安装时间": {
+    "de": "Update überprüft; Installationszeit auswählen",
+    "en": "Update verified; choose when to install",
+    "es": "Actualización verificada; elige cuándo instalarla",
+    "fr": "Mise à jour vérifiée ; choisissez l’heure d’installation",
+    "ja": "アップデートを検証しました。インストール時間を選択してください",
+    "zh-Hans": "更新已校验，请选择安装时间"
+  },
+  "更新恢复需要处理，编辑暂未开放": {
+    "de": "Die Wiederherstellung des Updates erfordert Aufmerksamkeit; die Bearbeitung ist noch nicht verfügbar",
+    "en": "Update recovery requires attention; editing is not yet available",
+    "es": "La recuperación de la actualización requiere atención; la edición aún no está disponible",
+    "fr": "La récupération de la mise à jour nécessite une intervention ; l’édition n’est pas encore disponible",
+    "ja": "アップデートの復旧が必要なため、編集はまだ利用できません",
+    "zh-Hans": "更新恢复需要处理，编辑暂未开放"
+  },
+  "更新未完成，请查看恢复说明": {
+    "de": "Update nicht abgeschlossen; siehe die Wiederherstellungsanleitung",
+    "en": "Update incomplete; see the recovery instructions",
+    "es": "La actualización no se ha completado; consulta las instrucciones de recuperación",
+    "fr": "Mise à jour incomplète ; consultez les instructions de récupération",
+    "ja": "アップデートが完了していません。復旧手順を確認してください",
+    "zh-Hans": "更新未完成，请查看恢复说明"
+  },
+  "有可用更新": {
+    "de": "Update verfügbar",
+    "en": "Update available",
+    "es": "Actualización disponible",
+    "fr": "Mise à jour disponible",
+    "ja": "利用可能なアップデート",
+    "zh-Hans": "有可用更新"
+  },
+  "查看更新前的数据备份": {
+    "de": "Datensicherung vor dem Update anzeigen",
+    "en": "View the data backup from before the update",
+    "es": "Ver la copia de seguridad de los datos anterior a la actualización",
+    "fr": "Afficher la sauvegarde des données avant la mise à jour",
+    "ja": "アップデート前のデータバックアップを表示",
+    "zh-Hans": "查看更新前的数据备份"
+  },
+  "查看此说明不会启用自动安装。失败后请保留现有应用和数据，使用官方可信安装包恢复；不要用旧版覆盖新版编辑记录。": {
+    "de": "Das Anzeigen dieser Anleitung aktiviert die automatische Installation nicht. Bewahren Sie nach einem Fehler die vorhandene App und Daten auf, stellen Sie sie mit einem vertrauenswürdigen offiziellen Installationsprogramm wieder her und überschreiben Sie Bearbeitungen einer neueren Version nicht mit einer älteren.",
+    "en": "Viewing these instructions does not enable automatic installation. After a failure, keep the existing app and data, use a trusted official installer to recover, and do not overwrite edits from a newer version with an older one.",
+    "es": "Consultar estas instrucciones no activa la instalación automática. Tras un fallo, conserva la aplicación y los datos existentes, usa un instalador oficial de confianza para recuperarlos y no sobrescribas los registros de edición de una versión nueva con una antigua.",
+    "fr": "La consultation de ces instructions n’active pas l’installation automatique. Après un échec, conservez l’application et les données existantes, utilisez un programme d’installation officiel de confiance pour récupérer l’installation et n’écrasez pas les réglages d’une version plus récente avec une ancienne.",
+    "ja": "この説明を表示しても自動インストールは有効になりません。失敗した場合は既存のアプリとデータを保持し、信頼できる公式インストーラーで復旧してください。古いバージョンで新しいバージョンの編集記録を上書きしないでください。",
+    "zh-Hans": "查看此说明不会启用自动安装。失败后请保留现有应用和数据，使用官方可信安装包恢复；不要用旧版覆盖新版编辑记录。"
+  },
+  "正在下载更新…": {
+    "de": "Update wird geladen…",
+    "en": "Downloading update…",
+    "es": "Descargando actualización…",
+    "fr": "Téléchargement de la mise à jour…",
+    "ja": "アップデートをダウンロード中…",
+    "zh-Hans": "正在下载更新…"
+  },
+  "正在安装更新…": {
+    "de": "Update wird installiert…",
+    "en": "Installing update…",
+    "es": "Instalando actualización…",
+    "fr": "Installation de la mise à jour…",
+    "ja": "アップデートをインストール中…",
+    "zh-Hans": "正在安装更新…"
+  },
+  "正在校验并准备更新…": {
+    "de": "Update wird überprüft und vorbereitet…",
+    "en": "Verifying and preparing update…",
+    "es": "Verificando y preparando la actualización…",
+    "fr": "Vérification et préparation de la mise à jour…",
+    "ja": "アップデートを検証して準備中…",
+    "zh-Hans": "正在校验并准备更新…"
+  },
+  "正在检查启动状态…": {
+    "de": "Startstatus wird geprüft…",
+    "en": "Checking startup status…",
+    "es": "Comprobando el estado de inicio…",
+    "fr": "Vérification de l’état du démarrage…",
+    "ja": "起動状態を確認中…",
+    "zh-Hans": "正在检查启动状态…"
+  },
+  "正在等待编辑和任务处理完成": {
+    "de": "Warte auf den Abschluss der Bearbeitung und Aufgaben",
+    "en": "Waiting for editing and task processing to finish",
+    "es": "Esperando a que terminen la edición y el procesamiento de tareas",
+    "fr": "En attente de la fin des modifications et du traitement des tâches",
+    "ja": "編集とタスク処理の完了を待機中",
+    "zh-Hans": "正在等待编辑和任务处理完成"
+  },
+  "正在等待预览、导出或批量任务结束": {
+    "de": "Warte auf den Abschluss der Vorschau, des Exports oder der Batch-Aufgabe",
+    "en": "Waiting for the preview, export, or batch task to finish",
+    "es": "Esperando a que terminen la vista previa, la exportación o la tarea por lotes",
+    "fr": "En attente de la fin de l’aperçu, de l’exportation ou de la tâche par lots",
+    "ja": "プレビュー、書き出し、またはバッチタスクの完了を待機中",
+    "zh-Hans": "正在等待预览、导出或批量任务结束"
+  },
+  "此安装暂不支持自动安装更新": {
+    "de": "Diese Installation unterstützt automatische Updates noch nicht",
+    "en": "This installation does not support automatic updates yet",
+    "es": "Esta instalación todavía no admite actualizaciones automáticas",
+    "fr": "Cette installation ne prend pas encore en charge les mises à jour automatiques",
+    "ja": "このインストール形式は自動アップデートにまだ対応していません",
+    "zh-Hans": "此安装暂不支持自动安装更新"
+  },
+  "照片编辑保存失败，请先重试保存": {
+    "de": "Fotobearbeitungen konnten nicht gespeichert werden; versuchen Sie zuerst erneut zu speichern",
+    "en": "Could not save photo edits; try saving again first",
+    "es": "No se pudieron guardar las ediciones de la foto; intenta guardarlas de nuevo",
+    "fr": "Impossible d’enregistrer les modifications de la photo ; réessayez d’abord",
+    "ja": "写真の編集を保存できませんでした。先にもう一度保存してください",
+    "zh-Hans": "照片编辑保存失败，请先重试保存"
+  },
+  "照片编辑尚未保存": {
+    "de": "Fotobearbeitungen wurden noch nicht gespeichert",
+    "en": "Photo edits have not been saved",
+    "es": "Las ediciones de la foto aún no se han guardado",
+    "fr": "Les modifications de la photo ne sont pas encore enregistrées",
+    "ja": "写真の編集はまだ保存されていません",
+    "zh-Hans": "照片编辑尚未保存"
+  },
+  "稍后提醒": {
+    "de": "Später erinnern",
+    "en": "Remind me later",
+    "es": "Recordármelo más tarde",
+    "fr": "Me le rappeler plus tard",
+    "ja": "後で通知",
+    "zh-Hans": "稍后提醒"
+  },
+  "立即重启安装": {
+    "de": "Jetzt neu starten und installieren",
+    "en": "Restart and install now",
+    "es": "Reiniciar e instalar ahora",
+    "fr": "Redémarrer et installer maintenant",
+    "ja": "今すぐ再起動してインストール",
+    "zh-Hans": "立即重启安装"
+  },
+  "等待重新启动": {
+    "de": "Warten auf Neustart",
+    "en": "Waiting for restart",
+    "es": "Esperando el reinicio",
+    "fr": "En attente du redémarrage",
+    "ja": "再起動を待機中",
+    "zh-Hans": "等待重新启动"
+  },
+  "自动下载并在退出时安装": {
+    "de": "Updates automatisch laden und beim Beenden installieren",
+    "en": "Automatically download and install on quit",
+    "es": "Descargar automáticamente e instalar al salir",
+    "fr": "Télécharger automatiquement et installer à la fermeture",
+    "ja": "自動でダウンロードし、終了時にインストール",
+    "zh-Hans": "自动下载并在退出时安装"
+  },
+  "自动安装默认关闭。安装前会保存已提交的编辑，并等待草稿和任务处理完成。": {
+    "de": "Die automatische Installation ist standardmäßig deaktiviert. Vor der Installation werden übernommene Bearbeitungen gespeichert und der Abschluss von Entwürfen und Aufgaben abgewartet.",
+    "en": "Automatic installation is off by default. Before installing, committed edits are saved and the app waits for drafts and tasks to finish.",
+    "es": "La instalación automática está desactivada de forma predeterminada. Antes de instalar, se guardan las ediciones confirmadas y se espera a que terminen los borradores y las tareas.",
+    "fr": "L’installation automatique est désactivée par défaut. Avant l’installation, les modifications validées sont enregistrées et l’application attend la fin des brouillons et des tâches.",
+    "ja": "自動インストールはデフォルトでオフです。インストール前に適用済みの編集を保存し、下書きとタスクの完了を待ちます。",
+    "zh-Hans": "自动安装默认关闭。安装前会保存已提交的编辑，并等待草稿和任务处理完成。"
+  },
+  "请保留现有应用和数据，处理问题后重新启动。": {
+    "de": "Behalten Sie die vorhandene App und die Daten, beheben Sie das Problem und starten Sie anschließend neu.",
+    "en": "Keep the existing app and data, resolve the issue, then restart.",
+    "es": "Conserva la aplicación y los datos existentes, resuelve el problema y reinicia.",
+    "fr": "Conservez l’application et les données existantes, corrigez le problème, puis redémarrez.",
+    "ja": "現在のアプリとデータを保持し、問題を解決してから再起動してください。",
+    "zh-Hans": "请保留现有应用和数据，处理问题后重新启动。"
+  },
+  "请先退出其他 RawLab 实例": {
+    "de": "Beenden Sie zuerst die andere RawLab-Instanz",
+    "en": "Quit the other RawLab instance first",
+    "es": "Cierra primero la otra instancia de RawLab",
+    "fr": "Quittez d’abord l’autre instance de RawLab",
+    "ja": "先に他の RawLab のインスタンスを終了してください",
+    "zh-Hans": "请先退出其他 RawLab 实例"
+  },
+  "请返回编辑器应用或放弃草稿和未提交输入": {
+    "de": "Kehren Sie zum Editor zurück und übernehmen oder verwerfen Sie den Entwurf und nicht übernommene Eingaben.",
+    "en": "Return to the editor, then apply or discard the draft and uncommitted input",
+    "es": "Vuelve al editor y aplica o descarta el borrador y las entradas no aplicadas.",
+    "fr": "Revenez à l’éditeur, puis appliquez ou abandonnez le brouillon et les entrées non validées.",
+    "ja": "エディタに戻り、下書きと未適用の入力を適用するか破棄してください。",
+    "zh-Hans": "请返回编辑器应用或放弃草稿和未提交输入"
+  },
+  "跳过此版本": {
+    "de": "Diese Version überspringen",
+    "en": "Skip this version",
+    "es": "Omitir esta versión",
+    "fr": "Ignorer cette version",
+    "ja": "このバージョンをスキップ",
+    "zh-Hans": "跳过此版本"
+  },
+  "软件更新": {
+    "de": "Softwareupdate",
+    "en": "Software Update",
+    "es": "Actualización de software",
+    "fr": "Mise à jour logicielle",
+    "ja": "ソフトウェアアップデート",
+    "zh-Hans": "软件更新"
+  },
+  "软件更新…": {
+    "de": "Softwareupdate…",
+    "en": "Software Update…",
+    "es": "Actualización de software…",
+    "fr": "Mise à jour logicielle…",
+    "ja": "ソフトウェアアップデート…",
+    "zh-Hans": "软件更新…"
+  },
+  "选择安装时间": {
+    "de": "Installationszeit auswählen",
+    "en": "Choose installation time",
+    "es": "Elegir cuándo instalar",
+    "fr": "Choisir l’heure d’installation",
+    "ja": "インストール時間を選択",
+    "zh-Hans": "选择安装时间"
+  },
+  "错误详情": {
+    "de": "Fehlerdetails",
+    "en": "Error details",
+    "es": "Detalles del error",
+    "fr": "Détails de l’erreur",
+    "ja": "エラーの詳細",
+    "zh-Hans": "错误详情"
+  },
+  "恢复更新前的数据": {
+    "zh-Hans": "恢复更新前的数据",
+    "en": "Restore data from before the update",
+    "de": "Daten vom Stand vor dem Update wiederherstellen",
+    "fr": "Restaurer les données d’avant la mise à jour",
+    "ja": "アップデート前のデータを復元",
+    "es": "Restaurar los datos anteriores a la actualización"
+  },
+  "请先安装更新前的同一可信版本，再恢复数据。当前数据会另存保留；恢复后需退出并重新打开应用。": {
+    "zh-Hans": "请先安装更新前的同一可信版本，再恢复数据。当前数据会另存保留；恢复后需退出并重新打开应用。",
+    "en": "First install the same trusted version that was used before the update, then restore the data. The current data will be kept in a separate copy; after restoring, quit and reopen the app.",
+    "de": "Installieren Sie zuerst dieselbe vertrauenswürdige Version wie vor dem Update und stellen Sie anschließend die Daten wieder her. Die aktuellen Daten werden separat aufbewahrt; beenden Sie die App nach der Wiederherstellung und öffnen Sie sie erneut.",
+    "fr": "Installez d’abord la même version fiable qu’avant la mise à jour, puis restaurez les données. Les données actuelles seront conservées dans une copie séparée ; après la restauration, quittez et rouvrez l’application.",
+    "ja": "まずアップデート前と同じ信頼できるバージョンをインストールしてから、データを復元してください。現在のデータは別のコピーとして保持されます。復元後はアプリを終了して、もう一度開いてください。",
+    "es": "Primero instala la misma versión de confianza que estaba instalada antes de la actualización y después restaura los datos. Los datos actuales se conservarán en una copia aparte; tras restaurarlos, cierra y vuelve a abrir la aplicación."
+  },
+  "正在恢复更新前的数据…": {
+    "zh-Hans": "正在恢复更新前的数据…",
+    "en": "Restoring data from before the update…",
+    "de": "Daten vom Stand vor dem Update werden wiederhergestellt…",
+    "fr": "Restauration des données d’avant la mise à jour…",
+    "ja": "アップデート前のデータを復元中…",
+    "es": "Restaurando los datos anteriores a la actualización…"
+  },
+  "数据已恢复，请退出并重新打开应用": {
+    "zh-Hans": "数据已恢复，请退出并重新打开应用",
+    "en": "Data restored. Quit and reopen the app.",
+    "de": "Daten wiederhergestellt. Beenden Sie die App und öffnen Sie sie erneut.",
+    "fr": "Données restaurées. Quittez et rouvrez l’application.",
+    "ja": "データを復元しました。アプリを終了して、もう一度開いてください。",
+    "es": "Datos restaurados. Cierra y vuelve a abrir la aplicación."
+  },
+  "查看恢复时保留的数据": {
+    "zh-Hans": "查看恢复时保留的数据",
+    "en": "View the data kept during recovery",
+    "de": "Während der Wiederherstellung aufbewahrte Daten anzeigen",
+    "fr": "Afficher les données conservées lors de la récupération",
+    "ja": "復元時に保持されたデータを表示",
+    "es": "Ver los datos conservados durante la recuperación"
   }
 }

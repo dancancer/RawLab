@@ -23,6 +23,9 @@ public partial class BatchExportWindow : Window
     private Task? thumbnailLoading;
     public bool Running { get; private set; }
     public bool Busy=>Running || preflighting;
+    public bool UpdateJournalFailed { get; private set; }
+    public bool PreserveOnUpdateExit { get; set; }
+    public bool UpdateTasksRunning => Busy || thumbnailLoading is { IsCompleted:false };
     public bool Discarded { get; private set; }
     public bool CloseFailed { get; private set; }
     public BatchJob Job => job;
@@ -47,7 +50,7 @@ public partial class BatchExportWindow : Window
         };
         Closing += (_, args) => {
             if(Running || preflighting){args.Cancel=true;closeRequested=true;if(Running)CancelExecution();return;}
-            if(!job.Started && !Discarded)try{journal.Discard(job);Discarded=true;CloseFailed=false;}catch(Exception error){args.Cancel=true;CloseFailed=true;closeRequested=false;job.Error=error.Message;Refresh();_=LoadThumbnails();}
+            if(!PreserveOnUpdateExit && !job.Started && !Discarded)try{journal.Discard(job);Discarded=true;CloseFailed=false;}catch(Exception error){args.Cancel=true;CloseFailed=true;closeRequested=false;job.Error=error.Message;Refresh();_=LoadThumbnails();}
         };
         ready = true;
         RefreshLanguage();
@@ -109,9 +112,14 @@ public partial class BatchExportWindow : Window
 
     private void SaveDraft()
     {
-        try { journal.Save(job); job.Error = null; }
-        catch (Exception error) { job.Error = Loc.Format("任务未保存：{0}", error.Message); }
+        try { journal.Save(job); job.Error = null; UpdateJournalFailed=false; }
+        catch (Exception error) { UpdateJournalFailed=true;job.Error = Loc.Format("任务未保存：{0}", error.Message); }
         Refresh();
+    }
+    public bool PrepareForUpdate()
+    {
+        if(UpdateTasksRunning)return false;
+        SaveDraft();return !UpdateJournalFailed;
     }
     private void Select(Guid id, bool selected)
     {

@@ -80,9 +80,10 @@ public partial class MainWindow : Window
     public MainWindow() : this(new UsageAnalytics()) { }
     public MainWindow(UsageAnalytics usageAnalytics) : this(usageAnalytics,null) { }
     internal MainWindow(string lookLibraryDirectory) : this(new UsageAnalytics(),lookLibraryDirectory) { }
-    internal MainWindow(UsageAnalytics usageAnalytics,string? lookLibraryDirectory,AIDenoiseJob? aiJob=null)
+    internal MainWindow(UsageAnalytics usageAnalytics,string? lookLibraryDirectory,AIDenoiseJob? aiJob=null,DesktopUpdateController? desktopUpdates=null)
     {
         this.usageAnalytics = usageAnalytics;
+        this.desktopUpdates=desktopUpdates ?? new(new UnavailableUpdateAdapter("configuration"),new(),new(UpdateStore.DefaultDirectory),updates.CurrentVersion,"",updates.Automatic);
         this.aiJob=aiJob ?? new((identity,snapshot,progress)=>{
             using var worker=new RenderEngine(gpuMode:0,aiBackend:identity.Backend);
             worker.PrepareAI(identity.Source.Path,snapshot,progress);
@@ -111,8 +112,7 @@ public partial class MainWindow : Window
         }
         Loc.Changed += RefreshLanguage;
         Closed += (_, _) => Loc.Changed -= RefreshLanguage;
-        UpdateNotice.DataContext = updates;
-        void RefreshUpdateNotice() => UpdateNotice.Visibility = updates.HasUpdate ? Visibility.Visible : Visibility.Collapsed;
+        void RefreshUpdateNotice() => UpdateChanged(null,new(null));
         updates.PropertyChanged += (_, _) => RefreshUpdateNotice();
         RefreshUpdateNotice();
         Closed += (_, _) => updateCancellation.Cancel();
@@ -138,7 +138,7 @@ public partial class MainWindow : Window
         PreviewKeyUp+=ViewKeyReleased;
         Activated+=(_,_)=>SyncBeforeKeyState();
         AddHandler(Keyboard.GotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler((_,_)=>SyncBeforeKeyState()),true);
-        Deactivated+=(_,_)=>{CancelViewingInput();GradingEditor.CancelInputs();CurveEditor.CancelInputs();};
+        Deactivated+=(_,_)=>{if(!preservingUpdateNavigation){CancelViewingInput();GradingEditor.CancelInputs();CurveEditor.CancelInputs();}};
         MainMenu.AddHandler(MenuItem.SubmenuOpenedEvent,new RoutedEventHandler((_,_)=>CancelViewingInput()));
         CompareButton.ContextMenuOpening+=(_,_)=>CancelViewingInput();
         viewport.ResolutionChanged+=()=>{if(!syncing)UpdatePreviewSize(viewport.ActualPixels ? 0 : ResultCanvas.PreviewLongEdge);};
@@ -216,6 +216,7 @@ public partial class MainWindow : Window
         SetPhotoMargin(true);
         ready=true; RefreshControls(); RefreshRenderLabels(); RefreshCopyLabels();
         InitializeEditWorkflow();
+        InitializeSoftwareUpdates();
         Closing+=WindowClosing;
         Loaded+=async (_,_)=> {
             if (!startupReported) { startupReported = true; this.usageAnalytics.BeginSession(); }
@@ -223,7 +224,10 @@ public partial class MainWindow : Window
                 SetStatus(() => lookLibraryLoadError is LookLibraryException ? lookLibraryLoadError.Message : Loc.Text("本地记录损坏。"), true);
             var input=Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(LibraryEntry.IsImage);
             if(input!=null)OpenFile(input);
-            await updates.CheckAsync(false, updateCancellation.Token);
+            if(updates.Automatic!=this.desktopUpdates.Preferences.AutomaticCheck)
+                updates.Automatic=this.desktopUpdates.Preferences.AutomaticCheck;
+            if(this.desktopUpdates.UnavailableReason!=null)await updates.CheckAsync(false, updateCancellation.Token);
+            else await this.desktopUpdates.CheckAsync(false);
         };
     }
 }

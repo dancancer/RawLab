@@ -190,6 +190,20 @@ struct ParameterValueTests {
     }
 
     static func main() {
+        for draft in ["1.25", "-"] {
+            let (box, field, coordinator) = fixture(0.3)
+            change(draft, field: field, coordinator: coordinator)
+            ParameterValueField.preserveInputsForUpdateNavigation()
+            blur(field, coordinator: coordinator)
+            coordinator.update(coordinator.parent, isEnabled: true)
+            check(box.writes == 0 && coordinator.dirty && field.stringValue == draft,
+                  "Opening updates preserves pending input \(draft) across blur and view refresh")
+            coordinator.controlTextDidBeginEditing(Notification(name: NSControl.textDidBeginEditingNotification, object: field))
+            change("0.75", field: field, coordinator: coordinator)
+            blur(field, coordinator: coordinator)
+            check(box.value == 0.75 && box.writes == 1 && !coordinator.dirty,
+                  "Returning from updates resumes normal explicit input editing")
+        }
         _ = NSApplication.shared
         if let focus = ProcessInfo.processInfo.environment["RAWLAB_PARAMETER_FOCUS"] {
             switch focus {

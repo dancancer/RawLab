@@ -26,6 +26,7 @@ public sealed class ParameterRow : Grid
     private object? source,scope;
     private double value,defaultValue;
     private bool syncing,dragging,dragChanged;
+    private bool preserveNextBlur;
     private object? dragSource,dragScope;
     private double dragValue;
     public static readonly RoutedEvent GestureStartedEvent=EventManager.RegisterRoutedEvent("GestureStarted",RoutingStrategy.Bubble,typeof(RoutedEventHandler),typeof(ParameterRow));
@@ -35,6 +36,8 @@ public sealed class ParameterRow : Grid
     public bool KeepInvalidInput { get; set; }
     public bool Compact { get; set; }
     public bool HasInvalidInput => input.Dirty && range.Parse(Number.Text,input.Original)==null;
+    public bool HasPendingInput => input.Dirty;
+    public void PreserveInputForUpdateNavigation() { if(input.Dirty)preserveNextBlur=true; }
     public object? SourceIdentity { get=>source; set {if(Equals(source,value))return;CancelDrag();source=value;input.Bind(source,scope,range,this.value);RestoreText();} }
     public event Action<double,bool>? Changed;
     public event Action? InvalidInput;
@@ -57,7 +60,8 @@ public sealed class ParameterRow : Grid
             dragging=false;var changed=dragChanged;dragChanged=false;if(changed)Changed?.Invoke(value,false);RaiseEvent(new(GestureCompletedEvent));
         }));
         Number.TextChanged+=(_,_)=>{if(!syncing)input.Edit(Number.Text);};
-        Number.LostKeyboardFocus+=(_,_)=>Commit();
+        Number.GotKeyboardFocus+=(_,_)=>preserveNextBlur=false;
+        Number.LostKeyboardFocus+=(_,_)=>{if(!preserveNextBlur)Commit();preserveNextBlur=false;};
         Number.SetNumericValue=next=>{if(Commit())Publish(range.Clamp(next),false);};
         Number.PreviewKeyDown+=(_,e)=>{
             if(e.Key==Key.Enter){Commit();e.Handled=true;}

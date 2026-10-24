@@ -9,5 +9,8 @@
     <Compile Include="../../Localization.cs" Link="Localization.cs" />
     <Compile Include="../../UpdateRelease.cs" Link="UpdateRelease.cs" />
     <Compile Include="../../UpdateChecker.cs" Link="UpdateChecker.cs" />
+    <Compile Include="../../Updates/UpdateState.cs" Link="UpdateState.cs" />
+    <Compile Include="../../Updates/UpdateInstallGate.cs" Link="UpdateInstallGate.cs" />
+    <Compile Include="../../Updates/UpdateStore.cs" Link="UpdateStore.cs" />
   </ItemGroup>
 </Project>

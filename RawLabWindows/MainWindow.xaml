@@ -37,15 +37,15 @@
         <Separator/><MenuItem Header="{DynamicResource '对比方式'}"><MenuItem x:Name="MenuCompareOff" Header="{DynamicResource '关闭对比'}" IsCheckable="True" Click="CompareOffClicked"/><MenuItem x:Name="MenuCompareSide" Header="{DynamicResource '并排'}" IsCheckable="True" Click="CompareSideClicked"/><MenuItem x:Name="MenuCompareSwipe" Header="{DynamicResource '分割线'}" IsCheckable="True" Click="CompareSwipeClicked"/></MenuItem>
         <MenuItem Header="{DynamicResource '缩放'}"><MenuItem Header="{DynamicResource '适合窗口'}" InputGestureText="F" Click="FitClicked"/><MenuItem Header="{DynamicResource '实际像素 · 100%'}" InputGestureText="1" Click="ActualClicked"/><MenuItem Header="{DynamicResource '放大'}" Click="ZoomInClicked"/><MenuItem Header="{DynamicResource '缩小'}" Click="ZoomOutClicked"/></MenuItem>
       </MenuItem>
-      <MenuItem Header="{DynamicResource '工具(_T)'}"><MenuItem x:Name="MenuAutoExposure" Header="{DynamicResource '自动调整曝光'}" Click="AutoExposureClicked" IsEnabled="False"/><MenuItem x:Name="MenuAsShot" Header="{DynamicResource '拍摄时白平衡'}" Click="AsShotClicked" IsEnabled="False"/><Separator/><MenuItem Header="{DynamicResource '设置'}" Click="SettingsClicked"/></MenuItem>
+      <MenuItem x:Name="ToolsMenu" Header="{DynamicResource '工具(_T)'}"><MenuItem x:Name="MenuAutoExposure" Header="{DynamicResource '自动调整曝光'}" Click="AutoExposureClicked" IsEnabled="False"/><MenuItem x:Name="MenuAsShot" Header="{DynamicResource '拍摄时白平衡'}" Click="AsShotClicked" IsEnabled="False"/><Separator/><MenuItem Header="{DynamicResource '设置'}" Click="SettingsClicked"/></MenuItem>
       <MenuItem Header="{DynamicResource '帮助(_H)'}"><MenuItem Header="{DynamicResource '关于 RawLab'}" Click="AboutClicked"/></MenuItem>
     </Menu>
     <Border Grid.Row="1" MinHeight="48" Background="{DynamicResource RaisedSurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="0,0,0,1">
       <DockPanel Margin="8,2">
         <TextBlock Text="RAWLAB" FontWeight="Bold" FontSize="18" Foreground="{DynamicResource Foreground}" VerticalAlignment="Center" Margin="6,0,22,0"/>
-        <Button Click="AboutClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '关于 RawLab / 检查更新'}" AutomationProperties.Name="{DynamicResource '关于 RawLab'}"><local:EditorIcon Kind="Help" Width="22" Height="22"/></Button>
+        <Button Click="AboutClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '关于 RawLab'}" AutomationProperties.Name="{DynamicResource '关于 RawLab'}"><local:EditorIcon Kind="Help" Width="22" Height="22"/></Button>
         <Button Click="SettingsClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '设置'}" AutomationProperties.Name="{DynamicResource '设置'}"><local:EditorIcon Kind="Settings" Width="22" Height="22"/></Button>
-        <Button x:Name="UpdateNotice" Click="AboutClicked" DockPanel.Dock="Right" Content="{Binding AvailableLabel}" Visibility="Collapsed" Style="{StaticResource QuietButton}" ToolTip="{DynamicResource '查看更新'}"/>
+        <Button x:Name="UpdateNotice" Click="SoftwareUpdatesClicked" PreviewMouseDown="UpdateNavigationPressed" DockPanel.Dock="Right" Visibility="Collapsed" Style="{StaticResource QuietButton}" ToolTip="{DynamicResource '查看更新'}"/>
         <Button x:Name="ExportButton" Click="ExportMenuClicked" DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" IsEnabled="False" ToolTip="{DynamicResource '导出'}" AutomationProperties.Name="{DynamicResource '导出'}">
           <local:EditorIcon Kind="Export" Width="22" Height="22"/>
           <Button.ContextMenu><ContextMenu>
