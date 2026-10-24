@@ -1,8 +1,9 @@
 #pragma once
 #include "photo_tone_shader.h"
 #include "photo_color_grading_shader.h"
+#include "photo_tone_curve_shader.h"
 namespace sony2fuji {
-inline const std::string kD3DPhotoShader = toneControlsShader("float3") + colorGradingShader("float3") + R"hlsl(
+inline const std::string kD3DPhotoShader = toneControlsShader("float3") + colorGradingShader("float3") + kToneCurveShader + R"hlsl(
 cbuffer Params : register(b0) {
     uint4 dimensions; // source width/height, destination width/height
     uint4 control; // stage, HSL active, use LUT, LUT size
@@ -10,13 +11,14 @@ cbuffer Params : register(b0) {
     float4 toFilm[3];
     float4 exposureStrength;
     float4 tone; // contrast, saturation, highlights, shadows
-    float4 detail; // curve, noise, sharpening, unused
+    float4 detail; // legacy curve, noise, sharpening, custom interval count
     float4 domainLow;
     float4 domainHigh;
     uint4 logTransfer; // input is F-Log, output is Log, output is F-Log, unused
     float4 hslHue[2], hslSaturation[2], hslLightness[2];
     float4 toneControls;
     float4 colorGrading[3];
+    float4 curveRanges[32], curveTangents[32];
 };
 StructuredBuffer<float3> source : register(t0);
 StructuredBuffer<float3> film : register(t1);
@@ -57,6 +59,14 @@ float curve(float x) {
     if(x<=.5)return lerp(p.x,p.y,(x-.25)*4);
     if(x<=.75)return lerp(p.y,p.z,(x-.5)*4);
     return lerp(p.z,1,(x-.75)*4);
+}
+float customToneCurve(float x) {
+    if (x <= 0.0) return 0.0;
+    if (x >= 1.0) return 1.0;
+    uint i = 0;
+    while (i + 1 < uint(detail.w) && x > curveRanges[i].y) ++i;
+    float4 r = curveRanges[i];
+    return pchipSegment(x, r.x, r.y, r.z, r.w, curveTangents[i].x, curveTangents[i].y);
 }
 float3 applyHsl(float3 pixel) {
     if (control.y == 0) return pixel;
@@ -114,7 +124,8 @@ float3 evaluate(float3 inputColor) {
         if(tone.z!=0)adjusted=1-pow(1-saturate(adjusted),1-tone.z*.5);
         pixel=light>0 ? pixel*(adjusted/light) : adjusted.xxx;
     }
-    if(detail.x!=0)pixel=float3(curve(pixel.r),curve(pixel.g),curve(pixel.b));
+    if(detail.w!=0)pixel=float3(customToneCurve(pixel.r),customToneCurve(pixel.g),customToneCurve(pixel.b));
+    else if(detail.x!=0)pixel=float3(curve(pixel.r),curve(pixel.g),curve(pixel.b));
     if(tone.x!=1 || tone.y!=1) {
         pixel=(pixel-.5)*tone.x+.5;float light=dot(pixel,float3(.2126,.7152,.0722));
         pixel=light+(pixel-light)*tone.y;

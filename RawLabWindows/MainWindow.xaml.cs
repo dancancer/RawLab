@@ -100,7 +100,7 @@ public partial class MainWindow : Window
         void RefreshLanguage()
         {
             RecipeStrip.Children.Clear(); recipeButtons.Clear();
-            BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu(); HslEditor.RefreshLanguage();GradingEditor.RefreshLanguage();GeometryEditor.RefreshLanguage();
+            BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu(); HslEditor.RefreshLanguage();GradingEditor.RefreshLanguage();CurveEditor.RefreshLanguage();GeometryEditor.RefreshLanguage();
             RefreshControls(); RefreshPhotoInfo(); RefreshExportSizeMenu(); RefreshCopyLabels();
             RefreshRenderLabels();
             RefreshSaveNotice();
@@ -137,7 +137,7 @@ public partial class MainWindow : Window
         PreviewKeyUp+=ViewKeyReleased;
         Activated+=(_,_)=>SyncBeforeKeyState();
         AddHandler(Keyboard.GotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler((_,_)=>SyncBeforeKeyState()),true);
-        Deactivated+=(_,_)=>{CancelViewingInput();GradingEditor.CancelInputs();};
+        Deactivated+=(_,_)=>{CancelViewingInput();GradingEditor.CancelInputs();CurveEditor.CancelInputs();};
         MainMenu.AddHandler(MenuItem.SubmenuOpenedEvent,new RoutedEventHandler((_,_)=>CancelViewingInput()));
         CompareButton.ContextMenuOpening+=(_,_)=>CancelViewingInput();
         viewport.ResolutionChanged+=()=>{if(!syncing)UpdatePreviewSize(viewport.ActualPixels ? 0 : ResultCanvas.PreviewLongEdge);};
@@ -177,6 +177,14 @@ public partial class MainWindow : Window
             RequestReset(new(EditorResetKind.Tool,Tool:EditorAdjustmentTool.WhiteBalance));
         };
         GradingEditor.ResetRequested+=RequestReset;
+        CurveEditor.Changed+=(value,dragging)=>{
+            if(!ready || syncing || exporting || transform.Active)return;
+            settings.Curve=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
+        };
+        CurveEditor.LegacyChanged+=(value,dragging)=>{
+            if(!ready || syncing || exporting || transform.Active)return;
+            settings.Set(Parameter.ToneCurve,value);interacting=dragging;RefreshControls();MarkEdited();Schedule();
+        };
         GradingEditor.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
             settings.ColorGrading=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();

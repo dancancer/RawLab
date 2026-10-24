@@ -50,6 +50,21 @@
     <string name="collection_sync_history">"前回の同期履歴"</string>
     <string name="collection_title">"一括編集"</string>
     <string name="color_grading">"カラーグレーディング"</string>
+    <string name="curve_add_point">"制御点を追加"</string>
+    <string name="curve_custom">"ポイントカーブ"</string>
+    <string name="curve_fixed_endpoint">"端点は固定されています"</string>
+    <string name="curve_hint">"カーブ領域をタップして点を追加します。中間の点をドラッグして調整します。"</string>
+    <string name="curve_input">"入力"</string>
+    <string name="curve_output">"出力"</string>
+    <string name="curve_point_number">"制御点 %1$d"</string>
+    <string name="curve_remove_point">"制御点を削除"</string>
+    <string name="curve_reset_identity">"直線にリセット"</string>
+    <string name="curve_summary">"ポイントカーブ（%1$d点）"</string>
+    <string name="curve_switch">"切り替え"</string>
+    <string name="curve_switch_custom">"ポイントカーブは直線から始まります。Sカーブの値は保持されます。"</string>
+    <string name="curve_switch_legacy">"Sカーブに切り替えると現在の制御点が削除されます。この変更は取り消せます。"</string>
+    <string name="curve_switch_title">"カーブモードを切り替え"</string>
+    <string name="curve_title">"カーブ"</string>
     <string name="dcp_automatic_black">"DCP には自動ブラックレベル処理が必要ですが、この変換はまだ対応していません。準備ツールでブラックレベルの方針を明示的に選択してください。"</string>
     <string name="dcp_invalid_calibration">"DCP に一意で有効な D65 ColorMatrix/ForwardMatrix がないため、変換できません。"</string>
     <string name="dcp_invalid_exposure">"DCP の露出オフセットが無効です。-16～+16 EV の有限値が必要です。"</string>
@@ -152,6 +167,7 @@
     <string name="info_unavailable">"利用不可"</string>
     <string name="invalid_color_grading">"カラーグレーディングの値が無効です"</string>
     <string name="invalid_tone_controls">"黒レベル、白レベル、自然な彩度の値が無効です"</string>
+    <string name="invalid_tone_curve">"カーブの値が無効です"</string>
     <string name="jpeg_description">"sRGB · 品質 95 · 撮影メタデータ"</string>
     <string name="look_invalid_file">"ルックファイルが壊れているか互換性がありません。互換性のある CUBE または RLOOK ファイルが必要です。"</string>
     <string name="look_remove_body">"RawLab が保存したルックのコピーを削除します。元のファイルは削除されません。"</string>
@@ -222,6 +238,7 @@
     <string name="transfer_field_crop_width">"幅"</string>
     <string name="transfer_field_crop_x">"水平位置"</string>
     <string name="transfer_field_crop_y">"垂直位置"</string>
+    <string name="transfer_field_curve">"カーブモードと制御点"</string>
     <string name="transfer_field_exposure">"露出"</string>
     <string name="transfer_field_exposure_mode">"露出モード"</string>
     <string name="transfer_field_flip_horizontal">"左右反転"</string>

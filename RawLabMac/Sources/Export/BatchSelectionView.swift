@@ -256,9 +256,16 @@ struct BatchSettingsSummary: View {
         VStack(alignment: .leading, spacing: 7) {
             Text(L10n.text("曝光基准") + " · " + settings.exposureMode.title)
             Text(L10n.text("白平衡") + " · " + settings.whiteBalanceMode.title)
-            ForEach(AdjustmentParameter.allCases) { parameter in
+            ForEach(AdjustmentParameter.allCases.filter { settings.curveSettings.isDefault || $0 != .toneCurve }) { parameter in
                 let spec = parameter.spec(for: settings)
                 HStack { Text(spec.title); Spacer(); Text(spec.display(settings[keyPath: spec.keyPath])).monospacedDigit() }
+            }
+            if !settings.curveSettings.isDefault {
+                DisclosureGroup(L10n.format("多点曲线（%d 个控制点）", settings.curveSettings.points.count)) {
+                    ForEach(Array(settings.curveSettings.points.enumerated()), id: \.offset) { index, point in
+                        summary(L10n.format("控制点 %d", index + 1), "\(point.x) → \(point.y)")
+                    }
+                }
             }
             DisclosureGroup(L10n.text("HSL")) {
                 ForEach(0..<8, id: \.self) { channel in

@@ -44,6 +44,7 @@ internal object AdjustmentTransferValues {
 
     fun values(s: EditSettings, context: AdjustmentTransferContext): Map<AdjustmentField, AdjustmentValue> {
         val values = linkedMapOf<AdjustmentField, AdjustmentValue>()
+        values[AdjustmentField.CURVE] = AdjustmentPayload.curveValue(s.curve)
         fun number(field: AdjustmentField, value: Number) { values[field] = AdjustmentValue.Number(value.toDouble()) }
         fun boolean(field: AdjustmentField, value: Boolean) { values[field] = AdjustmentValue.Boolean(value) }
         for (field in scalars + AdjustmentField.entries.filter { it.hslLocation != null }) number(field, logical(s, field))
@@ -101,6 +102,7 @@ internal object AdjustmentTransferValues {
             if (payload[field]?.number?.let { it != 0.0 } == true) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, field.id)
         }
         var result = original
+        payload[AdjustmentField.CURVE]?.let { result = result.copy(curve = AdjustmentPayload.curve(it)) }
         for (field in payload.fields) field.gradingZone?.let { zone ->
             val wheel = payload[field]!!.objectValue!!
             result = result.copy(colorGrading = result.colorGrading.with(zone,

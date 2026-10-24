@@ -43,6 +43,7 @@ public static class EditorAdjustmentRules
     public static string Title(EditorAdjustmentTool tool) => tool switch {
         EditorAdjustmentTool.Film => "胶片", EditorAdjustmentTool.MasterRecipe => "大师配方",
         EditorAdjustmentTool.ColorGrading => "颜色分级",
+        EditorAdjustmentTool.ToneCurve => "曲线",
         EditorAdjustmentTool.WhiteBalance => "白平衡", EditorAdjustmentTool.Hsl => "HSL",
         EditorAdjustmentTool.Vignette => "暗角", EditorAdjustmentTool.Grain => "颗粒",
         EditorAdjustmentTool.Denoise => "降噪", EditorAdjustmentTool.Geometry => "几何",
@@ -163,7 +164,7 @@ public static class EditorAdjustmentRules
         foreach (var parameter in parameters) value.Values[(int)parameter] =
             group == EditorAdjustmentGroup.Color && parameter == Parameter.Tint && value.MasterRecipeID != null ? 0 : defaults.Values[(int)parameter];
         return group switch {
-            EditorAdjustmentGroup.Light => value with { ExposureMode = defaults.ExposureMode,
+            EditorAdjustmentGroup.Light => value with { ExposureMode = defaults.ExposureMode, Curve = null,
                 ToneControls = (value.ToneControls ?? new()) with { BlackPoint = 0, WhitePoint = 0 } },
             EditorAdjustmentGroup.Color => value with { CameraWhiteBalance = true, Hsl = new(), ColorGrading = null,
                 ToneControls = (value.ToneControls ?? new()) with { Vibrance = 0 },
@@ -179,6 +180,9 @@ public static class EditorAdjustmentRules
         if (ToneParameterFor(tool) is {} toneParameter)
             return value with { ToneControls = (value.ToneControls ?? new()).With(toneParameter, 0) };
         switch (tool) {
+            case EditorAdjustmentTool.ToneCurve:
+                value.Values[(int)Parameter.ToneCurve] = defaults.Values[(int)Parameter.ToneCurve];
+                return value with { Curve = null };
             case EditorAdjustmentTool.WhiteBalance:
                 value.Values[(int)Parameter.Temperature] = defaults.Values[(int)Parameter.Temperature];
                 value.Values[(int)Parameter.Tint] = value.MasterRecipeID != null ? 0 : defaults.Values[(int)Parameter.Tint];
@@ -267,6 +271,6 @@ public static class EditorAdjustmentRules
             x.Shadows == y.Shadows && x.Saturation == y.Saturation && x.ToneCurve == y.ToneCurve && x.Sharpening == y.Sharpening &&
             x.WbMode == y.WbMode && x.Temperature == y.Temperature && x.Tint == y.Tint && a.ExposureMode == b.ExposureMode &&
             a.RenderHsl.Values.Select(v => (float)v).SequenceEqual(b.RenderHsl.Values.Select(v => (float)v)) &&
-            a.ToneControls == b.ToneControls && a.ColorGrading == b.ColorGrading && a.AIDenoiseEnabled == b.AIDenoiseEnabled && a.Effects == b.Effects && a.Denoise == b.Denoise && a.DisplayChromaDenoise == b.DisplayChromaDenoise && a.Geometry == b.Geometry && a.Lens == b.Lens;
+            a.ToneControls == b.ToneControls && a.ColorGrading == b.ColorGrading && a.Curve == b.Curve && a.AIDenoiseEnabled == b.AIDenoiseEnabled && a.Effects == b.Effects && a.Denoise == b.Denoise && a.DisplayChromaDenoise == b.DisplayChromaDenoise && a.Geometry == b.Geometry && a.Lens == b.Lens;
     }
 }

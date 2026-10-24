@@ -202,6 +202,13 @@
 			isa = PBXBuildFile;
 			fileRef = 90808E94AB71C094544966D4;
 		};
+        B113946A33D6E7CA01F7A684 /* ToneCurveSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121C57F16BC998BA385F1EA6; };
+        2413F38498878607A82822FF /* ToneCurveNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD125F07D1C4D65DADBADB20; };
+        2DA4DF4798D881C25F72C798 /* ToneCurveSampling.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00A3E4C709437DACC0D1D46F; };
+        BA13EBD0673C922006A7B4B1 /* ToneCurveInteraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DAAAD88BE5F6F4ABA164EB9; };
+        2DCD5783547984E860773E97 /* ToneCurveCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324C679CADE139F72163211; };
+        B6C0A774BB3BFD64F1F06174 /* ToneCurveEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D20BB7F1FC842F0DA927634; };
+        591EBC8F57FFA39BB60C77B4 /* ToneCurveControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BD8A49A9293229AE363C138; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -543,6 +550,13 @@
 			path = "RawLabUITests/EditorUITests/Workflows/PhotoWorkflow.swift";
 			sourceTree = SOURCE_ROOT;
 		};
+        121C57F16BC998BA385F1EA6 /* ToneCurveSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveSettings.swift; path = "../Shared/ToneCurveSettings.swift"; sourceTree = SOURCE_ROOT; };
+        DD125F07D1C4D65DADBADB20 /* ToneCurveNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveNative.swift; path = "../Shared/ToneCurveNative.swift"; sourceTree = SOURCE_ROOT; };
+        00A3E4C709437DACC0D1D46F /* ToneCurveSampling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveSampling.swift; path = "../Shared/ToneCurveSampling.swift"; sourceTree = SOURCE_ROOT; };
+        8DAAAD88BE5F6F4ABA164EB9 /* ToneCurveInteraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveInteraction.swift; path = "../Shared/ToneCurveInteraction.swift"; sourceTree = SOURCE_ROOT; };
+        0324C679CADE139F72163211 /* ToneCurveCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveCanvas.swift; path = "../Shared/ToneCurveCanvas.swift"; sourceTree = SOURCE_ROOT; };
+        8D20BB7F1FC842F0DA927634 /* ToneCurveEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveEditor.swift; path = "../Shared/ToneCurveEditor.swift"; sourceTree = SOURCE_ROOT; };
+        4BD8A49A9293229AE363C138 /* ToneCurveControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveControls.swift; path = "RawLab/UI/Panels/ToneCurveControls.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -623,7 +637,7 @@
 				AB1700000000000000000002,
 				D00300000000000000000011,
 				D00500000000000000000011,
-				D00600000000000000000011,
+				D00600000000000000000011, 00A3E4C709437DACC0D1D46F, DD125F07D1C4D65DADBADB20, 121C57F16BC998BA385F1EA6, 8DAAAD88BE5F6F4ABA164EB9, 0324C679CADE139F72163211, 8D20BB7F1FC842F0DA927634, 4BD8A49A9293229AE363C138,
 				D00700000000000000000016,
 				D00700000000000000000015,
 				D00700000000000000000014,
@@ -1133,7 +1147,7 @@
 				AB1700000000000000000001,
 				D00300000000000000000001,
 				D00500000000000000000001,
-				D00600000000000000000001,
+				D00600000000000000000001, 2DA4DF4798D881C25F72C798, 2413F38498878607A82822FF, B113946A33D6E7CA01F7A684, BA13EBD0673C922006A7B4B1, 2DCD5783547984E860773E97, B6C0A774BB3BFD64F1F06174, 591EBC8F57FFA39BB60C77B4,
 				D00700000000000000000006,
 				D00700000000000000000005,
 				D00700000000000000000004,

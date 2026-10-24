@@ -24,12 +24,19 @@ enum BatchSettingsSummary {
     // "全部调整"展开后：常驻行之外的工具，加上降噪、暗角、颗粒、镜头的各项参数
     static func details(_ settings: RawSettings) -> [BatchSettingRow] {
         let scalars: [AdjustmentKind] = [.strength, .highlights, .shadows, .contrast, .toneCurve, .blackPoint, .whitePoint, .saturation, .vibrance, .sharpening]
-        let tools = scalars.map { BatchSettingRow(title: $0.title, value: $0.displayValue($0.value(from: settings))) }
+        let tools = scalars.filter { settings.curveSettings.isDefault || $0 != .toneCurve }.map {
+            BatchSettingRow(title: $0 == .toneCurve ? L10n.text("S 曲线") : $0.title, value: $0.displayValue($0.value(from: settings)))
+        }
+        let curve = settings.curveSettings.isDefault ? [] :
+            [row("曲线", L10n.format("多点曲线（%d 个控制点）", settings.curveSettings.points.count))] +
+            settings.curveSettings.points.enumerated().map { index, point in
+                BatchSettingRow(title: L10n.format("控制点 %d", index + 1), value: "\(point.x) → \(point.y)")
+            }
         let grading = ColorGradingZone.allCases.map { zone in
             BatchSettingRow(title: L10n.text("颜色分级") + " · " + zone.title,
                 value: String(format: "%.1f° · %.1f%%", locale: L10n.locale, settings.gradingSettings[zone].hue, settings.gradingSettings[zone].saturation))
         }
-        return tools + grading + hsl(settings.hsl) + geometry(settings.geometry) + whiteBalance(settings) + denoise(settings.denoise)
+        return tools + curve + grading + hsl(settings.hsl) + geometry(settings.geometry) + whiteBalance(settings) + denoise(settings.denoise)
             + effects.map { row($0.key, effectValue(settings.photoEffects, $0.parameter)) } + lens(settings.lensSettings)
     }
 

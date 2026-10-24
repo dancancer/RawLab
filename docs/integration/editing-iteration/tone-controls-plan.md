@@ -78,3 +78,9 @@ iOS 执行已编译的 tone native harness，Android 执行 JNI instrumentation�
 待验项仍独立保留，不能用本批构建或数值质量集代替。
 
 后续 ITER-06 可以消费本批新配置和完整数据链；IT-06/15 的实际 UI 与联合验收仍保持未完成。
+
+## 解锁后的增量补验（2026-10-24）
+
+Mac 实际数值输入与撤销/重做、Android JNI 预览/导出清零回归、iOS native tone 回归均已执行通过；本轮 iOS processor 共 122 项断言通过，范围与 RAW 跳过项分列。
+
+本轮证据分别绑定 `cfff3308` 基线与具体修复/测试覆盖层，见外部验收索引 `iteration-08-batch-selection` 中的 `mac-ui`、`ios-ui`、`android-ui`、`windows-ui`；不得合称同一二进制的全量通过。Mac/Windows 默认用户目录未变化。Android 扩展到旧 RAW 套件时，样片不满足镜头匹配前提，后续 instrumentation 退出 255；该扩展运行未通过。后续功能的六语大字号联合验收和实体设备覆盖仍未完成。

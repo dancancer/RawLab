@@ -21,10 +21,11 @@ internal sealed partial class RenderEngine
         var format=ExportFormatExtensions.FromPath(output) switch{ExportFormat.Jpeg=>"jpeg",ExportFormat.Png=>"png",ExportFormat.RenderedDng=>"dng",_=>throw new ArgumentOutOfRangeException(nameof(output))};
         object size=longEdge is {} edge ? new{mode="limit_long_edge",long_edge=edge} : new{mode="native"};
         var toneControls=state.ToneControls.NativeConfig();
-        var tone=new Dictionary<string,float> {
+        var tone=new Dictionary<string,object> {
             ["contrast"]=Math.Clamp(request.Contrast,0,2),["saturation"]=Math.Clamp(request.Saturation,0,2),
             ["highlights"]=Math.Clamp(request.Highlights,-1,1),["shadows"]=Math.Clamp(request.Shadows,-1,1),["s_curve"]=Math.Clamp(request.ToneCurve,-1,1)
         };
+        tone["curve"] = state.Curve;
         if(toneControls.BlackPoint!=0)tone["black_point"]=toneControls.BlackPoint;
         if(toneControls.WhitePoint!=0)tone["white_point"]=toneControls.WhitePoint;
         var document=new{

@@ -12,6 +12,7 @@ enum class AdjustmentField(val id: String) {
     HIGHLIGHTS("light.highlights"),
     SHADOWS("light.shadows"),
     S_CURVE("light.s_curve"),
+    CURVE("light.curve"),
     BLACK_POINT("tone.black_point"),
     WHITE_POINT("tone.white_point"),
     VIBRANCE("color.vibrance"),

@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 
 ToneControlsChecks.Run();
 ColorGradingChecks.Run();
+ToneCurveChecks.Run();
 HslTargetChecks.Run();
 BatchFrozenChecks.Run();
 BatchSelectionChecks.Run();

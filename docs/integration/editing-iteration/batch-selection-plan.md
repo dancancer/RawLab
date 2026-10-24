@@ -50,3 +50,9 @@ runner 和预览从相应任务模式读取参数；取消保留成功输出，�
 逐项绑定；后续新参数仍需进入本端 native snapshot、确认摘要与逐张任务回归，不能另建导出参数 DTO。
 
 具体命令、源码/产物哈希与临时文件清理记录保留在本地交付记录，远端 PR/CI 状态另行登记。
+
+## 解锁后的增量补验（2026-10-24）
+
+Mac 实际完成来源排除同步、两张目标单独微调、保留集合、逐张冻结及 2 张 JPEG 导出；iOS/Android 各自完成真实界面的单照片微调/返回/冻结/放弃流程。iOS 54 项 native history/collection 断言与混合 RAW/raster JPEG/DNG 发布恢复通过；Windows 16 项 WPF collection 检查通过。多照片同步的 iOS/Android 证据来自模型及复用的 transfer 工作流，不能算本轮 collection UI 的多照片覆盖。
+
+本轮证据分别绑定 `cfff3308` 基线与具体修复/测试覆盖层，见外部验收索引 `iteration-08-batch-selection` 中的 `mac-ui`、`ios-ui`、`android-ui`、`windows-ui`；不得合称同一二进制的全量通过。Mac/Windows 默认用户目录未变化。Android 扩展到旧 RAW 套件时，样片不满足镜头匹配前提，后续 instrumentation 退出 255；该扩展运行未通过。后续功能的六语大字号联合验收和实体设备覆盖仍未完成。

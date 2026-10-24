@@ -450,6 +450,8 @@ extension ContentView {
         switch tool {
         case .film: return selectedFilmName
         case .recipe: return settings.masterRecipe?.title ?? L10n.text("无配方")
+        case .adjustment(.toneCurve) where settings.curveSettings.mode == .custom:
+            return L10n.format("多点曲线（%d 个控制点）", settings.curveSettings.points.count)
         case .adjustment(let adjustment): return adjustment.valueLabel(for: adjustment.value(from: settings))
         default: return resetModified(.tool(tool)) ? L10n.text("已调整") : ""
         }
@@ -463,7 +465,8 @@ extension ContentView {
                         ForEach(EditorAdjustmentRules.tools(selectedGroup), id: \.self) { tool in
                             Button { if tool == .geometry { geometryPerspective = false }; selectEditorTool(tool) } label: {
                                 AdjustmentToolLabel(title: tool == .geometry ? L10n.text("裁切") : tool.title, symbol: tool.symbol, selected: currentEditorTool == tool && !(tool == .geometry && geometryPerspective),
-                                    progress: tool.scalar.map(adjustmentProgress) ?? (resetModified(.tool(tool)) ? 1 : 0), width: toolWidth, height: editorToolHeight)
+                                    progress: tool == .adjustment(.toneCurve) && settings.curveSettings.mode == .custom ? 1 :
+                                        tool.scalar.map(adjustmentProgress) ?? (resetModified(.tool(tool)) ? 1 : 0), width: toolWidth, height: editorToolHeight)
                             }
                             .disabled((tool == .lens && viewModel.sourceKind != .raw) ||
                                       (tool == .adjustment(.strength) && !settings.hasLook))

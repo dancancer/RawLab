@@ -40,7 +40,7 @@ if [[ -z "${RAWLAB_PARAMETER_BASELINE:-}" ]]; then
     GRADING_SOURCES=("$ROOT/Shared/ColorGradingWheelControl.swift" "$ROOT/RawLab/RawLab/UI/Panels/ColorGradingControls.swift")
 fi
 xcrun --sdk iphonesimulator swiftc -swift-version 5 -module-name ParameterInputTests -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/module-cache" \
- "$ROOT/Shared/Localization.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" \
+ "$ROOT/Shared/Localization.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" \
  "${GRADING_SOURCES[@]}" \
  "$OUT/source/AdjustmentScale.swift" "$OUT/source/AdjustmentRuler.swift" \
  "$OUT/source/AdjustmentControl.swift" "$OUT/source/NativeValueWheel.swift" \

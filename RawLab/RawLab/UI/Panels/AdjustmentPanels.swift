@@ -16,6 +16,10 @@ extension ContentView {
             .disabled(!viewModel.hasImage || editingLocked || viewModel.sourceKind != .raw)
         } else if choosingMasterRecipe {
             masterRecipePanel
+        } else if selectedAdjustment == .toneCurve {
+            IOSToneCurveControls(settings: Binding(get: { settings.curveSettings }, set: { settings.curveSettings = $0 }),
+                legacy: $settings.toneCurve, onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
+                .disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .colorGrading {
             IOSColorGradingControls(settings: Binding(get: { settings.gradingSettings }, set: { settings.gradingSettings = $0 }),
                 zone: $gradingZone, onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)

@@ -93,7 +93,14 @@ struct AdjustmentDock: View {
     }
 
     @ViewBuilder private var editorContent: some View {
-        if navigation.tool == .colorGrading {
+        if navigation.tool == .toneCurve {
+            let source = model.sourceRevision
+            MacToneCurveControls(settings: Binding(get: { model.settings.curveSettings }, set: { model.settings.curveSettings = $0 }),
+                legacy: $model.settings.toneCurve, source: String(describing: source),
+                isCurrent: { model.sourceRevision == source && model.adjustmentNavigation.tool == .toneCurve && model.adjustmentNavigation.expandedGroup != nil },
+                onEditingChanged: model.setInteracting, onCancelled: model.cancelAdjustmentInteraction)
+                .padding(.horizontal, 16).disabled(model.result == nil)
+        } else if navigation.tool == .colorGrading {
             let source = model.sourceRevision
             MacColorGradingControls(settings: Binding(get: { model.settings.gradingSettings }, set: { model.settings.gradingSettings = $0 }),
                 zone: $model.adjustmentNavigation.selectedGradingZone, source: String(describing: source),

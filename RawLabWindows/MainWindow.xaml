@@ -234,6 +234,7 @@
             <ScrollViewer x:Name="GeometrySurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:GeometryPanel x:Name="GeometryEditor" VerticalAlignment="Center"/></ScrollViewer>
             <ScrollViewer x:Name="HslSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:HslPanel x:Name="HslEditor"/></ScrollViewer>
             <ScrollViewer x:Name="GradingSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:ColorGradingPanel x:Name="GradingEditor"/></ScrollViewer>
+            <ScrollViewer x:Name="CurveSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:ToneCurvePanel x:Name="CurveEditor"/></ScrollViewer>
             <ScrollViewer x:Name="WhiteBalanceSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><local:WhiteBalancePanel x:Name="WhiteBalanceEditor"/></ScrollViewer>
             <ScrollViewer x:Name="PhotoEffectsSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
               <local:PhotoEffectsPanel x:Name="PhotoEffectsEditor" VerticalAlignment="Center"/>

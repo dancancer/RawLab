@@ -5,6 +5,7 @@
 #include "hsl_gpu_boundary.h"
 #include "tone_gpu_boundary.h"
 #include "grading_gpu_boundary.h"
+#include "curve_gpu_boundary.h"
 #ifdef SONY2FUJI_ENABLE_D3D11
 #include "gpu/d3d11_photo.h"
 #endif
@@ -262,6 +263,18 @@ int main() {
 #endif
     }),"Color grading matches CPU float reference across regions and gamut boundaries");
 
+    check(rawlabtest::curveGpuBoundary([](const sony2fuji::ImageData& input,const sony2fuji_request& request,
+        const sony2fuji::ToneCurve& curve,sony2fuji::ImageData& output) {
+#ifdef SONY2FUJI_ENABLE_D3D11
+        sony2fuji::D3D11PhotoRenderer renderer;
+        return renderer.render(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
+            input.width,input.height,0,output,{},0,false,{}, {},{},curve);
+#else
+        return sony2fuji::renderPhotoMetal(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
+            input.width,input.height,output,{}, {},0,false,{}, {},{},curve);
+#endif
+    }),"PCHIP curve matches CPU float reference including 33 points and plateaus");
+
     const auto lutPath = makePhotoLUT();
     const auto lutUtf8 = lutPath.u8string();
     auto lut = std::shared_ptr<sony2fuji::LUT3D>(
@@ -459,6 +472,12 @@ int main() {
     sony2fuji_color_grading_config grading{1,sizeof(grading),220,75,110,35,35,60};
     for (auto* target : {session,forced})check(sony2fuji_session_set_color_grading(target,&grading)==SONY2FUJI_STATUS_OK,"grading combination setter");
     compareForcedCase(session,forced,hslRequest,"Grading with tone, LUT, HSL, chroma, detail, effects and resize");
+    sony2fuji_tone_curve_config curve{1,sizeof(curve),SONY2FUJI_CURVE_CUSTOM,4,{{0,0},{.25,.12},{.75,.88},{1,1}}};
+    for (auto* target : {session,forced}) sony2fuji_session_set_tone_curve(target,&curve);
+    hslRequest.tone_curve=0;
+    compareForcedCase(session,forced,hslRequest,"Custom curve with grading, tone, LUT, HSL, chroma, detail, effects and resize");
+    curve={1,sizeof(curve),SONY2FUJI_CURVE_LEGACY,0,{}};
+    for (auto* target : {session,forced}) sony2fuji_session_set_tone_curve(target,&curve);
     grading={1,sizeof(grading),0,0,0,0,0,0};
     for (auto* target : {session,forced})sony2fuji_session_set_color_grading(target,&grading);
     tone.black_point=tone.white_point=tone.vibrance=0;

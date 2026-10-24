@@ -346,7 +346,14 @@ internal fun SettingsSummary(settings: EditSettings, lookName: String) {
         SettingLine(AppStrings.text(R.string.message_highlights), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.highlights * 100))
         SettingLine(AppStrings.text(R.string.message_shadows), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.shadows * 100))
         SettingLine(AppStrings.text(R.string.message_contrast), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.contrast * 100))
-        SettingLine(AppStrings.text(R.string.message_s_curve), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.toneCurve * 100))
+        if (settings.curve.isDefault) {
+            SettingLine(AppStrings.text(R.string.message_s_curve), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.toneCurve * 100))
+        } else {
+            SettingLine(stringResource(R.string.curve_title), stringResource(R.string.curve_summary, settings.curve.points.size))
+            settings.curve.points.forEachIndexed { index, point ->
+                SettingLine(stringResource(R.string.curve_point_number, index + 1), "${point.x} → ${point.y}")
+            }
+        }
         SettingLine(AppStrings.text(R.string.black_point), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.blackPoint))
         SettingLine(AppStrings.text(R.string.white_point), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.whitePoint))
         SettingLine(AppStrings.text(R.string.vibrance), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.vibrance))

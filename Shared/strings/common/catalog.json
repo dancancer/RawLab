@@ -5174,5 +5174,141 @@
     "fr": "Export par photo",
     "ja": "写真ごとに書き出す",
     "zh-Hans": "逐张导出"
+  },
+  "曲线": {
+    "de": "Kurve",
+    "en": "Curve",
+    "es": "Curva",
+    "fr": "Courbe",
+    "ja": "カーブ",
+    "zh-Hans": "曲线"
+  },
+  "多点曲线": {
+    "de": "Punktkurve",
+    "en": "Point curve",
+    "es": "Curva de puntos",
+    "fr": "Courbe à points",
+    "ja": "ポイントカーブ",
+    "zh-Hans": "多点曲线"
+  },
+  "切换曲线模式": {
+    "de": "Kurvenmodus wechseln",
+    "en": "Switch curve mode",
+    "es": "Cambiar el modo de curva",
+    "fr": "Changer le mode de courbe",
+    "ja": "カーブモードを切り替え",
+    "zh-Hans": "切换曲线模式"
+  },
+  "多点曲线将从直线开始，旧 S 曲线数值会保留。": {
+    "de": "Die Punktkurve beginnt als Gerade. Der S-Kurvenwert bleibt erhalten.",
+    "en": "The point curve starts as a straight line. Your S-curve value is retained.",
+    "es": "La curva de puntos comienza como una línea recta. Se conserva el valor de la curva S.",
+    "fr": "La courbe à points commence par une droite. La valeur de courbe en S est conservée.",
+    "ja": "ポイントカーブは直線から始まります。Sカーブの値は保持されます。",
+    "zh-Hans": "多点曲线将从直线开始，旧 S 曲线数值会保留。"
+  },
+  "切换到 S 曲线将移除当前控制点，可撤销此操作。": {
+    "de": "Beim Wechsel zur S-Kurve werden die aktuellen Kontrollpunkte entfernt. Dies lässt sich rückgängig machen.",
+    "en": "Switching to the S-curve removes the current control points. You can undo this change.",
+    "es": "Al cambiar a la curva S se eliminan los puntos actuales. Puedes deshacer este cambio.",
+    "fr": "Le passage à la courbe en S supprime les points actuels. Cette modification peut être annulée.",
+    "ja": "Sカーブに切り替えると現在の制御点が削除されます。この変更は取り消せます。",
+    "zh-Hans": "切换到 S 曲线将移除当前控制点，可撤销此操作。"
+  },
+  "切换": {
+    "de": "Wechseln",
+    "en": "Switch",
+    "es": "Cambiar",
+    "fr": "Changer",
+    "ja": "切り替え",
+    "zh-Hans": "切换"
+  },
+  "添加控制点": {
+    "de": "Punkt hinzufügen",
+    "en": "Add point",
+    "es": "Añadir punto",
+    "fr": "Ajouter un point",
+    "ja": "制御点を追加",
+    "zh-Hans": "添加控制点"
+  },
+  "删除控制点": {
+    "de": "Punkt löschen",
+    "en": "Delete point",
+    "es": "Eliminar punto",
+    "fr": "Supprimer le point",
+    "ja": "制御点を削除",
+    "zh-Hans": "删除控制点"
+  },
+  "重置为直线": {
+    "de": "Auf Gerade zurücksetzen",
+    "en": "Reset to straight line",
+    "es": "Restablecer línea recta",
+    "fr": "Rétablir une droite",
+    "ja": "直線にリセット",
+    "zh-Hans": "重置为直线"
+  },
+  "输入坐标": {
+    "de": "Eingabe",
+    "en": "Input",
+    "es": "Entrada",
+    "fr": "Entrée",
+    "ja": "入力",
+    "zh-Hans": "输入坐标"
+  },
+  "输出坐标": {
+    "de": "Ausgabe",
+    "en": "Output",
+    "es": "Salida",
+    "fr": "Sortie",
+    "ja": "出力",
+    "zh-Hans": "输出坐标"
+  },
+  "端点固定": {
+    "de": "Endpunkte sind fest",
+    "en": "Endpoints are fixed",
+    "es": "Los extremos son fijos",
+    "fr": "Les extrémités sont fixes",
+    "ja": "端点は固定されています",
+    "zh-Hans": "端点固定"
+  },
+  "点击曲线区域添加控制点，拖动中间点调整。": {
+    "de": "Zum Hinzufügen in die Kurvenfläche tippen. Innere Punkte zum Anpassen ziehen.",
+    "en": "Tap the curve area to add a point. Drag interior points to adjust.",
+    "es": "Toca el área de la curva para añadir un punto. Arrastra los puntos interiores para ajustar.",
+    "fr": "Touchez la zone de courbe pour ajouter un point. Faites glisser les points intérieurs pour ajuster.",
+    "ja": "カーブ領域をタップして点を追加します。中間の点をドラッグして調整します。",
+    "zh-Hans": "点击曲线区域添加控制点，拖动中间点调整。"
+  },
+  "曲线模式与控制点": {
+    "de": "Kurvenmodus und Punkte",
+    "en": "Curve mode and points",
+    "es": "Modo de curva y puntos",
+    "fr": "Mode de courbe et points",
+    "ja": "カーブモードと制御点",
+    "zh-Hans": "曲线模式与控制点"
+  },
+  "无效的曲线参数": {
+    "de": "Ungültige Kurvenwerte",
+    "en": "Invalid curve values",
+    "es": "Valores de curva no válidos",
+    "fr": "Valeurs de courbe non valides",
+    "ja": "カーブの値が無効です",
+    "zh-Hans": "无效的曲线参数"
+  },
+  "控制点 {0}": {
+    "de": "Punkt {0}",
+    "en": "Point {0}",
+    "es": "Punto {0}",
+    "fr": "Point {0}",
+    "ja": "制御点 {0}",
+    "zh-Hans": "控制点 {0}"
+  },
+  "多点曲线（{0} 个控制点）": {
+    "de": "Punktkurve ({0} Punkte)",
+    "en": "Point curve ({0} points)",
+    "es": "Curva de puntos ({0} puntos)",
+    "fr": "Courbe à points ({0} points)",
+    "ja": "ポイントカーブ（{0}点）",
+    "zh-Hans": "多点曲线（{0} 个控制点）"
   }
 }

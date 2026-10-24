@@ -276,6 +276,8 @@ extension ContentView {
              "beforeHistogram": probe.histogramInfo(viewModel.baseHistogram),
              "referenceSize": viewModel.basePreviewImage.map { [$0.size.width, $0.size.height] } ?? []]
             receipt["hslTargetNotice"] = hslTargetNotice.map { String(describing: $0) } ?? ""
+            receipt["curveMode"] = settings.curveSettings.mode.rawValue
+            receipt["curvePoints"] = settings.curveSettings.points.map { [$0.x, $0.y] }
             receipt["hslTargetSelection"] = hslTargetInteraction.selection.map { String(describing: $0.availability) } ?? ""
             receipt["collectionShowing"] = showingBatchSelection
             receipt["collectionOrdered"] = viewModel.batchSelection.selection.ordered

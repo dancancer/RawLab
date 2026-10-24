@@ -6,10 +6,16 @@ import org.junit.Test
 import java.io.File
 
 class AdjustmentPayloadTest {
+    @Test fun curvePayloadRejectsLooseJSONAndDuplicateKeys() {
+        val json = """{"payload_version":1,"scope_version":1,"source":{"identifier":"a","is_raw":true,"processing_version":2},"values":{"light.curve":{"mode":"custom","points":[[0,0],[1,1]]}}}"""
+        for (invalid in listOf(json + " trailing", json.replace("\"mode\":\"custom\"", "\"mode\":\"legacy\",\"mode\":\"custom\""),
+            json.replace("\"custom\"", "'custom'")))
+            assertThrows(AdjustmentTransferException::class.java) { AdjustmentPayload.decode(invalid) }
+    }
     @Test fun sharedPayloadVectorsHaveTheSameAcceptanceAndRoundTrip() {
         val fixture = JSONObject(File("../../Shared/fixtures/adjustment-transfer-v1.json").readText())
         val vectors = fixture.getJSONArray("vectors")
-        assertEquals(59, vectors.length())
+        assertEquals(73, vectors.length())
         for (index in 0 until vectors.length()) {
             val vector = vectors.getJSONObject(index)
             val json = vector.getJSONObject("payload").toString()

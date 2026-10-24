@@ -31,6 +31,7 @@ extension IOSAdjustmentTransfer {
     }
     static func values(_ settings: RawSettings, context: IOSAdjustmentTransferContext) -> [String: Value] {
         var result = [String: Value]()
+        result[Field.curve.rawValue] = settings.curveSettings.transferValue
         for (field, key) in scalarKeys { result[field.rawValue] = .number(settings[keyPath: key]) }
         result[Field.strength.rawValue] = .number(Double(settings.clampedLUTStrength))
         let look: [String: Value]
@@ -79,6 +80,7 @@ extension IOSAdjustmentTransfer {
     }
     static func applyObjects(_ payload: AdjustmentTransferPayload, to settings: inout RawSettings,
                              context: IOSAdjustmentTransferContext) throws {
+        if let curve = payload[.curve]?.curve, curve != settings.curveSettings { settings.curveSettings = curve }
         for field in payload.fields {
             if let zone = field.gradingZone, let wheel = payload[field]?.object {
                 settings.gradingSettings[zone] = ColorGradingWheel(hue: wheel["hue"]!.number!, saturation: wheel["saturation"]!.number!)

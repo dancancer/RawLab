@@ -94,13 +94,14 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         val pixels = rasterInput(input, inputKind)
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
+        nativeSetToneCurve(handle, effective.curve.mode.nativeValue, effective.curve.packed())
         nativeSetToneControls(handle, effective.blackPoint / 100f, effective.whitePoint / 100f, effective.vibrance / 100f)
         with(effective.colorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
             midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
         return nativeProcess(handle, input.path, pixels?.bitmap, pixels?.width ?: 0,
             pixels?.height ?: 0, if (pixels == null) 0 else 1, lut?.path, null, effective.strength,
             effective.exposure, effective.customWb, effective.temperature, effective.tint,
-            effective.highlights, effective.shadows, effective.contrast, effective.toneCurve,
+            effective.highlights, effective.shadows, effective.contrast, effective.renderToneCurve,
             effective.saturation, effective.sharpening, edge, interactive, ExportFormat.JPEG.nativeValue, 0,
             effective.denoise.enabled, effective.denoise.luma, effective.denoise.chroma, effective.denoise.coarse,
             effective.displayChromaDenoise, effective.effects.vignetteAmount, effective.effects.vignetteMidpoint,
@@ -132,6 +133,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         val pixels = rasterInput(input, inputKind)
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
+        nativeSetToneCurve(handle, effective.curve.mode.nativeValue, effective.curve.packed())
         nativeSetToneControls(handle, effective.blackPoint / 100f, effective.whitePoint / 100f, effective.vibrance / 100f)
         with(effective.colorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
             midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
@@ -139,7 +141,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         nativeProcess(handle, input.path, pixels?.bitmap, pixels?.width ?: 0, pixels?.height ?: 0,
             if (pixels == null) 0 else 1, lut?.path, output.path, effective.strength,
             effective.exposure, effective.customWb, effective.temperature, effective.tint,
-            effective.highlights, effective.shadows, effective.contrast, effective.toneCurve,
+            effective.highlights, effective.shadows, effective.contrast, effective.renderToneCurve,
             effective.saturation, effective.sharpening, 0, false, format.nativeValue, longEdge ?: 0,
             effective.denoise.enabled, effective.denoise.luma, effective.denoise.chroma, effective.denoise.coarse,
             effective.displayChromaDenoise, effective.effects.vignetteAmount, effective.effects.vignetteMidpoint,
@@ -159,6 +161,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         val pixels = rasterInput(input, inputKind)
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
+        nativeSetToneCurve(handle, effective.curve.mode.nativeValue, effective.curve.packed())
         nativeSetToneControls(handle, effective.blackPoint / 100f, effective.whitePoint / 100f, effective.vibrance / 100f)
         with(effective.colorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
             midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
@@ -220,6 +223,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     private external fun nativeSetColorGrading(handle: Long, shadowsHue: Float, shadowsSaturation: Float,
         midtonesHue: Float, midtonesSaturation: Float, highlightsHue: Float, highlightsSaturation: Float)
     private external fun nativeSetToneControls(handle: Long, blackPoint: Float, whitePoint: Float, vibrance: Float)
+    private external fun nativeSetToneCurve(handle: Long, mode: Int, points: DoubleArray)
     private external fun nativeSetGeometry(handle: Long, cropX: Float, cropY: Float, cropWidth: Float,
         cropHeight: Float, quarterTurns: Int, flipHorizontal: Boolean, flipVertical: Boolean, straightenDegrees: Float,
         perspectiveHorizontal: Float, perspectiveVertical: Float)

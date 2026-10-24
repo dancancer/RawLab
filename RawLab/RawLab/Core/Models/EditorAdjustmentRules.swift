@@ -89,7 +89,7 @@ enum EditorAdjustmentRules {
             let settings = snapshot.settings
             return (context.isRaw && settings.exposureMode != context.defaultExposureMode) ||
                 settings.exposure != 0 || settings.highlights != 0 || settings.shadows != 0 ||
-                settings.contrast != 1 || settings.toneCurve != 0 || settings.blackPoint != 0 || settings.whitePoint != 0
+                settings.contrast != 1 || settings.toneCurve != 0 || !settings.curveSettings.isDefault || settings.blackPoint != 0 || settings.whitePoint != 0
         }
         if case .group(.color) = scope {
             let settings = snapshot.settings
@@ -230,6 +230,7 @@ enum EditorAdjustmentRules {
                 case .temperature, .tint:
                     result.whiteBalanceMode = defaults.whiteBalanceMode
                     result.temperature = defaults.temperature; result.tint = defaults.tint
+                case .toneCurve: result.toneCurve = defaults.toneCurve; result.toneCurveConfig = nil
                 case .noiseReduction:
                     result.noiseReduction = defaults.noiseReduction; result.denoise = defaults.denoise
                     result.displayChromaDenoise = defaults.displayChromaDenoise
@@ -248,7 +249,7 @@ enum EditorAdjustmentRules {
             case .light:
                 result.exposure = defaults.exposure; result.exposureMode = defaults.exposureMode
                 result.highlights = defaults.highlights; result.shadows = defaults.shadows
-                result.contrast = defaults.contrast; result.toneCurve = defaults.toneCurve
+                result.contrast = defaults.contrast; result.toneCurve = defaults.toneCurve; result.toneCurveConfig = nil
                 result.blackPoint = 0; result.whitePoint = 0
             case .color:
                 result.whiteBalanceMode = defaults.whiteBalanceMode
@@ -275,7 +276,7 @@ enum EditorAdjustmentRules {
             (settings.lutStrength, RawSettings.lutStrengthRange)
         ]
         return fields.allSatisfy { $0.0.isFinite && $0.1.contains($0.0) } &&
-            settings.geometry.isValid && settings.denoise.isValid && settings.hsl.isValid && settings.toneSettings.isValid && settings.gradingSettings.isValid &&
+            settings.geometry.isValid && settings.denoise.isValid && settings.hsl.isValid && settings.toneSettings.isValid && settings.gradingSettings.isValid && settings.curveSettings.isValid &&
             settings.photoEffects.isValid && PhotoEffectParameter.allCases.allSatisfy {
                 $0.range.contains(settings.photoEffects[keyPath: $0.keyPath])
             } && (0...2).contains(settings.displayChromaDenoise)

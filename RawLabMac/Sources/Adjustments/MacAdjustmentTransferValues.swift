@@ -43,7 +43,7 @@ extension MacAdjustmentTransfer {
         var request = sony2fuji_request(); settings.apply(to: &request)
         var result: [Field: Double] = [
             .strength: settings.strength, .exposure: Double(request.exposure_ev), .contrast: Double(request.contrast),
-            .highlights: Double(request.highlights), .shadows: Double(request.shadows), .sCurve: Double(request.tone_curve),
+            .highlights: Double(request.highlights), .shadows: Double(request.shadows), .sCurve: Double(Float(settings.toneCurve / 100)),
             .saturation: Double(request.saturation), .sharpening: Double(request.sharpening),
             .blackPoint: settings.blackPoint, .whitePoint: settings.whitePoint, .vibrance: settings.vibrance
         ]
@@ -58,6 +58,7 @@ extension MacAdjustmentTransfer {
     static func values(_ snapshot: PhotoEditState, isRaw: Bool) -> [String: Value] {
         let settings = snapshot.settings
         var result = [String: Value]()
+        result[Field.curve.rawValue] = settings.curveSettings.transferValue
         for (field, key) in scalarKeys { result[field.rawValue] = .number(logical(settings[keyPath: key], field: field)) }
         let look: [String: Value]
         if let recipe = settings.masterRecipeID { look = ["kind": .string("recipe"), "id": .string(recipe)] }
@@ -107,6 +108,7 @@ extension MacAdjustmentTransfer {
 
     static func applyObjects(_ payload: AdjustmentTransferPayload, to settings: inout Adjustments,
                              context: MacAdjustmentTransferContext) throws {
+        if let curve = payload[.curve]?.curve, curve != settings.curveSettings { settings.curveSettings = curve }
         for field in payload.fields {
             if let zone = field.gradingZone, let wheel = payload[field]?.object {
                 settings.gradingSettings[zone] = ColorGradingWheel(hue: wheel["hue"]!.number!, saturation: wheel["saturation"]!.number!)

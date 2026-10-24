@@ -118,6 +118,42 @@ class EditRecipeSchema(unittest.TestCase):
         del document["processing"]
         self.reject(document, "edits.color_grading")
 
+    def test_v5_tone_curve(self):
+        schema = json.loads((ROOT / "docs" / "edit-json-v5.schema.json").read_text())
+        document = self.full()
+        document.update(schema_version=5, processing={"family": "rawlab", "version": 2, "quality": "standard"})
+        document["edits"]["tone"].update(s_curve=0, curve={"mode": "custom", "points": [[0, 0], [.25, .12], [.75, .88], [1, 1]]})
+        normalized = self.normalize(document)
+        self.assertEqual(normalized["edits"]["tone"]["curve"], document["edits"]["tone"]["curve"])
+        if jsonschema:
+            jsonschema.Draft202012Validator(schema).validate(normalized)
+        for curve in (
+            {"mode": "future", "points": []}, {"mode": "custom", "points": [[0, 0]]},
+            {"mode": "custom", "points": [[0, 0], [True, 1]]},
+            {"mode": "custom", "points": [[0, 0], [1, 1, 1]]},
+            {"mode": "custom", "points": [[0, 0], [1.000001, 1]]},
+            {"mode": "legacy", "points": [[0, 0], [1, 1]]},
+            {"mode": "custom", "points": [[0, 0], [1, 1]], "channel": "red"},
+        ):
+            invalid = copy.deepcopy(document)
+            invalid["edits"]["tone"]["curve"] = curve
+            self.reject(invalid, "edits.tone.curve")
+            if jsonschema:
+                self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(invalid))
+        for points in ([[0, .1], [1, 1]], [[0, 0], [.5, .7], [.5, .9], [1, 1]],
+                       [[0, 0], [.5, .7], [.7, .5], [1, 1]]):
+            invalid = copy.deepcopy(document)
+            invalid["edits"]["tone"]["curve"]["points"] = points
+            self.reject(invalid, "edits.tone.curve")
+        invalid = copy.deepcopy(document)
+        invalid["edits"]["tone"]["s_curve"] = .1
+        self.reject(invalid, "s_curve")
+        if jsonschema:
+            self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(invalid))
+        document["schema_version"] = 4
+        del document["processing"]
+        self.reject(document, "edits.tone.curve")
+
     def test_processing_identity(self):
         schema = json.loads((ROOT / "docs" / "edit-json-v5.schema.json").read_text())
         document = self.full()

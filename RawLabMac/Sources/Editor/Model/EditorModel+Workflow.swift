@@ -107,7 +107,7 @@ extension EditorModel {
 
     private func navigateAdjustment(to target: EditorAdjustmentNavigation, geometryTab: MacGeometryTab? = nil) {
         cancelHSLTarget(); hslTargetEnabled = false
-        if adjustmentNavigation.tool == .colorGrading { cancelAdjustmentInteraction() }
+        if adjustmentNavigation.tool == .colorGrading || adjustmentNavigation.tool == .toneCurve { cancelAdjustmentInteraction() }
         ParameterValueField.cancelPendingInputs()
         guard resetReturnTool == nil, resetConfirmation == nil else { return }
         let action = { [weak self] in

@@ -136,7 +136,7 @@ object EditorAdjustmentRules {
         3 -> s.copy(highlights = d.highlights)
         4 -> s.copy(shadows = d.shadows)
         5 -> s.copy(contrast = d.contrast)
-        6 -> s.copy(toneCurve = d.toneCurve)
+        6 -> s.copy(toneCurve = d.toneCurve, curve = d.curve)
         7 -> s.copy(saturation = d.saturation)
         8, 9 -> s.copy(customWb = d.customWb, temperature = d.temperature, tint = d.tint)
         10 -> s.copy(sharpening = d.sharpening)

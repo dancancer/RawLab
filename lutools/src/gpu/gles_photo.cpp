@@ -252,12 +252,12 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
     const sony2fuji_request& request, const std::shared_ptr<LUT3D>& lut,
     const RGB& relativeWB, uint32_t width, uint32_t height, uint64_t revision, ImageData& output,
     const PhotoEffectsOptions& effects, int chromaDenoise, bool preserveSourceResolution, const HslOptions& hsl, const ToneControlsOptions& toneControls,
-    const ColorGradingOptions& colorGrading) {
+    const ColorGradingOptions& colorGrading, const ToneCurve& customCurve) {
     if (lut && lut->inputTransfer() == LUTTransfer::SRGB) return false;
     if (input.width <= 0 || input.height <= 0 || width == 0 || height == 0 ||
         width > INT32_MAX || height > INT32_MAX || uint64_t(width) * height > INT32_MAX ||
         input.pixels.size() != size_t(input.width) * input.height ||
-        !effects.valid() || !hsl.valid() || !toneControls.valid() || !colorGrading.valid() || chromaDenoise < 0 || chromaDenoise > 2) return false;
+        !effects.valid() || !hsl.valid() || !toneControls.valid() || !colorGrading.valid() || !customCurve.gpuSupported() || (customCurve.custom() && request.tone_curve != 0) || chromaDenoise < 0 || chromaDenoise > 2) return false;
     try {
         if (!impl_) { impl_ = std::make_unique<Impl>(); impl_->initialize(); }
         auto& context = *impl_;
@@ -272,6 +272,10 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
         glUniform4f(context.uniform("tone"), std::clamp(request.contrast, 0.f, 2.f), std::clamp(request.saturation, 0.f, 2.f),
             std::clamp(request.highlights, -1.f, 1.f), std::clamp(request.shadows, -1.f, 1.f));
         glUniform1f(context.uniform("curve"), request.tone_curve);
+        const auto custom = toneCurveGpuParameters(customCurve);
+        glUniform1i(context.uniform("customCurveCount"), custom.count);
+        glUniform4fv(context.uniform("curveRanges[0]"), 32, &custom.ranges[0][0]);
+        glUniform4fv(context.uniform("curveTangents[0]"), 32, &custom.tangents[0][0]);
         glUniform1i(context.uniform("hslActive"), hsl.active());
         glUniform3f(context.uniform("toneControls"), toneControls.blackPoint, toneControls.whitePoint, toneControls.vibrance);
         const auto grading=colorGradingCoefficients(colorGrading);

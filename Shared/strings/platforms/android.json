@@ -3939,6 +3939,116 @@
       "formats": [],
       "source": "批量编辑",
       "types": []
+    },
+    "curve_title": {
+      "formats": [],
+      "source": "曲线",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_custom": {
+      "formats": [],
+      "source": "多点曲线",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_switch_title": {
+      "formats": [],
+      "source": "切换曲线模式",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_switch_custom": {
+      "formats": [],
+      "source": "多点曲线将从直线开始，旧 S 曲线数值会保留。",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_switch_legacy": {
+      "formats": [],
+      "source": "切换到 S 曲线将移除当前控制点，可撤销此操作。",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_switch": {
+      "formats": [],
+      "source": "切换",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_add_point": {
+      "formats": [],
+      "source": "添加控制点",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_remove_point": {
+      "formats": [],
+      "source": "删除控制点",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_reset_identity": {
+      "formats": [],
+      "source": "重置为直线",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_input": {
+      "formats": [],
+      "source": "输入坐标",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_output": {
+      "formats": [],
+      "source": "输出坐标",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_fixed_endpoint": {
+      "formats": [],
+      "source": "端点固定",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_hint": {
+      "formats": [],
+      "source": "点击曲线区域添加控制点，拖动中间点调整。",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "transfer_field_curve": {
+      "formats": [],
+      "source": "曲线模式与控制点",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "invalid_tone_curve": {
+      "formats": [],
+      "source": "无效的曲线参数",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_point_number": {
+      "formats": [
+        "%1$d"
+      ],
+      "source": "控制点 {0}",
+      "file": "editor_strings.xml",
+      "types": [
+        "d"
+      ]
+    },
+    "curve_summary": {
+      "formats": [
+        "%1$d"
+      ],
+      "source": "多点曲线（{0} 个控制点）",
+      "file": "editor_strings.xml",
+      "types": [
+        "d"
+      ]
     }
   },
   "overrides": {

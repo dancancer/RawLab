@@ -34,6 +34,9 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
                                       "midtones": {"hue": 110, "saturation": 0},
                                       "highlights": {"hue": 35.25, "saturation": 16.5}},
                     "tone": {"black_point": .25}, "color": {"vibrance": .5},
+                }), (2, {
+                    "tone": {"curve": {"mode": "custom", "points": [[0, 0], [.25, .12], [.75, .88], [1, 1]]},
+                             "black_point": .25}, "color": {"vibrance": .5},
                 }))):
                     identity = {"family": "rawlab", "version": version, "quality": "standard"}
                     document = {

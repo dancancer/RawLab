@@ -40,6 +40,8 @@ static class Program
             if(args.Length==3 && args[0]=="--histogram") { ViewComparisonChecks.NeutralChecks(args[1],args[2],Check);Console.WriteLine($"PASS {checks} histogram checks");return 0; }
             if(args.Length==4 && args[0]=="--tone-render") { ToneControlsRenderChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} tone render checks");return 0; }
             if(args.Length==4 && args[0]=="--grading-render") { ColorGradingRenderChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} grading render checks");return 0; }
+            if(args.Length==4 && args[0]=="--curve-render") { ToneCurveRenderChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} curve render checks");return 0; }
+            if(args.Length==3 && args[0]=="--curve-ui") { ToneCurveUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} curve UI checks");return 0; }
             if(args.Length==3 && args[0]=="--hsl-target-render") { HslTargetRenderChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HSL target render checks");return 0; }
             if(args.Length==3 && args[0]=="--hsl-target") { HslTargetUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HSL target UI checks");return 0; }
             TestWindowState.PreserveExistingBatch(journalDirectory);

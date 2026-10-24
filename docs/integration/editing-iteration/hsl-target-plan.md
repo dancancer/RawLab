@@ -81,3 +81,9 @@ Android/Windows 同职责 target model、native wrapper/JNI 和模型测试。
 ## 当前验证边界
 
 核心、共享模型和四端桥接使用同一 pre-HSL 合同。Mac 原生 EditorModel 已执行 pending release、一次保存、取消、undo/redo、切源迟到结果回归；Android 已增加对应 ViewModel/JNI/Compose 检查，Windows 已增加 native sample 与 MainWindow 检查，iOS 已增加 processor 和真实编辑器检查。设备和窗口交互仍须解锁后执行，三轴、相邻色域、放大提示、六语/大字以及多指/失焦不能仅凭编译验收。
+
+## 解锁后的增量补验（2026-10-24）
+
+Mac 实际拖拽暴露数值预检释放画布焦点，iOS 实际拖拽暴露普通图片 probe 请求遗漏 input_type；修复与回归保存在本地提交 a05a5e4。修复后 Mac 三轴拖拽、连续键盘微调、Undo/Redo，以及 iOS XCTest 拖拽/历史/pinch 取消通过。Windows 9 项 WPF HSL 检查和 Android JNI/Compose 目标调整检查通过。
+
+本轮证据分别绑定 `cfff3308` 基线与具体修复/测试覆盖层，见外部验收索引 `iteration-08-batch-selection` 中的 `mac-ui`、`ios-ui`、`android-ui`、`windows-ui`；不得合称同一二进制的全量通过。Mac/Windows 默认用户目录未变化。Android 扩展到旧 RAW 套件时，样片不满足镜头匹配前提，后续 instrumentation 退出 255；该扩展运行未通过。后续功能的六语大字号联合验收和实体设备覆盖仍未完成。

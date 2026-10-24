@@ -5,6 +5,76 @@ final class ViewingEditorUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
     override func tearDownWithError() throws { XCUIDevice.shared.orientation = .portrait }
 
+    func testCurveModePointDragAndUndo() {
+        let app = launch(language: "en")
+        app.buttons["editor.group.light"].tap(); app.buttons["tool.toneCurve"].tap()
+        app.buttons["curve.switch"].tap()
+        XCTAssertEqual(receipt(app)["curveMode"] as? String, "legacy")
+        app.alerts.buttons["Switch"].tap()
+        wait(app) { $0["ready"] as? Bool == true && $0["curveMode"] as? String == "custom" }
+        XCTAssertEqual(receipt(app)["curvePoints"] as? [[Double]], [[0, 0], [1, 1]])
+        XCTAssertFalse(app.buttons["curve.remove"].isEnabled)
+        app.buttons["curve.add"].tap()
+        wait(app) { $0["ready"] as? Bool == true && ($0["curvePoints"] as? [[Double]])?.count == 3 }
+        let before = receipt(app)["curvePoints"] as! [[Double]]
+        let history = receipt(app)["historyCount"] as! Int
+        let canvas = app.descendants(matching: .any).matching(identifier: "curve.canvas").firstMatch
+        let panel = app.scrollViews["editor.panel"]
+        for _ in 0..<4 {
+            if panel.frame.contains(canvas.frame) { break }
+            panel.swipeDown(velocity: .slow)
+        }
+        XCTAssertTrue(panel.frame.contains(canvas.frame), "The actual curve must be inside the scrolled viewport before dragging")
+        capture(app, "curve-before-drag")
+        let start = canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 15, dy: -20)),
+                    withVelocity: .slow, thenHoldForDuration: 0.2)
+        wait(app) { $0["ready"] as? Bool == true && $0["gestureActive"] as? Bool == false && $0["historyCount"] as? Int == history + 1 }
+        let moved = receipt(app)["curvePoints"] as! [[Double]]
+        XCTAssertNotEqual(moved, before); XCTAssertEqual(moved.first, [0, 0]); XCTAssertEqual(moved.last, [1, 1])
+        XCTAssertEqual(moved[1][0], before[1][0] + 15 / (canvas.frame.width - 24), accuracy: 0.75 / (canvas.frame.width - 24),
+                       "The curve retains horizontal movement before the pan recognition threshold")
+        XCTAssertEqual(moved[1][1], before[1][1] + 20 / (canvas.frame.height - 24), accuracy: 0.75 / (canvas.frame.height - 24),
+                       "The curve retains vertical movement before the pan recognition threshold")
+        capture(app, "curve-point-drag")
+        openAdjustmentAction("adjustment.history.undo", app: app)
+        wait(app) { $0["ready"] as? Bool == true && $0["curvePoints"] as? [[Double]] == before }
+        openAdjustmentAction("adjustment.history.redo", app: app)
+        wait(app) { $0["ready"] as? Bool == true && $0["curvePoints"] as? [[Double]] == moved }
+        let fineRect = (receipt(app)["nativeSwitchRects"] as! [[Double]])[0]
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: fineRect[0] + fineRect[2] / 2,
+            dy: fineRect[1] + fineRect[3] / 2)).tap()
+        wait(app) { $0["fine"] as? Bool == true }
+        let nextStart = canvas.coordinate(withNormalizedOffset: CGVector(
+            dx: (12 + moved[1][0] * (canvas.frame.width - 24)) / canvas.frame.width,
+            dy: (12 + (1 - moved[1][1]) * (canvas.frame.height - 24)) / canvas.frame.height))
+        nextStart.press(forDuration: 0.1, thenDragTo: nextStart.withOffset(CGVector(dx: -12, dy: 8)),
+                        withVelocity: .slow, thenHoldForDuration: 0.2)
+        wait(app) { $0["ready"] as? Bool == true && $0["gestureActive"] as? Bool == false && $0["historyCount"] as? Int == history + 2 }
+        let fineMoved = receipt(app)["curvePoints"] as! [[Double]]
+        XCTAssertEqual(fineMoved[1][0], moved[1][0] - 3 / (canvas.frame.width - 24), accuracy: 0.75 / (canvas.frame.width - 24))
+        XCTAssertEqual(fineMoved[1][1], moved[1][1] - 2 / (canvas.frame.height - 24), accuracy: 0.75 / (canvas.frame.height - 24),
+                       "A second gesture captures a fresh touch origin and quarter sensitivity")
+        capture(app, "curve-fine-drag")
+        openAdjustmentAction("adjustment.history.undo", app: app)
+        wait(app) { $0["ready"] as? Bool == true && $0["curvePoints"] as? [[Double]] == moved }
+        let remove = app.buttons["curve.remove"]
+        for _ in 0..<4 {
+            if panel.frame.contains(remove.frame) { break }
+            panel.swipeUp(velocity: .slow)
+        }
+        XCTAssertTrue(panel.frame.contains(remove.frame)); remove.tap()
+        wait(app) { $0["ready"] as? Bool == true && ($0["curvePoints"] as? [[Double]])?.count == 2 }
+        for _ in 0..<4 {
+            if panel.frame.contains(app.buttons["curve.switch"].frame) { break }
+            panel.swipeDown(velocity: .slow)
+        }
+        app.buttons["curve.switch"].tap(); app.alerts.buttons["Switch"].tap()
+        wait(app) { $0["ready"] as? Bool == true && $0["curveMode"] as? String == "legacy" }
+        openAdjustmentAction("adjustment.history.undo", app: app)
+        wait(app) { $0["ready"] as? Bool == true && $0["curveMode"] as? String == "custom" }
+    }
+
     func testHSLTargetPhotoDragHistoryAndPinchCancellation() {
         let app = launch(language: "en")
         app.buttons["editor.group.color"].tap(); app.buttons["tool.hsl"].tap()

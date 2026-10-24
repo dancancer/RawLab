@@ -13,6 +13,7 @@ internal object StructuredSettingsCodec {
             .put("exposure", s.exposure).put("exposureMode", s.exposureMode)
             .put("highlights", s.highlights).put("shadows", s.shadows).put("contrast", s.contrast)
             .put("toneCurve", s.toneCurve).put("saturation", s.saturation).put("sharpening", s.sharpening)
+            .put("curve", s.curve.json())
             .put("customWb", s.customWb).put("temperature", s.temperature).put("tint", s.tint)
             .put("recipeID", s.recipeID ?: JSONObject.NULL).put("displayChromaDenoise", s.displayChromaDenoise)
             .put("hsl", JSONArray(s.hsl.packed().toList()))
@@ -45,7 +46,7 @@ internal object StructuredSettingsCodec {
         validateStrictJSON(json, setOf("version", "exposureMode", "displayChromaDenoise", "quarterTurns"))
         val root = JSONObject(json).keysExactly("format", "version", "settings")
         require(root.string("format") == format && root.integer("version") == 2) { "Unsupported settings format" }
-        val s = root.getJSONObject("settings").keysWithOptional(setOf("colorGrading"), "film", "strength", "exposure", "exposureMode", "highlights",
+        val s = root.getJSONObject("settings").keysWithOptional(setOf("colorGrading", "curve"), "film", "strength", "exposure", "exposureMode", "highlights",
             "shadows", "contrast", "toneCurve", "saturation", "sharpening", "customWb", "temperature", "tint",
             "recipeID", "displayChromaDenoise", "hsl", "tone", "denoise", "effects", "lens", "geometry", "processing")
         val tone = s.getJSONObject("tone").keysExactly("blackPoint", "whitePoint", "vibrance")
@@ -65,6 +66,7 @@ internal object StructuredSettingsCodec {
             tint = s.number("tint", -150.0..150.0), recipeID = s.nullableString("recipeID"), displayChromaDenoise = s.integer("displayChromaDenoise"),
             blackPoint = tone.number("blackPoint", -100.0..100.0), whitePoint = tone.number("whitePoint", -100.0..100.0), vibrance = tone.number("vibrance", -100.0..100.0),
             colorGrading = if (s.has("colorGrading")) grading(s.getJSONObject("colorGrading")) else ColorGradingSettings(),
+            curve = if (s.has("curve")) ToneCurveSettings.decode(s.getJSONObject("curve")) else ToneCurveSettings(),
             hsl = HslSettings((0 until hsl.length()).map { number(hsl.get(it), -100.0..100.0) }),
             denoise = DenoiseSettings(denoise.boolean("enabled"), denoise.number("luma", 0.0..100.0), denoise.number("chroma", 0.0..100.0), denoise.number("coarse", 0.0..100.0)),
             effects = PhotoEffectsSettings(effects.number("vignetteAmount", -100.0..100.0), effects.number("vignetteMidpoint", 0.0..100.0),

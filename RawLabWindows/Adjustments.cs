@@ -64,6 +64,7 @@ public sealed class Adjustments
     public bool AIDenoiseEnabled { get; set; }
     public PhotoEffectsSettings Effects { get; set; } = new();
     public ColorGradingSettings ColorGrading { get; set; } = new();
+    public ToneCurveSettings Curve { get; set; } = new();
     public ToneControlsSettings ToneControls { get; set; } = new();
     public string? MasterRecipeID { get; private set; }
     public LensSettings Lens { get; set; } = new();
@@ -108,7 +109,8 @@ public sealed class Adjustments
         Denoise, Effects, DisplayChromaDenoise, Hsl, MasterRecipeID, Lens, Geometry) {
         Processing = ProcessingIdentity.Require(Processing), AIDenoiseEnabled = AIDenoiseEnabled,
         ToneControls = ToneControls.IsIdentity ? null : ToneControls,
-        ColorGrading = ColorGrading.IsDefault ? null : ColorGrading
+        ColorGrading = ColorGrading.IsDefault ? null : ColorGrading,
+        Curve = Curve.IsDefault ? null : Curve
     };
     public static Adjustments FromSnapshot(AdjustmentSnapshot snapshot)
     {
@@ -134,6 +136,7 @@ public sealed class Adjustments
             Effects = effects,
             ToneControls = tone,
             ColorGrading = grading,
+            Curve = snapshot.Curve ?? new(),
             Hsl = snapshot.Hsl ?? new HslSettings(),
             MasterRecipeID = snapshot.MasterRecipeID,
             Lens = snapshot.Lens ?? new(),
@@ -198,13 +201,13 @@ public sealed class Adjustments
         foreach (var spec in ParameterSpec.All.Where(p => p.Group == group)) Reset(spec.Id);
         if (group == "输入") { ExposureMode = 1; ResetWhiteBalance(); }
         if (group == "色彩") { ColorGrading = new(); Hsl = new(); ToneControls = ToneControls with { Vibrance = 0 }; }
-        if (group == "明暗") ToneControls = ToneControls with { BlackPoint = 0, WhitePoint = 0 };
+        if (group == "明暗") { Curve = new(); ToneControls = ToneControls with { BlackPoint = 0, WhitePoint = 0 }; }
         if (group == "细节") { AIDenoiseEnabled = false; Denoise = new(); DisplayChromaDenoise = 0; }
         if (group == "效果") Effects = new();
         if (group == "镜头") Lens = new();
         if (group == "几何") Geometry = new();
     }
-    public void ResetAll() { ColorGrading = new(); ToneControls = new(); AIDenoiseEnabled = false; MasterRecipeID = null; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); }
+    public void ResetAll() { Curve = new(); ColorGrading = new(); ToneControls = new(); AIDenoiseEnabled = false; MasterRecipeID = null; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); }
     internal Native.Request Request(string path, string? lut, int edge, string? output, int? longEdge = null)
     {
         if (longEdge is { } requested && !ExportSize.IsValid(requested))
@@ -221,7 +224,7 @@ public sealed class Adjustments
             ExposureEv=(float)(this[Parameter.Exposure]*scale), Brightness=1, Contrast=1+(float)(this[Parameter.Contrast]*scale)/100,
             Saturation=1+(float)(this[Parameter.Saturation]*scale)/100, Temperature=temperatureWb ? (float)this[Parameter.Temperature] : 6500,
             Tint=temperatureWb ? (float)tint : 0, Highlights=-(float)(this[Parameter.Highlights]*scale)/100,
-            Shadows=(float)(this[Parameter.Shadows]*scale)/100,ToneCurve=(float)this[Parameter.ToneCurve]/100,Sharpening=(float)this[Parameter.Sharpening]/100,
+            Shadows=(float)(this[Parameter.Shadows]*scale)/100,ToneCurve=Curve.Mode == ToneCurveMode.Custom ? 0 : (float)this[Parameter.ToneCurve]/100,Sharpening=(float)this[Parameter.Sharpening]/100,
             // SizeMode 4 is the shared final long-edge contract. PreviewLongEdge
             // remains independent and is never used to size an export.
             SizeMode=limitedFinal ? 4 : 3,LongEdge=limitedFinal ? (uint)longEdge!.Value : 0,

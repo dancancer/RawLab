@@ -242,7 +242,7 @@ ITER-06 的 [color grading v1 数值合同](../../../lutools/docs/color-grading-
 参考、固定质量集和 Metal/D3D11/GLES 对照，四端数据链及色轮已接入，本地模型/native/构建验证完成；
 实际 UI 按用户要求解锁后统一验收，IT-07/15 尚未关闭，范围见
 [接入计划](../../integration/editing-iteration/color-grading-plan.md)。
-ITER-10 仍为**未实施、数值合同待冻结**。上文选定处理路线、顺序和 identity 行为，候选半径/保护权重不是已经验证的跨端常量；这些项没有达到数值冻结前，不能登记为“核心完成”或直接并行抄写到 GPU。ITER-09 的点数、合法性与 PCHIP 策略已明确，但仍未实现/验证。
+ITER-10 仍为**未实施、数值合同待冻结**。上文选定处理路线、顺序和 identity 行为，候选半径/保护权重不是已经验证的跨端常量；这些项没有达到数值冻结前，不能登记为“核心完成”或直接并行抄写到 GPU。ITER-09 已实现版本化 PCHIP 数值合同、CPU/三个 GPU 后端、四端模型与编辑器，核心/native 及实际界面证据与剩余联合门槛见 [接入计划](../../integration/editing-iteration/tone-curve-plan.md)。
 
 核心 owner 在对应算法 PR 先提交同一份版本化数值合同和 CPU 参考向量：黑白场的亮度系数/限幅规则，鲜艳度的彩度定义/肤色权重/负向公式，颜色分级的传递函数/三分区权重/色域处理，以及 Clarity/Dehaze 的半径/边界采样/空气光/transmission 下限/增益和噪声保护。合同连同 fixture ID、来源许可、哈希、参数和期望输出写入共享核心契约与测试资产；默认参数、常量或公式变化不得只在某端修改。先 CPU 参考评估，再冻结算法版本，最后接各端及可用 GPU。
 

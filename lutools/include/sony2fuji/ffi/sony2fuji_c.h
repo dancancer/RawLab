@@ -256,6 +256,21 @@ typedef struct sony2fuji_color_grading_config {
     float highlights_saturation;
 } sony2fuji_color_grading_config;
 
+#define SONY2FUJI_TONE_CURVE_CONFIG_VERSION 1u
+#define SONY2FUJI_TONE_CURVE_MAX_POINTS 33u
+typedef enum sony2fuji_curve_mode {
+    SONY2FUJI_CURVE_LEGACY = 0,
+    SONY2FUJI_CURVE_CUSTOM = 1
+} sony2fuji_curve_mode;
+typedef struct sony2fuji_curve_point { double x, y; } sony2fuji_curve_point;
+typedef struct sony2fuji_tone_curve_config {
+    uint32_t version;
+    uint32_t struct_size;
+    sony2fuji_curve_mode mode;
+    uint32_t count;
+    sony2fuji_curve_point points[SONY2FUJI_TONE_CURVE_MAX_POINTS];
+} sony2fuji_tone_curve_config;
+
 #define SONY2FUJI_GEOMETRY_CONFIG_VERSION 1u
 typedef struct sony2fuji_geometry_config {
     uint32_t version;
@@ -540,6 +555,21 @@ sony2fuji_status sony2fuji_session_set_tone_controls(
 sony2fuji_status sony2fuji_session_set_color_grading(
     sony2fuji_session* session, const sony2fuji_color_grading_config* config
 );
+
+// Legacy mode has count=0 and uses request.tone_curve unchanged. Custom mode
+// requires 2..33 finite normalized points, fixed (0,0)/(1,1), increasing x and
+// nondecreasing y; request.tone_curve must be zero. Identity is an exact bypass.
+// PCHIP runs after highlights/shadows, before contrast/saturation. Invalid
+// setters retain state; configure every reused session, including legacy reset.
+// Precision-limited custom curves use CPU Auto; Force returns UNSUPPORTED.
+sony2fuji_status sony2fuji_session_set_tone_curve(
+    sony2fuji_session* session, const sony2fuji_tone_curve_config* config
+);
+// Stateless custom-curve samples for editor canvases; same evaluator as render.
+// Custom mode, nonzero count and finite x are required. Invalid input leaves y
+// untouched. x and y may be the same array; no session/render lock is needed.
+sony2fuji_status sony2fuji_sample_tone_curve(const sony2fuji_tone_curve_config* config,
+    const double* x, double* y, uint32_t count);
 
 // Additive API; request v2 is unchanged. Identity is an exact bypass.
 // Already-oriented pixels rotate, flip, apply perspective, straighten within a

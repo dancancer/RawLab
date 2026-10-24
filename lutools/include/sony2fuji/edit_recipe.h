@@ -28,6 +28,8 @@ struct EditRecipe {
     float highlights = 0;
     float shadows = 0;
     float sCurve = 0;
+    sony2fuji_tone_curve_config toneCurve{SONY2FUJI_TONE_CURVE_CONFIG_VERSION,
+        sizeof(sony2fuji_tone_curve_config), SONY2FUJI_CURVE_LEGACY, 0, {}};
     sony2fuji_tone_controls_config toneControls{SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION,
         sizeof(sony2fuji_tone_controls_config), 0, 0, 0};
     sony2fuji_color_grading_config colorGrading{SONY2FUJI_COLOR_GRADING_CONFIG_VERSION,

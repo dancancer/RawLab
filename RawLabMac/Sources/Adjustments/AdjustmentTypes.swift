@@ -306,6 +306,7 @@ enum EditorAdjustmentTool: String, CaseIterable, Identifiable {
         case .recipe: return L10n.text("大师配方")
         case .whiteBalance: return L10n.text("白平衡")
         case .colorGrading: return L10n.text("颜色分级")
+        case .toneCurve: return L10n.text("曲线")
         case .hsl: return "HSL"
         case .geometry: return L10n.text("几何")
         case .lens: return L10n.text("镜头")

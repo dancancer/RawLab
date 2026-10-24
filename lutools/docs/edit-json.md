@@ -379,6 +379,27 @@ v1, after HSL and before chroma denoising. See the
 quality admission and exact zero-saturation bypass. CLI capabilities reports
 the actual config version, minimum recipe version, zone names and ranges.
 
+Schema 5 accepts `edits.tone.curve`, with exactly `mode` and `points`:
+
+```json
+"curve": { "mode": "custom", "points": [[0, 0], [0.25, 0.4], [0.75, 0.9], [1, 1]] }
+```
+
+`legacy` requires an empty point array and uses the existing `s_curve` scalar.
+`custom` requires 2–33 finite binary64 coordinate pairs in `[0,1]`, fixed
+endpoints `[0,0]` and `[1,1]`, strictly increasing x and nondecreasing y.
+Custom mode rejects nonzero `s_curve`; desktop adapters preserve the inactive
+legacy value in the photo record but emit scalar zero for rendering. Missing
+`curve` means legacy. Schema 5 normalization emits the complete mode and point
+array, including `{ "mode": "legacy", "points": [] }` for old v5 input.
+Schemas 1–4 reject this field and cannot serialize an active custom curve.
+
+The [tone curve v1 contract](tone-curve-v1.md) defines monotone PCHIP, exact
+identity bypass, fixed endpoints and precision admission. The independent
+544-byte native config leaves request v2 unchanged. The native sampler used by
+all four curve canvases shares the render evaluator. CLI capabilities exposes
+`tone_curve.version`, `recipe_min_version`, modes, point limit and interpolation.
+
 The macOS and Windows Agent adapters emit schema 5 and preserve the photo's
 selected identity, including old records restored as version 1. Ordinary
 parameter changes, resets and batch snapshots do not implicitly upgrade it.

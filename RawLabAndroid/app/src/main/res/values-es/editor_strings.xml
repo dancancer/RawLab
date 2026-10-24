@@ -50,6 +50,21 @@
     <string name="collection_sync_history">"Historial de la última sincronización"</string>
     <string name="collection_title">"Edición por lotes"</string>
     <string name="color_grading">"Gradación de color"</string>
+    <string name="curve_add_point">"Añadir punto"</string>
+    <string name="curve_custom">"Curva de puntos"</string>
+    <string name="curve_fixed_endpoint">"Los extremos son fijos"</string>
+    <string name="curve_hint">"Toca el área de la curva para añadir un punto. Arrastra los puntos interiores para ajustar."</string>
+    <string name="curve_input">"Entrada"</string>
+    <string name="curve_output">"Salida"</string>
+    <string name="curve_point_number">"Punto %1$d"</string>
+    <string name="curve_remove_point">"Eliminar punto"</string>
+    <string name="curve_reset_identity">"Restablecer línea recta"</string>
+    <string name="curve_summary">"Curva de puntos (%1$d puntos)"</string>
+    <string name="curve_switch">"Cambiar"</string>
+    <string name="curve_switch_custom">"La curva de puntos comienza como una línea recta. Se conserva el valor de la curva S."</string>
+    <string name="curve_switch_legacy">"Al cambiar a la curva S se eliminan los puntos actuales. Puedes deshacer este cambio."</string>
+    <string name="curve_switch_title">"Cambiar el modo de curva"</string>
+    <string name="curve_title">"Curva"</string>
     <string name="dcp_automatic_black">"El DCP requiere un procesamiento automático del nivel de negros, que esta conversión aún no admite. Seleccione primero una estrategia de negros explícita con la herramienta de preparación."</string>
     <string name="dcp_invalid_calibration">"Al DCP le falta una ColorMatrix/ForwardMatrix D65 única y válida, por lo que no se puede convertir."</string>
     <string name="dcp_invalid_exposure">"El desplazamiento de exposición del DCP no es válido; debe ser un valor finito de -16 a +16 EV."</string>
@@ -152,6 +167,7 @@
     <string name="info_unavailable">"No disponible"</string>
     <string name="invalid_color_grading">"Valores de gradación de color no válidos"</string>
     <string name="invalid_tone_controls">"Valores de punto negro, punto blanco o intensidad no válidos"</string>
+    <string name="invalid_tone_curve">"Valores de curva no válidos"</string>
     <string name="jpeg_description">"sRGB · calidad 95 · metadatos de captura"</string>
     <string name="look_invalid_file">"El archivo de look está dañado o es incompatible; se requiere un archivo CUBE o RLOOK compatible."</string>
     <string name="look_remove_body">"Se eliminará la copia del look guardada por RawLab; el archivo original no se borrará."</string>
@@ -222,6 +238,7 @@
     <string name="transfer_field_crop_width">"Anchura"</string>
     <string name="transfer_field_crop_x">"Posición horizontal"</string>
     <string name="transfer_field_crop_y">"Posición vertical"</string>
+    <string name="transfer_field_curve">"Modo de curva y puntos"</string>
     <string name="transfer_field_exposure">"Exposición"</string>
     <string name="transfer_field_exposure_mode">"Modo de exposición"</string>
     <string name="transfer_field_flip_horizontal">"Voltear horizontalmente"</string>

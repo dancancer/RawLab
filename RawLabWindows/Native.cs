@@ -31,6 +31,11 @@ internal static partial class Native
     [StructLayout(LayoutKind.Sequential)]
     internal struct ToneControlsConfig { public uint Version, StructSize; public float BlackPoint, WhitePoint, Vibrance; }
     [StructLayout(LayoutKind.Sequential)]
+    internal struct ToneCurveConfig {
+        public uint Version, StructSize; public int Mode; public uint Count;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst=66)] public double[] Points;
+    }
+    [StructLayout(LayoutKind.Sequential)]
     internal struct PhotoEffectsConfig
     {
         public uint Version,StructSize;
@@ -142,6 +147,8 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_wavelet_denoise(Session session,ref WaveletConfig config);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_color_grading(Session session,ref ColorGradingConfig config);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_tone_controls(Session session,ref ToneControlsConfig config);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_tone_curve(Session session,ref ToneCurveConfig config);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_sample_tone_curve(ref ToneCurveConfig config,[In] double[] x,[Out] double[] y,uint count);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_photo_effects(Session session,ref PhotoEffectsConfig config);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_raw_exposure(Session session,out float baseline,out float metadata);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_raw_white_balance(Session session,out float temperature,out float tint);

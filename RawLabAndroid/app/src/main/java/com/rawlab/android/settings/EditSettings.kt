@@ -46,6 +46,7 @@ data class EditSettings(
     val whitePoint: Float = 0f,
     val vibrance: Float = 0f,
     val colorGrading: ColorGradingSettings = ColorGradingSettings(),
+    val curve: ToneCurveSettings = ToneCurveSettings(),
 ) {
     init {
         require(listOf(blackPoint, whitePoint, vibrance).all { it.isFinite() && it in -100f..100f })
@@ -79,6 +80,7 @@ data class EditSettings(
     )
     val recipeScale get() = if (recipeID == null) 1f else strength
     val renderHsl get() = hsl.scaled(recipeScale)
+    val renderToneCurve get() = if (curve.mode == ToneCurveMode.CUSTOM) 0f else toneCurve
     fun selectFilm(id: String, cameraTint: Float? = null): EditSettings {
         if (recipeID == null) return copy(film = id)
         val baseTint = cameraTint?.takeIf { it.isFinite() }

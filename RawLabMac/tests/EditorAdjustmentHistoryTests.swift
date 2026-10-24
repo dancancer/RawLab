@@ -95,6 +95,29 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try historyErrorChecks(root: root, first: first)
         try presetChecks(root: root, first: first, second: second)
         try hslTargetChecks(root: root, second: second)
+        try curveNavigationChecks(root: root, photo: first)
+    }
+
+    static func curveNavigationChecks(root: URL, photo: URL) throws {
+        let model = EditorModel(lookDirectory: root.appendingPathComponent("curve-looks"),
+            editDirectory: root.appendingPathComponent("curve-edits"), batchDirectory: root.appendingPathComponent("curve-batch"))
+        model.open(photo); try rendered(model)
+        model.settings.curveSettings = .identity; try check(model.saveEdits(), "curve mode saves")
+        let before = model.settings, count = model.adjustmentSession!.transactions.count
+        for collapse in [false, true] {
+            model.selectAdjustmentTool(.toneCurve)
+            model.setInteracting(true); model.settings.curveSettings = .identity.inserting(x: 0.5, y: 0.7)
+            if collapse { model.selectAdjustmentGroup(.light) } else { model.selectAdjustmentTool(.exposure) }
+            try check(model.settings == before && !model.scheduler.interacting && model.interactionEntry == nil &&
+                model.adjustmentSession!.transactions.count == count,
+                "curve navigation cancels before changing the tool or collapsing its group")
+        }
+        model.selectAdjustmentTool(.exposure)
+        model.setInteracting(true); model.settings.exposure = 0.4; model.setInteracting(false)
+        try check(model.adjustmentSession!.transactions.count == count + 1 && model.settings.curveSettings == .identity,
+            "the next tool creates its own history entry after curve cancellation")
+        model.undoAdjustment(); try rendered(model)
+        try check(model.settings == before, "undo of the next tool retains the saved curve")
     }
 
     static func hslTargetChecks(root: URL, second: URL) throws {

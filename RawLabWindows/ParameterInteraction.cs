@@ -3,7 +3,7 @@ using System.Globalization;
 namespace RawLab.Windows;
 
 public sealed record NumericRange(double Min, double Max, double Grid = .1, double Wheel = 1,
-    double FineWheel = .1, bool Reciprocal = false, int FixedDecimals = -1, bool CompactPercent = false)
+    double FineWheel = .1, bool Reciprocal = false, int FixedDecimals = -1, bool CompactPercent = false, bool AllowOffGrid = false)
 {
     public double Clamp(double value) => Math.Clamp(Math.Round(value / Grid, MidpointRounding.AwayFromZero) * Grid, Min, Max);
     public double Position(double value) => Max<=Min ? 0 : Reciprocal
@@ -19,6 +19,7 @@ public sealed record NumericRange(double Min, double Max, double Grid = .1, doub
         {value=current;return NumericInputError.None;}
         if(value<Min || value>Max)return NumericInputError.Range;
         if(value==original)return NumericInputError.None;
+        if(AllowOffGrid)return NumericInputError.None;
         var units=value/Grid;
         return Math.Abs(units-Math.Round(units))<=1e-8*Math.Max(1,Math.Abs(units)) ? NumericInputError.None : NumericInputError.Grid;
     }

@@ -101,7 +101,11 @@
 "几何与镜头仅在“全部”或显式选择时包含。" = "La géométrie et l’objectif sont inclus uniquement avec « Tout » ou une sélection explicite.";
 "分割位置" = "Position de la séparation";
 "分割线" = "Ligne de séparation";
+"切换" = "Changer";
+"切换到 S 曲线将移除当前控制点，可撤销此操作。" = "Le passage à la courbe en S supprime les points actuels. Cette modification peut être annulée.";
+"切换曲线模式" = "Changer le mode de courbe";
 "删除" = "Supprimer";
+"删除控制点" = "Supprimer le point";
 "删除预设？" = "Supprimer le préréglage ?";
 "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感" = "Soleil californien mêlé à un film japonais, or urbain diffus et lueur chaude transparente";
 "匹配内嵌预览" = "Adapter à l'aperçu intégré";
@@ -138,6 +142,9 @@
 "外观不可用" = "Look indisponible";
 "外观名称不能为空或包含控制字符。" = "Le nom du look ne peut pas être vide ni contenir de caractères de contrôle.";
 "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。" = "Le fichier de look est endommagé ou incompatible ; un fichier CUBE ou RLOOK compatible est requis.";
+"多点曲线" = "Courbe à points";
+"多点曲线将从直线开始，旧 S 曲线数值会保留。" = "La courbe à points commence par une droite. La valeur de courbe en S est conservée.";
+"多点曲线（%d 个控制点）" = "Courbe à points (%d points)";
 "大小" = "Taille";
 "大师配方" = "Recette maître";
 "完成" = "Terminé";
@@ -241,6 +248,7 @@
 "按每张调整导出" = "Exporter avec les réglages de chaque photo";
 "按每张调整导出…" = "Exporter avec les réglages de chaque photo…";
 "授权核对相册中的保存结果" = "Autoriser l’accès pour vérifier les résultats enregistrés dans Photos";
+"控制点 %d" = "Point %d";
 "搜索镜头" = "Rechercher un objectif";
 "撤销" = "Annuler";
 "撤销 %@ 张" = "Annuler les photos : %@";
@@ -264,6 +272,7 @@
 "无效的几何参数" = "Paramètres géométriques non valides";
 "无效的暗角或颗粒参数" = "Paramètre de vignettage ou de grain invalide";
 "无效的曝光基准" = "Référence d'exposition invalide";
+"无效的曲线参数" = "Valeurs de courbe non valides";
 "无效的视口预览模式" = "Mode d’aperçu de la zone visible non valide";
 "无效的颜色分级参数" = "Valeurs d’étalonnage des couleurs non valides";
 "无效的黑白场或鲜艳度参数" = "Valeurs de point noir, de point blanc ou de vibrance non valides";
@@ -307,6 +316,8 @@
 "曝光" = "Exposition";
 "曝光基准" = "Référence d'exposition";
 "曝光模式" = "Mode d’exposition";
+"曲线" = "Courbe";
+"曲线模式与控制点" = "Mode de courbe et points";
 "更多" = "Plus";
 "有多个匹配镜头，请手动选择" = "Plusieurs objectifs correspondent ; choisissez manuellement";
 "有未提交调整。" = "Des réglages ne sont pas encore validés.";
@@ -373,11 +384,13 @@
 "油润复古 · 城市胶片" = "Vintage riche · film urbain";
 "洋红" = "Magenta";
 "添加" = "Ajouter";
+"添加控制点" = "Ajouter un point";
 "添加照片" = "Ajouter des photos";
 "清空选择" = "Effacer la sélection";
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Film urbain vintage chaud et riche, ombres stables et propres, hautes lumières dorées et récit de déambulation";
 "渲染型 DNG 未生成。" = "Le DNG développé n’a pas été créé.";
 "滨田英明" = "Hideaki Hamada";
+"点击曲线区域添加控制点，拖动中间点调整。" = "Touchez la zone de courbe pour ajouter un point. Faites glisser les points intérieurs pour ajuster.";
 "照片" = "Photo";
 "照片信息" = "Informations de la photo";
 "照片四周留白" = "Marge autour de la photo";
@@ -411,6 +424,7 @@
 "空气清透 · 少女淡蓝" = "Transparence aérienne · bleu tendre";
 "童话油画 · 梦幻微光" = "Peinture à l'huile féerique · lueur onirique";
 "童话绘本油画感，深邃沉静暗部，暖金柔光包裹与漫反射微光" = "Peinture à l'huile de livre de contes, ombres profondes et calmes, lumière dorée enveloppante et lueur diffuse";
+"端点固定" = "Les extrémités sont fixes";
 "等待导出" = "En attente d’exportation";
 "管理预设：%@" = "Gérer le préréglage : %@";
 "粗糙度" = "Rugosité";
@@ -497,7 +511,9 @@
 "跟随系统" = "Suivre le système";
 "跳过" = "Ignorer";
 "跳过以上目标后重试" = "Ignorer les photos ci-dessus et réessayer";
+"输入坐标" = "Entrée";
 "输出" = "Sortie";
+"输出坐标" = "Sortie";
 "返回" = "Retour";
 "返回批量集合" = "Revenir à la collection par lot";
 "返回调整后" = "Revenir à après";
@@ -529,6 +545,7 @@
 "重置%@组…" = "Réinitialiser le groupe %@…";
 "重置%@组？" = "Réinitialiser le groupe %@ ?";
 "重置%@？" = "Réinitialiser %@ ?";
+"重置为直线" = "Rétablir une droite";
 "重置全部 HSL…" = "Réinitialiser tous les réglages HSL…";
 "重置全部 HSL？" = "Réinitialiser tous les réglages HSL ?";
 "重置全部调整" = "Réinitialiser tous les réglages";

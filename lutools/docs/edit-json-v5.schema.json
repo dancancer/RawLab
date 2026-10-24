@@ -269,8 +269,101 @@
               "minimum": -1,
               "maximum": 1,
               "default": 0
+            },
+            "curve": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "points"
+              ],
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "legacy",
+                    "custom"
+                  ]
+                },
+                "points": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      }
+                    ],
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": false
+                  },
+                  "maxItems": 33
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "mode": {
+                        "const": "legacy"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "points": {
+                        "maxItems": 0
+                      }
+                    }
+                  },
+                  "else": {
+                    "properties": {
+                      "points": {
+                        "minItems": 2
+                      }
+                    }
+                  }
+                }
+              ],
+              "default": {
+                "mode": "legacy",
+                "points": []
+              },
+              "description": "Custom PCHIP requires fixed (0,0)/(1,1), strictly increasing x and nondecreasing y; these relational rules are validated by the core."
             }
-          }
+          },
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "curve"
+                ],
+                "properties": {
+                  "curve": {
+                    "properties": {
+                      "mode": {
+                        "const": "custom"
+                      }
+                    }
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "s_curve": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          ]
         },
         "detail": {
           "type": "object",

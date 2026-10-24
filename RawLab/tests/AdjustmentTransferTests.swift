@@ -156,7 +156,35 @@ import Foundation
         }
     }
 
+    static func toneCurve() throws {
+        var source = RawSettings.default
+        source.toneCurve = 0.65
+        source.curveSettings = ToneCurveSettings.identity.inserting(x: 0.25, y: 0.12).inserting(x: 0.75, y: 0.88)
+        let restored = try JSONDecoder().decode(RawSettings.self, from: JSONEncoder().encode(source))
+        check(restored == source, "Curve mode, binary64 points and inactive legacy scalar persist")
+        let modified = try IOSAdjustmentTransfer.capture(scope: .modified, snapshot: state(source), context: raw)
+        check(modified.fields.contains(.curve) && modified.fields.contains(.sCurve), "Modified scope keeps curve and inactive legacy scalar")
+        let partial = try IOSAdjustmentTransfer.capture(scope: .custom([.curve]), snapshot: state(source), context: raw)
+        var target = RawSettings.default
+        target.toneCurve = -0.25
+        let merged = try IOSAdjustmentTransfer.prepare(payload: partial, target: state(target), context: raw)
+        check(merged.settings.curveSettings == source.curveSettings && merged.settings.toneCurve == -0.25,
+            "Pasting curve mode and points preserves unselected legacy scalar")
+        let scalar = try IOSAdjustmentTransfer.capture(scope: .custom([.sCurve]), snapshot: state(target), context: raw)
+        let legacyOnly = try IOSAdjustmentTransfer.prepare(payload: scalar, target: state(source), context: raw)
+        check(legacyOnly.settings.curveSettings == source.curveSettings && legacyOnly.settings.toneCurve == -0.25,
+            "Old scalar-only payload preserves unselected custom curve mode")
+        let bytes = try JSONEncoder().encode(partial)
+        check(try JSONDecoder().decode(AdjustmentTransferPayload.self, from: bytes) == partial, "Curve payload round trip")
+        var bad = source
+        bad.curveSettings.points[1].x = 0
+        rejects("Invalid native curve cannot enter a transfer") {
+            _ = try IOSAdjustmentTransfer.capture(scope: .custom([.curve]), snapshot: state(bad), context: raw)
+        }
+    }
+
     static func main() throws {
+        try toneCurve()
         try colorGrading()
         try toneControls()
         try scopes()

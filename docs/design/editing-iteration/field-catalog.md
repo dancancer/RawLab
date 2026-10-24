@@ -141,13 +141,27 @@ request v2 保持不变。Agent v5 使用 `edits.color_grading`，旧版本不�
 CPU/Metal/D3D11/GLES 已接通，四端当前实现和后补 UI 边界见
 [接入计划](../../integration/editing-iteration/color-grading-plan.md)；这不是 IT-07/15 已验收声明。
 
-### 3.4 尚未支持的候选新字段
+### 3.4 多点曲线
+
+`light.curve` 是独立逻辑对象 `{mode, points}`，模式为 `legacy/custom`；legacy 点列为空，
+custom 为 2～33 个 binary64 `[x,y]`，固定端点、x 严格递增、y 非递减。它与
+`light.s_curve` 分别选择和传输：未选中的模式/点列或旧 scalar 必须保留。custom 下旧
+scalar 仅保存在本端记录中，native 和 Agent 渲染时显式传零，不叠加两条曲线。
+
+common scope 包含两项；曲线工具/light group reset 清除两项。预设、历史和 batch
+冻结完整对象，UI 的选点位置不进入 snapshot。custom identity 仍是非默认模式，
+不能为了像素等价而在保存/交换中丢掉模式或额外控制点。
+
+四端数据与界面、additive C ABI、v5 parser/schema/Agent、CPU/Metal/D3D11/GLES 已接通。
+数值与精度回退见 [tone curve v1](../../../lutools/docs/tone-curve-v1.md)，实际验证边界见
+[接入计划](../../integration/editing-iteration/tone-curve-plan.md)；IT-11/15 的联合验收仍单列。
+
+### 3.5 尚未支持的候选新字段
 
 以下名称只登记未来接线位置，不表示当前 core、Agent、四端或 GPU 已支持：
 
 | 候选字段/配置 | 设计状态 | 当前边界 |
 | --- | --- | --- |
-| `light.curve` | proposed | custom curve 与 legacy `s_curve` 互斥；当前 EditRecipe v5 仍只有 scalar `s_curve`。 |
 | `effects.clarity` / `effects.dehaze` | proposed | 方案候选 core `[-1,1]`；当前无 atmosphere config，算法数值合同和质量集未冻结。 |
 
 来源：[总技术方案 2.1](technical-design.md#21-agent-v5-与-additive-c-abi)。在真实核心、parser/serializer、能力查询、native adapter、保存、Agent 和回归全部接通前，能力响应不得宣告这些字段；旧 schema 和旧像素行为必须保持。

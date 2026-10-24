@@ -50,6 +50,21 @@
     <string name="collection_sync_history">"上次同步记录"</string>
     <string name="collection_title">"批量编辑"</string>
     <string name="color_grading">"颜色分级"</string>
+    <string name="curve_add_point">"添加控制点"</string>
+    <string name="curve_custom">"多点曲线"</string>
+    <string name="curve_fixed_endpoint">"端点固定"</string>
+    <string name="curve_hint">"点击曲线区域添加控制点，拖动中间点调整。"</string>
+    <string name="curve_input">"输入坐标"</string>
+    <string name="curve_output">"输出坐标"</string>
+    <string name="curve_point_number">"控制点 %1$d"</string>
+    <string name="curve_remove_point">"删除控制点"</string>
+    <string name="curve_reset_identity">"重置为直线"</string>
+    <string name="curve_summary">"多点曲线（%1$d 个控制点）"</string>
+    <string name="curve_switch">"切换"</string>
+    <string name="curve_switch_custom">"多点曲线将从直线开始，旧 S 曲线数值会保留。"</string>
+    <string name="curve_switch_legacy">"切换到 S 曲线将移除当前控制点，可撤销此操作。"</string>
+    <string name="curve_switch_title">"切换曲线模式"</string>
+    <string name="curve_title">"曲线"</string>
     <string name="dcp_automatic_black">"DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。"</string>
     <string name="dcp_invalid_calibration">"DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。"</string>
     <string name="dcp_invalid_exposure">"DCP 曝光偏移无效；需要 -16 至 +16 EV 的有限数值。"</string>
@@ -152,6 +167,7 @@
     <string name="info_unavailable">"不可用"</string>
     <string name="invalid_color_grading">"无效的颜色分级参数"</string>
     <string name="invalid_tone_controls">"无效的黑白场或鲜艳度参数"</string>
+    <string name="invalid_tone_curve">"无效的曲线参数"</string>
     <string name="jpeg_description">"sRGB · 质量 95 · 保留拍摄元数据"</string>
     <string name="look_invalid_file">"外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。"</string>
     <string name="look_remove_body">"将移除 RawLab 保存的外观副本，原始文件不会被删除。"</string>
@@ -222,6 +238,7 @@
     <string name="transfer_field_crop_width">"宽度"</string>
     <string name="transfer_field_crop_x">"水平位置"</string>
     <string name="transfer_field_crop_y">"垂直位置"</string>
+    <string name="transfer_field_curve">"曲线模式与控制点"</string>
     <string name="transfer_field_exposure">"曝光"</string>
     <string name="transfer_field_exposure_mode">"曝光模式"</string>
     <string name="transfer_field_flip_horizontal">"水平翻转"</string>

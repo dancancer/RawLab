@@ -37,7 +37,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
         case .shadows:
             return L10n.text("阴影")
         case .toneCurve:
-            return L10n.text("S 曲线")
+            return L10n.text("曲线")
         case .saturation:
             return L10n.text("饱和度")
         case .colorGrading: return L10n.text("颜色分级")

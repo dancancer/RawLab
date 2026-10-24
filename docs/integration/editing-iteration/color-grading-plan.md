@@ -112,3 +112,9 @@ GLES 使用 headless SwiftShader，均验证了实际 backend 调用，但不属
 Apple 原生色轮取消入口缺失；相关模型/会话回归已运行。四端真实界面、六语/大字号、
 iOS native harness 与 Android JNI instrumentation 只完成构建，待用户解锁后统一执行。
 IT-07/15 保持未关闭；本地依赖检查点不代表远端交付或实际 UI 验收通过。
+
+## 解锁后的增量补验（2026-10-24）
+
+Mac 实际色轮拖动、单步撤销、零饱和度候选色相及 360° 归一化通过；iOS 7 项参数 UI 与 native grading 回归、Android Compose 色轮/JNI 回归、Windows WPF 13/26 字号分级面板和原生输入检查通过。
+
+本轮证据分别绑定 `cfff3308` 基线与具体修复/测试覆盖层，见外部验收索引 `iteration-08-batch-selection` 中的 `mac-ui`、`ios-ui`、`android-ui`、`windows-ui`；不得合称同一二进制的全量通过。Mac/Windows 默认用户目录未变化。Android 扩展到旧 RAW 套件时，样片不满足镜头匹配前提，后续 instrumentation 退出 255；该扩展运行未通过。后续功能的六语大字号联合验收和实体设备覆盖仍未完成。

@@ -42,7 +42,7 @@ import com.rawlab.android.settings.LensSettings
 internal val editorToolOrder = EditorAdjustmentGroup.entries.flatMap(EditorAdjustmentRules::tools)
 
 internal val editorToolTitles = listOf(R.string.film, R.string.strength, R.string.exposure, R.string.highlights,
-    R.string.shadows, R.string.contrast, R.string.tone_curve, R.string.saturation, R.string.white_balance,
+    R.string.shadows, R.string.contrast, R.string.curve_title, R.string.saturation, R.string.white_balance,
     R.string.tint, R.string.sharpening, R.string.denoise, R.string.vignette, R.string.grain, R.string.hsl,
     R.string.master_recipes, R.string.info_lens, R.string.geometry, R.string.black_point, R.string.white_point, R.string.vibrance, R.string.color_grading)
 
@@ -92,7 +92,7 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, navig
         3 -> Triple(edits.highlights * 100f, 0f, -100f..100f)
         4 -> Triple(edits.shadows * 100f, 0f, -100f..100f)
         5 -> Triple(edits.contrast * 100f, 0f, -100f..100f)
-        6 -> Triple(edits.toneCurve * 100f, 0f, -100f..100f)
+        6 -> if (edits.curve.isDefault) Triple(edits.toneCurve * 100f, 0f, -100f..100f) else null
         7 -> Triple(edits.saturation * 100f, 0f, -100f..100f)
         // Temperature and tint share one entry; keep the legacy tint slot for restored UI state only.
         9 -> Triple(edits.tint, if (edits.recipeID != null) 0f else state.preview?.tint ?: edits.tint, -150f..150f)

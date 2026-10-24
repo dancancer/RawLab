@@ -126,7 +126,11 @@
 "几何编辑" = "Geometry edits";
 "分割位置" = "Split position";
 "分割线" = "Wipe";
+"切换" = "Switch";
+"切换到 S 曲线将移除当前控制点，可撤销此操作。" = "Switching to the S-curve removes the current control points. You can undo this change.";
+"切换曲线模式" = "Switch curve mode";
 "删除" = "Delete";
+"删除控制点" = "Delete point";
 "删除预设？" = "Delete Preset?";
 "前往下载 %@" = "Download %@";
 "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感" = "California sunlight blended with Japanese film, diffused urban gold and clear warm glow";
@@ -178,6 +182,9 @@
 "外观" = "Looks";
 "外观名称不能为空或包含控制字符。" = "The look name cannot be empty or contain control characters.";
 "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。" = "The look file is damaged or incompatible; a compatible CUBE or RLOOK file is required.";
+"多点曲线" = "Point curve";
+"多点曲线将从直线开始，旧 S 曲线数值会保留。" = "The point curve starts as a straight line. Your S-curve value is retained.";
+"多点曲线（%d 个控制点）" = "Point curve (%d points)";
 "大小" = "Size";
 "大师配方" = "Master Recipe";
 "大师配方外观文件不可用。" = "The master recipe look file is unavailable.";
@@ -309,6 +316,7 @@
 "按各自调整导出…" = "Export with individual adjustments…";
 "按实际生效值应用，已包含配方强度。" = "Applied at effective values, including recipe strength.";
 "按每张照片" = "Per Photo";
+"控制点 %d" = "Point %d";
 "搜索镜头" = "Search Lenses";
 "撤销" = "Undo";
 "撤销 %@ 张" = "Undo photos: %@";
@@ -342,6 +350,7 @@
 "无效的几何参数" = "Invalid geometry parameters";
 "无效的暗角或颗粒参数" = "Invalid vignette or grain settings";
 "无效的曝光基准" = "Invalid exposure reference";
+"无效的曲线参数" = "Invalid curve values";
 "无效的视口预览模式" = "Invalid Viewport Preview Mode";
 "无效的透视参数" = "Invalid perspective settings";
 "无效的预览模式" = "Invalid preview mode";
@@ -395,6 +404,8 @@
 "曝光" = "Exposure";
 "曝光基准" = "Exposure reference";
 "曝光模式" = "Exposure mode";
+"曲线" = "Curve";
+"曲线模式与控制点" = "Curve mode and points";
 "更多编辑操作" = "More Editing Actions";
 "更换镜头…" = "Change Lens…";
 "最终导出：%@ 张" = "Final export · Photos: %@";
@@ -481,6 +492,7 @@
 "油润复古 · 城市胶片" = "Rich vintage · urban film";
 "洋红" = "Magenta";
 "添加 RAW" = "Add RAW";
+"添加控制点" = "Add point";
 "添加照片" = "Add Photos";
 "添加照片…" = "Add photos…";
 "添加照片目录" = "Add Photo Folder";
@@ -491,6 +503,7 @@
 "渲染型 DNG 未生成。" = "Rendered DNG Was Not Created.";
 "滚轮：%@；Shift：%@；范围：%@ 至 %@ %@" = "Wheel: %@; Shift: %@; Range: %@ to %@ %@";
 "滨田英明" = "Hideaki Hamada";
+"点击曲线区域添加控制点，拖动中间点调整。" = "Tap the curve area to add a point. Drag interior points to adjust.";
 "照片" = "Photo";
 "照片信息" = "Photo Information";
 "照片四周留白" = "Space around photo";
@@ -528,6 +541,7 @@
 "空气清透 · 少女淡蓝" = "Airy clarity · soft blue";
 "童话油画 · 梦幻微光" = "Fairy-tale oil painting · dreamy glow";
 "童话绘本油画感，深邃沉静暗部，暖金柔光包裹与漫反射微光" = "Fairy-tale picture-book oil painting, deep quiet shadows, enveloping warm-gold light and diffuse glow";
+"端点固定" = "Endpoints are fixed";
 "等待导出" = "Waiting to Export";
 "管理预设：%@" = "Manage preset: %@";
 "粗糙度" = "Roughness";
@@ -641,8 +655,10 @@
 "跳过本次导出" = "Skip this export";
 "轻度" = "Mild";
 "载入照片后可用" = "Available after loading photos";
+"输入坐标" = "Input";
 "输入调整" = "Input adjustments";
 "输出" = "Output";
+"输出坐标" = "Output";
 "返回调整后" = "Return to after";
 "返回选片集合" = "Return to photo collection";
 "这些修改尚未应用。应用并离开，放弃修改，或继续编辑。" = "These changes have not been applied. Apply them and leave, discard them, or keep editing.";
@@ -678,6 +694,7 @@
 "重置%@组…" = "Reset %@ group…";
 "重置%@组？" = "Reset the %@ group?";
 "重置%@？" = "Reset %@?";
+"重置为直线" = "Reset to straight line";
 "重置全部 HSL…" = "Reset all HSL…";
 "重置全部 HSL？" = "Reset all HSL?";
 "重置全部调整" = "Reset All Adjustments";

@@ -2,13 +2,14 @@ import Foundation
 
 /// Precision is expressed in the units shown in the editor, not engine units.
 enum ParameterPrecision {
-    case standard, exposure, temperature, cropPercent
+    case standard, exposure, temperature, cropPercent, curveCoordinate
 
     var scale: Double {
         switch self {
         case .standard: return 10
         case .exposure, .cropPercent: return 100
         case .temperature: return 0.1
+        case .curveCoordinate: return 1000
         }
     }
     var normalStep: Double {
@@ -16,6 +17,7 @@ enum ParameterPrecision {
         case .standard: return 1
         case .exposure, .cropPercent: return 0.1
         case .temperature: return 100
+        case .curveCoordinate: return 0.01
         }
     }
     var fineStep: Double { 1 / scale }
@@ -43,6 +45,7 @@ enum ParameterPrecision {
         case .exposure, .cropPercent: decimals = 2
         case .temperature: decimals = 0
         case .standard: decimals = abs(clean - clean.rounded()) < 0.0000001 ? 0 : 1
+        case .curveCoordinate: decimals = 6
         }
         let roundedText = String(format: "%.*f", locale: Locale(identifier: "en_US_POSIX"), decimals, clean)
         if self == .cropPercent {
@@ -57,6 +60,7 @@ enum ParameterPrecision {
     func accepts(_ value: Double, original: Double, in range: ClosedRange<Double>) -> Bool {
         guard value.isFinite, range.contains(value) else { return false }
         if value == original { return true }
+        if self == .curveCoordinate { return true }
         let ticks = value * scale
         return value == ticks.rounded() / scale
     }

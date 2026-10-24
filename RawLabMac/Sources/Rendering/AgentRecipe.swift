@@ -37,9 +37,11 @@ extension RenderEngine {
         }
         let size: [String: Any] = exportLongEdge.map { ["mode": "limit_long_edge", "long_edge": $0] } ?? ["mode": "native"]
         guard state.toneSettings.isValid else { throw RenderError.failed(L10n.text("无效的黑白场或鲜艳度参数")) }
+        guard state.curveSettings.isValid else { throw RenderError.failed(L10n.text("无效的曲线参数")) }
         let toneConfig = state.toneSettings.nativeConfig
         var tone: [String: Any] = ["contrast": min(2, max(0, request.contrast)), "saturation": min(2, max(0, request.saturation)),
             "highlights": min(1, max(-1, request.highlights)), "shadows": min(1, max(-1, request.shadows)), "s_curve": request.tone_curve]
+        tone["curve"] = ["mode": state.curveSettings.mode.rawValue, "points": state.curveSettings.points.map { [$0.x, $0.y] }]
         if toneConfig.black_point != 0 { tone["black_point"] = toneConfig.black_point }
         if toneConfig.white_point != 0 { tone["white_point"] = toneConfig.white_point }
         var document: [String: Any] = [

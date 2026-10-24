@@ -72,7 +72,8 @@ public enum AdjustmentField
     BlackPoint,
     WhitePoint,
     Vibrance,
-    GradingShadows, GradingMidtones, GradingHighlights
+    GradingShadows, GradingMidtones, GradingHighlights,
+    Curve
 }
 
 public static class AdjustmentFields
@@ -145,7 +146,8 @@ public static class AdjustmentFields
         "tone.black_point",
         "tone.white_point",
         "color.vibrance",
-        "color.grading.shadows", "color.grading.midtones", "color.grading.highlights"
+        "color.grading.shadows", "color.grading.midtones", "color.grading.highlights",
+        "light.curve"
     ];
     public static string ID(this AdjustmentField field) => ids[(int)field];
     public static string Group(this AdjustmentField field) => field is AdjustmentField.BlackPoint or AdjustmentField.WhitePoint ? "light" : field.ID().Split('.')[0];
@@ -215,6 +217,7 @@ public sealed class AdjustmentPayload
         return a.ValueKind switch {
             JsonValueKind.Number => a.GetDouble() == b.GetDouble(), JsonValueKind.String => a.GetString() == b.GetString(),
             JsonValueKind.Object => a.EnumerateObject().Count() == b.EnumerateObject().Count() && a.EnumerateObject().All(p => b.TryGetProperty(p.Name,out var v) && SameValue(p.Value,v)),
+            JsonValueKind.Array => a.GetArrayLength() == b.GetArrayLength() && a.EnumerateArray().Zip(b.EnumerateArray()).All(pair => SameValue(pair.First, pair.Second)),
             JsonValueKind.Null or JsonValueKind.True or JsonValueKind.False => true, _ => false
         };
     }
@@ -273,6 +276,9 @@ public sealed class AdjustmentPayload
     }
     private static bool Valid(AdjustmentField field, JsonElement value)
     {
+        if (field == AdjustmentField.Curve) {
+            try { _ = ToneCurveSettings.Parse(value); return true; } catch (JsonException) { return false; }
+        }
         if (field.GradingZone() != null) {
             if (!ObjectKeys(value, "hue", "saturation")) return false;
             return Number(value.GetProperty("hue")) is {} hue && Number(value.GetProperty("saturation")) is {} saturation

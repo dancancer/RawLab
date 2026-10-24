@@ -45,11 +45,11 @@ public partial class MainWindow
             var spec=ParameterSpec.All[(int)id];
             var ring=new AdjustmentRing{Width=18,Height=18,Compact=true};
             var grid=new Grid(); grid.Children.Add(ring); grid.Children.Add(new EditorIcon{Kind=spec.Id.ToString(),Width=16,Height=16});
-            var caption=new TextBlock{Text=Loc.Text(spec.Title),TextWrapping=TextWrapping.NoWrap,TextAlignment=TextAlignment.Center,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(6,0,0,0)};
+            var caption=new TextBlock{Text=Loc.Text(id==Parameter.ToneCurve ? "曲线" : spec.Title),TextWrapping=TextWrapping.NoWrap,TextAlignment=TextAlignment.Center,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(6,0,0,0)};
             caption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");
             var stack=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};stack.Children.Add(grid);stack.Children.Add(caption);
-            var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=Loc.Text(spec.Title)};
-            AutomationProperties.SetName(button,Loc.Text(spec.Title));
+            var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=Loc.Text(id==Parameter.ToneCurve ? "曲线" : spec.Title)};
+            AutomationProperties.SetName(button,Loc.Text(id==Parameter.ToneCurve ? "曲线" : spec.Title));
             button.Click+=(_,_)=>SelectTool(ToolFor(spec.Id));
             Tools.Children.Add(button); toolButtons[spec.Id]=(button,ring);
         }
@@ -172,7 +172,7 @@ public partial class MainWindow
     }
     private void CancelParameterInputs()
     {
-        CancelHslTarget();GradingEditor.CancelInputs();
+        CancelHslTarget();GradingEditor.CancelInputs();CurveEditor.CancelInputs();
         var draftRows=transform.Active && transform.Tool==TransformTool.Geometry ? ParameterRows(GeometryEditor).ToHashSet() : [];
         foreach(var row in ParameterRows(AdjustmentPanel))if(!draftRows.Contains(row))row.CancelInput();
     }
@@ -204,7 +204,7 @@ public partial class MainWindow
         var expanded=expandedGroup!=null;
         ToolsScroller.Visibility=expanded ? Visibility.Visible : Visibility.Collapsed;
         PerspectiveCategory.Visibility=expandedGroup==EditorAdjustmentGroup.Geometry ? Visibility.Visible : Visibility.Collapsed;
-        if(!expanded)foreach(var panel in new FrameworkElement[]{ParameterPanel,FilmPanel,MasterRecipePanel,DenoiseSurface,LensSurface,GeometrySurface,HslSurface,GradingSurface,WhiteBalanceSurface,PhotoEffectsSurface,DraftActions})panel.Visibility=Visibility.Collapsed;
+        if(!expanded)foreach(var panel in new FrameworkElement[]{ParameterPanel,FilmPanel,MasterRecipePanel,DenoiseSurface,LensSurface,GeometrySurface,HslSurface,GradingSurface,CurveSurface,WhiteBalanceSurface,PhotoEffectsSurface,DraftActions})panel.Visibility=Visibility.Collapsed;
     }
     private void BuildFilms()
     {
@@ -287,7 +287,7 @@ public partial class MainWindow
             MasterRecipePanel.Visibility=choosingRecipes ? Visibility.Visible : Visibility.Collapsed;
             MasterRecipeCategory.Tag=choosingRecipes ? "selected" : null;MasterRecipeCategoryRing.Selected=choosingRecipes;MasterRecipeCategoryRing.Progress=settings.MasterRecipeID==null ? 0 : 1;MasterRecipeCategoryRing.InvalidateVisual();
             foreach(var pair in recipeButtons)pair.Value.Tag=pair.Key==(settings.MasterRecipeID ?? "") ? "selected" : null;
-            ParameterPanel.Visibility=choosingRecipes || choosingFilm || choosingDenoise || choosingPhotoEffects || choosingHsl || choosingGrading || choosingWhiteBalance || choosingLens || choosingGeometry ? Visibility.Collapsed : Visibility.Visible;
+            ParameterPanel.Visibility=CurrentTool==EditorAdjustmentTool.ToneCurve || choosingRecipes || choosingFilm || choosingDenoise || choosingPhotoEffects || choosingHsl || choosingGrading || choosingWhiteBalance || choosingLens || choosingGeometry ? Visibility.Collapsed : Visibility.Visible;
             LensEditor.Visibility=choosingLens ? Visibility.Visible : Visibility.Collapsed;
             LensSurface.Visibility=LensEditor.Visibility;
             LensEditor.IsEnabled=file!=null && !raster && !exporting;LensEditor.Refresh(PreviewLens,result?.Lens);
@@ -301,6 +301,8 @@ public partial class MainWindow
             PerspectiveCategory.Tag=choosingGeometry && GeometryEditor.ShowPerspective ? "selected" : null;
             GeometryCategoryRing.Selected=choosingGeometry && !GeometryEditor.ShowPerspective;GeometryCategoryRing.Progress=settings.Geometry.IsIdentity ? 0 : 1;GeometryCategoryRing.InvalidateVisual();
             GradingSurface.Visibility=choosingGrading ? Visibility.Visible : Visibility.Collapsed;
+            CurveSurface.Visibility=CurrentTool==EditorAdjustmentTool.ToneCurve ? Visibility.Visible : Visibility.Collapsed;
+            CurveEditor.IsEnabled=file!=null && !exporting;CurveEditor.Refresh(settings.Curve,settings[Parameter.ToneCurve],(file,openRevision));
             GradingEditor.IsEnabled=file!=null && !exporting;GradingEditor.Refresh(settings.ColorGrading,(file,openRevision));
             GradingCategory.Tag=choosingGrading ? "selected" : null;
             GradingCategoryRing.Selected=choosingGrading;GradingCategoryRing.Progress=settings.ColorGrading.IsDefault ? 0 : 1;GradingCategoryRing.InvalidateVisual();
@@ -363,7 +365,7 @@ public partial class MainWindow
                 controls.Button.Tag=selected ? "selected" : null;
                 controls.Ring.Selected=selected;
                 var p=ParameterSpec.All[(int)id]; var origin=p.Position(settings.Default(id)); var offset=p.Position(settings[id])-origin;
-                controls.Ring.Progress=offset==0 ? 0 : offset/(offset<0 ? origin : 1-origin); controls.Ring.InvalidateVisual();
+                controls.Ring.Progress=id==Parameter.ToneCurve && !settings.Curve.IsDefault ? settings.Curve.Progress : offset==0 ? 0 : offset/(offset<0 ? origin : 1-origin); controls.Ring.InvalidateVisual();
             }
             foreach(var (id,controls) in toneToolButtons) {
                 var selected=CurrentTool==EditorAdjustmentRules.ToolFor(id);

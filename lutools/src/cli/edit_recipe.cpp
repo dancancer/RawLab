@@ -1,4 +1,5 @@
 #include "sony2fuji/edit_recipe.h"
+#include "core/photo_tone_curve.h"
 #include "nlohmann/json.hpp"
 #include <algorithm>
 #include <cmath>
@@ -98,7 +99,7 @@ void completeEdits(const Json& edits, EditRecipe& parsed) {
     if (edits.contains("tone")) {
         const auto& tone = edits.at("tone");
         if (parsed.schemaVersion >= 5)
-            fields(tone, "edits.tone", {"contrast", "saturation", "highlights", "shadows", "s_curve", "black_point", "white_point"});
+            fields(tone, "edits.tone", {"contrast", "saturation", "highlights", "shadows", "s_curve", "black_point", "white_point", "curve"});
         else fields(tone, "edits.tone", {"contrast", "saturation", "highlights", "shadows", "s_curve"});
         parsed.contrast = number(tone, "contrast", 1, 0, 2, "edits.tone");
         parsed.saturation = number(tone, "saturation", 1, 0, 2, "edits.tone");
@@ -107,6 +108,29 @@ void completeEdits(const Json& edits, EditRecipe& parsed) {
         parsed.sCurve = number(tone, "s_curve", 0, -1, 1, "edits.tone");
         parsed.toneControls.black_point = number(tone, "black_point", 0, -1, 1, "edits.tone");
         parsed.toneControls.white_point = number(tone, "white_point", 0, -1, 1, "edits.tone");
+        if (tone.contains("curve")) {
+            const auto& curve = tone.at("curve");
+            const std::string path = "edits.tone.curve";
+            fields(curve, path, {"mode", "points"});
+            const auto mode = text(required(curve, "mode", path), path + ".mode");
+            auto& config = parsed.toneCurve;
+            if (mode == "legacy") config.mode = SONY2FUJI_CURVE_LEGACY;
+            else if (mode == "custom") config.mode = SONY2FUJI_CURVE_CUSTOM;
+            else throw std::invalid_argument(path + ".mode is unsupported");
+            const auto& points = required(curve, "points", path);
+            if (!points.is_array() || points.size() > SONY2FUJI_TONE_CURVE_MAX_POINTS)
+                throw std::invalid_argument(path + ".points must be an array of at most 33 points");
+            config.count = static_cast<uint32_t>(points.size());
+            for (size_t i = 0; i < points.size(); ++i) {
+                const auto& point = points[i];
+                if (!point.is_array() || point.size() != 2 || !point[0].is_number() || !point[1].is_number())
+                    throw std::invalid_argument(path + ".points must contain [x,y] pairs");
+                config.points[i] = {point[0].get<double>(), point[1].get<double>()};
+            }
+            if (!validToneCurve(config)) throw std::invalid_argument(path + ".points are invalid for the selected mode");
+            if (config.mode == SONY2FUJI_CURVE_CUSTOM && parsed.sCurve != 0)
+                throw std::invalid_argument(path + " conflicts with nonzero edits.tone.s_curve");
+        }
     }
     if (edits.contains("color")) {
         const auto& color = edits.at("color");
@@ -342,6 +366,9 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
 }
 
 std::string serializeEditRecipe(const EditRecipe& recipe) {
+    if (!validToneCurve(recipe.toneCurve)) throw std::invalid_argument("Invalid tone curve configuration");
+    if (recipe.toneCurve.mode == SONY2FUJI_CURVE_CUSTOM && (recipe.schemaVersion < 5 || recipe.sCurve != 0))
+        throw std::invalid_argument("Custom tone curve requires schema_version 5 and zero s_curve");
     if (recipe.schemaVersion < 1 || recipe.schemaVersion > 5)
         throw std::invalid_argument("Unsupported schema_version");
     if (recipe.processingVersion != SONY2FUJI_PROCESSING_LEGACY && recipe.processingVersion != SONY2FUJI_PROCESSING_C5_V2)
@@ -410,6 +437,12 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
         auto& edits = document["edits"];
         edits["tone"] = {{"contrast", recipe.contrast}, {"saturation", recipe.saturation},
             {"highlights", recipe.highlights}, {"shadows", recipe.shadows}, {"s_curve", recipe.sCurve}};
+        if (recipe.schemaVersion >= 5) {
+            Json points = Json::array();
+            for (uint32_t i = 0; i < recipe.toneCurve.count; ++i)
+                points.push_back({recipe.toneCurve.points[i].x, recipe.toneCurve.points[i].y});
+            edits["tone"]["curve"] = {{"mode", recipe.toneCurve.mode == SONY2FUJI_CURVE_CUSTOM ? "custom" : "legacy"}, {"points", points}};
+        }
         // Identity omits additive keys so existing normalized recipes stay byte-identical.
         if (controls.black_point != 0) edits["tone"]["black_point"] = controls.black_point;
         if (controls.white_point != 0) edits["tone"]["white_point"] = controls.white_point;

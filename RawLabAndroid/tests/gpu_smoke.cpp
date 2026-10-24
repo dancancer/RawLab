@@ -3,6 +3,7 @@
 #include "hsl_gpu_boundary.h"
 #include "tone_gpu_boundary.h"
 #include "grading_gpu_boundary.h"
+#include "curve_gpu_boundary.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -82,6 +83,12 @@ int main(int argc, char** argv) {
         return renderer.render(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
             input.width,input.height,0,output,{},0,false,{}, {},grading);
     }),"Color grading matches CPU float reference across regions and gamut boundaries");
+    require(rawlabtest::curveGpuBoundary([](const sony2fuji::ImageData& input,const sony2fuji_request& request,
+        const sony2fuji::ToneCurve& curve,sony2fuji::ImageData& output) {
+        sony2fuji::GlesPhotoRenderer renderer;
+        return renderer.render(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
+            input.width,input.height,0,output,{},0,false,{}, {},{},curve);
+    }),"PCHIP curve matches CPU float reference including 33 points and plateaus");
     Session forced(SONY2FUJI_GPU_FORCE);
     Session cpu(SONY2FUJI_GPU_OFF), automatic(SONY2FUJI_GPU_AUTO);
     std::vector<uint8_t> pixels(53 * 41 * 3);
@@ -212,6 +219,13 @@ int main(int argc, char** argv) {
     for (Session* session : {&cpu,&forced,&automatic})
         require(sony2fuji_session_set_color_grading(session->value,&grading)==SONY2FUJI_STATUS_OK,"grading setter");
     compare(render(cpu,request,false),render(forced,request,true),"Grading with black/white/vibrance and HSL/LUT FINAL");
+    sony2fuji_tone_curve_config curve{1,sizeof(curve),SONY2FUJI_CURVE_CUSTOM,4,{{0,0},{.25,.12},{.75,.88},{1,1}}};
+    for (Session* session : {&cpu,&forced,&automatic}) sony2fuji_session_set_tone_curve(session->value,&curve);
+    const float legacyCurve=request.tone_curve;request.tone_curve=0;
+    compare(render(cpu,request,false),render(forced,request,true),"Custom curve with grading, tone and HSL/LUT FINAL");
+    curve={1,sizeof(curve),SONY2FUJI_CURVE_LEGACY,0,{}};
+    for (Session* session : {&cpu,&forced,&automatic}) sony2fuji_session_set_tone_curve(session->value,&curve);
+    request.tone_curve=legacyCurve;
     auto hslPreview = request;
     hslPreview.intent = SONY2FUJI_INTENT_PREVIEW;
     compare(render(cpu, hslPreview, false), render(automatic, hslPreview, true), "HSL tone/LUT Auto preview");

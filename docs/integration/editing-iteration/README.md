@@ -30,12 +30,12 @@
 | I1-MCP | ITER-01，本地 stdio 五工具，先服务既有 v4 CLI | CLI 协商、路径和子进程生命周期 | 基础功能已集成；Mac/Windows 当前 CLI 本地对照与 Windows native 生命周期通过，补充实现 `b5d226d` 已本地集成，随阶段汇总 PR 交付 | IT-01，真实 CLI/MCP 输出对照 |
 | I1-UI | ITER-02，六组、范围重置、原生输入/草稿/查看、移动 RGB | 先完成 Mac S1 规则与候选；再接四端 | S1/S2a/S2b 已集成，相关原生验证、独立复评和最终源联合 CI 完成，边界见对应批次；S3 四端实现、独立复评及约定原生增量已完成；S3/S4 本地交付见第六、七批索引，通过阶段汇总 PR 交付，尚未合入 `development` | AC-01～21、IT-02/16 |
 | I2 | ITER-03，选择性复制/粘贴与会话历史 | I0 + 本端提交/草稿门控 | 四端实现、对应原生工作流和独立复核完成，随 draft [#134](https://github.com/dancancer/RawLab/pull/134) 待集成；实际验证与未覆盖项见 PR 和[接入计划](selective-transactions-plan.md) | IT-03/04；IT-15 仍属于跨功能联合门槛 |
-| I3-P | ITER-04，独立用户预设 | I2 的 prepare/commit/history | 四端实现、共享格式复核和功能原生验证完成；用户要求解锁后统一补验 Mac 大字号，当前保留为本地依赖检查点；依赖 draft #134，见[预设接入计划](user-presets-plan.md)；尚未 push/提 PR | IT-05/15 |
-| I3-T | ITER-05，黑白场/鲜艳度与新字段端到端 | 版本化数值合同、固定质量集、CPU reference | 数值合同、三后端和四端实现已接通，本地模型/native/构建检查完成；新工具实际 UI 按用户要求解锁后统一验收，见[接入计划](tone-controls-plan.md)；尚未 push/提 PR | IT-06/15，未关闭 |
-| I4-G | ITER-06，三分区颜色分级 | I3-T 的新配置/数据链，单独质量准入 | 数值合同、三后端和四端数据链/色轮已接通，本地模型/native/构建检查及独立复核完成；实际 UI 待解锁后统一验收，见[接入计划](color-grading-plan.md)；尚未 push/提 PR | IT-07/15，未关闭 |
-| I4-H | ITER-07，HSL 真实像素 probe、坐标与目标手势 | I1-UI + 核心 probe 合同；提交接 I2 | CPU probe 合同和四端接入已实现，本地模型/native/构建检查及独立复核完成；实际 UI 待解锁后统一验收，见[接入计划](hsl-target-plan.md)；尚未 push/提 PR | IT-08/15，未关闭 |
-| I4-B | ITER-08，集合、同步、单张微调、逐张冻结导出 | I2；不等待全部新算法 | 四端集合/同步/微调与两次确认冻结已接入，模型和可执行的原生回归通过；实际界面待解锁后统一验收，见[接入计划](batch-selection-plan.md)；尚未 push/提 PR | IT-09/10/15，未关闭 |
-| I5-Q | ITER-09，多点 PCHIP，保留 legacy S 曲线 | I3-T 的新参数配置、快照/Agent/导出接线 | 排队；合法性策略已明确 | IT-11/15 |
+| I3-P | ITER-04，独立用户预设 | I2 的 prepare/commit/history | 四端实现、共享格式复核和功能原生验证完成；解锁后已补齐 Mac 六语大字号原生检查，保留为本地依赖检查点；依赖 draft #134，见[预设接入计划](user-presets-plan.md)；尚未 push/提 PR | IT-05/15 |
+| I3-T | ITER-05，黑白场/鲜艳度与新字段端到端 | 版本化数值合同、固定质量集、CPU reference | 数值合同、三后端和四端实现已接通，本地模型/native/构建检查完成；解锁后已执行原生/实际 UI 增量，六语大字号联合门槛仍未关闭，见[接入计划](tone-controls-plan.md)；尚未 push/提 PR | IT-06/15，未关闭 |
+| I4-G | ITER-06，三分区颜色分级 | I3-T 的新配置/数据链，单独质量准入 | 数值合同、三后端和四端数据链/色轮已接通，本地模型/native/构建检查及独立复核完成；解锁后已执行原生/实际 UI 增量，修复及未覆盖项分列，见[接入计划](color-grading-plan.md)；尚未 push/提 PR | IT-07/15，未关闭 |
+| I4-H | ITER-07，HSL 真实像素 probe、坐标与目标手势 | I1-UI + 核心 probe 合同；提交接 I2 | CPU probe 合同和四端接入已实现，本地模型/native/构建检查及独立复核完成；解锁后已执行原生/实际 UI 增量，修复及未覆盖项分列，见[接入计划](hsl-target-plan.md)；尚未 push/提 PR | IT-08/15，未关闭 |
+| I4-B | ITER-08，集合、同步、单张微调、逐张冻结导出 | I2；不等待全部新算法 | 四端集合/同步/微调与两次确认冻结已接入，模型和可执行的原生回归通过；解锁后已执行实际界面增量，单照片与多照片证据分列，见[接入计划](batch-selection-plan.md)；尚未 push/提 PR | IT-09/10/15，未关闭 |
+| I5-Q | ITER-09，多点 PCHIP，保留 legacy S 曲线 | I3-T 的新参数配置、快照/Agent/导出接线 | 四端曲线/数据链、CPU 与三后端已实现；模型/native/构建已验证，实际界面增量与剩余联合门槛见[接入计划](tone-curve-plan.md)，尚未 push/提 PR | IT-11/15 |
 | I5-A | ITER-10，清晰度与去朦胧 | I5-Q 的配置/Agent 接口；各自数值合同、固定质量集、CPU reference | 数值合同待冻结 | IT-12/15 |
 | IU | ITER-11，可信发行链、种子版、真实升级与恢复 | 两端发行身份、安装形态、可信 feed；真实发布另行授权 | 前置待核对 | IT-13/14 |
 | IF | 同一集成源联合验收及发布源冻结 | 上述全部交付及逐端证据 | 未开始 | IT-01～16 + AC-01～21 |

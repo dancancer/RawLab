@@ -30,10 +30,12 @@ struct alignas(16) Parameters {
     float hslHue[2][4], hslSaturation[2][4], hslLightness[2][4];
     float toneControls[4];
     float colorGrading[3][4];
+    float curveRanges[32][4], curveTangents[32][4];
 };
-static_assert(sizeof(Parameters) == 384);
+static_assert(sizeof(Parameters) == 1408);
 static_assert(offsetof(Parameters, hslHue) == 224);
 static_assert(offsetof(Parameters, colorGrading) == 336);
+static_assert(offsetof(Parameters, curveRanges) == 384);
 static_assert(sizeof(RGB) == 12);
 struct Buffer {
     ComPtr<ID3D11Buffer> data;
@@ -150,10 +152,10 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
     const sony2fuji_request& request, const std::shared_ptr<LUT3D>& lut,
     const RGB& wb, uint32_t width, uint32_t height, uint64_t revision, ImageData& output,
     const PhotoEffectsOptions& effects, int chromaDenoise, bool preserveSourceResolution, const HslOptions& hsl, const ToneControlsOptions& toneControls,
-    const ColorGradingOptions& colorGrading) {
+    const ColorGradingOptions& colorGrading, const ToneCurve& customCurve) {
     if (lut && lut->inputTransfer() == LUTTransfer::SRGB) return false;
     if (input.width<=0 || input.height<=0 || width==0 || height==0 || width>65535 || height>65535 ||
-        input.pixels.size()!=static_cast<size_t>(input.width)*input.height || !effects.valid() || !hsl.valid() || !toneControls.valid() || !colorGrading.valid() ||
+        input.pixels.size()!=static_cast<size_t>(input.width)*input.height || !effects.valid() || !hsl.valid() || !toneControls.valid() || !colorGrading.valid() || !customCurve.gpuSupported() || (customCurve.custom() && request.tone_curve != 0) ||
         chromaDenoise < 0 || chromaDenoise > 2) return false;
     // Diagnostic switch also exercises Auto fallback and Force failure in regression tests.
     if (GetEnvironmentVariableW(L"RAWLAB_DISABLE_D3D11",nullptr,0)>0) return false;
@@ -172,6 +174,10 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
         p.tone[0]=std::clamp(request.contrast,0.f,2.f);p.tone[1]=std::clamp(request.saturation,0.f,2.f);
         p.tone[2]=std::clamp(request.highlights,-1.f,1.f);p.tone[3]=std::clamp(request.shadows,-1.f,1.f);
         p.detail[0]=request.tone_curve;p.detail[1]=request.noise_reduction;p.detail[2]=request.sharpening;
+        const auto custom = toneCurveGpuParameters(customCurve);
+        p.detail[3] = static_cast<float>(custom.count);
+        std::memcpy(p.curveRanges, custom.ranges, sizeof(custom.ranges));
+        std::memcpy(p.curveTangents, custom.tangents, sizeof(custom.tangents));
         p.control[1]=hsl.active();
         p.toneControls[0]=toneControls.blackPoint; p.toneControls[1]=toneControls.whitePoint;
         p.toneControls[2]=toneControls.vibrance;

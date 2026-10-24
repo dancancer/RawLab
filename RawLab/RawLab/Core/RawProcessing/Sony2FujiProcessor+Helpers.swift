@@ -49,6 +49,14 @@ extension Sony2FujiProcessor {
         }
     }
 
+    func configureCurve(_ session: OpaquePointer, settings: ToneCurveSettings) throws {
+        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的曲线参数")) }
+        var config = settings.nativeConfig
+        guard sony2fuji_session_set_tone_curve(session, &config) == SONY2FUJI_STATUS_OK else {
+            throw ProcessorError.processFailed(L10n.text("无效的曲线参数"))
+        }
+    }
+
     func configureGrading(_ session: OpaquePointer, settings: ColorGradingSettings) throws {
         guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的颜色分级参数")) }
         var config = settings.nativeConfig
@@ -69,6 +77,7 @@ extension Sony2FujiProcessor {
                           viewportPreview: Bool = false) throws {
         try configureProcessing(session, identity: settings.processing)
         try configureTone(session, settings: settings.toneSettings)
+        try configureCurve(session, settings: settings.curveSettings)
         try configureGrading(session, settings: settings.gradingSettings)
         try configureGeometry(session, settings: settings.geometry)
         try configureLens(session, settings: settings.lensSettings)
@@ -228,7 +237,7 @@ extension Sony2FujiProcessor {
             : Float(settings.tint)
         request.highlights = Float(settings.highlights)
         request.shadows = Float(settings.shadows)
-        request.tone_curve = Float(settings.toneCurve)
+        request.tone_curve = settings.curveSettings.mode == .custom ? 0 : Float(settings.toneCurve)
         request.noise_reduction = displayInput || settings.denoise.enabled ? 0 : Float(settings.noiseReduction)
         request.sharpening = Float(settings.sharpening)
         return request

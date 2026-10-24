@@ -56,6 +56,7 @@ import com.rawlab.android.looks.localizedSubtitle
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.ColorGradingZone
 import com.rawlab.android.editor.controls.ColorGradingControls
+import com.rawlab.android.editor.controls.ToneCurveControls
 import com.rawlab.android.editor.controls.HslTargetControls
 import com.rawlab.android.editor.controls.HslTargetActions
 import com.rawlab.android.settings.Film
@@ -245,8 +246,9 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 { value, dragging -> onEdit(edits.copy(shadows = value / 100), dragging) }, { onEdit(edits.copy(shadows = 0f), false) })
             5 -> NumericControl(R.string.contrast, edits.contrast * 100, -100f..100f, "%", state.controlsEnabled,
                 { value, dragging -> onEdit(edits.copy(contrast = value / 100), dragging) }, { onEdit(edits.copy(contrast = 0f), false) })
-            6 -> NumericControl(R.string.tone_curve, edits.toneCurve * 100, -100f..100f, "%", state.controlsEnabled,
-                { value, dragging -> onEdit(edits.copy(toneCurve = value / 100), dragging) }, { onEdit(edits.copy(toneCurve = 0f), false) })
+            6 -> ToneCurveControls(edits.curve, edits.toneCurve, state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(curve = value), dragging) },
+                { value, dragging -> onEdit(edits.copy(toneCurve = value), dragging) })
             7 -> NumericControl(R.string.saturation, edits.saturation * 100, -100f..100f, "%", state.controlsEnabled,
                 { value, dragging -> onEdit(edits.copy(saturation = value / 100), dragging) }, { onEdit(edits.copy(saturation = 0f), false) })
             8 -> {
