@@ -14,6 +14,8 @@ internal static class BatchSettingsText
                 Loc.Format("控制点 {0}", index + 1) + "  " + point.X.ToString("0.##", CultureInfo.GetCultureInfo(Loc.Language)) +
                 " → " + point.Y.ToString("0.##", CultureInfo.GetCultureInfo(Loc.Language))));
         }
+        text += "\n" + string.Join("\n", AtmosphereSpec.All.Select(spec =>
+            Row(spec.Title, state.Atmosphere[spec.Id].ToString("+0.##;-0.##;0", CultureInfo.GetCultureInfo(Loc.Language)) + "%")));
         text += "\n" + string.Join("\n", ToneControlSpec.All.Select(spec =>
             Row(spec.Title, state.ToneControls[spec.Id].ToString("+0.#;-0.#;0", CultureInfo.GetCultureInfo(Loc.Language)) + "%")));
         text += "\n" + string.Join("\n", Enum.GetValues<ColorGradingZone>().Select(zone =>

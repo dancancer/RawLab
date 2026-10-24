@@ -96,6 +96,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         configureGeometry(settings.geometry)
         nativeSetToneCurve(handle, effective.curve.mode.nativeValue, effective.curve.packed())
         nativeSetToneControls(handle, effective.blackPoint / 100f, effective.whitePoint / 100f, effective.vibrance / 100f)
+        nativeSetAtmosphere(handle, effective.clarity / 100f, effective.dehaze / 100f)
         with(effective.colorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
             midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
         return nativeProcess(handle, input.path, pixels?.bitmap, pixels?.width ?: 0,
@@ -135,6 +136,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         configureGeometry(settings.geometry)
         nativeSetToneCurve(handle, effective.curve.mode.nativeValue, effective.curve.packed())
         nativeSetToneControls(handle, effective.blackPoint / 100f, effective.whitePoint / 100f, effective.vibrance / 100f)
+        nativeSetAtmosphere(handle, effective.clarity / 100f, effective.dehaze / 100f)
         with(effective.colorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
             midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
         val backend = intArrayOf(-1)
@@ -163,6 +165,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         configureGeometry(settings.geometry)
         nativeSetToneCurve(handle, effective.curve.mode.nativeValue, effective.curve.packed())
         nativeSetToneControls(handle, effective.blackPoint / 100f, effective.whitePoint / 100f, effective.vibrance / 100f)
+        nativeSetAtmosphere(handle, effective.clarity / 100f, effective.dehaze / 100f)
         with(effective.colorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
             midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
         return nativeAutoExposure(handle, input.path, pixels?.bitmap, pixels?.width ?: 0, pixels?.height ?: 0,
@@ -222,6 +225,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     private external fun nativeSetLensCorrection(handle: Long, distortion: Boolean, tca: Boolean, autoCrop: Boolean, profile: ByteArray)
     private external fun nativeSetColorGrading(handle: Long, shadowsHue: Float, shadowsSaturation: Float,
         midtonesHue: Float, midtonesSaturation: Float, highlightsHue: Float, highlightsSaturation: Float)
+    private external fun nativeSetAtmosphere(handle: Long, clarity: Float, dehaze: Float)
     private external fun nativeSetToneControls(handle: Long, blackPoint: Float, whitePoint: Float, vibrance: Float)
     private external fun nativeSetToneCurve(handle: Long, mode: Int, points: DoubleArray)
     private external fun nativeSetGeometry(handle: Long, cropX: Float, cropY: Float, cropWidth: Float,

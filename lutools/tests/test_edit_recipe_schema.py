@@ -86,6 +86,32 @@ class EditRecipeSchema(unittest.TestCase):
         del document["edits"]["color"]
         self.reject(document, "edits.tone.black_point")
 
+    def test_v5_atmosphere(self):
+        schema = json.loads((ROOT / "docs" / "edit-json-v5.schema.json").read_text())
+        document = self.full()
+        document["schema_version"] = 5
+        document["processing"] = {"family": "rawlab", "version": 2, "quality": "standard"}
+        document["edits"]["effects"].update(clarity=.625, dehaze=-.375)
+        normalized = self.normalize(document)
+        for field, expected in (("clarity", .625), ("dehaze", -.375)):
+            self.assertEqual(normalized["edits"]["effects"][field], expected)
+            for value in (-1.01, 1.01, True, "0", None):
+                invalid = copy.deepcopy(document)
+                invalid["edits"]["effects"][field] = value
+                self.reject(invalid, f"edits.effects.{field}")
+                if jsonschema:
+                    self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(invalid))
+        if jsonschema:
+            jsonschema.Draft202012Validator(schema).validate(document)
+            jsonschema.Draft202012Validator(schema).validate(normalized)
+        document["edits"]["effects"].update(clarity=0, dehaze=0)
+        normalized = self.normalize(document)
+        self.assertNotIn("clarity", normalized["edits"]["effects"])
+        self.assertNotIn("dehaze", normalized["edits"]["effects"])
+        document["schema_version"] = 4
+        del document["processing"]
+        self.reject(document, "edits.effects.clarity")
+
     def test_v5_color_grading(self):
         schema = json.loads((ROOT / "docs" / "edit-json-v5.schema.json").read_text())
         document = self.full()

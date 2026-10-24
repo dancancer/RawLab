@@ -244,6 +244,14 @@ typedef struct sony2fuji_tone_controls_config {
     float vibrance;    // -1..1, default 0. Independent of legacy saturation.
 } sony2fuji_tone_controls_config;
 
+#define SONY2FUJI_ATMOSPHERE_CONFIG_VERSION 1u
+typedef struct sony2fuji_atmosphere_config {
+    uint32_t version;
+    uint32_t struct_size;
+    float clarity; // -1..1, default 0. Medium-scale local contrast.
+    float dehaze;  // -1..1, default 0. Negative adds atmosphere.
+} sony2fuji_atmosphere_config;
+
 #define SONY2FUJI_COLOR_GRADING_CONFIG_VERSION 1u
 typedef struct sony2fuji_color_grading_config {
     uint32_t version;
@@ -547,6 +555,15 @@ void sony2fuji_hsl_probe_destroy(sony2fuji_hsl_probe* probe);
 // set the complete configuration, including zero for an unadjusted next photo.
 sony2fuji_status sony2fuji_session_set_tone_controls(
     sony2fuji_session* session, const sony2fuji_tone_controls_config* config
+);
+
+// Additive CPU v1 stages; request v2 and photo_effects v1 stay unchanged.
+// Dehaze runs after the look, clarity after denoising and before sharpening.
+// Nonzero uses the complete source for preview/export consistency. GPU Auto
+// uses CPU for the whole render; Force returns UNSUPPORTED. Invalid configs
+// retain previous state. Reused sessions must set both fields, including zero.
+sony2fuji_status sony2fuji_session_set_atmosphere(
+    sony2fuji_session* session, const sony2fuji_atmosphere_config* config
 );
 
 // Display-linear grading after HSL, before chroma denoise. All saturation zero

@@ -6,7 +6,7 @@ trap 'rm -rf "$OUT"' EXIT
 SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
 swiftc -swift-version 5 -sdk "$SDK" \
     -module-cache-path "${RAWLAB_TRANSFER_MODULE_CACHE:-$OUT/modules}" \
-    "$ROOT/Shared/Localization.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" \
+    "$ROOT/Shared/Localization.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/AtmosphereSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" \
     "$ROOT/Shared/AdjustmentTransfer.swift" "$ROOT/Shared/AdjustmentPresetStore.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/PhotoImportTypes.swift" \

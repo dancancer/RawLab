@@ -16,7 +16,7 @@ internal static class AdjustmentTransferPresentation
         [F.Temperature]="色温",
         [F.Tint]="色调",
         [F.Saturation]="饱和度",
-        [F.BlackPoint]="黑场", [F.WhitePoint]="白场", [F.Vibrance]="鲜艳度",
+        [F.BlackPoint]="黑场", [F.WhitePoint]="白场", [F.Vibrance]="鲜艳度", [F.Clarity]="清晰度", [F.Dehaze]="去朦胧",
         [F.VignetteAmount]="暗角",
         [F.VignetteMidpoint]="中点",
         [F.VignetteRoundness]="圆度",

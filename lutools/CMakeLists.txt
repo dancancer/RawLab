@@ -162,6 +162,7 @@ set(CORE_SOURCES
     src/core/photo_geometry.cpp
     src/core/photo_color.cpp
     src/core/photo_tone_controls.cpp
+    src/core/photo_atmosphere.cpp
     src/core/photo_color_grading.cpp
     src/core/photo_tone_curve.cpp
     src/core/white_balance.cpp
@@ -718,6 +719,19 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     target_link_libraries(tone_curve_recipe_tests rawlab_edit_protocol)
     add_test(NAME tone_curve_recipe COMMAND tone_curve_recipe_tests)
     add_executable(tone_controls_tests tests/tone_controls_tests.cpp src/core/photo_tone_controls.cpp)
+    add_executable(atmosphere_tests tests/atmosphere_tests.cpp src/core/photo_atmosphere.cpp)
+    target_include_directories(atmosphere_tests PRIVATE third_party)
+    target_compile_definitions(atmosphere_tests PRIVATE
+        SONY2FUJI_ATMOSPHERE_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/atmosphere-v1-reference.json")
+    add_test(NAME atmosphere COMMAND atmosphere_tests)
+    add_executable(atmosphere_api_tests tests/atmosphere_api_tests.cpp)
+    target_link_libraries(atmosphere_api_tests sony2fuji_core)
+    add_test(NAME atmosphere_api COMMAND atmosphere_api_tests)
+    add_executable(atmosphere_quality_probe tests/atmosphere_quality_probe.cpp)
+    target_link_libraries(atmosphere_quality_probe sony2fuji_core)
+    if(SONY2FUJI_TEST_RAW AND EXISTS "${SONY2FUJI_TEST_RAW}")
+        add_test(NAME atmosphere_raw COMMAND atmosphere_api_tests "${SONY2FUJI_TEST_RAW}")
+    endif()
     target_include_directories(tone_controls_tests PRIVATE third_party)
     target_compile_definitions(tone_controls_tests PRIVATE
         SONY2FUJI_TONE_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/tone-controls-v1-reference.json")

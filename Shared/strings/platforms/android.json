@@ -4049,6 +4049,24 @@
       "types": [
         "d"
       ]
+    },
+    "clarity": {
+      "formats": [],
+      "source": "清晰度",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "dehaze": {
+      "formats": [],
+      "source": "去朦胧",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "invalid_atmosphere": {
+      "formats": [],
+      "source": "无效的清晰度或去朦胧参数",
+      "file": "editor_strings.xml",
+      "types": []
     }
   },
   "overrides": {

@@ -5,7 +5,7 @@ extension MacAdjustmentTransfer {
         .strength: \.strength, .exposure: \.exposure, .contrast: \.contrast,
         .highlights: \.highlights, .shadows: \.shadows, .sCurve: \.toneCurve,
         .saturation: \.saturation, .sharpening: \.sharpening,
-        .blackPoint: \.blackPoint, .whitePoint: \.whitePoint, .vibrance: \.vibrance
+        .blackPoint: \.blackPoint, .whitePoint: \.whitePoint, .vibrance: \.vibrance, .clarity: \.clarity, .dehaze: \.dehaze
     ]
     static let effectKeys: [Field: WritableKeyPath<PhotoEffectsSettings, Double>] = [
         .vignetteAmount: \.vignetteAmount, .vignetteMidpoint: \.vignetteMidpoint,
@@ -45,7 +45,7 @@ extension MacAdjustmentTransfer {
             .strength: settings.strength, .exposure: Double(request.exposure_ev), .contrast: Double(request.contrast),
             .highlights: Double(request.highlights), .shadows: Double(request.shadows), .sCurve: Double(Float(settings.toneCurve / 100)),
             .saturation: Double(request.saturation), .sharpening: Double(request.sharpening),
-            .blackPoint: settings.blackPoint, .whitePoint: settings.whitePoint, .vibrance: settings.vibrance
+            .blackPoint: settings.blackPoint, .whitePoint: settings.whitePoint, .vibrance: settings.vibrance, .clarity: settings.clarity, .dehaze: settings.dehaze
         ]
         for field in Field.allCases {
             if let location = field.hslLocation {

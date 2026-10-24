@@ -6,8 +6,8 @@ import com.rawlab.android.settings.*
 internal object AdjustmentTransferValues {
     val scalars = setOf(AdjustmentField.STRENGTH, AdjustmentField.EXPOSURE, AdjustmentField.CONTRAST,
         AdjustmentField.HIGHLIGHTS, AdjustmentField.SHADOWS, AdjustmentField.S_CURVE,
-        AdjustmentField.SATURATION, AdjustmentField.SHARPENING, AdjustmentField.BLACK_POINT, AdjustmentField.WHITE_POINT, AdjustmentField.VIBRANCE)
-    val effects = AdjustmentField.entries.filter { it.group == "effects" }.toSet()
+        AdjustmentField.SATURATION, AdjustmentField.SHARPENING, AdjustmentField.BLACK_POINT, AdjustmentField.WHITE_POINT, AdjustmentField.VIBRANCE, AdjustmentField.CLARITY, AdjustmentField.DEHAZE)
+    val effects = AdjustmentField.entries.filter { it.id.startsWith("effects.vignette.") || it.id.startsWith("effects.grain.") }.toSet()
     val scaled = setOf(AdjustmentField.EXPOSURE, AdjustmentField.CONTRAST, AdjustmentField.HIGHLIGHTS,
         AdjustmentField.SHADOWS, AdjustmentField.SATURATION)
     fun logical(settings: EditSettings, field: AdjustmentField): Double = when (field) {
@@ -21,6 +21,8 @@ internal object AdjustmentTransferValues {
         AdjustmentField.BLACK_POINT -> settings.blackPoint.toDouble()
         AdjustmentField.WHITE_POINT -> settings.whitePoint.toDouble()
         AdjustmentField.VIBRANCE -> settings.vibrance.toDouble()
+        AdjustmentField.CLARITY -> settings.clarity.toDouble()
+        AdjustmentField.DEHAZE -> settings.dehaze.toDouble()
         AdjustmentField.SHARPENING -> settings.sharpening.toDouble()
         else -> field.hslLocation!!.let { (axis, channel) -> settings.hsl.value(axis, channel).toDouble() }
     }
@@ -35,6 +37,8 @@ internal object AdjustmentTransferValues {
         AdjustmentField.BLACK_POINT -> settings.copy(blackPoint = value.toFloat())
         AdjustmentField.WHITE_POINT -> settings.copy(whitePoint = value.toFloat())
         AdjustmentField.VIBRANCE -> settings.copy(vibrance = value.toFloat())
+        AdjustmentField.CLARITY -> settings.copy(clarity = value.toFloat())
+        AdjustmentField.DEHAZE -> settings.copy(dehaze = value.toFloat())
         AdjustmentField.SHARPENING -> settings.copy(sharpening = value.toFloat())
         else -> {
             val (axis, channel) = field.hslLocation!!

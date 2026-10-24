@@ -41,7 +41,7 @@ enum EditorAdjustmentRules {
         (.light, [.adjustment(.exposure), .adjustment(.highlights), .adjustment(.shadows),
                   .adjustment(.blackPoint), .adjustment(.whitePoint), .adjustment(.contrast), .adjustment(.toneCurve)]),
         (.color, [.adjustment(.temperature), .adjustment(.saturation), .adjustment(.vibrance), .adjustment(.hsl), .adjustment(.colorGrading)]),
-        (.effects, [.adjustment(.vignette), .adjustment(.grain)]),
+        (.effects, [.adjustment(.clarity), .adjustment(.dehaze), .adjustment(.vignette), .adjustment(.grain)]),
         (.detail, [.adjustment(.noiseReduction), .adjustment(.sharpening)]),
         (.geometry, [.geometry, .lens])
     ]
@@ -255,7 +255,7 @@ enum EditorAdjustmentRules {
                 result.whiteBalanceMode = defaults.whiteBalanceMode
                 result.temperature = defaults.temperature; result.tint = defaults.tint
                 result.saturation = defaults.saturation; result.hsl = defaults.hsl; result.vibrance = 0; result.colorGrading = nil
-            case .effects: result.photoEffects = defaults.photoEffects
+            case .effects: result.photoEffects = defaults.photoEffects; result.atmosphere = nil
             case .detail:
                 result.sharpening = defaults.sharpening; result.denoise = defaults.denoise
                 result.noiseReduction = defaults.noiseReduction
@@ -276,7 +276,7 @@ enum EditorAdjustmentRules {
             (settings.lutStrength, RawSettings.lutStrengthRange)
         ]
         return fields.allSatisfy { $0.0.isFinite && $0.1.contains($0.0) } &&
-            settings.geometry.isValid && settings.denoise.isValid && settings.hsl.isValid && settings.toneSettings.isValid && settings.gradingSettings.isValid && settings.curveSettings.isValid &&
+            settings.geometry.isValid && settings.denoise.isValid && settings.hsl.isValid && settings.toneSettings.isValid && settings.atmosphereSettings.isValid && settings.gradingSettings.isValid && settings.curveSettings.isValid &&
             settings.photoEffects.isValid && PhotoEffectParameter.allCases.allSatisfy {
                 $0.range.contains(settings.photoEffects[keyPath: $0.keyPath])
             } && (0...2).contains(settings.displayChromaDenoise)

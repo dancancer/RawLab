@@ -33,6 +33,7 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     case vignetteAmount = "effects.vignette.amount", vignetteMidpoint = "effects.vignette.midpoint"
     case vignetteRoundness = "effects.vignette.roundness", vignetteFeather = "effects.vignette.feather"
     case vignetteHighlights = "effects.vignette.highlights", grainAmount = "effects.grain.amount"
+    case clarity = "effects.clarity", dehaze = "effects.dehaze"
     case grainSize = "effects.grain.size", grainRoughness = "effects.grain.roughness"
     case sharpening = "detail.sharpening", rawDenoise = "detail.denoise.raw_level"
     case postRGBDenoise = "detail.denoise.post_rgb"
@@ -74,7 +75,7 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
         case .strength, .contrast, .saturation, .sharpening: return 0...2
         case .exposure: return -20...20
         case .highlights, .shadows, .sCurve, .perspectiveHorizontal, .perspectiveVertical: return -1...1
-        case .vignetteAmount, .vignetteRoundness, .blackPoint, .whitePoint, .vibrance: return -100...100
+        case .vignetteAmount, .vignetteRoundness, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze: return -100...100
         case .vignetteMidpoint, .vignetteFeather, .vignetteHighlights, .grainAmount, .grainSize, .grainRoughness: return 0...100
         case .quarterTurns: return 0...3
         case .cropX, .cropY, .cropWidth, .cropHeight: return 0...1

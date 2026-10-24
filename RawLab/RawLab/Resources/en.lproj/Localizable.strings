@@ -116,6 +116,7 @@
 "原始文件已被替换，请重新选择照片。" = "The original file has been replaced. Select the photo again.";
 "原始比例" = "Original Ratio";
 "去噪优先" = "Noise Reduction Priority";
+"去朦胧" = "Dehaze";
 "参数或输出路径无效。" = "Invalid parameters or output path.";
 "双击名称或轨道恢复默认值。" = "Double-tap the name or track to restore the default.";
 "取消" = "Cancel";
@@ -273,6 +274,7 @@
 "无效的暗角或颗粒参数" = "Invalid vignette or grain settings";
 "无效的曝光基准" = "Invalid exposure reference";
 "无效的曲线参数" = "Invalid curve values";
+"无效的清晰度或去朦胧参数" = "Invalid clarity or dehaze values";
 "无效的视口预览模式" = "Invalid Viewport Preview Mode";
 "无效的颜色分级参数" = "Invalid color grading values";
 "无效的黑白场或鲜艳度参数" = "Invalid black point, white point, or vibrance values";
@@ -386,6 +388,7 @@
 "添加" = "Add";
 "添加控制点" = "Add point";
 "添加照片" = "Add Photos";
+"清晰度" = "Clarity";
 "清空选择" = "Clear Selection";
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Warm rich vintage urban film, clean stable shadows, warm golden highlights and a wandering story feel";
 "渲染型 DNG 未生成。" = "Rendered DNG Was Not Created.";

@@ -457,8 +457,11 @@ extension ContentView {
         }
     }
 
-    var toolStrip: some View {
-        HStack(spacing: 4) {
+    func toolStrip(width: CGFloat, accessibility: Bool) -> some View {
+        let stacked = stacksToolHeader(width: width, accessibility: accessibility)
+        let rowHeight = editorToolRowHeight(width: width, accessibility: accessibility)
+        let layout = stacked ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 4))
+        return layout {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 4) {
@@ -466,7 +469,8 @@ extension ContentView {
                             Button { if tool == .geometry { geometryPerspective = false }; selectEditorTool(tool) } label: {
                                 AdjustmentToolLabel(title: tool == .geometry ? L10n.text("裁切") : tool.title, symbol: tool.symbol, selected: currentEditorTool == tool && !(tool == .geometry && geometryPerspective),
                                     progress: tool == .adjustment(.toneCurve) && settings.curveSettings.mode == .custom ? 1 :
-                                        tool.scalar.map(adjustmentProgress) ?? (resetModified(.tool(tool)) ? 1 : 0), width: toolWidth, height: editorToolHeight)
+                                        tool.scalar.map(adjustmentProgress) ?? (resetModified(.tool(tool)) ? 1 : 0), width: toolWidth, height: rowHeight,
+                                    maximumWidth: accessibility ? max(44, width - 24) : nil)
                             }
                             .disabled((tool == .lens && viewModel.sourceKind != .raw) ||
                                       (tool == .adjustment(.strength) && !settings.hasLook))
@@ -484,7 +488,8 @@ extension ContentView {
                             if tool == .geometry {
                                 Button { geometryPerspective = true; selectEditorTool(.geometry) } label: {
                                     AdjustmentToolLabel(title: L10n.text("透视"), symbol: "perspective", selected: geometrySelected && geometryPerspective,
-                                        progress: 0, width: toolWidth, height: editorToolHeight)
+                                        progress: 0, width: toolWidth, height: rowHeight,
+                                        maximumWidth: accessibility ? max(44, width - 24) : nil)
                                 }.accessibilityLabel(L10n.text("透视")).accessibilityIdentifier("tool.perspective")
                                     .accessibilityAddTraits(geometrySelected && geometryPerspective ? .isSelected : [])
                             }
@@ -492,13 +497,14 @@ extension ContentView {
                         if selectedGroup == .looks {
                             Button { adjustmentSheet = .presets } label: {
                                 AdjustmentToolLabel(title: L10n.text("我的预设"), symbol: "bookmark", selected: false,
-                                    progress: 0, width: toolWidth, height: editorToolHeight)
+                                    progress: 0, width: toolWidth, height: rowHeight,
+                                    maximumWidth: accessibility ? max(44, width - 24) : nil)
                             }.disabled(editorBusy).accessibilityLabel(L10n.text("我的预设"))
                                 .accessibilityIdentifier("preset.library")
                         }
                     }.padding(.horizontal, 12)
                 }
-                .frame(height: editorToolHeight)
+                .frame(height: rowHeight)
                 .accessibilityIdentifier("editor.tools")
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _ in
                     proxy.scrollTo(currentEditorTool.stableID, anchor: .center)
@@ -507,7 +513,8 @@ extension ContentView {
             }
             .buttonStyle(.plain)
             .disabled(editorBusy || resetDraftSuspended)
-            adjustmentHeader.padding(.trailing, 8)
+            adjustmentHeader.padding(.horizontal, 8)
+                .frame(maxWidth: stacked ? .infinity : nil, minHeight: editorToolHeight, alignment: .trailing)
         }
     }
 }

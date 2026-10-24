@@ -7,6 +7,31 @@ extension ContentView {
         return max(44, UIFont.preferredFont(forTextStyle: .body).lineHeight + 16)
     }
 
+    func stacksToolHeader(width: CGFloat, accessibility: Bool) -> Bool {
+        let font = UIFont.preferredFont(forTextStyle: .subheadline)
+        let longest = EditorAdjustmentRules.tools(selectedGroup).map {
+            ($0.title as NSString).size(withAttributes: [.font: font]).width
+        }.max() ?? 0
+        let fine = (L10n.text("精细") as NSString).size(withAttributes: [.font: UIFont.preferredFont(forTextStyle: .caption1)]).width
+        return accessibility || width < longest + 55 + 24 + fine + 51 + 44 + 24
+    }
+
+    func editorToolRowHeight(width: CGFloat, accessibility: Bool) -> CGFloat {
+        guard accessibility else { return editorToolHeight }
+        let font = UIFont.preferredFont(forTextStyle: .body)
+        let titles = EditorAdjustmentRules.tools(selectedGroup).map(\.title) + [L10n.text("透视"), L10n.text("我的预设")]
+        let height = titles.map { title in
+            (title as NSString).boundingRect(with: CGSize(width: max(44, width - 79), height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: font], context: nil).height
+        }.max() ?? 0
+        return max(editorToolHeight, ceil(height) + 16)
+    }
+
+    private func editorToolStripHeight(width: CGFloat, accessibility: Bool) -> CGFloat {
+        editorToolRowHeight(width: width, accessibility: accessibility) +
+            (stacksToolHeader(width: width, accessibility: accessibility) ? editorToolHeight : 0)
+    }
+
     var groupNavigationButtonWidth: CGFloat {
         let font = UIFont.preferredFont(forTextStyle: .caption1)
         return EditorAdjustmentGroup.allCases.map { group in
@@ -53,7 +78,7 @@ extension ContentView {
         let actionSpace = max(44, bodyLine + 16) + 16
         let parameterSpace = max(44, bodyLine) + 8
         return accessibility && size.width > size.height &&
-            size.height < groupNavigationButtonHeight + editorToolHeight + actionSpace + parameterSpace + 24
+            size.height < groupNavigationButtonHeight + editorToolStripHeight(width: size.width, accessibility: accessibility) + actionSpace + parameterSpace + 24
     }
 
     func editorWorkspace(size: CGSize, accessibility: Bool) -> some View {
@@ -72,11 +97,11 @@ extension ContentView {
                     if side { groupNavigation(side: true, singleLine: singleLineGroups) }
                     if adjustmentsExpanded {
                         if side { Divider() }
-                        if !scrollTools { toolStrip; Divider() }
+                        if !scrollTools { toolStrip(width: side ? sideWidth : size.width, accessibility: accessibility); Divider() }
                         VStack(spacing: 0) {
                             ScrollView(.vertical) {
                                 VStack(spacing: 0) {
-                                    if scrollTools { toolStrip; Divider() }
+                                    if scrollTools { toolStrip(width: side ? sideWidth : size.width, accessibility: accessibility); Divider() }
                                     adjustmentPanel
                                 }
                             }
@@ -111,7 +136,7 @@ extension ContentView {
         let navigationHeight = accessibility && size.width > size.height
             ? singleLineGroupNavigationHeight : groupNavigationButtonHeight
         let scrollTools = scrollsToolsWithParameters(size: size, accessibility: accessibility)
-        let available = max(0, size.height - (scrollTools ? 0 : editorToolHeight) - navigationHeight - 3)
+        let available = max(0, size.height - (scrollTools ? 0 : editorToolStripHeight(width: size.width, accessibility: accessibility)) - navigationHeight - 3)
         // 即使工具与参数一起滚动，也保留 44pt 照片叠层触点及上下留白。
         let photoSpace = min(scrollTools ? 68 : 96, available)
         return min(preferred, max(0, available - photoSpace))

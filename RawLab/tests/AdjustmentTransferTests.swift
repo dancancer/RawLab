@@ -19,6 +19,58 @@ import Foundation
         try .init(source: .init(identifier: "frozen", isRaw: true, processingVersion: 2, recipe: recipe), values: values)
     }
 
+    static func atmospherePersistence() throws {
+        let input = Data("{\"atmosphere\":{\"clarity\":-37.25,\"dehaze\":42.5}}".utf8)
+        let settings = try JSONDecoder().decode(RawSettings.self, from: input)
+        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as! [String: Any]
+        let atmosphere = json["atmosphere"] as? [String: Double]
+        check(atmosphere == ["clarity": -37.25, "dehaze": 42.5], "Atmosphere values survive a persisted edit round trip")
+    }
+
+    static func atmosphereControls() throws {
+        var source = RawSettings.default
+        source.clarity = -37.251234; source.dehaze = 42.5
+        let restored = try JSONDecoder().decode(RawSettings.self, from: JSONEncoder().encode(source))
+        check(restored == source, "Atmosphere precision survives persistence")
+        let old = try JSONDecoder().decode(RawSettings.self, from: Data("{}".utf8))
+        check(old.atmosphere == nil && old.atmosphereSettings.isIdentity, "Missing atmosphere extension is identity")
+        let zero = try JSONDecoder().decode(RawSettings.self, from: Data("{\"atmosphere\":{\"clarity\":0,\"dehaze\":0}}".utf8))
+        check(zero.atmosphere == nil, "Explicit identity atmosphere normalizes to absent storage")
+        for invalid in [-100.001, 100.001] {
+            for field in ["clarity", "dehaze"] {
+                rejects("Out-of-range atmosphere is rejected on load") {
+                    let json = try JSONSerialization.data(withJSONObject: ["atmosphere": ["clarity": field == "clarity" ? invalid : 0, "dehaze": field == "dehaze" ? invalid : 0]])
+                    _ = try JSONDecoder().decode(RawSettings.self, from: json)
+                }
+            }
+        }
+        let fields: Set<AdjustmentTransferField> = [.clarity, .dehaze]
+        let modified = try IOSAdjustmentTransfer.capture(scope: .modified, snapshot: state(source), context: raw)
+        check(modified.fields == fields, "Modified scope contains exactly the atmosphere changes")
+        let standard = try IOSAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
+        check(fields.isSubset(of: standard.fields) && fields.allSatisfy { $0.group == "effects" }, "Atmosphere belongs to standard and effects scopes")
+        check(try IOSAdjustmentTransfer.prepare(payload: modified, target: state(), context: raw).settings.atmosphereSettings == source.atmosphereSettings,
+            "Atmosphere paste retains exact values")
+        var target = RawSettings.default; target.clarity = 71; target.dehaze = -29
+        let partial = try IOSAdjustmentTransfer.capture(scope: .custom([.dehaze]), snapshot: state(source), context: raw)
+        let merged = try IOSAdjustmentTransfer.prepare(payload: partial, target: state(target), context: raw)
+        check(merged.settings.clarity == 71 && merged.settings.dehaze == 42.5, "Partial paste preserves unselected clarity")
+        let legacy = try IOSAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: state(), context: raw)
+        check(try IOSAdjustmentTransfer.prepare(payload: legacy, target: state(target), context: raw).settings.atmosphereSettings == target.atmosphereSettings,
+            "Legacy payload preserves target atmosphere")
+        source.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!); source.lutStrength = 0
+        target.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!); target.lutStrength = 0
+        let recipe = try IOSAdjustmentTransfer.capture(scope: .custom(fields), snapshot: state(source), context: raw)
+        check(try IOSAdjustmentTransfer.prepare(payload: recipe, target: state(target), context: raw).settings.atmosphereSettings == source.atmosphereSettings,
+            "Atmosphere is independent of zero recipe strength")
+        var effects = RawSettings.default; effects.clarity = 31; effects.dehaze = -23; effects.vibrance = 19
+        let resetContext = EditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor)
+        check(EditorAdjustmentRules.isModified(.group(.effects), snapshot: state(effects), context: resetContext), "Atmosphere-only edits mark effects group modified")
+        if case .candidate(let reset, _) = EditorAdjustmentRules.prepareReset(.group(.effects), snapshot: state(effects), context: resetContext) {
+            check(reset.settings.atmosphereSettings.isIdentity && reset.settings.vibrance == 19, "Effects reset clears atmosphere and preserves color")
+        } else { fatalError("Atmosphere reset must prepare a candidate") }
+    }
+
     static func toneControls() throws {
         var source = RawSettings.default
         source.blackPoint = -37.25; source.whitePoint = 42.5; source.vibrance = 18.125
@@ -186,6 +238,8 @@ import Foundation
     static func main() throws {
         try toneCurve()
         try colorGrading()
+        try atmospherePersistence()
+        try atmosphereControls()
         try toneControls()
         try scopes()
         try recipes()

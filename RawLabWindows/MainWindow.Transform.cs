@@ -82,7 +82,7 @@ public partial class MainWindow
     {
         ++transformGeneration;transformPreviewReady=false;exactReady=false;interacting=false;
         transformSource=null;transformSaveFailed=false;
-        choosingLens=choosingGeometry=choosingGrading=false;selectedParameter=Parameter.Exposure;selectedToneParameter=null;expandedGroup=EditorAdjustmentGroup.Light;ResultCanvas.GeometryEditing=false;ResultCanvas.SetCropDraft(null,null,false);
+        choosingLens=choosingGeometry=choosingGrading=false;selectedParameter=Parameter.Exposure;selectedToneParameter=null;selectedAtmosphereParameter=null;expandedGroup=EditorAdjustmentGroup.Light;ResultCanvas.GeometryEditing=false;ResultCanvas.SetCropDraft(null,null,false);
         GeometryEditor.Begin(settings.Geometry);
         view.SetEnabled(savedTransformCompare);
         RefreshComparisonLayout();RefreshComparisonToolTip();viewport.Fit();

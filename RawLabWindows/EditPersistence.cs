@@ -40,6 +40,8 @@ public sealed record AdjustmentSnapshot(
     [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
     public ToneControlsSettings? ToneControls { get; init; }
     [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public AtmosphereSettings? Atmosphere { get; init; }
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
     public ColorGradingSettings? ColorGrading { get; init; }
     [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
     public ToneCurveSettings? Curve { get; init; }
@@ -51,6 +53,7 @@ public sealed record AdjustmentSnapshot(
         (Effects ?? new()) == (other.Effects ?? new()) && DisplayChromaDenoise == other.DisplayChromaDenoise &&
         (Hsl ?? new()).Equals(other.Hsl ?? new()) && (Lens ?? new()) == (other.Lens ?? new()) &&
         (Geometry ?? new()) == (other.Geometry ?? new()) && (ToneControls ?? new()) == (other.ToneControls ?? new()) &&
+        (Atmosphere ?? new()) == (other.Atmosphere ?? new()) &&
         (ColorGrading ?? new()) == (other.ColorGrading ?? new()) && (Curve ?? new()) == (other.Curve ?? new());
     public AdjustmentSnapshot Copy() => this with { Values = (double[])Values.Clone() };
 }

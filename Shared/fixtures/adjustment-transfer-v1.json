@@ -1761,6 +1761,133 @@
           }
         }
       }
+    },
+    {
+      "id": "atmosphere-fractional",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-atmosphere",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "effects.clarity": -37.251234,
+          "effects.dehaze": 42.5
+        }
+      },
+      "neutral_effective": {
+        "effects.clarity": -37.251234,
+        "effects.dehaze": 42.5
+      }
+    },
+    {
+      "id": "atmosphere-bounds",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-atmosphere",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "effects.clarity": -100,
+          "effects.dehaze": 100
+        }
+      },
+      "neutral_effective": {
+        "effects.clarity": -100,
+        "effects.dehaze": 100
+      }
+    },
+    {
+      "id": "atmosphere-zero",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-atmosphere",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "effects.clarity": 0,
+          "effects.dehaze": 0
+        }
+      },
+      "neutral_effective": {
+        "effects.clarity": 0,
+        "effects.dehaze": 0
+      }
+    },
+    {
+      "id": "atmosphere-clarity-low",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-atmosphere",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "effects.clarity": -100.0001
+        }
+      }
+    },
+    {
+      "id": "atmosphere-dehaze-high",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-atmosphere",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "effects.dehaze": 100.0001
+        }
+      }
+    },
+    {
+      "id": "atmosphere-string",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-atmosphere",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "effects.clarity": "10"
+        }
+      }
+    },
+    {
+      "id": "atmosphere-null",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-atmosphere",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "effects.dehaze": null
+        }
+      }
     }
   ]
 }

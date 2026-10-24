@@ -11,6 +11,22 @@ struct Adjustments: Equatable, Codable {
         get { colorGrading ?? ColorGradingSettings() }
         set { colorGrading = newValue.isDefault ? nil : newValue }
     }
+    var atmosphere: AtmosphereSettings?
+    var atmosphereSettings: AtmosphereSettings { atmosphere ?? AtmosphereSettings() }
+    var clarity: Double {
+        get { atmosphereSettings.clarity }
+        set { setAtmosphere(\.clarity, to: newValue) }
+    }
+    var dehaze: Double {
+        get { atmosphereSettings.dehaze }
+        set { setAtmosphere(\.dehaze, to: newValue) }
+    }
+    private mutating func setAtmosphere(_ key: WritableKeyPath<AtmosphereSettings, Double>, to value: Double) {
+        var state = atmosphereSettings
+        state[keyPath: key] = value
+        atmosphere = state.isIdentity ? nil : state
+    }
+
     var toneControls: ToneControlsSettings?
     var toneSettings: ToneControlsSettings { toneControls ?? ToneControlsSettings() }
     var blackPoint: Double {
@@ -273,7 +289,7 @@ struct Adjustments: Equatable, Codable {
         if group == .color { hsl = nil; colorGrading = nil }
         if group == .tone { toneCurveConfig = nil }
         if group == .detail { aiDenoiseEnabled = false }
-        if group == .effects { photoEffects = nil }
+        if group == .effects { photoEffects = nil; atmosphere = nil }
         if group == .lens { lensCorrection = nil }
         if group == .geometry { geometry = nil }
     }
@@ -284,7 +300,7 @@ struct Adjustments: Equatable, Codable {
             && (group != .tone || curveSettings.isDefault)
             && (group != .color || hslSettings.isIdentity && gradingSettings.isDefault)
             && (group != .detail || !isDenoiseEnabled)
-            && (group != .effects || effectSettings == PhotoEffectsSettings())
+            && (group != .effects || effectSettings == PhotoEffectsSettings() && atmosphereSettings.isIdentity)
             && (group != .film || masterRecipeID == nil)
             && (group != .lens || lensSettings == LensCorrectionSettings())
             && (group != .geometry || geometrySettings.isIdentity)
@@ -370,7 +386,7 @@ struct Adjustments: Equatable, Codable {
         guard PhotoEffectParameter.allCases.allSatisfy({
             let value = effectSettings[keyPath: $0.keyPath]
             return value.isFinite && $0.range.contains(value)
-        }), hslSettings.isValid, geometrySettings.isValid, gradingSettings.isValid, curveSettings.isValid else {
+        }), hslSettings.isValid, geometrySettings.isValid, atmosphereSettings.isValid, gradingSettings.isValid, curveSettings.isValid else {
             throw EditorResetBlockedReason.invalidSnapshot("effects/hsl/geometry")
         }
         if let camera = asShotWhiteBalance {
@@ -482,7 +498,7 @@ enum EditorAdjustmentRules {
             return settings.saturation != 0 || settings.vibrance != 0 || !settings.hslSettings.isIdentity || !settings.gradingSettings.isDefault ||
                 (context.isRaw && (!settings.isWhiteBalanceDefault || !settings.usesAsShotWhiteBalance)) ||
                 (settings.masterRecipe != nil && settings.tint != 0)
-        case .group(.effects): return settings.effectSettings != PhotoEffectsSettings()
+        case .group(.effects): return settings.effectSettings != PhotoEffectsSettings() || !settings.atmosphereSettings.isIdentity
         case .group(.detail):
             return settings.aiDenoiseEnabled || settings.sharpening != 0 || settings.rawNoiseReduction != 0 ||
                 (settings.chromaNoiseReduction ?? 0) != 0 || settings.waveletSettings != WaveletDenoiseSettings()
@@ -545,7 +561,7 @@ enum EditorAdjustmentRules {
                 result.settings.saturation = 0; result.settings.vibrance = 0; result.settings.colorGrading = nil
                 result.settings.resetWhiteBalance()
                 result.settings.hsl = nil
-            case .group(.effects): result.settings.photoEffects = nil
+            case .group(.effects): result.settings.photoEffects = nil; result.settings.atmosphere = nil
             case .group(.detail):
                 result.settings.aiDenoiseEnabled = false
                 result.settings.sharpening = 0; result.settings.rawNoiseReduction = 0
@@ -578,6 +594,11 @@ extension Adjustments {
         toneCurveConfig = try values.decodeIfPresent(ToneCurveSettings.self, forKey: .toneCurveConfig)
         colorGrading = try values.decodeIfPresent(ColorGradingSettings.self, forKey: .colorGrading)
         if colorGrading?.isDefault == true { colorGrading = nil }
+        atmosphere = try values.decodeIfPresent(AtmosphereSettings.self, forKey: .atmosphere)
+        guard atmosphereSettings.isValid else {
+            throw DecodingError.dataCorruptedError(forKey: .atmosphere, in: values, debugDescription: "Invalid atmosphere controls")
+        }
+        if atmosphere?.isIdentity == true { atmosphere = nil }
         toneControls = try values.decodeIfPresent(ToneControlsSettings.self, forKey: .toneControls)
         guard toneSettings.isValid else {
             throw DecodingError.dataCorruptedError(forKey: .toneControls, in: values, debugDescription: "Invalid tone controls")

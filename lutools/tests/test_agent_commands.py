@@ -121,6 +121,11 @@ class AgentCommands(unittest.TestCase):
                     "version": 1, "recipe_min_version": 5, "modes": ["legacy", "custom"],
                     "max_points": 33, "interpolation": "pchip", "fixed_endpoints": True, "monotone": True,
                 })
+                self.assertEqual(result["result"]["atmosphere"], {
+                    "version": 1, "recipe_min_version": 5, "range": [-1, 1],
+                    "fields": ["effects.clarity", "effects.dehaze"], "backend": "cpu",
+                    "gpu_force": "unsupported", "preview": "complete_source",
+                })
                 if sys.platform in ("darwin", "win32"):
                     self.assertEqual(result["result"]["raster_input"]["max_pixels"], 128_000_000)
                 if sys.platform == "win32":

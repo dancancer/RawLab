@@ -48,6 +48,7 @@
         D01000000000000000000001 /* PickerAcquisitionCancelUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01000000000000000000011; };
         D00300000000000000000001 /* GeometrySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00300000000000000000011; };
         D00500000000000000000001 /* ToneControlsSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00500000000000000000011; };
+        B1536143952C400DB68B26A0 /* AtmosphereSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D8E964BDD254CC5B38B55CD; };
         D00600000000000000000001 /* ColorGradingSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00600000000000000000011; };
         D00300000000000000000002 /* GeometryControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00300000000000000000012; };
 		D00200000000000000000001 /* Sony2FujiProcessor+Lens.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00200000000000000000011; };
@@ -59,6 +60,7 @@
         AB1900000000000000000002 /* HSLMixer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1900000000000000000012; };
         AB1900000000000000000003 /* HSLNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1900000000000000000013; };
         D00500000000000000000002 /* ToneControlsNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00500000000000000000012; };
+        41C5E5C8C1BF433C837BBFA1 /* AtmosphereNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEEBF5C6C72A477B93B716E6; };
         D00600000000000000000002 /* ColorGradingNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00600000000000000000012; };
 		AB2100000000000000000001 /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2100000000000000000002; };
 		AB2100000000000000000003 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = AB2100000000000000000004; };
@@ -253,6 +255,7 @@
         D01000000000000000000011 /* PickerAcquisitionCancelUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/PickerAcquisitionCancelUITests.swift; sourceTree = SOURCE_ROOT; };
         D00300000000000000000011 /* GeometrySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GeometrySettings.swift; path = "../Shared/GeometrySettings.swift"; sourceTree = SOURCE_ROOT; };
         D00500000000000000000011 /* ToneControlsSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneControlsSettings.swift; path = "../Shared/ToneControlsSettings.swift"; sourceTree = SOURCE_ROOT; };
+        1D8E964BDD254CC5B38B55CD /* AtmosphereSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AtmosphereSettings.swift; path = "../Shared/AtmosphereSettings.swift"; sourceTree = SOURCE_ROOT; };
         D00600000000000000000011 /* ColorGradingSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorGradingSettings.swift; path = "../Shared/ColorGradingSettings.swift"; sourceTree = SOURCE_ROOT; };
 		D00300000000000000000012 = {
 			path = "RawLab/UI/Controls/GeometryControls.swift";
@@ -274,6 +277,7 @@
         AB1900000000000000000012 /* HSLMixer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HSLMixer.swift; path = "../Shared/HSLMixer.swift"; sourceTree = SOURCE_ROOT; };
         AB1900000000000000000013 /* HSLNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HSLNative.swift; path = "../Shared/HSLNative.swift"; sourceTree = SOURCE_ROOT; };
         D00500000000000000000012 /* ToneControlsNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneControlsNative.swift; path = "../Shared/ToneControlsNative.swift"; sourceTree = SOURCE_ROOT; };
+        AEEBF5C6C72A477B93B716E6 /* AtmosphereNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AtmosphereNative.swift; path = "../Shared/AtmosphereNative.swift"; sourceTree = SOURCE_ROOT; };
         D00600000000000000000012 /* ColorGradingNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorGradingNative.swift; path = "../Shared/ColorGradingNative.swift"; sourceTree = SOURCE_ROOT; };
 		AB2100000000000000000002 /* Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Localization.swift; path = "../Shared/Localization.swift"; sourceTree = SOURCE_ROOT; };
 		AB210000000000000000000A /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en"; path = "en.lproj/Localizable.strings"; sourceTree = "<group>"; };
@@ -637,6 +641,7 @@
 				AB1700000000000000000002,
 				D00300000000000000000011,
 				D00500000000000000000011,
+				1D8E964BDD254CC5B38B55CD,
 				D00600000000000000000011, 00A3E4C709437DACC0D1D46F, DD125F07D1C4D65DADBADB20, 121C57F16BC998BA385F1EA6, 8DAAAD88BE5F6F4ABA164EB9, 0324C679CADE139F72163211, 8D20BB7F1FC842F0DA927634, 4BD8A49A9293229AE363C138,
 				D00700000000000000000016,
 				D00700000000000000000015,
@@ -655,6 +660,7 @@
 				AB1900000000000000000012,
 				AB1900000000000000000013,
 				D00500000000000000000012,
+				AEEBF5C6C72A477B93B716E6,
 				D00600000000000000000012,
 				AB1700000000000000000004,
 				AB3900000000000000000002,
@@ -1147,6 +1153,7 @@
 				AB1700000000000000000001,
 				D00300000000000000000001,
 				D00500000000000000000001,
+				B1536143952C400DB68B26A0,
 				D00600000000000000000001, 2DA4DF4798D881C25F72C798, 2413F38498878607A82822FF, B113946A33D6E7CA01F7A684, BA13EBD0673C922006A7B4B1, 2DCD5783547984E860773E97, B6C0A774BB3BFD64F1F06174, 591EBC8F57FFA39BB60C77B4,
 				D00700000000000000000006,
 				D00700000000000000000005,
@@ -1169,6 +1176,7 @@
 				AB1900000000000000000002,
 				AB1900000000000000000003,
 				D00500000000000000000002,
+				41C5E5C8C1BF433C837BBFA1,
 				D00600000000000000000002,
 				AB1700000000000000000003,
 				AB2100000000000000000001,

@@ -84,7 +84,8 @@ public static class AdjustmentTransfer
         var a=s.Restore();var r=a.Request("",null,0,null);
         var result=new Dictionary<F,float> {[F.Strength]=(float)a[Parameter.Strength]/100,[F.Exposure]=r.ExposureEv,[F.Contrast]=r.Contrast,
             [F.Highlights]=r.Highlights,[F.Shadows]=r.Shadows,[F.SCurve]=(float)a[Parameter.ToneCurve]/100,[F.Saturation]=r.Saturation,[F.Sharpening]=r.Sharpening,
-            [F.BlackPoint]=(float)a.ToneControls.BlackPoint,[F.WhitePoint]=(float)a.ToneControls.WhitePoint,[F.Vibrance]=(float)a.ToneControls.Vibrance};
+            [F.BlackPoint]=(float)a.ToneControls.BlackPoint,[F.WhitePoint]=(float)a.ToneControls.WhitePoint,[F.Vibrance]=(float)a.ToneControls.Vibrance,
+            [F.Clarity]=(float)a.Atmosphere.Clarity,[F.Dehaze]=(float)a.Atmosphere.Dehaze};
         var hsl=a.RenderHsl.Values;
         foreach(var field in AdjustmentFields.All) if(field.HslIndex() is {} index) result[field]=(float)hsl[index];
         return result;

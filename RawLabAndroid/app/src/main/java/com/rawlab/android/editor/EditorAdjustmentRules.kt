@@ -49,7 +49,7 @@ object EditorAdjustmentRules {
         EditorAdjustmentGroup.LOOKS to listOf(0, 15, 1),
         EditorAdjustmentGroup.LIGHT to listOf(2, 3, 4, 18, 19, 5, 6),
         EditorAdjustmentGroup.COLOR to listOf(8, 7, 20, 14, 21),
-        EditorAdjustmentGroup.EFFECTS to listOf(12, 13),
+        EditorAdjustmentGroup.EFFECTS to listOf(22, 23, 12, 13),
         EditorAdjustmentGroup.DETAIL to listOf(11, 10),
         EditorAdjustmentGroup.GEOMETRY to listOf(17, 16),
     )
@@ -153,6 +153,8 @@ object EditorAdjustmentRules {
         19 -> s.copy(whitePoint = d.whitePoint)
         20 -> s.copy(vibrance = d.vibrance)
         21 -> s.copy(colorGrading = d.colorGrading)
+        22 -> s.copy(clarity = d.clarity)
+        23 -> s.copy(dehaze = d.dehaze)
         else -> s
     }
 

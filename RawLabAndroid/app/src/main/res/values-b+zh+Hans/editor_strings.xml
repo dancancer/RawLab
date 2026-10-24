@@ -13,6 +13,7 @@
     <string name="all_tools">"全部工具"</string>
     <string name="batch_confirmation_count">"%1$d 项输出待核对"</string>
     <string name="black_point">"黑场"</string>
+    <string name="clarity">"清晰度"</string>
     <string name="collection_add">"添加照片"</string>
     <string name="collection_apply_draft">"应用并保存草稿"</string>
     <string name="collection_check_targets">"检查同步目标"</string>
@@ -75,6 +76,7 @@
     <string name="dcp_too_large">"DCP 文件或外观数据超过安全大小限制。"</string>
     <string name="dcp_triple_illuminant">"DCP 使用三光源 HueSatMap，暂不支持转换。"</string>
     <string name="dcp_unsupported_stages">"DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。"</string>
+    <string name="dehaze">"去朦胧"</string>
     <string name="dng_description">"保存最终外观，不是传感器 RAW；不保留可编辑历史或拍摄 EXIF，仅保存到文件。"</string>
     <string name="edit_read_error">"无法读取调整记录：%1$s"</string>
     <string name="edit_unsaved_detail">"调整未保存：%1$s"</string>
@@ -165,6 +167,7 @@
     <string name="hsl_target_unavailable">"此像素不可取样。"</string>
     <string name="hsl_target_waiting">"正在取色…"</string>
     <string name="info_unavailable">"不可用"</string>
+    <string name="invalid_atmosphere">"无效的清晰度或去朦胧参数"</string>
     <string name="invalid_color_grading">"无效的颜色分级参数"</string>
     <string name="invalid_tone_controls">"无效的黑白场或鲜艳度参数"</string>
     <string name="invalid_tone_curve">"无效的曲线参数"</string>

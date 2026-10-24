@@ -20,6 +20,7 @@ internal sealed partial class RenderEngine
         var exposure=state.ExposureMode switch{0=>"scene",1=>"preview",2=>"sensor",_=>throw new ArgumentOutOfRangeException(nameof(settings))};
         var format=ExportFormatExtensions.FromPath(output) switch{ExportFormat.Jpeg=>"jpeg",ExportFormat.Png=>"png",ExportFormat.RenderedDng=>"dng",_=>throw new ArgumentOutOfRangeException(nameof(output))};
         object size=longEdge is {} edge ? new{mode="limit_long_edge",long_edge=edge} : new{mode="native"};
+        var atmosphere=state.Atmosphere.NativeConfig();
         var toneControls=state.ToneControls.NativeConfig();
         var tone=new Dictionary<string,object> {
             ["contrast"]=Math.Clamp(request.Contrast,0,2),["saturation"]=Math.Clamp(request.Saturation,0,2),
@@ -41,7 +42,7 @@ internal sealed partial class RenderEngine
                 hsl=new{hue=hsl.Hue,saturation=hsl.Saturation,lightness=hsl.Lightness},
                 effects=new{vignette_amount=effects.VignetteAmount,vignette_midpoint=effects.VignetteMidpoint,
                     vignette_roundness=effects.VignetteRoundness,vignette_feather=effects.VignetteFeather,vignette_highlights=effects.VignetteHighlights,
-                    grain_amount=effects.GrainAmount,grain_size=effects.GrainSize,grain_roughness=effects.GrainRoughness},
+                    grain_amount=effects.GrainAmount,grain_size=effects.GrainSize,grain_roughness=effects.GrainRoughness,clarity=atmosphere.Clarity,dehaze=atmosphere.Dehaze},
                 denoise=new{raw_level=0,chroma_mode=state.DisplayChromaDenoise,wavelet=new{enabled=denoise.Enabled!=0,
                     luma=denoise.Enabled!=0 ? denoise.Luma : 0,chroma=denoise.Enabled!=0 ? denoise.Chroma : 46,coarse=denoise.Enabled!=0 ? denoise.Coarse : 50}},
                 lens_correction=new{distortion=state.Lens.Distortion,tca=state.Lens.Tca,auto_crop=state.Lens.AutoCrop,

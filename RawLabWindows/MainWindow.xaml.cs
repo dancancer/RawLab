@@ -35,6 +35,7 @@ public partial class MainWindow : Window
     private Adjustments settings=new();
     private Parameter selectedParameter=Parameter.Exposure;
     private ToneControlParameter? selectedToneParameter;
+    private AtmosphereParameter? selectedAtmosphereParameter;
     private string? file,lut;
     private RenderEngine? engine;
     private bool ready,syncing,interacting,foregroundBusy,closing,closeFinished,exactReady;
@@ -207,7 +208,8 @@ public partial class MainWindow : Window
         OrdinaryParameter.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
             interacting=dragging;
-            if(selectedToneParameter is {} tone)settings.SetTone(tone,value);else settings.Set(selectedParameter,value);
+            if(selectedAtmosphereParameter is {} atmosphere)settings.SetAtmosphere(atmosphere,value);
+            else if(selectedToneParameter is {} tone)settings.SetTone(tone,value);else settings.Set(selectedParameter,value);
             MarkEdited();RefreshControls();Schedule();
         };
         OrdinaryParameter.InvalidInput+=()=>SetStatus(() => Loc.Text("请输入有效数字"),true);

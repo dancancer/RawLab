@@ -15,10 +15,14 @@ internal static class AdjustmentTransferValues
         [F.BlackPoint] = ToneControlParameter.BlackPoint, [F.WhitePoint] = ToneControlParameter.WhitePoint,
         [F.Vibrance] = ToneControlParameter.Vibrance
     };
-    internal static IEnumerable<F> NumericFields => Scalars.Keys.Concat(ToneFields.Keys);
+    internal static readonly IReadOnlyDictionary<F, AtmosphereParameter> AtmosphereFields = new Dictionary<F, AtmosphereParameter> {
+        [F.Clarity] = AtmosphereParameter.Clarity, [F.Dehaze] = AtmosphereParameter.Dehaze
+    };
+    internal static IEnumerable<F> NumericFields => Scalars.Keys.Concat(ToneFields.Keys).Concat(AtmosphereFields.Keys);
     internal static readonly IReadOnlySet<F> Scaled = new HashSet<F> { F.Exposure,F.Contrast,F.Highlights,F.Shadows,F.Saturation };
     internal static double Logical(AdjustmentSnapshot s, F field)
     {
+        if (AtmosphereFields.TryGetValue(field, out var atmosphere)) return (s.Atmosphere ?? new())[atmosphere];
         if (ToneFields.TryGetValue(field, out var tone)) return (s.ToneControls ?? new())[tone];
         if (field.HslIndex() is {} index) return (s.Hsl ?? new()).Values[index];
         var value = s.Values[(int)Scalars[field]];
@@ -26,6 +30,10 @@ internal static class AdjustmentTransferValues
     }
     internal static AdjustmentSnapshot SetLogical(AdjustmentSnapshot s, F field, double value)
     {
+        if (AtmosphereFields.TryGetValue(field, out var atmosphere)) {
+            var controls = (s.Atmosphere ?? new()).With(atmosphere, value); _ = controls.NativeConfig();
+            return s with { Atmosphere = controls.IsIdentity ? null : controls };
+        }
         if (ToneFields.TryGetValue(field, out var tone)) {
             var controls = (s.ToneControls ?? new()).With(tone, value); _ = controls.NativeConfig();
             return s with { ToneControls = controls.IsIdentity ? null : controls };
@@ -60,7 +68,7 @@ internal static class AdjustmentTransferValues
             Put(field, new { hue = wheel.Hue, saturation = wheel.Saturation });
         }
         var effects=s.Effects ?? new();
-        foreach(var field in AdjustmentFields.All.Where(f=>f.Group()=="effects")) Put(field,effects[(PhotoEffectParameter)((int)field-(int)F.VignetteAmount)]);
+        foreach(var field in AdjustmentFields.All.Where(f=>f is >= F.VignetteAmount and <= F.GrainRoughness)) Put(field,effects[(PhotoEffectParameter)((int)field-(int)F.VignetteAmount)]);
         Put(F.RawDenoise,0);Put(F.PostRGBDenoise,0);Put(F.ChromaDenoise,s.DisplayChromaDenoise);
         var denoise=s.Denoise ?? new(); Put(F.WaveletDenoise,new {enabled=denoise.Enabled,luma=denoise.Luma,chroma=denoise.Chroma,coarse=denoise.Coarse,preset=new[]{"detail","clean","custom"}[denoise.Preset]});
         var g=s.Geometry ?? new();

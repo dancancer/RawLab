@@ -13,6 +13,12 @@ internal static class ToneControlsChecks
     }
     internal static void Run()
     {
+        var atmosphereJson = JsonSerializer.SerializeToNode(new Adjustments().Capture())!.AsObject();
+        atmosphereJson["Atmosphere"] = new JsonObject { ["Clarity"] = -37.25, ["Dehaze"] = 42.5 };
+        var atmosphereRestored = atmosphereJson.Deserialize<AdjustmentSnapshot>()!.Restore().Capture();
+        Check(JsonSerializer.SerializeToNode(atmosphereRestored)!["Atmosphere"]?["Dehaze"]?.GetValue<double>() == 42.5,
+            "Atmosphere values survive a persisted snapshot round trip");
+
         var tone = new ToneControlsSettings(-37.25, 42.5, 18.125);
         var state = new Adjustments { ToneControls = tone };
         var snapshot = state.Capture();

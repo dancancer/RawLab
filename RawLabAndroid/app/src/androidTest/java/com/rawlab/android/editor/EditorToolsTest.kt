@@ -12,6 +12,8 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -43,6 +45,34 @@ import org.junit.Assert.assertTrue
 class EditorToolsTest {
     val compose = createComposeRule()
     @get:Rule val languageAndCompose = org.junit.rules.RuleChain.outerRule(LanguageTestRule()).around(compose)
+
+    @Test fun atmosphereToolsEditIndependentlyAndKeepRoundedOriginalPrecision() {
+        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        var edits by mutableStateOf(EditSettings(clarity = 37.251234f, dehaze = -42.5f))
+        var commits = 0
+        compose.setContent { RawLabTheme {
+            EditorScreen(state = EditorState(
+                photo = ImportedPhoto(Uri.parse("content://rawlab.test/atmosphere"), "fixture", File("fixture")),
+                edits = edits, preview = PreviewPair(bitmap, bitmap, temperature = 6500f, tint = 0f), exact = true),
+                onAlbum = {}, onFile = {}, onEdit = { next, dragging -> edits = next; if (!dragging) commits++ }, onRetry = {},
+                onExport = {}, onMessageDismiss = {}, onLicenses = {}, onGpuChange = {})
+        } }
+        compose.onNodeWithTag("editor-group-effects").performClick()
+        compose.onNodeWithTag("editor-tool-22").assertIsSelected()
+        compose.onNodeWithTag("adjustment-value-${com.rawlab.android.R.string.clarity}").assertTextContains("37.25").performClick()
+        compose.onNodeWithTag("adjustment-input-apply").performClick()
+        compose.runOnIdle { assertEquals(37.251234f, edits.clarity); assertEquals(0, commits) }
+        compose.onNodeWithTag("editor-tool-23").performClick()
+        compose.onNodeWithTag("adjustment-value-${com.rawlab.android.R.string.dehaze}").assertTextContains("-42.5").performClick()
+        compose.onNodeWithTag("adjustment-input").performTextReplacement("-25")
+        compose.onNodeWithTag("adjustment-input-apply").performClick()
+        compose.runOnIdle { assertEquals(-25f, edits.dehaze); assertEquals(37.251234f, edits.clarity); assertEquals(1, commits) }
+        compose.onNodeWithTag("editor-tool-22").performClick()
+        compose.onNodeWithTag("adjustment-value-${com.rawlab.android.R.string.clarity}").performClick()
+        compose.onNodeWithTag("adjustment-input").performTextReplacement("-30")
+        compose.onNodeWithTag("adjustment-input-apply").performClick()
+        compose.runOnIdle { assertEquals(-30f, edits.clarity); assertEquals(-25f, edits.dehaze); assertEquals(2, commits) }
+    }
 
     @Test fun whiteBalanceToolHasOneSelectedAccessibleEntryAndOneChangedIndicator() {
         val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)

@@ -53,6 +53,7 @@ enum class AdjustmentField(val id: String) {
     GRAIN_AMOUNT("effects.grain.amount"),
     GRAIN_SIZE("effects.grain.size"),
     GRAIN_ROUGHNESS("effects.grain.roughness"),
+    CLARITY("effects.clarity"), DEHAZE("effects.dehaze"),
     SHARPENING("detail.sharpening"),
     RAW_DENOISE("detail.denoise.raw_level"),
     POST_RGB_DENOISE("detail.denoise.post_rgb"),
@@ -90,7 +91,7 @@ enum class AdjustmentField(val id: String) {
             STRENGTH, CONTRAST, SATURATION, SHARPENING -> 0.0..2.0
             EXPOSURE -> -20.0..20.0
             HIGHLIGHTS, SHADOWS, S_CURVE, PERSPECTIVE_HORIZONTAL, PERSPECTIVE_VERTICAL -> -1.0..1.0
-            VIGNETTE_AMOUNT, VIGNETTE_ROUNDNESS, BLACK_POINT, WHITE_POINT, VIBRANCE -> -100.0..100.0
+            VIGNETTE_AMOUNT, VIGNETTE_ROUNDNESS, BLACK_POINT, WHITE_POINT, VIBRANCE, CLARITY, DEHAZE -> -100.0..100.0
             VIGNETTE_MIDPOINT, VIGNETTE_FEATHER, VIGNETTE_HIGHLIGHTS, GRAIN_AMOUNT, GRAIN_SIZE, GRAIN_ROUGHNESS -> 0.0..100.0
             QUARTER_TURNS -> 0.0..3.0
             CROP_X, CROP_Y, CROP_WIDTH, CROP_HEIGHT, POST_RGB_DENOISE -> 0.0..1.0

@@ -226,11 +226,15 @@ struct CompactControlsPresentationTests {
         } else {
             languages = AppLanguage.allCases.filter { $0 != .system }
         }
-        if ProcessInfo.processInfo.environment["RAWLAB_PARAMETER_MATRIX"] == "1" {
+        let atmosphereOnly = ProcessInfo.processInfo.environment["RAWLAB_ATMOSPHERE_MATRIX"] == "1"
+        if ProcessInfo.processInfo.environment["RAWLAB_PARAMETER_MATRIX"] == "1" || atmosphereOnly {
+            if atmosphereOnly { model.settings.clarity = 37.251234; model.settings.dehaze = -42.5 }
+            let controls: [(EditorAdjustmentTool, Int)] = atmosphereOnly ? [(.clarity, 1), (.dehaze, 1)] :
+                [(.exposure, 1), (.hsl, 3), (.whiteBalance, 2), (.geometry, 1)]
             var snapshots: [SnapshotEvidence] = []
             for language in languages {
                 UserDefaults.standard.setVolatileDomain([L10n.preferenceKey: language.rawValue, "photoFolders": [String]()], forName: UserDefaults.argumentDomain)
-                for (tool, fieldCount) in [(EditorAdjustmentTool.exposure, 1), (.hsl, 3), (.whiteBalance, 2), (.geometry, 1)] {
+                for (tool, fieldCount) in controls {
                     model.selectAdjustmentTool(tool)
                     try await waitForRender(model)
                     for (fontName, fontSize) in [("normal", DynamicTypeSize.large), ("large", .accessibility3)] {

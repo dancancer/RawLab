@@ -38,6 +38,8 @@ extension RenderEngine {
         let size: [String: Any] = exportLongEdge.map { ["mode": "limit_long_edge", "long_edge": $0] } ?? ["mode": "native"]
         guard state.toneSettings.isValid else { throw RenderError.failed(L10n.text("无效的黑白场或鲜艳度参数")) }
         guard state.curveSettings.isValid else { throw RenderError.failed(L10n.text("无效的曲线参数")) }
+        guard state.atmosphereSettings.isValid else { throw RenderError.failed(L10n.text("无效的清晰度或去朦胧参数")) }
+        let atmosphereConfig = state.atmosphereSettings.nativeConfig
         let toneConfig = state.toneSettings.nativeConfig
         var tone: [String: Any] = ["contrast": min(2, max(0, request.contrast)), "saturation": min(2, max(0, request.saturation)),
             "highlights": min(1, max(-1, request.highlights)), "shadows": min(1, max(-1, request.shadows)), "s_curve": request.tone_curve]
@@ -59,7 +61,8 @@ extension RenderEngine {
                 "effects": ["vignette_amount": fx.vignette_amount, "vignette_midpoint": fx.vignette_midpoint,
                             "vignette_roundness": fx.vignette_roundness, "vignette_feather": fx.vignette_feather,
                             "vignette_highlights": fx.vignette_highlights, "grain_amount": fx.grain_amount,
-                            "grain_size": fx.grain_size, "grain_roughness": fx.grain_roughness],
+                            "grain_size": fx.grain_size, "grain_roughness": fx.grain_roughness,
+                            "clarity": atmosphereConfig.clarity, "dehaze": atmosphereConfig.dehaze],
                 "denoise": ["raw_level": Int(raw), "chroma_mode": Int(chroma),
                             "wavelet": ["enabled": wavelet?.enabled ?? false, "luma": Float(wavelet?.luma ?? 0),
                                         "chroma": Float(wavelet?.chroma ?? 46), "coarse": Float(wavelet?.coarse ?? 50)]],

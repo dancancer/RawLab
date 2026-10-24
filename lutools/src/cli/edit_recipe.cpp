@@ -151,8 +151,13 @@ void completeEdits(const Json& edits, EditRecipe& parsed) {
     }
     if (edits.contains("effects")) {
         const auto& fx = edits.at("effects");
-        fields(fx, "edits.effects", {"vignette_amount", "vignette_midpoint", "vignette_roundness",
+        if (parsed.schemaVersion >= 5)
+            fields(fx, "edits.effects", {"vignette_amount", "vignette_midpoint", "vignette_roundness",
+                "vignette_feather", "vignette_highlights", "grain_amount", "grain_size", "grain_roughness", "clarity", "dehaze"});
+        else fields(fx, "edits.effects", {"vignette_amount", "vignette_midpoint", "vignette_roundness",
             "vignette_feather", "vignette_highlights", "grain_amount", "grain_size", "grain_roughness"});
+        parsed.atmosphere.clarity = number(fx, "clarity", 0, -1, 1, "edits.effects");
+        parsed.atmosphere.dehaze = number(fx, "dehaze", 0, -1, 1, "edits.effects");
         auto& config = parsed.effects;
         config.vignette_amount = number(fx, "vignette_amount", 0, -100, 100, "edits.effects");
         config.vignette_midpoint = number(fx, "vignette_midpoint", 50, 0, 100, "edits.effects");
@@ -383,6 +388,14 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
             throw std::invalid_argument("Tone controls must be finite and within [-1,1]");
     if (recipe.schemaVersion < 5 && (controls.black_point != 0 || controls.white_point != 0 || controls.vibrance != 0))
         throw std::invalid_argument("Tone controls require schema_version 5");
+    const auto& atmosphere=recipe.atmosphere;
+    if (atmosphere.version!=SONY2FUJI_ATMOSPHERE_CONFIG_VERSION || atmosphere.struct_size!=sizeof(atmosphere))
+        throw std::invalid_argument("Invalid atmosphere configuration");
+    for (float value : {atmosphere.clarity,atmosphere.dehaze})
+        if (!std::isfinite(value) || std::abs(value)>1)
+            throw std::invalid_argument("Atmosphere controls must be finite and within [-1,1]");
+    if (recipe.schemaVersion<5 && (atmosphere.clarity!=0 || atmosphere.dehaze!=0))
+        throw std::invalid_argument("Atmosphere controls require schema_version 5");
     const auto& grading=recipe.colorGrading;
     if (grading.version!=SONY2FUJI_COLOR_GRADING_CONFIG_VERSION || grading.struct_size!=sizeof(grading))
         throw std::invalid_argument("Invalid color grading configuration");
@@ -458,6 +471,8 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
             {"vignette_roundness", fx.vignette_roundness}, {"vignette_feather", fx.vignette_feather},
             {"vignette_highlights", fx.vignette_highlights}, {"grain_amount", fx.grain_amount},
             {"grain_size", fx.grain_size}, {"grain_roughness", fx.grain_roughness}};
+        if (atmosphere.clarity!=0) edits["effects"]["clarity"]=atmosphere.clarity;
+        if (atmosphere.dehaze!=0) edits["effects"]["dehaze"]=atmosphere.dehaze;
         edits["denoise"] = {{"raw_level", recipe.rawNoiseReduction}, {"chroma_mode", recipe.chromaDenoise},
             {"wavelet", {{"enabled", recipe.wavelet.enabled != 0}, {"luma", recipe.wavelet.luma},
                 {"chroma", recipe.wavelet.chroma}, {"coarse", recipe.wavelet.coarse}}}};

@@ -13,7 +13,7 @@ import com.rawlab.android.editor.ui.editorToolIcons
 
 class EditorToolGroupingTest {
     @Test fun everyGroupStartsAtItsDesignatedTool() {
-        assertEquals(listOf(0, 2, 8, 12, 11, 17), EditorAdjustmentGroup.entries.map(EditorAdjustmentRules::defaultTool))
+        assertEquals(listOf(0, 2, 8, 22, 11, 17), EditorAdjustmentGroup.entries.map(EditorAdjustmentRules::defaultTool))
     }
 
     @Test fun busyDoesNotHideStoredLegacyAuxiliaryObjectMarkers() {
@@ -23,7 +23,7 @@ class EditorToolGroupingTest {
     }
 
     @Test fun toolsFollowTheSixWorkspaceGroupsWithStableIds() {
-        assertEquals(listOf(0, 15, 1, 2, 3, 4, 18, 19, 5, 6, 8, 7, 20, 14, 21, 12, 13, 11, 10, 17, 16), editorToolOrder)
+        assertEquals(listOf(0, 15, 1, 2, 3, 4, 18, 19, 5, 6, 8, 7, 20, 14, 21, 22, 23, 12, 13, 11, 10, 17, 16), editorToolOrder)
     }
 
     @Test fun whiteBalanceUsesOneToolEntryWithTheCombinedTitle() {

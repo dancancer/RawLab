@@ -7,6 +7,7 @@ struct ProcessorExportTests {
     static func main() throws {
         let root = URL(fileURLWithPath: CommandLine.arguments[1])
         let output = URL(fileURLWithPath: CommandLine.arguments[2])
+        try checkAtmosphere()
         try checkToneControls()
         try checkColorGrading()
         try checkToneCurve()

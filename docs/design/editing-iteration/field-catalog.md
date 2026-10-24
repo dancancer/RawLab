@@ -156,15 +156,19 @@ common scope 包含两项；曲线工具/light group reset 清除两项。预设
 数值与精度回退见 [tone curve v1](../../../lutools/docs/tone-curve-v1.md)，实际验证边界见
 [接入计划](../../integration/editing-iteration/tone-curve-plan.md)；IT-11/15 的联合验收仍单列。
 
-### 3.5 尚未支持的候选新字段
+### 3.5 清晰度与去朦胧
 
-以下名称只登记未来接线位置，不表示当前 core、Agent、四端或 GPU 已支持：
+两个字段的 CPU 数值合同和 core/Agent v5 已接通，四端接入仍在进行：
 
-| 候选字段/配置 | 设计状态 | 当前边界 |
+| 字段/配置 | 语义与范围 | 当前边界 |
 | --- | --- | --- |
-| `effects.clarity` / `effects.dehaze` | proposed | 方案候选 core `[-1,1]`；当前无 atmosphere config，算法数值合同和质量集未冻结。 |
+| `effects.clarity` / `effects.dehaze` | UI/payload `[-100,100]`，默认 0；native/Agent `[-1,1]` | 独立 `atmosphere_config` v1；不扩旧 effects config。CPU 数值合同及固定质量集已准入，四端数据/UI 待接入。 |
 
-来源：[总技术方案 2.1](technical-design.md#21-agent-v5-与-additive-c-abi)。在真实核心、parser/serializer、能力查询、native adapter、保存、Agent 和回归全部接通前，能力响应不得宣告这些字段；旧 schema 和旧像素行为必须保持。
+common scope 包含两项，归 `effects` 组；未选字段保留目标原值，两个零值表示关闭。
+它们不跟随旧 master-recipe strength 二次缩放。旧记录缺失为 identity，旧 v1–v4
+recipe 拒绝新键。能力响应声明 CPU 和完整源图预览策略，不宣称 GPU 加速。
+数值细节与接入边界见 [atmosphere v1](../../../lutools/docs/atmosphere-v1.md) 和
+[接入计划](../../integration/editing-iteration/atmosphere-plan.md)。
 
 ## 4. scope、modified、自动值和配方规则
 

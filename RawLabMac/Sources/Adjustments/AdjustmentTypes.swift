@@ -249,7 +249,7 @@ enum AdjustmentGroup: String, CaseIterable, Identifiable {
         case .tone: return [.contrast, .highlights, .shadows, .blackPoint, .whitePoint, .toneCurve]
         case .color: return [.saturation, .vibrance]
         case .detail: return [.denoiseMode, .sharpening]
-        case .effects: return [.vignetteAmount, .grainAmount]
+        case .effects: return [.clarity, .dehaze, .vignetteAmount, .grainAmount]
         case .lens, .geometry: return []
         }
     }
@@ -267,7 +267,7 @@ enum EditorAdjustmentGroup: String, CaseIterable, Identifiable {
         case .looks: return [.film, .recipe, .strength]
         case .light: return [.exposure, .highlights, .shadows, .blackPoint, .whitePoint, .contrast, .toneCurve]
         case .color: return [.whiteBalance, .saturation, .vibrance, .hsl, .colorGrading]
-        case .effects: return [.vignette, .grain]
+        case .effects: return [.clarity, .dehaze, .vignette, .grain]
         case .detail: return [.denoise, .sharpening]
         case .geometry: return [.geometry, .lens]
         }
@@ -277,6 +277,7 @@ enum EditorAdjustmentGroup: String, CaseIterable, Identifiable {
 
 enum EditorAdjustmentTool: String, CaseIterable, Identifiable {
     case film, recipe, strength, exposure, highlights, shadows, blackPoint, whitePoint, vibrance, contrast, toneCurve
+    case clarity, dehaze
     case whiteBalance, saturation, hsl, colorGrading, vignette, grain, denoise, sharpening, geometry, lens
     var id: String { rawValue }
     var group: EditorAdjustmentGroup { EditorAdjustmentGroup.allCases.first { $0.tools.contains(self) }! }
@@ -289,6 +290,8 @@ enum EditorAdjustmentTool: String, CaseIterable, Identifiable {
         case .blackPoint: return .blackPoint
         case .whitePoint: return .whitePoint
         case .vibrance: return .vibrance
+        case .clarity: return .clarity
+        case .dehaze: return .dehaze
         case .contrast: return .contrast
         case .toneCurve: return .toneCurve
         case .whiteBalance: return .temperature
@@ -471,7 +474,7 @@ struct AdjustmentSpec {
 
 enum AdjustmentParameter: String, CaseIterable, Identifiable {
     case strength, exposure, temperature, tint, contrast, highlights, shadows, blackPoint, whitePoint, vibrance, toneCurve, saturation, sharpening, rawNoiseReduction, denoiseMode
-    case vignetteAmount, grainAmount
+    case vignetteAmount, grainAmount, clarity, dehaze
     var id: String { rawValue }
     var isWhiteBalance: Bool { self == .temperature || self == .tint }
     var isPhotoEffect: Bool { self == .vignetteAmount || self == .grainAmount }
@@ -482,7 +485,7 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
         return value
     }
     static let photoTools: [Self] = [.exposure, .highlights, .shadows, .contrast, .toneCurve,
-                                    .saturation, .temperature, .denoiseMode, .sharpening, .vignetteAmount, .grainAmount]
+                                    .saturation, .temperature, .denoiseMode, .sharpening, .clarity, .dehaze, .vignetteAmount, .grainAmount]
     var symbol: String {
         switch self {
         case .strength: return "camera.aperture"
@@ -492,6 +495,8 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
         case .blackPoint: return "circle.fill"
         case .whitePoint: return "circle"
         case .vibrance: return "drop.fill"
+        case .clarity: return "circle.dotted.circle"
+        case .dehaze: return "cloud.fog"
         case .contrast: return "circle.lefthalf.filled"
         case .toneCurve: return "waveform.path"
         case .saturation: return "drop.halffull"
@@ -512,6 +517,8 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
         case .blackPoint: return AdjustmentSpec(title: L10n.text("黑场"), keyPath: \.blackPoint, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
         case .whitePoint: return AdjustmentSpec(title: L10n.text("白场"), keyPath: \.whitePoint, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
         case .vibrance: return AdjustmentSpec(title: L10n.text("鲜艳度"), keyPath: \.vibrance, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
+        case .clarity: return AdjustmentSpec(title: L10n.text("清晰度"), keyPath: \.clarity, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
+        case .dehaze: return AdjustmentSpec(title: L10n.text("去朦胧"), keyPath: \.dehaze, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
         case .contrast: return AdjustmentSpec(title: L10n.text("对比度"), keyPath: \.contrast, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
         case .highlights: return AdjustmentSpec(title: L10n.text("高光"), keyPath: \.highlights, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
         case .shadows: return AdjustmentSpec(title: L10n.text("阴影"), keyPath: \.shadows, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)

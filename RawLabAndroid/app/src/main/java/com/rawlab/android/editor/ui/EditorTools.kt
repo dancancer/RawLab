@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -44,13 +45,13 @@ internal val editorToolOrder = EditorAdjustmentGroup.entries.flatMap(EditorAdjus
 internal val editorToolTitles = listOf(R.string.film, R.string.strength, R.string.exposure, R.string.highlights,
     R.string.shadows, R.string.contrast, R.string.curve_title, R.string.saturation, R.string.white_balance,
     R.string.tint, R.string.sharpening, R.string.denoise, R.string.vignette, R.string.grain, R.string.hsl,
-    R.string.master_recipes, R.string.info_lens, R.string.geometry, R.string.black_point, R.string.white_point, R.string.vibrance, R.string.color_grading)
+    R.string.master_recipes, R.string.info_lens, R.string.geometry, R.string.black_point, R.string.white_point, R.string.vibrance, R.string.color_grading, R.string.clarity, R.string.dehaze)
 
 internal val editorToolIcons: List<ImageVector> get() = listOf(Icons.Outlined.PhotoFilter, Icons.Outlined.Tune,
     Icons.Outlined.Exposure, Icons.Outlined.WbSunny, Icons.Outlined.DarkMode, Icons.Outlined.Contrast,
     Icons.Outlined.SsidChart, Icons.Outlined.WaterDrop, Icons.Outlined.Thermostat, Icons.Outlined.Palette,
     Icons.Outlined.Deblur, Icons.Outlined.NoiseAware, Icons.Outlined.Circle, Icons.Outlined.Grain,
-    Icons.Outlined.ColorLens, Icons.Outlined.Layers, Icons.Outlined.CenterFocusStrong, Icons.Outlined.CropRotate, Icons.Filled.Circle, Icons.Outlined.RadioButtonUnchecked, Icons.Filled.WaterDrop, Icons.Outlined.Palette)
+    Icons.Outlined.ColorLens, Icons.Outlined.Layers, Icons.Outlined.CenterFocusStrong, Icons.Outlined.CropRotate, Icons.Filled.Circle, Icons.Outlined.RadioButtonUnchecked, Icons.Filled.WaterDrop, Icons.Outlined.Palette, Icons.Outlined.Tonality, Icons.Outlined.Cloud)
 
 internal fun whiteBalanceChanged(edits: EditSettings, shotTemperature: Float?, shotTint: Float?): Boolean {
     val temperature = shotTemperature ?: edits.temperature
@@ -69,7 +70,7 @@ internal fun EditorToolStrip(state: EditorState, selected: Int, tools: List<Int>
         if (list.layoutInfo.visibleItemsInfo.none { it.index == index && it.offset >= 0 &&
             it.offset + it.size <= list.layoutInfo.viewportEndOffset }) list.scrollToItem(index)
     }
-    LazyRow(modifier.fillMaxWidth().testTag("editor-tools"), state = list, contentPadding = PaddingValues(horizontal = 8.dp),
+    LazyRow(modifier.fillMaxWidth().clipToBounds().testTag("editor-tools"), state = list, contentPadding = PaddingValues(horizontal = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         items(entries, key = { it }) { index ->
             if (index == -1) TextButton(onClick = { onPerspective?.invoke() }, enabled = navigationEnabled && state.controlsEnabled,
@@ -100,6 +101,8 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, navig
         18 -> Triple(edits.blackPoint, 0f, -100f..100f)
         19 -> Triple(edits.whitePoint, 0f, -100f..100f)
         20 -> Triple(edits.vibrance, 0f, -100f..100f)
+        22 -> Triple(edits.clarity, 0f, -100f..100f)
+        23 -> Triple(edits.dehaze, 0f, -100f..100f)
         else -> null
     }
     val changed = EditorAdjustmentRules.isModified(EditorResetScope.Tool(index), edits, state.resetContext())

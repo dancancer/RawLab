@@ -9,15 +9,18 @@ struct AdjustmentToolLabel: View {
     let progress: Double
     let width: CGFloat
     let height: CGFloat
+    var maximumWidth: CGFloat? = nil
 
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: symbol).font(.body).dynamicTypeSize(...DynamicTypeSize.xxxLarge)
             Text(title).font(dynamicTypeSize.isAccessibilitySize ? .body : .subheadline)
-                .fixedSize(horizontal: true, vertical: false)
+                .fixedSize(horizontal: maximumWidth == nil, vertical: true)
+                .frame(maxWidth: maximumWidth.map { max(44, $0 - 55) })
             Circle().fill(progress != 0 ? Color.yellow : .clear).frame(width: 3, height: 3)
         }
         .padding(.horizontal, 8).frame(minWidth: 44, minHeight: max(44, height))
+        .frame(maxWidth: maximumWidth)
         .foregroundStyle(selected ? Color.yellow : Color.primary)
         .background(selected ? Color.yellow.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 5))
         .contentShape(Rectangle()).accessibilityElement(children: .ignore).accessibilityLabel(title)

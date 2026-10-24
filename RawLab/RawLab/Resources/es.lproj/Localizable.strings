@@ -116,6 +116,7 @@
 "原始文件已被替换，请重新选择照片。" = "El archivo original ha sido reemplazado. Selecciona la foto de nuevo.";
 "原始比例" = "Proporción original";
 "去噪优先" = "Prioridad a la reducción de ruido";
+"去朦胧" = "Borrar neblina";
 "参数或输出路径无效。" = "Parámetros o ruta de salida no válidos.";
 "双击名称或轨道恢复默认值。" = "Toca dos veces el nombre o la pista para restablecer el valor predeterminado.";
 "取消" = "Cancelar";
@@ -273,6 +274,7 @@
 "无效的暗角或颗粒参数" = "Parámetro de viñeteado o grano no válido";
 "无效的曝光基准" = "Punto de referencia de exposición no válido";
 "无效的曲线参数" = "Valores de curva no válidos";
+"无效的清晰度或去朦胧参数" = "Valores de claridad o borrado de neblina no válidos";
 "无效的视口预览模式" = "Modo de vista previa del área visible no válido";
 "无效的颜色分级参数" = "Valores de gradación de color no válidos";
 "无效的黑白场或鲜艳度参数" = "Valores de punto negro, punto blanco o intensidad no válidos";
@@ -386,6 +388,7 @@
 "添加" = "Añadir";
 "添加控制点" = "Añadir punto";
 "添加照片" = "Añadir fotos";
+"清晰度" = "Claridad";
 "清空选择" = "Borrar selección";
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Película urbana vintage cálida y rica, sombras estables y limpias, altas luces doradas y sensación de historia errante";
 "渲染型 DNG 未生成。" = "No se creó el DNG revelado.";

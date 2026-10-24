@@ -1,7 +1,7 @@
 namespace RawLab.Windows;
 
 public enum EditorAdjustmentGroup { Looks, Light, Color, Effects, Detail, Geometry }
-public enum EditorAdjustmentTool { Film, MasterRecipe, Strength, Exposure, Highlights, Shadows, Contrast, ToneCurve, WhiteBalance, Saturation, Hsl, Vignette, Grain, Denoise, Sharpening, Geometry, Lens, BlackPoint, WhitePoint, Vibrance, ColorGrading }
+public enum EditorAdjustmentTool { Film, MasterRecipe, Strength, Exposure, Highlights, Shadows, Contrast, ToneCurve, WhiteBalance, Saturation, Hsl, Vignette, Grain, Denoise, Sharpening, Geometry, Lens, BlackPoint, WhitePoint, Vibrance, ColorGrading, Clarity, Dehaze }
 public enum EditorResetKind { Group, HslChannel, AllHsl, All, Tool, GradingZone, AllGrading }
 public sealed record EditorResetScope(EditorResetKind Kind, EditorAdjustmentGroup Group = EditorAdjustmentGroup.Looks, int Channel = 0, EditorAdjustmentTool Tool = EditorAdjustmentTool.Film, ColorGradingZone Zone = ColorGradingZone.Shadows);
 public enum EditorResetStatus { Ready, NoChange, Invalid, Blocked }
@@ -15,7 +15,7 @@ public static class EditorAdjustmentRules
         Array.AsReadOnly(new[] { EditorAdjustmentTool.Film, EditorAdjustmentTool.MasterRecipe, EditorAdjustmentTool.Strength }),
         Array.AsReadOnly(new[] { EditorAdjustmentTool.Exposure, EditorAdjustmentTool.Highlights, EditorAdjustmentTool.Shadows, EditorAdjustmentTool.BlackPoint, EditorAdjustmentTool.WhitePoint, EditorAdjustmentTool.Contrast, EditorAdjustmentTool.ToneCurve }),
         Array.AsReadOnly(new[] { EditorAdjustmentTool.WhiteBalance, EditorAdjustmentTool.Saturation, EditorAdjustmentTool.Vibrance, EditorAdjustmentTool.Hsl, EditorAdjustmentTool.ColorGrading }),
-        Array.AsReadOnly(new[] { EditorAdjustmentTool.Vignette, EditorAdjustmentTool.Grain }),
+        Array.AsReadOnly(new[] { EditorAdjustmentTool.Clarity, EditorAdjustmentTool.Dehaze, EditorAdjustmentTool.Vignette, EditorAdjustmentTool.Grain }),
         Array.AsReadOnly(new[] { EditorAdjustmentTool.Denoise, EditorAdjustmentTool.Sharpening }),
         Array.AsReadOnly(new[] { EditorAdjustmentTool.Geometry, EditorAdjustmentTool.Lens })
     ];
@@ -43,12 +43,20 @@ public static class EditorAdjustmentRules
     public static string Title(EditorAdjustmentTool tool) => tool switch {
         EditorAdjustmentTool.Film => "胶片", EditorAdjustmentTool.MasterRecipe => "大师配方",
         EditorAdjustmentTool.ColorGrading => "颜色分级",
+        EditorAdjustmentTool.Clarity => "清晰度", EditorAdjustmentTool.Dehaze => "去朦胧",
         EditorAdjustmentTool.ToneCurve => "曲线",
         EditorAdjustmentTool.WhiteBalance => "白平衡", EditorAdjustmentTool.Hsl => "HSL",
         EditorAdjustmentTool.Vignette => "暗角", EditorAdjustmentTool.Grain => "颗粒",
         EditorAdjustmentTool.Denoise => "降噪", EditorAdjustmentTool.Geometry => "几何",
         EditorAdjustmentTool.BlackPoint => "黑场", EditorAdjustmentTool.WhitePoint => "白场", EditorAdjustmentTool.Vibrance => "鲜艳度",
         EditorAdjustmentTool.Lens => "镜头", _ => ParameterSpec.All[(int)ParameterFor(tool)].Title
+    };
+    public static AtmosphereParameter? AtmosphereParameterFor(EditorAdjustmentTool tool) => tool switch {
+        EditorAdjustmentTool.Clarity => AtmosphereParameter.Clarity, EditorAdjustmentTool.Dehaze => AtmosphereParameter.Dehaze, _ => null
+    };
+    public static EditorAdjustmentTool ToolFor(AtmosphereParameter parameter) => parameter switch {
+        AtmosphereParameter.Clarity => EditorAdjustmentTool.Clarity, AtmosphereParameter.Dehaze => EditorAdjustmentTool.Dehaze,
+        _ => throw new ArgumentOutOfRangeException(nameof(parameter))
     };
     public static ToneControlParameter? ToneParameterFor(EditorAdjustmentTool tool) => tool switch {
         EditorAdjustmentTool.BlackPoint => ToneControlParameter.BlackPoint,
@@ -169,7 +177,7 @@ public static class EditorAdjustmentRules
             EditorAdjustmentGroup.Color => value with { CameraWhiteBalance = true, Hsl = new(), ColorGrading = null,
                 ToneControls = (value.ToneControls ?? new()) with { Vibrance = 0 },
                 AsShotTemperature = defaults.AsShotTemperature, AsShotTint = defaults.AsShotTint },
-            EditorAdjustmentGroup.Effects => value with { Effects = defaults.Effects },
+            EditorAdjustmentGroup.Effects => value with { Effects = defaults.Effects, Atmosphere = null },
             EditorAdjustmentGroup.Detail => value with { Denoise = defaults.Denoise, DisplayChromaDenoise = defaults.DisplayChromaDenoise, AIDenoiseEnabled = false },
             EditorAdjustmentGroup.Geometry => value with { Geometry = defaults.Geometry, Lens = defaults.Lens },
             _ => value
@@ -177,6 +185,8 @@ public static class EditorAdjustmentRules
     }
     private static AdjustmentSnapshot ResetTool(EditorAdjustmentTool tool, AdjustmentSnapshot value, AdjustmentSnapshot defaults)
     {
+        if (AtmosphereParameterFor(tool) is {} atmosphereParameter)
+            return value with { Atmosphere = (value.Atmosphere ?? new()).With(atmosphereParameter, 0) };
         if (ToneParameterFor(tool) is {} toneParameter)
             return value with { ToneControls = (value.ToneControls ?? new()).With(toneParameter, 0) };
         switch (tool) {
@@ -271,6 +281,6 @@ public static class EditorAdjustmentRules
             x.Shadows == y.Shadows && x.Saturation == y.Saturation && x.ToneCurve == y.ToneCurve && x.Sharpening == y.Sharpening &&
             x.WbMode == y.WbMode && x.Temperature == y.Temperature && x.Tint == y.Tint && a.ExposureMode == b.ExposureMode &&
             a.RenderHsl.Values.Select(v => (float)v).SequenceEqual(b.RenderHsl.Values.Select(v => (float)v)) &&
-            a.ToneControls == b.ToneControls && a.ColorGrading == b.ColorGrading && a.Curve == b.Curve && a.AIDenoiseEnabled == b.AIDenoiseEnabled && a.Effects == b.Effects && a.Denoise == b.Denoise && a.DisplayChromaDenoise == b.DisplayChromaDenoise && a.Geometry == b.Geometry && a.Lens == b.Lens;
+            a.ToneControls == b.ToneControls && a.Atmosphere == b.Atmosphere && a.ColorGrading == b.ColorGrading && a.Curve == b.Curve && a.AIDenoiseEnabled == b.AIDenoiseEnabled && a.Effects == b.Effects && a.Denoise == b.Denoise && a.DisplayChromaDenoise == b.DisplayChromaDenoise && a.Geometry == b.Geometry && a.Lens == b.Lens;
     }
 }

@@ -37,6 +37,8 @@ internal object StructuredSettingsCodec {
                 .put("perspectiveVertical", perspectiveVertical) })
             .put("processing", JSONObject().put("family", s.processing.family).put("version", s.processing.version)
                 .put("quality", s.processing.quality))
+        if (s.clarity != 0f || s.dehaze != 0f) value.put("atmosphere",
+            JSONObject().put("clarity", s.clarity).put("dehaze", s.dehaze))
         return "v2:" + JSONObject().put("format", format).put("version", 2).put("settings", value).toString()
     }
 
@@ -46,9 +48,10 @@ internal object StructuredSettingsCodec {
         validateStrictJSON(json, setOf("version", "exposureMode", "displayChromaDenoise", "quarterTurns"))
         val root = JSONObject(json).keysExactly("format", "version", "settings")
         require(root.string("format") == format && root.integer("version") == 2) { "Unsupported settings format" }
-        val s = root.getJSONObject("settings").keysWithOptional(setOf("colorGrading", "curve"), "film", "strength", "exposure", "exposureMode", "highlights",
+        val s = root.getJSONObject("settings").keysWithOptional(setOf("colorGrading", "curve", "atmosphere"), "film", "strength", "exposure", "exposureMode", "highlights",
             "shadows", "contrast", "toneCurve", "saturation", "sharpening", "customWb", "temperature", "tint",
             "recipeID", "displayChromaDenoise", "hsl", "tone", "denoise", "effects", "lens", "geometry", "processing")
+        val atmosphere = if (s.has("atmosphere")) s.getJSONObject("atmosphere").keysExactly("clarity", "dehaze") else null
         val tone = s.getJSONObject("tone").keysExactly("blackPoint", "whitePoint", "vibrance")
         val denoise = s.getJSONObject("denoise").keysExactly("enabled", "luma", "chroma", "coarse")
         val effects = s.getJSONObject("effects").keysExactly("vignetteAmount", "vignetteMidpoint", "vignetteRoundness",
@@ -65,6 +68,7 @@ internal object StructuredSettingsCodec {
             sharpening = s.number("sharpening", 0.0..2.0), customWb = s.boolean("customWb"), temperature = s.number("temperature", 2000.0..50000.0),
             tint = s.number("tint", -150.0..150.0), recipeID = s.nullableString("recipeID"), displayChromaDenoise = s.integer("displayChromaDenoise"),
             blackPoint = tone.number("blackPoint", -100.0..100.0), whitePoint = tone.number("whitePoint", -100.0..100.0), vibrance = tone.number("vibrance", -100.0..100.0),
+            clarity = atmosphere?.number("clarity", -100.0..100.0) ?: 0f, dehaze = atmosphere?.number("dehaze", -100.0..100.0) ?: 0f,
             colorGrading = if (s.has("colorGrading")) grading(s.getJSONObject("colorGrading")) else ColorGradingSettings(),
             curve = if (s.has("curve")) ToneCurveSettings.decode(s.getJSONObject("curve")) else ToneCurveSettings(),
             hsl = HslSettings((0 until hsl.length()).map { number(hsl.get(it), -100.0..100.0) }),

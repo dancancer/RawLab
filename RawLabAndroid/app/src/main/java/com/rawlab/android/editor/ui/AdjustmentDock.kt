@@ -131,16 +131,39 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     @Composable fun groupStrip() {
         EditorGroupStrip(state, expanded, tool, sideDock, groupList, navigationEnabled, true, select = selectGroup)
     }
+    val showFine = tool !in listOf(0, 9, 15, 16)
+    @Composable fun fineControl() {
+        if (showFine) {
+            val fineHint = stringResource(R.string.editor_fine_hint)
+            Text(stringResource(R.string.adjustment_fine), style = MaterialTheme.typography.labelSmall)
+            Switch(checked = fine, onCheckedChange = { fine = it }, enabled = state.controlsEnabled,
+                modifier = Modifier.minimumInteractiveComponentSize().testTag("adjustment-fine").semantics { contentDescription = fineHint })
+        }
+    }
     @Composable fun toolRow() {
-        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-            toolStrip(Modifier.weight(1f))
-            if (tool !in listOf(0, 9, 15, 16)) {
-                val fineHint = stringResource(R.string.editor_fine_hint)
-                Text(stringResource(R.string.adjustment_fine), style = MaterialTheme.typography.labelSmall)
-                Switch(checked = fine, onCheckedChange = { fine = it }, enabled = state.controlsEnabled,
-                    modifier = Modifier.minimumInteractiveComponentSize().testTag("adjustment-fine").semantics { contentDescription = fineHint })
+        val measurer = rememberTextMeasurer()
+        val density = LocalDensity.current
+        val labelStyle = MaterialTheme.typography.labelMedium
+        val labels = EditorAdjustmentRules.tools(EditorAdjustmentRules.groupFor(tool) ?: EditorAdjustmentGroup.LOOKS)
+            .map { stringResource(editorToolTitles[it]) }
+        val longestLabel = labels.maxOf { measurer.measure(AnnotatedString(it), labelStyle).size.width }
+        val fineWidth = if (showFine) measurer.measure(AnnotatedString(stringResource(R.string.adjustment_fine)),
+            MaterialTheme.typography.labelSmall).size.width else 0
+        // 按整个分组的最长译文分行，切换工具时保持工具栏高度稳定。
+        val requiredWidth = with(density) { (longestLabel + fineWidth).toDp() } +
+            73.dp + 96.dp + if (showFine) 52.dp else 0.dp
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            if (maxWidth < requiredWidth) {
+                Column {
+                    toolStrip()
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically) { fineControl(); dockActions() }
+                }
+            } else {
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                    toolStrip(Modifier.weight(1f)); fineControl(); dockActions()
+                }
             }
-            dockActions()
         }
     }
     val scrollTools = compactNavigation && !sideDock
@@ -304,6 +327,10 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 { value, dragging -> onEdit(edits.copy(whitePoint = value), dragging) }, { onEdit(edits.copy(whitePoint = 0f), false) })
             20 -> NumericControl(R.string.vibrance, edits.vibrance, -100f..100f, "%", state.controlsEnabled,
                 { value, dragging -> onEdit(edits.copy(vibrance = value), dragging) }, { onEdit(edits.copy(vibrance = 0f), false) })
+            22 -> NumericControl(R.string.clarity, edits.clarity, -100f..100f, "%", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(clarity = value), dragging) }, { onEdit(edits.copy(clarity = 0f), false) })
+            23 -> NumericControl(R.string.dehaze, edits.dehaze, -100f..100f, "%", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(dehaze = value), dragging) }, { onEdit(edits.copy(dehaze = 0f), false) })
             10 -> NumericControl(R.string.sharpening, edits.sharpening * 100, 0f..200f, "%", state.controlsEnabled,
                 { value, dragging -> onEdit(edits.copy(sharpening = value / 100), dragging) }, { onEdit(edits.copy(sharpening = 0f), false) })
         }

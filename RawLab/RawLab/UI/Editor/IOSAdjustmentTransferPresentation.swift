@@ -22,7 +22,7 @@ extension AdjustmentTransferField {
         }
         let labels: [Self: String] = [
             .look: "外观", .strength: "强度", .exposure: "曝光", .exposureMode: "曝光模式",
-            .blackPoint: "黑场", .whitePoint: "白场", .vibrance: "鲜艳度",
+            .blackPoint: "黑场", .whitePoint: "白场", .vibrance: "鲜艳度", .clarity: "清晰度", .dehaze: "去朦胧",
             .contrast: "对比度", .highlights: "高光", .shadows: "阴影", .sCurve: "S 曲线", .curve: "曲线模式与控制点",
             .whiteBalanceMode: "白平衡模式", .temperature: "色温", .tint: "色调", .saturation: "饱和度",
             .vignetteAmount: "暗角", .vignetteMidpoint: "中点", .vignetteRoundness: "圆度",

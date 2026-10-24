@@ -2,6 +2,8 @@ package com.rawlab.android.batch.ui
 
 import android.net.Uri
 import android.os.Build
+import com.rawlab.android.editor.controls.formatAdjustment
+
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -357,6 +359,8 @@ internal fun SettingsSummary(settings: EditSettings, lookName: String) {
         SettingLine(AppStrings.text(R.string.black_point), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.blackPoint))
         SettingLine(AppStrings.text(R.string.white_point), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.whitePoint))
         SettingLine(AppStrings.text(R.string.vibrance), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.vibrance))
+        SettingLine(AppStrings.text(R.string.clarity), formatAdjustment(settings.clarity, 1f) + "%")
+        SettingLine(AppStrings.text(R.string.dehaze), formatAdjustment(settings.dehaze, 1f) + "%")
         SettingLine(AppStrings.text(R.string.message_saturation), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.saturation * 100))
         SettingLine(AppStrings.text(R.string.message_white_balance), if (settings.customWb) AppStrings.text(R.string.message_custom) else AppStrings.text(R.string.message_as_shot_for_each_photo))
         if (settings.customWb) {

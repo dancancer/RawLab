@@ -145,6 +145,7 @@
 "原始比例" = "Original Ratio";
 "原尺寸" = "Original size";
 "去噪优先" = "Noise Reduction Priority";
+"去朦胧" = "Dehaze";
 "参数或输出路径无效。" = "Invalid parameters or output path.";
 "双击名称或轨道恢复默认值。" = "Double-click the name or track to restore the default.";
 "发现新版本 %@" = "New Version Available: %@";
@@ -351,6 +352,7 @@
 "无效的暗角或颗粒参数" = "Invalid vignette or grain settings";
 "无效的曝光基准" = "Invalid exposure reference";
 "无效的曲线参数" = "Invalid curve values";
+"无效的清晰度或去朦胧参数" = "Invalid clarity or dehaze values";
 "无效的视口预览模式" = "Invalid Viewport Preview Mode";
 "无效的透视参数" = "Invalid perspective settings";
 "无效的预览模式" = "Invalid preview mode";
@@ -498,6 +500,7 @@
 "添加照片目录" = "Add Photo Folder";
 "添加目录" = "Add Folder";
 "添加目录…" = "Add Folder…";
+"清晰度" = "Clarity";
 "清空选择" = "Clear Selection";
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Warm rich vintage urban film, clean stable shadows, warm golden highlights and a wandering story feel";
 "渲染型 DNG 未生成。" = "Rendered DNG Was Not Created.";

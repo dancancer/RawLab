@@ -5310,5 +5310,29 @@
     "fr": "Courbe à points ({0} points)",
     "ja": "ポイントカーブ（{0}点）",
     "zh-Hans": "多点曲线（{0} 个控制点）"
+  },
+  "清晰度": {
+    "en": "Clarity",
+    "de": "Klarheit",
+    "fr": "Clarté",
+    "ja": "明瞭度",
+    "es": "Claridad",
+    "zh-Hans": "清晰度"
+  },
+  "去朦胧": {
+    "en": "Dehaze",
+    "de": "Dunst entfernen",
+    "fr": "Correction du voile",
+    "ja": "かすみの除去",
+    "es": "Borrar neblina",
+    "zh-Hans": "去朦胧"
+  },
+  "无效的清晰度或去朦胧参数": {
+    "en": "Invalid clarity or dehaze values",
+    "de": "Ungültige Werte für Klarheit oder Dunstentfernung",
+    "fr": "Valeurs de clarté ou de correction du voile non valides",
+    "ja": "明瞭度またはかすみの除去の値が無効です",
+    "es": "Valores de claridad o borrado de neblina no válidos",
+    "zh-Hans": "无效的清晰度或去朦胧参数"
   }
 }

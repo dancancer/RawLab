@@ -45,11 +45,13 @@ data class EditSettings(
     val blackPoint: Float = 0f,
     val whitePoint: Float = 0f,
     val vibrance: Float = 0f,
+    val clarity: Float = 0f,
+    val dehaze: Float = 0f,
     val colorGrading: ColorGradingSettings = ColorGradingSettings(),
     val curve: ToneCurveSettings = ToneCurveSettings(),
 ) {
     init {
-        require(listOf(blackPoint, whitePoint, vibrance).all { it.isFinite() && it in -100f..100f })
+        require(listOf(blackPoint, whitePoint, vibrance, clarity, dehaze).all { it.isFinite() && it in -100f..100f })
         require(exposureMode in 0..2)
         require(strength.isFinite() && strength in 0f..2f)
         require(exposure.isFinite() && exposure in -4f..4f)

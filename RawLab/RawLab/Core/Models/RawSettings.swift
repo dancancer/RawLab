@@ -260,6 +260,22 @@ struct RawSettings: Codable, Equatable {
         get { colorGrading ?? ColorGradingSettings() }
         set { colorGrading = newValue.isDefault ? nil : newValue }
     }
+    var atmosphere: AtmosphereSettings?
+    var atmosphereSettings: AtmosphereSettings { atmosphere ?? AtmosphereSettings() }
+    var clarity: Double {
+        get { atmosphereSettings.clarity }
+        set { setAtmosphere(\.clarity, to: newValue) }
+    }
+    var dehaze: Double {
+        get { atmosphereSettings.dehaze }
+        set { setAtmosphere(\.dehaze, to: newValue) }
+    }
+    private mutating func setAtmosphere(_ key: WritableKeyPath<AtmosphereSettings, Double>, to value: Double) {
+        var state = atmosphereSettings
+        state[keyPath: key] = value
+        atmosphere = state.isIdentity ? nil : state
+    }
+
     var toneControls: ToneControlsSettings?
     var toneSettings: ToneControlsSettings { toneControls ?? ToneControlsSettings() }
     var blackPoint: Double {
@@ -339,7 +355,7 @@ struct RawSettings: Codable, Equatable {
         case exposure, contrast, saturation, temperature, tint, highlights, shadows
         case toneCurve, noiseReduction, sharpening, lutID, lutStrength, whiteBalanceMode
         case denoise, photoEffects, displayChromaDenoise, exposureMode, hsl
-        case masterRecipeID, lensCorrection, geometry, processing, toneControls, colorGrading, toneCurveConfig
+        case masterRecipeID, lensCorrection, geometry, processing, toneControls, atmosphere, colorGrading, toneCurveConfig
     }
 
     var clampedLUTStrength: Float {
@@ -409,6 +425,11 @@ struct RawSettings: Codable, Equatable {
         toneCurveConfig = try values.decodeIfPresent(ToneCurveSettings.self, forKey: .toneCurveConfig)
         colorGrading = try values.decodeIfPresent(ColorGradingSettings.self, forKey: .colorGrading)
         if colorGrading?.isDefault == true { colorGrading = nil }
+        atmosphere = try values.decodeIfPresent(AtmosphereSettings.self, forKey: .atmosphere)
+        guard atmosphere?.isValid ?? true else {
+            throw DecodingError.dataCorruptedError(forKey: .atmosphere, in: values, debugDescription: "Invalid atmosphere controls")
+        }
+        if atmosphere?.isIdentity == true { atmosphere = nil }
         toneControls = try values.decodeIfPresent(ToneControlsSettings.self, forKey: .toneControls)
         guard toneControls?.isValid ?? true else {
             throw DecodingError.dataCorruptedError(forKey: .toneControls, in: values, debugDescription: "Invalid tone controls")

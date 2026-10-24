@@ -167,9 +167,9 @@ extension EditMemoryTests {
         let toolOrder: [(EditorAdjustmentGroup, [EditorToolSelection])] = [
             (.looks, [.film, .recipe, .adjustment(.strength)]),
             (.light, [.adjustment(.exposure), .adjustment(.highlights), .adjustment(.shadows),
-                      .adjustment(.contrast), .adjustment(.toneCurve)]),
-            (.color, [.adjustment(.temperature), .adjustment(.saturation), .adjustment(.hsl)]),
-            (.effects, [.adjustment(.vignette), .adjustment(.grain)]),
+                      .adjustment(.blackPoint), .adjustment(.whitePoint), .adjustment(.contrast), .adjustment(.toneCurve)]),
+            (.color, [.adjustment(.temperature), .adjustment(.saturation), .adjustment(.vibrance), .adjustment(.hsl), .adjustment(.colorGrading)]),
+            (.effects, [.adjustment(.clarity), .adjustment(.dehaze), .adjustment(.vignette), .adjustment(.grain)]),
             (.detail, [.adjustment(.noiseReduction), .adjustment(.sharpening)]),
             (.geometry, [.geometry, .lens])
         ]

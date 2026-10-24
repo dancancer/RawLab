@@ -7,6 +7,39 @@ import java.nio.file.Files
 import java.util.Properties
 
 class StructuredSettingsCodecTest {
+    @Test fun atmosphereExtensionSurvivesStructuredSettings() {
+        val json = org.json.JSONObject(SettingsCodec.encode(EditSettings()).removePrefix("v2:"))
+        json.getJSONObject("settings").put("atmosphere", org.json.JSONObject().put("clarity", -37.25).put("dehaze", 42.5))
+        val restored = SettingsCodec.decode("v2:$json")
+        val result = org.json.JSONObject(SettingsCodec.encode(restored).removePrefix("v2:"))
+        val atmosphere = result.getJSONObject("settings").getJSONObject("atmosphere")
+        assertEquals(-37.25, atmosphere.getDouble("clarity"), 0.0)
+        assertEquals(42.5, atmosphere.getDouble("dehaze"), 0.0)
+    }
+
+    @Test fun atmosphereIsOptionalStrictAndPreservedByPhotoStore() {
+        val settings = EditSettings(clarity = -37.251234f, dehaze = 42.5f)
+        assertEquals(settings, SettingsCodec.decode(SettingsCodec.encode(settings)))
+        val old = org.json.JSONObject(SettingsCodec.encode(settings).removePrefix("v2:"))
+        old.getJSONObject("settings").remove("atmosphere")
+        assertEquals(EditSettings(), SettingsCodec.decode("v2:$old"))
+        for (value in listOf("null", "{}", "{\"clarity\":1}", "{\"clarity\":0,\"dehaze\":101}",
+            "{\"clarity\":0,\"dehaze\":0,\"extra\":1}", "{\"clarity\":\"1\",\"dehaze\":0}")) {
+            val invalid = old.toString().replace("\"settings\":{", "\"settings\":{\"atmosphere\":$value,")
+            assertThrows(Exception::class.java) { SettingsCodec.decode("v2:$invalid") }
+        }
+        for (bad in listOf(-100.1f, 100.1f, Float.NaN, Float.POSITIVE_INFINITY)) {
+            assertThrows(IllegalArgumentException::class.java) { settings.copy(clarity = bad) }
+            assertThrows(IllegalArgumentException::class.java) { settings.copy(dehaze = bad) }
+        }
+        val directory = Files.createTempDirectory("rawlab-atmosphere").toFile()
+        try {
+            val identity = PhotoIdentity("image")
+            EditStore(directory).save(identity, settings)
+            assertEquals(settings, EditStore(directory).load(identity))
+        } finally { directory.deleteRecursively() }
+    }
+
     @Test fun gradingPendingHueSurvivesStructuredSettings() {
         val json = org.json.JSONObject(SettingsCodec.encode(EditSettings()).removePrefix("v2:"))
         val grading = org.json.JSONObject("""{"shadows":{"hue":231.25,"saturation":0},"midtones":{"hue":0,"saturation":0},"highlights":{"hue":0,"saturation":0}}""")

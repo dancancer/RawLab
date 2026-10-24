@@ -22,6 +22,7 @@
     <Compile Include="../../HslTargetAdjustment.cs" />
     <Compile Include="../../DenoiseSettings.cs" Link="DenoiseSettings.cs" />
     <Compile Include="../../ToneControlsSettings.cs" />
+    <Compile Include="../../AtmosphereSettings.cs" />
     <Compile Include="../../ColorGradingSettings.cs" />
     <Compile Include="../../ToneCurveSettings.cs" />
     <Compile Include="../../PhotoEffectsSettings.cs" Link="PhotoEffectsSettings.cs" />

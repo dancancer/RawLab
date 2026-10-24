@@ -494,6 +494,18 @@
               "minimum": 0,
               "maximum": 100,
               "default": 50
+            },
+            "clarity": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1,
+              "default": 0
+            },
+            "dehaze": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1,
+              "default": 0
             }
           }
         },

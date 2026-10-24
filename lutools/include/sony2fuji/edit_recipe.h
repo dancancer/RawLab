@@ -32,6 +32,8 @@ struct EditRecipe {
         sizeof(sony2fuji_tone_curve_config), SONY2FUJI_CURVE_LEGACY, 0, {}};
     sony2fuji_tone_controls_config toneControls{SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION,
         sizeof(sony2fuji_tone_controls_config), 0, 0, 0};
+    sony2fuji_atmosphere_config atmosphere{SONY2FUJI_ATMOSPHERE_CONFIG_VERSION,
+        sizeof(sony2fuji_atmosphere_config), 0, 0};
     sony2fuji_color_grading_config colorGrading{SONY2FUJI_COLOR_GRADING_CONFIG_VERSION,
         sizeof(sony2fuji_color_grading_config), 0, 0, 0, 0, 0, 0};
     float sharpening = 0;

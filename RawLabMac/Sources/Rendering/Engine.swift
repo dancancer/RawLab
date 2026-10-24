@@ -231,6 +231,14 @@ final class RenderEngine {
         }
     }
 
+    private func configureAtmosphere(_ settings: AtmosphereSettings) throws {
+        guard settings.isValid else { throw RenderError.failed(L10n.text("无效的清晰度或去朦胧参数")) }
+        var config = settings.nativeConfig
+        guard sony2fuji_session_set_atmosphere(session, &config) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed(L10n.text("无效的清晰度或去朦胧参数"))
+        }
+    }
+
     private func configureProcessing(_ identity: ProcessingIdentity) throws {
         guard sony2fuji_session_set_processing_version(session, identity.core) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed(L10n.text("不支持此处理版本，原有记录未被覆盖。"))
@@ -271,6 +279,7 @@ final class RenderEngine {
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
         try configureTone(settings.toneSettings)
+        try configureAtmosphere(settings.atmosphereSettings)
         try configureCurve(settings.curveSettings)
         try configureGrading(settings.gradingSettings)
         try configureLens(settings.lensSettings)
@@ -298,6 +307,7 @@ final class RenderEngine {
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
         try configureTone(settings.toneSettings)
+        try configureAtmosphere(settings.atmosphereSettings)
         try configureCurve(settings.curveSettings)
         try configureGrading(settings.gradingSettings)
         try configureAI(enabled: settings.aiDenoiseEnabled)
@@ -360,6 +370,7 @@ final class RenderEngine {
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
         try configureTone(settings.toneSettings)
+        try configureAtmosphere(settings.atmosphereSettings)
         try configureCurve(settings.curveSettings)
         try configureGrading(settings.gradingSettings)
         if settings.aiDenoiseEnabled && Self.isRasterInput(url) {

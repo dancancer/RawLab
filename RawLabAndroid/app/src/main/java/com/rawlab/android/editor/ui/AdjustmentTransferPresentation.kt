@@ -26,6 +26,8 @@ internal val AdjustmentField.title: String get() {
         AdjustmentField.BLACK_POINT -> R.string.black_point
         AdjustmentField.WHITE_POINT -> R.string.white_point
         AdjustmentField.VIBRANCE -> R.string.vibrance
+        AdjustmentField.CLARITY -> R.string.clarity
+        AdjustmentField.DEHAZE -> R.string.dehaze
         AdjustmentField.SATURATION -> R.string.transfer_field_saturation
         AdjustmentField.VIGNETTE_AMOUNT -> R.string.transfer_field_vignette_amount
         AdjustmentField.VIGNETTE_MIDPOINT -> R.string.transfer_field_vignette_midpoint

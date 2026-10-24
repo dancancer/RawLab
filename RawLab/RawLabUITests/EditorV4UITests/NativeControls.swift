@@ -1,6 +1,46 @@
 import XCTest
 
 extension EditorV4UITests {
+    func testAtmosphereEditingHistoryPersistenceAndLanguages() throws {
+        let app = try launchImportedEditor()
+        try selectTool("clarity", in: app)
+        try setValue("+37", title: "Clarity", unit: "%", control: "adjustment", in: app)
+        XCTAssertEqual(try number(app.buttons["adjustment.value"]), 37, accuracy: 0.0001)
+        try selectTool("dehaze", in: app)
+        try setValue("-42", title: "Dehaze", unit: "%", control: "adjustment", in: app)
+        XCTAssertEqual(try number(app.buttons["adjustment.value"]), -42, accuracy: 0.0001)
+        app.buttons["editor.privacy"].tap()
+        let undo = app.buttons["Undo"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 5)); XCTAssertTrue(undo.isEnabled); undo.tap()
+        waitUntil { (try? self.number(app.buttons["adjustment.value"])) == 0 }
+        try selectTool("clarity", in: app)
+        XCTAssertEqual(try number(app.buttons["adjustment.value"]), 37, accuracy: 0.0001, "Undo retains independent clarity")
+        app.buttons["editor.privacy"].tap()
+        let redo = app.buttons["Redo"]
+        XCTAssertTrue(redo.waitForExistence(timeout: 5)); XCTAssertTrue(redo.isEnabled); redo.tap()
+        try selectTool("dehaze", in: app)
+        waitUntil { (try? self.number(app.buttons["adjustment.value"])) == -42 }
+        capture("atmosphere-history", in: app)
+        let languages = [("zh-Hans", "清晰度", "去朦胧"), ("en", "Clarity", "Dehaze"),
+                         ("de", "Klarheit", "Dunst entfernen"), ("fr", "Clarté", "Correction du voile"),
+                         ("ja", "明瞭度", "かすみの除去"), ("es", "Claridad", "Borrar neblina")]
+        for (language, clarity, dehaze) in languages {
+            app.terminate()
+            app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", language,
+                                   "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+            app.launch(); XCTAssertTrue(app.buttons["editor.import"].waitForExistence(timeout: 10))
+            try importFirstVisiblePhoto(in: app)
+            for (tool, title, value) in [("clarity", clarity, 37.0), ("dehaze", dehaze, -42.0)] {
+                try selectTool(tool, in: app)
+                let button = app.buttons["tool." + tool]
+                XCTAssertTrue(button.label.contains(title)); XCTAssertTrue(button.isHittable)
+                XCTAssertGreaterThanOrEqual(button.frame.height, 44)
+                XCTAssertEqual(try number(app.buttons["adjustment.value"]), value, accuracy: 0.0001, "Atmosphere survives reopening")
+                capture("atmosphere-" + language + "-" + tool, in: app)
+            }
+        }
+    }
+
     func testRAWNativeHistoryPerspectiveAndBatchEntry() throws {
         guard ProcessInfo.processInfo.environment["RAWLAB_RAW_INTEGRATION_UI"] == "1" else {
             throw XCTSkip("Run on a dedicated Photos library seeded with one RAW and explicitly enable RAWLAB_RAW_INTEGRATION_UI.")

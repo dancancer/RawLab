@@ -67,7 +67,7 @@ xcrun --sdk iphonesimulator swiftc -parse-as-library -swift-version 5 -O -sdk "$
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" \
     -Xcc -I"$ROOT/lutools/include" \
     "$ROOT/Shared/Localization.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/HSLTargetAdjustment.swift" \
-    "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/HSLTargetNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" "$ROOT/Shared/ExportMetadata.swift" \
+    "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/AtmosphereSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/HSLTargetNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" "$ROOT/Shared/ExportMetadata.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
     "${PROCESSOR_SOURCES[@]}" "$ROOT/RawLab/tests/PreviewPerformanceTests.swift" "$TEMP/bridge.o" \
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \

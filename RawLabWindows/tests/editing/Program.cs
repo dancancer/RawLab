@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 
 ToneControlsChecks.Run();
+AtmosphereChecks.Run();
 ColorGradingChecks.Run();
 ToneCurveChecks.Run();
 HslTargetChecks.Run();
@@ -210,10 +211,11 @@ try
     mixedState.ColorGrading = new() { Shadows = new(231.25, 0), Midtones = new(110.125, 32.375) };
     var mixedEdit = Edit(mixedState); var mixedFrozen = mixedEdit.Settings.Copy();
     Check(Enum.GetValues<EditorAdjustmentGroup>().Select(EditorAdjustmentRules.DefaultTool).SequenceEqual(new[] {
-        EditorAdjustmentTool.Film,EditorAdjustmentTool.Exposure,EditorAdjustmentTool.WhiteBalance,EditorAdjustmentTool.Vignette,
+        EditorAdjustmentTool.Film,EditorAdjustmentTool.Exposure,EditorAdjustmentTool.WhiteBalance,EditorAdjustmentTool.Clarity,
         EditorAdjustmentTool.Denoise,EditorAdjustmentTool.Geometry }), "Each group opens its frozen default tool");
     foreach(var tool in Enum.GetValues<EditorAdjustmentTool>()) {
         var ownedState=mixedState.Clone();
+        if(EditorAdjustmentRules.AtmosphereParameterFor(tool) is {} atmosphereParameter)ownedState.SetAtmosphere(atmosphereParameter,25);
         if(EditorAdjustmentRules.ToneParameterFor(tool) is {} toneParameter)ownedState.SetTone(toneParameter,25);
         ownedState.Set(Parameter.Strength,37);ownedState.Set(Parameter.Highlights,11);ownedState.Set(Parameter.Shadows,-14);
         ownedState.Set(Parameter.Contrast,23);ownedState.Set(Parameter.ToneCurve,-19);ownedState.Set(Parameter.Temperature,6000);ownedState.Set(Parameter.Tint,12);
@@ -231,6 +233,8 @@ try
             case EditorAdjustmentTool.Denoise:expected=expected with{Denoise=new(),DisplayChromaDenoise=0};break;
             case EditorAdjustmentTool.Geometry:expected=expected with{Geometry=new()};break;
             case EditorAdjustmentTool.Lens:expected=expected with{Lens=new()};break;
+            case EditorAdjustmentTool.Clarity:expected=expected with{Atmosphere=expected.Atmosphere! with{Clarity=0}};break;
+            case EditorAdjustmentTool.Dehaze:expected=expected with{Atmosphere=expected.Atmosphere! with{Dehaze=0}};break;
             case EditorAdjustmentTool.BlackPoint:expected=expected with{ToneControls=expected.ToneControls! with{BlackPoint=0}};break;
             case EditorAdjustmentTool.WhitePoint:expected=expected with{ToneControls=expected.ToneControls! with{WhitePoint=0}};break;
             case EditorAdjustmentTool.Vibrance:expected=expected with{ToneControls=expected.ToneControls! with{Vibrance=0}};break;

@@ -117,7 +117,7 @@ extension EditorUITests {
         case "film", "masterRecipe", "strength": group = "looks"
         case "exposure", "highlights", "shadows", "contrast", "toneCurve": group = "light"
         case "temperature", "tint", "saturation", "hsl": group = "color"
-        case "vignette", "grain": group = "effects"
+        case "clarity", "dehaze", "vignette", "grain": group = "effects"
         case "noiseReduction", "sharpening": group = "detail"
         default: group = "geometry"
         }

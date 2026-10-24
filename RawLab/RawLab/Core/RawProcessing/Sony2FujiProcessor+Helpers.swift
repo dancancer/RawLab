@@ -73,10 +73,19 @@ extension Sony2FujiProcessor {
         }
     }
 
+    func configureAtmosphere(_ session: OpaquePointer, settings: AtmosphereSettings) throws {
+        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的清晰度或去朦胧参数")) }
+        var config = settings.nativeConfig
+        guard sony2fuji_session_set_atmosphere(session, &config) == SONY2FUJI_STATUS_OK else {
+            throw ProcessorError.processFailed(L10n.text("无效的清晰度或去朦胧参数"))
+        }
+    }
+
     func configureSession(_ session: OpaquePointer, settings: RawSettings, interactive: Bool,
                           viewportPreview: Bool = false) throws {
         try configureProcessing(session, identity: settings.processing)
         try configureTone(session, settings: settings.toneSettings)
+        try configureAtmosphere(session, settings: settings.atmosphereSettings)
         try configureCurve(session, settings: settings.curveSettings)
         try configureGrading(session, settings: settings.gradingSettings)
         try configureGeometry(session, settings: settings.geometry)

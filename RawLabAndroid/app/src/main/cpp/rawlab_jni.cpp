@@ -271,6 +271,17 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeSetToneControls(JNIEnv* env
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_rawlab_android_engine_NativeProcessor_nativeSetAtmosphere(JNIEnv* env, jobject, jlong id,
+    jfloat clarity, jfloat dehaze) {
+    try {
+        std::lock_guard<std::mutex> lock(sessionsMutex);
+        sony2fuji_atmosphere_config config{SONY2FUJI_ATMOSPHERE_CONFIG_VERSION, sizeof(config),
+            clarity, dehaze};
+        check(sony2fuji_session_set_atmosphere(sessionFor(id), &config));
+    } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeSetGeometry(JNIEnv* env, jobject, jlong id,
     jfloat x, jfloat y, jfloat width, jfloat height, jint turns,
     jboolean horizontal, jboolean vertical, jfloat straighten,

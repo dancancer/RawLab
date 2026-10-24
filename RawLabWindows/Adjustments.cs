@@ -65,6 +65,7 @@ public sealed class Adjustments
     public PhotoEffectsSettings Effects { get; set; } = new();
     public ColorGradingSettings ColorGrading { get; set; } = new();
     public ToneCurveSettings Curve { get; set; } = new();
+    public AtmosphereSettings Atmosphere { get; set; } = new();
     public ToneControlsSettings ToneControls { get; set; } = new();
     public string? MasterRecipeID { get; private set; }
     public LensSettings Lens { get; set; } = new();
@@ -108,6 +109,7 @@ public sealed class Adjustments
     public AdjustmentSnapshot Capture() => new((double[])values.Clone(), ExposureMode, CameraWhiteBalance, AsShot?.Temperature, AsShot?.Tint,
         Denoise, Effects, DisplayChromaDenoise, Hsl, MasterRecipeID, Lens, Geometry) {
         Processing = ProcessingIdentity.Require(Processing), AIDenoiseEnabled = AIDenoiseEnabled,
+        Atmosphere = Atmosphere.IsIdentity ? null : Atmosphere,
         ToneControls = ToneControls.IsIdentity ? null : ToneControls,
         ColorGrading = ColorGrading.IsDefault ? null : ColorGrading,
         Curve = Curve.IsDefault ? null : Curve
@@ -120,6 +122,8 @@ public sealed class Adjustments
         var denoise = snapshot.Denoise ?? new DenoiseSettings();
         var effects = snapshot.Effects ?? new PhotoEffectsSettings();
         var geometry = snapshot.Geometry ?? new GeometrySettings();
+        var atmosphere = snapshot.Atmosphere ?? new AtmosphereSettings();
+        _ = atmosphere.NativeConfig();
         var tone = snapshot.ToneControls ?? new ToneControlsSettings();
         var grading = snapshot.ColorGrading ?? new ColorGradingSettings();
         _ = grading.NativeConfig();
@@ -135,6 +139,7 @@ public sealed class Adjustments
             AIDenoiseEnabled = snapshot.AIDenoiseEnabled,
             Effects = effects,
             ToneControls = tone,
+            Atmosphere = atmosphere,
             ColorGrading = grading,
             Curve = snapshot.Curve ?? new(),
             Hsl = snapshot.Hsl ?? new HslSettings(),
@@ -166,6 +171,11 @@ public sealed class Adjustments
         }
     }
     public void ResetWhiteBalance() { values[2] = Default(Parameter.Temperature); values[3] = Default(Parameter.Tint); CameraWhiteBalance = true; }
+    public void SetAtmosphere(AtmosphereParameter id, double value)
+    {
+        if (!double.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
+        Atmosphere = Atmosphere.With(id, Math.Clamp(value, -100, 100));
+    }
     public void SetTone(ToneControlParameter id, double value)
     {
         if (!double.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
@@ -203,11 +213,11 @@ public sealed class Adjustments
         if (group == "色彩") { ColorGrading = new(); Hsl = new(); ToneControls = ToneControls with { Vibrance = 0 }; }
         if (group == "明暗") { Curve = new(); ToneControls = ToneControls with { BlackPoint = 0, WhitePoint = 0 }; }
         if (group == "细节") { AIDenoiseEnabled = false; Denoise = new(); DisplayChromaDenoise = 0; }
-        if (group == "效果") Effects = new();
+        if (group == "效果") { Effects = new(); Atmosphere = new(); }
         if (group == "镜头") Lens = new();
         if (group == "几何") Geometry = new();
     }
-    public void ResetAll() { Curve = new(); ColorGrading = new(); ToneControls = new(); AIDenoiseEnabled = false; MasterRecipeID = null; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); }
+    public void ResetAll() { Atmosphere = new(); Curve = new(); ColorGrading = new(); ToneControls = new(); AIDenoiseEnabled = false; MasterRecipeID = null; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); }
     internal Native.Request Request(string path, string? lut, int edge, string? output, int? longEdge = null)
     {
         if (longEdge is { } requested && !ExportSize.IsValid(requested))

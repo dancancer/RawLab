@@ -4,7 +4,7 @@ extension IOSAdjustmentTransfer {
     static let scalarKeys: [Field: WritableKeyPath<RawSettings, Double>] = [
         .strength: \.lutStrength, .exposure: \.exposure, .contrast: \.contrast, .highlights: \.highlights,
         .shadows: \.shadows, .sCurve: \.toneCurve, .saturation: \.saturation, .sharpening: \.sharpening,
-        .blackPoint: \.blackPoint, .whitePoint: \.whitePoint, .vibrance: \.vibrance
+        .blackPoint: \.blackPoint, .whitePoint: \.whitePoint, .vibrance: \.vibrance, .clarity: \.clarity, .dehaze: \.dehaze
     ]
     static let effectKeys: [Field: WritableKeyPath<PhotoEffectsSettings, Double>] = [
         .vignetteAmount: \.vignetteAmount, .vignetteMidpoint: \.vignetteMidpoint, .vignetteRoundness: \.vignetteRoundness,
