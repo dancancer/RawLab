@@ -487,7 +487,9 @@ try
         "Only the exact original off-grid value survives manual confirmation or formatting changes");
     Check(strictRange.Parse("100")==100 && strictRange.Parse("-100")==-100 && strictRange.Parse("")==null && strictRange.Parse("Infinity")==null,
         "Strict UI parser accepts exact boundaries and rejects empty or infinite values");
-    Check(new NumericRange(-4,4,.01,FixedDecimals:2).Format(.005)=="0.005", "Old off-grid exposure is displayed without F2 quantization");
+    Check(new NumericRange(-4,4,.01,FixedDecimals:2).Format(.005)=="0.01", "Old off-grid exposure displays at most two decimals");
+    Check(new NumericRange(-4,4,.01,FixedDecimals:2).Parse("0.01",.005)==.005, "Confirming rounded text preserves the exact stored value");
+    Check(new NumericRange(0,1,.001,AllowOffGrid:true).Format(.25123456789)=="0.25", "Curve coordinates display at most two decimals");
     var inputSession=new NumericInputSession();
     var cropRange=new NumericRange(0,100,.01,.1,.01,CompactPercent:true);
     var cropInput=new NumericInputSession();var cropOriginal=33.33333333333333;

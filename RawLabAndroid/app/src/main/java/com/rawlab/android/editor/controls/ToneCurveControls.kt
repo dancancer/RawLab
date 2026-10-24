@@ -30,7 +30,6 @@ import androidx.compose.ui.unit.dp
 import com.rawlab.android.R
 import com.rawlab.android.engine.ToneCurveSampling
 import com.rawlab.android.settings.*
-import java.text.DecimalFormatSymbols
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -121,8 +120,10 @@ private fun CurveCoordinate(label: Int, value: Double, enabled: Boolean, tag: St
     var editing by remember(session) { mutableStateOf(false) }
     var input by remember(session) { mutableStateOf("") }
     val locale = LocalConfiguration.current.locales[0]
-    val formatted = value.toString().replace('.', DecimalFormatSymbols.getInstance(locale).decimalSeparator)
-    val parsed = parseAdjustmentNumber(input, locale)?.takeIf { it in 0.0..1.0 }
+    val formatted = formatAdjustmentNumber(value, locale)
+    val parsed = parseAdjustmentNumber(input, locale)?.takeIf { it in 0.0..1.0 }?.let {
+        if (it == parseAdjustmentNumber(formatted, locale)) value else it
+    }
     val title = stringResource(label)
     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(title, Modifier.heightIn(min = 48.dp).wrapContentHeight(), style = MaterialTheme.typography.labelMedium)

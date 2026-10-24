@@ -3,6 +3,8 @@ package com.rawlab.android.editor.controls
 import kotlin.math.abs
 import kotlin.math.round
 import java.math.BigDecimal
+import java.math.RoundingMode
+import java.text.DecimalFormatSymbols
 import java.text.NumberFormat
 import java.text.ParsePosition
 import java.util.Locale
@@ -27,7 +29,10 @@ internal data class AdjustmentScale(
 
     fun parse(text: String, locale: Locale = Locale.ROOT, current: Float? = null): Float? {
         val parsed = parseAdjustmentNumber(text, locale)
-        if (compactPercent && current != null && parsed == parseAdjustmentNumber(formatCropPercent(current, locale), locale)) return current
+        if (current != null && current.isFinite() && current in range && parsed != null) {
+            val displayed = if (compactPercent) formatCropPercent(current, locale) else formatAdjustmentNumber(current.toString().toDouble(), locale)
+            if (parsed == parseAdjustmentNumber(displayed, locale)) return current
+        }
         return parsed?.takeIf { it.isFinite() && it in range.start.toDouble()..range.endInclusive.toDouble() }
             ?.takeIf { it == current?.toString()?.toDouble() || BigDecimal(it.toString()).remainder(BigDecimal(step.toString())).signum() == 0 }
             ?.toFloat()
@@ -55,6 +60,13 @@ internal data class AdjustmentScale(
         else (distance / available).coerceIn(-1f, 1f) * 270f
     }
 }
+
+internal fun formatAdjustmentNumber(value: Double, locale: Locale = Locale.ROOT): String =
+    BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+        .replace('.', DecimalFormatSymbols.getInstance(locale).decimalSeparator)
+
+internal fun formatAdjustmentStep(step: Float, locale: Locale = Locale.ROOT): String =
+    if (step == .001f) "1/1000" else formatAdjustmentNumber(step.toString().toDouble(), locale)
 
 internal fun formatCropPercent(value: Float, locale: Locale = Locale.ROOT): String =
     NumberFormat.getNumberInstance(locale).apply {

@@ -8,7 +8,7 @@ private final class ParameterInputState: ObservableObject {
         return try! JSONDecoder().decode(HSLSettings.self, from: JSONSerialization.data(withJSONObject: object))
     }()
     @Published var grading: ColorGradingSettings = {
-        var value = ColorGradingSettings(); value.shadows = ColorGradingWheel(hue: 231.25, saturation: 0); return value
+        var value = ColorGradingSettings(); value.shadows = ColorGradingWheel(hue: 231.25456789, saturation: 0); return value
     }()
     @Published var zone = ColorGradingZone.shadows
     @Published var channel = 0

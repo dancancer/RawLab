@@ -71,29 +71,36 @@ internal sealed record PhotoInfo(
     private static string? FormatShutter(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
-        var text=value.Trim();
-        if (text.EndsWith("s", StringComparison.OrdinalIgnoreCase)) return text;
+        var original=value.Trim();
+        var text=original;
+        if (text.EndsWith("s", StringComparison.OrdinalIgnoreCase)) text=text[..^1].Trim();
         if (text.Contains('/')) return text + " s";
         if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) && double.IsFinite(seconds) && seconds > 0)
-            return seconds <= .5 ? $"1/{Math.Round(1 / seconds):0} s" : $"{seconds:0.###} s";
-        return text;
+            return seconds <= .5 ? $"1/{Math.Round(1 / seconds):0} s" : seconds.ToString("0.##", CultureInfo.GetCultureInfo(Loc.Language)) + " s";
+        return original;
     }
 
     private static string? FormatAperture(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
-        var text=value.Trim();
-        if (text.StartsWith("f/", StringComparison.OrdinalIgnoreCase)) return text;
+        var original=value.Trim();
+        var text=original;
+        if (text.StartsWith("f/", StringComparison.OrdinalIgnoreCase)) text=text[2..].Trim();
         return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var aperture) && double.IsFinite(aperture) && aperture > 0
-            ? $"f/{aperture:0.###}" : text;
+            ? "f/" + aperture.ToString("0.##", CultureInfo.GetCultureInfo(Loc.Language)) : original;
     }
 
     private static string? FormatUnit(string? value, string unit)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
-        var text=value.Trim();
-        return text.StartsWith(unit, StringComparison.OrdinalIgnoreCase) || text.EndsWith(unit, StringComparison.OrdinalIgnoreCase)
-            ? text : text + (unit == "ISO" ? "" : " " + unit);
+        var original=value.Trim();
+        var text=original;
+        if (text.StartsWith(unit, StringComparison.OrdinalIgnoreCase)) text=text[unit.Length..].Trim();
+        if (text.EndsWith(unit, StringComparison.OrdinalIgnoreCase)) text=text[..^unit.Length].Trim();
+        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) && double.IsFinite(number))
+            return number.ToString("0.##", CultureInfo.GetCultureInfo(Loc.Language)) + (unit == "ISO" ? "" : " " + unit);
+        return original.StartsWith(unit, StringComparison.OrdinalIgnoreCase) || original.EndsWith(unit, StringComparison.OrdinalIgnoreCase)
+            ? original : original + (unit == "ISO" ? "" : " " + unit);
     }
 }
 

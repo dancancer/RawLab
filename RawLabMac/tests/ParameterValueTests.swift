@@ -119,14 +119,25 @@ struct ParameterValueTests {
                                            (3.27, .standard, -100.0...100.0),
                                            (12.34, .standard, -100.0...100.0),
                                            (5274.0, .temperature, 2000.0...50000.0),
-                                           (0.05, .standard, -100.0...100.0)] {
+                                           (0.05, .standard, -100.0...100.0),
+                                           (0.25123456789, .curveCoordinate, 0.0...1.0)] {
             let (box, field, coordinator) = fixture(value, precision: precision, range: range)
-            check(precision.parse(precision.text(value)) == value, "An off-grid original is displayed exactly: \(value)")
+            check(precision.text(value).split(separator: ".").last!.count <= 2 || !precision.text(value).contains("."),
+                  "An off-grid original displays at most two decimals: \(value)")
+            blur(field, coordinator: coordinator)
+            check(box.value == value && box.writes == 0, "Unedited rounded text does not write its display value")
+            change(precision.text(value), field: field, coordinator: coordinator)
+            blur(field, coordinator: coordinator)
+            check(box.value == value && box.writes == 0 && !field.invalid, "Confirming unchanged rounded text preserves the original")
             change("+" + String(value), field: field, coordinator: coordinator)
             blur(field, coordinator: coordinator)
             check(box.value == value && box.writes == 0 && !field.invalid,
                   "A format-only edit preserves its off-grid original without invoking the setter: \(value)")
         }
+        let (curveBox, curveField, curveCoordinator) = fixture(0.25123456789, precision: .curveCoordinate, range: 0...1)
+        check(curveCoordinator.wheel(wheel(1, time: 50, fine: true, line: true, precise: false)) && curveBox.value == 0.252,
+              "Fine curve stepping starts at the original value, not rounded display text")
+        check(curveField.stringValue == "0.25", "A sub-hundredth curve step still displays at most two decimals")
         let (box, field, coordinator) = fixture(0.3)
         for invalid in ["1.234", "1.23000000000001", "4.01", "-4.01", "nan", "inf", "1e308", "abc", "", "1,23"] {
             change(invalid, field: field, coordinator: coordinator)

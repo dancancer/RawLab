@@ -30,6 +30,23 @@ class ParameterInputControlsTest {
         compose.runOnIdle { assertEquals(0, writes) }
     }
 
+    @Test fun roundedOriginalApplyAndCancelKeepStoredPrecision() {
+        var writes = 0
+        compose.setContent { RawLabTheme {
+            NumericControl(R.string.hsl_hue, 12.3456f, -100f..100f, "", true, { _, _ -> writes++ }, {})
+        } }
+        val value = compose.onNodeWithTag("adjustment-value-${R.string.hsl_hue}")
+        value.assertTextContains("12.35").performClick()
+        compose.onNodeWithTag("adjustment-input").assertTextContains("12.35")
+        compose.onNodeWithTag("adjustment-input-apply").performClick()
+        compose.runOnIdle { assertEquals(0, writes) }
+        value.performClick()
+        compose.onNodeWithTag("adjustment-input").performTextReplacement("13")
+        compose.onNodeWithText("取消").performClick()
+        value.assertTextContains("12.35")
+        compose.runOnIdle { assertEquals(0, writes) }
+    }
+
     @Test fun invalidNewInputStaysOpenAndLegalNewInputCallsSetterOnce() {
         val writes = mutableListOf<Float>()
         compose.setContent { RawLabTheme {

@@ -34,6 +34,14 @@ class ToneCurveControlsTest {
         compose.onNodeWithTag("curve-coordinate-input").performTextReplacement("0.250000000000001")
         compose.onNodeWithTag("curve-coordinate-apply").performClick()
         compose.runOnIdle { assertEquals(.250000000000001, curve.points[1].x, 0.0); assertEquals(.65f, legacy, 0f) }
+        compose.onNodeWithTag("curve-x").assertTextContains("0.25").performClick()
+        compose.onNodeWithTag("curve-coordinate-input").assertTextContains("0.25")
+        compose.onNodeWithTag("curve-coordinate-apply").performClick()
+        compose.runOnIdle { assertEquals(.250000000000001, curve.points[1].x, 0.0) }
+        compose.onNodeWithTag("curve-x").performClick()
+        compose.onNodeWithTag("curve-coordinate-input").performTextReplacement("0.3")
+        compose.onNodeWithText("取消").performClick()
+        compose.runOnIdle { assertEquals(.250000000000001, curve.points[1].x, 0.0) }
         compose.onNodeWithTag("curve-point-0").performClick()
         compose.onNodeWithTag("curve-x").assertIsNotEnabled()
         compose.onNodeWithTag("curve-remove").assertIsNotEnabled()

@@ -22,6 +22,19 @@ internal static class FeatureRegressionChecks
         check(missing?.CaptureLine.Contains("6500", StringComparison.Ordinal) != true &&
               missing?.CaptureLine.Contains("ISO", StringComparison.Ordinal) != true,
             "missing EXIF fields do not invent camera settings");
+        var precise = new PhotoInfo("precise.ARW",null,null,null,null,null,null,null,"1.23456 s","f/2.34567","400.12345","35.6789 mm");
+        var preciseText=precise.CaptureLine;
+        check(preciseText.Contains("1.23 s") && preciseText.Contains("f/2.35") && preciseText.Contains("400.12") && preciseText.Contains("35.68 mm"),
+            "Editor metadata limits numeric values to two decimals, including values with units");
+        var unknown=new PhotoInfo("unknown.ARW",null,null,null,null,null,null,null,"bulb s","f/unknown","ISO","mm");
+        check(unknown.CaptureLine.Contains("bulb s") && unknown.CaptureLine.Contains("f/unknown") && unknown.CaptureLine.Contains("mm"),
+            "Unrecognized metadata keeps its original text and units");
+        var language=Loc.Language;
+        try {
+            Loc.Initialize("de");
+            check(precise.CaptureLine.Contains("1,23 s") && precise.CaptureLine.Contains("f/2,35") && precise.CaptureLine.Contains("35,68 mm"),
+                "Metadata number separators follow the selected interface language");
+        } finally {Loc.Initialize(language);}
         var slow = PhotoInfoReader.Parse("[{\"FileName\":\"slow.ARW\",\"ExposureTime\":0.8}]", "slow.ARW");
         check(slow?.CaptureLine.Contains("0.8 s", StringComparison.Ordinal) == true &&
               slow.CaptureLine.Contains("1/1", StringComparison.Ordinal) == false,

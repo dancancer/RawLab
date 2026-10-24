@@ -35,7 +35,7 @@ struct IOSToneCurveControls: View {
         })
         return AdjustmentControl(title: L10n.text(horizontal ? "输入坐标" : "输出坐标"), value: binding,
             range: 0...1, step: 0.001, defaultValue: point.x,
-            formatter: { String(format: "%.6f", locale: L10n.locale, $0) }, identifier: horizontal ? "curve.x" : "curve.y",
+            formatter: { String(format: "%.2f", locale: L10n.locale, $0) }, identifier: horizontal ? "curve.x" : "curve.y",
             compactNumber: true, compactDecimals: nil, onEditingChanged: onEditingChanged)
     }
 }

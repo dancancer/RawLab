@@ -75,7 +75,7 @@ struct AdjustmentControl: View {
     private func complete(_ value: Double) -> String { "\(number(value)) \(unit)".trimmingCharacters(in: .whitespaces) }
     private var help: String {
         L10n.format("默认值：%@；范围：%@ 至 %@；步进：%@。", validDefault.map(complete) ?? "—",
-                    complete(range.lowerBound), complete(range.upperBound), complete(step))
+                    complete(range.lowerBound), complete(range.upperBound), step * displayScale == 0.001 ? "1/1000 " + unit : complete(step))
     }
 
     var body: some View {

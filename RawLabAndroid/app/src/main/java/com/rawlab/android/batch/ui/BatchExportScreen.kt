@@ -351,7 +351,7 @@ internal fun SettingsSummary(settings: EditSettings, lookName: String) {
         } else {
             SettingLine(stringResource(R.string.curve_title), stringResource(R.string.curve_summary, settings.curve.points.size))
             settings.curve.points.forEachIndexed { index, point ->
-                SettingLine(stringResource(R.string.curve_point_number, index + 1), "${point.x} → ${point.y}")
+                SettingLine(stringResource(R.string.curve_point_number, index + 1), String.format(androidx.compose.ui.platform.LocalConfiguration.current.locales[0], "%.2f → %.2f", point.x, point.y))
             }
         }
         SettingLine(AppStrings.text(R.string.black_point), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.blackPoint))

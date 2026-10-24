@@ -145,7 +145,7 @@ struct BatchExportView: View {
                     if !model.job.settings.curveSettings.isDefault {
                         valueRow(L10n.text("曲线"), L10n.format("多点曲线（%d 个控制点）", model.job.settings.curveSettings.points.count))
                         ForEach(Array(model.job.settings.curveSettings.points.enumerated()), id: \.offset) { index, point in
-                            valueRow(L10n.format("控制点 %d", index + 1), "\(point.x) → \(point.y)")
+                            valueRow(L10n.format("控制点 %d", index + 1), String(format: "%.2f → %.2f", locale: L10n.locale, point.x, point.y))
                         }
                     }
                     if let denoise = model.job.settings.waveletNoiseReduction {

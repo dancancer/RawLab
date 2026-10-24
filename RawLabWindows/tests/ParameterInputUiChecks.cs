@@ -22,9 +22,11 @@ internal static class ParameterInputUiChecks
                 "A full-width crop has a valid stationary native X control");
             var changes=new List<double>();row.Changed+=(value,_)=>changes.Add(value);
             row.SourceIdentity="source-a";row.Refresh("Exposure",new(-4,4,.01,.1,.01,false,2),.005,0,"EV",inputScope:"exposure");host.UpdateLayout();
-            check(row.Number.Text=="0.005","Native input shows a legal original off-grid exposure without F2 rounding");
+            check(row.Number.Text=="0.01","Native input displays the original off-grid exposure with two decimals");
             row.Number.Focus();row.Number.Text="0.0050";PressKey(row.Number,Key.Enter);
-            check(changes.Count==0 && row.Number.Text=="0.005","Formatting-only Enter preserves the original and makes no edit");
+            check(changes.Count==0 && row.Number.Text=="0.01","Formatting-only Enter preserves the original and makes no edit");
+            row.Number.Text="0.01";PressKey(row.Number,Key.Enter);
+            check(changes.Count==0 && row.Number.ActualValue==.005,"Confirming the rounded label preserves the full original precision");
             var peer=(IRangeValueProvider)UIElementAutomationPeer.CreatePeerForElement(row.Slider)!.GetPattern(PatternInterface.RangeValue)!;
             check(peer.Value==.005,"UIA exposes the complete original off-grid value");
             peer.SetValue(peer.Value);
@@ -73,6 +75,20 @@ internal static class ParameterInputUiChecks
             reset.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));row.ContextMenu.IsOpen=false;
             check(changes.Last()==0,"Semantic reset uses the same effective default");
         } finally {host.Close();}
+        var curveRow=new ParameterRow();var curveWindow=new Window {Content=curveRow,Width=600,Height=200};curveWindow.Show();
+        try {
+            const double precise=.25123456789;
+            var changes=new List<double>();curveRow.Changed+=(value,_)=>changes.Add(value);
+            curveRow.Refresh("Input",new(0,1,.001,.01,.001,AllowOffGrid:true),precise,0);
+            curveWindow.UpdateLayout();
+            check(curveRow.Number.Text=="0.25" && curveRow.Number.ActualValue==precise,"Curve input limits display decimals while retaining the Double value");
+            check(System.Windows.Automation.AutomationProperties.GetHelpText(curveRow.Number).Contains("1/1000"),"Fine-step help never displays a nonzero step as zero");
+            curveRow.Number.Focus();curveRow.Number.Text="0.25";PressKey(curveRow.Number,Key.Enter);
+            check(changes.Count==0 && curveRow.Number.ActualValue==precise,"Unchanged rounded curve text makes no edit");
+            curveRow.Number.Text="0.260000000000001";PressKey(curveRow.Number,Key.Enter);
+            check(changes.SequenceEqual(new[]{.260000000000001}) && curveRow.Number.Text=="0.26","Precise curve input commits once then displays two decimals");
+            Snapshot(curveWindow,curveRow,Path.Combine(output,"curve-numeric-display.png"));
+        } finally {curveWindow.Close();}
         ColorGradingUiChecks.Run(output,check);
     }
     private static void PressKey(TextBox number,Key key)=>number.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(number),Environment.TickCount,key){RoutedEvent=Keyboard.PreviewKeyDownEvent});

@@ -35,6 +35,10 @@ struct BatchExportTests {
               "batch summary includes each tone value in the editor units")
         check(value("降噪") != nil && value("粗色斑抑制") != nil,
               "batch denoise rows use the editor's toggle and parameter names")
+        settings.curveSettings = .identity.inserting(x: 0.25123456789, y: 0.456789)
+        let curveRows = BatchSettingsSummary.details(settings)
+        check(curveRows.contains { $0.value == "0,25 → 0,46" }, "Batch curve summary limits localized coordinates to two decimals")
+        check(settings.curveSettings.points[1].x == 0.25123456789, "Formatting a summary preserves curve precision")
         // 目录里"关闭"是关闭按钮（Close / Schließen），关着的开关要用"停用"（Off / Aus），与 Mac 一致
         check(value("降噪") == L10n.text("停用") && value("畸变矫正") == L10n.text("停用"),
               "switched-off settings read Off rather than the Close button's label")

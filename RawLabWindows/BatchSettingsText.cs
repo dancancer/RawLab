@@ -11,8 +11,8 @@ internal static class BatchSettingsText
         if (!state.Curve.IsDefault) {
             text += "\n" + Loc.Format("多点曲线（{0} 个控制点）", state.Curve.Points.Count);
             text += "\n" + string.Join("\n", state.Curve.Points.Select((point, index) =>
-                Loc.Format("控制点 {0}", index + 1) + "  " + point.X.ToString("G", CultureInfo.GetCultureInfo(Loc.Language)) +
-                " → " + point.Y.ToString("G", CultureInfo.GetCultureInfo(Loc.Language))));
+                Loc.Format("控制点 {0}", index + 1) + "  " + point.X.ToString("0.##", CultureInfo.GetCultureInfo(Loc.Language)) +
+                " → " + point.Y.ToString("0.##", CultureInfo.GetCultureInfo(Loc.Language))));
         }
         text += "\n" + string.Join("\n", ToneControlSpec.All.Select(spec =>
             Row(spec.Title, state.ToneControls[spec.Id].ToString("+0.#;-0.#;0", CultureInfo.GetCultureInfo(Loc.Language)) + "%")));
@@ -39,7 +39,7 @@ internal static class BatchSettingsText
         text += "\n" + Loc.Format("几何：左边 {0:0.##}% · 顶边 {1:0.##}% · 宽度 {2:0.##}% · 高度 {3:0.##}% · 旋转 {4}° · 拉直 {5:0.##}°",
             geometry.CropX * 100, geometry.CropY * 100, geometry.CropWidth * 100, geometry.CropHeight * 100,
             geometry.QuarterTurns * 90, geometry.StraightenDegrees);
-        text += "\n"+Loc.Format("透视：水平 {0:0.###} · 垂直 {1:0.###}",geometry.PerspectiveHorizontal,geometry.PerspectiveVertical);
+        text += "\n"+Loc.Format("透视：水平 {0:0.###} · 垂直 {1:0.###}",geometry.PerspectiveHorizontal.ToString("0.##",CultureInfo.GetCultureInfo(Loc.Language)),geometry.PerspectiveVertical.ToString("0.##",CultureInfo.GetCultureInfo(Loc.Language)));
         text += $"\n{Loc.Text("水平翻转")}  {OnOff(geometry.FlipHorizontal)} · {Loc.Text("垂直翻转")}  {OnOff(geometry.FlipVertical)}";
         var effects = state.Effects;
         var chroma = state.DisplayChromaDenoise switch { 1 => Loc.Text("细节优先"), 2 => Loc.Text("去噪优先"), _ => Loc.Text("停用") };

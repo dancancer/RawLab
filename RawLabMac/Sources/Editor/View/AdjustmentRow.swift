@@ -152,7 +152,7 @@ struct ParameterRow: View {
     private var metadata: String {
         L10n.format("默认值：%@；范围：%@ 至 %@；步进：%@。",
                     precision.text(defaultValue) + unit, precision.text(range.lowerBound) + unit,
-                    precision.text(range.upperBound) + unit, precision.text(precision.fineStep) + unit)
+                    precision.text(range.upperBound) + unit, precision.fineStepText + unit)
     }
     private func reset() {
         ParameterValueField.cancelPendingInputs()

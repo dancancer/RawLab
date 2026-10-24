@@ -30,7 +30,7 @@ enum BatchSettingsSummary {
         let curve = settings.curveSettings.isDefault ? [] :
             [row("曲线", L10n.format("多点曲线（%d 个控制点）", settings.curveSettings.points.count))] +
             settings.curveSettings.points.enumerated().map { index, point in
-                BatchSettingRow(title: L10n.format("控制点 %d", index + 1), value: "\(point.x) → \(point.y)")
+                BatchSettingRow(title: L10n.format("控制点 %d", index + 1), value: String(format: "%.2f → %.2f", locale: L10n.locale, point.x, point.y))
             }
         let grading = ColorGradingZone.allCases.map { zone in
             BatchSettingRow(title: L10n.text("颜色分级") + " · " + zone.title,
@@ -50,7 +50,7 @@ enum BatchSettingsSummary {
     }
 
     private static func geometry(_ value: GeometrySettings) -> [BatchSettingRow] {
-        [row("裁切区域", String(format: "%.3f, %.3f · %.3f × %.3f", locale: L10n.locale,
+        [row("裁切区域", String(format: "%.2f, %.2f · %.2f × %.2f", locale: L10n.locale,
               value.cropX, value.cropY, value.cropWidth, value.cropHeight)),
          row("旋转", "\(value.quarterTurns * 90)°"), row("水平翻转", onOff(value.flipHorizontal)),
          row("垂直翻转", onOff(value.flipVertical)), row("拉直", String(format: "%.2f°", locale: L10n.locale, value.straightenDegrees)),

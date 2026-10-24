@@ -263,7 +263,7 @@ struct BatchSettingsSummary: View {
             if !settings.curveSettings.isDefault {
                 DisclosureGroup(L10n.format("多点曲线（%d 个控制点）", settings.curveSettings.points.count)) {
                     ForEach(Array(settings.curveSettings.points.enumerated()), id: \.offset) { index, point in
-                        summary(L10n.format("控制点 %d", index + 1), "\(point.x) → \(point.y)")
+                        summary(L10n.format("控制点 %d", index + 1), String(format: "%.2f → %.2f", locale: L10n.locale, point.x, point.y))
                     }
                 }
             }

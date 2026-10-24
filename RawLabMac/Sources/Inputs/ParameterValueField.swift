@@ -159,10 +159,10 @@ struct ParameterValueField: NSViewRepresentable {
                 parent.precision.text(parent.defaultValue) + parent.unit,
                 parent.precision.text(parent.range.lowerBound) + parent.unit,
                 parent.precision.text(parent.range.upperBound) + parent.unit,
-                parent.precision.text(parent.precision.fineStep) + parent.unit)
+                parent.precision.fineStepText + parent.unit)
             field.normalHelp = metadata + " " + L10n.format("滚轮：%@；Shift：%@；范围：%@ 至 %@ %@",
                                            parent.precision.text(parent.precision.normalStep),
-                                           parent.precision.text(parent.precision.fineStep),
+                                           parent.precision.fineStepText,
                                            parent.precision.text(parent.range.lowerBound),
                                            parent.precision.text(parent.range.upperBound), parent.unit)
             if externalChange || reset || (!editing && !retainedInvalidDraft) {
@@ -221,7 +221,7 @@ struct ParameterValueField: NSViewRepresentable {
             guard let value = parent.precision.parse(text) else { return L10n.text("请输入有效数字") }
             guard parent.range.contains(value) else { return L10n.text("请输入范围内的有效数字") }
             guard parent.precision.accepts(value, original: parent.value, in: parent.range) else {
-                return L10n.format("请使用 %@ 的步进。", parent.precision.text(parent.precision.fineStep))
+                return L10n.format("请使用 %@ 的步进。", parent.precision.fineStepText)
             }
             return nil
         }
@@ -343,7 +343,8 @@ struct ParameterValueField: NSViewRepresentable {
         func wheel(_ event: NSEvent) -> Bool {
             guard let field else { return false }
             let draft = field.currentEditor()?.string ?? field.stringValue
-            let starting = parent.precision.parse(draft)
+            let starting = parent.precision.isUnchangedDisplay(draft, original: parent.value)
+                ? parent.value : parent.precision.parse(draft)
             let fine = event.modifierFlags.contains(.shift)
             // Shift 滚轮可能由 AppKit 转为横轴；普通横向滚动仍交给父视图。
             let delta = event.scrollingDeltaY != 0 ? event.scrollingDeltaY : (fine ? event.scrollingDeltaX : 0)

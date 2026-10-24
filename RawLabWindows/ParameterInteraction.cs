@@ -14,7 +14,7 @@ public sealed record NumericRange(double Min, double Max, double Grid = .1, doub
     public NumericInputError Validate(string text, double? original, out double value)
     {
         if(!double.TryParse(text,NumberStyles.Float,CultureInfo.GetCultureInfo(Loc.Language),out value) || !double.IsFinite(value))return NumericInputError.Invalid;
-        if(CompactPercent && original is {} current && double.TryParse(Format(current),NumberStyles.Float,
+        if(original is {} current && double.IsFinite(current) && current>=Min && current<=Max && double.TryParse(Format(current),NumberStyles.Float,
             CultureInfo.GetCultureInfo(Loc.Language),out var displayed) && value==displayed)
         {value=current;return NumericInputError.None;}
         if(value<Min || value>Max)return NumericInputError.Range;
@@ -27,10 +27,11 @@ public sealed record NumericRange(double Min, double Max, double Grid = .1, doub
     public string Format(double value)
     {
         var culture=CultureInfo.GetCultureInfo(Loc.Language);
-        if(CompactPercent)return value.ToString("0.##",culture);
-        var text=value.ToString(FixedDecimals>=0 ? "F"+FixedDecimals : "G",culture);
-        return double.TryParse(text,NumberStyles.Float,culture,out var shown) && shown==value ? text : value.ToString("G",culture);
+        var clean=Math.Abs(value)<.005 ? 0 : value;
+        return clean.ToString(!CompactPercent && FixedDecimals>=0 ? "F"+Math.Min(2,FixedDecimals) : "0.##",culture);
     }
+    public string StepText(double step) => step==.001 ? "1/1000" : Format(step);
+
     public (double Start,double End) Fill(double origin,double current) => (Math.Min(Position(origin),Position(current)),Math.Max(Position(origin),Position(current)));
     public static NumericRange For(ParameterSpec spec) => new(spec.Min, spec.Max, spec.Step,
         spec.Id == Parameter.Exposure ? .1 : spec.Id == Parameter.Temperature ? 100 : 1,

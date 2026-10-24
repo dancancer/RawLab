@@ -116,7 +116,7 @@ public sealed class ParameterRow : Grid
         this.title=title;this.suffix=suffix;range=limits;value=current;defaultValue=reset;scope=inputScope??title;
         var rebound=input.Bind(source,scope,limits,current);
         label.Text=title;unit.Text=suffix;IsEnabled=enabled;
-        help=Loc.Format("默认值：{0}；范围：{1} 至 {2}；步进：{3}。",limits.Format(reset)+suffix,limits.Format(limits.Min)+suffix,limits.Format(limits.Max)+suffix,limits.Format(limits.Grid)+suffix);
+        help=Loc.Format("默认值：{0}；范围：{1} 至 {2}；步进：{3}。",limits.Format(reset)+suffix,limits.Format(limits.Min)+suffix,limits.Format(limits.Max)+suffix,limits.StepText(limits.Grid)+suffix);
         AutomationProperties.SetName(Slider,title);AutomationProperties.SetName(Number,title);
         AutomationProperties.SetHelpText(Number,help);AutomationProperties.SetHelpText(Slider,help);
         AutomationProperties.SetName(ResetButton,Loc.Format("重置{0}",title));ResetButton.ToolTip=Loc.Format("重置{0}",title);
@@ -148,7 +148,7 @@ public sealed class ParameterRow : Grid
         if(!IsEnabled || Number.IsReadOnly)return !HasInvalidInput;
         if(input.Commit() is {} next){Publish(next,false);return true;}
         if(input.Error==NumericInputError.None){RestoreText();return true;}
-        var message=input.Error==NumericInputError.Grid ? Loc.Format("请使用 {0} 的步进。",range.Format(range.Grid)) : Loc.Text("请输入有效数字");
+        var message=input.Error==NumericInputError.Grid ? Loc.Format("请使用 {0} 的步进。",range.StepText(range.Grid)) : Loc.Text("请输入有效数字");
         error.Text=message+" "+help;error.Visibility=Visibility.Visible;Number.ToolTip=error.Text;
         AutomationProperties.SetHelpText(Number,error.Text);InvalidInput?.Invoke();return false;
     }
