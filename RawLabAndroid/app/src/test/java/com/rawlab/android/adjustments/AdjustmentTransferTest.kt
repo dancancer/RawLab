@@ -133,6 +133,24 @@ class AdjustmentTransferTest {
         assertThrows(AdjustmentTransferException::class.java) { prepare(lens, context = context.copy(isRaw = false)) }
     }
 
+    @Test fun manualLensWithoutProfilePreservesSelectionAndRejectsEnabledRequests() {
+        val source = EditSettings(lens = LensSettings(manual = true))
+        for (scope in listOf(AdjustmentScope.All, AdjustmentScope.Custom(setOf(F.LENS_PROFILE)))) {
+            val copied = AdjustmentTransfer.capture(scope, source, context)
+            assertEquals(AdjustmentValue.Text(source.lens.coreProfileId), copied[F.LENS_PROFILE])
+            val restored = AdjustmentPayload.decode(copied.encode())
+            assertEquals(copied, restored)
+            val applied = prepare(restored)
+            assertTrue(applied.lens.manual); assertNull(applied.lens.profileId)
+        }
+        val standard = AdjustmentTransfer.capture(AdjustmentScope.Custom(F.COMMON), source, context)
+        assertTrue(standard.fields.none { it in F.LENS })
+        val enabled = capture(source.copy(lens = LensSettings(distortion = true, manual = true)), F.LENS_DISTORTION, F.LENS_PROFILE)
+        var validated = false
+        assertThrows(AdjustmentTransferException::class.java) { prepare(enabled, context = context.copy(validateLens = { validated = true })) }
+        assertFalse(validated)
+    }
+
     @Test fun fractionalEffectsBypassUIQuantizationAndRawRequestsRejectRaster() {
         val result = prepare(payload(F.GRAIN_AMOUNT to AdjustmentValue.Number(12.375), F.VIGNETTE_MIDPOINT to AdjustmentValue.Number(32.25)))
         assertEquals(12.375f, result.effects.grainAmount); assertEquals(32.25f, result.effects.vignetteMidpoint)

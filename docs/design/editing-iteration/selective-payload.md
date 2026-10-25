@@ -77,7 +77,9 @@ Mac 的 UI 百分比、native snapshot 或 Agent render recipe。
 | `geometry.quarter_turns`、`geometry.flip_horizontal/vertical` | 整数 `0...3`、布尔值。 |
 | `geometry.straighten_degrees`、`geometry.perspective.horizontal/vertical` | `[-45,45]` 度、`[-1,1]`。 |
 | `geometry.lens.distortion/tca/auto_crop` | 各自独立布尔值。 |
-| `geometry.lens.profile_id` | null 为自动匹配；非空 ID 为显式请求，不包含源匹配结果。 |
+| `geometry.lens.profile_id` | null 为自动匹配；非空 ID 为显式请求，不包含源匹配结果。手动模式未选择 profile 时使用保留字符串 `__rawlab_manual_selection_required__`。 |
+
+保留字符串必须解码回手动模式和空 profile，不能作为实际镜头 ID。该状态可传输关闭的校正请求；若同时启用 distortion 或 TCA，prepare 必须在目标镜头校验器前拒绝。
 
 表中的斜线是多个独立字段的缩写，不是实际 JSON 键。wavelet 明确是完整算法请求对象；
 raw 与 chroma 不因选择 wavelet 而被偷偷改写，其有效路径仍由本端既有算法选择规则决定。

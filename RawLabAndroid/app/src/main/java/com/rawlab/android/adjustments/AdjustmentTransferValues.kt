@@ -80,7 +80,7 @@ internal object AdjustmentTransferValues {
         val lens = if (context.isRaw) s.lens else LensSettings()
         boolean(AdjustmentField.LENS_DISTORTION, lens.distortion); boolean(AdjustmentField.LENS_TCA, lens.tca)
         boolean(AdjustmentField.LENS_AUTO_CROP, lens.autoCrop)
-        values[AdjustmentField.LENS_PROFILE] = if (!lens.manual) AdjustmentValue.Null else AdjustmentValue.Text(lens.profileId.orEmpty())
+        values[AdjustmentField.LENS_PROFILE] = if (!lens.manual) AdjustmentValue.Null else AdjustmentValue.Text(lens.coreProfileId)
         return values
     }
 
@@ -126,7 +126,9 @@ internal object AdjustmentTransferValues {
             val lens = with(original.lens) { copy(distortion = boolean(AdjustmentField.LENS_DISTORTION, distortion),
                 tca = boolean(AdjustmentField.LENS_TCA, tca), autoCrop = boolean(AdjustmentField.LENS_AUTO_CROP, autoCrop),
                 manual = if (profile != null) profile != AdjustmentValue.Null else manual,
-                profileId = if (profile != null) profile.text else profileId) }
+                profileId = if (profile != null) profile.text?.takeUnless { it == LensSettings(manual = true).coreProfileId } else profileId) }
+            if (lens.enabled && lens.manual && lens.profileId == null)
+                throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, AdjustmentField.LENS_PROFILE.id)
             if (lens.enabled) {
                 if (!context.isRaw || context.validateLens == null) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "target lens calibration unavailable")
                 context.validateLens.invoke(lens)

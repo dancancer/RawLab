@@ -93,7 +93,7 @@ extension MacAdjustmentTransfer {
         result[Field.lensDistortion.rawValue] = .boolean(lens.distortion)
         result[Field.lensTCA.rawValue] = .boolean(lens.tca)
         result[Field.lensAutoCrop.rawValue] = .boolean(lens.autoCrop)
-        result[Field.lensProfile.rawValue] = lens.mode == .automatic ? .null : .string(lens.profileID ?? "")
+        result[Field.lensProfile.rawValue] = lens.mode == .automatic ? .null : .string(lens.coreProfileID)
         return result
     }
 
@@ -139,7 +139,10 @@ extension MacAdjustmentTransfer {
             if let value = payload[.lensAutoCrop]?.boolean { lens.autoCrop = value }
             if let value = payload[.lensProfile] {
                 lens.mode = value == .null ? .automatic : .manual
-                lens.profileID = value.string
+                lens.profileID = value.string == "__rawlab_manual_selection_required__" ? nil : value.string
+            }
+            if lens.isEnabled && lens.mode == .manual && lens.profileID == nil {
+                throw AdjustmentTransferError.unrepresentable(Field.lensProfile.rawValue)
             }
             guard context.isRaw || !lens.isEnabled else { throw AdjustmentTransferError.incompatible("geometry.lens") }
             if lens.isEnabled {

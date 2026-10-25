@@ -36,6 +36,7 @@ struct AdjustmentTransferTests {
         try whiteBalanceGuards()
         try independentRequestFields()
         try serialization()
+        try manualLensSelectionTransport()
         try sharedFixtures()
     }
 
@@ -417,4 +418,28 @@ struct AdjustmentTransferTests {
                 target: state(), context: invalid)
         }
     }
+    static func manualLensSelectionTransport() throws {
+        var source = Adjustments()
+        source.lensCorrection = LensCorrectionSettings(mode: .manual)
+        for scope: AdjustmentTransferScope in [.all, .custom([.lensProfile])] {
+            let payload = try MacAdjustmentTransfer.capture(scope: scope, snapshot: state(source), context: raw)
+            check(payload[.lensProfile] == .string(source.lensSettings.coreProfileID), "Manual lens uses reserved nonempty transport")
+            let restored = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: JSONEncoder().encode(payload))
+            check(restored == payload, "Manual lens payload round-trips")
+            let applied = try MacAdjustmentTransfer.prepare(payload: restored, target: state(), context: raw)
+            check(applied.settings.lensSettings.mode == .manual && applied.settings.lensSettings.profileID == nil,
+                "Manual lens without profile preserves selection mode and nil profile")
+        }
+        let standard = try MacAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
+        check(standard.fields.isDisjoint(with: AdjustmentTransferField.lensFields), "Default scope excludes manual lens selection")
+        source.lensCorrection = LensCorrectionSettings(distortion: true, mode: .manual)
+        let enabled = try MacAdjustmentTransfer.capture(scope: .custom([.lensDistortion, .lensProfile]), snapshot: state(source), context: raw)
+        var permissive = raw; var validated = false
+        permissive.validateLensRequest = { _ in validated = true }
+        rejects("Enabled manual lens without profile rejects") {
+            _ = try MacAdjustmentTransfer.prepare(payload: enabled, target: state(), context: permissive)
+        }
+        check(!validated, "Missing manual profile rejects before target validation")
+    }
+
 }
