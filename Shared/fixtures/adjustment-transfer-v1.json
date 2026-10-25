@@ -1,0 +1,420 @@
+{
+  "fixture_version": 1,
+  "vectors": [
+    {
+      "id": "plain-scalars",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "light.exposure": 1.25,
+          "light.contrast": 1.2,
+          "light.highlights": -0.4
+        }
+      },
+      "neutral_effective": {
+        "light.exposure": 1.25,
+        "light.contrast": 1.2,
+        "light.highlights": -0.4
+      }
+    },
+    {
+      "id": "recipe-half-once",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": true,
+          "processing_version": 2,
+          "recipe": {
+            "id": "hamada_daylight_v2",
+            "strength": 0.5,
+            "settings_version": 3
+          }
+        },
+        "values": {
+          "light.exposure": 1.4,
+          "light.contrast": 1.4
+        }
+      },
+      "neutral_effective": {
+        "light.exposure": 0.7,
+        "light.contrast": 1.2
+      }
+    },
+    {
+      "id": "fractional-hsl",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.hsl.hue.red": 12.375
+        }
+      },
+      "neutral_effective": {
+        "color.hsl.hue.red": 12.375
+      }
+    },
+    {
+      "id": "legacy-hsl-unscaled",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": true,
+          "processing_version": 2,
+          "recipe": {
+            "id": "hamada_daylight_v2",
+            "strength": 0.5,
+            "settings_version": 2
+          }
+        },
+        "values": {
+          "color.hsl.hue.red": 37.25
+        }
+      },
+      "neutral_effective": {
+        "color.hsl.hue.red": 37.25
+      }
+    },
+    {
+      "id": "current-hsl-native-clamp",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": true,
+          "processing_version": 2,
+          "recipe": {
+            "id": "hamada_daylight_v2",
+            "strength": 2,
+            "settings_version": 3
+          }
+        },
+        "values": {
+          "color.hsl.hue.red": 80
+        }
+      },
+      "neutral_effective": {
+        "color.hsl.hue.red": 100
+      }
+    },
+    {
+      "id": "camera-wb",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.white_balance.mode": "camera",
+          "color.white_balance.temperature_kelvin": null,
+          "color.white_balance.tint": null
+        }
+      }
+    },
+    {
+      "id": "raster-recipe-relative-tint",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": false,
+          "processing_version": 2,
+          "recipe": {
+            "id": "hamada_daylight_v2",
+            "strength": 0.5,
+            "settings_version": 3
+          }
+        },
+        "values": {
+          "color.white_balance.mode": "none",
+          "color.white_balance.temperature_kelvin": null,
+          "color.white_balance.tint": 5
+        }
+      }
+    },
+    {
+      "id": "partial-fixed-kelvin",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.white_balance.temperature_kelvin": 5400
+        }
+      }
+    },
+    {
+      "id": "partial-crop-width",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "geometry.crop.width": 0.4
+        }
+      }
+    },
+    {
+      "id": "independent-lens-request",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "geometry.lens.distortion": true,
+          "geometry.lens.profile_id": "fixture-profile"
+        }
+      }
+    },
+    {
+      "id": "legacy-denoise",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "detail.denoise.raw_level": 2,
+          "detail.denoise.chroma_mode": null,
+          "detail.denoise.wavelet": null
+        }
+      }
+    },
+    {
+      "id": "wavelet-object",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "detail.denoise.wavelet": {
+            "enabled": true,
+            "luma": 10,
+            "chroma": 72,
+            "coarse": 100,
+            "preset": "clean"
+          }
+        }
+      }
+    },
+    {
+      "id": "raw-none-wb",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.white_balance.mode": "none"
+        }
+      }
+    },
+    {
+      "id": "raster-fixed-kelvin",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": false,
+          "processing_version": 2
+        },
+        "values": {
+          "color.white_balance.temperature_kelvin": 5400
+        }
+      }
+    },
+    {
+      "id": "camera-wb-with-derived-kelvin",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.white_balance.mode": "camera",
+          "color.white_balance.temperature_kelvin": 5400
+        }
+      }
+    },
+    {
+      "id": "raster-raw-denoise",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": false,
+          "processing_version": 2
+        },
+        "values": {
+          "detail.denoise.raw_level": 1
+        }
+      }
+    },
+    {
+      "id": "boolean-is-not-number",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "light.exposure": true
+        }
+      }
+    },
+    {
+      "id": "invalid-crop-width",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "geometry.crop.width": 1.2
+        }
+      }
+    },
+    {
+      "id": "unknown-selected-field",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "light.future_parameter": 1
+        }
+      }
+    },
+    {
+      "id": "wavelet-unknown-key",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "detail.denoise.wavelet": {
+            "enabled": true,
+            "luma": 10,
+            "chroma": 72,
+            "coarse": 100,
+            "preset": "clean",
+            "future": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "future-payload-version",
+      "valid": false,
+      "payload": {
+        "payload_version": 99,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "light.exposure": 1
+        }
+      }
+    },
+    {
+      "id": "unknown-source-key",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-source",
+          "is_raw": true,
+          "processing_version": 2,
+          "as_shot_kelvin": 5200
+        },
+        "values": {
+          "light.exposure": 1
+        }
+      }
+    }
+  ]
+}

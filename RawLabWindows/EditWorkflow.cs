@@ -21,13 +21,14 @@ public partial class MainWindow
     private void InitializeEditWorkflow()
     {
         editSaveTimer.Tick += (_, _) => { editSaveTimer.Stop(); SaveEdits(); };
-        editNoticeTimer.Tick += (_, _) => { editNoticeTimer.Stop(); if (RetrySave.Visibility != Visibility.Visible) {SaveState.Text = "";saveNoticeKey=null;} };
-        Deactivated += (_, _) => SaveEdits();
+        editNoticeTimer.Tick += (_, _) => { editNoticeTimer.Stop(); if (RetrySave.Visibility != Visibility.Visible && !adjustmentReloadRequired) {SaveState.Text = "";saveNoticeKey=null;} };
+        Deactivated += (_, _) => {CancelParameterInputs();CancelEditGesture();SaveEdits();};
         try { editStore = new EditStore(EditStore.DefaultDirectory); }
         catch (Exception error) { SetSaveNotice("无法读取调整记录", error.Message, true); }
         try { previousBatch = batchJournal.Load(); }
         catch (Exception error) { Report(new IOException(Loc.Format("无法读取上次批量任务：{0}", error.Message), error)); }
         RefreshBatchNotice(); UpdateBusy();
+        InitializeAdjustmentHistory();
     }
 
     private void MarkEdited()
@@ -36,21 +37,25 @@ public partial class MainWindow
         if (!ready || syncing || file == null) return;
         editDirty = true;
         if (RetrySave.Visibility != Visibility.Visible) {SaveState.Text = "";saveNoticeKey=null;}
-        editSaveTimer.Stop(); editSaveTimer.Start();
+        editSaveTimer.Stop();
+        if(!interacting)SaveEdits();
     }
 
     private bool SaveEdits()
     {
         editSaveTimer.Stop();
+        if(editGesture!=null && interacting)return true;
         if (!editDirty || file == null) return true;
         try
         {
-            editStore ??= new EditStore(EditStore.DefaultDirectory);
-            editStore.Save(file, settings.Capture(), CurrentLookIdentity());
-            editDirty = false; SetSaveNotice("调整已保存", "", false);
+            CommitCurrentEdit(settings.Capture());
+            editGesture=null;editDirty = false; SetSaveNotice("调整已保存", "", false);
             return true;
         }
-        catch (Exception error) { SetSaveNotice("调整未保存 · 重试", error.Message, true); return false; }
+        catch (Exception error) {
+            if(error is EditPersistenceConflict){adjustmentReloadRequired=true;RefreshControls();}
+            SetSaveNotice(adjustmentReloadRequired ? "照片或调整已变化，请重新打开后重试。" : "调整未保存 · 重试", error.Message, true);return false;
+        }
     }
 
     private SavedEdit CaptureCurrentEdit() => new(OriginalIdentity.Read(file ?? throw new InvalidOperationException()),
@@ -99,6 +104,8 @@ public partial class MainWindow
     internal string? CurrentLookIdentity()
     {
         if (settings.Recipe is {} recipe) return "recipe:" + recipe.Id;
+        if(lut!=null && MasterRecipe.All.FirstOrDefault(r=>StringComparer.OrdinalIgnoreCase.Equals(r.LutPath,lut)) is {} independent)
+            return "recipe-lut:"+independent.Id;
         if (lut != null && StringComparer.OrdinalIgnoreCase.Equals(Path.GetDirectoryName(lut), Path.Combine(AppContext.BaseDirectory, "LUTs")))
             return "builtin:" + Path.GetFileName(lut);
         return lookLibrary?.IdentityForPath(lut) ?? lut;
@@ -118,12 +125,10 @@ public partial class MainWindow
     private void RestoreEdits(string input)
     {
         editStore ??= new EditStore(EditStore.DefaultDirectory);
-        var saved = editStore.Find(input);
+        currentEditRecord=editStore.VersionedState(input);editGesture=null;adjustmentReloadRequired=false;
+        var saved = currentEditRecord.Edit;
         settings = saved?.Settings.Restore() ?? new Adjustments();
-        lut = saved == null ? null : lookLibrary?.ResolveIdentity(saved.Look) ?? saved.Look;
-        if (settings.Recipe is {} recipe) lut = recipe.LutPath;
-        if (lut?.StartsWith("builtin:", StringComparison.Ordinal) == true)
-            lut = Path.Combine(AppContext.BaseDirectory, "LUTs", Path.GetFileName(lut[8..]));
+        lut = saved == null ? null : ResolveLook(saved);
         if (settings.MasterRecipeID == null && lut != null && !films.Any(f => StringComparer.OrdinalIgnoreCase.Equals(f.Path, lut)))
         {
             films.Add(new(Path.GetFileNameWithoutExtension(lut), lut, null)); BuildFilms();
@@ -138,7 +143,7 @@ public partial class MainWindow
     {
         saveNoticeKey=key;SaveState.Text = Loc.Text(key); SaveState.ToolTip = detail;
         SaveState.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty,failed ? "ErrorForeground" : "Muted");
-        RetrySave.Visibility = failed ? Visibility.Visible : Visibility.Collapsed;
+        RetrySave.Visibility = failed && !adjustmentReloadRequired ? Visibility.Visible : Visibility.Collapsed;
         editNoticeTimer.Stop(); if (!failed) editNoticeTimer.Start();
     }
     private void RetrySaveClicked(object sender, RoutedEventArgs e)

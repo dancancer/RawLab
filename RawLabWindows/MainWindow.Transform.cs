@@ -61,12 +61,12 @@ public partial class MainWindow
                 throw new InvalidOperationException(Loc.Text("原始文件已被替换，请重新选择照片。"));
             var candidate=settings.Capture() with{Geometry=transform.Geometry,Lens=transform.Lens};
             editSaveTimer.Stop();
-            editStore ??= new EditStore(EditStore.DefaultDirectory);
-            editStore.Save(file,candidate,CurrentLookIdentity());
+            CommitCurrentEdit(candidate);
         }
         catch(Exception error)
         {
-            transformSaveFailed=true;SetSaveNotice("调整未保存 · 重试",error.Message,true);return false;
+            if(error is EditPersistenceConflict){adjustmentReloadRequired=true;RefreshControls();}
+            transformSaveFailed=true;SetSaveNotice(adjustmentReloadRequired ? "照片或调整已变化，请重新打开后重试。" : "调整未保存 · 重试",error.Message,true);return false;
         }
         // 只有候选已落盘，才能提升草稿；不再排队保存旧 committed。
         (settings.Geometry,settings.Lens)=transform.Apply();++editRevision;editDirty=false;
@@ -75,7 +75,7 @@ public partial class MainWindow
     private void CancelTransformDraft()
     {
         if(!transform.Active)return;
-        if(transformSaveFailed)SetSaveNotice("调整已保存","",false);
+        if(transformSaveFailed)SetSaveNotice("已放弃未保存的修改","",false);
         transform.Cancel();EndTransform();RefreshControls();Schedule();
     }
     private void EndTransform()

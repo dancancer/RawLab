@@ -146,11 +146,16 @@ internal static class TransformUiChecks
             Set(window,"settings",normalSettings.Restore());
             var ordinaryReset=window.PrepareReset(new(EditorResetKind.Group,EditorAdjustmentGroup.Light))!;
             var normalLook=Get<string>(window,"lut");var recordBeforeReset=File.ReadAllBytes(Path.Combine(directory,"edits","edits.json"));
+            var history=Get<AdjustmentTransferSession>(window,"adjustmentSession");var historyBeforeReset=history.Transactions.Count;
             check(window.CommitReset(ordinaryReset,normalRevision) && Get<long>(window,"editRevision")==normalRevision+1 &&
-                PreviewRequests(window)==normalPreview+1 && Get<bool>(window,"editDirty") && Get<DispatcherTimer>(window,"editSaveTimer").IsEnabled &&
-                Get<string>(window,"lut")==normalLook && File.ReadAllBytes(Path.Combine(directory,"edits","edits.json")).SequenceEqual(recordBeforeReset),
-                "Ordinary reset preserves resolved look and queues one normal edit/autosave and preview");
+                PreviewRequests(window)==normalPreview+1 && !Get<bool>(window,"editDirty") && !Get<DispatcherTimer>(window,"editSaveTimer").IsEnabled &&
+                Get<string>(window,"lut")==normalLook && !File.ReadAllBytes(Path.Combine(directory,"edits","edits.json")).SequenceEqual(recordBeforeReset) &&
+                store.Find(photo)!.Settings.SameAs(Get<Adjustments>(window,"settings").Capture()) && history.Transactions.Count==historyBeforeReset+1,
+                "Ordinary reset preserves resolved look and commits one durable history component and preview");
+            var resetReceipt=store.VersionedState(photo);
             InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);Invoke(window,"SaveEdits");
+            check(store.VersionedState(photo).SameAs(resetReceipt) && history.Transactions.Count==historyBeforeReset+1,
+                "Preview completion and the former autosave boundary cannot append another reset save");
             var noChange=window.PrepareReset(new(EditorResetKind.Group,EditorAdjustmentGroup.Light))!;
             normalPreview=PreviewRequests(window);normalRevision=Get<long>(window,"editRevision");
             check(noChange.Status==EditorResetStatus.NoChange && !window.CommitReset(noChange,normalRevision) &&

@@ -6,7 +6,16 @@ SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
 BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 OUT="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-usage-model.XXXXXX")"
 trap 'rm -r "$OUT"' EXIT
-swiftc -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
+TRANSFER_SOURCES=(
+  "$ROOT/Shared/AdjustmentTransfer.swift"
+  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"
+  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"
+  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferWB.swift"
+  "$ROOT/RawLabMac/Sources/Editor/Storage/AdjustmentTransferSession.swift"
+  "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentHistory.swift"
+  "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentTransfer.swift"
+)
+swiftc "${TRANSFER_SOURCES[@]}" -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
   "$ROOT/Shared/BundledLook.swift" \
   "$ROOT/RawLabMac/Sources/Presentation/MacNeutralReference.swift" "$ROOT/RawLabMac/Sources/Inputs/ParameterValueField.swift" "$ROOT/RawLabMac/Sources/Inputs/ParameterPrecision.swift" \
   -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \

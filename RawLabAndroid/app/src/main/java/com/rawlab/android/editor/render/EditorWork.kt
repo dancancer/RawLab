@@ -16,6 +16,7 @@ import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.ProcessingIdentity
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.VersionedPhotoEdit
 import com.rawlab.android.settings.LensSettings
 import com.rawlab.android.settings.LookChoice
 
@@ -50,14 +51,14 @@ internal sealed interface Work {
     data class Import(val uri: Uri, val gpuMode: Int) : Work
     data class Preview(val photo: ImportedPhoto, val edits: EditSettings, val interactive: Boolean,
         val gpuMode: Int, val importing: Boolean = false, val restored: Boolean = false,
-        val edge: Int = 1600, val draft: Boolean = false) : Work
+        val edge: Int = 1600, val draft: Boolean = false, val importedRecord: VersionedPhotoEdit? = null) : Work
     data class Export(val photo: ImportedPhoto, val edits: EditSettings, val destination: Uri?, val format: ExportFormat,
         val longEdge: Int?, val gpuMode: Int) : Work
     data class AutoExposure(val photo: ImportedPhoto, val edits: EditSettings) : Work
 }
 internal sealed interface WorkResult {
     data class Preview(val request: Work.Preview, val pair: PreviewPair) : WorkResult
-    data class MissingLook(val photo: ImportedPhoto, val edits: EditSettings) : WorkResult
+    data class MissingLook(val photo: ImportedPhoto, val edits: EditSettings, val importedRecord: VersionedPhotoEdit?) : WorkResult
     data object Export : WorkResult
     data class AutoExposure(val request: Work.AutoExposure, val exposure: Float) : WorkResult
 }

@@ -63,6 +63,7 @@ static class Program
             if(args.Length==2 && args[0]=="--editor-shell") { EditorShellChecks.Run(args[1],Check);return 0; }
             if(args.Length==2 && args[0]=="--ui-details") { UiDetailChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} UI detail checks");return 0; }
             if(args.Length==3 && args[0]=="--transform-ui") { TransformUiChecks.Run(args[1],args[2],Check);return 0; }
+            if(args.Length==3 && args[0]=="--adjustment-history") { AdjustmentHistoryUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} adjustment history checks");return 0; }
             if(args.Length==1 && args[0]=="--about") { AboutChecks.Run(Check);Console.WriteLine($"PASS {checks} about checks");return 0; }
             if(args.Length==3 && args[0]=="--geometry") { GeometryChecks.Run(args[1],args[2],Check);return 0; }
             if(args.Length==3 && args[0]=="--lens") { LensChecks.Run(args[1],args[2],Check);return 0; }

@@ -4015,6 +4015,14 @@
     "ja": "現在の縦横比を固定",
     "zh-Hans": "锁定当前比例"
   },
+  "已保存": {
+    "de": "Gespeichert",
+    "en": "Saved",
+    "es": "Guardado",
+    "fr": "Enregistré",
+    "ja": "保存済み",
+    "zh-Hans": "已保存"
+  },
   "已停用": {
     "de": "Deaktiviert",
     "en": "Disabled",
@@ -4022,5 +4030,525 @@
     "fr": "Désactivé",
     "ja": "無効",
     "zh-Hans": "已停用"
+  },
+  "RAW 降噪": {
+    "de": "RAW-Rauschreduzierung",
+    "en": "RAW noise reduction",
+    "es": "Reducción de ruido RAW",
+    "fr": "Réduction du bruit RAW",
+    "ja": "RAW ノイズ低減",
+    "zh-Hans": "RAW 降噪"
+  },
+  "仅已修改": {
+    "de": "Nur geändert",
+    "en": "Modified only",
+    "es": "Solo modificados",
+    "fr": "Modifiés uniquement",
+    "ja": "変更した項目のみ",
+    "zh-Hans": "仅已修改"
+  },
+  "以下目标尚未完成本次历史操作，请检查原因后重试。": {
+    "de": "Der Verlaufsschritt ist für diese Fotos unvollständig. Prüfe den Grund und versuche es erneut.",
+    "en": "The history operation is incomplete for these photos. Check the reason and retry.",
+    "es": "La operación de historial no se ha completado para estas fotos. Comprueba el motivo y vuelve a intentarlo.",
+    "fr": "L’opération d’historique est incomplète pour ces photos. Vérifiez la cause et réessayez.",
+    "ja": "次の写真では履歴操作が完了していません。原因を確認して再試行してください。",
+    "zh-Hans": "以下目标尚未完成本次历史操作，请检查原因后重试。"
+  },
+  "保存失败": {
+    "de": "Speichern fehlgeschlagen",
+    "en": "Save failed",
+    "es": "Error al guardar",
+    "fr": "Échec de l’enregistrement",
+    "ja": "保存に失敗",
+    "zh-Hans": "保存失败"
+  },
+  "全部": {
+    "de": "Alle",
+    "en": "All",
+    "es": "Todo",
+    "fr": "Tout",
+    "ja": "すべて",
+    "zh-Hans": "全部"
+  },
+  "几何与镜头仅在“全部”或显式选择时包含。": {
+    "de": "Geometrie und Objektiv werden nur mit „Alle“ oder bei ausdrücklicher Auswahl übernommen.",
+    "en": "Geometry and lens settings are included only with All or an explicit selection.",
+    "es": "La geometría y el objetivo solo se incluyen con Todo o al seleccionarlos expresamente.",
+    "fr": "La géométrie et l’objectif sont inclus uniquement avec « Tout » ou une sélection explicite.",
+    "ja": "ジオメトリとレンズは「すべて」または明示的に選択した場合のみ含まれます。",
+    "zh-Hans": "几何与镜头仅在“全部”或显式选择时包含。"
+  },
+  "历史仅保留在本次会话；已保存的调整会在重新打开时恢复。": {
+    "de": "Der Verlauf gilt für diese Sitzung. Gespeicherte Anpassungen werden beim erneuten Öffnen wiederhergestellt.",
+    "en": "History lasts for this session. Saved adjustments are restored when you reopen a photo.",
+    "es": "El historial dura esta sesión. Los ajustes guardados se restauran al volver a abrir una foto.",
+    "fr": "L’historique est limité à cette session. Les réglages enregistrés sont restaurés à la réouverture.",
+    "ja": "履歴はこのセッション中のみ保持されます。保存済みの調整は写真を再度開くと復元されます。",
+    "zh-Hans": "历史仅保留在本次会话；已保存的调整会在重新打开时恢复。"
+  },
+  "垂直位置": {
+    "de": "Vertikale Position",
+    "en": "Vertical position",
+    "es": "Posición vertical",
+    "fr": "Position verticale",
+    "ja": "垂直位置",
+    "zh-Hans": "垂直位置"
+  },
+  "复制范围": {
+    "de": "Kopierumfang",
+    "en": "Copy scope",
+    "es": "Alcance de la copia",
+    "fr": "Éléments à copier",
+    "ja": "コピーする範囲",
+    "zh-Hans": "复制范围"
+  },
+  "复制调整": {
+    "de": "Anpassungen kopieren",
+    "en": "Copy Adjustments",
+    "es": "Copiar ajustes",
+    "fr": "Copier les réglages",
+    "ja": "調整をコピー",
+    "zh-Hans": "复制调整"
+  },
+  "完成": {
+    "de": "Fertig",
+    "en": "Done",
+    "es": "Listo",
+    "fr": "Terminé",
+    "ja": "完了",
+    "zh-Hans": "完成"
+  },
+  "宽度": {
+    "de": "Breite",
+    "en": "Width",
+    "es": "Anchura",
+    "fr": "Largeur",
+    "ja": "幅",
+    "zh-Hans": "宽度"
+  },
+  "尚未复制调整。请先从一张照片复制所需范围。": {
+    "de": "Noch keine Anpassungen kopiert. Kopieren Sie zuerst die gewünschten Einstellungen eines Fotos.",
+    "en": "No adjustments copied yet. Copy the desired settings from a photo first.",
+    "es": "Aún no se han copiado ajustes. Copia primero los ajustes deseados de una foto.",
+    "fr": "Aucun réglage copié. Copiez d’abord les réglages souhaités d’une photo.",
+    "ja": "調整はまだコピーされていません。写真から必要な項目をコピーしてください。",
+    "zh-Hans": "尚未复制调整。请先从一张照片复制所需范围。"
+  },
+  "已保存 {0} 张 · 未变化 {1} 张 · 已跳过 {2} 张 · 已撤销 {3} 张 · 未完成 {4} 张": {
+    "de": "Gespeichert {0} · Unverändert {1} · Übersprungen {2} · Rückgängig {3} · Offen {4}",
+    "en": "Saved {0} · Unchanged {1} · Skipped {2} · Undone {3} · Incomplete {4}",
+    "es": "Guardadas {0} · Sin cambios {1} · Omitidas {2} · Deshechas {3} · Pendientes {4}",
+    "fr": "Enregistrées {0} · Inchangées {1} · Ignorées {2} · Annulées {3} · Inachevées {4}",
+    "ja": "保存済み {0} 枚 · 変更なし {1} 枚 · スキップ {2} 枚 · 取り消し済み {3} 枚 · 未完了 {4} 枚",
+    "zh-Hans": "已保存 {0} 张 · 未变化 {1} 张 · 已跳过 {2} 张 · 已撤销 {3} 张 · 未完成 {4} 张"
+  },
+  "已撤销": {
+    "de": "Rückgängig gemacht",
+    "en": "Undone",
+    "es": "Deshecho",
+    "fr": "Annulé",
+    "ja": "取り消し済み",
+    "zh-Hans": "已撤销"
+  },
+  "已撤销 {0} 张 · 未完成 {1} 张": {
+    "de": "Rückgängig {0} · Offen {1}",
+    "en": "Undone {0} · Incomplete {1}",
+    "es": "Deshechas {0} · Pendientes {1}",
+    "fr": "Annulées {0} · Inachevées {1}",
+    "ja": "取り消し済み {0} 枚 · 未完了 {1} 枚",
+    "zh-Hans": "已撤销 {0} 张 · 未完成 {1} 张"
+  },
+  "已跳过": {
+    "de": "Übersprungen",
+    "en": "Skipped",
+    "es": "Omitida",
+    "fr": "Ignorée",
+    "ja": "スキップ済み",
+    "zh-Hans": "已跳过"
+  },
+  "已选 {0} 项": {
+    "de": "{0} ausgewählt",
+    "en": "{0} selected",
+    "es": "{0} seleccionados",
+    "fr": "{0} sélectionnés",
+    "ja": "{0} 項目を選択中",
+    "zh-Hans": "已选 {0} 项"
+  },
+  "已重做 {0} 张 · 未完成 {1} 张": {
+    "de": "Wiederholt {0} · Offen {1}",
+    "en": "Redone {0} · Incomplete {1}",
+    "es": "Rehechas {0} · Pendientes {1}",
+    "fr": "Rétablies {0} · Inachevées {1}",
+    "ja": "やり直し済み {0} 枚 · 未完了 {1} 枚",
+    "zh-Hans": "已重做 {0} 张 · 未完成 {1} 张"
+  },
+  "应用并保存": {
+    "de": "Anwenden und speichern",
+    "en": "Apply and Save",
+    "es": "Aplicar y guardar",
+    "fr": "Appliquer et enregistrer",
+    "ja": "適用して保存",
+    "zh-Hans": "应用并保存"
+  },
+  "待处理": {
+    "de": "Aktion erforderlich",
+    "en": "Needs attention",
+    "es": "Requiere atención",
+    "fr": "À traiter",
+    "ja": "対応が必要",
+    "zh-Hans": "待处理"
+  },
+  "所选调整与目标不兼容，请调整范围或跳过目标。": {
+    "de": "Diese Anpassungen sind mit dem Foto nicht kompatibel. Ändern Sie den Umfang oder überspringen Sie es.",
+    "en": "These adjustments are incompatible with this photo. Change the scope or skip it.",
+    "es": "Estos ajustes no son compatibles con esta foto. Cambia el alcance u omítela.",
+    "fr": "Ces réglages sont incompatibles avec cette photo. Modifiez la sélection ou ignorez-la.",
+    "ja": "選択した調整はこの写真に対応していません。範囲を変更するか、スキップしてください。",
+    "zh-Hans": "所选调整与目标不兼容，请调整范围或跳过目标。"
+  },
+  "撤销": {
+    "de": "Rückgängig",
+    "en": "Undo",
+    "es": "Deshacer",
+    "fr": "Annuler",
+    "ja": "取り消す",
+    "zh-Hans": "撤销"
+  },
+  "撤销 {0} 张": {
+    "de": "Fotos rückgängig machen: {0}",
+    "en": "Undo photos: {0}",
+    "es": "Deshacer fotos: {0}",
+    "fr": "Annuler les photos : {0}",
+    "ja": "{0} 枚を取り消す",
+    "zh-Hans": "撤销 {0} 张"
+  },
+  "操作未完成，请重试。": {
+    "de": "Der Vorgang ist nicht abgeschlossen. Versuchen Sie es erneut.",
+    "en": "The operation is incomplete. Try again.",
+    "es": "La operación no se ha completado. Inténtalo de nuevo.",
+    "fr": "L’opération est inachevée. Réessayez.",
+    "ja": "操作が完了していません。再試行してください。",
+    "zh-Hans": "操作未完成，请重试。"
+  },
+  "旋转": {
+    "de": "Drehung",
+    "en": "Rotation",
+    "es": "Rotación",
+    "fr": "Rotation",
+    "ja": "回転",
+    "zh-Hans": "旋转"
+  },
+  "旧版降噪": {
+    "de": "Frühere Rauschreduzierung",
+    "en": "Legacy noise reduction",
+    "es": "Reducción de ruido anterior",
+    "fr": "Ancienne réduction du bruit",
+    "ja": "従来のノイズ低減",
+    "zh-Hans": "旧版降噪"
+  },
+  "暂无编辑历史。": {
+    "de": "Noch kein Bearbeitungsverlauf.",
+    "en": "No edit history yet.",
+    "es": "Aún no hay historial de edición.",
+    "fr": "Aucun historique de modification.",
+    "ja": "編集履歴はまだありません。",
+    "zh-Hans": "暂无编辑历史。"
+  },
+  "曝光模式": {
+    "de": "Belichtungsmodus",
+    "en": "Exposure mode",
+    "es": "Modo de exposición",
+    "fr": "Mode d’exposition",
+    "ja": "露出モード",
+    "zh-Hans": "曝光模式"
+  },
+  "未变化": {
+    "de": "Unverändert",
+    "en": "Unchanged",
+    "es": "Sin cambios",
+    "fr": "Inchangée",
+    "ja": "変更なし",
+    "zh-Hans": "未变化"
+  },
+  "本次会话历史": {
+    "de": "Sitzungsverlauf",
+    "en": "Session History",
+    "es": "Historial de la sesión",
+    "fr": "Historique de la session",
+    "ja": "セッション履歴",
+    "zh-Hans": "本次会话历史"
+  },
+  "来源：{0} · {1} 项调整": {
+    "de": "Quelle: {0} · {1} Anpassungen",
+    "en": "Source: {0} · {1} adjustments",
+    "es": "Origen: {0} · {1} ajustes",
+    "fr": "Source : {0} · {1} réglages",
+    "ja": "コピー元：{0} · {1} 項目",
+    "zh-Hans": "来源：{0} · {1} 项调整"
+  },
+  "查看调整范围": {
+    "de": "Anpassungsumfang anzeigen",
+    "en": "View Adjustment Scope",
+    "es": "Ver alcance de los ajustes",
+    "fr": "Voir les réglages sélectionnés",
+    "ja": "調整範囲を表示",
+    "zh-Hans": "查看调整范围"
+  },
+  "检查目标": {
+    "de": "Fotos prüfen",
+    "en": "Check Photos",
+    "es": "Comprobar fotos",
+    "fr": "Vérifier les photos",
+    "ja": "対象を確認",
+    "zh-Hans": "检查目标"
+  },
+  "正在检查目标…": {
+    "de": "Fotos werden geprüft…",
+    "en": "Checking photos…",
+    "es": "Comprobando fotos…",
+    "fr": "Vérification des photos…",
+    "ja": "対象を確認中…",
+    "zh-Hans": "正在检查目标…"
+  },
+  "水平位置": {
+    "de": "Horizontale Position",
+    "en": "Horizontal position",
+    "es": "Posición horizontal",
+    "fr": "Position horizontale",
+    "ja": "水平位置",
+    "zh-Hans": "水平位置"
+  },
+  "没有可处理目标，请重新选择照片。": {
+    "de": "Keine Fotos zum Verarbeiten übrig. Wählen Sie erneut Fotos aus.",
+    "en": "No photos remain to process. Select photos again.",
+    "es": "No quedan fotos que procesar. Vuelve a seleccionar fotos.",
+    "fr": "Aucune photo à traiter. Sélectionnez à nouveau des photos.",
+    "ja": "処理する写真がありません。写真を選び直してください。",
+    "zh-Hans": "没有可处理目标，请重新选择照片。"
+  },
+  "没有可复制的调整，请选择其他范围。": {
+    "de": "Keine Anpassungen zum Kopieren. Wählen Sie einen anderen Umfang.",
+    "en": "No adjustments to copy. Choose a different scope.",
+    "es": "No hay ajustes que copiar. Elige otro alcance.",
+    "fr": "Aucun réglage à copier. Choisissez une autre sélection.",
+    "ja": "コピーする調整がありません。別の範囲を選択してください。",
+    "zh-Hans": "没有可复制的调整，请选择其他范围。"
+  },
+  "清空选择": {
+    "de": "Auswahl aufheben",
+    "en": "Clear Selection",
+    "es": "Borrar selección",
+    "fr": "Effacer la sélection",
+    "ja": "選択を解除",
+    "zh-Hans": "清空选择"
+  },
+  "照片或调整已变化，请重新检查目标。": {
+    "de": "Das Foto oder seine Anpassungen wurden geändert. Prüfen Sie das Ziel erneut.",
+    "en": "The photo or its adjustments have changed. Check the target again.",
+    "es": "La foto o sus ajustes han cambiado. Comprueba de nuevo el destino.",
+    "fr": "La photo ou ses réglages ont changé. Vérifiez à nouveau la cible.",
+    "ja": "写真または調整が変更されました。対象を再確認してください。",
+    "zh-Hans": "照片或调整已变化，请重新检查目标。"
+  },
+  "畸变校正": {
+    "de": "Verzeichnungskorrektur",
+    "en": "Distortion correction",
+    "es": "Corrección de distorsión",
+    "fr": "Correction de la distorsion",
+    "ja": "歪曲補正",
+    "zh-Hans": "畸变校正"
+  },
+  "白平衡模式": {
+    "de": "Weißabgleichmodus",
+    "en": "White balance mode",
+    "es": "Modo de balance de blancos",
+    "fr": "Mode de balance des blancs",
+    "ja": "ホワイトバランスモード",
+    "zh-Hans": "白平衡模式"
+  },
+  "目标所需的外观不可用，请先导入外观。": {
+    "de": "Der benötigte Look ist nicht verfügbar. Importieren Sie ihn zuerst.",
+    "en": "The required look is unavailable. Import it first.",
+    "es": "El aspecto necesario no está disponible. Impórtalo primero.",
+    "fr": "Le rendu requis est indisponible. Importez-le d’abord.",
+    "ja": "必要な外観を利用できません。先に読み込んでください。",
+    "zh-Hans": "目标所需的外观不可用，请先导入外观。"
+  },
+  "目标无法保留未选参数，请调整复制范围。": {
+    "de": "Nicht ausgewählte Einstellungen können nicht erhalten bleiben. Ändern Sie den Kopierumfang.",
+    "en": "The target cannot preserve unselected settings. Change the copy scope.",
+    "es": "No se pueden conservar los ajustes no seleccionados. Cambia el alcance de la copia.",
+    "fr": "Les réglages non sélectionnés ne peuvent pas être préservés. Modifiez la sélection à copier.",
+    "ja": "未選択の設定を保持できません。コピー範囲を変更してください。",
+    "zh-Hans": "目标无法保留未选参数，请调整复制范围。"
+  },
+  "目标：{0} 张照片": {
+    "de": "Zielfotos: {0}",
+    "en": "Target photos: {0}",
+    "es": "Fotos de destino: {0}",
+    "fr": "Photos cibles : {0}",
+    "ja": "対象：{0} 枚",
+    "zh-Hans": "目标：{0} 张照片"
+  },
+  "粘贴调整": {
+    "de": "Anpassungen einfügen",
+    "en": "Paste Adjustments",
+    "es": "Pegar ajustes",
+    "fr": "Coller les réglages",
+    "ja": "調整を貼り付け",
+    "zh-Hans": "粘贴调整"
+  },
+  "自动裁切": {
+    "de": "Automatischer Zuschnitt",
+    "en": "Automatic crop",
+    "es": "Recorte automático",
+    "fr": "Recadrage automatique",
+    "ja": "自動クロップ",
+    "zh-Hans": "自动裁切"
+  },
+  "色度降噪": {
+    "de": "Reduzierung des Chroma-Rauschens",
+    "en": "Chroma noise reduction",
+    "es": "Reducción de ruido cromático",
+    "fr": "Réduction du bruit chroma",
+    "ja": "クロマノイズ低減",
+    "zh-Hans": "色度降噪"
+  },
+  "请先应用或放弃未完成的输入和几何草稿。": {
+    "de": "Wenden Sie offene Eingaben und Geometrieentwürfe zuerst an oder verwerfen Sie sie.",
+    "en": "Apply or discard unfinished input and geometry drafts first.",
+    "es": "Aplica o descarta primero las entradas y los borradores de geometría pendientes.",
+    "fr": "Appliquez ou abandonnez d’abord les saisies et les brouillons de géométrie en cours.",
+    "ja": "未完了の入力とジオメトリの下書きを先に適用または破棄してください。",
+    "zh-Hans": "请先应用或放弃未完成的输入和几何草稿。"
+  },
+  "调整内容无法读取，请重新复制。": {
+    "de": "Die Anpassungen können nicht gelesen werden. Kopieren Sie sie erneut.",
+    "en": "The adjustments cannot be read. Copy them again.",
+    "es": "No se pueden leer los ajustes. Vuelve a copiarlos.",
+    "fr": "Les réglages ne peuvent pas être lus. Copiez-les à nouveau.",
+    "ja": "調整内容を読み取れません。もう一度コピーしてください。",
+    "zh-Hans": "调整内容无法读取，请重新复制。"
+  },
+  "调整已变化": {
+    "de": "Anpassungen geändert",
+    "en": "Adjustments changed",
+    "es": "Ajustes modificados",
+    "fr": "Réglages modifiés",
+    "ja": "調整が変更されました",
+    "zh-Hans": "调整已变化"
+  },
+  "调整照片": {
+    "de": "Fotoanpassung",
+    "en": "Photo Adjustment",
+    "es": "Ajuste de foto",
+    "fr": "Réglage de photo",
+    "ja": "写真の調整",
+    "zh-Hans": "调整照片"
+  },
+  "跳过": {
+    "de": "Überspringen",
+    "en": "Skip",
+    "es": "Omitir",
+    "fr": "Ignorer",
+    "ja": "スキップ",
+    "zh-Hans": "跳过"
+  },
+  "跳过以上目标后重试": {
+    "de": "Aufgeführte Fotos überspringen und erneut versuchen",
+    "en": "Skip Listed Photos and Retry",
+    "es": "Omitir las fotos indicadas y reintentar",
+    "fr": "Ignorer les photos ci-dessus et réessayer",
+    "ja": "上記の写真をスキップして再試行",
+    "zh-Hans": "跳过以上目标后重试"
+  },
+  "选择此组": {
+    "de": "Gruppe auswählen",
+    "en": "Select Group",
+    "es": "Seleccionar grupo",
+    "fr": "Sélectionner ce groupe",
+    "ja": "このグループを選択",
+    "zh-Hans": "选择此组"
+  },
+  "重做": {
+    "de": "Wiederholen",
+    "en": "Redo",
+    "es": "Rehacer",
+    "fr": "Rétablir",
+    "ja": "やり直す",
+    "zh-Hans": "重做"
+  },
+  "重做 {0} 张": {
+    "de": "Fotos wiederherstellen: {0}",
+    "en": "Redo photos: {0}",
+    "es": "Rehacer fotos: {0}",
+    "fr": "Rétablir les photos : {0}",
+    "ja": "{0} 枚をやり直す",
+    "zh-Hans": "重做 {0} 张"
+  },
+  "重试未完成项": {
+    "de": "Offene erneut versuchen",
+    "en": "Retry Incomplete",
+    "es": "Reintentar pendientes",
+    "fr": "Réessayer les inachevées",
+    "ja": "未完了の項目を再試行",
+    "zh-Hans": "重试未完成项"
+  },
+  "降噪参数": {
+    "de": "Rauschminderungseinstellungen",
+    "en": "Noise reduction settings",
+    "es": "Ajustes de reducción de ruido",
+    "fr": "Réglages de réduction du bruit",
+    "ja": "ノイズ低減設定",
+    "zh-Hans": "降噪参数"
+  },
+  "高度": {
+    "de": "Höhe",
+    "en": "Height",
+    "es": "Altura",
+    "fr": "Hauteur",
+    "ja": "高さ",
+    "zh-Hans": "高度"
+  },
+  "重新载入已保存调整": {
+    "de": "Gespeicherte Anpassungen neu laden",
+    "en": "Reload Saved Adjustments",
+    "es": "Recargar ajustes guardados",
+    "fr": "Recharger les réglages enregistrés",
+    "ja": "保存済みの調整を読み直す",
+    "zh-Hans": "重新载入已保存调整"
+  },
+  "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。": {
+    "de": "Beim Neuladen werden ungespeicherte Anpassungen verworfen und der aktuell gespeicherte Stand dieses Fotos geladen.",
+    "en": "Reloading discards unsaved adjustments and reads the current saved record for this photo.",
+    "es": "Al recargar se descartan los ajustes sin guardar y se lee el registro guardado actual de esta foto.",
+    "fr": "Le rechargement abandonne les réglages non enregistrés et lit les réglages actuellement enregistrés pour cette photo.",
+    "ja": "読み直すと未保存の調整を破棄し、この写真に現在保存されている設定を読み込みます。",
+    "zh-Hans": "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。"
+  },
+  "复制调整…": {
+    "de": "Anpassungen kopieren…",
+    "en": "Copy Adjustments…",
+    "es": "Copiar ajustes…",
+    "fr": "Copier les réglages…",
+    "ja": "調整をコピー…",
+    "zh-Hans": "复制调整…"
+  },
+  "本次会话历史…": {
+    "de": "Sitzungsverlauf…",
+    "en": "Session History…",
+    "es": "Historial de la sesión…",
+    "fr": "Historique de la session…",
+    "ja": "セッション履歴…",
+    "zh-Hans": "本次会话历史…"
+  },
+  "粘贴调整…": {
+    "de": "Anpassungen einfügen…",
+    "en": "Paste Adjustments…",
+    "es": "Pegar ajustes…",
+    "fr": "Coller les réglages…",
+    "ja": "調整を貼り付け…",
+    "zh-Hans": "粘贴调整…"
   }
 }

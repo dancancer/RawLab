@@ -121,7 +121,7 @@ swiftc -O -whole-module-optimization -num-threads "${JOBS:-$(sysctl -n hw.ncpu)}
     -sdk "$SDK" -target "$ARCH-apple-macosx$DEPLOYMENT_TARGET" \
     "${RUM_FLAGS[@]}" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "${APP_SOURCES[@]}" "$ROOT"/Shared/*.swift "$BUILD/libsony2fuji_core.a" "${AI_LINK_FLAGS[@]}" \
+    "${APP_SOURCES[@]}" "$ROOT"/Shared/*.swift "$BUILD/libsony2fuji_core.a" ${AI_LINK_FLAGS[@]+"${AI_LINK_FLAGS[@]}"} \
     $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     -o "$APP/Contents/MacOS/RawLabMac"

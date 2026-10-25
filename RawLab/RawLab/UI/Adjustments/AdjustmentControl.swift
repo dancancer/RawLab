@@ -4,6 +4,8 @@ import UIKit
 struct AdjustmentInputContext {
     var id: AnyHashable = 0
     var isCurrent: () -> Bool = { true }
+    var canChange: () -> Bool = { true }
+    var onInteractionCancelled: () -> Void = {}
 }
 
 private struct AdjustmentInputContextKey: EnvironmentKey {
@@ -109,10 +111,12 @@ struct AdjustmentControl: View {
     }
 
     private var ruler: some View {
-        AdjustmentRuler(value: Binding(get: { value }, set: { if inputContext.isCurrent() { value = $0 } }), scale: scale, defaultValue: validDefault, title: title,
+        AdjustmentRuler(value: Binding(get: { value }, set: { if inputContext.isCurrent() && inputContext.canChange() { value = $0 } }), scale: scale, defaultValue: validDefault, title: title,
                         formatter: complete, identifier: "\(identifier).ruler", fine: fine,
                         haptics: haptics, reduceMotion: reduceMotion, interactionID: inputContext.id, directionColors: directionColors,
-                        directionHint: directionHint, onEditingChanged: onEditingChanged)
+                        directionHint: directionHint,
+                        onEditingCancelled: inputContext.onInteractionCancelled,
+                        onEditingChanged: { editing in if inputContext.isCurrent() { onEditingChanged(editing) } })
             .modifier(AdjustmentResetGesture(enabled: !voiceOver, action: reset))
     }
 
@@ -175,7 +179,9 @@ struct AdjustmentControl: View {
     }
     private func commit(_ newValue: Double) {
         guard inputContext.isCurrent(), scale.contains(newValue), newValue != value else { return }
-        value = newValue
+        onEditingChanged(true)
+        if inputContext.canChange() { value = newValue }
+        onEditingChanged(false)
     }
 }
 

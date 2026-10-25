@@ -513,10 +513,10 @@ class EditorViewModelRaceInstrumentedTest {
                 assertSame(preview, model.state.value.preview)
             }
             settle(1)
-            // 普通编辑保留既有的 edit + resolved-preview 两次保存。
+            // 普通动作提交一次；迟到的 native metadata 回调不再追加保存或历史。
             instrumentation.runOnMainSync { model.edit(model.state.value.edits.copy(exposure = .75f)) }
             awaitState(model) { it.canExport }
-            settle(3)
+            settle(2)
             lateinit var stale: PreparedEditorReset
             instrumentation.runOnMainSync {
                 stale = model.prepareReset(EditorResetScope.Tool(2)).prepared!!
@@ -530,16 +530,19 @@ class EditorViewModelRaceInstrumentedTest {
             assertEquals(currentRequest, revision.getLong(model))
             assertArrayEquals(record, File(directory, "edits.properties").readBytes())
             assertEquals(.75f, model.state.value.edits.exposure, 0f)
-            settle(6)
-            // 强制 WB 从自定义转换为相机；native 返回真实 metadata 必须沿原路径落盘。
+            settle(4)
+            // 切换相机 WB 保存逻辑请求，native 校准只更新预览元数据。
             writes.set(0)
             instrumentation.runOnMainSync {
                 model.edit(model.state.value.edits.copy(customWb = false, temperature = 6500f, tint = 0f))
             }
             awaitState(model) { it.canExport }
-            settle(2)
+            settle(1)
             assertNotEquals(6500f, model.state.value.edits.temperature)
-            assertEquals(model.state.value.edits, EditStore(directory).load(model.state.value.photo!!.identity))
+            val storedCameraRequest = EditStore(directory).load(model.state.value.photo!!.identity)!!
+            assertFalse(storedCameraRequest.customWb)
+            assertEquals(6500f, storedCameraRequest.temperature)
+            assertTrue(com.rawlab.android.adjustments.AdjustmentTransfer.sameAdjustments(storedCameraRequest, model.state.value.edits, true))
             val unchangedRequest = revision.getLong(model)
             val unchangedRecord = File(directory, "edits.properties").readBytes()
             instrumentation.runOnMainSync {
@@ -549,19 +552,19 @@ class EditorViewModelRaceInstrumentedTest {
             }
             assertEquals(unchangedRequest, revision.getLong(model))
             assertArrayEquals(unchangedRecord, File(directory, "edits.properties").readBytes())
-            settle(2)
+            settle(1)
             instrumentation.runOnMainSync {
                 model.changeDraft(model.state.value.visibleEdits.copy(lens = LensSettings(autoCrop = false)))
             }
             awaitState(model) { it.canApplyDraft }
-            settle(2)
+            settle(1)
             val draftRequest = revision.getLong(model)
             instrumentation.runOnMainSync {
                 assertTrue(model.applyDraft())
                 assertEquals(draftRequest + 1, revision.getLong(model))
             }
             awaitState(model) { it.canExport }
-            settle(3)
+            settle(2)
             assertEquals(model.state.value.edits, EditStore(directory).load(model.state.value.photo!!.identity))
         } finally {
             observer.stopWatching()

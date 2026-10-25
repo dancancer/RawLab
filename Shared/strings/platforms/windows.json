@@ -2395,6 +2395,257 @@
     "已停用": {
       "source": "已停用",
       "formats": []
+    },
+    "RAW 降噪": {
+      "formats": [],
+      "source": "RAW 降噪"
+    },
+    "丢弃当前未保存修改并重新载入调整？": {
+      "formats": [],
+      "source": "丢弃当前未保存修改并重新载入调整？"
+    },
+    "仅已修改": {
+      "formats": [],
+      "source": "仅已修改"
+    },
+    "保存失败": {
+      "formats": [],
+      "source": "保存失败"
+    },
+    "保存失败，请检查文件和存储位置后重试。": {
+      "formats": [],
+      "source": "保存失败，请检查文件和存储位置后重试。"
+    },
+    "历史仅保留在本次会话；已保存的调整会在重新打开时恢复。": {
+      "formats": [],
+      "source": "历史仅保留在本次会话；已保存的调整会在重新打开时恢复。"
+    },
+    "可应用": {
+      "formats": [],
+      "source": "可应用"
+    },
+    "垂直位置": {
+      "formats": [],
+      "source": "垂直位置"
+    },
+    "复制调整": {
+      "formats": [],
+      "source": "复制调整"
+    },
+    "复制调整…": {
+      "formats": [],
+      "source": "复制调整…"
+    },
+    "宽度": {
+      "formats": [],
+      "source": "宽度"
+    },
+    "尚未复制调整。请先从一张照片复制所需范围。": {
+      "formats": [],
+      "source": "尚未复制调整。请先从一张照片复制所需范围。"
+    },
+    "已保存": {
+      "formats": [],
+      "source": "已保存"
+    },
+    "已撤销": {
+      "formats": [],
+      "source": "已撤销"
+    },
+    "已放弃未保存的修改": {
+      "formats": [],
+      "source": "已放弃未保存的修改"
+    },
+    "已跳过": {
+      "formats": [],
+      "source": "已跳过"
+    },
+    "已预检 {0} 张照片。确认后保存所选调整。": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "已预检 {0} 张照片。确认后保存所选调整。"
+    },
+    "应用调整": {
+      "formats": [],
+      "source": "应用调整"
+    },
+    "待处理": {
+      "formats": [],
+      "source": "待处理"
+    },
+    "所选调整与目标不兼容，请调整范围或跳过目标。": {
+      "formats": [],
+      "source": "所选调整与目标不兼容，请调整范围或跳过目标。"
+    },
+    "撤销": {
+      "formats": [],
+      "source": "撤销"
+    },
+    "旋转": {
+      "formats": [],
+      "source": "旋转"
+    },
+    "无法读取这份调整，请重新复制。": {
+      "formats": [],
+      "source": "无法读取这份调整，请重新复制。"
+    },
+    "旧版降噪": {
+      "formats": [],
+      "source": "旧版降噪"
+    },
+    "曝光模式": {
+      "formats": [],
+      "source": "曝光模式"
+    },
+    "未变化": {
+      "formats": [],
+      "source": "未变化"
+    },
+    "本次会话历史": {
+      "formats": [],
+      "source": "本次会话历史"
+    },
+    "本次会话历史…": {
+      "formats": [],
+      "source": "本次会话历史…"
+    },
+    "本次会话暂无编辑历史。": {
+      "formats": [],
+      "source": "本次会话暂无编辑历史。"
+    },
+    "此目录没有其他照片。": {
+      "formats": [],
+      "source": "此目录没有其他照片。"
+    },
+    "水平位置": {
+      "formats": [],
+      "source": "水平位置"
+    },
+    "清空选择": {
+      "formats": [],
+      "source": "清空选择"
+    },
+    "照片或调整已变化，请重新打开后重试。": {
+      "formats": [],
+      "source": "照片或调整已变化，请重新打开后重试。"
+    },
+    "畸变校正": {
+      "formats": [],
+      "source": "畸变校正"
+    },
+    "白平衡模式": {
+      "formats": [],
+      "source": "白平衡模式"
+    },
+    "目标缺少所选外观，请先导入外观。": {
+      "formats": [],
+      "source": "目标缺少所选外观，请先导入外观。"
+    },
+    "粘贴到所选照片…": {
+      "formats": [],
+      "source": "粘贴到所选照片…"
+    },
+    "粘贴调整": {
+      "formats": [],
+      "source": "粘贴调整"
+    },
+    "粘贴调整…": {
+      "formats": [],
+      "source": "粘贴调整…"
+    },
+    "自动裁切": {
+      "formats": [],
+      "source": "自动裁切"
+    },
+    "色度降噪": {
+      "formats": [],
+      "source": "色度降噪"
+    },
+    "请先应用或放弃当前草稿。": {
+      "formats": [],
+      "source": "请先应用或放弃当前草稿。"
+    },
+    "请选择至少一项调整。": {
+      "formats": [],
+      "source": "请选择至少一项调整。"
+    },
+    "调整已保存，当前照片需要重新载入。": {
+      "formats": [],
+      "source": "调整已保存，当前照片需要重新载入。"
+    },
+    "调整已变化": {
+      "formats": [],
+      "source": "调整已变化"
+    },
+    "调整已复制。": {
+      "formats": [],
+      "source": "调整已复制。"
+    },
+    "调整未应用": {
+      "formats": [],
+      "source": "调整未应用"
+    },
+    "调整照片": {
+      "formats": [],
+      "source": "调整照片"
+    },
+    "跳过": {
+      "formats": [],
+      "source": "跳过"
+    },
+    "选择此组": {
+      "formats": [],
+      "source": "选择此组"
+    },
+    "选择目标照片": {
+      "formats": [],
+      "source": "选择目标照片"
+    },
+    "重做": {
+      "formats": [],
+      "source": "重做"
+    },
+    "重做已失效": {
+      "formats": [],
+      "source": "重做已失效"
+    },
+    "重新载入调整": {
+      "formats": [],
+      "source": "重新载入调整"
+    },
+    "降噪参数": {
+      "formats": [],
+      "source": "降噪参数"
+    },
+    "高度": {
+      "formats": [],
+      "source": "高度"
+    },
+    "默认不包含几何与镜头。自定义可逐项选择。": {
+      "formats": [],
+      "source": "默认不包含几何与镜头。自定义可逐项选择。"
+    },
+    "默认范围": {
+      "formats": [],
+      "source": "默认范围"
+    },
+    "来源：{0} · {1} 项调整": {
+      "formats": [
+        "{0}",
+        "{1}"
+      ],
+      "source": "来源：{0} · {1} 项调整"
+    },
+    "已保存 {0} 张 · 未变化 {1} 张 · 已跳过 {2} 张 · 已撤销 {3} 张 · 未完成 {4} 张": {
+      "formats": [
+        "{0}",
+        "{1}",
+        "{2}",
+        "{3}",
+        "{4}"
+      ],
+      "source": "已保存 {0} 张 · 未变化 {1} 张 · 已跳过 {2} 张 · 已撤销 {3} 张 · 未完成 {4} 张"
     }
   },
   "overrides": {
@@ -3611,6 +3862,182 @@
       "fr": "{0} · {1}/{2}",
       "ja": "{0} · {1}/{2}",
       "zh-Hans": "{0} · {1}/{2}"
+    },
+    "丢弃当前未保存修改并重新载入调整？": {
+      "de": "Ungespeicherte Änderungen verwerfen und Anpassungen neu laden?",
+      "en": "Discard unsaved changes and reload adjustments?",
+      "es": "¿Descartar los cambios sin guardar y volver a cargar los ajustes?",
+      "fr": "Abandonner les modifications non enregistrées et recharger les réglages ?",
+      "ja": "未保存の変更を破棄して調整を再読み込みしますか？",
+      "zh-Hans": "丢弃当前未保存修改并重新载入调整？"
+    },
+    "保存失败，请检查文件和存储位置后重试。": {
+      "de": "Speichern fehlgeschlagen. Prüfen Sie die Datei und den Speicherort und versuchen Sie es erneut.",
+      "en": "Could not save. Check the file and storage location, then retry.",
+      "es": "No se pudo guardar. Comprueba el archivo y la ubicación y vuelve a intentarlo.",
+      "fr": "Échec de l’enregistrement. Vérifiez le fichier et son emplacement, puis réessayez.",
+      "ja": "保存できませんでした。ファイルと保存先を確認して、再試行してください。",
+      "zh-Hans": "保存失败，请检查文件和存储位置后重试。"
+    },
+    "可应用": {
+      "de": "Bereit zum Anwenden",
+      "en": "Ready to apply",
+      "es": "Listo para aplicar",
+      "fr": "Prêt à appliquer",
+      "ja": "適用できます",
+      "zh-Hans": "可应用"
+    },
+    "已放弃未保存的修改": {
+      "de": "Ungespeicherte Änderungen verworfen",
+      "en": "Unsaved changes discarded",
+      "es": "Cambios sin guardar descartados",
+      "fr": "Modifications non enregistrées abandonnées",
+      "ja": "未保存の変更を破棄しました",
+      "zh-Hans": "已放弃未保存的修改"
+    },
+    "已预检 {0} 张照片。确认后保存所选调整。": {
+      "de": "Geprüfte Fotos: {0}. Bestätigen Sie, um die gewählten Anpassungen zu speichern.",
+      "en": "Photos checked: {0}. Confirm to save the selected adjustments.",
+      "es": "Fotos comprobadas: {0}. Confirma para guardar los ajustes seleccionados.",
+      "fr": "Photos vérifiées : {0}. Confirmez pour enregistrer les réglages sélectionnés.",
+      "ja": "{0} 枚の写真を確認しました。選択した調整を保存するには確定してください。",
+      "zh-Hans": "已预检 {0} 张照片。确认后保存所选调整。"
+    },
+    "应用调整": {
+      "de": "Anpassungen anwenden",
+      "en": "Apply adjustments",
+      "es": "Aplicar ajustes",
+      "fr": "Appliquer les réglages",
+      "ja": "調整を適用",
+      "zh-Hans": "应用调整"
+    },
+    "无法读取这份调整，请重新复制。": {
+      "de": "Diese Anpassungen konnten nicht gelesen werden. Kopieren Sie sie erneut.",
+      "en": "Could not read these adjustments. Copy them again.",
+      "es": "No se pudieron leer estos ajustes. Vuelve a copiarlos.",
+      "fr": "Impossible de lire ces réglages. Copiez-les à nouveau.",
+      "ja": "この調整を読み取れません。もう一度コピーしてください。",
+      "zh-Hans": "无法读取这份调整，请重新复制。"
+    },
+    "本次会话暂无编辑历史。": {
+      "de": "In dieser Sitzung gibt es noch keinen Bearbeitungsverlauf.",
+      "en": "No edit history in this session yet.",
+      "es": "Esta sesión aún no tiene historial de edición.",
+      "fr": "Aucun historique de retouche dans cette session.",
+      "ja": "このセッションにはまだ編集履歴がありません。",
+      "zh-Hans": "本次会话暂无编辑历史。"
+    },
+    "此目录没有其他照片。": {
+      "de": "Dieser Ordner enthält keine weiteren Fotos.",
+      "en": "There are no other photos in this folder.",
+      "es": "Esta carpeta no contiene otras fotos.",
+      "fr": "Ce dossier ne contient aucune autre photo.",
+      "ja": "このフォルダには他の写真がありません。",
+      "zh-Hans": "此目录没有其他照片。"
+    },
+    "照片或调整已变化，请重新打开后重试。": {
+      "de": "Das Foto oder die Anpassungen wurden geändert. Öffnen Sie das Foto erneut und versuchen Sie es noch einmal.",
+      "en": "The photo or adjustments changed. Reopen the photo and retry.",
+      "es": "La foto o los ajustes han cambiado. Abre de nuevo la foto y vuelve a intentarlo.",
+      "fr": "La photo ou les réglages ont changé. Rouvrez la photo, puis réessayez.",
+      "ja": "写真または調整が変更されました。写真を開き直して再試行してください。",
+      "zh-Hans": "照片或调整已变化，请重新打开后重试。"
+    },
+    "目标缺少所选外观，请先导入外观。": {
+      "de": "Der gewählte Look ist für dieses Ziel nicht verfügbar. Importieren Sie ihn zuerst.",
+      "en": "The selected look is unavailable for this target. Import the look first.",
+      "es": "El aspecto seleccionado no está disponible para este destino. Impórtalo primero.",
+      "fr": "Le style sélectionné est indisponible pour cette cible. Importez-le d’abord.",
+      "ja": "対象で選択したルックを利用できません。先にルックを読み込んでください。",
+      "zh-Hans": "目标缺少所选外观，请先导入外观。"
+    },
+    "粘贴到所选照片…": {
+      "de": "In ausgewählte Fotos einfügen…",
+      "en": "Paste to selected photos…",
+      "es": "Pegar en las fotos seleccionadas…",
+      "fr": "Coller sur les photos sélectionnées…",
+      "ja": "選択した写真にペースト…",
+      "zh-Hans": "粘贴到所选照片…"
+    },
+    "请先应用或放弃当前草稿。": {
+      "de": "Wenden Sie den aktuellen Entwurf zuerst an oder verwerfen Sie ihn.",
+      "en": "Apply or discard the current draft first.",
+      "es": "Aplica o descarta primero los cambios pendientes.",
+      "fr": "Appliquez ou abandonnez d’abord les modifications en cours.",
+      "ja": "先に現在の下書きを適用または破棄してください。",
+      "zh-Hans": "请先应用或放弃当前草稿。"
+    },
+    "请选择至少一项调整。": {
+      "de": "Wählen Sie mindestens eine Anpassung.",
+      "en": "Select at least one adjustment.",
+      "es": "Selecciona al menos un ajuste.",
+      "fr": "Sélectionnez au moins un réglage.",
+      "ja": "少なくとも1つの調整を選択してください。",
+      "zh-Hans": "请选择至少一项调整。"
+    },
+    "调整已保存，当前照片需要重新载入。": {
+      "de": "Die Anpassungen wurden gespeichert. Laden Sie das aktuelle Foto neu, um den neuesten Stand anzuzeigen.",
+      "en": "Adjustments were saved. Reload the current photo to display the latest record.",
+      "es": "Los ajustes se han guardado. Vuelve a cargar la foto actual para mostrar la versión más reciente.",
+      "fr": "Les réglages ont été enregistrés. Rechargez la photo actuelle pour afficher la dernière version.",
+      "ja": "調整は保存されました。最新の状態を表示するには現在の写真を再読み込みしてください。",
+      "zh-Hans": "调整已保存，当前照片需要重新载入。"
+    },
+    "调整已复制。": {
+      "de": "Anpassungen kopiert.",
+      "en": "Adjustments copied.",
+      "es": "Ajustes copiados.",
+      "fr": "Réglages copiés.",
+      "ja": "調整をコピーしました。",
+      "zh-Hans": "调整已复制。"
+    },
+    "调整未应用": {
+      "de": "Anpassungen nicht angewendet",
+      "en": "Adjustments not applied",
+      "es": "Ajustes sin aplicar",
+      "fr": "Réglages non appliqués",
+      "ja": "調整は適用されていません",
+      "zh-Hans": "调整未应用"
+    },
+    "选择目标照片": {
+      "de": "Zielfotos auswählen",
+      "en": "Select target photos",
+      "es": "Seleccionar fotos de destino",
+      "fr": "Sélectionner les photos cibles",
+      "ja": "対象の写真を選択",
+      "zh-Hans": "选择目标照片"
+    },
+    "重做已失效": {
+      "de": "Wiederholen nicht mehr verfügbar",
+      "en": "Redo no longer available",
+      "es": "Rehacer ya no está disponible",
+      "fr": "Rétablissement indisponible",
+      "ja": "やり直しは無効になりました",
+      "zh-Hans": "重做已失效"
+    },
+    "重新载入调整": {
+      "de": "Anpassungen neu laden",
+      "en": "Reload adjustments",
+      "es": "Volver a cargar ajustes",
+      "fr": "Recharger les réglages",
+      "ja": "調整を再読み込み",
+      "zh-Hans": "重新载入调整"
+    },
+    "默认不包含几何与镜头。自定义可逐项选择。": {
+      "de": "Geometrie und Objektiveinstellungen sind standardmäßig ausgeschlossen. Unter Benutzerdefiniert können Sie einzelne Anpassungen wählen.",
+      "en": "Geometry and lens settings are excluded by default. Use Custom to choose individual adjustments.",
+      "es": "La geometría y los ajustes de lente se excluyen de forma predeterminada. Usa Personalizado para elegir cada ajuste.",
+      "fr": "La géométrie et les réglages optiques sont exclus par défaut. Choisissez Personnalisé pour sélectionner chaque réglage.",
+      "ja": "標準ではジオメトリとレンズ設定を含みません。カスタムで項目を個別に選択できます。",
+      "zh-Hans": "默认不包含几何与镜头。自定义可逐项选择。"
+    },
+    "默认范围": {
+      "de": "Standardumfang",
+      "en": "Default range",
+      "es": "Rango predeterminado",
+      "fr": "Portée par défaut",
+      "ja": "標準範囲",
+      "zh-Hans": "默认范围"
     }
   }
 }

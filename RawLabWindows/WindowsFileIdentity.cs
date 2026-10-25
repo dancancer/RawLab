@@ -42,6 +42,19 @@ internal static class WindowsFileIdentity
         return Read(source) == Read(destination);
     }
 
+    internal static OriginalIdentity ReadIdentity(string path)
+    {
+        using var stream=OpenReadLock(path);
+        if(!GetFileInformationByHandle(stream.SafeFileHandle,out var information))
+            throw new Win32Exception(Marshal.GetLastWin32Error(),Loc.Text("无法读取文件身份。"));
+        static long Ticks(System.Runtime.InteropServices.ComTypes.FILETIME value)=>
+            DateTime.FromFileTimeUtc(((long)(uint)value.dwHighDateTime<<32)|(uint)value.dwLowDateTime).Ticks;
+        return new OriginalIdentity(Path.GetFullPath(path),((long)information.FileSizeHigh<<32)|information.FileSizeLow,
+            Ticks(information.LastWriteTime),Ticks(information.CreationTime)) {
+            FileID=$"{information.VolumeSerialNumber:x8}-{information.FileIndexHigh:x8}-{information.FileIndexLow:x8}"
+        };
+    }
+
     private static WindowsFileId Read(FileStream stream)
     {
         if (!GetFileInformationByHandle(stream.SafeFileHandle, out var information))

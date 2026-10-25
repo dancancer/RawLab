@@ -37,7 +37,8 @@ data class AlbumPhoto(val uri: Uri, val name: String, val album: String,
 }
 data class ImportedPhoto(val uri: Uri, val name: String, val file: File,
     val identity: PhotoIdentity = PhotoIdentity(uri.toString()),
-    val inputKind: PhotoInputKind = PhotoInputKind.RAW)
+    val inputKind: PhotoInputKind = PhotoInputKind.RAW,
+    val validateOriginal: (() -> Unit)? = null)
 
 internal fun albumAspectRatio(width: Int, height: Int, orientation: Int): Float? {
     if (width <= 0 || height <= 0) return null
@@ -117,13 +118,19 @@ class PhotoStorage(
         } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "RAW"
         val inputKind = PhotoFiles.kind(name, resolver.getType(uri))
             ?: throw IOException("Selected item is not a supported photo")
+        val validate = OriginalPhotoSource.capture(resolver, uri)
         val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot open input")
-        return ImportedPhoto(uri, name, WorkingCopy.import(directory, stream), PhotoIdentity(uri.toString()), inputKind)
+        val file = WorkingCopy.import(directory, stream)
+        try {
+            validate()
+            return ImportedPhoto(uri, name, file, PhotoIdentity(uri.toString()), inputKind, validate)
+        } catch (error: Throwable) { file.delete(); throw error }
     }
 
     fun looks(): List<LookChoice> = films.map { LookChoice(it.id, it.name, managed = false) } + lookLibrary.list().map {
         LookChoice(it.id, it.name, managed = true, available = it.available)
     }
+    fun builtinLookIDs(): Map<String, String> = films.mapNotNull { film -> film.fileName?.let { it to film.id } }.toMap()
 
     fun importLook(uri: Uri): ManagedLook {
         val name = runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
@@ -156,7 +163,8 @@ class PhotoStorage(
         return destination
     }
     fun lookPath(settings: EditSettings): File? {
-        val id = settings.recipeID ?: return filmPath(settings.film)
+        val id = settings.recipeID ?: settings.film.takeIf { it.startsWith("recipe-lut:") }?.removePrefix("recipe-lut:")
+            ?: return filmPath(settings.film)
         val recipe = MasterRecipe.load(context).first { it.id == id }
         val destination = File(directory, recipe.lutFileName)
         if (!destination.exists()) {

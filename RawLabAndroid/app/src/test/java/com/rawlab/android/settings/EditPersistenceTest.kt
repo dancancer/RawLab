@@ -7,6 +7,18 @@ import java.nio.file.Files
 import com.rawlab.android.geometry.GeometrySettings
 
 class EditPersistenceTest {
+    @Test fun concurrentStoreInstancesDoNotReplaceUnrelatedRecords() {
+        val directory = Files.createTempDirectory("rawlab-edit-instances").toFile()
+        try {
+            val first = EditStore(directory)
+            val second = EditStore(directory)
+            first.save(PhotoIdentity("a"), EditSettings(exposure = .5f))
+            second.save(PhotoIdentity("b"), EditSettings(exposure = -.5f))
+            assertEquals(.5f, EditStore(directory).load(PhotoIdentity("a"))?.exposure)
+            assertEquals(-.5f, first.load(PhotoIdentity("b"))?.exposure)
+        } finally { directory.deleteRecursively() }
+    }
+
     @Test fun failedReplacementKeepsLastDurableValueInMemory() {
         val root = Files.createTempDirectory("rawlab-atomic").toFile()
         try {

@@ -120,7 +120,9 @@ import Combine
         try check(model.neutral!.image.dataProvider!.data! as Data == expected.image.dataProvider!.data! as Data,
                   "lens-only neutral pixels match default-color committed-lens rendering")
         let accepted = model.result!.image
-        try FileManager.default.removeItem(at: file)
+        let unavailable = file.appendingPathExtension("unavailable")
+        // 临时不可用后恢复同一文件；原文件被替换时条件保存应报告身份冲突。
+        try FileManager.default.moveItem(at: file, to: unavailable)
         model.settings.exposure = 0.7
         try wait("real missing-file render fails") { !model.busy && model.error != nil }
         try check(model.result?.image === accepted, "latest preview failure preserves the last valid frame")
@@ -130,15 +132,15 @@ import Combine
         try check(model.previewOutdated && !model.canApplySettings, "dismissing an error does not promote the old frame to current")
         try wait("independent autosave failure becomes visible") { model.saveError != nil }
         let saveError = model.saveError
-        try FileManager.default.copyItem(at: fixture, to: file)
+        try FileManager.default.moveItem(at: unavailable, to: file)
         model.schedule()
         try check(model.previewOutdated && model.busy, "retry stays outdated until a successful accepted frame")
         try wait("retry accepts current exact frame") { !model.busy && !model.previewOutdated && model.error == nil }
         try check(model.result != nil && model.saveError == saveError, "render completion does not clear independent save failure")
         try check(model.saveEdits(), "successful save can clear its own error")
-        try FileManager.default.removeItem(at: file); model.settings.exposure = 0.8
+        try FileManager.default.moveItem(at: file, to: unavailable); model.settings.exposure = 0.8
         try wait("second current-source failure") { !model.busy && model.previewOutdated }
-        try FileManager.default.copyItem(at: fixture, to: file)
+        try FileManager.default.moveItem(at: unavailable, to: file)
         model.open(next)
         try check(model.file == next && !model.previewOutdated && model.result == nil, "new source clears stale-frame status and old pair")
         try wait("new source pair accepted") { !model.busy && model.result != nil && model.neutral != nil }

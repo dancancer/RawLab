@@ -7,7 +7,11 @@ class RenderQueue<T, R>(
     private val render: (T) -> R,
     private val publish: (Long, Result<R>) -> Unit,
     private val release: () -> Unit,
+    private val discard: (R) -> Unit,
 ) : AutoCloseable {
+    constructor(render: (T) -> R, publish: (Long, Result<R>) -> Unit, release: () -> Unit) :
+        this(render, publish, release, {})
+
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "rawlab-render") }
     private val lock = Any()
     private var pending: Pair<Long, T>? = null
@@ -35,9 +39,10 @@ class RenderQueue<T, R>(
                 next
             }
             val result = runCatching { render(task.second) }
-            synchronized(lock) {
-                if (!closed && task.first == revision) publish(task.first, result)
+            val accepted = synchronized(lock) {
+                if (!closed && task.first == revision) { publish(task.first, result); true } else false
             }
+            if (!accepted) result.getOrNull()?.let(discard)
         }
     }
 

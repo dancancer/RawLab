@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -41,6 +42,7 @@ import com.rawlab.android.editor.canvas.PhotoCanvasState
 import com.rawlab.android.editor.canvas.PhotoViewOptions
 import com.rawlab.android.editor.canvas.ComparisonMode
 import com.rawlab.android.editor.controls.AdjustmentHapticGate
+import com.rawlab.android.editor.controls.LocalAdjustmentCancellation
 import com.rawlab.android.editor.controls.LocalAdjustmentFocus
 import com.rawlab.android.editor.controls.LocalAdjustmentHapticGate
 import com.rawlab.android.editor.controls.LocalEditorHaptics
@@ -65,6 +67,11 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onEdit: (EditSettings, Boolean) -> Unit, onRetry: () -> Unit,
     onExport: () -> Unit, onMessageDismiss: () -> Unit, onLicenses: () -> Unit, onGpuChange: (Boolean) -> Unit,
     onSaveRetry: () -> Unit = {},
+    adjustmentReloadRequired: Boolean = false, onReloadAdjustments: () -> Boolean = { false },
+    onCancelAdjustment: () -> Unit = {},
+    canUndoAdjustment: Boolean = false, canRedoAdjustment: Boolean = false, canPasteAdjustment: Boolean = false,
+    onCopyAdjustments: () -> Unit = {}, onPasteAdjustments: () -> Unit = {}, onAdjustmentHistory: () -> Unit = {},
+    onUndoAdjustment: () -> Unit = {}, onRedoAdjustment: () -> Unit = {},
     onAutoExposure: () -> Unit = {},
     onBatchExport: () -> Unit = {},
     onImportLook: () -> Unit = {}, onRenameLook: (String, String) -> Unit = { _, _ -> },
@@ -104,6 +111,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     var haptics by rememberSaveable { mutableStateOf(preferences.getBoolean("haptics", true)) }
     fun leave(action: () -> Unit) {
         if (pendingAll) return
+        onCancelAdjustment()
         if (state.draft?.changed == true) pendingLeave = action
         else { if (state.draft != null) onDiscardDraft(); action() }
     }
@@ -114,7 +122,15 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         if (destination != null) destination() else tool = 2
         return true
     }
-    val retrySave = { if (state.draft != null) { applyAndLeave(); Unit } else onSaveRetry() }
+    var confirmReload by remember { mutableStateOf(false) }
+    val retrySave = { if (adjustmentReloadRequired) confirmReload = true else if (state.draft != null) { applyAndLeave(); Unit } else onSaveRetry() }
+    if (confirmReload) AlertDialog(onDismissRequest = { confirmReload = false },
+        title = { Text(stringResource(R.string.transfer_reload)) }, text = { Text(stringResource(R.string.transfer_reload_body)) },
+        confirmButton = { TextButton(onClick = {
+            confirmReload = false
+            if (onReloadAdjustments()) { pendingLeave = null; pendingAll = false; prepareAllWhenReady = false; tool = 2 }
+        }, modifier = Modifier.testTag("adjustment-reload-confirm")) { Text(stringResource(R.string.transfer_reload)) } },
+        dismissButton = { TextButton(onClick = { confirmReload = false }) { Text(stringResource(R.string.cancel)) } })
     val selectTool: (Int) -> Unit = { next -> if (next != tool) leave { tool = next; expanded = true } }
     val selectGroup: (EditorAdjustmentGroup) -> Unit = { group ->
         leave {
@@ -210,6 +226,13 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             LanguageMenu()
         } }, confirmButton = { TextButton(onClick = { settings = false }) { Text(stringResource(R.string.confirm)) } })
     val sourceKey = "${state.photo?.identity?.value}:${state.photo?.file?.absolutePath}"
+    val liveSourceKey by rememberUpdatedState(sourceKey)
+    val cancelAdjustment = onCancelAdjustment
+    val cancelRuler: (() -> Unit) -> Unit = { restore ->
+        if (liveSourceKey == sourceKey) {
+            if (state.draft == null) cancelAdjustment() else restore()
+        }
+    }
     var viewSource by rememberSaveable { mutableStateOf(sourceKey) }
     val photoCanvas = rememberSaveable(sourceKey, saver = PhotoCanvasState.Saver) { PhotoCanvasState() }
     fun togglePure() {
@@ -257,12 +280,12 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     }
     val hapticGate = remember { AdjustmentHapticGate() }
     CompositionLocalProvider(LocalEditorHaptics provides haptics, LocalAdjustmentFocus provides { adjusting = it },
-        LocalAdjustmentHapticGate provides hapticGate) {
+        LocalAdjustmentHapticGate provides hapticGate, LocalAdjustmentCancellation provides cancelRuler) {
     val currentDock by rememberUpdatedState<@Composable (Modifier, Boolean, Boolean) -> Unit>({ modifier, side, compact ->
         AdjustmentDock(state, modifier, tool, selectTool, expanded, { leave { expanded = !expanded } },
             compare, { view = view.toggleComparison() }, onEdit, onImportLook, onRenameLook, onDeleteLook,
             onAutoExposure, onDraftEdit, { applyAndLeave(); Unit }, { onDiscardDraft(); tool = 2 },
-            onFilmSelected, onGeometryRatio, selectGroup, channel, { channel = it }, requestReset, side, !pendingAll, compact,
+            onFilmSelected, onGeometryRatio, selectGroup, channel, { onCancelAdjustment(); channel = it }, requestReset, side, !pendingAll, compact,
             onGeometryLock, onGeometrySwap, onGeometryGrid)
     })
     // 纯预览与横竖布局只移动/暂不测量同一面板，保留 fine、滚动和本地输入状态。
@@ -284,6 +307,23 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(text = { Text(stringResource(R.string.open_file)) }, enabled = state.operation == Operation.NONE,
                         leadingIcon = { Icon(Icons.Outlined.FolderOpen, null) }, onClick = { menu = false; leave(onFile) })
+                    HorizontalDivider()
+                    DropdownMenuItem(text = { Text(stringResource(R.string.transfer_copy)) }, enabled = state.controlsEnabled,
+                        modifier = Modifier.testTag("adjustment-menu-copy"), leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },
+                        onClick = { menu = false; leave(onCopyAdjustments) })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.transfer_paste)) }, enabled = state.controlsEnabled && canPasteAdjustment,
+                        modifier = Modifier.testTag("adjustment-menu-paste"), leadingIcon = { Icon(Icons.Outlined.ContentPaste, null) },
+                        onClick = { menu = false; leave(onPasteAdjustments) })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.transfer_undo)) }, enabled = canUndoAdjustment && state.controlsEnabled,
+                        modifier = Modifier.testTag("adjustment-menu-undo"), leadingIcon = { Icon(Icons.Outlined.Undo, null) },
+                        onClick = { menu = false; leave(onUndoAdjustment) })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.transfer_redo)) }, enabled = canRedoAdjustment && state.controlsEnabled,
+                        modifier = Modifier.testTag("adjustment-menu-redo"), leadingIcon = { Icon(Icons.Outlined.Redo, null) },
+                        onClick = { menu = false; leave(onRedoAdjustment) })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.transfer_history)) }, enabled = state.controlsEnabled && !adjustmentReloadRequired,
+                        modifier = Modifier.testTag("adjustment-menu-history"), leadingIcon = { Icon(Icons.Outlined.History, null) },
+                        onClick = { menu = false; leave(onAdjustmentHistory) })
+                    HorizontalDivider()
                     DropdownMenuItem(text = { Text(stringResource(R.string.batch_export)) }, enabled = state.canExport,
                         leadingIcon = { Icon(Icons.Outlined.Layers, null) }, onClick = { menu = false; onBatchExport() })
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_photo_info)) }, enabled = state.preview != null,

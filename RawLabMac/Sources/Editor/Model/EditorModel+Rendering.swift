@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 extension EditorModel {
     func setInteracting(_ value: Bool) {
         guard scheduler.interacting != value else { return }
+        if value { beginAdjustmentInteraction() }
         scheduler.setInteracting(value)
         guard file != nil else { refreshBusy(); return }
         if geometryDraft != nil {
@@ -14,7 +15,7 @@ extension EditorModel {
             refreshBusy()
             return
         }
-        if value { schedule() } else { schedule(forceExact: true) }
+        if value { schedule() } else { finishAdjustmentInteraction(); schedule(forceExact: true) }
     }
     func schedule() {
         schedule(forceExact: false)

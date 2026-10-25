@@ -13,7 +13,16 @@ SOURCES+=("$ROOT/RawLabMac/Sources/Export/ExportSizePicker.swift" "$ROOT/RawLabM
 SOURCES+=("$ROOT/RawLabMac/Sources/Lens/MacStraightenPreview.swift")
 SOURCES+=("$ROOT/RawLabMac/Sources/Geometry/MacCropInteraction.swift")
 SOURCES+=("$ROOT/RawLabMac/Sources/Inputs/ParameterValueField.swift" "$ROOT/RawLabMac/Sources/Inputs/ParameterPrecision.swift")
-swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
+TRANSFER_SOURCES=(
+  "$ROOT/Shared/AdjustmentTransfer.swift"
+  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"
+  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"
+  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferWB.swift"
+  "$ROOT/RawLabMac/Sources/Editor/Storage/AdjustmentTransferSession.swift"
+  "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentHistory.swift"
+  "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentTransfer.swift"
+)
+swiftc "${TRANSFER_SOURCES[@]}" "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
     "$ROOT/Shared/BundledLook.swift" \
   -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
   "$ROOT/Shared/UsageAnalytics.swift" \

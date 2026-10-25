@@ -124,7 +124,8 @@ final class EditorModel: ObservableObject {
     @Published var films = Film.bundled()
     @Published var selectedFilmID = "" {
         didSet {
-            if !updatingMetadata {
+            if selectedFilmID.hasPrefix("recipe-lut:") { independentRecipeLookIDs.insert(selectedFilmID) }
+            if !updatingMetadata && (oldValue != selectedFilmID || settings.masterRecipeID != nil) {
                 if settings.masterRecipeID != nil {
                     settings.clearMasterRecipe()
                 }
@@ -197,7 +198,28 @@ final class EditorModel: ObservableObject {
     var engine: RenderEngine?
     var originalCache: (key: MacNeutralReferenceKey, frame: RenderedImage)?
     var geometryReferenceCache: (key: MacNeutralReferenceKey, frame: RenderedImage)?
-    var editStore: EditPersistence?
+    var editStore: EditPersistence? {
+        didSet {
+            if editStore !== oldValue {
+                adjustmentSession = editStore.map(AdjustmentTransferSession.init)
+                committedEdit = nil
+            }
+        }
+    }
+    var adjustmentSession: AdjustmentTransferSession?
+    var committedEdit: VersionedPhotoEdit?
+    var interactionEntry: PhotoEditState?
+    var interactionWasDirty = false
+    @Published var adjustmentHistoryRevision = 0
+    @Published var adjustmentClipboard: AdjustmentTransferPayload?
+    @Published var adjustmentSheet: AdjustmentSheetKind?
+    var adjustmentSheetPayload: AdjustmentTransferPayload?
+    var adjustmentSheetTargets: [URL]?
+    var adjustmentSheetExcludedSource: String?
+    var pendingAdjustmentHistory: AdjustmentHistoryRequest?
+    @Published var independentRecipeLookIDs = Set<String>()
+    @Published var adjustmentOutcomes: [AdjustmentTransferOutcome] = []
+    var lastAdjustmentTransaction: UUID?
     let editDirectory: URL
     let batchJournal: BatchJournal
     var saveWork: DispatchWorkItem?
@@ -205,7 +227,10 @@ final class EditorModel: ObservableObject {
     var lookLibrary: LookLibrary?
     let onUsage: (UsageEvent) -> Void
     var pendingImportEvent = false
-    var selectedFilm: Film? { films.first { $0.id == selectedFilmID } }
+    var selectedFilm: Film? {
+        Film.independentRecipe(selectedFilmID) ?? films.first { $0.id == selectedFilmID }
+    }
+    var filmChoices: [Film] { films + independentRecipeLookIDs.sorted().compactMap(Film.independentRecipe) }
     var selectedMasterRecipe: MasterRecipe? { settings.masterRecipe }
     var missingFilm: Bool { !selectedFilmID.isEmpty && (selectedFilm == nil || !FileManager.default.isReadableFile(atPath: selectedFilm!.url.path)) }
     var missingMasterRecipe: Bool {

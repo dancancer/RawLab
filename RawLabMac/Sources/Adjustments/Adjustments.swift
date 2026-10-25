@@ -30,6 +30,11 @@ struct Adjustments: Equatable, Codable {
     private var masterRecipeSettingsVersion: Int? = 3
 
     var masterRecipe: MasterRecipe? { MasterRecipe.recipe(for: masterRecipeID) }
+    var recipeSettingsVersion: Int { masterRecipeSettingsVersion ?? 2 }
+    mutating func setTransferRecipe(_ id: String?, settingsVersion: Int = 3) {
+        masterRecipeID = id
+        masterRecipeSettingsVersion = settingsVersion
+    }
     var effectSettings: PhotoEffectsSettings { photoEffects ?? PhotoEffectsSettings() }
     var hslSettings: HSLSettings { hsl ?? HSLSettings() }
     var renderHSLSettings: HSLSettings {
@@ -316,7 +321,7 @@ struct Adjustments: Equatable, Codable {
         return state
     }
 
-    fileprivate func validateResetValues() throws {
+    func validateResetValues() throws {
         for parameter in [AdjustmentParameter.strength, .exposure, .temperature, .tint, .contrast,
                           .highlights, .shadows, .toneCurve, .saturation, .sharpening, .rawNoiseReduction] {
             let value = self[keyPath: parameter.spec.keyPath]

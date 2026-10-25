@@ -14,6 +14,7 @@ struct AdjustmentRuler: UIViewRepresentable {
     var interactionID: AnyHashable = 0
     var directionColors: [Color] = []
     var directionHint: String = ""
+    var onEditingCancelled: () -> Void = {}
     let onEditingChanged: (Bool) -> Void
 
     func makeUIView(context: Context) -> AdjustmentRulerView { AdjustmentRulerView() }
@@ -23,7 +24,7 @@ struct AdjustmentRuler: UIViewRepresentable {
                        haptics: haptics, reduceMotion: reduceMotion, title: title,
                        formatter: formatter, identifier: identifier,
                        interactionID: interactionID, directionColors: directionColors.map { UIColor($0) }, directionHint: directionHint,
-                       onChange: { value = $0 }, onEditingChanged: onEditingChanged)
+                       onChange: { value = $0 }, onEditingCancelled: onEditingCancelled, onEditingChanged: onEditingChanged)
     }
 
     static func dismantleUIView(_ view: AdjustmentRulerView, coordinator: Void) { view.cancel() }
@@ -49,11 +50,13 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
     private var formatter: (Double) -> String = { String($0) }
     private var onChange: (Double) -> Void = { _ in }
     private var onEditingChanged: (Bool) -> Void = { _ in }
+    private var onEditingCancelled: () -> Void = {}
     private var motion = AdjustmentTickMotion()
     private var displayLink: CADisplayLink?
     private var settlement: (start: Double, end: Double, time: Double)?
     private lazy var pan = UIPanGestureRecognizer(target: self, action: #selector(drag(_:)))
     private lazy var linkTarget = RulerDisplayLinkTarget(view: self)
+    private let keyboardlessInput = UIView(frame: .zero)
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -73,10 +76,13 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
     func configure(scale: AdjustmentScale, value: Double, defaultValue: Double?, fine: Bool,
                    haptics: Bool, reduceMotion: Bool, title: String, formatter: @escaping (Double) -> String,
                    identifier: String, interactionID: AnyHashable = 0, directionColors: [UIColor] = [], directionHint: String = "", onChange: @escaping (Double) -> Void,
-                   onEditingChanged: @escaping (Bool) -> Void) {
+                   onEditingCancelled: @escaping () -> Void = {}, onEditingChanged: @escaping (Bool) -> Void) {
         let gestureEcho = gestureActive && self.interactionID == interactionID && self.scale == scale && gestureValueEchoes.contains(value)
-        let replaced = self.interactionID != interactionID || self.scale != scale || (!gestureEcho && abs(self.value - value) > scale.step * 1e-8)
+        let replaced = self.interactionID != interactionID || self.scale != scale || self.fine != fine ||
+            (!gestureEcho && abs(self.value - value) > scale.step * 1e-8)
         let endedEditing = replaced && editing
+        let cancelled = self.onEditingCancelled
+        let ended = self.onEditingChanged
         if replaced { cancelState(notify: false) }
         if self.scale != scale || ticks.isEmpty { ticks = scale.ticks }
         self.scale = scale
@@ -90,6 +96,7 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
         self.interactionID = interactionID
         self.onChange = onChange
         self.onEditingChanged = onEditingChanged
+        self.onEditingCancelled = onEditingCancelled
         accessibilityLabel = title
         accessibilityIdentifier = identifier
         accessibilityValue = formatter(self.value)
@@ -100,7 +107,7 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
         if !editing && settlement == nil { position = scale.position(for: value) }
         if reduceMotion { motion.clear(); settlement = nil; stopDisplayLink() }
         if endedEditing {
-            DispatchQueue.main.async { [weak self] in self?.onEditingChanged(false) }
+            DispatchQueue.main.async { cancelled(); ended(false) }
         }
         setNeedsDisplay()
     }
@@ -112,6 +119,8 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
 
     override var isHidden: Bool { didSet { if isHidden { cancel() } } }
     override var canBecomeFirstResponder: Bool { true }
+    // 保留硬件方向键焦点，不为数值标尺唤出文本软键盘。
+    override var inputView: UIView? { keyboardlessInput }
     override func resignFirstResponder() -> Bool { cancel(); return super.resignFirstResponder() }
 
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -207,7 +216,7 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
         gestureValueEchoes.removeAll(keepingCapacity: true)
         if editing {
             editing = false
-            if notify { onEditingChanged(false) }
+            if notify { onEditingCancelled(); onEditingChanged(false) }
         }
         settlement = nil
         motion.clear()

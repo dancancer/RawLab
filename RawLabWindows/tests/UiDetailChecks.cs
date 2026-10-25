@@ -205,7 +205,9 @@ internal static class UiDetailChecks
     {
         typeof(MainWindow).GetMethod("BuildResetMenu",PrivateInstance)!.Invoke(window,null);
         var edit=(MenuItem)window.MainMenu.Items[1];
-        var editItems=edit.Items.OfType<MenuItem>().ToArray();
+        var editItems=edit.Items.OfType<MenuItem>().Where(item=>item.Tag is EditorResetScope).ToArray();
+        check(new[]{window.CopyAdjustmentMenu,window.PasteAdjustmentMenu,window.PastePhotosAdjustmentMenu,window.HistoryAdjustmentMenu,window.UndoAdjustmentMenu,window.RedoAdjustmentMenu}.All(edit.Items.Contains),
+            "Rebuilding reset scopes preserves the actual transfer and history menu items: "+language);
         check(editItems.Select(item=>((EditorResetScope)item.Tag).Kind).SequenceEqual(new[]{EditorResetKind.Tool,EditorResetKind.Group,EditorResetKind.All}),
             "Edit menu exposes current tool, current group and All scopes: "+language);
         check(editItems[1].Header.ToString()==Loc.Format("重置{0}组…",Loc.Text("光线")) && editItems.All(item=>!item.IsEnabled),

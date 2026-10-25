@@ -4,6 +4,8 @@
     <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../AdjustmentPayload.cs" Link="AdjustmentPayload.cs" />
+    <Compile Include="../../AdjustmentTransfer*.cs" Link="%(Filename)%(Extension)" />
     <Compile Include="../../Localization.cs" Link="Localization.cs" />
     <Compile Include="../../GeometrySettings.cs" Link="GeometrySettings.cs" />
     <Compile Include="../../EditorAdjustmentRules.cs" Link="EditorAdjustmentRules.cs" />

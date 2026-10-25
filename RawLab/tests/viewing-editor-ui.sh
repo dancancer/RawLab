@@ -15,11 +15,11 @@ import pathlib,plistlib,sys,subprocess,shutil,json,hashlib,difflib
 root,out,original=map(pathlib.Path,sys.argv[1:]);app=out/'ViewingEditor.app';info=plistlib.load((app/'Info.plist').open('rb'));old=info['CFBundleExecutable']
 for name in [old,old+'.debug.dylib']:
  (app/name).unlink(missing_ok=True)
-info.update(CFBundleIdentifier='com.rawlab.tests.viewing-editor',CFBundleExecutable='viewing-editor',UIApplicationSceneManifest={'UIApplicationSupportsMultipleScenes':False});plistlib.dump(info,(app/'Info.plist').open('wb'))
+info.update(CFBundleIdentifier='com.rawlab.tests.viewing-editor',CFBundleExecutable='viewing-editor',UIFileSharingEnabled=True,LSSupportsOpeningDocumentsInPlace=True,UIApplicationSceneManifest={'UIApplicationSupportsMultipleScenes':False});plistlib.dump(info,(app/'Info.plist').open('wb'))
 transforms={
  'RawLab/RawLab/UI/Editor/ContentView.swift':('        .onAppear {\n            viewModel.loadLUTsIfNeeded()', '        .onChange(of: photoViewing.holdingBefore) { _, _ in ViewingEditorProbe.shared.recordHistogram(currentHistogram, showingBefore: showingBefore) }\n        .onAppear {\n            Task { await prepareViewingReview() }\n            viewModel.loadLUTsIfNeeded()'),
  'RawLab/RawLab/Core/ViewModel/RawEditorViewModel+Rendering.swift':('        lastPreviewRequest = request','        MainActor.assumeIsolated { ViewingEditorProbe.shared.recordPreview(request, source: sourceRevision) }\n        lastPreviewRequest = request'),
- 'RawLab/RawLab/Core/Persistence/EditPersistence.swift':('        updated[identity.key] = state','        try MainActor.assumeIsolated { try ViewingEditorProbe.shared.recordSave(state) }\n        updated[identity.key] = state'),
+ 'RawLab/RawLab/Core/Persistence/EditPersistence.swift':('        store.records[identity.key] = state','        try MainActor.assumeIsolated { try ViewingEditorProbe.shared.recordSave(state, identity: identity) }\n        store.records[identity.key] = state'),
  'RawLab/RawLab/UI/Editor/ContentView+Panels.swift':('onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) }','onPreviewSizeChange: { ViewingEditorProbe.shared.resizing = true; defer { ViewingEditorProbe.shared.resizing = false }; viewModel.updatePreviewSize($0, settings: draftPreviewSettings) }')}
 sources=[];diff=[]
 for folder in ['RawLab/RawLab/Core','RawLab/RawLab/UI','Shared']:
@@ -59,7 +59,10 @@ codesign --force --sign - "$RUNNER" >/dev/null
 xcrun simctl install "$DEVICE" "$HARNESS"
 xcrun simctl uninstall "$DEVICE" com.example.RawLabUITests.xctrunner >/dev/null 2>&1 || true
 STATUS=0
-xcodebuild -xctestrun "$OUT/viewing-editor.xctestrun" -destination "platform=iOS Simulator,id=$DEVICE" -parallel-testing-enabled NO -only-testing:"RawLabUITests/ViewingEditorUITests/${RAWLAB_VIEWING_EDITOR_TEST:-testActualCropHandlesAlignWithNativePhotoMargin}" -collect-test-diagnostics never -resultBundlePath "$OUT/viewing-editor.xcresult" test-without-building > "$OUT/viewing-editor-ui.log" 2>&1 || STATUS=$?
+IFS=',' read -r -a SELECTED_TESTS <<< "${RAWLAB_VIEWING_EDITOR_TEST:-testActualCropHandlesAlignWithNativePhotoMargin}"
+TEST_FILTERS=()
+for test in "${SELECTED_TESTS[@]}"; do TEST_FILTERS+=("-only-testing:RawLabUITests/ViewingEditorUITests/$test"); done
+xcodebuild -xctestrun "$OUT/viewing-editor.xctestrun" -destination "platform=iOS Simulator,id=$DEVICE" -parallel-testing-enabled NO "${TEST_FILTERS[@]}" -collect-test-diagnostics never -resultBundlePath "$OUT/viewing-editor.xcresult" test-without-building > "$OUT/viewing-editor-ui.log" 2>&1 || STATUS=$?
 python3 - "$OUT" "$DEVICE" "$STATUS" <<'PY'
 import pathlib,hashlib,json,sys,subprocess
 out=pathlib.Path(sys.argv[1]);app=out/'ViewingEditor.app';sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest();installed=pathlib.Path(subprocess.check_output(['xcrun','simctl','get_app_container',sys.argv[2],'com.rawlab.tests.viewing-editor','app'],text=True).strip())

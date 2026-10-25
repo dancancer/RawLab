@@ -26,11 +26,16 @@ public sealed class ParameterRow : Grid
     private object? source,scope;
     private double value,defaultValue;
     private bool syncing,dragging,dragChanged;
+    private object? dragSource,dragScope;
+    private double dragValue;
+    public static readonly RoutedEvent GestureStartedEvent=EventManager.RegisterRoutedEvent("GestureStarted",RoutingStrategy.Bubble,typeof(RoutedEventHandler),typeof(ParameterRow));
+    public static readonly RoutedEvent GestureCancelledEvent=EventManager.RegisterRoutedEvent("GestureCancelled",RoutingStrategy.Bubble,typeof(RoutedEventHandler),typeof(ParameterRow));
+    public static readonly RoutedEvent GestureCompletedEvent=EventManager.RegisterRoutedEvent("GestureCompleted",RoutingStrategy.Bubble,typeof(RoutedEventHandler),typeof(ParameterRow));
     private string title="",suffix="",help="";
     public bool KeepInvalidInput { get; set; }
     public bool Compact { get; set; }
     public bool HasInvalidInput => input.Dirty && range.Parse(Number.Text,input.Original)==null;
-    public object? SourceIdentity { get=>source; set {if(Equals(source,value))return;source=value;input.Bind(source,scope,range,this.value);RestoreText();} }
+    public object? SourceIdentity { get=>source; set {if(Equals(source,value))return;CancelDrag();source=value;input.Bind(source,scope,range,this.value);RestoreText();} }
     public event Action<double,bool>? Changed;
     public event Action? InvalidInput;
 
@@ -43,8 +48,14 @@ public sealed class ParameterRow : Grid
         SetRow(error,2);SetColumnSpan(error,4);error.SetResourceReference(TextBlock.ForegroundProperty,"ErrorForeground");
         Typography.SetNumeralAlignment(Number,FontNumeralAlignment.Tabular);
         Slider.ValueChanged+=(_,e)=>{if(!syncing)Publish(range.Value(e.NewValue),dragging);};
-        Slider.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>{dragging=true;dragChanged=false;}));
-        Slider.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,_)=>{dragging=false;if(dragChanged)Changed?.Invoke(value,false);dragChanged=false;}));
+        Slider.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>{
+            dragging=true;dragChanged=false;dragValue=value;dragSource=source;dragScope=scope;RaiseEvent(new(GestureStartedEvent));
+        }));
+        Slider.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,e)=>{
+            if(!dragging)return;
+            if(e.Canceled || !Equals(dragSource,source) || !Equals(dragScope,scope)){CancelDrag();return;}
+            dragging=false;var changed=dragChanged;dragChanged=false;if(changed)Changed?.Invoke(value,false);RaiseEvent(new(GestureCompletedEvent));
+        }));
         Number.TextChanged+=(_,_)=>{if(!syncing)input.Edit(Number.Text);};
         Number.LostKeyboardFocus+=(_,_)=>Commit();
         Number.SetNumericValue=next=>{if(Commit())Publish(range.Clamp(next),false);};
@@ -101,6 +112,7 @@ public sealed class ParameterRow : Grid
     }
     public void Refresh(string title,NumericRange limits,double current,double reset,string suffix="",bool enabled=true,object? inputScope=null)
     {
+        if(!Equals(scope,inputScope??title))CancelDrag();
         this.title=title;this.suffix=suffix;range=limits;value=current;defaultValue=reset;scope=inputScope??title;
         var rebound=input.Bind(source,scope,limits,current);
         label.Text=title;unit.Text=suffix;IsEnabled=enabled;
@@ -117,7 +129,15 @@ public sealed class ParameterRow : Grid
         if(rebound || !input.Dirty)RestoreText();
         UpdateModified();LayoutRow();
     }
-    public void CancelInput(){input.Cancel();RestoreText();wheel.Reset();}
+    public void CancelInput(){CancelDrag();input.Cancel();RestoreText();wheel.Reset();}
+    private void CancelDrag()
+    {
+        if(!dragging)return;
+        dragging=false;dragChanged=false;value=dragValue;input.Bind(source,scope,range,value);
+        syncing=true;Slider.Value=range.Position(value);syncing=false;
+        RaiseEvent(new(GestureCancelledEvent));
+        if(Slider.IsMouseCaptureWithin)Mouse.Capture(null);
+    }
     public void RestoreText()
     {
         input.Cancel();syncing=true;Number.Text=input.Text;syncing=false;

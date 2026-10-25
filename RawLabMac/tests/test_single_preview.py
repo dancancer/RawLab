@@ -18,7 +18,9 @@ class SinglePreview(unittest.TestCase):
     def test_every_open_resets_comparison_without_touching_edits(self):
         source = (ROOT / "Sources/Editor/View/EditorView.swift").read_text()
         self.assertRegex(source, r"\.onChange\(of: model\.sourceRevision\)\s*\{[^}]*viewing.sourceChanged\(\)[^}]*fit\(\)")
-        self.assertNotIn("compare", (ROOT / "Sources/Editor/Storage/EditPersistence.swift").read_text())
+        storage = (ROOT / "Sources/Editor/Storage/EditPersistence.swift").read_text()
+        # 约束持久化状态声明；compareAndSave 这类存储操作不属于画面对比状态。
+        self.assertNotRegex(storage, r"\b(?:let|var)\s+(?:compare|comparison)\w*\s*[:=]")
 
     def test_manual_toggle_survives_parameter_and_render_changes(self):
         source = (ROOT / "Sources/Editor/View/EditorView.swift").read_text()
