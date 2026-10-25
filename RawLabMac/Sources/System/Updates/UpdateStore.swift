@@ -18,6 +18,13 @@ struct UpdateStore {
         guard value.channel == "stable", value.pendingUpdate.format == 1 else {
             throw UpdateAdapterError(code: "storage", detail: "Unsupported update state")
         }
+        // 失败阶段决定启动恢复门禁，缺失信息不能被当作普通失败。
+        if value.pendingUpdate.phase == .failed {
+            guard let failure = value.pendingUpdate.failure,
+                  ![.idle, .available, .complete, .failed].contains(failure.stage), !failure.code.isEmpty else {
+                throw UpdateAdapterError(code: "storage", detail: "Incomplete update failure")
+            }
+        }
         if let receipt = value.stateRepairReceipt {
             let archive = repairedStateArchive(receipt)
             try requireOrdinary(archive.deletingLastPathComponent().deletingLastPathComponent())

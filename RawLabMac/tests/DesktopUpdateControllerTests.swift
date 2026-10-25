@@ -77,6 +77,7 @@ import Foundation
         let newer = DesktopUpdateController(adapter: FakeUpdateAdapter(), gate: UpdateInstallGate(), store: recoveryStore, currentVersion: "0.9.1", currentBuild: "19")
         newer.finishStartupHealthCheck(healthy: false)
         check(newer.requiresRecovery && !newer.canCheck && !newer.canRestorePreviousData, "Failed first boot blocks editing and cannot restore old data into the newer app")
+        try malformedFailureStartup(store: recoveryStore, original: newer.preferences)
         let untrusted = DesktopUpdateController(adapter: UnavailableUpdateAdapter("identity"), gate: UpdateInstallGate(), store: recoveryStore, currentVersion: "0.8.2", currentBuild: "14")
         check(!untrusted.canRestorePreviousData, "Untrusted previous application cannot restore data")
         let wrongBuild = DesktopUpdateController(adapter: FakeUpdateAdapter(), gate: UpdateInstallGate(), store: recoveryStore, currentVersion: "0.8.2", currentBuild: "15")
@@ -94,6 +95,26 @@ import Foundation
     static func checkData(_ path: URL, _ expected: String) throws {
         let value = try String(contentsOf: path, encoding: .utf8)
         check(value == expected, "Recovery restores the verified backup contents")
+    }
+
+    @MainActor static func malformedFailureStartup(store: UpdateStore, original: UpdatePreferences) throws {
+        defer { try? store.save(original) }
+        let document = try JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as! [String: Any]
+        for name in ["missing", "null", "incomplete"] {
+            var damaged = document, pending = document["pendingUpdate"] as! [String: Any]
+            if name == "missing" { pending.removeValue(forKey: "failure") }
+            else if name == "null" { pending["failure"] = NSNull() }
+            else { pending["failure"] = ["stage": "pending_restart"] }
+            damaged["pendingUpdate"] = pending
+            let bytes = try JSONSerialization.data(withJSONObject: damaged); try bytes.write(to: store.stateURL)
+            let reopened = DesktopUpdateController(adapter: FakeUpdateAdapter(), gate: UpdateInstallGate(), store: store,
+                currentVersion: "0.9.1", currentBuild: "19")
+            reopened.finishStartupHealthCheck(healthy: true)
+            check(reopened.storageError != nil && !reopened.canCheck && !reopened.canChooseInstall && !reopened.canRepairState,
+                "Malformed installation failure blocks startup and state reset: \(name)")
+            let preserved = try Data(contentsOf: store.stateURL)
+            check(preserved == bytes, "Blocked startup preserves the damaged failure record: \(name)")
+        }
     }
 
     @MainActor static func stateRepair() throws {

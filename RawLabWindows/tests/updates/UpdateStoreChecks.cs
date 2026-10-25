@@ -12,6 +12,7 @@ internal static class UpdateStoreChecks
     internal static void Run(Action<bool, string> check)
     {
         StateRepair(check);
+        FailedStateValidation(check);
         var root = Path.Combine(Path.GetTempPath(), "rawlab-update-store-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
         try
         {
@@ -102,6 +103,35 @@ internal static class UpdateStoreChecks
             Directory.Delete(backups, true); File.WriteAllText(Path.Combine(store.DirectoryPath, "recovery-in-progress.json"), "journal");
             check(Rejected(() => store.RepairableState()) && File.ReadAllBytes(store.StatePath).SequenceEqual(damaged),
                 "An interrupted recovery remains blocked without changing damaged state");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    private static void FailedStateValidation(Action<bool, string> check)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-failure-state-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new UpdateStore(root); var valid = new UpdatePreferences(); var token = valid.PendingUpdate.BeginCheck();
+            valid.PendingUpdate.Fail("network", "", token); store.Save(valid);
+            check(store.Load(false).PendingUpdate.Failure == valid.PendingUpdate.Failure, "A complete failure with empty detail remains readable");
+            var original = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(store.StatePath))!; var accepted = new List<string>();
+            foreach (var name in new[] { "missing", "null", "empty", "missing-Stage", "missing-Code", "missing-Detail",
+                "null-Stage", "null-Code", "null-Detail", "empty-Code", "Idle", "Available", "Complete", "Failed" })
+            {
+                var document = original.DeepClone(); var pending = document["PendingUpdate"]!.AsObject(); var failure = pending["Failure"]!.AsObject();
+                if (name == "missing") pending.Remove("Failure");
+                else if (name == "null") pending["Failure"] = null;
+                else if (name == "empty") pending["Failure"] = new System.Text.Json.Nodes.JsonObject();
+                else if (name == "empty-Code") failure["Code"] = "";
+                else if (name.StartsWith("missing-")) failure.Remove(name[8..]);
+                else if (name.StartsWith("null-")) failure[name[5..]] = null;
+                else failure["Stage"] = (int)Enum.Parse<UpdatePhase>(name);
+                var damaged = document.ToJsonString(); File.WriteAllText(store.StatePath, damaged);
+                try { store.Load(false); accepted.Add(name); } catch { }
+                check(File.ReadAllText(store.StatePath) == damaged, "Rejected failure input is preserved: " + name);
+            }
+            check(accepted.Count == 0, "Malformed failed states must be rejected; accepted: " + string.Join(", ", accepted));
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }

@@ -29,6 +29,14 @@ public sealed class UpdateStore(string directory)
             value.PendingUpdate.Failure is {} failure && !Enum.IsDefined(failure.Stage) ||
             !double.IsFinite(value.PendingUpdate.Progress) || value.PendingUpdate.Progress is < 0 or > 1 || value.PendingUpdate.Blockers == null)
             throw new InvalidDataException("Unsupported update state");
+        // 失败阶段决定启动恢复门禁，缺失字段不能被默认值掩盖。
+        if (value.PendingUpdate.Phase == UpdatePhase.Failed)
+        {
+            var failed = value.PendingUpdate.Failure;
+            if (failed == null || failed.Stage is UpdatePhase.Idle or UpdatePhase.Available or UpdatePhase.Complete or UpdatePhase.Failed ||
+                string.IsNullOrEmpty(failed.Code) || failed.Detail == null)
+                throw new InvalidDataException("Incomplete update failure");
+        }
         if (value.StateRepairReceipt is {} receipt)
         {
             var archive = RepairedStateArchive(receipt);

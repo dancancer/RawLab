@@ -50,6 +50,7 @@ internal static class ControllerChecks
             later.FinishStartupHealthCheck(true);
             check(later.State.Phase == UpdatePhase.Failed && later.RecoveryError != null, "Corrupt backup routes first boot to recovery instead of crashing");
             File.WriteAllText(manifestPath, validManifest);
+            MalformedFailureStartup(store, later.Preferences, check);
             check(!later.CanRestorePreviousData, "A process that already opened editing cannot restore cached data in place");
             var wrongVersion = new DesktopUpdateController(adapter, new(), store, "0.9.1", "19");
             check(wrongVersion.RequiresRecovery && !wrongVersion.CanCheck && !wrongVersion.CanRestorePreviousData,
@@ -93,5 +94,27 @@ internal static class ControllerChecks
                 "Only a fresh healthy startup completes explicit state repair");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    private static void MalformedFailureStartup(UpdateStore store, UpdatePreferences original, Action<bool, string> check)
+    {
+        var document = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(original))!;
+        try
+        {
+            foreach (var name in new[] { "missing", "null", "incomplete" })
+            {
+                var damaged = document.DeepClone(); var pending = damaged["PendingUpdate"]!.AsObject();
+                if (name == "missing") pending.Remove("Failure");
+                else if (name == "null") pending["Failure"] = null;
+                else pending["Failure"] = new System.Text.Json.Nodes.JsonObject { ["Stage"] = (int)UpdatePhase.PendingRestart };
+                var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(damaged); File.WriteAllBytes(store.StatePath, bytes);
+                var reopened = new DesktopUpdateController(new Adapter(), new(), store, "0.9.1", "19");
+                reopened.FinishStartupHealthCheck(true);
+                check(reopened.StorageError != null && !reopened.CanCheck && !reopened.CanChooseInstall && !reopened.CanRepairState,
+                    "Malformed installation failure blocks startup and state reset: " + name);
+                check(File.ReadAllBytes(store.StatePath).SequenceEqual(bytes), "Blocked startup preserves the damaged failure record: " + name);
+            }
+        }
+        finally { store.Save(original); }
     }
 }

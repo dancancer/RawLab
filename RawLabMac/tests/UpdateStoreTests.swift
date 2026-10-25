@@ -7,6 +7,7 @@ import Foundation
     static func rejected(_ work: () throws -> Void) -> Bool { do { try work(); return false } catch { return true } }
     static func main() throws {
         try stateRepair()
+        try failedStateValidation()
         if CommandLine.arguments.count == 4, CommandLine.arguments[1] == "--crash-recovery" {
             let root = URL(fileURLWithPath: CommandLine.arguments[2])
             _ = try UpdateDataBackup(dataRoot: root, updateRoot: root.appendingPathComponent("Updates"))
@@ -106,5 +107,40 @@ import Foundation
         try Data("journal".utf8).write(to: store.directory.appendingPathComponent("recovery-in-progress.json"))
         try check(rejected { _ = try store.repairableState() } && Data(contentsOf: store.stateURL) == damaged,
             "An interrupted data recovery remains blocked without changing the damaged state")
+    }
+
+    static func failedStateValidation() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-failure-state-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = UpdateStore(directory: root)
+        var valid = UpdatePreferences(); let token = valid.pendingUpdate.beginCheck()
+        _ = valid.pendingUpdate.fail("network", detail: "", token: token)
+        try store.save(valid)
+        try check(try store.load(automaticCheck: false).pendingUpdate.failure == valid.pendingUpdate.failure,
+            "A complete failure with an empty detail remains readable")
+        let original = try JSONSerialization.jsonObject(with: Data(contentsOf: store.stateURL)) as! [String: Any]
+        var accepted: [String] = []
+        for name in ["missing", "null", "empty", "missing-stage", "missing-code", "missing-detail",
+                     "null-stage", "null-code", "null-detail", "empty-code", "idle", "available", "complete", "failed"] {
+            var document = original, pending = original["pendingUpdate"] as! [String: Any]
+            var failure = pending["failure"] as! [String: Any]
+            switch name {
+            case "missing": pending.removeValue(forKey: "failure")
+            case "null": pending["failure"] = NSNull()
+            case "empty": pending["failure"] = [String: Any]()
+            case "empty-code": failure["code"] = ""; pending["failure"] = failure
+            default:
+                if name.hasPrefix("missing-") { failure.removeValue(forKey: String(name.dropFirst(8))) }
+                else if name.hasPrefix("null-") { failure[String(name.dropFirst(5))] = NSNull() }
+                else { failure["stage"] = name }
+                pending["failure"] = failure
+            }
+            document["pendingUpdate"] = pending
+            let damaged = try JSONSerialization.data(withJSONObject: document)
+            try damaged.write(to: store.stateURL)
+            if !rejected({ _ = try store.load(automaticCheck: false) }) { accepted.append(name) }
+            try check(Data(contentsOf: store.stateURL) == damaged, "Rejected failure input is preserved: \(name)")
+        }
+        try check(accepted.isEmpty, "Malformed failed states must be rejected; accepted: \(accepted.joined(separator: ", "))")
     }
 }
