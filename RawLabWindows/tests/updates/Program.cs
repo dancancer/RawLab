@@ -1,6 +1,8 @@
 using System.Text.Json;
 using RawLab.Windows;
 
+if (args.Length == 3 && args[0] == "--crash-recovery") { UpdateStoreChecks.Crash(args[1], args[2]); return; }
+
 static void Check(bool condition, string label)
 {
     if (!condition) throw new Exception(label);
@@ -8,6 +10,9 @@ static void Check(bool condition, string label)
 static string Payload(string tag, bool draft = false, bool preview = false, string asset = "RawLab-Windows-0.5.0-win-x64.zip") =>
     JsonSerializer.Serialize(new { tag_name = tag, draft, prerelease = preview, body = "Notes", assets = new[] { new { name = asset } } });
 static UpdateRelease? Release(string tag) => UpdateRelease.Parse(Payload(tag), "0.4.0");
+InstallStateChecks.Run(Check);
+UpdateStoreChecks.Run(Check);
+Console.WriteLine("PASS: persisted update state, stale callbacks, cancellation and installation gate");
 Check(Release("v0.10.0")?.Version == "0.10.0", "numeric comparison");
 Check(Release("v0.4") == null, "historical two-part tag");
 Check(Release("v0.3.9") == null, "never downgrade");

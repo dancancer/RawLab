@@ -14,6 +14,9 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     case look = "looks.reference", strength = "looks.strength"
     case exposure = "light.exposure", exposureMode = "light.exposure_mode"
     case contrast = "light.contrast", highlights = "light.highlights", shadows = "light.shadows", sCurve = "light.s_curve"
+    case curve = "light.curve"
+    case blackPoint = "tone.black_point", whitePoint = "tone.white_point", vibrance = "color.vibrance"
+    case gradingShadows = "color.grading.shadows", gradingMidtones = "color.grading.midtones", gradingHighlights = "color.grading.highlights"
     case whiteBalanceMode = "color.white_balance.mode", temperature = "color.white_balance.temperature_kelvin"
     case tint = "color.white_balance.tint", saturation = "color.saturation"
     case hslHueRed = "color.hsl.hue.red", hslHueOrange = "color.hsl.hue.orange", hslHueYellow = "color.hsl.hue.yellow"
@@ -30,6 +33,7 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     case vignetteAmount = "effects.vignette.amount", vignetteMidpoint = "effects.vignette.midpoint"
     case vignetteRoundness = "effects.vignette.roundness", vignetteFeather = "effects.vignette.feather"
     case vignetteHighlights = "effects.vignette.highlights", grainAmount = "effects.grain.amount"
+    case clarity = "effects.clarity", dehaze = "effects.dehaze"
     case grainSize = "effects.grain.size", grainRoughness = "effects.grain.roughness"
     case sharpening = "detail.sharpening", rawDenoise = "detail.denoise.raw_level"
     case postRGBDenoise = "detail.denoise.post_rgb"
@@ -42,7 +46,15 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     case lensDistortion = "geometry.lens.distortion", lensTCA = "geometry.lens.tca"
     case lensAutoCrop = "geometry.lens.auto_crop", lensProfile = "geometry.lens.profile_id"
 
-    var group: String { String(rawValue.split(separator: ".")[0]) }
+    var group: String { self == .blackPoint || self == .whitePoint ? "light" : String(rawValue.split(separator: ".")[0]) }
+    var gradingZone: ColorGradingZone? {
+        switch self {
+        case .gradingShadows: return .shadows
+        case .gradingMidtones: return .midtones
+        case .gradingHighlights: return .highlights
+        default: return nil
+        }
+    }
     static var common: Set<Self> { Set(allCases.filter { $0.group != "geometry" }) }
     static let whiteBalanceFields: Set<Self> = [.whiteBalanceMode, .temperature, .tint]
     static let lensFields: Set<Self> = [.lensDistortion, .lensTCA, .lensAutoCrop, .lensProfile]
@@ -63,7 +75,7 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
         case .strength, .contrast, .saturation, .sharpening: return 0...2
         case .exposure: return -20...20
         case .highlights, .shadows, .sCurve, .perspectiveHorizontal, .perspectiveVertical: return -1...1
-        case .vignetteAmount, .vignetteRoundness: return -100...100
+        case .vignetteAmount, .vignetteRoundness, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze: return -100...100
         case .vignetteMidpoint, .vignetteFeather, .vignetteHighlights, .grainAmount, .grainSize, .grainRoughness: return 0...100
         case .quarterTurns: return 0...3
         case .cropX, .cropY, .cropWidth, .cropHeight: return 0...1
@@ -81,12 +93,25 @@ enum AdjustmentTransferScope {
 
 // 这是逻辑 payload 的 JSON 值，不是 native snapshot 或渲染 recipe。
 enum AdjustmentTransferValue: Codable, Equatable {
-    case number(Double), string(String), boolean(Bool), object([String: Self]), null
+    case number(Double), string(String), boolean(Bool), object([String: Self]), array([Self]), null
 
     var number: Double? { if case .number(let value) = self { return value }; return nil }
     var string: String? { if case .string(let value) = self { return value }; return nil }
     var boolean: Bool? { if case .boolean(let value) = self { return value }; return nil }
     var object: [String: Self]? { if case .object(let value) = self { return value }; return nil }
+    var array: [Self]? { if case .array(let value) = self { return value }; return nil }
+    var curve: ToneCurveSettings? {
+        guard let object, Set(object.keys) == ["mode", "points"],
+              let mode = object["mode"]?.string.flatMap(ToneCurveMode.init(rawValue:)),
+              let values = object["points"]?.array else { return nil }
+        var points = [ToneCurvePoint]()
+        for value in values {
+            guard let pair = value.array, pair.count == 2, let x = pair[0].number, let y = pair[1].number else { return nil }
+            points.append(.init(x: x, y: y))
+        }
+        let curve = ToneCurveSettings(mode: mode, points: points)
+        return curve.isValid ? curve : nil
+    }
 
     init(from decoder: Decoder) throws {
         let value = try decoder.singleValueContainer()
@@ -94,6 +119,7 @@ enum AdjustmentTransferValue: Codable, Equatable {
         else if let bool = try? value.decode(Bool.self) { self = .boolean(bool) }
         else if let number = try? value.decode(Double.self), number.isFinite { self = .number(number) }
         else if let string = try? value.decode(String.self) { self = .string(string) }
+        else if let array = try? value.decode([Self].self) { self = .array(array) }
         else { self = .object(try value.decode([String: Self].self)) }
     }
 
@@ -104,8 +130,15 @@ enum AdjustmentTransferValue: Codable, Equatable {
         case .string(let string): try value.encode(string)
         case .boolean(let bool): try value.encode(bool)
         case .object(let object): try value.encode(object)
+        case .array(let array): try value.encode(array)
         case .null: try value.encodeNil()
         }
+    }
+}
+
+extension ToneCurveSettings {
+    var transferValue: AdjustmentTransferValue {
+        .object(["mode": .string(mode.rawValue), "points": .array(points.map { .array([.number($0.x), .number($0.y)]) })])
     }
 }
 
@@ -225,6 +258,12 @@ struct AdjustmentTransferPayload: Codable, Equatable {
     }
 
     private static func valid(_ value: AdjustmentTransferValue, for field: AdjustmentTransferField) -> Bool {
+        if field == .curve { return value.curve != nil }
+        if field.gradingZone != nil {
+            guard let wheel = value.object, Set(wheel.keys) == ["hue", "saturation"],
+                  let hue = wheel["hue"]?.number, let saturation = wheel["saturation"]?.number else { return false }
+            return ColorGradingWheel(hue: hue, saturation: saturation).isValid
+        }
         if let range = field.scalarRange {
             guard let number = value.number, number.isFinite, range.contains(number) else { return false }
             if field == .quarterTurns { return number.rounded() == number }

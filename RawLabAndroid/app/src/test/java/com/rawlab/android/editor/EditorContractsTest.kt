@@ -1,5 +1,6 @@
 package com.rawlab.android.editor
 
+import com.rawlab.android.settings.legacyPipeSettings
 import org.junit.Assert.*
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
@@ -25,7 +26,7 @@ class EditorContractsTest {
         assertEquals(edited, SettingsCodec.decode(SettingsCodec.encode(edited)))
         assertEquals(1, edited.reset().exposureMode)
         assertTrue(edited.reset().hsl.isIdentity)
-        val legacy = SettingsCodec.encode(EditSettings()).split('|').take(25).joinToString("|")
+        val legacy = legacyPipeSettings(EditSettings()).split('|').take(25).joinToString("|")
         assertEquals(0, SettingsCodec.decode(legacy).exposureMode)
         assertTrue(SettingsCodec.decode(legacy).hsl.isIdentity)
         assertThrows(IllegalArgumentException::class.java) { HslSettings(List(24) { Float.NaN }) }

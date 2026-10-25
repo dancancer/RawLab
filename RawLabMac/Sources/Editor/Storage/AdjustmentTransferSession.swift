@@ -4,6 +4,7 @@ struct AdjustmentTransferTarget {
     let url: URL
     let defaultState: PhotoEditState
     var context: MacAdjustmentTransferContext
+    var expectedIdentity: OriginalFileIdentity? = nil
     var isCurrent: (() -> Bool)? = nil
     var resolveMetadata: ((PhotoEditState) throws -> PhotoEditState)? = nil
 }
@@ -30,10 +31,11 @@ struct PreparedAdjustmentTransfer {
     let id: UUID
     let payload: AdjustmentTransferPayload
     let targets: [Target]
+    let action: AdjustmentHistoryTransaction.Action
 }
 
 struct AdjustmentHistoryTransaction {
-    enum Action { case paste, edit }
+    enum Action { case paste, preset, edit, synchronize }
     enum State { case applied, undone, redoInvalidated }
     struct Part {
         let id: UUID
@@ -67,7 +69,8 @@ final class AdjustmentTransferSession {
         return captured
     }
 
-    func prepare(payload: AdjustmentTransferPayload, targets: [AdjustmentTransferTarget]) throws -> PreparedAdjustmentTransfer {
+    func prepare(payload: AdjustmentTransferPayload, targets: [AdjustmentTransferTarget],
+                 action: AdjustmentHistoryTransaction.Action = .paste) throws -> PreparedAdjustmentTransfer {
         try payload.validate()
         var seen = Set<String>()
         var prepared = [PreparedAdjustmentTransfer.Target]()
@@ -77,6 +80,7 @@ final class AdjustmentTransferSession {
             do {
                 guard target.isCurrent?() != false else { throw AdjustmentTransferError.draftRequiresPreflight }
                 let original = try store.versionedState(for: target.url)
+                if let expected = target.expectedIdentity, original.identity != expected { throw EditPersistenceConflict.changed }
                 let stored = original.state ?? target.defaultState
                 let effective = try target.resolveMetadata?(stored) ?? stored
                 let candidate = try MacAdjustmentTransfer.prepare(payload: payload, target: effective, context: target.context)
@@ -87,7 +91,7 @@ final class AdjustmentTransferSession {
                     isCurrent: target.isCurrent, error: error))
             }
         }
-        return PreparedAdjustmentTransfer(id: UUID(), payload: payload, targets: prepared)
+        return PreparedAdjustmentTransfer(id: UUID(), payload: payload, targets: prepared, action: action)
     }
 
     func apply(_ operation: PreparedAdjustmentTransfer, skipping: Set<String> = []) -> [AdjustmentTransferOutcome] {
@@ -109,7 +113,7 @@ final class AdjustmentTransferSession {
                     if target.unchanged { applied = outcome(target.id, .unchanged, saved: original) }
                     else {
                         let saved = try store.compareAndSave(expected: original, state: candidate)
-                        record(id: operation.id, action: .paste, fields: operation.payload.fields, before: original, after: saved)
+                        record(id: operation.id, action: operation.action, fields: operation.payload.fields, before: original, after: saved)
                         applied = outcome(target.id, .applied, saved: saved)
                     }
                 } catch is EditPersistenceConflict { applied = outcome(target.id, .conflict, error: EditPersistenceConflict.changed) }

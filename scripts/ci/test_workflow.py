@@ -276,6 +276,14 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("test-without-building", commands["ios"])
         self.assertNotIn("connectedDebugAndroidTest", commands["android"])
 
+    def test_desktop_update_models_do_not_install_packages(self):
+        apple = (ROOT / "scripts/ci/apple-models.sh").read_text()
+        windows = (ROOT / "scripts/ci/windows-models.ps1").read_text()
+        self.assertIn("RawLabMac/tests/update-install.sh", apple)
+        self.assertIn("updates-sdk/UpdateSdkChecks.csproj", windows)
+        self.assertNotIn("update-ui.sh", apple)
+        self.assertNotIn("offline.ps1", windows)
+
     def test_presentation_model_mode_does_not_launch_canvas_ui(self):
         # Execute the actual script dispatch with compiler/native dependencies stubbed.
         source = (ROOT / "RawLabMac/tests/presentation.sh").read_text()
@@ -411,7 +419,7 @@ class WorkflowContractTests(unittest.TestCase):
                      "look-library.sh", "look-import-model.sh", "ctest --test-dir lutools/build-macos"),
             "agent": ("agent-recipe-render.sh",),
             "render": ("raster-render.sh", "test_real_cli.py"),
-            "model": ("batch-export.sh", "edit-model.sh", "adjustment-history-model.sh", "presentation.sh", "usage-model.sh", "usage-termination.sh"),
+            "model": ("batch-export.sh", "batch-selection-model.sh", "edit-model.sh", "adjustment-history-model.sh", "presentation.sh", "usage-model.sh", "usage-termination.sh"),
         }
         for group, commands in expected.items():
             text = "\n".join(groups[group])

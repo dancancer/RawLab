@@ -3,7 +3,8 @@ import Foundation
 extension IOSAdjustmentTransfer {
     static let scalarKeys: [Field: WritableKeyPath<RawSettings, Double>] = [
         .strength: \.lutStrength, .exposure: \.exposure, .contrast: \.contrast, .highlights: \.highlights,
-        .shadows: \.shadows, .sCurve: \.toneCurve, .saturation: \.saturation, .sharpening: \.sharpening
+        .shadows: \.shadows, .sCurve: \.toneCurve, .saturation: \.saturation, .sharpening: \.sharpening,
+        .blackPoint: \.blackPoint, .whitePoint: \.whitePoint, .vibrance: \.vibrance, .clarity: \.clarity, .dehaze: \.dehaze
     ]
     static let effectKeys: [Field: WritableKeyPath<PhotoEffectsSettings, Double>] = [
         .vignetteAmount: \.vignetteAmount, .vignetteMidpoint: \.vignetteMidpoint, .vignetteRoundness: \.vignetteRoundness,
@@ -30,6 +31,7 @@ extension IOSAdjustmentTransfer {
     }
     static func values(_ settings: RawSettings, context: IOSAdjustmentTransferContext) -> [String: Value] {
         var result = [String: Value]()
+        result[Field.curve.rawValue] = settings.curveSettings.transferValue
         for (field, key) in scalarKeys { result[field.rawValue] = .number(settings[keyPath: key]) }
         result[Field.strength.rawValue] = .number(Double(settings.clampedLUTStrength))
         let look: [String: Value]
@@ -49,6 +51,12 @@ extension IOSAdjustmentTransfer {
         for field in Field.allCases {
             if let location = field.hslLocation {
                 result[field.rawValue] = .number(settings.hsl.value(HSLAxis(rawValue: location.axis)!, channel: location.channel))
+            }
+        }
+        for field in Field.allCases {
+            if let zone = field.gradingZone {
+                let wheel = settings.gradingSettings[zone]
+                result[field.rawValue] = .object(["hue": .number(wheel.hue), "saturation": .number(wheel.saturation)])
             }
         }
         for (field, key) in effectKeys { result[field.rawValue] = .number(settings.photoEffects[keyPath: key]) }
@@ -72,6 +80,12 @@ extension IOSAdjustmentTransfer {
     }
     static func applyObjects(_ payload: AdjustmentTransferPayload, to settings: inout RawSettings,
                              context: IOSAdjustmentTransferContext) throws {
+        if let curve = payload[.curve]?.curve, curve != settings.curveSettings { settings.curveSettings = curve }
+        for field in payload.fields {
+            if let zone = field.gradingZone, let wheel = payload[field]?.object {
+                settings.gradingSettings[zone] = ColorGradingWheel(hue: wheel["hue"]!.number!, saturation: wheel["saturation"]!.number!)
+            }
+        }
         if let raw = payload[.rawDenoise]?.number, raw != 0 { throw AdjustmentTransferError.incompatible(Field.rawDenoise.rawValue) }
         if let post = payload[.postRGBDenoise]?.number {
             guard context.isRaw || post == 0 else { throw AdjustmentTransferError.incompatible(Field.postRGBDenoise.rawValue) }

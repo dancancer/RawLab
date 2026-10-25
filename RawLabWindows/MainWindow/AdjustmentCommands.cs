@@ -41,7 +41,9 @@ public partial class MainWindow
         var picker=new OpenFileDialog{Title=Loc.Text("选择目标照片"),Filter=Loc.Text("照片|")+LibraryEntry.ImageFilter,Multiselect=true};
         if(picker.ShowDialog(this)==true)await ShowAdjustmentPreflight(payload,picker.FileNames);
     }
-    internal async Task<PreparedAdjustmentTransfer?> PrepareAdjustmentTargets(AdjustmentPayload payload,IEnumerable<string> paths)
+    internal async Task<PreparedAdjustmentTransfer?> PrepareAdjustmentTargets(AdjustmentPayload payload,IEnumerable<string> paths,
+        AdjustmentHistoryAction action=AdjustmentHistoryAction.Paste,OriginalIdentity? frozenSource=null,
+        IReadOnlyDictionary<string,CollectionPhoto>? collectionTargets=null)
     {
         var generation=++transferGeneration;var revision=editRevision;var opened=openRevision;var current=file;
         var session=TransferSession;var looks=AvailableTransferLooks();var selected=paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -55,6 +57,7 @@ public partial class MainWindow
                 foreach(var path in selected) {
                     if(!IsCurrent())return null;
                     try {
+                        collectionTargets?.GetValueOrDefault(path)?.Validate();
                         var identity=OriginalIdentity.Read(path);var raw=PhotoInput.IsRaw(path);
                         var defaults=RenderEngine.PrepareInputSettings(path,new Adjustments());
                         (double Temperature,double Tint)? calibration=null;
@@ -78,23 +81,24 @@ public partial class MainWindow
                     }
                 }
                 if(!IsCurrent())return null;
-                var operation=session.Prepare(payload,targets);prepared=true;return operation;
+                var operation=session.Prepare(payload,targets,action,frozenSource);prepared=true;return operation;
             });
             return !closing && generation==transferGeneration && revision==editRevision && opened==openRevision && file==current ? result : null;
         }finally{if(generation==transferGeneration)transferPreparing=false;}
     }
-    private async Task ShowAdjustmentPreflight(AdjustmentPayload payload,IEnumerable<string> paths)
+    private async Task ShowAdjustmentPreflight(AdjustmentPayload payload,IEnumerable<string> paths,
+        AdjustmentHistoryAction action=AdjustmentHistoryAction.Paste,string? sourceName=null)
     {
         if(transferPreparing)return;
         try {
-            var operation=await PrepareAdjustmentTargets(payload,paths);if(operation==null)return;
+            var operation=await PrepareAdjustmentTargets(payload,paths,action);if(operation==null)return;
             if(operation.Targets.Count==0){SetStatus(()=>Loc.Text("此目录没有照片。"),true);return;}
             var initial=operation.Targets.Select(t=>new AdjustmentOutcome(t.ID,t.Unchanged ? AdjustmentStatus.Unchanged : AdjustmentStatus.Blocked,
                 Error:t.Error,RequiresHistoryDecision:t.Error!=null)).ToArray();
             var adopted=new Dictionary<string,Exception?>();
             var session=TransferSession;AdjustmentResultDialog? dialog=null;
-            dialog=new AdjustmentResultDialog(this,"粘贴调整",initial,true,skipping=>AdoptAdjustmentOutcomes(session.Apply(operation,skipping),adopted),
-                ()=>ReloadEditsClicked(this,new()),Loc.Format("来源：{0} · {1} 项调整",Path.GetFileName(payload.Source.Identifier),payload.Fields.Count),
+            dialog=new AdjustmentResultDialog(this,action==AdjustmentHistoryAction.Preset ? "应用预设" : "粘贴调整",initial,true,skipping=>AdoptAdjustmentOutcomes(session.Apply(operation,skipping),adopted),
+                ()=>ReloadEditsClicked(this,new()),Loc.Format("来源：{0} · {1} 项调整",sourceName ?? Path.GetFileName(payload.Source.Identifier),payload.Fields.Count),
                 ()=>session.Transactions.FirstOrDefault(t=>t.ID==operation.ID)?.Parts ?? [],undo=>RunAdjustmentHistory(operation.ID,null,undo,dialog!));
             dialog.ShowDialog();
         }catch(Exception error){ShowAdjustmentError(error);}
@@ -141,6 +145,7 @@ public partial class MainWindow
     private void ShowAdjustmentError(Exception error)=>MessageBox.Show(this,AdjustmentTransferPresentation.Error(error),Loc.Text("调整未应用"),MessageBoxButton.OK,MessageBoxImage.Information);
     private void EditMenuOpened(object sender,RoutedEventArgs e)
     {
+        PresetsAdjustmentMenu.IsEnabled=!exporting && !closing && !transferPreparing;
         var enabled=file!=null && !exporting && !closing && !aiJob.State.IsRunning && !adjustmentReloadRequired;
         UndoAdjustmentMenu.IsEnabled=enabled && adjustmentSession?.PhotoHistoryID(file!,true)!=null;
         RedoAdjustmentMenu.IsEnabled=enabled && adjustmentSession?.PhotoHistoryID(file!,false)!=null;

@@ -5,6 +5,7 @@ import com.rawlab.android.adjustments.*
 import com.rawlab.android.i18n.AppStrings
 
 internal val AdjustmentField.title: String get() {
+    gradingZone?.let { return AppStrings.text(R.string.color_grading) + " · " + AppStrings.text(gradingZoneTitle(it)) }
     hslLocation?.let { (axis, channel) ->
         return AppStrings.text(listOf(R.string.transfer_channel_0,R.string.transfer_channel_1,R.string.transfer_channel_2,R.string.transfer_channel_3,R.string.transfer_channel_4,R.string.transfer_channel_5,R.string.transfer_channel_6,R.string.transfer_channel_7)[channel]) + " · " +
             AppStrings.text(listOf(R.string.transfer_axis_0,R.string.transfer_axis_1,R.string.transfer_axis_2)[axis])
@@ -18,9 +19,15 @@ internal val AdjustmentField.title: String get() {
         AdjustmentField.HIGHLIGHTS -> R.string.transfer_field_highlights
         AdjustmentField.SHADOWS -> R.string.transfer_field_shadows
         AdjustmentField.S_CURVE -> R.string.transfer_field_s_curve
+        AdjustmentField.CURVE -> R.string.transfer_field_curve
         AdjustmentField.WHITE_BALANCE_MODE -> R.string.transfer_field_white_balance_mode
         AdjustmentField.TEMPERATURE -> R.string.transfer_field_temperature
         AdjustmentField.TINT -> R.string.transfer_field_tint
+        AdjustmentField.BLACK_POINT -> R.string.black_point
+        AdjustmentField.WHITE_POINT -> R.string.white_point
+        AdjustmentField.VIBRANCE -> R.string.vibrance
+        AdjustmentField.CLARITY -> R.string.clarity
+        AdjustmentField.DEHAZE -> R.string.dehaze
         AdjustmentField.SATURATION -> R.string.transfer_field_saturation
         AdjustmentField.VIGNETTE_AMOUNT -> R.string.transfer_field_vignette_amount
         AdjustmentField.VIGNETTE_MIDPOINT -> R.string.transfer_field_vignette_midpoint

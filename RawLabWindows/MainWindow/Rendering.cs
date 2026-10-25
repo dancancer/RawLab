@@ -21,7 +21,7 @@ public partial class MainWindow
         CancelParameterInputs();
         try
         {
-            path=Path.GetFullPath(path);
+            path=Collection.CanonicalPath(Path.GetFullPath(path));
             if(!LibraryEntry.IsImage(path))throw new InvalidOperationException(Loc.Text("请选择支持的照片文件。"));
             CancelViewingInput();
             if(!ResolveTransformDraft() || !SaveEdits())return;
@@ -30,7 +30,7 @@ public partial class MainWindow
             lastExportedPath=null;ExportRevealButton.Visibility=Visibility.Collapsed;
             if(file==null){AdjustmentPanel.Visibility=AdjustmentSplitter.Visibility=Visibility.Visible;DockRow.MinHeight=216;DockRow.Height=new(dockHeight);SplitterRow.Height=new(6);}
             previewResize.Stop();previewLongEdge=requestedPreviewLongEdge=2000;previewDeferred=false;
-            file=path; interacting=false; exactReady=false; result=null; photoInfo=null; ++photoInfoRevision; syncing=true;viewport.Fit();
+            file=path;Collection.BeginEditing(Collection.Photos.FirstOrDefault(photo=>StringComparer.OrdinalIgnoreCase.Equals(photo.Path,path))?.ID ?? ""); interacting=false; exactReady=false; result=null; photoInfo=null; ++photoInfoRevision; syncing=true;viewport.Fit();
             RefreshComparisonToolTip();
             viewport.SetSourceSize(0,0);
             NeutralCanvas.SetImage(placeholder,null); ResultCanvas.SetImage(placeholder,null);ResultCanvas.SetComparison(null,null); Histogram.Bins=null; Histogram.InvalidateVisual(); ClipStats.Text="";
@@ -98,6 +98,7 @@ public partial class MainWindow
     private void UpdatePreviewSize(int edge)
     {
         if(syncing || file==null || closing || (edge==requestedPreviewLongEdge && (edge==previewLongEdge || previewResize.IsEnabled)))return;
+        CancelHslTarget();
         requestedPreviewLongEdge=edge;previewResize.Stop();
         if(exporting)return;
         if(edge==previewLongEdge){UpdateBusy();return;}
@@ -138,11 +139,15 @@ public partial class MainWindow
     private async void Pump()
     {
         var ticket=scheduler.Start(); if(ticket==null)return;
-        RenderedImage? neutral=null,rendered=null; Exception? failure=null;
+        RenderedImage? neutral=null,rendered=null; HslTargetSample? hslSample=null;Exception? failure=null;
         try
         {
             (neutral,rendered)=await Task.Run(()=> {
                 engine ??= new(); var w=ticket.Value;engine.SetGpuMode(w.GpuMode);
+                if(w.Probe is {} probe) {
+                    hslSample=engine.SampleHsl(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,probe.Revision,probe.Point.X,probe.Point.Y);
+                    return ((RenderedImage?)null,(RenderedImage?)null);
+                }
                 var frame=engine.RenderPreview(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,w.Compare,w.Clipping);
                 return(frame.Neutral,frame.Result);
             });
@@ -151,6 +156,10 @@ public partial class MainWindow
         var current=scheduler.Finish(ticket);
         if(closing) { FinishClose(); return; }
         var work=ticket.Value;
+        if(work.Probe is {} probeWork) {
+            AcceptHslTarget(work,hslSample ?? HslTargetSample.Unavailable(probeWork.Revision,HslTargetAvailability.Failed),current);
+            UpdateBusy();Pump();QueuePendingReset();return;
+        }
         // A current-file proxy may publish while dragging; stale exact work never publishes.
         if(CurrentViewSource is {} currentSource && work.Source.SameFile(currentSource) && work.OpenRevision==openRevision && work.File==file && work.Lut==lut && work.Settings.AIDenoiseEnabled==settings.AIDenoiseEnabled &&
             (!settings.AIDenoiseEnabled || AIResultReady && work.AIIdentity==aiJob.Identity) && work.Settings.Geometry==PreviewGeometry && work.Settings.Lens==PreviewLens && work.TransformGeneration==transformGeneration && (!view.NeedsReference || work.Compare) && work.Clipping==clipping && (current || (work.Interactive && interacting && work.Edge==RenderEdge(true))))
@@ -160,6 +169,9 @@ public partial class MainWindow
             {
                 result=rendered;acceptedAfter=new(work.Source,PhotoInput.IsRaster(work.File),work.Settings.Processing,work.Settings.Geometry,work.Settings.Lens,work.Edge);
                 if(!transform.Active)settings.ResolveWhiteBalance(rendered.WhiteBalance);
+                hslAcceptedWork=work;
+                var acceptedSettings=work.Settings.Clone();acceptedSettings.ResolveWhiteBalance(rendered.WhiteBalance);hslAcceptedSettings=acceptedSettings.Capture();
+                hslAcceptedRevision=new((ulong)openRevision,(ulong)ticket.Id);
                 // The core supplies the post-geometry canvas before preview/export resizing.
                 syncing=true;
                 try { viewport.SetSourceSize(rendered.NativeWidth,rendered.NativeHeight); }

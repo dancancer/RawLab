@@ -42,8 +42,16 @@ data class EditSettings(
     val lens: LensSettings = LensSettings(),
     val geometry: GeometrySettings = GeometrySettings(),
     val processing: ProcessingIdentity = ProcessingIdentity.CURRENT,
+    val blackPoint: Float = 0f,
+    val whitePoint: Float = 0f,
+    val vibrance: Float = 0f,
+    val clarity: Float = 0f,
+    val dehaze: Float = 0f,
+    val colorGrading: ColorGradingSettings = ColorGradingSettings(),
+    val curve: ToneCurveSettings = ToneCurveSettings(),
 ) {
     init {
+        require(listOf(blackPoint, whitePoint, vibrance, clarity, dehaze).all { it.isFinite() && it in -100f..100f })
         require(exposureMode in 0..2)
         require(strength.isFinite() && strength in 0f..2f)
         require(exposure.isFinite() && exposure in -4f..4f)
@@ -74,6 +82,7 @@ data class EditSettings(
     )
     val recipeScale get() = if (recipeID == null) 1f else strength
     val renderHsl get() = hsl.scaled(recipeScale)
+    val renderToneCurve get() = if (curve.mode == ToneCurveMode.CUSTOM) 0f else toneCurve
     fun selectFilm(id: String, cameraTint: Float? = null): EditSettings {
         if (recipeID == null) return copy(film = id)
         val baseTint = cameraTint?.takeIf { it.isFinite() }

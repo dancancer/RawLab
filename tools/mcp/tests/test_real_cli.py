@@ -27,34 +27,55 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
                 "-m", "rawlab_mcp", "--cli", CLI, "--read-root", str(root), "--write-root", str(root),
             ], env={**os.environ, "PYTHONPATH": str(ROOT / "tools/mcp/src")})
             async with Client(params) as client:
-                for version in (1, 2):
+                for case, (version, extra) in enumerate(((1, {}), (2, {}), (2, {
+                    "tone": {"black_point": .4, "white_point": -.3}, "color": {"vibrance": .6},
+                }), (2, {
+                    "color_grading": {"shadows": {"hue": 220, "saturation": 75},
+                                      "midtones": {"hue": 110, "saturation": 0},
+                                      "highlights": {"hue": 35.25, "saturation": 16.5}},
+                    "tone": {"black_point": .25}, "color": {"vibrance": .5},
+                }), (2, {
+                    "tone": {"curve": {"mode": "custom", "points": [[0, 0], [.25, .12], [.75, .88], [1, 1]]},
+                             "black_point": .25}, "color": {"vibrance": .5},
+                }), (2, {
+                    "effects": {"clarity": .65, "dehaze": -.4},
+                    "tone": {"curve": {"mode": "custom", "points": [[0, 0], [.4, .3], [1, 1]]}},
+                    "color_grading": {"shadows": {"hue": 220, "saturation": 20}},
+                }))):
                     identity = {"family": "rawlab", "version": version, "quality": "standard"}
                     document = {
                         "schema_version": 5, "processing": identity, "input": {"path": source.name},
-                        "edits": {"exposure": {"mode": "scene", "ev": 0.25}},
-                        "output": {"path": f"mcp-{version}.png", "format": "png"},
+                        "edits": {"exposure": {"mode": "scene", "ev": 0.25}, **extra},
+                        "output": {"path": f"mcp-{case}.png", "format": "png"},
                     }
                     recipe.write_text(json.dumps(document), encoding="utf-8")
                     validated = await client.call_tool("validate_recipe", {"recipe_path": str(recipe)})
                     self.assertFalse(validated.is_error)
                     self.assertEqual(validated.structured_content["result"]["processing"], identity)
-                    preview = root / f"mcp-preview-{version}.png"
+                    for group, values in extra.items():
+                        for field, value in values.items():
+                            actual = validated.structured_content["result"]["edits"][group][field]
+                            if isinstance(value, dict):
+                                self.assertEqual(actual, value)
+                            else:
+                                self.assertAlmostEqual(actual, value, places=6)
+                    preview = root / f"mcp-preview-{case}.png"
                     rendered = await client.call_tool("render_preview", {
                         "recipe_path": str(recipe), "output_path": str(preview), "long_edge": 1280,
                     })
                     self.assertFalse(rendered.is_error)
-                    direct_preview = root / f"cli-preview-{version}.png"
+                    direct_preview = root / f"cli-preview-{case}.png"
                     direct = subprocess.run([CLI, "--recipe", str(recipe), "--preview", str(direct_preview),
                                              "--long-edge", "1280", "--json"], capture_output=True, timeout=120)
                     self.assertEqual(direct.returncode, 0, direct.stderr)
                     self.assertEqual(preview.read_bytes(), direct_preview.read_bytes())
                     exported = await client.call_tool("export_photo", {"recipe_path": str(recipe)})
                     self.assertFalse(exported.is_error)
-                    document["output"]["path"] = f"cli-{version}.png"
+                    document["output"]["path"] = f"cli-{case}.png"
                     recipe.write_text(json.dumps(document), encoding="utf-8")
                     direct = subprocess.run([CLI, "--recipe", str(recipe), "--json"], capture_output=True, timeout=120)
                     self.assertEqual(direct.returncode, 0, direct.stderr)
-                    self.assertEqual((root / f"mcp-{version}.png").read_bytes(), (root / f"cli-{version}.png").read_bytes())
+                    self.assertEqual((root / f"mcp-{case}.png").read_bytes(), (root / f"cli-{case}.png").read_bytes())
 
     async def test_five_tools_match_direct_cli_and_preserve_source(self):
         with tempfile.TemporaryDirectory(prefix="rawlab-mcp-real-") as directory:

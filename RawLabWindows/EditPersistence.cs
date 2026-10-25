@@ -37,6 +37,14 @@ public sealed record AdjustmentSnapshot(
 {
     public ProcessingIdentity Processing { get; init; } = ProcessingIdentity.Legacy;
     public bool AIDenoiseEnabled { get; init; }
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public ToneControlsSettings? ToneControls { get; init; }
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public AtmosphereSettings? Atmosphere { get; init; }
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public ColorGradingSettings? ColorGrading { get; init; }
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public ToneCurveSettings? Curve { get; init; }
     public Adjustments Restore() => Adjustments.FromSnapshot(this);
     public bool SameAs(AdjustmentSnapshot other) => Processing == other.Processing &&
         AIDenoiseEnabled == other.AIDenoiseEnabled && MasterRecipeID == other.MasterRecipeID && ExposureMode == other.ExposureMode && CameraWhiteBalance == other.CameraWhiteBalance &&
@@ -44,7 +52,9 @@ public sealed record AdjustmentSnapshot(
         (Denoise ?? new()) == (other.Denoise ?? new()) &&
         (Effects ?? new()) == (other.Effects ?? new()) && DisplayChromaDenoise == other.DisplayChromaDenoise &&
         (Hsl ?? new()).Equals(other.Hsl ?? new()) && (Lens ?? new()) == (other.Lens ?? new()) &&
-        (Geometry ?? new()) == (other.Geometry ?? new());
+        (Geometry ?? new()) == (other.Geometry ?? new()) && (ToneControls ?? new()) == (other.ToneControls ?? new()) &&
+        (Atmosphere ?? new()) == (other.Atmosphere ?? new()) &&
+        (ColorGrading ?? new()) == (other.ColorGrading ?? new()) && (Curve ?? new()) == (other.Curve ?? new());
     public AdjustmentSnapshot Copy() => this with { Values = (double[])Values.Clone() };
 }
 
@@ -59,6 +69,7 @@ public sealed record OriginalIdentity(string Path, long Length, long Modified, l
         if (!file.Exists) throw new FileNotFoundException(Loc.Text("无法访问原始照片。"), path);
         return new(file.FullName, file.Length, file.LastWriteTimeUtc.Ticks, file.CreationTimeUtc.Ticks);
     }
+    [JsonIgnore] public string StableKey => FileID ?? System.IO.Path.GetFullPath(Path).ToUpperInvariant();
     public bool SameFile(OriginalIdentity other) => StringComparer.OrdinalIgnoreCase.Equals(Path, other.Path) && SameContent(other);
     public bool SameContent(OriginalIdentity other) => Length == other.Length && Modified == other.Modified && Created == other.Created &&
         (FileID==null || other.FileID==null || FileID==other.FileID);

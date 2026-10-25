@@ -16,6 +16,9 @@ namespace RawLab.Windows;
 public partial class MainWindow
 {
     private Button? importLookButton;
+    private Button? presetLibraryButton;
+    private readonly Dictionary<ToneControlParameter,(Button Button,AdjustmentRing Ring)> toneToolButtons = [];
+    private readonly Dictionary<AtmosphereParameter,(Button Button,AdjustmentRing Ring)> atmosphereToolButtons = [];
 
     private void AboutClicked(object sender, RoutedEventArgs e)
     {
@@ -29,7 +32,7 @@ public partial class MainWindow
     }
     private void BuildTools()
     {
-        Tools.Children.Clear();toolButtons.Clear();effectToolButtons.Clear();
+        Tools.Children.Clear();toolButtons.Clear();effectToolButtons.Clear();toneToolButtons.Clear();atmosphereToolButtons.Clear();
         Tools.Children.Add(FilmCategory);Tools.Children.Add(MasterRecipeCategory);
         foreach(var id in new[]{Parameter.Strength,Parameter.Exposure,Parameter.Highlights,Parameter.Shadows,Parameter.Contrast,
             Parameter.ToneCurve,Parameter.Saturation,Parameter.Sharpening})
@@ -43,11 +46,11 @@ public partial class MainWindow
             var spec=ParameterSpec.All[(int)id];
             var ring=new AdjustmentRing{Width=18,Height=18,Compact=true};
             var grid=new Grid(); grid.Children.Add(ring); grid.Children.Add(new EditorIcon{Kind=spec.Id.ToString(),Width=16,Height=16});
-            var caption=new TextBlock{Text=Loc.Text(spec.Title),TextWrapping=TextWrapping.NoWrap,TextAlignment=TextAlignment.Center,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(6,0,0,0)};
+            var caption=new TextBlock{Text=Loc.Text(id==Parameter.ToneCurve ? "曲线" : spec.Title),TextWrapping=TextWrapping.NoWrap,TextAlignment=TextAlignment.Center,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(6,0,0,0)};
             caption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");
             var stack=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};stack.Children.Add(grid);stack.Children.Add(caption);
-            var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=Loc.Text(spec.Title)};
-            AutomationProperties.SetName(button,Loc.Text(spec.Title));
+            var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=Loc.Text(id==Parameter.ToneCurve ? "曲线" : spec.Title)};
+            AutomationProperties.SetName(button,Loc.Text(id==Parameter.ToneCurve ? "曲线" : spec.Title));
             button.Click+=(_,_)=>SelectTool(ToolFor(spec.Id));
             Tools.Children.Add(button); toolButtons[spec.Id]=(button,ring);
         }
@@ -66,10 +69,33 @@ public partial class MainWindow
             button.Click+=(_,_)=>SelectTool(tool==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain);
             Tools.Children.Add(button); effectToolButtons[tool]=(button,ring);
         }
+        foreach(var spec in ToneControlSpec.All) {
+            var ring=new AdjustmentRing{Width=18,Height=18,Compact=true};
+            var grid=new Grid();grid.Children.Add(ring);grid.Children.Add(new EditorIcon{Kind=spec.Id.ToString(),Width=16,Height=16});
+            var caption=new TextBlock{Text=Loc.Text(spec.Title),TextWrapping=TextWrapping.NoWrap,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(6,0,0,0)};
+            caption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");
+            var stack=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};stack.Children.Add(grid);stack.Children.Add(caption);
+            var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=Loc.Text(spec.Title)};
+            AutomationProperties.SetName(button,Loc.Text(spec.Title));
+            button.Click+=(_,_)=>SelectTool(EditorAdjustmentRules.ToolFor(spec.Id));
+            toneToolButtons[spec.Id]=(button,ring);
+        }
+        foreach(var spec in AtmosphereSpec.All) {
+            var ring=new AdjustmentRing{Width=18,Height=18,Compact=true};
+            var grid=new Grid();grid.Children.Add(ring);grid.Children.Add(new EditorIcon{Kind=spec.Id.ToString(),Width=16,Height=16});
+            var caption=new TextBlock{Text=Loc.Text(spec.Title),TextWrapping=TextWrapping.NoWrap,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(6,0,0,0)};
+            caption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");
+            var stack=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};stack.Children.Add(grid);stack.Children.Add(caption);
+            var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=Loc.Text(spec.Title)};
+            AutomationProperties.SetName(button,Loc.Text(spec.Title));
+            button.Click+=(_,_)=>SelectTool(EditorAdjustmentRules.ToolFor(spec.Id));
+            atmosphereToolButtons[spec.Id]=(button,ring);
+        }
         Tools.Children.Add(GeometryCategory);Tools.Children.Add(LensCategory);BuildWorkspaceNavigation();FitToolCaptions();
     }
     private void FilmCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.Film);
     private void DenoiseCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.Denoise);
+    private void GradingCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.ColorGrading);
     private void HslCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.Hsl);
     private void WhiteBalanceCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.WhiteBalance);
     private void LensCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.Lens);
@@ -81,9 +107,9 @@ public partial class MainWindow
     private readonly Dictionary<EditorAdjustmentGroup,Button> groupButtons = [];
     private readonly Dictionary<EditorAdjustmentTool,(Button Button,AdjustmentRing Ring)> workspaceTools = [];
     private EditorAdjustmentTool CurrentTool => choosingFilm ? EditorAdjustmentTool.Film : choosingRecipes ? EditorAdjustmentTool.MasterRecipe :
-        choosingHsl ? EditorAdjustmentTool.Hsl : choosingWhiteBalance ? EditorAdjustmentTool.WhiteBalance : choosingDenoise ? EditorAdjustmentTool.Denoise :
+        choosingGrading ? EditorAdjustmentTool.ColorGrading : choosingHsl ? EditorAdjustmentTool.Hsl : choosingWhiteBalance ? EditorAdjustmentTool.WhiteBalance : choosingDenoise ? EditorAdjustmentTool.Denoise :
         choosingGeometry ? EditorAdjustmentTool.Geometry : choosingLens ? EditorAdjustmentTool.Lens :
-        choosingPhotoEffects ? selectedEffect==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain : ToolFor(selectedParameter);
+        choosingPhotoEffects ? selectedEffect==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain : selectedAtmosphereParameter is {} atmosphere ? EditorAdjustmentRules.ToolFor(atmosphere) : selectedToneParameter is {} tone ? EditorAdjustmentRules.ToolFor(tone) : ToolFor(selectedParameter);
     private static EditorAdjustmentTool ToolFor(Parameter parameter) => parameter switch {
         Parameter.Temperature or Parameter.Tint => EditorAdjustmentTool.WhiteBalance,
         _ => Enum.GetValues<EditorAdjustmentTool>().First(tool => (tool is EditorAdjustmentTool.Strength or EditorAdjustmentTool.Exposure or
@@ -101,11 +127,14 @@ public partial class MainWindow
         workspaceTools[EditorAdjustmentTool.Film]=(FilmCategory,FilmCategoryRing);
         workspaceTools[EditorAdjustmentTool.MasterRecipe]=(MasterRecipeCategory,MasterRecipeCategoryRing);
         workspaceTools[EditorAdjustmentTool.WhiteBalance]=(WhiteBalanceCategory,WhiteBalanceCategoryRing);
+        workspaceTools[EditorAdjustmentTool.ColorGrading]=(GradingCategory,GradingCategoryRing);
         workspaceTools[EditorAdjustmentTool.Hsl]=(HslCategory,HslCategoryRing);
         workspaceTools[EditorAdjustmentTool.Denoise]=(DenoiseCategory,DenoiseCategoryRing);
         workspaceTools[EditorAdjustmentTool.Geometry]=(GeometryCategory,GeometryCategoryRing);
         workspaceTools[EditorAdjustmentTool.Lens]=(LensCategory,LensCategoryRing);
         foreach(var (parameter,controls) in toolButtons)workspaceTools[ToolFor(parameter)]=controls;
+        foreach(var (parameter,controls) in toneToolButtons)workspaceTools[EditorAdjustmentRules.ToolFor(parameter)]=controls;
+        foreach(var (parameter,controls) in atmosphereToolButtons)workspaceTools[EditorAdjustmentRules.ToolFor(parameter)]=controls;
         foreach(var (tool,controls) in effectToolButtons)workspaceTools[tool==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain]=controls;
         foreach(var (tool,controls) in workspaceTools)AutomationProperties.SetAutomationId(controls.Button,tool.ToString());
         // 同一描述表决定工具顺序、默认工具与重置范围。
@@ -118,7 +147,7 @@ public partial class MainWindow
     {
         if(file==null || exporting || pendingAllReset!=null)return;
         if(expandedGroup==group) {
-            CancelParameterInputs();if(!ResolveTransformDraft())return;
+            SetHslTargetMode(false,hslTargetAxis);CancelParameterInputs();if(!ResolveTransformDraft())return;
             dockHeight=DockRow.ActualHeight;expandedGroup=null;RefreshWorkspaceNavigation();
             DockRow.MinHeight=0;DockRow.Height=GridLength.Auto;AdjustmentSplitter.Visibility=Visibility.Collapsed;SplitterRow.Height=new(0);
             return;
@@ -128,6 +157,7 @@ public partial class MainWindow
     private void SelectTool(EditorAdjustmentTool tool)
     {
         if(file==null || exporting || pendingAllReset!=null)return;
+        if(tool!=EditorAdjustmentTool.Hsl)SetHslTargetMode(false,hslTargetAxis);
         CancelParameterInputs();
         if(tool is EditorAdjustmentTool.Geometry or EditorAdjustmentTool.Lens) {
             BeginTransform(tool==EditorAdjustmentTool.Geometry ? TransformTool.Geometry : TransformTool.Lens);
@@ -135,11 +165,14 @@ public partial class MainWindow
         } else {
             if(!ResolveTransformDraft())return;
             choosingFilm=tool==EditorAdjustmentTool.Film;choosingRecipes=tool==EditorAdjustmentTool.MasterRecipe;
+            choosingGrading=tool==EditorAdjustmentTool.ColorGrading;
             choosingHsl=tool==EditorAdjustmentTool.Hsl;choosingWhiteBalance=tool==EditorAdjustmentTool.WhiteBalance;
             choosingDenoise=tool==EditorAdjustmentTool.Denoise;choosingPhotoEffects=tool is EditorAdjustmentTool.Vignette or EditorAdjustmentTool.Grain;
             choosingGeometry=choosingLens=false;
+            selectedToneParameter=EditorAdjustmentRules.ToneParameterFor(tool);
+            selectedAtmosphereParameter=EditorAdjustmentRules.AtmosphereParameterFor(tool);
             if(choosingPhotoEffects)selectedEffect=tool==EditorAdjustmentTool.Vignette ? PhotoEffectTool.Vignette : PhotoEffectTool.Grain;
-            else if(!choosingFilm && !choosingRecipes && !choosingHsl && !choosingWhiteBalance && !choosingDenoise)selectedParameter=EditorAdjustmentRules.ParameterFor(tool);
+            else if(selectedToneParameter==null && selectedAtmosphereParameter==null && !choosingFilm && !choosingRecipes && !choosingHsl && !choosingGrading && !choosingWhiteBalance && !choosingDenoise)selectedParameter=EditorAdjustmentRules.ParameterFor(tool);
         }
         var wasCollapsed=expandedGroup==null;expandedGroup=EditorAdjustmentRules.GroupFor(tool);
         if(wasCollapsed){DockRow.Height=new(dockHeight);DockRow.MinHeight=216;AdjustmentSplitter.Visibility=Visibility.Visible;SplitterRow.Height=new(6);UpdateDockMinimum();}
@@ -153,10 +186,15 @@ public partial class MainWindow
     }
     private void CancelParameterInputs()
     {
+        CancelHslTarget();GradingEditor.CancelInputs();CurveEditor.CancelInputs();
         var draftRows=transform.Active && transform.Tool==TransformTool.Geometry ? ParameterRows(GeometryEditor).ToHashSet() : [];
         foreach(var row in ParameterRows(AdjustmentPanel))if(!draftRows.Contains(row))row.CancelInput();
     }
-    private void ParameterNavigationPressed(object sender,MouseButtonEventArgs e)=>CancelParameterInputs();
+    private void ParameterNavigationPressed(object sender,MouseButtonEventArgs e)
+    {
+        if(ReferenceEquals(sender,MainMenu) && IsUpdateMenuNavigation(e.OriginalSource as DependencyObject)){PreserveUpdateNavigation();return;}
+        CancelParameterInputs();
+    }
     private SavedEdit? WorkspaceEdit()
     {
         if(file==null)return null;
@@ -184,11 +222,20 @@ public partial class MainWindow
         var expanded=expandedGroup!=null;
         ToolsScroller.Visibility=expanded ? Visibility.Visible : Visibility.Collapsed;
         PerspectiveCategory.Visibility=expandedGroup==EditorAdjustmentGroup.Geometry ? Visibility.Visible : Visibility.Collapsed;
-        if(!expanded)foreach(var panel in new FrameworkElement[]{ParameterPanel,FilmPanel,MasterRecipePanel,DenoiseSurface,LensSurface,GeometrySurface,HslSurface,WhiteBalanceSurface,PhotoEffectsSurface,DraftActions})panel.Visibility=Visibility.Collapsed;
+        if(!expanded)foreach(var panel in new FrameworkElement[]{ParameterPanel,FilmPanel,MasterRecipePanel,DenoiseSurface,LensSurface,GeometrySurface,HslSurface,GradingSurface,CurveSurface,WhiteBalanceSurface,PhotoEffectsSurface,DraftActions})panel.Visibility=Visibility.Collapsed;
     }
     private void BuildFilms()
     {
         FilmStrip.Children.Clear(); filmButtons.Clear(); importLookButton=null;
+        var presets = new StackPanel();
+        presets.Children.Add(new EditorIcon { Kind="Photo", Width=32, Height=64 });
+        var presetCaption = new TextBlock { Text=Loc.Text("我的预设"), MinHeight=30, TextWrapping=TextWrapping.Wrap,
+            TextAlignment=TextAlignment.Center, Margin=new Thickness(0,5,0,0) };
+        presetCaption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize"); presets.Children.Add(presetCaption);
+        presetLibraryButton = new Button { Content=presets, Style=(Style)FindResource("FilmButton") };
+        AutomationProperties.SetName(presetLibraryButton,Loc.Text("我的预设"));
+        AutomationProperties.SetAutomationId(presetLibraryButton,"preset.library.open");
+        presetLibraryButton.Click+=ShowPresetsClicked; FilmStrip.Children.Add(presetLibraryButton);
         foreach(var item in FilmGrouping.Arrange(films,film=>film.Path==null,film=>film.Group))
         {
             var film=item.Value;
@@ -244,16 +291,24 @@ public partial class MainWindow
             else if(rasterPreviousGpuMode is {} previousMode)
             {rasterPreviousGpuMode=null;GpuMode.SelectedIndex=previousMode;}
             var spec=ParameterSpec.All[(int)selectedParameter];
-            OrdinaryParameter.Refresh(Loc.Text(spec.Title),NumericRange.For(spec),settings[selectedParameter],settings.Default(selectedParameter),spec.Unit,inputScope:selectedParameter);
-            AutomationProperties.SetName(ValueSlider,Loc.Text(spec.Title));
-            AutomationProperties.SetName(ValueText,Loc.Format("{0}数值（{1}）",Loc.Text(spec.Title),spec.Unit));
-            var canAdjust=file!=null && !exporting && !choosingFilm && !choosingPhotoEffects && (selectedParameter!=Parameter.Strength || lut!=null) && (selectedParameter is not(Parameter.Temperature or Parameter.Tint) || settings.AsShot!=null);
+            var toneSpec=selectedToneParameter is {} toneParameter ? ToneControlSpec.For(toneParameter) : null;
+            var atmosphereSpec=selectedAtmosphereParameter is {} atmosphereParameter ? AtmosphereSpec.For(atmosphereParameter) : null;
+            var extensionControl=toneSpec!=null || atmosphereSpec!=null;
+            var title=atmosphereSpec?.Title ?? toneSpec?.Title ?? spec.Title;var unit=extensionControl ? "%" : spec.Unit;
+            var value=atmosphereSpec!=null ? settings.Atmosphere[atmosphereSpec.Id] : toneSpec!=null ? settings.ToneControls[toneSpec.Id] : settings[selectedParameter];
+            OrdinaryParameter.Refresh(Loc.Text(title),extensionControl ? new NumericRange(-100,100) : NumericRange.For(spec),
+                value,extensionControl ? 0 : settings.Default(selectedParameter),unit,
+                inputScope:(object?)selectedAtmosphereParameter ?? (object?)selectedToneParameter ?? selectedParameter);
+            AutomationProperties.SetName(ValueSlider,Loc.Text(title));
+            AutomationProperties.SetName(ValueText,Loc.Format("{0}数值（{1}）",Loc.Text(title),unit));
+            var canAdjust=file!=null && !exporting && !choosingFilm && !choosingPhotoEffects &&
+                (extensionControl || (selectedParameter!=Parameter.Strength || lut!=null) && (selectedParameter is not(Parameter.Temperature or Parameter.Tint) || settings.AsShot!=null));
             ValueSlider.IsEnabled=ValueText.IsEnabled=canAdjust;
             FilmPanel.Visibility=choosingFilm ? Visibility.Visible : Visibility.Collapsed;
             MasterRecipePanel.Visibility=choosingRecipes ? Visibility.Visible : Visibility.Collapsed;
             MasterRecipeCategory.Tag=choosingRecipes ? "selected" : null;MasterRecipeCategoryRing.Selected=choosingRecipes;MasterRecipeCategoryRing.Progress=settings.MasterRecipeID==null ? 0 : 1;MasterRecipeCategoryRing.InvalidateVisual();
             foreach(var pair in recipeButtons)pair.Value.Tag=pair.Key==(settings.MasterRecipeID ?? "") ? "selected" : null;
-            ParameterPanel.Visibility=choosingRecipes || choosingFilm || choosingDenoise || choosingPhotoEffects || choosingHsl || choosingWhiteBalance || choosingLens || choosingGeometry ? Visibility.Collapsed : Visibility.Visible;
+            ParameterPanel.Visibility=CurrentTool==EditorAdjustmentTool.ToneCurve || choosingRecipes || choosingFilm || choosingDenoise || choosingPhotoEffects || choosingHsl || choosingGrading || choosingWhiteBalance || choosingLens || choosingGeometry ? Visibility.Collapsed : Visibility.Visible;
             LensEditor.Visibility=choosingLens ? Visibility.Visible : Visibility.Collapsed;
             LensSurface.Visibility=LensEditor.Visibility;
             LensEditor.IsEnabled=file!=null && !raster && !exporting;LensEditor.Refresh(PreviewLens,result?.Lens);
@@ -266,8 +321,14 @@ public partial class MainWindow
             GeometryCategory.Tag=choosingGeometry && !GeometryEditor.ShowPerspective ? "selected" : null;
             PerspectiveCategory.Tag=choosingGeometry && GeometryEditor.ShowPerspective ? "selected" : null;
             GeometryCategoryRing.Selected=choosingGeometry && !GeometryEditor.ShowPerspective;GeometryCategoryRing.Progress=settings.Geometry.IsIdentity ? 0 : 1;GeometryCategoryRing.InvalidateVisual();
+            GradingSurface.Visibility=choosingGrading ? Visibility.Visible : Visibility.Collapsed;
+            CurveSurface.Visibility=CurrentTool==EditorAdjustmentTool.ToneCurve ? Visibility.Visible : Visibility.Collapsed;
+            CurveEditor.IsEnabled=file!=null && !exporting;CurveEditor.Refresh(settings.Curve,settings[Parameter.ToneCurve],(file,openRevision));
+            GradingEditor.IsEnabled=file!=null && !exporting;GradingEditor.Refresh(settings.ColorGrading,(file,openRevision));
+            GradingCategory.Tag=choosingGrading ? "selected" : null;
+            GradingCategoryRing.Selected=choosingGrading;GradingCategoryRing.Progress=settings.ColorGrading.IsDefault ? 0 : 1;GradingCategoryRing.InvalidateVisual();
             HslSurface.Visibility=choosingHsl ? Visibility.Visible : Visibility.Collapsed;
-            HslEditor.IsEnabled=file!=null && !exporting;HslEditor.Refresh(settings.Hsl);
+            HslEditor.IsEnabled=file!=null && !exporting;HslEditor.Refresh(settings.Hsl);RefreshHslTarget();
             HslCategory.Tag=choosingHsl ? "selected" : null;
             HslCategoryRing.Selected=choosingHsl;HslCategoryRing.Progress=settings.Hsl.IsIdentity ? 0 : 1;HslCategoryRing.InvalidateVisual();
             WhiteBalanceSurface.Visibility=choosingWhiteBalance ? Visibility.Visible : Visibility.Collapsed;
@@ -286,7 +347,7 @@ public partial class MainWindow
             var tintProgress=tintOffset==0 ? 0 : tintOffset/(tintOffset<0 ? tintOrigin : 1-tintOrigin);
             WhiteBalanceCategoryRing.Progress=Math.Abs(temperatureProgress)>=Math.Abs(tintProgress) ? temperatureProgress : tintProgress;
             WhiteBalanceCategoryRing.InvalidateVisual();
-            AutoExposureButton.Visibility=selectedParameter==Parameter.Exposure ? Visibility.Visible : Visibility.Collapsed;
+            AutoExposureButton.Visibility=selectedToneParameter==null && selectedAtmosphereParameter==null && selectedParameter==Parameter.Exposure ? Visibility.Visible : Visibility.Collapsed;
             AutoExposureButton.IsEnabled=file!=null && result!=null && !autoExposing && !exporting && !scheduler.Busy && !transform.Active;
             DenoiseEditor.Visibility=choosingDenoise ? Visibility.Visible : Visibility.Collapsed;
             DenoiseSurface.Visibility=DenoiseEditor.Visibility;
@@ -300,6 +361,7 @@ public partial class MainWindow
             FilmCategory.IsEnabled=!exporting;
             FilmCategoryRing.Selected=choosingFilm;FilmCategoryRing.InvalidateVisual();
             if(importLookButton!=null)importLookButton.IsEnabled=!exporting;
+            if(presetLibraryButton!=null)presetLibraryButton.IsEnabled=!exporting && !transferPreparing;
             foreach(var (tool,controls) in effectToolButtons)
             {
                 var selected=choosingPhotoEffects && selectedEffect==tool;
@@ -320,11 +382,23 @@ public partial class MainWindow
             foreach(var (id,controls) in toolButtons)
             {
                 controls.Button.IsEnabled=file!=null && !exporting;
-                var selected=!choosingRecipes && !choosingHsl && !choosingFilm && !choosingDenoise && !choosingPhotoEffects && !choosingWhiteBalance && !choosingLens && !choosingGeometry && id==selectedParameter;
+                var selected=!choosingRecipes && !choosingHsl && !choosingGrading && !choosingFilm && !choosingDenoise && !choosingPhotoEffects && !choosingWhiteBalance && !choosingLens && !choosingGeometry && selectedToneParameter==null && selectedAtmosphereParameter==null && id==selectedParameter;
                 controls.Button.Tag=selected ? "selected" : null;
                 controls.Ring.Selected=selected;
                 var p=ParameterSpec.All[(int)id]; var origin=p.Position(settings.Default(id)); var offset=p.Position(settings[id])-origin;
-                controls.Ring.Progress=offset==0 ? 0 : offset/(offset<0 ? origin : 1-origin); controls.Ring.InvalidateVisual();
+                controls.Ring.Progress=id==Parameter.ToneCurve && !settings.Curve.IsDefault ? settings.Curve.Progress : offset==0 ? 0 : offset/(offset<0 ? origin : 1-origin); controls.Ring.InvalidateVisual();
+            }
+            foreach(var (id,controls) in toneToolButtons) {
+                var selected=CurrentTool==EditorAdjustmentRules.ToolFor(id);
+                controls.Button.IsEnabled=file!=null && !exporting;
+                controls.Button.Tag=selected ? "selected" : null;controls.Ring.Selected=selected;
+                controls.Ring.Progress=settings.ToneControls[id]/100;controls.Ring.InvalidateVisual();
+            }
+            foreach(var (id,controls) in atmosphereToolButtons) {
+                var selected=CurrentTool==EditorAdjustmentRules.ToolFor(id);
+                controls.Button.IsEnabled=file!=null && !exporting;
+                controls.Button.Tag=selected ? "selected" : null;controls.Ring.Selected=selected;
+                controls.Ring.Progress=settings.Atmosphere[id]/100;controls.Ring.InvalidateVisual();
             }
             foreach(var pair in filmButtons)pair.Value.Tag=pair.Key==(lut ?? "") ? "selected" : null;
             var lookTitle=LookTitle;
@@ -345,6 +419,8 @@ public partial class MainWindow
     }
     private void UpdateBusy()
     {
+        MenuCollection.IsEnabled=CollectionReturn.IsEnabled=!CollectionBusy;
+        CollectionReturn.Visibility=Collection.CurrentID!=null ? Visibility.Visible : Visibility.Collapsed;
         ExportJpeg.IsEnabled=ExportPng.IsEnabled=ExportDng.IsEnabled=BatchExportMenu.IsEnabled=pendingAllReset==null && !AIBlocksOutput && exactReady && !scheduler.Busy && !previewResize.IsEnabled && !exporting && result!=null && LookAvailable && !transform.Active;
         ViewBatchMenu.IsEnabled=CurrentBatch!=null;
         MenuViewBatch.IsEnabled=ViewBatchMenu.IsEnabled;
@@ -362,7 +438,7 @@ public partial class MainWindow
         InfoEntryButton.Visibility=file==null ? Visibility.Collapsed : Visibility.Visible;
         InfoEntryButton.IsEnabled=file!=null && !exporting;
         AdjustmentPanel.IsEnabled=!exporting && !pendingResetReady && !adjustmentReloadRequired;GpuMode.IsEnabled=!exporting && (file==null || !LibraryEntry.IsRaster(file));
-        var busy=scheduler.Busy || previewResize.IsEnabled || exporting || aiJob.State.IsRunning;
+        var busy=scheduler.Busy || previewResize.IsEnabled || aiJob.State.IsRunning;
         BusyIndicator.Visibility=busy ? Visibility.Visible : Visibility.Collapsed;
         BusyAnimation.Visibility=SystemParameters.ClientAreaAnimation ? Visibility.Visible : Visibility.Collapsed;
         BusyStill.Visibility=SystemParameters.ClientAreaAnimation ? Visibility.Collapsed : Visibility.Visible;
@@ -384,7 +460,7 @@ public partial class MainWindow
         RefreshViewingFrames();
         var raster=file!=null && LibraryEntry.IsRaster(file);
         BaselineLabel.Text=raster ? Loc.Text("显示图像") : Loc.Format("基础偏移 {0:+0.00;-0.00;0.00} EV", result.Baseline);
-        AsShotButton.ToolTip=raster ? Loc.Text("不适用") : result.WhiteBalance==null ? Loc.Text("此 RAW 缺少有效校准，使用相机原始白平衡") : Loc.Format("拍摄时：{0} K / {1}", result.WhiteBalance.Value.Temperature, result.WhiteBalance.Value.Tint);
+        AsShotButton.ToolTip=raster ? Loc.Text("不适用") : result.WhiteBalance==null ? Loc.Text("此 RAW 缺少有效校准，使用相机原始白平衡") : Loc.Format("拍摄时：{0} K / {1}", result.WhiteBalance.Value.Temperature.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo(Loc.Language)), result.WhiteBalance.Value.Tint.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo(Loc.Language)));
     }
     private void RetryClicked(object sender,RoutedEventArgs e)=>Schedule();
     private void Report(Exception error)=>SetStatus(error is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException

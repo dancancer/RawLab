@@ -415,6 +415,1479 @@
           "light.exposure": 1
         }
       }
+    },
+    {
+      "id": "tone-controls-ui-units",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "tone.black_point": -37.25,
+          "tone.white_point": 42.5,
+          "color.vibrance": 18.125
+        }
+      },
+      "neutral_effective": {
+        "tone.black_point": -37.25,
+        "tone.white_point": 42.5,
+        "color.vibrance": 18.125
+      }
+    },
+    {
+      "id": "tone.black_point-boundary--100",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "tone.black_point": -100
+        }
+      },
+      "neutral_effective": {
+        "tone.black_point": -100
+      }
+    },
+    {
+      "id": "tone.black_point-boundary-100",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "tone.black_point": 100
+        }
+      },
+      "neutral_effective": {
+        "tone.black_point": 100
+      }
+    },
+    {
+      "id": "tone.black_point-out-of-range--100.01",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "tone.black_point": -100.01
+        }
+      }
+    },
+    {
+      "id": "tone.black_point-out-of-range-100.01",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "tone.black_point": 100.01
+        }
+      }
+    },
+    {
+      "id": "tone.white_point-boundary--100",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "tone.white_point": -100
+        }
+      },
+      "neutral_effective": {
+        "tone.white_point": -100
+      }
+    },
+    {
+      "id": "tone.white_point-boundary-100",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "tone.white_point": 100
+        }
+      },
+      "neutral_effective": {
+        "tone.white_point": 100
+      }
+    },
+    {
+      "id": "tone.white_point-out-of-range--100.01",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "tone.white_point": -100.01
+        }
+      }
+    },
+    {
+      "id": "tone.white_point-out-of-range-100.01",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "tone.white_point": 100.01
+        }
+      }
+    },
+    {
+      "id": "color.vibrance-boundary--100",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.vibrance": -100
+        }
+      },
+      "neutral_effective": {
+        "color.vibrance": -100
+      }
+    },
+    {
+      "id": "color.vibrance-boundary-100",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.vibrance": 100
+        }
+      },
+      "neutral_effective": {
+        "color.vibrance": 100
+      }
+    },
+    {
+      "id": "color.vibrance-out-of-range--100.01",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.vibrance": -100.01
+        }
+      }
+    },
+    {
+      "id": "color.vibrance-out-of-range-100.01",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "tone-controls-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.vibrance": 100.01
+        }
+      }
+    },
+    {
+      "id": "grading-shadows-default",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.shadows": {
+            "hue": 0,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-shadows-pending-hue",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.shadows": {
+            "hue": 231.25,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-shadows-max",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.shadows": {
+            "hue": 359.5,
+            "saturation": 100
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-shadows-hue360",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.shadows": {
+            "hue": 360,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-shadows-negative-hue",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.shadows": {
+            "hue": -0.01,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-shadows-sat-over",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.shadows": {
+            "hue": 0,
+            "saturation": 100.01
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-shadows-missing-sat",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.shadows": {
+            "hue": 120
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-shadows-extra-axis",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.shadows": {
+            "hue": 120,
+            "saturation": 20,
+            "lightness": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-midtones-default",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.midtones": {
+            "hue": 0,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-midtones-pending-hue",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.midtones": {
+            "hue": 231.25,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-midtones-max",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.midtones": {
+            "hue": 359.5,
+            "saturation": 100
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-midtones-hue360",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.midtones": {
+            "hue": 360,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-midtones-negative-hue",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.midtones": {
+            "hue": -0.01,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-midtones-sat-over",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.midtones": {
+            "hue": 0,
+            "saturation": 100.01
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-midtones-missing-sat",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.midtones": {
+            "hue": 120
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-midtones-extra-axis",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.midtones": {
+            "hue": 120,
+            "saturation": 20,
+            "lightness": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-highlights-default",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 0,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-highlights-pending-hue",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 231.25,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-highlights-max",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 359.5,
+            "saturation": 100
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-highlights-hue360",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 360,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-highlights-negative-hue",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": -0.01,
+            "saturation": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-highlights-sat-over",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 0,
+            "saturation": 100.01
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-highlights-missing-sat",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 120
+          }
+        }
+      }
+    },
+    {
+      "id": "grading-highlights-extra-axis",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "color-grading-v1",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 120,
+            "saturation": 20,
+            "lightness": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "curve-legacy",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-curve",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "light.curve": {
+            "mode": "legacy",
+            "points": []
+          }
+        }
+      }
+    },
+    {
+      "id": "curve-identity",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-curve",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "light.curve": {
+            "mode": "custom",
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                1
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "curve-precise-inactive-legacy",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-curve",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "light.curve": {
+            "mode": "custom",
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                0.250000000000001,
+                0.125000000000001
+              ],
+              [
+                0.75,
+                0.875
+              ],
+              [
+                1,
+                1
+              ]
+            ]
+          },
+          "light.s_curve": 0.65
+        }
+      }
+    },
+    {
+      "id": "curve-33-points",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-curve",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "light.curve": {
+            "mode": "custom",
+            "points": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                0.03125,
+                0.03125
+              ],
+              [
+                0.0625,
+                0.0625
+              ],
+              [
+                0.09375,
+                0.09375
+              ],
+              [
+                0.125,
+                0.125
+              ],
+              [
+                0.15625,
+                0.15625
+              ],
+              [
+                0.1875,
+                0.1875
+              ],
+              [
+                0.21875,
+                0.21875
+              ],
+              [
+                0.25,
+                0.25
+              ],
+              [
+                0.28125,
+                0.28125
+              ],
+              [
+                0.3125,
+                0.3125
+              ],
+              [
+                0.34375,
+                0.34375
+              ],
+              [
+                0.375,
+                0.375
+              ],
+              [
+                0.40625,
+                0.40625
+              ],
+              [
+                0.4375,
+                0.4375
+              ],
+              [
+                0.46875,
+                0.46875
+              ],
+              [
+                0.5,
+                0.5
+              ],
+              [
+                0.53125,
+                0.53125
+              ],
+              [
+                0.5625,
+                0.5625
+              ],
+              [
+                0.59375,
+                0.59375
+              ],
+              [
+                0.625,
+                0.625
+              ],
+              [
+                0.65625,
+                0.65625
+              ],
+              [
+                0.6875,
+                0.6875
+              ],
+              [
+                0.71875,
+                0.71875
+              ],
+              [
+                0.75,
+                0.75
+              ],
+              [
+                0.78125,
+                0.78125
+              ],
+              [
+                0.8125,
+                0.8125
+              ],
+              [
+                0.84375,
+                0.84375
+              ],
+              [
+                0.875,
+                0.875
+              ],
+              [
+                0.90625,
+                0.90625
+              ],
+              [
+                0.9375,
+                0.9375
+              ],
+              [
+                0.96875,
+                0.96875
+              ],
+              [
+                1.0,
+                1.0
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "curve-subnormal",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-curve",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "light.curve": {
+            "mode": "custom",
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                2e-320,
+                4e-320
+              ],
+              [
+                1,
+                1
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "curve-too-many",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-curve",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "light.curve": {
+            "mode": "custom",
+            "points": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                0.030303030303030304,
+                0.030303030303030304
+              ],
+              [
+                0.06060606060606061,
+                0.06060606060606061
+              ],
+              [
+                0.09090909090909091,
+                0.09090909090909091
+              ],
+              [
+                0.12121212121212122,
+                0.12121212121212122
+              ],
+              [
+                0.15151515151515152,
+                0.15151515151515152
+              ],
+              [
+                0.18181818181818182,
+                0.18181818181818182
+              ],
+              [
+                0.21212121212121213,
+                0.21212121212121213
+              ],
+              [
+                0.24242424242424243,
+                0.24242424242424243
+              ],
+              [
+                0.2727272727272727,
+                0.2727272727272727
+              ],
+              [
+                0.30303030303030304,
+                0.30303030303030304
+              ],
+              [
+                0.3333333333333333,
+                0.3333333333333333
+              ],
+              [
+                0.36363636363636365,
+                0.36363636363636365
+              ],
+              [
+                0.3939393939393939,
+                0.3939393939393939
+              ],
+              [
+                0.42424242424242425,
+                0.42424242424242425
+              ],
+              [
+                0.45454545454545453,
+                0.45454545454545453
+              ],
+              [
+                0.48484848484848486,
+                0.48484848484848486
+              ],
+              [
+                0.5151515151515151,
+                0.5151515151515151
+              ],
+              [
+                0.5454545454545454,
+                0.5454545454545454
+              ],
+              [
+                0.5757575757575758,
+                0.5757575757575758
+              ],
+              [
+                0.6060606060606061,
+                0.6060606060606061
+              ],
+              [
+                0.6363636363636364,
+                0.6363636363636364
+              ],
+              [
+                0.6666666666666666,
+                0.6666666666666666
+              ],
+              [
+                0.696969696969697,
+                0.696969696969697
+              ],
+              [
+                0.7272727272727273,
+                0.7272727272727273
+              ],
+              [
+                0.7575757575757576,
+                0.7575757575757576
+              ],
+              [
+                0.7878787878787878,
+                0.7878787878787878
+              ],
+              [
+                0.8181818181818182,
+                0.8181818181818182
+              ],
+              [
+                0.8484848484848485,
+                0.8484848484848485
+              ],
+              [
+                0.8787878787878788,
+                0.8787878787878788
+              ],
+              [
+                0.9090909090909091,
+                0.9090909090909091
+              ],
+              [
+                0.9393939393939394,
+                0.9393939393939394
+              ],
+              [
+                0.9696969696969697,
+                0.9696969696969697
+              ],
+              [
+                1.0,
+                1.0
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "curve-duplicate-x",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-curve",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "light.curve": {
+            "mode": "custom",
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                0.5,
+                0.2
+              ],
+              [
+                0.5,
+                0.8
+              ],
+              [
+                1,
+                1
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "curve-decreasing-y",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-curve",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "light.curve": {
+            "mode": "custom",
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                0.25,
+                0.7
+              ],
+              [
+                0.75,
+                0.5
+              ],
+              [
+                1,
+                1
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "curve-bad-endpoint",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-curve",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "light.curve": {
+            "mode": "custom",
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0.99
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "curve-legacy-points",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-curve",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "light.curve": {
+            "mode": "legacy",
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                1
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "curve-unknown-mode",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-curve",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "light.curve": {
+            "mode": "future",
+            "points": []
+          }
+        }
+      }
+    },
+    {
+      "id": "curve-unknown-field",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-curve",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "light.curve": {
+            "mode": "custom",
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "future": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "curve-point-size",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-curve",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "light.curve": {
+            "mode": "custom",
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                1,
+                1
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "curve-point-type",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-curve",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "light.curve": {
+            "mode": "custom",
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                "1",
+                1
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "atmosphere-fractional",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-atmosphere",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "effects.clarity": -37.251234,
+          "effects.dehaze": 42.5
+        }
+      },
+      "neutral_effective": {
+        "effects.clarity": -37.251234,
+        "effects.dehaze": 42.5
+      }
+    },
+    {
+      "id": "atmosphere-bounds",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-atmosphere",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "effects.clarity": -100,
+          "effects.dehaze": 100
+        }
+      },
+      "neutral_effective": {
+        "effects.clarity": -100,
+        "effects.dehaze": 100
+      }
+    },
+    {
+      "id": "atmosphere-zero",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-atmosphere",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "effects.clarity": 0,
+          "effects.dehaze": 0
+        }
+      },
+      "neutral_effective": {
+        "effects.clarity": 0,
+        "effects.dehaze": 0
+      }
+    },
+    {
+      "id": "atmosphere-clarity-low",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-atmosphere",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "effects.clarity": -100.0001
+        }
+      }
+    },
+    {
+      "id": "atmosphere-dehaze-high",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-atmosphere",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "effects.dehaze": 100.0001
+        }
+      }
+    },
+    {
+      "id": "atmosphere-string",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-atmosphere",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "effects.clarity": "10"
+        }
+      }
+    },
+    {
+      "id": "atmosphere-null",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-atmosphere",
+          "is_raw": true,
+          "processing_version": 2
+        },
+        "values": {
+          "effects.dehaze": null
+        }
+      }
     }
   ]
 }

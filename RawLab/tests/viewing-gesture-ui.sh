@@ -20,11 +20,11 @@ plistlib.dump({'CFBundleIdentifier':'com.rawlab.tests.viewing-uitests','CFBundle
 for lang in (root/'RawLab/RawLab/Resources').glob('*.lproj'):shutil.copytree(lang,app/lang.name)
 config={'RawLabUITests':{'BlueprintName':'RawLabUITests','ProductModuleName':'RawLabUITests','TestHostBundleIdentifier':p['CFBundleIdentifier'],'TestHostPath':str(runner),'TestBundlePath':str(test),'UITargetAppPath':str(app),'IsUITestBundle':True,'IsXCTRunnerHostedTestBundle':True,'DependentProductPaths':[str(runner),str(test),str(app)],'TestingEnvironmentVariables':{'DYLD_FRAMEWORK_PATH':'__PLATFORMS__/iPhoneSimulator.platform/Developer/Library/Frameworks','DYLD_LIBRARY_PATH':'__PLATFORMS__/iPhoneSimulator.platform/Developer/usr/lib'}},'__xctestrun_metadata__':{'FormatVersion':1}}
 plistlib.dump(config,(out/'viewing.xctestrun').open('wb'))
-for n in ['ZoomablePhoto','PhotoZoomGeometry']:
+for n in ['ZoomablePhoto','PhotoZoomGeometry','PhotoHSLTargetInput']:
  name='RawLab/RawLab/UI/Preview/'+n+'.swift'
  text=subprocess.check_output(['git','show',os.environ['RAWLAB_VIEWING_BASELINE']+':'+name],cwd=root) if os.environ.get('RAWLAB_VIEWING_BASELINE') and n=='ZoomablePhoto' else (root/name).read_bytes()
  (out/'source'/ (n+'.swift')).write_bytes(text)
-for name in ['Shared/Localization.swift','RawLab/tests/ViewingGestureHarness.swift','RawLab/tests/ViewingGestureUITests.swift']:
+for name in ['Shared/Localization.swift','Shared/HSLSettings.swift','Shared/HSLTargetAdjustment.swift','RawLab/tests/ViewingGestureHarness.swift','RawLab/tests/ViewingGestureUITests.swift']:
  (out/'source'/pathlib.Path(name).name).write_bytes((root/name).read_bytes())
 import hashlib,json
 sources={str(f.relative_to(out/'source')):hashlib.sha256(f.read_bytes()).hexdigest() for f in (out/'source').glob('*.swift')}
@@ -32,10 +32,14 @@ sources={str(f.relative_to(out/'source')):hashlib.sha256(f.read_bytes()).hexdige
 PY
 FLAGS=(-D VIEWING_CURRENT)
 if [[ -n "${RAWLAB_VIEWING_BASELINE:-}" ]]; then FLAGS=(-D VIEWING_BASELINE); fi
-xcrun --sdk iphonesimulator swiftc -parse-as-library -module-name ViewingGesture -sdk "$SDK" -target arm64-apple-ios18.0-simulator -module-cache-path "$OUT/module-cache" "${FLAGS[@]}" "$OUT/source/Localization.swift" "$OUT/source/PhotoZoomGeometry.swift" "$OUT/source/ZoomablePhoto.swift" "$OUT/source/ViewingGestureHarness.swift" -o "$APP/viewing-gesture"
+xcrun --sdk iphonesimulator swiftc -parse-as-library -module-name ViewingGesture -sdk "$SDK" -target arm64-apple-ios18.0-simulator -module-cache-path "$OUT/module-cache" "${FLAGS[@]}" "$OUT/source/Localization.swift" "$OUT/source/HSLSettings.swift" "$OUT/source/HSLTargetAdjustment.swift" "$OUT/source/PhotoHSLTargetInput.swift" "$OUT/source/PhotoZoomGeometry.swift" "$OUT/source/ZoomablePhoto.swift" "$OUT/source/ViewingGestureHarness.swift" -o "$APP/viewing-gesture"
 xcrun --sdk iphonesimulator swiftc -emit-library -module-name RawLabUITests -sdk "$SDK" -target arm64-apple-ios18.0-simulator -module-cache-path "$OUT/module-cache" -F "$PLATFORM/Developer/Library/Frameworks" -I "$PLATFORM/Developer/usr/lib" -L "$PLATFORM/Developer/usr/lib" -lXCTestSwiftSupport -framework XCTest "$OUT/source/ViewingGestureUITests.swift" -o "$RUNNER/PlugIns/RawLabUITests.xctest/RawLabUITests"
 codesign --force --deep --sign - "$APP" >/dev/null
 codesign --force --deep --sign - "$RUNNER" >/dev/null
+if [[ "${RAWLAB_BUILD_ONLY:-0}" == 1 ]]; then
+    echo "Built viewing gesture harness without running tests: $OUT"
+    exit 0
+fi
 xcrun simctl install "$DEVICE" "$APP"
 STATUS=0
 xcodebuild -xctestrun "$OUT/viewing.xctestrun" -destination "platform=iOS Simulator,id=$DEVICE" -parallel-testing-enabled NO -only-testing:RawLabUITests/ViewingGestureUITests -collect-test-diagnostics never -resultBundlePath "$OUT/viewing.xcresult" test-without-building || STATUS=$?

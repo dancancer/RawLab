@@ -6,7 +6,7 @@ using System.Windows.Shapes;
 
 namespace RawLab.Windows;
 
-public sealed class HslPanel : StackPanel
+public sealed partial class HslPanel : StackPanel
 {
     private HslSettings settings=new();
     private int channel;
@@ -23,11 +23,12 @@ public sealed class HslPanel : StackPanel
     public string SelectedChannelName => Loc.Text(colorKeys[channel]);
     public void SelectChannel(int value) {
         if(value is <0 or >7)throw new ArgumentOutOfRangeException(nameof(value));
-        foreach(var row in rows)row.CancelInput();channel=value;Refresh(settings);
+        TargetInputCancelled?.Invoke();foreach(var row in rows)row.CancelInput();channel=value;Refresh(settings);
     }
     public HslPanel()
     {
         MaxWidth=720;Margin=new Thickness(4);
+        InitializeTargetControls();
         var selector=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Center};
         var colors=new[]{Colors.Red,Colors.Orange,Colors.Yellow,Colors.LimeGreen,Colors.Cyan,Colors.DodgerBlue,Colors.Purple,Colors.Magenta};
         for(var i=0;i<8;++i)
@@ -46,7 +47,7 @@ public sealed class HslPanel : StackPanel
         Children.Add(new ScrollViewer { Content=selector,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled });
         for(var i=0;i<3;++i)
         {
-            var axis=i;Children.Add(rows[i]);rows[i].Changed+=(value,dragging)=>{
+            var axis=i;Children.Add(rows[i]);rows[i].PreviewMouseDown+=(_,_)=>TargetInputCancelled?.Invoke();rows[i].Changed+=(value,dragging)=>{
                 if(syncing || !IsEnabled)return;
                 settings=settings.WithValue(axis,channel,value);Refresh(settings);Changed?.Invoke(settings,dragging);
             };
@@ -59,6 +60,7 @@ public sealed class HslPanel : StackPanel
     }
     public void RefreshLanguage()
     {
+        RefreshTargetControls();
         for(var i=0;i<8;++i){swatches[i].ToolTip=Loc.Text(colorKeys[i]);AutomationProperties.SetName(swatches[i],Loc.Text(colorKeys[i]));}
         resetColor.Content=Loc.Text("重置当前颜色");resetAll.Content=Loc.Text("重置 HSL");
         Refresh(settings);

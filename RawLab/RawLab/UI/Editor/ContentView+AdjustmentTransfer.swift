@@ -12,6 +12,25 @@ extension ContentView {
             .disabled(!viewModel.canRedoAdjustment).accessibilityIdentifier("adjustment.history.redo")
         Button(L10n.text("本次会话历史")) { requestAdjustmentAction(.history) }
             .accessibilityIdentifier("adjustment.history.open")
+        Button(L10n.text("我的预设")) { adjustmentSheet = .presets }
+            .accessibilityIdentifier("preset.library.open")
+    }
+
+    func queuePresetAction(_ action: IOSAdjustmentAction) {
+        // 先关闭管理页，再由 editor 统一处理草稿确认，避免两个 sheet 同时展示。
+        queuedPresetAction = action
+        adjustmentSheet = nil
+    }
+
+    func finishAdjustmentSheet() {
+        if let action = queuedPresetAction {
+            queuedPresetAction = nil
+            requestAdjustmentAction(action)
+        } else if returnToPresetLibrary {
+            returnToPresetLibrary = false
+            applyingPreset = nil
+            adjustmentSheet = .presets
+        } else { applyingPreset = nil }
     }
 
     func requestAdjustmentAction(_ action: IOSAdjustmentAction) {
@@ -30,6 +49,11 @@ extension ContentView {
         switch action {
         case .copy: adjustmentSheet = .copy
         case .paste: adjustmentSheet = .paste
+        case .presetSave: adjustmentSheet = .presetSave
+        case .presetApply(let preset):
+            applyingPreset = preset
+            returnToPresetLibrary = true
+            adjustmentSheet = .presetApply
         case .history:
             viewModel.adjustmentHistoryResults = []
             viewModel.adjustmentHistoryRequest = nil

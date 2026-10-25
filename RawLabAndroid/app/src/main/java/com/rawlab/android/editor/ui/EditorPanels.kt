@@ -1,5 +1,7 @@
 package com.rawlab.android.editor.ui
 
+import com.rawlab.android.editor.controls.HslTargetActions
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -42,7 +44,7 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
     onAlbum: () -> Unit, onFile: () -> Unit, onLicenses: () -> Unit, onPreviewSizeChange: (Int) -> Unit,
     onDraftEdit: (EditSettings, Boolean) -> Unit, onSaveRetry: () -> Unit,
     view: PhotoViewOptions = PhotoViewOptions(), onCanvasTap: () -> Unit = {}, onHoldBefore: (Boolean) -> Unit = {},
-    onModeChange: (ComparisonMode) -> Unit = {}, onCompareClose: () -> Unit = {}, onRetry: () -> Unit = {}) {
+    onModeChange: (ComparisonMode) -> Unit = {}, onCompareClose: () -> Unit = {}, onRetry: () -> Unit = {}, hslTarget: HslTargetActions? = null) {
     val comparisonInset = if (compare) with(LocalDensity.current) {
         MaterialTheme.typography.labelSmall.lineHeight.toDp() + 36.dp
     } else 12.dp
@@ -53,7 +55,7 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
                 onDraftEdit(state.visibleEdits.copy(geometry = value), false)
             }
             else PhotoCanvas(it, compare && state.draft == null, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange,
-                mode = view.preferredMode, holdingBefore = view.holdingBefore && state.draft == null,
+                mode = view.preferredMode, holdingBefore = view.holdingBefore && state.draft == null && hslTarget == null, hslTarget = hslTarget,
                 showOverlays = !view.purePreview, margins = view.margins,
                 onCanvasTap = { if (state.draft == null) onCanvasTap() }, onHoldBefore = { onHoldBefore(it && state.draft == null) },
                 onModeChange = onModeChange, onCompareClose = onCompareClose, viewingEnabled = state.draft == null && state.controlsEnabled,

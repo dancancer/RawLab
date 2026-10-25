@@ -6,8 +6,8 @@ import com.rawlab.android.settings.*
 internal object AdjustmentTransferValues {
     val scalars = setOf(AdjustmentField.STRENGTH, AdjustmentField.EXPOSURE, AdjustmentField.CONTRAST,
         AdjustmentField.HIGHLIGHTS, AdjustmentField.SHADOWS, AdjustmentField.S_CURVE,
-        AdjustmentField.SATURATION, AdjustmentField.SHARPENING)
-    val effects = AdjustmentField.entries.filter { it.group == "effects" }.toSet()
+        AdjustmentField.SATURATION, AdjustmentField.SHARPENING, AdjustmentField.BLACK_POINT, AdjustmentField.WHITE_POINT, AdjustmentField.VIBRANCE, AdjustmentField.CLARITY, AdjustmentField.DEHAZE)
+    val effects = AdjustmentField.entries.filter { it.id.startsWith("effects.vignette.") || it.id.startsWith("effects.grain.") }.toSet()
     val scaled = setOf(AdjustmentField.EXPOSURE, AdjustmentField.CONTRAST, AdjustmentField.HIGHLIGHTS,
         AdjustmentField.SHADOWS, AdjustmentField.SATURATION)
     fun logical(settings: EditSettings, field: AdjustmentField): Double = when (field) {
@@ -18,6 +18,11 @@ internal object AdjustmentTransferValues {
         AdjustmentField.SHADOWS -> settings.shadows.toDouble()
         AdjustmentField.S_CURVE -> settings.toneCurve.toDouble()
         AdjustmentField.SATURATION -> 1.0 + settings.saturation.toDouble()
+        AdjustmentField.BLACK_POINT -> settings.blackPoint.toDouble()
+        AdjustmentField.WHITE_POINT -> settings.whitePoint.toDouble()
+        AdjustmentField.VIBRANCE -> settings.vibrance.toDouble()
+        AdjustmentField.CLARITY -> settings.clarity.toDouble()
+        AdjustmentField.DEHAZE -> settings.dehaze.toDouble()
         AdjustmentField.SHARPENING -> settings.sharpening.toDouble()
         else -> field.hslLocation!!.let { (axis, channel) -> settings.hsl.value(axis, channel).toDouble() }
     }
@@ -29,6 +34,11 @@ internal object AdjustmentTransferValues {
         AdjustmentField.SHADOWS -> settings.copy(shadows = value.toFloat())
         AdjustmentField.S_CURVE -> settings.copy(toneCurve = value.toFloat())
         AdjustmentField.SATURATION -> settings.copy(saturation = (value - 1).toFloat())
+        AdjustmentField.BLACK_POINT -> settings.copy(blackPoint = value.toFloat())
+        AdjustmentField.WHITE_POINT -> settings.copy(whitePoint = value.toFloat())
+        AdjustmentField.VIBRANCE -> settings.copy(vibrance = value.toFloat())
+        AdjustmentField.CLARITY -> settings.copy(clarity = value.toFloat())
+        AdjustmentField.DEHAZE -> settings.copy(dehaze = value.toFloat())
         AdjustmentField.SHARPENING -> settings.copy(sharpening = value.toFloat())
         else -> {
             val (axis, channel) = field.hslLocation!!
@@ -38,9 +48,14 @@ internal object AdjustmentTransferValues {
 
     fun values(s: EditSettings, context: AdjustmentTransferContext): Map<AdjustmentField, AdjustmentValue> {
         val values = linkedMapOf<AdjustmentField, AdjustmentValue>()
+        values[AdjustmentField.CURVE] = AdjustmentPayload.curveValue(s.curve)
         fun number(field: AdjustmentField, value: Number) { values[field] = AdjustmentValue.Number(value.toDouble()) }
         fun boolean(field: AdjustmentField, value: Boolean) { values[field] = AdjustmentValue.Boolean(value) }
         for (field in scalars + AdjustmentField.entries.filter { it.hslLocation != null }) number(field, logical(s, field))
+        for (field in AdjustmentField.entries) field.gradingZone?.let { zone ->
+            values[field] = AdjustmentValue.Object(mapOf("hue" to AdjustmentValue.Number(s.colorGrading[zone].hue.toDouble()),
+                "saturation" to AdjustmentValue.Number(s.colorGrading[zone].saturation.toDouble())))
+        }
         val kind: String; val id: String?
         when {
             s.recipeID != null -> { kind = "recipe"; id = s.recipeID }
@@ -91,6 +106,12 @@ internal object AdjustmentTransferValues {
             if (payload[field]?.number?.let { it != 0.0 } == true) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, field.id)
         }
         var result = original
+        payload[AdjustmentField.CURVE]?.let { result = result.copy(curve = AdjustmentPayload.curve(it)) }
+        for (field in payload.fields) field.gradingZone?.let { zone ->
+            val wheel = payload[field]!!.objectValue!!
+            result = result.copy(colorGrading = result.colorGrading.with(zone,
+                ColorGradingWheel.fromNumbers(wheel["hue"]!!.number!!, wheel["saturation"]!!.number!!)))
+        }
         payload[AdjustmentField.CHROMA_DENOISE]?.let { result = result.copy(displayChromaDenoise = it.number?.toInt() ?: 0) }
         payload[AdjustmentField.WAVELET_DENOISE]?.let { value ->
             val wavelet = value.objectValue

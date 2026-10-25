@@ -7,6 +7,10 @@ private final class ParameterInputState: ObservableObject {
                                     "saturation": Array(repeating: 0.0, count: 8), "lightness": Array(repeating: 0.0, count: 8)]
         return try! JSONDecoder().decode(HSLSettings.self, from: JSONSerialization.data(withJSONObject: object))
     }()
+    @Published var grading: ColorGradingSettings = {
+        var value = ColorGradingSettings(); value.shadows = ColorGradingWheel(hue: 231.25456789, saturation: 0); return value
+    }()
+    @Published var zone = ColorGradingZone.shadows
     @Published var channel = 0
     @Published var writes = 0
     @Published var exposure = -4.0
@@ -31,9 +35,9 @@ private struct ParameterInputHost: View {
 
     #if PARAMETER_INPUT_CONTEXT
     private var context: AdjustmentInputContext {
-        let source = state.source, channel = state.channel
-        return AdjustmentInputContext(id: "\(source).\(channel)", isCurrent: {
-            state.source == source && state.channel == channel
+        let source = state.source, channel = state.channel, zone = state.zone
+        return AdjustmentInputContext(id: "\(source).\(channel).\(zone.rawValue)", isCurrent: {
+            state.source == source && state.channel == channel && state.zone == zone
         })
     }
     #endif
@@ -60,6 +64,15 @@ private struct ParameterInputHost: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 10) { state.source = UUID(); state.sourceChanged = true }
             }.accessibilityIdentifier("fixture.changeSourceSoon")
             ScrollView {
+                #if PARAMETER_INPUT_CONTEXT
+                if ProcessInfo.processInfo.arguments.contains("-Grading") {
+                    IOSColorGradingControls(settings: Binding(get: { state.grading }, set: {
+                        state.grading = $0; state.writes += 1
+                    }), zone: $state.zone, onEditingChanged: { _ in }, onCancelled: {})
+                    Text(String(state.grading.shadows.hue)).accessibilityIdentifier("fixture.gradingHue")
+                }
+                #endif
+                if !ProcessInfo.processInfo.arguments.contains("-Grading") {
                 if ProcessInfo.processInfo.arguments.contains("-Endpoint") {
                     AdjustmentRuler(value: $state.exposure, scale: AdjustmentScale(range: -4...4, step: 0.05),
                                     defaultValue: 0, title: "Exposure", formatter: { String($0) }, identifier: "fixture.endpoint",
@@ -77,6 +90,7 @@ private struct ParameterInputHost: View {
                                       range: 0...2, step: 0.01, defaultValue: 1, unit: "%",
                                       formatter: { String(format: "%.0f", $0 * 100) }, displayScale: 100, identifier: "fixture.strength")
                     #endif
+                }
                 }
             }
         }

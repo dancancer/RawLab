@@ -16,10 +16,25 @@ extension ContentView {
             .disabled(!viewModel.hasImage || editingLocked || viewModel.sourceKind != .raw)
         } else if choosingMasterRecipe {
             masterRecipePanel
-        } else if selectedAdjustment == .hsl {
-            IOSHSLMixer(settings: Binding(get: { settings.hsl }, set: { settings.hsl = $0 }),
-                        onEditingChanged: setSliderEditing, channel: $hslChannel)
+        } else if selectedAdjustment == .toneCurve {
+            IOSToneCurveControls(settings: Binding(get: { settings.curveSettings }, set: { settings.curveSettings = $0 }),
+                legacy: $settings.toneCurve, onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
                 .disabled(!viewModel.hasImage || editingLocked)
+        } else if selectedAdjustment == .colorGrading {
+            IOSColorGradingControls(settings: Binding(get: { settings.gradingSettings }, set: { settings.gradingSettings = $0 }),
+                zone: $gradingZone, onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
+                .disabled(!viewModel.hasImage || editingLocked)
+        } else if selectedAdjustment == .hsl {
+            VStack(spacing: 8) {
+                HSLTargetControls(enabled: $hslTargetEnabled, axis: $hslTargetAxis,
+                    sample: hslTargetInteraction.selection, waiting: hslTargetInteraction.isWaiting,
+                    notice: hslTargetNotice, onCancel: cancelHSLTarget).padding(.horizontal, 16)
+                IOSHSLMixer(settings: Binding(get: { settings.hsl }, set: { settings.hsl = $0 }),
+                    onEditingChanged: { editing in
+                        if editing { cancelHSLTarget() }
+                        setSliderEditing(editing)
+                    }, channel: $hslChannel)
+            }.disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .vignette || selectedAdjustment == .grain {
             IOSPhotoEffectsControls(effect: selectedAdjustment ?? .vignette, settings: Binding(
                 get: { settings.photoEffects }, set: { settings.photoEffects = $0 }

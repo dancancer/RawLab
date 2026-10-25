@@ -9,12 +9,13 @@ data class AdjustmentTransferTarget(val identity: PhotoIdentity, val displayName
 enum class AdjustmentStatus { APPLIED, UNCHANGED, SKIPPED, BLOCKED, CONFLICT, FAILED }
 data class AdjustmentOutcome(val targetID: String, val status: AdjustmentStatus,
     val saved: VersionedPhotoEdit? = null, val error: Throwable? = null, val requiresHistoryDecision: Boolean = false)
-data class PreparedAdjustmentTransfer(val id: UUID, val payload: AdjustmentPayload, val targets: List<Target>) {
+data class PreparedAdjustmentTransfer(val id: UUID, val payload: AdjustmentPayload, val targets: List<Target>,
+    val action: AdjustmentHistoryTransaction.Action = AdjustmentHistoryTransaction.Action.PASTE) {
     data class Target(val id: String, val displayName: String, val original: VersionedPhotoEdit?, val candidate: EditSettings?,
         val unchanged: Boolean, val isCurrent: () -> Boolean, val validateSource: (() -> Unit)?, val error: Throwable?)
 }
 data class AdjustmentHistoryTransaction(val id: UUID, val action: Action, val fields: Set<AdjustmentField>, val parts: List<Part>) {
-    enum class Action { PASTE, EDIT }
+    enum class Action { PASTE, EDIT, PRESET, SYNCHRONIZE }
     enum class State { APPLIED, UNDONE, REDO_INVALIDATED }
     data class Part(val id: UUID, val priorHead: UUID?, val identity: PhotoIdentity, val displayName: String,
         val before: EditSettings?, val after: EditSettings?, val state: State)
@@ -40,9 +41,11 @@ class AdjustmentTransferSession(private val store: EditStore) {
         clipboard = captured
         return captured
     }
-    fun prepare(payload: AdjustmentPayload, targets: List<AdjustmentTransferTarget>): PreparedAdjustmentTransfer {
+    fun prepare(payload: AdjustmentPayload, targets: List<AdjustmentTransferTarget>,
+        action: AdjustmentHistoryTransaction.Action = AdjustmentHistoryTransaction.Action.PASTE): PreparedAdjustmentTransfer {
         payload.validate()
-        val prepared = targets.distinctBy { it.identity }.map { target ->
+        val prepared = targets.distinctBy { it.identity }
+            .filterNot { action == AdjustmentHistoryTransaction.Action.SYNCHRONIZE && it.identity.value == payload.source.identifier }.map { target ->
             try {
                 if (!target.isCurrent()) throw draftError()
                 target.validateSource?.invoke()
@@ -56,7 +59,7 @@ class AdjustmentTransferSession(private val store: EditStore) {
                     false, target.isCurrent, target.validateSource, error)
             }
         }
-        return PreparedAdjustmentTransfer(UUID.randomUUID(), payload, prepared)
+        return PreparedAdjustmentTransfer(UUID.randomUUID(), payload, prepared, action)
     }
     fun apply(operation: PreparedAdjustmentTransfer, skipping: Set<String> = emptySet()): List<AdjustmentOutcome> {
         if (operation.targets.any { it.error != null && it.id !in skipping }) return operation.targets.map {
@@ -66,6 +69,8 @@ class AdjustmentTransferSession(private val store: EditStore) {
             val cached = outcomes[operation.id]?.get(target.id)
             if (cached?.status in setOf(AdjustmentStatus.APPLIED, AdjustmentStatus.UNCHANGED, AdjustmentStatus.SKIPPED)) return@map cached!!
             val result = when {
+                operation.action == AdjustmentHistoryTransaction.Action.SYNCHRONIZE && target.id == operation.payload.source.identifier ->
+                    AdjustmentOutcome(target.id, AdjustmentStatus.BLOCKED, error = unresolved("synchronization source"))
                 target.id in skipping -> AdjustmentOutcome(target.id, AdjustmentStatus.SKIPPED)
                 !target.isCurrent() -> AdjustmentOutcome(target.id, AdjustmentStatus.BLOCKED, error = draftError())
                 target.original != null && target.candidate != null -> try {
@@ -73,7 +78,7 @@ class AdjustmentTransferSession(private val store: EditStore) {
                     if (store.versionedState(target.original.identity) != target.original) throw EditPersistenceConflict()
                     if (target.unchanged) AdjustmentOutcome(target.id, AdjustmentStatus.UNCHANGED, saved = target.original) else {
                         val saved = store.compareAndSave(target.original, target.candidate)
-                        record(operation.id, AdjustmentHistoryTransaction.Action.PASTE, operation.payload.fields, target.displayName,
+                        record(operation.id, operation.action, operation.payload.fields, target.displayName,
                             target.original, saved, target.validateSource)
                         AdjustmentOutcome(target.id, AdjustmentStatus.APPLIED, saved = saved)
                     }

@@ -26,19 +26,24 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try check(model.adjustmentSession!.transactions.isEmpty, "opening and resolving metadata create no history")
         model.setInteracting(true)
         model.settings.exposure = 0.2
+        model.settings.gradingSettings[.shadows] = ColorGradingWheel(hue: 231.25, saturation: 0)
         RunLoop.main.run(until: Date().addingTimeInterval(0.55))
         model.settings.exposure = 0.6
+        model.settings.gradingSettings[.midtones] = ColorGradingWheel(hue: 110.125, saturation: 32.375)
         try check(model.adjustmentSession!.transactions.isEmpty, "a long slider gesture does not save intermediate history")
         model.setInteracting(false)
         try check(model.adjustmentSession!.transactions.count == 1 && !model.dirty, "gesture end saves exactly one history item")
         try rendered(model)
         model.undoAdjustment(); try rendered(model)
-        try check(model.settings.exposure == 0 && model.canRedoAdjustment, "undo restores the pre-gesture state")
+        try check(model.settings.exposure == 0 && model.settings.gradingSettings.isDefault && model.canRedoAdjustment, "undo restores the pre-gesture state")
         model.redoAdjustment(); try rendered(model)
-        try check(model.settings.exposure == 0.6, "redo restores the saved gesture")
+        try check(model.settings.exposure == 0.6 && model.settings.gradingSettings.shadows.hue == 231.25
+            && model.settings.gradingSettings.midtones.saturation == 32.375, "redo restores the saved gesture including pending hue")
         model.setInteracting(true); model.settings.exposure = 1.2
+        model.settings.gradingSettings[.shadows] = ColorGradingWheel(hue: 80, saturation: 75)
         model.cancelAdjustmentInteraction(); try rendered(model)
-        try check(model.settings.exposure == 0.6 && model.adjustmentSession!.transactions.count == 1,
+        try check(model.settings.exposure == 0.6 && model.settings.gradingSettings.shadows == ColorGradingWheel(hue: 231.25, saturation: 0)
+            && model.adjustmentSession!.transactions.count == 1,
             "cancelled gesture restores its entry snapshot without history")
         model.settings.contrast = 15; try check(model.saveEdits(), "ordinary change saves")
         try check(model.applyCurrentSettings(to: [first, first]) == 0,
@@ -88,6 +93,127 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             "failed save neither overwrites storage nor creates history")
         try recipeLUTChecks(root: root, first: first, second: second)
         try historyErrorChecks(root: root, first: first)
+        try presetChecks(root: root, first: first, second: second)
+        try hslTargetChecks(root: root, second: second)
+        try curveNavigationChecks(root: root, photo: first)
+    }
+
+    static func curveNavigationChecks(root: URL, photo: URL) throws {
+        let model = EditorModel(lookDirectory: root.appendingPathComponent("curve-looks"),
+            editDirectory: root.appendingPathComponent("curve-edits"), batchDirectory: root.appendingPathComponent("curve-batch"))
+        model.open(photo); try rendered(model)
+        model.settings.curveSettings = .identity; try check(model.saveEdits(), "curve mode saves")
+        let before = model.settings, count = model.adjustmentSession!.transactions.count
+        for collapse in [false, true] {
+            model.selectAdjustmentTool(.toneCurve)
+            model.setInteracting(true); model.settings.curveSettings = .identity.inserting(x: 0.5, y: 0.7)
+            if collapse { model.selectAdjustmentGroup(.light) } else { model.selectAdjustmentTool(.exposure) }
+            try check(model.settings == before && !model.scheduler.interacting && model.interactionEntry == nil &&
+                model.adjustmentSession!.transactions.count == count,
+                "curve navigation cancels before changing the tool or collapsing its group")
+        }
+        model.selectAdjustmentTool(.exposure)
+        model.setInteracting(true); model.settings.exposure = 0.4; model.setInteracting(false)
+        try check(model.adjustmentSession!.transactions.count == count + 1 && model.settings.curveSettings == .identity,
+            "the next tool creates its own history entry after curve cancellation")
+        model.undoAdjustment(); try rendered(model)
+        try check(model.settings == before, "undo of the next tool retains the saved curve")
+    }
+
+    static func hslTargetChecks(root: URL, second: URL) throws {
+        let photo = root.appendingPathComponent("hsl-target.png")
+        let pixels: [UInt8] = Array(repeating: [204, 102, 51], count: 8 * 6).flatMap { $0 }
+        let image = CGImage(width: 8, height: 6, bitsPerComponent: 8, bitsPerPixel: 24, bytesPerRow: 24,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+            provider: CGDataProvider(data: Data(pixels) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+        let destination = CGImageDestinationCreateWithURL(photo as CFURL, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { fatalError("fixture") }
+        let model = EditorModel(lookDirectory: root.appendingPathComponent("hsl-looks"),
+            editDirectory: root.appendingPathComponent("hsl-edits"), batchDirectory: root.appendingPathComponent("hsl-batch"))
+        model.open(photo); try rendered(model); model.selectAdjustmentTool(.hsl); model.hslTargetEnabled = true
+        func sampled() throws {
+            let deadline = Date().addingTimeInterval(30)
+            while model.hslTargetInteraction.isWaiting && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+            try check(!model.hslTargetInteraction.isWaiting, "target sampling completes")
+        }
+        model.beginHSLTarget(CGPoint(x: 0.5, y: 0.5)); model.moveHSLTarget(20); model.endHSLTarget()
+        try sampled(); try rendered(model)
+        try check(model.adjustmentSession!.transactions.count == 1 && !model.settings.hslSettings.isIdentity,
+            "release before native sample creates exactly one durable HSL edit")
+        let saved = model.settings
+        model.beginHSLTarget(CGPoint(x: 0.5, y: 0.5)); try sampled()
+        model.moveHSLTarget(50); model.cancelHSLTarget(); model.endHSLTarget(); try rendered(model)
+        try check(model.settings == saved && model.adjustmentSession!.transactions.count == 1,
+            "native target cancellation restores before without a second history item")
+        model.undoAdjustment(); try rendered(model)
+        try check(model.settings.hslSettings.isIdentity, "target undo restores all HSL channels")
+        model.redoAdjustment(); try rendered(model)
+        try check(model.settings == saved, "target redo restores frozen weighted values")
+        model.beginHSLTarget(CGPoint(x: 0.5, y: 0.5)); model.moveHSLTarget(10); model.open(second); try rendered(model)
+        try check(model.settings.hslSettings.isIdentity && !model.hslTargetInteraction.isWaiting,
+            "source switch discards a pending native target sample")
+    }
+
+    static func presetChecks(root: URL, first: URL, second: URL) throws {
+        let directory = root.appendingPathComponent("preset-edits")
+        let model = EditorModel(lookDirectory: root.appendingPathComponent("preset-looks"), editDirectory: directory,
+            batchDirectory: root.appendingPathComponent("preset-batch"), presetDirectory: root.appendingPathComponent("preset-library"))
+        model.open(first); try rendered(model)
+        model.settings.exposure = 0.7; try check(model.saveEdits(), "preset source is committed")
+        let clipboard = try model.copyAdjustments(scope: .custom([.contrast]))
+        let count = model.adjustmentSession!.transactions.count
+        let payload = try model.capturePresetAdjustments(scope: .custom([.exposure]))
+        let preset = try model.presetStore.create(name: "Native preset", payload: payload)
+        try check(model.adjustmentClipboard == clipboard && model.adjustmentSession!.clipboard == clipboard &&
+            model.adjustmentSession!.transactions.count == count, "native preset save preserves both clipboard and photo history")
+        try check(model.beginGeometryDraft(), "preset fixture enters a geometry draft")
+        try rendered(model); model.updateGeometryDraft { $0.cropWidth = 0.8 }
+        model.requestAdjustmentSheet(.presets)
+        try check(model.adjustmentSheet == .presets && model.geometryDraft != nil && !model.geometryDraftDeparturePending,
+            "opening preset management does not apply or discard a photo draft")
+        var continued = false
+        model.preparePresetAction { continued = true }
+        try check(model.geometryDraftDeparturePending && !continued, "preset save waits for the shared geometry decision")
+        model.resolveGeometryDraftDeparture(.stay)
+        try check(!continued && model.geometryDraft != nil, "Continue Editing cancels the preset action and preserves its draft")
+        model.preparePresetAction { continued = true }
+        model.resolveGeometryDraftDeparture(.discard)
+        try check(continued && model.geometryDraft == nil && model.adjustmentSession!.transactions.count == count,
+            "Discard then preset capture uses committed values without adding a geometry history item")
+        model.adjustmentSheet = nil
+        model.open(second); try rendered(model)
+        model.settings.exposure = -0.2; model.settings.saturation = 14
+        try check(model.saveEdits(), "preset target has independent committed adjustments")
+        let operation = try model.prepareAdjustmentPaste(payload: preset.payload, targets: [second], action: .preset)
+        model.applyAdjustmentPaste(operation); try rendered(model)
+        try check(model.settings.exposure == 0.7 && model.settings.saturation == 14 && !model.dirty,
+            "native preset apply adopts its conditional receipt and preserves unselected settings")
+        try check(model.adjustmentSession!.transactions.last?.action == .preset, "native preset history records its actual action")
+        model.undoAdjustment(); try rendered(model)
+        try check(model.settings.exposure == -0.2 && model.canRedoAdjustment, "native Undo restores the pre-preset photo")
+        model.redoAdjustment(); try rendered(model)
+        try check(model.settings.exposure == 0.7, "native Redo restores the same preset component")
+        let externalStore = try EditPersistence(directory: directory)
+        var externalSettings = model.settings; externalSettings.exposure = 1.8
+        try externalStore.save(second, state: model.editState(settings: externalSettings))
+        let externalReceipt = try externalStore.versionedState(for: second)
+        let beforeConflictHistory = model.adjustmentSession!.transactions.count
+        do { _ = try model.capturePresetAdjustments(scope: .custom([.exposure])); throw NSError(domain: "Expected stale preset capture failure", code: 1) }
+        catch EditPersistenceConflict.changed {}
+        try check(try externalStore.versionedState(for: second) == externalReceipt && model.presetStore.list() == [preset] &&
+            model.adjustmentSession!.transactions.count == beforeConflictHistory && model.adjustmentClipboard == clipboard && model.saveError == nil,
+            "preset capture rejects an external photo revision without changing saved state, library, history, clipboard or photo-save status")
+        model.open(first); try rendered(model)
+        model.open(second); try rendered(model)
+        try check(model.settings.exposure == 1.8, "switching away and back after stale preset capture adopts the external settings")
+        model.editStore = try EditPersistence(directory: directory, writeData: { _, _ in throw CocoaError(.fileWriteUnknown) })
+        model.settings.exposure = 1.3
+        do { _ = try model.capturePresetAdjustments(scope: .custom([.exposure])); throw NSError(domain: "Expected preset source save failure", code: 1) }
+        catch AdjustmentTransferError.draftRequiresPreflight {}
+        try check(model.dirty && model.saveError != nil && model.adjustmentClipboard == clipboard,
+            "failed source persistence blocks preset capture without changing clipboard")
+        try check(model.presetStore.list() == [preset], "source save failure does not alter the preset library")
     }
 
     static func recipeLUTChecks(root: URL, first: URL, second: URL) throws {

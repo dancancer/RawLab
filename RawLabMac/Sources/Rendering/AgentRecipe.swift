@@ -36,7 +36,17 @@ extension RenderEngine {
         case .renderedDNG: format = "dng"
         }
         let size: [String: Any] = exportLongEdge.map { ["mode": "limit_long_edge", "long_edge": $0] } ?? ["mode": "native"]
-        let document: [String: Any] = [
+        guard state.toneSettings.isValid else { throw RenderError.failed(L10n.text("无效的黑白场或鲜艳度参数")) }
+        guard state.curveSettings.isValid else { throw RenderError.failed(L10n.text("无效的曲线参数")) }
+        guard state.atmosphereSettings.isValid else { throw RenderError.failed(L10n.text("无效的清晰度或去朦胧参数")) }
+        let atmosphereConfig = state.atmosphereSettings.nativeConfig
+        let toneConfig = state.toneSettings.nativeConfig
+        var tone: [String: Any] = ["contrast": min(2, max(0, request.contrast)), "saturation": min(2, max(0, request.saturation)),
+            "highlights": min(1, max(-1, request.highlights)), "shadows": min(1, max(-1, request.shadows)), "s_curve": request.tone_curve]
+        tone["curve"] = ["mode": state.curveSettings.mode.rawValue, "points": state.curveSettings.points.map { [$0.x, $0.y] }]
+        if toneConfig.black_point != 0 { tone["black_point"] = toneConfig.black_point }
+        if toneConfig.white_point != 0 { tone["white_point"] = toneConfig.white_point }
+        var document: [String: Any] = [
             "schema_version": 5,
             "processing": ["family": state.processing.family, "version": state.processing.version,
                            "quality": state.processing.quality],
@@ -45,15 +55,14 @@ extension RenderEngine {
                 "exposure": ["mode": exposure, "ev": request.exposure_ev, "brightness": request.brightness],
                 "white_balance": wb,
                 "look": ["path": lut?.standardizedFileURL.path as Any? ?? NSNull(), "strength": Float(state.strength)],
-                "tone": ["contrast": min(2, max(0, request.contrast)), "saturation": min(2, max(0, request.saturation)),
-                         "highlights": min(1, max(-1, request.highlights)), "shadows": min(1, max(-1, request.shadows)),
-                         "s_curve": request.tone_curve],
+                "tone": tone,
                 "detail": ["sharpening": request.sharpening],
                 "hsl": ["hue": hsl.hue.map(Float.init), "saturation": hsl.saturation.map(Float.init), "lightness": hsl.lightness.map(Float.init)],
                 "effects": ["vignette_amount": fx.vignette_amount, "vignette_midpoint": fx.vignette_midpoint,
                             "vignette_roundness": fx.vignette_roundness, "vignette_feather": fx.vignette_feather,
                             "vignette_highlights": fx.vignette_highlights, "grain_amount": fx.grain_amount,
-                            "grain_size": fx.grain_size, "grain_roughness": fx.grain_roughness],
+                            "grain_size": fx.grain_size, "grain_roughness": fx.grain_roughness,
+                            "clarity": atmosphereConfig.clarity, "dehaze": atmosphereConfig.dehaze],
                 "denoise": ["raw_level": Int(raw), "chroma_mode": Int(chroma),
                             "wavelet": ["enabled": wavelet?.enabled ?? false, "luma": Float(wavelet?.luma ?? 0),
                                         "chroma": Float(wavelet?.chroma ?? 46), "coarse": Float(wavelet?.coarse ?? 50)]],
@@ -67,6 +76,18 @@ extension RenderEngine {
             ],
             "output": ["path": output.standardizedFileURL.path, "format": format, "jpeg_quality": 95, "size": size]
         ]
+        if toneConfig.vibrance != 0, var edits = document["edits"] as? [String: Any] {
+            edits["color"] = ["vibrance": toneConfig.vibrance]
+            document["edits"] = edits
+        }
+        guard state.gradingSettings.isValid else { throw RenderError.failed(L10n.text("无效的颜色分级参数")) }
+        if !state.gradingSettings.isDefault, var edits = document["edits"] as? [String: Any] {
+            edits["color_grading"] = Dictionary(uniqueKeysWithValues: ColorGradingZone.allCases.map { zone in
+                let wheel = state.gradingSettings[zone]
+                return (zone.rawValue, ["hue": wheel.nativeHue, "saturation": Float(wheel.saturation)])
+            })
+            document["edits"] = edits
+        }
         return try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys])
     }
 }

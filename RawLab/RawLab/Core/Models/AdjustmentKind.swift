@@ -6,9 +6,10 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
     case highlights
     case shadows
     case contrast
+    case blackPoint, whitePoint, vibrance, clarity, dehaze
     case toneCurve
     case saturation
-    case hsl
+    case hsl, colorGrading
     case temperature
     case tint
     case noiseReduction
@@ -26,6 +27,11 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return L10n.text("强度")
         case .exposure:
             return L10n.text("曝光")
+        case .blackPoint: return L10n.text("黑场")
+        case .whitePoint: return L10n.text("白场")
+        case .vibrance: return L10n.text("鲜艳度")
+        case .clarity: return L10n.text("清晰度")
+        case .dehaze: return L10n.text("去朦胧")
         case .contrast:
             return L10n.text("对比度")
         case .highlights:
@@ -33,9 +39,10 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
         case .shadows:
             return L10n.text("阴影")
         case .toneCurve:
-            return L10n.text("S 曲线")
+            return L10n.text("曲线")
         case .saturation:
             return L10n.text("饱和度")
+        case .colorGrading: return L10n.text("颜色分级")
         case .hsl: return "HSL"
         case .temperature:
             return L10n.text("白平衡")
@@ -58,6 +65,11 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return "camera.aperture"
         case .exposure:
             return "plusminus.circle"
+        case .blackPoint: return "circle.fill"
+        case .whitePoint: return "circle"
+        case .vibrance: return "drop.fill"
+        case .clarity: return "circle.dotted.circle"
+        case .dehaze: return "cloud.fog"
         case .contrast:
             return "circle.lefthalf.filled"
         case .highlights:
@@ -68,6 +80,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return "waveform.path.ecg"
         case .saturation:
             return "drop"
+        case .colorGrading: return "paintpalette"
         case .hsl: return "slider.horizontal.3"
         case .temperature:
             return "thermometer"
@@ -90,7 +103,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return RawSettings.lutStrengthRange
         case .exposure:
             return -4...4
-        case .contrast:
+        case .contrast, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze:
             return -100...100
         case .highlights:
             return -100...100
@@ -100,6 +113,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return -100...100
         case .saturation:
             return -100...100
+        case .colorGrading: return 0...100
         case .hsl: return -100...100
         case .temperature:
             return RawSettings.temperatureRange
@@ -122,7 +136,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return 0.01
         case .exposure:
             return 0.05
-        case .contrast:
+        case .contrast, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze:
             return 1
         case .highlights, .shadows:
             return 1
@@ -140,7 +154,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return 1
         case .vignette, .grain:
             return 1
-        case .hsl: return 1
+        case .hsl, .colorGrading: return 1
         }
     }
 
@@ -150,6 +164,11 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return settings.lutStrength
         case .exposure:
             return settings.exposure
+        case .blackPoint: return settings.blackPoint
+        case .whitePoint: return settings.whitePoint
+        case .vibrance: return settings.vibrance
+        case .clarity: return settings.clarity
+        case .dehaze: return settings.dehaze
         case .contrast:
             return (settings.contrast - 1) * 100
         case .highlights:
@@ -160,6 +179,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return settings.toneCurve * 100
         case .saturation:
             return (settings.saturation - 1) * 100
+        case .colorGrading: return settings.gradingSettings.progress * 100
         case .hsl: return settings.hsl.progress * 100
         case .temperature:
             return settings.temperature
@@ -182,6 +202,11 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             settings.lutStrength = value
         case .exposure:
             settings.exposure = value
+        case .blackPoint: settings.blackPoint = value
+        case .whitePoint: settings.whitePoint = value
+        case .vibrance: settings.vibrance = value
+        case .clarity: settings.clarity = value
+        case .dehaze: settings.dehaze = value
         case .contrast:
             settings.contrast = 1 + value / 100
         case .highlights:
@@ -192,6 +217,8 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             settings.toneCurve = value / 100
         case .saturation:
             settings.saturation = 1 + value / 100
+        case .colorGrading:
+            if value == 0 { settings.colorGrading = nil }
         case .hsl:
             if value == 0 { settings.hsl.reset() }
         case .temperature:
@@ -216,7 +243,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
     // ------------------------------------------------------------------------
     var unit: String {
         switch self {
-        case .strength, .contrast, .highlights, .shadows, .toneCurve, .saturation, .sharpening: return "%"
+        case .strength, .contrast, .highlights, .shadows, .toneCurve, .saturation, .sharpening, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze: return "%"
         case .exposure: return "EV"
         case .temperature: return "K"
         default: return ""
@@ -237,7 +264,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
 
     // 选中工具圆圈里的数值徽标：只给单一数值的工具
     static let badgeKinds: Set<AdjustmentKind> = [.strength, .exposure, .highlights, .shadows,
-                                                  .contrast, .toneCurve, .saturation, .sharpening]
+                                                  .contrast, .toneCurve, .saturation, .sharpening, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze]
 
     func badge(for value: Double) -> String? {
         Self.badgeKinds.contains(self) ? formatted(value) : nil
@@ -249,7 +276,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return String(format: "%.0f%%", value * 100)
         case .exposure:
             return String(format: "%+.2f EV", value)
-        case .contrast, .saturation, .sharpening:
+        case .contrast, .saturation, .sharpening, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze:
             return String(format: "%+.0f%%", value)
         case .noiseReduction:
             return String(format: "%.2f", value)
@@ -261,6 +288,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return String(format: "%.0f", value)
         case .vignette, .grain:
             return String(format: "%+.0f", value)
+        case .colorGrading: return L10n.text("颜色分级")
         case .hsl: return "HSL"
         }
     }

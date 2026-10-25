@@ -24,11 +24,11 @@ public partial class MainWindow
     }
     private void SettingsClicked(object sender,RoutedEventArgs e)
     {
-        if(exporting)return;
+        PreserveUpdateNavigation();
         var focus=Keyboard.FocusedElement;
-        var dialog=new SettingsWindow(GpuMode.SelectedIndex){Owner=this};
+        var dialog=new SettingsWindow(GpuMode.SelectedIndex,()=>ShowSoftwareUpdates(true)){Owner=this};
         if(dialog.ShowDialog()==true && GpuMode.SelectedIndex!=dialog.Backend)GpuMode.SelectedIndex=dialog.Backend;
-        if(focus is UIElement control && control.IsVisible)control.Focus();
+        if(softwareUpdateWindow?.IsVisible!=true && focus is UIElement control && control.IsVisible)control.Focus();
     }
     private void ResetCurrentToolClicked(object sender,RoutedEventArgs e) => RequestReset(new(EditorResetKind.Tool,Tool:CurrentTool));
     private bool resetMenuInitialized;
@@ -56,7 +56,10 @@ public partial class MainWindow
                     (scope.Kind==EditorResetKind.All && transform.Active ? WorkspaceEdit() is {} edit && EditorAdjustmentRules.IsModified(scope,edit) || GeometryEditor.HasInvalidInput : prepared is { Status: EditorResetStatus.Ready or EditorResetStatus.Blocked } || HasPendingAIReset(scope)) };
             item.Click+=(_,_)=>RequestReset(scope);items.Add(item);
         }
-        if(CurrentTool==EditorAdjustmentTool.Hsl) {
+        if(CurrentTool==EditorAdjustmentTool.ColorGrading) {
+            Add(Loc.Text("重置当前分区"),new(EditorResetKind.GradingZone,Zone:GradingEditor.SelectedZone));
+            Add(Loc.Text("重置颜色分级"),new(EditorResetKind.AllGrading));
+        } else if(CurrentTool==EditorAdjustmentTool.Hsl) {
             Add(Loc.Format("重置当前颜色（{0}）",HslEditor.SelectedChannelName),new(EditorResetKind.HslChannel,Channel:HslEditor.SelectedChannel));
             Add(Loc.Text("重置全部 HSL…"),new(EditorResetKind.AllHsl));
         } else Add(Loc.Format("重置{0}",Loc.Text(EditorAdjustmentRules.Title(CurrentTool))),new(EditorResetKind.Tool,Tool:CurrentTool));
@@ -128,11 +131,12 @@ public partial class MainWindow
     }
     private bool ConfirmReset(EditorResetScope scope,EditorResetTransaction prepared)
     {
+        var grading=scope.Kind==EditorResetKind.AllGrading || scope.Kind==EditorResetKind.Tool && scope.Tool==EditorAdjustmentTool.ColorGrading;
         var hsl=scope.Kind==EditorResetKind.AllHsl || scope.Kind==EditorResetKind.Tool && scope.Tool==EditorAdjustmentTool.Hsl;
         var groupName=Loc.Text(EditorAdjustmentRules.Title(scope.Group));
-        var title=scope.Kind==EditorResetKind.All ? Loc.Text("重置全部调整？") : hsl ? Loc.Text("重置全部 HSL？") :
+        var title=scope.Kind==EditorResetKind.All ? Loc.Text("重置全部调整？") : grading ? Loc.Text("重置颜色分级") : hsl ? Loc.Text("重置全部 HSL？") :
             scope.Kind==EditorResetKind.Group ? Loc.Format("重置{0}组？",groupName) : Loc.Format("重置{0}？",Loc.Text(EditorAdjustmentRules.Title(scope.Tool)));
-        var message=scope.Kind==EditorResetKind.All ? Loc.Text("恢复当前照片的全部调整，不改写原始照片。") : hsl ?
+        var message=scope.Kind==EditorResetKind.All ? Loc.Text("恢复当前照片的全部调整，不改写原始照片。") : grading ? Loc.Text("恢复阴影、中间调和高光的颜色分级默认值？") : hsl ?
             Loc.Text("八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。") :
             scope.Kind==EditorResetKind.Group ? Loc.Format("此操作只恢复{0}组内的调整，其他分组保持不变。",groupName) : "";
         if(scope.Kind==EditorResetKind.All)message=System.IO.Path.GetFileName(file)+"\n\n"+message;

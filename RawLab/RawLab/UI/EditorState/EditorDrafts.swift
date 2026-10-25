@@ -136,6 +136,11 @@ extension ContentView {
         if apply {
             guard commitEditorDraft() else { return }
         } else { discardEditorDraft() }
+        if pendingCollectionNavigation != nil {
+            activateEditorTool(.adjustment(.exposure))
+            continueCollectionNavigation()
+            return
+        }
         if pendingAdjustmentAction != nil {
             activateEditorTool(.adjustment(.exposure))
             continueAdjustmentAction()
@@ -167,10 +172,12 @@ extension ContentView {
     func retryEditorSave() {
         if viewModel.adjustmentReloadRequired { adjustmentReloadPresented = true; return }
         if isEditorDraftActive && viewModel.hasFailedDraftSave {
-            if pendingToolSelection != nil || pendingAdjustmentExpansion != nil || resetRestoreTool != nil || pendingFileImport || pendingPhotoImport || pendingAdjustmentAction != nil { finishDraftNavigation(apply: true) }
+            if pendingToolSelection != nil || pendingAdjustmentExpansion != nil || resetRestoreTool != nil || pendingFileImport || pendingPhotoImport || pendingAdjustmentAction != nil || pendingCollectionNavigation != nil { finishDraftNavigation(apply: true) }
             else { applyEditorDraft() }
         } else if pendingFileImport || pendingPhotoImport {
             continueEditorImport()
+        } else if pendingCollectionNavigation != nil {
+            continueCollectionNavigation()
         } else if pendingAdjustmentAction != nil {
             continueAdjustmentAction()
         } else { viewModel.retrySave(settings: settings) }
@@ -258,6 +265,7 @@ extension ContentView {
     }
 
     func cancelDraftNavigation() {
+        pendingCollectionNavigation = nil
         pendingAdjustmentAction = nil
         pendingFileImport = false
         pendingPhotoImport = false
@@ -353,6 +361,7 @@ extension ContentView {
     var resetConfirmationTitle: String {
         switch preparedResetScope {
         case .all: return L10n.text("重置全部调整？")
+        case .allGrading, .tool(.adjustment(.colorGrading)): return L10n.text("重置颜色分级")
         case .allHSL, .tool(.adjustment(.hsl)): return L10n.text("重置全部 HSL？")
         case .group(let group): return L10n.format("重置%@组？", group.title)
         case .tool(let tool): return L10n.format("重置%@？", tool.title)
@@ -364,6 +373,7 @@ extension ContentView {
         let base: String
         switch preparedResetScope {
         case .all: base = L10n.text("恢复当前照片的全部调整，不改写原始照片。")
+        case .allGrading, .tool(.adjustment(.colorGrading)): base = L10n.text("恢复阴影、中间调和高光的颜色分级默认值？")
         case .allHSL, .tool(.adjustment(.hsl)):
             base = L10n.text("八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。")
         case .group(let group): base = L10n.format("此操作只恢复%@组内的调整，其他分组保持不变。", group.title)

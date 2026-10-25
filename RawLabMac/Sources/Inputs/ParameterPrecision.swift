@@ -2,13 +2,14 @@ import Foundation
 
 /// Precision is expressed in the units shown in the editor, not engine units.
 enum ParameterPrecision {
-    case standard, exposure, temperature, cropPercent
+    case standard, exposure, temperature, cropPercent, curveCoordinate
 
     var scale: Double {
         switch self {
         case .standard: return 10
         case .exposure, .cropPercent: return 100
         case .temperature: return 0.1
+        case .curveCoordinate: return 1000
         }
     }
     var normalStep: Double {
@@ -16,6 +17,7 @@ enum ParameterPrecision {
         case .standard: return 1
         case .exposure, .cropPercent: return 0.1
         case .temperature: return 100
+        case .curveCoordinate: return 0.01
         }
     }
     var fineStep: Double { 1 / scale }
@@ -37,26 +39,28 @@ enum ParameterPrecision {
     }
 
     func text(_ value: Double, signed: Bool = false) -> String {
-        let clean = value == 0 ? 0 : value
+        let clean = abs(value) < 0.005 ? 0 : value
         let decimals: Int
         switch self {
-        case .exposure, .cropPercent: decimals = 2
+        case .exposure, .cropPercent, .curveCoordinate: decimals = 2
         case .temperature: decimals = 0
         case .standard: decimals = abs(clean - clean.rounded()) < 0.0000001 ? 0 : 1
         }
-        let roundedText = String(format: "%.*f", locale: Locale(identifier: "en_US_POSIX"), decimals, clean)
+        let ordinary = String(format: "%.*f", locale: Locale(identifier: "en_US_POSIX"), decimals, clean)
+        // 显示精度独立于保存和输入精度，历史值最多显示两位小数。
+        var result = Double(ordinary) == clean ? ordinary : String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), clean)
         if self == .cropPercent {
-            let compact = roundedText.replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
-            return signed && clean > 0 ? "+" + compact : compact
+            result = result.replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
         }
-        // Existing values may predate the editing grid, including camera white balance.
-        let result = Double(roundedText) == clean ? roundedText : String(clean)
         return signed && clean > 0 ? "+" + result : result
     }
+
+    var fineStepText: String { self == .curveCoordinate ? "1/1000" : text(fineStep) }
 
     func accepts(_ value: Double, original: Double, in range: ClosedRange<Double>) -> Bool {
         guard value.isFinite, range.contains(value) else { return false }
         if value == original { return true }
+        if self == .curveCoordinate { return true }
         let ticks = value * scale
         return value == ticks.rounded() / scale
     }
@@ -67,7 +71,8 @@ enum ParameterPrecision {
     }
 
     func isUnchangedDisplay(_ draft: String, original: Double) -> Bool {
-        self == .cropPercent && parse(draft) == parse(text(original))
+        guard let parsed = parse(draft) else { return false }
+        return parsed == parse(text(original))
     }
 }
 

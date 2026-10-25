@@ -2,8 +2,21 @@ using RawLab.Windows;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+ToneControlsChecks.Run();
+AtmosphereChecks.Run();
+ColorGradingChecks.Run();
+ToneCurveChecks.Run();
+HslTargetChecks.Run();
+BatchFrozenChecks.Run();
+BatchSelectionChecks.Run();
+var pendingGrading = JsonSerializer.SerializeToNode(new Adjustments().Capture())!;
+pendingGrading["ColorGrading"] = JsonNode.Parse("""{"Shadows":{"Hue":231.25,"Saturation":0},"Midtones":{"Hue":0,"Saturation":0},"Highlights":{"Hue":0,"Saturation":0}}""");
+var gradingRestored = pendingGrading.Deserialize<AdjustmentSnapshot>()!.Restore();
+if (JsonSerializer.SerializeToNode(gradingRestored.Capture())!["ColorGrading"] == null)
+    throw new Exception("Pending grading hue must survive snapshot restore");
 AdjustmentTransferChecks.Run();
 AdjustmentHistoryChecks.Run();
+AdjustmentPresetChecks.Run();
 
 static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
 static JsonNode? Processing(Adjustments value) => JsonSerializer.SerializeToNode(value.Capture())!["Processing"];
@@ -178,7 +191,7 @@ try
     SavedEdit Edit(Adjustments state, string? look = "film.cube") => new(resetIdentity, state.Capture(), look);
     EditorResetScope Group(EditorAdjustmentGroup group) => new(EditorResetKind.Group, group);
     Check(EditorAdjustmentRules.Tools(EditorAdjustmentGroup.Light).SequenceEqual(new[] { EditorAdjustmentTool.Exposure,
-        EditorAdjustmentTool.Highlights, EditorAdjustmentTool.Shadows, EditorAdjustmentTool.Contrast, EditorAdjustmentTool.ToneCurve }),
+        EditorAdjustmentTool.Highlights, EditorAdjustmentTool.Shadows, EditorAdjustmentTool.BlackPoint, EditorAdjustmentTool.WhitePoint, EditorAdjustmentTool.Contrast, EditorAdjustmentTool.ToneCurve }),
         "light tool order follows native ownership");
     foreach (var tool in Enum.GetValues<EditorAdjustmentTool>())
         Check(EditorAdjustmentRules.Tools(EditorAdjustmentRules.GroupFor(tool)).Contains(tool), "every native tool belongs to one group");
@@ -195,12 +208,15 @@ try
     mixedState.Effects = new(0, 21, 11, 70, 33, 0, 66, 80);
     mixedState.Denoise = new(false, 13, 40, 27); mixedState.DisplayChromaDenoise = 2;
     mixedState.Geometry = new(PerspectiveHorizontal: .2); mixedState.Lens = new(true, true, false, true, "fixture");
+    mixedState.ColorGrading = new() { Shadows = new(231.25, 0), Midtones = new(110.125, 32.375) };
     var mixedEdit = Edit(mixedState); var mixedFrozen = mixedEdit.Settings.Copy();
     Check(Enum.GetValues<EditorAdjustmentGroup>().Select(EditorAdjustmentRules.DefaultTool).SequenceEqual(new[] {
-        EditorAdjustmentTool.Film,EditorAdjustmentTool.Exposure,EditorAdjustmentTool.WhiteBalance,EditorAdjustmentTool.Vignette,
+        EditorAdjustmentTool.Film,EditorAdjustmentTool.Exposure,EditorAdjustmentTool.WhiteBalance,EditorAdjustmentTool.Clarity,
         EditorAdjustmentTool.Denoise,EditorAdjustmentTool.Geometry }), "Each group opens its frozen default tool");
     foreach(var tool in Enum.GetValues<EditorAdjustmentTool>()) {
         var ownedState=mixedState.Clone();
+        if(EditorAdjustmentRules.AtmosphereParameterFor(tool) is {} atmosphereParameter)ownedState.SetAtmosphere(atmosphereParameter,25);
+        if(EditorAdjustmentRules.ToneParameterFor(tool) is {} toneParameter)ownedState.SetTone(toneParameter,25);
         ownedState.Set(Parameter.Strength,37);ownedState.Set(Parameter.Highlights,11);ownedState.Set(Parameter.Shadows,-14);
         ownedState.Set(Parameter.Contrast,23);ownedState.Set(Parameter.ToneCurve,-19);ownedState.Set(Parameter.Temperature,6000);ownedState.Set(Parameter.Tint,12);
         var edit=Edit(ownedState);var frozen=edit.Settings.Copy();var expected=frozen.Copy();var ownedLook=edit.Look;
@@ -210,12 +226,18 @@ try
                 Check(EditorAdjustmentRules.PrepareReset(Tool(tool),edit).Status==EditorResetStatus.NoChange,"Recipe reset without identity does not clear film or strength");continue;
             case EditorAdjustmentTool.WhiteBalance:
                 expected.Values[2]=5200;expected.Values[3]=8;expected=expected with{CameraWhiteBalance=true};break;
+            case EditorAdjustmentTool.ColorGrading:expected=expected with{ColorGrading=null};break;
             case EditorAdjustmentTool.Hsl:expected=expected with{Hsl=new()};break;
             case EditorAdjustmentTool.Vignette:expected=expected with{Effects=new(GrainAmount:0,GrainSize:66,GrainRoughness:80)};break;
             case EditorAdjustmentTool.Grain:expected=expected with{Effects=new(0,21,11,70,33)};break;
             case EditorAdjustmentTool.Denoise:expected=expected with{Denoise=new(),DisplayChromaDenoise=0};break;
             case EditorAdjustmentTool.Geometry:expected=expected with{Geometry=new()};break;
             case EditorAdjustmentTool.Lens:expected=expected with{Lens=new()};break;
+            case EditorAdjustmentTool.Clarity:expected=expected with{Atmosphere=expected.Atmosphere! with{Clarity=0}};break;
+            case EditorAdjustmentTool.Dehaze:expected=expected with{Atmosphere=expected.Atmosphere! with{Dehaze=0}};break;
+            case EditorAdjustmentTool.BlackPoint:expected=expected with{ToneControls=expected.ToneControls! with{BlackPoint=0}};break;
+            case EditorAdjustmentTool.WhitePoint:expected=expected with{ToneControls=expected.ToneControls! with{WhitePoint=0}};break;
+            case EditorAdjustmentTool.Vibrance:expected=expected with{ToneControls=expected.ToneControls! with{Vibrance=0}};break;
             default:
                 var parameter=EditorAdjustmentRules.ParameterFor(tool);expected.Values[(int)parameter]=parameter==Parameter.Strength ? 100 : 0;
                 if(tool==EditorAdjustmentTool.Exposure)expected=expected with{ExposureMode=1};break;
@@ -223,7 +245,7 @@ try
         var prepared=EditorAdjustmentRules.PrepareReset(Tool(tool),edit);
         Check(prepared.Status==EditorResetStatus.Ready && prepared.Candidate!.Look==ownedLook && prepared.Candidate.Settings.SameAs(expected),
             "Current tool owns only its complete field set: "+tool);
-        Check(prepared.RequiresConfirmation==(tool==EditorAdjustmentTool.Hsl),"Only all-HSL tool requires ordinary confirmation: "+tool);
+        Check(prepared.RequiresConfirmation==(tool is EditorAdjustmentTool.Hsl or EditorAdjustmentTool.ColorGrading),"Whole color tools require ordinary confirmation: "+tool);
         Check(edit.Settings.SameAs(frozen),"Preparing/cancelling tool reset never mutates source: "+tool);
         Check(EditorAdjustmentRules.PrepareReset(Tool(tool),prepared.Candidate!).Status==EditorResetStatus.NoChange,"Repeated tool reset is NoChange: "+tool);
     }
@@ -288,7 +310,7 @@ try
         }
         if (group == EditorAdjustmentGroup.Color) {
             expected.Values[2] = 5200; expected.Values[3] = 8; expected.Values[8] = 0;
-            expected = expected with { CameraWhiteBalance = true, Hsl = new() };
+            expected = expected with { CameraWhiteBalance = true, Hsl = new(), ColorGrading = null };
         }
         if (group == EditorAdjustmentGroup.Effects) expected = expected with { Effects = new() };
         if (group == EditorAdjustmentGroup.Detail) { expected.Values[9] = 0; expected = expected with { Denoise = new(), DisplayChromaDenoise = 0 }; }
@@ -469,7 +491,9 @@ try
         "Only the exact original off-grid value survives manual confirmation or formatting changes");
     Check(strictRange.Parse("100")==100 && strictRange.Parse("-100")==-100 && strictRange.Parse("")==null && strictRange.Parse("Infinity")==null,
         "Strict UI parser accepts exact boundaries and rejects empty or infinite values");
-    Check(new NumericRange(-4,4,.01,FixedDecimals:2).Format(.005)=="0.005", "Old off-grid exposure is displayed without F2 quantization");
+    Check(new NumericRange(-4,4,.01,FixedDecimals:2).Format(.005)=="0.01", "Old off-grid exposure displays at most two decimals");
+    Check(new NumericRange(-4,4,.01,FixedDecimals:2).Parse("0.01",.005)==.005, "Confirming rounded text preserves the exact stored value");
+    Check(new NumericRange(0,1,.001,AllowOffGrid:true).Format(.25123456789)=="0.25", "Curve coordinates display at most two decimals");
     var inputSession=new NumericInputSession();
     var cropRange=new NumericRange(0,100,.01,.1,.01,CompactPercent:true);
     var cropInput=new NumericInputSession();var cropOriginal=33.33333333333333;

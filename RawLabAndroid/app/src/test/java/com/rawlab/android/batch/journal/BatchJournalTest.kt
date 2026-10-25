@@ -210,7 +210,7 @@ class BatchJournalTest {
         }, { _, _, _ -> }, journal = BatchJournal(root), didUpdate = {
             if (initialSnapshot == null) {
                 val properties = Properties().also { values -> snapshotFile.inputStream().use(values::load) }
-                assertEquals("3", properties.getProperty("journal.version"))
+                assertEquals("4", properties.getProperty("journal.version"))
                 assertFalse(properties.getProperty("journal.generation").isNullOrEmpty())
                 assertEquals("CANCELLED", properties.getProperty("row.1.status"))
                 initialSnapshot = snapshotFile.readBytes()

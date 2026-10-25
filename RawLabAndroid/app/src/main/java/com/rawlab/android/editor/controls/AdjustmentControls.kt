@@ -13,8 +13,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
-import java.math.BigDecimal
-import java.text.DecimalFormatSymbols
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
@@ -59,8 +57,8 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
     enabled: Boolean, onValue: (Float, Boolean) -> Unit, onReset: () -> Unit, reciprocal: Boolean = false,
     defaultValue: Float = 0f, resetEnabled: Boolean = enabled, showReset: Boolean = true,
     trackColors: List<Color>? = null, axisDescription: String? = null,
-    compactNumber: Boolean = false, modifier: Modifier = Modifier) {
-    val step = when (label) {
+    compactNumber: Boolean = false, modifier: Modifier = Modifier, stepOverride: Float? = null) {
+    val step = stepOverride ?: when (label) {
         R.string.exposure -> .05f
         R.string.temperature -> 10f
         R.string.geometry_straighten -> .1f
@@ -91,7 +89,7 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
     val modified = value != baseline
     val status = stringResource(if (modified) R.string.hsl_adjusted else R.string.hsl_unadjusted)
     val help = stringResource(R.string.editor_numeric_help, formatAdjustment(baseline, step, locale),
-        formatAdjustment(range.start, step, locale), formatAdjustment(range.endInclusive, step, locale), formatAdjustment(step, step, locale))
+        formatAdjustment(range.start, step, locale), formatAdjustment(range.endInclusive, step, locale), formatAdjustmentStep(step, locale))
     val resetLabel = stringResource(R.string.reset_value)
     val resetHint = stringResource(R.string.editor_numeric_reset_hint)
     val requester = remember { FocusRequester() }
@@ -175,8 +173,8 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
                             input = if (draft.startsWith("-")) draft.removePrefix("-") else "-" + draft.removePrefix("+")
                         }
                     }) else null,
-                    supportingText = { if (parsed == null) Text(if (raw != null && raw.isFinite() && raw in range)
-                        stringResource(R.string.editor_numeric_step_error, formatAdjustment(step, step, locale))
+                    supportingText = { if (parsed == null) Text(if (raw != null && raw.isFinite() && raw in range.start.toDouble()..range.endInclusive.toDouble())
+                        stringResource(R.string.editor_numeric_step_error, formatAdjustmentStep(step, locale))
                         else stringResource(R.string.invalid_value)) })
             }
         }, confirmButton = { TextButton(onClick = {
@@ -189,8 +187,7 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
 }
 
 internal fun formatAdjustment(value: Float, step: Float, locale: Locale = Locale.ROOT): String =
-    (if (value == 0f) "0" else BigDecimal(value.toString()).stripTrailingZeros().toPlainString())
-        .replace('.', DecimalFormatSymbols.getInstance(locale).decimalSeparator)
+    formatAdjustmentNumber(value.toString().toDouble(), locale)
 
 @Composable
 private fun AdjustmentRuler(title: String, value: Float, scale: AdjustmentScale, unit: String, fine: Boolean,

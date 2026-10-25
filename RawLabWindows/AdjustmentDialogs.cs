@@ -28,40 +28,23 @@ internal static class AdjustmentDialogLayout
 
 internal sealed class AdjustmentScopeDialog : Window
 {
-    private readonly ComboBox scope=new(){MinWidth=180,Margin=new Thickness(0,4,0,12)};
-    private readonly Dictionary<AdjustmentField,CheckBox> fields=[];
-    internal AdjustmentScope SelectedScope => scope.SelectedIndex switch {0=>AdjustmentScope.Standard,1=>AdjustmentScope.All,2=>AdjustmentScope.Modified,
-        _=>AdjustmentScope.Custom(fields.Where(p=>p.Value.IsChecked==true).Select(p=>p.Key))};
-    internal AdjustmentScopeDialog(Window owner,string source,Func<AdjustmentScope,string?> copy)
+    private readonly AdjustmentScopeEditor editor = new("adjustment.copy");
+    internal AdjustmentScope SelectedScope => editor.SelectedScope;
+    internal AdjustmentScopeDialog(Window owner, string source, Func<AdjustmentScope, string?> copy, string title = "复制调整", string confirmTitle = "复制调整")
     {
-        var root=AdjustmentDialogLayout.Configure(this,owner,"复制调整","adjustment.copy");
-        var heading=new StackPanel();heading.Children.Add(AdjustmentDialogLayout.Text(Path.GetFileName(source)));
-        foreach(var key in new[]{"默认范围","全部调整","仅已修改","自定义"})scope.Items.Add(Loc.Text(key));
-        AutomationProperties.SetAutomationId(scope,"adjustment.copy.scope");heading.Children.Add(scope);
-        heading.Children.Add(AdjustmentDialogLayout.Text(Loc.Text("默认不包含几何与镜头。自定义可逐项选择。")));root.Children.Add(heading);
-        var content=new StackPanel();
-        var clear=AdjustmentDialogLayout.Button("清空选择","adjustment.copy.clear",()=>{foreach(var check in fields.Values)check.IsChecked=false;});
-        clear.HorizontalAlignment=HorizontalAlignment.Left;content.Children.Add(clear);
-        foreach(var group in AdjustmentFields.All.GroupBy(f=>f.Group())) {
-            var title=AdjustmentDialogLayout.Text(AdjustmentTransferPresentation.Group(group.Key));title.FontWeight=FontWeights.SemiBold;title.Margin=new Thickness(0,14,0,6);content.Children.Add(title);
-            var members=group.ToArray();
-            var selectGroup=AdjustmentDialogLayout.Button("选择此组","adjustment.group."+group.Key,()=>{foreach(var field in members)fields[field].IsChecked=true;});
-            selectGroup.HorizontalAlignment=HorizontalAlignment.Left;content.Children.Add(selectGroup);
-            var grid=new System.Windows.Controls.Primitives.UniformGrid{Columns=2};content.Children.Add(grid);
-            foreach(var field in group) {
-                var check=new CheckBox{Content=new TextBlock{Text=AdjustmentTransferPresentation.Title(field),TextWrapping=TextWrapping.Wrap},
-                    IsChecked=AdjustmentFields.Common.Contains(field),Margin=new Thickness(0,4,12,4)};
-                AutomationProperties.SetName(check,AdjustmentTransferPresentation.Title(field));AutomationProperties.SetAutomationId(check,"adjustment.field."+field.ID());
-                fields[field]=check;grid.Children.Add(check);
-            }
-        }
-        var scroll=new ScrollViewer{Content=content,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};Grid.SetRow(scroll,1);root.Children.Add(scroll);
-        scope.SelectionChanged+=(_,_)=>{scroll.Visibility=scope.SelectedIndex==3 ? Visibility.Visible : Visibility.Collapsed;Height=scope.SelectedIndex==3 ? 660 : 340;};scope.SelectedIndex=0;
-        var footer=new StackPanel{Margin=new Thickness(0,12,0,0)};var error=AdjustmentDialogLayout.Text("");error.SetResourceReference(TextBlock.ForegroundProperty,"ErrorForeground");footer.Children.Add(error);
-        var actions=new WrapPanel{HorizontalAlignment=HorizontalAlignment.Right};footer.Children.Add(actions);
-        var cancel=AdjustmentDialogLayout.Button("取消","adjustment.cancel",()=>Close());cancel.IsCancel=true;actions.Children.Add(cancel);
-        var confirm=AdjustmentDialogLayout.Button("复制调整","adjustment.copy.confirm",()=>{error.Text=copy(SelectedScope) ?? "";if(error.Text.Length==0)DialogResult=true;});
-        confirm.IsDefault=true;actions.Children.Add(confirm);Grid.SetRow(footer,2);root.Children.Add(footer);
+        var root = AdjustmentDialogLayout.Configure(this, owner, title, "adjustment.copy");
+        root.Children.Add(AdjustmentDialogLayout.Text(Path.GetFileName(source)));
+        Grid.SetRow(editor, 1); root.Children.Add(editor);
+        var footer = new StackPanel { Margin = new Thickness(0, 12, 0, 0) };
+        var error = AdjustmentDialogLayout.Text(""); error.SetResourceReference(TextBlock.ForegroundProperty, "ErrorForeground"); footer.Children.Add(error);
+        var actions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right }; footer.Children.Add(actions);
+        var cancel = AdjustmentDialogLayout.Button("取消", "adjustment.cancel", Close); cancel.IsCancel = true; actions.Children.Add(cancel);
+        var confirm = AdjustmentDialogLayout.Button(confirmTitle, "adjustment.copy.confirm", () => {
+            error.Text = copy(SelectedScope) ?? ""; if (error.Text.Length == 0) DialogResult = true;
+        });
+        confirm.IsDefault = true; actions.Children.Add(confirm); Grid.SetRow(footer, 2); root.Children.Add(footer);
+        void Update() { Height = editor.IsCustom ? 660 : 340; confirm.IsEnabled = editor.HasSelection; }
+        editor.SelectionChanged += Update; Update();
     }
 }
 
@@ -131,8 +114,18 @@ internal sealed class AdjustmentResultDialog : Window
         undo.Content=Loc.Text("撤销")+" · "+appliedCount;redo.Content=Loc.Text("重做")+" · "+undoneCount;
         undo.IsEnabled=appliedCount>0;redo.IsEnabled=undoneCount>0;
     }
-    private void UpdateApply()=>apply.IsEnabled=outcomes.Count>0 && !outcomes.Any(o=>o.RequiresHistoryDecision && !skipping.Contains(o.TargetID)) &&
-        (preview || outcomes.Any(o=>o.Status is AdjustmentStatus.Blocked or AdjustmentStatus.Conflict or AdjustmentStatus.Failed));
+    private void UpdateApply()
+    {
+        var remaining=outcomes.Count(outcome=>!skipping.Contains(outcome.TargetID));
+        apply.IsEnabled=remaining>0 && !outcomes.Any(outcome=>outcome.RequiresHistoryDecision && !skipping.Contains(outcome.TargetID)) &&
+            (preview || outcomes.Any(outcome=>outcome.Status is AdjustmentStatus.Blocked or AdjustmentStatus.Conflict or AdjustmentStatus.Failed));
+        if(preview) {
+            summary.Text=Loc.Format("已预检 {0} 张照片。确认后保存所选调整。",remaining);
+            if(sourceSummary!=null)summary.Text=sourceSummary+"\n"+summary.Text;
+        }
+        if(remaining==0)summary.Text+="\n"+Loc.Text("没有可应用的目标，请取消跳过或重新选择。");
+    }
+
 }
 
 internal sealed class AdjustmentHistoryDialog : Window
@@ -148,7 +141,7 @@ internal sealed class AdjustmentHistoryDialog : Window
             rows.Children.Clear();
             foreach(var transaction in transactions().Reverse()) {
                 var panel=new StackPanel{Margin=new Thickness(0,10,0,14)};rows.Children.Add(panel);
-                var title=AdjustmentDialogLayout.Text(Loc.Text(transaction.Action==AdjustmentHistoryAction.Paste ? "粘贴调整" : "调整照片"));title.FontWeight=FontWeights.SemiBold;panel.Children.Add(title);
+                var title=AdjustmentDialogLayout.Text(Loc.Text(transaction.Action switch { AdjustmentHistoryAction.Paste=>"粘贴调整", AdjustmentHistoryAction.Preset=>"应用预设", AdjustmentHistoryAction.Synchronize=>"同步调整", _=>"调整照片" }));title.FontWeight=FontWeights.SemiBold;panel.Children.Add(title);
                 foreach(var part in transaction.Parts)panel.Children.Add(AdjustmentDialogLayout.Text(part.DisplayName+" · "+Loc.Text(part.State switch {
                     AdjustmentHistoryState.Applied=>"已保存",AdjustmentHistoryState.Undone=>"已撤销",_=>"重做已失效"})));
                 var actions=new WrapPanel();panel.Children.Add(actions);

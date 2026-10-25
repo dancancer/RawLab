@@ -17,6 +17,7 @@ final class BatchExportModel: ObservableObject {
     @Published private(set) var preview: RenderedImage?
     @Published private(set) var previewing = false
     @Published private(set) var validating = false
+    private(set) var updateJournalFailed = false
     @Published var previewFile: URL?
     @Published var sourceEditingGeometry = false
     var onActivity: (Bool) -> Void = { _ in }
@@ -35,7 +36,7 @@ final class BatchExportModel: ObservableObject {
         error = job.failure
     }
 
-    var canRun: Bool { !running && !validating && !sourceEditingGeometry && job.selectedCount > 0 && job.outputDirectory != nil }
+    var canRun: Bool { !running && !validating && (job.mode == .perTargetFrozen || !sourceEditingGeometry) && job.selectedCount > 0 && job.outputDirectory != nil }
     var title: String {
         if stopping { return L10n.text("正在停止…") }
         if running { return L10n.text("正在导出") }
@@ -49,7 +50,7 @@ final class BatchExportModel: ObservableObject {
     }
 
     func addFiles() {
-        guard !running, !job.started, !validating else { return }
+        guard job.mode == .uniformFrozen, !running, !job.started, !validating else { return }
         let panel = NSOpenPanel()
         panel.title = L10n.text("选择待导出的照片")
         panel.allowsMultipleSelection = true
@@ -59,7 +60,7 @@ final class BatchExportModel: ObservableObject {
     }
 
     func add(_ urls: [URL]) {
-        guard !running, !job.started, !validating else { return }
+        guard job.mode == .uniformFrozen, !running, !job.started, !validating else { return }
         var failures: [String] = []
         var added: [BatchExportItem] = []
         for url in urls {
@@ -101,26 +102,26 @@ final class BatchExportModel: ObservableObject {
     }
 
     func select(_ id: UUID, _ value: Bool) {
-        guard !running, !job.started, let index = job.items.firstIndex(where: { $0.id == id }) else { return }
+        guard job.mode == .uniformFrozen, !running, !job.started, let index = job.items.firstIndex(where: { $0.id == id }) else { return }
         guard !validating, job.items[index].validationError == nil else { return }
         job.items[index].selected = value
         saveDraft()
     }
 
     func selectAll(_ selected: Bool) {
-        guard !running, !job.started, !validating else { return }
+        guard job.mode == .uniformFrozen, !running, !job.started, !validating else { return }
         for index in job.items.indices { job.items[index].selected = selected && job.items[index].validationError == nil }
         saveDraft()
     }
 
     func remove(_ id: UUID) {
-        guard !running, !job.started else { return }
+        guard job.mode == .uniformFrozen, !running, !job.started else { return }
         job.items.removeAll { $0.id == id }
         saveDraft()
     }
 
     func chooseDirectory() {
-        guard !running else { return }
+        guard job.mode == .uniformFrozen, !running else { return }
         let panel = NSOpenPanel()
         panel.title = L10n.text("选择输出文件夹")
         panel.canChooseFiles = false; panel.canChooseDirectories = true
@@ -130,18 +131,24 @@ final class BatchExportModel: ObservableObject {
     }
 
     func setFormat(_ value: ExportFormat) {
-        guard !running, !job.started else { return }
+        guard job.mode == .uniformFrozen, !running, !job.started else { return }
         job.format = value; saveDraft()
     }
 
     func setLongEdge(_ value: Int?) {
-        guard !running, !job.started, value == nil || (1...65535).contains(value!) else { return }
+        guard job.mode == .uniformFrozen, !running, !job.started, value == nil || (1...65535).contains(value!) else { return }
         job.longEdge = value; saveDraft()
     }
 
     private func saveDraft() {
-        do { try journal.save(job); error = nil }
-        catch { self.error = L10n.format("任务未保存：%@", String(describing: error.localizedDescription)) }
+        do { try journal.save(job); error = nil; updateJournalFailed = false }
+        catch { updateJournalFailed = true; self.error = L10n.format("任务未保存：%@", String(describing: error.localizedDescription)) }
+    }
+
+    func prepareForUpdate() -> Bool {
+        guard !running, !stopping, !validating, !previewing else { return false }
+        saveDraft()
+        return !updateJournalFailed
     }
 
     func start(_ scope: BatchRunScope = .unfinished) {
@@ -163,7 +170,9 @@ final class BatchExportModel: ObservableObject {
                 }) { input, settings, look, output in
                     if self.engine == nil { self.engine = try RenderEngine() }
                     _ = try self.engine!.render(input, settings: settings, lut: look, edge: 32)
-                    _ = try self.engine!.render(input, settings: settings, lut: look, edge: nil, output: output, exportLongEdge: snapshot.longEdge)
+                    let item = snapshot.items.first { $0.input == input }!
+                    let longEdge = try snapshot.snapshot(for: item).longEdge
+                    _ = try self.engine!.render(input, settings: settings, lut: look, edge: nil, output: output, exportLongEdge: longEdge)
                 }
             } catch { failure = error.localizedDescription; work.interrupted = true }
             let final = work, message = failure
@@ -185,7 +194,12 @@ final class BatchExportModel: ObservableObject {
     }
 
     func discardDraft() -> Bool {
-        guard !running, !validating, !previewing, !job.started else { return false }
+        guard !job.started else { return false }
+        return discardTask()
+    }
+
+    func discardTask() -> Bool {
+        guard !running, !validating, !previewing else { return false }
         do { try journal.discard(job); onDiscard(); return true }
         catch { self.error = error.localizedDescription; return false }
     }
@@ -194,12 +208,18 @@ final class BatchExportModel: ObservableObject {
         guard !running else { return }
         let revision = UUID()
         previewRevision = revision; previewFile = item.input; preview = nil; previewing = true; error = nil
-        let settings = job.settings(for: item.input), look = job.look
+        let frozenJob = job
         queue.async { [self] in
             let result = Result { () -> RenderedImage? in
+                try frozenJob.validate()
+                let snapshot = try frozenJob.snapshot(for: item)
                 guard try OriginalFileIdentity(item.input) == item.identity else { throw BatchExportFailure.changedInput }
+                if frozenJob.mode == .perTargetFrozen {
+                    guard try BatchExportItem.resourceKey(item.input) == item.resourceIdentifier else { throw BatchExportFailure.changedInput }
+                    try snapshot.verifyLook()
+                }
                 if engine == nil { engine = try RenderEngine() }
-                return try engine!.render(item.input, settings: settings, lut: look, edge: 1600)
+                return try engine!.render(item.input, settings: snapshot.settings, lut: snapshot.look, edge: 1600)
             }
             DispatchQueue.main.async {
                 guard self.previewRevision == revision else { return }

@@ -14,6 +14,7 @@ enum EditorAdjustmentScope: Equatable {
     case group(EditorAdjustmentGroup)
     case hslChannel(Int)
     case allHSL
+    case gradingZone(ColorGradingZone), allGrading
     case all
 }
 
@@ -38,9 +39,9 @@ enum EditorAdjustmentRules {
     private static let toolGroups: [(group: EditorAdjustmentGroup, tools: [EditorToolSelection])] = [
         (.looks, [.film, .recipe, .adjustment(.strength)]),
         (.light, [.adjustment(.exposure), .adjustment(.highlights), .adjustment(.shadows),
-                  .adjustment(.contrast), .adjustment(.toneCurve)]),
-        (.color, [.adjustment(.temperature), .adjustment(.saturation), .adjustment(.hsl)]),
-        (.effects, [.adjustment(.vignette), .adjustment(.grain)]),
+                  .adjustment(.blackPoint), .adjustment(.whitePoint), .adjustment(.contrast), .adjustment(.toneCurve)]),
+        (.color, [.adjustment(.temperature), .adjustment(.saturation), .adjustment(.vibrance), .adjustment(.hsl), .adjustment(.colorGrading)]),
+        (.effects, [.adjustment(.clarity), .adjustment(.dehaze), .adjustment(.vignette), .adjustment(.grain)]),
         (.detail, [.adjustment(.noiseReduction), .adjustment(.sharpening)]),
         (.geometry, [.geometry, .lens])
     ]
@@ -88,13 +89,13 @@ enum EditorAdjustmentRules {
             let settings = snapshot.settings
             return (context.isRaw && settings.exposureMode != context.defaultExposureMode) ||
                 settings.exposure != 0 || settings.highlights != 0 || settings.shadows != 0 ||
-                settings.contrast != 1 || settings.toneCurve != 0
+                settings.contrast != 1 || settings.toneCurve != 0 || !settings.curveSettings.isDefault || settings.blackPoint != 0 || settings.whitePoint != 0
         }
         if case .group(.color) = scope {
             let settings = snapshot.settings
             let whiteBalance = (context.isRaw && settings.whiteBalanceMode != .camera) ||
                 (settings.masterRecipeID != nil && settings.tint != 0)
-            return whiteBalance || settings.saturation != 1 || !settings.hsl.isIdentity
+            return whiteBalance || settings.saturation != 1 || settings.vibrance != 0 || !settings.hsl.isIdentity || !settings.gradingSettings.isDefault
         }
         let reset = resetting(scope, settings: snapshot.settings, context: context)
         return reset != snapshot.settings
@@ -169,9 +170,9 @@ enum EditorAdjustmentRules {
         guard candidate != snapshot else { return .unchanged }
         let confirmation: Bool
         switch scope {
-        case .group, .allHSL, .all: confirmation = true
-        case .hslChannel: confirmation = false
-        case .tool(.adjustment(.hsl)): confirmation = true
+        case .group, .allHSL, .allGrading, .all: confirmation = true
+        case .hslChannel, .gradingZone: confirmation = false
+        case .tool(.adjustment(.hsl)), .tool(.adjustment(.colorGrading)): confirmation = true
         case .tool:
             confirmation = removesLook && !materializedFields(before: snapshot.settings, after: settings).isEmpty
         }
@@ -229,12 +230,15 @@ enum EditorAdjustmentRules {
                 case .temperature, .tint:
                     result.whiteBalanceMode = defaults.whiteBalanceMode
                     result.temperature = defaults.temperature; result.tint = defaults.tint
+                case .toneCurve: result.toneCurve = defaults.toneCurve; result.toneCurveConfig = nil
                 case .noiseReduction:
                     result.noiseReduction = defaults.noiseReduction; result.denoise = defaults.denoise
                     result.displayChromaDenoise = defaults.displayChromaDenoise
                 default: kind.reset(in: &result)
                 }
             }
+        case .allGrading: result.colorGrading = nil
+        case .gradingZone(let zone): result.gradingSettings[zone] = ColorGradingWheel()
         case .allHSL: result.hsl = HSLSettings()
         case .hslChannel(let channel):
             if (0..<8).contains(channel) { result.hsl.reset(channel: channel) }
@@ -245,12 +249,13 @@ enum EditorAdjustmentRules {
             case .light:
                 result.exposure = defaults.exposure; result.exposureMode = defaults.exposureMode
                 result.highlights = defaults.highlights; result.shadows = defaults.shadows
-                result.contrast = defaults.contrast; result.toneCurve = defaults.toneCurve
+                result.contrast = defaults.contrast; result.toneCurve = defaults.toneCurve; result.toneCurveConfig = nil
+                result.blackPoint = 0; result.whitePoint = 0
             case .color:
                 result.whiteBalanceMode = defaults.whiteBalanceMode
                 result.temperature = defaults.temperature; result.tint = defaults.tint
-                result.saturation = defaults.saturation; result.hsl = defaults.hsl
-            case .effects: result.photoEffects = defaults.photoEffects
+                result.saturation = defaults.saturation; result.hsl = defaults.hsl; result.vibrance = 0; result.colorGrading = nil
+            case .effects: result.photoEffects = defaults.photoEffects; result.atmosphere = nil
             case .detail:
                 result.sharpening = defaults.sharpening; result.denoise = defaults.denoise
                 result.noiseReduction = defaults.noiseReduction
@@ -271,7 +276,7 @@ enum EditorAdjustmentRules {
             (settings.lutStrength, RawSettings.lutStrengthRange)
         ]
         return fields.allSatisfy { $0.0.isFinite && $0.1.contains($0.0) } &&
-            settings.geometry.isValid && settings.denoise.isValid && settings.hsl.isValid &&
+            settings.geometry.isValid && settings.denoise.isValid && settings.hsl.isValid && settings.toneSettings.isValid && settings.atmosphereSettings.isValid && settings.gradingSettings.isValid && settings.curveSettings.isValid &&
             settings.photoEffects.isValid && PhotoEffectParameter.allCases.allSatisfy {
                 $0.range.contains(settings.photoEffects[keyPath: $0.keyPath])
             } && (0...2).contains(settings.displayChromaDenoise)

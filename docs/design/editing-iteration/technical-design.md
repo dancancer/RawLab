@@ -150,6 +150,10 @@ undo/redo 使用 revision guard：目标当前状态仍匹配预期 after/before
 
 预设 registry 与照片记录分开，复用版本化/原子写入模式，首批放各端 app-support 私有目录：`id`、`name`、时间、payload/scope version、字段集合、逻辑值/模式、外观引用。名称不是 ID；新建使用独立生成、经碰撞检查的唯一标识，不能以 registry 长度或列表位置派生。碰撞时重新生成或阻止创建，不覆盖已有项。重命名、删除其他预设、排序与恢复不改剩余 ID；删除不修改已应用照片。
 
+持久化合同使用 `registry_version=1`、`presets` 和可选 `retired_ids`；删除身份保留为 tombstone，防止旧确认在 UUID 碰撞后命中新条目。条目使用 canonical UUID，`created_at` / `updated_at` 为非负 Unix 毫秒十进制整数字面量，修改时间单调递增。名称按固定空白集合 trim 并转 NFC，按完整规范名称区分大小写检测重名；JSON 重复键、未知字段及未来版本统一拒绝。跨端读写和失败向量以 [共享 fixture](../../../Shared/fixtures/adjustment-presets-v1.json) 为准。
+
+保存只 capture 已提交且仍匹配磁盘 revision 的当前状态，不写剪贴板或照片历史。payload 来源标识固定为 `preset:<id>`，重命名不改内容。覆盖、重命名和删除在独立文件锁内 fresh-read，并比较确认时的完整条目；迟到确认不能覆盖其他实例的新修改。
+
 创建/覆盖先完整校验并原子替换；损坏 registry 保留原文件并给出恢复说明。应用完全调用第 5 节 draft preflight/prepare/commit/history，不另实现参数合并。原照片删除后仍能复用，外观缺失走统一 blocked/跳过流程，不自动替换成中性。新参数通过字段目录扩展；旧 preset 缺失新字段表示“未包含”，不是“将目标新字段归零”。
 
 ## 7. ITER-08：批量编辑与逐张导出
@@ -171,6 +175,10 @@ undo/redo 使用 revision guard：目标当前状态仍匹配预期 after/before
 区分编辑操作和导出模式：同步是编辑事务；导出 job 增加 `settings_mode=uniform_frozen|per_target_frozen`。缺字段旧 job 一律按旧统一源快照恢复。每个新逐张 item 冻结 native snapshot/版本、look 引用与校验、输出设置、稳定身份和序号；runner 不再去读实时 editor。
 
 job/item 显式版本升级，保留 iOS/Mac/Windows 旧版本及 Android journal v3 reader。旧统一 job 不展开成读取目标当前设置的新任务。继续复用 waiting/running/publishing/succeeded/failed 与原子 journal；重启时 publishing 先核对既有输出提交标记，成功项不重复执行。取消不删除已成功输出，retry 只调度选定失败项。新旧任务各有快照回归。
+
+四端实现与格式版本见[批量编辑接入记录](../../integration/editing-iteration/batch-selection-plan.md)。
+集合与逐张冻结的模型、编译和可执行原生回归已接入；实际界面按用户要求解锁后联合验收，
+IT-09/10/15 不因构建成功提前关闭。
 
 ## 8. ITER-05/06/09/10：共享处理扩展
 
@@ -202,7 +210,7 @@ RAW/raster decode → 线性降噪 → WB/曝光 → 中性显示/LUT/强度混�
 
 ### 8.3 三分区颜色分级
 
-首版采用 display-linear RGB 的亮度/对立色度向量，不新增 OKLab/ICC 依赖。三个色轮转换为零亮度色度方向，按像素亮度的平滑三分区权重混合；权重归一化，避免三块硬切。候选区间为 shadows 0.20～0.55、highlights 0.45～0.80，中间调在 0.20～0.80 平滑包络；这些是 RawLab 方案常量，需在冻结前以黑白灰梯度和真实样本验收。
+首版采用 display-linear RGB 的亮度/对立色度向量，不新增 OKLab/ICC 依赖。三个色轮转换为零亮度色度方向，按像素亮度的平滑三分区权重混合；权重归一化，避免三块硬切。v1 固定区间为 shadows 0.20～0.55、highlights 0.45～0.80，中间调在 0.20～0.80 平滑包络；传递函数、归一化权重和保持亮度的色域处理以 [color grading v1](../../../lutools/docs/color-grading-v1.md) 为准。
 
 每区 hue [0,360)、saturation [0,100]，饱和度零不染色，三组全零不改变像素。输出色域映射/有界处理在该阶段固定，CPU/GPU不能分别使用不同的混合空间。自动区间分析、全局第四轮和局部蒙版本轮不扩入。
 
@@ -227,7 +235,14 @@ CPU 为所有新阶段 reference。点运算逐项接 Metal/D3D11/GLES；尚未�
 
 ### 8.7 算法冻结状态与准入
 
-ITER-05/06/10 当前均为**未实施、数值合同待冻结**。上文选定处理路线、顺序和 identity 行为，候选半径/保护权重不是已经验证的跨端常量；这些项没有达到数值冻结前，不能登记为“核心完成”或直接并行抄写到 GPU。ITER-09 的点数、合法性与 PCHIP 策略已明确，但仍未实现/验证。
+ITER-05 的 [tone controls v1 数值合同](../../../lutools/docs/tone-controls-v1.md) 已完成 CPU
+参考、固定合成/真实质量集及三个 GPU 后端对照，四端接线和无界面验证已完成；新工具
+实际 UI 留待解锁后统一验收，IT-06/15 尚未关闭。具体范围见[接入计划](../../integration/editing-iteration/tone-controls-plan.md)。
+ITER-06 的 [color grading v1 数值合同](../../../lutools/docs/color-grading-v1.md) 已完成 CPU
+参考、固定质量集和 Metal/D3D11/GLES 对照，四端数据链及色轮已接入，本地模型/native/构建验证完成；
+实际 UI 按用户要求解锁后统一验收，IT-07/15 尚未关闭，范围见
+[接入计划](../../integration/editing-iteration/color-grading-plan.md)。
+ITER-10 的 [atmosphere v1 数值合同](../../../lutools/docs/atmosphere-v1.md) 已完成 CPU 参考、45 个独立边界向量、空间性质测试及固定七张真实样片质量准入。首版非零参数从完整源图走 CPU，Auto 整条回退、Force 明确 unsupported；算法准入不代表四端接线和 IT-12/15 已完成，进度见[接入计划](../../integration/editing-iteration/atmosphere-plan.md)。ITER-09 已实现版本化 PCHIP 数值合同、CPU/三个 GPU 后端、四端模型与编辑器，核心/native 及实际界面证据与剩余联合门槛见 [接入计划](../../integration/editing-iteration/tone-curve-plan.md)。
 
 核心 owner 在对应算法 PR 先提交同一份版本化数值合同和 CPU 参考向量：黑白场的亮度系数/限幅规则，鲜艳度的彩度定义/肤色权重/负向公式，颜色分级的传递函数/三分区权重/色域处理，以及 Clarity/Dehaze 的半径/边界采样/空气光/transmission 下限/增益和噪声保护。合同连同 fixture ID、来源许可、哈希、参数和期望输出写入共享核心契约与测试资产；默认参数、常量或公式变化不得只在某端修改。先 CPU 参考评估，再冻结算法版本，最后接各端及可用 GPU。
 
@@ -235,9 +250,11 @@ ITER-05/06/10 当前均为**未实施、数值合同待冻结**。上文选定�
 
 ## 9. ITER-07：HSL 取色与目标调整
 
-复用 [photo_color](../../../lutools/src/core/photo_color.cpp) 的八色域 smoothstep 权重。拟增加 additive 采样/probe 接口，输入源/request revision 和归一化照片坐标，返回 pre-HSL 的显示颜色、H/S/L 与八通道权重；采样路径在目标点读取 tone/vibrance 完成、HSL 尚未应用的状态，避免当前 HSL 把下一次取色带偏。
+复用 [photo_color](../../../lutools/src/core/photo_color.cpp) 的八色域 smoothstep 权重。additive C ABI 通过 `sony2fuji_session_create_hsl_probe` 创建拥有独立像素的 CPU 快照，`sony2fuji_hsl_probe_sample` 查询归一化照片坐标，`sony2fuji_hsl_probe_destroy` 释放。结果包含源/request revision、尺寸、质量、可用状态、pre-HSL 显示颜色、H/S/L 与八通道权重；快照截止于 tone/vibrance 完成、HSL 尚未应用的阶段，避免当前 HSL 把下一次取色带偏。接口与数值细节见[颜色合同](../../../lutools/docs/color-contract.md)。
 
 客户端将画布点反变换为实际结果图坐标，经过 crop/rotate/perspective/lens 同一变换映射；尽量复用核心变换，不能各端猜坐标。probe 的预览/精确质量明确，不声称代理取样与全分辨率纹理完全一致；色域选择/变化方向要稳定。无彩度、越界、黑边或过期帧返回不可取样。
+
+当前快照直接复用核心几何与缩放，RAW 输入已包含镜头及方向处理；客户端只反解结果图的查看投影并排除留白、标签和参考图。核心验证 query 与快照的 revision 标签，客户端另行匹配已接受预览、源身份及编辑状态。取色和渲染在同一串行队列中进行；等待期间的最终位移会保留，取消或被新工作替换后不接纳迟到样本。
 
 手势开始冻结 before HSL、通道权重、当前轴和采样 revision，之后所有 delta 从 before 计算，结束一次提交；不在每帧新像素重新取权重造成反馈。持久化只有最终 24 个值，坐标/权重是会话状态。取消、切图、后台、草稿、多指缩放不产生历史；三轴和相邻色域均有测试。
 

@@ -31,6 +31,8 @@ struct AdjustmentHistoryModelTests {
         try check(model.beginAdjustmentInteraction(settings: settings), "gesture begins with an accepted storage revision")
         for step in 1...30 {
             settings.exposure = Double(step) / 100
+            settings.gradingSettings[.shadows] = ColorGradingWheel(hue: 231.25, saturation: 0)
+            settings.gradingSettings[.midtones] = ColorGradingWheel(hue: 110.125, saturation: Double(step))
             model.queueSettingsSave(settings)
         }
         try check(model.editSaveWork == nil && store.state(for: identity) == nil,
@@ -45,10 +47,11 @@ struct AdjustmentHistoryModelTests {
         try check(try store.versionedState(for: identity) == revision, "unchanged echo preserves timestamp and revision")
         try check(model.beginAdjustmentInteraction(settings: settings), "second gesture begins")
         settings.exposure = 0.9
+        settings.gradingSettings[.shadows] = ColorGradingWheel(hue: 80, saturation: 75)
         model.queueSettingsSave(settings)
         guard let restored = model.cancelAdjustmentInteraction() else { throw NSError(domain: "missing cancel snapshot", code: 1) }
         settings = restored
-        try check(settings.exposure == 0.3 && model.pendingSettings == nil && model.consumePersistedEditorSettings(settings),
+        try check(settings.exposure == 0.3 && settings.gradingSettings.shadows == ColorGradingWheel(hue: 231.25, saturation: 0) && model.pendingSettings == nil && model.consumePersistedEditorSettings(settings),
                   "cancel restores the exact gesture start and consumes the observer echo")
         try check(try store.versionedState(for: identity) == revision, "cancel does not write or record history")
         let undo = model.performAdjustmentHistory(undo: true)
@@ -89,7 +92,141 @@ struct AdjustmentHistoryModelTests {
                   "native editor captures exactly the requested exposure and HSL fields")
         try preflight(model, store: store, directory: directory)
         try cancelledImportMetadata(directory: directory)
+        try presetCapture(directory: directory)
+        try collection(directory: directory)
         print("PASS: native adjustment history model (\(checks) assertions)")
+    }
+
+    private static func collection(directory: URL) throws {
+        let store = try EditPersistence(directory: directory.appendingPathComponent("collection-edits"))
+        let model = RawEditorViewModel(editPersistence: store)
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 30), format: format).image { context in
+            UIColor(red: 0.2, green: 0.3, blue: 0.4, alpha: 1).setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 40, height: 30))
+        }
+        let file = directory.appendingPathComponent("collection-native.png")
+        try image.pngData()!.write(to: file)
+        let a = PhotoIdentity(resourceIdentifier: "native-collection-source")
+        let b = PhotoIdentity(resourceIdentifier: "native-collection-target")
+        model.sourceFile = .externallyManaged(file); model.sourceIdentity = a; model.sourceKind = .raster
+        model.sourceDisplayName = "same.png"; model.hasImage = true
+        model.acceptImportedEditRecord(try store.versionedState(for: a), settings: .default)
+        var settings = RawSettings.default; settings.exposure = 0.75
+        model.queueSettingsSave(settings)
+        try check(model.saveCurrentSettings(settings), "collection source saves before synchronization capture")
+        model.batchSelection.append(model.currentAdjustmentPhoto!)
+        model.batchSelection.append(.init(identity: b, displayName: "same.png", file: .externallyManaged(file), isRaw: false))
+        try model.copyAdjustments(scope: .custom([.contrast]), settings: settings)
+        let clipboard = model.adjustmentSession?.clipboard
+        model.hasAdjustmentDraft = true
+        var blocked = false
+        do { _ = try model.captureCollectionSynchronization(scope: .custom([.exposure]), settings: settings) } catch { blocked = true }
+        try check(blocked, "native collection source draft blocks capture")
+        model.hasAdjustmentDraft = false
+        let sync = try model.captureCollectionSynchronization(scope: .custom([.exposure]), settings: settings)
+        try check(sync.photos.map(\.id) == [b.key] && model.adjustmentSession?.clipboard == clipboard,
+                  "native collection capture excludes source and preserves clipboard")
+        var prepared: Result<IOSPreparedAdjustmentTransfer, Error>?
+        model.prepareAdjustmentPaste(sync.payload, photos: sync.photos, action: .synchronize) { prepared = $0 }
+        let deadline = Date().addingTimeInterval(30)
+        while prepared == nil && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+        guard let prepared else { throw NSError(domain: "collection preparation timed out", code: 1) }
+        let operation = try prepared.get()
+        let results = model.applyAdjustmentPaste(operation, skipping: [])
+        try check(results.map(\.status) == [.applied] && model.batchSelection.selection.lastSynchronization == operation.id,
+                  "native synchronization saves target and retains its transaction entry")
+        model.sourceIdentity = b; model.sourceRevision = UUID()
+        model.acceptImportedEditRecord(try store.versionedState(for: b), settings: settings)
+        _ = model.batchSelection.selection.beginEditing(b.key)
+        settings.contrast = 0.4; model.queueSettingsSave(settings)
+        try check(model.saveCurrentSettings(settings), "native micro-edit commits only the current collection photo")
+        model.batchSelection.selection.returnToCollection()
+        try check(model.batchSelection.selection.returnPosition == b.key && model.batchSelection.selection.selected == Set([a.key, b.key])
+            && model.batchSelection.selection.lastSynchronization == operation.id, "micro-edit return preserves collection and synchronization history")
+        model.hasAdjustmentDraft = true
+        let draft = model.batchSelection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: nil,
+            validateActive: model.validateCollectionActive, resolveLook: { _ in (nil, nil) })
+        try check(!draft.ready && draft.rows.first { $0.id == b.key }?.error != nil, "native export preflight inspects the active editor draft")
+        let skipped = model.batchSelection.prepareExport(store: store, skipping: [b.key], format: .jpeg, longEdge: nil,
+            validateActive: model.validateCollectionActive, resolveLook: { _ in (nil, nil) })
+        try check(skipped.ready && model.hasAdjustmentDraft && model.batchSelection.selection.selected.contains(b.key),
+                  "native export Skip preserves the active draft and selection")
+        model.hasAdjustmentDraft = false
+        let review = model.batchSelection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: nil,
+            validateActive: model.validateCollectionActive, resolveLook: { _ in (nil, nil) })
+        let journal = try BatchJournalStore(directory: directory.appendingPathComponent("collection-jobs"))
+        let job = try model.batchSelection.freeze(review, store: store, journal: journal, validateActive: model.validateCollectionActive)
+        settings.exposure = -0.5; model.queueSettingsSave(settings)
+        try check(model.saveCurrentSettings(settings), "editor remains independently editable after freezing")
+        let batch = BatchExportModel(job: job, journalStore: journal)
+        let bytes = try job.targets.map { try batch.render(target: $0, settings: job.settings(for: $0), look: job.look(for: $0), longEdge: nil) }
+        try check(bytes[0] != bytes[1] && job.targets[1].frozen?.settings.exposure == 0.75,
+                  "native JPEG rendering retains per-photo contrast and ignores later editor exposure")
+    }
+
+    private static func presetCapture(directory: URL) throws {
+        var rejectWrite = false
+        let store = try EditPersistence(directory: directory.appendingPathComponent("preset-edits"), writeData: { data, url in
+            if rejectWrite { throw CocoaError(.fileWriteNoPermission) }
+            try data.write(to: url, options: .atomic)
+        })
+        let library = AdjustmentPresetStore(directory: directory.appendingPathComponent("preset-library"))
+        let model = RawEditorViewModel(editPersistence: store, presetStore: library)
+        let source = directory.appendingPathComponent("preset-source.png")
+        try Data([1, 2, 3]).write(to: source)
+        let identity = PhotoIdentity(resourceIdentifier: "preset-capture")
+        model.sourceFile = .externallyManaged(source); model.sourceIdentity = identity
+        model.sourceKind = .raster; model.hasImage = true
+        model.acceptImportedEditRecord(try store.versionedState(for: identity), settings: .default)
+        var settings = RawSettings.default; settings.exposure = 0.75
+        model.queueSettingsSave(settings)
+        try check(model.saveCurrentSettings(settings), "preset source edit commits before capture")
+        try model.copyAdjustments(scope: .custom([.contrast]), settings: settings)
+        let clipboard = model.adjustmentSession?.clipboard
+        let revision = try store.versionedState(for: identity)
+        let historyCount = model.adjustmentSession?.transactions.count
+        let captured = try model.capturePresetAdjustments(scope: .custom([.exposure]), settings: settings)
+        _ = try library.create(name: "Native iOS", payload: captured)
+        try check(captured.fields == [.exposure] && captured[.exposure]?.number == 0.75,
+                  "preset capture uses the exact selected committed values")
+        try check(try model.adjustmentSession?.clipboard == clipboard && model.adjustmentSession?.transactions.count == historyCount
+                  && store.versionedState(for: identity) == revision,
+                  "preset capture and library save leave clipboard, photo receipt and history unchanged")
+        model.hasAdjustmentDraft = true
+        var rejected = false
+        do { _ = try model.capturePresetAdjustments(scope: .all, settings: settings) } catch { rejected = true }
+        try check(rejected, "unresolved geometry draft prevents preset capture")
+        model.hasAdjustmentDraft = false
+        settings.exposure = 1.0; model.queueSettingsSave(settings); rejectWrite = true
+        try check(!model.saveCurrentSettings(settings), "preset capture fixture retains failed pending edits")
+        rejected = false
+        do { _ = try model.capturePresetAdjustments(scope: .all, settings: settings) } catch { rejected = true }
+        try check(rejected && model.adjustmentSession?.clipboard == clipboard,
+                  "failed pending photo save prevents preset capture without changing clipboard")
+        rejectWrite = false
+        try check(model.saveCurrentSettings(settings), "preset source can recover through the existing save retry")
+        let historyBeforeExternal = model.adjustmentSession?.transactions.map(\.id)
+        var external = settings; external.exposure = 1.4
+        try store.save(identity, state: PhotoEditState(settings: external))
+        let externalReceipt = try store.versionedState(for: identity)
+        rejected = false
+        do { _ = try model.capturePresetAdjustments(scope: .custom([.exposure]), settings: settings) } catch { rejected = true }
+        try check(try rejected && store.versionedState(for: identity) == externalReceipt && library.list().count == 1 &&
+                  model.adjustmentSession?.clipboard == clipboard && model.adjustmentSession?.transactions.map(\.id) == historyBeforeExternal,
+                  "external photo revision blocks preset capture without changing library or history")
+        try check(model.adjustmentReloadRequired, "stale preset capture offers explicit saved-adjustment reload")
+        model.acceptImportedEditRecord(externalReceipt, settings: external)
+        settings = external
+        var uncommitted = settings; uncommitted.exposure = 1.8
+        rejected = false
+        do { _ = try model.capturePresetAdjustments(scope: .custom([.exposure]), settings: uncommitted) } catch { rejected = true }
+        try check(rejected, "pure preset capture rejects values outside the committed snapshot")
+        try Data([4, 5, 6, 7]).write(to: source)
+        rejected = false
+        do { _ = try model.capturePresetAdjustments(scope: .custom([.exposure]), settings: settings) } catch { rejected = true }
+        try check(try rejected && library.list().count == 1 && model.adjustmentSession?.clipboard == clipboard,
+                  "changed source identity blocks capture and preserves the existing library")
     }
 
     private static func cancelledImportMetadata(directory: URL) throws {

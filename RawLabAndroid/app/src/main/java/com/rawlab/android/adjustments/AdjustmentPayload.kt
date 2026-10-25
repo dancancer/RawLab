@@ -1,6 +1,10 @@
 package com.rawlab.android.adjustments
 
 import org.json.JSONObject
+import org.json.JSONArray
+import com.rawlab.android.settings.ColorGradingWheel
+import com.rawlab.android.settings.ToneCurveSettings
+import com.rawlab.android.json.validateStrictJSON
 
 enum class AdjustmentFailure { INVALID_PAYLOAD, UNSUPPORTED_VERSION, EMPTY_SCOPE, DRAFT, INCOMPATIBLE, MISSING_LOOK, UNREPRESENTABLE }
 class AdjustmentTransferException(val reason: AdjustmentFailure, val field: String = "") : Exception("$reason: $field")
@@ -10,12 +14,17 @@ sealed interface AdjustmentValue {
     data class Text(val value: String) : AdjustmentValue
     data class Boolean(val value: kotlin.Boolean) : AdjustmentValue
     data class Object(val value: Map<String, AdjustmentValue>) : AdjustmentValue
+    data class Array(val value: List<AdjustmentValue>) : AdjustmentValue
     data object Null : AdjustmentValue
     val number get() = (this as? Number)?.value
     val text get() = (this as? Text)?.value
     val boolean get() = (this as? Boolean)?.value
     val objectValue get() = (this as? Object)?.value
-    fun frozen(): AdjustmentValue = if (this is Object) Object(value.mapValues { it.value.frozen() }) else this
+    fun frozen(): AdjustmentValue = when (this) {
+        is Object -> Object(value.mapValues { it.value.frozen() })
+        is Array -> Array(value.map { it.frozen() })
+        else -> this
+    }
 }
 
 data class AdjustmentRecipeContext(val id: String, val strength: Double, val settingsVersion: Int = 3)
@@ -87,6 +96,7 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
         private fun bool(value: Any?): Boolean { valid(value is Boolean, "boolean"); return value as Boolean }
         private fun objectValue(value: Any?): JSONObject { valid(value is JSONObject, "object"); return value as JSONObject }
         fun decode(json: String): AdjustmentPayload = try {
+            validateStrictJSON(json, setOf("payload_version", "scope_version", "processing_version", "settings_version"))
             val root = JSONObject(json)
             rejectUnknown(root, setOf("payload_version", "scope_version", "source", "values"))
             val source = objectValue(root.get("source"))
@@ -111,6 +121,7 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
             is kotlin.Number -> AdjustmentValue.Number(number(value))
             is String -> AdjustmentValue.Text(value)
             is JSONObject -> AdjustmentValue.Object(keys(value).associateWith { decodeValue(value.get(it)) })
+            is JSONArray -> AdjustmentValue.Array((0 until value.length()).map { decodeValue(value.get(it)) })
             else -> throw AdjustmentTransferException(AdjustmentFailure.INVALID_PAYLOAD, "value")
         }
         private fun jsonValue(value: AdjustmentValue): Any = when (value) {
@@ -118,10 +129,17 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
             is AdjustmentValue.Text -> value.value
             is AdjustmentValue.Boolean -> value.value
             is AdjustmentValue.Object -> JSONObject().also { json -> value.value.forEach { (key, nested) -> json.put(key, jsonValue(nested)) } }
+            is AdjustmentValue.Array -> JSONArray(value.value.map { jsonValue(it) })
             AdjustmentValue.Null -> JSONObject.NULL
         }
 
         private fun validValue(field: AdjustmentField, value: AdjustmentValue): Boolean {
+            if (field == AdjustmentField.CURVE) return runCatching { curve(value) }.isSuccess
+            if (field.gradingZone != null) {
+                val wheel = value.objectValue ?: return false
+                if (wheel.keys != setOf("hue", "saturation")) return false
+                return ColorGradingWheel.valid(wheel["hue"]?.number ?: return false, wheel["saturation"]?.number ?: return false)
+            }
             field.scalarRange?.let { range ->
                 val number = value.number ?: return false
                 return number.isFinite() && number in range &&
@@ -156,5 +174,7 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
                 else -> false
             }
         }
+        internal fun curve(value: AdjustmentValue): ToneCurveSettings = ToneCurveSettings.decode(jsonValue(value) as JSONObject)
+        internal fun curveValue(curve: ToneCurveSettings): AdjustmentValue = decodeValue(curve.json())
     }
 }

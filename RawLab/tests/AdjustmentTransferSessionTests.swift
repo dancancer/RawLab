@@ -57,11 +57,98 @@ import Foundation
         try preflightAndExternal(root.appendingPathComponent("preflight"))
         try historyOrder(root.appendingPathComponent("lineage"))
         try saveFailure(root.appendingPathComponent("failures"))
+        try synchronization(root.appendingPathComponent("collection-sync"))
+        try presetApplication(root.appendingPathComponent("presets"))
         var invalid = context; invalid.hasUncommittedDraft = true
         do { _ = try session.copy(scope: .all, snapshot: state(2), context: invalid) } catch {}
         try check(session.clipboard == copy, "Failed copy preserves the frozen clipboard")
         let empty = try session.prepare(payload: copy, targets: [])
         try check(session.apply(empty).isEmpty, "Empty target operation reports no successes")
+    }
+    static func synchronization(_ root: URL) throws {
+        let store = try EditPersistence(directory: root), session = IOSAdjustmentTransferSession(store: store)
+        let source = PhotoIdentity(resourceIdentifier: "sync-source"), other = PhotoIdentity(resourceIdentifier: "sync-other")
+        var context = self.context; context.identifier = source.key
+        let clipboard = try session.copy(scope: .all, snapshot: state(0.5), context: context)
+        let payload = try IOSAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: state(1.25), context: context)
+        var original = state(0).settings; original.contrast = 0.37
+        try store.save(source, state: state(0.5))
+        try store.save(other, state: PhotoEditState(settings: original))
+        let targets = [source, other, other].map {
+            IOSAdjustmentTransferTarget(identity: $0, displayName: "same.png", defaultState: state(0), context: context)
+        }
+        let operation = try session.prepare(payload: payload, targets: targets, action: .synchronize)
+        try check(operation.targets.map(\.id) == [other.key], "Synchronization excludes the selected source and deduplicates by identity, not filename")
+        let results = session.apply(operation)
+        try check(results.map(\.status) == [.applied] && store.state(for: source)?.settings.exposure == 0.5
+            && store.state(for: other)?.settings.exposure == 1.25 && store.state(for: other)?.settings.contrast == 0.37,
+            "Synchronization saves only selected fields on actual targets")
+        try check(session.clipboard == clipboard && session.transactions.first?.action == .synchronize,
+            "Synchronization retains clipboard and records its own history action")
+        let unsafe = try session.prepare(payload: payload, targets: [targets[0]], action: .paste)
+        let injected = IOSPreparedAdjustmentTransfer(id: UUID(), payload: payload, action: .synchronize, targets: unsafe.targets)
+        let rejected = session.apply(injected)
+        try check(rejected.map(\.status) == [.blocked] && store.state(for: source)?.settings.exposure == 0.5,
+            "Write-time source exclusion rejects a source reintroduced after preparation")
+        let before = try store.versionedState(for: other)
+        var micro = before.state!.settings; micro.contrast = 0.61
+        let edit = session.commitEdit(expected: before, state: PhotoEditState(settings: micro))
+        try check(edit.status == .applied && store.state(for: other)?.settings.contrast == 0.61,
+            "A collection photo can receive an independent micro-edit")
+        let secondPayload = try IOSAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: state(1.75), context: context)
+        let second = try session.prepare(payload: secondPayload, targets: targets, action: .synchronize)
+        _ = session.apply(second)
+        try check(store.state(for: other)?.settings.exposure == 1.75 && store.state(for: other)?.settings.contrast == 0.61,
+            "A second synchronization preserves unselected micro-edits")
+        let undo = session.undoTransaction(second.id)
+        try check(undo.map(\.status) == [.applied] && store.state(for: other)?.settings.exposure == 1.25
+            && store.state(for: other)?.settings.contrast == 0.61, "Transaction history restores only the successful synchronization component")
+    }
+
+    static func presetApplication(_ root: URL) throws {
+        let edits = try EditPersistence(directory: root.appendingPathComponent("edits"))
+        let session = IOSAdjustmentTransferSession(store: edits)
+        let library = AdjustmentPresetStore(directory: root.appendingPathComponent("library"))
+        let clipboard = try session.copy(scope: .custom([.exposure]), snapshot: state(0.5), context: context)
+        var sourceSettings = state(1.25).settings
+        sourceSettings.blackPoint = -32.75; sourceSettings.whitePoint = 46.5; sourceSettings.vibrance = 21.25
+        let source = try IOSAdjustmentTransfer.capture(scope: .custom([.exposure, .blackPoint, .whitePoint, .vibrance]),
+            snapshot: PhotoEditState(settings: sourceSettings), context: context)
+        let saved = try library.create(name: "iOS preset", payload: source)
+        try check(session.clipboard == clipboard && session.transactions.isEmpty,
+            "Preset save leaves clipboard and photo history unchanged")
+        let reloaded = try AdjustmentPresetStore(directory: library.directory).list().first!
+        var beforeSettings = state(-0.5).settings; beforeSettings.saturation = 1.2
+        let before = PhotoEditState(settings: beforeSettings)
+        let identity = PhotoIdentity(resourceIdentifier: "preset-target")
+        try edits.save(identity, state: before)
+        let direct = try IOSAdjustmentTransfer.prepare(payload: source, target: before, context: context)
+        let candidate = try IOSAdjustmentTransfer.prepare(payload: reloaded.payload, target: before, context: context)
+        try check(candidate.settings == direct.settings, "Preset and clipboard resolve identical native settings")
+        let targets = [IOSAdjustmentTransferTarget(identity: identity, displayName: "Preset target",
+            defaultState: state(0), context: context)]
+        let operation = try session.prepare(payload: reloaded.payload, targets: targets, action: .preset)
+        try check(session.apply(operation).first?.status == .applied && edits.state(for: identity)?.settings.exposure == 1.25,
+            "Persisted preset applies through the existing conditional-save path")
+        try check(edits.state(for: identity)?.settings.saturation == 1.2 && session.clipboard == clipboard,
+            "Preset application preserves unselected fields and the frozen clipboard")
+        try check(session.transactions.count == 1 && session.transactions[0].action == .preset,
+            "Preset application records its own action in the shared photo history")
+        try check(edits.state(for: identity)?.settings.toneSettings == sourceSettings.toneSettings,
+            "Preset application saves exact tone fields in the photo registry")
+        try library.delete(saved)
+        try check(edits.state(for: identity)?.settings.exposure == 1.25,
+            "Deleting a preset does not change an already-applied photo")
+        try check(session.undoPhoto(identity).first?.status == .applied && edits.state(for: identity)?.hasSameAdjustments(as: before) == true,
+            "Preset undo restores the full prior photo state")
+        let unchanged = try IOSAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: before, context: context)
+        let noChange = try session.prepare(payload: unchanged, targets: targets, action: .preset)
+        try check(session.apply(noChange).first?.status == .unchanged && session.canRedoPhoto(identity),
+            "No-change preset application preserves the redo branch")
+        try check(session.redoPhoto(identity).first?.status == .applied && edits.state(for: identity)?.settings.exposure == 1.25,
+            "Preset redo restores the saved result after the preset itself was deleted")
+        try check(edits.state(for: identity)?.settings.toneSettings == sourceSettings.toneSettings,
+            "Preset redo restores all tone values after deleting the source preset")
     }
     static func preflightAndExternal(_ root: URL) throws {
         let store = try EditPersistence(directory: root), session = IOSAdjustmentTransferSession(store: store)

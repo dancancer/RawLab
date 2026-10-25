@@ -26,7 +26,232 @@ struct AdjustmentTransferTests {
         return request
     }
 
+
+    static func atmospherePersistence() throws {
+        let input = Data("{\"atmosphere\":{\"clarity\":-37.25,\"dehaze\":42.5}}".utf8)
+        let settings = try JSONDecoder().decode(Adjustments.self, from: input)
+        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as! [String: Any]
+        let atmosphere = json["atmosphere"] as? [String: Double]
+        check(atmosphere == ["clarity": -37.25, "dehaze": 42.5], "Atmosphere values survive a persisted edit round trip")
+    }
+
+    static func atmosphereControls() throws {
+        var source = Adjustments()
+        source.clarity = -37.251234; source.dehaze = 42.5
+        let restored = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(source))
+        check(restored == source, "Atmosphere precision survives persistence")
+        let old = try JSONDecoder().decode(Adjustments.self, from: Data("{}".utf8))
+        check(old.atmosphere == nil && old.atmosphereSettings.isIdentity, "Missing atmosphere extension is identity")
+        let zero = try JSONDecoder().decode(Adjustments.self, from: Data("{\"atmosphere\":{\"clarity\":0,\"dehaze\":0}}".utf8))
+        check(zero.atmosphere == nil, "Explicit identity atmosphere normalizes to absent storage")
+        for invalid in [-100.001, 100.001] {
+            for field in ["clarity", "dehaze"] {
+                rejects("Out-of-range atmosphere is rejected on load") {
+                    let json = try JSONSerialization.data(withJSONObject: ["atmosphere": ["clarity": field == "clarity" ? invalid : 0, "dehaze": field == "dehaze" ? invalid : 0]])
+                    _ = try JSONDecoder().decode(Adjustments.self, from: json)
+                }
+            }
+        }
+        let fields: Set<AdjustmentTransferField> = [.clarity, .dehaze]
+        let modified = try MacAdjustmentTransfer.capture(scope: .modified, snapshot: state(source), context: raw)
+        check(modified.fields == fields, "Modified scope contains exactly the atmosphere changes")
+        let standard = try MacAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
+        check(fields.isSubset(of: standard.fields) && fields.allSatisfy { $0.group == "effects" }, "Atmosphere belongs to standard and effects scopes")
+        check(try MacAdjustmentTransfer.prepare(payload: modified, target: state(), context: raw).settings.atmosphereSettings == source.atmosphereSettings,
+            "Atmosphere paste retains exact values")
+        var target = Adjustments(); target.clarity = 71; target.dehaze = -29
+        let partial = try MacAdjustmentTransfer.capture(scope: .custom([.dehaze]), snapshot: state(source), context: raw)
+        let merged = try MacAdjustmentTransfer.prepare(payload: partial, target: state(target), context: raw)
+        check(merged.settings.clarity == 71 && merged.settings.dehaze == 42.5, "Partial paste preserves unselected clarity")
+        let legacy = try MacAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: state(), context: raw)
+        check(try MacAdjustmentTransfer.prepare(payload: legacy, target: state(target), context: raw).settings.atmosphereSettings == target.atmosphereSettings,
+            "Legacy payload preserves target atmosphere")
+        source.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!); source.strength = 0
+        target.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!); target.strength = 0
+        let recipe = try MacAdjustmentTransfer.capture(scope: .custom(fields), snapshot: state(source), context: raw)
+        check(try MacAdjustmentTransfer.prepare(payload: recipe, target: state(target), context: raw).settings.atmosphereSettings == source.atmosphereSettings,
+            "Atmosphere is independent of zero recipe strength")
+        var effects = Adjustments(); effects.clarity = 31; effects.dehaze = -23; effects.vibrance = 19
+        let resetContext = EditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "")
+        check(EditorAdjustmentRules.isModified(scope: .group(.effects), snapshot: state(effects), context: resetContext), "Atmosphere-only edits mark effects group modified")
+        if case .candidate(let reset) = EditorAdjustmentRules.prepareReset(scope: .group(.effects), snapshot: state(effects), context: resetContext) {
+            check(reset.settings.atmosphereSettings.isIdentity && reset.settings.vibrance == 19, "Effects reset clears atmosphere and preserves color")
+        } else { fatalError("Atmosphere reset must prepare a candidate") }
+    }
+
+    static func toneControls() throws {
+        var source = Adjustments()
+        source.blackPoint = -37.25; source.whitePoint = 42.5; source.vibrance = 18.125
+        let restored = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(source))
+        check(restored == source, "Tone controls persist as one optional object")
+        let old = try JSONDecoder().decode(Adjustments.self, from: Data("{}".utf8))
+        check(old.toneControls == nil && old.toneSettings.isIdentity, "Legacy missing tone object retains identity")
+        for invalid in [-100.1, 100.1] {
+            rejects("Persisted tone values outside the UI range are rejected") {
+                _ = try JSONDecoder().decode(Adjustments.self, from: Data("{\"toneControls\":{\"blackPoint\":\(invalid),\"whitePoint\":0,\"vibrance\":0}}".utf8))
+            }
+        }
+        let fields: Set<AdjustmentTransferField> = [.blackPoint, .whitePoint, .vibrance]
+        let modified = try MacAdjustmentTransfer.capture(scope: .modified, snapshot: state(source), context: raw)
+        check(modified.fields == fields, "Modified scope includes exactly the changed tone fields")
+        let standard = try MacAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
+        check(fields.isSubset(of: standard.fields), "Standard copy includes all tone fields")
+        let applied = try MacAdjustmentTransfer.prepare(payload: modified, target: state(), context: raw)
+        check(applied.settings.toneSettings == source.toneSettings, "Tone transfer keeps exact UI units")
+        var target = Adjustments()
+        target.blackPoint = 71; target.whitePoint = -29; target.vibrance = -63
+        let partial = try MacAdjustmentTransfer.capture(scope: .custom([.whitePoint]), snapshot: state(source), context: raw)
+        let merged = try MacAdjustmentTransfer.prepare(payload: partial, target: state(target), context: raw)
+        check(merged.settings.blackPoint == 71 && merged.settings.whitePoint == 42.5 && merged.settings.vibrance == -63,
+            "Partial tone paste preserves unselected target fields")
+        let legacy = try MacAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: state(), context: raw)
+        check(try MacAdjustmentTransfer.prepare(payload: legacy, target: state(target), context: raw).settings.toneSettings == target.toneSettings,
+            "Legacy payload omitting tone fields does not reset target tone")
+        source.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
+        source.strength = 0
+        target.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
+        target.strength = 0
+        let recipeCopy = try MacAdjustmentTransfer.capture(scope: .custom(fields), snapshot: state(source), context: raw)
+        let recipeMerged = try MacAdjustmentTransfer.prepare(payload: recipeCopy, target: state(target), context: raw)
+        check(recipeMerged.settings.toneSettings == source.toneSettings,
+            "Tone controls remain independent of source and target recipe strength, including zero")
+        var resetSource = source
+        resetSource.setTransferRecipe(nil)
+        let resetContext = EditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "")
+        let snapshot = state(resetSource)
+        check(EditorAdjustmentRules.isModified(scope: .group(.light), snapshot: snapshot, context: resetContext)
+            && EditorAdjustmentRules.isModified(scope: .tool(.vibrance), snapshot: snapshot, context: resetContext),
+            "New controls participate in group and tool modified state")
+        if case .candidate(let reset) = EditorAdjustmentRules.prepareReset(scope: .group(.light), snapshot: snapshot, context: resetContext) {
+            check(reset.settings.blackPoint == 0 && reset.settings.whitePoint == 0 && reset.settings.vibrance == 18.125,
+                "Light reset clears black and white point while preserving vibrance")
+        } else { fatalError("Tone light reset must prepare a candidate") }
+        resetSource.reset(.color)
+        check(resetSource.vibrance == 0 && resetSource.blackPoint == -37.25, "Color reset clears vibrance and preserves black point")
+        check(AdjustmentTransferField.blackPoint.group == "light" && AdjustmentTransferField.whitePoint.group == "light"
+            && AdjustmentTransferField.vibrance.group == "color", "Tone controls appear in light and color copy groups")
+    }
+
+    static func colorGrading() throws {
+        var source = Adjustments()
+        source.gradingSettings[.shadows] = ColorGradingWheel(hue: 231.25, saturation: 0)
+        source.gradingSettings[.midtones] = ColorGradingWheel(hue: 110.125, saturation: 32.375)
+        source.gradingSettings[.highlights] = ColorGradingWheel(hue: 359.999999, saturation: 99.5)
+        let restored = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(source))
+        check(restored == source, "All grading values persist exactly, including pending hue")
+        let old = try JSONDecoder().decode(Adjustments.self, from: Data("{}".utf8))
+        check(old.colorGrading == nil && old.gradingSettings.isDefault, "Old settings missing grading remain default")
+        let zeroJSON = try JSONSerialization.data(withJSONObject: ["colorGrading": ["shadows": ["hue": 0, "saturation": 0],
+            "midtones": ["hue": 0, "saturation": 0], "highlights": ["hue": 0, "saturation": 0]]])
+        check(try JSONDecoder().decode(Adjustments.self, from: zeroJSON).colorGrading == nil,
+            "Explicit all-zero grading normalizes to the same storage default")
+        check(ColorGradingWheel.inputHue(360) == 0 && ColorGradingWheel.inputHue(-1) == nil
+            && ColorGradingWheel.inputHue(361) == nil, "Only the UI hue endpoint wraps; out-of-range input is rejected")
+        let pending = ColorGradingWheel(hue: 215, saturation: 0)
+        check(pending.isIdentity && !pending.isDefault && pending.moving(toX: 0, y: 0) == pending,
+            "Wheel center preserves pending hue without affecting pixels")
+        for (x, y, expected) in [(1.0, 0.0, 0.0), (0, 1, 90), (-1, 0, 180), (0, -1, 270)] {
+            let wheel = pending.moving(toX: x, y: y)
+            check(wheel.hue == expected && wheel.saturation == 100, "Wheel coordinates follow the shared clockwise hue convention")
+        }
+        let fine = ColorGradingDrag(initial: ColorGradingWheel(hue: 0, saturation: 20), originX: 0.8, originY: 0.4, fine: true)
+        check(fine.value(x: 0.8, y: 0.4) == fine.initial && abs(fine.value(x: 1.2, y: 0.4).saturation - 30) < 1e-6,
+            "Fine drag starts at the existing handle and scales pointer movement by one quarter")
+        check(pending.moving(toX: 1, y: -Double.leastNonzeroMagnitude).hue == 0, "Internal negative angle rounding stays canonical")
+        let fields: Set<AdjustmentTransferField> = [.gradingShadows, .gradingMidtones, .gradingHighlights]
+        let captured = try MacAdjustmentTransfer.capture(scope: .modified, snapshot: state(source), context: raw)
+        check(captured.fields == fields, "Modified copy includes complete grading objects and pending hue")
+        check(fields.isSubset(of: try MacAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw).fields),
+            "Standard copy includes all three grading zones")
+        let roundTrip = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: JSONEncoder().encode(captured))
+        check(roundTrip == captured, "Grading payload JSON round-trips exactly")
+        var target = Adjustments()
+        target.gradingSettings[.shadows] = ColorGradingWheel(hue: 80, saturation: 75)
+        target.gradingSettings[.highlights] = ColorGradingWheel(hue: 50, saturation: 15.125)
+        let partial = try MacAdjustmentTransfer.capture(scope: .custom([.gradingMidtones]), snapshot: state(source), context: raw)
+        let merged = try MacAdjustmentTransfer.prepare(payload: partial, target: state(target), context: raw)
+        check(merged.settings.gradingSettings.midtones == source.gradingSettings.midtones
+            && merged.settings.gradingSettings.shadows == target.gradingSettings.shadows
+            && merged.settings.gradingSettings.highlights == target.gradingSettings.highlights,
+            "Partial grading paste preserves both unselected zones")
+        let legacy = try MacAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: state(), context: raw)
+        check(try MacAdjustmentTransfer.prepare(payload: legacy, target: state(target), context: raw).settings.gradingSettings == target.gradingSettings,
+            "Old payloads do not reset grading")
+        source.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
+        target.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
+        source.strength = 0; target.strength = 0
+        let recipeCopy = try MacAdjustmentTransfer.capture(scope: .custom(fields), snapshot: state(source), context: raw)
+        check(try MacAdjustmentTransfer.prepare(payload: recipeCopy, target: state(target), context: raw).settings.gradingSettings == source.gradingSettings,
+            "Grading is independent of recipe strength, including zero")
+        let valid: [String: Any] = ["shadows": ["hue": 231.25, "saturation": 0],
+            "midtones": ["hue": 0, "saturation": 0], "highlights": ["hue": 0, "saturation": 0]]
+        for wheel in [["hue": -0.1, "saturation": 0], ["hue": 360, "saturation": 0], ["hue": 0, "saturation": 100.01],
+                      ["hue": 0], ["hue": 0, "saturation": 0, "lightness": 0]] {
+            var invalid = valid; invalid["shadows"] = wheel
+            rejects("Persisted grading rejects incomplete, unknown and out-of-range wheel fields") {
+                _ = try JSONDecoder().decode(Adjustments.self, from: JSONSerialization.data(withJSONObject: ["colorGrading": invalid]))
+            }
+            rejects("Transfer rejects incomplete, unknown and out-of-range wheel fields") {
+                let value = AdjustmentTransferValue.object(wheel.mapValues { .number($0) })
+                _ = try AdjustmentTransferPayload(source: captured.source, values: [AdjustmentTransferField.gradingShadows.rawValue: value])
+            }
+        }
+        var incomplete = valid; incomplete.removeValue(forKey: "midtones")
+        rejects("Persisted grading requires all three zones when the object is present") {
+            _ = try JSONDecoder().decode(Adjustments.self, from: JSONSerialization.data(withJSONObject: ["colorGrading": incomplete]))
+        }
+        var resetSource = Adjustments()
+        resetSource.gradingSettings = source.gradingSettings
+        let context = EditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "")
+        let snapshot = state(resetSource)
+        if case .candidate(let reset) = EditorAdjustmentRules.prepareReset(scope: .gradingZone(.midtones), snapshot: snapshot, context: context) {
+            check(reset.settings.gradingSettings.midtones.isDefault && reset.settings.gradingSettings.shadows == source.gradingSettings.shadows
+                && reset.settings.gradingSettings.highlights == source.gradingSettings.highlights, "Zone reset preserves sibling precision")
+        } else { fatalError("Expected grading zone reset") }
+        for scope in [EditorResetScope.allGrading, .group(.color), .tool(.colorGrading)] {
+            if case .candidate(let reset) = EditorAdjustmentRules.prepareReset(scope: scope, snapshot: snapshot, context: context) {
+                check(reset.settings.gradingSettings.isDefault, "Tool and color-group resets clear every grading value")
+            } else { fatalError("Expected grading reset") }
+        }
+    }
+
+    static func toneCurve() throws {
+        var source = Adjustments()
+        source.toneCurve = 65
+        source.curveSettings = ToneCurveSettings.identity.inserting(x: 0.25, y: 0.12).inserting(x: 0.75, y: 0.88)
+        let restored = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(source))
+        check(restored == source, "Curve mode, binary64 points and inactive legacy scalar persist")
+        let modified = try MacAdjustmentTransfer.capture(scope: .modified, snapshot: state(source), context: raw)
+        check(modified.fields.contains(.curve) && modified.fields.contains(.sCurve), "Modified scope keeps curve and inactive legacy scalar")
+        let partial = try MacAdjustmentTransfer.capture(scope: .custom([.curve]), snapshot: state(source), context: raw)
+        var target = Adjustments()
+        target.toneCurve = -25
+        let merged = try MacAdjustmentTransfer.prepare(payload: partial, target: state(target), context: raw)
+        check(merged.settings.curveSettings == source.curveSettings && merged.settings.toneCurve == -25,
+            "Pasting curve mode and points preserves unselected legacy scalar")
+        let scalar = try MacAdjustmentTransfer.capture(scope: .custom([.sCurve]), snapshot: state(target), context: raw)
+        let legacyOnly = try MacAdjustmentTransfer.prepare(payload: scalar, target: state(source), context: raw)
+        check(legacyOnly.settings.curveSettings == source.curveSettings && legacyOnly.settings.toneCurve == -25,
+            "Old scalar-only payload preserves unselected custom curve mode")
+        let bytes = try JSONEncoder().encode(partial)
+        check(try JSONDecoder().decode(AdjustmentTransferPayload.self, from: bytes) == partial, "Curve payload round trip")
+        var bad = source
+        bad.curveSettings.points[1].x = 0
+        rejects("Invalid native curve cannot enter a transfer") {
+            _ = try MacAdjustmentTransfer.capture(scope: .custom([.curve]), snapshot: state(bad), context: raw)
+        }
+    }
+
     static func main() throws {
+        try toneCurve()
+        try colorGrading()
+        let pendingHue = Data(#"{"colorGrading":{"shadows":{"hue":231.25,"saturation":0},"midtones":{"hue":0,"saturation":0},"highlights":{"hue":0,"saturation":0}}}"#.utf8)
+        let gradingRestored = try JSONDecoder().decode(Adjustments.self, from: pendingHue)
+        let gradingJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(gradingRestored)) as! [String: Any]
+        check(gradingJSON["colorGrading"] != nil, "Pending grading hue survives a persisted edit even with zero saturation")
+        try atmospherePersistence()
+        try atmosphereControls()
+        try toneControls()
         try aiDenoiseBoundary()
         try postRGBCompatibility()
         try scopesAndFreeze()

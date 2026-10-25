@@ -106,6 +106,8 @@ extension EditorModel {
     }
 
     private func navigateAdjustment(to target: EditorAdjustmentNavigation, geometryTab: MacGeometryTab? = nil) {
+        cancelHSLTarget(); hslTargetEnabled = false
+        if adjustmentNavigation.tool == .colorGrading || adjustmentNavigation.tool == .toneCurve { cancelAdjustmentInteraction() }
         ParameterValueField.cancelPendingInputs()
         guard resetReturnTool == nil, resetConfirmation == nil else { return }
         let action = { [weak self] in
@@ -120,6 +122,7 @@ extension EditorModel {
     }
 
     func requestAdjustmentReset(_ scope: EditorResetScope) {
+        cancelHSLTarget()
         ParameterValueField.cancelPendingInputs()
         guard !busy, !exporting, !lookLibraryBusy, resetConfirmation == nil, resetReturnTool == nil else { return }
         if scope == .all, geometryDraft != nil {
@@ -146,7 +149,7 @@ extension EditorModel {
         case .prepared(let prepared):
             let needsConfirmation: Bool
             switch scope {
-            case .all, .group, .hslAll, .tool(.hsl): needsConfirmation = true
+            case .all, .group, .hslAll, .allGrading, .tool(.hsl), .tool(.colorGrading): needsConfirmation = true
             case .tool(.film), .tool(.recipe): needsConfirmation = !resetConversions(prepared).isEmpty
             default: needsConfirmation = false
             }
@@ -283,7 +286,7 @@ extension EditorModel {
             adjustmentSheetTargets = targets
             adjustmentSheetExcludedSource = sourcePath
             pendingAdjustmentHistory = nil
-            adjustmentSheet = .paste
+            adjustmentSheetInCollection = false; adjustmentSheet = .paste
         } catch { self.error = error.localizedDescription }
     }
 
@@ -327,13 +330,16 @@ extension EditorModel {
         if panel.runModal() == .OK, let url = panel.url { open(url) }
     }
     func open(_ url: URL) {
+        let url = (try? BatchExportItem.resourceKey(url)).flatMap { batchSelectionPhotos[$0]?.url } ?? url
         guard !exporting else { return }
+        cancelHSLTarget()
         if file == url && result != nil, originalCache?.key.source == MacReferenceSource(url, raster: RenderEngine.isRasterInput(url)) { return }
         ParameterValueField.cancelPendingInputs()
         if geometryDraft != nil {
             requestLeavingGeometryDraft { [weak self] in self?.open(url) }
             return
         }
+        if adjustmentNavigation.tool == .colorGrading { cancelAdjustmentInteraction() }
         if scheduler.interacting { setInteracting(false) }
         guard saveEdits() else { return }
         let restoredRecord: VersionedPhotoEdit

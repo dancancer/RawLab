@@ -50,8 +50,8 @@
       <Border Grid.Column="1" BorderBrush="{DynamicResource Outline}" BorderThickness="1,0,0,0">
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
           <StackPanel Margin="22,10,22,20">
-            <TextBlock Text="{DynamicResource '调整来源'}" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,18"/>
-            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="100"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <TextBlock x:Name="SourceHeading" Text="{DynamicResource '调整来源'}" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,18"/>
+            <Grid x:Name="SourcePhoto"><Grid.ColumnDefinitions><ColumnDefinition Width="100"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
               <Image x:Name="SourceThumbnail" Height="78" Stretch="Uniform"/>
               <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center"><TextBlock x:Name="SourceName" TextWrapping="Wrap"/><TextBlock x:Name="SourceLook" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Margin="0,6,0,0"/></StackPanel>
             </Grid>
@@ -88,6 +88,7 @@
     <Border Grid.Row="2" BorderBrush="{DynamicResource Outline}" BorderThickness="0,1,0,0" Padding="18,12">
       <DockPanel>
         <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+          <Button x:Name="DiscardTask" Content="{DynamicResource '结束导出任务'}" Click="DiscardTaskClicked"/>
           <Button x:Name="CloseAction" Content="{DynamicResource '取消'}" Click="CloseClicked"/>
           <Button x:Name="RevealFolder" Content="{DynamicResource '打开文件夹'}" Click="RevealFolderClicked" Visibility="Collapsed"/>
           <Button x:Name="PrimaryAction"  Click="PrimaryClicked" Style="{StaticResource AccentButton}" FontWeight="SemiBold" MinWidth="125"/>

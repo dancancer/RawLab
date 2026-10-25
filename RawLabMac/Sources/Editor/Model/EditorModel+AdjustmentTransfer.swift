@@ -1,12 +1,19 @@
 import AppKit
 
 enum AdjustmentSheetKind: String, Identifiable {
-    case copy, paste, history
+    case copy, paste, history, presets, synchronize
     var id: String { rawValue }
 }
 
 extension EditorModel {
     func requestAdjustmentSheet(_ kind: AdjustmentSheetKind) {
+        if kind == .presets {
+            guard !exporting, !lookLibraryBusy, adjustmentSheet == nil, !geometryDraftDeparturePending else { return }
+            adjustmentSheetPayload = nil; adjustmentSheetTargets = nil
+            adjustmentSheetExcludedSource = nil; adjustmentSheetExcludedIdentity = nil; pendingAdjustmentHistory = nil
+            adjustmentSheetInCollection = false; adjustmentSheet = .presets
+            return
+        }
         guard !exporting, !lookLibraryBusy, adjustmentSheet == nil, !geometryDraftDeparturePending,
               kind == .history || !aiState.isRunning,
               kind == .history || file != nil else { return }
@@ -14,8 +21,8 @@ extension EditorModel {
         if scheduler.interacting { setInteracting(false) }
         guard saveEdits() else { return }
         adjustmentSheetPayload = nil; adjustmentSheetTargets = nil
-        adjustmentSheetExcludedSource = nil; pendingAdjustmentHistory = nil
-        let show: () -> Void = { [weak self] in self?.adjustmentSheet = kind }
+        adjustmentSheetExcludedSource = nil; adjustmentSheetExcludedIdentity = nil; pendingAdjustmentHistory = nil
+        let show: () -> Void = { [weak self] in self?.adjustmentSheetInCollection = false; self?.adjustmentSheet = kind }
         if kind == .copy, geometryDraft != nil { requestLeavingGeometryDraft(show) }
         else { show() }
     }
@@ -45,16 +52,20 @@ extension EditorModel {
     }
 
     // 主线程模型/测试入口；界面的大批量预检使用独立队列执行只读 prepare。
-    func prepareAdjustmentPaste(payload: AdjustmentTransferPayload, targets: [URL], excludingSource: String? = nil) throws -> PreparedAdjustmentTransfer {
+    func prepareAdjustmentPaste(payload: AdjustmentTransferPayload, targets: [URL], excludingSource: String? = nil,
+                                action: AdjustmentHistoryTransaction.Action = .paste) throws -> PreparedAdjustmentTransfer {
         let session = try requireAdjustmentSession()
-        return try session.prepare(payload: payload, targets: adjustmentTransferTargets(targets, payload: payload, excludingSource: excludingSource))
+        return try session.prepare(payload: payload, targets: adjustmentTransferTargets(targets, payload: payload, excludingSource: excludingSource), action: action)
     }
 
-    func adjustmentTransferTargets(_ urls: [URL], payload: AdjustmentTransferPayload, excludingSource: String? = nil) -> [AdjustmentTransferTarget] {
+    func adjustmentTransferTargets(_ urls: [URL], payload: AdjustmentTransferPayload, excludingSource: String? = nil,
+                                   excludingIdentity: String? = nil, collection: Bool = false) -> [AdjustmentTransferTarget] {
         let activePath = file?.resolvingSymlinksInPath().standardizedFileURL.path
         let revision = editRevision
-        return urls.filter { $0.resolvingSymlinksInPath().standardizedFileURL.path != excludingSource }.map { url in
+        return urls.filter { $0.resolvingSymlinksInPath().standardizedFileURL.path != excludingSource &&
+            (excludingIdentity == nil || (try? BatchExportItem.resourceKey($0)) != excludingIdentity) }.map { url in
             let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+            let collectionPhoto = collection ? batchSelectionPhotos.values.first { $0.url.path == path } : nil
             var defaults = Adjustments()
             defaults.exposureMode = RenderEngine.isRasterInput(url) ? .sensor : .preview
             var context = adjustmentTransferContext(for: url)
@@ -66,11 +77,15 @@ extension EditorModel {
                       !lens.distortion || info.appliedDistortion,
                       !lens.tca || info.appliedTCA else { throw AdjustmentTransferError.incompatible("lens calibration") }
             }
-            return AdjustmentTransferTarget(url: url, defaultState: PhotoEditState(settings: defaults, filmID: ""), context: context,
+            return AdjustmentTransferTarget(url: url, defaultState: PhotoEditState(settings: defaults, filmID: ""), context: context, expectedIdentity: collectionPhoto?.original,
                 isCurrent: { [weak self] in
                     let check = {
                         guard let self else { return false }
                         guard path != excludingSource else { return false }
+                        if let excludingIdentity, (try? BatchExportItem.resourceKey(url)) == excludingIdentity { return false }
+                        if collection {
+                            guard let collectionPhoto, (try? collectionPhoto.validate()) != nil else { return false }
+                        }
                         if self.file?.resolvingSymlinksInPath().standardizedFileURL.path != path { return path != activePath }
                         return self.editRevision == revision && !self.dirty && self.geometryDraft == nil && !self.aiState.isRunning
                     }
@@ -92,7 +107,10 @@ extension EditorModel {
     func applyAdjustmentPaste(_ operation: PreparedAdjustmentTransfer, skipping: Set<String> = []) {
         guard let session = adjustmentSession else { return }
         acceptAdjustmentOutcomes(session.apply(operation, skipping: skipping))
-        if session.transactions.contains(where: { $0.id == operation.id }) { lastAdjustmentTransaction = operation.id }
+        if session.transactions.contains(where: { $0.id == operation.id }) {
+            lastAdjustmentTransaction = operation.id
+            if operation.action == .synchronize { batchSelection.recordSynchronization(operation.id, changed: true) }
+        }
     }
 
     func changeAdjustmentTransaction(_ id: UUID, undo: Bool, skipping: Set<String> = []) {

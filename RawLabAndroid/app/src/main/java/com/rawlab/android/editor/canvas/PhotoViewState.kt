@@ -36,3 +36,15 @@ fun photoImageRect(viewport: PhotoViewport, zoom: PhotoZoom): PhotoImageRect {
     val y = (viewport.height - height) / 2f + zoom.y
     return PhotoImageRect(max(0f, x), max(0f, y), min(viewport.width, x + width), min(viewport.height, y + height))
 }
+
+fun hslTargetCoordinates(viewport: PhotoViewport, zoom: PhotoZoom, x: Float, y: Float,
+    wipeSplit: Float? = null, dividerRadius: Float = 0f): Pair<Float, Float>? {
+    if (!x.isFinite() || !y.isFinite() || x !in 0f..viewport.width || y !in 0f..viewport.height) return null
+    val visible = photoImageRect(viewport, zoom)
+    if (x !in visible.left..visible.right || y !in visible.top..visible.bottom) return null
+    if (wipeSplit != null && x <= visible.splitX(wipeSplit) + dividerRadius) return null
+    val width = viewport.imageWidth * zoom.scale; val height = viewport.imageHeight * zoom.scale
+    if (!width.isFinite() || !height.isFinite() || width <= 0 || height <= 0) return null
+    val left = (viewport.width-width)/2 + zoom.x; val top = (viewport.height-height)/2 + zoom.y
+    return ((x-left)/width) to ((y-top)/height)
+}

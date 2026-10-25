@@ -3,6 +3,7 @@ package com.rawlab.android.editor
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.HslSettings
+import com.rawlab.android.settings.ColorGradingZone
 import com.rawlab.android.settings.independentForReset
 
 /** 工作区导航 ID 不进入持久化，也不替代几何/镜头草稿的 AdjustmentGroup。 */
@@ -14,6 +15,8 @@ sealed interface EditorResetScope {
     data class Tool(val id: Int) : EditorResetScope
     data class Group(val group: EditorAdjustmentGroup) : EditorResetScope
     data class HslChannel(val channel: Int) : EditorResetScope
+    data class GradingZone(val zone: ColorGradingZone) : EditorResetScope
+    data object AllGrading : EditorResetScope
     data object AllHsl : EditorResetScope
     data object All : EditorResetScope
 }
@@ -44,9 +47,9 @@ sealed interface EditorResetResult {
 object EditorAdjustmentRules {
     private val toolGroups = mapOf(
         EditorAdjustmentGroup.LOOKS to listOf(0, 15, 1),
-        EditorAdjustmentGroup.LIGHT to listOf(2, 3, 4, 5, 6),
-        EditorAdjustmentGroup.COLOR to listOf(8, 7, 14),
-        EditorAdjustmentGroup.EFFECTS to listOf(12, 13),
+        EditorAdjustmentGroup.LIGHT to listOf(2, 3, 4, 18, 19, 5, 6),
+        EditorAdjustmentGroup.COLOR to listOf(8, 7, 20, 14, 21),
+        EditorAdjustmentGroup.EFFECTS to listOf(22, 23, 12, 13),
         EditorAdjustmentGroup.DETAIL to listOf(11, 10),
         EditorAdjustmentGroup.GEOMETRY to listOf(17, 16),
     )
@@ -75,7 +78,7 @@ object EditorAdjustmentRules {
         val candidate = if (clearsRecipe) independent else resetStored(scope, snapshot, defaults(scope, snapshot, context))
         val converted = if (clearsRecipe) changedFields(snapshot, candidate) else emptySet()
         return EditorResetResult.Ready(candidate,
-            scope is EditorResetScope.Group || scope == EditorResetScope.All || scope == EditorResetScope.AllHsl || scope == EditorResetScope.Tool(14) ||
+            scope is EditorResetScope.Group || scope == EditorResetScope.All || scope == EditorResetScope.AllHsl || scope == EditorResetScope.Tool(14) || scope == EditorResetScope.AllGrading || scope == EditorResetScope.Tool(21) ||
                 converted.isNotEmpty(), converted)
     }
 
@@ -115,6 +118,8 @@ object EditorAdjustmentRules {
 
     private fun resetStored(scope: EditorResetScope, s: EditSettings, d: EditSettings): EditSettings = when (scope) {
         EditorResetScope.All -> d.copy(film = "neutral", recipeID = null, strength = 1f)
+        EditorResetScope.AllGrading -> s.copy(colorGrading = d.colorGrading)
+        is EditorResetScope.GradingZone -> s.copy(colorGrading = s.colorGrading.with(scope.zone, d.colorGrading[scope.zone]))
         EditorResetScope.AllHsl -> s.copy(hsl = d.hsl)
         is EditorResetScope.HslChannel -> s.copy(hsl = HslSettings(s.hsl.packed().mapIndexed { index, value ->
             if (index % 8 == scope.channel) d.hsl.packed()[index] else value
@@ -131,7 +136,7 @@ object EditorAdjustmentRules {
         3 -> s.copy(highlights = d.highlights)
         4 -> s.copy(shadows = d.shadows)
         5 -> s.copy(contrast = d.contrast)
-        6 -> s.copy(toneCurve = d.toneCurve)
+        6 -> s.copy(toneCurve = d.toneCurve, curve = d.curve)
         7 -> s.copy(saturation = d.saturation)
         8, 9 -> s.copy(customWb = d.customWb, temperature = d.temperature, tint = d.tint)
         10 -> s.copy(sharpening = d.sharpening)
@@ -144,6 +149,12 @@ object EditorAdjustmentRules {
         14 -> s.copy(hsl = d.hsl)
         16 -> s.copy(lens = d.lens)
         17 -> s.copy(geometry = d.geometry)
+        18 -> s.copy(blackPoint = d.blackPoint)
+        19 -> s.copy(whitePoint = d.whitePoint)
+        20 -> s.copy(vibrance = d.vibrance)
+        21 -> s.copy(colorGrading = d.colorGrading)
+        22 -> s.copy(clarity = d.clarity)
+        23 -> s.copy(dehaze = d.dehaze)
         else -> s
     }
 

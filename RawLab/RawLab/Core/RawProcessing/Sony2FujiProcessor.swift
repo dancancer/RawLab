@@ -179,6 +179,8 @@ struct Sony2FujiProcessor {
         return try withRawSession(reuse: false, inputType: inputType) { session in
             let settings = try effectiveSettings(settings, session: session, url: url, inputType: inputType)
             try configureProcessing(session, identity: settings.processing)
+            try configureTone(session, settings: settings.toneSettings)
+            try configureAtmosphere(session, settings: settings.atmosphereSettings)
             try configureLens(session, settings: settings.lensSettings)
             let mode = sony2fuji_raw_exposure_mode(rawValue: UInt32(settings.exposureMode.rawValue))
             guard sony2fuji_session_set_raw_exposure_mode(session, mode) == SONY2FUJI_STATUS_OK else {
@@ -207,6 +209,46 @@ struct Sony2FujiProcessor {
                 throw ProcessorError.processFailed(L10n.format("无法自动调整曝光：%@", String(describing: statusMessage(status))))
             }
             return Double(ev)
+        }
+    }
+
+    func sampleHSL(url: URL?, buffer: Buffer?, settings: RawSettings, previewLongEdge: CGFloat,
+                   lutURL: URL?, interactive: Bool, revision: HSLTargetRevision, point: CGPoint) throws -> HSLTargetSample {
+        let inputType: sony2fuji_input_type
+        let width: UInt32, height: UInt32
+        if let url {
+            inputType = SONY2FUJI_INPUT_RAW
+            let metadata = try loadMetadata(from: url)
+            width = metadata.width; height = metadata.height
+        } else if let buffer {
+            inputType = semanticInputType(for: buffer)
+            width = UInt32(buffer.width); height = UInt32(buffer.height)
+        } else { throw ProcessorError.rasterDecodeFailed }
+        return try withRawSession(reuse: url != nil, inputType: inputType) { session in
+            let effective = try effectiveSettings(settings, session: session, url: url, inputType: inputType)
+            try configureSession(session, settings: effective, interactive: interactive, viewportPreview: true)
+            var request = makeBaseRequest(settings: effective, inputType: inputType)
+            request.input_type = inputType
+            applySize(&request, width: width, height: height, previewLongEdge: previewLongEdge, exportLongEdge: nil)
+            request.lut_strength = lutURL == nil ? 0 : effective.clampedLUTStrength
+            return (lutURL?.path ?? "").withCString { look in
+                request.lut_path = lutURL == nil ? nil : look
+                if let url {
+                    return url.path.withCString { path in
+                        request.input_path = path
+                        return HSLTargetSample.capture(session: session, request: &request, revision: revision, x: point.x, y: point.y)
+                    }
+                }
+                guard let buffer else {
+                    return HSLTargetSample(revision: revision, availability: .failed, rgb: [], weights: [], preview: true)
+                }
+                request.input_width = UInt32(buffer.width); request.input_height = UInt32(buffer.height)
+                request.input_pixel_format = buffer.pixelFormat; request.input_color_space = SONY2FUJI_COLOR_SRGB
+                return buffer.data.withUnsafeBytes { bytes in
+                    request.input_pixels = bytes.baseAddress
+                    return HSLTargetSample.capture(session: session, request: &request, revision: revision, x: point.x, y: point.y)
+                }
+            }
         }
     }
 

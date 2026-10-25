@@ -38,9 +38,14 @@ struct AdjustmentScale: Equatable {
             // 同一既有网格点保留正常格式，避免二进制长尾；旧非网格值仍须精确相等。
             if logical == value || (contains(logical) && rounded(logical) == value) { return ordinary }
         }
-        // Swift 的最短往返表示保留合法历史小数；候选的 Double 本身不经过格式化再解析。
-        let exact = String(value * displayScale).replacingOccurrences(of: ".", with: locale.decimalSeparator ?? ".")
-        return (ordinary.hasPrefix("+") && value > 0 ? "+" : "") + exact
+        // 标签最多显示两位；候选 Double 仍保留原始值，不从标签反解析。
+        parser.minimumFractionDigits = 0
+        parser.maximumFractionDigits = 2
+        parser.usesGroupingSeparator = false
+        let displayed = value * displayScale
+        let clean = abs(displayed) < 0.005 ? 0 : displayed
+        let text = parser.string(from: NSNumber(value: clean)) ?? ordinary
+        return (ordinary.hasPrefix("+") && clean > 0 ? "+" : "") + text
     }
 
     func contains(_ value: Double) -> Bool {

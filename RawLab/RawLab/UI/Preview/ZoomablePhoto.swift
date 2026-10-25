@@ -9,6 +9,8 @@ struct ZoomablePhoto: UIViewRepresentable {
     let label: String
     @Binding var viewing: PhotoViewingState
     @Binding var viewport: PhotoViewport
+    var hslTarget: HSLTargetCanvasInput? = nil
+    var hslTargetPoint: CGPoint? = nil
     var isDraft = false
     var overlayAvoidanceRect = CGRect.zero
     var interactionEnabled = true
@@ -17,7 +19,7 @@ struct ZoomablePhoto: UIViewRepresentable {
     init(image: UIImage, referenceImage: UIImage?, label: String,
          viewing: Binding<PhotoViewingState>, viewport: Binding<PhotoViewport>,
          isDraft: Bool = false, interactionEnabled: Bool = true, overlayAvoidanceRect: CGRect = .zero,
-         onPreviewSizeChange: ((Int) -> Void)? = nil) {
+         onPreviewSizeChange: ((Int) -> Void)? = nil, hslTarget: HSLTargetCanvasInput? = nil, hslTargetPoint: CGPoint? = nil) {
         self.image = image
         self.referenceImage = referenceImage
         self.label = label
@@ -27,6 +29,7 @@ struct ZoomablePhoto: UIViewRepresentable {
         self.interactionEnabled = interactionEnabled
         self.overlayAvoidanceRect = overlayAvoidanceRect
         self.onPreviewSizeChange = onPreviewSizeChange
+        self.hslTarget = hslTarget; self.hslTargetPoint = hslTargetPoint
     }
 
     // 批量结果查看沿用只读缩放接口，不启用编辑器的查看会话动作。
@@ -45,7 +48,7 @@ struct ZoomablePhoto: UIViewRepresentable {
         view.onPreviewSizeChange = onPreviewSizeChange
         view.configure(image: image, reference: referenceImage, label: label, state: viewing,
                        viewport: viewport, displayScale: displayScale, overlayAvoidanceRect: overlayAvoidanceRect,
-                       isDraft: isDraft, interactionEnabled: interactionEnabled)
+                       isDraft: isDraft, interactionEnabled: interactionEnabled, hslTarget: hslTarget, hslTargetPoint: hslTargetPoint)
     }
 }
 
@@ -62,6 +65,13 @@ final class PhotoCanvasView: UIView {
     private var overlayAvoidanceRect = CGRect.zero
     private var interactionEnabled = true
     private var touchMonitor: PhotoTouchMonitor?
+    private var hslTarget: HSLTargetCanvasInput?
+    private var hslTargetPoint: CGPoint?
+    private var targetOrigin: CGPoint?
+    private var targetImage: UIImage?
+    private let targetRecognizer = PhotoHSLTargetRecognizer()
+    private let sampleLoupe = PhotoSampleLoupe(frame: CGRect(x: 0, y: 0, width: 88, height: 88))
+    private let sampleMarker = UIView()
     var onViewingChange: ((PhotoViewingState) -> Void)?
     var onViewportChange: ((PhotoViewport) -> Void)?
     var onPreviewSizeChange: ((Int) -> Void)?
@@ -71,6 +81,20 @@ final class PhotoCanvasView: UIView {
         clipsToBounds = true
         addSubview(reference)
         addSubview(result)
+        targetRecognizer.addTarget(self, action: #selector(targeted(_:)))
+        targetRecognizer.isEnabled = false
+        targetRecognizer.canBegin = { [weak self] point in
+            guard let self else { return false }
+            guard self.targetCoordinate(point) != nil else { self.hslTarget?.reject(); return false }
+            return true
+        }
+        addGestureRecognizer(targetRecognizer)
+        sampleLoupe.isHidden = true
+        sampleMarker.isHidden = true; sampleMarker.isUserInteractionEnabled = false
+        sampleMarker.layer.cornerRadius = 9; sampleMarker.layer.borderWidth = 2
+        sampleMarker.layer.borderColor = UIColor.white.cgColor
+        sampleMarker.layer.shadowColor = UIColor.black.cgColor; sampleMarker.layer.shadowOpacity = 1
+        sampleMarker.layer.shadowRadius = 1; sampleMarker.layer.shadowOffset = .zero
         for label in [beforeLabel, afterLabel] {
             label.font = .preferredFont(forTextStyle: .caption1)
             label.adjustsFontForContentSizeCategory = false
@@ -82,8 +106,10 @@ final class PhotoCanvasView: UIView {
         beforeLabel.accessibilityIdentifier = "editor.compare.before"
         afterLabel.accessibilityIdentifier = "editor.compare.after"
         addSubview(divider)
+        addSubview(sampleMarker); addSubview(sampleLoupe)
         divider.onChange = { [weak self] value in
             guard let self, self.state.enabled, self.state.preferredMode == .wipe else { return }
+            self.cancelTargetInput()
             self.state.setSplit(value)
             self.divider.position = self.state.split
             self.result.wipePosition = self.state.split
@@ -91,8 +117,10 @@ final class PhotoCanvasView: UIView {
             self.layoutOverlays()
         }
         for scroll in [result, reference] {
+            scroll.onGestureCancel = { [weak self] in self?.cancelTargetInput() }
             scroll.onViewportChange = { [weak self, weak scroll] value in
                 guard let self, let scroll, !self.syncingViewport else { return }
+                self.cancelTargetInput()
                 self.viewport = value
                 self.syncingViewport = true
                 (scroll === self.result ? self.reference : self.result).applyViewport(value)
@@ -122,8 +150,16 @@ final class PhotoCanvasView: UIView {
 
     func configure(image: UIImage, reference imageBefore: UIImage?, label: String,
                    state: PhotoViewingState, viewport: PhotoViewport, displayScale: CGFloat, overlayAvoidanceRect: CGRect = .zero,
-                   isDraft: Bool, interactionEnabled: Bool) {
+                   isDraft: Bool, interactionEnabled: Bool, hslTarget: HSLTargetCanvasInput? = nil,
+                   hslTargetPoint: CGPoint? = nil) {
+        if self.hslTarget?.scope != hslTarget?.scope || !interactionEnabled || isDraft || self.viewport != viewport {
+            cancelTargetInput()
+        }
+        self.hslTarget = interactionEnabled && !isDraft ? hslTarget : nil
+        self.hslTargetPoint = hslTargetPoint
+        targetRecognizer.isEnabled = self.hslTarget != nil
         var displayState = state
+        if self.hslTarget != nil { displayState.endTemporaryViewing() }
         if imageBefore == nil {
             displayState.enabled = false
             displayState.endTemporaryViewing()
@@ -139,8 +175,9 @@ final class PhotoCanvasView: UIView {
             scroll.pixels = pixels
             scroll.displayScale = displayScale
             scroll.photoMargin = displayState.photoMargin
-            scroll.canvasActionsEnabled = interactionEnabled && !isDraft
-            scroll.holdEnabled = interactionEnabled && !isDraft && !displayState.enabled && imageBefore != nil
+            scroll.targetMode = self.hslTarget != nil
+            scroll.canvasActionsEnabled = interactionEnabled && !isDraft && self.hslTarget == nil
+            scroll.holdEnabled = interactionEnabled && !isDraft && !displayState.enabled && imageBefore != nil && self.hslTarget == nil
             scroll.previewOnly = displayState.previewOnly
             scroll.refreshAccessibilityActions()
         }
@@ -203,6 +240,11 @@ final class PhotoCanvasView: UIView {
         divider.lineExclusionRects = [beforeLabel, afterLabel].filter { !$0.isHidden }
             .map { $0.convert($0.bounds, to: divider) }
         divider.setNeedsDisplay()
+        sampleMarker.isHidden = hslTarget == nil || hslTargetPoint == nil
+        if let point = hslTargetPoint {
+            sampleMarker.frame = CGRect(x: imageRect.minX+point.x*imageRect.width-9,
+                                        y: imageRect.minY+point.y*imageRect.height-9, width: 18, height: 18)
+        }
     }
 
     private func place(_ label: UILabel, in rect: CGRect, trailing: Bool, avoiding exclusion: CGRect = .zero) {
@@ -233,6 +275,7 @@ final class PhotoCanvasView: UIView {
     }
 
     @objc private func cancelTemporaryViewing() {
+        cancelTargetInput()
         result.cancelCanvasGestures()
         reference.cancelCanvasGestures()
         state.endTemporaryViewing()
@@ -251,10 +294,64 @@ final class PhotoCanvasView: UIView {
         } else { cancelTemporaryViewing() }
     }
 
+    private func targetCoordinate(_ point: CGPoint) -> CGPoint? {
+        guard hslTarget != nil, interactionEnabled, !isDraft, !state.holdingBefore,
+              result.visiblePhotoRect(in: self).contains(point), !overlayAvoidanceRect.contains(point),
+              ![beforeLabel, afterLabel].contains(where: { !$0.isHidden && $0.frame.contains(point) }),
+              divider.isHidden || !divider.frame.contains(point) else { return nil }
+        let imagePoint = result.imageView.convert(point, from: self)
+        let rect = result.imageView.bounds
+        guard rect.width > 0, rect.height > 0, rect.contains(imagePoint) else { return nil }
+        let normalized = CGPoint(x: (imagePoint.x-rect.minX)/rect.width, y: (imagePoint.y-rect.minY)/rect.height)
+        if state.enabled && state.preferredMode == .wipe && normalized.x <= state.split { return nil }
+        return normalized
+    }
+    private func cancelTargetInput(reset: Bool = true) {
+        targetOrigin = nil; targetImage = nil; sampleLoupe.isHidden = true
+        hslTarget?.cancel()
+        if reset && (targetRecognizer.state == .began || targetRecognizer.state == .changed) {
+            targetRecognizer.isEnabled = false; targetRecognizer.isEnabled = hslTarget != nil
+        }
+    }
+    @objc private func targeted(_ recognizer: PhotoHSLTargetRecognizer) {
+        switch recognizer.state {
+        case .began:
+            guard let point = targetCoordinate(recognizer.point) else { hslTarget?.reject(); return }
+            targetOrigin = recognizer.point; hslTargetPoint = point; targetImage = result.imageView.image
+            hslTarget?.begin(point); becomeFirstResponder(); updateLoupe(at: recognizer.point)
+        case .changed:
+            if let origin = targetOrigin { hslTarget?.change(Double(origin.y-recognizer.point.y)*0.5) }
+            updateLoupe(at: recognizer.point)
+        case .ended:
+            if let origin = targetOrigin { hslTarget?.change(Double(origin.y-recognizer.point.y)*0.5) }
+            targetOrigin = nil; targetImage = nil; sampleLoupe.isHidden = true; hslTarget?.end()
+        case .cancelled: cancelTargetInput(reset: false)
+        case .failed: if targetOrigin != nil { cancelTargetInput(reset: false) }
+        default: break
+        }
+    }
+    private func updateLoupe(at point: CGPoint) {
+        guard let target = hslTargetPoint, targetOrigin != nil else { return }
+        sampleLoupe.image = targetImage; sampleLoupe.normalizedPoint = target
+        sampleLoupe.displayWidth = result.imageView.convert(result.imageView.bounds, to: self).width
+        let x = min(max(44, point.x), max(44, bounds.width-44))
+        let desiredY = point.y >= 110 ? point.y-72 : point.y+72
+        sampleLoupe.center = CGPoint(x: x, y: min(max(44, desiredY), max(44, bounds.height-44)))
+        sampleLoupe.isHidden = false; sampleLoupe.setNeedsDisplay(); layoutOverlays()
+    }
+
     override var canBecomeFirstResponder: Bool { true }
     override var keyCommands: [UIKeyCommand]? {
-        state.previewOnly ? [UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(exitPreview))] : nil
+        if hslTarget != nil {
+            return [UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(cancelTargetKey)),
+                    UIKeyCommand(input: UIKeyCommand.inputUpArrow, modifierFlags: [], action: #selector(increaseTargetKey)),
+                    UIKeyCommand(input: UIKeyCommand.inputDownArrow, modifierFlags: [], action: #selector(decreaseTargetKey))]
+        }
+        return state.previewOnly ? [UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(exitPreview))] : nil
     }
+    @objc private func cancelTargetKey() { cancelTargetInput() }
+    @objc private func increaseTargetKey() { if targetOrigin == nil { hslTarget?.key(1) } }
+    @objc private func decreaseTargetKey() { if targetOrigin == nil { hslTarget?.key(-1) } }
     @objc private func exitPreview() {
         if state.previewOnly { state.togglePreview(isDraft: false); onViewingChange?(state) }
     }
@@ -331,6 +428,12 @@ final class PhotoScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecogn
     private var updatingGeometry = false
     private var geometry: PhotoZoomGeometry?
     private var sharedViewport = PhotoViewport()
+    private let doubleTap = UITapGestureRecognizer()
+    var targetMode = false { didSet {
+        panGestureRecognizer.minimumNumberOfTouches = targetMode ? 2 : 1
+        doubleTap.isEnabled = !targetMode
+    } }
+    var onGestureCancel: (() -> Void)?
     private let singleTap = UITapGestureRecognizer()
     private let holding = PhotoHoldRecognizer()
     var onPreviewSizeChange: ((Int) -> Void)?
@@ -351,7 +454,7 @@ final class PhotoScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecogn
         beforeImageView.contentMode = .scaleToFill
         imageView.addSubview(beforeImageView)
         addSubview(imageView)
-        let doubleTap = UITapGestureRecognizer(target: self, action: #selector(toggleZoom(_:)))
+        doubleTap.addTarget(self, action: #selector(toggleZoom(_:)))
         doubleTap.numberOfTapsRequired = 2
         addGestureRecognizer(doubleTap)
         singleTap.addTarget(self, action: #selector(tapCanvas))
@@ -483,6 +586,7 @@ final class PhotoScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecogn
         onHoldingChange?(holdEnabled && (gesture.state == .began || gesture.state == .changed))
     }
     func cancelCanvasGestures() {
+        onGestureCancel?()
         onHoldingChange?(false)
         holding.isEnabled = false
         holding.isEnabled = true

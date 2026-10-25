@@ -1,5 +1,7 @@
 package com.rawlab.android
 
+import com.rawlab.android.editor.controls.HslTargetActions
+
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -34,11 +36,15 @@ import com.rawlab.android.album.AlbumScreen
 import com.rawlab.android.analytics.UsageAnalytics
 import com.rawlab.android.analytics.UsageEvent
 import com.rawlab.android.analytics.setup.UsageAnalyticsRegistry
+import com.rawlab.android.batch.ui.BatchSelectionScreen
 import com.rawlab.android.batch.ui.BatchExportScreen
 import com.rawlab.android.editor.EditorViewModel
 import com.rawlab.android.editor.ui.EditorScreen
 import com.rawlab.android.editor.ui.AdjustmentSheet
 import com.rawlab.android.editor.ui.AdjustmentTransferSheet
+import com.rawlab.android.editor.ui.AdjustmentPresetSheet
+import com.rawlab.android.editor.ui.AdjustmentPresetAction
+import com.rawlab.android.presets.AdjustmentPreset
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
 import com.rawlab.android.format.ExportSizeChoice
@@ -82,11 +88,16 @@ fun RawLabTheme(content: @Composable () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: UsageAnalytics) {
     val state by model.state.collectAsStateWithLifecycle()
+    val hslTarget by model.hslTarget.collectAsStateWithLifecycle()
     val updateState by updates.state.collectAsStateWithLifecycle()
     val usageState by usage.state.collectAsStateWithLifecycle()
     var about by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(updates) { updates.check(manual = false) }
     var adjustmentSheet by remember { mutableStateOf<AdjustmentSheet?>(null) }
+    var presetLibrary by remember { mutableStateOf(false) }
+    var savingPreset by remember { mutableStateOf(false) }
+    var selectedPreset by remember { mutableStateOf<AdjustmentPreset?>(null) }
+    var presetAction by remember { mutableStateOf<AdjustmentPresetAction?>(null) }
     fun history(undo: Boolean) {
         val results = if (undo) model.undoAdjustment() else model.redoAdjustment()
         if (results.any { it.status in setOf(com.rawlab.android.adjustments.AdjustmentStatus.BLOCKED,
@@ -94,6 +105,8 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             adjustmentSheet = AdjustmentSheet.HISTORY
     }
     var album by rememberSaveable { mutableStateOf(false) }
+    var collectionOpen by rememberSaveable { mutableStateOf(false) }
+    val collection by model.collection.collectAsStateWithLifecycle()
     val batch by model.batch.collectAsStateWithLifecycle()
     val pendingBatch by model.pendingBatch.collectAsStateWithLifecycle()
     val owner = LocalLifecycleOwner.current
@@ -131,6 +144,8 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     }
     if (batch != null) {
         BatchExportScreen(model = batch!!, storage = model.storage, onBack = model::closeBatch)
+    } else if (collectionOpen) {
+        BatchSelectionScreen(model, onBack = { collectionOpen = false }, onEdit = { collectionOpen = false })
     } else if (album) {
         screenState.SaveableStateProvider("album") {
             AlbumScreen(model.storage, onBack = { album = false }, onFile = { openFile.launch(arrayOf("*/*")) },
@@ -146,6 +161,9 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
         }
         Box(Modifier.weight(1f)) {
         EditorScreen(state, onAlbum = { album = true }, onFile = { openFile.launch(arrayOf("*/*")) },
+            hslTarget = HslTargetActions(hslTarget, model::setHslTargetEnabled, model::setHslTargetAxis,
+                { x, y -> model.beginHslTarget(x, y) }, model::moveHslTarget, model::endHslTarget,
+                model::cancelHslTarget, model::keyHslTarget, model::rejectHslTarget),
             onEdit = model::edit, onRetry = model::retry,
             onPrepareReset = model::prepareReset, onCommitReset = model::commitReset,
             onSaveRetry = model::retrySave,
@@ -156,6 +174,15 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             onCopyAdjustments = { model.closeAdjustmentOperation(); adjustmentSheet = AdjustmentSheet.COPY },
             onPasteAdjustments = { model.closeAdjustmentOperation(); adjustmentSheet = AdjustmentSheet.PASTE },
             onAdjustmentHistory = { model.closeAdjustmentOperation(); adjustmentSheet = AdjustmentSheet.HISTORY },
+            onPresets = { savingPreset = false; presetLibrary = true }, presetAction = presetAction,
+            onPresetActionConsumed = { presetAction = null }, onPresetActionReady = { action ->
+                when (action) {
+                    AdjustmentPresetAction.Save -> { savingPreset = true; presetLibrary = true }
+                    is AdjustmentPresetAction.Apply -> {
+                        model.closeAdjustmentOperation(); selectedPreset = action.preset; adjustmentSheet = AdjustmentSheet.PASTE
+                    }
+                }
+            },
             onUndoAdjustment = { history(true) }, onRedoAdjustment = { history(false) },
             onAutoExposure = model::autoExposure,
             onFilmSelected = { usage.record(UsageEvent.FilmSelected(it)) },
@@ -166,6 +193,12 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
                 if (model.beginExport()) exportDialog = true
             },
             onBatchExport = model::beginBatch,
+            collectionEditing = collection.currentID != null && collection.currentID == state.photo?.identity?.value,
+            onCollection = {
+                if (collection.currentID != null) {
+                    if (model.returnToCollection()) collectionOpen = true
+                } else { model.retainCurrentInCollection(); collectionOpen = true }
+            },
             onMessageDismiss = model::dismissMessage, onLicenses = { licenses = true }, onGpuChange = model::setGpuEnabled,
             onImportLook = { openLook.launch(arrayOf("*/*")) }, onRenameLook = model::renameLook,
             onDeleteLook = model::deleteLook, onLookImportReportDismiss = model::dismissLookImportReport,
@@ -179,8 +212,11 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
         }
     }
     adjustmentSheet?.let { kind ->
-        AdjustmentTransferSheet(model, kind) { adjustmentSheet = null }
+        AdjustmentTransferSheet(model, kind, selectedPreset) { adjustmentSheet = null; selectedPreset = null }
     }
+    if (presetLibrary) AdjustmentPresetSheet(model, savingPreset,
+        onClose = { presetLibrary = false; savingPreset = false },
+        onRequest = { action -> presetLibrary = false; savingPreset = false; presetAction = action })
     if (exportDialog) ModalBottomSheet(
         onDismissRequest = { exportDialog = false; model.cancelExport() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),

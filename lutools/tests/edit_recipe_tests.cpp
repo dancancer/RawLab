@@ -1,5 +1,6 @@
 #include "sony2fuji/edit_recipe.h"
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -334,6 +335,39 @@ void malformedAndUnicode() {
     reject(std::string(1024 * 1024 + 1, ' '), "oversized document", "1 MiB");
 }
 
+void atmosphereCompatibility() {
+    auto recipe=sentinel();
+    const auto old=sony2fuji::serializeEditRecipe(recipe);
+    check(old.find("clarity")==std::string::npos && old.find("dehaze")==std::string::npos,"v4 bytes omit new identity fields");
+    recipe.schemaVersion=5;recipe.atmosphere.clarity=.625f;recipe.atmosphere.dehaze=-.375f;
+    const auto saved=sony2fuji::serializeEditRecipe(recipe);
+    const auto restored=parse(saved);
+    check(restored.atmosphere.clarity==.625f && restored.atmosphere.dehaze==-.375f,"atmosphere signed values round trip");
+    for(int version=1;version<=4;++version) {
+        auto invalid=recipe;invalid.schemaVersion=version;
+        bool rejected=false;
+        try { sony2fuji::serializeEditRecipe(invalid); }catch(const std::invalid_argument&){rejected=true;}
+        check(rejected,"old serializer rejects active atmosphere "+std::to_string(version));
+    }
+    for(int field=0;field<2;++field) for(float bad:{-1.01f,1.01f,std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()}) {
+        auto invalid=recipe;(field==0?invalid.atmosphere.clarity:invalid.atmosphere.dehaze)=bad;
+        bool rejected=false;
+        try { sony2fuji::serializeEditRecipe(invalid); }catch(const std::invalid_argument&){rejected=true;}
+        check(rejected,"serializer validates atmosphere finite range");
+    }
+    for(int kind=0;kind<2;++kind) {
+        auto invalid=recipe;if(kind==0)++invalid.atmosphere.version;else --invalid.atmosphere.struct_size;
+        bool rejected=false;
+        try { sony2fuji::serializeEditRecipe(invalid); }catch(const std::invalid_argument&){rejected=true;}
+        check(rejected,"serializer validates atmosphere ABI");
+    }
+    auto destination=recipe;std::string error;
+    const auto bad=replaceOnce(saved,"\"clarity\": 0.625","\"clarity\": 1.01");
+    check(!sony2fuji::parseEditRecipe(bad,destination,error) && sameRecipe(destination,recipe),"invalid atmosphere parse retains destination");
+    check(sony2fuji::parseEditRecipe(old,destination,error) && destination.atmosphere.clarity==0 && destination.atmosphere.dehaze==0,
+        "old recipe clears previously active atmosphere on reused destination");
+}
+
 } // namespace
 
 int main() {
@@ -346,6 +380,7 @@ int main() {
         invalidFields();
         unknownAndDuplicateKeys();
         malformedAndUnicode();
+        atmosphereCompatibility();
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';
         return 1;

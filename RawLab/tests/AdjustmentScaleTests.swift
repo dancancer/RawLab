@@ -84,7 +84,14 @@ struct AdjustmentScaleTests {
         check(ev.values().allSatisfy { value in
             ev.completeText(value, locale: locale, formatter: { String(format: "%+.2f", $0) }) == String(format: "%+.2f", value)
         }, "Every EV grid value keeps its two-decimal formatter")
-        check(ev.completeText(gridEV.nextUp, locale: locale, formatter: { String(format: "%+.2f", $0) }) == "+" + String(gridEV.nextUp), "A distinct legal old value adjacent to the grid remains exact")
+        check(ev.completeText(gridEV.nextUp, locale: locale, formatter: { String(format: "%+.2f", $0) }) == "+0.35", "A distinct legal old value displays two decimals without changing its candidate")
+        let original = 0.25123456789
+        let curve = AdjustmentScale(range: 0...1, step: 0.001)
+        check(curve.completeText(original, locale: locale, formatter: { String(format: "%.2f", $0) }) == "0.25",
+              "Curve coordinates never reveal the full floating point tail")
+        check(curve.values(including: [original]).contains(original), "Rounded curve labels preserve the exact selectable candidate")
+        check(hsl.completeText(12.345678, locale: Locale(identifier: "de_DE"), formatter: { _ in "+12" }) == "+12,35",
+              "Off-grid values display at most two localized decimals")
         check(hsl.completeText(25, locale: locale, formatter: { String(format: "%+.0f", $0) }) == "+25", "Grid values keep existing formatting")
     }
 

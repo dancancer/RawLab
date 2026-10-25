@@ -1,8 +1,8 @@
 # I0 字段目录与兼容边界
 
 状态：I0 字段来源与版本边界已复核。下文带源码链接的事实保留 I0 基线；当前 selective
-payload v1 及 Mac/iOS adapter 以 [选择性 payload 合同](selective-payload.md) 为准，
-Android/Windows adapter 和四端格式冻结仍待完成。I0 基线为
+payload v1 及四端 adapter 以 [选择性 payload 合同](selective-payload.md) 为准。
+ITER-05 的新增字段见 §3.2，其数值和接入状态与历史 I0 事实分开登记。I0 基线为
 `development@12cda1c67ddd1c58095831ff12a112fc1356da78`。带源码行号的链接固定到该提交，避免后续实现改变行号后混淆历史依据。
 
 本文只登记稳定字段语义、现有来源和格式边界，不新增通用 native DTO，不修改现有
@@ -104,19 +104,71 @@ payload 或 native record 的编辑参数部分。六组是 UI/reset 归属；�
 | `geometry.lens.auto_crop` | `geometry` | Boolean，默认 `true`。 | 仅随明确 lens scope 复制；不能因未选择 lens 把目标 lens 清空。 | [edit-json.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/lutools/docs/edit-json.md?plain=1#L305)。 |
 | `geometry.lens.profile_id` | `geometry` | nullable stable catalog ID；`null` 为自动匹配；手动模式未选择 profile 使用保留字符串 `__rawlab_manual_selection_required__`。 | 保留字符串解码为手动模式和空 profile；启用 distortion/TCA 时须在目标镜头校验器前拒绝。其他 ID 只保存请求，不包含来源匹配结果；目标匹配、数据库和标定状态由 prepare 判断。详见[选择性 payload](selective-payload.md)。 | [edit-json.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/lutools/docs/edit-json.md?plain=1#L306)；C ABI setter：[sony2fuji_c.cpp](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/lutools/src/ffi/sony2fuji_c.cpp#L1083)。 |
 
-### 3.2 尚未支持的候选新字段
+### 3.2 ITER-05 新增字段
 
-以下名称只登记未来接线位置，不表示当前 core、Agent、四端或 GPU 已支持：
+三个字段默认均为 0，UI、native snapshot 和 selective payload 均为 `[-100,100]`；
+仅在 C ABI/Agent 边界除以 100。它们独立于旧 master recipe strength，RAW/raster
+均适用，默认 common scope 包含；旧 payload 缺失时保留目标值。
 
-| 候选字段/配置 | 设计状态 | 当前边界 |
+| 稳定字段 ID | group | native / Agent 映射 | reset 与缺失语义 |
+| --- | --- | --- | --- |
+| `tone.black_point` | `light` | tone controls v1 的 `black_point` / v5 `edits.tone.black_point` | light reset 清零；旧 native 缺失为 0。 |
+| `tone.white_point` | `light` | tone controls v1 的 `white_point` / v5 `edits.tone.white_point` | light reset 清零；旧 native 缺失为 0。 |
+| `color.vibrance` | `color` | tone controls v1 的 `vibrance` / v5 `edits.color.vibrance` | color reset 清零；旧 native 缺失为 0。 |
+
+`tone.*` 是已实现的稳定交换 ID，替代 I0 中尚未发布的 `light.black_point/white_point`
+候选名称。数值合同、质量向量和后端顺序以 [tone controls v1](../../../lutools/docs/tone-controls-v1.md)
+为准。Apple optional 对象、Windows nullable 扩展保持旧字段布局；Android 照片记录与
+batch settings 使用各自 `v2:` JSON，仍读取全部已有 CSV/pipe 长度。读取不迁移，
+只有明确保存才写入新格式；不改变 transfer `payload_version=1`。
+
+实现、模型及 native 验证已接通，实际四端新工具 UI 待解锁后统一验收，见
+[接入计划](../../integration/editing-iteration/tone-controls-plan.md)。这不是 IT-06/15 验收通过声明。
+
+### 3.3 ITER-06 颜色分级扩展
+
+三个交换字段 `color.grading.shadows`、`color.grading.midtones`、`color.grading.highlights`
+均属于 `color`，common 默认包含。每项是完整 `{hue,saturation}` 对象，hue 范围 `[0,360)`、
+saturation 范围 `[0,100]`；UI 的合法端点 360 归一到 0。缺少交换字段表示未选择，保持目标；
+旧存储缺整个 grading 扩展才按全零读取。三组不受旧 recipe strength 缩放。
+
+所有 saturation 为零是渲染 identity，但非零 hue 仍是已修改的存储值，需要经过复制、预设、
+历史和 batch 冻结。单区 reset 清该区两个值，整工具/color group reset 清六值。
+additive `sony2fuji_color_grading_config` v1 使用 32-byte 结构，每次 preview/export 显式配置；
+request v2 保持不变。Agent v5 使用 `edits.color_grading`，旧版本不能有损降级。
+
+算法、参考向量和固定质量集以 [color grading v1](../../../lutools/docs/color-grading-v1.md) 为准。
+CPU/Metal/D3D11/GLES 已接通，四端当前实现和后补 UI 边界见
+[接入计划](../../integration/editing-iteration/color-grading-plan.md)；这不是 IT-07/15 已验收声明。
+
+### 3.4 多点曲线
+
+`light.curve` 是独立逻辑对象 `{mode, points}`，模式为 `legacy/custom`；legacy 点列为空，
+custom 为 2～33 个 binary64 `[x,y]`，固定端点、x 严格递增、y 非递减。它与
+`light.s_curve` 分别选择和传输：未选中的模式/点列或旧 scalar 必须保留。custom 下旧
+scalar 仅保存在本端记录中，native 和 Agent 渲染时显式传零，不叠加两条曲线。
+
+common scope 包含两项；曲线工具/light group reset 清除两项。预设、历史和 batch
+冻结完整对象，UI 的选点位置不进入 snapshot。custom identity 仍是非默认模式，
+不能为了像素等价而在保存/交换中丢掉模式或额外控制点。
+
+四端数据与界面、additive C ABI、v5 parser/schema/Agent、CPU/Metal/D3D11/GLES 已接通。
+数值与精度回退见 [tone curve v1](../../../lutools/docs/tone-curve-v1.md)，实际验证边界见
+[接入计划](../../integration/editing-iteration/tone-curve-plan.md)；IT-11/15 的联合验收仍单列。
+
+### 3.5 清晰度与去朦胧
+
+两个字段的 CPU 数值合同和 core/Agent v5 已接通，四端接入仍在进行：
+
+| 字段/配置 | 语义与范围 | 当前边界 |
 | --- | --- | --- |
-| `light.black_point` / `light.white_point` | proposed | 方案候选 core `[-1,1]`，不改 LibRaw sensor black/white；当前 request v2/C ABI 没有该配置。 |
-| `color.vibrance` | proposed | 方案候选 core `[-1,1]`；当前 photo effects/HSL v1 不包含该字段。 |
-| `color.grading.shadows/midtones/highlights` | proposed | 方案候选 hue/saturation；当前无 `color_grading_config`。 |
-| `light.curve` | proposed | custom curve 与 legacy `s_curve` 互斥；当前 EditRecipe v4 只有 scalar `s_curve`。 |
-| `effects.clarity` / `effects.dehaze` | proposed | 方案候选 core `[-1,1]`；当前无 atmosphere config，算法数值合同和质量集未冻结。 |
+| `effects.clarity` / `effects.dehaze` | UI/payload `[-100,100]`，默认 0；native/Agent `[-1,1]` | 独立 `atmosphere_config` v1；不扩旧 effects config。CPU 数值合同及固定质量集已准入，四端数据/UI 待接入。 |
 
-来源：[总技术方案 2.1](technical-design.md#21-agent-v5-与-additive-c-abi)。在真实核心、parser/serializer、能力查询、native adapter、保存、Agent 和回归全部接通前，能力响应不得宣告这些字段；旧 schema 和旧像素行为必须保持。
+common scope 包含两项，归 `effects` 组；未选字段保留目标原值，两个零值表示关闭。
+它们不跟随旧 master-recipe strength 二次缩放。旧记录缺失为 identity，旧 v1–v4
+recipe 拒绝新键。能力响应声明 CPU 和完整源图预览策略，不宣称 GPU 加速。
+数值细节与接入边界见 [atmosphere v1](../../../lutools/docs/atmosphere-v1.md) 和
+[接入计划](../../integration/editing-iteration/atmosphere-plan.md)。
 
 ## 4. scope、modified、自动值和配方规则
 
@@ -172,7 +224,7 @@ payload 或 native record 的编辑参数部分。六组是 UI/reset 归属；�
 - 新配置必须有独立 `version/struct_size` 和 setter；setter 先校验全部值，错误版本、size、非有限、越界、非法曲线或不支持能力时保留旧 session 状态。新 session 从 identity 开始，复用 session 时请求必须显式设置或清零，不能泄漏上一张照片参数。
 - 当前 setter 的 `struct_size` 兼容规则存在 exact/min 差异，新增 ABI 不得自行假定旧规则：wavelet 实现接受 `>= sizeof`，effects/HSL/geometry/perspective/lens 实现要求 exact size，详见 [sony2fuji_c.cpp](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/lutools/src/ffi/sony2fuji_c.cpp#L1083)。
 - Agent v1～v4 的未知字段/旧版本拒绝行为保持；只有 v5 parser、serializer、CLI capability、native preview/export、Mac/Windows AgentRecipe 和实际核心全部接通，才能宣告 v5。当前能力查询仍报告 recipe versions `[1,2,3,4]`：[agent_commands.cpp](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/lutools/src/cli/agent_commands.cpp#L133)。
-- 新算法候选 `black_point/white_point/vibrance/color_grading/custom curve/clarity/dehaze` 目前只是技术方案候选，未写入本目录的“已支持”表；数值合同和固定质量集未冻结前，保持 `proposed/unimplemented`：[technical-design.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/docs/design/editing-iteration/technical-design.md?plain=1#L56-L69)、[technical-design.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/docs/design/editing-iteration/technical-design.md?plain=1#L228)。
+- I0 基线时 `black_point/white_point/vibrance/color_grading/custom curve/clarity/dehaze` 均为候选；ITER-05/06 当前接入分别以 §3.2/3.3 为准，其余仍未写入本目录的“已支持”表；数值合同和固定质量集未冻结前，保持 `proposed/unimplemented`：[technical-design.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/docs/design/editing-iteration/technical-design.md?plain=1#L56-L69)、[technical-design.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/docs/design/editing-iteration/technical-design.md?plain=1#L228)。
 
 ## 7. 未来版本、缺字段和失败处理
 

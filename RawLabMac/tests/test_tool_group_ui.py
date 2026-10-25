@@ -1,5 +1,6 @@
 """Source contracts complement the native white-balance/vignette acceptance."""
 from pathlib import Path
+import re
 import unittest
 
 
@@ -11,7 +12,15 @@ class ToolGroupUIContracts(unittest.TestCase):
         source = (ROOT / "RawLabMac/Sources/Editor/View/AdjustmentDock.swift").read_text()
         self.assertIn("ForEach(group.tools)", source)
         descriptors = (ROOT / "RawLabMac/Sources/Adjustments/AdjustmentTypes.swift").read_text()
-        self.assertIn("case .color: return [.whiteBalance, .saturation, .hsl]", descriptors)
+        tools = descriptors.split("var tools:", 1)[1]
+        color = re.search(r"case \.color:\s*return\s*\[([^]]+)\]", tools)
+        self.assertIsNotNone(color)
+        entries = [entry.strip() for entry in color.group(1).split(",")]
+        self.assertEqual(entries.count(".whiteBalance"), 1)
+        self.assertIn(".saturation", entries)
+        self.assertIn(".hsl", entries)
+        self.assertNotIn(".temperature", entries)
+        self.assertNotIn(".tint", entries)
 
     def test_white_balance_context_reset_uses_transaction(self):
         source = (ROOT / "RawLabMac/Sources/Editor/View/AdjustmentDock.swift").read_text()

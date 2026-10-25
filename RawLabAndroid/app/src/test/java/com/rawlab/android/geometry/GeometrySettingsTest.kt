@@ -1,5 +1,6 @@
 package com.rawlab.android.geometry
 
+import com.rawlab.android.settings.legacyPipeSettings
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
@@ -50,7 +51,7 @@ class GeometrySettingsTest {
         val expected = GeometrySettings(.2f, .1f, .8f, .7f, 3, true, true, -8.5f)
         assertEquals(expected, GeometrySettings.decode(record))
         val settings = EditSettings(geometry = expected, exposureMode = 2)
-        val oldSnapshot = SettingsCodec.encode(settings).split('|').toMutableList().also { it[52] = record }
+        val oldSnapshot = legacyPipeSettings(settings).split('|').toMutableList().also { it[52] = record }
         assertEquals(settings, SettingsCodec.decode(oldSnapshot.joinToString("|")))
     }
 
@@ -145,7 +146,7 @@ class GeometrySettingsTest {
             journal.save(job)
             val file = File(directory, "${job.id}.properties")
             val properties = java.util.Properties().also { file.inputStream().use(it::load) }
-            val fields = properties.getProperty("source.settings").split('|').toMutableList()
+            val fields = legacyPipeSettings(source.settings).split('|').toMutableList()
             fields[52] = "1,0.1,0.2,0.75,0.8,1,1,1,-12.2"
             properties.setProperty("source.settings", fields.joinToString("|"))
             file.outputStream().use { properties.store(it, null) }

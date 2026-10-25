@@ -246,10 +246,10 @@ enum AdjustmentGroup: String, CaseIterable, Identifiable {
         switch self {
         case .film: return [.strength]
         case .input: return [.exposure, .temperature, .tint]
-        case .tone: return [.contrast, .highlights, .shadows, .toneCurve]
-        case .color: return [.saturation]
+        case .tone: return [.contrast, .highlights, .shadows, .blackPoint, .whitePoint, .toneCurve]
+        case .color: return [.saturation, .vibrance]
         case .detail: return [.denoiseMode, .sharpening]
-        case .effects: return [.vignetteAmount, .grainAmount]
+        case .effects: return [.clarity, .dehaze, .vignetteAmount, .grainAmount]
         case .lens, .geometry: return []
         }
     }
@@ -265,9 +265,9 @@ enum EditorAdjustmentGroup: String, CaseIterable, Identifiable {
     var tools: [EditorAdjustmentTool] {
         switch self {
         case .looks: return [.film, .recipe, .strength]
-        case .light: return [.exposure, .highlights, .shadows, .contrast, .toneCurve]
-        case .color: return [.whiteBalance, .saturation, .hsl]
-        case .effects: return [.vignette, .grain]
+        case .light: return [.exposure, .highlights, .shadows, .blackPoint, .whitePoint, .contrast, .toneCurve]
+        case .color: return [.whiteBalance, .saturation, .vibrance, .hsl, .colorGrading]
+        case .effects: return [.clarity, .dehaze, .vignette, .grain]
         case .detail: return [.denoise, .sharpening]
         case .geometry: return [.geometry, .lens]
         }
@@ -276,8 +276,9 @@ enum EditorAdjustmentGroup: String, CaseIterable, Identifiable {
 }
 
 enum EditorAdjustmentTool: String, CaseIterable, Identifiable {
-    case film, recipe, strength, exposure, highlights, shadows, contrast, toneCurve
-    case whiteBalance, saturation, hsl, vignette, grain, denoise, sharpening, geometry, lens
+    case film, recipe, strength, exposure, highlights, shadows, blackPoint, whitePoint, vibrance, contrast, toneCurve
+    case clarity, dehaze
+    case whiteBalance, saturation, hsl, colorGrading, vignette, grain, denoise, sharpening, geometry, lens
     var id: String { rawValue }
     var group: EditorAdjustmentGroup { EditorAdjustmentGroup.allCases.first { $0.tools.contains(self) }! }
     var parameter: AdjustmentParameter? {
@@ -286,6 +287,11 @@ enum EditorAdjustmentTool: String, CaseIterable, Identifiable {
         case .exposure: return .exposure
         case .highlights: return .highlights
         case .shadows: return .shadows
+        case .blackPoint: return .blackPoint
+        case .whitePoint: return .whitePoint
+        case .vibrance: return .vibrance
+        case .clarity: return .clarity
+        case .dehaze: return .dehaze
         case .contrast: return .contrast
         case .toneCurve: return .toneCurve
         case .whiteBalance: return .temperature
@@ -302,6 +308,8 @@ enum EditorAdjustmentTool: String, CaseIterable, Identifiable {
         case .film: return L10n.text("胶片")
         case .recipe: return L10n.text("大师配方")
         case .whiteBalance: return L10n.text("白平衡")
+        case .colorGrading: return L10n.text("颜色分级")
+        case .toneCurve: return L10n.text("曲线")
         case .hsl: return "HSL"
         case .geometry: return L10n.text("几何")
         case .lens: return L10n.text("镜头")
@@ -312,6 +320,7 @@ enum EditorAdjustmentTool: String, CaseIterable, Identifiable {
         switch self {
         case .film: return "film"
         case .recipe: return "photo.stack"
+        case .colorGrading: return "paintpalette"
         case .hsl: return "slider.horizontal.3"
         case .geometry: return "crop.rotate"
         case .lens: return "viewfinder"
@@ -325,6 +334,7 @@ struct EditorAdjustmentNavigation: Equatable {
     var expandedGroup: EditorAdjustmentGroup? = .looks
     var tool: EditorAdjustmentTool = .film
     var selectedHSLChannel = 0
+    var selectedGradingZone: ColorGradingZone = .shadows
     mutating func selectGroup(_ group: EditorAdjustmentGroup) {
         if expandedGroup == group { expandedGroup = nil }
         else { expandedGroup = group; tool = group.defaultTool }
@@ -337,6 +347,7 @@ enum EditorResetScope: Equatable {
     case group(EditorAdjustmentGroup)
     case hslColor(Int)
     case hslAll
+    case gradingZone(ColorGradingZone), allGrading
     case all
     var usesGeometryDraft: Bool {
         switch self {
@@ -462,8 +473,8 @@ struct AdjustmentSpec {
 }
 
 enum AdjustmentParameter: String, CaseIterable, Identifiable {
-    case strength, exposure, temperature, tint, contrast, highlights, shadows, toneCurve, saturation, sharpening, rawNoiseReduction, denoiseMode
-    case vignetteAmount, grainAmount
+    case strength, exposure, temperature, tint, contrast, highlights, shadows, blackPoint, whitePoint, vibrance, toneCurve, saturation, sharpening, rawNoiseReduction, denoiseMode
+    case vignetteAmount, grainAmount, clarity, dehaze
     var id: String { rawValue }
     var isWhiteBalance: Bool { self == .temperature || self == .tint }
     var isPhotoEffect: Bool { self == .vignetteAmount || self == .grainAmount }
@@ -474,13 +485,18 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
         return value
     }
     static let photoTools: [Self] = [.exposure, .highlights, .shadows, .contrast, .toneCurve,
-                                    .saturation, .temperature, .denoiseMode, .sharpening, .vignetteAmount, .grainAmount]
+                                    .saturation, .temperature, .denoiseMode, .sharpening, .clarity, .dehaze, .vignetteAmount, .grainAmount]
     var symbol: String {
         switch self {
         case .strength: return "camera.aperture"
         case .exposure: return "plusminus.circle"
         case .highlights: return "sun.max"
         case .shadows: return "moon"
+        case .blackPoint: return "circle.fill"
+        case .whitePoint: return "circle"
+        case .vibrance: return "drop.fill"
+        case .clarity: return "circle.dotted.circle"
+        case .dehaze: return "cloud.fog"
         case .contrast: return "circle.lefthalf.filled"
         case .toneCurve: return "waveform.path"
         case .saturation: return "drop.halffull"
@@ -498,6 +514,11 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
         case .exposure: return AdjustmentSpec(title: L10n.text("曝光"), keyPath: \.exposure, range: -4...4, defaultValue: 0, step: 0.01, unit: "EV", decimals: 2)
         case .temperature: return AdjustmentSpec(title: L10n.text("色温"), keyPath: \.temperature, range: 2000...50000, defaultValue: 6500, step: 10, unit: "K", reciprocalScale: true)
         case .tint: return AdjustmentSpec(title: L10n.text("色调"), keyPath: \.tint, range: -150...150, defaultValue: 0, step: 0.1, unit: "", decimals: 1)
+        case .blackPoint: return AdjustmentSpec(title: L10n.text("黑场"), keyPath: \.blackPoint, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
+        case .whitePoint: return AdjustmentSpec(title: L10n.text("白场"), keyPath: \.whitePoint, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
+        case .vibrance: return AdjustmentSpec(title: L10n.text("鲜艳度"), keyPath: \.vibrance, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
+        case .clarity: return AdjustmentSpec(title: L10n.text("清晰度"), keyPath: \.clarity, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
+        case .dehaze: return AdjustmentSpec(title: L10n.text("去朦胧"), keyPath: \.dehaze, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
         case .contrast: return AdjustmentSpec(title: L10n.text("对比度"), keyPath: \.contrast, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
         case .highlights: return AdjustmentSpec(title: L10n.text("高光"), keyPath: \.highlights, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
         case .shadows: return AdjustmentSpec(title: L10n.text("阴影"), keyPath: \.shadows, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)

@@ -5,6 +5,8 @@ import com.rawlab.android.batch.BatchRow
 import com.rawlab.android.batch.BatchRowStatus
 import com.rawlab.android.batch.BatchSourceSnapshot
 import com.rawlab.android.batch.BatchTarget
+import com.rawlab.android.batch.BatchSettingsMode
+import com.rawlab.android.batch.BatchFrozenSettings
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
 import com.rawlab.android.format.PhotoInputKind
@@ -19,10 +21,12 @@ import java.util.Properties
 // ============================================================================
 
 internal object JournalCodec {
-    const val VERSION = 3
+    const val VERSION = 4
 
     fun snapshot(job: BatchJob, generation: String) = Properties().apply {
+        job.validate()
         setProperty("journal.version", VERSION.toString())
+        setProperty("settings_mode", job.settingsMode.persisted)
         setProperty("journal.generation", generation)
         setProperty("source.identity", job.source.identity.value)
         setProperty("source.path", job.source.sourceFile.path)
@@ -43,6 +47,17 @@ internal object JournalCodec {
             setProperty(prefix + "name", row.target.displayName)
             setProperty(prefix + "uri", row.target.sourceUri.orEmpty())
             setProperty(prefix + "kind", row.target.inputKind.name)
+            row.target.frozen?.let { frozen ->
+                setProperty(prefix + "frozen.version", frozen.version.toString())
+                setProperty(prefix + "frozen.settingsVersion", frozen.settingsVersion.toString())
+                setProperty(prefix + "frozen.ordinal", frozen.ordinal.toString())
+                setProperty(prefix + "frozen.settings", SettingsCodec.encode(frozen.settings))
+                setProperty(prefix + "frozen.inputSHA256", frozen.inputSHA256)
+                setProperty(prefix + "frozen.look", frozen.lookFile?.path.orEmpty())
+                setProperty(prefix + "frozen.lookSHA256", frozen.lookSHA256.orEmpty())
+                setProperty(prefix + "frozen.format", frozen.outputFormat.name.lowercase())
+                setProperty(prefix + "frozen.longEdge", frozen.longEdge?.toString().orEmpty())
+            }
             putAll(rowState(row, prefix))
         }
     }
@@ -63,8 +78,10 @@ internal object JournalCodec {
         outputReady = properties.getProperty(prefix + "output.ready", "false").toBoolean())
 
     fun readSnapshot(id: String, properties: Properties): BatchJob {
-        val version = properties.getProperty("journal.version", "1").toIntOrNull() ?: 1
-        if (version > VERSION) throw IOException("Unsupported batch journal version: $version")
+        val version = properties.getProperty("journal.version", "1").toIntOrNull()
+        if (version == null || version !in 1..VERSION) throw IOException("Unsupported batch journal version: $version")
+        val mode = BatchSettingsMode.decode(properties.getProperty("settings_mode"))
+        if (mode == BatchSettingsMode.PER_TARGET_FROZEN && version < 4) throw IOException("Missing per-target journal version")
         val source = BatchSourceSnapshot(PhotoIdentity(properties.getProperty("source.identity")),
             File(properties.getProperty("source.path")), SettingsCodec.decode(properties.getProperty("source.settings")),
             properties.getProperty("source.name"), properties.getProperty("source.look").orEmpty().takeIf { it.isNotEmpty() }?.let(::File),
@@ -72,17 +89,30 @@ internal object JournalCodec {
         val count = properties.getProperty("row.count", "0").toInt()
         val targets = (0 until count).map { index ->
             val prefix = "row.$index."
+            if (mode == BatchSettingsMode.UNIFORM_FROZEN && properties.stringPropertyNames().any { it.startsWith(prefix + "frozen.") })
+                throw IOException("Frozen items require per-target mode")
             BatchTarget(PhotoIdentity(properties.getProperty(prefix + "id")), File(properties.getProperty(prefix + "path")),
                 properties.getProperty(prefix + "name"), properties.getProperty(prefix + "uri").ifBlank { null },
-                properties.getProperty(prefix + "kind").toInputKind())
+                properties.getProperty(prefix + "kind").toInputKind(),
+                if (mode == BatchSettingsMode.PER_TARGET_FROZEN) readFrozen(properties, prefix + "frozen.") else null)
         }
         val format = if (version >= 2) ExportFormat.fromPersisted(properties.getProperty("output.format"))
             else if (properties.getProperty("output.png", "false").toBoolean()) ExportFormat.PNG else ExportFormat.JPEG
         val base = BatchJob(source, targets, id = id, outputFormat = format,
             outputLongEdge = properties.getProperty("output.longEdge").orEmpty().toIntOrNull()?.takeIf { ExportSize.isValid(it) },
-            destination = properties.getProperty("output.destination").orEmpty().ifBlank { null })
+            destination = properties.getProperty("output.destination").orEmpty().ifBlank { null }, settingsMode = mode)
+        if (mode == BatchSettingsMode.PER_TARGET_FROZEN && base.rows.size != count) throw IOException("Duplicate frozen target")
         return base.withRows(base.rows.mapIndexed { index, row -> readRow(properties, row, "row.$index.") },
-            properties.getProperty("global.error").orEmpty().ifBlank { null })
+            properties.getProperty("global.error").orEmpty().ifBlank { null }).also { it.validate() }
+    }
+
+    private fun readFrozen(properties: Properties, prefix: String): BatchFrozenSettings {
+        fun field(name: String): String = properties.getProperty(prefix + name) ?: throw IOException("Missing frozen $name")
+        return BatchFrozenSettings(version = field("version").toInt(), settingsVersion = field("settingsVersion").toInt(),
+            ordinal = field("ordinal").toInt(), settings = SettingsCodec.decode(field("settings")),
+            inputSHA256 = field("inputSHA256"), lookFile = field("look").ifBlank { null }?.let(::File),
+            lookSHA256 = field("lookSHA256").ifBlank { null }, outputFormat = ExportFormat.fromPersisted(field("format")),
+            longEdge = field("longEdge").takeIf { it.isNotEmpty() }?.toInt()).also { it.validate() }
     }
 
     private fun String?.toInputKind(): PhotoInputKind = runCatching {

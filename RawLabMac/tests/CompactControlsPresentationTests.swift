@@ -226,11 +226,15 @@ struct CompactControlsPresentationTests {
         } else {
             languages = AppLanguage.allCases.filter { $0 != .system }
         }
-        if ProcessInfo.processInfo.environment["RAWLAB_PARAMETER_MATRIX"] == "1" {
+        let atmosphereOnly = ProcessInfo.processInfo.environment["RAWLAB_ATMOSPHERE_MATRIX"] == "1"
+        if ProcessInfo.processInfo.environment["RAWLAB_PARAMETER_MATRIX"] == "1" || atmosphereOnly {
+            if atmosphereOnly { model.settings.clarity = 37.251234; model.settings.dehaze = -42.5 }
+            let controls: [(EditorAdjustmentTool, Int)] = atmosphereOnly ? [(.clarity, 1), (.dehaze, 1)] :
+                [(.exposure, 1), (.hsl, 3), (.whiteBalance, 2), (.geometry, 1)]
             var snapshots: [SnapshotEvidence] = []
             for language in languages {
                 UserDefaults.standard.setVolatileDomain([L10n.preferenceKey: language.rawValue, "photoFolders": [String]()], forName: UserDefaults.argumentDomain)
-                for (tool, fieldCount) in [(EditorAdjustmentTool.exposure, 1), (.hsl, 3), (.whiteBalance, 2), (.geometry, 1)] {
+                for (tool, fieldCount) in controls {
                     model.selectAdjustmentTool(tool)
                     try await waitForRender(model)
                     for (fontName, fontSize) in [("normal", DynamicTypeSize.large), ("large", .accessibility3)] {
@@ -273,6 +277,18 @@ struct CompactControlsPresentationTests {
                 .frame(width: 650, height: 220, alignment: .top).background(Color(nsColor: .windowBackgroundColor)),
                 name: "hsl-workspace-650", language: language, size: NSSize(width: 650, height: 220),
                 expectedFields: 3, output: output))
+            var grading = ColorGradingSettings()
+            grading.shadows = ColorGradingWheel(hue: 231.25, saturation: 0)
+            grading.midtones = ColorGradingWheel(hue: 110.125, saturation: 32.375)
+            for (name, width, textSize) in [("grading-wide", 650.0, DynamicTypeSize.large),
+                                           ("grading-narrow-large", 360.0, DynamicTypeSize.accessibility3)] {
+                snapshots.append(try await snapshot(ScrollView {
+                    MacColorGradingControls(settings: .constant(grading), zone: .constant(.shadows),
+                        source: "grading-fixture", isCurrent: { true }, onEditingChanged: { _ in }, onCancelled: {})
+                        .padding(16)
+                }.background(Color(nsColor: .windowBackgroundColor)), name: name, language: language,
+                    size: NSSize(width: width, height: 340), expectedFields: 2, output: output, textSize: textSize))
+            }
             snapshots.append(try await snapshot(PhotoEffectsControls(model: model, tool: .grainAmount).padding(.vertical, 12)
                 .frame(width: 650, height: 200, alignment: .top).background(Color(nsColor: .windowBackgroundColor)),
                 name: "grain-workspace-650", language: language, size: NSSize(width: 650, height: 200),

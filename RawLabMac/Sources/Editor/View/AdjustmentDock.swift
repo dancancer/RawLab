@@ -26,7 +26,16 @@ struct AdjustmentDock: View {
                     MacGeometryWorkspace(model: model)
                 } else {
                     HorizontalPicker(selectedID: navigation.tool.rawValue, name: L10n.text("调整工具"), showsScrollIndicators: false) {
-                        HStack(spacing: 6) { ForEach(group.tools) { toolButton($0) } }
+                        HStack(spacing: 6) {
+                            ForEach(group.tools) { toolButton($0) }
+                            if group == .looks {
+                                Button { model.requestAdjustmentSheet(.presets) } label: {
+                                    Label(L10n.text("我的预设"), systemImage: "bookmark")
+                                        .font(.system(size: 12)).padding(.horizontal, 10).frame(height: 28)
+                                }.buttonStyle(.plain).disabled(model.exporting || model.lookLibraryBusy)
+                                    .accessibilityIdentifier("preset.library")
+                            }
+                        }
                             .scrollTargetLayout().padding(.horizontal, 12)
                     }.frame(height: 32).fixedSize(horizontal: false, vertical: true)
                     GeometryReader { editor in
@@ -84,11 +93,32 @@ struct AdjustmentDock: View {
     }
 
     @ViewBuilder private var editorContent: some View {
-        if navigation.tool == .hsl {
-            MacHSLMixer(settings: Binding(get: { model.settings.hslSettings }, set: { model.settings.hsl = $0.isIdentity ? nil : $0 }),
-                channel: $model.adjustmentNavigation.selectedHSLChannel,
-                onEditingChanged: model.setInteracting)
+        if navigation.tool == .toneCurve {
+            let source = model.sourceRevision
+            MacToneCurveControls(settings: Binding(get: { model.settings.curveSettings }, set: { model.settings.curveSettings = $0 }),
+                legacy: $model.settings.toneCurve, source: String(describing: source),
+                isCurrent: { model.sourceRevision == source && model.adjustmentNavigation.tool == .toneCurve && model.adjustmentNavigation.expandedGroup != nil },
+                onEditingChanged: model.setInteracting, onCancelled: model.cancelAdjustmentInteraction)
                 .padding(.horizontal, 16).disabled(model.result == nil)
+        } else if navigation.tool == .colorGrading {
+            let source = model.sourceRevision
+            MacColorGradingControls(settings: Binding(get: { model.settings.gradingSettings }, set: { model.settings.gradingSettings = $0 }),
+                zone: $model.adjustmentNavigation.selectedGradingZone, source: String(describing: source),
+                isCurrent: { model.sourceRevision == source && model.adjustmentNavigation.tool == .colorGrading && model.adjustmentNavigation.expandedGroup != nil },
+                onEditingChanged: model.setInteracting, onCancelled: model.cancelAdjustmentInteraction)
+                .padding(.horizontal, 16).disabled(model.result == nil)
+        } else if navigation.tool == .hsl {
+            VStack(spacing: 10) {
+                HSLTargetControls(enabled: $model.hslTargetEnabled, axis: $model.hslTargetAxis,
+                    sample: model.hslTargetInteraction.selection, waiting: model.hslTargetInteraction.isWaiting,
+                    notice: model.hslTargetNotice, onCancel: model.cancelHSLTarget)
+                MacHSLMixer(settings: Binding(get: { model.settings.hslSettings }, set: { model.settings.hsl = $0.isIdentity ? nil : $0 }),
+                    channel: $model.adjustmentNavigation.selectedHSLChannel,
+                    onEditingChanged: { editing in
+                        if editing { model.cancelHSLTarget() }
+                        model.setInteracting(editing)
+                    }, onCancelTarget: model.cancelHSLTarget)
+            }.padding(.horizontal, 16).disabled(model.result == nil)
         } else if navigation.tool == .denoise {
             DenoiseControls(model: model, onReset: { model.requestAdjustmentReset(.tool(.denoise)) })
                 .id(resetVersion).frame(maxWidth: 720).padding(.horizontal, 16)

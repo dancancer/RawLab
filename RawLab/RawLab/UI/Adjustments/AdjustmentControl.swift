@@ -38,6 +38,7 @@ struct AdjustmentControl: View {
     let directionColors: [Color]
     let directionHint: String
     let compactNumber: Bool
+    let compactDecimals: Int?
     let onEditingChanged: (Bool) -> Void
     @State private var showingWheel = false
     @State private var wheelOriginal = 0.0
@@ -55,17 +56,17 @@ struct AdjustmentControl: View {
          defaultValue: Double, unit: String = "", formatter: @escaping (Double) -> String,
          reciprocal: Bool = false, displayScale: Double = 1, identifier: String,
          directionColors: [Color] = [], directionHint: String = "",
-         compactNumber: Bool = false,
+         compactNumber: Bool = false, compactDecimals: Int? = 2,
          onEditingChanged: @escaping (Bool) -> Void = { _ in }) {
         self.title = title; _value = value; self.range = range; self.step = step
         self.defaultValue = defaultValue; self.unit = unit; self.formatter = formatter
         self.reciprocal = reciprocal; self.displayScale = displayScale; self.identifier = identifier
         self.directionColors = directionColors; self.directionHint = directionHint
-        self.compactNumber = compactNumber
+        self.compactNumber = compactNumber; self.compactDecimals = compactDecimals
         self.onEditingChanged = onEditingChanged
     }
 
-    private var scale: AdjustmentScale { AdjustmentScale(range: range, step: step, reciprocal: reciprocal, compactDecimals: compactNumber ? 2 : nil) }
+    private var scale: AdjustmentScale { AdjustmentScale(range: range, step: step, reciprocal: reciprocal, compactDecimals: compactNumber ? compactDecimals : nil) }
     private var validDefault: Double? { scale.contains(defaultValue) ? defaultValue : nil }
     private var modified: Bool { validDefault.map { value != $0 } ?? false }
     private func number(_ value: Double) -> String {
@@ -74,7 +75,7 @@ struct AdjustmentControl: View {
     private func complete(_ value: Double) -> String { "\(number(value)) \(unit)".trimmingCharacters(in: .whitespaces) }
     private var help: String {
         L10n.format("默认值：%@；范围：%@ 至 %@；步进：%@。", validDefault.map(complete) ?? "—",
-                    complete(range.lowerBound), complete(range.upperBound), complete(step))
+                    complete(range.lowerBound), complete(range.upperBound), step * displayScale == 0.001 ? "1/1000 " + unit : complete(step))
     }
 
     var body: some View {

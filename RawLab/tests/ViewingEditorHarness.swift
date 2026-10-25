@@ -10,6 +10,8 @@ final class ViewingEditorProbe {
     var failIdentity: String?
     var transferTarget: PhotoIdentity?
     var externalEdit: (() -> Void)?
+    var changePresetFault: ((String) -> Void)?
+    var presetFault = ""
     var resizing = false
     var saves: [[String: Any]] = []
     var previews: [[String: Any]] = []
@@ -154,6 +156,36 @@ extension ContentView {
         }, "com.rawlab.iter03.external-edit" as CFString, nil, .deliverImmediately)
         probe.clearReference = { viewModel.basePreviewImage = nil; viewModel.baseHistogram = nil }
         probe.clearStatistics = { viewModel.histogram = nil; viewModel.baseHistogram = nil }
+        if ProcessInfo.processInfo.arguments.contains("-RawLab.presetUI") {
+            let library = viewModel.presetStore.directory
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: library.path)
+            if !ProcessInfo.processInfo.arguments.contains("-RawLab.presetResume") {
+                try? FileManager.default.removeItem(at: library)
+            }
+            try! FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
+            var original: Data?
+            probe.changePresetFault = { fault in
+                let file = library.appendingPathComponent("presets.json")
+                if fault == "readonly" {
+                    try! FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: library.path)
+                } else if fault == "future" {
+                    original = try! Data(contentsOf: file)
+                    var object = try! JSONSerialization.jsonObject(with: original!) as! [String: Any]
+                    object["registry_version"] = 999
+                    try! JSONSerialization.data(withJSONObject: object).write(to: file, options: .atomic)
+                } else {
+                    try! FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: library.path)
+                    if let bytes = original { try! bytes.write(to: file, options: .atomic); original = nil }
+                }
+                probe.presetFault = fault
+            }
+            for fault in ["readonly", "future", "restore"] {
+                CFNotificationCenterAddObserver(center, nil, { _, _, name, _, _ in
+                    let fault = (name?.rawValue as String?)?.components(separatedBy: ".").last ?? "restore"
+                    Task { @MainActor in ViewingEditorProbe.shared.changePresetFault?(fault) }
+                }, "com.rawlab.iter04.preset.\(fault)" as CFString, nil, .deliverImmediately)
+            }
+        }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("viewing-editor-\(UUID().uuidString)")
         try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let format = UIGraphicsImageRendererFormat(); format.scale = 1
@@ -192,7 +224,7 @@ extension ContentView {
         viewModel.adjustmentSession = IOSAdjustmentTransferSession(store: store)
         viewModel.importImage(from: .raster(url), identity: identity, onSettingsRestored: { settings = $0 })
         probe.readEditor = {
-            ["ready": viewModel.hasImage && !editorBusy && !viewModel.previewRendering && !viewModel.previewResizePending,
+            var receipt: [String: Any] = ["ready": viewModel.hasImage && !editorBusy && !viewModel.previewRendering && !viewModel.previewResizePending,
              "busy": editorBusy, "rendering": viewModel.previewRendering, "resize": viewModel.previewResizePending,
              "previewFailed": viewModel.previewFailed, "source": viewModel.sourceRevision.uuidString,
              "settings": probe.settingsText(settings),
@@ -203,6 +235,13 @@ extension ContentView {
              "photoPicker": showingPhotoImporter, "filePicker": showingFileImporter,
              "saveState": String(describing: viewModel.editSaveState),
              "historyCount": viewModel.adjustmentSession?.transactions.count ?? 0,
+             "presets": (try? viewModel.presetStore.list()).map {
+                 (try? JSONSerialization.jsonObject(with: JSONEncoder().encode($0))) ?? []
+             } ?? [],
+             "presetFault": probe.presetFault,
+             "adjustmentSheet": adjustmentSheet?.rawValue ?? "",
+             "pendingAdjustmentAction": String(describing: pendingAdjustmentAction),
+             "queuedPresetAction": String(describing: queuedPresetAction),
              "sourceStoredExposure": store.state(for: identity)?.settings.exposure as Any? ?? NSNull(),
              "sourceStoredRevision": (try? store.versionedState(for: identity).revision) ?? "",
              "targetStoredExposure": probe.transferTarget.flatMap { store.state(for: $0)?.settings.exposure } as Any? ?? NSNull(),
@@ -223,6 +262,9 @@ extension ContentView {
              "compare": photoViewing.enabled, "mode": String(describing: photoViewing.preferredMode),
              "margin": photoViewing.photoMargin, "split": photoViewing.split,
              "referenceAvailable": viewModel.basePreviewImage != nil, "hslChannel": hslChannel, "infoMode": photoInfoMode.rawValue,
+             "hslTargetEnabled": hslTargetEnabled, "hslTargetAxis": hslTargetAxis.rawValue,
+             "hslTargetWaiting": hslTargetInteraction.isWaiting,
+             "hslValues": settings.hsl.hue + settings.hsl.saturation + settings.hsl.lightness,
              "relativeScale": photoViewport.relativeScale,
              "focus": [photoViewport.focus.x, photoViewport.focus.y],
              "group": selectedGroup.rawValue, "tool": currentEditorTool.stableID,
@@ -233,6 +275,18 @@ extension ContentView {
              "afterHistogram": probe.histogramInfo(viewModel.histogram),
              "beforeHistogram": probe.histogramInfo(viewModel.baseHistogram),
              "referenceSize": viewModel.basePreviewImage.map { [$0.size.width, $0.size.height] } ?? []]
+            receipt["hslTargetNotice"] = hslTargetNotice.map { String(describing: $0) } ?? ""
+            receipt["curveMode"] = settings.curveSettings.mode.rawValue
+            receipt["curvePoints"] = settings.curveSettings.points.map { [$0.x, $0.y] }
+            receipt["hslTargetSelection"] = hslTargetInteraction.selection.map { String(describing: $0.availability) } ?? ""
+            receipt["collectionShowing"] = showingBatchSelection
+            receipt["collectionOrdered"] = viewModel.batchSelection.selection.ordered
+            receipt["collectionSelected"] = viewModel.batchSelection.selection.selected.sorted()
+            receipt["collectionCurrent"] = viewModel.batchSelection.selection.current ?? ""
+            receipt["batchShowing"] = showingBatchExport
+            receipt["batchMode"] = batchModel?.job.settingsMode.rawValue ?? ""
+            receipt["batchFrozenExposure"] = batchModel?.job.targets.compactMap { $0.frozen?.settings.exposure } ?? []
+            return receipt
         }
     }
 }

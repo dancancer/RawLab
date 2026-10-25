@@ -3,7 +3,7 @@ using System.Windows.Automation;
 using System.Windows.Automation.Provider;
 using System.Runtime.InteropServices;
 
-internal static class Program
+internal static partial class Program
 {
     private static readonly TimeSpan TotalTimeout = TimeSpan.FromMinutes(8);
 
@@ -29,7 +29,7 @@ internal static class Program
         }
     }
 
-    private sealed class DriverContext
+    private sealed partial class DriverContext
     {
         private readonly int hostPid;
         private readonly string profile, raw, png, jpeg, phase;
@@ -61,6 +61,7 @@ internal static class Program
                 WaitMode("off");
                 var value = GetRangeValue("ParameterValueSlider");
                 Check(Math.Abs(value - 1.25) < .02, "Restarted profile restores RAW exposure history");
+                if (Environment.GetEnvironmentVariable("RAWLAB_PRESET_UI") == "1") PresetRestartFlow();
                 CloseMainWindow();
                 return 0;
             }
@@ -83,6 +84,7 @@ internal static class Program
                 "Async exposure preserves the native swipe divider");
 
             if(Environment.GetEnvironmentVariable("RAWLAB_ADJUSTMENT_UI")=="1")AdjustmentFlows();
+            if(Environment.GetEnvironmentVariable("RAWLAB_PRESET_UI")=="1")PresetFlows();
 
             OpenPhoto(png);
             WaitMode("off");
@@ -191,8 +193,9 @@ internal static class Program
         private void EditCommand(string id)
         {
             Trace("edit-command-start "+id);
-            var menu=FindById(main,"adjustment.edit-menu") ?? throw new InvalidOperationException("Edit menu unavailable");
-            SetForegroundWindow(new IntPtr(main.Current.NativeWindowHandle));menu.SetFocus();
+            SetForegroundWindow(new IntPtr(main.Current.NativeWindowHandle));
+            var menu=Wait(()=>FindById(main,"adjustment.edit-menu"),TimeSpan.FromSeconds(5))!;
+            menu.SetFocus();
             var expansion=(ExpandCollapsePattern)menu.GetCurrentPattern(ExpandCollapsePattern.Pattern);expansion.Expand();
             Trace("edit-menu-state "+expansion.Current.ExpandCollapseState);
             foreach(AutomationElement child in menu.FindAll(TreeScope.Children,Condition.TrueCondition))

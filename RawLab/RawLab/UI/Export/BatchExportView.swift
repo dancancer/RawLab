@@ -18,8 +18,21 @@ struct BatchExportView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    sourceSection
-                    settingsSection
+                    if model.job.settingsMode == .uniformFrozen {
+                        sourceSection
+                        settingsSection
+                    } else {
+                        Text(L10n.text("每张照片使用确认时冻结的独立调整。"))
+                            .font(.callout).foregroundStyle(.secondary).padding(20)
+                        ForEach(model.job.targets) { target in
+                            if let frozen = target.frozen {
+                                DisclosureGroup(target.displayName) {
+                                    Text(L10n.text(frozen.lookName ?? "中性"))
+                                    IOSBatchSettingsRows(settings: frozen.settings)
+                                }.padding(.horizontal, 20).padding(.vertical, 6)
+                            }
+                        }
+                    }
                     targetsSection
                     outputSection
                     if let message = model.validationMessage {
@@ -239,7 +252,7 @@ struct BatchExportView: View {
                 primary(L10n.text("完成")) { if model.discard() { dismiss() } }
             } else {
                 if model.job.status == .draft {
-                    Text(L10n.text("仅用于本次导出，保留各照片原有调整")).font(.footnote).foregroundStyle(.secondary)
+                    Text(L10n.text(model.job.settingsMode == .perTargetFrozen ? "按每张调整导出" : "仅用于本次导出，保留各照片原有调整")).font(.footnote).foregroundStyle(.secondary)
                 } else {
                     Text(L10n.format("成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张", String(describing: model.completedCount), String(describing: model.failedCount), String(describing: model.pendingCount)))
                         .font(.footnote).foregroundStyle(.secondary)
@@ -311,7 +324,7 @@ private struct TargetEffectInspectionView: View {
     }
 }
 
-private struct BatchPhotoThumbnail: View {
+struct BatchPhotoThumbnail: View {
     @Environment(\.locale) private var localizationLocale
     let sourceFile: PhotoSourceFile
     @State private var image: UIImage?

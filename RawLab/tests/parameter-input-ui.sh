@@ -34,9 +34,14 @@ SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 PLATFORM="$(xcrun --sdk iphonesimulator --show-sdk-platform-path)"
 TARGET="arm64-apple-ios18.0-simulator"
 FLAGS=(-D PARAMETER_INPUT_BASELINE)
-if [[ -z "${RAWLAB_PARAMETER_BASELINE:-}" ]]; then FLAGS=(-D PARAMETER_INPUT_CONTEXT); fi
+GRADING_SOURCES=()
+if [[ -z "${RAWLAB_PARAMETER_BASELINE:-}" ]]; then
+    FLAGS=(-D PARAMETER_INPUT_CONTEXT)
+    GRADING_SOURCES=("$ROOT/Shared/ColorGradingWheelControl.swift" "$ROOT/RawLab/RawLab/UI/Panels/ColorGradingControls.swift")
+fi
 xcrun --sdk iphonesimulator swiftc -swift-version 5 -module-name ParameterInputTests -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/module-cache" \
- "$ROOT/Shared/Localization.swift" "$ROOT/Shared/HSLSettings.swift" \
+ "$ROOT/Shared/Localization.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" \
+ "${GRADING_SOURCES[@]}" \
  "$OUT/source/AdjustmentScale.swift" "$OUT/source/AdjustmentRuler.swift" \
  "$OUT/source/AdjustmentControl.swift" "$OUT/source/NativeValueWheel.swift" \
  "${FLAGS[@]}" "$OUT/source/IOSHSLMixer.swift" "$ROOT/RawLab/tests/ParameterInputHarness.swift" -o "$OUT/ParameterInputTests.app/parameter-inputs"
@@ -46,6 +51,10 @@ xcrun --sdk iphonesimulator swiftc -emit-library -swift-version 5 -module-name R
  "$ROOT/RawLab/tests/ParameterInputUITests.swift" -o "$TEST/RawLabUITests"
 codesign --force --deep --sign - "$OUT/ParameterInputTests.app" >/dev/null
 codesign --force --deep --sign - "$OUT/RawLabUITests-Runner.app" >/dev/null
+if [[ "${RAWLAB_BUILD_ONLY:-0}" == 1 ]]; then
+    echo "Built parameter input app and tests without running: $OUT"
+    exit 0
+fi
 xcrun simctl install "$DEVICE" "$OUT/ParameterInputTests.app"
 xcrun simctl terminate "$DEVICE" com.example.RawLabUITests.xctrunner >/dev/null 2>&1 || true
 xcrun simctl uninstall "$DEVICE" com.example.RawLabUITests.xctrunner >/dev/null 2>&1 || true

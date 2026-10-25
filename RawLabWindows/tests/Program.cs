@@ -38,6 +38,15 @@ static class Program
         {
             if(args.Length==1 && args[0]=="--white-balance") { WhiteBalanceChecks.Run(Check);Console.WriteLine($"PASS {checks} white balance checks");return 0; }
             if(args.Length==3 && args[0]=="--histogram") { ViewComparisonChecks.NeutralChecks(args[1],args[2],Check);Console.WriteLine($"PASS {checks} histogram checks");return 0; }
+            if(args.Length==3 && args[0]=="--atmosphere-ui") { AtmosphereUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} atmosphere UI checks");return 0; }
+            if(args.Length==3 && args[0]=="--update-ui") { SoftwareUpdateUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} update UI checks");return 0; }
+            if(args.Length==4 && args[0]=="--atmosphere-render") { AtmosphereRenderChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} atmosphere render checks");return 0; }
+            if(args.Length==4 && args[0]=="--tone-render") { ToneControlsRenderChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} tone render checks");return 0; }
+            if(args.Length==4 && args[0]=="--grading-render") { ColorGradingRenderChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} grading render checks");return 0; }
+            if(args.Length==4 && args[0]=="--curve-render") { ToneCurveRenderChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} curve render checks");return 0; }
+            if(args.Length==3 && args[0]=="--curve-ui") { ToneCurveUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} curve UI checks");return 0; }
+            if(args.Length==3 && args[0]=="--hsl-target-render") { HslTargetRenderChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HSL target render checks");return 0; }
+            if(args.Length==3 && args[0]=="--hsl-target") { HslTargetUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HSL target UI checks");return 0; }
             TestWindowState.PreserveExistingBatch(journalDirectory);
             Loc.Initialize("zh-Hans");
             if(args.Length==5 && args[0]=="--ai-real-window") { AIDenoiseRealWindowChecks.Run(args[1],args[2],args[3],args[4],Check);Console.WriteLine($"PASS {checks} real AI window checks");return 0; }
@@ -63,6 +72,8 @@ static class Program
             if(args.Length==2 && args[0]=="--editor-shell") { EditorShellChecks.Run(args[1],Check);return 0; }
             if(args.Length==2 && args[0]=="--ui-details") { UiDetailChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} UI detail checks");return 0; }
             if(args.Length==3 && args[0]=="--transform-ui") { TransformUiChecks.Run(args[1],args[2],Check);return 0; }
+            if(args.Length==3 && args[0]=="--adjustment-presets") { AdjustmentPresetUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} adjustment preset checks");return 0; }
+            if(args.Length==3 && args[0]=="--batch-selection") { BatchSelectionUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} batch selection UI checks");return 0; }
             if(args.Length==3 && args[0]=="--adjustment-history") { AdjustmentHistoryUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} adjustment history checks");return 0; }
             if(args.Length==1 && args[0]=="--about") { AboutChecks.Run(Check);Console.WriteLine($"PASS {checks} about checks");return 0; }
             if(args.Length==3 && args[0]=="--geometry") { GeometryChecks.Run(args[1],args[2],Check);return 0; }
@@ -214,6 +225,7 @@ static class Program
             }
             Check(originalHash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(unicodeRaw))),"RAW source remains byte-identical");
             // Exercise the real WPF window and asynchronous worker using its dispatcher.
+            if(args.Length==3 && args[0]=="--hsl-target") { HslTargetUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HSL target UI checks");return 0; }
             TestWindowState.PreserveExistingBatch(journalDirectory);
             var app=TestWindowState.CreateApplication();
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());

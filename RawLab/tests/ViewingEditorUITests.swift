@@ -5,17 +5,151 @@ final class ViewingEditorUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
     override func tearDownWithError() throws { XCUIDevice.shared.orientation = .portrait }
 
-    private func openAdjustmentAction(_ id: String, app: XCUIApplication) {
+    func testCurveModePointDragAndUndo() {
+        let app = launch(language: "en")
+        app.buttons["editor.group.light"].tap(); app.buttons["tool.toneCurve"].tap()
+        app.buttons["curve.switch"].tap()
+        XCTAssertEqual(receipt(app)["curveMode"] as? String, "legacy")
+        app.alerts.buttons["Switch"].tap()
+        wait(app) { $0["ready"] as? Bool == true && $0["curveMode"] as? String == "custom" }
+        XCTAssertEqual(receipt(app)["curvePoints"] as? [[Double]], [[0, 0], [1, 1]])
+        XCTAssertFalse(app.buttons["curve.remove"].isEnabled)
+        app.buttons["curve.add"].tap()
+        wait(app) { $0["ready"] as? Bool == true && ($0["curvePoints"] as? [[Double]])?.count == 3 }
+        let before = receipt(app)["curvePoints"] as! [[Double]]
+        let history = receipt(app)["historyCount"] as! Int
+        let canvas = app.descendants(matching: .any).matching(identifier: "curve.canvas").firstMatch
+        let panel = app.scrollViews["editor.panel"]
+        for _ in 0..<4 {
+            if panel.frame.contains(canvas.frame) { break }
+            panel.swipeDown(velocity: .slow)
+        }
+        XCTAssertTrue(panel.frame.contains(canvas.frame), "The actual curve must be inside the scrolled viewport before dragging")
+        capture(app, "curve-before-drag")
+        let start = canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 15, dy: -20)),
+                    withVelocity: .slow, thenHoldForDuration: 0.2)
+        wait(app) { $0["ready"] as? Bool == true && $0["gestureActive"] as? Bool == false && $0["historyCount"] as? Int == history + 1 }
+        let moved = receipt(app)["curvePoints"] as! [[Double]]
+        XCTAssertNotEqual(moved, before); XCTAssertEqual(moved.first, [0, 0]); XCTAssertEqual(moved.last, [1, 1])
+        XCTAssertEqual(moved[1][0], before[1][0] + 15 / (canvas.frame.width - 24), accuracy: 0.75 / (canvas.frame.width - 24),
+                       "The curve retains horizontal movement before the pan recognition threshold")
+        XCTAssertEqual(moved[1][1], before[1][1] + 20 / (canvas.frame.height - 24), accuracy: 0.75 / (canvas.frame.height - 24),
+                       "The curve retains vertical movement before the pan recognition threshold")
+        capture(app, "curve-point-drag")
+        openAdjustmentAction("adjustment.history.undo", app: app)
+        wait(app) { $0["ready"] as? Bool == true && $0["curvePoints"] as? [[Double]] == before }
+        openAdjustmentAction("adjustment.history.redo", app: app)
+        wait(app) { $0["ready"] as? Bool == true && $0["curvePoints"] as? [[Double]] == moved }
+        let fineRect = (receipt(app)["nativeSwitchRects"] as! [[Double]])[0]
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: fineRect[0] + fineRect[2] / 2,
+            dy: fineRect[1] + fineRect[3] / 2)).tap()
+        wait(app) { $0["fine"] as? Bool == true }
+        let nextStart = canvas.coordinate(withNormalizedOffset: CGVector(
+            dx: (12 + moved[1][0] * (canvas.frame.width - 24)) / canvas.frame.width,
+            dy: (12 + (1 - moved[1][1]) * (canvas.frame.height - 24)) / canvas.frame.height))
+        nextStart.press(forDuration: 0.1, thenDragTo: nextStart.withOffset(CGVector(dx: -12, dy: 8)),
+                        withVelocity: .slow, thenHoldForDuration: 0.2)
+        wait(app) { $0["ready"] as? Bool == true && $0["gestureActive"] as? Bool == false && $0["historyCount"] as? Int == history + 2 }
+        let fineMoved = receipt(app)["curvePoints"] as! [[Double]]
+        XCTAssertEqual(fineMoved[1][0], moved[1][0] - 3 / (canvas.frame.width - 24), accuracy: 0.75 / (canvas.frame.width - 24))
+        XCTAssertEqual(fineMoved[1][1], moved[1][1] - 2 / (canvas.frame.height - 24), accuracy: 0.75 / (canvas.frame.height - 24),
+                       "A second gesture captures a fresh touch origin and quarter sensitivity")
+        capture(app, "curve-fine-drag")
+        openAdjustmentAction("adjustment.history.undo", app: app)
+        wait(app) { $0["ready"] as? Bool == true && $0["curvePoints"] as? [[Double]] == moved }
+        let remove = app.buttons["curve.remove"]
+        for _ in 0..<4 {
+            if panel.frame.contains(remove.frame) { break }
+            panel.swipeUp(velocity: .slow)
+        }
+        XCTAssertTrue(panel.frame.contains(remove.frame)); remove.tap()
+        wait(app) { $0["ready"] as? Bool == true && ($0["curvePoints"] as? [[Double]])?.count == 2 }
+        for _ in 0..<4 {
+            if panel.frame.contains(app.buttons["curve.switch"].frame) { break }
+            panel.swipeDown(velocity: .slow)
+        }
+        app.buttons["curve.switch"].tap(); app.alerts.buttons["Switch"].tap()
+        wait(app) { $0["ready"] as? Bool == true && $0["curveMode"] as? String == "legacy" }
+        openAdjustmentAction("adjustment.history.undo", app: app)
+        wait(app) { $0["ready"] as? Bool == true && $0["curveMode"] as? String == "custom" }
+    }
+
+    func testHSLTargetPhotoDragHistoryAndPinchCancellation() {
+        let app = launch(language: "en")
+        app.buttons["editor.group.color"].tap(); app.buttons["tool.hsl"].tap()
+        let toggle = app.buttons["hsl.target"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.tap()
+        app.buttons["Lightness"].tap()
+        wait(app) { $0["ready"] as? Bool == true && $0["hslTargetEnabled"] as? Bool == true && $0["hslTargetAxis"] as? String == "lightness" }
+        let before = receipt(app)
+        let history = before["historyCount"] as! Int
+        let values = before["hslValues"] as! [Double]
+        let photo = app.images["editor.photo"]
+        let start = photo.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.6))
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -45)),
+                    withVelocity: .slow, thenHoldForDuration: 0.3)
+        wait(app) { $0["ready"] as? Bool == true && $0["hslTargetWaiting"] as? Bool == false && $0["historyCount"] as? Int == history + 1 }
+        let adjusted = receipt(app)["hslValues"] as! [Double]
+        XCTAssertEqual(Array(adjusted.prefix(16)), Array(values.prefix(16)), "Target only changes the selected axis")
+        XCTAssertNotEqual(adjusted, values)
+        capture(app, "hsl-target-drag")
+        openAdjustmentAction("adjustment.history.undo", app: app)
+        wait(app) { $0["ready"] as? Bool == true && $0["hslValues"] as? [Double] == values }
+        openAdjustmentAction("adjustment.history.redo", app: app)
+        wait(app) { $0["ready"] as? Bool == true && $0["hslValues"] as? [Double] == adjusted }
+        photo.pinch(withScale: 1.5, velocity: 1)
+        wait(app) { $0["ready"] as? Bool == true && $0["hslTargetWaiting"] as? Bool == false }
+        XCTAssertEqual(receipt(app)["hslValues"] as? [Double], adjusted, "A second finger cancels target input before zoom")
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, history + 1)
+    }
+
+    func testBatchCollectionMicroEditAndFrozenExport() {
+        let app = launch(language: "en")
+        openAdjustmentAction("collection.open", app: app)
+        wait(app) { $0["collectionShowing"] as? Bool == true && ($0["collectionOrdered"] as? [String])?.count == 1 }
+        let ordered = receipt(app)["collectionOrdered"] as! [String]
+        XCTAssertEqual(receipt(app)["collectionSelected"] as? [String], ordered)
+        XCTAssertFalse(app.buttons["collection.synchronize"].isEnabled, "The only source is excluded from synchronization")
+        app.buttons["collection.edit.\(ordered[0])"].tap()
+        wait(app) { $0["collectionShowing"] as? Bool == false && $0["collectionCurrent"] as? String == ordered[0] }
+        app.buttons["editor.group.light"].tap()
+        setExposure("+0.75", app: app)
+        app.buttons["collection.return"].tap()
+        wait(app) { $0["collectionShowing"] as? Bool == true }
+        XCTAssertEqual(receipt(app)["collectionOrdered"] as? [String], ordered)
+        XCTAssertEqual(receipt(app)["collectionSelected"] as? [String], ordered)
+        app.buttons["collection.export"].tap()
+        let prepare = app.buttons["collection.export.preflight"]
+        revealFormControl(prepare, app: app); prepare.tap()
+        let freeze = app.buttons["collection.export.freeze"]
+        revealFormControl(freeze, app: app); freeze.tap()
+        wait(app) { $0["batchShowing"] as? Bool == true && $0["batchMode"] as? String == "per_target_frozen" }
+        XCTAssertEqual(receipt(app)["batchFrozenExposure"] as? [Double], [0.75])
+        capture(app, "collection-frozen-export")
+        app.buttons["Task Actions"].tap()
+        app.buttons["Discard Task"].tap()
+        app.buttons["Discard Task"].tap()
+        wait(app) { $0["batchMode"] as? String == "" }
+        openAdjustmentAction("collection.open", app: app)
+        wait(app) { $0["collectionShowing"] as? Bool == true }
+        XCTAssertEqual(receipt(app)["collectionOrdered"] as? [String], ordered)
+        XCTAssertEqual(receipt(app)["collectionSelected"] as? [String], ordered)
+        XCTAssertEqual(receipt(app)["sourceStoredExposure"] as? Double, 0.75)
+    }
+
+    func openAdjustmentAction(_ id: String, app: XCUIApplication) {
         app.buttons["editor.privacy"].tap()
         let labels = ["adjustment.history.undo": "Undo", "adjustment.history.redo": "Redo",
                       "adjustment.copy.open": "Copy Adjustments", "adjustment.paste.open": "Paste Adjustments",
-                      "adjustment.history.open": "Session History"]
-        let action = app.buttons[id].exists ? app.buttons[id] : app.buttons[labels[id] ?? id]
+                      "adjustment.history.open": "Session History", "preset.library.open": "My Presets"]
+        let identified = app.buttons.matching(identifier: id).firstMatch
+        let action = identified.exists ? identified : app.collectionViews.buttons.matching(identifier: labels[id] ?? id).firstMatch
         XCTAssertTrue(action.waitForExistence(timeout: 5), app.debugDescription)
         action.tap()
     }
 
-    private func revealFormControl(_ element: XCUIElement, app: XCUIApplication) {
+    func revealFormControl(_ element: XCUIElement, app: XCUIApplication) {
         for _ in 0..<8 {
             if element.exists && element.isHittable { return }
             app.swipeUp(velocity: .slow)
@@ -23,7 +157,7 @@ final class ViewingEditorUITests: XCTestCase {
         XCTFail("Unreachable form control: \(element.identifier)\n\(app.debugDescription)")
     }
 
-    private func toggleField(_ element: XCUIElement) {
+    func toggleField(_ element: XCUIElement) {
         let previous = element.value as? String
         let nativeSwitch = element.switches.firstMatch
         if nativeSwitch.exists { nativeSwitch.tap() } else { element.tap() }
@@ -31,7 +165,7 @@ final class ViewingEditorUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 5), .completed)
     }
 
-    private func setExposure(_ value: String, app: XCUIApplication) {
+    func setExposure(_ value: String, app: XCUIApplication) {
         app.buttons["adjustment.value"].tap()
         let wheel = app.pickerWheels.firstMatch
         XCTAssertTrue(wheel.waitForExistence(timeout: 5))
@@ -222,11 +356,13 @@ final class ViewingEditorUITests: XCTestCase {
         wait(app) { $0["clipboard"] is [String: Any] }
         XCTAssertEqual(receipt(app)["historyCount"] as? Int, 0)
     }
-    func launch(language requestedLanguage: String? = nil, textCategory: String? = nil, adjustmentFixtures: Bool = false) -> XCUIApplication {
+    func launch(language requestedLanguage: String? = nil, textCategory: String? = nil, adjustmentFixtures: Bool = false,
+                presetFixtures: Bool = false) -> XCUIApplication {
         let app = XCUIApplication(bundleIdentifier: "com.rawlab.tests.viewing-editor")
         let language = requestedLanguage ?? ProcessInfo.processInfo.environment["S3_VIEWING_LANGUAGE"] ?? "en"
         app.launchArguments = ["-AppleLanguages", "(\(language))", "-AppleLocale", language, "-RawLab.language", language]
         if adjustmentFixtures { app.launchArguments.append("-RawLab.adjustmentTransferUI") }
+        if presetFixtures { app.launchArguments.append("-RawLab.presetUI") }
         if let category = textCategory ?? ProcessInfo.processInfo.environment["S3_VIEWING_TEXT"], !category.isEmpty {
             app.launchArguments += ["-UIPreferredContentSizeCategoryName", category]
         }

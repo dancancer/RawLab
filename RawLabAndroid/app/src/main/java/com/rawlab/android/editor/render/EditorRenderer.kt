@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.engine.RgbHistogram
 import com.rawlab.android.photo.PhotoStorage
+import com.rawlab.android.settings.HslTargetAvailability
+import com.rawlab.android.settings.HslTargetSample
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.VersionedPhotoEdit
@@ -31,8 +33,9 @@ internal class EditorRenderer(
     // 托管文件从解析路径到 native 读取完成期间不能被另一队列删除。
     fun perform(work: Work): WorkResult = synchronized(storage) { when (work) {
         is Work.Import -> {
-            val photo = storage.import(work.uri)
+            val photo = work.retained ?: storage.import(work.uri)
             try {
+                photo.validateOriginal?.invoke()
                 val record = restore(photo.identity)
                 val restored = record?.settings
                 if (restored != null && runCatching { storage.lookPath(restored) }.isFailure) {
@@ -45,7 +48,7 @@ internal class EditorRenderer(
                 } else perform(Work.Preview(photo, restored ?: EditSettings(), false, work.gpuMode,
                     importing = true, restored = restored != null, importedRecord = record))
             }
-            catch (error: Throwable) { photo.file.delete(); throw error }
+            catch (error: Throwable) { if (work.retained == null) photo.file.delete(); throw error }
         }
         is Work.Preview -> {
             val edge = work.edge
@@ -75,6 +78,14 @@ internal class EditorRenderer(
             val dimensions = comparisonDimensions(film.geometryWidth, film.geometryHeight)
             WorkResult.Preview(work, PreviewPair(neutral.bitmap, film.bitmap(), film.temperature, film.tint, film.lens,
                 dimensions.first, dimensions.second, originalAspect, neutral.histogram, film.histogram))
+        }
+        is Work.HslProbe -> {
+            val preview = work.preview
+            val sample = runCatching {
+                engine().sampleHsl(preview.photo.file, storage.lookPath(preview.edits), preview.edits,
+                    preview.edge, preview.interactive, preview.photo.inputKind, work.revision, work.x, work.y)
+            }.getOrElse { HslTargetSample.unavailable(work.revision, HslTargetAvailability.FAILED) }
+            WorkResult.HslProbe(work, sample)
         }
         is Work.Export -> {
             val output = storage.temporaryOutput(work.format)

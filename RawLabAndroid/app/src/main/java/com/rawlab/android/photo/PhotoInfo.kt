@@ -4,6 +4,8 @@ import androidx.exifinterface.media.ExifInterface
 import androidx.exifinterface.media.ExifInterface.*
 import java.io.File
 import java.util.Locale
+import java.math.BigDecimal
+import java.math.RoundingMode
 import com.rawlab.android.R
 import com.rawlab.android.format.ExportMetadata
 import com.rawlab.android.i18n.AppStrings
@@ -51,7 +53,9 @@ internal object PhotoInfoReader {
             originalHeight = height,
             camera = joinDistinct(make, model),
             lens = joinDistinct(lensMake, lensModel),
-            shutter = ExportMetadata.shutter(exposure),
+            shutter = if (exposure.isFinite() && exposure > 0) {
+                if (exposure <= .5) String.format(Locale.ROOT, "1/%.0f", 1 / exposure) else displayNumber(exposure)
+            } else null,
             aperture = ExportMetadata.aperture(fNumber),
             iso = iso(exif),
             focalLength = if (focal.isFinite() && focal > 0) {
@@ -59,6 +63,9 @@ internal object PhotoInfoReader {
             } else null,
         )
     }
+
+    private fun displayNumber(value: Double): String =
+        BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
 
     private fun first(exif: ExifInterface, vararg tags: String): String? = tags.asSequence()
         .mapNotNull { exif.getAttribute(it)?.trim()?.takeIf(String::isNotEmpty) }
@@ -73,7 +80,7 @@ internal object PhotoInfoReader {
             val value = first(exif, tag) ?: continue
             val number = exif.getAttributeDouble(tag, Double.NaN)
             if (number.isFinite() && number > 0) {
-                return if (number % 1 == 0.0) number.toInt().toString() else value
+                return displayNumber(number)
             }
         }
         return null

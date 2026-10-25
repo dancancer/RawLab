@@ -156,7 +156,7 @@ identity rules are in [the DualDn contract](../../docs/architecture/dualdn-inlin
 2. Run optional linear-sRGB wavelet denoising, then apply relative white balance and `2^exposure_ev * brightness` in linear sRGB. Custom RAW WB multipliers are applied once, during decode.
 3. Generate the neutral reference with a fixed log-logistic display curve, then sRGB encode. For positive x the linear display value is `1 / (1 + ((1-g)/g) * (g/x)^1.5)`, with `g=0.1845`; black is 0 and highlights approach 1 smoothly. This independently implemented mathematical subset follows the same curve family as darktable sigmoid, but does not reproduce its primaries adjustment, hue-preservation or full default pipeline.
 4. For a film CUBE: start from the un-tonemapped linear input, transform to its declared F-Gamut or F-Gamut C and encode F-Log, F-Log2 or F-Log2C, then interpolate the CUBE. Named display outputs bypass the neutral curve. Explicit Log outputs are decoded back to linear BT.709/sRGB, then rendered with the neutral display curve. A compiled DCP `.rlook` instead evaluates its preserved matrix/HSV/tone stages directly from common linear sRGB, without F-Log2, an RGB CUBE or an extra neutral curve. Log encoding itself never normalizes exposure, and there is no linear clamp at 1 before it.
-5. Blend neutral and film outputs in the same display-encoded RGB convention. Strength 0 is continuous with the no-LUT rendering. Contrast, saturation and curves follow, then HSL, optional display-chroma denoising, detail adjustments, vignette and grain, optional geometry, and final resizing.
+5. Blend neutral and film outputs in the same display-encoded RGB convention. Strength 0 is continuous with the no-LUT rendering. Optional Dehaze precedes black/white endpoint controls and the tone/curve/contrast/saturation sequence. The curve slot selects either the unchanged legacy S scalar or the [custom PCHIP curve](tone-curve-v1.md), with custom identity bypassing all arithmetic; optional vibrance follows it, then HSL, color grading, optional display-chroma and legacy detail denoising, Clarity, sharpening, vignette and grain, optional geometry, and final resizing. Each new zero control bypasses arithmetic and clamping exactly. Versioned formulas and quality admission are in [tone controls v1](tone-controls-v1.md) and [atmosphere v1](atmosphere-v1.md). Active Clarity/Dehaze uses the complete source and CPU for previews and export; GPU Auto falls back for the whole path and Force returns unsupported.
 
 Geometry uses the oriented, lens-processed source: clockwise quarter turns,
 flips in that canvas, centered horizontal/vertical perspective, centered inscribed
@@ -718,3 +718,36 @@ Embedded JPEG decoding uses vendored [stb_image v2.30](https://github.com/nothin
 The bundled Sony ILCE-7CM2 sample has a 7008x4672 active inset within its padded RAW storage; the renderer applies LibRaw's inset crop before demosaic. iOS and macOS must not apply the original EXIF rotation a second time.
 
 Actual cross-brand accuracy requires controlled lighting, exposure/gray and color-chart measurements. Current sample smoke checks prove decoding/rendering, not calibrated Fuji JPEG equivalence. iOS/Android binaries must be rebuilt with the updated core; changing Swift source alone does not update an old xcframework.
+
+### HSL Target Sampling
+
+The additive `sony2fuji_session_create_hsl_probe` creates an immutable CPU
+reference snapshot after the complete look, black/white, legacy tone and
+vibrance stages, before HSL, grading, chroma/detail and effects. It applies the
+same geometry and requested resize as photo output; RAW orientation and lens
+processing have already happened and are not applied again by clients. Capture
+accepts buffer requests only and must run on the session's serialized worker.
+It preserves GPU policy, reported render backend/canvas and reusable large RAW
+pixels. The owned snapshot is released with `sony2fuji_hsl_probe_destroy`.
+
+`FINAL` reports `EXACT_CPU`, meaning the CPU reference at the requested output
+size. `PREVIEW` reports `PREVIEW_CPU` and inherits the caller's interactive and
+viewport approximation; it is not a full-resolution or GPU texture readback.
+The RGB values remain display-encoded working sRGB, including finite out-of-range
+residuals. H/S/L are hue degrees in `[0,360)` and saturation/lightness in `[0,1]`.
+The eight weights are the exact existing HSL smoothstep neighbors, summing to 1.
+Spread below `1/255` is too close to gray for selection and produces no weights.
+
+Queries use normalized geometry-result coordinates `[0,1]`, with endpoints at
+first/last pixel centers, and bilinear sample the snapshot before hue analysis.
+Out-of-range or nonfinite coordinates report `OUTSIDE`; nonfinite sampled RGB
+reports `NONFINITE`. Reference panes, wipe-before regions, labels, overlays and
+letterboxing must be rejected in the client canvas before submitting a query.
+
+Source/request revisions are caller-owned immutable labels. The core rejects a
+query whose labels differ from the snapshot; clients must separately compare
+asynchronous results to the current source, accepted frame and editing state.
+An old snapshot is not made current by reusing its labels. A gesture freezes its
+logical before-HSL values, axis and sample weights once, computes all deltas
+from that before-state, and commits once or rolls back without history. Only
+the resulting existing 24 HSL values persist; sampling never adds recipe fields.

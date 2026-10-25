@@ -21,6 +21,8 @@ class VersionedEditPersistenceTest {
         EditStore(directory).save(identity, EditSettings(exposure = .75f, processing = ProcessingIdentity.LEGACY))
         val file = File(directory, "edits.properties")
         val legacy = Properties().apply { file.inputStream().use(::load) }
+        val valueKey = legacy.stringPropertyNames().single { it.endsWith(".values") }
+        legacy.setProperty(valueKey, legacyCSVSettings(EditSettings(exposure = .75f)))
         legacy.stringPropertyNames().filter { it.startsWith("revision.") || it == "format.version" }
             .forEach(legacy::remove)
         file.outputStream().use { legacy.store(it, null) }
@@ -58,7 +60,9 @@ class VersionedEditPersistenceTest {
         val file = File(directory, "edits.properties")
         val props = Properties().apply { file.inputStream().use(::load) }
         val key = props.stringPropertyNames().single { it.endsWith(".values") }
-        props.setProperty(key, props.getProperty(key).split(',').toMutableList().also { it[1] = "1.0" }.joinToString(","))
+        val encoded = org.json.JSONObject(props.getProperty(key).removePrefix("v2:"))
+        encoded.getJSONObject("settings").put("exposure", 1.0)
+        props.setProperty(key, "v2:$encoded")
         file.outputStream().use { props.store(it, null) }
         assertThrows(EditPersistenceConflict::class.java) { store.compareAndSave(saved, saved.settings) }
         assertEquals(1f, store.versionedState(identity).settings!!.exposure)

@@ -250,6 +250,52 @@ struct RawSettings: Codable, Equatable {
     static let temperatureRange: ClosedRange<Double> = 2000...50000
     static let tintRange: ClosedRange<Double> = -150...150
 
+    var toneCurveConfig: ToneCurveSettings?
+    var curveSettings: ToneCurveSettings {
+        get { toneCurveConfig ?? ToneCurveSettings() }
+        set { toneCurveConfig = newValue.isDefault ? nil : newValue }
+    }
+    var colorGrading: ColorGradingSettings?
+    var gradingSettings: ColorGradingSettings {
+        get { colorGrading ?? ColorGradingSettings() }
+        set { colorGrading = newValue.isDefault ? nil : newValue }
+    }
+    var atmosphere: AtmosphereSettings?
+    var atmosphereSettings: AtmosphereSettings { atmosphere ?? AtmosphereSettings() }
+    var clarity: Double {
+        get { atmosphereSettings.clarity }
+        set { setAtmosphere(\.clarity, to: newValue) }
+    }
+    var dehaze: Double {
+        get { atmosphereSettings.dehaze }
+        set { setAtmosphere(\.dehaze, to: newValue) }
+    }
+    private mutating func setAtmosphere(_ key: WritableKeyPath<AtmosphereSettings, Double>, to value: Double) {
+        var state = atmosphereSettings
+        state[keyPath: key] = value
+        atmosphere = state.isIdentity ? nil : state
+    }
+
+    var toneControls: ToneControlsSettings?
+    var toneSettings: ToneControlsSettings { toneControls ?? ToneControlsSettings() }
+    var blackPoint: Double {
+        get { toneSettings.blackPoint }
+        set { setTone(\.blackPoint, to: newValue) }
+    }
+    var whitePoint: Double {
+        get { toneSettings.whitePoint }
+        set { setTone(\.whitePoint, to: newValue) }
+    }
+    var vibrance: Double {
+        get { toneSettings.vibrance }
+        set { setTone(\.vibrance, to: newValue) }
+    }
+    private mutating func setTone(_ key: WritableKeyPath<ToneControlsSettings, Double>, to value: Double) {
+        var state = toneSettings
+        state[keyPath: key] = value
+        toneControls = state.isIdentity ? nil : state
+    }
+
     var processing = ProcessingIdentity.current
     var geometry = GeometrySettings()
     var denoise = RawDenoiseSettings()
@@ -309,7 +355,7 @@ struct RawSettings: Codable, Equatable {
         case exposure, contrast, saturation, temperature, tint, highlights, shadows
         case toneCurve, noiseReduction, sharpening, lutID, lutStrength, whiteBalanceMode
         case denoise, photoEffects, displayChromaDenoise, exposureMode, hsl
-        case masterRecipeID, lensCorrection, geometry, processing
+        case masterRecipeID, lensCorrection, geometry, processing, toneControls, atmosphere, colorGrading, toneCurveConfig
     }
 
     var clampedLUTStrength: Float {
@@ -375,6 +421,18 @@ struct RawSettings: Codable, Equatable {
         geometry = try values.decodeIfPresent(GeometrySettings.self, forKey: .geometry) ?? GeometrySettings()
         guard geometry.isValid else {
             throw DecodingError.dataCorruptedError(forKey: .geometry, in: values, debugDescription: "Invalid geometry parameters")
+        }
+        toneCurveConfig = try values.decodeIfPresent(ToneCurveSettings.self, forKey: .toneCurveConfig)
+        colorGrading = try values.decodeIfPresent(ColorGradingSettings.self, forKey: .colorGrading)
+        if colorGrading?.isDefault == true { colorGrading = nil }
+        atmosphere = try values.decodeIfPresent(AtmosphereSettings.self, forKey: .atmosphere)
+        guard atmosphere?.isValid ?? true else {
+            throw DecodingError.dataCorruptedError(forKey: .atmosphere, in: values, debugDescription: "Invalid atmosphere controls")
+        }
+        if atmosphere?.isIdentity == true { atmosphere = nil }
+        toneControls = try values.decodeIfPresent(ToneControlsSettings.self, forKey: .toneControls)
+        guard toneControls?.isValid ?? true else {
+            throw DecodingError.dataCorruptedError(forKey: .toneControls, in: values, debugDescription: "Invalid tone controls")
         }
         exposureMode = RawExposureMode(rawValue: try values.decodeIfPresent(Int.self, forKey: .exposureMode) ?? 0) ?? .scene
         hsl = try values.decodeIfPresent(HSLSettings.self, forKey: .hsl) ?? HSLSettings()

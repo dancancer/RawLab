@@ -265,7 +265,8 @@ internal static class UiDetailChecks
                 window.AdjustmentPanel.Visibility=Visibility.Visible;window.UpdateLayout();
                 var buttons=window.Tools.Children.OfType<Button>().Where(button=>button.IsVisible).ToList();
                 var ids=buttons.Select(AutomationProperties.GetAutomationId).ToArray();
-                var expected=EditorAdjustmentRules.Tools(group).Select(tool=>tool.ToString()).ToArray();
+                var expected=EditorAdjustmentRules.Tools(group).SelectMany(tool=>tool==EditorAdjustmentTool.Geometry
+                    ? new[]{tool.ToString(),"Perspective"} : new[]{tool.ToString()}).ToArray();
                 check(buttons.Count>0 && ids.SequenceEqual(expected) && buttons.All(button=>button.ActualWidth>0 && button.ActualHeight>0),
                     $"Caption fixture lays out every tool in descriptor order: {language}/{group}");
                 checkedTools.UnionWith(ids);
@@ -277,8 +278,8 @@ internal static class UiDetailChecks
                 var tops=buttons.Select(button=>Descendants(button).OfType<EditorIcon>().First()).Select(icon=>icon.TranslatePoint(new Point(),window.Tools).Y).ToList();
                 check(tops.Max()-tops.Min()<.5,$"Tool icons stay on one line: {tops.Min():0.#}-{tops.Max():0.#} ({language}/{group})");
             }
-            check(checkedTools.SetEquals(Enum.GetValues<EditorAdjustmentTool>().Select(tool=>tool.ToString())),
-                "Caption alignment covers all 17 tools while visible: "+language);
+            check(checkedTools.SetEquals(Enum.GetValues<EditorAdjustmentTool>().Select(tool=>tool.ToString()).Append("Perspective")),
+                "Caption alignment covers all adjustment tools and Perspective navigation: "+language);
         } finally {expanded.SetValue(window,previous);Refresh(window);}
     }
     private static double LineHeight(TextBlock text)=>new System.Windows.Media.FormattedText("Ag",System.Globalization.CultureInfo.InvariantCulture,
@@ -293,10 +294,14 @@ internal static class UiDetailChecks
         check(System.Windows.Controls.Primitives.LayoutInformation.GetLayoutClip(window.ClipStats)==null,$"Histogram statistics are not clipped: {window.ClipStats.Text}");
         window.HistogramSurface.Visibility=Visibility.Collapsed;
         // 选中项的文字在框内完整排下：用 WPF 自己的布局裁切判断，与屏幕缩放无关
-        window.AdjustmentPanel.Visibility=Visibility.Visible;window.UpdateLayout();
-        var shown=Visuals(window.ExposureMode).OfType<TextBlock>().First();
-        check(System.Windows.Controls.Primitives.LayoutInformation.GetLayoutClip(shown)==null,
-            $"Exposure baseline selector shows its choice whole: {shown.Text} {shown.ActualWidth:0}/{shown.DesiredSize.Width:0} ({language})");
+        window.AdjustmentPanel.Visibility=Visibility.Visible;
+        window.ProcessingPopup.IsOpen=true;
+        try {
+            window.UpdateLayout();((FrameworkElement)window.ProcessingPopup.Child).UpdateLayout();
+            var shown=Visuals(window.ExposureMode).OfType<TextBlock>().FirstOrDefault();
+            check(shown!=null && System.Windows.Controls.Primitives.LayoutInformation.GetLayoutClip(shown)==null,
+                $"Open exposure baseline selector shows its choice whole: {shown?.Text ?? "not realized"} ({language})");
+        } finally {window.ProcessingPopup.IsOpen=false;}
     }
 
     private static AboutWindow About(MainWindow window,string output)

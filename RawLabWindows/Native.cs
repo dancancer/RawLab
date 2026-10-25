@@ -27,6 +27,17 @@ internal static partial class Native
     [StructLayout(LayoutKind.Sequential)]
     internal struct WaveletConfig { public uint Version,StructSize; public int Enabled; public float Luma,Chroma,Coarse; }
     [StructLayout(LayoutKind.Sequential)]
+    internal struct ColorGradingConfig { public uint Version, StructSize; public float ShadowsHue, ShadowsSaturation, MidtonesHue, MidtonesSaturation, HighlightsHue, HighlightsSaturation; }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct AtmosphereConfig { public uint Version, StructSize; public float Clarity, Dehaze; }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct ToneControlsConfig { public uint Version, StructSize; public float BlackPoint, WhitePoint, Vibrance; }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct ToneCurveConfig {
+        public uint Version, StructSize; public int Mode; public uint Count;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst=66)] public double[] Points;
+    }
+    [StructLayout(LayoutKind.Sequential)]
     internal struct PhotoEffectsConfig
     {
         public uint Version,StructSize;
@@ -54,6 +65,24 @@ internal static partial class Native
         [MarshalAs(UnmanagedType.ByValArray, SizeConst=8)] public float[] Hue;
         [MarshalAs(UnmanagedType.ByValArray, SizeConst=8)] public float[] Saturation;
         [MarshalAs(UnmanagedType.ByValArray, SizeConst=8)] public float[] Lightness;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct HslProbeQuery
+    {
+        public uint Version,StructSize;
+        public ulong SourceRevision,RequestRevision;
+        public float X,Y;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct HslProbeResult
+    {
+        public uint Version,StructSize;
+        public ulong SourceRevision,RequestRevision;
+        public uint Width,Height;
+        public int Availability,Quality;
+        [MarshalAs(UnmanagedType.ByValArray,SizeConst=3)] public float[] Rgb;
+        [MarshalAs(UnmanagedType.ByValArray,SizeConst=3)] public float[] Hsl;
+        [MarshalAs(UnmanagedType.ByValArray,SizeConst=8)] public float[] Weights;
     }
     [StructLayout(LayoutKind.Sequential)]
     internal struct LensConfig {
@@ -105,6 +134,9 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_lens_report(Session session,out LensReport report);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_inspect_lens(Session session,[MarshalAs(UnmanagedType.LPUTF8Str)] string input,out LensReport report,[Out] LensProfile[]? profiles,uint capacity,out uint count);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_hsl(Session session,ref HslConfig config);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_create_hsl_probe(Session session,ref Request request,ulong sourceRevision,ulong requestRevision,out IntPtr probe);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hsl_probe_sample(IntPtr probe,ref HslProbeQuery query,out HslProbeResult result);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern void sony2fuji_hsl_probe_destroy(IntPtr probe);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_geometry(Session session,ref GeometryConfig config);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_perspective(Session session,ref PerspectiveConfig config);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_geometry_size(Session session,out uint width,out uint height);
@@ -115,6 +147,11 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_chroma_denoise(Session session,int mode);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_viewport_preview(Session session,int enabled);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_wavelet_denoise(Session session,ref WaveletConfig config);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_color_grading(Session session,ref ColorGradingConfig config);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_atmosphere(Session session,ref AtmosphereConfig config);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_tone_controls(Session session,ref ToneControlsConfig config);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_tone_curve(Session session,ref ToneCurveConfig config);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_sample_tone_curve(ref ToneCurveConfig config,[In] double[] x,[Out] double[] y,uint count);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_photo_effects(Session session,ref PhotoEffectsConfig config);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_raw_exposure(Session session,out float baseline,out float metadata);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_raw_white_balance(Session session,out float temperature,out float tint);

@@ -5,6 +5,8 @@ import UniformTypeIdentifiers
 struct AdjustmentTransferView: View {
     @ObservedObject var model: EditorModel
     let kind: AdjustmentSheetKind
+    var preset: AdjustmentPreset? = nil
+    var onClose: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var scope = "custom"
     @State private var fields = AdjustmentTransferField.common
@@ -20,9 +22,10 @@ struct AdjustmentTransferView: View {
     @State private var historyID: UUID?
     @State private var historyUndo = true
     @State private var historyPhoto: URL?
+    @State private var focusedHistory: UUID?
     @State private var excludedSource: String?
 
-    private var title: String { L10n.text(kind == .copy ? "复制调整" : kind == .paste ? "粘贴调整" : "本次会话历史") }
+    private var title: String { L10n.text(preset != nil ? "应用预设" : kind == .copy ? "复制调整" : kind == .paste ? "粘贴调整" : kind == .synchronize ? "应用调整并保存到所选照片" : "本次会话历史") }
     private var selectedScope: AdjustmentTransferScope {
         scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields)
     }
@@ -36,30 +39,31 @@ struct AdjustmentTransferView: View {
             HStack {
                 Text(title).font(.title2.weight(.semibold))
                 Spacer()
-                Button(L10n.text("关闭")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(L10n.text("关闭")) { close() }.keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("adjustment.transfer.close")
             }
             if kind == .copy { copyContent }
-            else if kind == .paste { pasteContent }
+            else if kind == .paste || kind == .synchronize { pasteContent }
             else { historyContent }
             if let message { Text(message).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("adjustment.transfer.message") }
         }
         .padding(24).frame(width: 600).frame(minHeight: 380, maxHeight: 680).tint(.yellow)
         .onAppear {
-            if kind == .paste {
-                payload = model.adjustmentSheetPayload ?? model.adjustmentClipboard
-                targets = model.adjustmentSheetTargets ?? model.file.map { [$0] } ?? []
-                excludedSource = model.adjustmentSheetExcludedSource
+            if kind == .paste || kind == .synchronize {
+                payload = preset?.payload ?? model.adjustmentSheetPayload ?? model.adjustmentClipboard
+                targets = preset != nil ? model.file.map { [$0] } ?? [] : model.adjustmentSheetTargets ?? model.file.map { [$0] } ?? []
+                excludedSource = preset == nil ? model.adjustmentSheetExcludedSource : nil
             } else if kind == .history, let request = model.pendingAdjustmentHistory {
                 historyID = request.transactionID; historyUndo = request.undo; historyPhoto = request.photo
                 historyResults = model.adjustmentOutcomes
-                updateResultMessage()
+                if model.adjustmentSheetInCollection { focusedHistory = request.transactionID }
+                if !historyResults.isEmpty { updateResultMessage() }
             }
         }
         .onDisappear {
             operationGeneration = UUID(); model.adjustmentSheetPayload = nil; model.adjustmentSheetTargets = nil
-            model.adjustmentSheetExcludedSource = nil; model.pendingAdjustmentHistory = nil
+            model.adjustmentSheetExcludedSource = nil; model.adjustmentSheetExcludedIdentity = nil; model.pendingAdjustmentHistory = nil
         }
     }
 
@@ -67,48 +71,11 @@ struct AdjustmentTransferView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(model.file?.lastPathComponent ?? "").font(.headline)
             Text(model.file?.deletingLastPathComponent().path ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(2)
-            Picker(L10n.text("复制范围"), selection: $scope) {
-                Text(L10n.text("全部")).tag("all")
-                Text(L10n.text("仅已修改")).tag("modified")
-                Text(L10n.text("自定义")).tag("custom")
-            }.pickerStyle(.segmented).accessibilityIdentifier("adjustment.copy.scope")
-            Text(L10n.text("几何与镜头仅在“全部”或显式选择时包含。")).font(.callout).foregroundStyle(.secondary)
-            if scope == "custom" {
-                HStack {
-                    Text(L10n.format("已选 %@ 项", String(fields.count))).foregroundStyle(.secondary)
-                    Spacer()
-                    Button(L10n.text("清空选择")) { fields.removeAll() }.disabled(fields.isEmpty)
-                        .accessibilityIdentifier("adjustment.copy.clear")
-                }
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(["looks", "light", "color", "effects", "detail", "geometry"], id: \.self) { group in
-                            DisclosureGroup {
-                                let members = AdjustmentTransferField.allCases.filter { $0.group == group }
-                                Toggle(L10n.text("选择此组"), isOn: groupBinding(members)).fontWeight(.medium)
-                                ForEach(members.filter { $0.hslLocation == nil }, id: \.rawValue) { field in fieldToggle(field) }
-                                if group == "color" {
-                                    ForEach(HSLAxis.allCases) { axis in
-                                        DisclosureGroup("HSL · \(axis.title)") {
-                                            let items = members.filter { $0.hslLocation?.axis == axis.rawValue }
-                                            Toggle(L10n.text("选择此组"), isOn: groupBinding(items))
-                                            ForEach(items, id: \.rawValue) { field in fieldToggle(field) }
-                                        }.padding(.leading, 12)
-                                    }
-                                }
-                            } label: {
-                                let members = AdjustmentTransferField.allCases.filter { $0.group == group }
-                                Text(AdjustmentTransferField.groupTitle(group) + " · \(members.filter { fields.contains($0) }.count)/\(members.count)")
-                                    .fontWeight(.medium)
-                            }
-                        }
-                    }.padding(.trailing, 8)
-                }.frame(minHeight: 220, maxHeight: 400)
-            }
+            AdjustmentScopeEditor(scope: $scope, fields: $fields)
             HStack {
                 Spacer()
                 Button(L10n.text("复制调整")) {
-                    do { _ = try model.copyAdjustments(scope: selectedScope); dismiss() }
+                    do { _ = try model.copyAdjustments(scope: selectedScope); close() }
                     catch { message = model.adjustmentErrorMessage(error) }
                 }.buttonStyle(.borderedProminent).disabled(scope == "custom" && fields.isEmpty)
                     .accessibilityIdentifier("adjustment.copy.confirm")
@@ -134,8 +101,10 @@ struct AdjustmentTransferView: View {
                 HStack {
                     Text(L10n.format("目标：%@ 张照片", String(targets.count))).fontWeight(.medium)
                     Spacer()
-                    Button(L10n.text("选择照片…"), action: chooseTargets).disabled(preparing)
-                        .accessibilityIdentifier("adjustment.paste.chooseTargets")
+                    if kind != .synchronize {
+                        Button(L10n.text("选择照片…"), action: chooseTargets).disabled(preparing)
+                            .accessibilityIdentifier("adjustment.paste.chooseTargets")
+                    }
                     Button(L10n.text("检查目标"), action: prepare).disabled(preparing || targets.isEmpty)
                         .accessibilityIdentifier("adjustment.paste.preflight")
                 }
@@ -163,7 +132,7 @@ struct AdjustmentTransferView: View {
                     }
                     Spacer()
                     if !pasteResults.isEmpty && !hasPendingApplication {
-                        Button(L10n.text("完成")) { dismiss() }.buttonStyle(.borderedProminent)
+                        Button(L10n.text("完成")) { close() }.buttonStyle(.borderedProminent)
                             .accessibilityIdentifier("adjustment.paste.done")
                     } else {
                         Button(L10n.text(pasteResults.isEmpty ? "应用并保存" : "重试未完成项")) {
@@ -207,7 +176,13 @@ struct AdjustmentTransferView: View {
                     .disabled(outcome.map { [.applied, .unchanged, .skipped].contains($0.status) } == true)
             }
             Text(url.deletingLastPathComponent().path).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-            if model.file?.resolvingSymlinksInPath().standardizedFileURL.path == id, model.geometryDraft != nil {
+            if kind == .synchronize, let photo = model.batchSelectionPhotos.values.first(where: { $0.url.path == id }), model.collectionHasDraft(photo.id) {
+                Text(L10n.text("此照片有尚未保存的调整。应用或放弃后，请重新检查目标。"))
+                HStack {
+                    Button(L10n.text("应用并保存")) { if model.resolveCollectionDraft(photo.id, apply: true) { invalidatePreparation() } }
+                    Button(L10n.text("放弃草稿")) { if model.resolveCollectionDraft(photo.id, apply: false) { invalidatePreparation() } }
+                }
+            } else if model.file?.resolvingSymlinksInPath().standardizedFileURL.path == id, model.geometryDraft != nil {
                 Text(L10n.text("此照片有未应用的几何或镜头草稿。")).font(.callout)
                 HStack {
                     Button(L10n.text("应用草稿")) { if model.applyGeometryDraft() { invalidatePreparation() } }
@@ -229,9 +204,9 @@ struct AdjustmentTransferView: View {
                 if let historyPhoto { Text(historyPhoto.lastPathComponent).fontWeight(.medium) }
                 conflictActions
                 if model.adjustmentSession?.transactions.isEmpty != false { Text(L10n.text("暂无编辑历史。")) }
-                ForEach((model.adjustmentSession?.transactions ?? []).reversed(), id: \.id) { transaction in
+                ForEach((model.adjustmentSession?.transactions ?? []).filter { focusedHistory == nil || $0.id == focusedHistory }.reversed(), id: \.id) { transaction in
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(L10n.text(transaction.action == .paste ? "粘贴调整" : "调整照片")).fontWeight(.medium)
+                        Text(transaction.action.title).fontWeight(.medium)
                         Text(transaction.parts.map { URL(fileURLWithPath: $0.identity.path).lastPathComponent }.joined(separator: "、"))
                             .font(.callout).lineLimit(3)
                         HStack {
@@ -317,11 +292,12 @@ struct AdjustmentTransferView: View {
         guard let payload else { return }
         invalidatePreparation()
         guard let session = try? model.requireAdjustmentSession() else { return }
-        let descriptors = model.adjustmentTransferTargets(targets, payload: payload, excludingSource: excludedSource)
+        let descriptors = model.adjustmentTransferTargets(targets, payload: payload, excludingSource: excludedSource,
+            excludingIdentity: kind == .synchronize ? model.adjustmentSheetExcludedIdentity : nil, collection: kind == .synchronize)
         preparing = true
         let generation = UUID(); operationGeneration = generation
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = Result { try session.prepare(payload: payload, targets: descriptors) }
+            let result = Result { try session.prepare(payload: payload, targets: descriptors, action: kind == .synchronize ? .synchronize : preset == nil ? .paste : .preset) }
             DispatchQueue.main.async {
                 guard generation == operationGeneration else { return }
                 preparing = false
@@ -332,16 +308,10 @@ struct AdjustmentTransferView: View {
             }
         }
     }
-    private func groupBinding(_ members: [AdjustmentTransferField]) -> Binding<Bool> {
-        Binding(get: { Set(members).isSubset(of: fields) }, set: { if $0 { fields.formUnion(members) } else { fields.subtract(members) } })
-    }
-    private func fieldToggle(_ field: AdjustmentTransferField) -> some View {
-        Toggle(field.displayTitle, isOn: Binding(get: { fields.contains(field) }, set: {
-            if $0 { fields.insert(field) } else { fields.remove(field) }
-        })).padding(.leading, 12).accessibilityIdentifier("adjustment.copy.\(field.rawValue)")
-    }
-
     private func sourceName(_ payload: AdjustmentTransferPayload) -> String {
-        payload.source.identifier.hasPrefix("/") ? URL(fileURLWithPath: payload.source.identifier).lastPathComponent : payload.source.identifier
+        if let preset { return preset.name }
+        return payload.source.identifier.hasPrefix("/") ? URL(fileURLWithPath: payload.source.identifier).lastPathComponent : payload.source.identifier
     }
+    private func close() { if let onClose { onClose() } else { dismiss() } }
+
 }

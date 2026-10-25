@@ -125,6 +125,7 @@ extension RawEditorViewModel {
                             }
                             self.previewImage = previewImage
                             self.acceptedPreviewFrameID = renderID
+                            self.acceptedPreviewRequest = request
                             self.histogram = nil
                             self.nativeImageSize = result.buffer.nativeSize
                             if let comparison {
@@ -200,6 +201,7 @@ extension RawEditorViewModel {
                 }
                 self.previewImage = previewImage
                 self.acceptedPreviewFrameID = renderID
+                self.acceptedPreviewRequest = request
                 self.histogram = nil
                 self.nativeImageSize = outputBuffer.nativeSize
                 if let comparison {
@@ -268,6 +270,7 @@ extension RawEditorViewModel {
         basePreviewLens = settings.lensSettings
         comparisonReferenceKey = comparisonKey(settings: settings, longEdge: Int(previewMaxDimension))
         acceptedPreviewFrameID = UUID()
+        acceptedPreviewRequest = PreviewRequest(settings: settings, quality: .final, includeHistogram: true, longEdge: Int(previewMaxDimension))
         previewFailed = false
     }
 
@@ -317,6 +320,7 @@ extension RawEditorViewModel {
         previewFailed = false
         comparisonReferenceKey = nil
         acceptedPreviewFrameID = nil
+        acceptedPreviewRequest = nil
     }
 
     func setLatestRenderID(_ renderID: UUID) {

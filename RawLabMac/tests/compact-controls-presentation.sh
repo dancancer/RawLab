@@ -26,7 +26,7 @@ swiftc -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT/RawLabMac/tests/CompactControlsPresentationTests.swift" \
-    "$ROOT/lutools/build-macos/libsony2fuji_core.a" \
+    "${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}/libsony2fuji_core.a" \
     $(pkg-config --libs libraw opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \
     "${RPATHS[@]}" \
@@ -54,6 +54,11 @@ for lut in "$ROOT"/lutools/flog-2-new/*.cube; do
     case "$lut" in *FLog2-709*|*to_WDR*) continue ;; esac
     cp "$lut" "$APP/Contents/Resources/LUTs/"
 done
+if [[ "${RAWLAB_BUILD_ONLY:-0}" == 1 ]]; then
+    trap - EXIT
+    echo "Built compact controls snapshot harness without running: $APP"
+    exit 0
+fi
 # Separate processes also isolate SwiftUI/AppKit text caches for each locale.
 for language in zh-Hans en de fr ja es; do
     RAWLAB_SNAPSHOT_LANGUAGE="$language" \

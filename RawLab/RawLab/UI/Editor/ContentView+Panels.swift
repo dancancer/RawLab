@@ -6,6 +6,8 @@ extension ContentView {
     var editorToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarLeading) {
             Menu {
+                Button(L10n.text("批量编辑"), action: openBatchSelection)
+                    .disabled(editorBusy).accessibilityIdentifier("collection.open")
                 Section { adjustmentTransferMenu }.disabled(!viewModel.hasImage || editorBusy)
                 Button { photoInfoMode = photoInfoMode.next } label: {
                     Label(L10n.text("照片信息"), systemImage: "info.circle")
@@ -36,6 +38,10 @@ extension ContentView {
             // 菜单里不止隐私设置（还有"从文件导入"），读屏名称按通用的"更多"
             .accessibilityLabel(L10n.text("更多")).help(L10n.text("更多"))
             .accessibilityIdentifier("editor.privacy")
+            if viewModel.batchSelection.selection.current != nil {
+                Button { requestCollectionNavigation(.returnToCollection) } label: { Image(systemName: "square.grid.2x2") }
+                    .accessibilityLabel(L10n.text("返回批量集合")).accessibilityIdentifier("collection.return").disabled(editorBusy)
+            }
             photoImportButton(isEnabled: !editorBusy)
                 .opacity(rulerFocusOpacity)
         }
@@ -114,7 +120,8 @@ extension ContentView {
                                   isDraft: isEditorDraftActive,
                                   interactionEnabled: !editorBusy && !draftExitPresented && !resetConfirmationPresented && !showingFileImporter && !showingLookImporter,
                                   overlayAvoidanceRect: photoComparisonControlBounds,
-                                  onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) })
+                                  onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) },
+                                  hslTarget: hslTargetActive ? hslTargetInput : nil, hslTargetPoint: hslTargetPoint)
                         .id(viewModel.sourceRevision)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .allowsHitTesting(!geometrySelected)
@@ -280,7 +287,12 @@ extension ContentView {
                     .accessibilityIdentifier("editor.fine")
             }
         Menu {
-            if currentEditorTool == .adjustment(.hsl) {
+            if currentEditorTool == .adjustment(.colorGrading) {
+                Button(L10n.text("重置当前分区")) { requestEditorReset(.gradingZone(gradingZone)) }
+                    .disabled(!resetModified(.gradingZone(gradingZone)))
+                Button(L10n.text("重置颜色分级")) { requestEditorReset(.allGrading) }
+                    .disabled(!resetModified(.allGrading))
+            } else if currentEditorTool == .adjustment(.hsl) {
                 Button(L10n.format("重置当前颜色（%@）", L10n.text(HSLSettings.channelNames[hslChannel]))) {
                     requestEditorReset(.hslChannel(hslChannel))
                 }.disabled(!resetModified(.hslChannel(hslChannel)))
@@ -333,14 +345,17 @@ extension ContentView {
         let source = viewModel.sourceRevision
         let tool = currentEditorTool
         let channel = hslChannel
+        let grading = gradingZone
         let perspective = geometryPerspective
-        return AdjustmentInputContext(id: "\(source).\(tool.stableID).\(channel).\(perspective)", isCurrent: {
+        return AdjustmentInputContext(id: "\(source).\(tool.stableID).\(channel).\(grading.rawValue).\(perspective)", isCurrent: {
             viewModel.sourceRevision == source && currentEditorTool == tool && adjustmentsExpanded &&
                 (tool != .adjustment(.hsl) || hslChannel == channel) &&
+                (tool != .adjustment(.colorGrading) || gradingZone == grading) &&
                 (tool != .geometry || geometryPerspective == perspective)
         }, canChange: { !viewModel.adjustmentInteractionRejected }, onInteractionCancelled: {
             if viewModel.sourceRevision == source && currentEditorTool == tool &&
                 (tool != .adjustment(.hsl) || hslChannel == channel) &&
+                (tool != .adjustment(.colorGrading) || gradingZone == grading) &&
                 (tool != .geometry || geometryPerspective == perspective) {
                 cancelSliderInteraction()
             }
@@ -435,20 +450,27 @@ extension ContentView {
         switch tool {
         case .film: return selectedFilmName
         case .recipe: return settings.masterRecipe?.title ?? L10n.text("无配方")
+        case .adjustment(.toneCurve) where settings.curveSettings.mode == .custom:
+            return L10n.format("多点曲线（%d 个控制点）", settings.curveSettings.points.count)
         case .adjustment(let adjustment): return adjustment.valueLabel(for: adjustment.value(from: settings))
         default: return resetModified(.tool(tool)) ? L10n.text("已调整") : ""
         }
     }
 
-    var toolStrip: some View {
-        HStack(spacing: 4) {
+    func toolStrip(width: CGFloat, accessibility: Bool) -> some View {
+        let stacked = stacksToolHeader(width: width, accessibility: accessibility)
+        let rowHeight = editorToolRowHeight(width: width, accessibility: accessibility)
+        let layout = stacked ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 4))
+        return layout {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 4) {
                         ForEach(EditorAdjustmentRules.tools(selectedGroup), id: \.self) { tool in
                             Button { if tool == .geometry { geometryPerspective = false }; selectEditorTool(tool) } label: {
                                 AdjustmentToolLabel(title: tool == .geometry ? L10n.text("裁切") : tool.title, symbol: tool.symbol, selected: currentEditorTool == tool && !(tool == .geometry && geometryPerspective),
-                                    progress: tool.scalar.map(adjustmentProgress) ?? (resetModified(.tool(tool)) ? 1 : 0), width: toolWidth, height: editorToolHeight)
+                                    progress: tool == .adjustment(.toneCurve) && settings.curveSettings.mode == .custom ? 1 :
+                                        tool.scalar.map(adjustmentProgress) ?? (resetModified(.tool(tool)) ? 1 : 0), width: toolWidth, height: rowHeight,
+                                    maximumWidth: accessibility ? max(44, width - 24) : nil)
                             }
                             .disabled((tool == .lens && viewModel.sourceKind != .raw) ||
                                       (tool == .adjustment(.strength) && !settings.hasLook))
@@ -466,14 +488,24 @@ extension ContentView {
                             if tool == .geometry {
                                 Button { geometryPerspective = true; selectEditorTool(.geometry) } label: {
                                     AdjustmentToolLabel(title: L10n.text("透视"), symbol: "perspective", selected: geometrySelected && geometryPerspective,
-                                        progress: 0, width: toolWidth, height: editorToolHeight)
+                                        progress: 0, width: toolWidth, height: rowHeight,
+                                        maximumWidth: accessibility ? max(44, width - 24) : nil)
                                 }.accessibilityLabel(L10n.text("透视")).accessibilityIdentifier("tool.perspective")
                                     .accessibilityAddTraits(geometrySelected && geometryPerspective ? .isSelected : [])
                             }
                         }
+                        if selectedGroup == .looks {
+                            Button { adjustmentSheet = .presets } label: {
+                                AdjustmentToolLabel(title: L10n.text("我的预设"), symbol: "bookmark", selected: false,
+                                    progress: 0, width: toolWidth, height: rowHeight,
+                                    maximumWidth: accessibility ? max(44, width - 24) : nil)
+                            }.disabled(editorBusy).accessibilityLabel(L10n.text("我的预设"))
+                                .accessibilityIdentifier("preset.library")
+                        }
                     }.padding(.horizontal, 12)
                 }
-                .frame(height: editorToolHeight)
+                .frame(height: rowHeight)
+                .accessibilityIdentifier("editor.tools")
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _ in
                     proxy.scrollTo(currentEditorTool.stableID, anchor: .center)
                 }
@@ -481,7 +513,8 @@ extension ContentView {
             }
             .buttonStyle(.plain)
             .disabled(editorBusy || resetDraftSuspended)
-            adjustmentHeader.padding(.trailing, 8)
+            adjustmentHeader.padding(.horizontal, 8)
+                .frame(maxWidth: stacked ? .infinity : nil, minHeight: editorToolHeight, alignment: .trailing)
         }
     }
 }

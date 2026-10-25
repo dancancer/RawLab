@@ -1,16 +1,29 @@
 import Foundation
 
+extension AdjustmentHistoryTransaction.Action {
+    var title: String {
+        switch self {
+        case .paste: return L10n.text("粘贴调整")
+        case .preset: return L10n.text("应用预设")
+        case .edit: return L10n.text("调整照片")
+        case .synchronize: return L10n.text("同步所选照片")
+        }
+    }
+}
+
 extension AdjustmentTransferField {
     static func groupTitle(_ group: String) -> String {
         L10n.text(["looks": "外观", "light": "光线", "color": "颜色", "effects": "效果", "detail": "细节", "geometry": "几何与镜头"][group] ?? group)
     }
     var displayTitle: String {
+        if let zone = gradingZone { return L10n.text("颜色分级") + " · " + zone.title }
         if let location = hslLocation {
             return L10n.text(HSLSettings.channelNames[location.channel]) + " · " + HSLAxis(rawValue: location.axis)!.title
         }
         let labels: [Self: String] = [
             .look: "外观", .strength: "强度", .exposure: "曝光", .exposureMode: "曝光模式",
-            .contrast: "对比度", .highlights: "高光", .shadows: "阴影", .sCurve: "S 曲线",
+            .blackPoint: "黑场", .whitePoint: "白场", .vibrance: "鲜艳度", .clarity: "清晰度", .dehaze: "去朦胧",
+            .contrast: "对比度", .highlights: "高光", .shadows: "阴影", .sCurve: "S 曲线", .curve: "曲线模式与控制点",
             .whiteBalanceMode: "白平衡模式", .temperature: "色温", .tint: "色调", .saturation: "饱和度",
             .vignetteAmount: "暗角", .vignetteMidpoint: "中点", .vignetteRoundness: "圆度",
             .vignetteFeather: "羽化", .vignetteHighlights: "高光保护", .grainAmount: "颗粒",

@@ -23,10 +23,39 @@ enum BatchSettingsSummary {
 
     // "全部调整"展开后：常驻行之外的工具，加上降噪、暗角、颗粒、镜头的各项参数
     static func details(_ settings: RawSettings) -> [BatchSettingRow] {
-        let scalars: [AdjustmentKind] = [.strength, .highlights, .shadows, .contrast, .toneCurve, .saturation, .sharpening]
-        let tools = scalars.map { BatchSettingRow(title: $0.title, value: $0.displayValue($0.value(from: settings))) }
-        return tools + whiteBalance(settings) + denoise(settings.denoise)
+        let scalars: [AdjustmentKind] = [.strength, .highlights, .shadows, .contrast, .toneCurve, .blackPoint, .whitePoint, .saturation, .vibrance, .sharpening, .clarity, .dehaze]
+        let tools = scalars.filter { settings.curveSettings.isDefault || $0 != .toneCurve }.map {
+            BatchSettingRow(title: $0 == .toneCurve ? L10n.text("S 曲线") : $0.title, value: $0.displayValue($0.value(from: settings)))
+        }
+        let curve = settings.curveSettings.isDefault ? [] :
+            [row("曲线", L10n.format("多点曲线（%d 个控制点）", settings.curveSettings.points.count))] +
+            settings.curveSettings.points.enumerated().map { index, point in
+                BatchSettingRow(title: L10n.format("控制点 %d", index + 1), value: String(format: "%.2f → %.2f", locale: L10n.locale, point.x, point.y))
+            }
+        let grading = ColorGradingZone.allCases.map { zone in
+            BatchSettingRow(title: L10n.text("颜色分级") + " · " + zone.title,
+                value: String(format: "%.1f° · %.1f%%", locale: L10n.locale, settings.gradingSettings[zone].hue, settings.gradingSettings[zone].saturation))
+        }
+        return tools + curve + grading + hsl(settings.hsl) + geometry(settings.geometry) + whiteBalance(settings) + denoise(settings.denoise)
             + effects.map { row($0.key, effectValue(settings.photoEffects, $0.parameter)) } + lens(settings.lensSettings)
+    }
+
+    private static func hsl(_ settings: HSLSettings) -> [BatchSettingRow] {
+        (0..<8).flatMap { channel in
+            HSLAxis.allCases.map { axis in
+                BatchSettingRow(title: "HSL · " + L10n.text(HSLSettings.channelNames[channel]) + " · " + axis.title,
+                    value: String(format: "%+.1f", locale: L10n.locale, settings.value(axis, channel: channel)))
+            }
+        }
+    }
+
+    private static func geometry(_ value: GeometrySettings) -> [BatchSettingRow] {
+        [row("裁切区域", String(format: "%.2f, %.2f · %.2f × %.2f", locale: L10n.locale,
+              value.cropX, value.cropY, value.cropWidth, value.cropHeight)),
+         row("旋转", "\(value.quarterTurns * 90)°"), row("水平翻转", onOff(value.flipHorizontal)),
+         row("垂直翻转", onOff(value.flipVertical)), row("拉直", String(format: "%.2f°", locale: L10n.locale, value.straightenDegrees)),
+         row("水平透视", String(format: "%+.2f", locale: L10n.locale, value.perspectiveHorizontal)),
+         row("垂直透视", String(format: "%+.2f", locale: L10n.locale, value.perspectiveVertical))]
     }
 
     // ------------------------------------------------------------------------

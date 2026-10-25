@@ -5,9 +5,10 @@ namespace RawLab.Windows;
 public sealed record AdjustmentTransferTarget(string Path,SavedEdit DefaultEdit,AdjustmentTransferContext Context,Func<bool>? IsCurrent=null);
 public enum AdjustmentStatus { Applied, Unchanged, Skipped, Blocked, Conflict, Failed }
 public sealed record AdjustmentOutcome(string TargetID,AdjustmentStatus Status,VersionedPhotoEdit? Saved=null,Exception? Error=null,bool RequiresHistoryDecision=false);
-public sealed record PreparedAdjustmentTransfer(Guid ID,AdjustmentPayload Payload,IReadOnlyList<PreparedAdjustmentTarget> Targets);
+public sealed record PreparedAdjustmentTransfer(Guid ID,AdjustmentPayload Payload,IReadOnlyList<PreparedAdjustmentTarget> Targets,
+    AdjustmentHistoryAction Action = AdjustmentHistoryAction.Paste, OriginalIdentity? FrozenSource = null);
 public sealed record PreparedAdjustmentTarget(string ID,string DisplayName,VersionedPhotoEdit? Original,SavedEdit? Candidate,bool Unchanged,Func<bool>? IsCurrent,Exception? Error);
-public enum AdjustmentHistoryAction { Paste, Edit }
+public enum AdjustmentHistoryAction { Paste, Edit, Preset, Synchronize }
 public enum AdjustmentHistoryState { Applied, Undone, RedoInvalidated }
 public sealed record AdjustmentHistoryPart(Guid ID,Guid? PriorHead,OriginalIdentity Identity,string DisplayName,SavedEdit? Before,SavedEdit? After,AdjustmentHistoryState State);
 public sealed record AdjustmentHistoryTransaction(Guid ID,AdjustmentHistoryAction Action,IReadOnlySet<AdjustmentField> Fields,IReadOnlyList<AdjustmentHistoryPart> Parts);
@@ -24,12 +25,17 @@ public sealed class AdjustmentTransferSession(EditStore store)
     public AdjustmentPayload? Clipboard {get;private set;}
     public AdjustmentPayload Copy(AdjustmentScope scope,SavedEdit source,AdjustmentTransferContext context)
     {var payload=AdjustmentTransfer.Capture(scope,source,context);Clipboard=payload;return payload;}
-    public PreparedAdjustmentTransfer Prepare(AdjustmentPayload payload,IEnumerable<AdjustmentTransferTarget> targets)
+    public PreparedAdjustmentTransfer Prepare(AdjustmentPayload payload,IEnumerable<AdjustmentTransferTarget> targets,
+        AdjustmentHistoryAction action = AdjustmentHistoryAction.Paste,OriginalIdentity? frozenSource=null)
     {
         payload.Validate();
+        if(action==AdjustmentHistoryAction.Synchronize && frozenSource==null)throw new ArgumentException("Missing synchronization source identity");
+        var physical=new HashSet<string>(StringComparer.Ordinal);
         var prepared=new List<PreparedAdjustmentTarget>();var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach(var target in targets) {
             var id=Path.GetFullPath(target.Path);if(!seen.Add(id))continue;
+            if(action==AdjustmentHistoryAction.Synchronize &&
+                (target.DefaultEdit.Identity.StableKey==frozenSource!.StableKey || !physical.Add(target.DefaultEdit.Identity.StableKey)))continue;
             try {
                 if(target.IsCurrent?.Invoke()==false)throw Draft();
                 var original=store.VersionedState(id);var before=original.Edit ?? target.DefaultEdit;
@@ -38,7 +44,7 @@ public sealed class AdjustmentTransferSession(EditStore store)
                 prepared.Add(new(id,Path.GetFileName(id),original,candidate.Copy(),candidate.SameAs(before),target.IsCurrent,null));
             }catch(Exception error) {prepared.Add(new(id,Path.GetFileName(id),null,null,false,target.IsCurrent,error));}
         }
-        return new(Guid.NewGuid(),payload,prepared.AsReadOnly());
+        return new(Guid.NewGuid(),payload,prepared.AsReadOnly(),action,frozenSource);
     }
     public IReadOnlyList<AdjustmentOutcome> Apply(PreparedAdjustmentTransfer operation,IReadOnlySet<string>? skipping=null)
     {
@@ -50,15 +56,21 @@ public sealed class AdjustmentTransferSession(EditStore store)
         foreach(var target in operation.Targets) {
             if(cache.TryGetValue(target.ID,out var cached) && cached.Status is AdjustmentStatus.Applied or AdjustmentStatus.Unchanged or AdjustmentStatus.Skipped) {results.Add(cached);continue;}
             AdjustmentOutcome result;
-            if(skipping.Contains(target.ID))result=new(target.ID,AdjustmentStatus.Skipped);
+            if(operation.Action==AdjustmentHistoryAction.Synchronize &&
+                (operation.FrozenSource==null || target.Original?.Identity.StableKey==operation.FrozenSource.StableKey))
+                result=new(target.ID,AdjustmentStatus.Blocked,Error:Unresolved("synchronization source"));
+            else if(skipping.Contains(target.ID))result=new(target.ID,AdjustmentStatus.Skipped);
             else if(target.IsCurrent?.Invoke()==false)result=new(target.ID,AdjustmentStatus.Blocked,Error:Draft());
             else if(target.Original is {} original && target.Candidate is {} candidate) {
                 try {
-                    if(!store.VersionedState(target.ID).SameAs(original))throw new EditPersistenceConflict();
+                    var current=store.VersionedState(target.ID);
+                    if(operation.Action==AdjustmentHistoryAction.Synchronize && current.Identity.StableKey==operation.FrozenSource!.StableKey)
+                        throw new EditPersistenceConflict();
+                    if(!current.SameAs(original))throw new EditPersistenceConflict();
                     if(target.Unchanged)result=new(target.ID,AdjustmentStatus.Unchanged,original);
                     else {
                         var saved=store.CompareAndSave(original,candidate);
-                        Record(operation.ID,AdjustmentHistoryAction.Paste,operation.Payload.Fields,target.DisplayName,original,saved);
+                        Record(operation.ID,operation.Action,operation.Payload.Fields,target.DisplayName,original,saved);
                         result=new(target.ID,AdjustmentStatus.Applied,saved);
                     }
                 }catch(EditPersistenceConflict error){result=new(target.ID,AdjustmentStatus.Conflict,Error:error);}

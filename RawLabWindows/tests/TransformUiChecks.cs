@@ -49,6 +49,7 @@ internal static class TransformUiChecks
             // 用不同校准值证明草稿显影回调不会回写 committed WB。
             Get<Adjustments>(window,"settings").ResolveWhiteBalance((9000,-30));Invoke(window,"MarkEdited");
             Invoke(window,"SaveEdits");var original=Get<Adjustments>(window,"settings").Capture();
+            Invoke(window,"SelectTool",EditorAdjustmentTool.BlackPoint);
             Click(window.GeometryCategory);InteractionChecks.PumpUntil(()=>PreviewReady(window));
             var draft=Get<TransformDraft>(window,"transform");
             check(draft.Active && !window.ExportPng.IsEnabled,"Real WPF geometry workspace gates export");
@@ -113,16 +114,23 @@ internal static class TransformUiChecks
             check(Get<long>(window,"editRevision")==beforeFailedApply+1 && !Get<bool>(window,"editDirty") &&
                 !Get<DispatcherTimer>(window,"editSaveTimer").IsEnabled,"Retry applies the draft once without a second autosave");
             check(!draft.Active && store.Find(photo)!.Settings.Geometry?.CropWidth==.62,"Apply writes the draft once to photo memory");
+            check(Get<ToneControlParameter?>(window,"selectedToneParameter")==null && Get<Parameter>(window,"selectedParameter")==Parameter.Exposure,
+                "Applying geometry after black point returns to exposure without a stale tone selection");
+            Invoke(window,"SelectTool",EditorAdjustmentTool.WhitePoint);
             Click(window.GeometryCategory);InteractionChecks.PumpUntil(()=>PreviewReady(window));
             Commit((TextBox)window.GeometryEditor.FindName("CropWidth"),"bad");
             Invoke(window,"CancelTransformDraft");InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
             check(Get<Adjustments>(window,"settings").Geometry.CropWidth==.62 && !window.GeometryEditor.HasInvalidInput,"Cancel restores committed crop and clears invalid geometry input");
+            check(Get<ToneControlParameter?>(window,"selectedToneParameter")==null,"Cancelling geometry clears the previous white point selection");
+            Invoke(window,"SelectTool",EditorAdjustmentTool.Vibrance);
             Click(window.LensCategory);InteractionChecks.PumpUntil(()=>PreviewReady(window));
             ((CheckBox)window.LensEditor.FindName("Distortion")).IsChecked=true;
             InteractionChecks.PumpUntil(()=>window.ApplyDraftButton.IsEnabled);
             check(draft.Active && draft.Lens.Distortion && !Get<Adjustments>(window,"settings").Lens.Distortion,"Lens switches remain draft-only until apply");
             Click(window.ApplyDraftButton);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
             check(store.Find(photo)!.Settings.Lens?.Distortion==true,"Lens Apply persists the real correction request");
+            check(Get<ToneControlParameter?>(window,"selectedToneParameter")==null,"Applying lens clears the previous vibrance selection");
+            Invoke(window,"SelectTool",EditorAdjustmentTool.BlackPoint);
             Click(window.LensCategory);InteractionChecks.PumpUntil(()=>PreviewReady(window));
             var pairCommitted=Get<Adjustments>(window,"settings").Capture();
             var pairRecord=File.ReadAllBytes(Path.Combine(directory,"edits","edits.json"));
@@ -137,6 +145,7 @@ internal static class TransformUiChecks
             Invoke(window,"CancelTransformDraft");InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
             check(Get<Adjustments>(window,"settings").Geometry.CropWidth==.62 && Get<Adjustments>(window,"settings").Lens.Distortion,
                 "Cancelling the group reset retains both committed transform objects");
+            check(Get<ToneControlParameter?>(window,"selectedToneParameter")==null,"Cancelling lens clears the previous black point selection");
             var normalRevision=Get<long>(window,"editRevision");var normalPreview=PreviewRequests(window);
             var normalSettings=Get<Adjustments>(window,"settings").Capture();
             var staleReset=window.PrepareReset(new(EditorResetKind.Group,EditorAdjustmentGroup.Light))!;
@@ -233,7 +242,7 @@ internal static class TransformUiChecks
     }
     private static T Get<T>(object owner,string name)=>(T)owner.GetType().GetField(name,Private)!.GetValue(owner)!;
     private static void Set(object owner,string name,object value)=>owner.GetType().GetField(name,Private)!.SetValue(owner,value);
-    private static object? Invoke(object owner,string name)=>owner.GetType().GetMethod(name,Private)!.Invoke(owner,null);
+    private static object? Invoke(object owner,string name,params object[] args)=>owner.GetType().GetMethod(name,Private)!.Invoke(owner,args);
     private static bool PreviewReady(MainWindow window)=>Get<bool>(window,"transformPreviewReady") && !Get<DispatcherTimer>(window,"previewResize").IsEnabled;
     private static long PreviewRequests(MainWindow window)=>(long)Get<object>(window,"scheduler").GetType().GetProperty("Revision")!.GetValue(Get<object>(window,"scheduler"))!;
     private static void Click(Button button)=>button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

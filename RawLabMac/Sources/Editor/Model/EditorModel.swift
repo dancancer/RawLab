@@ -141,7 +141,18 @@ final class EditorModel: ObservableObject {
     }
     var previewLongEdge = 2000
     var renderPreviewLongEdge = 2000
-    @Published var sourceRevision = UUID()
+    @Published var hslTargetEnabled = false
+    @Published var hslTargetAxis: HSLAxis = .hue
+    @Published var hslTargetInteraction = HSLTargetInteraction()
+    @Published var hslTargetPoint: CGPoint?
+    @Published var hslTargetNotice: HSLTargetAvailability?
+    var hslTargetHistoryActive = false
+    var hslAcceptedRequest: RenderRequest<RenderWork>?
+    var hslAcceptedSettings: Adjustments?
+    var hslSourceRevision: UInt64 = 1
+    @Published var sourceRevision = UUID() { didSet {
+        hslSourceRevision &+= 1; hslAcceptedRequest = nil; hslAcceptedSettings = nil
+    } }
     @Published var file: URL?
     @Published var neutral: RenderedImage?
     @Published var result: RenderedImage?
@@ -188,6 +199,9 @@ final class EditorModel: ObservableObject {
     var saveStatus: String { L10n.text(saveStatusKey) }
     @Published var saveError: String?
     @Published var batch: BatchExportModel?
+    @Published var batchSelection = BatchSelectionSession<String>()
+    @Published var batchSelectionPhotos: [String: MacCollectionPhoto] = [:]
+    @Published var collectionError: String?
     @Published var exportLongEdge: Int?
     let queue = DispatchQueue(label: "rawlab.render", qos: .userInitiated)
     let debounceQueue = DispatchQueue(label: "rawlab.render.debounce", qos: .userInitiated)
@@ -213,15 +227,19 @@ final class EditorModel: ObservableObject {
     @Published var adjustmentHistoryRevision = 0
     @Published var adjustmentClipboard: AdjustmentTransferPayload?
     @Published var adjustmentSheet: AdjustmentSheetKind?
+    @Published var adjustmentSheetInCollection = false
     var adjustmentSheetPayload: AdjustmentTransferPayload?
     var adjustmentSheetTargets: [URL]?
     var adjustmentSheetExcludedSource: String?
+    var adjustmentSheetExcludedIdentity: String?
     var pendingAdjustmentHistory: AdjustmentHistoryRequest?
     @Published var independentRecipeLookIDs = Set<String>()
     @Published var adjustmentOutcomes: [AdjustmentTransferOutcome] = []
     var lastAdjustmentTransaction: UUID?
+    var presetStore: AdjustmentPresetStore
     let editDirectory: URL
     let batchJournal: BatchJournal
+    var updateJournalLoadFailed = false
     var saveWork: DispatchWorkItem?
     var dirty = false
     var lookLibrary: LookLibrary?
@@ -244,9 +262,11 @@ final class EditorModel: ObservableObject {
     init(lookDirectory: URL = LookLibrary.defaultDirectory,
          editDirectory: URL = EditPersistence.defaultDirectory,
          batchDirectory: URL = BatchJournal.defaultDirectory,
+         presetDirectory: URL = AdjustmentPresetStore.defaultDirectory,
          onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
         self.onUsage = onUsage
         self.editDirectory = editDirectory
+        presetStore = AdjustmentPresetStore(directory: presetDirectory)
         batchJournal = BatchJournal(directory: batchDirectory)
         do {
             let library = try LookLibrary(directory: lookDirectory)
@@ -260,7 +280,7 @@ final class EditorModel: ObservableObject {
         catch { saveError = L10n.format("无法读取调整记录：%@", String(describing: error.localizedDescription)) }
         do {
             if let job = try batchJournal.load() { attachBatch(job) }
-        } catch { self.error = L10n.format("无法读取上次批量任务：%@", String(describing: error.localizedDescription)) }
+        } catch { updateJournalLoadFailed = true; self.error = L10n.format("无法读取上次批量任务：%@", String(describing: error.localizedDescription)) }
         let timer = DispatchSource.makeTimerSource(queue: debounceQueue)
         timer.setEventHandler { [weak self] in
             DispatchQueue.main.async { [weak self] in self?.launchNextRender() }

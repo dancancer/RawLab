@@ -54,6 +54,11 @@ import com.rawlab.android.looks.filmStripItems
 import com.rawlab.android.looks.localizedName
 import com.rawlab.android.looks.localizedSubtitle
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.ColorGradingZone
+import com.rawlab.android.editor.controls.ColorGradingControls
+import com.rawlab.android.editor.controls.ToneCurveControls
+import com.rawlab.android.editor.controls.HslTargetControls
+import com.rawlab.android.editor.controls.HslTargetActions
 import com.rawlab.android.settings.Film
 import com.rawlab.android.ui.EditorSheetSystemBars
 import com.rawlab.android.ui.ToolIcon
@@ -75,7 +80,9 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     onFilmSelected: (UsageFilmKind) -> Unit, onGeometryRatio: (GeometryRatio, Boolean) -> Unit,
     selectGroup: (EditorAdjustmentGroup) -> Unit, channel: Int, onChannelChange: (Int) -> Unit,
     onResetScope: (EditorResetScope) -> Unit, sideDock: Boolean, navigationEnabled: Boolean, compactNavigation: Boolean,
-    onGeometryLock: () -> Unit = {}, onGeometrySwap: () -> Unit = {}, onGeometryGrid: () -> Unit = {}) {
+    onGeometryLock: () -> Unit = {}, onGeometrySwap: () -> Unit = {}, onGeometryGrid: () -> Unit = {},
+    onPresets: () -> Unit = {}, gradingZone: ColorGradingZone = ColorGradingZone.SHADOWS,
+    onGradingZoneChange: (ColorGradingZone) -> Unit = {}, hslTarget: HslTargetActions = HslTargetActions()) {
     val edits = state.visibleEdits
     val context = LocalContext.current
     val rawInput = state.photo?.inputKind == PhotoInputKind.RAW
@@ -104,7 +111,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     @Composable fun dockActions() {
         Box {
             ToolIcon(Icons.Outlined.SettingsBackupRestore, R.string.reset, state.controlsEnabled && navigationEnabled) { reset = true }
-            if (reset) EditorResetMenu(state, tool, channel, onDismiss = { reset = false }) { reset = false; onResetScope(it) }
+            if (reset) EditorResetMenu(state, tool, channel, gradingZone, onDismiss = { reset = false }) { reset = false; onResetScope(it) }
         }
         Box {
             ToolIcon(Icons.Outlined.MoreHoriz, R.string.more, navigationEnabled) { more = true }
@@ -124,16 +131,39 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     @Composable fun groupStrip() {
         EditorGroupStrip(state, expanded, tool, sideDock, groupList, navigationEnabled, true, select = selectGroup)
     }
+    val showFine = tool !in listOf(0, 9, 15, 16)
+    @Composable fun fineControl() {
+        if (showFine) {
+            val fineHint = stringResource(R.string.editor_fine_hint)
+            Text(stringResource(R.string.adjustment_fine), style = MaterialTheme.typography.labelSmall)
+            Switch(checked = fine, onCheckedChange = { fine = it }, enabled = state.controlsEnabled,
+                modifier = Modifier.minimumInteractiveComponentSize().testTag("adjustment-fine").semantics { contentDescription = fineHint })
+        }
+    }
     @Composable fun toolRow() {
-        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-            toolStrip(Modifier.weight(1f))
-            if (tool !in listOf(0, 9, 15, 16)) {
-                val fineHint = stringResource(R.string.editor_fine_hint)
-                Text(stringResource(R.string.adjustment_fine), style = MaterialTheme.typography.labelSmall)
-                Switch(checked = fine, onCheckedChange = { fine = it }, enabled = state.controlsEnabled,
-                    modifier = Modifier.minimumInteractiveComponentSize().testTag("adjustment-fine").semantics { contentDescription = fineHint })
+        val measurer = rememberTextMeasurer()
+        val density = LocalDensity.current
+        val labelStyle = MaterialTheme.typography.labelMedium
+        val labels = EditorAdjustmentRules.tools(EditorAdjustmentRules.groupFor(tool) ?: EditorAdjustmentGroup.LOOKS)
+            .map { stringResource(editorToolTitles[it]) }
+        val longestLabel = labels.maxOf { measurer.measure(AnnotatedString(it), labelStyle).size.width }
+        val fineWidth = if (showFine) measurer.measure(AnnotatedString(stringResource(R.string.adjustment_fine)),
+            MaterialTheme.typography.labelSmall).size.width else 0
+        // 按整个分组的最长译文分行，切换工具时保持工具栏高度稳定。
+        val requiredWidth = with(density) { (longestLabel + fineWidth).toDp() } +
+            73.dp + 96.dp + if (showFine) 52.dp else 0.dp
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            if (maxWidth < requiredWidth) {
+                Column {
+                    toolStrip()
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically) { fineControl(); dockActions() }
+                }
+            } else {
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                    toolStrip(Modifier.weight(1f)); fineControl(); dockActions()
+                }
             }
-            dockActions()
         }
     }
     val scrollTools = compactNavigation && !sideDock
@@ -147,6 +177,13 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
             if (scrollTools) toolRow()
         when (tool) {
             0 -> LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                item(key = "user-presets") {
+                    Column(Modifier.width(88.dp).testTag("preset-dock"), horizontalAlignment = Alignment.CenterHorizontally) {
+                        ToolIcon(Icons.Outlined.Bookmarks, R.string.preset_library, state.operation == Operation.NONE, onPresets)
+                        Text(stringResource(R.string.preset_library), Modifier.heightIn(min = 42.dp).padding(top = 4.dp),
+                            style = MaterialTheme.typography.labelSmall)
+                    }
+                }
                 item(key = "import-look") {
                     Column(Modifier.width(76.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         ToolIcon(Icons.Outlined.Add, R.string.import_look, state.operation == Operation.NONE, onImportLook)
@@ -232,8 +269,9 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 { value, dragging -> onEdit(edits.copy(shadows = value / 100), dragging) }, { onEdit(edits.copy(shadows = 0f), false) })
             5 -> NumericControl(R.string.contrast, edits.contrast * 100, -100f..100f, "%", state.controlsEnabled,
                 { value, dragging -> onEdit(edits.copy(contrast = value / 100), dragging) }, { onEdit(edits.copy(contrast = 0f), false) })
-            6 -> NumericControl(R.string.tone_curve, edits.toneCurve * 100, -100f..100f, "%", state.controlsEnabled,
-                { value, dragging -> onEdit(edits.copy(toneCurve = value / 100), dragging) }, { onEdit(edits.copy(toneCurve = 0f), false) })
+            6 -> ToneCurveControls(edits.curve, edits.toneCurve, state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(curve = value), dragging) },
+                { value, dragging -> onEdit(edits.copy(toneCurve = value), dragging) })
             7 -> NumericControl(R.string.saturation, edits.saturation * 100, -100f..100f, "%", state.controlsEnabled,
                 { value, dragging -> onEdit(edits.copy(saturation = value / 100), dragging) }, { onEdit(edits.copy(saturation = 0f), false) })
             8 -> {
@@ -260,8 +298,14 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
             13 -> PhotoEffectsControls(edits.effects, vignette = false, enabled = state.controlsEnabled, onReset = { onResetScope(EditorResetScope.Tool(13)) }) { value, dragging ->
                 onEdit(edits.copy(effects = value), dragging)
             }
-            14 -> HslControls(edits.hsl, state.controlsEnabled, channel, onChannelChange,
-                { all -> onResetScope(if (all) EditorResetScope.AllHsl else EditorResetScope.HslChannel(channel)) }) { value, dragging -> onEdit(edits.copy(hsl = value), dragging) }
+            21 -> ColorGradingControls(edits.colorGrading, state.controlsEnabled, gradingZone, onGradingZoneChange) { value, dragging ->
+                onEdit(edits.copy(colorGrading = value), dragging)
+            }
+            14 -> Column {
+                HslTargetControls(hslTarget, state.controlsEnabled)
+                HslControls(edits.hsl, state.controlsEnabled, channel, onChannelChange,
+                    { all -> onResetScope(if (all) EditorResetScope.AllHsl else EditorResetScope.HslChannel(channel)) }) { value, dragging -> onEdit(edits.copy(hsl = value), dragging) }
+            }
             16 -> LensControls(edits.lens, state.preview?.lens, rawInput && state.controlsEnabled && state.draft != null, state.rendering, onReset = { onResetScope(EditorResetScope.Tool(16)) }) { value ->
                 onDraftEdit(edits.copy(lens = value), false)
             }
@@ -277,6 +321,16 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
             15 -> MasterRecipePicker(recipes, edits.recipeID, state.controlsEnabled) { recipe ->
                 onEdit(if (recipe == null) edits.selectFilm("neutral", state.preview?.tint) else edits.applyRecipe(recipe), false)
             }
+            18 -> NumericControl(R.string.black_point, edits.blackPoint, -100f..100f, "%", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(blackPoint = value), dragging) }, { onEdit(edits.copy(blackPoint = 0f), false) })
+            19 -> NumericControl(R.string.white_point, edits.whitePoint, -100f..100f, "%", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(whitePoint = value), dragging) }, { onEdit(edits.copy(whitePoint = 0f), false) })
+            20 -> NumericControl(R.string.vibrance, edits.vibrance, -100f..100f, "%", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(vibrance = value), dragging) }, { onEdit(edits.copy(vibrance = 0f), false) })
+            22 -> NumericControl(R.string.clarity, edits.clarity, -100f..100f, "%", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(clarity = value), dragging) }, { onEdit(edits.copy(clarity = 0f), false) })
+            23 -> NumericControl(R.string.dehaze, edits.dehaze, -100f..100f, "%", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(dehaze = value), dragging) }, { onEdit(edits.copy(dehaze = 0f), false) })
             10 -> NumericControl(R.string.sharpening, edits.sharpening * 100, 0f..200f, "%", state.controlsEnabled,
                 { value, dragging -> onEdit(edits.copy(sharpening = value / 100), dragging) }, { onEdit(edits.copy(sharpening = 0f), false) })
         }

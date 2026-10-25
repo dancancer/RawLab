@@ -12,6 +12,7 @@ $projects=[ordered]@{
     denoise='denoise/DenoiseSettingsTests.csproj'
     localization='localization/LocalizationChecks.csproj'
     updates='updates/UpdateChecks.csproj'
+    updateSdk='updates-sdk/UpdateSdkChecks.csproj'
     usage='usage/UsageAnalytics.Tests.csproj'
 }
 try {

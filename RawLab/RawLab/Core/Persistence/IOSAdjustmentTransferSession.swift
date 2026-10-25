@@ -32,11 +32,12 @@ struct IOSPreparedAdjustmentTransfer {
     }
     let id: UUID
     let payload: AdjustmentTransferPayload
+    let action: IOSAdjustmentHistoryTransaction.Action
     let targets: [Target]
 }
 
 struct IOSAdjustmentHistoryTransaction {
-    enum Action { case paste, edit }
+    enum Action { case paste, preset, edit, synchronize }
     enum State { case applied, undone, redoInvalidated }
     struct Part {
         let id: UUID
@@ -76,12 +77,13 @@ final class IOSAdjustmentTransferSession {
         return captured
     }
 
-    func prepare(payload: AdjustmentTransferPayload, targets: [IOSAdjustmentTransferTarget]) throws -> IOSPreparedAdjustmentTransfer {
+    func prepare(payload: AdjustmentTransferPayload, targets: [IOSAdjustmentTransferTarget],
+                 action: IOSAdjustmentHistoryTransaction.Action = .paste) throws -> IOSPreparedAdjustmentTransfer {
         try payload.validate()
         var seen = Set<String>(), prepared = [IOSPreparedAdjustmentTransfer.Target]()
         for target in targets {
             let id = target.identity.key
-            guard seen.insert(id).inserted else { continue }
+            guard seen.insert(id).inserted, action != .synchronize || id != payload.source.identifier else { continue }
             do {
                 guard target.isCurrent?() != false else { throw AdjustmentTransferError.draftRequiresPreflight }
                 try target.validateSource?()
@@ -95,7 +97,7 @@ final class IOSAdjustmentTransferSession {
                     isCurrent: target.isCurrent, validateSource: target.validateSource, error: error))
             }
         }
-        return .init(id: UUID(), payload: payload, targets: prepared)
+        return .init(id: UUID(), payload: payload, action: action, targets: prepared)
     }
 
     func apply(_ operation: IOSPreparedAdjustmentTransfer, skipping: Set<String> = []) -> [IOSAdjustmentTransferOutcome] {
@@ -105,7 +107,10 @@ final class IOSAdjustmentTransferSession {
         return operation.targets.map { target in
             if let cached = outcomes[operation.id]?[target.id], [.applied, .unchanged, .skipped].contains(cached.status) { return cached }
             let result: IOSAdjustmentTransferOutcome
-            if skipping.contains(target.id) { result = outcome(target.id, .skipped) }
+            if operation.action == .synchronize && target.id == operation.payload.source.identifier {
+                result = outcome(target.id, .blocked, error: AdjustmentTransferError.incompatible("synchronization source"))
+            }
+            else if skipping.contains(target.id) { result = outcome(target.id, .skipped) }
             else if target.isCurrent?() == false { result = outcome(target.id, .blocked, error: AdjustmentTransferError.draftRequiresPreflight) }
             else if let original = target.original, let candidate = target.candidate {
                 do {
@@ -114,7 +119,7 @@ final class IOSAdjustmentTransferSession {
                     if target.unchanged { result = outcome(target.id, .unchanged, saved: original) }
                     else {
                         let saved = try store.compareAndSave(expected: original, state: candidate.withUpdatedAt(Date()))
-                        record(id: operation.id, action: .paste, fields: operation.payload.fields, displayName: target.displayName,
+                        record(id: operation.id, action: operation.action, fields: operation.payload.fields, displayName: target.displayName,
                             before: original, after: saved, validateSource: target.validateSource)
                         result = outcome(target.id, .applied, saved: saved)
                     }

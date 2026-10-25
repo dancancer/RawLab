@@ -63,6 +63,10 @@ public sealed class Adjustments
     public DenoiseSettings Denoise { get; set; } = new();
     public bool AIDenoiseEnabled { get; set; }
     public PhotoEffectsSettings Effects { get; set; } = new();
+    public ColorGradingSettings ColorGrading { get; set; } = new();
+    public ToneCurveSettings Curve { get; set; } = new();
+    public AtmosphereSettings Atmosphere { get; set; } = new();
+    public ToneControlsSettings ToneControls { get; set; } = new();
     public string? MasterRecipeID { get; private set; }
     public LensSettings Lens { get; set; } = new();
     public GeometrySettings Geometry { get; set; } = new();
@@ -104,7 +108,11 @@ public sealed class Adjustments
     public Adjustments Clone() { var copy = (Adjustments)MemberwiseClone(); copy.values = (double[])values.Clone(); return copy; }
     public AdjustmentSnapshot Capture() => new((double[])values.Clone(), ExposureMode, CameraWhiteBalance, AsShot?.Temperature, AsShot?.Tint,
         Denoise, Effects, DisplayChromaDenoise, Hsl, MasterRecipeID, Lens, Geometry) {
-        Processing = ProcessingIdentity.Require(Processing), AIDenoiseEnabled = AIDenoiseEnabled
+        Processing = ProcessingIdentity.Require(Processing), AIDenoiseEnabled = AIDenoiseEnabled,
+        Atmosphere = Atmosphere.IsIdentity ? null : Atmosphere,
+        ToneControls = ToneControls.IsIdentity ? null : ToneControls,
+        ColorGrading = ColorGrading.IsDefault ? null : ColorGrading,
+        Curve = Curve.IsDefault ? null : Curve
     };
     public static Adjustments FromSnapshot(AdjustmentSnapshot snapshot)
     {
@@ -114,6 +122,12 @@ public sealed class Adjustments
         var denoise = snapshot.Denoise ?? new DenoiseSettings();
         var effects = snapshot.Effects ?? new PhotoEffectsSettings();
         var geometry = snapshot.Geometry ?? new GeometrySettings();
+        var atmosphere = snapshot.Atmosphere ?? new AtmosphereSettings();
+        _ = atmosphere.NativeConfig();
+        var tone = snapshot.ToneControls ?? new ToneControlsSettings();
+        var grading = snapshot.ColorGrading ?? new ColorGradingSettings();
+        _ = grading.NativeConfig();
+        _ = tone.NativeConfig();
         _ = denoise.NativeConfig();
         _ = effects.NativeConfig();
         _ = geometry.NativeConfig();
@@ -124,6 +138,10 @@ public sealed class Adjustments
             Denoise = denoise,
             AIDenoiseEnabled = snapshot.AIDenoiseEnabled,
             Effects = effects,
+            ToneControls = tone,
+            Atmosphere = atmosphere,
+            ColorGrading = grading,
+            Curve = snapshot.Curve ?? new(),
             Hsl = snapshot.Hsl ?? new HslSettings(),
             MasterRecipeID = snapshot.MasterRecipeID,
             Lens = snapshot.Lens ?? new(),
@@ -153,6 +171,16 @@ public sealed class Adjustments
         }
     }
     public void ResetWhiteBalance() { values[2] = Default(Parameter.Temperature); values[3] = Default(Parameter.Tint); CameraWhiteBalance = true; }
+    public void SetAtmosphere(AtmosphereParameter id, double value)
+    {
+        if (!double.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
+        Atmosphere = Atmosphere.With(id, Math.Clamp(value, -100, 100));
+    }
+    public void SetTone(ToneControlParameter id, double value)
+    {
+        if (!double.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
+        ToneControls = ToneControls.With(id, Math.Clamp(Math.Round(value, 1, MidpointRounding.AwayFromZero), -100, 100));
+    }
     public void Reset(Parameter id) => Set(id, Default(id));
     public double EffectDefault(PhotoEffectParameter id) => PhotoEffectSpec.For(id).DefaultValue;
     public void SetEffect(PhotoEffectParameter id, double value)
@@ -182,13 +210,14 @@ public sealed class Adjustments
     {
         foreach (var spec in ParameterSpec.All.Where(p => p.Group == group)) Reset(spec.Id);
         if (group == "输入") { ExposureMode = 1; ResetWhiteBalance(); }
-        if (group == "色彩") Hsl = new();
+        if (group == "色彩") { ColorGrading = new(); Hsl = new(); ToneControls = ToneControls with { Vibrance = 0 }; }
+        if (group == "明暗") { Curve = new(); ToneControls = ToneControls with { BlackPoint = 0, WhitePoint = 0 }; }
         if (group == "细节") { AIDenoiseEnabled = false; Denoise = new(); DisplayChromaDenoise = 0; }
-        if (group == "效果") Effects = new();
+        if (group == "效果") { Effects = new(); Atmosphere = new(); }
         if (group == "镜头") Lens = new();
         if (group == "几何") Geometry = new();
     }
-    public void ResetAll() { AIDenoiseEnabled = false; MasterRecipeID = null; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); }
+    public void ResetAll() { Atmosphere = new(); Curve = new(); ColorGrading = new(); ToneControls = new(); AIDenoiseEnabled = false; MasterRecipeID = null; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); }
     internal Native.Request Request(string path, string? lut, int edge, string? output, int? longEdge = null)
     {
         if (longEdge is { } requested && !ExportSize.IsValid(requested))
@@ -205,7 +234,7 @@ public sealed class Adjustments
             ExposureEv=(float)(this[Parameter.Exposure]*scale), Brightness=1, Contrast=1+(float)(this[Parameter.Contrast]*scale)/100,
             Saturation=1+(float)(this[Parameter.Saturation]*scale)/100, Temperature=temperatureWb ? (float)this[Parameter.Temperature] : 6500,
             Tint=temperatureWb ? (float)tint : 0, Highlights=-(float)(this[Parameter.Highlights]*scale)/100,
-            Shadows=(float)(this[Parameter.Shadows]*scale)/100,ToneCurve=(float)this[Parameter.ToneCurve]/100,Sharpening=(float)this[Parameter.Sharpening]/100,
+            Shadows=(float)(this[Parameter.Shadows]*scale)/100,ToneCurve=Curve.Mode == ToneCurveMode.Custom ? 0 : (float)this[Parameter.ToneCurve]/100,Sharpening=(float)this[Parameter.Sharpening]/100,
             // SizeMode 4 is the shared final long-edge contract. PreviewLongEdge
             // remains independent and is never used to size an export.
             SizeMode=limitedFinal ? 4 : 3,LongEdge=limitedFinal ? (uint)longEdge!.Value : 0,

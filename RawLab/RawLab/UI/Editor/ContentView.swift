@@ -47,12 +47,22 @@ struct ContentView: View {
     @State var showingProcessingContext = false
     @State var adjustmentSheet: IOSAdjustmentSheet?
     @State var pendingAdjustmentAction: IOSAdjustmentAction?
+    @State var queuedPresetAction: IOSAdjustmentAction?
+    @State var applyingPreset: AdjustmentPreset?
+    @State var returnToPresetLibrary = false
     @State var adjustmentReloadPresented = false
     @State var lensDraft: RawSettings?
     @State var draftExitPresented = false
     @State var pendingToolSelection: EditorToolSelection?
     @State var selectedGroup = EditorAdjustmentGroup.looks
     @State var hslChannel = 0
+    @State var hslTargetEnabled = false
+    @State var hslTargetAxis: HSLAxis = .hue
+    @State var hslTargetInteraction = HSLTargetInteraction()
+    @State var hslTargetPoint: CGPoint?
+    @State var hslTargetNotice: HSLTargetAvailability?
+    @State var hslTargetHistoryActive = false
+    @State var gradingZone: ColorGradingZone = .shadows
     @State var adjustmentFine = false
     @State var pendingAdjustmentExpansion: Bool?
     @State var collapsedEditorTool: EditorToolSelection?
@@ -73,6 +83,11 @@ struct ContentView: View {
     @State var showingFileImporter = false
     @State var showingLookImporter = false
     @State private var checkedBatchRecovery = false
+    @State var showingBatchSelection = false
+    @State var queuedCollectionEdit: String?
+    @State var queuedCollectionBatch: BatchExportModel?
+    @State var queuedCollectionExistingBatch = false
+    @State var pendingCollectionNavigation: IOSCollectionNavigation?
     @State var showingBatchExport = false
     @State var batchModel: BatchExportModel?
     @State var photoInfoMode = PhotoInfoMode.hidden
@@ -203,12 +218,18 @@ struct ContentView: View {
             }
         }
         .onChange(of: viewModel.sourceRevision) { _, _ in
+            cancelHSLTarget()
+            gradingZone = .shadows
             photoViewing.sourceChanged()
             photoComparisonControlBounds = .zero
             photoViewport = PhotoViewport()
             pendingFileImport = false
             pendingPhotoImport = false
             pendingAdjustmentAction = nil
+            queuedPresetAction = nil
+            applyingPreset = nil
+            returnToPresetLibrary = false
+            if adjustmentSheet == .presetSave || adjustmentSheet == .presetApply { adjustmentSheet = nil }
             adjustmentFine = false
             geometryDraft = nil
             lensDraft = nil
@@ -230,6 +251,9 @@ struct ContentView: View {
             }
         }
         .onChange(of: viewModel.isBusy) { _, busy in
+            if !busy, let current = viewModel.batchSelection.selection.current, current != viewModel.sourceIdentity?.key {
+                viewModel.batchSelection.selection.returnToCollection()
+            }
             if !busy && photoImportTask == nil {
                 isImporting = false
                 photoImportRequestID = nil
@@ -265,10 +289,13 @@ struct ContentView: View {
             if active { photoViewing.sourceChanged() }
         }
         .onChange(of: selectedAdjustment) { _, _ in
+            cancelHSLTarget(); hslTargetEnabled = false
             if isAdjustingSlider { cancelSliderInteraction() }
             cancelRulerFocus()
         }
-        .onChange(of: hslChannel) { _, _ in cancelSliderInteraction() }
+        .onChange(of: gradingZone) { _, _ in cancelSliderInteraction() }
+        .onChange(of: hslChannel) { _, _ in cancelHSLTarget(); cancelSliderInteraction() }
+        .onChange(of: hslTargetEnabled) { _, _ in photoViewing.endTemporaryViewing() }
         .onChange(of: adjustmentFine) { _, _ in cancelSliderInteraction() }
         .onAppear {
             viewModel.loadLUTsIfNeeded()
@@ -278,8 +305,28 @@ struct ContentView: View {
 
     private func applyEditorSheets<Content: View>(to content: Content) -> some View {
         content
-        .sheet(item: $adjustmentSheet) { kind in
-            IOSAdjustmentTransferView(model: viewModel, kind: kind, settings: settings)
+        .sheet(item: $adjustmentSheet, onDismiss: finishAdjustmentSheet) { kind in
+            switch kind {
+            case .presets, .presetSave:
+                IOSAdjustmentPresetView(model: viewModel, settings: settings, initialSave: kind == .presetSave,
+                    requestPhotoAction: queuePresetAction)
+            case .presetApply:
+                if let applyingPreset {
+                    IOSAdjustmentTransferView(model: viewModel, kind: .paste, settings: settings, preset: applyingPreset)
+                }
+            default:
+                IOSAdjustmentTransferView(model: viewModel, kind: kind, settings: settings)
+            }
+        }
+        .sheet(isPresented: $showingBatchSelection, onDismiss: finishBatchSelection) {
+            IOSBatchSelectionView(model: viewModel, collection: viewModel.batchSelection, settings: settings,
+                hasPendingBatch: batchModel != nil, resolveDraft: resolveCollectionDraft,
+                editPhoto: { queuedCollectionEdit = $0; showingBatchSelection = false },
+                showExistingBatch: { queuedCollectionExistingBatch = true; showingBatchSelection = false },
+                created: { job, journal in
+                    queuedCollectionBatch = BatchExportModel(job: job, journalStore: journal)
+                    showingBatchSelection = false
+                })
         }
         .sheet(isPresented: $showingBatchExport) {
             if let batchModel {

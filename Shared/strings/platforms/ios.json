@@ -2228,6 +2228,398 @@
     "高度": {
       "formats": [],
       "source": "高度"
+    },
+    "保存当前调整为预设…": {
+      "formats": [],
+      "source": "保存当前调整为预设…"
+    },
+    "保存所选调整，之后可应用到其他照片。": {
+      "formats": [],
+      "source": "保存所选调整，之后可应用到其他照片。"
+    },
+    "保存预设": {
+      "formats": [],
+      "source": "保存预设"
+    },
+    "删除预设？": {
+      "formats": [],
+      "source": "删除预设？"
+    },
+    "另存": {
+      "formats": [],
+      "source": "另存"
+    },
+    "同名预设已存在，请使用其他名称。": {
+      "formats": [],
+      "source": "同名预设已存在，请使用其他名称。"
+    },
+    "尚无用户预设": {
+      "formats": [],
+      "source": "尚无用户预设"
+    },
+    "应用预设": {
+      "formats": [],
+      "source": "应用预设"
+    },
+    "我的预设": {
+      "formats": [],
+      "source": "我的预设"
+    },
+    "新预设": {
+      "formats": [],
+      "source": "新预设"
+    },
+    "无法创建新的预设标识，请重试。": {
+      "formats": [],
+      "source": "无法创建新的预设标识，请重试。"
+    },
+    "此预设库来自更新版本，请更新应用后重试。": {
+      "formats": [],
+      "source": "此预设库来自更新版本，请更新应用后重试。"
+    },
+    "管理预设：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "管理预设：{0}"
+    },
+    "覆盖": {
+      "formats": [],
+      "source": "覆盖"
+    },
+    "覆盖预设？": {
+      "formats": [],
+      "source": "覆盖预设？"
+    },
+    "请输入不同的预设名称。": {
+      "formats": [],
+      "source": "请输入不同的预设名称。"
+    },
+    "请输入预设名称。": {
+      "formats": [],
+      "source": "请输入预设名称。"
+    },
+    "调整范围": {
+      "formats": [],
+      "source": "调整范围"
+    },
+    "重命名预设": {
+      "formats": [],
+      "source": "重命名预设"
+    },
+    "预设名称": {
+      "formats": [],
+      "source": "预设名称"
+    },
+    "预设已变化，请重新载入列表后重试。": {
+      "formats": [],
+      "source": "预设已变化，请重新载入列表后重试。"
+    },
+    "预设库无法读取，原文件保持不变。请从备份恢复后重试。": {
+      "formats": [],
+      "source": "预设库无法读取，原文件保持不变。请从备份恢复后重试。"
+    },
+    "预设操作未完成：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "预设操作未完成：{0}"
+    },
+    "删除": {
+      "formats": [],
+      "source": "删除"
+    },
+    "重命名": {
+      "formats": [],
+      "source": "重命名"
+    },
+    "重新载入": {
+      "formats": [],
+      "source": "重新载入"
+    },
+    "黑场": {
+      "formats": [],
+      "source": "黑场"
+    },
+    "白场": {
+      "formats": [],
+      "source": "白场"
+    },
+    "鲜艳度": {
+      "formats": [],
+      "source": "鲜艳度"
+    },
+    "无效的黑白场或鲜艳度参数": {
+      "formats": [],
+      "source": "无效的黑白场或鲜艳度参数"
+    },
+    "颜色分级": {
+      "formats": [],
+      "source": "颜色分级"
+    },
+    "中间调": {
+      "formats": [],
+      "source": "中间调"
+    },
+    "无效的颜色分级参数": {
+      "formats": [],
+      "source": "无效的颜色分级参数"
+    },
+    "重置当前分区": {
+      "formats": [],
+      "source": "重置当前分区"
+    },
+    "重置颜色分级": {
+      "formats": [],
+      "source": "重置颜色分级"
+    },
+    "恢复阴影、中间调和高光的颜色分级默认值？": {
+      "formats": [],
+      "source": "恢复阴影、中间调和高光的颜色分级默认值？"
+    },
+    "取色失败，请重试。": {
+      "formats": [],
+      "source": "取色失败，请重试。"
+    },
+    "受影响色域：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "受影响色域：{0}"
+    },
+    "在照片上取色并上下拖动": {
+      "formats": [],
+      "source": "在照片上取色并上下拖动"
+    },
+    "正在取色…": {
+      "formats": [],
+      "source": "正在取色…"
+    },
+    "此像素不可取样。": {
+      "formats": [],
+      "source": "此像素不可取样。"
+    },
+    "目标调整": {
+      "formats": [],
+      "source": "目标调整"
+    },
+    "请在调整后的照片区域取色。": {
+      "formats": [],
+      "source": "请在调整后的照片区域取色。"
+    },
+    "调整轴": {
+      "formats": [],
+      "source": "调整轴"
+    },
+    "预览已变化，请重新取色。": {
+      "formats": [],
+      "source": "预览已变化，请重新取色。"
+    },
+    "颜色接近灰色，无法选择色域。": {
+      "formats": [],
+      "source": "颜色接近灰色，无法选择色域。"
+    },
+    "上下拖动调整，方向键微调，Esc 取消": {
+      "formats": [],
+      "source": "上下拖动调整，方向键微调，Esc 取消"
+    },
+    "上次同步结果与历史": {
+      "formats": [],
+      "source": "上次同步结果与历史"
+    },
+    "先检查每张照片的草稿和已保存调整，再确认冻结任务。": {
+      "formats": [],
+      "source": "先检查每张照片的草稿和已保存调整，再确认冻结任务。"
+    },
+    "全选": {
+      "formats": [],
+      "source": "全选"
+    },
+    "单张微调": {
+      "formats": [],
+      "source": "单张微调"
+    },
+    "原始文件已被替换，请重新选择照片。": {
+      "formats": [],
+      "source": "原始文件已被替换，请重新选择照片。"
+    },
+    "同步范围": {
+      "formats": [],
+      "source": "同步范围"
+    },
+    "同步调整": {
+      "formats": [],
+      "source": "同步调整"
+    },
+    "导出尺寸无效。": {
+      "formats": [],
+      "source": "导出尺寸无效。"
+    },
+    "将按各自调整导出 %@ 张照片。": {
+      "formats": [
+        "%@"
+      ],
+      "source": "将按各自调整导出 {0} 张照片。"
+    },
+    "应用草稿": {
+      "formats": [],
+      "source": "应用草稿"
+    },
+    "应用草稿并继续": {
+      "formats": [],
+      "source": "应用草稿并继续"
+    },
+    "批量编辑": {
+      "formats": [],
+      "source": "批量编辑"
+    },
+    "按每张调整导出": {
+      "formats": [],
+      "source": "按每张调整导出"
+    },
+    "按每张调整导出…": {
+      "formats": [],
+      "source": "按每张调整导出…"
+    },
+    "放弃草稿": {
+      "formats": [],
+      "source": "放弃草稿"
+    },
+    "放弃草稿并继续": {
+      "formats": [],
+      "source": "放弃草稿并继续"
+    },
+    "有未提交调整。": {
+      "formats": [],
+      "source": "有未提交调整。"
+    },
+    "来源有未提交调整，请先应用或放弃。": {
+      "formats": [],
+      "source": "来源有未提交调整，请先应用或放弃。"
+    },
+    "来源照片不参与同步。": {
+      "formats": [],
+      "source": "来源照片不参与同步。"
+    },
+    "来源照片不参与同步，请选择至少一张其他照片。": {
+      "formats": [],
+      "source": "来源照片不参与同步，请选择至少一张其他照片。"
+    },
+    "检查并查看最终调整": {
+      "formats": [],
+      "source": "检查并查看最终调整"
+    },
+    "每张照片使用确认时冻结的独立调整。": {
+      "formats": [],
+      "source": "每张照片使用确认时冻结的独立调整。"
+    },
+    "添加照片": {
+      "formats": [],
+      "source": "添加照片"
+    },
+    "确认并冻结任务": {
+      "formats": [],
+      "source": "确认并冻结任务"
+    },
+    "裁切区域": {
+      "formats": [],
+      "source": "裁切区域"
+    },
+    "请先完成或结束已有批量任务，再创建新任务。": {
+      "formats": [],
+      "source": "请先完成或结束已有批量任务，再创建新任务。"
+    },
+    "返回批量集合": {
+      "formats": [],
+      "source": "返回批量集合"
+    },
+    "选择照片后同步所需调整，也可进入单张微调，再返回原集合。": {
+      "formats": [],
+      "source": "选择照片后同步所需调整，也可进入单张微调，再返回原集合。"
+    },
+    "曲线": {
+      "formats": [],
+      "source": "曲线"
+    },
+    "多点曲线": {
+      "formats": [],
+      "source": "多点曲线"
+    },
+    "切换曲线模式": {
+      "formats": [],
+      "source": "切换曲线模式"
+    },
+    "多点曲线将从直线开始，旧 S 曲线数值会保留。": {
+      "formats": [],
+      "source": "多点曲线将从直线开始，旧 S 曲线数值会保留。"
+    },
+    "切换到 S 曲线将移除当前控制点，可撤销此操作。": {
+      "formats": [],
+      "source": "切换到 S 曲线将移除当前控制点，可撤销此操作。"
+    },
+    "切换": {
+      "formats": [],
+      "source": "切换"
+    },
+    "添加控制点": {
+      "formats": [],
+      "source": "添加控制点"
+    },
+    "删除控制点": {
+      "formats": [],
+      "source": "删除控制点"
+    },
+    "重置为直线": {
+      "formats": [],
+      "source": "重置为直线"
+    },
+    "输入坐标": {
+      "formats": [],
+      "source": "输入坐标"
+    },
+    "输出坐标": {
+      "formats": [],
+      "source": "输出坐标"
+    },
+    "端点固定": {
+      "formats": [],
+      "source": "端点固定"
+    },
+    "点击曲线区域添加控制点，拖动中间点调整。": {
+      "formats": [],
+      "source": "点击曲线区域添加控制点，拖动中间点调整。"
+    },
+    "曲线模式与控制点": {
+      "formats": [],
+      "source": "曲线模式与控制点"
+    },
+    "无效的曲线参数": {
+      "formats": [],
+      "source": "无效的曲线参数"
+    },
+    "控制点 %d": {
+      "formats": [
+        "%d"
+      ],
+      "source": "控制点 {0}"
+    },
+    "多点曲线（%d 个控制点）": {
+      "formats": [
+        "%d"
+      ],
+      "source": "多点曲线（{0} 个控制点）"
+    },
+    "清晰度": {
+      "formats": [],
+      "source": "清晰度"
+    },
+    "去朦胧": {
+      "formats": [],
+      "source": "去朦胧"
+    },
+    "无效的清晰度或去朦胧参数": {
+      "formats": [],
+      "source": "无效的清晰度或去朦胧参数"
     }
   },
   "overrides": {
@@ -2883,6 +3275,150 @@
       "fr": "Par défaut",
       "ja": "デフォルト",
       "zh-Hans": "默认"
+    },
+    "上次同步结果与历史": {
+      "de": "Ergebnisse und Verlauf der letzten Synchronisierung",
+      "en": "Last sync results and history",
+      "es": "Resultados e historial de la última sincronización",
+      "fr": "Résultats et historique de la dernière synchronisation",
+      "ja": "前回の同期結果と履歴",
+      "zh-Hans": "上次同步结果与历史"
+    },
+    "先检查每张照片的草稿和已保存调整，再确认冻结任务。": {
+      "de": "Prüfen Sie die Entwürfe und gespeicherten Anpassungen aller Fotos und bestätigen Sie dann die Aufgabe.",
+      "en": "Review each photo’s draft and saved adjustments, then confirm to freeze the task.",
+      "es": "Revisa el borrador y los ajustes guardados de cada foto, y confirma para fijar la tarea.",
+      "fr": "Vérifiez le brouillon et les réglages enregistrés de chaque photo, puis confirmez pour figer la tâche.",
+      "ja": "各写真の下書きと保存済みの調整を確認してから、タスクを確定してください。",
+      "zh-Hans": "先检查每张照片的草稿和已保存调整，再确认冻结任务。"
+    },
+    "同步范围": {
+      "de": "Synchronisierungsumfang",
+      "en": "Sync scope",
+      "es": "Alcance de sincronización",
+      "fr": "Portée de synchronisation",
+      "ja": "同期する範囲",
+      "zh-Hans": "同步范围"
+    },
+    "导出尺寸无效。": {
+      "de": "Ungültige Exportgröße.",
+      "en": "Invalid export size.",
+      "es": "Tamaño de exportación no válido.",
+      "fr": "Dimensions d’export non valides.",
+      "ja": "書き出しサイズが無効です。",
+      "zh-Hans": "导出尺寸无效。"
+    },
+    "将按各自调整导出 {0} 张照片。": {
+      "de": "Mit individuellen Anpassungen exportieren · Fotos: {0}",
+      "en": "Export with individual adjustments · Photos: {0}",
+      "es": "Exportar con ajustes individuales · Fotos: {0}",
+      "fr": "Exporter avec les réglages individuels · Photos : {0}",
+      "ja": "{0}枚の写真をそれぞれの調整で書き出します。",
+      "zh-Hans": "将按各自调整导出 {0} 张照片。"
+    },
+    "应用草稿并继续": {
+      "de": "Entwurf übernehmen und fortfahren",
+      "en": "Apply draft and continue",
+      "es": "Aplicar borrador y continuar",
+      "fr": "Appliquer le brouillon et continuer",
+      "ja": "下書きを適用して続行",
+      "zh-Hans": "应用草稿并继续"
+    },
+    "按每张调整导出": {
+      "de": "Mit den Anpassungen jedes Fotos exportieren",
+      "en": "Export with each photo’s adjustments",
+      "es": "Exportar con los ajustes de cada foto",
+      "fr": "Exporter avec les réglages de chaque photo",
+      "ja": "各写真の調整で書き出す",
+      "zh-Hans": "按每张调整导出"
+    },
+    "按每张调整导出…": {
+      "de": "Mit den Anpassungen jedes Fotos exportieren…",
+      "en": "Export with each photo’s adjustments…",
+      "es": "Exportar con los ajustes de cada foto…",
+      "fr": "Exporter avec les réglages de chaque photo…",
+      "ja": "各写真の調整で書き出す…",
+      "zh-Hans": "按每张调整导出…"
+    },
+    "放弃草稿并继续": {
+      "de": "Entwurf verwerfen und fortfahren",
+      "en": "Discard draft and continue",
+      "es": "Descartar borrador y continuar",
+      "fr": "Abandonner le brouillon et continuer",
+      "ja": "下書きを破棄して続行",
+      "zh-Hans": "放弃草稿并继续"
+    },
+    "有未提交调整。": {
+      "de": "Es gibt unbestätigte Anpassungen.",
+      "en": "There are uncommitted adjustments.",
+      "es": "Hay ajustes sin confirmar.",
+      "fr": "Des réglages ne sont pas encore validés.",
+      "ja": "未確定の調整があります。",
+      "zh-Hans": "有未提交调整。"
+    },
+    "来源有未提交调整，请先应用或放弃。": {
+      "de": "Übernehmen oder verwerfen Sie zuerst die unbestätigten Anpassungen der Quelle.",
+      "en": "Apply or discard the source’s uncommitted adjustments first.",
+      "es": "Primero aplica o descarta los ajustes sin confirmar del origen.",
+      "fr": "Appliquez ou abandonnez d’abord les réglages non validés de la source.",
+      "ja": "先に元の写真の未確定の調整を適用するか破棄してください。",
+      "zh-Hans": "来源有未提交调整，请先应用或放弃。"
+    },
+    "来源照片不参与同步。": {
+      "de": "Das Quellfoto ist von der Synchronisierung ausgeschlossen.",
+      "en": "The source photo is excluded from sync.",
+      "es": "La foto de origen se excluye de la sincronización.",
+      "fr": "La photo source est exclue de la synchronisation.",
+      "ja": "元の写真は同期対象に含まれません。",
+      "zh-Hans": "来源照片不参与同步。"
+    },
+    "来源照片不参与同步，请选择至少一张其他照片。": {
+      "de": "Das Quellfoto ist ausgeschlossen. Wählen Sie mindestens ein anderes Foto.",
+      "en": "The source photo is excluded. Select at least one other photo.",
+      "es": "Se excluye la foto de origen. Selecciona al menos otra foto.",
+      "fr": "La photo source est exclue. Sélectionnez au moins une autre photo.",
+      "ja": "元の写真は同期対象外です。他の写真を1枚以上選択してください。",
+      "zh-Hans": "来源照片不参与同步，请选择至少一张其他照片。"
+    },
+    "检查并查看最终调整": {
+      "de": "Endgültige Anpassungen prüfen und anzeigen",
+      "en": "Check and review final adjustments",
+      "es": "Comprobar y revisar ajustes finales",
+      "fr": "Vérifier et afficher les réglages finaux",
+      "ja": "最終調整を確認して表示",
+      "zh-Hans": "检查并查看最终调整"
+    },
+    "每张照片使用确认时冻结的独立调整。": {
+      "de": "Jedes Foto verwendet seine bei der Bestätigung festgeschriebenen Anpassungen.",
+      "en": "Each photo uses its individual adjustments frozen at confirmation.",
+      "es": "Cada foto usa sus ajustes individuales fijados al confirmar.",
+      "fr": "Chaque photo utilise ses propres réglages figés lors de la confirmation.",
+      "ja": "各写真には確認時に確定した個別の調整が使用されます。",
+      "zh-Hans": "每张照片使用确认时冻结的独立调整。"
+    },
+    "裁切区域": {
+      "de": "Zuschnittbereich",
+      "en": "Crop region",
+      "es": "Área de recorte",
+      "fr": "Zone de recadrage",
+      "ja": "切り抜き範囲",
+      "zh-Hans": "裁切区域"
+    },
+    "请先完成或结束已有批量任务，再创建新任务。": {
+      "de": "Schließen Sie die vorhandene Stapelaufgabe ab oder beenden Sie sie, bevor Sie eine neue erstellen.",
+      "en": "Finish or end the existing batch task before creating a new one.",
+      "es": "Completa o finaliza la tarea por lotes existente antes de crear otra.",
+      "fr": "Terminez la tâche par lot existante avant d’en créer une nouvelle.",
+      "ja": "新しいタスクを作成する前に、既存の一括処理を完了するか終了してください。",
+      "zh-Hans": "请先完成或结束已有批量任务，再创建新任务。"
+    },
+    "选择照片后同步所需调整，也可进入单张微调，再返回原集合。": {
+      "de": "Wählen Sie Fotos zum Synchronisieren aus oder bearbeiten Sie ein Foto einzeln und kehren Sie zur selben Sammlung zurück.",
+      "en": "Select photos to sync adjustments, or fine-tune a photo and return to the same collection.",
+      "es": "Selecciona fotos para sincronizar ajustes, o afina una foto y vuelve a la misma colección.",
+      "fr": "Sélectionnez des photos pour synchroniser les réglages, ou affinez une photo avant de revenir à la collection.",
+      "ja": "写真を選んで調整を同期できます。1枚ずつ微調整した後、同じ一覧に戻ることもできます。",
+      "zh-Hans": "选择照片后同步所需调整，也可进入单张微调，再返回原集合。"
     }
   }
 }

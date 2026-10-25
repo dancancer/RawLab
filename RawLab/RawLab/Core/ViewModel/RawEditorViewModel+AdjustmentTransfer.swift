@@ -1,14 +1,5 @@
 import Foundation
 
-struct IOSAdjustmentPhoto: Identifiable {
-    let identity: PhotoIdentity
-    let displayName: String
-    let file: PhotoSourceFile?
-    let isRaw: Bool
-    var error: Error? = nil
-    var id: String { identity.key }
-}
-
 extension RawEditorViewModel {
     func adjustmentContext(identifier: String, isRaw: Bool,
                            whiteBalance: Sony2FujiProcessor.RawWhiteBalance? = nil) -> IOSAdjustmentTransferContext {
@@ -41,6 +32,7 @@ extension RawEditorViewModel {
     }
 
     func prepareAdjustmentPaste(_ payload: AdjustmentTransferPayload, photos: [IOSAdjustmentPhoto],
+                                action: IOSAdjustmentHistoryTransaction.Action = .paste,
                                 completion: @escaping (Result<IOSPreparedAdjustmentTransfer, Error>) -> Void) {
         guard let session = adjustmentSession else { completion(.failure(EditPersistenceError.corruptStore)); return }
         let generation = UUID()
@@ -63,7 +55,9 @@ extension RawEditorViewModel {
                 do {
                     if let error = photo.error { throw error }
                     guard let file = photo.file else { throw CocoaError(.fileReadNoSuchFile) }
-                    validation = try Self.adjustmentSourceValidation(file)
+                    let original = try Self.adjustmentSourceValidation(file)
+                    validation = { try photo.validateSource?(); try original() }
+                    try validation?()
                     if photo.isRaw {
                         let processor = Sony2FujiProcessor()
                         let result = try file.withReadAccess {
@@ -93,7 +87,7 @@ extension RawEditorViewModel {
                     defaultState: PhotoEditState(settings: .default), context: context,
                     isCurrent: { validateCurrent(photo.id) }, validateSource: validation)
             }
-            let result = Result { try session.prepare(payload: payload, targets: targets) }
+            let result = Result { try session.prepare(payload: payload, targets: targets, action: action) }
             self.resultDelivery {
                 guard self.adjustmentPreparationID == generation else { return }
                 self.adjustmentPreparing = false
@@ -110,6 +104,9 @@ extension RawEditorViewModel {
     func applyAdjustmentPaste(_ operation: IOSPreparedAdjustmentTransfer, skipping: Set<String>) -> [IOSAdjustmentTransferOutcome] {
         let results = adjustmentSession?.apply(operation, skipping: skipping) ?? []
         acceptAdjustmentOutcomes(results)
+        if operation.action == .synchronize {
+            batchSelection.selection.recordSynchronization(operation.id, changed: results.contains { $0.status == .applied })
+        }
         return results
     }
 

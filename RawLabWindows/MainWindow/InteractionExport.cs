@@ -129,6 +129,7 @@ public partial class MainWindow
         var startsBeforeKey=viewingKey==Key.Oem5 && !beforeKeyDown;
         if(viewingKey==Key.Oem5)beforeKeyDown=true;
         if(e.OriginalSource is TextBoxBase or ComboBox || Keyboard.FocusedElement is TextBoxBase or ComboBox)return;
+        if(e.Key==Key.Escape && hslTargetEnabled){CancelHslTarget();e.Handled=true;return;}
         if(e.Key==Key.Escape && editGesture!=null){CancelParameterInputs();CancelEditGesture();e.Handled=true;return;}
         if(e.Key==Key.Z && Keyboard.Modifiers==ModifierKeys.Control){RunPhotoHistory(true);e.Handled=true;return;}
         if(e.Key==Key.Y && Keyboard.Modifiers==ModifierKeys.Control || e.Key==Key.Z && Keyboard.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift))
@@ -226,6 +227,8 @@ public partial class MainWindow
         Path.GetFullPath(Path.GetDirectoryName(path) ?? ""), Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "LUTs")));
     private void WindowClosing(object? sender,CancelEventArgs e)
     {
+        if(!updateQuitApproved){e.Cancel=true;Dispatcher.BeginInvoke(new Action(()=>_=PrepareUpdateQuitAsync()));return;}
+        updateQuitApproved=false;
         CancelParameterInputs();CancelViewingInput();
         if(!ResolveTransformDraft() || !SaveEdits()){e.Cancel=true;return;}
         closing=true;
@@ -233,6 +236,7 @@ public partial class MainWindow
         previewResize.Stop();
         if(batchWindow is {} batch)
         {
+            batch.PreserveOnUpdateExit=UpdateInstallationActive;
             batch.Close();
             if(batch.IsVisible && !batch.Busy){e.Cancel=true;RecoverFailedClose(batch);return;}
         }

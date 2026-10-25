@@ -4,7 +4,8 @@ extension MacAdjustmentTransfer {
     static let scalarKeys: [Field: WritableKeyPath<Adjustments, Double>] = [
         .strength: \.strength, .exposure: \.exposure, .contrast: \.contrast,
         .highlights: \.highlights, .shadows: \.shadows, .sCurve: \.toneCurve,
-        .saturation: \.saturation, .sharpening: \.sharpening
+        .saturation: \.saturation, .sharpening: \.sharpening,
+        .blackPoint: \.blackPoint, .whitePoint: \.whitePoint, .vibrance: \.vibrance, .clarity: \.clarity, .dehaze: \.dehaze
     ]
     static let effectKeys: [Field: WritableKeyPath<PhotoEffectsSettings, Double>] = [
         .vignetteAmount: \.vignetteAmount, .vignetteMidpoint: \.vignetteMidpoint,
@@ -42,8 +43,9 @@ extension MacAdjustmentTransfer {
         var request = sony2fuji_request(); settings.apply(to: &request)
         var result: [Field: Double] = [
             .strength: settings.strength, .exposure: Double(request.exposure_ev), .contrast: Double(request.contrast),
-            .highlights: Double(request.highlights), .shadows: Double(request.shadows), .sCurve: Double(request.tone_curve),
-            .saturation: Double(request.saturation), .sharpening: Double(request.sharpening)
+            .highlights: Double(request.highlights), .shadows: Double(request.shadows), .sCurve: Double(Float(settings.toneCurve / 100)),
+            .saturation: Double(request.saturation), .sharpening: Double(request.sharpening),
+            .blackPoint: settings.blackPoint, .whitePoint: settings.whitePoint, .vibrance: settings.vibrance, .clarity: settings.clarity, .dehaze: settings.dehaze
         ]
         for field in Field.allCases {
             if let location = field.hslLocation {
@@ -56,6 +58,7 @@ extension MacAdjustmentTransfer {
     static func values(_ snapshot: PhotoEditState, isRaw: Bool) -> [String: Value] {
         let settings = snapshot.settings
         var result = [String: Value]()
+        result[Field.curve.rawValue] = settings.curveSettings.transferValue
         for (field, key) in scalarKeys { result[field.rawValue] = .number(logical(settings[keyPath: key], field: field)) }
         let look: [String: Value]
         if let recipe = settings.masterRecipeID { look = ["kind": .string("recipe"), "id": .string(recipe)] }
@@ -73,6 +76,12 @@ extension MacAdjustmentTransfer {
         for field in Field.allCases {
             if let location = field.hslLocation {
                 result[field.rawValue] = .number(settings.hslSettings.value(HSLAxis(rawValue: location.axis)!, channel: location.channel))
+            }
+        }
+        for field in Field.allCases {
+            if let zone = field.gradingZone {
+                let wheel = settings.gradingSettings[zone]
+                result[field.rawValue] = .object(["hue": .number(wheel.hue), "saturation": .number(wheel.saturation)])
             }
         }
         for (field, key) in effectKeys { result[field.rawValue] = .number(settings.effectSettings[keyPath: key]) }
@@ -99,6 +108,12 @@ extension MacAdjustmentTransfer {
 
     static func applyObjects(_ payload: AdjustmentTransferPayload, to settings: inout Adjustments,
                              context: MacAdjustmentTransferContext) throws {
+        if let curve = payload[.curve]?.curve, curve != settings.curveSettings { settings.curveSettings = curve }
+        for field in payload.fields {
+            if let zone = field.gradingZone, let wheel = payload[field]?.object {
+                settings.gradingSettings[zone] = ColorGradingWheel(hue: wheel["hue"]!.number!, saturation: wheel["saturation"]!.number!)
+            }
+        }
         if let value = payload[.postRGBDenoise]?.number, value != 0 {
             throw AdjustmentTransferError.incompatible(Field.postRGBDenoise.rawValue)
         }

@@ -91,6 +91,10 @@ object AdjustmentTransfer {
         put(AdjustmentField.CONTRAST, 1f + s.contrast * s.recipeScale); put(AdjustmentField.HIGHLIGHTS, -s.highlights * s.recipeScale)
         put(AdjustmentField.SHADOWS, s.shadows * s.recipeScale); put(AdjustmentField.S_CURVE, s.toneCurve)
         put(AdjustmentField.SATURATION, 1f + s.saturation * s.recipeScale); put(AdjustmentField.SHARPENING, s.sharpening)
+        put(AdjustmentField.BLACK_POINT, s.blackPoint); put(AdjustmentField.WHITE_POINT, s.whitePoint)
+        put(AdjustmentField.VIBRANCE, s.vibrance)
+        put(AdjustmentField.CLARITY, s.clarity)
+        put(AdjustmentField.DEHAZE, s.dehaze)
         for (field in AdjustmentField.entries) field.hslLocation?.let { (axis, channel) -> put(field, s.renderHsl.value(axis, channel)) }
     }
     internal fun sourceEffective(value: Double, field: AdjustmentField, recipe: AdjustmentRecipeContext?): Double {

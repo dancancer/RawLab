@@ -1,5 +1,7 @@
 package com.rawlab.android.adjustments
 
+import com.rawlab.android.settings.ColorGradingZone
+
 /** 跨端逻辑字段；与 Shared/AdjustmentTransfer.swift 及同一 JSON 向量保持一致。 */
 enum class AdjustmentField(val id: String) {
     LOOK("looks.reference"),
@@ -10,6 +12,11 @@ enum class AdjustmentField(val id: String) {
     HIGHLIGHTS("light.highlights"),
     SHADOWS("light.shadows"),
     S_CURVE("light.s_curve"),
+    CURVE("light.curve"),
+    BLACK_POINT("tone.black_point"),
+    WHITE_POINT("tone.white_point"),
+    VIBRANCE("color.vibrance"),
+    GRADING_SHADOWS("color.grading.shadows"), GRADING_MIDTONES("color.grading.midtones"), GRADING_HIGHLIGHTS("color.grading.highlights"),
     WHITE_BALANCE_MODE("color.white_balance.mode"),
     TEMPERATURE("color.white_balance.temperature_kelvin"),
     TINT("color.white_balance.tint"),
@@ -46,6 +53,7 @@ enum class AdjustmentField(val id: String) {
     GRAIN_AMOUNT("effects.grain.amount"),
     GRAIN_SIZE("effects.grain.size"),
     GRAIN_ROUGHNESS("effects.grain.roughness"),
+    CLARITY("effects.clarity"), DEHAZE("effects.dehaze"),
     SHARPENING("detail.sharpening"),
     RAW_DENOISE("detail.denoise.raw_level"),
     POST_RGB_DENOISE("detail.denoise.post_rgb"),
@@ -66,7 +74,11 @@ enum class AdjustmentField(val id: String) {
     LENS_AUTO_CROP("geometry.lens.auto_crop"),
     LENS_PROFILE("geometry.lens.profile_id");
 
-    val group get() = id.substringBefore('.')
+    val group get() = if (this == BLACK_POINT || this == WHITE_POINT) "light" else id.substringBefore('.')
+    val gradingZone: ColorGradingZone? get() = when (this) {
+        GRADING_SHADOWS -> ColorGradingZone.SHADOWS; GRADING_MIDTONES -> ColorGradingZone.MIDTONES
+        GRADING_HIGHLIGHTS -> ColorGradingZone.HIGHLIGHTS; else -> null
+    }
     val hslLocation: Pair<Int, Int>? get() {
         val parts = id.split('.')
         if (parts.size != 4 || parts[1] != "hsl") return null
@@ -79,7 +91,7 @@ enum class AdjustmentField(val id: String) {
             STRENGTH, CONTRAST, SATURATION, SHARPENING -> 0.0..2.0
             EXPOSURE -> -20.0..20.0
             HIGHLIGHTS, SHADOWS, S_CURVE, PERSPECTIVE_HORIZONTAL, PERSPECTIVE_VERTICAL -> -1.0..1.0
-            VIGNETTE_AMOUNT, VIGNETTE_ROUNDNESS -> -100.0..100.0
+            VIGNETTE_AMOUNT, VIGNETTE_ROUNDNESS, BLACK_POINT, WHITE_POINT, VIBRANCE, CLARITY, DEHAZE -> -100.0..100.0
             VIGNETTE_MIDPOINT, VIGNETTE_FEATHER, VIGNETTE_HIGHLIGHTS, GRAIN_AMOUNT, GRAIN_SIZE, GRAIN_ROUGHNESS -> 0.0..100.0
             QUARTER_TURNS -> 0.0..3.0
             CROP_X, CROP_Y, CROP_WIDTH, CROP_HEIGHT, POST_RGB_DENOISE -> 0.0..1.0

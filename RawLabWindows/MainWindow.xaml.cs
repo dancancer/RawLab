@@ -19,7 +19,7 @@ public partial class MainWindow : Window
     internal TextBox ValueText => OrdinaryParameter.Number;
     private Button ResetParameterButton => OrdinaryParameter.ResetButton;
     private record Film(string Name,string? Path,string? Artwork,FilmGroup Group=FilmGroup.Other);
-    private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Clipping,bool Refine,long TransformGeneration,long OpenRevision,OriginalIdentity Source,AIDenoiseIdentity? AIIdentity);
+    private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Clipping,bool Refine,long TransformGeneration,long OpenRevision,OriginalIdentity Source,AIDenoiseIdentity? AIIdentity,HslProbeWork? Probe=null);
     private readonly Library library=new();
     private LookLibrary? lookLibrary;
     private Exception? lookLibraryLoadError;
@@ -34,6 +34,8 @@ public partial class MainWindow : Window
     private readonly Dictionary<string,Button> filmButtons=new(StringComparer.OrdinalIgnoreCase);
     private Adjustments settings=new();
     private Parameter selectedParameter=Parameter.Exposure;
+    private ToneControlParameter? selectedToneParameter;
+    private AtmosphereParameter? selectedAtmosphereParameter;
     private string? file,lut;
     private RenderEngine? engine;
     private bool ready,syncing,interacting,foregroundBusy,closing,closeFinished,exactReady;
@@ -49,7 +51,7 @@ public partial class MainWindow : Window
     private NeutralReferenceKey? acceptedAfter;
     private PhotoEffectTool selectedEffect=PhotoEffectTool.Vignette;
     private bool renderFailed;
-    private bool choosingHsl,autoExposing;
+    private bool choosingHsl,choosingGrading,autoExposing;
     private long editRevision;
     private int? exportLongEdge;
     private string? lastExportedPath;
@@ -78,9 +80,10 @@ public partial class MainWindow : Window
     public MainWindow() : this(new UsageAnalytics()) { }
     public MainWindow(UsageAnalytics usageAnalytics) : this(usageAnalytics,null) { }
     internal MainWindow(string lookLibraryDirectory) : this(new UsageAnalytics(),lookLibraryDirectory) { }
-    internal MainWindow(UsageAnalytics usageAnalytics,string? lookLibraryDirectory,AIDenoiseJob? aiJob=null)
+    internal MainWindow(UsageAnalytics usageAnalytics,string? lookLibraryDirectory,AIDenoiseJob? aiJob=null,DesktopUpdateController? desktopUpdates=null)
     {
         this.usageAnalytics = usageAnalytics;
+        this.desktopUpdates=desktopUpdates ?? new(new UnavailableUpdateAdapter("configuration"),new(),new(UpdateStore.DefaultDirectory),updates.CurrentVersion,"",updates.Automatic);
         this.aiJob=aiJob ?? new((identity,snapshot,progress)=>{
             using var worker=new RenderEngine(gpuMode:0,aiBackend:identity.Backend);
             worker.PrepareAI(identity.Source.Path,snapshot,progress);
@@ -99,7 +102,7 @@ public partial class MainWindow : Window
         void RefreshLanguage()
         {
             RecipeStrip.Children.Clear(); recipeButtons.Clear();
-            BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu(); HslEditor.RefreshLanguage();GeometryEditor.RefreshLanguage();
+            BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu(); HslEditor.RefreshLanguage();GradingEditor.RefreshLanguage();CurveEditor.RefreshLanguage();GeometryEditor.RefreshLanguage();
             RefreshControls(); RefreshPhotoInfo(); RefreshExportSizeMenu(); RefreshCopyLabels();
             RefreshRenderLabels();
             RefreshSaveNotice();
@@ -109,8 +112,7 @@ public partial class MainWindow : Window
         }
         Loc.Changed += RefreshLanguage;
         Closed += (_, _) => Loc.Changed -= RefreshLanguage;
-        UpdateNotice.DataContext = updates;
-        void RefreshUpdateNotice() => UpdateNotice.Visibility = updates.HasUpdate ? Visibility.Visible : Visibility.Collapsed;
+        void RefreshUpdateNotice() => UpdateChanged(null,new(null));
         updates.PropertyChanged += (_, _) => RefreshUpdateNotice();
         RefreshUpdateNotice();
         Closed += (_, _) => updateCancellation.Cancel();
@@ -136,7 +138,7 @@ public partial class MainWindow : Window
         PreviewKeyUp+=ViewKeyReleased;
         Activated+=(_,_)=>SyncBeforeKeyState();
         AddHandler(Keyboard.GotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler((_,_)=>SyncBeforeKeyState()),true);
-        Deactivated+=(_,_)=>CancelViewingInput();
+        Deactivated+=(_,_)=>{if(!preservingUpdateNavigation){CancelViewingInput();GradingEditor.CancelInputs();CurveEditor.CancelInputs();}};
         MainMenu.AddHandler(MenuItem.SubmenuOpenedEvent,new RoutedEventHandler((_,_)=>CancelViewingInput()));
         CompareButton.ContextMenuOpening+=(_,_)=>CancelViewingInput();
         viewport.ResolutionChanged+=()=>{if(!syncing)UpdatePreviewSize(viewport.ActualPixels ? 0 : ResultCanvas.PreviewLongEdge);};
@@ -175,6 +177,20 @@ public partial class MainWindow : Window
             if(!ready || syncing || exporting || transform.Active)return;
             RequestReset(new(EditorResetKind.Tool,Tool:EditorAdjustmentTool.WhiteBalance));
         };
+        GradingEditor.ResetRequested+=RequestReset;
+        CurveEditor.Changed+=(value,dragging)=>{
+            if(!ready || syncing || exporting || transform.Active)return;
+            settings.Curve=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
+        };
+        CurveEditor.LegacyChanged+=(value,dragging)=>{
+            if(!ready || syncing || exporting || transform.Active)return;
+            settings.Set(Parameter.ToneCurve,value);interacting=dragging;RefreshControls();MarkEdited();Schedule();
+        };
+        GradingEditor.Changed+=(value,dragging)=>{
+            if(!ready || syncing || exporting || transform.Active)return;
+            settings.ColorGrading=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
+        };
+        InitializeHslTarget();
         HslEditor.ResetRequested+=RequestReset;
         PhotoEffectsEditor.ResetRequested+=()=>RequestReset(new(EditorResetKind.Tool,Tool:CurrentTool));
         HslEditor.Changed+=(value,dragging)=>{
@@ -191,12 +207,16 @@ public partial class MainWindow : Window
         ResultCanvas.PrepareCropInteraction=GeometryEditor.CommitInputs;
         OrdinaryParameter.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
-            interacting=dragging;settings.Set(selectedParameter,value);MarkEdited();RefreshControls();Schedule();
+            interacting=dragging;
+            if(selectedAtmosphereParameter is {} atmosphere)settings.SetAtmosphere(atmosphere,value);
+            else if(selectedToneParameter is {} tone)settings.SetTone(tone,value);else settings.Set(selectedParameter,value);
+            MarkEdited();RefreshControls();Schedule();
         };
         OrdinaryParameter.InvalidInput+=()=>SetStatus(() => Loc.Text("请输入有效数字"),true);
         SetPhotoMargin(true);
         ready=true; RefreshControls(); RefreshRenderLabels(); RefreshCopyLabels();
         InitializeEditWorkflow();
+        InitializeSoftwareUpdates();
         Closing+=WindowClosing;
         Loaded+=async (_,_)=> {
             if (!startupReported) { startupReported = true; this.usageAnalytics.BeginSession(); }
@@ -204,7 +224,10 @@ public partial class MainWindow : Window
                 SetStatus(() => lookLibraryLoadError is LookLibraryException ? lookLibraryLoadError.Message : Loc.Text("本地记录损坏。"), true);
             var input=Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(LibraryEntry.IsImage);
             if(input!=null)OpenFile(input);
-            await updates.CheckAsync(false, updateCancellation.Token);
+            if(updates.Automatic!=this.desktopUpdates.Preferences.AutomaticCheck)
+                updates.Automatic=this.desktopUpdates.Preferences.AutomaticCheck;
+            if(this.desktopUpdates.UnavailableReason!=null)await updates.CheckAsync(false, updateCancellation.Token);
+            else await this.desktopUpdates.CheckAsync(false);
         };
     }
 }

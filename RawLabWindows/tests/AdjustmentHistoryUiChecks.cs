@@ -107,7 +107,7 @@ internal static class AdjustmentHistoryUiChecks
             check(Get<Adjustments>(window,"settings")[Parameter.Exposure]==2.8,"Receipt recovery reloads the newest disk state rather than the cached success");
             PartialResultsDialog(window,photo,output,check);
             Console.WriteLine("Native adjustment artifacts: "+output);
-        }finally{window.Close();app.Shutdown();}
+        }catch(Exception error){Console.Error.WriteLine("History check failed before teardown: "+error);throw;}finally{window.Close();app.Shutdown();}
     }
     private static void DialogChecks(MainWindow owner,AdjustmentTransferSession session,string photo,string output,Action<bool,string> check)
     {
@@ -234,7 +234,7 @@ internal static class AdjustmentHistoryUiChecks
                 }
             }catch(Exception error){failure=error;timer.Stop();dialog.Close();}
         };
-        timer.Start();var pending=(Task)Invoke(window,"ShowAdjustmentPreflight",payload,new[]{first,second})!;
+        timer.Start();var pending=(Task)Invoke(window,"ShowAdjustmentPreflight",payload,new[]{first,second},AdjustmentHistoryAction.Paste,null)!;
         InteractionChecks.PumpUntil(()=>pending.IsCompleted);timer.Stop();recoveryTimer?.Stop();pending.GetAwaiter().GetResult();
         if(failure!=null)throw failure;
         check(stage==6,"Production modal partial-save, undo, retry and redo flow completes");Ready(window);

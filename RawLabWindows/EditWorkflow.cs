@@ -9,6 +9,7 @@ public partial class MainWindow
 {
     private EditStore? editStore;
     private bool editDirty;
+    private bool updateJournalLoadFailed;
     private string? saveNoticeKey;
     private readonly DispatcherTimer editSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly DispatcherTimer editNoticeTimer = new() { Interval = TimeSpan.FromSeconds(3) };
@@ -22,11 +23,16 @@ public partial class MainWindow
     {
         editSaveTimer.Tick += (_, _) => { editSaveTimer.Stop(); SaveEdits(); };
         editNoticeTimer.Tick += (_, _) => { editNoticeTimer.Stop(); if (RetrySave.Visibility != Visibility.Visible && !adjustmentReloadRequired) {SaveState.Text = "";saveNoticeKey=null;} };
-        Deactivated += (_, _) => {CancelParameterInputs();CancelEditGesture();SaveEdits();};
+        Deactivated += (_, _) => {
+            if(preservingUpdateNavigation)return;
+            // 浏览预设不结束参数输入；其他窗口失活仍按原规则取消半输入。
+            if(!OwnedWindows.OfType<AdjustmentPresetLibraryDialog>().Any(window=>window.IsVisible))CancelParameterInputs();
+            CancelEditGesture();SaveEdits();
+        };
         try { editStore = new EditStore(EditStore.DefaultDirectory); }
         catch (Exception error) { SetSaveNotice("无法读取调整记录", error.Message, true); }
         try { previousBatch = batchJournal.Load(); }
-        catch (Exception error) { Report(new IOException(Loc.Format("无法读取上次批量任务：{0}", error.Message), error)); }
+        catch (Exception error) { updateJournalLoadFailed=true;Report(new IOException(Loc.Format("无法读取上次批量任务：{0}", error.Message), error)); }
         RefreshBatchNotice(); UpdateBusy();
         InitializeAdjustmentHistory();
     }
@@ -180,7 +186,7 @@ public partial class MainWindow
     private void ShowBatchClicked(object sender, RoutedEventArgs e)
     {
         if(CurrentBatch==null)return;
-        if(!ResolveTransformDraft())return;
+        if(CurrentBatch.Mode!=BatchJob.PerTargetFrozen && !ResolveTransformDraft())return;
         if (batchWindow != null) { batchWindow.Activate(); return; }
         if (previousBatch != null) ShowBatch(previousBatch);
     }

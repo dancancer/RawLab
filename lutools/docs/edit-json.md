@@ -330,7 +330,7 @@ schema. `--print-recipe` still validates without opening the RAW and preserves
 recipe-relative paths. The CLI capabilities response must advertise v4 only
 when the v4 parser and serializer are available.
 
-## v5: Processing Identity
+## v5: Processing Identity and Additive Color Controls
 
 [Schema v5](edit-json-v5.schema.json) retains all v4 input, edit and output
 groups, and requires one additional root object:
@@ -350,6 +350,55 @@ Schemas 1–4 implicitly select processing version 1, continue rejecting the
 processing version 2 cannot be serialized as schema 1–4: the serializer throws
 instead of discarding its identity. A schema 5 recipe can explicitly select
 version 1 without changing any edit values.
+
+Schema 5 also accepts optional `edits.tone.black_point`,
+`edits.tone.white_point`, and `edits.color.vibrance`, each a finite number in
+`[-1,1]`, default zero. These are resolved core values, independent of legacy
+contrast/saturation and master-recipe strength. The
+[tone controls v1 contract](tone-controls-v1.md) defines their stage and numerical
+behavior. Existing v5 recipes without them remain valid and retain the same
+normalized form; zero-valued additive keys are omitted during normalization.
+Schemas 1–4 reject the new fields, and serialization refuses to discard nonzero
+controls into an older schema. CLI capabilities advertises their algorithm
+version, minimum recipe version, stable field names and range in `tone_controls`.
+
+Schema 5 also accepts an optional `edits.color_grading` object with
+`shadows`, `midtones` and `highlights`. Each present zone must contain both
+`hue` (degrees in `[0,360)`) and `saturation` (`[0,100]`). Missing zones default
+to `{ "hue": 0, "saturation": 0 }`. These values are independent of legacy
+recipe strength. A valid JSON hue just below 360 may round to 360 in float;
+that rounded value is stored as equivalent canonical 0.
+
+Normalization emits all three zones when any hue or saturation is nonzero,
+including dormant hue with zero saturation. An entirely default configuration
+omits `color_grading`, preserving the previous normalized form. Schemas 1–4
+reject the field; serialization never silently discards grading into an older
+schema. Native processing uses the independent 32-byte color-grading config
+v1, after HSL and before chroma denoising. See the
+[grading numerical contract](color-grading-v1.md) for the candidate formulas,
+quality admission and exact zero-saturation bypass. CLI capabilities reports
+the actual config version, minimum recipe version, zone names and ranges.
+
+Schema 5 accepts `edits.tone.curve`, with exactly `mode` and `points`:
+
+```json
+"curve": { "mode": "custom", "points": [[0, 0], [0.25, 0.4], [0.75, 0.9], [1, 1]] }
+```
+
+`legacy` requires an empty point array and uses the existing `s_curve` scalar.
+`custom` requires 2–33 finite binary64 coordinate pairs in `[0,1]`, fixed
+endpoints `[0,0]` and `[1,1]`, strictly increasing x and nondecreasing y.
+Custom mode rejects nonzero `s_curve`; desktop adapters preserve the inactive
+legacy value in the photo record but emit scalar zero for rendering. Missing
+`curve` means legacy. Schema 5 normalization emits the complete mode and point
+array, including `{ "mode": "legacy", "points": [] }` for old v5 input.
+Schemas 1–4 reject this field and cannot serialize an active custom curve.
+
+The [tone curve v1 contract](tone-curve-v1.md) defines monotone PCHIP, exact
+identity bypass, fixed endpoints and precision admission. The independent
+544-byte native config leaves request v2 unchanged. The native sampler used by
+all four curve canvases shares the render evaluator. CLI capabilities exposes
+`tone_curve.version`, `recipe_min_version`, modes, point limit and interpolation.
 
 The macOS and Windows Agent adapters emit schema 5 and preserve the photo's
 selected identity, including old records restored as version 1. Ordinary

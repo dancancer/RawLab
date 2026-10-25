@@ -8,11 +8,23 @@ import org.junit.Test
 import java.util.Locale
 
 class ParameterInputContractTest {
-    @Test fun legalOffGridValuesAreDisplayedWithoutRoundingToTheNewInteractionGrid() {
+    @Test fun gradingBoundsAreCheckedBeforeFloatRounding() {
+        val hue = AdjustmentScale(0f..360f, .1f, 0f)
+        val saturation = AdjustmentScale(0f..100f, .1f, 0f)
+        assertNull(hue.parse("360.0000001", current = 0f))
+        assertNull(saturation.parse("100.0000001", current = 0f))
+        assertNull(hue.parse("12.1000001", current = 12.1f))
+        assertEquals(360f, hue.parse("360", current = 0f)!!, 0f)
+        assertEquals(12.1f, hue.parse("12.10", current = 12.1f)!!, 0f)
+    }
+
+    @Test fun displayLimitsDecimalsWithoutChangingTheInteractionGrid() {
         assertEquals("0.5", formatAdjustment(.5f, 1f))
         assertEquals("12.34", formatAdjustment(12.34f, 1f))
         assertEquals("5237", formatAdjustment(5237f, 10f))
-        assertEquals("0.00001", formatAdjustment(.00001f, .05f))
+        assertEquals("0", formatAdjustment(.00001f, .05f))
+        assertEquals("12.35", formatAdjustment(12.3456f, 1f))
+        assertEquals("12,35", formatAdjustment(12.3456f, 1f, Locale.GERMAN))
     }
 
     @Test fun originalValueExceptionAppliesToEveryParameterAndEquivalentNumericText() {
@@ -21,6 +33,8 @@ class ParameterInputContractTest {
         assertEquals(.5f, hsl.parse("0,50", Locale.GERMAN, .5f)!!, 0f)
         val exposure = AdjustmentScale(-4f..4f, .05f, 0f)
         assertEquals(.1234f, exposure.parse("0.12340", current = .1234f)!!, 0f)
+        assertEquals(.1234f, exposure.parse("0.12", current = .1234f)!!, 0f)
+        assertEquals(.00001f, exposure.parse("0", current = .00001f)!!, 0f)
     }
 
     @Test fun newOffGridTextIsRejectedInsteadOfSilentlySnapping() {

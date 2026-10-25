@@ -68,7 +68,12 @@ public enum AdjustmentField
     LensDistortion,
     LensTCA,
     LensAutoCrop,
-    LensProfile
+    LensProfile,
+    BlackPoint,
+    WhitePoint,
+    Vibrance,
+    GradingShadows, GradingMidtones, GradingHighlights,
+    Curve, Clarity, Dehaze
 }
 
 public static class AdjustmentFields
@@ -137,10 +142,19 @@ public static class AdjustmentFields
         "geometry.lens.distortion",
         "geometry.lens.tca",
         "geometry.lens.auto_crop",
-        "geometry.lens.profile_id"
+        "geometry.lens.profile_id",
+        "tone.black_point",
+        "tone.white_point",
+        "color.vibrance",
+        "color.grading.shadows", "color.grading.midtones", "color.grading.highlights",
+        "light.curve", "effects.clarity", "effects.dehaze"
     ];
     public static string ID(this AdjustmentField field) => ids[(int)field];
-    public static string Group(this AdjustmentField field) => field.ID().Split('.')[0];
+    public static string Group(this AdjustmentField field) => field is AdjustmentField.BlackPoint or AdjustmentField.WhitePoint ? "light" : field.ID().Split('.')[0];
+    public static ColorGradingZone? GradingZone(this AdjustmentField field) => field switch {
+        AdjustmentField.GradingShadows => ColorGradingZone.Shadows, AdjustmentField.GradingMidtones => ColorGradingZone.Midtones,
+        AdjustmentField.GradingHighlights => ColorGradingZone.Highlights, _ => null
+    };
     public static int? HslIndex(this AdjustmentField field) => field is >= AdjustmentField.HslHueRed and <= AdjustmentField.HslLightnessMagenta
         ? (int)field - (int)AdjustmentField.HslHueRed : null;
     public static AdjustmentField Parse(string id) => Array.IndexOf(ids, id) is var index && index >= 0
@@ -156,7 +170,7 @@ public static class AdjustmentFields
         AdjustmentField.Strength or AdjustmentField.Contrast or AdjustmentField.Saturation or AdjustmentField.Sharpening => (0,2),
         AdjustmentField.Exposure => (-20,20),
         AdjustmentField.Highlights or AdjustmentField.Shadows or AdjustmentField.SCurve or AdjustmentField.PerspectiveHorizontal or AdjustmentField.PerspectiveVertical => (-1,1),
-        AdjustmentField.VignetteAmount or AdjustmentField.VignetteRoundness => (-100,100),
+        AdjustmentField.VignetteAmount or AdjustmentField.VignetteRoundness or AdjustmentField.BlackPoint or AdjustmentField.WhitePoint or AdjustmentField.Vibrance or AdjustmentField.Clarity or AdjustmentField.Dehaze => (-100,100),
         AdjustmentField.VignetteMidpoint or AdjustmentField.VignetteFeather or AdjustmentField.VignetteHighlights or AdjustmentField.GrainAmount or AdjustmentField.GrainSize or AdjustmentField.GrainRoughness => (0,100),
         AdjustmentField.QuarterTurns => (0,3),
         AdjustmentField.CropX or AdjustmentField.CropY or AdjustmentField.CropWidth or AdjustmentField.CropHeight or AdjustmentField.PostRGBDenoise => (0,1),
@@ -203,6 +217,7 @@ public sealed class AdjustmentPayload
         return a.ValueKind switch {
             JsonValueKind.Number => a.GetDouble() == b.GetDouble(), JsonValueKind.String => a.GetString() == b.GetString(),
             JsonValueKind.Object => a.EnumerateObject().Count() == b.EnumerateObject().Count() && a.EnumerateObject().All(p => b.TryGetProperty(p.Name,out var v) && SameValue(p.Value,v)),
+            JsonValueKind.Array => a.GetArrayLength() == b.GetArrayLength() && a.EnumerateArray().Zip(b.EnumerateArray()).All(pair => SameValue(pair.First, pair.Second)),
             JsonValueKind.Null or JsonValueKind.True or JsonValueKind.False => true, _ => false
         };
     }
@@ -261,6 +276,14 @@ public sealed class AdjustmentPayload
     }
     private static bool Valid(AdjustmentField field, JsonElement value)
     {
+        if (field == AdjustmentField.Curve) {
+            try { _ = ToneCurveSettings.Parse(value); return true; } catch (JsonException) { return false; }
+        }
+        if (field.GradingZone() != null) {
+            if (!ObjectKeys(value, "hue", "saturation")) return false;
+            return Number(value.GetProperty("hue")) is {} hue && Number(value.GetProperty("saturation")) is {} saturation
+                && new ColorGradingWheel(hue, saturation).IsValid;
+        }
         var number=Number(value);
         if (field.Range() is {} range) return number is {} n && double.IsFinite(n) && n>=range.Min && n<=range.Max &&
             (field!=AdjustmentField.QuarterTurns || n==Math.Round(n)) && (field is not (AdjustmentField.CropWidth or AdjustmentField.CropHeight) || n>0);

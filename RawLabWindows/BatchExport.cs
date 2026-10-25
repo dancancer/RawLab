@@ -1,8 +1,45 @@
 using System.IO;
+using System.Security.Cryptography;
+using System.Text.Json.Serialization;
 
 namespace RawLab.Windows;
 
 public enum BatchStatus { Waiting, Running, Publishing, Succeeded, Failed }
+
+public sealed record BatchFrozenSettings
+{
+    [JsonRequired] public int Version { get; init; } = 1;
+    [JsonRequired] public int SettingsVersion { get; init; } = 1;
+    [JsonRequired] public int Ordinal { get; init; }
+    private AdjustmentSnapshot settings = new Adjustments().Capture();
+    public required AdjustmentSnapshot Settings { get => settings.Copy(); init => settings = value.Copy(); }
+    public string? Look { get; init; }
+    public string? LookSha256 { get; init; }
+    public string LookName { get; init; } = "中性";
+    [JsonRequired] public ExportFormat OutputFormat { get; init; }
+    public int? LongEdge { get; init; }
+
+    public BatchFrozenSettings Copy() => this with { Settings = Settings.Copy() };
+    public static string Checksum(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+    }
+    public void Validate()
+    {
+        if (Version != 1 || SettingsVersion != 1 || Ordinal < 0 || !Enum.IsDefined(OutputFormat) ||
+            LongEdge is {} edge && !ExportSize.IsValid(edge) ||
+            Look == null && LookSha256 != null || Look != null &&
+            (LookSha256?.Length != 64 || LookSha256.Any(c => !"0123456789abcdef".Contains(c))))
+            throw new InvalidDataException("Invalid frozen batch item.");
+        _ = Settings.Restore();
+    }
+    public void VerifyLook()
+    {
+        if (Look != null && (!File.Exists(Look) || Checksum(Look) != LookSha256))
+            throw new InvalidOperationException(Loc.Text("任务使用的外观文件不可用，请重新创建任务。"));
+    }
+}
 
 public sealed record BatchItem(Guid Id, string Input, OriginalIdentity Identity)
 {
@@ -12,6 +49,7 @@ public sealed record BatchItem(Guid Id, string Input, OriginalIdentity Identity)
     public OriginalIdentity? CompletedIdentity { get; init; }
     public string? Error { get; init; }
     public string? ValidationError { get; init; }
+    public BatchFrozenSettings? Frozen { get; init; }
     [System.Text.Json.Serialization.JsonIgnore] public bool CanSelect=>ValidationError==null;
     public static BatchItem Create(string input) => new(Guid.NewGuid(), Path.GetFullPath(input), OriginalIdentity.Read(input));
     public string StatusText => ValidationError!=null ? Loc.Text("验证失败") : Status switch {
@@ -22,6 +60,9 @@ public sealed record BatchItem(Guid Id, string Input, OriginalIdentity Identity)
 
 public sealed class BatchJob
 {
+    public const string UniformFrozen = "uniform_frozen", PerTargetFrozen = "per_target_frozen";
+    [JsonPropertyName("settings_mode")] public string? SettingsMode { get; set; }
+    [JsonIgnore] public string Mode => SettingsMode ?? UniformFrozen;
     public int Version { get; set; } = 1;
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Source { get; set; } = "";
@@ -37,7 +78,7 @@ public sealed class BatchJob
     public ExportFormat Format
     {
         get => OutputFormat ?? (Png ? ExportFormat.Png : ExportFormat.Jpeg);
-        set { OutputFormat = value; Png = value == ExportFormat.Png; Version = 2; }
+        set { OutputFormat = value; Png = value == ExportFormat.Png; Version = Math.Max(Version, 2); }
     }
     // Null is deliberately the original-size default, including for journals
     // written by older versions that do not have this property.
@@ -57,11 +98,37 @@ public sealed class BatchJob
         Source = source, Settings = settings.Copy(), Look = look, LookName = name
     };
     public BatchJob Copy() => new() {
-        Version=Version, Id=Id, Source=Source, Settings=Settings.Copy(), AIBackend=AIBackend, Look=Look, LookName=LookName,
+        Version=Version, SettingsMode=SettingsMode, Id=Id, Source=Source, Settings=Settings.Copy(), AIBackend=AIBackend, Look=Look, LookName=LookName,
         OutputDirectory=OutputDirectory, Png=Png, OutputFormat=OutputFormat, LongEdge=LongEdge, Started=Started, Interrupted=Interrupted, Cancelled=Cancelled,
-        Error=Error, Items=Items.Select(x => x with { }).ToList()
+        Error=Error, Items=Items.Select(x => x with { Frozen = x.Frozen?.Copy() }).ToList()
     };
-    public string TemporaryPath(BatchItem item) => Path.Combine(OutputDirectory!, $".rawlab-{Id}-{item.Id}.{Suffix}");
+    public BatchFrozenSettings SnapshotFor(BatchItem item) => Mode == PerTargetFrozen
+        ? item.Frozen ?? throw new InvalidDataException("Missing frozen batch item.")
+        : new() { Ordinal = 0, Settings = PhotoInput.PrepareBatchSettings(Source, item.Input, Settings.Restore()).Capture(),
+            Look = Look, LookName = LookName, OutputFormat = Format, LongEdge = LongEdge };
+    public string TemporaryPath(BatchItem item) => Path.Combine(OutputDirectory!, $".rawlab-{Id}-{item.Id}.{SnapshotFor(item).OutputFormat.Suffix()}");
+
+    public void Validate()
+    {
+        if (Version is < 1 or > 3 || Mode is not (UniformFrozen or PerTargetFrozen))
+            throw new InvalidDataException(Loc.Text("无法读取此版本的批量任务。"));
+        if (AIBackend is not (0 or 2 or 3)) throw new InvalidDataException("Invalid Windows AI backend in batch journal.");
+        _ = Settings.Restore();
+        if (Mode != PerTargetFrozen)
+        {
+            if (Version == 3 || Items.Any(x => x.Frozen != null)) throw new InvalidDataException("Frozen items require per-target mode.");
+            return;
+        }
+        if (Version != 3 || Items.Count == 0 || Items.Select(x => x.Id).Distinct().Count() != Items.Count ||
+            Items.Select(x => x.Identity.FileID ?? Path.GetFullPath(x.Input).ToUpperInvariant()).Distinct().Count() != Items.Count)
+            throw new InvalidDataException("Invalid per-target batch.");
+        for (var i = 0; i < Items.Count; i++)
+        {
+            var frozen = Items[i].Frozen;
+            if (frozen == null || frozen.Ordinal != i) throw new InvalidDataException("Missing frozen batch item or order.");
+            frozen.Validate();
+        }
+    }
 }
 
 public sealed class BatchJournal
@@ -88,9 +155,7 @@ public sealed class BatchJournal
 
     private static void Validate(BatchJob job)
     {
-        if (job.Version is < 1 or > 2) throw new InvalidDataException(Loc.Text("无法读取此版本的批量任务。"));
-        if(job.AIBackend is not (0 or 2 or 3))throw new InvalidDataException("Invalid Windows AI backend in batch journal.");
-        _ = job.Settings.Restore();
+        job.Validate();
     }
 
     private BatchJob? ReadJob()
@@ -123,9 +188,17 @@ public sealed class BatchJournal
     public void Discard(BatchJob job)
     {
         if (File.Exists(PathName)) File.Delete(PathName);
+        ReleaseResources(job);
+    }
+
+    public void ReleaseResources(BatchJob job)
+    {
         foreach (var item in job.Items) CleanupTemporary(job, item);
         if (job.Look != null && Path.GetDirectoryName(job.Look) == DirectoryPath && Path.GetFileNameWithoutExtension(job.Look) == job.Id.ToString())
             File.Delete(job.Look);
+        foreach (var item in job.Items)
+            if (item.Frozen?.Look is {} look && Path.GetDirectoryName(look) == DirectoryPath &&
+                Path.GetFileNameWithoutExtension(look) == item.Id.ToString()) File.Delete(look);
     }
 
     private static void CleanupTemporary(BatchJob job, BatchItem item)
@@ -156,9 +229,10 @@ public static class BatchRunner
     private static void RunCore(BatchJob job, BatchJournal journal, bool failuresOnly, CancellationToken cancellation,
                                 Action<BatchJob, string?> changed, SizedRender render)
     {
+        job.Validate();
         if (job.SelectedCount == 0) throw new InvalidOperationException(Loc.Text("请至少选择一张照片。"));
         if (job.OutputDirectory == null) throw new OutputWriteException(Loc.Text("选择输出文件夹"));
-        if (job.Look != null && !File.Exists(job.Look)) throw new InvalidOperationException(Loc.Text("任务使用的外观文件不可用，请重新创建任务。"));
+        if (job.Mode == BatchJob.UniformFrozen && job.Look != null && !File.Exists(job.Look)) throw new InvalidOperationException(Loc.Text("任务使用的外观文件不可用，请重新创建任务。"));
         job.Started = true; job.Interrupted = false; job.Cancelled = false; job.Error = null;
         journal.Save(job);
         try
@@ -188,14 +262,15 @@ public static class BatchRunner
     private static void Export(int index, BatchJob job, BatchJournal journal, SizedRender render)
     {
         var item = job.Items[index];
+        var snapshot = job.SnapshotFor(item);
         var temporary = job.TemporaryPath(item);
         try
         {
             try
             {
                 if (!item.Identity.SameFile(OriginalIdentity.Read(item.Input))) throw new InvalidOperationException(Loc.Text("原始文件已被替换，请重新选择照片。"));
-                var settings=PhotoInput.PrepareBatchSettings(job.Source,item.Input,job.Settings.Restore());
-                render(item.Input, settings, job.Look, temporary, job.LongEdge);
+                if (job.Mode == BatchJob.PerTargetFrozen) snapshot.VerifyLook();
+                render(item.Input, snapshot.Settings.Restore(), snapshot.Look, temporary, snapshot.LongEdge);
             }
             catch (Exception error)
             {
@@ -205,8 +280,8 @@ public static class BatchRunner
                 VerifyDestination(job.OutputDirectory!);
                 return;
             }
-            var name = Path.GetFileNameWithoutExtension(item.Input) + "-" + SafeName(job.LookName);
-            var destination = UniqueOutput(job.OutputDirectory!, name, job.Suffix);
+            var name = Path.GetFileNameWithoutExtension(item.Input) + "-" + SafeName(snapshot.LookName);
+            var destination = UniqueOutput(job.OutputDirectory!, name, snapshot.OutputFormat.Suffix());
             item = item with { Status = BatchStatus.Publishing, Output = destination, CompletedIdentity = OriginalIdentity.Read(temporary) };
             job.Items[index] = item;
             journal.Save(job);

@@ -40,6 +40,16 @@ internal class EditorAdjustmentHistory(private val store: EditorEditStore) {
         reloadRequired = false
         return true
     }
+    fun validateCommitted(photo: ImportedPhoto, settings: EditSettings) {
+        val expected = loaded ?: throw EditPersistenceConflict()
+        try {
+            if (interacting || expected.identity != photo.identity || sourcePath != photo.file.absolutePath ||
+                store.versionedState(photo.identity) != expected) throw EditPersistenceConflict()
+            validator?.invoke()
+            if (!AdjustmentTransfer.sameAdjustments(expected.settings ?: EditSettings(), settings, photo.inputKind == PhotoInputKind.RAW))
+                throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
+        } catch (error: Exception) { reloadRequired = error is EditPersistenceConflict; throw error }
+    }
     fun begin(photo: ImportedPhoto, settings: EditSettings, revision: Long): EditSaveResult {
         if (interacting) return EditSaveResult(EditSaveState.SAVED)
         val saved = commit(photo, settings)

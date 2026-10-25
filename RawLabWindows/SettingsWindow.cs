@@ -11,7 +11,7 @@ public sealed class SettingsWindow : Window
     private readonly ComboBox language=new(){MinWidth=220,DisplayMemberPath="NativeName",SelectedValuePath="Code"};
     private readonly ComboBox backend=new(){MinWidth=220};
     public int Backend=>backend.SelectedIndex;
-    public SettingsWindow(int currentBackend)
+    public SettingsWindow(int currentBackend,Action? openSoftwareUpdates=null)
     {
         Style=(Style)FindResource(typeof(Window));
         Title=Loc.Text("设置");Width=520;MinWidth=420;SizeToContent=SizeToContent.Height;
@@ -23,6 +23,11 @@ public sealed class SettingsWindow : Window
         backend.ItemsSource=new[]{Loc.Text("GPU 自动"),Loc.Text("仅 CPU"),Loc.Text("强制 GPU")};backend.SelectedIndex=currentBackend;
         void Row(string name,ComboBox control){panel.Children.Add(new TextBlock{Text=Loc.Text(name),Margin=new Thickness(0,8,0,6)});AutomationProperties.SetName(control,Loc.Text(name));panel.Children.Add(control);}
         Row("语言",language);Row("渲染加速",backend);
+        if(openSoftwareUpdates!=null) {
+            var updateButton=new Button{Content=Loc.Text("软件更新…"),Margin=new Thickness(0,16,0,0),HorizontalAlignment=HorizontalAlignment.Left};
+            AutomationProperties.SetAutomationId(updateButton,"settings.softwareUpdates");
+            updateButton.Click+=(_,_)=>{DialogResult=false;openSoftwareUpdates();};panel.Children.Add(updateButton);
+        }
         var actions=new WrapPanel{HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,20,0,0)};
         var cancel=new Button{Content=Loc.Text("取消"),IsCancel=true};cancel.Click+=(_,_)=>DialogResult=false;
         var apply=new Button{Content=Loc.Text("应用"),IsDefault=true};

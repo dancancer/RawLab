@@ -88,6 +88,7 @@ for binary in "$APP/Contents/MacOS/RawLabMac" "$APP"/Contents/Frameworks/*.dylib
     codesign --verify --strict "$binary"
 done
 codesign --verify --deep --strict "$APP"
+bash "$ROOT/RawLabMac/tests/sparkle-bundle.sh" "$APP"
 # 使用统计 SDK：带与不带必须和构建方式一致，不能悄悄缺失或混入
 if [ -n "${RAWLAB_RUM_EXPECTED:-}" ]; then
     linked=0

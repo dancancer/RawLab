@@ -112,6 +112,7 @@ struct EditorView: View {
             viewing.sourceChanged()
             fit()
         }
+        .onChange(of: model.hslTargetEnabled) { _, _ in viewing.hold(false, allowed: false) }
         .onChange(of: model.geometryDraft != nil, initial: true) { _, editing in geometryEditingChanged(editing) }
         .onChange(of: model.busy) { _, _ in model.resumeResetToolIfReady() }
         .onChange(of: model.pendingGeometryPresentation) { _, _ in model.resumeResetToolIfReady() }
@@ -122,15 +123,26 @@ struct EditorView: View {
             let info = await Task.detached(priority: .utility) { PhotoInformation.read(file) }.value
             if !Task.isCancelled && model.file == file { photoInformation = info }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.saveEdits() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in model.saveEdits() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            model.cancelHSLTarget()
+            if model.adjustmentNavigation.tool == .colorGrading { model.cancelAdjustmentInteraction() }
+            model.saveEdits()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
+            model.cancelHSLTarget()
+            if model.adjustmentNavigation.tool == .colorGrading { model.cancelAdjustmentInteraction() }
+            model.saveEdits()
+        }
         .toolbar { editorToolbar }
-        .sheet(item: $model.adjustmentSheet) { kind in AdjustmentTransferView(model: model, kind: kind) }
-        .onExitCommand { model.cancelAdjustmentInteraction() }
+        .sheet(item: Binding(get: { model.adjustmentSheetInCollection ? nil : model.adjustmentSheet }, set: { model.adjustmentSheet = $0 })) { kind in
+            if kind == .presets { AdjustmentPresetView(model: model) }
+            else { AdjustmentTransferView(model: model, kind: kind) }
+        }
+        .onExitCommand { model.cancelHSLTarget(); model.cancelAdjustmentInteraction() }
         .background(MacViewingKeyboard(canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) },
             onInformation: { infoMode = infoMode.next }).frame(width: 0, height: 0))
         .background(MacGeometryWindowGuard(model: model).frame(width: 0, height: 0))
-        .sheet(isPresented: Binding(get: { model.geometryDraftDeparturePending }, set: { _ in })) {
+        .sheet(isPresented: Binding(get: { model.geometryDraftDeparturePending && model.adjustmentSheet != .presets }, set: { _ in })) {
             MacGeometryDeparturePrompt(model: model)
         }
         .alert(resetConfirmationTitle, isPresented: Binding(get: { model.resetConfirmation != nil }, set: { if !$0 && model.resetConfirmation != nil { model.finishAdjustmentReset(confirm: false) } })) {
@@ -385,6 +397,10 @@ struct EditorView: View {
                 .help(adjustmentPanel.collapsed ? L10n.text("展开调整栏") : L10n.text("收起调整栏"))
                 .accessibilityLabel(L10n.text("调整栏")).accessibilityValue(adjustmentPanel.collapsed ? L10n.text("已收起") : L10n.text("已展开"))
                 .keyboardShortcut("a", modifiers: [.command, .option])
+            Button(L10n.text(model.batchSelection.current == nil ? "批量编辑…" : "返回选片集合")) {
+                if model.batchSelection.current != nil { model.returnToBatchSelection { openWindow(id: "batch-selection") } }
+                else { openWindow(id: "batch-selection") }
+            }.accessibilityIdentifier("collection.open").disabled(model.exporting)
             Menu {
                 // 与批量导出的格式选择同名：JPEG、16 位 PNG、DNG · 渲染型
                 ForEach(ExportFormat.allCases) { format in
@@ -407,7 +423,10 @@ struct EditorView: View {
     private var resetMenu: some View {
         Menu {
             let tool = model.adjustmentNavigation.tool
-            if tool == .hsl {
+            if tool == .colorGrading {
+                resetButton(.gradingZone(model.adjustmentNavigation.selectedGradingZone), title: L10n.text("重置当前分区"))
+                resetButton(.allGrading, title: L10n.text("重置颜色分级"))
+            } else if tool == .hsl {
                 resetButton(.hslColor(model.adjustmentNavigation.selectedHSLChannel),
                     title: L10n.format("重置当前颜色（%@）", L10n.text(HSLSettings.channelNames[model.adjustmentNavigation.selectedHSLChannel])))
                 resetButton(.hslAll, title: L10n.text("重置全部 HSL…"))
@@ -431,6 +450,7 @@ struct EditorView: View {
         switch model.resetConfirmationScope {
         case .all: return L10n.text("重置全部调整？")
         case .group(let group): return L10n.format("重置%@组？", group.title)
+        case .allGrading, .tool(.colorGrading): return L10n.text("重置颜色分级")
         case .hslAll, .tool(.hsl): return L10n.text("重置全部 HSL？")
         default: return L10n.text("重置调整")
         }
@@ -440,6 +460,7 @@ struct EditorView: View {
         var message: String
         switch model.resetConfirmationScope {
         case .all: message = L10n.text("恢复当前照片的全部调整，不改写原始照片。")
+        case .allGrading, .tool(.colorGrading): message = L10n.text("恢复阴影、中间调和高光的颜色分级默认值？")
         case .hslAll, .tool(.hsl): message = L10n.text("八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。")
         case .group(let group): message = L10n.format("此操作只恢复%@组内的调整，其他分组保持不变。", group.title)
         default: message = ""
@@ -464,13 +485,25 @@ struct EditorView: View {
         viewport.focus = CGPoint(x: 0.5, y: 0.5)
         if model.fullResolution != viewport.pixelMode { model.fullResolution = viewport.pixelMode }
     }
-    private var canHoldBefore: Bool { model.result != nil && model.neutral != nil && model.canComparePreview && !viewing.enabled }
+    private var canHoldBefore: Bool { !model.hslTargetActive && model.result != nil && model.neutral != nil && model.canComparePreview && !viewing.enabled }
+
+    private var hslTargetInput: HSLTargetCanvasInput {
+        let source = model.sourceRevision, axis = model.hslTargetAxis
+        func current() -> Bool { model.sourceRevision == source && model.hslTargetAxis == axis }
+        return HSLTargetCanvasInput(scope: "\(source)-\(axis.rawValue)",
+            begin: { if current() { model.beginHSLTarget($0) } },
+            change: { if current() { model.moveHSLTarget($0) } },
+            end: { if current() { model.endHSLTarget() } }, cancel: { if current() { model.cancelHSLTarget() } },
+            key: { if current() { model.keyHSLTarget($0) } }, reject: { if current() { model.rejectHSLTarget() } })
+    }
 
     private func imagePane(_ frame: RenderedImage, title: String, showMask: Bool, wipe: Bool = false) -> some View {
         PhotoCanvas(frame: frame, viewport: $viewport, sourceWidth: model.result?.nativeWidth ?? frame.image.width,
-                    clipping: showMask, margins: viewing.margins, beforeFrame: wipe ? model.neutral : nil,
+                    clipping: showMask && !model.hslTargetActive, margins: viewing.margins, beforeFrame: wipe ? model.neutral : nil,
                     split: wipe ? $viewing.split : nil,
                     comparisonLabel: (viewing.enabled && model.canComparePreview) || viewing.holdingBefore ? title : nil,
+                    hslTarget: model.hslTargetActive && model.result?.image === frame.image ? hslTargetInput : nil,
+                    hslTargetPoint: model.hslTargetPoint,
                     canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) }, onDoubleClick: {
                         if model.geometryDraft == nil { toggleActualPixels() }
                     }, sourceHeight: model.result?.nativeHeight,

@@ -54,7 +54,7 @@ public static class AdjustmentTransfer
         }
         if(Number(p[F.Strength]) is {} strength) s=AdjustmentTransferValues.SetLogical(s,F.Strength,strength);
         var changed=s.MasterRecipeID!=target.Settings.MasterRecipeID || Scale(s)!=Scale(target.Settings);
-        var fields=AdjustmentTransferValues.Scalars.Keys.Where(f=>f!=F.Strength).Concat(AdjustmentFields.All.Where(f=>f.HslIndex()!=null)).ToArray();
+        var fields=AdjustmentTransferValues.NumericFields.Where(f=>f!=F.Strength).Concat(AdjustmentFields.All.Where(f=>f.HslIndex()!=null)).ToArray();
         float Expected(F field) {
             if(Number(p[field]) is not {} value) return before[field];
             if(!changed && context.IsRaw==p.Source.IsRaw && Recipe(target.Settings)==p.Source.Recipe && Same(p[field],original[field])) return before[field];
@@ -83,7 +83,9 @@ public static class AdjustmentTransfer
     {
         var a=s.Restore();var r=a.Request("",null,0,null);
         var result=new Dictionary<F,float> {[F.Strength]=(float)a[Parameter.Strength]/100,[F.Exposure]=r.ExposureEv,[F.Contrast]=r.Contrast,
-            [F.Highlights]=r.Highlights,[F.Shadows]=r.Shadows,[F.SCurve]=r.ToneCurve,[F.Saturation]=r.Saturation,[F.Sharpening]=r.Sharpening};
+            [F.Highlights]=r.Highlights,[F.Shadows]=r.Shadows,[F.SCurve]=(float)a[Parameter.ToneCurve]/100,[F.Saturation]=r.Saturation,[F.Sharpening]=r.Sharpening,
+            [F.BlackPoint]=(float)a.ToneControls.BlackPoint,[F.WhitePoint]=(float)a.ToneControls.WhitePoint,[F.Vibrance]=(float)a.ToneControls.Vibrance,
+            [F.Clarity]=(float)a.Atmosphere.Clarity,[F.Dehaze]=(float)a.Atmosphere.Dehaze};
         var hsl=a.RenderHsl.Values;
         foreach(var field in AdjustmentFields.All) if(field.HslIndex() is {} index) result[field]=(float)hsl[index];
         return result;
@@ -109,7 +111,7 @@ public static class AdjustmentTransfer
         var candidate=AdjustmentTransferValues.SetLogical(s,field,logical);
         if(EffectiveNumbers(candidate)[field]==value) return candidate;
         // Windows 在百分比运算中间转为 Float；尝试相邻请求桶，最终仍以真实 request 完全相等为准。
-        var native=field.HslIndex()!=null ? logical : candidate.Values[(int)AdjustmentTransferValues.Scalars[field]];
+        var native=field.HslIndex()!=null || AdjustmentTransferValues.ToneFields.ContainsKey(field) ? logical : candidate.Values[(int)AdjustmentTransferValues.Scalars[field]];
         foreach(var neighbor in new[]{Math.BitDecrement(native),Math.BitIncrement(native),(double)MathF.BitDecrement((float)native),(double)MathF.BitIncrement((float)native)}) {
             try {
                 var alternative=field.HslIndex() is {} index ? candidate with {Hsl=(candidate.Hsl ?? new()).WithValue(index/8,index%8,neighbor)} : NativeValue(candidate,field,neighbor);
@@ -120,6 +122,7 @@ public static class AdjustmentTransfer
     }
     private static AdjustmentSnapshot NativeValue(AdjustmentSnapshot s,F field,double value)
     {
+        if(AdjustmentTransferValues.ToneFields.ContainsKey(field))return AdjustmentTransferValues.SetLogical(s,field,value);
         var values=(double[])s.Values.Clone(); values[(int)AdjustmentTransferValues.Scalars[field]]=value;
         var result=s with {Values=values};_=result.Restore();return result;
     }

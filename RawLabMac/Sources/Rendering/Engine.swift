@@ -207,6 +207,38 @@ final class RenderEngine {
     var lastBackend: sony2fuji_render_backend { sony2fuji_session_get_last_backend(session) }
     var lastAIBackend: String { String(cString: sony2fuji_session_get_ai_backend(session)) }
 
+    private func configureCurve(_ settings: ToneCurveSettings) throws {
+        guard settings.isValid else { throw RenderError.failed(L10n.text("无效的曲线参数")) }
+        var config = settings.nativeConfig
+        guard sony2fuji_session_set_tone_curve(session, &config) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed(L10n.text("无效的曲线参数"))
+        }
+    }
+
+    private func configureGrading(_ settings: ColorGradingSettings) throws {
+        guard settings.isValid else { throw RenderError.failed(L10n.text("无效的颜色分级参数")) }
+        var config = settings.nativeConfig
+        guard sony2fuji_session_set_color_grading(session, &config) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed(L10n.text("无效的颜色分级参数"))
+        }
+    }
+
+    private func configureTone(_ settings: ToneControlsSettings) throws {
+        guard settings.isValid else { throw RenderError.failed(L10n.text("无效的黑白场或鲜艳度参数")) }
+        var config = settings.nativeConfig
+        guard sony2fuji_session_set_tone_controls(session, &config) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed(L10n.text("无效的黑白场或鲜艳度参数"))
+        }
+    }
+
+    private func configureAtmosphere(_ settings: AtmosphereSettings) throws {
+        guard settings.isValid else { throw RenderError.failed(L10n.text("无效的清晰度或去朦胧参数")) }
+        var config = settings.nativeConfig
+        guard sony2fuji_session_set_atmosphere(session, &config) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed(L10n.text("无效的清晰度或去朦胧参数"))
+        }
+    }
+
     private func configureProcessing(_ identity: ProcessingIdentity) throws {
         guard sony2fuji_session_set_processing_version(session, identity.core) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed(L10n.text("不支持此处理版本，原有记录未被覆盖。"))
@@ -246,6 +278,10 @@ final class RenderEngine {
         guard !Self.isRasterInput(url) else { throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。")) }
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
+        try configureTone(settings.toneSettings)
+        try configureAtmosphere(settings.atmosphereSettings)
+        try configureCurve(settings.curveSettings)
+        try configureGrading(settings.gradingSettings)
         try configureLens(settings.lensSettings)
         try configureAI(enabled: true)
         var request = sony2fuji_request()
@@ -270,6 +306,10 @@ final class RenderEngine {
     func autoExposure(_ url: URL, settings: Adjustments) throws -> Double {
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
+        try configureTone(settings.toneSettings)
+        try configureAtmosphere(settings.atmosphereSettings)
+        try configureCurve(settings.curveSettings)
+        try configureGrading(settings.gradingSettings)
         try configureAI(enabled: settings.aiDenoiseEnabled)
         try configureLens(settings.lensSettings)
         try configureGeometry(settings.geometrySettings)
@@ -322,17 +362,21 @@ final class RenderEngine {
         return settings
     }
 
-    func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, interactive: Bool = false, exportLongEdge: Int? = nil, viewportPreview: Bool = false) throws -> RenderedImage? {
+    private func photoRequest(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL?,
+                              interactive: Bool, exportLongEdge: Int?, viewportPreview: Bool) throws -> (Adjustments, sony2fuji_request) {
         if let exportLongEdge, !(1...65535).contains(exportLongEdge) {
             throw RenderError.failed(L10n.text("导出长边必须为 1-65535 像素。"))
         }
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
+        try configureTone(settings.toneSettings)
+        try configureAtmosphere(settings.atmosphereSettings)
+        try configureCurve(settings.curveSettings)
+        try configureGrading(settings.gradingSettings)
         if settings.aiDenoiseEnabled && Self.isRasterInput(url) {
             throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。"))
         }
         try configureAI(enabled: settings.aiDenoiseEnabled)
-        let key = try? RawWhiteBalanceCacheKey(url)
         let allowsProxy = settings.geometrySettings.isIdentity
         guard sony2fuji_session_set_interactive_preview(session, interactive && allowsProxy && output == nil ? 1 : 0) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed(L10n.text("无效的预览模式"))
@@ -395,6 +439,34 @@ final class RenderEngine {
         request.output_format = output == nil ? SONY2FUJI_OUTPUT_RGBA8 :
             ExportFormat.forOutput(output!).nativeFormat
         request.jpeg_quality = 95
+        return (settings, request)
+    }
+
+    func sampleHSL(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, interactive: Bool,
+                   revision: HSLTargetRevision, point: CGPoint) throws -> HSLTargetSample {
+        let (_, prepared) = try photoRequest(url, settings: settings, lut: lut, edge: edge, output: nil,
+            interactive: interactive, exportLongEdge: nil, viewportPreview: edge != nil)
+        var request = prepared
+        var sample: HSLTargetSample?
+        _ = try withInput(url, request: &request) { input in
+            (lut?.path ?? "").withCString { path in
+                input.lut_path = lut == nil ? nil : path
+                if let session {
+                    sample = HSLTargetSample.capture(session: session, request: &input,
+                        revision: revision, x: point.x, y: point.y)
+                }
+                return SONY2FUJI_STATUS_OK
+            }
+        }
+        guard let sample else { throw RenderError.failed(L10n.text("无法创建处理会话")) }
+        return sample
+    }
+
+    func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, interactive: Bool = false, exportLongEdge: Int? = nil, viewportPreview: Bool = false) throws -> RenderedImage? {
+        let (settings, prepared) = try photoRequest(url, settings: settings, lut: lut, edge: edge, output: output,
+            interactive: interactive, exportLongEdge: exportLongEdge, viewportPreview: viewportPreview)
+        var request = prepared
+        let key = try? RawWhiteBalanceCacheKey(url)
         var buffer = sony2fuji_buffer()
         defer { sony2fuji_release_buffer(&buffer) }
         let status = try withInput(url, request: &request) { inputRequest in

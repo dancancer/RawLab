@@ -221,6 +221,8 @@ jobs:
           fi
           if in_suite model; then
             ci_timed batch-export bash RawLabMac/tests/batch-export.sh
+            ci_timed batch-selection bash Shared/tests/batch-selection.sh
+            ci_timed batch-selection-model bash RawLabMac/tests/batch-selection-model.sh
             ci_timed edit-model bash RawLabMac/tests/edit-model.sh
             ci_timed adjustment-history-model bash RawLabMac/tests/adjustment-history-model.sh
             ci_timed presentation bash RawLabMac/tests/presentation.sh --models-only

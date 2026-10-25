@@ -3,6 +3,8 @@ package com.rawlab.android.editor.controls
 import kotlin.math.abs
 import kotlin.math.round
 import java.math.BigDecimal
+import java.math.RoundingMode
+import java.text.DecimalFormatSymbols
 import java.text.NumberFormat
 import java.text.ParsePosition
 import java.util.Locale
@@ -27,9 +29,13 @@ internal data class AdjustmentScale(
 
     fun parse(text: String, locale: Locale = Locale.ROOT, current: Float? = null): Float? {
         val parsed = parseAdjustmentNumber(text, locale)
-        if (compactPercent && current != null && parsed == parseAdjustmentNumber(formatCropPercent(current, locale), locale)) return current
-        return parsed?.takeIf { it.isFinite() && it in range }
-            ?.takeIf { it == current || BigDecimal(it.toString()).remainder(BigDecimal(step.toString())).signum() == 0 }
+        if (current != null && current.isFinite() && current in range && parsed != null) {
+            val displayed = if (compactPercent) formatCropPercent(current, locale) else formatAdjustmentNumber(current.toString().toDouble(), locale)
+            if (parsed == parseAdjustmentNumber(displayed, locale)) return current
+        }
+        return parsed?.takeIf { it.isFinite() && it in range.start.toDouble()..range.endInclusive.toDouble() }
+            ?.takeIf { it == current?.toString()?.toDouble() || BigDecimal(it.toString()).remainder(BigDecimal(step.toString())).signum() == 0 }
+            ?.toFloat()
     }
 
     fun fraction(value: Float): Float {
@@ -55,6 +61,13 @@ internal data class AdjustmentScale(
     }
 }
 
+internal fun formatAdjustmentNumber(value: Double, locale: Locale = Locale.ROOT): String =
+    BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+        .replace('.', DecimalFormatSymbols.getInstance(locale).decimalSeparator)
+
+internal fun formatAdjustmentStep(step: Float, locale: Locale = Locale.ROOT): String =
+    if (step == .001f) "1/1000" else formatAdjustmentNumber(step.toString().toDouble(), locale)
+
 internal fun formatCropPercent(value: Float, locale: Locale = Locale.ROOT): String =
     NumberFormat.getNumberInstance(locale).apply {
         isGroupingUsed = false; minimumFractionDigits = 0; maximumFractionDigits = 2
@@ -75,10 +88,10 @@ internal fun editorDockLayout(availableHeight: Float, fontScale: Float, sideDock
     } else regular.coerceAtMost(maximum), compact)
 }
 
-internal fun parseAdjustmentNumber(text: String, locale: Locale): Float? {
+internal fun parseAdjustmentNumber(text: String, locale: Locale): Double? {
     val input = text.trim()
     val position = ParsePosition(0)
     val localized = NumberFormat.getNumberInstance(locale).apply { isGroupingUsed = false }.parse(input, position)
-        ?.takeIf { position.index == input.length }?.toFloat()
-    return input.toFloatOrNull() ?: localized
+        ?.takeIf { position.index == input.length }?.toDouble()
+    return input.toDoubleOrNull() ?: localized
 }
