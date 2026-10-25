@@ -35,10 +35,10 @@ public sealed class SoftwareUpdateWindow : Window
             Title=Loc.Text(settings ? "软件更新" : "RawLab 更新");panel.Children.Clear();
             AddText(Title,true);AddText(Loc.Format("版本 {0}",updates.CurrentVersion),localized:true);
             if(settings) {
-                Toggle("自动检查更新",updates.Preferences.AutomaticCheck,true,value=>{
+                Toggle("自动检查更新",updates.Preferences.AutomaticCheck,updates.StorageError==null && !updates.RequiresRecovery && !updates.RequiresStartupHealthCheck,value=>{
                     updates.SetAutomaticCheck(value);legacy.Automatic=updates.Preferences.AutomaticCheck;
                 },"updates.automaticCheck");
-                Toggle("自动下载并在退出时安装",updates.Preferences.AutomaticInstall,updates.UnavailableReason==null,updates.SetAutomaticInstall,"updates.automaticInstall");
+                Toggle("自动下载并在退出时安装",updates.Preferences.AutomaticInstall,updates.UnavailableReason==null && !updates.RequiresRecovery && !updates.RequiresStartupHealthCheck,updates.SetAutomaticInstall,"updates.automaticInstall");
                 AddText("自动安装默认关闭。安装前会保存已提交的编辑，并等待草稿和任务处理完成。");
                 panel.Children.Add(new Separator{Margin=new Thickness(0,10,0,10)});
             }
@@ -57,8 +57,18 @@ public sealed class SoftwareUpdateWindow : Window
                 AddText("更新未完成，请查看恢复说明",true);AddText(UpdatePresentation.Phase(failure.Stage));
                 panel.Children.Add(Disclosure("错误详情",Text(failure.Code+"\n"+failure.Detail)));
             }
-            if(updates.StorageError!=null)AddText(updates.StorageError,localized:true);
-            if(updates.RequiresRecovery) {
+            if(updates.StorageError!=null) {
+                AddText(updates.StorageError,localized:true);
+                AddText(updates.CanRepairState ? "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。" : "无法确认更新或恢复状态，请保留全部文件并联系支持。");
+                if(updates.CanRepairState) {
+                    var repairActions=new WrapPanel();panel.Children.Add(repairActions);
+                    ActionButton(repairActions,"重建更新设置",()=>{updates.RepairState();return Task.CompletedTask;},"updates.repairState");
+                }
+            }
+            if(updates.Preferences.StateRepairReceipt!=null) {
+                AddText(updates.RecoveryNeedsRestart ? "更新设置已重建，请退出并重新打开应用" : "数据检查未通过，编辑暂未开放。请保留文件并联系支持。");
+                if(updates.RecoveryError!=null)AddText(updates.RecoveryError,localized:true);
+            } else if(updates.RequiresRecovery) {
                 AddText(updates.RecoveryNeedsRestart ? "数据已恢复，请退出并重新打开应用" : "请先安装更新前的同一可信版本，再恢复数据。当前数据会另存保留；恢复后需退出并重新打开应用。");
                 if(updates.Recovering)AddText("正在恢复更新前的数据…");
                 if(updates.RecoveryError!=null)AddText(updates.RecoveryError,localized:true);
@@ -94,6 +104,9 @@ public sealed class SoftwareUpdateWindow : Window
             });
             if(updates.Preferences.RecoveryReceipt is {} receipt && Directory.Exists(receipt))ActionButton(links,"查看恢复时保留的数据",()=>{
                 var start=new ProcessStartInfo("explorer.exe");start.ArgumentList.Add(receipt);Open(start);return Task.CompletedTask;
+            });
+            if(updates.StateArchive is {} archive)ActionButton(links,"查看保留的更新状态文件",()=>{
+                var start=new ProcessStartInfo("explorer.exe");start.ArgumentList.Add(Path.GetDirectoryName(archive)!);Open(start);return Task.CompletedTask;
             });
         } finally {refreshing=false;}
     }

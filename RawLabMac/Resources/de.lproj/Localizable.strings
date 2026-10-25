@@ -99,6 +99,7 @@
 "保存所选调整，之后可应用到其他照片。" = "Speichern Sie ausgewählte Anpassungen, um sie später auf andere Fotos anzuwenden.";
 "保存预设" = "Vorgabe speichern";
 "保留任务" = "Aufgabe behalten";
+"保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。" = "Die beschädigte Datei wird aufbewahrt und die Update-Einstellungen werden neu erstellt. Nach dem Neustart werden die Daten geprüft; automatische Updates bleiben deaktiviert.";
 "保留旧编辑记录的降噪算法" = "Behält die Rauschreduzierung früherer Bearbeitungen bei";
 "保留这次几何或镜头修改？" = "Diese Geometrie- oder Objektivänderungen behalten?";
 "修正直线弯曲" = "Gekrümmte Linien begradigen";
@@ -350,6 +351,7 @@
 "效果预览" = "Effektvorschau";
 "数值输入尚未提交" = "Nicht übernommene Zahleneingabe";
 "数据已恢复，请退出并重新打开应用" = "Daten wiederhergestellt. Beenden Sie die App und öffnen Sie sie erneut.";
+"数据检查未通过，编辑暂未开放。请保留文件并联系支持。" = "Die Datenprüfung ist fehlgeschlagen; die Bearbeitung ist gesperrt. Bewahren Sie die Dateien auf und kontaktieren Sie den Support.";
 "文件信息" = "Dateiinformationen";
 "文件夹" = "Ordner";
 "文件树" = "Dateibaum";
@@ -379,6 +381,7 @@
 "无法恢复调整：%@" = "Anpassungen können nicht wiederhergestellt werden: %@";
 "无法显示处理结果" = "Verarbeitungsergebnisse können nicht angezeigt werden";
 "无法生成预览" = "Vorschau kann nicht generiert werden";
+"无法确认更新或恢复状态，请保留全部文件并联系支持。" = "Der Update- oder Wiederherstellungsstatus ist unklar. Bewahren Sie alle Dateien auf und kontaktieren Sie den Support.";
 "无法自动调整曝光：%@" = "Belichtung konnte nicht automatisch angepasst werden: %@";
 "无法解码普通图片：%@" = "Das Bild kann nicht dekodiert werden: %@";
 "无法计算直方图" = "Histogramm kann nicht berechnet werden";
@@ -429,6 +432,7 @@
 "更新已校验，请选择安装时间" = "Update überprüft; Installationszeit auswählen";
 "更新恢复需要处理，编辑暂未开放" = "Die Wiederherstellung des Updates erfordert Aufmerksamkeit; die Bearbeitung ist noch nicht verfügbar";
 "更新未完成，请查看恢复说明" = "Update nicht abgeschlossen; siehe die Wiederherstellungsanleitung";
+"更新设置已重建，请退出并重新打开应用" = "Update-Einstellungen neu erstellt. Beenden Sie die App und öffnen Sie sie erneut.";
 "最终导出：%@ 张" = "Endgültiger Export · Fotos: %@";
 "有可用更新" = "Update verfügbar";
 "有多个匹配镜头，请手动选择" = "Mehrere passende Objektive; bitte manuell auswählen";
@@ -451,6 +455,7 @@
 "来源：%@ · %@ 项调整" = "Quelle: %@ · %@ Anpassungen";
 "极简禅意 · 日系街拍" = "Minimalistisches Zen · japanische Streetfotografie";
 "查看任务" = "Aufgabe anzeigen";
+"查看保留的更新状态文件" = "Aufbewahrte Update-Statusdatei anzeigen";
 "查看应用后的效果" = "Ergebnis mit den angewendeten Einstellungen anzeigen";
 "查看恢复时保留的数据" = "Während der Wiederherstellung aufbewahrte Daten anzeigen";
 "查看批量任务…" = "Stapel-Export anzeigen…";
@@ -735,6 +740,7 @@
 "重命名…" = "Umbenennen…";
 "重命名外观" = "Look umbenennen";
 "重命名预设" = "Vorgabe umbenennen";
+"重建更新设置" = "Update-Einstellungen neu erstellen";
 "重新读取目录" = "Ordner neu einlesen";
 "重新载入" = "Neu laden";
 "重置" = "Zurücksetzen";

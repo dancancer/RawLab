@@ -131,6 +131,21 @@ import SwiftUI
         try check(recovery.recoveryNeedsRestart && recovery.state.phase != .complete && String(contentsOf: original, encoding: .utf8) == "previous edit",
             "Native recovery restores verified data and keeps editing blocked until reopening")
         recoveryWindow.contentView = nil; recoveryWindow.close()
+        let repairStore = UpdateStore(directory: output.appendingPathComponent("state-repair/Updates"))
+        try FileManager.default.createDirectory(at: repairStore.directory, withIntermediateDirectories: true)
+        let damaged = Data("{broken".utf8); try damaged.write(to: repairStore.stateURL)
+        let repair = DesktopUpdateController(adapter: Adapter(), gate: UpdateInstallGate(), store: repairStore, currentVersion: "0.8.2", currentBuild: "14")
+        let (repairWindow, repairHost) = window(SoftwareUpdateView(updates: repair, legacy: legacy).dynamicTypeSize(.accessibility3), width: 560, height: 680)
+        try await Task.sleep(for: .milliseconds(100)); repairHost.layoutSubtreeIfNeeded()
+        try check(repair.canRepairState && !repair.canCheck, "Native damaged-state screen offers explicit repair")
+        repair.repairState()
+        try await Task.sleep(for: .milliseconds(100)); repairHost.layoutSubtreeIfNeeded()
+        try check(repair.recoveryNeedsRestart && repair.requiresRecovery && Data(contentsOf: repair.stateArchive!) == damaged,
+            "Native state repair preserves damaged bytes and remains blocked until reopening")
+        let reopened = DesktopUpdateController(adapter: Adapter(), gate: UpdateInstallGate(), store: repairStore, currentVersion: "0.8.2", currentBuild: "14")
+        reopened.finishStartupHealthCheck(healthy: model.updateDataHealthy)
+        try check(!reopened.requiresRecovery && !reopened.requiresStartupHealthCheck, "Real editor data health completes state repair on a fresh controller")
+        repairWindow.contentView = nil; repairWindow.close()
         print("PASS: actual NSHostingView controls, focus changes, draft gate and six-language layouts; no production update or install")
     }
     @MainActor final class Adapter: UpdateAdapter {

@@ -99,6 +99,7 @@
 "保存所选调整，之后可应用到其他照片。" = "Guarda los ajustes seleccionados para aplicarlos después a otras fotos.";
 "保存预设" = "Guardar ajuste preestablecido";
 "保留任务" = "Conservar tarea";
+"保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。" = "Se conservará el archivo dañado y se restablecerán los ajustes. Los datos se comprobarán al reiniciar; las actualizaciones automáticas seguirán desactivadas.";
 "保留旧编辑记录的降噪算法" = "Conserva la reducción de ruido de ediciones anteriores";
 "保留这次几何或镜头修改？" = "¿Conservar estos cambios de geometría u objetivo?";
 "修正直线弯曲" = "Corregir la curvatura de las líneas";
@@ -350,6 +351,7 @@
 "效果预览" = "Vista previa del efecto";
 "数值输入尚未提交" = "Entrada numérica sin confirmar";
 "数据已恢复，请退出并重新打开应用" = "Datos restaurados. Cierra y vuelve a abrir la aplicación.";
+"数据检查未通过，编辑暂未开放。请保留文件并联系支持。" = "La validación de datos falló y la edición no está disponible. Conserva los archivos y contacta con soporte.";
 "文件信息" = "Información del archivo";
 "文件夹" = "Carpetas";
 "文件树" = "Árbol de archivos";
@@ -379,6 +381,7 @@
 "无法恢复调整：%@" = "No se pueden restaurar los ajustes: %@";
 "无法显示处理结果" = "No se pueden mostrar los resultados del procesamiento";
 "无法生成预览" = "No se puede generar una vista previa";
+"无法确认更新或恢复状态，请保留全部文件并联系支持。" = "No se puede confirmar el estado de actualización o recuperación. Conserva todos los archivos y contacta con soporte.";
 "无法自动调整曝光：%@" = "No se puede ajustar la exposición automáticamente: %@";
 "无法解码普通图片：%@" = "No se puede decodificar la imagen: %@";
 "无法计算直方图" = "No se puede calcular el histograma";
@@ -429,6 +432,7 @@
 "更新已校验，请选择安装时间" = "Actualización verificada; elige cuándo instalarla";
 "更新恢复需要处理，编辑暂未开放" = "La recuperación de la actualización requiere atención; la edición aún no está disponible";
 "更新未完成，请查看恢复说明" = "La actualización no se ha completado; consulta las instrucciones de recuperación";
+"更新设置已重建，请退出并重新打开应用" = "Ajustes restablecidos. Cierra y vuelve a abrir la aplicación.";
 "最终导出：%@ 张" = "Exportación final · Fotos: %@";
 "有可用更新" = "Actualización disponible";
 "有多个匹配镜头，请手动选择" = "Varias lentes coinciden; elige una manualmente";
@@ -451,6 +455,7 @@
 "来源：%@ · %@ 项调整" = "Origen: %@ · %@ ajustes";
 "极简禅意 · 日系街拍" = "Zen minimalista · fotografía callejera japonesa";
 "查看任务" = "Ver tarea";
+"查看保留的更新状态文件" = "Ver el archivo de estado conservado";
 "查看应用后的效果" = "Ver el resultado con los ajustes aplicados";
 "查看恢复时保留的数据" = "Ver los datos conservados durante la recuperación";
 "查看批量任务…" = "Ver tarea por lotes…";
@@ -735,6 +740,7 @@
 "重命名…" = "Cambiar nombre…";
 "重命名外观" = "Cambiar nombre del look";
 "重命名预设" = "Renombrar ajuste preestablecido";
+"重建更新设置" = "Restablecer los ajustes de actualización";
 "重新读取目录" = "Volver a cargar la carpeta";
 "重新载入" = "Recargar";
 "重置" = "Restablecer";

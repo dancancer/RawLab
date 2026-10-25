@@ -15,6 +15,7 @@ internal static class ControllerChecks
     }
     internal static async Task Run(Action<bool, string> check)
     {
+        StateRepair(check);
         var root = Path.Combine(Path.GetTempPath(), "rawlab-update-controller-" + Guid.NewGuid().ToString("N"));
         try
         {
@@ -66,5 +67,31 @@ internal static class ControllerChecks
             check(!reopenedAfterRecovery.RequiresRecovery && !reopenedAfterRecovery.CanRestorePreviousData, "Persisted recovery permits a fresh editor on the next launch");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    private static void StateRepair(Action<bool, string> check)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-controller-repair-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new UpdateStore(Path.Combine(root, "Updates")); Directory.CreateDirectory(store.DirectoryPath);
+            File.WriteAllText(store.StatePath, "{broken"); var adapter = new Adapter();
+            var damaged = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14");
+            check(damaged.StorageError != null && damaged.CanRepairState && !damaged.CanCheck, "Corrupt pre-install state offers explicit repair");
+            damaged.RepairState(); damaged.SetAutomaticCheck(true); damaged.SetAutomaticInstall(true); damaged.Cancel(); damaged.FinishStartupHealthCheck(true);
+            check(damaged.StorageError == null && damaged.RecoveryNeedsRestart && damaged.RequiresRecovery && !damaged.CanCheck && adapter.Installs == 0,
+                "Repair cannot reopen editing or install in the current process");
+            check(!damaged.Preferences.AutomaticCheck && !damaged.Preferences.AutomaticInstall && damaged.Preferences.StateRepairReceipt != null,
+                "Recovery actions cannot enable automatic updates or clear the receipt");
+            var unhealthy = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14");
+            check(unhealthy.RequiresStartupHealthCheck && !unhealthy.RequiresRecovery, "Reopening repaired state requires data health validation");
+            unhealthy.FinishStartupHealthCheck(false);
+            check(unhealthy.RequiresRecovery && !unhealthy.CanCheck && unhealthy.Preferences.StateRepairReceipt != null,
+                "Unhealthy user data remains blocked after repair");
+            var healthy = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14"); healthy.FinishStartupHealthCheck(true);
+            check(!healthy.RequiresStartupHealthCheck && !healthy.RequiresRecovery && healthy.CanCheck && !healthy.Preferences.AutomaticInstall,
+                "Only a fresh healthy startup completes explicit state repair");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
 }

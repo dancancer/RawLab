@@ -35,7 +35,8 @@ struct ColorGradingWheelControl: View {
             + ", " + L10n.text("饱和度") + " " + String(format: "%.1f%%", locale: L10n.locale, value.saturation))
         .accessibilityIdentifier("grading.wheel")
         .accessibilityAdjustableAction { direction in
-            guard enabled, isCurrent(), canChange() else { return }
+            guard enabled, isCurrent(), canChange(), prepareEditing() else { return }
+            guard isCurrent(), canChange() else { return }
             let next = min(100, max(0, value.saturation + (direction == .increment ? 1 : -1)))
             guard next != value.saturation else { return }
             onEditingChanged(true)

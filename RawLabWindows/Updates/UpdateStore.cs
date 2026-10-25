@@ -12,9 +12,89 @@ public sealed class UpdateStore(string directory)
     public UpdatePreferences Load(bool automaticCheck)
     {
         if (!File.Exists(StatePath)) return new() { AutomaticCheck = automaticCheck };
-        var value = JsonSerializer.Deserialize<UpdatePreferences>(File.ReadAllText(StatePath)) ?? throw new InvalidDataException("Missing update state");
-        if (value.Channel != "stable" || value.PendingUpdate.Format != 1) throw new InvalidDataException("Unsupported update state");
+        RequireOrdinary(DirectoryPath); RequireOrdinary(StatePath);
+        var data = File.ReadAllBytes(StatePath);
+        using var document = JsonDocument.Parse(data);
+        var root = document.RootElement;
+        static void RequireFields(JsonElement element, params string[] names)
+        {
+            if (element.ValueKind != JsonValueKind.Object || names.Any(name => !element.TryGetProperty(name, out _)))
+                throw new InvalidDataException("Incomplete update state");
+        }
+        RequireFields(root, "AutomaticCheck", "AutomaticInstall", "Channel", "PendingUpdate");
+        RequireFields(root.GetProperty("PendingUpdate"), "Format", "Phase", "Attempt", "Choice", "Progress", "Blockers");
+        var value = JsonSerializer.Deserialize<UpdatePreferences>(data) ?? throw new InvalidDataException("Missing update state");
+        if (value.Channel != "stable" || value.PendingUpdate == null || value.PendingUpdate.Format != 1) throw new InvalidDataException("Unsupported update state");
+        if (!Enum.IsDefined(value.PendingUpdate.Phase) || !Enum.IsDefined(value.PendingUpdate.Choice) ||
+            value.PendingUpdate.Failure is {} failure && !Enum.IsDefined(failure.Stage) ||
+            !double.IsFinite(value.PendingUpdate.Progress) || value.PendingUpdate.Progress is < 0 or > 1 || value.PendingUpdate.Blockers == null)
+            throw new InvalidDataException("Unsupported update state");
+        if (value.StateRepairReceipt is {} receipt)
+        {
+            var archive = RepairedStateArchive(receipt);
+            RequireOrdinary(Path.GetDirectoryName(Path.GetDirectoryName(archive)!)!);
+            RequireOrdinary(Path.GetDirectoryName(archive)!); RequireOrdinary(archive);
+            if (!CryptographicOperations.FixedTimeEquals(SHA256.HashData(File.ReadAllBytes(archive)), Convert.FromHexString(receipt.Sha256)))
+                throw new InvalidDataException("State repair archive changed");
+        }
         return value;
+    }
+    public string RepairedStateArchive(UpdateStateRepairReceipt receipt) => Path.Combine(DirectoryPath, "StateRecoveries", receipt.Id.ToString("N"), "state.json");
+    public byte[] RepairableState()
+    {
+        RequireOrdinary(DirectoryPath); RequireOrdinary(StatePath); var data = File.ReadAllBytes(StatePath);
+        JsonDocument? document = null;
+        try { document = JsonDocument.Parse(data); } catch (JsonException) { }
+        using (document)
+        {
+            if (document?.RootElement is { ValueKind: JsonValueKind.Object } root)
+            {
+                if (root.TryGetProperty("Channel", out var channel) && channel.GetString() != "stable" ||
+                    root.TryGetProperty("StateRepairReceipt", out var receipt) && receipt.ValueKind != JsonValueKind.Null ||
+                    root.TryGetProperty("RecoveryReceipt", out var recovery) && recovery.ValueKind != JsonValueKind.Null)
+                    throw new InvalidDataException("Unsupported update state cannot be rebuilt");
+                if (root.TryGetProperty("PendingUpdate", out var pending) && pending.ValueKind == JsonValueKind.Object)
+                {
+                    static bool Installation(JsonElement element) => element.TryGetInt32(out var number) &&
+                        (number == (int)UpdatePhase.Installing || number == (int)UpdatePhase.PendingRestart);
+                    if (pending.TryGetProperty("Format", out var format) && format.GetInt32() != 1 ||
+                        pending.TryGetProperty("Phase", out var phase) && (!phase.TryGetInt32(out var number) || !Enum.IsDefined(typeof(UpdatePhase), number) || Installation(phase)) ||
+                        pending.TryGetProperty("BackupPath", out var path) && path.ValueKind != JsonValueKind.Null ||
+                        pending.TryGetProperty("PreviousVersion", out var previousVersion) && previousVersion.ValueKind != JsonValueKind.Null ||
+                        pending.TryGetProperty("PreviousBuild", out var previousBuild) && previousBuild.ValueKind != JsonValueKind.Null ||
+                        pending.TryGetProperty("Choice", out var choice) && (!choice.TryGetInt32(out var choiceNumber) || !Enum.IsDefined(typeof(UpdateInstallChoice), choiceNumber)) ||
+                        pending.TryGetProperty("Failure", out var failure) && failure.ValueKind == JsonValueKind.Object &&
+                            failure.TryGetProperty("Stage", out var stage) && (!stage.TryGetInt32(out var stageNumber) || !Enum.IsDefined(typeof(UpdatePhase), stageNumber) || Installation(stage)))
+                        throw new InvalidDataException("Unsupported update state cannot be rebuilt");
+                }
+            }
+        }
+        var readable = false; try { Load(false); readable = true; } catch { }
+        if (readable) throw new InvalidDataException("Update state is readable; reopen the app");
+        foreach (var name in new[] { "Backups", "Recoveries" })
+        {
+            var path = Path.Combine(DirectoryPath, name);
+            if (!Path.Exists(path)) continue;
+            RequireOrdinary(path);
+            if (Directory.EnumerateFileSystemEntries(path).Any()) throw new InvalidDataException("Installation or data recovery status is unknown");
+        }
+        if (Path.Exists(Path.Combine(DirectoryPath, "recovery-in-progress.json"))) throw new InvalidDataException("Data recovery is unfinished");
+        return data;
+    }
+    public UpdatePreferences RepairState(byte[] expected)
+    {
+        if (!RepairableState().SequenceEqual(expected)) throw new InvalidDataException("Update state changed; reopen the app");
+        var receipt = new UpdateStateRepairReceipt(Guid.NewGuid(), Convert.ToHexString(SHA256.HashData(expected)));
+        var archive = RepairedStateArchive(receipt); Directory.CreateDirectory(Path.GetDirectoryName(archive)!);
+        RequireOrdinary(Path.GetDirectoryName(Path.GetDirectoryName(archive)!)!); RequireOrdinary(Path.GetDirectoryName(archive)!);
+        // 原始字节先落盘，再原子替换；中断期间不会出现缺失状态而开放编辑。
+        WriteAtomic(archive, expected);
+        if (!RepairableState().SequenceEqual(expected)) throw new InvalidDataException("Update state changed");
+        var next = new UpdatePreferences { AutomaticCheck = false, StateRepairReceipt = receipt }; Save(next); return next;
+    }
+    private static void RequireOrdinary(string path)
+    {
+        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) throw new IOException("Linked update state cannot be rebuilt");
     }
     public void Save(UpdatePreferences preferences) => WriteAtomic(StatePath, JsonSerializer.SerializeToUtf8Bytes(preferences));
     public static void WriteAtomic(string path, byte[] data)

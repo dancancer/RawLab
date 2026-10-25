@@ -115,6 +115,9 @@ public sealed class UpdatePreferences
     public string Channel { get; set; } = "stable";
     public UpdateTaskState PendingUpdate { get; set; } = new();
     public string? RecoveryReceipt { get; set; }
+    public UpdateStateRepairReceipt? StateRepairReceipt { get; set; }
     public UpdatePreferences Copy() => new() { AutomaticCheck = AutomaticCheck, AutomaticInstall = AutomaticInstall,
-        SkippedVersion = SkippedVersion, RemindAfter = RemindAfter, LastCheck = LastCheck, Channel = Channel, PendingUpdate = PendingUpdate.Copy(), RecoveryReceipt = RecoveryReceipt };
+        SkippedVersion = SkippedVersion, RemindAfter = RemindAfter, LastCheck = LastCheck, Channel = Channel, PendingUpdate = PendingUpdate.Copy(), RecoveryReceipt = RecoveryReceipt, StateRepairReceipt = StateRepairReceipt };
 }
+
+public sealed record UpdateStateRepairReceipt(Guid Id, string Sha256);

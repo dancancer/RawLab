@@ -19,7 +19,7 @@ int main() {
     if (FAILED(D3DReflect(code->GetBufferPointer(), code->GetBufferSize(), IID_PPV_ARGS(&reflection)))) return 1;
     auto* buffer = reflection->GetConstantBufferByName("Params");
     D3D11_SHADER_BUFFER_DESC description{};
-    if (FAILED(buffer->GetDesc(&description)) || description.Size != 384) return 1;
+    if (FAILED(buffer->GetDesc(&description)) || description.Size != 1408) return 1;
     const char* names[] = {"hslHue", "hslSaturation", "hslLightness"};
     for (unsigned index = 0; index < 3; ++index) {
         D3D11_SHADER_VARIABLE_DESC variable{};
@@ -32,7 +32,12 @@ int main() {
     D3D11_SHADER_VARIABLE_DESC grading{};
     if (FAILED(buffer->GetVariableByName("colorGrading")->GetDesc(&grading)) ||
         grading.StartOffset!=336 || grading.Size!=48) return 1;
-    std::cout << "PASS: cs_5_0 color shader compiles; reflected constants match the 384-byte host layout\n";
+    D3D11_SHADER_VARIABLE_DESC ranges{}, tangents{};
+    if (FAILED(buffer->GetVariableByName("curveRanges")->GetDesc(&ranges)) ||
+        ranges.StartOffset != 384 || ranges.Size != 512) return 1;
+    if (FAILED(buffer->GetVariableByName("curveTangents")->GetDesc(&tangents)) ||
+        tangents.StartOffset != 896 || tangents.Size != 512) return 1;
+    std::cout << "PASS: cs_5_0 color shader compiles; reflected constants match the 1408-byte host layout\n";
     std::cout << "Shader compilation/reflection does not establish hardware GPU execution\n";
     return 0;
 }

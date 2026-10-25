@@ -77,7 +77,7 @@ internal static class AdjustmentTransferValues
         Put(F.Straighten,g.StraightenDegrees);Put(F.PerspectiveHorizontal,g.PerspectiveHorizontal);Put(F.PerspectiveVertical,g.PerspectiveVertical);
         var lens=context.IsRaw ? s.Lens ?? new() : new();
         Put(F.LensDistortion,lens.Distortion);Put(F.LensTCA,lens.Tca);Put(F.LensAutoCrop,lens.AutoCrop);
-        Put(F.LensProfile,lens.Manual ? lens.ProfileId ?? "" : null);
+        Put(F.LensProfile,lens.Manual ? lens.CoreProfileId : null);
         return result;
     }
     internal static AdjustmentSnapshot ApplyObjects(AdjustmentPayload p,AdjustmentSnapshot s,AdjustmentTransferContext context)
@@ -122,8 +122,11 @@ internal static class AdjustmentTransferValues
                     throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"geometry.lens");
             }
             var l=s.Lens ?? new(); var profile=p[F.LensProfile];
+            var profileId=Text(profile);if(profileId==new LensSettings(Manual:true).CoreProfileId)profileId=null;
             l=l with {Distortion=B(F.LensDistortion,l.Distortion),Tca=B(F.LensTCA,l.Tca),AutoCrop=B(F.LensAutoCrop,l.AutoCrop),
-                Manual=profile!=null ? !Null(profile) : l.Manual,ProfileId=profile!=null ? Text(profile) : l.ProfileId};
+                Manual=profile!=null ? !Null(profile) : l.Manual,ProfileId=profile!=null ? profileId : l.ProfileId};
+            if(l.Enabled && l.Manual && l.ProfileId==null)
+                throw new AdjustmentTransferException(AdjustmentFailure.Unrepresentable,F.LensProfile.ID());
             if(l.Enabled) {
                 if(!context.IsRaw || context.ValidateLens==null) throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"target lens calibration unavailable");
                 context.ValidateLens(l);

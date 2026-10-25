@@ -23,6 +23,7 @@ import Foundation
         guard value() else { fatalError(message) }; print("PASS: \(message)")
     }
     @MainActor static func main() async throws {
+        try stateRepair()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-update-controller-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let unavailable = DesktopUpdateController(adapter: UnavailableUpdateAdapter("configuration"), gate: UpdateInstallGate(),
@@ -93,5 +94,32 @@ import Foundation
     static func checkData(_ path: URL, _ expected: String) throws {
         let value = try String(contentsOf: path, encoding: .utf8)
         check(value == expected, "Recovery restores the verified backup contents")
+    }
+
+    @MainActor static func stateRepair() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-controller-repair-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = UpdateStore(directory: root.appendingPathComponent("Updates"))
+        try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)
+        try Data("{broken".utf8).write(to: store.stateURL)
+        let adapter = FakeUpdateAdapter()
+        let damaged = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: store, currentVersion: "0.8.2", currentBuild: "14")
+        check(damaged.storageError != nil && damaged.canRepairState && !damaged.canCheck, "Corrupt pre-install state offers only explicit repair")
+        damaged.repairState()
+        damaged.setAutomaticCheck(true); damaged.setAutomaticInstall(true); damaged.cancel(); damaged.retry()
+        damaged.finishStartupHealthCheck(healthy: true)
+        check(damaged.storageError == nil && damaged.recoveryNeedsRestart && damaged.requiresRecovery && !damaged.canCheck && adapter.installs == 0,
+            "Repair cannot reopen editing or install in the current process")
+        check(!damaged.preferences.automaticCheck && !damaged.preferences.automaticInstall && damaged.preferences.stateRepairReceipt != nil,
+            "Recovery actions cannot enable automatic updates or clear the startup receipt")
+        let unhealthy = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: store, currentVersion: "0.8.2", currentBuild: "14")
+        check(unhealthy.requiresStartupHealthCheck && !unhealthy.requiresRecovery, "Reopening repaired state requires data health validation")
+        unhealthy.finishStartupHealthCheck(healthy: false)
+        check(unhealthy.requiresRecovery && !unhealthy.canCheck && unhealthy.preferences.stateRepairReceipt != nil,
+            "Unhealthy user data remains blocked after repair")
+        let healthy = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: store, currentVersion: "0.8.2", currentBuild: "14")
+        healthy.finishStartupHealthCheck(healthy: true)
+        check(!healthy.requiresStartupHealthCheck && !healthy.requiresRecovery && healthy.canCheck && !healthy.preferences.automaticInstall,
+            "Only a fresh healthy startup completes explicit state repair")
     }
 }

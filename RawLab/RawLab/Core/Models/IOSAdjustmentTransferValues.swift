@@ -75,7 +75,7 @@ extension IOSAdjustmentTransfer {
         result[Field.lensDistortion.rawValue] = .boolean(lens.distortion)
         result[Field.lensTCA.rawValue] = .boolean(lens.tca)
         result[Field.lensAutoCrop.rawValue] = .boolean(lens.autoCrop)
-        result[Field.lensProfile.rawValue] = lens.mode == .automatic ? .null : .string(lens.profileID ?? "")
+        result[Field.lensProfile.rawValue] = lens.mode == .automatic ? .null : .string(lens.coreProfileID)
         return result
     }
     static func applyObjects(_ payload: AdjustmentTransferPayload, to settings: inout RawSettings,
@@ -123,7 +123,10 @@ extension IOSAdjustmentTransfer {
             if let value = payload[.lensDistortion]?.boolean { lens.distortion = value }
             if let value = payload[.lensTCA]?.boolean { lens.tca = value }
             if let value = payload[.lensAutoCrop]?.boolean { lens.autoCrop = value }
-            if let value = payload[.lensProfile] { lens.mode = value == .null ? .automatic : .manual; lens.profileID = value.string }
+            if let value = payload[.lensProfile] { lens.mode = value == .null ? .automatic : .manual; lens.profileID = value.string == "__rawlab_manual_selection_required__" ? nil : value.string }
+            if lens.isEnabled && lens.mode == .manual && lens.profileID == nil {
+                throw AdjustmentTransferError.unrepresentable(Field.lensProfile.rawValue)
+            }
             guard context.isRaw || !lens.isEnabled else { throw AdjustmentTransferError.incompatible("geometry.lens") }
             if lens.isEnabled {
                 guard let validate = context.validateLensRequest else { throw AdjustmentTransferError.incompatible("target lens calibration unavailable") }

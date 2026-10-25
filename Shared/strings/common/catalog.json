@@ -5710,5 +5710,53 @@
     "fr": "Afficher les données conservées lors de la récupération",
     "ja": "復元時に保持されたデータを表示",
     "es": "Ver los datos conservados durante la recuperación"
+  },
+  "重建更新设置": {
+    "zh-Hans": "重建更新设置",
+    "en": "Rebuild update settings",
+    "de": "Update-Einstellungen neu erstellen",
+    "fr": "Reconstruire les réglages de mise à jour",
+    "ja": "更新設定を再作成",
+    "es": "Restablecer los ajustes de actualización"
+  },
+  "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。": {
+    "zh-Hans": "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。",
+    "en": "Keep the damaged file and rebuild update settings. Data will be checked after restarting; automatic updates stay off.",
+    "de": "Die beschädigte Datei wird aufbewahrt und die Update-Einstellungen werden neu erstellt. Nach dem Neustart werden die Daten geprüft; automatische Updates bleiben deaktiviert.",
+    "fr": "Le fichier endommagé sera conservé et les réglages de mise à jour reconstruits. Les données seront vérifiées au redémarrage ; les mises à jour automatiques resteront désactivées.",
+    "ja": "破損したファイルを保持し、更新設定を再作成します。再起動後にデータを確認し、自動更新は無効のままにします。",
+    "es": "Se conservará el archivo dañado y se restablecerán los ajustes. Los datos se comprobarán al reiniciar; las actualizaciones automáticas seguirán desactivadas."
+  },
+  "无法确认更新或恢复状态，请保留全部文件并联系支持。": {
+    "zh-Hans": "无法确认更新或恢复状态，请保留全部文件并联系支持。",
+    "en": "The update or recovery status is uncertain. Keep all files and contact support.",
+    "de": "Der Update- oder Wiederherstellungsstatus ist unklar. Bewahren Sie alle Dateien auf und kontaktieren Sie den Support.",
+    "fr": "L’état de la mise à jour ou de la récupération est incertain. Conservez tous les fichiers et contactez l’assistance.",
+    "ja": "更新または復元の状態を確認できません。すべてのファイルを保持し、サポートにお問い合わせください。",
+    "es": "No se puede confirmar el estado de actualización o recuperación. Conserva todos los archivos y contacta con soporte."
+  },
+  "更新设置已重建，请退出并重新打开应用": {
+    "zh-Hans": "更新设置已重建，请退出并重新打开应用",
+    "en": "Update settings rebuilt. Quit and reopen the app.",
+    "de": "Update-Einstellungen neu erstellt. Beenden Sie die App und öffnen Sie sie erneut.",
+    "fr": "Réglages de mise à jour reconstruits. Quittez et rouvrez l’application.",
+    "ja": "更新設定を再作成しました。アプリを終了して、もう一度開いてください。",
+    "es": "Ajustes restablecidos. Cierra y vuelve a abrir la aplicación."
+  },
+  "数据检查未通过，编辑暂未开放。请保留文件并联系支持。": {
+    "zh-Hans": "数据检查未通过，编辑暂未开放。请保留文件并联系支持。",
+    "en": "Data validation failed and editing is unavailable. Keep the files and contact support.",
+    "de": "Die Datenprüfung ist fehlgeschlagen; die Bearbeitung ist gesperrt. Bewahren Sie die Dateien auf und kontaktieren Sie den Support.",
+    "fr": "La validation des données a échoué et la modification est indisponible. Conservez les fichiers et contactez l’assistance.",
+    "ja": "データの確認に失敗したため、編集を開始できません。ファイルを保持し、サポートにお問い合わせください。",
+    "es": "La validación de datos falló y la edición no está disponible. Conserva los archivos y contacta con soporte."
+  },
+  "查看保留的更新状态文件": {
+    "zh-Hans": "查看保留的更新状态文件",
+    "en": "View the preserved update state file",
+    "de": "Aufbewahrte Update-Statusdatei anzeigen",
+    "fr": "Afficher le fichier d’état conservé",
+    "ja": "保持された更新状態ファイルを表示",
+    "es": "Ver el archivo de estado conservado"
   }
 }

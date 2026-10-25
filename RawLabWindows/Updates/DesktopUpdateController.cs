@@ -15,6 +15,8 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     private CancellationTokenSource? operation;
     private bool automaticDownload;
     private readonly bool recoveryStartup;
+    private byte[]? repairSnapshot;
+    private bool repairHealthFailed;
     public event PropertyChangedEventHandler? PropertyChanged;
     public event Action? RestartRequested;
     public UpdatePreferences Preferences => preferences;
@@ -32,8 +34,10 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     public bool CanCancel => State.Phase is UpdatePhase.Checking or UpdatePhase.Downloading or UpdatePhase.Verifying or
         UpdatePhase.PackageReady or UpdatePhase.WaitingForTasks or UpdatePhase.ReadyToInstall && !PreparingInstallation;
     public bool CanChooseInstall => UnavailableReason == null && State.Prepared && !PreparingInstallation;
-    public bool RequiresStartupHealthCheck => State.Phase is UpdatePhase.Installing or UpdatePhase.PendingRestart;
-    public bool RequiresRecovery => backup.HasPendingRecovery || Recovering || RecoveryNeedsRestart || State.Failure?.Stage is UpdatePhase.Installing or UpdatePhase.PendingRestart;
+    public bool RequiresStartupHealthCheck => preferences.StateRepairReceipt != null || State.Phase is UpdatePhase.Installing or UpdatePhase.PendingRestart;
+    public bool RequiresRecovery => backup.HasPendingRecovery || Recovering || RecoveryNeedsRestart || repairHealthFailed || State.Failure?.Stage is UpdatePhase.Installing or UpdatePhase.PendingRestart;
+    public bool CanRepairState => StorageError != null && repairSnapshot != null && !RecoveryNeedsRestart;
+    public string? StateArchive => preferences.StateRepairReceipt is {} receipt ? store.RepairedStateArchive(receipt) : null;
     public bool CanRestorePreviousData => recoveryStartup && RequiresRecovery && !Recovering && !RecoveryNeedsRestart && StorageError == null &&
         adapter.UnavailableReason == null && State.PreviousVersion == currentVersion && State.PreviousBuild == currentBuild && State.BackupPath != null;
 
@@ -43,7 +47,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         this.adapter = adapter; this.gate = gate; this.store = store; this.currentVersion = currentVersion; this.currentBuild = currentBuild;
         this.now = now ?? (() => DateTimeOffset.UtcNow); backup = new(Path.GetDirectoryName(store.DirectoryPath)!, store.DirectoryPath);
         try { preferences = store.Load(automaticCheck); }
-        catch (Exception error) { preferences = new(); StorageError = error.Message; }
+        catch (Exception error) { preferences = new(); StorageError = error.Message; try { repairSnapshot = store.RepairableState(); } catch { } }
         if (StorageError == null && backup.HasPendingRecovery && preferences.RecoveryReceipt is {} receipt)
         {
             try { backup.FinishRecovery(receipt); } catch (Exception error) { RecoveryError = error.Message; }
@@ -54,6 +58,16 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             var next = preferences.Copy(); next.PendingUpdate.RestoreAfterLaunch(currentVersion, currentBuild, false);
             if (next.PendingUpdate.Phase != State.Phase) Save(next);
         }
+    }
+    public void RepairState()
+    {
+        if (!CanRepairState || repairSnapshot == null) return;
+        try
+        {
+            preferences = store.RepairState(repairSnapshot); StorageError = null; repairSnapshot = null; RecoveryNeedsRestart = true;
+        }
+        catch (Exception error) { StorageError = error.Message; repairSnapshot = null; try { repairSnapshot = store.RepairableState(); } catch { } }
+        Notify();
     }
     public async Task RestorePreviousDataAsync()
     {
@@ -78,16 +92,25 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     }
     public void FinishStartupHealthCheck(bool healthy)
     {
-        if (!RequiresStartupHealthCheck || backup.HasPendingRecovery) return;
+        if (!RequiresStartupHealthCheck || backup.HasPendingRecovery || RecoveryNeedsRestart) return;
+        if (preferences.StateRepairReceipt != null)
+        {
+            if (!healthy) { repairHealthFailed = true; RecoveryError = "User data failed startup validation"; Notify(); return; }
+            var repaired = preferences.Copy(); repaired.StateRepairReceipt = null; Save(repaired); return;
+        }
         var backupValid=false;
         try {
             if(State.BackupPath is {} path) {var manifest=backup.Verify(path);backupValid=manifest.TargetVersion==State.Release?.Version && manifest.PreviousVersion==State.PreviousVersion && manifest.PreviousBuild==State.PreviousBuild;}
         } catch(Exception error) { RecoveryError = error.Message; }
         var next = preferences.Copy(); next.PendingUpdate.RestoreAfterLaunch(currentVersion, currentBuild, healthy && backupValid && adapter.UnavailableReason == null); Save(next);
     }
-    public void SetAutomaticCheck(bool value) { var next = preferences.Copy(); next.AutomaticCheck = value; Save(next); }
+    public void SetAutomaticCheck(bool value) {
+        if (StorageError != null || RequiresStartupHealthCheck || RequiresRecovery) return;
+        var next = preferences.Copy(); next.AutomaticCheck = value; Save(next);
+    }
     public void SetAutomaticInstall(bool value)
     {
+        if (StorageError != null || RequiresStartupHealthCheck || RequiresRecovery) return;
         if (value && UnavailableReason != null) return;
         var next = preferences.Copy(); next.AutomaticInstall = value;
         var revoke = !value && (automaticDownload || State.Choice == UpdateInstallChoice.AutomaticOnQuit);

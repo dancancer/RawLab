@@ -42,6 +42,7 @@ internal static class SoftwareUpdateUiChecks
         var store=new EditStore(Path.Combine(output,"edits"));typeof(MainWindow).GetField("editStore",Private)!.SetValue(window,store);
         try {
             window.GpuMode.SelectedIndex=1;window.Show();window.OpenFile(photo);Ready(window);
+            GateBusyWorkChecks(window,controller,adapter,check);
             Invoke(window,"SelectTool",EditorAdjustmentTool.Exposure);Ready(window);
             var session=(AdjustmentTransferSession)typeof(MainWindow).GetProperty("TransferSession",Private)!.GetValue(window)!;
             foreach(var draft in new[]{"1.25","-"}) {
@@ -110,8 +111,35 @@ internal static class SoftwareUpdateUiChecks
             check(File.ReadAllText(original)=="previous edit" && recovery.RequiresRecovery && recovery.State.Phase!=UpdatePhase.Complete,
                 "Native restore action preserves failure semantics and requires reopening before editing");
             InteractionChecks.PumpUntil(()=>!recovery.Recovering);recoveryWindow.Close();
+            var repairStore=new UpdateStore(Path.Combine(output,"state-repair","Updates"));Directory.CreateDirectory(repairStore.DirectoryPath);
+            File.WriteAllText(repairStore.StatePath,"{broken");
+            var repair=new DesktopUpdateController(new Adapter(),new(),repairStore,"0.8.2","14");
+            var repairWindow=new SoftwareUpdateWindow(repair,new UpdateChecker("0.8.2")){Owner=window,FontSize=26};repairWindow.Show();repairWindow.UpdateLayout();
+            check(Button(repairWindow,"updates.repairState").IsEnabled,"Native corrupt-state screen offers explicit repair");
+            Click(Button(repairWindow,"updates.repairState"));InteractionChecks.PumpUntil(()=>repair.RecoveryNeedsRestart);
+            check(repair.RequiresRecovery && !Button(repairWindow,"updates.check").IsEnabled && File.ReadAllText(repair.StateArchive!)=="{broken",
+                "Native repair action preserves damaged state and requires reopening");
+            var repairedStartup=new DesktopUpdateController(new Adapter(),new(),repairStore,"0.8.2","14");
+            repairedStartup.FinishStartupHealthCheck(window.UpdateDataHealthy);
+            check(!repairedStartup.RequiresRecovery && !repairedStartup.RequiresStartupHealthCheck,"Real editor data health completes repair on fresh startup");
+            repairWindow.Close();
             Console.WriteLine("UPDATE_UI_OUTPUT="+output);
         } finally {controller.Cancel();Invoke(window,"CancelTransformDraft");Invoke(window,"CancelParameterInputs");window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);}
+    }
+    private static void GateBusyWorkChecks(MainWindow window,DesktopUpdateController controller,Adapter adapter,Action<bool,string> check)
+    {
+        foreach(var name in new[]{"autoExposing","transferPreparing"}) {
+            var field=typeof(MainWindow).GetField(name,Private)!;field.SetValue(window,true);
+            try {
+                var before=controller.State.Copy();
+                check(((UpdateSessionStatus)Invoke(window,"UpdateStatus")!).TasksRunning && controller.Gate.Blockers().Contains("tasks") &&
+                    controller.Gate.Prepare().Contains("tasks") && controller.State.Phase==before.Phase &&
+                    controller.State.BackupPath==before.BackupPath && adapter.Installs==0,
+                    "Active native work blocks update preparation before backup or install: "+name);
+            } finally {field.SetValue(window,false);}
+            check(!((UpdateSessionStatus)Invoke(window,"UpdateStatus")!).TasksRunning && !controller.Gate.Blockers().Contains("tasks"),
+                "Completed native work releases the update gate: "+name);
+        }
     }
     private sealed class Adapter:IDesktopUpdateAdapter
     {

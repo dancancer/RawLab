@@ -99,6 +99,7 @@
 "保存所选调整，之后可应用到其他照片。" = "Save selected adjustments to apply them to other photos later.";
 "保存预设" = "Save Preset";
 "保留任务" = "Keep task";
+"保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。" = "Keep the damaged file and rebuild update settings. Data will be checked after restarting; automatic updates stay off.";
 "保留旧编辑记录的降噪算法" = "Keeps the noise reduction method from earlier edits";
 "保留这次几何或镜头修改？" = "Keep these geometry or lens changes?";
 "修正直线弯曲" = "Straighten Curved Lines";
@@ -350,6 +351,7 @@
 "效果预览" = "Effect preview";
 "数值输入尚未提交" = "Uncommitted Number Input";
 "数据已恢复，请退出并重新打开应用" = "Data restored. Quit and reopen the app.";
+"数据检查未通过，编辑暂未开放。请保留文件并联系支持。" = "Data validation failed and editing is unavailable. Keep the files and contact support.";
 "文件信息" = "File Information";
 "文件夹" = "Folders";
 "文件树" = "File tree";
@@ -379,6 +381,7 @@
 "无法恢复调整：%@" = "Unable to restore adjustments: %@";
 "无法显示处理结果" = "Unable to display processing results";
 "无法生成预览" = "Unable to generate preview";
+"无法确认更新或恢复状态，请保留全部文件并联系支持。" = "The update or recovery status is uncertain. Keep all files and contact support.";
 "无法自动调整曝光：%@" = "Unable to auto-adjust exposure: %@";
 "无法解码普通图片：%@" = "Unable to decode the image: %@";
 "无法计算直方图" = "Unable to calculate histogram";
@@ -429,6 +432,7 @@
 "更新已校验，请选择安装时间" = "Update verified; choose when to install";
 "更新恢复需要处理，编辑暂未开放" = "Update recovery requires attention; editing is not yet available";
 "更新未完成，请查看恢复说明" = "Update incomplete; see the recovery instructions";
+"更新设置已重建，请退出并重新打开应用" = "Update settings rebuilt. Quit and reopen the app.";
 "最终导出：%@ 张" = "Final export · Photos: %@";
 "有可用更新" = "Update available";
 "有多个匹配镜头，请手动选择" = "Multiple Lens Matches; Choose Manually";
@@ -451,6 +455,7 @@
 "来源：%@ · %@ 项调整" = "Source: %@ · %@ adjustments";
 "极简禅意 · 日系街拍" = "Minimalist Zen · Japanese street photography";
 "查看任务" = "View Task";
+"查看保留的更新状态文件" = "View the preserved update state file";
 "查看应用后的效果" = "Preview the Result with These Adjustments";
 "查看恢复时保留的数据" = "View the data kept during recovery";
 "查看批量任务…" = "View Batch Task…";
@@ -735,6 +740,7 @@
 "重命名…" = "Rename…";
 "重命名外观" = "Rename Look";
 "重命名预设" = "Rename Preset";
+"重建更新设置" = "Rebuild update settings";
 "重新读取目录" = "Reload Folder";
 "重新载入" = "Reload";
 "重置" = "Reset";

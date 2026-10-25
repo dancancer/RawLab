@@ -134,4 +134,10 @@ struct UpdatePreferences: Codable {
     var channel = "stable"
     var pendingUpdate = UpdateTaskState()
     var recoveryReceipt: String?
+    var stateRepairReceipt: UpdateStateRepairReceipt?
+}
+
+struct UpdateStateRepairReceipt: Codable, Equatable {
+    let id: UUID
+    let sha256: String
 }

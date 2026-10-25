@@ -99,6 +99,7 @@
 "保存所选调整，之后可应用到其他照片。" = "Enregistrez les réglages sélectionnés pour les appliquer ensuite à d’autres photos.";
 "保存预设" = "Enregistrer le préréglage";
 "保留任务" = "Conserver la tâche";
+"保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。" = "Le fichier endommagé sera conservé et les réglages de mise à jour reconstruits. Les données seront vérifiées au redémarrage ; les mises à jour automatiques resteront désactivées.";
 "保留旧编辑记录的降噪算法" = "Conserve la réduction du bruit des modifications précédentes";
 "保留这次几何或镜头修改？" = "Conserver ces modifications de géométrie ou d’objectif ?";
 "修正直线弯曲" = "Redresser les lignes courbes";
@@ -350,6 +351,7 @@
 "效果预览" = "Aperçu de l'effet";
 "数值输入尚未提交" = "Valeur non validée";
 "数据已恢复，请退出并重新打开应用" = "Données restaurées. Quittez et rouvrez l’application.";
+"数据检查未通过，编辑暂未开放。请保留文件并联系支持。" = "La validation des données a échoué et la modification est indisponible. Conservez les fichiers et contactez l’assistance.";
 "文件信息" = "Informations du fichier";
 "文件夹" = "Dossiers";
 "文件树" = "Arborescence des fichiers";
@@ -379,6 +381,7 @@
 "无法恢复调整：%@" = "Impossible de restaurer les ajustements : %@";
 "无法显示处理结果" = "Impossible d'afficher les résultats du traitement";
 "无法生成预览" = "Impossible de générer un aperçu";
+"无法确认更新或恢复状态，请保留全部文件并联系支持。" = "L’état de la mise à jour ou de la récupération est incertain. Conservez tous les fichiers et contactez l’assistance.";
 "无法自动调整曝光：%@" = "Impossible d’ajuster automatiquement l’exposition : %@";
 "无法解码普通图片：%@" = "Impossible de décoder l’image : %@";
 "无法计算直方图" = "Impossible de calculer l'histogramme";
@@ -429,6 +432,7 @@
 "更新已校验，请选择安装时间" = "Mise à jour vérifiée ; choisissez l’heure d’installation";
 "更新恢复需要处理，编辑暂未开放" = "La récupération de la mise à jour nécessite une intervention ; l’édition n’est pas encore disponible";
 "更新未完成，请查看恢复说明" = "Mise à jour incomplète ; consultez les instructions de récupération";
+"更新设置已重建，请退出并重新打开应用" = "Réglages de mise à jour reconstruits. Quittez et rouvrez l’application.";
 "最终导出：%@ 张" = "Export final · Photos : %@";
 "有可用更新" = "Mise à jour disponible";
 "有多个匹配镜头，请手动选择" = "Plusieurs objectifs correspondent ; choisissez manuellement";
@@ -451,6 +455,7 @@
 "来源：%@ · %@ 项调整" = "Source : %@ · %@ réglages";
 "极简禅意 · 日系街拍" = "Zen minimaliste · photo de rue japonaise";
 "查看任务" = "Afficher la tâche";
+"查看保留的更新状态文件" = "Afficher le fichier d’état conservé";
 "查看应用后的效果" = "Voir le résultat avec les réglages appliqués";
 "查看恢复时保留的数据" = "Afficher les données conservées lors de la récupération";
 "查看批量任务…" = "Afficher la tâche par lots…";
@@ -735,6 +740,7 @@
 "重命名…" = "Renommer…";
 "重命名外观" = "Renommer le look";
 "重命名预设" = "Renommer le préréglage";
+"重建更新设置" = "Reconstruire les réglages de mise à jour";
 "重新读取目录" = "Recharger le dossier";
 "重新载入" = "Recharger";
 "重置" = "Réinitialiser";

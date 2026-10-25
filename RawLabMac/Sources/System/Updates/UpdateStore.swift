@@ -13,12 +13,93 @@ struct UpdateStore {
         guard FileManager.default.fileExists(atPath: stateURL.path) else {
             var result = UpdatePreferences(); result.automaticCheck = automaticCheck; return result
         }
+        try requireOrdinary(directory); try requireOrdinary(stateURL)
         let value = try JSONDecoder().decode(UpdatePreferences.self, from: Data(contentsOf: stateURL))
         guard value.channel == "stable", value.pendingUpdate.format == 1 else {
             throw UpdateAdapterError(code: "storage", detail: "Unsupported update state")
         }
+        if let receipt = value.stateRepairReceipt {
+            let archive = repairedStateArchive(receipt)
+            try requireOrdinary(archive.deletingLastPathComponent().deletingLastPathComponent())
+            try requireOrdinary(archive.deletingLastPathComponent()); try requireOrdinary(archive)
+            guard digest(try Data(contentsOf: archive)) == receipt.sha256 else {
+                throw UpdateAdapterError(code: "storage", detail: "State repair archive changed")
+            }
+        }
         return value
     }
+    func repairedStateArchive(_ receipt: UpdateStateRepairReceipt) -> URL {
+        directory.appendingPathComponent("StateRecoveries/\(receipt.id.uuidString)/state.json")
+    }
+    func repairableState() throws -> Data {
+        try requireOrdinary(directory); try requireOrdinary(stateURL)
+        let data = try Data(contentsOf: stateURL)
+        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            func knownString(_ value: Any?, _ accepts: (String) -> Bool) -> Bool {
+                guard let value else { return true }
+                guard let text = value as? String else { return false }
+                return accepts(text)
+            }
+            let pending = object["pendingUpdate"] as? [String: Any]
+            let failure = pending?["failure"] as? [String: Any]
+            let installationPhases = ["installing", "pending_restart"]
+            guard knownString(object["channel"], { $0 == "stable" }),
+                  object["pendingUpdate"] == nil || pending != nil,
+                  pending?["format"].map({ ($0 as? Int) == 1 }) ?? true,
+                  knownString(pending?["phase"], { UpdatePhase(rawValue: $0) != nil }),
+                  knownString(pending?["choice"], { UpdateInstallChoice(rawValue: $0) != nil }),
+                  knownString(failure?["stage"], { UpdatePhase(rawValue: $0) != nil }),
+                  object["stateRepairReceipt"] == nil || object["stateRepairReceipt"] is NSNull,
+                  object["recoveryReceipt"] == nil || object["recoveryReceipt"] is NSNull,
+                  pending?["backupPath"] == nil || pending?["backupPath"] is NSNull,
+                  pending?["previousVersion"] == nil || pending?["previousVersion"] is NSNull,
+                  pending?["previousBuild"] == nil || pending?["previousBuild"] is NSNull,
+                  !installationPhases.contains(pending?["phase"] as? String ?? ""),
+                  !installationPhases.contains(failure?["stage"] as? String ?? "") else {
+                throw UpdateAdapterError(code: "storage", detail: "Unsupported update state cannot be rebuilt")
+            }
+        }
+        guard (try? load(automaticCheck: false)) == nil else {
+            throw UpdateAdapterError(code: "storage", detail: "Update state is readable; reopen the app")
+        }
+        for name in ["Backups", "Recoveries"] {
+            let path = directory.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: path.path) {
+                try requireOrdinary(path)
+                guard try FileManager.default.contentsOfDirectory(atPath: path.path).isEmpty else {
+                    throw UpdateAdapterError(code: "storage", detail: "Installation or data recovery status is unknown")
+                }
+            }
+        }
+        guard !FileManager.default.fileExists(atPath: directory.appendingPathComponent("recovery-in-progress.json").path) else {
+            throw UpdateAdapterError(code: "storage", detail: "Data recovery is unfinished")
+        }
+        return data
+    }
+    func repairState(expected: Data) throws -> UpdatePreferences {
+        guard try repairableState() == expected else {
+            throw UpdateAdapterError(code: "storage", detail: "Update state changed; reopen the app")
+        }
+        let receipt = UpdateStateRepairReceipt(id: UUID(), sha256: digest(expected))
+        let archive = repairedStateArchive(receipt)
+        try FileManager.default.createDirectory(at: archive.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try requireOrdinary(archive.deletingLastPathComponent().deletingLastPathComponent())
+        try requireOrdinary(archive.deletingLastPathComponent())
+        // 先持久保存原始字节，再原子替换；中断不会留下缺失状态而绕过启动门禁。
+        try expected.write(to: archive, options: .atomic)
+        let file = try FileHandle(forWritingTo: archive); try file.synchronize(); try file.close()
+        guard try repairableState() == expected else { throw UpdateAdapterError(code: "storage", detail: "Update state changed") }
+        var next = UpdatePreferences(); next.automaticCheck = false; next.stateRepairReceipt = receipt
+        try save(next)
+        return next
+    }
+    private func requireOrdinary(_ path: URL) throws {
+        let values = try path.resourceValues(forKeys: [.isSymbolicLinkKey, .isDirectoryKey, .isRegularFileKey])
+        guard values.isSymbolicLink != true, values.isDirectory == true || values.isRegularFile == true else {
+            throw UpdateAdapterError(code: "storage", detail: "Unsupported state entry")
+        }
+    }
+    private func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
     func save(_ preferences: UpdatePreferences) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try JSONEncoder().encode(preferences).write(to: stateURL, options: .atomic)

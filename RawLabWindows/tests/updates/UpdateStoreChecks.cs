@@ -11,6 +11,7 @@ internal static class UpdateStoreChecks
     }
     internal static void Run(Action<bool, string> check)
     {
+        StateRepair(check);
         var root = Path.Combine(Path.GetTempPath(), "rawlab-update-store-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
         try
         {
@@ -60,5 +61,48 @@ internal static class UpdateStoreChecks
             check(rejected, "Recovery cannot reference an arbitrary directory");
         }
         finally { Directory.Delete(root, recursive: true); }
+    }
+
+    private static void StateRepair(Action<bool, string> check)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-state-repair-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new UpdateStore(Path.Combine(root, "Updates")); Directory.CreateDirectory(store.DirectoryPath);
+            bool Rejected(Action work) { try { work(); return false; } catch { return true; } }
+            foreach (var incomplete in new[] { "{}", "{\"PendingUpdate\":{}}" })
+            {
+                File.WriteAllText(store.StatePath, incomplete);
+                check(Rejected(() => store.Load(false)) && store.RepairableState().Length > 0, "Incomplete state requires explicit repair instead of defaulting to idle");
+            }
+            foreach (var field in new[] { "Phase", "Choice" })
+            {
+                store.Save(new()); var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(store.StatePath))!;
+                json["PendingUpdate"]![field] = 99; File.WriteAllText(store.StatePath, json.ToJsonString());
+                check(Rejected(() => store.Load(false)) && Rejected(() => store.RepairableState()), "Future enum state cannot open editing or be reset: " + field);
+            }
+            byte[] damaged = "{broken"u8.ToArray(); File.WriteAllBytes(store.StatePath, damaged);
+            var snapshot = store.RepairableState(); var repaired = store.RepairState(snapshot); var receipt = repaired.StateRepairReceipt!;
+            check(File.ReadAllBytes(store.RepairedStateArchive(receipt)).SequenceEqual(damaged) && !repaired.AutomaticCheck &&
+                !repaired.AutomaticInstall && repaired.PendingUpdate.Phase == UpdatePhase.Idle,
+                "Explicit state repair preserves damaged bytes and disables automatic updates");
+            check(store.Load(true).StateRepairReceipt == receipt, "State repair persists a verified startup receipt");
+            File.WriteAllText(store.RepairedStateArchive(receipt), "changed archive");
+            check(Rejected(() => store.Load(false)) && Rejected(() => store.RepairableState()), "A changed repair archive blocks startup and another reset");
+            check(Rejected(() => store.RepairState(snapshot)), "A stale repair cannot overwrite the replacement state");
+            var future = new UpdatePreferences(); future.PendingUpdate.Format = 2; store.Save(future);
+            check(Rejected(() => store.RepairableState()), "Future update formats cannot be reset as corrupt preferences");
+            File.WriteAllText(store.StatePath, "{\"PendingUpdate\":{\"Phase\":8},\"AutomaticCheck\":\"invalid\"}");
+            check(Rejected(() => store.RepairableState()), "Partial installation state remains blocked without its backup");
+            File.WriteAllText(store.StatePath, "{\"PendingUpdate\":{\"PreviousVersion\":\"0.8.2\"}}");
+            check(Rejected(() => store.RepairableState()), "Previous installation identity blocks ambiguous state repair");
+            File.WriteAllBytes(store.StatePath, damaged); var backups = Path.Combine(store.DirectoryPath, "Backups");
+            Directory.CreateDirectory(Path.Combine(backups, "prior"));
+            check(Rejected(() => store.RepairableState()), "Installation evidence blocks uncertain state repair");
+            Directory.Delete(backups, true); File.WriteAllText(Path.Combine(store.DirectoryPath, "recovery-in-progress.json"), "journal");
+            check(Rejected(() => store.RepairableState()) && File.ReadAllBytes(store.StatePath).SequenceEqual(damaged),
+                "An interrupted recovery remains blocked without changing damaged state");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
 }

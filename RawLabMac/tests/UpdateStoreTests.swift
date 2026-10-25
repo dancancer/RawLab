@@ -6,6 +6,7 @@ import Foundation
     }
     static func rejected(_ work: () throws -> Void) -> Bool { do { try work(); return false } catch { return true } }
     static func main() throws {
+        try stateRepair()
         if CommandLine.arguments.count == 4, CommandLine.arguments[1] == "--crash-recovery" {
             let root = URL(fileURLWithPath: CommandLine.arguments[2])
             _ = try UpdateDataBackup(dataRoot: root, updateRoot: root.appendingPathComponent("Updates"))
@@ -67,5 +68,43 @@ import Foundation
         let outside = root.appendingPathComponent("external.json"); try Data("outside".utf8).write(to: outside)
         try FileManager.default.createSymbolicLink(at: edits.appendingPathComponent("link.json"), withDestinationURL: outside)
         try check(rejected { _ = try backups.create(previous: "0.8.2", target: "0.9.1") }, "Backup refuses linked source records")
+    }
+
+    static func stateRepair() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-state-repair-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = UpdateStore(directory: root.appendingPathComponent("Updates"))
+        try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)
+        let damaged = Data("{broken".utf8); try damaged.write(to: store.stateURL)
+        let snapshot = try store.repairableState()
+        let repaired = try store.repairState(expected: snapshot)
+        let receipt = repaired.stateRepairReceipt!
+        try check(Data(contentsOf: store.repairedStateArchive(receipt)) == damaged &&
+            !repaired.automaticCheck && !repaired.automaticInstall && repaired.pendingUpdate.phase == .idle,
+            "Explicit state repair preserves damaged bytes and disables automatic updates")
+        try check(try store.load(automaticCheck: true).stateRepairReceipt == receipt,
+            "State repair persists a verified receipt for the next startup health check")
+        try Data("changed archive".utf8).write(to: store.repairedStateArchive(receipt))
+        try check(rejected { _ = try store.load(automaticCheck: false) } && rejected { _ = try store.repairableState() },
+            "A changed repair archive blocks startup and cannot be erased by another reset")
+        try check(rejected { _ = try store.repairState(expected: snapshot) }, "A stale repair cannot overwrite the replacement state")
+        var future = UpdatePreferences(); future.pendingUpdate.format = 2; try store.save(future)
+        try check(rejected { _ = try store.repairableState() }, "Future update formats cannot be reset as corrupt preferences")
+        for typedFuture in [#"{"pendingUpdate":{"format":"2"}}"#, #"{"pendingUpdate":{"phase":8}}"#] {
+            try Data(typedFuture.utf8).write(to: store.stateURL)
+            try check(rejected { _ = try store.repairableState() }, "Changed state field types cannot be reset as preferences")
+        }
+        try Data(#"{"pendingUpdate":{"phase":"installing"}}"#.utf8).write(to: store.stateURL)
+        try check(rejected { _ = try store.repairableState() }, "Partial installation state remains blocked even without its backup")
+        try Data(#"{"pendingUpdate":{"previousVersion":"0.8.2"}}"#.utf8).write(to: store.stateURL)
+        try check(rejected { _ = try store.repairableState() }, "Previous installation identity blocks ambiguous state repair")
+        try damaged.write(to: store.stateURL)
+        let backups = store.directory.appendingPathComponent("Backups/prior")
+        try FileManager.default.createDirectory(at: backups, withIntermediateDirectories: true)
+        try check(rejected { _ = try store.repairableState() }, "Installation evidence blocks uncertain state repair")
+        try FileManager.default.removeItem(at: backups.deletingLastPathComponent())
+        try Data("journal".utf8).write(to: store.directory.appendingPathComponent("recovery-in-progress.json"))
+        try check(rejected { _ = try store.repairableState() } && Data(contentsOf: store.stateURL) == damaged,
+            "An interrupted data recovery remains blocked without changing the damaged state")
     }
 }

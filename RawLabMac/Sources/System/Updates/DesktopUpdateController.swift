@@ -22,15 +22,19 @@ import Combine
     private var cancelForQuit: (UUID, (Bool) -> Void)?
     private var timer: Timer?
     private var recoveryStartup = false
+    private var repairSnapshot: Data?
+    private var repairHealthFailed = false
     var state: UpdateTaskState { preferences.pendingUpdate }
     var unavailableReason: String? { storageError == nil ? adapter.unavailableReason : "storage" }
-    var canCheck: Bool { unavailableReason == nil && adapter.canCheck && !preparingInstallation && !requiresRecovery }
+    var canCheck: Bool { unavailableReason == nil && adapter.canCheck && !preparingInstallation && !requiresRecovery && !requiresStartupHealthCheck }
     var canDownload: Bool { unavailableReason == nil && state.phase == .available }
     var canCancel: Bool { [.checking, .downloading, .verifying, .packageReady, .waitingForTasks, .readyToInstall].contains(state.phase) && !preparingInstallation }
     var canChooseInstall: Bool { unavailableReason == nil && [.packageReady, .waitingForTasks, .readyToInstall].contains(state.phase) && !preparingInstallation }
-    var requiresStartupHealthCheck: Bool { [.installing, .pendingRestart].contains(state.phase) }
-    var requiresRecovery: Bool { backup.hasPendingRecovery || recovering || recoveryNeedsRestart ||
+    var requiresStartupHealthCheck: Bool { preferences.stateRepairReceipt != nil || [.installing, .pendingRestart].contains(state.phase) }
+    var requiresRecovery: Bool { backup.hasPendingRecovery || recovering || recoveryNeedsRestart || repairHealthFailed ||
         state.failure.map { [.installing, .pendingRestart].contains($0.stage) } == true }
+    var canRepairState: Bool { storageError != nil && repairSnapshot != nil && !recoveryNeedsRestart }
+    var stateArchive: URL? { preferences.stateRepairReceipt.map(store.repairedStateArchive) }
     var canRestorePreviousData: Bool { recoveryStartup && requiresRecovery && !recovering && !recoveryNeedsRestart &&
         storageError == nil && adapter.unavailableReason == nil && state.previousVersion == currentVersion &&
         state.previousBuild == currentBuild && state.backupPath != nil }
@@ -41,7 +45,7 @@ import Combine
         self.currentVersion = currentVersion; self.currentBuild = currentBuild; self.now = now
         backup = UpdateDataBackup(dataRoot: store.directory.deletingLastPathComponent(), updateRoot: store.directory)
         do { preferences = try store.load(automaticCheck: automaticCheck) }
-        catch { preferences = UpdatePreferences(); storageError = error.localizedDescription }
+        catch { preferences = UpdatePreferences(); storageError = error.localizedDescription; repairSnapshot = try? store.repairableState() }
         if storageError == nil, backup.hasPendingRecovery, let receipt = preferences.recoveryReceipt {
             do { try backup.finishRecovery(receipt) } catch { recoveryError = error.localizedDescription }
         }
@@ -51,6 +55,14 @@ import Combine
             preferences.pendingUpdate.restoreAfterLaunch(version: currentVersion, build: currentBuild, trusted: false)
             if preferences.pendingUpdate != old { _ = save(preferences) }
         }
+    }
+
+    func repairState() {
+        guard canRepairState, let snapshot = repairSnapshot else { return }
+        do {
+            let next = try store.repairState(expected: snapshot)
+            preferences = next; storageError = nil; repairSnapshot = nil; recoveryNeedsRestart = true
+        } catch { storageError = error.localizedDescription; repairSnapshot = try? store.repairableState() }
     }
 
     func restorePreviousData() async {
@@ -84,7 +96,12 @@ import Combine
     func stopPolling() { timer?.invalidate(); timer = nil }
 
     func finishStartupHealthCheck(healthy: Bool) {
-        guard requiresStartupHealthCheck, !backup.hasPendingRecovery else { return }
+        guard requiresStartupHealthCheck, !backup.hasPendingRecovery, !recoveryNeedsRestart else { return }
+        if preferences.stateRepairReceipt != nil {
+            guard healthy else { repairHealthFailed = true; recoveryError = "User data failed startup validation"; return }
+            var next = preferences; next.stateRepairReceipt = nil
+            _ = save(next); return
+        }
         var backupValid = false
         if let path = state.backupPath, let manifest = try? backup.verify(URL(fileURLWithPath: path)) {
             backupValid = manifest.targetVersion == state.release?.version && manifest.previousVersion == state.previousVersion && manifest.previousBuild == state.previousBuild
@@ -95,8 +112,12 @@ import Combine
         _ = save(next)
     }
 
-    func setAutomaticCheck(_ value: Bool) { var next = preferences; next.automaticCheck = value; _ = save(next) }
+    func setAutomaticCheck(_ value: Bool) {
+        guard storageError == nil, !requiresStartupHealthCheck, !requiresRecovery else { return }
+        var next = preferences; next.automaticCheck = value; _ = save(next)
+    }
     func setAutomaticInstall(_ value: Bool) {
+        guard storageError == nil, !requiresStartupHealthCheck, !requiresRecovery else { return }
         guard !value || unavailableReason == nil else { return }
         var next = preferences; next.automaticInstall = value
         let revoke = !value && (automaticDownload || state.choice == .automaticOnQuit)

@@ -16,9 +16,9 @@ struct SoftwareUpdateView: View {
                 if settings {
                     Toggle(L10n.text("自动检查更新"), isOn: Binding(get: { updates.preferences.automaticCheck }, set: {
                         updates.setAutomaticCheck($0); legacy.automatic = updates.preferences.automaticCheck
-                    })).accessibilityIdentifier("updates.automaticCheck")
+                    })).disabled(updates.storageError != nil || updates.requiresRecovery || updates.requiresStartupHealthCheck).accessibilityIdentifier("updates.automaticCheck")
                     Toggle(L10n.text("自动下载并在退出时安装"), isOn: Binding(get: { updates.preferences.automaticInstall }, set: updates.setAutomaticInstall))
-                        .disabled(updates.unavailableReason != nil).accessibilityIdentifier("updates.automaticInstall")
+                        .disabled(updates.unavailableReason != nil || updates.requiresRecovery || updates.requiresStartupHealthCheck).accessibilityIdentifier("updates.automaticInstall")
                     Text(L10n.text("自动安装默认关闭。安装前会保存已提交的编辑，并等待草稿和任务处理完成。"))
                         .font(detailFont).foregroundStyle(.secondary)
                     Divider()
@@ -49,8 +49,17 @@ struct SoftwareUpdateView: View {
                         Text(failure.code + (failure.detail.isEmpty ? "" : "\n" + failure.detail)).font(.caption).textSelection(.enabled)
                     }
                 }
-                if let error = updates.storageError { Text(error).font(detailFont).textSelection(.enabled) }
-                if updates.requiresRecovery {
+                if let error = updates.storageError {
+                    Text(error).font(detailFont).textSelection(.enabled)
+                    Text(L10n.text(updates.canRepairState ? "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。" : "无法确认更新或恢复状态，请保留全部文件并联系支持。"))
+                    if updates.canRepairState {
+                        Button(L10n.text("重建更新设置"), action: updates.repairState).accessibilityIdentifier("updates.repairState")
+                    }
+                }
+                if updates.preferences.stateRepairReceipt != nil {
+                    Text(L10n.text(updates.recoveryNeedsRestart ? "更新设置已重建，请退出并重新打开应用" : "数据检查未通过，编辑暂未开放。请保留文件并联系支持。"))
+                    if let error = updates.recoveryError { Text(error).font(detailFont).textSelection(.enabled) }
+                } else if updates.requiresRecovery {
                     Text(L10n.text(updates.recoveryNeedsRestart ? "数据已恢复，请退出并重新打开应用" : "请先安装更新前的同一可信版本，再恢复数据。当前数据会另存保留；恢复后需退出并重新打开应用。"))
                     if updates.recovering { ProgressView(L10n.text("正在恢复更新前的数据…")) }
                     if let error = updates.recoveryError { Text(error).font(detailFont).textSelection(.enabled) }
@@ -80,6 +89,9 @@ struct SoftwareUpdateView: View {
                 }
                 if let path = updates.preferences.recoveryReceipt {
                     Button(L10n.text("查看恢复时保留的数据")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+                }
+                if let path = updates.stateArchive {
+                    Button(L10n.text("查看保留的更新状态文件")) { NSWorkspace.shared.activateFileViewerSelecting([path]) }
                 }
             }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
         }.font(.system(size: textSize.isAccessibilitySize ? 22 : 13))
