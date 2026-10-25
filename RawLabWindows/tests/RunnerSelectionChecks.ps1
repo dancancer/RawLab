@@ -28,7 +28,7 @@ if($args[0] -eq 'msbuild'){
 }
 exit 0
 '@)
-$names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','ai-panel','editor-shell','ui-details','geometry','transform-ui','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
+$names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','ai-panel','editor-shell','ui-details','geometry','transform-ui','adjustment-history','hsl-target','adjustment-presets','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
 $saved=@{};foreach($key in @('RAWLAB_RUNNER_CALLS','RAWLAB_RUNNER_TARGET','RAWLAB_RUNNER_FAIL')){$saved[$key]=[Environment]::GetEnvironmentVariable($key)}
 $checks=0;$index=0
 function Check([bool]$Success,[string]$Name){if(!$Success){throw $Name};$script:checks++;Write-Output "PASS $Name"}
@@ -51,7 +51,7 @@ function Run([string]$Selection,[string]$Failure){
         $code=$LASTEXITCODE
     }finally{$ErrorActionPreference=$preference}
     $calls=@();if(Test-Path -LiteralPath $env:RAWLAB_RUNNER_CALLS){$calls=@(Get-Content -LiteralPath $env:RAWLAB_RUNNER_CALLS)}
-    [pscustomobject]@{Code=$code;Rows=@(Get-Content -LiteralPath $summary -Raw | ConvertFrom-Json);Calls=$calls;Text=(Get-Content $log -Raw)}
+    [pscustomobject]@{Code=$code;Rows=@(Get-Content -LiteralPath $summary -Raw | ConvertFrom-Json | ForEach-Object {$_});Calls=$calls;Text=(Get-Content $log -Raw)}
 }
 try{
     $env:RAWLAB_RUNNER_TARGET=Join-Path $root 'targets'

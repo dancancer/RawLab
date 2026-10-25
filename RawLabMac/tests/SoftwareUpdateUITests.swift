@@ -2,6 +2,11 @@ import AppKit
 import SwiftUI
 
 @main struct SoftwareUpdateUITests {
+    @MainActor struct GuardedEditor: View {
+        let model: EditorModel
+        @ObservedObject var updates: DesktopUpdateController
+        var body: some View { EditorView(model: model).disabled(updates.blocksEditing) }
+    }
     static func main() {
         setbuf(stdout, nil)
         let app = NSApplication.shared; app.setActivationPolicy(.prohibited)
@@ -55,7 +60,7 @@ import SwiftUI
         let defaults = UserDefaults(suiteName: "dev.rawlab.updates-ui.\(UUID())")!
         let legacy = UpdateChecker(defaults: defaults, currentVersion: "0.8.2", fetch: { throw URLError(.notConnectedToInternet) })
         model.open(photo); try await settle(model); model.selectAdjustmentTool(.exposure)
-        let (editorWindow, editor) = window(EditorView(model: model), width: 1200, height: 850)
+        let (editorWindow, editor) = window(GuardedEditor(model: model, updates: updates), width: 1200, height: 850)
         defer { editorWindow.contentView = nil; editorWindow.close() }
         try await settle(model); editor.layoutSubtreeIfNeeded()
         guard let field = fields(editor).first(where: { $0.isEnabled }),
@@ -101,6 +106,14 @@ import SwiftUI
             dialog.contentView = nil; dialog.close()
         }
         UserDefaults.standard.setVolatileDomain([L10n.preferenceKey: "en"], forName: UserDefaults.argumentDomain)
+        let beforeFailure = try model.editStore!.versionedState(for: photo)
+        updates.check(manual: true); adapter.send(.found(adapter.release)); updates.download(); adapter.send(.preparing); adapter.send(.verified)
+        adapter.rejectInstall = true; updates.choose(.restartNow)
+        for _ in 0..<400 where updates.state.phase != .failed || updates.preparingInstallation { try await Task.sleep(for: .milliseconds(10)) }
+        try await Task.sleep(for: .milliseconds(100)); editor.layoutSubtreeIfNeeded()
+        try check(updates.state.failure?.stage == .installing && !fields(editor).contains(where: { $0.isEnabled }) &&
+            model.editStore!.versionedState(for: photo) == beforeFailure,
+            "A failed installer dispatch disables real editor fields and preserves saved edits")
         let recoveryRoot = output.appendingPathComponent("recovery"), recoveryStore = UpdateStore(directory: output.appendingPathComponent("recovery/Updates"))
         let original = recoveryRoot.appendingPathComponent("Edits/photo.json")
         try FileManager.default.createDirectory(at: original.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -153,12 +166,16 @@ import SwiftUI
         var canCheck = true, hasAvailableRelease = false, hasPreparedInstaller = false
         var hasActiveSession: Bool { !canCheck || hasPreparedInstaller }
         var installs = 0
+        var rejectInstall = false
         var token = UUID(), callback: ((UUID, UpdateAdapterEvent) -> Void)?
         let release = UpdateDescriptor(version: "0.9.1", build: "19", platform: "macos", architecture: "arm64", channel: "stable", assetURL: "https://example.invalid/update.zip", size: 12, sha256: nil, notes: "Offline UI fixture")
         func check(token: UUID, emit: @escaping (UUID, UpdateAdapterEvent) -> Void) throws { self.token = token; callback = emit; canCheck = false }
         func download(_ release: UpdateDescriptor, token: UUID) throws { self.token = token; hasAvailableRelease = false }
         func cancel() { canCheck = true; hasAvailableRelease = false; hasPreparedInstaller = false; callback?(token, .ended) }
-        func install(restart: Bool) throws { installs += 1 }
+        func install(restart: Bool) throws {
+            installs += 1
+            if rejectInstall { throw UpdateAdapterError(code: "install", detail: "Injected dispatch failure") }
+        }
         func send(_ event: UpdateAdapterEvent) {
             if case .found = event { hasAvailableRelease = true }
             if case .verified = event { hasPreparedInstaller = true }

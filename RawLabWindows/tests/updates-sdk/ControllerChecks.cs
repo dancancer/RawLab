@@ -7,15 +7,16 @@ internal static class ControllerChecks
         public string? UnavailableReason => null;
         public UpdateDescriptor Release = new("0.9.1", "19", "windows", "x64", "stable", "https://example.invalid/update.nupkg", 12, null, "Notes");
         public int Checks, Downloads, Installs;
-        public bool RejectSignature;
+        public bool RejectSignature, RejectInstall;
         public Task<UpdateDescriptor?> CheckAsync(CancellationToken token) { Checks++; return Task.FromResult<UpdateDescriptor?>(Release); }
         public Task DownloadAsync(UpdateDescriptor release, Action<int> progress, CancellationToken token) { Downloads++; progress(75); return Task.CompletedTask; }
         public Task VerifyAsync(UpdateDescriptor release, CancellationToken token) => RejectSignature ? Task.FromException(new Exception("Rejected signature")) : Task.CompletedTask;
-        public void Install(UpdateDescriptor release, bool restart) { Installs++; }
+        public void Install(UpdateDescriptor release, bool restart) { Installs++; if (RejectInstall) throw new IOException("Injected dispatch failure"); }
     }
     internal static async Task Run(Action<bool, string> check)
     {
         StateRepair(check);
+        await InstallationFailureBlocksEditing(check);
         var root = Path.Combine(Path.GetTempPath(), "rawlab-update-controller-" + Guid.NewGuid().ToString("N"));
         try
         {
@@ -68,6 +69,28 @@ internal static class ControllerChecks
             check(!reopenedAfterRecovery.RequiresRecovery && !reopenedAfterRecovery.CanRestorePreviousData, "Persisted recovery permits a fresh editor on the next launch");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    private static async Task InstallationFailureBlocksEditing(Action<bool, string> check)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-install-failure-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var photo = Path.Combine(root, "Edits", "photo.json"); Directory.CreateDirectory(Path.GetDirectoryName(photo)!);
+            File.WriteAllText(photo, "committed edit"); var bytes = File.ReadAllBytes(photo);
+            var store = new UpdateStore(Path.Combine(root, "Updates")); var adapter = new Adapter { RejectInstall = true };
+            var controller = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14");
+            check(!controller.BlocksEditing, "Ordinary editing is available before installation");
+            await controller.CheckAsync(true); await controller.DownloadAsync(); await controller.ChooseAsync(UpdateInstallChoice.RestartNow);
+            check(controller.State.Failure?.Stage == UpdatePhase.Installing && controller.BlocksEditing && !controller.CanRestorePreviousData,
+                "A dispatch failure keeps the active editor blocked before any recovery");
+            check(File.ReadAllBytes(photo).SequenceEqual(bytes), "Failed dispatch preserves committed editor data");
+            var reopened = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
+            check(reopened.BlocksEditing && reopened.CanRestorePreviousData, "Reopening offers recovery while editing remains blocked");
+            await reopened.RestorePreviousDataAsync();
+            check(reopened.BlocksEditing && reopened.RecoveryNeedsRestart, "Restored data remains blocked until the next launch");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
 
     private static void StateRepair(Action<bool, string> check)

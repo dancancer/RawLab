@@ -123,6 +123,15 @@ internal static class SoftwareUpdateUiChecks
             repairedStartup.FinishStartupHealthCheck(window.UpdateDataHealthy);
             check(!repairedStartup.RequiresRecovery && !repairedStartup.RequiresStartupHealthCheck,"Real editor data health completes repair on fresh startup");
             repairWindow.Close();
+            var beforeFailure=store.VersionedState(photo);
+            adapter.RejectInstall=true;controller.CheckAsync(true).GetAwaiter().GetResult();
+            var downloading=controller.DownloadAsync();adapter.Download.TrySetResult();
+            InteractionChecks.PumpUntil(()=>downloading.IsCompleted && controller.State.Phase==UpdatePhase.PackageReady);
+            var installing=controller.ChooseAsync(UpdateInstallChoice.RestartNow);
+            InteractionChecks.PumpUntil(()=>installing.IsCompleted && !controller.PreparingInstallation);
+            check(controller.State.Failure?.Stage==UpdatePhase.Installing && !window.IsEnabled &&
+                store.VersionedState(photo).SameAs(beforeFailure),
+                "A failed installer dispatch disables the real editor and preserves saved edits");
             Console.WriteLine("UPDATE_UI_OUTPUT="+output);
         } finally {controller.Cancel();Invoke(window,"CancelTransformDraft");Invoke(window,"CancelParameterInputs");window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);}
     }
@@ -145,10 +154,11 @@ internal static class SoftwareUpdateUiChecks
     {
         public string? UnavailableReason=>null;
         public int Installs;
+        public bool RejectInstall;
         public TaskCompletionSource Download=new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task<UpdateDescriptor?> CheckAsync(CancellationToken token)=>Task.FromResult<UpdateDescriptor?>(new("0.9.1","19","windows","x64","stable","https://updates.example.invalid/RawLab-full.nupkg",12,new string('a',64),"Offline UI fixture"));
         public async Task DownloadAsync(UpdateDescriptor release,Action<int> progress,CancellationToken token){Download=new(TaskCreationOptions.RunContinuationsAsynchronously);progress(50);await Download.Task.WaitAsync(token);}
         public Task VerifyAsync(UpdateDescriptor release,CancellationToken token)=>Task.CompletedTask;
-        public void Install(UpdateDescriptor release,bool restart)=>Installs++;
+        public void Install(UpdateDescriptor release,bool restart){Installs++;if(RejectInstall)throw new IOException("Injected dispatch failure");}
     }
 }

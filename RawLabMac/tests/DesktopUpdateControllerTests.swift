@@ -9,12 +9,17 @@ import Foundation
     var token = UUID()
     var callback: ((UUID, UpdateAdapterEvent) -> Void)?
     var checks = 0, downloads = 0, cancellations = 0, installs = 0
+    var rejectInstall = false
     func check(token: UUID, emit: @escaping (UUID, UpdateAdapterEvent) -> Void) throws {
         self.token = token; callback = emit; checks += 1; canCheck = false
     }
     func download(_ release: UpdateDescriptor, token: UUID) throws { self.token = token; hasAvailableRelease = false; downloads += 1 }
     func cancel() { cancellations += 1; hasPreparedInstaller = false; hasAvailableRelease = false; canCheck = true; callback?(token, .ended) }
-    func install(restart: Bool) throws { installs += 1; callback?(token, .pendingRestart) }
+    func install(restart: Bool) throws {
+        installs += 1
+        if rejectInstall { throw UpdateAdapterError(code: "install", detail: "Injected dispatch failure") }
+        callback?(token, .pendingRestart)
+    }
     func send(_ event: UpdateAdapterEvent) { if case .found(let release) = event { hasAvailableRelease = release != nil }; callback?(token, event) }
 }
 
@@ -24,6 +29,7 @@ import Foundation
     }
     @MainActor static func main() async throws {
         try stateRepair()
+        try await installationFailureBlocksEditing()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-update-controller-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let unavailable = DesktopUpdateController(adapter: UnavailableUpdateAdapter("configuration"), gate: UpdateInstallGate(),
@@ -95,6 +101,29 @@ import Foundation
     static func checkData(_ path: URL, _ expected: String) throws {
         let value = try String(contentsOf: path, encoding: .utf8)
         check(value == expected, "Recovery restores the verified backup contents")
+    }
+
+    @MainActor static func installationFailureBlocksEditing() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-install-failure-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let edits = root.appendingPathComponent("Edits"); try FileManager.default.createDirectory(at: edits, withIntermediateDirectories: true)
+        let photo = edits.appendingPathComponent("photo.json"), bytes = Data("committed edit".utf8); try bytes.write(to: photo)
+        let store = UpdateStore(directory: root.appendingPathComponent("Updates")), adapter = FakeUpdateAdapter()
+        let controller = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: store, currentVersion: "0.8.2", currentBuild: "14")
+        let release = UpdateDescriptor(version: "0.9.1", build: "19", platform: "macos", architecture: "arm64", channel: "stable", assetURL: "https://example.invalid/update.zip", size: 12, sha256: nil, notes: "")
+        check(!controller.blocksEditing, "Ordinary editing is available before installation")
+        controller.check(manual: true); adapter.send(.found(release)); controller.download()
+        adapter.send(.preparing); adapter.hasPreparedInstaller = true; adapter.send(.verified); adapter.rejectInstall = true
+        controller.choose(.restartNow)
+        for _ in 0..<400 where controller.state.phase != .failed || controller.preparingInstallation { try await Task.sleep(for: .milliseconds(10)) }
+        check(controller.state.failure?.stage == .installing && controller.blocksEditing && !controller.canRestorePreviousData,
+            "A dispatch failure keeps the active editor blocked before any recovery")
+        let preserved = try Data(contentsOf: photo)
+        check(preserved == bytes, "Failed dispatch preserves committed editor data")
+        let reopened = DesktopUpdateController(adapter: FakeUpdateAdapter(), gate: UpdateInstallGate(), store: store, currentVersion: "0.8.2", currentBuild: "14")
+        check(reopened.blocksEditing && reopened.canRestorePreviousData, "Reopening offers recovery while editing remains blocked")
+        await reopened.restorePreviousData()
+        check(reopened.blocksEditing && reopened.recoveryNeedsRestart, "Restored data remains blocked until the next launch")
     }
 
     @MainActor static func malformedFailureStartup(store: UpdateStore, original: UpdatePreferences) throws {

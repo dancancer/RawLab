@@ -63,7 +63,7 @@ struct RawLabMacApp: App {
                     VStack(spacing: 0) {
                         UpdateAvailabilityBanner(updates: updates, legacy: runtime.legacy) { showUpdateWindow("update-prompt") }
                         EditorView(model: model)
-                            .disabled(updates.preparingInstallation || [.installing, .pendingRestart].contains(updates.state.phase))
+                            .disabled(updates.blocksEditing)
                     }
                 } else if let error = runtime.startupError {
                     VStack(alignment: .leading, spacing: 16) {
@@ -130,7 +130,7 @@ struct RawLabMacApp: App {
         }.defaultSize(width: 1040, height: 720)
     }
 
-    private var installationActive: Bool { runtime.controller.map { $0.preparingInstallation || [.installing, .pendingRestart].contains($0.state.phase) } ?? false }
+    private var installationActive: Bool { runtime.controller?.blocksEditing ?? false }
 
     private func showUpdateWindow(_ id: String) {
         ParameterValueField.preserveInputsForUpdateNavigation()

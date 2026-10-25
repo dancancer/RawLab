@@ -18,7 +18,10 @@ internal static class Program
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
-            MessageBox.Show(Loc.Text(error.Message == "other_instance" ? "请先退出其他 RawLab 实例" : "请保留现有应用和数据，处理问题后重新启动。") + "\n" + error.Message, "RawLab");
+            var message = error.Message == "other_instance"
+                ? Loc.Text("请先退出其他 RawLab 实例")
+                : Loc.Text("请保留现有应用和数据，处理问题后重新启动。");
+            MessageBox.Show(message + "\n" + error.Message, "RawLab");
         }
     }
 }

@@ -25,6 +25,7 @@ import Combine
     private var repairSnapshot: Data?
     private var repairHealthFailed = false
     var state: UpdateTaskState { preferences.pendingUpdate }
+    var blocksEditing: Bool { storageError != nil || preparingInstallation || requiresStartupHealthCheck || requiresRecovery }
     var unavailableReason: String? { storageError == nil ? adapter.unavailableReason : "storage" }
     var canCheck: Bool { unavailableReason == nil && adapter.canCheck && !preparingInstallation && !requiresRecovery && !requiresStartupHealthCheck }
     var canDownload: Bool { unavailableReason == nil && state.phase == .available }

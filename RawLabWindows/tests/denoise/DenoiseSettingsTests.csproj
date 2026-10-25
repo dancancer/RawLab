@@ -11,8 +11,10 @@
     <Compile Include="../../DenoiseSettings.cs"/><Compile Include="../../ToneControlsSettings.cs" />
     <Compile Include="../../AtmosphereSettings.cs" />
     <Compile Include="../../ColorGradingSettings.cs" />
+    <Compile Include="../../ToneCurveSettings.cs" />
     <Compile Include="../../PhotoEffectsSettings.cs"/><Compile Include="../../Native.cs"/><Compile Include="../../ExportSize.cs"/>
     <Compile Include="../../ExportFormat.cs"/>
     <Compile Include="../../EditPersistence.cs"/>
+    <Compile Include="../../WindowsFileIdentity.cs"/>
   </ItemGroup>
 </Project>

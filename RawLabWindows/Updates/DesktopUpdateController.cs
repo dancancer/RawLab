@@ -25,6 +25,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     public string CurrentVersion => currentVersion;
     public string? StorageError { get; private set; }
     public bool PreparingInstallation { get; private set; }
+    public bool BlocksEditing => StorageError != null || PreparingInstallation || RequiresStartupHealthCheck || RequiresRecovery;
     public bool Recovering { get; private set; }
     public bool RecoveryNeedsRestart { get; private set; }
     public string? RecoveryError { get; private set; }

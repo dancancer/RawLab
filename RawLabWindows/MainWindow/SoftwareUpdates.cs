@@ -16,7 +16,7 @@ public partial class MainWindow
     internal bool UpdateDataHealthy {
         get {try {_=presetStore.List();return editStore!=null && lookLibrary!=null && !updateJournalLoadFailed;}catch{return false;}}
     }
-    private bool UpdateInstallationActive => desktopUpdates.PreparingInstallation || desktopUpdates.State.Phase is UpdatePhase.Installing or UpdatePhase.PendingRestart;
+    private bool UpdateInstallationActive => desktopUpdates.BlocksEditing;
 
     private void InitializeSoftwareUpdates()
     {
