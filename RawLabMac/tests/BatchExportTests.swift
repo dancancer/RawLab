@@ -315,6 +315,21 @@ private func perTargetSnapshots(root: URL, inputs: [URL], output: URL) throws {
         }
         try check(cancelled.items[0].status == .succeeded && cancelled.items[1].status == .waiting,
                   "cancel retains completed output and leaves remaining inputs unprocessed")
+        var duringPreparation = BatchExportJob(source: inputs[0], settings: settings, look: nil, lookName: "Neutral")
+        duringPreparation.outputDirectory = output
+        duringPreparation.items = try inputs.map { try BatchExportItem(url: $0) }
+        for index in duringPreparation.items.indices { duringPreparation.items[index].selected = true }
+        stop = false
+        var preparedCount = 0
+        try BatchExportRunner.run(job: &duringPreparation, journal: journal, scope: .unfinished, shouldCancel: { stop }) { _, _, _, destination in
+            preparedCount += 1
+            if preparedCount == 2 { stop = true; throw RenderError.aiCancelled }
+            try Data("completed".utf8).write(to: destination)
+        }
+        try check(duringPreparation.cancelled && duringPreparation.failedCount == 0 &&
+                  duringPreparation.items[0].status == .succeeded && duringPreparation.items[1].status == .waiting,
+                  "AI preparation cancellation keeps the active item retryable and preserves completed output")
+        try check(try journal.load()?.items[1].status == .waiting, "AI cancellation saves a retryable journal")
         var interrupted = cancelled
         interrupted.items[1].status = .running
         try journal.save(interrupted)

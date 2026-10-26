@@ -27,10 +27,11 @@ pins in `scripts/ci/ai-inputs.py` and `RawLabWindows/build.ps1`.
 
 For CI, provision the licensed complete package once at
 `$RAWLAB_AI_SHARED_CACHE/ai-models/<manifest-sha256>/complete`, or explicitly set
-`RAWLAB_DUALDN_MODEL_DIR`. Both Mac runners use the same relative cache layout;
-the default root is `~/.cache/rawlab-ci`. Windows uses its runner's shared cache
-root. Provisioning is an administrator action, not an unverified public download.
-A missing model makes full checks fail. CI never reads signing private keys.
+`RAWLAB_DUALDN_MODEL_DIR`. Within the macOS matrix, only the Apple Silicon full job provisions AI inputs; its default cache
+root is `~/.cache/rawlab-ci`. Intel full shards still build and run their native
+suites without AI models or CPU neural inference. Windows uses its runner's shared cache root. Provisioning is an administrator action, not an unverified public download.
+A missing model fails AI-enabled Apple Silicon macOS and Windows full checks.
+Intel full checks do not require these models. CI never reads signing private keys.
 
 ## macOS
 
@@ -117,7 +118,61 @@ The tool checks private/public key agreement, P-256 signature, expiry, minimum
 version, package hashes and size, embedded executable versions and architecture.
 Strict mode additionally checks Authenticode. It never installs a package.
 
+### Windows descriptor lifetime and renewal
+
+Use a **365-day UTC validity period** for a stable descriptor and renew it at
+least **30 days before `ExpiresAt`**, even when no new desktop binary is planned.
+These are release maintenance rules, not limits imposed by the wire format.
+Record the expiry and the responsible release owner in the release checklist.
+The app rejects expired descriptors; a successful download does not override
+expiry. Keep the signing key available for maintenance throughout the supported
+lifetime of the trusted seed.
+
+For a renewal, retain the same P-256 public key, desktop version/build, minimum
+version, nupkg bytes, filename and versioned package URL. Generate a new envelope
+with a new `IssuedAt` and `ExpiresAt`; do not edit signed JSON fields by hand:
+
+```powershell
+$ExpirationUtc = [DateTimeOffset]::UtcNow.AddDays(365).ToString("o")
+dotnet run --project scripts/release/update-manifest -c Release -- sign `
+  $PublicTrustJson $PrivatePem $FullNupkg $Version $Build $MinimumVersion `
+  $ExpirationUtc $ReleaseNotes windows-stable.json.new
+
+dotnet run --project scripts/release/update-manifest -c Release -- verify `
+  $PublicTrustJson windows-stable.json.new $FullNupkg $MinimumVersion
+```
+
+After the public-key verification succeeds and replacement is authorized, keep
+both the old and renewed envelopes locally, rename the renewed file to
+`windows-stable.json`, and replace that asset in the Release currently serving
+`latest`. The descriptor continues to point to the original desktop version's
+nupkg. For a mutable Release, the command is:
+
+```bash
+gh release upload "$LATEST_RELEASE_TAG" windows-stable.json \
+  --repo dancancer/RawLab --clobber
+```
+
+[`--clobber`](https://cli.github.com/manual/gh_release_upload) deletes the old
+asset before uploading. Perform the operation before the expiry window, then
+immediately fetch the latest URL and verify the downloaded envelope and package
+with the production public key. If upload fails, restore the still-valid old
+asset or retry the verified renewed asset immediately; do not leave the latest
+URL missing. Retain the resulting asset hashes in the release record. If Release
+immutability is enabled, replacement is unavailable: publish a new authorized
+maintenance Release containing the renewed metadata before the old one expires.
+
 ## Acceptance and publication
+
+The updater publishes backups only after their copy and manifest are complete.
+On a healthy startup, unreferenced complete backups are removed; unpublished
+`.staging-<UUID>` copies older than 24 hours are removed. Legacy incomplete
+backups move to `IncompleteBackups/`, and unreferenced recovery directories move
+to `RecoveryArchives/`. These archives retain all files because they can contain
+the only copy of edits made before recovery. They are not caches and must not be
+deleted automatically. The current recovery receipt and its data remain in
+`Recoveries/` so the application's recovery link stays valid. An active recovery
+journal or unresolved installation state still blocks settings repair and cleanup.
 
 Before publishing, run the release plan's UI, hardware and actual update matrix.
 A build or fake-adapter test is not a successful install/restart/recovery test.
@@ -125,8 +180,57 @@ No-hardware skips must remain visible; they do not establish GPU acceptance.
 Use separate test keys and a prerelease source for seed-to-next-version testing.
 The existing 0.8.2 release requires one manual installation of the trusted seed.
 
-After explicit release authorization, create a draft GitHub Release and upload
+For a desktop Release, after explicit release authorization, create a draft GitHub Release and upload
 all architecture packages, Setup, nupkg, signed appcasts, signed manifest, source
 archive and checksums. Verify the complete asset set and all signatures with the
 formal public keys before publishing the draft. Drafts are not `latest`, so
 users cannot see an update whose assets are still being uploaded.
+
+Every stable Release that can become GitHub `latest`, including a mobile-only
+Release, must contain all three desktop update metadata assets:
+
+- `appcast-arm64.xml`
+- `appcast-x86_64.xml`
+- `windows-stable.json`
+
+For a mobile-only Release, carry forward the previous desktop's signed appcasts
+without changing their bytes. Carry forward the Windows envelope only if it has
+at least 30 days remaining; otherwise renew it with the same desktop package
+using the procedure above. Copy the three metadata assets into the new draft
+before publication. Keep the original versioned desktop archives/nupkg available:
+the metadata refers to those URLs, so the old packages do not need to be copied
+or renamed into the mobile Release. Do not regenerate desktop metadata using the
+mobile version or silently remove a supported architecture.
+
+GitHub resolves each [`latest/download/<asset>` URL](https://docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases)
+against the current latest Release; it does not fall back to an older Release
+when an asset is absent. Immediately after every stable publication or metadata
+replacement, fetch all three URLs into an isolated verification directory:
+
+```bash
+verification_dir=$(mktemp -d)
+trap 'rm -rf "$verification_dir"' EXIT
+for asset in appcast-arm64.xml appcast-x86_64.xml windows-stable.json; do
+  curl --fail --location --silent --show-error \
+    -o "$verification_dir/$asset" \
+    "https://github.com/dancancer/RawLab/releases/latest/download/$asset"
+done
+```
+
+Verify the downloaded files, using the established public keys and the exact
+desktop nupkg referenced by the Windows descriptor:
+
+```bash
+for arch in arm64 x86_64; do
+  swift scripts/release/verify-sparkle.swift "$RAWLAB_SPARKLE_PUBLIC_KEY" \
+    "$verification_dir/appcast-$arch.xml" feed
+done
+dotnet run --project scripts/release/update-manifest -c Release -- verify \
+  "$PublicTrustJson" "$verification_dir/windows-stable.json" "$FullNupkg" "$MinimumVersion"
+```
+
+Strict Authenticode verification must run on Windows. Also verify each referenced
+versioned package remains downloadable and matches its signed size/hash. Record
+the results; the shell exit trap removes the temporary verification directory.
+A missing, expired or invalid feed blocks release acceptance even when that
+Release only changes a mobile client.

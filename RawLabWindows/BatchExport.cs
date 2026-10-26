@@ -247,8 +247,9 @@ public static class BatchRunner
                 VerifyDestination(job.OutputDirectory);
                 job.Items[i] = item with { Status = BatchStatus.Running, Error = null };
                 journal.Save(job); changed(job.Copy(), null);
-                Export(i, job, journal, render);
+                Export(i, job, journal, cancellation, render);
                 changed(job.Copy(), null);
+                if(cancellation.IsCancellationRequested) { job.Cancelled=true; break; }
             }
         }
         catch (Exception error)
@@ -261,7 +262,7 @@ public static class BatchRunner
         journal.Save(job); changed(job.Copy(), null);
     }
 
-    private static void Export(int index, BatchJob job, BatchJournal journal, SizedRender render)
+    private static void Export(int index, BatchJob job, BatchJournal journal, CancellationToken cancellation, SizedRender render)
     {
         var item = job.Items[index];
         var snapshot = job.SnapshotFor(item);
@@ -273,6 +274,12 @@ public static class BatchRunner
                 if (!item.Identity.SameFile(OriginalIdentity.Read(item.Input))) throw new InvalidOperationException(Loc.Text("原始文件已被替换，请重新选择照片。"));
                 if (job.Mode == BatchJob.PerTargetFrozen) snapshot.VerifyLook();
                 render(item.Input, snapshot.Settings.Restore(), snapshot.Look, temporary, snapshot.LongEdge);
+            }
+            catch (OperationCanceledException) when(cancellation.IsCancellationRequested)
+            {
+                job.Items[index]=item with {Status=BatchStatus.Waiting,Error=null};
+                journal.Save(job);
+                return;
             }
             catch (Exception error)
             {

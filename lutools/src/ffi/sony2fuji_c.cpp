@@ -17,6 +17,7 @@
 #include "gpu/image_stats.h"
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
 #include "ai/ai_session.h"
+#include "ai/directml_device.h"
 #endif
 #if defined(SONY2FUJI_ENABLE_D3D11)
 #include "gpu/d3d11_photo.h"
@@ -1324,6 +1325,17 @@ sony2fuji_status sony2fuji_session_set_raw_noise_reduction(sony2fuji_session* se
 int32_t sony2fuji_ai_available(void) {
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
     return 1;
+#else
+    return 0;
+#endif
+}
+
+int32_t sony2fuji_ai_hardware_available(void) {
+#if defined(SONY2FUJI_ENABLE_AI_DENOISE) && defined(_WIN32)
+    try { sony2fuji::ai::findDirectMLAdapter(); return 1; }
+    catch (...) { return 0; }
+#elif defined(SONY2FUJI_ENABLE_AI_DENOISE) && defined(__APPLE__)
+    return sony2fuji::ai::CoreMLGraph::available() ? 1 : 0;
 #else
     return 0;
 #endif

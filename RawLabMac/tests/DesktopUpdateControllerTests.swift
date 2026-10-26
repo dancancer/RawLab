@@ -30,6 +30,7 @@ import Foundation
         guard value() else { fatalError(message) }; print("PASS: \(message)")
     }
     @MainActor static func main() async throws {
+        try await automaticCheckRetries()
         try await stateRepair()
         try await installationFailureBlocksEditing()
         try await blockedQuitFallsBack()
@@ -113,6 +114,37 @@ import Foundation
         check(!reopened.requiresRecovery && !reopened.canRestorePreviousData, "Persisted recovery reopens without reusing the cached editor model")
         check(!FileManager.default.fileExists(atPath: orphan.path), "Fresh startup retries cleanup of verified unreferenced backups")
     }
+    @MainActor static func automaticCheckRetries() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-check-retry-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = UpdateStore(directory: root), adapter = FakeUpdateAdapter()
+        var time = Date(timeIntervalSince1970: 1800000000)
+        let controller = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: store,
+            currentVersion: "0.8.2", currentBuild: "14", now: { time })
+        controller.check(manual: false); adapter.send(.failed("network", "offline"))
+        check(controller.state.failure?.stage == .checking, "Check failure persists its checking stage")
+        controller.check(manual: false)
+        check(adapter.checks == 1, "Failed automatic check respects the daily retry interval")
+        time.addTimeInterval(86401)
+        let reopened = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: store,
+            currentVersion: "0.8.2", currentBuild: "14", now: { time })
+        reopened.check(manual: false)
+        check(adapter.checks == 2 && reopened.state.phase == .checking, "Failed check retries automatically the next day after reopening")
+        // Simulate the process exiting before a check callback arrives.
+        time.addTimeInterval(86401)
+        let afterInterruption = FakeUpdateAdapter()
+        let interrupted = DesktopUpdateController(adapter: afterInterruption, gate: UpdateInstallGate(), store: store,
+            currentVersion: "0.8.2", currentBuild: "14", now: { time })
+        interrupted.check(manual: false)
+        check(afterInterruption.checks == 1, "Interrupted check also retries automatically the next day")
+        let release = UpdateDescriptor(version: "0.9.1", build: "19", platform: "macos", architecture: "arm64", channel: "stable",
+            assetURL: "https://example.invalid/update.zip", size: 12, sha256: nil, notes: "")
+        afterInterruption.send(.found(release)); interrupted.download(); afterInterruption.send(.failed("download", "offline"))
+        time.addTimeInterval(86401); interrupted.check(manual: false)
+        check(afterInterruption.checks == 1 && interrupted.state.failure?.stage == .downloading,
+            "Download failure still waits for an explicit retry after a day")
+    }
+
     @MainActor static func blockedQuitFallsBack() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-blocked-quit-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -136,6 +168,31 @@ import Foundation
         }
         check(noSession && controller.state.phase == .available && controller.state.choice == .onQuit,
             "Ordinary quit without an SDK session preserves the install choice in a resumable state")
+        let preserved = try Data(contentsOf: UpdateStore(directory: root.appendingPathComponent("Updates")).stateURL)
+        let changedStore = UpdateStore(directory: root.appendingPathComponent("Changed"))
+        try FileManager.default.createDirectory(at: changedStore.directory, withIntermediateDirectories: true)
+        try preserved.write(to: changedStore.stateURL)
+        let changedAdapter = FakeUpdateAdapter()
+        let changed = DesktopUpdateController(adapter: changedAdapter, gate: UpdateInstallGate(), store: changedStore,
+            currentVersion: "0.8.2", currentBuild: "14")
+        changed.refreshGate()
+        let newer = UpdateDescriptor(version: "0.9.2", build: "20", platform: "macos", architecture: "arm64", channel: "stable",
+            assetURL: "https://example.invalid/new-update.zip", size: 13, sha256: nil, notes: "")
+        changedAdapter.send(.found(newer))
+        check(changed.state.phase == .available && changed.state.choice == .none && changedAdapter.downloads == 0,
+            "A changed release does not inherit a previous quit choice or its download retry")
+        let nextAdapter = FakeUpdateAdapter()
+        let reopened = DesktopUpdateController(adapter: nextAdapter, gate: UpdateInstallGate(),
+            store: UpdateStore(directory: root.appendingPathComponent("Updates")), currentVersion: "0.8.2", currentBuild: "14")
+        reopened.refreshGate()
+        check(nextAdapter.checks == 1, "A preserved quit choice revalidates the selected release on reopening")
+        nextAdapter.send(.found(release))
+        check(nextAdapter.downloads == 1, "The previously selected release is prepared again without another manual choice")
+        nextAdapter.send(.preparing); nextAdapter.hasPreparedInstaller = true; nextAdapter.send(.verified)
+        let completed = await withCheckedContinuation { continuation in
+            reopened.prepareForQuit { continuation.resume(returning: $0) }
+        }
+        check(completed && nextAdapter.installs == 1, "The next ordinary quit uses the preserved installation choice")
     }
 
     static func checkData(_ path: URL, _ expected: String) throws {

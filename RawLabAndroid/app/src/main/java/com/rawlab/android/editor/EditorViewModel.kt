@@ -11,6 +11,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -72,13 +73,15 @@ class EditorViewModel @JvmOverloads constructor(
     private val mutableAdjustmentTransfer = MutableStateFlow(EditorAdjustmentTransferState())
     val adjustmentTransfer = mutableAdjustmentTransfer.asStateFlow()
     private var adjustmentOwnedFiles = emptyMap<String, File>()
-        private var adjustmentPreparationGeneration = UUID.randomUUID()
+    @Volatile private var adjustmentPreparationGeneration = UUID.randomUUID()
+    private var adjustmentPreparations = 0
+    private var adjustmentCloseRequested = false
     private val batches = EditorBatches(application, storage, viewModelScope, batchProcessorFactory, usage) { error ->
         mutable.value = mutable.value.copy(error = error)
     }
     private val collections = EditorCollections(storage, viewModelScope, File(application.filesDir, "RawLab/BatchJobs"),
         editStore::versionedState, ::captureCollectionActiveValidation, canRelease = { photo ->
-            mutable.value.photo?.file != photo.file && !mutableAdjustmentTransfer.value.preparing && !mutable.value.committingAdjustments
+            mutable.value.photo?.file != photo.file && adjustmentPreparations == 0 && !mutable.value.committingAdjustments
         })
     val collection = collections.state
     val batch = batches.active
@@ -107,7 +110,7 @@ class EditorViewModel @JvmOverloads constructor(
     private var releases = 0
     private val mutable = MutableStateFlow(EditorState())
     val state = mutable.asStateFlow()
-    private var disposed = false
+    @Volatile private var disposed = false
     private val renderer = EditorRenderer(storage, { if (editStore.available) editStore.versionedState(it) else null },
         (application.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0)
     private val queue = RenderQueue<Work, WorkResult>(renderer::perform, { revision, result ->
@@ -122,14 +125,18 @@ class EditorViewModel @JvmOverloads constructor(
     }, ::releaseStorage)
     private val adjustmentPreparation = EditorAdjustmentPreparation(application, storage, editStore)
     private val adjustmentQueue = SerialWorkQueue(::releaseStorage)
+    private val adjustmentPreparationQueue = SerialWorkQueue(::releaseStorage)
 
     private fun <T> commitAdjustments(work: () -> T, completed: (Result<T>) -> Unit) {
-        if (disposed || mutable.value.committingAdjustments) return
+        if (disposed || mutable.value.committingAdjustments) {
+            completed(Result.failure(AdjustmentTransferException(AdjustmentFailure.DRAFT))); return
+        }
         mutable.value = mutable.value.copy(committingAdjustments = true)
         adjustmentQueue.submit(work) { result -> viewModelScope.launch {
             if (!disposed) {
                 mutable.value = mutable.value.copy(committingAdjustments = false)
-                completed(result)
+                try { completed(result) }
+                finally { finishAdjustmentClose(); collections.releaseDeferred() }
             }
         } }
     }
@@ -293,10 +300,19 @@ class EditorViewModel @JvmOverloads constructor(
             if (mutable.value.operation == Operation.IMPORT) pendingPhotoImport.clear()
             mutable.value = EditorStateReducer.renderFinished(mutable.value).copy(error = failure(error))
         })
+        collections.releaseDeferred()
         updatePreviewSize(requestedPreviewLongEdge)
     }
 
     private fun acceptLook(result: Result<LookResult>) {
+        if (mutable.value.committingAdjustments) {
+            val revision = lookRevision
+            viewModelScope.launch {
+                state.first { !it.committingAdjustments }
+                if (!disposed && revision == lookRevision) acceptLook(result)
+            }
+            return
+        }
         result.fold(::acceptLookValue, { error ->
             mutable.value = mutable.value.copy(operation = Operation.NONE,
                 error = text(R.string.look_storage_error) + "\n" + (error.message ?: error.javaClass.simpleName))
@@ -645,11 +661,6 @@ class EditorViewModel @JvmOverloads constructor(
         val previousRequest = currentRevision
         edit(prepared.result.candidate)
         if (currentRevision == previousRequest) return false
-        if (mutable.value.saveState == EditSaveState.SAVED) {
-            val photo = current.photo!!
-            durablePreview = EditorDurablePreview(photo.identity, photo.file.absolutePath, sourceRevision,
-                currentRevision, prepared.result.candidate)
-        }
         return true
     }
 
@@ -840,7 +851,13 @@ class EditorViewModel @JvmOverloads constructor(
 
     fun prepareAdjustmentPaste(payload: AdjustmentPayload, uris: List<Uri>,
         action: AdjustmentHistoryTransaction.Action = AdjustmentHistoryTransaction.Action.PASTE) {
+        if (disposed || mutable.value.committingAdjustments) {
+            mutableAdjustmentTransfer.value = mutableAdjustmentTransfer.value.copy(
+                error = adjustmentErrorMessage(AdjustmentTransferException(AdjustmentFailure.DRAFT)))
+            return
+        }
         closeAdjustmentOperation()
+        adjustmentCloseRequested = false
         val generation = UUID.randomUUID()
         adjustmentPreparationGeneration = generation
         mutableAdjustmentTransfer.value = EditorAdjustmentTransferState(preparing = true)
@@ -851,17 +868,23 @@ class EditorViewModel @JvmOverloads constructor(
                 collection.value.photos.firstOrNull { it.id == id }?.let(collections::validate)
                     ?: error("Photo left the collection")
             } else null)
-        adjustmentQueue.submit({ adjustmentPreparation.prepare(work) }) { result -> viewModelScope.launch {
-            result.fold({ value ->
-                if (!disposed && value.generation == adjustmentPreparationGeneration) {
-                    adjustmentOwnedFiles = value.ownedFiles
-                    mutableAdjustmentTransfer.value = mutableAdjustmentTransfer.value.copy(preparing = false, prepared = value.operation,
-                        results = emptyList(), error = null)
-                } else value.ownedFiles.values.forEach(File::delete)
-            }, { error ->
-                if (!disposed && generation == adjustmentPreparationGeneration)
-                    mutableAdjustmentTransfer.value = mutableAdjustmentTransfer.value.copy(preparing = false, error = adjustmentErrorMessage(error))
-            })
+        adjustmentPreparations += 1
+        adjustmentPreparationQueue.submit({ adjustmentPreparation.prepare(work) { generation != adjustmentPreparationGeneration } }) { result ->
+            // viewModelScope 已取消时也必须释放工作结果，不能依赖一个不再执行的 UI 回调。
+            if (disposed) result.getOrNull()?.ownedFiles?.values?.forEach(File::delete)
+            else viewModelScope.launch {
+                adjustmentPreparations -= 1
+                result.fold({ value ->
+                    if (!disposed && value.generation == adjustmentPreparationGeneration) {
+                        adjustmentOwnedFiles = value.ownedFiles
+                        mutableAdjustmentTransfer.value = mutableAdjustmentTransfer.value.copy(preparing = false, prepared = value.operation,
+                            results = emptyList(), error = null)
+                    } else value.ownedFiles.values.forEach(File::delete)
+                }, { error ->
+                    if (!disposed && generation == adjustmentPreparationGeneration)
+                        mutableAdjustmentTransfer.value = mutableAdjustmentTransfer.value.copy(preparing = false, error = adjustmentErrorMessage(error))
+                })
+                collections.releaseDeferred()
         } }
     }
     fun applyAdjustmentPaste(operation: PreparedAdjustmentTransfer, skipping: Set<String> = emptySet(),
@@ -873,18 +896,24 @@ class EditorViewModel @JvmOverloads constructor(
         commitAdjustments({ verifyAdjustmentReceipts(session.apply(operation, skipping), previous) }) { outcome ->
             val results = outcome.getOrElse { operation.targets.map { target -> AdjustmentOutcome(target.id, AdjustmentStatus.FAILED, error = it) } }
             val accepted = acceptAdjustmentOutcomes(results, previous, receiptsVerified = true)
-            mutableAdjustmentTransfer.value = mutableAdjustmentTransfer.value.copy(results = accepted)
+            if (!adjustmentCloseRequested) mutableAdjustmentTransfer.value = mutableAdjustmentTransfer.value.copy(results = accepted)
             if (operation.action == AdjustmentHistoryTransaction.Action.SYNCHRONIZE)
                 collections.synchronized(operation.id, accepted.any { it.status == AdjustmentStatus.APPLIED })
             completed(accepted)
         }
     }
     fun closeAdjustmentOperation() {
-        if (mutable.value.committingAdjustments) return
-        adjustmentOwnedFiles.values.forEach(File::delete)
-        adjustmentOwnedFiles = emptyMap()
         adjustmentPreparationGeneration = UUID.randomUUID()
         mutableAdjustmentTransfer.value = EditorAdjustmentTransferState()
+        adjustmentCloseRequested = true
+        finishAdjustmentClose()
+        collections.releaseDeferred()
+    }
+    private fun finishAdjustmentClose() {
+        if (!adjustmentCloseRequested || mutable.value.committingAdjustments) return
+        adjustmentOwnedFiles.values.forEach(File::delete)
+        adjustmentOwnedFiles = emptyMap()
+        adjustmentCloseRequested = false
     }
     fun setGpuEnabled(enabled: Boolean) {
         if (mutable.value.committingAdjustments || mutable.value.operation != Operation.NONE) return
@@ -1011,7 +1040,10 @@ class EditorViewModel @JvmOverloads constructor(
         if (batch.value != null) { collections.failure("Close the current export task first"); completed(false); return }
         collections.freeze(review) { job ->
             if (job == null) completed(false)
-            else releaseEditorRasterForBatch { batches.resume(job, gpuMode()); completed(true) }
+            else releaseEditorRasterForBatch { released ->
+                if (released) batches.resume(job, gpuMode())
+                completed(released)
+            }
         }
     }
 
@@ -1020,16 +1052,23 @@ class EditorViewModel @JvmOverloads constructor(
         if (!current.canExport || batch.value != null) return
         val photo = current.photo ?: return
         val source = BatchSourceSnapshot(photo.identity, photo.file, current.edits, photo.name, inputKind = photo.inputKind)
-        releaseEditorRasterForBatch { batches.begin(source, gpuMode()) }
+        releaseEditorRasterForBatch { if (it) batches.begin(source, gpuMode()) }
     }
 
     fun resumeBatch(job: BatchJob) {
         if (batch.value != null || mutable.value.committingAdjustments || mutable.value.draft != null || mutable.value.operation != Operation.NONE) return
-        releaseEditorRasterForBatch { batches.resume(job, gpuMode()) }
+        releaseEditorRasterForBatch { if (it) batches.resume(job, gpuMode()) }
     }
 
-    private fun releaseEditorRasterForBatch(completed: () -> Unit) {
-        if (disposed || mutable.value.committingAdjustments) return
+    private fun releaseEditorRasterForBatch(completed: (Boolean) -> Unit) {
+        if (disposed) { completed(false); return }
+        if (mutable.value.committingAdjustments) {
+            viewModelScope.launch {
+                state.first { !it.committingAdjustments }
+                releaseEditorRasterForBatch(completed)
+            }
+            return
+        }
         // 页面切换沿用存储动作的输入门禁；只在渲染队列上释放完整解码图，保留仍在显示的预览。
         mutable.value = mutable.value.copy(committingAdjustments = true)
         queue.performAfterPending {
@@ -1037,7 +1076,10 @@ class EditorViewModel @JvmOverloads constructor(
             viewModelScope.launch {
                 if (!disposed) {
                     mutable.value = mutable.value.copy(committingAdjustments = false)
-                    result.fold({ completed() }, { mutable.value = mutable.value.copy(error = failure(it)) })
+                    try {
+                        result.exceptionOrNull()?.let { mutable.value = mutable.value.copy(error = failure(it)) }
+                        completed(result.isSuccess)
+                    } finally { finishAdjustmentClose(); collections.releaseDeferred() }
                 }
             }
         }
@@ -1060,18 +1102,20 @@ class EditorViewModel @JvmOverloads constructor(
 
     override fun onCleared() {
         disposed = true
+        adjustmentPreparationGeneration = UUID.randomUUID()
         previewResizeJob?.cancel()
         batches.dispose()
         collections.close(::releaseStorage)
         lookQueue.close()
         queue.close()
         adjustmentQueue.close()
+        adjustmentPreparationQueue.close()
     }
 
     private fun releaseStorage() {
         synchronized(this) {
             releases += 1
-            if (releases == 4) storage.close()
+            if (releases == 5) storage.close()
         }
     }
 }

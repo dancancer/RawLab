@@ -126,7 +126,8 @@ public partial class MainWindow
     private void ZoomOutClicked(object sender,RoutedEventArgs e) {CancelViewingInput();if(!transform.Active)viewport.Magnify(.8);}
     private void KeyPressed(object sender,KeyEventArgs e)
     {
-        if(UpdateInstallationActive) { if(e.Key!=Key.System)e.Handled=true;return; }
+        // 编辑区已禁用；让横幅和菜单继续收到 Tab、Enter、空格等标准导航键。
+        if(UpdateInstallationActive)return;
         var viewingKey=ViewingKey(e);
         var startsBeforeKey=viewingKey==Key.Oem5 && !beforeKeyDown;
         if(viewingKey==Key.Oem5)beforeKeyDown=true;

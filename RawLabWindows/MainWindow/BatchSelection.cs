@@ -122,7 +122,7 @@ public partial class MainWindow
     internal CollectionExportReview PrepareCollectionExport(IReadOnlyCollection<string> skipping,ExportFormat format,int? longEdge,string directory)
     {
         editStore ??=new(EditStore.DefaultDirectory);
-        return new BatchSelectionExport(editStore,batchJournal,ResolveLook).Prepare(Collection,skipping,format,longEdge,directory,CollectionDraftFailure);
+        return new BatchSelectionExport(editStore,batchJournal,ResolveLook,RenderEngine.ValidateAIInput).Prepare(Collection,skipping,format,longEdge,directory,CollectionDraftFailure);
     }
     internal BatchJob FreezeCollectionExport(CollectionExportReview review)
     {
@@ -131,7 +131,7 @@ public partial class MainWindow
             throw new InvalidOperationException(Loc.Text("请先结束或完成当前导出任务。"));
         if(batchWindow!=null){batchWindow.Close();if(batchWindow!=null)throw new InvalidOperationException(Loc.Text("请先关闭当前任务窗口。"));}
         editStore ??=new(EditStore.DefaultDirectory);
-        var job=new BatchSelectionExport(editStore,batchJournal,ResolveLook).Freeze(Collection,review,CollectionDraftFailure);
+        var job=new BatchSelectionExport(editStore,batchJournal,ResolveLook,RenderEngine.ValidateAIInput).Freeze(Collection,review,CollectionDraftFailure);
         previousBatch=job;ShowBatch(job);return job;
     }
     internal void ViewCollectionExport()=>ShowBatchClicked(this,new());

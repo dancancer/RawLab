@@ -61,7 +61,7 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
                 onCanvasTap = { if (state.draft == null) onCanvasTap() }, onHoldBefore = { onHoldBefore(it && state.draft == null) },
                 onModeChange = onModeChange, onCompareClose = onCompareClose, viewingEnabled = state.draft == null && state.controlsEnabled,
                 bottomOverlayInset = comparisonInset, bottomOverlay = {
-                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(Modifier.wrapContentWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         if (showTargetStatus && hslTarget != null) HslTargetCanvasControls(hslTarget, Modifier.padding(8.dp))
                         EditorSaveNotice(state, onSaveRetry, Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
                     }

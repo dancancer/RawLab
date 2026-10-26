@@ -3347,6 +3347,18 @@
     "AI 降噪不支持 CPU，请重新创建使用 GPU 的批量任务。": {
       "formats": [],
       "source": "AI 降噪不支持 CPU，请重新创建使用 GPU 的批量任务。"
+    },
+    "AI 准备可取消；已完成的输出会保留。": {
+      "formats": [],
+      "source": "AI 准备可取消；已完成的输出会保留。"
+    },
+    "AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。": {
+      "formats": [],
+      "source": "AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。"
+    },
+    "普通显影使用 CPU；AI 降噪仍使用硬件 GPU。": {
+      "formats": [],
+      "source": "普通显影使用 CPU；AI 降噪仍使用硬件 GPU。"
     }
   },
   "overrides": {
@@ -4835,6 +4847,30 @@
       "es": "La reducción de ruido con IA no admite CPU. Crea una nueva tarea por lotes con GPU.",
       "fr": "La réduction du bruit par IA ne prend pas en charge le CPU. Créez une nouvelle tâche par lots avec le GPU.",
       "ja": "AIノイズ除去はCPUに対応していません。GPUを使用する新しいバッチタスクを作成してください。"
+    },
+    "AI 准备可取消；已完成的输出会保留。": {
+      "de": "Die KI-Vorbereitung kann abgebrochen werden. Fertige Exporte bleiben erhalten.",
+      "en": "AI preparation can be cancelled. Completed exports are kept.",
+      "es": "La preparación de IA se puede cancelar. Las exportaciones completadas se conservan.",
+      "fr": "La préparation IA peut être annulée. Les exports terminés sont conservés.",
+      "ja": "AI の準備はキャンセルできます。完了した書き出しは保持されます。",
+      "zh-Hans": "AI 准备可取消；已完成的输出会保留。"
+    },
+    "AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。": {
+      "de": "KI-Entrauschung erfordert eine D3D12-Hardware-GPU mit DirectML-Unterstützung.",
+      "en": "AI denoise requires a hardware D3D12 GPU that supports DirectML.",
+      "es": "La reducción de ruido con IA requiere una GPU D3D12 compatible con DirectML.",
+      "fr": "La réduction du bruit par IA nécessite un GPU matériel D3D12 compatible avec DirectML.",
+      "ja": "AIノイズ除去には、DirectMLに対応したD3D12ハードウェアGPUが必要です。",
+      "zh-Hans": "AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。"
+    },
+    "普通显影使用 CPU；AI 降噪仍使用硬件 GPU。": {
+      "de": "Die Fotoentwicklung nutzt die CPU; KI-Entrauschung nutzt weiterhin die Hardware-GPU.",
+      "en": "Photo rendering uses CPU; AI denoise still uses the hardware GPU.",
+      "es": "El revelado usa la CPU; la reducción de ruido con IA sigue usando la GPU.",
+      "fr": "Le rendu photo utilise le CPU ; la réduction du bruit par IA utilise toujours le GPU matériel.",
+      "ja": "通常の現像はCPUを使用しますが、AIノイズ除去は引き続きハードウェアGPUを使用します。",
+      "zh-Hans": "普通显影使用 CPU；AI 降噪仍使用硬件 GPU。"
     }
   }
 }

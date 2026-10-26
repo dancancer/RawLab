@@ -233,7 +233,8 @@ RAW 样片不再随仓库分发。运行真实 RAW 测试前设置 `RAWLAB_TEST_
 独立 CMake 构建使用 `-DSONY2FUJI_TEST_RAW=/path/to/sample.ARW`。下面的历史报告可能引用已删除的旧样片。
 
 启用 AI 的原生构建可运行 `bash RawLabMac/tests/ai-batch-native.sh "$MODEL_DIR" "$RAWLAB_TEST_RAW"`。
-该测试使用隔离的应用资源与缓存，验证真实 RAW 的 GPU 预检、普通图片排除、批量导出、缓存复用和关闭 AI；
+该测试使用隔离的应用资源与缓存，验证轻量预检、普通图片排除、导出阶段 GPU 准备的进度与取消、
+继续导出、集合快照、缓存复用和关闭 AI；
 不会运行 CPU 神经网络，也不修改原片或用户数据。
 
 验证文档中的 `/tmp` 和 `.impeccable/review` 路径记录本机产物，不随 Git 发布；本地 RAW 样片也不随本次提交上传。缺少可选样片时，CMake 会跳过对应测试。

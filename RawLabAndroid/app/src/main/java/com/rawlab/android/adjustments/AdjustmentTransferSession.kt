@@ -44,10 +44,13 @@ class AdjustmentTransferSession(private val store: EditStore) {
         return captured
     }
     fun prepare(payload: AdjustmentPayload, targets: List<AdjustmentTransferTarget>,
-        action: AdjustmentHistoryTransaction.Action = AdjustmentHistoryTransaction.Action.PASTE): PreparedAdjustmentTransfer {
+        action: AdjustmentHistoryTransaction.Action = AdjustmentHistoryTransaction.Action.PASTE,
+        checkCancelled: () -> Unit = {}): PreparedAdjustmentTransfer {
+        checkCancelled()
         payload.validate()
         val prepared = targets.distinctBy { it.identity }
             .filterNot { action == AdjustmentHistoryTransaction.Action.SYNCHRONIZE && it.identity.value == payload.source.identifier }.map { target ->
+            checkCancelled()
             try {
                 if (!target.isCurrent()) throw draftError()
                 target.validateSource?.invoke()

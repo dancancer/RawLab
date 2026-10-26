@@ -20,6 +20,18 @@ class AdjustmentTransferSessionTest {
         try { block(directory) } finally { directory.deleteRecursively() }
     }
 
+    @Test fun preparationCancelsBetweenTargetRecordChecks() = inStore { directory ->
+        val session = AdjustmentTransferSession(EditStore(directory))
+        var validated = 0
+        val targets = (1..200).map { index -> target(PhotoIdentity("target-$index")).copy(validateSource = { validated++ }) }
+        val result = runCatching { session.prepare(payload(), targets, checkCancelled = {
+            if (validated == 2) throw java.util.concurrent.CancellationException()
+        }) }
+        assertTrue(result.exceptionOrNull() is java.util.concurrent.CancellationException)
+        assertEquals(2, validated)
+        assertTrue(session.transactions.isEmpty())
+    }
+
     @Test fun historyUsesOriginalSourceAfterWorkingCopyIsReleased() = inStore { directory ->
         val store = EditStore(directory); val session = AdjustmentTransferSession(store)
         val working = File(directory, "preview.raw").apply { writeText("copy") }

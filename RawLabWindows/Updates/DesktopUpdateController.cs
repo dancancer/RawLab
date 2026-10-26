@@ -63,7 +63,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             if (next.PendingUpdate.Phase != State.Phase) Save(next);
         }
         if (StorageError == null && !RequiresStartupHealthCheck && !RequiresRecovery && File.Exists(store.StatePath)) {
-            try { backup.DiscardUnreferencedBackups(State.BackupPath); } catch { }
+            try { backup.DiscardUnreferencedBackups(State.BackupPath, preferences.RecoveryReceipt); } catch { }
         }
     }
     public void RepairState()
@@ -104,7 +104,9 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         if (preferences.StateRepairReceipt != null)
         {
             if (!healthy) { repairHealthFailed = true; RecoveryError = "User data failed startup validation"; Notify(); return; }
-            var repaired = preferences.Copy(); repaired.StateRepairReceipt = null; Save(repaired); return;
+            var repaired = preferences.Copy(); repaired.StateRepairReceipt = null;
+            if (Save(repaired)) { try { backup.DiscardUnreferencedBackups(State.BackupPath, preferences.RecoveryReceipt); } catch { } }
+            return;
         }
         if (CheckingStartupTrust) return;
         CheckingStartupTrust = true; StartupTrustError = null; Notify();
@@ -137,7 +139,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     public async Task CheckAsync(bool manual, bool retryDownload = false)
     {
         if (!CanCheck) return;
-        if (!manual && (!preferences.AutomaticCheck || State.Phase == UpdatePhase.Failed || preferences.RemindAfter > now() ||
+        if (!manual && (!preferences.AutomaticCheck || State.Phase == UpdatePhase.Failed && State.Failure?.Stage != UpdatePhase.Checking || preferences.RemindAfter > now() ||
             preferences.LastCheck is { } last && last <= now() && now() - last < TimeSpan.FromDays(1))) return;
         var next = preferences.Copy(); var attempt = next.PendingUpdate.BeginCheck(); next.LastCheck = now();
         if (!Save(next)) return;
@@ -147,7 +149,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             var release = await adapter.CheckAsync(cancellation.Token);
             if (!manual && release?.Identity == preferences.SkippedVersion) release = null;
             next = preferences.Copy(); if (!next.PendingUpdate.Found(release, attempt) || !Save(next)) return;
-            if (release != null && (automaticDownload || retryDownload)) await DownloadAsync(automaticDownload);
+            if (release != null && (automaticDownload || retryDownload || DeferredQuitChoice)) await DownloadAsync(automaticDownload);
         }
         catch (OperationCanceledException) { }
         catch (Exception error) { Fail(error, attempt); }
@@ -170,7 +172,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             next = preferences.Copy(); if (!next.PendingUpdate.Preparing(attempt.Value) || !Save(next)) return;
             await adapter.VerifyAsync(release, cancellation.Token); cancellation.Token.ThrowIfCancellationRequested();
             next = preferences.Copy(); if (!next.PendingUpdate.Verified(attempt.Value)) return;
-            if (automaticDownload && preferences.AutomaticInstall) next.PendingUpdate.Choose(UpdateInstallChoice.AutomaticOnQuit);
+            if (automaticDownload && preferences.AutomaticInstall && next.PendingUpdate.Choice == UpdateInstallChoice.None) next.PendingUpdate.Choose(UpdateInstallChoice.AutomaticOnQuit);
             Save(next);
         }
         catch (OperationCanceledException) { }
@@ -201,8 +203,12 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         next.PendingUpdate.Admit(gate.Blockers()); if (!Save(next)) return;
         if (choice is UpdateInstallChoice.RestartNow or UpdateInstallChoice.AfterTasks && await InstallPreparedAsync(true)) RestartRequested?.Invoke();
     }
+    private bool DeferredQuitChoice => State.Choice == UpdateInstallChoice.OnQuit ||
+        State.Choice == UpdateInstallChoice.AutomaticOnQuit && preferences.AutomaticInstall;
     public async Task RefreshGateAsync()
     {
+        if (State.Phase == UpdatePhase.Available && DeferredQuitChoice && CanCheck) { await CheckAsync(true); return; }
+        if (State.Phase == UpdatePhase.Failed && State.Failure?.Stage == UpdatePhase.Checking) { await CheckAsync(false); return; }
         if (!CanChooseInstall || State.Choice == UpdateInstallChoice.None) return;
         var reasons = gate.Blockers();
         if (!reasons.SequenceEqual(State.Blockers))

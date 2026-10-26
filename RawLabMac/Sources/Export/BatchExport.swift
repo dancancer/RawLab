@@ -288,8 +288,9 @@ enum BatchExportRunner {
                 job.items[index].error = nil
                 try journal.save(job)
                 didUpdate(job)
-                try export(index, job: &job, journal: journal, directory: directory, render: render)
+                try export(index, job: &job, journal: journal, directory: directory, shouldCancel: shouldCancel, render: render)
                 didUpdate(job)
+                if shouldCancel() { job.cancelled = true; break }
             }
         } catch {
             job.interrupted = true; job.failure = error.localizedDescription
@@ -302,7 +303,7 @@ enum BatchExportRunner {
     }
 
     private static func export(_ index: Int, job: inout BatchExportJob, journal: BatchJournal,
-                               directory: URL, render: Render) throws {
+                               directory: URL, shouldCancel: () -> Bool, render: Render) throws {
         let item = job.items[index]
         let snapshot = try job.snapshot(for: item)
         let temp = directory.appendingPathComponent(".rawlab-\(job.id)-\(item.id).\(snapshot.outputFormat.suffix)")
@@ -314,6 +315,11 @@ enum BatchExportRunner {
                 try snapshot.verifyLook()
             }
             try render(item.input, snapshot.settings, snapshot.look, temp)
+        } catch RenderError.aiCancelled where shouldCancel() {
+            job.items[index].status = .waiting
+            job.items[index].error = nil
+            try journal.save(job)
+            return
         } catch {
             job.items[index].status = .failed
             job.items[index].error = error.localizedDescription

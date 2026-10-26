@@ -32,6 +32,14 @@ struct BatchExportView: View {
                              total: Double(max(1, model.job.selectedCount)))
                     .tint(.yellow).padding(.horizontal, 20).padding(.bottom, 12)
             }
+            if let progress = model.aiProgress {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(model.aiProgressTitle + " · " + String(progress.done) + "/" + String(progress.total))
+                        .foregroundStyle(.secondary).monospacedDigit()
+                    if progress.total == 0 { ProgressView().controlSize(.small) }
+                    else { ProgressView(value: Double(progress.done), total: Double(progress.total)) }
+                }.padding(.horizontal, 20).padding(.bottom, 12)
+            }
             if let error = model.error {
                 HStack(alignment: .top) {
                     Image(systemName: "exclamationmark.triangle").foregroundStyle(.yellow)

@@ -31,49 +31,61 @@ internal data class AdjustmentPreparationResult(val generation: UUID, val operat
 /** 与普通渲染一样在串行资源队列执行；每个 native processor 在该目标预检结束时释放。 */
 internal class EditorAdjustmentPreparation(private val context: Context, private val storage: PhotoStorage,
     private val store: EditorEditStore) {
-    fun prepare(work: AdjustmentPreparationWork): AdjustmentPreparationResult = synchronized(storage) {
+    fun prepare(work: AdjustmentPreparationWork, isCancelled: () -> Boolean = { false }): AdjustmentPreparationResult = synchronized(storage) {
+        fun checkActive() { if (isCancelled()) throw java.util.concurrent.CancellationException() }
+        checkActive()
         val session = store.adjustmentSession ?: throw IOException("Edit store is unavailable; reload saved adjustments")
         val builtin = storage.builtinLookIDs()
         val available = builtin.keys.map { "builtin:$it" }.toSet() +
             storage.looks().filter { it.managed && it.available }.map { it.id } +
             MasterRecipe.load(context).map { "recipe:${it.id}" }
         val owned = mutableMapOf<String, File>()
-        val targets = work.uris.distinct().map { uri ->
-            val identity = PhotoIdentity(uri.toString())
-            var displayName = uri.lastPathSegment ?: identity.value
-            try {
-                val photo = work.collectionPhotos[identity.value] ?: work.currentPhoto?.takeIf { it.identity == identity } ?: storage.import(uri).also { owned[identity.value] = it.file }
-                displayName = photo.name
-                val sourceValidator = EditorAdjustmentHistory.sourceValidation(photo)
-                work.validateCollection?.invoke(identity.value)
-                sourceValidator()
-                val validate = sourceValidator
-                val saved = store.versionedState(identity)
-                val neutral = EditSettings(processing = saved.settings?.processing ?: EditSettings().processing)
-                val database = storage.lensDatabase()
-                val frame = NativeProcessor(NativeProcessor.CPU, database).use {
-                    it.preview(photo.file, null, neutral, 128, false, photo.inputKind)
+        try {
+            val targets = work.uris.distinct().map { uri ->
+                checkActive()
+                val identity = PhotoIdentity(uri.toString())
+                var displayName = uri.lastPathSegment ?: identity.value
+                try {
+                    val photo = work.collectionPhotos[identity.value] ?: work.currentPhoto?.takeIf { it.identity == identity } ?: storage.import(uri).also { owned[identity.value] = it.file }
+                    displayName = photo.name
+                    val sourceValidator = EditorAdjustmentHistory.sourceValidation(photo)
+                    work.validateCollection?.invoke(identity.value)
+                    sourceValidator()
+                    checkActive()
+                    val validate = sourceValidator
+                    val saved = store.versionedState(identity)
+                    val neutral = EditSettings(processing = saved.settings?.processing ?: EditSettings().processing)
+                    val database = storage.lensDatabase()
+                    val frame = NativeProcessor(NativeProcessor.CPU, database).use {
+                        it.preview(photo.file, null, neutral, 128, false, photo.inputKind)
+                    }
+                    checkActive()
+                    val transferContext = AdjustmentTransferContext(identity.value, photo.inputKind == PhotoInputKind.RAW,
+                        available, builtin, frame.temperature.takeIf { it.isFinite() }, frame.tint.takeIf { it.isFinite() },
+                        validateLens = { request ->
+                            checkActive()
+                            val report = NativeProcessor(NativeProcessor.CPU, database).use {
+                                it.preview(photo.file, null, neutral.copy(lens = request), 128, false, photo.inputKind).lens
+                            }
+                            checkActive()
+                            if ((request.distortion && report?.appliedDistortion != true) || (request.tca && report?.appliedTca != true))
+                                throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "target lens calibration unavailable")
+                        })
+                    AdjustmentTransferTarget(identity, displayName, EditSettings(), transferContext,
+                        isCurrent = { work.isCurrent(identity.value) }, validateSource = validate,
+                        validateHistorySource = EditorAdjustmentHistory.historySourceValidation(photo))
+                } catch (error: java.util.concurrent.CancellationException) { throw error }
+                  catch (error: Exception) {
+                    owned.remove(identity.value)?.delete()
+                    AdjustmentTransferTarget(identity, displayName, EditSettings(), AdjustmentTransferContext(identity.value, true),
+                        isCurrent = { work.isCurrent(identity.value) }, validateSource = { throw error })
                 }
-                val transferContext = AdjustmentTransferContext(identity.value, photo.inputKind == PhotoInputKind.RAW,
-                    available, builtin, frame.temperature.takeIf { it.isFinite() }, frame.tint.takeIf { it.isFinite() },
-                    validateLens = { request ->
-                        val report = NativeProcessor(NativeProcessor.CPU, database).use {
-                            it.preview(photo.file, null, neutral.copy(lens = request), 128, false, photo.inputKind).lens
-                        }
-                        if ((request.distortion && report?.appliedDistortion != true) || (request.tca && report?.appliedTca != true))
-                            throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "target lens calibration unavailable")
-                    })
-                AdjustmentTransferTarget(identity, displayName, EditSettings(), transferContext,
-                    isCurrent = { work.isCurrent(identity.value) }, validateSource = validate,
-                    validateHistorySource = EditorAdjustmentHistory.historySourceValidation(photo))
-            } catch (error: Exception) {
-                owned.remove(identity.value)?.delete()
-                AdjustmentTransferTarget(identity, displayName, EditSettings(), AdjustmentTransferContext(identity.value, true),
-                    isCurrent = { work.isCurrent(identity.value) }, validateSource = { throw error })
             }
-        }
-        try { AdjustmentPreparationResult(work.generation, session.prepare(work.payload, targets, work.action), owned.toMap()) }
-        catch (error: Throwable) { owned.values.forEach(File::delete); throw error }
+            checkActive()
+            val operation = session.prepare(work.payload, targets, work.action, ::checkActive)
+            checkActive()
+            AdjustmentPreparationResult(work.generation, operation, owned.toMap())
+        } catch (error: Throwable) { owned.values.forEach(File::delete); throw error }
     }
 }
 

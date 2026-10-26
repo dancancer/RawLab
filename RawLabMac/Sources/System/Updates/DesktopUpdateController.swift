@@ -61,7 +61,7 @@ import Combine
         }
         if storageError == nil, !requiresStartupHealthCheck, !requiresRecovery,
            FileManager.default.fileExists(atPath: store.stateURL.path) {
-            try? backup.discardUnreferencedBackups(retaining: state.backupPath)
+            try? backup.discardUnreferencedBackups(retaining: state.backupPath, recoveryReceipt: preferences.recoveryReceipt)
         }
     }
 
@@ -110,7 +110,8 @@ import Combine
         if preferences.stateRepairReceipt != nil {
             guard healthy else { repairHealthFailed = true; recoveryError = "User data failed startup validation"; return }
             var next = preferences; next.stateRepairReceipt = nil
-            _ = save(next); return
+            if save(next) { try? backup.discardUnreferencedBackups(retaining: state.backupPath, recoveryReceipt: preferences.recoveryReceipt) }
+            return
         }
         guard !checkingStartupTrust else { return }
         checkingStartupTrust = true; startupTrustError = nil
@@ -143,15 +144,16 @@ import Combine
         if revoke { next.pendingUpdate.cancel() }
         if save(next), revoke { automaticDownload = false; adapter.cancel() }
     }
-    func check(manual: Bool) {
+    func check(manual: Bool, retryDownload: Bool = false) {
         guard canCheck, !requiresStartupHealthCheck else { return }
         if !manual {
-            guard preferences.automaticCheck, state.phase != .failed,
+            guard preferences.automaticCheck, state.phase != .failed || state.failure?.stage == .checking,
                   preferences.remindAfter.map({ $0 <= now() }) ?? true,
                   preferences.lastCheck.map({ now().timeIntervalSince($0) >= 86400 || $0 > now() }) ?? true else { return }
         }
         var next = preferences; let token = next.pendingUpdate.beginCheck(); next.lastCheck = now()
         guard save(next) else { return }
+        self.retryDownload = retryDownload
         automaticDownload = !manual && preferences.automaticInstall
         automaticCheck = !manual; adapterToken = token
         do { try adapter.check(token: token) { [weak self] token, event in self?.receive(token, event) } }
@@ -160,7 +162,7 @@ import Combine
     func download() {
         guard canDownload else { return }
         if !adapter.hasAvailableRelease {
-            guard canCheck else { return }; retryDownload = true; check(manual: true); return
+            guard canCheck else { return }; check(manual: true, retryDownload: true); return
         }
         guard let release = state.release else { return }
         var next = preferences
@@ -171,8 +173,7 @@ import Combine
     }
     func retry() {
         guard state.phase == .failed, canCheck else { return }
-        retryDownload = state.failure?.stage != .checking
-        check(manual: true)
+        check(manual: true, retryDownload: state.failure?.stage != .checking)
     }
     func cancel() {
         guard canCancel else { return }
@@ -198,7 +199,12 @@ import Combine
         if choice == .restartNow || choice == .afterTasks { Task { _ = await self.installPrepared(restart: true) } }
     }
 
+    private var deferredQuitChoice: Bool {
+        state.choice == .onQuit || state.choice == .automaticOnQuit && preferences.automaticInstall
+    }
     func refreshGate() {
+        if state.phase == .available && deferredQuitChoice && canCheck { check(manual: true); return }
+        if state.phase == .failed && state.failure?.stage == .checking { check(manual: false); return }
         guard canChooseInstall, state.choice != .none else { return }
         let reasons = gate.blockers()
         if reasons != state.blockers {
@@ -281,14 +287,14 @@ import Combine
                 adapter.cancel(); automaticDownload = false; return
             }
             guard next.pendingUpdate.found(release, token: token), save(next) else { return }
-            if release != nil && (automaticDownload || retryDownload) { retryDownload = false; download() }
+            if release != nil && (automaticDownload || retryDownload || deferredQuitChoice) { retryDownload = false; download() }
         case .progress(let value):
             if next.pendingUpdate.received(value, token: token) { preferences = next }
         case .preparing:
             if next.pendingUpdate.preparing(token: token) { _ = save(next) }
         case .verified:
             guard next.pendingUpdate.verified(token: token) else { return }
-            if automaticDownload && preferences.automaticInstall { _ = next.pendingUpdate.choose(.automaticOnQuit) }
+            if automaticDownload && preferences.automaticInstall && next.pendingUpdate.choice == .none { _ = next.pendingUpdate.choose(.automaticOnQuit) }
             _ = save(next)
         case .installing: break
         case .pendingRestart:

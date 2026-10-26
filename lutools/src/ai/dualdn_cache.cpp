@@ -50,17 +50,17 @@ struct SourceMetadata {
     bool cacheable = true;
     std::string stamp() const { return digestJson({identity, changed, sequence}); }
 };
-SourceMetadata sourceMetadata(const std::filesystem::path& path) {
+SourceMetadata sourceMetadata(const std::filesystem::path& path, bool model = false) {
 #ifdef _WIN32
-    // 不与写句柄共享：写入尚未关闭时，Windows 的时间戳可能还没刷新。
+    // 允许其他程序同时打开写句柄；变更租约与摘要前后校验负责检测实际修改。
     const HANDLE file = CreateFileW(path.c_str(), GENERIC_READ,
-        FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) throw std::runtime_error("Cannot identify AI source file");
     BY_HANDLE_FILE_INFORMATION info{};
     FILE_BASIC_INFO basic{};
     const bool valid = GetFileInformationByHandle(file, &info) != 0 &&
         GetFileInformationByHandleEx(file, FileBasicInfo, &basic, sizeof(basic)) != 0;
-    const auto generation = valid ? fileChangeGeneration(path) : std::nullopt;
+    const auto generation = valid ? fileChangeGeneration(path, model) : std::nullopt;
     CloseHandle(file);
     if (!valid) throw std::runtime_error("Cannot identify AI source file");
     return {{{"file", path.u8string()}, {"volume", info.dwVolumeSerialNumber},
@@ -84,21 +84,25 @@ SourceMetadata sourceMetadata(const std::filesystem::path& path) {
 }
 
 std::string sourceMetadataKey(const std::string& path) {
-    const auto metadata = sourceMetadata(std::filesystem::canonical(std::filesystem::u8path(path)));
+    const auto metadata = sourceMetadata(std::filesystem::canonical(std::filesystem::u8path(path)), true);
     // 不支持变更通知的文件系统不能安全复用元数据；只在该退路读取内容。
     return metadata.cacheable ? metadata.stamp() : digestJson({metadata.stamp(), sha256File(path)});
 }
 
 std::string sourceIdentityKey(const std::string& path) {
-    struct Entry { std::string stamp, key; };
+    struct Entry { std::string stamp, key; uint64_t used; };
     static std::mutex mutex;
     static std::map<std::string, Entry> cache;
+    static uint64_t access = 0;
     const auto file = std::filesystem::canonical(std::filesystem::u8path(path));
     std::lock_guard<std::mutex> lock(mutex);
     const auto metadata = sourceMetadata(file);
     const auto stamp = metadata.stamp();
     const auto found = cache.find(file.u8string());
-    if (metadata.cacheable && found != cache.end() && found->second.stamp == stamp) return found->second.key;
+    if (metadata.cacheable && found != cache.end() && found->second.stamp == stamp) {
+        found->second.used = ++access;
+        return found->second.key;
+    }
     const auto content = sha256File(file.u8string());
     const auto after = sourceMetadata(file);
     if (after.identity != metadata.identity || after.changed != metadata.changed ||
@@ -106,8 +110,12 @@ std::string sourceIdentityKey(const std::string& path) {
         throw std::runtime_error("AI source changed while computing its identity");
     // ctime/ChangeTime 只触发摘要刷新，权限和标签变化不改变最终照片身份。
     const auto key = digestJson({metadata.identity, content});
-    if (cache.size() >= 128) cache.erase(cache.begin());
-    cache[file.u8string()] = {stamp, key};
+    if (found == cache.end() && cache.size() >= 128) {
+        const auto oldest = std::min_element(cache.begin(), cache.end(),
+            [](const auto& left, const auto& right) { return left.second.used < right.second.used; });
+        cache.erase(oldest);
+    }
+    cache[file.u8string()] = {stamp, key, ++access};
     return key;
 }
 

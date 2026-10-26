@@ -27,4 +27,4 @@ swiftc -swift-version 5 -sdk "$SDK" -target "$ARCH-apple-macosx$MACOSX_DEPLOYMEN
     "$BUILD/libsony2fuji_core.a" "${AI_LINK[@]}" \
     $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$APP/Contents/MacOS/test"
-CFFIXED_USER_HOME="$OUT/home" "$APP/Contents/MacOS/test" "$RAW" "$OUT"
+CFFIXED_USER_HOME="$OUT/home" "$APP/Contents/MacOS/test" "$RAW" "$OUT" "${3:-$OUT}"

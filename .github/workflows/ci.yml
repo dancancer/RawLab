@@ -167,7 +167,7 @@ jobs:
           git rev-parse HEAD
           bash scripts/ci/apple-models.sh macos
       - name: Prepare GPU AI inputs for full checks
-        if: needs.changes.outputs.checks == 'full'
+        if: needs.changes.outputs.checks == 'full' && matrix.arch == 'arm64'
         shell: bash
         run: python scripts/ci/ai-inputs.py --platform macos --arch "$RAWLAB_ARCH"
       - name: Install offline GLES shader validator

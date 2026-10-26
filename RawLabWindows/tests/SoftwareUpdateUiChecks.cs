@@ -136,10 +136,19 @@ internal static class SoftwareUpdateUiChecks
             check(!collection.IsEnabled,"Installation lock also disables an existing collection window");
             collection.Close();Invoke(window,"ShowCollection");collection=Get<BatchSelectionWindow>(window,"collectionWindow");
             check(!collection.IsEnabled,"A collection window created during the installation lock starts disabled");
-            collection.Close();Click(Button(window,"updates.lock.open"));
+            collection.Close();
+            var openUpdates=Button(window,"updates.lock.open");window.Activate();openUpdates.Focus();
+            var tab=new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(openUpdates),Environment.TickCount,Key.Tab){RoutedEvent=Keyboard.PreviewKeyDownEvent};
+            openUpdates.RaiseEvent(tab);
+            check(!tab.Handled,"Installation lock permits keyboard focus navigation to the update banner");
+            var press=new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(openUpdates),Environment.TickCount,Key.Space){RoutedEvent=Keyboard.PreviewKeyDownEvent};
+            openUpdates.RaiseEvent(press);
+            check(!press.Handled,"Installation lock does not swallow the focused update button's Space key");
+            press.RoutedEvent=Keyboard.KeyDownEvent;openUpdates.RaiseEvent(press);
+            openUpdates.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(openUpdates),Environment.TickCount,Key.Space){RoutedEvent=Keyboard.KeyUpEvent});
             InteractionChecks.PumpUntil(()=>Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow").IsVisible);
             check(Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow").IsEnabled,
-                "Visible lock banner reopens the usable software update window");
+                "Keyboard activation of the lock banner reopens the usable software update window");
             Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow").Close();
             Console.WriteLine("UPDATE_UI_OUTPUT="+output);
         } finally {controller.Cancel();Invoke(window,"CancelTransformDraft");Invoke(window,"CancelParameterInputs");window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);}

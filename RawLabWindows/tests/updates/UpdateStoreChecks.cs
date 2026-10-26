@@ -40,6 +40,14 @@ internal static class UpdateStoreChecks
                 "Recovery quarantines every newer record");
             check(backup.HasPendingRecovery, "Recovery remains blocked until its completion is persisted");
             backup.FinishRecovery(receipt);
+            var recovered=new UpdatePreferences {RecoveryReceipt=receipt};
+            var damagedRecovery=JsonSerializer.SerializeToNode(recovered)!;damagedRecovery["AutomaticCheck"]="broken";
+            File.WriteAllText(store.StatePath,damagedRecovery.ToJsonString());
+            var repairedRecovery=store.RepairState(store.RepairableState());
+            check(repairedRecovery.RecoveryReceipt==receipt && Directory.Exists(receipt),
+                "Completed recovery receipt does not block preference repair or lose its data link");
+            backup.DiscardUnreferencedBackups(saved+"/.",receipt+"/.");
+            check(Directory.Exists(saved) && Directory.Exists(receipt),"Equivalent referenced paths preserve backup and recovery links during cleanup");
             File.WriteAllText(photo, "latest format"); rejected = false;
             try { backup.Restore(saved, name => { if (name == "Edits") throw new IOException("Injected failure"); }); }
             catch (IOException) { rejected = true; }
@@ -103,8 +111,23 @@ internal static class UpdateStoreChecks
             check(Rejected(() => store.RepairableState()) && Directory.Exists(orphan), "Incomplete installation state cannot prove a backup is orphaned");
             var nonInstallation=System.Text.Json.JsonSerializer.SerializeToNode(new UpdatePreferences())!;
             nonInstallation["AutomaticCheck"]="broken"; File.WriteAllText(store.StatePath,nonInstallation.ToJsonString());
+            var partialId=Guid.NewGuid().ToString("N"); var recoveryId=Guid.NewGuid().ToString("N"); var stagedId=Guid.NewGuid().ToString("N");
+            var partial=Path.Combine(store.DirectoryPath,"Backups",partialId);
+            var recovery=Path.Combine(store.DirectoryPath,"Recoveries",recoveryId,"original","Edits");
+            var staged=Path.Combine(store.DirectoryPath,"Backups",".staging-"+stagedId);
+            foreach(var path in new[]{partial,recovery,staged})Directory.CreateDirectory(path);
+            File.WriteAllText(Path.Combine(partial,"part.json"),"unfinished copy");
+            File.WriteAllText(Path.Combine(recovery,"new.json"),"unique newer edit");
+            File.WriteAllText(Path.Combine(staged,"part.json"),"staged copy");
+            Directory.SetLastWriteTimeUtc(staged,DateTime.UtcNow.AddDays(-2));
             store.RepairState(store.RepairableState());
-            check(!Directory.Exists(orphan),"Known non-install state can be rebuilt and cleans verified orphan backup after saving");
+            check(Directory.Exists(orphan),"Repair preserves backup evidence until a healthy startup can clean it");
+            orphanManager.DiscardUnreferencedBackups(null);
+            check(!Directory.Exists(orphan) && !Directory.Exists(staged),"Healthy cleanup removes verified orphan backups and abandoned staging copies");
+            check(File.ReadAllText(Path.Combine(store.DirectoryPath,"IncompleteBackups",partialId,"part.json"))=="unfinished copy",
+                "Old incomplete backups are quarantined rather than deleted");
+            check(File.ReadAllText(Path.Combine(store.DirectoryPath,"RecoveryArchives",recoveryId,"original","Edits","new.json"))=="unique newer edit",
+                "Inactive recovery data is archived without losing newer edits");
             File.WriteAllBytes(store.StatePath, damaged); var backups = Path.Combine(store.DirectoryPath, "Backups");
             Directory.CreateDirectory(Path.Combine(backups, "prior"));
             check(Rejected(() => store.RepairableState()), "Installation evidence blocks uncertain state repair");

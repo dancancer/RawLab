@@ -9,14 +9,24 @@ internal sealed partial class RenderEngine
     private readonly string aiModelDirectory,aiCacheDirectory;
     private readonly int? aiBackendOverride;
     internal static bool AIAvailable=>Native.sony2fuji_ai_available()!=0;
+    private static readonly Lazy<bool> aiHardware=new(()=>Native.sony2fuji_ai_hardware_available()!=0);
+    internal static bool AIHardwareAvailable=>aiHardware.Value;
     internal static string BundledAIModel=>Path.Combine(AppContext.BaseDirectory,"AI","DualDn");
     internal static bool HasBundledAIModel=>File.Exists(Path.Combine(BundledAIModel,"manifest.json"));
     internal static int AIBackendForGpuMode(int mode)=>mode==2 ? 3 : 2;
     internal string LastAIBackend=>Marshal.PtrToStringUTF8(Native.sony2fuji_session_get_ai_backend(session)) ?? "";
+    internal static void ValidateAIInput(string path)
+    {
+        if(!PhotoInput.IsRaw(path))throw new AIDenoiseException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
+        if(!AIAvailable || !HasBundledAIModel)throw new AIDenoiseException(Loc.Text("此构建未安装 AI 降噪模型。"));
+        if(!AIHardwareAvailable)throw new AIDenoiseException(Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。"));
+    }
     private void ConfigureAI(bool enabled)
     {
         if(enabled && (!AIAvailable || !File.Exists(Path.Combine(aiModelDirectory,"manifest.json"))))
             throw new AIDenoiseException(Loc.Text("此构建未安装 AI 降噪模型。"));
+        if(enabled && !AIHardwareAvailable)
+            throw new AIDenoiseException(Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。"));
         var config=new Native.AIConfig {Version=1,StructSize=(uint)Marshal.SizeOf<Native.AIConfig>(),
             Enabled=enabled ? 1 : 0,Backend=aiBackendOverride ?? AIBackendForGpuMode(gpuMode),
             ModelDirectory=aiModelDirectory,CacheDirectory=aiCacheDirectory};
@@ -27,6 +37,9 @@ internal sealed partial class RenderEngine
         if(status==0)return;
         if(status==7)throw new OperationCanceledException(Loc.Text("AI 降噪已取消。"));
         var detail=Marshal.PtrToStringUTF8(Native.sony2fuji_session_get_ai_error(session)) ?? "";
+        if(detail.StartsWith("DirectML requires a hardware D3D12 adapter",StringComparison.Ordinal) ||
+            detail.StartsWith("This build has no DirectML backend",StringComparison.Ordinal))
+            throw new AIDenoiseException(Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。"));
         if(status==8)throw new AINotReadyException(Loc.Text("请先完成此照片的 AI 降噪，再预览或导出。")+"\n"+detail);
         if(detail.Length==0)Native.Check(status);
         throw new AIDenoiseException(Loc.Format("AI 降噪失败：{0}",detail));

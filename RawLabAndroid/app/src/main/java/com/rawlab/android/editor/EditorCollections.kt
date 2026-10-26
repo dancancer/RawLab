@@ -22,6 +22,7 @@ internal class EditorCollections(private val storage: PhotoStorage, parentScope:
     private val mutable = MutableStateFlow(BatchSelectionState())
     val state = mutable.asStateFlow()
     private val imported = java.util.concurrent.ConcurrentHashMap<String, ImportedPhoto>()
+    private val deferredRelease = java.util.concurrent.ConcurrentHashMap<String, ImportedPhoto>()
     private data class SourceValidation(val stamp: () -> Unit, val content: () -> Unit)
     private val validators = java.util.concurrent.ConcurrentHashMap<String, SourceValidation>()
     private val exporter = BatchSelectionExport(journalRoot, readRecord, storage::lookPath, ::validate)
@@ -31,14 +32,22 @@ internal class EditorCollections(private val storage: PhotoStorage, parentScope:
         job.invokeOnCompletion { onReleased() }; job.cancel()
     }
     fun photo(id: String) = imported[id]
-    fun owns(file: File) = imported.values.any { it.file == file }
+    fun owns(file: File) = imported.values.any { it.file == file } || deferredRelease.containsKey(file.absolutePath)
+    fun releaseDeferred() {
+        deferredRelease.entries.removeAll { (_, photo) ->
+            if (imported.values.any { it.file == photo.file }) true
+            else if (canRelease(photo)) { photo.file.delete(); true } else false
+        }
+    }
     fun select(id: String, selected: Boolean) { if (!mutable.value.busy) mutable.update { it.select(id, selected) } }
     fun selectAll(selected: Boolean) { if (!mutable.value.busy) mutable.update {
         it.copy(selected = if (selected) it.photos.mapTo(mutableSetOf()) { row -> row.id } else emptySet())
     } }
     fun remove(id: String) {
         if (mutable.value.busy) return
-        imported.remove(id)?.let { if (canRelease(it)) it.file.delete() }
+        imported.remove(id)?.let {
+            if (canRelease(it)) it.file.delete() else deferredRelease[it.file.absolutePath] = it
+        }
         validators.remove(id)
         mutable.update { it.remove(id) }
     }
@@ -100,7 +109,7 @@ internal class EditorCollections(private val storage: PhotoStorage, parentScope:
     }
     fun prepare(skipping: Set<String>, format: ExportFormat, longEdge: Int?, destination: Uri?,
         completed: (CollectionExportReview?) -> Unit) {
-        if (mutable.value.busy) return
+        if (mutable.value.busy) { completed(null); return }
         val selection = mutable.value
         val validateActive = captureActiveValidation()
         mutable.update { it.copy(busy = true, error = null) }
@@ -115,7 +124,7 @@ internal class EditorCollections(private val storage: PhotoStorage, parentScope:
         }
     }
     fun freeze(review: CollectionExportReview, completed: (BatchJob?) -> Unit) {
-        if (mutable.value.busy) return
+        if (mutable.value.busy) { completed(null); return }
         val selection = mutable.value
         val validateActive = captureActiveValidation()
         mutable.update { it.copy(busy = true, error = null) }

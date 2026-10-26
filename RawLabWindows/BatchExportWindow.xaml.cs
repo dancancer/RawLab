@@ -16,11 +16,13 @@ public partial class BatchExportWindow : Window
 {
     private BatchJob job;
     private readonly BatchJournal journal;
+    private readonly Func<int,RenderEngine> createEngine;
     private readonly ObservableCollection<BatchRow> rows = [];
     private CancellationTokenSource cancellation = new();
     private bool ready, refreshingSize, editingCustomSize,preflighting,closed;
     private volatile bool closeRequested;
     private Task? thumbnailLoading;
+    private AIDenoiseState? aiProgress;
     public bool Running { get; private set; }
     public bool Busy=>Running || preflighting;
     public bool UpdateJournalFailed { get; private set; }
@@ -33,9 +35,10 @@ public partial class BatchExportWindow : Window
     public event Action<bool>? BusyChanged;
     public event Action<BatchJob, BatchJob, int>? RunCompleted;
 
-    public BatchExportWindow(BatchJob job, BatchJournal journal)
+    public BatchExportWindow(BatchJob job, BatchJournal journal) : this(job,journal,backend=>new RenderEngine(aiBackend:backend)) { }
+    internal BatchExportWindow(BatchJob job, BatchJournal journal, Func<int,RenderEngine> createEngine)
     {
-        this.job = job; this.journal = journal;
+        this.job = job; this.journal = journal; this.createEngine=createEngine;
         InitializeComponent(); Targets.ItemsSource = rows;
         Loc.Changed += RefreshLanguage;
         Closed += (_, _) => {closed=true;Loc.Changed -= RefreshLanguage;};
@@ -84,6 +87,13 @@ public partial class BatchExportWindow : Window
         ErrorText.Text = job.Error ?? ""; ErrorText.Visibility = string.IsNullOrEmpty(job.Error) ? Visibility.Collapsed : Visibility.Visible;
         Progress.Visibility = job.Started || preflighting ? Visibility.Visible : Visibility.Collapsed;Progress.IsIndeterminate=preflighting;
         Progress.Maximum = Math.Max(1, job.SelectedCount); Progress.Value = job.SucceededCount + job.FailedCount;
+        AIStatus.Visibility=AIProgress.Visibility=aiProgress==null ? Visibility.Collapsed : Visibility.Visible;
+        if(aiProgress is {} ai) {
+            AIStatus.Text=Loc.Format("{0} · {1}/{2}",Loc.Text(ai.Phase switch {
+                2=>"正在处理 RAW 噪声",3=>"正在处理颜色噪声",4=>"正在保存 AI 结果",_=>"正在准备 AI 降噪"}),ai.Done,ai.Total);
+            AIProgress.IsIndeterminate=ai.Total==0;
+            AIProgress.Value=ai.Total==0 ? 0 : Math.Clamp((double)ai.Done/ai.Total,0,1);
+        }
         SelectionActions.Visibility = job.Started || Frozen ? Visibility.Collapsed : Visibility.Visible;
         SelectionActions.IsEnabled=!preflighting;
         FormatOptions.IsEnabled = !Frozen && !job.Started && !Running && !preflighting; ChooseFolder.IsEnabled = !Frozen && !Running && !preflighting;
@@ -104,7 +114,7 @@ public partial class BatchExportWindow : Window
         PrimaryAction.Content = Running ? cancellation.IsCancellationRequested ? Loc.Text("正在停止…") : Loc.Text("取消导出") :
             !job.Started ? Loc.Format("导出 {0} 张", job.SelectedCount) : job.RemainingCount > 0 ? Loc.Format("继续未完成的 {0} 张", job.SelectedCount - job.SucceededCount) : Loc.Format("重试失败的 {0} 张", job.FailedCount);
         PrimaryAction.Visibility = !Running && job.Started && job.SucceededCount == job.SelectedCount ? Visibility.Collapsed : Visibility.Visible;
-        Footnote.Text=Running ? Loc.Text("当前项完成后停止，已完成的输出会保留。") : Loc.Text(Frozen ? "使用每张照片已冻结的调整，保留逐张差异。" : "仅用于本次导出，保留各照片原有调整");
+        Footnote.Text=Running ? Loc.Text(aiProgress!=null ? "AI 准备可取消；已完成的输出会保留。" : "当前项完成后停止，已完成的输出会保留。") : Loc.Text(Frozen ? "使用每张照片已冻结的调整，保留逐张差异。" : "仅用于本次导出，保留各照片原有调整");
         DiscardTask.IsEnabled=!Running && !preflighting;
         PrimaryAction.IsEnabled = !preflighting && (Running ? !cancellation.IsCancellationRequested : job.SelectedCount > 0 && job.OutputDirectory != null &&
             (!editingCustomSize || ExportSize.Parse(CustomLongEdge.Text) != null));
@@ -150,7 +160,9 @@ public partial class BatchExportWindow : Window
                     try{
                         var item=BatchItem.Create(input);
                         try{var effective=RenderEngine.PrepareBatchSettings(job.Source,input,settings.Restore());
-                            validator.Render(input,effective,look,64,statistics:false,clipping:false,viewportPreview:true);item=item with{Selected=true};}
+                            if(effective.AIDenoiseEnabled)RenderEngine.ValidateAIInput(input);
+                            else validator.Render(input,effective,look,64,statistics:false,clipping:false,viewportPreview:true);
+                            item=item with{Selected=true};}
                         catch(Exception error){item=item with{ValidationError=error.Message,Selected=false};}
                         accepted.Add(item);
                     }
@@ -294,7 +306,7 @@ public partial class BatchExportWindow : Window
         {
             await Task.Run(() => {
                 if (work.Format != ExportFormat.RenderedDng) ExportMetadata.VerifyAvailable();
-                using var engine = new RenderEngine(aiBackend:work.AIBackend);
+                using var engine = createEngine(work.AIBackend);
                 BatchRunner.Run(work, journal, failuresOnly, cancellation.Token,
                     (updated, _) => {
                         foreach (var item in updated.Items)
@@ -306,6 +318,14 @@ public partial class BatchExportWindow : Window
                         Dispatcher.BeginInvoke(new Action(() => { job = updated; Refresh(); }));
                     },
                     (input, settings, look, destination, longEdge) => {
+                        if(settings.AIDenoiseEnabled) {
+                            using var progress=new AIPreparation((phase,done,total)=>
+                                Dispatcher.BeginInvoke(new Action(()=>{aiProgress=new(AIDenoiseStatus.Running,phase,done,total);Refresh();})));
+                            using var registration=cancellation.Token.Register(progress.Cancel);
+                            try { engine.PrepareAI(input,settings,progress); }
+                            finally { Dispatcher.BeginInvoke(new Action(()=>{aiProgress=null;Refresh();})); }
+                        }
+                        cancellation.Token.ThrowIfCancellationRequested();
                         engine.Render(input, settings, look, 32, statistics: false, clipping: false);
                         engine.Render(input, settings, look, 0, output: destination, longEdge: longEdge);
                     });
@@ -320,7 +340,7 @@ public partial class BatchExportWindow : Window
         {
             job = work;
             RunCompleted?.Invoke(before, job.Copy(), runFailed.Count);
-            Running = false; Refresh(); BusyChanged?.Invoke(false);
+            Running = false; aiProgress=null; Refresh(); BusyChanged?.Invoke(false);
             if (closeRequested && IsLoaded) Close();
         }
     }

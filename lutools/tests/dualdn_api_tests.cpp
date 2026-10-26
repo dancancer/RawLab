@@ -16,9 +16,16 @@ int main(int argc, char** argv) {
     sony2fuji_session* session = nullptr;
     try {
         require(argc == 4, "requires RAW, model directory and temporary cache directory");
+        std::filesystem::create_directories(std::filesystem::absolute(std::filesystem::u8path(argv[3])).parent_path());
         require(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK, "session create");
         require(!sony2fuji_session_get_ai_backend(session)[0] && !sony2fuji_session_get_ai_backend(nullptr)[0],
                 "unused AI session reported an inference backend");
+#if defined(_WIN32) && defined(RAWLAB_TEST_AI)
+        bool hardware = true;
+        try { sony2fuji::ai::findDirectMLAdapter(); } catch (const std::runtime_error&) { hardware = false; }
+        require((sony2fuji_ai_hardware_available() != 0) == hardware, "public GPU probe does not match hardware adapter availability");
+        std::cout << "PASS public AI hardware probe=" << hardware << '\n';
+#endif
         sony2fuji_ai_denoise_config config{};
         config.version = SONY2FUJI_AI_DENOISE_CONFIG_VERSION; config.struct_size = sizeof(config);
         config.backend = SONY2FUJI_AI_CPU; config.model_directory = argv[2]; config.cache_directory = argv[3];
@@ -81,7 +88,11 @@ int main(int argc, char** argv) {
             config.model_directory = argv[2];
             require(sony2fuji_session_set_ai_denoise(session,&config) == SONY2FUJI_STATUS_OK, "restored model configuration");
             const auto invalidSource = std::string(argv[3])+"-invalid.raw";
-            { std::ofstream file(std::filesystem::u8path(invalidSource),std::ios::binary); file << std::string(4096,'x'); }
+            {
+                std::ofstream file(std::filesystem::u8path(invalidSource),std::ios::binary);
+                file << std::string(4096,'x'); file.close();
+                require(bool(file), "Cannot create invalid RAW fixture");
+            }
             request.input_path = invalidSource.c_str();
             const auto invalidStatus = sony2fuji_session_prepare_ai(session,&request,nullptr,nullptr);
             request.input_path = argv[1]; std::filesystem::remove(std::filesystem::u8path(invalidSource));

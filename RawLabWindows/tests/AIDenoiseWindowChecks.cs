@@ -77,8 +77,16 @@ internal static class AIDenoiseWindowChecks
             var transform=(TransformDraft)typeof(MainWindow).GetField("transform",flags)!.GetValue(window)!;
             transform.Update(new GeometrySettings {StraightenDegrees=1});Call("Schedule",false);
             check(ReferenceEquals(originalPreparation,job.Completion),"Geometry-only draft keeps the same AI task");
+            var failurePendingType=typeof(MainWindow).GetNestedType("PendingAllReset",BindingFlags.NonPublic)!;
+            var failurePending=Activator.CreateInstance(failurePendingType,BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.Instance,
+                null,new object?[]{typeof(MainWindow).GetField("file",flags)!.GetValue(window),
+                    typeof(MainWindow).GetField("openRevision",flags)!.GetValue(window),EditorAdjustmentTool.Exposure,null},null);
+            typeof(MainWindow).GetField("pendingAllReset",flags)!.SetValue(window,failurePending);
             Call("UpdateLensDraft",new LensSettings(Distortion:true));release.Set();
             Pump(()=>job.State.Status==AIDenoiseStatus.Failed);
+            window.Dispatcher.Invoke(()=>{},DispatcherPriority.ApplicationIdle);
+            check(typeof(MainWindow).GetField("pendingAllReset",flags)!.GetValue(window)==null,
+                "AI preparation failure clears the pending all-reset continuation before preview can run");
             check(job.Identity?.Lens.Distortion==true && !Settings().Lens.Distortion,
                 "Active lens draft prepares its own identity without committing lens settings");
             var failedPreparation=job.Completion;Call("Schedule",false);
@@ -124,7 +132,15 @@ internal static class AIDenoiseWindowChecks
             Pump(()=>!window.IsEnabled || !window.IsVisible);
             check(window.IsVisible && !window.IsEnabled,"Closing waits for the active AI worker");
             release.Set();Pump(()=>!window.IsVisible);
-        } finally { release.Set();if(window.IsVisible){window.Close();Pump(()=>!window.IsVisible);}app.Shutdown(); }
+        } finally {
+            release.Set();
+            if(window.IsVisible){
+                typeof(MainWindow).GetField("pendingAllReset",flags)!.SetValue(window,null);
+                Settings().AIDenoiseEnabled=false;Call("ResetAITask");Call("CancelTransformDraft");
+                window.Close();Pump(()=>!window.IsVisible);
+            }
+            app.Shutdown();
+        }
     }
     private static void Pump(Func<bool> done)
     {

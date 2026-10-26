@@ -58,13 +58,16 @@ struct UpdateStore {
                   knownString(pending?["choice"], { UpdateInstallChoice(rawValue: $0) != nil }),
                   knownString(failure?["stage"], { UpdatePhase(rawValue: $0) != nil }),
                   object["stateRepairReceipt"] == nil || object["stateRepairReceipt"] is NSNull,
-                  object["recoveryReceipt"] == nil || object["recoveryReceipt"] is NSNull,
                   pending?["backupPath"] == nil || pending?["backupPath"] is NSNull,
                   pending?["previousVersion"] == nil || pending?["previousVersion"] is NSNull,
                   pending?["previousBuild"] == nil || pending?["previousBuild"] is NSNull,
                   !installationPhases.contains(pending?["phase"] as? String ?? ""),
                   !installationPhases.contains(failure?["stage"] as? String ?? "") else {
                 throw UpdateAdapterError(code: "storage", detail: "Unsupported update state cannot be rebuilt")
+            }
+            if let receipt = object["recoveryReceipt"], !(receipt is NSNull) {
+                guard let path = receipt as? String else { throw UpdateAdapterError(code: "storage", detail: "Invalid recovery receipt") }
+                try UpdateDataBackup(dataRoot: directory.deletingLastPathComponent(), updateRoot: directory).verifyCompletedRecovery(path)
             }
             if let pending,
                let pendingData = try? JSONSerialization.data(withJSONObject: pending),
@@ -83,15 +86,16 @@ struct UpdateStore {
                 try requireOrdinary(path)
                 let entries = try FileManager.default.contentsOfDirectory(at: path, includingPropertiesForKeys: nil)
                 if !entries.isEmpty {
-                    guard name == "Backups", knownNonInstallation else {
+                    guard knownNonInstallation else {
                         throw UpdateAdapterError(code: "storage", detail: "Installation or data recovery status is unknown")
                     }
-                    let backups = UpdateDataBackup(dataRoot: directory.deletingLastPathComponent(), updateRoot: directory)
                     for entry in entries {
-                        guard UUID(uuidString: entry.lastPathComponent) != nil else {
+                        let entryName = entry.lastPathComponent
+                        guard UUID(uuidString: entryName) != nil || name == "Backups" &&
+                            entryName.hasPrefix(".staging-") && UUID(uuidString: String(entryName.dropFirst(9))) != nil else {
                             throw UpdateAdapterError(code: "storage", detail: "Unknown backup entry")
                         }
-                        _ = try backups.verify(entry)
+                        try requireOrdinary(entry)
                     }
                 }
             }
@@ -115,10 +119,11 @@ struct UpdateStore {
         let file = try FileHandle(forWritingTo: archive); try file.synchronize(); try file.close()
         guard try repairableState() == expected else { throw UpdateAdapterError(code: "storage", detail: "Update state changed") }
         var next = UpdatePreferences(); next.automaticCheck = false; next.stateRepairReceipt = receipt
+        if let object = try? JSONSerialization.jsonObject(with: expected) as? [String: Any] {
+            next.recoveryReceipt = object["recoveryReceipt"] as? String
+        }
+        // 修复只重建设置；备份和恢复前数据留到健康启动再分别回收或归档。
         try save(next)
-        let backups = UpdateDataBackup(dataRoot: directory.deletingLastPathComponent(), updateRoot: directory)
-        let entries = (try? FileManager.default.contentsOfDirectory(at: directory.appendingPathComponent("Backups"), includingPropertiesForKeys: nil)) ?? []
-        for entry in entries { try? backups.discard(entry) }
         return next
     }
     private func requireOrdinary(_ path: URL) throws {
@@ -149,7 +154,9 @@ struct UpdateDataBackup {
     let updateRoot: URL
 
     func create(previous: String, target: String, previousBuild: String? = nil) throws -> URL {
-        let result = updateRoot.appendingPathComponent("Backups/\(UUID().uuidString)", isDirectory: true)
+        let id = UUID().uuidString
+        let result = updateRoot.appendingPathComponent("Backups/.staging-\(id)", isDirectory: true)
+        let completed = updateRoot.appendingPathComponent("Backups/\(id)", isDirectory: true)
         try FileManager.default.createDirectory(at: result, withIntermediateDirectories: true)
         var files: [String: String] = [:]
         do {
@@ -182,8 +189,11 @@ struct UpdateDataBackup {
                 if let walkError { throw walkError }
             }
             let manifest = Manifest(format: 1, created: Date(), previousVersion: previous, previousBuild: previousBuild, targetVersion: target, files: files)
-            try JSONEncoder().encode(manifest).write(to: result.appendingPathComponent("manifest.json"), options: .atomic)
-            return result
+            let manifestURL = result.appendingPathComponent("manifest.json")
+            try JSONEncoder().encode(manifest).write(to: manifestURL, options: .atomic)
+            try synchronize(manifestURL)
+            try FileManager.default.moveItem(at: result, to: completed)
+            return completed
         } catch { try? FileManager.default.removeItem(at: result); throw error }
     }
 
@@ -221,15 +231,58 @@ struct UpdateDataBackup {
         try FileManager.default.removeItem(at: directory)
     }
 
-    func discardUnreferencedBackups(retaining: String?) throws {
+    func discardUnreferencedBackups(retaining: String?, recoveryReceipt: String? = nil) throws {
         guard !hasPendingRecovery else { return }
+        let retainedBackup = retaining.map { URL(fileURLWithPath: $0).standardizedFileURL }
+        let retainedRecovery = recoveryReceipt.map { URL(fileURLWithPath: $0).standardizedFileURL }
         let root = updateRoot.appendingPathComponent("Backups")
-        guard FileManager.default.fileExists(atPath: root.path) else { return }
-        try requireOrdinary(root)
-        for entry in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
-            where entry.path != retaining {
-            try? discard(entry)
+        if FileManager.default.fileExists(atPath: root.path) {
+            try requireOrdinary(root)
+            for entry in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey])
+                where entry.standardizedFileURL != retainedBackup {
+                let name = entry.lastPathComponent
+                if name.hasPrefix(".staging-"), UUID(uuidString: String(name.dropFirst(9))) != nil {
+                    guard (try? requireOrdinary(entry)) != nil else { continue }
+                    // 留出一天避免干扰另一个仍在复制备份的进程；未发布的 staging 不可能被安装状态引用。
+                    if let modified = try? entry.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+                       Date().timeIntervalSince(modified) >= 86400 { try? FileManager.default.removeItem(at: entry) }
+                } else if UUID(uuidString: name) != nil {
+                    do { try discard(entry) }
+                    catch { try? archive(entry, under: "IncompleteBackups") }
+                }
+            }
         }
+        let recoveries = updateRoot.appendingPathComponent("Recoveries")
+        if FileManager.default.fileExists(atPath: recoveries.path) {
+            try requireOrdinary(recoveries)
+            for entry in try FileManager.default.contentsOfDirectory(at: recoveries, includingPropertiesForKeys: nil)
+                where entry.standardizedFileURL != retainedRecovery && UUID(uuidString: entry.lastPathComponent) != nil {
+                // original/discarded 可能是唯一的新编辑副本，归档而不是作为缓存删除。
+                try? archive(entry, under: "RecoveryArchives")
+            }
+        }
+    }
+
+    private func archive(_ entry: URL, under name: String) throws {
+        try requireOrdinary(entry)
+        let parent = updateRoot.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        try requireOrdinary(parent)
+        let destination = parent.appendingPathComponent(entry.lastPathComponent)
+        guard !FileManager.default.fileExists(atPath: destination.path) else { return }
+        try FileManager.default.moveItem(at: entry, to: destination)
+    }
+
+    func verifyCompletedRecovery(_ path: String) throws {
+        let directory = URL(fileURLWithPath: path).standardizedFileURL
+        guard directory.deletingLastPathComponent() == updateRoot.appendingPathComponent("Recoveries").standardizedFileURL,
+              let id = UUID(uuidString: directory.lastPathComponent) else {
+            throw UpdateAdapterError(code: "recovery", detail: "Invalid recovery receipt location")
+        }
+        try requireOrdinary(directory.deletingLastPathComponent()); try requireOrdinary(directory)
+        let receipt = directory.appendingPathComponent("receipt.json"); try requireOrdinary(receipt)
+        let saved = try JSONDecoder().decode(Recovery.self, from: Data(contentsOf: receipt))
+        guard saved.id == id, saved.restored else { throw UpdateAdapterError(code: "recovery", detail: "Invalid recovery receipt") }
     }
 
     private struct Recovery: Codable {

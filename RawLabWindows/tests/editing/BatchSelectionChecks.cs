@@ -71,6 +71,22 @@ static class BatchSelectionChecks
             Check(exposures.SequenceEqual([.5,1]),"Runner never reads live editor or deleted library look");
             var owned=job.Items[1].Frozen!.Look!;Check(File.Exists(owned),"Task owns copied look");
             journal.Discard(job);Check(!File.Exists(owned) && File.Exists(source) && File.Exists(target),"Cleanup preserves original photos");
+            var aiSettings=new Adjustments { AIDenoiseEnabled=true };store.Save(source,aiSettings.Capture(),null);
+            var capabilityChecks=0;var capabilityAvailable=true;
+            var aiExporter=new BatchSelectionExport(store,journal,edit=>edit.Look,_=>{
+                capabilityChecks++;if(!capabilityAvailable)throw new InvalidOperationException("GPU unavailable");
+            });
+            var aiReview=aiExporter.Prepare(selection,[targetKey],ExportFormat.Png,512,output,_=>null);
+            Check(aiReview.Ready && capabilityChecks==1 && aiReview.Rows[0].Settings!.AIDenoiseEnabled,
+                "RAW collection preflight checks AI capability and retains enabled AI without preparing pixels");
+            capabilityAvailable=false;
+            Rejected(()=>aiExporter.Freeze(selection,aiReview,_=>null),"AI becoming unavailable invalidates collection confirmation");
+            capabilityAvailable=true;
+            var aiJob=aiExporter.Freeze(selection,aiReview,_=>null);
+            Check(aiJob.Items.Single().Frozen!.Settings.AIDenoiseEnabled,"Collection freeze retains AI for export-stage preparation");
+            journal.Discard(aiJob);
+            var unavailable=new BatchSelectionExport(store,journal,edit=>edit.Look,_=>throw new InvalidOperationException("GPU unavailable"));
+            Check(!unavailable.Prepare(selection,[targetKey],ExportFormat.Png,512,output,_=>null).Ready,"Collection preflight reports unavailable AI capability");
             File.Delete(target);selection.RefreshFailures();Check(selection.Failures.ContainsKey(targetKey),"Missing input remains marked per photo");
         }finally{Directory.Delete(root,true);}
         Console.WriteLine("PASS: collection identity, navigation, preflight, revision guards and frozen export");

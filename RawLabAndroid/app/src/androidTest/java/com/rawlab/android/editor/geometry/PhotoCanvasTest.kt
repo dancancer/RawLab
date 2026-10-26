@@ -40,6 +40,23 @@ class PhotoCanvasTest {
     val compose = createComposeRule()
     @get:Rule val languageAndCompose = org.junit.rules.RuleChain.outerRule(LanguageTestRule()).around(compose)
 
+    @Test fun bottomCardOnlyBlocksItsOwnWidthDuringTargetSampling() {
+        val state = PhotoCanvasState()
+        var begins = 0
+        val target = com.rawlab.android.editor.controls.HslTargetActions(
+            state = com.rawlab.android.settings.HslTargetState(enabled = true), begin = { _, _ -> begins++ })
+        compose.setChineseContent { MaterialTheme {
+            Box(Modifier.width(320.dp).height(240.dp)) {
+                PhotoCanvas(fixture(), false, "bottom-card", state, hslTarget = target,
+                    bottomOverlayInset = 0.dp, bottomOverlay = { Box(Modifier.width(80.dp).height(60.dp)) })
+            }
+        } }
+        compose.onNodeWithTag("photo-canvas").performTouchInput {
+            down(Offset(width * .2f, height * .82f)); moveBy(Offset(0f, -24f)); up()
+        }
+        compose.runOnIdle { assertEquals("photo beside the card must remain sampleable", 1, begins) }
+    }
+
     @Test fun viewportCallbackTracksPhysicalSizeButNotResultReplacementOrPan() {
         val state = PhotoCanvasState()
         val original = fixture().neutral

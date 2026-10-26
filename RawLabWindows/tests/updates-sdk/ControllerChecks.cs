@@ -7,16 +7,17 @@ internal static class ControllerChecks
         public string? UnavailableReason => null;
         public UpdateDescriptor Release = new("0.9.1", "19", "windows", "x64", "stable", "https://example.invalid/update.nupkg", 12, null, "Notes");
         public int Checks, Downloads, Installs;
-        public bool RejectSignature, RejectInstall;
+        public bool RejectSignature, RejectInstall, RejectCheck;
         public Exception? TrustError;
         public Task ValidateHostTrustAsync() => TrustError == null ? Task.CompletedTask : Task.FromException(TrustError);
-        public Task<UpdateDescriptor?> CheckAsync(CancellationToken token) { Checks++; return Task.FromResult<UpdateDescriptor?>(Release); }
+        public Task<UpdateDescriptor?> CheckAsync(CancellationToken token) { Checks++; return RejectCheck ? Task.FromException<UpdateDescriptor?>(new IOException("offline")) : Task.FromResult<UpdateDescriptor?>(Release); }
         public Task DownloadAsync(UpdateDescriptor release, Action<int> progress, CancellationToken token) { Downloads++; progress(75); return Task.CompletedTask; }
         public Task VerifyAsync(UpdateDescriptor release, CancellationToken token) => RejectSignature ? Task.FromException(new Exception("Rejected signature")) : Task.CompletedTask;
         public void Install(UpdateDescriptor release, bool restart) { Installs++; if (RejectInstall) throw new IOException("Injected dispatch failure"); }
     }
     internal static async Task Run(Action<bool, string> check)
     {
+        await AutomaticCheckRetries(check);
         await StartupAndQuit(check);
         await StateRepair(check);
         await InstallationFailureBlocksEditing(check);
@@ -74,6 +75,32 @@ internal static class ControllerChecks
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }
 
+    private static async Task AutomaticCheckRetries(Action<bool, string> check)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-check-retry-" + Guid.NewGuid());
+        try {
+            var now = DateTimeOffset.FromUnixTimeSeconds(1800000000);
+            var store = new UpdateStore(root); var adapter = new Adapter { RejectCheck = true };
+            var controller = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14", now: () => now);
+            await controller.CheckAsync(false);
+            check(controller.State.Failure?.Stage == UpdatePhase.Checking, "Check failure persists its checking stage");
+            await controller.CheckAsync(false);
+            check(adapter.Checks == 1, "Failed automatic check respects the daily retry interval");
+            now = now.AddDays(1).AddSeconds(1); adapter.RejectCheck = false;
+            var reopened = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14", now: () => now);
+            await reopened.CheckAsync(false);
+            check(adapter.Checks == 2 && reopened.State.Phase == UpdatePhase.Available, "Failed check retries automatically the next day after reopening");
+            var interrupted = reopened.Preferences.Copy(); interrupted.PendingUpdate.BeginCheck(); store.Save(interrupted);
+            now = now.AddDays(1).AddSeconds(1);
+            reopened = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14", now: () => now);
+            await reopened.CheckAsync(false);
+            check(adapter.Checks == 3, "Interrupted check also retries automatically the next day");
+            adapter.RejectSignature = true; await reopened.DownloadAsync(); now = now.AddDays(1).AddSeconds(1);
+            await reopened.CheckAsync(false);
+            check(adapter.Checks == 3 && reopened.State.Failure?.Stage == UpdatePhase.Verifying, "Verification failure still waits for an explicit retry after a day");
+        } finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
     private static async Task StartupAndQuit(Action<bool,string> check)
     {
         var root=Path.Combine(Path.GetTempPath(),"rawlab-startup-quit-"+Guid.NewGuid());
@@ -85,8 +112,19 @@ internal static class ControllerChecks
             await controller.CheckAsync(true);await controller.DownloadAsync();await controller.ChooseAsync(UpdateInstallChoice.OnQuit);
             check(await controller.PrepareForQuitAsync() && adapter.Installs==0 && controller.State.Choice==UpdateInstallChoice.OnQuit,
                 "Blocked install-on-quit returns to ordinary exit and preserves the installation choice");
-            draft=false;await controller.DownloadAsync();await controller.ChooseAsync(UpdateInstallChoice.OnQuit);
-            check(await controller.PrepareForQuitAsync(),"Unblocked install-on-quit dispatches normally");
+            var changedStore=new UpdateStore(Path.Combine(root,"Changed"));Directory.CreateDirectory(changedStore.DirectoryPath);
+            File.Copy(store.StatePath,changedStore.StatePath);
+            var changedAdapter=new Adapter {Release=adapter.Release with {Version="0.9.2",Build="20",AssetUrl="https://example.invalid/new-update.nupkg"}};
+            var changed=new DesktopUpdateController(changedAdapter,new(),changedStore,"0.8.2","14");
+            await changed.RefreshGateAsync();
+            check(changed.State.Phase==UpdatePhase.Available && changed.State.Choice==UpdateInstallChoice.None && changedAdapter.Downloads==0,
+                "A changed release does not inherit a previous quit choice or its download retry");
+            draft=false;
+            controller=new DesktopUpdateController(adapter,gate,store,"0.8.2","14");
+            await controller.RefreshGateAsync();
+            check(adapter.Checks==2 && adapter.Downloads==2 && controller.State.Choice==UpdateInstallChoice.OnQuit,
+                "Reopening revalidates and prepares the previously chosen package without a manual choice");
+            check(await controller.PrepareForQuitAsync() && adapter.Installs==1,"The next ordinary quit uses the preserved installation choice");
             var path=controller.State.BackupPath!;
             var reopened=new DesktopUpdateController(adapter,new(),store,"0.9.1","19");
             adapter.TrustError=new TimeoutException("Injected trust timeout");

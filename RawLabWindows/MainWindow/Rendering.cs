@@ -212,7 +212,7 @@ public partial class MainWindow
         settings.Processing=ProcessingVersion.SelectedIndex==0 ? ProcessingIdentity.Legacy : ProcessingIdentity.Current;
         MarkEdited();Schedule();
     }
-    private void GpuModeChanged(object sender,SelectionChangedEventArgs e) { if(ready && !syncing && !exporting)Schedule(); }
+    private void GpuModeChanged(object sender,SelectionChangedEventArgs e) { if(ready && !syncing && !exporting) {RefreshAIControls();Schedule();} }
     private void ResetGroupClicked(object sender,RoutedEventArgs e) => RequestReset(new(EditorResetKind.Group,EditorAdjustmentRules.GroupFor(CurrentTool)));
     private void ResetAllClicked(object sender,RoutedEventArgs e) => RequestReset(new(EditorResetKind.All));
     private async void AutoExposureClicked(object sender,RoutedEventArgs e)
