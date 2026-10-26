@@ -43,6 +43,30 @@ void checkLegacyOpponent() {
             transformOpponent(source, actual, matrix);
             require(std::memcmp(expected.data, actual.data, actual.total() * actual.elemSize()) == 0,
                 "Legacy opponent transform differs from v0.8.2 cv::transform");
+#if defined(__aarch64__) || defined(_M_ARM64) || defined(_M_ARM64EC)
+            // 分块依赖 ARM64 上 OpenCV 的舍入与调用边界无关；覆盖行带、尾块和非连续 ROI。
+            for (const int extent : {64, 512, 1024}) {
+                auto tiled = source.clone();
+                for (int y = 0; y < source.rows; y += extent) {
+                    for (int x = 0; x < source.cols; x += extent) {
+                        const cv::Rect region(x, y, std::min(extent, source.cols - x),
+                            std::min(extent, source.rows - y));
+                        auto input = source(region);
+                        auto output = tiled(region);
+                        transformOpponent(input, output, matrix);
+                    }
+                }
+                require(std::memcmp(expected.data, tiled.data, tiled.total() * tiled.elemSize()) == 0,
+                    "ARM64 Legacy tile transform differs bitwise from the released full-frame transform");
+            }
+            auto bands = source.clone();
+            for (int y = 0; y < source.rows; y += 64) {
+                auto band = bands.rowRange(y, std::min(source.rows, y + 64));
+                transformOpponent(band, band, matrix);
+            }
+            require(std::memcmp(expected.data, bands.data, bands.total() * bands.elemSize()) == 0,
+                "ARM64 Legacy in-place row-band transform differs bitwise from full-frame transform");
+#endif
         }
     }
 }

@@ -53,8 +53,7 @@ cv::Matx33f opponent() {
 }
 
 void transformOpponent(const cv::Mat& source,cv::Mat& output,const cv::Matx33f& matrix) {
-    // Legacy 沿用 v0.8.2 的 OpenCV 整图调度，保留 AVX2/FMA 的舍入顺序。
-    // 标量重写或把整图拆成行带/tile 都会改变主段与尾部的边界。
+    // 保留 v0.8.2 的 OpenCV 计算顺序，分块重建也必须使用同一实现。
     cv::transform(source,output,matrix);
 }
 
@@ -489,6 +488,45 @@ cv::Mat filter(const cv::Mat& transformed,const NoiseModel& model,const sony2fuj
     return output;
 }
 
+void filterWorking(cv::Mat& transformed,const sony2fuji::ImageData& source,sony2fuji::ColorSpace space,
+                   const NoiseModel& model,const sony2fuji::WaveletDenoiseOptions& options,
+                   sony2fuji::GpuMode gpuMode,std::atomic<bool>& gpuUsed) {
+    const bool coarseChroma=options.chroma>0 && options.coarse>0;
+    const bool coarseLuma=options.processingVersion!=sony2fuji::ProcessingVersion::Legacy && options.luma>0;
+    const bool coarse=coarseLuma || coarseChroma;
+    const int centerSize=coarse ? 1024 : tileSize;
+    const int margin=coarse ? coarseHalo : halo,alignment=1<<(coarse ? coarseLevels : levels);
+    for (int y=0;y<transformed.rows;y+=centerSize) for (int x=0;x<transformed.cols;x+=centerSize) {
+        const int w=std::min(centerSize,transformed.cols-x),h=std::min(centerSize,transformed.rows-y);
+        // 从不可变 RAW 重建当前 tile，避免保留跨越整图宽度的原始行带。
+        // 反射与对齐均按整张源图计算，与 waveletTilePlane 的边界完全一致。
+        sony2fuji::ImageData original((w+alignment-1)/alignment*alignment+2*margin,
+            (h+alignment-1)/alignment*alignment+2*margin);
+        for (int py=0;py<original.height;++py) {
+            const int sy=cv::borderInterpolate(y-margin+py,source.height,cv::BORDER_REFLECT_101);
+            for (int px=0;px<original.width;++px) {
+                const int sx=cv::borderInterpolate(x-margin+px,source.width,cv::BORDER_REFLECT_101);
+                original.at(px,py)=source.at(sx,sy);
+            }
+        }
+        if (sony2fuji::ColorConverter().convertImage(original,space,sony2fuji::ColorSpace::sRGB)!=sony2fuji::ErrorCode::Success)
+            throw std::runtime_error("Cannot reload wavelet source color space");
+        cv::Mat tile(original.height,original.width,CV_32FC3,original.pixels.data());
+        {
+            const auto normalized=normalize(tile,model);
+            transformOpponent(normalized,tile,opponent());
+        }
+        for (int c=0;c<3;++c) {
+            const bool extended=c==0 ? coarseLuma : coarseChroma;
+            const int radius=extended ? coarseHalo : halo,divisor=extended ? 1<<coarseLevels : 1<<levels;
+            const auto plane=sony2fuji::waveletTilePlane(tile,{margin,margin,w,h},radius,divisor,c);
+            const auto filtered=filterPlane(plane,model,options,c,gpuMode,gpuUsed);
+            for (int py=0;py<h;++py) for (int px=0;px<w;++px)
+                transformed.at<cv::Vec3f>(y+py,x+px)[c]=filtered.at<float>(radius+py,radius+px);
+        }
+    }
+}
+
 void restore(cv::Mat& rgb,cv::Mat filtered,const NoiseModel& model,
              sony2fuji::ProcessingVersion version = sony2fuji::ProcessingVersion::C5V2) {
     cv::Mat normalized;
@@ -523,6 +561,29 @@ void restore(cv::Mat& rgb,cv::Mat filtered,const NoiseModel& model,
             }
         }
     });
+}
+
+void restoreWorking(cv::Mat& filtered,const sony2fuji::ImageData& source,sony2fuji::ColorSpace space,
+                    const NoiseModel& model,sony2fuji::ProcessingVersion version) {
+    constexpr int rowsPerBand=128,margin=12;
+    cv::Mat previous;
+    int previousFirst=0,previousEnd=0;
+    for (int y=0;y<filtered.rows;y+=rowsPerBand) {
+        const int end=std::min(filtered.rows,y+rowsPerBand);
+        const int top=std::max(0,y-margin),bottom=std::min(filtered.rows,end+margin);
+        cv::Mat band=filtered.rowRange(top,bottom).clone();
+        if (top<previousEnd)
+            previous.rowRange(top-previousFirst,previousEnd-previousFirst).copyTo(band.rowRange(0,previousEnd-top));
+        previousEnd=end;previousFirst=std::max(0,end-margin);
+        previous=band.rowRange(previousFirst-top,previousEnd-top).clone();
+        sony2fuji::ImageData original(source.width,bottom-top);
+        std::copy_n(source.pixels.data()+size_t(top)*source.width,original.pixels.size(),original.pixels.data());
+        if (sony2fuji::ColorConverter().convertImage(original,space,sony2fuji::ColorSpace::sRGB)!=sony2fuji::ErrorCode::Success)
+            throw std::runtime_error("Cannot restore wavelet source color space");
+        cv::Mat rgb(original.height,original.width,CV_32FC3,original.pixels.data());
+        restore(rgb,std::move(band),model,version);
+        rgb.rowRange(y-top,end-top).copyTo(filtered.rowRange(y,end));
+    }
 }
 
 #include "eaw_denoise_impl.h"
@@ -675,8 +736,22 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
             if (diagnostics) diagnostics->applied=true;
             return finish(WaveletDenoiseOutcome::Applied, ErrorCode::Success);
         }
+        // OpenCV 4.12 在 ARM64 上关闭手写 SIMD 分支；逐位回归覆盖这两个 opponent 变换。
+        // x86/ARM32 保留整图调度，避免移动向量主段与标量尾部造成 Legacy 舍入变化。
+#if defined(__aarch64__) || defined(_M_ARM64) || defined(_M_ARM64EC)
+        const bool tiledLegacy = reloadable;
+#else
+        constexpr bool tiledLegacy = false;
+#endif
         cv::Mat transformed;
-        {
+        if (tiledLegacy) {
+            transformed=rgb;
+            for (int y=0;y<rgb.rows;y+=64) {
+                auto band=rgb.rowRange(y,std::min(rgb.rows,y+64));
+                const auto normalized=normalize(band,model);
+                transformOpponent(normalized,band,opponent());
+            }
+        } else {
             const cv::Mat normalized=normalize(rgb,model);
             transformOpponent(normalized,transformed,opponent());
         }
@@ -698,14 +773,19 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
             }
         }
         std::atomic<bool> gpuUsed{false};
-        cv::Mat filtered;
-        try { filtered = filter(transformed, model, options, gpuMode, gpuUsed); }
-        catch (const WaveletGpuFailure&) {
+        try {
+            if (tiledLegacy) {
+                filterWorking(transformed,*immutableSource,sourceSpace,model,options,gpuMode,gpuUsed);
+                restoreWorking(transformed,*immutableSource,sourceSpace,model,options.processingVersion);
+            } else {
+                auto filtered=filter(transformed,model,options,gpuMode,gpuUsed);
+                transformed.release();
+                restore(rgb,std::move(filtered),model,options.processingVersion);
+            }
+        } catch (const WaveletGpuFailure&) {
             if (reloadable) { transformed.release(); rgb.release(); image={}; }
             return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::ProcessingError);
         }
-        transformed.release();
-        restore(rgb,std::move(filtered),model,options.processingVersion);
         if (diagnostics) {
             diagnostics->applied=true;
             diagnostics->gpuUsed=gpuUsed.load(std::memory_order_relaxed);
