@@ -46,6 +46,9 @@ static void AIDenoisePersistenceChecks()
     var frozen = BatchJob.Create("photo.arw", snapshot, null, "Neutral");
     Check(JsonSerializer.SerializeToNode(frozen.Copy().Settings)!["AIDenoiseEnabled"]?.GetValue<bool>() == true,
         "Batch snapshot preserves requested AI appearance");
+    frozen.AIBackend=0;
+    var rejectedCpu=false;try{frozen.Validate();}catch(InvalidDataException){rejectedCpu=true;}
+    Check(rejectedCpu,"Legacy CPU AI batch journals are rejected before preflight");
     frozen.AIBackend=3;
     Check(JsonSerializer.Deserialize<BatchJob>(JsonSerializer.Serialize(frozen.Copy()))!.AIBackend==3,
         "Frozen batch preserves requested AI backend through copy and JSON");
@@ -727,6 +730,18 @@ try
     using var cancellation = new CancellationTokenSource();
     BatchRunner.Run(cancelled, journal, false, cancellation.Token, (_, _) => { }, (_, _, _, destination) => { File.WriteAllText(destination, "first"); cancellation.Cancel(); });
     Check(cancelled.Cancelled && cancelled.Items[0].Status == BatchStatus.Succeeded && cancelled.Items[1].Status == BatchStatus.Waiting, "cancel preserves completed output");
+    var duringPreparation = BatchJob.Create(a, saved, null, "Neutral"); duringPreparation.OutputDirectory = output;
+    duringPreparation.Items.Add(BatchItem.Create(a) with { Selected=true });
+    duringPreparation.Items.Add(BatchItem.Create(b) with { Selected=true });
+    using var preparationCancellation = new CancellationTokenSource();
+    var preparedCount = 0;
+    BatchRunner.Run(duringPreparation,journal,false,preparationCancellation.Token,(_,_)=>{},(_,_,_,destination)=>{
+        if(++preparedCount==2) { preparationCancellation.Cancel(); throw new OperationCanceledException(preparationCancellation.Token); }
+        File.WriteAllText(destination,"completed");
+    });
+    Check(duringPreparation.Cancelled && duringPreparation.FailedCount==0 && duringPreparation.Items[0].Status==BatchStatus.Succeeded &&
+        duringPreparation.Items[1].Status==BatchStatus.Waiting,"AI preparation cancellation preserves completed output and keeps the active item retryable");
+    Check(journal.Load()!.Items[1].Status==BatchStatus.Waiting,"AI cancellation saves a retryable journal");
     cancelled.Items[1] = cancelled.Items[1] with { Status = BatchStatus.Running };
     journal.Save(cancelled);
     var recovered = journal.Load()!;

@@ -10,6 +10,8 @@ import Foundation
     var callback: ((UUID, UpdateAdapterEvent) -> Void)?
     var checks = 0, downloads = 0, cancellations = 0, installs = 0
     var rejectInstall = false
+    var trustError: UpdateAdapterError?
+    func validateHostTrust() async throws { if let trustError { throw trustError } }
     func check(token: UUID, emit: @escaping (UUID, UpdateAdapterEvent) -> Void) throws {
         self.token = token; callback = emit; checks += 1; canCheck = false
     }
@@ -28,8 +30,10 @@ import Foundation
         guard value() else { fatalError(message) }; print("PASS: \(message)")
     }
     @MainActor static func main() async throws {
-        try stateRepair()
+        try await automaticCheckRetries()
+        try await stateRepair()
         try await installationFailureBlocksEditing()
+        try await blockedQuitFallsBack()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-update-controller-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let unavailable = DesktopUpdateController(adapter: UnavailableUpdateAdapter("configuration"), gate: UpdateInstallGate(),
@@ -68,7 +72,7 @@ import Foundation
         try FileManager.default.createDirectory(at: edits, withIntermediateDirectories: true)
         let photo = edits.appendingPathComponent("photo.json"); try Data("old data".utf8).write(to: photo)
         let backups = UpdateDataBackup(dataRoot: recoveryRoot, updateRoot: recoveryStore.directory)
-        let saved = try backups.create(previous: "0.8.2", target: "0.9.1", previousBuild: "14")
+        var saved = try backups.create(previous: "0.8.2", target: "0.9.1", previousBuild: "14")
         var failed = UpdatePreferences(); var attempt = failed.pendingUpdate.beginCheck()
         _ = failed.pendingUpdate.found(release, token: attempt); attempt = failed.pendingUpdate.beginDownload()!
         _ = failed.pendingUpdate.preparing(token: attempt); _ = failed.pendingUpdate.verified(token: attempt)
@@ -76,14 +80,24 @@ import Foundation
         failed.pendingUpdate.backupPath = saved.path; failed.pendingUpdate.previousVersion = "0.8.2"; failed.pendingUpdate.previousBuild = "14"
         _ = failed.pendingUpdate.installing(token: attempt); _ = failed.pendingUpdate.awaitingRestart(token: attempt)
         try recoveryStore.save(failed)
-        let healthy = DesktopUpdateController(adapter: FakeUpdateAdapter(), gate: UpdateInstallGate(), store: recoveryStore, currentVersion: "0.9.1", currentBuild: "19")
-        healthy.finishStartupHealthCheck(healthy: true)
+        let healthAdapter = FakeUpdateAdapter()
+        healthAdapter.trustError = UpdateAdapterError(code: "trust_temporary", detail: "Injected timeout")
+        let healthy = DesktopUpdateController(adapter: healthAdapter, gate: UpdateInstallGate(), store: recoveryStore, currentVersion: "0.9.1", currentBuild: "19")
+        await healthy.finishStartupHealthCheck(healthy: true)
+        check(healthy.requiresStartupHealthCheck && healthy.state.phase == .pendingRestart && !healthy.requiresRecovery,
+            "Temporary host assessment leaves the persisted installation pending for retry")
+        healthAdapter.trustError = nil
+        await healthy.finishStartupHealthCheck(healthy: true)
         check(healthy.state.phase == .complete && !healthy.canRestorePreviousData, "A healthy new version never offers automatic data downgrade")
+        check(healthy.state.backupPath == nil && !FileManager.default.fileExists(atPath: saved.path),
+            "Successful health check clears the persisted backup reference and removes the completed backup")
+        saved = try backups.create(previous: "0.8.2", target: "0.9.1", previousBuild: "14")
+        failed.pendingUpdate.backupPath = saved.path
         try recoveryStore.save(failed)
         let newer = DesktopUpdateController(adapter: FakeUpdateAdapter(), gate: UpdateInstallGate(), store: recoveryStore, currentVersion: "0.9.1", currentBuild: "19")
-        newer.finishStartupHealthCheck(healthy: false)
+        await newer.finishStartupHealthCheck(healthy: false)
         check(newer.requiresRecovery && !newer.canCheck && !newer.canRestorePreviousData, "Failed first boot blocks editing and cannot restore old data into the newer app")
-        try malformedFailureStartup(store: recoveryStore, original: newer.preferences)
+        try await malformedFailureStartup(store: recoveryStore, original: newer.preferences)
         let untrusted = DesktopUpdateController(adapter: UnavailableUpdateAdapter("identity"), gate: UpdateInstallGate(), store: recoveryStore, currentVersion: "0.8.2", currentBuild: "14")
         check(!untrusted.canRestorePreviousData, "Untrusted previous application cannot restore data")
         let wrongBuild = DesktopUpdateController(adapter: FakeUpdateAdapter(), gate: UpdateInstallGate(), store: recoveryStore, currentVersion: "0.8.2", currentBuild: "15")
@@ -95,9 +109,92 @@ import Foundation
         check(recovery.recoveryNeedsRestart && recovery.requiresRecovery && recovery.state.phase == .idle && recovery.preferences.skippedVersion == release.identity,
             "Restored data requires reopening and never reports the failed update as complete")
         try checkData(photo, "old data")
+        let orphan = try backups.create(previous: "0.8.2", target: "0.9.1", previousBuild: "14")
         let reopened = DesktopUpdateController(adapter: FakeUpdateAdapter(), gate: UpdateInstallGate(), store: recoveryStore, currentVersion: "0.8.2", currentBuild: "14")
         check(!reopened.requiresRecovery && !reopened.canRestorePreviousData, "Persisted recovery reopens without reusing the cached editor model")
+        check(!FileManager.default.fileExists(atPath: orphan.path), "Fresh startup retries cleanup of verified unreferenced backups")
     }
+    @MainActor static func automaticCheckRetries() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-check-retry-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = UpdateStore(directory: root), adapter = FakeUpdateAdapter()
+        var time = Date(timeIntervalSince1970: 1800000000)
+        let controller = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: store,
+            currentVersion: "0.8.2", currentBuild: "14", now: { time })
+        controller.check(manual: false); adapter.send(.failed("network", "offline"))
+        check(controller.state.failure?.stage == .checking, "Check failure persists its checking stage")
+        controller.check(manual: false)
+        check(adapter.checks == 1, "Failed automatic check respects the daily retry interval")
+        time.addTimeInterval(86401)
+        let reopened = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: store,
+            currentVersion: "0.8.2", currentBuild: "14", now: { time })
+        reopened.check(manual: false)
+        check(adapter.checks == 2 && reopened.state.phase == .checking, "Failed check retries automatically the next day after reopening")
+        // Simulate the process exiting before a check callback arrives.
+        time.addTimeInterval(86401)
+        let afterInterruption = FakeUpdateAdapter()
+        let interrupted = DesktopUpdateController(adapter: afterInterruption, gate: UpdateInstallGate(), store: store,
+            currentVersion: "0.8.2", currentBuild: "14", now: { time })
+        interrupted.check(manual: false)
+        check(afterInterruption.checks == 1, "Interrupted check also retries automatically the next day")
+        let release = UpdateDescriptor(version: "0.9.1", build: "19", platform: "macos", architecture: "arm64", channel: "stable",
+            assetURL: "https://example.invalid/update.zip", size: 12, sha256: nil, notes: "")
+        afterInterruption.send(.found(release)); interrupted.download(); afterInterruption.send(.failed("download", "offline"))
+        time.addTimeInterval(86401); interrupted.check(manual: false)
+        check(afterInterruption.checks == 1 && interrupted.state.failure?.stage == .downloading,
+            "Download failure still waits for an explicit retry after a day")
+    }
+
+    @MainActor static func blockedQuitFallsBack() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-blocked-quit-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let adapter = FakeUpdateAdapter(), gate = UpdateInstallGate(), owner = NSObject()
+        gate.register(owner, status: { UpdateSessionStatus(draft: true) }, save: { true })
+        let controller = DesktopUpdateController(adapter: adapter, gate: gate,
+            store: UpdateStore(directory: root.appendingPathComponent("Updates")), currentVersion: "0.8.2", currentBuild: "14")
+        let release = UpdateDescriptor(version: "0.9.1", build: "19", platform: "macos", architecture: "arm64", channel: "stable",
+            assetURL: "https://example.invalid/update.zip", size: 12, sha256: nil, notes: "")
+        controller.check(manual: true); adapter.send(.found(release)); controller.download()
+        adapter.send(.preparing); adapter.hasPreparedInstaller = true; adapter.send(.verified)
+        controller.choose(.onQuit)
+        let allowed = await withCheckedContinuation { continuation in
+            controller.prepareForQuit { continuation.resume(returning: $0) }
+        }
+        check(allowed && adapter.installs == 0 && !adapter.hasActiveSession,
+            "Blocked install-on-quit cancels the installer and resumes ordinary draft confirmation")
+        check(controller.state.choice == .onQuit, "Skipped installation keeps the user's install-on-quit choice")
+        let noSession = await withCheckedContinuation { continuation in
+            controller.prepareForQuit { continuation.resume(returning: $0) }
+        }
+        check(noSession && controller.state.phase == .available && controller.state.choice == .onQuit,
+            "Ordinary quit without an SDK session preserves the install choice in a resumable state")
+        let preserved = try Data(contentsOf: UpdateStore(directory: root.appendingPathComponent("Updates")).stateURL)
+        let changedStore = UpdateStore(directory: root.appendingPathComponent("Changed"))
+        try FileManager.default.createDirectory(at: changedStore.directory, withIntermediateDirectories: true)
+        try preserved.write(to: changedStore.stateURL)
+        let changedAdapter = FakeUpdateAdapter()
+        let changed = DesktopUpdateController(adapter: changedAdapter, gate: UpdateInstallGate(), store: changedStore,
+            currentVersion: "0.8.2", currentBuild: "14")
+        changed.refreshGate()
+        let newer = UpdateDescriptor(version: "0.9.2", build: "20", platform: "macos", architecture: "arm64", channel: "stable",
+            assetURL: "https://example.invalid/new-update.zip", size: 13, sha256: nil, notes: "")
+        changedAdapter.send(.found(newer))
+        check(changed.state.phase == .available && changed.state.choice == .none && changedAdapter.downloads == 0,
+            "A changed release does not inherit a previous quit choice or its download retry")
+        let nextAdapter = FakeUpdateAdapter()
+        let reopened = DesktopUpdateController(adapter: nextAdapter, gate: UpdateInstallGate(),
+            store: UpdateStore(directory: root.appendingPathComponent("Updates")), currentVersion: "0.8.2", currentBuild: "14")
+        reopened.refreshGate()
+        check(nextAdapter.checks == 1, "A preserved quit choice revalidates the selected release on reopening")
+        nextAdapter.send(.found(release))
+        check(nextAdapter.downloads == 1, "The previously selected release is prepared again without another manual choice")
+        nextAdapter.send(.preparing); nextAdapter.hasPreparedInstaller = true; nextAdapter.send(.verified)
+        let completed = await withCheckedContinuation { continuation in
+            reopened.prepareForQuit { continuation.resume(returning: $0) }
+        }
+        check(completed && nextAdapter.installs == 1, "The next ordinary quit uses the preserved installation choice")
+    }
+
     static func checkData(_ path: URL, _ expected: String) throws {
         let value = try String(contentsOf: path, encoding: .utf8)
         check(value == expected, "Recovery restores the verified backup contents")
@@ -126,7 +223,7 @@ import Foundation
         check(reopened.blocksEditing && reopened.recoveryNeedsRestart, "Restored data remains blocked until the next launch")
     }
 
-    @MainActor static func malformedFailureStartup(store: UpdateStore, original: UpdatePreferences) throws {
+    @MainActor static func malformedFailureStartup(store: UpdateStore, original: UpdatePreferences) async throws {
         defer { try? store.save(original) }
         let document = try JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as! [String: Any]
         for name in ["missing", "null", "incomplete"] {
@@ -138,7 +235,7 @@ import Foundation
             let bytes = try JSONSerialization.data(withJSONObject: damaged); try bytes.write(to: store.stateURL)
             let reopened = DesktopUpdateController(adapter: FakeUpdateAdapter(), gate: UpdateInstallGate(), store: store,
                 currentVersion: "0.9.1", currentBuild: "19")
-            reopened.finishStartupHealthCheck(healthy: true)
+            await reopened.finishStartupHealthCheck(healthy: true)
             check(reopened.storageError != nil && !reopened.canCheck && !reopened.canChooseInstall && !reopened.canRepairState,
                 "Malformed installation failure blocks startup and state reset: \(name)")
             let preserved = try Data(contentsOf: store.stateURL)
@@ -146,7 +243,7 @@ import Foundation
         }
     }
 
-    @MainActor static func stateRepair() throws {
+    @MainActor static func stateRepair() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-controller-repair-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let store = UpdateStore(directory: root.appendingPathComponent("Updates"))
@@ -157,18 +254,18 @@ import Foundation
         check(damaged.storageError != nil && damaged.canRepairState && !damaged.canCheck, "Corrupt pre-install state offers only explicit repair")
         damaged.repairState()
         damaged.setAutomaticCheck(true); damaged.setAutomaticInstall(true); damaged.cancel(); damaged.retry()
-        damaged.finishStartupHealthCheck(healthy: true)
+        await damaged.finishStartupHealthCheck(healthy: true)
         check(damaged.storageError == nil && damaged.recoveryNeedsRestart && damaged.requiresRecovery && !damaged.canCheck && adapter.installs == 0,
             "Repair cannot reopen editing or install in the current process")
         check(!damaged.preferences.automaticCheck && !damaged.preferences.automaticInstall && damaged.preferences.stateRepairReceipt != nil,
             "Recovery actions cannot enable automatic updates or clear the startup receipt")
         let unhealthy = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: store, currentVersion: "0.8.2", currentBuild: "14")
         check(unhealthy.requiresStartupHealthCheck && !unhealthy.requiresRecovery, "Reopening repaired state requires data health validation")
-        unhealthy.finishStartupHealthCheck(healthy: false)
+        await unhealthy.finishStartupHealthCheck(healthy: false)
         check(unhealthy.requiresRecovery && !unhealthy.canCheck && unhealthy.preferences.stateRepairReceipt != nil,
             "Unhealthy user data remains blocked after repair")
         let healthy = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: store, currentVersion: "0.8.2", currentBuild: "14")
-        healthy.finishStartupHealthCheck(healthy: true)
+        await healthy.finishStartupHealthCheck(healthy: true)
         check(!healthy.requiresStartupHealthCheck && !healthy.requiresRecovery && healthy.canCheck && !healthy.preferences.automaticInstall,
             "Only a fresh healthy startup completes explicit state repair")
     }

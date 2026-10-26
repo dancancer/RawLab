@@ -98,7 +98,7 @@ class LookLibraryScreenTest {
                 compose.activity.model.state.value.looks.any { it.id == lookId && it.name == "Transferred Look $token" }
             }
             compose.runOnUiThread {
-                assertTrue(compose.activity.model.beginExport())
+                compose.activity.model.beginExport { assertTrue(it) }
                 compose.activity.model.export(Uri.fromFile(exported), ExportFormat.JPEG)
             }
             compose.waitUntil(30_000) { compose.activity.model.state.value.operation == Operation.NONE }

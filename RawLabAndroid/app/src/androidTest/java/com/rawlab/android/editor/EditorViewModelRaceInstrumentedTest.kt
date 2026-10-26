@@ -73,7 +73,7 @@ class EditorViewModelRaceInstrumentedTest {
             instrumentation.runOnMainSync { model.edit(model.state.value.edits) }
             awaitState(model) { it.canExport }
             instrumentation.runOnMainSync {
-                assertTrue(model.beginExport())
+                model.beginExport { assertTrue(it) }
                 model.updatePreviewSize(896)
                 model.cancelExport()
             }
@@ -149,7 +149,7 @@ class EditorViewModelRaceInstrumentedTest {
             val model = EditorViewModel(context.applicationContext as Application)
             store.put("editor", model)
             model.importPhoto(Uri.fromFile(raw))
-            awaitState(model) { state -> state.photo != null && state.exact && !state.rendering }
+            awaitState(model) { state -> state.photo != null && state.exact && !state.rendering && !state.committingAdjustments }
             InstrumentationRegistry.getInstrumentation().runOnMainSync {
                 model.edit(model.state.value.edits.copy(exposure = .25f))
                 assertTrue(model.state.value.rendering)
@@ -157,7 +157,7 @@ class EditorViewModelRaceInstrumentedTest {
             }
             awaitState(model) { state ->
                 state.looks.any { it.managed && it.name == source.name } &&
-                    state.edits.film != "neutral" && state.exact && !state.rendering
+                    state.edits.film != "neutral" && state.exact && !state.rendering && !state.committingAdjustments
             }
             val importedId = model.state.value.edits.film
             InstrumentationRegistry.getInstrumentation().runOnMainSync {
@@ -521,8 +521,9 @@ class EditorViewModelRaceInstrumentedTest {
             instrumentation.runOnMainSync {
                 stale = model.prepareReset(EditorResetScope.Tool(2)).prepared!!
                 model.edit(model.state.value.edits.copy(exposure = 1f))
-                model.edit(model.state.value.edits.copy(exposure = .75f))
             }
+            awaitState(model) { it.canExport }
+            instrumentation.runOnMainSync { model.edit(model.state.value.edits.copy(exposure = .75f)) }
             awaitState(model) { it.canExport }
             val currentRequest = revision.getLong(model)
             val record = File(directory, "edits.properties").readBytes()
@@ -548,7 +549,7 @@ class EditorViewModelRaceInstrumentedTest {
             instrumentation.runOnMainSync {
                 model.beginDraft(AdjustmentGroup.LENS)
                 assertTrue(model.state.value.draftReady)
-                assertFalse(model.applyDraft())
+                model.applyDraft { assertFalse(it) }
             }
             assertEquals(unchangedRequest, revision.getLong(model))
             assertArrayEquals(unchangedRecord, File(directory, "edits.properties").readBytes())
@@ -560,10 +561,10 @@ class EditorViewModelRaceInstrumentedTest {
             settle(1)
             val draftRequest = revision.getLong(model)
             instrumentation.runOnMainSync {
-                assertTrue(model.applyDraft())
-                assertEquals(draftRequest + 1, revision.getLong(model))
+                model.applyDraft { assertTrue(it) }
             }
             awaitState(model) { it.canExport }
+            assertEquals(draftRequest + 1, revision.getLong(model))
             settle(2)
             assertEquals(model.state.value.edits, EditStore(directory).load(model.state.value.photo!!.identity))
         } finally {
@@ -619,7 +620,7 @@ class EditorViewModelRaceInstrumentedTest {
                 assertTrue(model.commitReset(model.prepareReset(EditorResetScope.Group(EditorAdjustmentGroup.GEOMETRY)).prepared!!))
             }
             awaitState(model) { it.canApplyDraft }
-            instrumentation.runOnMainSync { assertTrue(model.applyDraft()) }
+            instrumentation.runOnMainSync { model.applyDraft { assertTrue(it) } }
             awaitState(model) { it.canExport }
             assertNull(model.state.value.draft)
             assertEquals(GeometrySettings(), model.state.value.edits.geometry)

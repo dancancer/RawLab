@@ -43,6 +43,8 @@ struct OnnxGraph::Impl {
     std::vector<int64_t> outputShape;
 
     Impl(const std::string& path, GraphKind kind, int size, Backend requested) {
+        if (requested == Backend::Cpu && kind != GraphKind::ISP)
+            throw std::invalid_argument("CPU neural inference is not supported");
         if (requested != Backend::Cpu && requested != Backend::DirectML)
             throw std::invalid_argument("ONNX graph requires CPU or DirectML");
         const auto signature = graphSignature(kind, size);

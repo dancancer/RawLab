@@ -53,6 +53,8 @@ internal static class OfflineManagerChecks
             var downloaded=Path.Combine(root,"signed",name);
             check(File.ReadAllBytes(downloaded).SequenceEqual(bytes) && manager.UpdatePendingRestart!=null,
                 "Production signed source works through actual Velopack Check and Download APIs");
+            UpdatePackageVerifier.Verify(downloaded,payload,"");
+            check(true,"Signed-manifest mode accepts the real unsigned vpk package");
             var rejected=false;
             try{UpdatePackageVerifier.Verify(downloaded,payload,trust.PublisherKeySha256);}catch(CryptographicException){rejected=true;}
             check(rejected,"A real unsigned vpk package is rejected by production package Authenticode verification");

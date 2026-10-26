@@ -27,6 +27,7 @@ internal class EditorRenderer(
     private var transformedNeutral: Pair<ComparisonPreviewKey, ReferenceFrame>? = null
 
     fun close() { processor?.close() }
+    fun releaseDecodedRaster() { processor?.releaseRasterCache() }
 
     private fun engine() = processor ?: NativeProcessor(lensDatabase = storage.lensDatabase()).also { processor = it }
 

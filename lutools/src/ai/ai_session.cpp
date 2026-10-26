@@ -24,6 +24,7 @@ void AISession::configure(std::string modelDirectory, std::string cacheDirectory
         stamp_.clear(); runtimeDigest_.clear(); loadedKey_.clear(); package_.reset(); loaded_ = {};
         lastBackend.clear();
     }
+    if (!enabled) { loaded_ = {}; loadedKey_.clear(); lastBackend.clear(); }
     lastError.clear();
 }
 
@@ -36,7 +37,7 @@ std::string AISession::packageStamp() const {
                              "blind_rgb.onnx", "Restormer-LICENSE.txt"}) {
         const auto file = root / name;
         if (!std::filesystem::exists(file)) { result << ":missing:" << name; continue; }
-        result << ':' << sourceIdentityKey(file.u8string());
+        result << ':' << sourceMetadataKey(file.u8string());
     }
     for (const auto* name : {"raw.mlmodelc", "rgb.mlmodelc", "blind_rgb.mlmodelc"}) {
         const auto directory = root / name;
@@ -50,7 +51,7 @@ std::string AISession::packageStamp() const {
             else if (!entry.is_directory()) throw std::runtime_error("Invalid AI model resource type");
         }
         std::sort(files.begin(), files.end());
-        for (const auto& file : files) result << ':' << sourceIdentityKey(file);
+        for (const auto& file : files) result << ':' << sourceMetadataKey(file);
     }
     return result.str();
 }
@@ -61,7 +62,7 @@ void AISession::ensurePackage() {
     if (package_ && stamp == stamp_) return;
     auto package = loadModelPackage(modelDirectory_);
     if (packageStamp() != stamp) throw std::runtime_error("AI model changed during validation");
-    const auto identity = package.digest + ":" + NetworkGraph::runtimeVersion(backend_);
+    const auto identity = package.digest + ":" + runtimeVersion_(backend_);
     runtimeDigest_ = sha256Bytes(identity.data(), identity.size());
     package_ = std::move(package); stamp_ = stamp; loadedKey_.clear(); loaded_ = {};
     } catch (const std::bad_alloc&) { throw; }
@@ -71,46 +72,54 @@ void AISession::ensurePackage() {
     }
 }
 
-std::string AISession::renderKey(const std::string& path, const RAWProcessOptions& options) {
+std::string AISession::renderKey(const std::string& path, const RAWProcessOptions& options, const std::string& sourceIdentity) {
     if (options.useAutoWhiteBalance) {
         lastError = "AI denoising does not support automatic white balance";
         throw Unsupported(lastError);
     }
     ensurePackage();
-    const auto rawKey = rawCacheKey(path, runtimeDigest_, static_cast<int>(backend_));
+    const auto rawKey = rawCacheKeyFromIdentity(sourceIdentity.empty() ? sourceIdentityKey(path) : sourceIdentity, runtimeDigest_, static_cast<int>(backend_));
     return rgbCacheKey(rawKey,options) + ":" + sceneRGBCacheKey(rawKey,options);
 }
 
-const PreparedDenoise& AISession::result(const std::string& path, const RAWProcessOptions& options, const RAWBayerSource* metadata) {
-    const auto key = renderKey(path, options);
-    if (loadedKey_ == key) return loaded_;
-    const auto rawKey = rawCacheKey(path, runtimeDigest_, static_cast<int>(backend_));
-    DenoiseCache cache(cacheDirectory_);
-    std::string rawProducer, rgbProducer;
-    // 只有 prepare 选择路由并发布完整结果，渲染与导出均不触发模型推理。
-    loaded_ = {}; loadedKey_.clear();
-    if (auto scene = cache.load(sceneRGBCacheKey(rawKey,options),CacheKind::SceneRGB,0,0,{},&rgbProducer)) {
-        loaded_.scene = std::move(*scene); loadedKey_ = key; lastError.clear();
-        lastBackend = "SceneRGB=" + rgbProducer;
+const PreparedDenoise& AISession::result(const std::string& path, const RAWProcessOptions& options,
+                                        const RAWBayerSource* metadata, const std::string& sourceIdentity) {
+    const auto identity = sourceIdentity.empty() ? sourceIdentityKey(path) : sourceIdentity;
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        const auto key = renderKey(path, options, identity);
+        if (loadedKey_ == key) return loaded_;
+        const auto rawKey = rawCacheKeyFromIdentity(identity, runtimeDigest_, static_cast<int>(backend_));
+        DenoiseCache cache(cacheDirectory_);
+        std::string rawProducer, rgbProducer;
+        // 只有 prepare 发布完整结果，渲染与导出不触发模型推理。
+        loaded_ = {}; loadedKey_.clear();
+        if (auto scene = cache.load(sceneRGBCacheKey(rawKey,options),CacheKind::SceneRGB,0,0,{},&rgbProducer)) {
+            loaded_.scene = std::move(*scene); loadedKey_ = key; lastError.clear();
+            lastBackend = "SceneRGB=" + rgbProducer;
+            return loaded_;
+        }
+        auto raw = metadata ? cache.load(rawKey, CacheKind::Raw, metadata->width, metadata->height, {}, &rawProducer) : std::optional<Tensor>{};
+        auto rgb = raw ? cache.load(rgbCacheKey(rawKey,options), CacheKind::RGB, metadata->width, metadata->height,
+            sha256Bytes(raw->values.data(), raw->values.size() * sizeof(float)), &rgbProducer) : std::optional<Tensor>{};
+        if (!raw || !rgb) {
+            // 准备任务使用新会话；驱动/适配器身份变化或首次查询失败后，只刷新并重查一次。
+            const auto runtime = package_->digest + ":" + runtimeVersion_(backend_);
+            const auto current = sha256Bytes(runtime.data(), runtime.size());
+            if (attempt == 0 && current != runtimeDigest_) { runtimeDigest_ = current; continue; }
+            lastError = "AI result is missing or invalid; prepare this photo before rendering or exporting";
+            throw NotReady(lastError);
+        }
+        const int width = metadata->width, height = metadata->height;
+        RAWBayerOverride replacement{width, height, std::move(raw->values), {}};
+        const size_t pixels = size_t(width) * height;
+        replacement.cameraCorrection.resize(pixels);
+        for (size_t i = 0; i < pixels; ++i)
+            replacement.cameraCorrection[i] = RGB(rgb->values[i], rgb->values[pixels+i], rgb->values[2*pixels+i]);
+        loaded_.bayer = std::move(replacement); loadedKey_ = key; lastError.clear();
+        lastBackend = producers(rawProducer, rgbProducer);
         return loaded_;
     }
-    auto raw = metadata ? cache.load(rawKey, CacheKind::Raw, metadata->width, metadata->height, {}, &rawProducer) : std::optional<Tensor>{};
-    // RGB 修正必须对应实际 RAW 输出；损坏后重算的结果不同则不能混用旧修正。
-    auto rgb = raw ? cache.load(rgbCacheKey(rawKey,options), CacheKind::RGB, metadata->width, metadata->height,
-        sha256Bytes(raw->values.data(), raw->values.size() * sizeof(float)), &rgbProducer) : std::optional<Tensor>{};
-    if (!raw || !rgb) {
-        lastError = "AI result is missing or invalid; prepare this photo before rendering or exporting";
-        throw NotReady(lastError);
-    }
-    const int width = metadata->width, height = metadata->height;
-    RAWBayerOverride replacement{width, height, std::move(raw->values), {}};
-    const size_t pixels = size_t(width) * height;
-    replacement.cameraCorrection.resize(pixels);
-    for (size_t i = 0; i < pixels; ++i)
-        replacement.cameraCorrection[i] = RGB(rgb->values[i], rgb->values[pixels+i], rgb->values[2*pixels+i]);
-    loaded_.bayer = std::move(replacement); loadedKey_ = key; lastError.clear();
-    lastBackend = producers(rawProducer, rgbProducer);
-    return loaded_;
+    throw NotReady("GPU AI result is unavailable");
 }
 
 PrepareReport AISession::prepare(const std::string& path, const RAWProcessOptions& options, const JobProgress& progress) {

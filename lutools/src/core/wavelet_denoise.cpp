@@ -53,20 +53,8 @@ cv::Matx33f opponent() {
 }
 
 void transformOpponent(const cv::Mat& source,cv::Mat& output,const cv::Matx33f& matrix) {
-    output.create(source.size(),CV_32FC3);
-    // OpenCV 的 AVX2 主段与标量尾部采用不同的乘加顺序；分块会移动尾部位置。
-    // Legacy 重载必须逐位一致，因此整图、行带和 tile 共用固定的逐像素计算。
-    cv::parallel_for_(cv::Range(0,source.rows),[&](const cv::Range& range) {
-        for (int y=range.start;y<range.end;++y) {
-            const auto* input=source.ptr<cv::Vec3f>(y);
-            auto* target=output.ptr<cv::Vec3f>(y);
-            for (int x=0;x<source.cols;++x) {
-                const auto value=input[x];
-                for (int c=0;c<3;++c)
-                    target[x][c]=(matrix(c,0)*value[0]+matrix(c,1)*value[1])+matrix(c,2)*value[2];
-            }
-        }
-    });
+    // 保留 v0.8.2 的 OpenCV 计算顺序，分块重建也必须使用同一实现。
+    cv::transform(source,output,matrix);
 }
 
 std::vector<int> positions(int length) {
@@ -574,6 +562,7 @@ void restore(cv::Mat& rgb,cv::Mat filtered,const NoiseModel& model,
         }
     });
 }
+
 void restoreWorking(cv::Mat& filtered,const sony2fuji::ImageData& source,sony2fuji::ColorSpace space,
                     const NoiseModel& model,sony2fuji::ProcessingVersion version) {
     constexpr int rowsPerBand=128,margin=12;
@@ -747,8 +736,15 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
             if (diagnostics) diagnostics->applied=true;
             return finish(WaveletDenoiseOutcome::Applied, ErrorCode::Success);
         }
+        // OpenCV 4.12 在 ARM64 上关闭手写 SIMD 分支；逐位回归覆盖这两个 opponent 变换。
+        // x86/ARM32 保留整图调度，避免移动向量主段与标量尾部造成 Legacy 舍入变化。
+#if defined(__aarch64__) || defined(_M_ARM64) || defined(_M_ARM64EC)
+        const bool tiledLegacy = reloadable;
+#else
+        constexpr bool tiledLegacy = false;
+#endif
         cv::Mat transformed;
-        if (reloadable) {
+        if (tiledLegacy) {
             transformed=rgb;
             for (int y=0;y<rgb.rows;y+=64) {
                 auto band=rgb.rowRange(y,std::min(rgb.rows,y+64));
@@ -777,19 +773,18 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
             }
         }
         std::atomic<bool> gpuUsed{false};
-        if (reloadable) {
-            try { filterWorking(transformed,*immutableSource,sourceSpace,model,options,gpuMode,gpuUsed); }
-            catch (const WaveletGpuFailure&) {
-                transformed.release(); rgb.release(); image={};
-                return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::ProcessingError);
+        try {
+            if (tiledLegacy) {
+                filterWorking(transformed,*immutableSource,sourceSpace,model,options,gpuMode,gpuUsed);
+                restoreWorking(transformed,*immutableSource,sourceSpace,model,options.processingVersion);
+            } else {
+                auto filtered=filter(transformed,model,options,gpuMode,gpuUsed);
+                transformed.release();
+                restore(rgb,std::move(filtered),model,options.processingVersion);
             }
-            restoreWorking(transformed,*immutableSource,sourceSpace,model,options.processingVersion);
-        } else {
-            cv::Mat filtered;
-            try { filtered = filter(transformed, model, options, gpuMode, gpuUsed); }
-            catch (const WaveletGpuFailure&) { return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::ProcessingError); }
-            transformed.release();
-            restore(rgb,std::move(filtered),model,options.processingVersion);
+        } catch (const WaveletGpuFailure&) {
+            if (reloadable) { transformed.release(); rgb.release(); image={}; }
+            return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::ProcessingError);
         }
         if (diagnostics) {
             diagnostics->applied=true;

@@ -139,7 +139,7 @@ class RenderedDngInstrumentedTest {
             single = DocumentsContract.createDocument(context.contentResolver, parent, ExportFormat.DNG.mimeType,
                 "single-${UUID.randomUUID()}.dng")!!
             ownedOutputs += single!!
-            compose.runOnUiThread { assertTrue(model.beginExport()); model.export(single, ExportFormat.DNG, 128) }
+            compose.runOnUiThread { model.beginExport { assertTrue(it); model.export(single, ExportFormat.DNG, 128) } }
             compose.waitUntil(300_000) { model.state.value.canExport || model.state.value.error != null }
             assertNull(model.state.value.error)
             val singleBytes = context.contentResolver.openInputStream(single!!)!!.use { it.readBytes() }

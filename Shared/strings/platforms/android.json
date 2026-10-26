@@ -4067,6 +4067,28 @@
       "source": "无效的清晰度或去朦胧参数",
       "file": "editor_strings.xml",
       "types": []
+    },
+    "hsl_target_active": {
+      "source": "目标调整：{0}",
+      "formats": [
+        "%1$s"
+      ],
+      "file": "editor_strings.xml",
+      "types": [
+        "s"
+      ]
+    },
+    "hsl_target_exit": {
+      "source": "退出目标调整",
+      "formats": [],
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "hsl_target_pan_hint": {
+      "source": "拖动照片调整颜色；退出目标模式后可平移。",
+      "formats": [],
+      "file": "editor_strings.xml",
+      "types": []
     }
   },
   "overrides": {

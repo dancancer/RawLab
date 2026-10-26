@@ -96,7 +96,7 @@ object AdjustmentTransfer {
         put(AdjustmentField.CLARITY, s.clarity)
         put(AdjustmentField.DEHAZE, s.dehaze)
         for (field in AdjustmentField.entries) field.hslLocation?.let { (axis, channel) -> put(field, s.renderHsl.value(axis, channel)) }
-    }
+    }.mapValues { it.value.canonicalZero() }
     internal fun sourceEffective(value: Double, field: AdjustmentField, recipe: AdjustmentRecipeContext?): Double {
         val scale = recipe?.strength ?: 1.0
         if (field.hslLocation != null) return (value * if ((recipe?.settingsVersion ?: 2) >= 3) scale else 1.0).coerceIn(-100.0, 100.0)

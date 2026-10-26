@@ -146,18 +146,4 @@ Tensor runTiles(const Tensor& input, TileGeometry geometry, int outputChannels,
     return output;
 }
 
-Tensor runTilesWithFallback(const Tensor& input, TileGeometry geometry, int outputChannels,
-                            const PredictTile& primary, const PredictTile& cpu,
-                            InferenceReport& report, const Progress& progress) {
-    report = {};
-    try { return runTiles(input, geometry, outputChannels, primary, progress); }
-    catch (const Cancelled&) { throw; }
-    catch (const std::runtime_error& error) {
-        if (!cpu) throw;
-        const std::string reason = error.what();
-        auto result = runTiles(input, geometry, outputChannels, cpu, progress);
-        report.fallbackUsed = true; report.fallbackReason = reason;
-        return result;
-    }
-}
 } // namespace sony2fuji::ai

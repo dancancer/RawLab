@@ -213,6 +213,12 @@ extension EditMemoryTests {
                 check(true, "raster custom WB effective no-op leaves stored values alone")
             } else { fatalError("raster custom WB generated a no-op candidate") }
         }
+        var rasterRecipe = RawSettings.default
+        rasterRecipe.masterRecipeID = "fixture-recipe"; rasterRecipe.tint = 18
+        check(!EditorAdjustmentRules.isModified(.group(.color), snapshot: PhotoEditState(settings: rasterRecipe), context: raster),
+              "raster recipe tint does not mark the color group as modified")
+        check(EditorAdjustmentRules.isModified(.group(.color), snapshot: PhotoEditState(settings: rasterRecipe), context: context),
+              "RAW recipe tint still marks the color group as modified")
         var rasterAuxiliary = rasterWB
         rasterAuxiliary.photoEffects.grainSize = 61
         rasterAuxiliary.denoise.chroma = 72

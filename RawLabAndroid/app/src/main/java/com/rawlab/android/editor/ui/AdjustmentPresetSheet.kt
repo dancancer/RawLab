@@ -42,6 +42,9 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
     var loaded by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var creating by remember { mutableStateOf(saving) }
+    var captureGeneration by remember { mutableIntStateOf(0) }
+    fun close() { captureGeneration++; onClose() }
+    DisposableEffect(model) { onDispose { captureGeneration++ } }
     var rename by remember { mutableStateOf<AdjustmentPreset?>(null) }
     var deleting by remember { mutableStateOf<AdjustmentPreset?>(null) }
     var overwrite by remember { mutableStateOf<Pair<AdjustmentPreset, AdjustmentPayload>?>(null) }
@@ -55,14 +58,14 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
         try { action(); finish() } catch (failure: Exception) { error = presetErrorMessage(failure) }
     }
     LaunchedEffect(model) { reload() }
-    ModalBottomSheet(onDismissRequest = onClose,
+    ModalBottomSheet(onDismissRequest = ::close,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         EditorSheetSystemBars()
         Column(Modifier.fillMaxWidth().fillMaxHeight(.94f).imePadding().padding(horizontal = 20.dp).testTag("preset-root")) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(if (creating) R.string.preset_save else if (rename != null) R.string.preset_rename else R.string.preset_library),
                     Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                TextButton(onClick = onClose, modifier = Modifier.testTag("preset-close")) { Text(stringResource(R.string.message_close)) }
+                TextButton(onClick = ::close, modifier = Modifier.testTag("preset-close")) { Text(stringResource(R.string.message_close)) }
             }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -77,18 +80,23 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
                         keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }))
                     val validName = AdjustmentPreset.normalizedName(name).isNotEmpty()
                     if (creating) AdjustmentScopeEditor(stringResource(R.string.preset_save), "preset-save", validName && editor.controlsEnabled) { scope ->
-                        try {
-                            val payload = model.capturePresetAdjustments(scope)
-                            try { model.presetStore.create(name, payload); finish() }
-                            catch (duplicate: AdjustmentPresetException) {
-                                if (duplicate.reason == PresetFailure.DUPLICATE_NAME && duplicate.existing != null)
-                                    overwrite = duplicate.existing to payload
-                                else throw duplicate
-                            }
-                        } catch (failure: Exception) { error = presetErrorMessage(failure) }
+                        val savedName = name
+                        val generation = ++captureGeneration
+                        model.capturePresetAdjustments(scope) capture@ { captured ->
+                            if (captureGeneration != generation) return@capture
+                            try {
+                                val payload = captured.getOrThrow()
+                                try { model.presetStore.create(savedName, payload); finish() }
+                                catch (duplicate: AdjustmentPresetException) {
+                                    if (duplicate.reason == PresetFailure.DUPLICATE_NAME && duplicate.existing != null)
+                                        overwrite = duplicate.existing to payload
+                                    else throw duplicate
+                                }
+                            } catch (failure: Exception) { error = presetErrorMessage(failure) }
+                        }
                     } else Button(onClick = { rename?.let { expected -> operation { model.presetStore.rename(expected, name) } } },
                         enabled = validName, modifier = Modifier.testTag("preset-rename-save")) { Text(stringResource(R.string.preset_rename_action)) }
-                    TextButton(onClick = { creating = false; rename = null; error = null; name = "" }, modifier = Modifier.testTag("preset-cancel")) {
+                    TextButton(onClick = { captureGeneration++; creating = false; rename = null; error = null; name = "" }, modifier = Modifier.testTag("preset-cancel")) {
                         Text(stringResource(R.string.cancel))
                     }
                 } else {

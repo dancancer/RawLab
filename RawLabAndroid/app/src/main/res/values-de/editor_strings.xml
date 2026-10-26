@@ -157,11 +157,14 @@
     <string name="grading_reset_message">"Color-Grading für Schatten, Mitteltöne und Lichter zurücksetzen?"</string>
     <string name="grading_reset_zone">"Aktuellen Tonwertbereich zurücksetzen"</string>
     <string name="hsl_target">"Zielgerichtete Anpassung"</string>
+    <string name="hsl_target_active">"Gezielte Anpassung: %1$s"</string>
     <string name="hsl_target_axis">"Anpassungsachse"</string>
+    <string name="hsl_target_exit">"Gezielte Anpassung beenden"</string>
     <string name="hsl_target_failed">"Die Farbe konnte nicht erfasst werden. Versuchen Sie es erneut."</string>
     <string name="hsl_target_gray">"Diese Farbe liegt zu nahe an Grau, um einen Farbbereich auszuwählen."</string>
     <string name="hsl_target_instructions">"Wählen Sie eine Farbe im Foto und ziehen Sie nach oben oder unten"</string>
     <string name="hsl_target_outside">"Wählen Sie eine Farbe im bearbeiteten Foto."</string>
+    <string name="hsl_target_pan_hint">"Foto ziehen, um Farben anzupassen. Zum Verschieben den Zielmodus beenden."</string>
     <string name="hsl_target_ranges">"Betroffene Farbbereiche: %1$s"</string>
     <string name="hsl_target_stale">"Die Vorschau hat sich geändert. Wählen Sie die Farbe erneut."</string>
     <string name="hsl_target_unavailable">"Dieses Pixel kann nicht erfasst werden."</string>

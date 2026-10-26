@@ -49,6 +49,16 @@ import Foundation
         try check(backups.hasPendingRecovery, "Recovery stays blocked until its completion is persisted")
         try backups.finishRecovery(receipt.path)
         try check(!backups.hasPendingRecovery, "Persisted recovery can be finalized before reopening editing")
+        var recovered = UpdatePreferences(); recovered.recoveryReceipt = receipt.path
+        var damagedRecovery = try JSONSerialization.jsonObject(with: JSONEncoder().encode(recovered)) as! [String: Any]
+        damagedRecovery["automaticCheck"] = "broken"
+        try JSONSerialization.data(withJSONObject: damagedRecovery).write(to: store.stateURL)
+        let repairedRecovery = try store.repairState(expected: store.repairableState())
+        try check(repairedRecovery.recoveryReceipt == receipt.path && FileManager.default.fileExists(atPath: receipt.path),
+            "Completed recovery receipt does not block preference repair or lose its data link")
+        try backups.discardUnreferencedBackups(retaining: backup.path + "/.", recoveryReceipt: receipt.path + "/.")
+        try check(FileManager.default.fileExists(atPath: backup.path) && FileManager.default.fileExists(atPath: receipt.path),
+            "Equivalent referenced paths preserve backup and recovery links during cleanup")
         try Data("latest format".utf8).write(to: source)
         try check(rejected { _ = try backups.restore(backup, afterMove: { name in
             if name == "Edits" { throw UpdateAdapterError(code: "test", detail: "Injected failure") }
@@ -99,6 +109,34 @@ import Foundation
         try check(rejected { _ = try store.repairableState() }, "Partial installation state remains blocked even without its backup")
         try Data(#"{"pendingUpdate":{"previousVersion":"0.8.2"}}"#.utf8).write(to: store.stateURL)
         try check(rejected { _ = try store.repairableState() }, "Previous installation identity blocks ambiguous state repair")
+        try damaged.write(to: store.stateURL)
+        let orphanManager = UpdateDataBackup(dataRoot: root, updateRoot: store.directory)
+        let orphan = try orphanManager.create(previous: "0.8.2", target: "0.9.1")
+        try Data(#"{"automaticCheck":"broken","pendingUpdate":{"format":1,"phase":"idle"}}"#.utf8).write(to: store.stateURL)
+        try check(rejected { _ = try store.repairableState() } && FileManager.default.fileExists(atPath: orphan.path),
+            "Incomplete installation state cannot prove a backup is orphaned")
+        var nonInstallation = try JSONSerialization.jsonObject(with: JSONEncoder().encode(UpdatePreferences())) as! [String: Any]
+        nonInstallation["automaticCheck"] = "broken"
+        try JSONSerialization.data(withJSONObject: nonInstallation).write(to: store.stateURL)
+        let partialID = UUID().uuidString, recoveryID = UUID().uuidString, stagedID = UUID().uuidString
+        let partial = store.directory.appendingPathComponent("Backups/\(partialID)")
+        let recovery = store.directory.appendingPathComponent("Recoveries/\(recoveryID)/original/Edits")
+        let staged = store.directory.appendingPathComponent("Backups/.staging-\(stagedID)")
+        for path in [partial, recovery, staged] { try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true) }
+        try Data("unfinished copy".utf8).write(to: partial.appendingPathComponent("part.json"))
+        try Data("unique newer edit".utf8).write(to: recovery.appendingPathComponent("new.json"))
+        try Data("staged copy".utf8).write(to: staged.appendingPathComponent("part.json"))
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-172800)], ofItemAtPath: staged.path)
+        _ = try store.repairState(expected: store.repairableState())
+        try check(FileManager.default.fileExists(atPath: orphan.path),
+            "Repair preserves backup evidence until a healthy startup can clean it")
+        try orphanManager.discardUnreferencedBackups(retaining: nil)
+        try check(!FileManager.default.fileExists(atPath: orphan.path) && !FileManager.default.fileExists(atPath: staged.path),
+            "Healthy cleanup removes verified orphan backups and abandoned staging copies")
+        try check(Data(contentsOf: store.directory.appendingPathComponent("IncompleteBackups/\(partialID)/part.json")) == Data("unfinished copy".utf8),
+            "Old incomplete backups are quarantined rather than deleted")
+        try check(Data(contentsOf: store.directory.appendingPathComponent("RecoveryArchives/\(recoveryID)/original/Edits/new.json")) == Data("unique newer edit".utf8),
+            "Inactive recovery data is archived without losing newer edits")
         try damaged.write(to: store.stateURL)
         let backups = store.directory.appendingPathComponent("Backups/prior")
         try FileManager.default.createDirectory(at: backups, withIntermediateDirectories: true)

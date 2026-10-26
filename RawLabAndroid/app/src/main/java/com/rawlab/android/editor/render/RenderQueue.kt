@@ -46,6 +46,12 @@ class RenderQueue<T, R>(
         }
     }
 
+    /** 生命周期操作与渲染串行，但不能像预览请求一样被合并丢弃。 */
+    fun performAfterPending(work: () -> Unit) = synchronized(lock) {
+        check(!closed)
+        worker.execute(work)
+    }
+
     override fun close() = synchronized(lock) {
         if (!closed) {
             closed = true

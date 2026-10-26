@@ -10,10 +10,10 @@ extension EditorModel {
         return HSLTargetRevision(source: hslSourceRevision, request: UInt64(accepted.id))
     }
     func beginHSLTarget(_ point: CGPoint, keyDelta: Double? = nil) {
-        cancelHSLTarget()
         guard hslTargetActive, ParameterValueField.commitPendingInputs(), !busy, !previewOutdated, let work = hslAcceptedRequest?.value,
               let revision = hslTargetRevision, settings == hslAcceptedSettings,
               work.source == file.map({ MacReferenceSource($0, raster: RenderEngine.isRasterInput($0)) }) else { hslTargetNotice = .stale; return }
+        cancelHSLTarget()
         let before = settings, source = sourceRevision, axis = hslTargetAxis
         let token = hslTargetInteraction.begin(before: before.hslSettings, axis: axis, revision: revision)
         hslTargetPoint = point; hslTargetNotice = nil
@@ -54,12 +54,19 @@ extension EditorModel {
     }
     func cancelHSLTarget() {
         hslTargetInteraction.cancel()
-        hslTargetPoint = nil; hslTargetNotice = nil
+        hslTargetPoint = nil; hslTargetNotice = nil; hslPendingKeyDelta = 0
         if hslTargetHistoryActive { hslTargetHistoryActive = false; cancelAdjustmentInteraction() }
     }
     func keyHSLTarget(_ delta: Double) {
         guard !hslTargetInteraction.isDragging, let point = hslTargetPoint else { return }
         if hslTargetInteraction.isWaiting { hslTargetInteraction.accumulateReleased(delta: delta); return }
+        if busy { hslPendingKeyDelta += delta; return }
+        beginHSLTarget(point, keyDelta: delta)
+    }
+    func resumeHSLTargetKeys() {
+        guard !busy, !previewOutdated, hslTargetActive, let point = hslTargetPoint,
+              hslPendingKeyDelta != 0, !hslTargetInteraction.isDragging, !hslTargetInteraction.isWaiting else { return }
+        let delta = hslPendingKeyDelta; hslPendingKeyDelta = 0
         beginHSLTarget(point, keyDelta: delta)
     }
     func rejectHSLTarget() { cancelHSLTarget(); hslTargetNotice = .outside }

@@ -94,6 +94,13 @@ class WorkflowContractTests(unittest.TestCase):
         ])
         self.assertEqual(jobs["ios"]["runs-on"], ["self-hosted", "macOS", "ARM64", "rawlab-apple"])
 
+    def test_intel_full_checks_do_not_require_licensed_gpu_models(self):
+        mac = self.workflow["jobs"]["macos"]
+        prepare = next(step for step in mac["steps"] if step.get("name") == "Prepare GPU AI inputs for full checks")
+        self.assertEqual(prepare["if"], "needs.changes.outputs.checks == 'full' && matrix.arch == 'arm64'")
+        self.assertEqual({entry["suite"] for entry in macos_matrix("full") if entry["arch"] == "x86_64"},
+                         {"core", "agent", "render"})
+
     def test_actions_and_artifact_paths_are_constrained(self):
         for name, job in self.workflow["jobs"].items():
             if name in ("changes", "result"):

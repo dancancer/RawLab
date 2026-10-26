@@ -22,7 +22,9 @@
 "AI 降噪失败：%@" = "AI denoising failed: %@";
 "AI 降噪已取消。" = "AI denoising cancelled.";
 "AI 降噪暂不支持复制。请选择自定义范围，只复制其他调整。" = "AI denoising cannot be copied yet. Choose Custom to copy other adjustments.";
+"AI 降噪结果连续未就绪，请重试。" = "AI denoise results are still unavailable. Please retry.";
 "AI 降噪（实验）" = "AI denoise (experimental)";
+"Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。" = "Agent recipes do not support AI denoise. Turn off AI denoise first.";
 "DCP 使用三光源 HueSatMap，暂不支持转换。" = "The DCP uses a three-illuminant HueSatMap, which is not supported for conversion yet.";
 "DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。" = "The DCP contains unsupported spatial gains, HDR, or RGB-table processing and cannot be converted.";
 "DCP 文件或外观数据超过安全大小限制。" = "The DCP file or look data exceeds the safe size limit.";
@@ -40,6 +42,7 @@
 "GitHub 仓库" = "GitHub repository";
 "HSL" = "HSL";
 "Mac 需要同架构、已签名并公证的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。" = "Mac requires a signed and notarized app for the same architecture. Windows requires an x64 per-user Setup installer. Migrate old ZIP installations from the official release page to a version that supports updates first.";
+"Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。" = "Mac requires an app with the same architecture and matching signing identity. Windows requires an x64 per-user Setup installation. For an older ZIP version, first install an update-capable version from the official releases page.";
 "PNG · 16-bit…" = "PNG · 16-bit…";
 "RAW 照片" = "RAW Photo";
 "RAW 降噪" = "RAW noise reduction";
@@ -325,6 +328,7 @@
 "拉直" = "Straighten";
 "拍摄参数" = "Capture Settings";
 "拍摄时设置" = "As-Shot Setting";
+"拖动照片调整颜色；退出目标模式后可平移。" = "Drag the photo to adjust color. Exit target mode to pan.";
 "拖动边角裁切，拖动画面内移动选区。" = "Drag a corner to crop; drag inside the selection to move it.";
 "指定长边" = "Specify long edge";
 "按各自调整导出" = "Export with individual adjustments";
@@ -488,6 +492,7 @@
 "正在准备编辑画布…" = "Preparing Editing Canvas…";
 "正在取色…" = "Sampling…";
 "正在处理 RAW 噪声" = "Processing RAW noise";
+"正在处理更新，编辑暂不可用。" = "An update is in progress. Editing is temporarily unavailable.";
 "正在处理颜色噪声" = "Processing color noise";
 "正在安装更新…" = "Installing update…";
 "正在导出" = "Exporting";
@@ -572,6 +577,7 @@
 "目标所需的外观不可用，请先导入外观。" = "The required look is unavailable. Import it first.";
 "目标无法保留未选参数，请调整复制范围。" = "The target cannot preserve unselected settings. Change the copy scope.";
 "目标调整" = "Targeted adjustment";
+"目标调整：%@" = "Target adjustment: %@";
 "目标：%@ 张照片" = "Target photos: %@";
 "直方图" = "Histogram";
 "确认并冻结任务" = "Confirm and freeze task";
@@ -715,6 +721,7 @@
 "返回调整后" = "Return to after";
 "返回选片集合" = "Return to photo collection";
 "这些修改尚未应用。应用并离开，放弃修改，或继续编辑。" = "These changes have not been applied. Apply them and leave, discard them, or keep editing.";
+"退出目标调整" = "Exit target adjustment";
 "适合窗口" = "Fit to window";
 "选择 %@" = "Select %@";
 "选择一组照片，再同步调整或逐张微调。" = "Choose photos, then sync adjustments or fine-tune each photo.";

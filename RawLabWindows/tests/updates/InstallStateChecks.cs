@@ -34,8 +34,12 @@ internal static class InstallStateChecks
         var again = state.BeginCheck(); state.Found(release, again); var auto = state.BeginDownload()!.Value;
         state.Preparing(auto); state.Verified(auto); state.Choose(UpdateInstallChoice.AutomaticOnQuit); state.DisableAutomaticInstallation();
         check(state.Phase == UpdatePhase.Available && !state.Installing(auto), "Turning automatic install off revokes the queued attempt");
-        var cancelled = state.BeginDownload()!.Value; state.Cancel();
+        var cancelled = state.BeginDownload()!.Value;
+        state.BackupPath = "obsolete"; state.PreviousVersion = "0.8.2"; state.PreviousBuild = "14";
+        state.Cancel();
         check(!state.Received(1, cancelled) && !state.Preparing(cancelled), "Cancelled callbacks cannot revive state");
+        check(state.BackupPath == null && state.PreviousVersion == null && state.PreviousBuild == null,
+            "Cancelled attempts release obsolete backup references");
 
         var gate = new UpdateInstallGate(); var front = new object(); var other = new object();
         var status = new UpdateSessionStatus(Draft: true); var calls = 0; var succeeds = false;

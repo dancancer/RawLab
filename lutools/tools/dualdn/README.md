@@ -1,8 +1,8 @@
-# DualDn 原生实验构建
+# DualDn 原生 GPU 构建
 
 此工具把固定的 DualDn Big 权重转换为 RAW、官方 ISP、RGB 三个 ONNX 图。
 Python 只用于转换和核验。Mac 应用用原生 Core ML 执行可选的 RAW/RGB float32 网络，
-官方 ISP 和 CPU 回退通过 ONNX Runtime C++ API 执行。
+官方 ISP 通过 ONNX Runtime C++ API 执行；神经网络不支持 CPU 模式或 CPU 回退。
 设计和颜色边界见 [原照片内降噪契约](../../../docs/architecture/dualdn-inline-denoise.md)。
 
 ## 准备模型
@@ -35,13 +35,13 @@ python3 lutools/tools/dualdn/export_coreml.py \
   --package "$DUALDN_PACKAGE" --output "$DUALDN_NATIVE_PACKAGE"
 ```
 
-该目录包含 CPU 图及 `raw.mlmodelc`、`rgb.mlmodelc`，构建时将
+该目录包含 ONNX 图及 `raw.mlmodelc`、`rgb.mlmodelc`，构建时将
 `RAWLAB_DUALDN_MODEL_DIR` 指向它。转换固定为 macOS 14 MLProgram、float32、CPU/GPU，
 不启用 float16 或 ANE。当前已核验 PyTorch 2.10.0 的导出结果；coremltools 9.0
 会提示该 PyTorch 版本超出其已测试范围，因此转换仍必须通过内置数值检查。
 原生文件逐个记录大小和 SHA-256；应用加载时校验，不在用户设备上转换模型。
 
-## 构建 Mac 实验版
+## 构建 Mac GPU 验证版
 
 准备匹配目标架构的官方 ONNX Runtime 1.23.2 C/C++ 分发包，然后在仓库根目录运行：
 
@@ -53,21 +53,21 @@ bash RawLabMac/build.sh
 ```
 
 其他构建选项仍遵循 [Mac 构建说明](../../../RawLabMac/README.md)。
-如需仅含 CPU 图的实验包，将模型目录改为 `$DUALDN_PACKAGE`；该包的 Auto 会使用 CPU。
-`RAWLAB_DUALDN` 默认关闭；普通构建不需要模型或 ONNX Runtime。
+仅含 ONNX 图的包不能用于 Mac AI 运行；必须包含原生 Core ML 图。
+开发构建的 `RAWLAB_DUALDN` 默认关闭；发布开关强制要求 AI 模型与运行库，见[桌面发布流程](../../../docs/process/desktop-release.md)。
 实验构建验证模型后，把模型和动态库放入应用资源/Frameworks，并保留上游许可。
 Mac 运行验收覆盖 Apple Silicon；Intel 和移动端未验证。Windows 的 DirectML 构建与
 硬件要求见 [Windows AI 降噪说明](../../../RawLabWindows/README.md#实验性-ai-降噪)。
 
 在“细节 → 降噪”中打开“AI 降噪（实验）”。首次完整计算后才保存启用状态。
 默认使用 Auto：Apple Silicon/macOS 14 及以上优先执行原生 Core ML 网络，
-官方 AHD/ISP 保持 CPU；缺少原生模型或后端执行失败时完整重跑该阶段的 CPU 路径。
+官方 AHD/ISP 保持 CPU；缺少原生模型或后端执行失败时直接失败，不重跑 CPU 网络。
 Core ML 的 CPU/GPU 调度不代表每个算子都在 GPU 上运行。首次耗时取决于设备和后端，
-CPU 回退可能需要数十分钟；取消在分块边界生效。
+AI CPU 模式不受支持，也不属于产品验证矩阵；取消在分块边界生效。
 曝光、外观和裁剪复用结果，改变白平衡只重做 RGB 阶段；镜头校正改变时重做通用 RGB
 路径。准备期间不能导出或复制设置。
 重新打开已启用的照片会读缓存，缺失/损坏时重建；失败或取消后可以重试或关闭 AI。
-批量导出只消费已经准备好的结果，缺失结果按照片报告失败，不偷偷启动整批 AI 推理。
+批量预检使用各目标的实际设置；普通图片的 AI 目标在预检排除，RAW 目标在预检和导出前准备对应结果。
 
 缓存位于当前用户的 `Caches/RawLab/DualDn`，DualDn 保存未白平衡 Bayer 和相机空间 RGB 修正，
 通用 RGB 路径另存已执行镜头/方向变换的线性 sRGB 修正，不混用两种坐标。
@@ -136,8 +136,8 @@ RAWLAB_BUILD_DIR="$RAWLAB_BUILD_DIR" bash RawLabMac/tests/ai-denoise.sh
 
 `ai-denoise.sh MODEL_DIR RAW CACHE_DIR` 还会验证 Auto 原生缓存的真实后端、缓存复用、普通降噪旁路、曝光编辑、
 原尺寸预览/PNG 导出一致性以及 WB 失效。它不把视口缩小后的结果声称为原尺寸像素参考。
-末尾追加 `cpu` 或 `coreml` 可检查对应显式后端缓存。`dualdn_native_tests MODEL_DIR` 检查包内原生网络的
-固定数值门槛、输入校验、ISP CPU 路径、Auto 回退和强制 Core ML 失败语义。
+末尾追加 `coreml` 可检查显式 GPU 后端缓存。`dualdn_native_tests MODEL_DIR` 检查包内原生网络的
+固定数值门槛、输入校验、ISP CPU 路径及 GPU 失败不回退的语义。
 `dualdn_onnx_tests FIXTURE_DIR coreml --diagnostic MODEL_DIR` 可用独立原生包回放已冻结的真实张量。
 
 `check_real_tensors.py` 接受外部 JSON case 列表（`id/path/model/iso/noise_new/parameter_origin/cross_body`），
@@ -148,6 +148,6 @@ RAWLAB_BUILD_DIR="$RAWLAB_BUILD_DIR" bash RawLabMac/tests/ai-denoise.sh
 
 DualDn 的固定上游许可为 CC BY-NC 4.0（Copyright 2024 OpenImagingLab），
 Restormer v1.0 原始许可为 Academic Public License（非商业用途），ONNX Runtime 为 MIT。
-原文保留在实验应用的 `Licenses/DualDn`。
+原文保留在应用的 `Licenses/DualDn`。
 本转换保留原始权重，没有训练或微调；变更包括拆图、固定尺寸、分块运行和 RawLab
 颜色桥接。上游模型及派生产物保留其许可，不因宿主项目许可而重新授权。

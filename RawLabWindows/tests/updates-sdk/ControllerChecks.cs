@@ -7,15 +7,19 @@ internal static class ControllerChecks
         public string? UnavailableReason => null;
         public UpdateDescriptor Release = new("0.9.1", "19", "windows", "x64", "stable", "https://example.invalid/update.nupkg", 12, null, "Notes");
         public int Checks, Downloads, Installs;
-        public bool RejectSignature, RejectInstall;
-        public Task<UpdateDescriptor?> CheckAsync(CancellationToken token) { Checks++; return Task.FromResult<UpdateDescriptor?>(Release); }
+        public bool RejectSignature, RejectInstall, RejectCheck;
+        public Exception? TrustError;
+        public Task ValidateHostTrustAsync() => TrustError == null ? Task.CompletedTask : Task.FromException(TrustError);
+        public Task<UpdateDescriptor?> CheckAsync(CancellationToken token) { Checks++; return RejectCheck ? Task.FromException<UpdateDescriptor?>(new IOException("offline")) : Task.FromResult<UpdateDescriptor?>(Release); }
         public Task DownloadAsync(UpdateDescriptor release, Action<int> progress, CancellationToken token) { Downloads++; progress(75); return Task.CompletedTask; }
         public Task VerifyAsync(UpdateDescriptor release, CancellationToken token) => RejectSignature ? Task.FromException(new Exception("Rejected signature")) : Task.CompletedTask;
         public void Install(UpdateDescriptor release, bool restart) { Installs++; if (RejectInstall) throw new IOException("Injected dispatch failure"); }
     }
     internal static async Task Run(Action<bool, string> check)
     {
-        StateRepair(check);
+        await AutomaticCheckRetries(check);
+        await StartupAndQuit(check);
+        await StateRepair(check);
         await InstallationFailureBlocksEditing(check);
         var root = Path.Combine(Path.GetTempPath(), "rawlab-update-controller-" + Guid.NewGuid().ToString("N"));
         try
@@ -48,10 +52,10 @@ internal static class ControllerChecks
                 "Re-admission creates a verified data backup before installer dispatch");
             var manifestPath = Path.Combine(later.State.BackupPath!, "manifest.json"); var validManifest = File.ReadAllText(manifestPath);
             File.WriteAllText(manifestPath, "{\"Format\":2,\"Files\":{}}");
-            later.FinishStartupHealthCheck(true);
+            await later.FinishStartupHealthCheckAsync(true);
             check(later.State.Phase == UpdatePhase.Failed && later.RecoveryError != null, "Corrupt backup routes first boot to recovery instead of crashing");
             File.WriteAllText(manifestPath, validManifest);
-            MalformedFailureStartup(store, later.Preferences, check);
+            await MalformedFailureStartup(store, later.Preferences, check);
             check(!later.CanRestorePreviousData, "A process that already opened editing cannot restore cached data in place");
             var wrongVersion = new DesktopUpdateController(adapter, new(), store, "0.9.1", "19");
             check(wrongVersion.RequiresRecovery && !wrongVersion.CanCheck && !wrongVersion.CanRestorePreviousData,
@@ -69,6 +73,68 @@ internal static class ControllerChecks
             check(!reopenedAfterRecovery.RequiresRecovery && !reopenedAfterRecovery.CanRestorePreviousData, "Persisted recovery permits a fresh editor on the next launch");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    private static async Task AutomaticCheckRetries(Action<bool, string> check)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-check-retry-" + Guid.NewGuid());
+        try {
+            var now = DateTimeOffset.FromUnixTimeSeconds(1800000000);
+            var store = new UpdateStore(root); var adapter = new Adapter { RejectCheck = true };
+            var controller = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14", now: () => now);
+            await controller.CheckAsync(false);
+            check(controller.State.Failure?.Stage == UpdatePhase.Checking, "Check failure persists its checking stage");
+            await controller.CheckAsync(false);
+            check(adapter.Checks == 1, "Failed automatic check respects the daily retry interval");
+            now = now.AddDays(1).AddSeconds(1); adapter.RejectCheck = false;
+            var reopened = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14", now: () => now);
+            await reopened.CheckAsync(false);
+            check(adapter.Checks == 2 && reopened.State.Phase == UpdatePhase.Available, "Failed check retries automatically the next day after reopening");
+            var interrupted = reopened.Preferences.Copy(); interrupted.PendingUpdate.BeginCheck(); store.Save(interrupted);
+            now = now.AddDays(1).AddSeconds(1);
+            reopened = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14", now: () => now);
+            await reopened.CheckAsync(false);
+            check(adapter.Checks == 3, "Interrupted check also retries automatically the next day");
+            adapter.RejectSignature = true; await reopened.DownloadAsync(); now = now.AddDays(1).AddSeconds(1);
+            await reopened.CheckAsync(false);
+            check(adapter.Checks == 3 && reopened.State.Failure?.Stage == UpdatePhase.Verifying, "Verification failure still waits for an explicit retry after a day");
+        } finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    private static async Task StartupAndQuit(Action<bool,string> check)
+    {
+        var root=Path.Combine(Path.GetTempPath(),"rawlab-startup-quit-"+Guid.NewGuid());
+        try {
+            var adapter=new Adapter();var gate=new UpdateInstallGate();var owner=new object();var draft=true;
+            gate.Register(owner,()=>new(Draft:draft),()=>true);
+            var store=new UpdateStore(Path.Combine(root,"Updates"));
+            var controller=new DesktopUpdateController(adapter,gate,store,"0.8.2","14");
+            await controller.CheckAsync(true);await controller.DownloadAsync();await controller.ChooseAsync(UpdateInstallChoice.OnQuit);
+            check(await controller.PrepareForQuitAsync() && adapter.Installs==0 && controller.State.Choice==UpdateInstallChoice.OnQuit,
+                "Blocked install-on-quit returns to ordinary exit and preserves the installation choice");
+            var changedStore=new UpdateStore(Path.Combine(root,"Changed"));Directory.CreateDirectory(changedStore.DirectoryPath);
+            File.Copy(store.StatePath,changedStore.StatePath);
+            var changedAdapter=new Adapter {Release=adapter.Release with {Version="0.9.2",Build="20",AssetUrl="https://example.invalid/new-update.nupkg"}};
+            var changed=new DesktopUpdateController(changedAdapter,new(),changedStore,"0.8.2","14");
+            await changed.RefreshGateAsync();
+            check(changed.State.Phase==UpdatePhase.Available && changed.State.Choice==UpdateInstallChoice.None && changedAdapter.Downloads==0,
+                "A changed release does not inherit a previous quit choice or its download retry");
+            draft=false;
+            controller=new DesktopUpdateController(adapter,gate,store,"0.8.2","14");
+            await controller.RefreshGateAsync();
+            check(adapter.Checks==2 && adapter.Downloads==2 && controller.State.Choice==UpdateInstallChoice.OnQuit,
+                "Reopening revalidates and prepares the previously chosen package without a manual choice");
+            check(await controller.PrepareForQuitAsync() && adapter.Installs==1,"The next ordinary quit uses the preserved installation choice");
+            var path=controller.State.BackupPath!;
+            var reopened=new DesktopUpdateController(adapter,new(),store,"0.9.1","19");
+            adapter.TrustError=new TimeoutException("Injected trust timeout");
+            await reopened.FinishStartupHealthCheckAsync(true);
+            check(reopened.RequiresStartupHealthCheck && !reopened.RequiresRecovery && File.Exists(Path.Combine(path,"manifest.json")),
+                "Temporary trust failure preserves pending installation and backup for retry");
+            adapter.TrustError=null;await reopened.FinishStartupHealthCheckAsync(true);
+            check(reopened.State.Phase==UpdatePhase.Complete && reopened.State.BackupPath==null && !Directory.Exists(path),
+                "Successful health retry clears persisted backup reference before removing the backup");
+        } finally { if(Directory.Exists(root))Directory.Delete(root,true); }
     }
 
     private static async Task InstallationFailureBlocksEditing(Action<bool, string> check)
@@ -89,11 +155,15 @@ internal static class ControllerChecks
             check(reopened.BlocksEditing && reopened.CanRestorePreviousData, "Reopening offers recovery while editing remains blocked");
             await reopened.RestorePreviousDataAsync();
             check(reopened.BlocksEditing && reopened.RecoveryNeedsRestart, "Restored data remains blocked until the next launch");
+            var orphan = new UpdateDataBackup(root, store.DirectoryPath).Create("0.8.2", "0.9.1", "14");
+            var finished = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
+            check(!finished.RequiresRecovery && !Directory.Exists(orphan),
+                "Fresh startup retries cleanup of verified unreferenced backups");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
 
-    private static void StateRepair(Action<bool, string> check)
+    private static async Task StateRepair(Action<bool, string> check)
     {
         var root = Path.Combine(Path.GetTempPath(), "rawlab-controller-repair-" + Guid.NewGuid().ToString("N"));
         try
@@ -102,24 +172,24 @@ internal static class ControllerChecks
             File.WriteAllText(store.StatePath, "{broken"); var adapter = new Adapter();
             var damaged = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14");
             check(damaged.StorageError != null && damaged.CanRepairState && !damaged.CanCheck, "Corrupt pre-install state offers explicit repair");
-            damaged.RepairState(); damaged.SetAutomaticCheck(true); damaged.SetAutomaticInstall(true); damaged.Cancel(); damaged.FinishStartupHealthCheck(true);
+            damaged.RepairState(); damaged.SetAutomaticCheck(true); damaged.SetAutomaticInstall(true); damaged.Cancel(); await damaged.FinishStartupHealthCheckAsync(true);
             check(damaged.StorageError == null && damaged.RecoveryNeedsRestart && damaged.RequiresRecovery && !damaged.CanCheck && adapter.Installs == 0,
                 "Repair cannot reopen editing or install in the current process");
             check(!damaged.Preferences.AutomaticCheck && !damaged.Preferences.AutomaticInstall && damaged.Preferences.StateRepairReceipt != null,
                 "Recovery actions cannot enable automatic updates or clear the receipt");
             var unhealthy = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14");
             check(unhealthy.RequiresStartupHealthCheck && !unhealthy.RequiresRecovery, "Reopening repaired state requires data health validation");
-            unhealthy.FinishStartupHealthCheck(false);
+            await unhealthy.FinishStartupHealthCheckAsync(false);
             check(unhealthy.RequiresRecovery && !unhealthy.CanCheck && unhealthy.Preferences.StateRepairReceipt != null,
                 "Unhealthy user data remains blocked after repair");
-            var healthy = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14"); healthy.FinishStartupHealthCheck(true);
+            var healthy = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14"); await healthy.FinishStartupHealthCheckAsync(true);
             check(!healthy.RequiresStartupHealthCheck && !healthy.RequiresRecovery && healthy.CanCheck && !healthy.Preferences.AutomaticInstall,
                 "Only a fresh healthy startup completes explicit state repair");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
 
-    private static void MalformedFailureStartup(UpdateStore store, UpdatePreferences original, Action<bool, string> check)
+    private static async Task MalformedFailureStartup(UpdateStore store, UpdatePreferences original, Action<bool, string> check)
     {
         var document = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(original))!;
         try
@@ -132,7 +202,7 @@ internal static class ControllerChecks
                 else pending["Failure"] = new System.Text.Json.Nodes.JsonObject { ["Stage"] = (int)UpdatePhase.PendingRestart };
                 var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(damaged); File.WriteAllBytes(store.StatePath, bytes);
                 var reopened = new DesktopUpdateController(new Adapter(), new(), store, "0.9.1", "19");
-                reopened.FinishStartupHealthCheck(true);
+                await reopened.FinishStartupHealthCheckAsync(true);
                 check(reopened.StorageError != null && !reopened.CanCheck && !reopened.CanChooseInstall && !reopened.CanRepairState,
                     "Malformed installation failure blocks startup and state reset: " + name);
                 check(File.ReadAllBytes(store.StatePath).SequenceEqual(bytes), "Blocked startup preserves the damaged failure record: " + name);

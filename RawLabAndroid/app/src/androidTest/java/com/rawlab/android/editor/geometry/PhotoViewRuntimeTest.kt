@@ -210,7 +210,7 @@ class PhotoViewRuntimeTest {
             }
             compose.waitUntil(180_000) { model.state.value.draftReady || model.state.value.error != null }
             assertNull(model.state.value.error)
-            compose.runOnUiThread { assertTrue(model.applyDraft()) }
+            compose.runOnUiThread { model.applyDraft { assertTrue(it) } }
             ready()
             if (!raster) {
                 compose.runOnUiThread {
@@ -219,7 +219,7 @@ class PhotoViewRuntimeTest {
                 }
                 compose.waitUntil(180_000) { model.state.value.draftReady || model.state.value.error != null }
                 assertNull(model.state.value.error)
-                compose.runOnUiThread { assertTrue(model.applyDraft()) }
+                compose.runOnUiThread { model.applyDraft { assertTrue(it) } }
                 ready()
             }
             val neutralBeforeTone = model.state.value.preview!!.neutral

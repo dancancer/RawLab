@@ -243,6 +243,7 @@
 "拍摄时设置" = "As-Shot Setting";
 "拍摄时：%.0f K · 色调 %+.0f" = "As Shot: %.0f K · Tint %+.0f";
 "拖动灵敏度为普通模式的四分之一。" = "Dragging uses one quarter of the normal sensitivity.";
+"拖动照片调整颜色；退出目标模式后可平移。" = "Drag the photo to adjust color. Exit target mode to pan.";
 "拖动边角裁切，拖动画面内移动选区。" = "Drag a corner to crop; drag inside the selection to move it.";
 "指定长边" = "Specify long edge";
 "按每张照片" = "Per Photo";
@@ -418,6 +419,7 @@
 "目标无法保留未选参数，请调整复制范围。" = "The target cannot preserve unselected settings. Change the copy scope.";
 "目标照片" = "Target Photos";
 "目标调整" = "Targeted adjustment";
+"目标调整：%@" = "Target adjustment: %@";
 "目标：%@ 张照片" = "Target photos: %@";
 "确认并冻结任务" = "Confirm and freeze task";
 "移除" = "Remove";
@@ -521,6 +523,7 @@
 "返回批量集合" = "Return to batch collection";
 "返回调整后" = "Return to after";
 "进入纯预览" = "Enter immersive preview";
+"退出目标调整" = "Exit target adjustment";
 "退出纯预览" = "Exit immersive preview";
 "适合窗口" = "Fit to window";
 "选择" = "Select";

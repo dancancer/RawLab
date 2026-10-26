@@ -75,7 +75,8 @@ public sealed record CollectionExportReview(IReadOnlyList<string> SelectionIDs,I
     public bool Ready=>Rows.Count>0 && Rows.All(row=>row.Error==null && row.Record!=null && row.Settings!=null);
 }
 
-public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Func<SavedEdit,string?> resolveLook)
+public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Func<SavedEdit,string?> resolveLook,
+    Action<string>? validateAI=null)
 {
     public CollectionExportReview Prepare(BatchSelectionSession selection,IReadOnlyCollection<string> skipping,
         ExportFormat format,int? longEdge,string outputDirectory,Func<string,string?> activeFailure)
@@ -89,7 +90,10 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                 photo.Validate();var record=store.VersionedState(photo.Path);
                 if(!record.Identity.SameFile(photo.Identity))throw new EditPersistenceConflict();
                 var settings=(record.Edit?.Settings.Restore() ?? PhotoInput.PrepareInputSettings(photo.Path,new Adjustments())).Capture();
-                if(settings.AIDenoiseEnabled)throw new InvalidOperationException(Loc.Text("请先关闭 AI 降噪，再创建逐张导出任务。"));
+                if(settings.AIDenoiseEnabled) {
+                    if(!PhotoInput.IsRaw(photo.Path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
+                    validateAI?.Invoke(photo.Path);
+                }
                 var look=record.Edit is {} edit ? resolveLook(edit) : null;
                 if((record.Edit?.Look!=null || settings.MasterRecipeID!=null) && look==null)throw new FileNotFoundException(Loc.Text("外观不可用。"));
                 var hash=look==null ? null : BatchFrozenSettings.Checksum(look);
@@ -113,6 +117,10 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                 if(!current.SameAs(row.Record))throw new EditPersistenceConflict();
                 var expected=(current.Edit?.Settings.Restore() ?? PhotoInput.PrepareInputSettings(row.Photo.Path,new Adjustments())).Capture();
                 if(!expected.SameAs(row.Settings!))throw new EditPersistenceConflict();
+                if(expected.AIDenoiseEnabled) {
+                    if(!PhotoInput.IsRaw(row.Photo.Path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
+                    validateAI?.Invoke(row.Photo.Path);
+                }
                 if(row.Look!=null && BatchFrozenSettings.Checksum(row.Look)!=row.LookSHA256)
                     throw new InvalidOperationException(Loc.Text("外观已变化，请重新检查。"));
             }

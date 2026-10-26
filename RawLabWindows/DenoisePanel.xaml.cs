@@ -41,7 +41,7 @@ public partial class DenoisePanel : UserControl
     private void ResetClicked(object sender,RoutedEventArgs e){if(!syncing && IsEnabled)ResetRequested?.Invoke();}
     private void Set(int axis,double number,bool interactive)=>Publish(axis switch {
         0=>value with {Luma=number},1=>value with {Chroma=number},_=>value with {Coarse=number}},interactive);
-    internal void RefreshAI(bool visible,bool enabled,bool canStart,AIDenoiseState state)
+    internal void RefreshAI(bool visible,bool enabled,bool canStart,AIDenoiseState state,string? unavailableHint=null,bool cpuPreview=false)
     {
         syncing=true;
         AISurface.Visibility=visible ? Visibility.Visible : Visibility.Collapsed;
@@ -59,8 +59,9 @@ public partial class DenoisePanel : UserControl
             AIDenoiseStatus.Ready when enabled=>Loc.Text("已应用 AI 降噪；曝光和外观调整复用结果。"),
             AIDenoiseStatus.Cancelled=>Loc.Text("AI 降噪已取消。"),
             AIDenoiseStatus.Failed=>state.Error ?? Loc.Text("AI 降噪失败"),
-            _=>Loc.Text(canStart ? "支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。" : "此照片或构建尚不能使用 AI 降噪。")
+            _=>unavailableHint ?? Loc.Text(canStart ? "支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。" : "此照片或构建尚不能使用 AI 降噪。")
         };
+        if(cpuPreview)AIStatus.Text+="\n"+Loc.Text("普通显影使用 CPU；AI 降噪仍使用硬件 GPU。");
         if(enabled)AIStatus.Text+="\n"+Loc.Text("普通降噪参数已保留，关闭 AI 降噪即可恢复。");
         syncing=false;
     }

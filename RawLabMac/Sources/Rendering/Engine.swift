@@ -245,6 +245,11 @@ final class RenderEngine {
         }
     }
 
+    static func validateAIInput(_ url: URL) throws {
+        guard !isRasterInput(url) else { throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。")) }
+        guard aiAvailable, bundledAIModel != nil else { throw RenderError.aiFailed(L10n.text("此构建未安装 AI 降噪模型。")) }
+    }
+
     private func configureAI(enabled: Bool) throws {
         if enabled && (!Self.aiAvailable || aiModelDirectory == nil) {
             throw RenderError.aiFailed(L10n.text("此构建未安装 AI 降噪模型。"))

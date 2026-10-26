@@ -6,10 +6,11 @@ A native SwiftUI/AppKit desktop editor sharing the C++ pipeline with the CLI and
 
 ## 功能预览 / Preview
 
-可选实验构建提供原照片内的 DualDn AI 降噪，默认构建关闭。适用 RAW、模型准备、
-后台处理、缓存和已知限制见 [DualDn 构建与使用说明](../lutools/tools/dualdn/README.md)。
-Optional experimental builds provide inline DualDn AI denoising. See the linked guide for
-supported RAW inputs, model packaging, background processing and validation limits.
+正式发布构建要求打包 DualDn 与 Restormer，并只使用 GPU AI 后端；开发构建默认关闭。
+适用 RAW、模型准备、后台处理、缓存和已知限制见 [DualDn 构建与使用说明](../lutools/tools/dualdn/README.md)，
+签名与发布配置见[桌面发布流程](../docs/process/desktop-release.md)。
+Release builds require packaged DualDn/Restormer models and a GPU AI backend.
+Development builds keep AI optional. The linked guides cover inputs, packaging and validation limits.
 
 单张及批量导出新增“DNG · 渲染型”。完整渲染当前外观、白平衡、曝光、明暗、HSL、
 降噪、锐化、暗角和颗粒后，以输出参考的线性 sRGB 浮点 RGB 写入 DNG 1.4。
@@ -230,6 +231,11 @@ See the [shared contract](../lutools/docs/color-contract.md#gpu-denoising).
 
 RAW 样片不再随仓库分发。运行真实 RAW 测试前设置 `RAWLAB_TEST_RAW=/path/to/sample.ARW`；
 独立 CMake 构建使用 `-DSONY2FUJI_TEST_RAW=/path/to/sample.ARW`。下面的历史报告可能引用已删除的旧样片。
+
+启用 AI 的原生构建可运行 `bash RawLabMac/tests/ai-batch-native.sh "$MODEL_DIR" "$RAWLAB_TEST_RAW"`。
+该测试使用隔离的应用资源与缓存，验证轻量预检、普通图片排除、导出阶段 GPU 准备的进度与取消、
+继续导出、集合快照、缓存复用和关闭 AI；
+不会运行 CPU 神经网络，也不修改原片或用户数据。
 
 验证文档中的 `/tmp` 和 `.impeccable/review` 路径记录本机产物，不随 Git 发布；本地 RAW 样片也不随本次提交上传。缺少可选样片时，CMake 会跳过对应测试。
 

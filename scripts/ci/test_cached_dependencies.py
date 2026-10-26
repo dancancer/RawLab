@@ -63,7 +63,7 @@ class CachedMacTests(unittest.TestCase):
             root = Path(directory)
             scripts = root / "RawLabMac"
             scripts.mkdir()
-            for name in ("build.sh", "build-env.sh"):
+            for name in ("build.sh", "build-env.sh", "release-config.sh"):
                 shutil.copy2(ROOT / "RawLabMac" / name, scripts / name)
             for name in ("build-dependencies.sh", "build-chroma-dependency.sh",
                          "build-wavelet-dependency.sh", "build-tiff-dependency.sh"):

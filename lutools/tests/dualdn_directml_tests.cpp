@@ -49,8 +49,11 @@ int main(int argc, char** argv) {
             } catch (const std::runtime_error&) { if (hardware) throw; rejected = true; }
             require(hardware || rejected, "Force accepted missing DirectML hardware");
 #ifdef _WIN32
-            NetworkGraph automatic(package, kind, Backend::Auto);
-            if (!hardware) require(automatic.backend() == "CPU" && !automatic.fallbackReason().empty(), "Auto did not report CPU fallback");
+            bool autoRejected = false;
+            try { NetworkGraph automatic(package, kind, Backend::Auto);
+                require(hardware && automatic.backend() == "DirectML", "Auto accepted a CPU backend"); }
+            catch (const std::runtime_error&) { if (hardware) throw; autoRejected = true; }
+            require(hardware || autoRejected, "Auto accepted missing GPU hardware");
 #endif
         }
         NetworkGraph isp(package, GraphKind::ISP, Backend::DirectML);

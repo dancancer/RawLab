@@ -71,7 +71,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onEdit: (EditSettings, Boolean) -> Unit, onRetry: () -> Unit,
     onExport: () -> Unit, onMessageDismiss: () -> Unit, onLicenses: () -> Unit, onGpuChange: (Boolean) -> Unit,
     onSaveRetry: () -> Unit = {},
-    adjustmentReloadRequired: Boolean = false, onReloadAdjustments: () -> Boolean = { false },
+    adjustmentReloadRequired: Boolean = false, onReloadAdjustments: ((Boolean) -> Unit) -> Unit = { it(false) },
     onCancelAdjustment: () -> Unit = {},
     canUndoAdjustment: Boolean = false, canRedoAdjustment: Boolean = false, canPasteAdjustment: Boolean = false,
     onCopyAdjustments: () -> Unit = {}, onPasteAdjustments: () -> Unit = {}, onAdjustmentHistory: () -> Unit = {},
@@ -87,7 +87,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onAbout: () -> Unit = {}, updateVersion: String? = null,
     onPreviewSizeChange: (Int) -> Unit = {},
     onBeginDraft: (AdjustmentGroup) -> Unit = {}, onDraftEdit: (EditSettings, Boolean) -> Unit = { _, _ -> },
-    onApplyDraft: () -> Boolean = { false }, onDiscardDraft: () -> Unit = {},
+    onApplyDraft: ((Boolean) -> Unit) -> Unit = { it(false) }, onDiscardDraft: () -> Unit = {},
     onGeometryRatio: (GeometryRatio, Boolean) -> Unit = { _, _ -> },
     onGeometryLock: () -> Unit = {}, onGeometrySwap: () -> Unit = {}, onGeometryGrid: () -> Unit = {},
     onFilmSelected: (UsageFilmKind) -> Unit = {},
@@ -124,12 +124,14 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         if (state.draft?.changed == true) pendingLeave = action
         else { if (state.draft != null) onDiscardDraft(); action() }
     }
-    fun applyAndLeave(): Boolean {
-        if (!onApplyDraft()) return false
-        val destination = pendingLeave
-        pendingLeave = null
-        if (destination != null) destination() else tool = 2
-        return true
+    fun applyAndLeave() {
+        onApplyDraft { accepted ->
+            if (accepted) {
+                val destination = pendingLeave
+                pendingLeave = null
+                if (destination != null) destination() else tool = 2
+            }
+        }
     }
     LaunchedEffect(presetAction) {
         presetAction?.let { action ->
@@ -143,7 +145,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         title = { Text(stringResource(R.string.transfer_reload)) }, text = { Text(stringResource(R.string.transfer_reload_body)) },
         confirmButton = { TextButton(onClick = {
             confirmReload = false
-            if (onReloadAdjustments()) { pendingLeave = null; pendingAll = false; prepareAllWhenReady = false; tool = 2 }
+            onReloadAdjustments { if (it) { pendingLeave = null; pendingAll = false; prepareAllWhenReady = false; tool = 2 } }
         }, modifier = Modifier.testTag("adjustment-reload-confirm")) { Text(stringResource(R.string.transfer_reload)) } },
         dismissButton = { TextButton(onClick = { confirmReload = false }) { Text(stringResource(R.string.cancel)) } })
     val selectTool: (Int) -> Unit = { next -> if (next != tool) leave { tool = next; expanded = true } }
@@ -244,9 +246,9 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     val liveSourceKey by rememberUpdatedState(sourceKey)
     val liveTarget by rememberUpdatedState(hslTarget)
     val targetAxis = hslTarget.state.axis
-    val targetMode = hslTarget.state.enabled && tool == 14 && expanded && state.draft == null
+    val targetMode = hslTarget.state.enabled && tool == 14 && state.draft == null
     val canvasTarget = if (targetMode) hslTarget.guarded { liveSourceKey == sourceKey && liveTarget.state.axis == targetAxis } else null
-    LaunchedEffect(tool, expanded) { if (tool != 14 || !expanded) liveTarget.enabled(false) }
+    LaunchedEffect(tool) { if (tool != 14) liveTarget.enabled(false) }
     LaunchedEffect(targetMode) { if (targetMode) view = view.cancelHold() }
     BackHandler(targetMode) { hslTarget.enabled(false) }
     val cancelAdjustment = onCancelAdjustment
@@ -304,7 +306,9 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     CompositionLocalProvider(LocalEditorHaptics provides haptics, LocalAdjustmentFocus provides { adjusting = it },
         LocalAdjustmentHapticGate provides hapticGate, LocalAdjustmentCancellation provides cancelRuler) {
     val currentDock by rememberUpdatedState<@Composable (Modifier, Boolean, Boolean) -> Unit>({ modifier, side, compact ->
-        AdjustmentDock(state, modifier, tool, selectTool, expanded, { leave { expanded = !expanded } },
+        AdjustmentDock(state, modifier, tool, selectTool, expanded, {
+            if (targetMode) expanded = !expanded else leave { expanded = !expanded }
+        },
             compare, { view = view.toggleComparison() }, onEdit, onImportLook, onRenameLook, onDeleteLook,
             onAutoExposure, onDraftEdit, { applyAndLeave(); Unit }, { onDiscardDraft(); tool = 2 },
             onFilmSelected, onGeometryRatio, selectGroup, channel, { onCancelAdjustment(); channel = it }, requestReset, side, !pendingAll, compact,
@@ -401,7 +405,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         Column(Modifier.weight(1f)) {
                             EditorCanvas(state, compare, photoCanvas, photoInfo, view.infoMode, { view = view.copy(infoMode = (view.infoMode + 1) % 3) },
                                 Modifier.weight(1f), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit, retrySave, view, ::togglePure, holdBefore,
-                                { view = view.selectComparison(it) }, { view = view.copy(comparisonEnabled = false, holdingBefore = false) }, onRetry, hslTarget = canvasTarget)
+                                { view = view.selectComparison(it) }, { view = view.copy(comparisonEnabled = false, holdingBefore = false) }, onRetry, hslTarget = canvasTarget, showTargetStatus = !expanded)
                         }
                         if (!view.purePreview) VerticalDivider()
                         retainedDock(Modifier.hideForPurePreview(view.purePreview).width(sideDockWidth).fillMaxHeight(), true, dockLayout.compactNavigation)
@@ -409,7 +413,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                 } else {
                     EditorCanvas(state, compare, photoCanvas, photoInfo, view.infoMode, { view = view.copy(infoMode = (view.infoMode + 1) % 3) },
                         Modifier.weight(1f), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit, retrySave, view, ::togglePure, holdBefore,
-                                { view = view.selectComparison(it) }, { view = view.copy(comparisonEnabled = false, holdingBefore = false) }, onRetry, hslTarget = canvasTarget)
+                                { view = view.selectComparison(it) }, { view = view.copy(comparisonEnabled = false, holdingBefore = false) }, onRetry, hslTarget = canvasTarget, showTargetStatus = !expanded)
                     if (state.photo != null) {
                         if (!view.purePreview) HorizontalDivider()
                         retainedDock(Modifier.hideForPurePreview(view.purePreview).fillMaxWidth().height(dockHeight), false, dockLayout.compactNavigation)

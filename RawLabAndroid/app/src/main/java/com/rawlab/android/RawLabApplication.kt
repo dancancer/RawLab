@@ -7,6 +7,7 @@ import com.rawlab.android.i18n.AppStrings
 class RawLabApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        com.rawlab.android.photo.WorkingCopyCleanup.atProcessStart(cacheDir, java.io.File(filesDir, "RawLab/BatchJobs"))
         AppStrings.initialize(this)
     }
 }

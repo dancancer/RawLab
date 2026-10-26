@@ -16,6 +16,37 @@ class VersionedEditPersistenceTest {
         try { block(directory) } finally { directory.deleteRecursively() }
     }
 
+    @Test fun cachedStrictReadsDetectSameSizePreservedTimeOverwrite() = inStore { directory ->
+        val identity = PhotoIdentity("a"); val store = EditStore(directory)
+        store.save(identity, EditSettings(exposure = .5f))
+        val previous = store.versionedState(identity)
+        val file = File(directory, "edits.properties")
+        val modified = Files.getLastModifiedTime(file.toPath())
+        val before = file.readText()
+        // Properties escapes ':'; change only the JSON number so size and mtime can stay equal.
+        val replacement = before.replace("0.5", "0.9")
+        assertNotEquals(before, replacement)
+        file.writeText(replacement); Files.setLastModifiedTime(file.toPath(), modified)
+        assertEquals(.9f, store.versionedState(identity).settings!!.exposure)
+        assertThrows(EditPersistenceConflict::class.java) { store.compareAndSave(previous, previous.settings) }
+    }
+
+    @Test fun savedReceiptMatchesDeviceZeroEncoding() = inStore { directory ->
+        val identity = PhotoIdentity("signed-zero")
+        val store = EditStore(directory)
+        val receipt = store.compareAndSave(store.versionedState(identity), EditSettings(highlights = -0f, exposure = -0f))
+        val file = File(directory, "edits.properties")
+        val props = Properties().apply { file.inputStream().use(::load) }
+        val key = props.stringPropertyNames().single { it.endsWith(".values") }
+        // Android org.json 会把浮点负零写为 0，JVM org.json 的行为不同。
+        val json = org.json.JSONObject(props.getProperty(key).removePrefix("v2:"))
+        json.getJSONObject("settings").put("highlights", 0).put("exposure", 0)
+        props.setProperty(key, "v2:$json")
+        file.outputStream().use { props.store(it, null) }
+        assertEquals(receipt, store.versionedState(identity))
+        assertEquals(0, receipt.settings!!.highlights.toRawBits())
+    }
+
     @Test fun legacyReadAndUnchangedSavePreserveBytesAndReceipt() = inStore { directory ->
         val identity = PhotoIdentity("content://photos/original")
         EditStore(directory).save(identity, EditSettings(exposure = .75f, processing = ProcessingIdentity.LEGACY))

@@ -156,7 +156,7 @@ import SwiftUI
         try check(repair.recoveryNeedsRestart && repair.requiresRecovery && Data(contentsOf: repair.stateArchive!) == damaged,
             "Native state repair preserves damaged bytes and remains blocked until reopening")
         let reopened = DesktopUpdateController(adapter: Adapter(), gate: UpdateInstallGate(), store: repairStore, currentVersion: "0.8.2", currentBuild: "14")
-        reopened.finishStartupHealthCheck(healthy: model.updateDataHealthy)
+        await reopened.finishStartupHealthCheck(healthy: model.updateDataHealthy)
         try check(!reopened.requiresRecovery && !reopened.requiresStartupHealthCheck, "Real editor data health completes state repair on a fresh controller")
         repairWindow.contentView = nil; repairWindow.close()
         print("PASS: actual NSHostingView controls, focus changes, draft gate and six-language layouts; no production update or install")

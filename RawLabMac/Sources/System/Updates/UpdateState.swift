@@ -43,13 +43,15 @@ struct UpdateTaskState: Codable, Equatable {
     var previousBuild: String?
 
     mutating func beginCheck() -> UUID {
-        attempt = UUID(); phase = .checking; failure = nil; choice = .none
-        release = nil; progress = 0; blockers = []; backupPath = nil
+        if release == nil || ![.onQuit, .automaticOnQuit].contains(choice) { choice = .none; release = nil }
+        attempt = UUID(); phase = .checking; failure = nil
+        progress = 0; blockers = []; backupPath = nil; previousVersion = nil; previousBuild = nil
         return attempt
     }
 
     @discardableResult mutating func found(_ item: UpdateDescriptor?, token: UUID) -> Bool {
         guard accepts(token, in: [.checking]) else { return false }
+        if item?.identity != release?.identity { choice = .none }
         release = item; phase = item == nil ? .idle : .available; return true
     }
 
@@ -96,14 +98,16 @@ struct UpdateTaskState: Codable, Equatable {
 
     @discardableResult mutating func fail(_ code: String, detail: String, token: UUID) -> Bool {
         guard attempt == token, ![.idle, .available, .complete, .failed].contains(phase) else { return false }
+        if phase != .checking { choice = .none }
         failure = UpdateFailure(stage: phase, code: code, detail: detail)
-        phase = .failed; choice = .none; attempt = UUID(); blockers = []; return true
+        phase = .failed; attempt = UUID(); blockers = []; return true
     }
 
-    mutating func cancel() {
+    mutating func cancel(preservingChoice: Bool = false) {
         guard phase != .installing && phase != .pendingRestart else { return }
         attempt = UUID(); phase = release == nil ? .idle : .available
-        choice = .none; failure = nil; progress = 0; blockers = []
+        if !preservingChoice { choice = .none }
+        failure = nil; progress = 0; blockers = []; backupPath = nil; previousVersion = nil; previousBuild = nil
     }
 
     mutating func disableAutomaticInstallation() {
@@ -111,11 +115,13 @@ struct UpdateTaskState: Codable, Equatable {
     }
 
     mutating func restoreAfterLaunch(version: String, build: String, trusted: Bool) {
-        attempt = UUID(); choice = .none; blockers = []
+        attempt = UUID(); blockers = []
+        if phase != .available && phase != .checking && !(phase == .failed && failure?.stage == .checking) { choice = .none }
         guard phase != .failed && phase != .complete && phase != .idle && phase != .available else { return }
         if [.installing, .pendingRestart].contains(phase), trusted,
            release?.version == version, release?.build == build {
             phase = .complete; failure = nil
+            backupPath = nil; previousVersion = nil; previousBuild = nil
         } else {
             failure = UpdateFailure(stage: phase, code: "interrupted", detail: "")
             phase = .failed

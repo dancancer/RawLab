@@ -31,13 +31,12 @@ struct PackedBayer {
 };
 
 struct TileGeometry { int size = 640, halo = 128; };
-struct InferenceReport { bool fallbackUsed = false; std::string fallbackReason; };
 class Cancelled : public std::runtime_error {
 public:
     Cancelled() : std::runtime_error("AI denoise cancelled") {}
 };
 using Progress = std::function<bool(size_t completed, size_t total)>;
-// 后端运行失败用 runtime_error；参数/契约错误用 invalid_argument，不做无意义的 CPU 重试。
+// 后端运行失败用 runtime_error；参数/契约错误用 invalid_argument，不切换后端重试。
 using PredictTile = std::function<Tensor(const Tensor&)>;
 
 void validateTensor(const Tensor& tensor);
@@ -48,8 +47,6 @@ Tensor unpackBayer(const Tensor& predicted, const PackedBayer& geometry);
 Tensor pairBayerMosaics(const PackedBayer& source, const std::vector<float>& denoisedMosaic);
 Tensor runTiles(const Tensor& input, TileGeometry geometry, int outputChannels,
                 const PredictTile& predict, const Progress& progress = {});
-Tensor runTilesWithFallback(const Tensor& input, TileGeometry geometry, int outputChannels,
-                            const PredictTile& primary, const PredictTile& cpu,
-                            InferenceReport& report, const Progress& progress = {});
+
 
 } // namespace sony2fuji::ai

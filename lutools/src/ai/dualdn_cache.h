@@ -6,6 +6,8 @@
 
 namespace sony2fuji::ai {
 enum class CacheKind { Raw, RGB, SceneRGB };
+std::string sourceMetadataKey(const std::string& path);
+std::string rawCacheKeyFromIdentity(const std::string& sourceIdentity, const std::string& modelDigest, int backend);
 std::string sourceIdentityKey(const std::string& path);
 std::string rawCacheKey(const std::string& path, const std::string& modelDigest, int backend);
 std::string rgbCacheKey(const std::string& rawKey, const RAWProcessOptions& options);

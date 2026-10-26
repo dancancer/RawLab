@@ -5758,5 +5758,61 @@
     "fr": "Afficher le fichier d’état conservé",
     "ja": "保持された更新状態ファイルを表示",
     "es": "Ver el archivo de estado conservado"
+  },
+  "目标调整：{0}": {
+    "zh-Hans": "目标调整：{0}",
+    "en": "Target adjustment: {0}",
+    "de": "Gezielte Anpassung: {0}",
+    "es": "Ajuste dirigido: {0}",
+    "fr": "Réglage ciblé : {0}",
+    "ja": "ターゲット調整：{0}"
+  },
+  "退出目标调整": {
+    "zh-Hans": "退出目标调整",
+    "en": "Exit target adjustment",
+    "de": "Gezielte Anpassung beenden",
+    "es": "Salir del ajuste dirigido",
+    "fr": "Quitter le réglage ciblé",
+    "ja": "ターゲット調整を終了"
+  },
+  "拖动照片调整颜色；退出目标模式后可平移。": {
+    "zh-Hans": "拖动照片调整颜色；退出目标模式后可平移。",
+    "en": "Drag the photo to adjust color. Exit target mode to pan.",
+    "de": "Foto ziehen, um Farben anzupassen. Zum Verschieben den Zielmodus beenden.",
+    "es": "Arrastra la foto para ajustar el color. Sal del modo dirigido para desplazarla.",
+    "fr": "Faites glisser la photo pour régler la couleur. Quittez le mode ciblé pour la déplacer.",
+    "ja": "写真をドラッグして色を調整します。移動するにはターゲットモードを終了してください。"
+  },
+  "AI 降噪结果连续未就绪，请重试。": {
+    "en": "AI denoise results are still unavailable. Please retry.",
+    "de": "Das KI-Entrauschungsergebnis ist weiterhin nicht verfügbar. Bitte erneut versuchen.",
+    "es": "El resultado de la reducción de ruido con IA sigue sin estar disponible. Inténtalo de nuevo.",
+    "fr": "Le résultat de la réduction du bruit par IA reste indisponible. Réessayez.",
+    "ja": "AIノイズ除去の結果を取得できません。もう一度お試しください。",
+    "zh-Hans": "AI 降噪结果连续未就绪，请重试。"
+  },
+  "正在处理更新，编辑暂不可用。": {
+    "en": "An update is in progress. Editing is temporarily unavailable.",
+    "de": "Ein Update wird verarbeitet. Die Bearbeitung ist vorübergehend nicht verfügbar.",
+    "es": "Se está procesando una actualización. La edición no está disponible temporalmente.",
+    "fr": "Une mise à jour est en cours. La retouche est temporairement indisponible.",
+    "ja": "更新を処理しています。編集は一時的に利用できません。",
+    "zh-Hans": "正在处理更新，编辑暂不可用。"
+  },
+  "Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。": {
+    "en": "Agent recipes do not support AI denoise. Turn off AI denoise first.",
+    "de": "Agent-Rezepte unterstützen keine KI-Entrauschung. Deaktivieren Sie diese zuerst.",
+    "es": "Las recetas de Agent no admiten la reducción de ruido con IA. Desactívala primero.",
+    "fr": "Les recettes Agent ne prennent pas en charge la réduction du bruit par IA. Désactivez-la d’abord.",
+    "ja": "AgentレシピはAIノイズ除去に対応していません。先にAIノイズ除去をオフにしてください。",
+    "zh-Hans": "Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。"
+  },
+  "Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。": {
+    "en": "Mac requires an app with the same architecture and matching signing identity. Windows requires an x64 per-user Setup installation. For an older ZIP version, first install an update-capable version from the official releases page.",
+    "de": "Mac benötigt eine App mit gleicher Architektur und passender Signaturidentität. Windows benötigt eine x64-Setup-Installation für den aktuellen Benutzer. Installieren Sie bei einer älteren ZIP-Version zuerst eine updatefähige Version von der offiziellen Release-Seite.",
+    "es": "Mac requiere una app de la misma arquitectura y con la misma identidad de firma. Windows requiere una instalación Setup x64 por usuario. Si usas una versión ZIP antigua, instala primero una versión compatible con actualizaciones desde la página oficial.",
+    "fr": "Mac nécessite une app de même architecture avec une identité de signature correspondante. Windows nécessite une installation Setup x64 par utilisateur. Pour une ancienne version ZIP, installez d’abord une version compatible avec les mises à jour depuis la page officielle.",
+    "ja": "Macでは同じアーキテクチャと一致する署名IDのアプリが必要です。Windowsではx64のユーザー単位Setupインストールが必要です。旧ZIP版は、公式リリースページから更新対応版を先にインストールしてください。",
+    "zh-Hans": "Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。"
   }
 }

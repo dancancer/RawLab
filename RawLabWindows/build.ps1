@@ -1,11 +1,27 @@
 [CmdletBinding()]
 param([switch]$Test, [switch]$SelfContained, [string]$DotNet, [string]$CMake, [string]$Python,
     [string]$RawPath, [string]$RawDirectory = 'Z:\Photo\2019\2019-02-02',
-    [string]$RumSdkZip, [switch]$NoRumSdk, [string]$DualDnModel, [string]$OnnxRuntimeRoot)
+    [string]$RumSdkZip, [switch]$NoRumSdk, [string]$DualDnModel, [string]$OnnxRuntimeRoot,
+    [switch]$ReleasePackage, [string]$ReleaseVersion, [int]$ReleaseBuild, [string]$UpdateTrustFile,
+    [string]$DualDnManifestSha256, [string]$ReleaseOutput)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $native = Join-Path $repo 'build/windows-native'
 $output = Join-Path $repo 'build/RawLab-Windows'
+if ($ReleasePackage) {
+    if (!$DualDnModel -or !$DualDnManifestSha256) { throw 'Release packages require -DualDnModel and its -DualDnManifestSha256.' }
+    if (!$UpdateTrustFile) { throw 'Release packages require -UpdateTrustFile with the permanent public key.' }
+    if ($ReleaseVersion -notmatch '^\d+\.\d+\.\d+$' -or $ReleaseBuild -lt 1) { throw 'Supply the authorized -ReleaseVersion and positive -ReleaseBuild.' }
+    if ((Get-FileHash -LiteralPath "$DualDnModel/manifest.json" -Algorithm SHA256).Hash -ne $DualDnManifestSha256) { throw 'Release model manifest SHA-256 mismatch.' }
+    foreach ($resource in @('blind_rgb.onnx','Restormer-LICENSE.txt')) {
+        if (!(Test-Path -LiteralPath "$DualDnModel/$resource" -PathType Leaf)) { throw "Incomplete release model: $resource" }
+    }
+    $SelfContained = $true
+    $UpdateTrustFile = (Resolve-Path -LiteralPath $UpdateTrustFile).Path
+    if (!$ReleaseOutput) { $ReleaseOutput = Join-Path $repo "build/release-$ReleaseVersion-windows-x64" }
+    if (Test-Path -LiteralPath $ReleaseOutput) { throw 'Release output already exists; choose a new output directory.' }
+    $output = Join-Path $ReleaseOutput 'publish'
+}
 if (!$DotNet) {
     $localSdk = Join-Path $repo 'build/tools/dotnet/dotnet.exe'
     $DotNet = if (Test-Path $localSdk) { $localSdk } else { 'dotnet' }
@@ -64,13 +80,18 @@ function Get-RumSdkZip {
     if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $rumSdkSha256) { throw "Unexpected RUM SDK archive SHA-256: $archive" }
     $archive
 }
+if ($ReleasePackage) {
+    Invoke-Checked $DotNet @('run','--project',"$repo/scripts/release/update-manifest/UpdateManifest.csproj",'-c','Release','--','config',$UpdateTrustFile)
+}
 $rumProperty = if ($NoRumSdk) { '-p:RawLabRumSdk=false' } else { "-p:RawLabRumSdkZip=$(Get-RumSdkZip)" }
 $aiOptions = @('-DSONY2FUJI_ENABLE_AI_DENOISE=OFF','-DSONY2FUJI_ENABLE_DIRECTML=OFF')
 if ($DualDnModel) {
     $DualDnModel = (Resolve-Path -LiteralPath $DualDnModel).Path
     $modelManifest = Get-Content -LiteralPath "$DualDnModel/manifest.json" -Raw | ConvertFrom-Json
     if (!$OnnxRuntimeRoot) {
-        $OnnxRuntimeRoot = & "$PSScriptRoot/build-ai-dependencies.ps1" -CacheDirectory (Join-Path (Get-SharedCache) 'onnxruntime/windows-directml-1.23.0') -Output "$repo/build/windows-ai-deps"
+        $aiCacheRoot = if ($env:RAWLAB_AI_SHARED_CACHE) { $env:RAWLAB_AI_SHARED_CACHE } else { Get-SharedCache }
+        $aiCache = Join-Path $aiCacheRoot 'onnxruntime/windows-directml-1.23.0'
+        $OnnxRuntimeRoot = & "$PSScriptRoot/build-ai-dependencies.ps1" -CacheDirectory $aiCache -Output (Join-Path $aiCache 'installed')
     }
     $OnnxRuntimeRoot = (Resolve-Path -LiteralPath $OnnxRuntimeRoot).Path
     if ((Get-Content -LiteralPath "$OnnxRuntimeRoot/VERSION_NUMBER" -Raw).Trim() -ne '1.23.0') { throw 'Windows DualDn requires ONNX Runtime DirectML 1.23.0.' }
@@ -110,6 +131,9 @@ Invoke-Checked $CMake @('--build',$native,'--config','Release','--parallel')
 $iconPath=Join-Path $native 'RawLab.ico'
 & "$PSScriptRoot/build-icon.ps1" -Source "$repo/RawLabMac/Resources/AppIcon.png" -Output $iconPath
 $publish = @('publish',"$PSScriptRoot/RawLabWindows.csproj",'-c','Release','-r','win-x64','-o',$output,'--self-contained',([bool]$SelfContained).ToString().ToLowerInvariant(),"-p:ApplicationIcon=$iconPath",$rumProperty)
+if ($ReleasePackage) {
+    $publish += @("-p:RawLabUpdateTrustFile=$UpdateTrustFile", "-p:Version=$ReleaseVersion", "-p:FileVersion=$ReleaseVersion.$ReleaseBuild", "-p:InformationalVersion=$ReleaseVersion+build.$ReleaseBuild")
+}
 Invoke-Checked $DotNet $publish
 if ((Test-Path -LiteralPath "$output/alibabacloud_rum.dll") -eq [bool]$NoRumSdk) { throw 'The package RUM SDK presence does not match -NoRumSdk.' }
 & "$PSScriptRoot/build-exiftool.ps1" -Output $output
@@ -194,5 +218,18 @@ if ($Test) {
     Invoke-Checked $DotNet @("$testOut/RawLabWindows.Tests.dll",'--ai-panel',"$repo/build/windows-ai-panel")
     Invoke-Checked $DotNet @("$testOut/RawLabWindows.Tests.dll",'--about')
     Invoke-Checked $DotNet @("$testOut/RawLabWindows.Tests.dll",$repo,$fixture)
+}
+if ($ReleasePackage) {
+    # Package only after native libraries, models, notices and compiler runtimes are copied.
+    $tools = Join-Path (Get-SharedCache) 'velopack/1.2.161/tools'
+    if (!(Test-Path -LiteralPath "$tools/vpk.exe")) { Invoke-Checked $DotNet @('tool','install','vpk','--version','1.2.161','--tool-path',$tools) }
+    $installed = & $DotNet tool list --tool-path $tools
+    if ($LASTEXITCODE -ne 0 -or -not ($installed -match 'vpk\s+1\.2\.161\s')) { throw 'Unexpected vpk version.' }
+    Invoke-Checked "$tools/vpk.exe" @('pack','--packId','RawLab.Desktop','--packVersion',$ReleaseVersion,'--runtime','win-x64','--packDir',$output,
+        '--mainExe','RawLab.exe','--channel','stable','--outputDir',$ReleaseOutput)
+    if (!(Get-ChildItem -LiteralPath $ReleaseOutput -Filter '*Setup.exe')) { throw 'Velopack did not produce a current-user Setup.' }
+    if (!(Get-ChildItem -LiteralPath $ReleaseOutput -Filter '*-full.nupkg')) { throw 'Velopack did not produce an update package.' }
+    Compress-Archive -Path "$output/*" -DestinationPath "$ReleaseOutput/RawLab-Windows-$ReleaseVersion-x64.zip"
+    Get-ChildItem -LiteralPath $ReleaseOutput -File | Get-FileHash -Algorithm SHA256
 }
 Write-Host "Built: $output/RawLab.exe"

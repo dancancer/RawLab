@@ -17,10 +17,17 @@ struct UpdateAdapterError: LocalizedError {
     var hasActiveSession: Bool { get }
     var hasAvailableRelease: Bool { get }
     var hasPreparedInstaller: Bool { get }
+    func validateHostTrust() async throws
     func check(token: UUID, emit: @escaping (UUID, UpdateAdapterEvent) -> Void) throws
     func download(_ release: UpdateDescriptor, token: UUID) throws
     func cancel()
     func install(restart: Bool) async throws
+}
+
+extension UpdateAdapter {
+    func validateHostTrust() async throws {
+        if let unavailableReason { throw UpdateAdapterError(code: unavailableReason, detail: "") }
+    }
 }
 
 @MainActor final class UnavailableUpdateAdapter: UpdateAdapter {

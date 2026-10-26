@@ -176,9 +176,12 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     @Synchronized
     override fun close() {
         if (handle != 0L) { nativeDestroy(handle); handle = 0L }
-        raster?.close()
-        raster = null
-        rasterKey = null
+        releaseRasterCache()
+    }
+
+    @Synchronized
+    internal fun releaseRasterCache() {
+        raster?.close(); raster = null; rasterKey = null
     }
 
     private fun rasterInput(input: File, kind: PhotoInputKind): DecodedRaster? {

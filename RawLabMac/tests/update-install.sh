@@ -20,3 +20,8 @@ swiftc -swift-version 5 -sdk "$SDK" "$ROOT/RawLabMac/Sources/System/Updates/Upda
     "$ROOT/RawLabMac/Sources/System/Updates/UpdateInstallGate.swift" "$ROOT/RawLabMac/Sources/System/Updates/DesktopUpdateController.swift" \
     "$ROOT/RawLabMac/tests/DesktopUpdateControllerTests.swift" -o "$OUT/controller"
 "$OUT/controller"
+
+swiftc -swift-version 5 -sdk "$SDK" "$ROOT/RawLabMac/Sources/System/Updates/UpdateState.swift" \
+    "$ROOT/RawLabMac/Sources/System/Updates/UpdateAdapter.swift" "$ROOT/RawLabMac/Sources/System/Updates/MacUpdateTrust.swift" \
+    "$ROOT/RawLabMac/tests/MacUpdateTrustTests.swift" -o "$OUT/trust"
+"$OUT/trust"

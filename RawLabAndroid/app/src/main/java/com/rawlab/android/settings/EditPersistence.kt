@@ -17,6 +17,7 @@ import com.rawlab.android.geometry.GeometrySettings
 /** Stable source identity. A picker URI is preferred; content:<digest> is used only when no URI exists. */
 @JvmInline
 value class PhotoIdentity(val value: String) {
+
     init { require(value.isNotBlank()) }
 }
 
@@ -33,6 +34,9 @@ class EditStore(private val directory: File,
         val properties: Properties = Properties()) {
         fun record(identity: PhotoIdentity) = VersionedPhotoEdit(identity, records[identity], revisions[identity])
     }
+
+    private var cachedBytes: ByteArray? = null
+    private var cachedSnapshot: Snapshot? = null
 
     init {
         if (directory.exists() && !directory.isDirectory) throw IOException("Edit store path is not a directory")
@@ -69,7 +73,8 @@ class EditStore(private val directory: File,
         }
     }
 
-    private fun commit(current: Snapshot, identity: PhotoIdentity, settings: EditSettings?): VersionedPhotoEdit {
+    private fun commit(current: Snapshot, identity: PhotoIdentity, requested: EditSettings?): VersionedPhotoEdit {
+        val settings = requested?.canonicalZeros()
         if (current.records[identity] == settings) return current.record(identity)
         val records = current.records.toMutableMap()
         if (settings == null) records.remove(identity) else records[identity] = settings
@@ -83,8 +88,11 @@ class EditStore(private val directory: File,
     private fun read(): Snapshot {
         if (file.exists() && !file.isFile) throw IOException("Edit record path is not a file")
         if (!file.exists()) return Snapshot(emptyMap(), emptyMap()).also { lastReadableRecords = it.records }
+        // 部分文件系统的时间戳精度不足；内容未变时才复用解析结果。
+        val bytes = file.readBytes()
+        if (cachedBytes?.contentEquals(bytes) == true) cachedSnapshot?.let { return it }
         val properties = Properties()
-        file.inputStream().use(properties::load)
+        bytes.inputStream().use(properties::load)
         require(properties.getProperty("format.version") in setOf(null, "1")) { "Unsupported edit store version" }
         val recordSuffixes = setOf("values", "film", "recipe", "lens", "geometry", "processing")
         for (key in properties.stringPropertyNames().filter { it.startsWith("record.") }) {
@@ -109,15 +117,18 @@ class EditStore(private val directory: File,
             val film = runCatching { String(Base64.getUrlDecoder().decode(storedFilm), StandardCharsets.UTF_8) }
                 .getOrDefault(storedFilm)
             val encodedSettings = properties.getProperty(key)
-            records[identity] = if (encodedSettings.startsWith("v2:")) StructuredSettingsCodec.decode(encodedSettings, "photo_edit")
+            records[identity] = (if (encodedSettings.startsWith("v2:")) StructuredSettingsCodec.decode(encodedSettings, "photo_edit")
             else decode(encodedSettings, film).copy(
                 recipeID = properties.getProperty("record.$encoded.recipe"),
                 lens = LensSettings.decode(properties.getProperty("record.$encoded.lens")),
                 geometry = GeometrySettings.decode(properties.getProperty("record.$encoded.geometry")),
-                processing = ProcessingIdentity.decode(properties.getProperty("record.$encoded.processing")))
+                processing = ProcessingIdentity.decode(properties.getProperty("record.$encoded.processing")))).canonicalZeros()
         }
         lastReadableRecords = records.toMap()
-        return Snapshot(records, revisions, properties)
+        return Snapshot(records, revisions, properties).also {
+            cachedSnapshot = it
+            cachedBytes = bytes
+        }
     }
 
     private fun encodeIdentity(identity: PhotoIdentity) = Base64.getUrlEncoder().withoutPadding()
@@ -135,9 +146,13 @@ class EditStore(private val directory: File,
         }
         val temporary = File(directory, "edits-${System.nanoTime()}.tmp")
         try {
-            temporary.outputStream().use { properties.store(it, null) }
+            val bytes = java.io.ByteArrayOutputStream().use { stream -> properties.store(stream, null); stream.toByteArray() }
+            temporary.writeBytes(bytes)
             replaceFile(temporary, file)
+            cachedSnapshot = updated.copy(properties = properties)
+            cachedBytes = bytes
         } catch (error: Throwable) {
+            cachedBytes = null; cachedSnapshot = null
             temporary.delete()
             throw if (error is IOException) error else IOException("Cannot save edit store", error)
         }

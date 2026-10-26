@@ -1,12 +1,17 @@
+#include "ai/cache_reader.h"
 #include "ai/dualdn_cache.h"
 #include "ai/model_package.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <future>
+#include <thread>
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
+#elif defined(__APPLE__)
+#include <sys/xattr.h>
 #endif
 
 using namespace sony2fuji;
@@ -50,6 +55,16 @@ int main(int argc, char** argv) {
 #endif
         require(rawCacheKey(raw.string(), std::string(64, 'a'), 0) != key,
                 "atomic replacement with preserved size/time reused stale AI data");
+        const auto beforeMetadata = sourceIdentityKey(raw.string());
+        const auto permissions = std::filesystem::status(raw).permissions();
+        std::filesystem::permissions(raw, permissions | std::filesystem::perms::owner_exec);
+        require(sourceIdentityKey(raw.string()) == beforeMetadata, "permissions invalidated unchanged AI source");
+        std::filesystem::permissions(raw, permissions);
+#ifdef __APPLE__
+        require(setxattr(raw.c_str(), "com.rawlab.cache-test", "tag", 3, 0, 0) == 0, "cannot write test xattr");
+        require(sourceIdentityKey(raw.string()) == beforeMetadata, "xattr invalidated unchanged AI source");
+        removexattr(raw.c_str(), "com.rawlab.cache-test", 0);
+#endif
         const auto beforeOverwrite = sourceIdentityKey(raw.string());
         { std::fstream stream(raw, std::ios::in | std::ios::out | std::ios::binary); stream.put('I'); }
         std::filesystem::last_write_time(raw, originalStamp);
@@ -84,6 +99,23 @@ int main(int argc, char** argv) {
         require(cache.load(key, CacheKind::Raw, 3, 2, {}, &producer) && producer == "CoreML",
                 "cache did not retain actual producer");
         require(!cache.load(key, CacheKind::Raw, 2, 3), "wrong geometry accepted");
+        {
+            const auto path = root / "cache" / (key + ".rawcache");
+            std::string expected;
+            { CacheReader reader(path); expected.resize(reader.size()); reader.read(expected.data(), expected.size()); }
+            auto activeReader = std::make_unique<CacheReader>(path);
+            auto replacement = std::async(std::launch::async, [&] {
+                cache.store(key, CacheKind::Raw, 3, 2, values.data(), values.size(), {}, "DirectML-longer-producer");
+            });
+            std::this_thread::sleep_for(std::chrono::milliseconds(60));
+            std::string actual(activeReader->size(), '\0'); activeReader->read(actual.data(), actual.size());
+            const bool intact = bool(*activeReader) && actual == expected;
+            activeReader.reset(); replacement.get();
+            require(intact, "atomic replacement changed an active reader's snapshot");
+            require(cache.load(key, CacheKind::Raw, 3, 2, {}, &producer) && producer == "DirectML-longer-producer",
+                "replacement failed while the previous cache reader was open");
+        }
+
         const auto file = root / "cache" / (key + ".rawcache");
         { std::fstream stream(file, std::ios::in | std::ios::out | std::ios::binary); stream.seekp(-1, std::ios::end); stream.put('\0'); }
         require(!cache.load(key, CacheKind::Raw, 3, 2), "corrupt cache accepted");

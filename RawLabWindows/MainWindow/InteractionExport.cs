@@ -96,6 +96,7 @@ public partial class MainWindow
         AdjustmentSplitter.Visibility=visible ? Visibility.Collapsed : Visibility.Visible;
         DockRow.MinHeight=visible || expandedGroup==null ? 0 : 216;
         DockRow.Height=visible ? new(0) : expandedGroup==null ? GridLength.Auto : new(dockHeight);
+        RefreshHslTarget();
         AdjustmentSplitter.Visibility=visible || expandedGroup==null ? Visibility.Collapsed : Visibility.Visible;
         SplitterRow.Height=new(visible || expandedGroup==null ? 0 : 6);
         RefreshControls();
@@ -125,11 +126,13 @@ public partial class MainWindow
     private void ZoomOutClicked(object sender,RoutedEventArgs e) {CancelViewingInput();if(!transform.Active)viewport.Magnify(.8);}
     private void KeyPressed(object sender,KeyEventArgs e)
     {
+        // 编辑区已禁用；让横幅和菜单继续收到 Tab、Enter、空格等标准导航键。
+        if(UpdateInstallationActive)return;
         var viewingKey=ViewingKey(e);
         var startsBeforeKey=viewingKey==Key.Oem5 && !beforeKeyDown;
         if(viewingKey==Key.Oem5)beforeKeyDown=true;
         if(e.OriginalSource is TextBoxBase or ComboBox || Keyboard.FocusedElement is TextBoxBase or ComboBox)return;
-        if(e.Key==Key.Escape && hslTargetEnabled){CancelHslTarget();e.Handled=true;return;}
+        if(e.Key==Key.Escape && hslTargetEnabled){SetHslTargetMode(false,hslTargetAxis);e.Handled=true;return;}
         if(e.Key==Key.Escape && editGesture!=null){CancelParameterInputs();CancelEditGesture();e.Handled=true;return;}
         if(e.Key==Key.Z && Keyboard.Modifiers==ModifierKeys.Control){RunPhotoHistory(true);e.Handled=true;return;}
         if(e.Key==Key.Y && Keyboard.Modifiers==ModifierKeys.Control || e.Key==Key.Z && Keyboard.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift))

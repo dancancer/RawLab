@@ -51,6 +51,7 @@ public sealed class UpdateStore(string directory)
     public byte[] RepairableState()
     {
         RequireOrdinary(DirectoryPath); RequireOrdinary(StatePath); var data = File.ReadAllBytes(StatePath);
+        var knownNonInstallation = false;
         JsonDocument? document = null;
         try { document = JsonDocument.Parse(data); } catch (JsonException) { }
         using (document)
@@ -58,11 +59,15 @@ public sealed class UpdateStore(string directory)
             if (document?.RootElement is { ValueKind: JsonValueKind.Object } root)
             {
                 if (root.TryGetProperty("Channel", out var channel) && channel.GetString() != "stable" ||
-                    root.TryGetProperty("StateRepairReceipt", out var receipt) && receipt.ValueKind != JsonValueKind.Null ||
-                    root.TryGetProperty("RecoveryReceipt", out var recovery) && recovery.ValueKind != JsonValueKind.Null)
+                    root.TryGetProperty("StateRepairReceipt", out var receipt) && receipt.ValueKind != JsonValueKind.Null)
                     throw new InvalidDataException("Unsupported update state cannot be rebuilt");
-                if (root.TryGetProperty("PendingUpdate", out var pending) && pending.ValueKind == JsonValueKind.Object)
+                if (root.TryGetProperty("RecoveryReceipt", out var recovery) && recovery.ValueKind != JsonValueKind.Null) {
+                    if (recovery.ValueKind != JsonValueKind.String) throw new InvalidDataException("Invalid recovery receipt");
+                    new UpdateDataBackup(Path.GetDirectoryName(DirectoryPath)!, DirectoryPath).VerifyCompletedRecovery(recovery.GetString()!);
+                }
+                if (root.TryGetProperty("PendingUpdate", out var pending))
                 {
+                    if (pending.ValueKind != JsonValueKind.Object) throw new InvalidDataException("Unknown pending update state");
                     static bool Installation(JsonElement element) => element.TryGetInt32(out var number) &&
                         (number == (int)UpdatePhase.Installing || number == (int)UpdatePhase.PendingRestart);
                     if (pending.TryGetProperty("Format", out var format) && format.GetInt32() != 1 ||
@@ -75,6 +80,14 @@ public sealed class UpdateStore(string directory)
                             failure.TryGetProperty("Stage", out var stage) && (!stage.TryGetInt32(out var stageNumber) || !Enum.IsDefined(typeof(UpdatePhase), stageNumber) || Installation(stage)))
                         throw new InvalidDataException("Unsupported update state cannot be rebuilt");
                 }
+                if (root.TryGetProperty("PendingUpdate", out var known) && known.ValueKind == JsonValueKind.Object &&
+                    new[] { "Format", "Phase", "Attempt", "Choice", "Progress", "Blockers" }.All(name => known.TryGetProperty(name, out _))) {
+                    try {
+                        var decoded = known.Deserialize<UpdateTaskState>();
+                        knownNonInstallation = decoded != null && (decoded.Phase != UpdatePhase.Failed || decoded.Failure is {} detail &&
+                            detail.Stage is not (UpdatePhase.Idle or UpdatePhase.Available or UpdatePhase.Complete or UpdatePhase.Failed) && !string.IsNullOrEmpty(detail.Code));
+                    } catch (JsonException) { }
+                }
             }
         }
         var readable = false; try { Load(false); readable = true; } catch { }
@@ -84,7 +97,16 @@ public sealed class UpdateStore(string directory)
             var path = Path.Combine(DirectoryPath, name);
             if (!Path.Exists(path)) continue;
             RequireOrdinary(path);
-            if (Directory.EnumerateFileSystemEntries(path).Any()) throw new InvalidDataException("Installation or data recovery status is unknown");
+            var entries = Directory.GetFileSystemEntries(path);
+            if (entries.Length != 0) {
+                if (!knownNonInstallation) throw new InvalidDataException("Installation or data recovery status is unknown");
+                foreach (var entry in entries) {
+                    var entryName = Path.GetFileName(entry);
+                    if (!Guid.TryParse(entryName, out _) && !(name == "Backups" && entryName.StartsWith(".staging-", StringComparison.Ordinal) && Guid.TryParse(entryName[9..], out _)))
+                        throw new InvalidDataException("Unknown backup entry");
+                    RequireOrdinary(entry);
+                }
+            }
         }
         if (Path.Exists(Path.Combine(DirectoryPath, "recovery-in-progress.json"))) throw new InvalidDataException("Data recovery is unfinished");
         return data;
@@ -98,7 +120,15 @@ public sealed class UpdateStore(string directory)
         // 原始字节先落盘，再原子替换；中断期间不会出现缺失状态而开放编辑。
         WriteAtomic(archive, expected);
         if (!RepairableState().SequenceEqual(expected)) throw new InvalidDataException("Update state changed");
-        var next = new UpdatePreferences { AutomaticCheck = false, StateRepairReceipt = receipt }; Save(next); return next;
+        var next = new UpdatePreferences { AutomaticCheck = false, StateRepairReceipt = receipt };
+        try {
+            using var document = JsonDocument.Parse(expected);
+            if (document.RootElement.TryGetProperty("RecoveryReceipt", out var recovery) && recovery.ValueKind == JsonValueKind.String)
+                next.RecoveryReceipt = recovery.GetString();
+        } catch (JsonException) { }
+        // 修复只重建设置，备份和恢复前数据留到健康启动再回收或归档。
+        Save(next);
+        return next;
     }
     private static void RequireOrdinary(string path)
     {
@@ -125,7 +155,9 @@ public sealed class UpdateDataBackup(string dataRoot, string updateRoot)
     private static readonly string[] DataDirectories = ["Edits", "Looks", "Presets", "Batch"];
     public string Create(string previous, string target, string? previousBuild = null)
     {
-        var directory = Path.Combine(updateRoot, "Backups", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
+        var id = Guid.NewGuid().ToString("N");
+        var directory = Path.Combine(updateRoot, "Backups", ".staging-" + id);
+        var completed = Path.Combine(updateRoot, "Backups", id); Directory.CreateDirectory(directory);
         var files = new Dictionary<string, string>(StringComparer.Ordinal);
         try
         {
@@ -137,9 +169,10 @@ public sealed class UpdateDataBackup(string dataRoot, string updateRoot)
             }
             UpdateStore.WriteAtomic(Path.Combine(directory, "manifest.json"), JsonSerializer.SerializeToUtf8Bytes(
                 new UpdateBackupManifest(1, DateTimeOffset.UtcNow, previous, target, files, previousBuild)));
-            return directory;
+            Directory.Move(directory, completed);
+            return completed;
         }
-        catch { Directory.Delete(directory, recursive: true); throw; }
+        catch { if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true); throw; }
     }
     private static void CopyTree(string source, string destination, string prefix, Dictionary<string, string> files)
     {
@@ -181,6 +214,62 @@ public sealed class UpdateDataBackup(string dataRoot, string updateRoot)
         }
         return manifest;
     }
+    public void Discard(string directory)
+    {
+        if (!Guid.TryParse(Path.GetFileName(directory), out _)) throw new InvalidDataException("Invalid backup name");
+        Verify(directory);
+        Directory.Delete(directory, recursive: true);
+    }
+    public void DiscardUnreferencedBackups(string? retaining, string? recoveryReceipt = null)
+    {
+        if (HasPendingRecovery) return;
+        var retainedBackup=retaining==null ? null : Path.TrimEndingDirectorySeparator(Path.GetFullPath(retaining));
+        var retainedRecovery=recoveryReceipt==null ? null : Path.TrimEndingDirectorySeparator(Path.GetFullPath(recoveryReceipt));
+        var root = Path.Combine(updateRoot, "Backups");
+        if (Directory.Exists(root)) {
+            RequireOrdinary(root);
+            foreach (var entry in Directory.GetFileSystemEntries(root)) {
+                if (StringComparer.OrdinalIgnoreCase.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(entry)), retainedBackup)) continue;
+                var name = Path.GetFileName(entry);
+                if (name.StartsWith(".staging-", StringComparison.Ordinal) && Guid.TryParse(name[9..], out _)) {
+                    // 未发布的 staging 不会被安装状态引用；保留一天避免干扰其他进程正在复制的备份。
+                    if (DateTime.UtcNow - Directory.GetLastWriteTimeUtc(entry) >= TimeSpan.FromDays(1)) {
+                        try { RequireOrdinary(entry); Directory.Delete(entry, true); } catch { }
+                    }
+                } else if (Guid.TryParse(name, out _)) {
+                    try { Discard(entry); }
+                    catch { try { Archive(entry, "IncompleteBackups"); } catch { } }
+                }
+            }
+        }
+        var recoveries = Path.Combine(updateRoot, "Recoveries");
+        if (Directory.Exists(recoveries)) {
+            RequireOrdinary(recoveries);
+            foreach (var entry in Directory.GetFileSystemEntries(recoveries))
+                if (!StringComparer.OrdinalIgnoreCase.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(entry)), retainedRecovery) && Guid.TryParse(Path.GetFileName(entry), out _)) {
+                    // 保留可能唯一的恢复前编辑，活动恢复目录中只留下仍有引用的记录。
+                    try { Archive(entry, "RecoveryArchives"); } catch { }
+                }
+        }
+    }
+    private void Archive(string entry, string name)
+    {
+        RequireOrdinary(entry);
+        var parent = Path.Combine(updateRoot, name); Directory.CreateDirectory(parent); RequireOrdinary(parent);
+        var destination = Path.Combine(parent, Path.GetFileName(entry));
+        if (!Path.Exists(destination)) Directory.Move(entry, destination);
+    }
+    public void VerifyCompletedRecovery(string path)
+    {
+        var directory = Path.GetFullPath(path);
+        if (!StringComparer.OrdinalIgnoreCase.Equals(Path.GetDirectoryName(directory), Path.GetFullPath(Path.Combine(updateRoot, "Recoveries"))) ||
+            !Guid.TryParse(Path.GetFileName(directory), out var id)) throw new InvalidDataException("Invalid recovery receipt location");
+        RequireOrdinary(Path.GetDirectoryName(directory)!); RequireOrdinary(directory);
+        var receipt = Path.Combine(directory, "receipt.json"); RequireOrdinary(receipt);
+        var saved = JsonSerializer.Deserialize<Recovery>(File.ReadAllText(receipt));
+        if (saved?.Id != id || !saved.Restored) throw new InvalidDataException("Invalid recovery receipt");
+    }
+
     private sealed record Recovery(Guid Id, string[] Originals, bool Restored);
     private string RecoveryJournal => Path.Combine(updateRoot, "recovery-in-progress.json");
     public bool HasPendingRecovery => File.Exists(RecoveryJournal);

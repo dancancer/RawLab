@@ -107,7 +107,7 @@ internal object StructuredSettingsCodec {
     private fun JSONObject.number(key: String, range: ClosedFloatingPointRange<Double>) = number(get(key), range)
     private fun number(value: Any, range: ClosedFloatingPointRange<Double>): Float {
         require(value is Number && value.toDouble().isFinite() && value.toDouble() in range)
-        return value.toFloat().also { require(it.isFinite()) }
+        return value.toFloat().canonicalZero().also { require(it.isFinite()) }
     }
     private fun JSONObject.integer(key: String): Int {
         val value = get(key)

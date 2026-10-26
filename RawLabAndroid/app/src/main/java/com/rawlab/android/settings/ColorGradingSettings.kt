@@ -23,12 +23,12 @@ data class ColorGradingWheel(val hue: Float = 0f, val saturation: Float = 0f) {
         fun valid(hue: Double, saturation: Double) = hue.isFinite() && hue >= 0 && hue < 360 &&
             saturation.isFinite() && saturation in 0.0..100.0
         fun inputHue(value: Float): Float? = if (value.isFinite() && value in 0f..360f) {
-            if (value == 360f) 0f else value
+            if (value == 360f) 0f else value.canonicalZero()
         } else null
         fun fromNumbers(hue: Double, saturation: Double): ColorGradingWheel {
             require(valid(hue, saturation))
             // 先检查源 Double，再处理合法值在 Float 边界的舍入环回。
-            return ColorGradingWheel(hue.toFloat().let { if (it == 360f) 0f else it }, saturation.toFloat())
+            return ColorGradingWheel(hue.toFloat().let { if (it == 360f) 0f else it.canonicalZero() }, saturation.toFloat().canonicalZero())
         }
     }
 }

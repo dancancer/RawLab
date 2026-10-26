@@ -70,9 +70,9 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (argc != 6 && argc != 8)
-            throw std::runtime_error("usage: dualdn_probe RAW MODEL_DIR NEW_OUTPUT raw|full|pipeline cpu|auto|coreml|directml [EXPERIMENT_K EXPERIMENT_B | --raw-result PREVIOUS_OUTPUT]");
+            throw std::runtime_error("usage: dualdn_probe RAW MODEL_DIR NEW_OUTPUT raw|full|pipeline auto|coreml|directml [EXPERIMENT_K EXPERIMENT_B | --raw-result PREVIOUS_OUTPUT]");
         const std::string mode = argv[4], requested = argv[5];
-        const auto backend = requested == "cpu" ? Backend::Cpu : requested == "auto" ? Backend::Auto :
+        const auto backend = requested == "auto" ? Backend::Auto :
             requested == "coreml" ? Backend::CoreML : requested == "directml" ? Backend::DirectML : throw std::invalid_argument("invalid backend");
         if (mode == "pipeline" && argc == 6) { probePipeline(argv[1],argv[2],std::filesystem::u8path(argv[3]),backend); return 0; }
         if (mode != "raw" && mode != "full") throw std::invalid_argument("invalid output mode");

@@ -5,9 +5,12 @@ public partial class MainWindow
 {
     private readonly AIDenoiseJob aiJob;
     private bool aiManuallyRequested;
-    private int RequestedAIBackend=>GpuMode.SelectedIndex switch { 1=>0,2=>3,_=>2 };
+    private AIDenoiseIdentity? aiNotReadyIdentity;
+    private int aiNotReadyAttempts;
+    private const int MaxAIReprepareAttempts=3;
+    private int RequestedAIBackend=>GpuMode.SelectedIndex==2 ? 3 : 2;
     private Adjustments AIWorkSettings { get { var snapshot=settings.Clone();snapshot.Lens=PreviewLens;return snapshot; } }
-    private bool CanStartAI=>file!=null && PhotoInput.IsRaw(file) && RenderEngine.AIAvailable &&
+    private bool CanStartAI=>file!=null && PhotoInput.IsRaw(file) && RenderEngine.AIAvailable && RenderEngine.AIHardwareAvailable &&
         RenderEngine.HasBundledAIModel && !exporting && !transform.Active && !closing;
     private bool AIResultReady
     {
@@ -30,8 +33,9 @@ public partial class MainWindow
         DenoiseEditor.AIRetryRequested+=()=>RequestAI(true);
     }
     private void RefreshAIControls()=>DenoiseEditor.RefreshAI(RenderEngine.AIAvailable || settings.AIDenoiseEnabled,
-        settings.AIDenoiseEnabled,CanStartAI,aiJob.State);
-    private void ResetAITask() { aiManuallyRequested=false;aiJob.Reset(); }
+        settings.AIDenoiseEnabled,CanStartAI,aiJob.State,
+        RenderEngine.AIHardwareAvailable ? null : Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。"),GpuMode.SelectedIndex==1);
+    private void ResetAITask() { aiManuallyRequested=false;aiNotReadyIdentity=null;aiNotReadyAttempts=0;aiJob.Reset(); }
     private static bool ResetsAI(EditorResetScope scope)=>scope.Kind==EditorResetKind.All ||
         scope.Kind==EditorResetKind.Group && scope.Group==EditorAdjustmentGroup.Detail ||
         scope.Kind==EditorResetKind.Tool && scope.Tool==EditorAdjustmentTool.Denoise;
@@ -63,13 +67,16 @@ public partial class MainWindow
             var revision=openRevision;
             if(!explicitRequest && identity==aiJob.Identity)return;
             if(explicitRequest)aiManuallyRequested=true;
+            if(explicitRequest || aiNotReadyIdentity!=identity) { aiNotReadyIdentity=identity;aiNotReadyAttempts=0; }
             exactReady=false;
             var work=aiJob.StartAsync(identity,snapshot);RefreshControls();
             var completed=await work;
             if(closing)return;
-            if(!completed && revision==openRevision && aiJob.Identity==identity &&
-                aiJob.State.Status is AIDenoiseStatus.Failed or AIDenoiseStatus.Cancelled && !settings.AIDenoiseEnabled) {
-                aiManuallyRequested=false;Schedule();return;
+            if(!completed && revision==openRevision && file==identity.Source.Path && aiJob.Identity==identity &&
+                aiJob.State.Status is AIDenoiseStatus.Failed or AIDenoiseStatus.Cancelled) {
+                ClearPendingAllReset();aiManuallyRequested=false;
+                if(!settings.AIDenoiseEnabled)Schedule();
+                return;
             }
             if(!completed || revision!=openRevision || file!=identity.Source.Path ||
                 aiJob.Identity!=identity || aiJob.State.Status!=AIDenoiseStatus.Ready ||
@@ -86,14 +93,19 @@ public partial class MainWindow
     }
     private void AIResultUnavailable()
     {
-        if(!settings.AIDenoiseEnabled || aiJob.State.Status!=AIDenoiseStatus.Ready)return;
+        if(!settings.AIDenoiseEnabled || aiJob.State.Status!=AIDenoiseStatus.Ready || aiJob.Identity is not {} identity)return;
+        if(aiNotReadyIdentity!=identity) { aiNotReadyIdentity=identity;aiNotReadyAttempts=0; }
+        if(++aiNotReadyAttempts>MaxAIReprepareAttempts) {
+            aiJob.Fail(Loc.Text("AI 降噪结果连续未就绪，请重试。"));aiManuallyRequested=false;
+            ClearPendingAllReset();RefreshControls();return;
+        }
         aiJob.Reset();previewDeferred=true;if(!exporting)ReconcileAI();
     }
     private bool HandleAIFailure(Exception error)
     {
         if(!settings.AIDenoiseEnabled)return false;
         if(error is AINotReadyException) {AIResultUnavailable();return true;}
-        if(error is AIDenoiseException) {aiJob.Fail(error.Message);RefreshControls();return true;}
+        if(error is AIDenoiseException) {ClearPendingAllReset();aiJob.Fail(error.Message);RefreshControls();return true;}
         return false;
     }
 }

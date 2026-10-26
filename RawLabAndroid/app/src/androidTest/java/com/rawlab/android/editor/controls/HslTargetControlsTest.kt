@@ -35,6 +35,16 @@ class HslTargetControlsTest {
         compose.onNodeWithTag("hsl-target-axis-2").assertDoesNotExist()
     }
 
+    @Test fun collapsedTargetShowsAxisAndExit() {
+        var state by mutableStateOf(HslTargetState(enabled = true, axis = 2))
+        compose.setChineseContent { MaterialTheme {
+            if (state.enabled) HslTargetCanvasControls(HslTargetActions(state, enabled = { state = state.copy(enabled = it) }))
+        } }
+        compose.onNodeWithText("目标调整：明度").assertIsDisplayed()
+        compose.onNodeWithTag("hsl-target-exit").performClick()
+        compose.onNodeWithTag("hsl-target-canvas").assertDoesNotExist()
+    }
+
     @Test fun canvasUsesOneFixedSampleAndCancelsWhenSecondFingerArrives() {
         val bitmap = Bitmap.createBitmap(600, 400, Bitmap.Config.ARGB_8888).apply { eraseColor(0xffcc6633.toInt()) }
         val points = mutableListOf<Pair<Float, Float>>()

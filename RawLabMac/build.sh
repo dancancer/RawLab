@@ -3,8 +3,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 source "$ROOT/RawLabMac/build-env.sh"
+source "$ROOT/RawLabMac/release-config.sh"
 BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 APP="${RAWLAB_APP_PATH:-$ROOT/build/RawLab Mac.app}"
+if [ "${RAWLAB_RELEASE:-0}" = 1 ]; then
+    APP="${RAWLAB_APP_PATH:-$ROOT/build/release-$RAWLAB_RELEASE_VERSION-$RAWLAB_RELEASE_BUILD-$ARCH/RawLab Mac.app}"
+    test ! -e "$APP" || { echo "Release app output already exists: $APP" >&2; exit 2; }
+fi
 SPARKLE_FRAMEWORK="$(bash "$ROOT/RawLabMac/prepare-sparkle.sh")"
 DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET"
 AI_CMAKE_FLAGS=(-DSONY2FUJI_ENABLE_AI_DENOISE=OFF)
@@ -15,6 +20,11 @@ if [ "${RAWLAB_DUALDN:-0}" = 1 ]; then
     if [ "$(cat "$RAWLAB_ONNXRUNTIME_ROOT/VERSION_NUMBER")" != 1.23.2 ]; then
         echo "DualDn currently requires ONNX Runtime 1.23.2." >&2; exit 2
     fi
+    case "$ARCH" in
+        arm64) ORT_SHA256=d306d2bc768540766c7ed8a1e0ff05d2870c77a934ebeee4a7bafa1b732ef299 ;;
+        x86_64) ORT_SHA256=8c9c78de65ea3786f987c0d980e9c1b13a3a5fbc6b3e2965ba05b450e6e4c054 ;;
+    esac
+    printf '%s  %s\n' "$ORT_SHA256" "$RAWLAB_ONNXRUNTIME_ROOT/lib/libonnxruntime.1.23.2.dylib" | shasum -a 256 -c -
     AI_CMAKE_FLAGS=(-DSONY2FUJI_ENABLE_AI_DENOISE=ON -DONNXRUNTIME_ROOT="$RAWLAB_ONNXRUNTIME_ROOT"
         -DRAWLAB_DUALDN_TEST_PACKAGE="$RAWLAB_DUALDN_MODEL_DIR")
     AI_LINK_FLAGS=("$BUILD/librawlab_dualdn_runtime.a" "$BUILD/librawlab_dualdn_core.a" -L "$RAWLAB_ONNXRUNTIME_ROOT/lib" -lonnxruntime -framework CoreML)
@@ -128,6 +138,9 @@ swiftc -O -whole-module-optimization -num-threads "${JOBS:-$(sysctl -n hw.ncpu)}
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     -o "$APP/Contents/MacOS/RawLabMac"
 cp "$ROOT/RawLabMac/Info.plist" "$APP/Contents/Info.plist"
+if [ "${RAWLAB_RELEASE:-0}" = 1 ]; then
+    python3 "$ROOT/scripts/release/macos_config.py" configure "$APP/Contents/Info.plist" "$ARCH"
+fi
 ditto "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/Sparkle.framework"
 cp "$(dirname "$(dirname "$(dirname "$SPARKLE_FRAMEWORK")")")/LICENSE" "$APP/Contents/Resources/Licenses/Sparkle-LICENSE.txt"
 cp "$ROOT/Shared/master-recipes.json" "$APP/Contents/Resources/master-recipes.json"
@@ -188,7 +201,6 @@ embed_dependency() {
             chmod u+w "$APP/Contents/Frameworks/$name"
             install_name_tool -id "@rpath/$name" "$APP/Contents/Frameworks/$name"
             embed_dependency "$APP/Contents/Frameworks/$name"
-            codesign --force --sign - "$APP/Contents/Frameworks/$name"
         fi
         install_name_tool -change "$dependency" "@rpath/$name" "$binary"
     done < <(otool -L "$binary" | awk 'NR>1 {print $1}')
@@ -204,7 +216,13 @@ embed_dependency() {
         }')
 }
 embed_dependency "$APP/Contents/MacOS/RawLabMac"
-codesign --force --deep --sign - "$APP"
+bash "$ROOT/RawLabMac/sign-bundle.sh" "$APP"
 RAWLAB_RUM_EXPECTED="$([ -n "$RUM_LIB" ] && echo 1 || echo 0)" RAWLAB_ARCH="$ARCH" \
     MACOSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" bash "$ROOT/RawLabMac/tests/bundle.sh" "$APP"
+if [ "${RAWLAB_RELEASE:-0}" = 1 ]; then
+    RELEASE_ZIP="${RAWLAB_RELEASE_ZIP:-$(dirname "$APP")/RawLab-Mac-$RAWLAB_RELEASE_VERSION-$ARCH.zip}"
+    test ! -e "$RELEASE_ZIP" || { echo "Release archive already exists: $RELEASE_ZIP" >&2; exit 2; }
+    ditto -c -k --keepParent "$APP" "$RELEASE_ZIP"
+    shasum -a 256 "$RELEASE_ZIP"
+fi
 echo "$APP"

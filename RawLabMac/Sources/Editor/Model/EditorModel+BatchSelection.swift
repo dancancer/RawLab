@@ -160,8 +160,7 @@ extension EditorModel {
         var defaults = Adjustments()
         defaults.exposureMode = RenderEngine.isRasterInput(photo.url) ? .sensor : .preview
         let state = record.state ?? PhotoEditState(settings: defaults, filmID: "")
-        // AI 结果有独立的派生源，不能在普通照片快照中悄悄忽略。
-        guard !state.settings.aiDenoiseEnabled else { throw AdjustmentTransferError.incompatible("ai.target_denoise") }
+        if state.settings.aiDenoiseEnabled { try RenderEngine.validateAIInput(photo.url) }
         let look: URL?, lookName: String
         if let recipeID = state.settings.masterRecipeID {
             guard let recipe = MasterRecipe.allRecipes.first(where: { $0.id == recipeID }), let url = recipe.lutURL() else {

@@ -21,6 +21,6 @@ Write-Output 'PASS Windows PowerShell parses the managed-test build before outpu
 $pins=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -eq '$rumSdkSha256'},$true))
 $projectPin=([xml](Get-Content -LiteralPath $RumTargets -Raw)).Project.PropertyGroup.RawLabRumSdkZipSha256 | Where-Object { $_ } | Select-Object -First 1
 if($pins.Count -ne 1 -or $pins[0].Right.Extent.Text.Trim("'") -ne $projectPin){throw "build.ps1 and RumSdk.targets must pin the same RUM SDK archive SHA-256."}
-$publish=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -eq '$publish'},$true))
+$publish=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -eq '$publish' -and $node.Operator -eq 'Equals'},$true))
 if($publish.Count -ne 1 -or !$publish[0].Right.Extent.Text.Contains('$rumProperty')){throw 'The release publish must pass the RUM SDK property.'}
 Write-Output 'PASS build.ps1 publishes with the RUM SDK archive pinned by RumSdk.targets.'

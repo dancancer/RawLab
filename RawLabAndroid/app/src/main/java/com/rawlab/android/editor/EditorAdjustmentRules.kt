@@ -4,6 +4,7 @@ import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.HslSettings
 import com.rawlab.android.settings.ColorGradingZone
+import com.rawlab.android.settings.canonicalZeros
 import com.rawlab.android.settings.independentForReset
 
 /** 工作区导航 ID 不进入持久化，也不替代几何/镜头草稿的 AdjustmentGroup。 */
@@ -75,7 +76,7 @@ object EditorAdjustmentRules {
                 (snapshot.customWb || snapshot.tint != 0f)) "Missing white balance calibration"
                 else "Recipe values cannot be represented without loss")
         else snapshot
-        val candidate = if (clearsRecipe) independent else resetStored(scope, snapshot, defaults(scope, snapshot, context))
+        val candidate = (if (clearsRecipe) independent else resetStored(scope, snapshot, defaults(scope, snapshot, context))).canonicalZeros()
         val converted = if (clearsRecipe) changedFields(snapshot, candidate) else emptySet()
         return EditorResetResult.Ready(candidate,
             scope is EditorResetScope.Group || scope == EditorResetScope.All || scope == EditorResetScope.AllHsl || scope == EditorResetScope.Tool(14) || scope == EditorResetScope.AllGrading || scope == EditorResetScope.Tool(21) ||

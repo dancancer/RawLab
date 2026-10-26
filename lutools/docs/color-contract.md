@@ -666,11 +666,31 @@ used by Auto fallback.
 
 Large-image processing bounds temporary working storage without reducing export
 resolution. CPU look blending uses fixed-size blocks; detail filters retain only
-original neighboring rows. Internal chroma uses bounded bands; reloadable Legacy
-wavelet reconstructs one tile at a time from immutable RAW pixels. Both preserve
-global statistics, sampling rules and original filter halos. Their private working
-image must be discarded on failure.
+original neighboring rows. Internal chroma uses bounded bands. On ARM64, reloadable
+Legacy wavelet normalizes in row bands, reconstructs one filter tile at a time from
+immutable RAW pixels, and restores in row bands. It retains two full images (the
+immutable source and work image) plus bounded tile/band scratch. Every opponent
+transform still uses `cv::transform`: the pinned OpenCV 4.12 ARM64 build preserves
+rounding for these opponent/inverse transforms across partitions, checked by
+bitwise regression (compiler auto-vectorization may still occur). x86 and ARM32 retain the full-frame transform,
+filter output and restoration path to preserve the released SIMD/tail rounding;
+Legacy calls without an immutable source also use that path. Global statistics,
+sampling rules and original filter halos are preserved. The private working image
+must be discarded on failure.
 The public chroma entry point retains its atomic input-update behavior.
+
+`wavelet_restore` checks ARM64 tile/band transforms bitwise against the full-frame
+OpenCV transform; `wavelet_denoise` compares the full Legacy result against the
+immutable-source path across tile seams, coarse settings and analysis-cache reuse.
+The ARM64 Unix `wavelet_legacy_memory_tests` target is built and run explicitly
+(it is excluded from ordinary builds/CTest):
+`cmake --build lutools/build-macos --target wavelet_legacy_memory_tests`, then
+`lutools/build-macos/wavelet_legacy_memory_tests 4` (or `1` for one OpenCV thread).
+It runs 62.9 MP CPU Legacy denoising including the immutable source, requires actual
+filtering and an unchanged source, and limits process peak RSS to two RGB float
+images plus 1280 MiB of scratch/runtime allowance (including allocator-retained
+pages). This core memory regression gate does not guarantee that an entire export
+fits every mobile device's memory limit.
 
 Filtered images above the 128 MiB retention budget are not cached. Final/file
 renders release large RAW pixel caches, while previews may retain one RAW source

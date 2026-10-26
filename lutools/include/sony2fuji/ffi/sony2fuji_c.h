@@ -380,7 +380,7 @@ typedef struct sony2fuji_hsl_probe_result {
 } sony2fuji_hsl_probe_result;
 
 typedef enum sony2fuji_ai_backend {
-    SONY2FUJI_AI_CPU = 0,
+    SONY2FUJI_AI_CPU = 0, // Reserved ABI value; enabled CPU requests return UNSUPPORTED.
     SONY2FUJI_AI_COREML = 1,
     SONY2FUJI_AI_AUTO = 2,
     SONY2FUJI_AI_DIRECTML = 3
@@ -484,6 +484,8 @@ sony2fuji_status sony2fuji_session_set_raw_noise_reduction(sony2fuji_session* se
 // Copies the directory strings. Configuration does not start inference.
 // Active AI bypasses FBDD, wavelet and display chroma denoising while preserving their settings.
 int32_t sony2fuji_ai_available(void);
+// Read-only native GPU probe. Does not load models or start inference; 0 means no supported hardware.
+int32_t sony2fuji_ai_hardware_available(void);
 sony2fuji_status sony2fuji_session_set_ai_denoise(sony2fuji_session* session, const sony2fuji_ai_denoise_config* config);
 // Explicit full-resolution preparation. Use a separate worker-owned session so previews remain responsive.
 // Cache keys exclude exposure/LUT/geometry, include WB and processing version for RGB, and retain reusable RAW output.

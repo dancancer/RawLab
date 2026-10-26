@@ -56,9 +56,13 @@ struct MacCanvasInput: NSViewRepresentable {
             owner?.onHold(false); owner?.onPanEnd()
             for recognizer in gestureRecognizers { recognizer.isEnabled = false; recognizer.isEnabled = owner?.target == nil }
         }
-        override func cancelOperation(_ sender: Any?) { cancelInput() }
+        override func cancelOperation(_ sender: Any?) { exitTarget() }
+        private func exitTarget() {
+            let exit = owner?.target?.exit
+            cancelInput(); exit?()
+        }
         override func keyDown(with event: NSEvent) {
-            if event.keyCode == 53 { cancelInput(); return }
+            if event.keyCode == 53 { exitTarget(); return }
             if let target = owner?.target, [UInt16(123), 124, 125, 126].contains(event.keyCode) {
                 if targetOrigin == nil {
                     let direction = event.keyCode == 124 || event.keyCode == 126 ? 1.0 : -1.0

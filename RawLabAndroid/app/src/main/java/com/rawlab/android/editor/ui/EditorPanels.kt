@@ -1,6 +1,7 @@
 package com.rawlab.android.editor.ui
 
 import com.rawlab.android.editor.controls.HslTargetActions
+import com.rawlab.android.editor.controls.HslTargetCanvasControls
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -44,7 +45,7 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
     onAlbum: () -> Unit, onFile: () -> Unit, onLicenses: () -> Unit, onPreviewSizeChange: (Int) -> Unit,
     onDraftEdit: (EditSettings, Boolean) -> Unit, onSaveRetry: () -> Unit,
     view: PhotoViewOptions = PhotoViewOptions(), onCanvasTap: () -> Unit = {}, onHoldBefore: (Boolean) -> Unit = {},
-    onModeChange: (ComparisonMode) -> Unit = {}, onCompareClose: () -> Unit = {}, onRetry: () -> Unit = {}, hslTarget: HslTargetActions? = null) {
+    onModeChange: (ComparisonMode) -> Unit = {}, onCompareClose: () -> Unit = {}, onRetry: () -> Unit = {}, hslTarget: HslTargetActions? = null, showTargetStatus: Boolean = false) {
     val comparisonInset = if (compare) with(LocalDensity.current) {
         MaterialTheme.typography.labelSmall.lineHeight.toDp() + 36.dp
     } else 12.dp
@@ -60,7 +61,8 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
                 onCanvasTap = { if (state.draft == null) onCanvasTap() }, onHoldBefore = { onHoldBefore(it && state.draft == null) },
                 onModeChange = onModeChange, onCompareClose = onCompareClose, viewingEnabled = state.draft == null && state.controlsEnabled,
                 bottomOverlayInset = comparisonInset, bottomOverlay = {
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Column(Modifier.wrapContentWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (showTargetStatus && hslTarget != null) HslTargetCanvasControls(hslTarget, Modifier.padding(8.dp))
                         EditorSaveNotice(state, onSaveRetry, Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
                     }
                 })

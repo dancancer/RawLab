@@ -147,7 +147,8 @@ private func check(_ value: @autoclosure () -> Bool, _ message: String) {
         let raw = URL(fileURLWithPath: CommandLine.arguments[2])
         let cache = URL(fileURLWithPath: CommandLine.arguments[3])
         let requested = CommandLine.arguments.count == 5 ? CommandLine.arguments[4] : "auto"
-        let backend = requested == "cpu" ? SONY2FUJI_AI_CPU : requested == "coreml" ? SONY2FUJI_AI_COREML : SONY2FUJI_AI_AUTO
+        check(["auto", "coreml"].contains(requested), "AI validation accepts GPU backends only")
+        let backend = requested == "coreml" ? SONY2FUJI_AI_COREML : SONY2FUJI_AI_AUTO
         let engine = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF, aiModelDirectory: model, aiCacheDirectory: cache, aiBackend: backend)
         var settings = Adjustments(); settings.aiDenoiseEnabled = true
         check(!settings.neutralSettings.aiDenoiseEnabled, "Neutral comparison excludes AI adjustments")
@@ -163,7 +164,7 @@ private func check(_ value: @autoclosure () -> Bool, _ message: String) {
               "Real RAW preparation reuses complete native caches without inference")
         check(!engine.lastAIBackend.isEmpty, "Prepared cache reports its actual AI producers")
         let sceneRGB = engine.lastAIBackend.hasPrefix("SceneRGB=")
-        if backend != SONY2FUJI_AI_CPU {
+        do {
             check(engine.lastAIBackend == (sceneRGB ? "SceneRGB=CoreML" : "RAW=CoreML; RGB=ISP:CPU/RGB:CoreML"),
                   "Native cache identifies CoreML networks and CPU ISP")
         }
@@ -184,7 +185,7 @@ private func check(_ value: @autoclosure () -> Bool, _ message: String) {
         let a = pixels(exact.image), b = pixels(exported)
         check(a.count == b.count && zip(a,b).allSatisfy { abs(Int($0)-Int($1)) <= 2 },
               "Exact preview and native export use the same AI result within output quantization")
-        if backend != SONY2FUJI_AI_CPU {
+        do {
             let copiedModel = root.appendingPathComponent("model")
             try FileManager.default.copyItem(at: model, to: copiedModel)
             let validationEngine = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF, aiModelDirectory: copiedModel, aiCacheDirectory: cache, aiBackend: backend)

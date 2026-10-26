@@ -1,4 +1,5 @@
 #include "dualdn_cache.h"
+#include "cache_reader.h"
 #include "model_package.h"
 #include "noise_profile.h"
 #include "scene_rgb_adapter.h"
@@ -9,9 +10,13 @@
 #include <filesystem>
 #include <fstream>
 #include <random>
+#include <map>
+#include <mutex>
+#include <thread>
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
+#include "windows_file_changes.h"
 #else
 #include <sys/stat.h>
 #endif
@@ -38,47 +43,91 @@ std::string digestJson(const Json& value) {
     const auto text = value.dump();
     return sha256Bytes(text.data(), text.size());
 }
-Json sourceIdentity(const std::filesystem::path& path) {
+struct SourceMetadata {
+    Json identity;
+    Json changed;
+    Json sequence;
+    bool cacheable = true;
+    std::string stamp() const { return digestJson({identity, changed, sequence}); }
+};
+SourceMetadata sourceMetadata(const std::filesystem::path& path, bool model = false) {
 #ifdef _WIN32
-    const HANDLE file = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES,
+    // 允许其他程序同时打开写句柄；变更租约与摘要前后校验负责检测实际修改。
+    const HANDLE file = CreateFileW(path.c_str(), GENERIC_READ,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) throw std::runtime_error("Cannot identify AI source file");
     BY_HANDLE_FILE_INFORMATION info{};
     FILE_BASIC_INFO basic{};
     const bool valid = GetFileInformationByHandle(file, &info) != 0 &&
         GetFileInformationByHandleEx(file, FileBasicInfo, &basic, sizeof(basic)) != 0;
+    const auto generation = valid ? fileChangeGeneration(path, model) : std::nullopt;
     CloseHandle(file);
     if (!valid) throw std::runtime_error("Cannot identify AI source file");
-    return {info.dwVolumeSerialNumber, info.nFileIndexHigh, info.nFileIndexLow,
-        info.ftCreationTime.dwHighDateTime, info.ftCreationTime.dwLowDateTime, basic.ChangeTime.QuadPart,
-        // Windows 的时间戳更新可能延后；内容摘要防止同尺寸、保留时间的覆盖复用旧结果。
-        sha256File(path.u8string())};
+    return {{{"file", path.u8string()}, {"volume", info.dwVolumeSerialNumber},
+        {"index", {info.nFileIndexHigh, info.nFileIndexLow}},
+        {"created", basic.CreationTime.QuadPart}, {"modified", basic.LastWriteTime.QuadPart},
+        {"bytes", (uint64_t(info.nFileSizeHigh) << 32) | info.nFileSizeLow}},
+        basic.ChangeTime.QuadPart, generation ? Json(*generation) : Json(), generation.has_value()};
 #else
     struct stat info{};
     if (::stat(path.c_str(), &info)) throw std::runtime_error("Cannot identify AI source file");
 #ifdef __APPLE__
-    const auto changed = info.st_ctimespec;
+    const auto modified = info.st_mtimespec, changed = info.st_ctimespec;
 #else
-    const auto changed = info.st_ctim;
+    const auto modified = info.st_mtim, changed = info.st_ctim;
 #endif
-    return {info.st_dev, info.st_ino, changed.tv_sec, changed.tv_nsec};
+    return {{{"file", path.u8string()}, {"device", info.st_dev}, {"index", info.st_ino},
+        {"modified", {modified.tv_sec, modified.tv_nsec}}, {"bytes", info.st_size}},
+        {changed.tv_sec, changed.tv_nsec}};
 #endif
 }
+}
+
+std::string sourceMetadataKey(const std::string& path) {
+    const auto metadata = sourceMetadata(std::filesystem::canonical(std::filesystem::u8path(path)), true);
+    // 不支持变更通知的文件系统不能安全复用元数据；只在该退路读取内容。
+    return metadata.cacheable ? metadata.stamp() : digestJson({metadata.stamp(), sha256File(path)});
 }
 
 std::string sourceIdentityKey(const std::string& path) {
+    struct Entry { std::string stamp, key; uint64_t used; };
+    static std::mutex mutex;
+    static std::map<std::string, Entry> cache;
+    static uint64_t access = 0;
     const auto file = std::filesystem::canonical(std::filesystem::u8path(path));
-    const auto modified = std::filesystem::last_write_time(file).time_since_epoch();
-    return digestJson({{"file", file.u8string()}, {"bytes", std::filesystem::file_size(file)},
-        {"modified_ns", std::chrono::duration_cast<std::chrono::nanoseconds>(modified).count()},
-        {"source_identity", sourceIdentity(file)}});
+    std::lock_guard<std::mutex> lock(mutex);
+    const auto metadata = sourceMetadata(file);
+    const auto stamp = metadata.stamp();
+    const auto found = cache.find(file.u8string());
+    if (metadata.cacheable && found != cache.end() && found->second.stamp == stamp) {
+        found->second.used = ++access;
+        return found->second.key;
+    }
+    const auto content = sha256File(file.u8string());
+    const auto after = sourceMetadata(file);
+    if (after.identity != metadata.identity || after.changed != metadata.changed ||
+        (metadata.cacheable && (after.sequence != metadata.sequence || !after.cacheable)))
+        throw std::runtime_error("AI source changed while computing its identity");
+    // ctime/ChangeTime 只触发摘要刷新，权限和标签变化不改变最终照片身份。
+    const auto key = digestJson({metadata.identity, content});
+    if (found == cache.end() && cache.size() >= 128) {
+        const auto oldest = std::min_element(cache.begin(), cache.end(),
+            [](const auto& left, const auto& right) { return left.second.used < right.second.used; });
+        cache.erase(oldest);
+    }
+    cache[file.u8string()] = {stamp, key, ++access};
+    return key;
+}
+
+std::string rawCacheKeyFromIdentity(const std::string& sourceIdentity, const std::string& modelDigest, int backend) {
+    if (!validKey(modelDigest) || !validKey(sourceIdentity)) throw std::invalid_argument("invalid AI cache digest");
+    return digestJson({{"source", sourceIdentity},
+        {"model", modelDigest}, {"backend", backend}, {"protocol", "rawlab-dualdn-v1"},
+        {"decoder", "rawlab-bayer-v2"}, {"noise", noiseProtocol}});
 }
 
 std::string rawCacheKey(const std::string& path, const std::string& modelDigest, int backend) {
-    if (!validKey(modelDigest)) throw std::invalid_argument("invalid AI model digest");
-    return digestJson({{"source", sourceIdentityKey(path)},
-        {"model", modelDigest}, {"backend", backend}, {"protocol", "rawlab-dualdn-v1"},
-        {"decoder", "rawlab-bayer-v2"}, {"noise", noiseProtocol}});
+    return rawCacheKeyFromIdentity(sourceIdentityKey(path), modelDigest, backend);
 }
 
 std::string rgbCacheKey(const std::string& rawKey, const RAWProcessOptions& options) {
@@ -121,7 +170,7 @@ std::optional<Tensor> DenoiseCache::load(const std::string& key, CacheKind kind,
     if (!readDimensions) countFor(kind, width, height);
     const auto file = std::filesystem::u8path(directory_) / (key + suffix(kind));
     try {
-        std::ifstream input(file, std::ios::binary);
+        CacheReader input(file);
         if (!input) return {};
         uint32_t length = 0; input.read(reinterpret_cast<char*>(&length), sizeof(length));
         if (!input || length == 0 || length > 4096) return {};
@@ -134,7 +183,7 @@ std::optional<Tensor> DenoiseCache::load(const std::string& key, CacheKind kind,
         }
         if (readDimensions) { width = header.at("width").get<int>(); height = header.at("height").get<int>(); }
         const size_t count = countFor(kind, width, height);
-        if (std::filesystem::file_size(file) != 4 + uint64_t(length) + count * 4) return {};
+        if (input.size() != 4 + uint64_t(length) + count * 4) return {};
         if (header.at("format") != "rawlab-dualdn-cache-v1" || header.at("key") != key ||
             header.at("width") != width || header.at("height") != height ||
             header.at("channels") != (kind == CacheKind::Raw ? 1 : 3) ||
@@ -176,8 +225,15 @@ void DenoiseCache::store(const std::string& key, CacheKind kind, int width, int 
         if (!output) throw std::runtime_error("Cannot write AI cache");
 #ifdef _WIN32
         // 原子替换整个文件，确保相同张量的新 producer 和依赖信息也一起更新。
-        if (!MoveFileExW(temporary.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING))
-            throw std::system_error(GetLastError(), std::system_category(), "Cannot replace AI cache");
+        // Windows 即使允许共享删除，也可能在旧读者关闭前拒绝替换；保留原子发布，有限等待短暂读取。
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (!MoveFileExW(temporary.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+            const auto error = GetLastError();
+            if ((error != ERROR_ACCESS_DENIED && error != ERROR_SHARING_VIOLATION) ||
+                std::chrono::steady_clock::now() >= deadline)
+                throw std::system_error(error, std::system_category(), "Cannot replace AI cache");
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
 #else
         std::filesystem::rename(temporary, target);
 #endif

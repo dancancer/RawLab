@@ -273,7 +273,7 @@ struct ContentView: View {
     private func applyEditorInteractionObservers<Content: View>(to content: Content) -> some View {
         content
         .onChange(of: adjustmentsExpanded) { _, expanded in
-            if !expanded && isAdjustingSlider { setSliderEditing(false) }
+            if !expanded && isAdjustingSlider && !hslTargetEnabled { setSliderEditing(false) }
             if expanded, let tool = collapsedEditorTool { activateEditorTool(tool) }
         }
         .onChange(of: geometrySelected) { _, active in

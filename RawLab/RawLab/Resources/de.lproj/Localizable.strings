@@ -243,6 +243,7 @@
 "拍摄时设置" = "Einstellung wie aufgenommen";
 "拍摄时：%.0f K · 色调 %+.0f" = "Wie aufgenommen: %.0f K · Tönung %+.0f";
 "拖动灵敏度为普通模式的四分之一。" = "Die Empfindlichkeit beim Ziehen beträgt ein Viertel der normalen Empfindlichkeit.";
+"拖动照片调整颜色；退出目标模式后可平移。" = "Foto ziehen, um Farben anzupassen. Zum Verschieben den Zielmodus beenden.";
 "拖动边角裁切，拖动画面内移动选区。" = "Ziehen Sie eine Ecke, um zuzuschneiden; ziehen Sie innerhalb der Auswahl, um sie zu verschieben.";
 "指定长边" = "Lange Seite festlegen";
 "按每张照片" = "Pro Foto";
@@ -418,6 +419,7 @@
 "目标无法保留未选参数，请调整复制范围。" = "Nicht ausgewählte Einstellungen können nicht erhalten bleiben. Ändern Sie den Kopierumfang.";
 "目标照片" = "Zielfotos";
 "目标调整" = "Zielgerichtete Anpassung";
+"目标调整：%@" = "Gezielte Anpassung: %@";
 "目标：%@ 张照片" = "Zielfotos: %@";
 "确认并冻结任务" = "Bestätigen und Aufgabe festschreiben";
 "移除" = "Entfernen";
@@ -521,6 +523,7 @@
 "返回批量集合" = "Zur Stapelsammlung zurück";
 "返回调整后" = "Nachher anzeigen";
 "进入纯预览" = "Reine Vorschau öffnen";
+"退出目标调整" = "Gezielte Anpassung beenden";
 "退出纯预览" = "Reine Vorschau schließen";
 "适合窗口" = "An Fenster anpassen";
 "选择" = "Auswählen";

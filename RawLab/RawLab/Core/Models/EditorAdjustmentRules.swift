@@ -93,8 +93,8 @@ enum EditorAdjustmentRules {
         }
         if case .group(.color) = scope {
             let settings = snapshot.settings
-            let whiteBalance = (context.isRaw && settings.whiteBalanceMode != .camera) ||
-                (settings.masterRecipeID != nil && settings.tint != 0)
+            let whiteBalance = context.isRaw && (settings.whiteBalanceMode != .camera ||
+                (settings.masterRecipeID != nil && settings.tint != 0))
             return whiteBalance || settings.saturation != 1 || settings.vibrance != 0 || !settings.hsl.isIdentity || !settings.gradingSettings.isDefault
         }
         let reset = resetting(scope, settings: snapshot.settings, context: context)

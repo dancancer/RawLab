@@ -38,7 +38,7 @@ public static class UpdatePackageVerifier
                 if (entry.Length > 256L * 1024 * 1024) throw new InvalidDataException("Unexpected executable size");
                 var extracted = Path.Combine(temporary, Path.GetFileName(entry.FullName));
                 entry.ExtractToFile(extracted);
-                AuthenticodeTrust.Verify(extracted, publisherKeySha256);
+                if (!string.IsNullOrEmpty(publisherKeySha256)) AuthenticodeTrust.Verify(extracted, publisherKeySha256);
                 var version = FileVersionInfo.GetVersionInfo(extracted);
                 if ($"{version.FileMajorPart}.{version.FileMinorPart}.{version.FileBuildPart}" != manifest.Version || version.FilePrivatePart.ToString() != manifest.Build)
                     throw new InvalidDataException("Package version differs from signed descriptor");

@@ -14,7 +14,7 @@ internal object AdjustmentTransferValues {
         AdjustmentField.STRENGTH -> settings.strength.toDouble()
         AdjustmentField.EXPOSURE -> settings.exposure.toDouble()
         AdjustmentField.CONTRAST -> 1.0 + settings.contrast.toDouble()
-        AdjustmentField.HIGHLIGHTS -> -settings.highlights.toDouble()
+        AdjustmentField.HIGHLIGHTS -> (-settings.highlights.toDouble()).canonicalZero()
         AdjustmentField.SHADOWS -> settings.shadows.toDouble()
         AdjustmentField.S_CURVE -> settings.toneCurve.toDouble()
         AdjustmentField.SATURATION -> 1.0 + settings.saturation.toDouble()
@@ -30,7 +30,7 @@ internal object AdjustmentTransferValues {
         AdjustmentField.STRENGTH -> settings.copy(strength = value.toFloat())
         AdjustmentField.EXPOSURE -> settings.copy(exposure = value.toFloat())
         AdjustmentField.CONTRAST -> settings.copy(contrast = (value - 1).toFloat())
-        AdjustmentField.HIGHLIGHTS -> settings.copy(highlights = -value.toFloat())
+        AdjustmentField.HIGHLIGHTS -> settings.copy(highlights = (-value.toFloat()).canonicalZero())
         AdjustmentField.SHADOWS -> settings.copy(shadows = value.toFloat())
         AdjustmentField.S_CURVE -> settings.copy(toneCurve = value.toFloat())
         AdjustmentField.SATURATION -> settings.copy(saturation = (value - 1).toFloat())
@@ -44,7 +44,7 @@ internal object AdjustmentTransferValues {
             val (axis, channel) = field.hslLocation!!
             settings.copy(hsl = HslSettings(settings.hsl.packed().toMutableList().also { it[axis * 8 + channel] = value.toFloat() }))
         }
-    }
+    }.canonicalZeros()
 
     fun values(s: EditSettings, context: AdjustmentTransferContext): Map<AdjustmentField, AdjustmentValue> {
         val values = linkedMapOf<AdjustmentField, AdjustmentValue>()
@@ -156,6 +156,6 @@ internal object AdjustmentTransferValues {
             }
             result = result.copy(lens = lens)
         }
-        return result
+        return result.canonicalZeros()
     }
 }

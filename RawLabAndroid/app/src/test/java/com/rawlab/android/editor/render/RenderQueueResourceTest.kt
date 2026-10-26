@@ -6,6 +6,16 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class RenderQueueResourceTest {
+    @Test fun lifecycleWorkDrainsBeforeResourceCloseAndCannotBeCoalesced() {
+        val started = CountDownLatch(1); val resume = CountDownLatch(1); val closed = CountDownLatch(1)
+        val order = java.util.Collections.synchronizedList(mutableListOf<Int>())
+        val queue = RenderQueue<Int, Int>({ started.countDown(); resume.await(); order += 1; it }, { _, _ -> },
+            { order += 3; closed.countDown() })
+        queue.submit(1); assertTrue(started.await(5, TimeUnit.SECONDS))
+        queue.performAfterPending { order += 2 }
+        queue.close(); resume.countDown()
+        assertTrue(closed.await(5, TimeUnit.SECONDS)); assertEquals(listOf(1, 2, 3), order)
+    }
     @Test fun supersededResultIsDisposedAndOnlyLatestResultIsPublished() {
         val started = CountDownLatch(1); val resume = CountDownLatch(1)
         val discarded = CountDownLatch(1); val published = CountDownLatch(1); val closed = CountDownLatch(1)

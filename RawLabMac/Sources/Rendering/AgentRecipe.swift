@@ -4,6 +4,9 @@ extension RenderEngine {
     // 复用实际渲染映射，固化配方强度和当前照片白平衡，不在 Agent 中再次叠加。
     func agentRecipe(_ url: URL, settings: Adjustments, lut: URL?, output: URL,
                      exportLongEdge: Int? = nil) throws -> Data {
+        guard !settings.aiDenoiseEnabled else {
+            throw RenderError.failed(L10n.text("Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。"))
+        }
         if let edge = exportLongEdge, !(1...65535).contains(edge) {
             throw RenderError.failed(L10n.text("导出长边必须为 1-65535 像素。"))
         }

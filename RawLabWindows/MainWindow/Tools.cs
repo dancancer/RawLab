@@ -437,7 +437,7 @@ public partial class MainWindow
         CompareButton.IsEnabled=CompareModeButton.IsEnabled=file!=null && !exporting && !transform.Active;
         InfoEntryButton.Visibility=file==null ? Visibility.Collapsed : Visibility.Visible;
         InfoEntryButton.IsEnabled=file!=null && !exporting;
-        AdjustmentPanel.IsEnabled=!exporting && !pendingResetReady && !adjustmentReloadRequired;GpuMode.IsEnabled=!exporting && (file==null || !LibraryEntry.IsRaster(file));
+        AdjustmentPanel.IsEnabled=!exporting && !adjustmentReloadRequired;GpuMode.IsEnabled=!exporting && (file==null || !LibraryEntry.IsRaster(file));
         var busy=scheduler.Busy || previewResize.IsEnabled || aiJob.State.IsRunning;
         BusyIndicator.Visibility=busy ? Visibility.Visible : Visibility.Collapsed;
         BusyAnimation.Visibility=SystemParameters.ClientAreaAnimation ? Visibility.Visible : Visibility.Collapsed;

@@ -157,11 +157,14 @@
     <string name="grading_reset_message">"シャドウ、中間調、ハイライトのカラーグレーディングを初期値に戻しますか？"</string>
     <string name="grading_reset_zone">"現在の階調範囲をリセット"</string>
     <string name="hsl_target">"ターゲット調整"</string>
+    <string name="hsl_target_active">"ターゲット調整：%1$s"</string>
     <string name="hsl_target_axis">"調整軸"</string>
+    <string name="hsl_target_exit">"ターゲット調整を終了"</string>
     <string name="hsl_target_failed">"色を取得できませんでした。もう一度お試しください。"</string>
     <string name="hsl_target_gray">"グレーに近いため、色域を選択できません。"</string>
     <string name="hsl_target_instructions">"写真の色を選び、上下にドラッグ"</string>
     <string name="hsl_target_outside">"調整後の写真内で色を選択してください。"</string>
+    <string name="hsl_target_pan_hint">"写真をドラッグして色を調整します。移動するにはターゲットモードを終了してください。"</string>
     <string name="hsl_target_ranges">"対象の色域：%1$s"</string>
     <string name="hsl_target_stale">"プレビューが変わりました。もう一度色を選択してください。"</string>
     <string name="hsl_target_unavailable">"このピクセルからは色を取得できません。"</string>

@@ -273,6 +273,13 @@ struct CompactControlsPresentationTests {
                 snapshots.append(try await snapshot(EditorView(model: model), name: name, language: language,
                     size: size, expectedFields: 1, output: output, renderModel: model))
             }
+            for (name, size, textSize) in [
+                ("hsl-target-collapsed", NSSize(width: 560, height: 150), DynamicTypeSize.large),
+                ("hsl-target-collapsed-large", NSSize(width: 390, height: 320), DynamicTypeSize.accessibility3)
+            ] {
+                snapshots.append(try await snapshot(HSLTargetCanvasControls(axis: .lightness, onExit: {}).padding(12),
+                    name: name, language: language, size: size, expectedFields: 0, output: output, textSize: textSize))
+            }
             snapshots.append(try await snapshot(MacHSLMixer(settings: .constant(hsl)).padding(16)
                 .frame(width: 650, height: 220, alignment: .top).background(Color(nsColor: .windowBackgroundColor)),
                 name: "hsl-workspace-650", language: language, size: NSSize(width: 650, height: 220),

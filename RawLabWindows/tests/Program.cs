@@ -49,10 +49,12 @@ static class Program
             if(args.Length==3 && args[0]=="--hsl-target") { HslTargetUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HSL target UI checks");return 0; }
             TestWindowState.PreserveExistingBatch(journalDirectory);
             Loc.Initialize("zh-Hans");
+            if(args.Length==4 && args[0]=="--ai-batch") { AIBatchWindowChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} AI batch checks");return 0; }
             if(args.Length==5 && args[0]=="--ai-real-window") { AIDenoiseRealWindowChecks.Run(args[1],args[2],args[3],args[4],Check);Console.WriteLine($"PASS {checks} real AI window checks");return 0; }
+            if(args.Length==4 && args[0]=="--ai-capability") { AICapabilityWindowChecks.Run(args[1],args[2],args[3]=="hardware",Check);Console.WriteLine($"PASS {checks} AI capability checks");return 0; }
             if(args.Length==3 && args[0]=="--ai-window") { AIDenoiseWindowChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} AI window checks");return 0; }
             if(args.Length==2 && args[0]=="--ai-panel") { AIDenoisePanelChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} AI panel checks");return 0; }
-            if(args.Length is 4 or 5 && args[0]=="--ai-denoise") { AIDenoiseChecks.Run(args[1],args[2],args[3],Check,args.Length==5 ? args[4] : "CPU");Console.WriteLine($"PASS {checks} AI denoise checks");return 0; }
+            if(args.Length is 4 or 5 && args[0]=="--ai-denoise") { AIDenoiseChecks.Run(args[1],args[2],args[3],Check,args.Length==5 ? args[4] : "DirectML");Console.WriteLine($"PASS {checks} AI denoise checks");return 0; }
             if(args.Length>=1 && args[0]=="--first-preview") { FirstPreviewChecks.Run(args.Skip(1),Check);Console.WriteLine($"PASS {checks} first preview checks");return 0; }
             if(args.Length==3 && args[0]=="--view-compare") { ViewComparisonChecks.Run(args[1],args[2],Check);return 0; }
             if(args.Length==3 && args[0]=="--view-pointer") { ViewComparisonChecks.Run(args[1],args[2],Check,pointerOnly:true);return 0; }

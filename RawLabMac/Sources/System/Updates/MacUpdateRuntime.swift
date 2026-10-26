@@ -44,10 +44,22 @@ final class MacUpdateRunLease {
         if updates.storageError != nil || updates.requiresRecovery { startupError = "recovery"; return }
         let candidate = EditorModel(onUsage: { UsageAnalytics.shared.record($0) })
         candidate.registerUpdateGate(updates.gate)
-        updates.finishStartupHealthCheck(healthy: candidate.updateDataHealthy && updates.storageError == nil)
+        updates.retryStartup = { [weak self, weak delegate] in
+            guard let self, let delegate else { return }
+            Task { await self.openEditor(candidate, updates: updates, delegate: delegate) }
+        }
+        await openEditor(candidate, updates: updates, delegate: delegate)
+    }
+
+    private func openEditor(_ candidate: EditorModel, updates: DesktopUpdateController, delegate: RawLabMacDelegate) async {
+        await updates.finishStartupHealthCheck(healthy: candidate.updateDataHealthy && updates.storageError == nil)
+        if updates.requiresStartupHealthCheck && !updates.requiresRecovery {
+            startupError = "trust"; return
+        }
         if updates.storageError != nil || updates.requiresRecovery {
             startupError = "recovery"; return
         }
+        startupError = nil; updates.retryStartup = nil
         model = candidate
         delegate.model = candidate
         updates.startPolling()

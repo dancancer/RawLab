@@ -103,8 +103,8 @@ internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentShe
                                         skipped = if (it) skipped + id else skipped - id
                                     }
                                     if (editor.photo?.identity?.value == id && model.collectionDraftFailure(id) != null) {
-                                        TextButton(onClick = { if (model.resolveCollectionDraft(true)) model.closeAdjustmentOperation() }, enabled = !busy && id !in skipped) { Text(stringResource(R.string.collection_apply_draft)) }
-                                        TextButton(onClick = { if (model.resolveCollectionDraft(false)) model.closeAdjustmentOperation() }, enabled = !busy && id !in skipped) { Text(stringResource(R.string.collection_discard_draft)) }
+                                        TextButton(onClick = { model.resolveCollectionDraft(true) { if (it) model.closeAdjustmentOperation() } }, enabled = !busy && id !in skipped) { Text(stringResource(R.string.collection_apply_draft)) }
+                                        TextButton(onClick = { model.resolveCollectionDraft(false) { if (it) model.closeAdjustmentOperation() } }, enabled = !busy && id !in skipped) { Text(stringResource(R.string.collection_discard_draft)) }
                                     }
                                     if (prepared == null && synchronization == null) TextButton(onClick = { changeTargets(targets - uri) }, enabled = !busy) {
                                         Text(stringResource(R.string.message_remove))
@@ -124,7 +124,7 @@ internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentShe
                                 transfer.results.count { it.status in unfinished }.toString()), Modifier.testTag("adjustment-paste-summary"))
                         }
                         if (transfer.results.isEmpty() || transfer.results.any { it.status in unfinished })
-                            Button(onClick = { prepared?.let { model.applyAdjustmentPaste(it, skipped) } }, enabled = ready,
+                            Button(onClick = { prepared?.let { model.applyAdjustmentPaste(it, skipped) } }, enabled = ready && !model.state.value.committingAdjustments,
                                 modifier = Modifier.testTag("adjustment-paste-apply")) {
                                 Text(stringResource(if (transfer.results.isEmpty()) R.string.transfer_apply else R.string.transfer_retry))
                             }
@@ -205,9 +205,9 @@ internal fun AdjustmentScopeEditor(confirmTitle: String, confirmTag: String, ena
 private fun TransactionButtons(model: EditorViewModel, transaction: AdjustmentHistoryTransaction, busy: Boolean) {
     val applied = transaction.parts.count { it.state == AdjustmentHistoryTransaction.State.APPLIED }
     val undone = transaction.parts.count { it.state == AdjustmentHistoryTransaction.State.UNDONE }
-    TextButton(onClick = { model.performAdjustmentHistory(true, transaction.id, true) }, enabled = !busy && applied > 0,
+    TextButton(onClick = { model.performAdjustmentHistory(true, transaction.id, true) }, enabled = !busy && !model.state.value.committingAdjustments && applied > 0,
         modifier = Modifier.testTag("adjustment-transaction-undo-${transaction.id}")) { Text(stringResource(R.string.transfer_undo_count, applied.toString())) }
-    TextButton(onClick = { model.performAdjustmentHistory(false, transaction.id, true) }, enabled = !busy && undone > 0,
+    TextButton(onClick = { model.performAdjustmentHistory(false, transaction.id, true) }, enabled = !busy && !model.state.value.committingAdjustments && undone > 0,
         modifier = Modifier.testTag("adjustment-transaction-redo-${transaction.id}")) { Text(stringResource(R.string.transfer_redo_count, undone.toString())) }
 }
 

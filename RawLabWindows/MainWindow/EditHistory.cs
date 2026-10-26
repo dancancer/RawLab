@@ -37,8 +37,11 @@ public partial class MainWindow
         if(editGesture is not {} gesture)return;
         editGesture=null;interacting=false;editSaveTimer.Stop();
         if(file!=gesture.Path || openRevision!=gesture.OpenRevision)return;
-        settings=gesture.Before.Settings.Restore();lut=ResolveLook(gesture.Before);
-        editDirty=gesture.WasDirty;++editRevision;RefreshControls();Schedule();
+        var aiEnabled=settings.AIDenoiseEnabled;
+        var aiChanged=aiEnabled!=gesture.Before.Settings.AIDenoiseEnabled;
+        settings=gesture.Before.Settings.Restore();settings.AIDenoiseEnabled=aiEnabled;lut=ResolveLook(gesture.Before);
+        editDirty=gesture.WasDirty || aiChanged;++editRevision;RefreshControls();Schedule();
+        if(aiChanged && !closing)SaveEdits();
     }
     private AdjustmentOutcome CommitCurrentEdit(AdjustmentSnapshot snapshot)
     {

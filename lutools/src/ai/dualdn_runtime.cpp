@@ -16,10 +16,7 @@ PackedBayer packedSource(const RAWBayerSource& source) {
     return packBayer({source.width, source.height, source.pixels, source.pattern, source.black, source.white});
 }
 
-void finishReport(RuntimeReport& report, const InferenceReport& fallback, Clock::time_point start) {
-    if (fallback.fallbackUsed) { report.backend = "CPU"; report.fallbackReason = fallback.fallbackReason; }
-    report.seconds = std::chrono::duration<double>(Clock::now() - start).count();
-}
+
 }
 
 RAWBayerOverride denoiseRaw(const RAWBayerSource& source, const ModelPackage& package,
@@ -31,20 +28,13 @@ RAWBayerOverride denoiseRaw(const RAWBayerSource& source, const ModelPackage& pa
     auto packed = packedSource(source);
     NetworkGraph graph(package, GraphKind::Raw, backend);
     report.backend = graph.backend(); report.fallbackReason = graph.fallbackReason();
-    std::unique_ptr<NetworkGraph> cpu;
     auto predict = [&](NetworkGraph& session, const Tensor& tile) {
         return Tensor{tile.width, tile.height, 4, session.run({tile.values, {noise.k}, {noise.b}})};
     };
-    PredictTile fallback;
-    if (backend == Backend::Auto && graph.backend() != "CPU") fallback = [&](const Tensor& tile) {
-        if (!cpu) cpu = std::make_unique<NetworkGraph>(package, GraphKind::Raw, Backend::Cpu);
-        return predict(*cpu, tile);
-    };
-    InferenceReport diagnostics;
-    auto output = runTilesWithFallback(packed.tensor, {package.tileSize, 128}, 4,
-        [&](const Tensor& tile) { return predict(graph, tile); }, fallback, diagnostics, progress);
+    auto output = runTiles(packed.tensor, {package.tileSize, 128}, 4,
+        [&](const Tensor& tile) { return predict(graph, tile); }, progress);
     auto mosaic = unpackBayer(output, packed);
-    finishReport(report, diagnostics, start);
+    report.seconds = std::chrono::duration<double>(Clock::now() - start).count();
     return {source.width, source.height, std::move(mosaic.values), {}};
 }
 
@@ -76,7 +66,6 @@ Tensor denoiseRgb(const RAWBayerSource& source, const RAWBayerOverride& denoised
     NetworkGraph rgb(package, GraphKind::RGB, backend);
     report.backend = isp.backend() == rgb.backend() ? rgb.backend() : "ISP:" + isp.backend() + "/RGB:" + rgb.backend();
     report.fallbackReason = isp.fallbackReason().empty() ? rgb.fallbackReason() : isp.fallbackReason();
-    std::unique_ptr<NetworkGraph> cpuISP, cpuRGB;
     auto predict = [&](const Tensor& tile, NetworkGraph& ispGraph, NetworkGraph& rgbGraph) {
         const size_t pixels = size_t(tile.width) * tile.height;
         Tensor clean{tile.width, tile.height, 1, {tile.values.begin(), tile.values.begin() + pixels}};
@@ -97,21 +86,14 @@ Tensor denoiseRgb(const RAWBayerSource& source, const RAWBayerOverride& denoised
         }
         return result;
     };
-    PredictTile fallback;
-    if (backend == Backend::Auto && (isp.backend() != "CPU" || rgb.backend() != "CPU")) fallback = [&](const Tensor& tile) {
-        if (!cpuISP) cpuISP = std::make_unique<NetworkGraph>(package, GraphKind::ISP, Backend::Cpu);
-        if (!cpuRGB) cpuRGB = std::make_unique<NetworkGraph>(package, GraphKind::RGB, Backend::Cpu);
-        return predict(tile, *cpuISP, *cpuRGB);
-    };
-    InferenceReport diagnostics;
     const int outputChannels = mode == RGBOutput::BothForValidation ? 6 : 3;
-    const auto canonical = runTilesWithFallback(mosaics, {package.tileSize, 64}, outputChannels,
-        [&](const Tensor& tile) { return predict(tile, isp, rgb); }, fallback, diagnostics, progress);
+    const auto canonical = runTiles(mosaics, {package.tileSize, 64}, outputChannels,
+        [&](const Tensor& tile) { return predict(tile, isp, rgb); }, progress);
     Tensor output{source.width, source.height, outputChannels, std::vector<float>(outputChannels * sourcePixels)};
     for (int c = 0; c < outputChannels; ++c) for (int y = 0; y < source.height; ++y)
         std::copy_n(canonical.values.data() + size_t(c) * plane + size_t(y + packed.offsetY) * canonical.width + packed.offsetX,
                     source.width, output.values.data() + size_t(c) * sourcePixels + size_t(y) * source.width);
-    finishReport(report, diagnostics, start);
+    report.seconds = std::chrono::duration<double>(Clock::now() - start).count();
     return output;
 }
 Tensor denoiseSceneRGB(const ImageData& source, float gain, const ModelPackage& package,
@@ -125,18 +107,7 @@ Tensor denoiseSceneRGB(const ImageData& source, float gain, const ModelPackage& 
             return Tensor{tile.width,tile.height,3,graph->run({tile.values})};
         },progress);
     };
-    Tensor result;
-    try { result = run(); }
-    catch (const Cancelled&) { throw; }
-    catch (const std::runtime_error& error) {
-        if (backend != Backend::Auto || report.backend == "CPU") throw;
-        report.fallbackReason = error.what();
-        graph.reset();
-        graph = std::make_unique<NetworkGraph>(package,GraphKind::BlindRGB,Backend::Cpu);
-        report.backend = graph->backend();
-        // 失败的部分结果已销毁，CPU 重新处理整张图，不能拼接不同后端的输出。
-        result = run();
-    }
+    const auto result = run();
     report.seconds = std::chrono::duration<double>(Clock::now()-start).count();
     return result;
 }

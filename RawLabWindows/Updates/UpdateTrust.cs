@@ -26,7 +26,8 @@ public sealed record UpdateTrustConfiguration(string FeedUrl, string PublicKey, 
             try
             {
                 if (!Uri.TryCreate(FeedUrl, UriKind.Absolute, out var url) || url.Scheme != "https" || url.Host.Length == 0 || url.UserInfo.Length != 0 ||
-                    string.IsNullOrWhiteSpace(PublicKey) || !Regex.IsMatch(PublisherKeySha256, "\\A[a-fA-F0-9]{64}\\z")) return false;
+                    string.IsNullOrWhiteSpace(PublicKey) || PublisherKeySha256 == null ||
+                    (PublisherKeySha256.Length != 0 && !Regex.IsMatch(PublisherKeySha256, "\\A[a-fA-F0-9]{64}\\z"))) return false;
                 using var key = ECDsa.Create(); var bytes = Convert.FromBase64String(PublicKey);
                 key.ImportSubjectPublicKeyInfo(bytes, out var consumed);
                 return consumed == bytes.Length && key.ExportParameters(false).Curve.Oid.Value == "1.2.840.10045.3.1.7";
@@ -61,8 +62,8 @@ public static class SignedUpdateManifest
         if (value.Format != 1 || value.PackageId != "RawLab.Desktop" || value.Platform != "windows" || value.Architecture != "x64" || value.Channel != "stable" ||
             value.IssuedAt > now.AddMinutes(5) || value.ExpiresAt <= now || value.ExpiresAt <= value.IssuedAt ||
             value.Size <= 0 || value.Size > 4L * 1024 * 1024 * 1024 ||
-            !Regex.IsMatch(value.Version, "\\A[0-9]+\\.[0-9]+\\.[0-9]+\\z") || !Version.TryParse(value.Version, out _) ||
-            !Version.TryParse(value.MinimumVersion, out var minimum) || !Version.TryParse(currentVersion, out var current) || current < minimum ||
+            !Regex.IsMatch(value.Version, "\\A[0-9]+\\.[0-9]+\\.[0-9]+\\z") || !Version.TryParse(value.Version, out var nextVersion) ||
+            !Version.TryParse(value.MinimumVersion, out var minimum) || !Version.TryParse(currentVersion, out var current) || current < minimum || current > nextVersion ||
             !int.TryParse(value.Build, out var build) || build < 1 ||
             !Regex.IsMatch(value.FileName, "\\A[A-Za-z0-9][A-Za-z0-9._-]*-full\\.nupkg\\z") ||
             !Regex.IsMatch(value.Sha256, "\\A[a-fA-F0-9]{64}\\z") || !Regex.IsMatch(value.Sha1, "\\A[a-fA-F0-9]{40}\\z"))

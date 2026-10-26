@@ -120,18 +120,36 @@ internal static class SoftwareUpdateUiChecks
             check(repair.RequiresRecovery && !Button(repairWindow,"updates.check").IsEnabled && File.ReadAllText(repair.StateArchive!)=="{broken",
                 "Native repair action preserves damaged state and requires reopening");
             var repairedStartup=new DesktopUpdateController(new Adapter(),new(),repairStore,"0.8.2","14");
-            repairedStartup.FinishStartupHealthCheck(window.UpdateDataHealthy);
+            repairedStartup.FinishStartupHealthCheckAsync(window.UpdateDataHealthy).GetAwaiter().GetResult();
             check(!repairedStartup.RequiresRecovery && !repairedStartup.RequiresStartupHealthCheck,"Real editor data health completes repair on fresh startup");
             repairWindow.Close();
             var beforeFailure=store.VersionedState(photo);
+            Invoke(window,"ShowCollection");var collection=Get<BatchSelectionWindow>(window,"collectionWindow");
             adapter.RejectInstall=true;controller.CheckAsync(true).GetAwaiter().GetResult();
             var downloading=controller.DownloadAsync();adapter.Download.TrySetResult();
             InteractionChecks.PumpUntil(()=>downloading.IsCompleted && controller.State.Phase==UpdatePhase.PackageReady);
             var installing=controller.ChooseAsync(UpdateInstallChoice.RestartNow);
             InteractionChecks.PumpUntil(()=>installing.IsCompleted && !controller.PreparingInstallation);
-            check(controller.State.Failure?.Stage==UpdatePhase.Installing && !window.IsEnabled &&
+            check(controller.State.Failure?.Stage==UpdatePhase.Installing && !window.EditorShell.IsEnabled && window.UpdateLockBanner.IsVisible &&
                 store.VersionedState(photo).SameAs(beforeFailure),
                 "A failed installer dispatch disables the real editor and preserves saved edits");
+            check(!collection.IsEnabled,"Installation lock also disables an existing collection window");
+            collection.Close();Invoke(window,"ShowCollection");collection=Get<BatchSelectionWindow>(window,"collectionWindow");
+            check(!collection.IsEnabled,"A collection window created during the installation lock starts disabled");
+            collection.Close();
+            var openUpdates=Button(window,"updates.lock.open");window.Activate();openUpdates.Focus();
+            var tab=new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(openUpdates),Environment.TickCount,Key.Tab){RoutedEvent=Keyboard.PreviewKeyDownEvent};
+            openUpdates.RaiseEvent(tab);
+            check(!tab.Handled,"Installation lock permits keyboard focus navigation to the update banner");
+            var press=new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(openUpdates),Environment.TickCount,Key.Space){RoutedEvent=Keyboard.PreviewKeyDownEvent};
+            openUpdates.RaiseEvent(press);
+            check(!press.Handled,"Installation lock does not swallow the focused update button's Space key");
+            press.RoutedEvent=Keyboard.KeyDownEvent;openUpdates.RaiseEvent(press);
+            openUpdates.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(openUpdates),Environment.TickCount,Key.Space){RoutedEvent=Keyboard.KeyUpEvent});
+            InteractionChecks.PumpUntil(()=>Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow").IsVisible);
+            check(Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow").IsEnabled,
+                "Keyboard activation of the lock banner reopens the usable software update window");
+            Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow").Close();
             Console.WriteLine("UPDATE_UI_OUTPUT="+output);
         } finally {controller.Cancel();Invoke(window,"CancelTransformDraft");Invoke(window,"CancelParameterInputs");window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);}
     }

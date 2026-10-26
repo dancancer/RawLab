@@ -14,10 +14,10 @@ extension EditorModel {
     }
 
     var canUndoAdjustment: Bool {
-        file.map { adjustmentSession?.canUndoPhoto($0) == true } == true && !exporting && geometryDraft == nil && adjustmentSheet == nil
+        file.map { adjustmentSession?.canUndoPhoto($0) == true } == true && !exporting && !scheduler.interacting && !aiState.isRunning && geometryDraft == nil && adjustmentSheet == nil
     }
     var canRedoAdjustment: Bool {
-        file.map { adjustmentSession?.canRedoPhoto($0) == true } == true && !exporting && geometryDraft == nil && adjustmentSheet == nil
+        file.map { adjustmentSession?.canRedoPhoto($0) == true } == true && !exporting && !scheduler.interacting && !aiState.isRunning && geometryDraft == nil && adjustmentSheet == nil
     }
 
     // 一个正式提交入口；失败保留当前 UI / 草稿，成功回执成为下一次保存的前态。
@@ -60,8 +60,11 @@ extension EditorModel {
         guard let entry = interactionEntry else { return }
         saveWork?.cancel()
         scheduler.setInteracting(false)
-        restoreAdjustmentState(entry)
-        dirty = interactionWasDirty
+        let aiEnabled = settings.aiDenoiseEnabled
+        let aiChanged = aiEnabled != entry.settings.aiDenoiseEnabled
+        var restored = entry; restored.settings.aiDenoiseEnabled = aiEnabled
+        restoreAdjustmentState(restored)
+        dirty = interactionWasDirty || aiChanged
         interactionEntry = nil
         if dirty { _ = saveEdits() }
         schedule(forceExact: true)
@@ -71,9 +74,8 @@ extension EditorModel {
     func redoAdjustment() { changeAdjustmentHistory(undo: false) }
 
     private func changeAdjustmentHistory(undo: Bool) {
-        guard geometryDraft == nil, !exporting, adjustmentSheet == nil, let file,
+        guard geometryDraft == nil, !exporting, !scheduler.interacting, !aiState.isRunning, adjustmentSheet == nil, let file,
               ParameterValueField.resolvePendingInputs() else { return }
-        if scheduler.interacting { setInteracting(false) }
         guard saveEdits(), let session = adjustmentSession else { return }
         guard let id = session.photoHistoryID(file, undo: undo) else { return }
         let request = AdjustmentHistoryRequest(transactionID: id, photo: file, undo: undo)

@@ -3313,6 +3313,52 @@
     "查看保留的更新状态文件": {
       "source": "查看保留的更新状态文件",
       "formats": []
+    },
+    "目标调整：{0}": {
+      "source": "目标调整：{0}",
+      "formats": [
+        "{0}"
+      ]
+    },
+    "退出目标调整": {
+      "source": "退出目标调整",
+      "formats": []
+    },
+    "拖动照片调整颜色；退出目标模式后可平移。": {
+      "source": "拖动照片调整颜色；退出目标模式后可平移。",
+      "formats": []
+    },
+    "AI 降噪结果连续未就绪，请重试。": {
+      "formats": [],
+      "source": "AI 降噪结果连续未就绪，请重试。"
+    },
+    "正在处理更新，编辑暂不可用。": {
+      "formats": [],
+      "source": "正在处理更新，编辑暂不可用。"
+    },
+    "Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。": {
+      "formats": [],
+      "source": "Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。"
+    },
+    "Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。": {
+      "formats": [],
+      "source": "Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。"
+    },
+    "AI 降噪不支持 CPU，请重新创建使用 GPU 的批量任务。": {
+      "formats": [],
+      "source": "AI 降噪不支持 CPU，请重新创建使用 GPU 的批量任务。"
+    },
+    "AI 准备可取消；已完成的输出会保留。": {
+      "formats": [],
+      "source": "AI 准备可取消；已完成的输出会保留。"
+    },
+    "AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。": {
+      "formats": [],
+      "source": "AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。"
+    },
+    "普通显影使用 CPU；AI 降噪仍使用硬件 GPU。": {
+      "formats": [],
+      "source": "普通显影使用 CPU；AI 降噪仍使用硬件 GPU。"
     }
   },
   "overrides": {
@@ -4793,6 +4839,38 @@
       "fr": "Choisissez un dossier de sortie.",
       "ja": "出力先フォルダーを選択してください。",
       "zh-Hans": "请选择输出文件夹。"
+    },
+    "AI 降噪不支持 CPU，请重新创建使用 GPU 的批量任务。": {
+      "en": "AI denoise does not support CPU. Create a new batch task using GPU.",
+      "zh-Hans": "AI 降噪不支持 CPU，请重新创建使用 GPU 的批量任务。",
+      "de": "KI-Entrauschung unterstützt keine CPU. Erstelle einen neuen Stapelauftrag mit GPU.",
+      "es": "La reducción de ruido con IA no admite CPU. Crea una nueva tarea por lotes con GPU.",
+      "fr": "La réduction du bruit par IA ne prend pas en charge le CPU. Créez une nouvelle tâche par lots avec le GPU.",
+      "ja": "AIノイズ除去はCPUに対応していません。GPUを使用する新しいバッチタスクを作成してください。"
+    },
+    "AI 准备可取消；已完成的输出会保留。": {
+      "de": "Die KI-Vorbereitung kann abgebrochen werden. Fertige Exporte bleiben erhalten.",
+      "en": "AI preparation can be cancelled. Completed exports are kept.",
+      "es": "La preparación de IA se puede cancelar. Las exportaciones completadas se conservan.",
+      "fr": "La préparation IA peut être annulée. Les exports terminés sont conservés.",
+      "ja": "AI の準備はキャンセルできます。完了した書き出しは保持されます。",
+      "zh-Hans": "AI 准备可取消；已完成的输出会保留。"
+    },
+    "AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。": {
+      "de": "KI-Entrauschung erfordert eine D3D12-Hardware-GPU mit DirectML-Unterstützung.",
+      "en": "AI denoise requires a hardware D3D12 GPU that supports DirectML.",
+      "es": "La reducción de ruido con IA requiere una GPU D3D12 compatible con DirectML.",
+      "fr": "La réduction du bruit par IA nécessite un GPU matériel D3D12 compatible avec DirectML.",
+      "ja": "AIノイズ除去には、DirectMLに対応したD3D12ハードウェアGPUが必要です。",
+      "zh-Hans": "AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。"
+    },
+    "普通显影使用 CPU；AI 降噪仍使用硬件 GPU。": {
+      "de": "Die Fotoentwicklung nutzt die CPU; KI-Entrauschung nutzt weiterhin die Hardware-GPU.",
+      "en": "Photo rendering uses CPU; AI denoise still uses the hardware GPU.",
+      "es": "El revelado usa la CPU; la reducción de ruido con IA sigue usando la GPU.",
+      "fr": "Le rendu photo utilise le CPU ; la réduction du bruit par IA utilise toujours le GPU matériel.",
+      "ja": "通常の現像はCPUを使用しますが、AIノイズ除去は引き続きハードウェアGPUを使用します。",
+      "zh-Hans": "普通显影使用 CPU；AI 降噪仍使用硬件 GPU。"
     }
   }
 }
