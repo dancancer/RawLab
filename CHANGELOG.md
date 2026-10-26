@@ -86,7 +86,9 @@ release notes include assets, installation requirements and validation limits.
   61 MP and 100 MP RAW files. Output keeps full resolution while temporary
   processing memory stays bounded.
 
-Version `0.9.0`, build `15` (release preparation).
+Version `0.9.0`, build `15` (release preparation). See the
+[release notes](docs/releases/v0.9/v0.9.0.md) and
+[Chinese update announcement](docs/releases/v0.9/v0.9.0-xiaohongshu.md).
 
 ## [0.8.2] - 2026-10-20
 
