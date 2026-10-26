@@ -128,16 +128,13 @@ class WorkflowContractTests(unittest.TestCase):
                         self.assertIn(path, allowed_paths)
             self.assertEqual(len(uploads), 0 if name in ("changes", "result") else 1, name)
 
-    def test_android_uses_a_dedicated_linux_runner_with_bounded_parallelism(self):
+    def test_android_uses_the_hosted_runner_while_the_local_guest_cannot_download(self):
         android = self.workflow["jobs"]["android"]
-        self.assertEqual(android["runs-on"], ["self-hosted", "linux", "x64", "rawlab-android"])
-        self.assertEqual(android["env"]["JOBS"], "8")
-        self.assertEqual(android["env"]["CMAKE_BUILD_PARALLEL_LEVEL"], "8")
-        self.assertEqual(android["env"]["ANDROID_HOME"], "/opt/android-sdk")
-        self.assertEqual(android["env"]["RAWLAB_LENS_SOURCE_CACHE"], "/var/cache/rawlab-ci/lens-sources")
-        self.assertEqual(android["env"]["RAWLAB_ANDROID_SOURCE_CACHE"], "/var/cache/rawlab-ci/android-sources")
+        self.assertEqual(android["runs-on"], "ubuntu-24.04")
+        self.assertNotIn("env", android)
         commands = "\n".join(step.get("run", "") for step in android["steps"])
-        self.assertIn("--max-workers=8", commands)
+        self.assertIn("--max-workers=2", commands)
+        self.assertNotIn("--max-workers=8", commands)
         self.assertIn("RAWLAB_TEST_ANDROID_CACHE=1", commands)
 
     def test_actionlint_recognizes_only_the_declared_local_runner_label(self):

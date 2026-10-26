@@ -410,14 +410,8 @@ jobs:
     name: Android ${{ needs.changes.outputs.checks }}
     needs: changes
     if: needs.changes.outputs.android == 'true'
-    runs-on: [self-hosted, linux, x64, rawlab-android]
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
-    env:
-      ANDROID_HOME: /opt/android-sdk
-      RAWLAB_LENS_SOURCE_CACHE: /var/cache/rawlab-ci/lens-sources
-      RAWLAB_ANDROID_SOURCE_CACHE: /var/cache/rawlab-ci/android-sources
-      JOBS: '8'
-      CMAKE_BUILD_PARALLEL_LEVEL: '8'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -454,19 +448,8 @@ jobs:
           exec > >(tee build/ci/android-models.log) 2>&1
           git rev-parse HEAD
           cd RawLabAndroid
-          ./gradlew :app:testDebugUnitTest --no-daemon --max-workers=8
+          ./gradlew :app:testDebugUnitTest --no-daemon --max-workers=2
           find app/build/test-results/testDebugUnitTest -name 'TEST-*.xml' -exec cp {} ../build/ci/ \;
-      - name: Prefetch LibRaw source with the system TLS client
-        if: needs.changes.outputs.build == 'true'
-        shell: bash
-        run: |
-          archive="$RAWLAB_ANDROID_SOURCE_CACHE/LibRaw-0.22.2.tar.gz"
-          if [ ! -f "$archive" ]; then
-            mkdir -p "$RAWLAB_ANDROID_SOURCE_CACHE"
-            curl --fail --location --proto '=https' --tlsv1.2 --retry 2 -o "$archive.download" https://www.libraw.org/data/LibRaw-0.22.2.tar.gz
-            mv "$archive.download" "$archive"
-          fi
-          echo "de86b035655accff8d4010f1a221fdf50d353cb7b1422ba26f14a0db92612cfa  $archive" | sha256sum -c -
       - name: Build both ABIs, lint and instrumentation test APK
         if: needs.changes.outputs.build == 'true'
         shell: bash
@@ -479,7 +462,7 @@ jobs:
           git rev-parse HEAD
           java -version
           cd RawLabAndroid
-          ./gradlew :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --max-workers=8
+          ./gradlew :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --max-workers=2
           bash scripts/check-native.sh
           cd ..
           if [[ "$RAWLAB_CI_NATIVE" == true ]]; then
