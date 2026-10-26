@@ -14,7 +14,7 @@ fi
 swiftc "$ROOT/Shared/Localization.swift" -parse-as-library -swift-version 5 -O -sdk "$SDK" \
     -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-15.0}" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "${SOURCES[@]}" "$BUILD/libsony2fuji_core.a" \
+    "${SOURCES[@]}" "${CORE_LINK[@]}" \
     -L "$(pkg-config --variable=libdir libraw)" -lraw $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
     -framework Metal -o "$OUT/look-library"
 "$OUT/look-library"

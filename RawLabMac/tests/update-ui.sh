@@ -28,7 +28,7 @@ swiftc -swift-version 5 -O -whole-module-optimization -num-threads 4 \
     -sdk "${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}" -target "$(uname -m)-apple-macosx14.0" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT/RawLabMac/tests/SoftwareUpdateUITests.swift" \
-    "${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}/libsony2fuji_core.a" \
+    "${CORE_LINK[@]}" \
     $(pkg-config --libs libraw opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \
     -o "$APP/Contents/MacOS/SoftwareUpdateTests"

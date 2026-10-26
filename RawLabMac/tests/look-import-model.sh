@@ -33,7 +33,7 @@ swiftc "${TRANSFER_SOURCES[@]}" "$ROOT/Shared/Localization.swift" -swift-version
     "$ROOT/Shared/LookLibrary.swift" "$ROOT/Shared/BatchSelectionSession.swift" "$ROOT/RawLabMac/Sources/Export/BatchSelection.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+BatchSelection.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Geometry.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Workflow.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Rendering.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+HSLTarget.swift" \
     "$ROOT/RawLabMac/Sources/Export/ExportSizePicker.swift" \
     "$ROOT/Shared/DCPCompiler.swift" "$ROOT/RawLabMac/tests/DCPTestFixtures.swift" \
-    "$ROOT/RawLabMac/tests/LookImportModelTests.swift" "$BUILD/libsony2fuji_core.a" \
+    "$ROOT/RawLabMac/tests/LookImportModelTests.swift" "${CORE_LINK[@]}" \
     -L "$(pkg-config --variable=libdir libraw)" -lraw $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \
     -o "$OUT/look-import-model"

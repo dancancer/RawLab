@@ -12,6 +12,6 @@ swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" -target "$
     "$ROOT/Shared/BundledLook.swift" \
   -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
   "${SOURCES[@]}" "$ROOT/RawLabMac/tests/EditMemoryTests.swift" \
-  "$ROOT/lutools/build-macos/libsony2fuji_core.a" -L "$(pkg-config --variable=libdir libraw)" \
+  "${CORE_LINK[@]}" -L "$(pkg-config --variable=libdir libraw)" \
   -lraw $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/test"
 "$OUT/test"

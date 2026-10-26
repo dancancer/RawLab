@@ -32,7 +32,7 @@ swiftc "${TRANSFER_SOURCES[@]}" -swift-version 5 -O -sdk "$SDK" -target "$(uname
   "$ROOT/RawLabMac/Sources/Export/BatchExport.swift" "$ROOT/RawLabMac/Sources/Export/BatchExportModel.swift" \
   "$ROOT/RawLabMac/Sources/Library/FileLibrary.swift" "$ROOT/Shared/DCPCompiler.swift" "$ROOT/Shared/LookLibrary.swift" \
   "$ROOT/Shared/BatchSelectionSession.swift" "$ROOT/RawLabMac/Sources/Export/BatchSelection.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+BatchSelection.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Geometry.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Workflow.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Rendering.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+HSLTarget.swift" "$ROOT/RawLabMac/Sources/Export/ExportSizePicker.swift" \
-  "$ROOT/RawLabMac/tests/UsageModelTests.swift" "$BUILD/libsony2fuji_core.a" \
+  "$ROOT/RawLabMac/tests/UsageModelTests.swift" "${CORE_LINK[@]}" \
   $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz \
   -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/test"
 "$OUT/test" "$@"
