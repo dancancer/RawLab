@@ -21,6 +21,14 @@
      以后有赞助购买证书时，只改配置和签名流程，不改代码结构。
 8. 2026-10-26 用户再次明确要求打包 DualDn 模型并启用 AI 降噪，确认本项目为非商业使用。
    模型分发确认前置已满足；随包保留上游 CC BY-NC 4.0、作者/来源及转换说明。
+9. 2026-10-26 明确 AGENTS.md 的 AI 降噪例外：只在硬件 GPU 后端（Mac Core ML、
+   Windows DirectML）运行；不可用时明确提示，不回退到 CPU 神经网络推理。普通显影的
+   CPU 路径不受影响；根目录与 `lutools/AGENTS.md` 同步记录。
+10. 2026-10-26 决定仅在许可文档和 CHANGELOG 中说明模型的非商业使用限制，
+    不在 AI 降噪界面新增许可提示；沿用 [许可说明](../../reference/licensing.md)。
+11. 2026-10-26 决定在 CHANGELOG 中明确 Restormer 通用 RGB 模型保留上游
+    Academic Public License；DualDn 权重与转换模型继续采用 CC BY-NC 4.0。两者仅限
+    非商业用途，随包保留上游署名和转换说明，不改为 RawLab 的 GPL。
 
 ## 最新 AI 后端决定（2026-10-26）
 

@@ -32,8 +32,10 @@ release notes include assets, installation requirements and validation limits.
   unsupported and Auto does not retry neural inference on CPU. Ordinary photo
   processing and the deterministic ISP may still use CPU. iOS and Android do
   not include AI denoising in this release. Intel builds do not support AI denoising.
-- DualDn weights and converted models remain under CC BY-NC 4.0, with upstream
-  attribution and conversion notices. They are not relicensed under RawLab's GPL.
+- DualDn weights and converted models remain under CC BY-NC 4.0, and the
+  Restormer generic RGB model keeps its upstream Academic Public License. Both
+  are limited to noncommercial use, ship with upstream attribution and
+  conversion notices, and are not relicensed under RawLab's GPL.
 - This is the first release intended to include automatic desktop updates.
   Upgrading from 0.8.2 requires one manual installation. Windows automatic
   updates require the current-user Setup installation; ZIP packages use manual

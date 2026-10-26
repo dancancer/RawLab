@@ -74,7 +74,9 @@ push 被拒绝时先核对远端变化，不默认 force-push。
 - 纯流程文档修改只检查内容、链接和 diff，不机械执行全平台构建。
 
 公共参数、持久化格式和渲染效果跨平台一致。修改共享 C ABI 时检查各客户端调用方；
-GPU Auto 保留 CPU 回退，Force 不伪装 GPU 成功。保留原始 RAW 和无关改动。
+GPU Auto 保留 CPU 回退，Force 不伪装 GPU 成功。AI 降噪例外：只在硬件 GPU 后端
+（Mac Core ML、Windows DirectML）运行，不可用时明确提示，不回退到 CPU 神经网络推理；
+普通显影的 CPU 路径不受影响。保留原始 RAW 和无关改动。
 
 ## 临时文件与共享资源
 
