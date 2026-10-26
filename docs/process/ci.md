@@ -214,6 +214,11 @@ from `lutools/cmake/lens-dependencies.json`, not compiled libraries. Pre-seed
 checksum-matching archives there when an upstream endpoint is unavailable;
 the existing builder verifies every archive again before use. Missing archives
 still download from their pinned upstream URL and failures remain fatal.
+`RAWLAB_ANDROID_SOURCE_CACHE=/var/cache/rawlab-ci/android-sources` holds the
+LibRaw source archive. libraw.org resets the TLS handshake from the Android SDK's
+CMake 3.22 client on this guest, so the job prefetches the archive with the
+system `curl` and checks its SHA-256. The Android build uses that local copy
+first; `URL_HASH` verifies it again.
 
 This is a persistent, trusted-contributor runner: SDKs, download caches and the
 runner installation survive jobs. Checkout cleanup is not a security boundary

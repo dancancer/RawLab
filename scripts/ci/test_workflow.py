@@ -135,6 +135,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(android["env"]["CMAKE_BUILD_PARALLEL_LEVEL"], "8")
         self.assertEqual(android["env"]["ANDROID_HOME"], "/opt/android-sdk")
         self.assertEqual(android["env"]["RAWLAB_LENS_SOURCE_CACHE"], "/var/cache/rawlab-ci/lens-sources")
+        self.assertEqual(android["env"]["RAWLAB_ANDROID_SOURCE_CACHE"], "/var/cache/rawlab-ci/android-sources")
         commands = "\n".join(step.get("run", "") for step in android["steps"])
         self.assertIn("--max-workers=8", commands)
         self.assertIn("RAWLAB_TEST_ANDROID_CACHE=1", commands)

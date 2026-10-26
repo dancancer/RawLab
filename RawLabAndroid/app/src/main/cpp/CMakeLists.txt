@@ -3,10 +3,17 @@ project(rawlab_android LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 include(FetchContent)
+# libraw.org resets the TLS handshake from CMake 3.22's bundled client on some hosts.
+# Use a pre-fetched local copy when present; URL_HASH verifies either source.
+# CMake 3.22 rejects a local path inside a URL list, so this picks exactly one.
+set(LIBRAW_URL https://www.libraw.org/data/LibRaw-0.22.2.tar.gz)
+if(DEFINED ENV{RAWLAB_ANDROID_SOURCE_CACHE} AND EXISTS "$ENV{RAWLAB_ANDROID_SOURCE_CACHE}/LibRaw-0.22.2.tar.gz")
+    set(LIBRAW_URL "$ENV{RAWLAB_ANDROID_SOURCE_CACHE}/LibRaw-0.22.2.tar.gz")
+endif()
 FetchContent_Declare(libraw
     # CMake 3.22 preserves archive timestamps; isolate ABI versions from old objects.
     SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/_deps/libraw-0.22.2-src"
-    URL https://www.libraw.org/data/LibRaw-0.22.2.tar.gz
+    URL ${LIBRAW_URL}
     URL_HASH SHA256=de86b035655accff8d4010f1a221fdf50d353cb7b1422ba26f14a0db92612cfa
 )
 FetchContent_MakeAvailable(libraw)
