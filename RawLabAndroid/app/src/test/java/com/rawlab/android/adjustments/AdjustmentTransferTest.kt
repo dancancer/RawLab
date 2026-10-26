@@ -22,6 +22,14 @@ class AdjustmentTransferTest {
     private fun capture(settings: EditSettings, vararg fields: F) =
         AdjustmentTransfer.capture(AdjustmentScope.Custom(fields.toSet()), settings, context.copy(identifier = "source"))
 
+    @Test fun defaultScopePasteIntoEqualPhotoDoesNotCreateNegativeZeroOrChange() {
+        val settings = EditSettings()
+        val copied = AdjustmentTransfer.capture(AdjustmentScope.Custom(F.entries.filter { it.group != "geometry" }.toSet()), settings, context)
+        val result = prepare(copied, settings)
+        assertEquals(settings, result)
+        assertEquals(0, result.highlights.toRawBits())
+    }
+
     @Test fun partialCopyFreezesExactHSLAndPreservesOtherFields() {
         val source = EditSettings(exposure = 1.5f, hsl = HslSettings().withValue(0, 0, 12.375f))
         val payload = capture(source, F.EXPOSURE, F.HSL_HUE_RED)

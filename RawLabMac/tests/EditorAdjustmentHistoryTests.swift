@@ -31,6 +31,9 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         model.settings.exposure = 0.6
         model.settings.gradingSettings[.midtones] = ColorGradingWheel(hue: 110.125, saturation: 32.375)
         try check(model.adjustmentSession!.transactions.isEmpty, "a long slider gesture does not save intermediate history")
+        model.undoAdjustment(); model.redoAdjustment()
+        try check(model.scheduler.interacting && model.settings.exposure == 0.6 && model.adjustmentSession!.transactions.isEmpty,
+            "Undo and Redo do not split an active adjustment gesture")
         model.setInteracting(false)
         try check(model.adjustmentSession!.transactions.count == 1 && !model.dirty, "gesture end saves exactly one history item")
         try rendered(model)
@@ -96,6 +99,14 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try presetChecks(root: root, first: first, second: second)
         try hslTargetChecks(root: root, second: second)
         try curveNavigationChecks(root: root, photo: first)
+        var aiSettings = Adjustments(); aiSettings.aiDenoiseEnabled = true
+        let aiBatch = BatchExportModel(job: BatchExportJob(source: first, settings: aiSettings, look: nil, lookName: "Neutral"),
+            journal: BatchJournal(directory: root.appendingPathComponent("ai-batch")))
+        aiBatch.add([second])
+        let deadline = Date().addingTimeInterval(30)
+        while aiBatch.validating && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+        try check(!aiBatch.validating && aiBatch.job.items.first?.selected == false && aiBatch.job.items.first?.validationError != nil,
+            "AI batch preflight excludes raster targets before export")
     }
 
     static func curveNavigationChecks(root: URL, photo: URL) throws {
@@ -141,10 +152,25 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try sampled(); try rendered(model)
         try check(model.adjustmentSession!.transactions.count == 1 && !model.settings.hslSettings.isIdentity,
             "release before native sample creates exactly one durable HSL edit")
+        let point = model.hslTargetPoint
+        let beforeKeys = model.settings.hslSettings
+        model.busy = true
+        model.keyHSLTarget(1); model.keyHSLTarget(1); model.keyHSLTarget(1)
+        try check(model.hslTargetPoint == point, "Keyboard repeats preserve the sample point while preview is busy")
+        model.refreshBusy(); try sampled(); try rendered(model)
+        try check(model.adjustmentSession!.transactions.count == 2, "Buffered keyboard repeats form one HSL history transaction")
+        let keySample = model.hslTargetInteraction.selection!
+        for channel in 0..<8 {
+            let expected = min(100, max(-100, beforeKeys.value(model.hslTargetAxis, channel: channel) + 3 * keySample.weights[channel]))
+            try check(abs(model.settings.hslSettings.value(model.hslTargetAxis, channel: channel) - expected) < 0.000001,
+                "Keyboard repeats apply every weighted step to channel \(channel)")
+        }
+        model.undoAdjustment(); try rendered(model)
+        let targetHistoryCount = model.adjustmentSession!.transactions.count
         let saved = model.settings
         model.beginHSLTarget(CGPoint(x: 0.5, y: 0.5)); try sampled()
         model.moveHSLTarget(50); model.cancelHSLTarget(); model.endHSLTarget(); try rendered(model)
-        try check(model.settings == saved && model.adjustmentSession!.transactions.count == 1,
+        try check(model.settings == saved && model.adjustmentSession!.transactions.count == targetHistoryCount,
             "native target cancellation restores before without a second history item")
         model.undoAdjustment(); try rendered(model)
         try check(model.settings.hslSettings.isIdentity, "target undo restores all HSL channels")

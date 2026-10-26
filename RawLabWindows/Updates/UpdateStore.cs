@@ -51,6 +51,7 @@ public sealed class UpdateStore(string directory)
     public byte[] RepairableState()
     {
         RequireOrdinary(DirectoryPath); RequireOrdinary(StatePath); var data = File.ReadAllBytes(StatePath);
+        var knownNonInstallation = false;
         JsonDocument? document = null;
         try { document = JsonDocument.Parse(data); } catch (JsonException) { }
         using (document)
@@ -61,8 +62,9 @@ public sealed class UpdateStore(string directory)
                     root.TryGetProperty("StateRepairReceipt", out var receipt) && receipt.ValueKind != JsonValueKind.Null ||
                     root.TryGetProperty("RecoveryReceipt", out var recovery) && recovery.ValueKind != JsonValueKind.Null)
                     throw new InvalidDataException("Unsupported update state cannot be rebuilt");
-                if (root.TryGetProperty("PendingUpdate", out var pending) && pending.ValueKind == JsonValueKind.Object)
+                if (root.TryGetProperty("PendingUpdate", out var pending))
                 {
+                    if (pending.ValueKind != JsonValueKind.Object) throw new InvalidDataException("Unknown pending update state");
                     static bool Installation(JsonElement element) => element.TryGetInt32(out var number) &&
                         (number == (int)UpdatePhase.Installing || number == (int)UpdatePhase.PendingRestart);
                     if (pending.TryGetProperty("Format", out var format) && format.GetInt32() != 1 ||
@@ -75,6 +77,14 @@ public sealed class UpdateStore(string directory)
                             failure.TryGetProperty("Stage", out var stage) && (!stage.TryGetInt32(out var stageNumber) || !Enum.IsDefined(typeof(UpdatePhase), stageNumber) || Installation(stage)))
                         throw new InvalidDataException("Unsupported update state cannot be rebuilt");
                 }
+                if (root.TryGetProperty("PendingUpdate", out var known) && known.ValueKind == JsonValueKind.Object &&
+                    new[] { "Format", "Phase", "Attempt", "Choice", "Progress", "Blockers" }.All(name => known.TryGetProperty(name, out _))) {
+                    try {
+                        var decoded = known.Deserialize<UpdateTaskState>();
+                        knownNonInstallation = decoded != null && (decoded.Phase != UpdatePhase.Failed || decoded.Failure is {} detail &&
+                            detail.Stage is not (UpdatePhase.Idle or UpdatePhase.Available or UpdatePhase.Complete or UpdatePhase.Failed) && !string.IsNullOrEmpty(detail.Code));
+                    } catch (JsonException) { }
+                }
             }
         }
         var readable = false; try { Load(false); readable = true; } catch { }
@@ -84,7 +94,15 @@ public sealed class UpdateStore(string directory)
             var path = Path.Combine(DirectoryPath, name);
             if (!Path.Exists(path)) continue;
             RequireOrdinary(path);
-            if (Directory.EnumerateFileSystemEntries(path).Any()) throw new InvalidDataException("Installation or data recovery status is unknown");
+            var entries = Directory.GetFileSystemEntries(path);
+            if (entries.Length != 0) {
+                if (name != "Backups" || !knownNonInstallation) throw new InvalidDataException("Installation or data recovery status is unknown");
+                var backups = new UpdateDataBackup(Path.GetDirectoryName(DirectoryPath)!, DirectoryPath);
+                foreach (var entry in entries) {
+                    if (!Guid.TryParse(Path.GetFileName(entry), out _)) throw new InvalidDataException("Unknown backup entry");
+                    backups.Verify(entry);
+                }
+            }
         }
         if (Path.Exists(Path.Combine(DirectoryPath, "recovery-in-progress.json"))) throw new InvalidDataException("Data recovery is unfinished");
         return data;
@@ -98,7 +116,13 @@ public sealed class UpdateStore(string directory)
         // 原始字节先落盘，再原子替换；中断期间不会出现缺失状态而开放编辑。
         WriteAtomic(archive, expected);
         if (!RepairableState().SequenceEqual(expected)) throw new InvalidDataException("Update state changed");
-        var next = new UpdatePreferences { AutomaticCheck = false, StateRepairReceipt = receipt }; Save(next); return next;
+        var next = new UpdatePreferences { AutomaticCheck = false, StateRepairReceipt = receipt }; Save(next);
+        var backups = new UpdateDataBackup(Path.GetDirectoryName(DirectoryPath)!, DirectoryPath);
+        var backupRoot = Path.Combine(DirectoryPath, "Backups");
+        if (Directory.Exists(backupRoot)) foreach (var entry in Directory.GetFileSystemEntries(backupRoot)) {
+            try { backups.Discard(entry); } catch { }
+        }
+        return next;
     }
     private static void RequireOrdinary(string path)
     {
@@ -181,6 +205,24 @@ public sealed class UpdateDataBackup(string dataRoot, string updateRoot)
         }
         return manifest;
     }
+    public void Discard(string directory)
+    {
+        if (!Guid.TryParse(Path.GetFileName(directory), out _)) throw new InvalidDataException("Invalid backup name");
+        Verify(directory);
+        Directory.Delete(directory, recursive: true);
+    }
+    public void DiscardUnreferencedBackups(string? retaining)
+    {
+        if (HasPendingRecovery) return;
+        var root = Path.Combine(updateRoot, "Backups");
+        if (!Directory.Exists(root)) return;
+        RequireOrdinary(root);
+        foreach (var entry in Directory.GetFileSystemEntries(root))
+            if (!StringComparer.OrdinalIgnoreCase.Equals(entry, retaining)) {
+                try { Discard(entry); } catch { }
+            }
+    }
+
     private sealed record Recovery(Guid Id, string[] Originals, bool Restored);
     private string RecoveryJournal => Path.Combine(updateRoot, "recovery-in-progress.json");
     public bool HasPendingRecovery => File.Exists(RecoveryJournal);

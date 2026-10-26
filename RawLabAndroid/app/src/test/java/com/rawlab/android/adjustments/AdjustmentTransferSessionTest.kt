@@ -20,6 +20,20 @@ class AdjustmentTransferSessionTest {
         try { block(directory) } finally { directory.deleteRecursively() }
     }
 
+    @Test fun historyUsesOriginalSourceAfterWorkingCopyIsReleased() = inStore { directory ->
+        val store = EditStore(directory); val session = AdjustmentTransferSession(store)
+        val working = File(directory, "preview.raw").apply { writeText("copy") }
+        var originalValid = true
+        val operation = session.prepare(payload(), listOf(target(a).copy(
+            validateSource = { check(working.isFile) }, validateHistorySource = { check(originalValid) })))
+        assertEquals(AdjustmentStatus.APPLIED, session.apply(operation).single().status)
+        working.delete()
+        assertEquals(AdjustmentStatus.APPLIED, session.undoPhoto(a).single().status)
+        assertEquals(AdjustmentStatus.APPLIED, session.redoPhoto(a).single().status)
+        originalValid = false
+        assertEquals(AdjustmentStatus.BLOCKED, session.undoPhoto(a).single().status)
+    }
+
     @Test fun partialFailureRetryDoesNotRewriteAnAlreadyUndonePhoto() = inStore { directory ->
         var writes = 0
         val store = EditStore(directory) { from, to ->

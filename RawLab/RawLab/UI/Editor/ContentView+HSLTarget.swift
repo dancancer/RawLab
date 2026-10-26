@@ -2,7 +2,7 @@ import SwiftUI
 
 extension ContentView {
     var hslTargetActive: Bool {
-        hslTargetEnabled && selectedAdjustment == .hsl && adjustmentsExpanded && !isEditorDraftActive &&
+        hslTargetEnabled && selectedAdjustment == .hsl && !isEditorDraftActive &&
         !editorBusy && adjustmentSheet == nil && !draftExitPresented && !resetConfirmationPresented
     }
     var hslTargetInput: HSLTargetCanvasInput {

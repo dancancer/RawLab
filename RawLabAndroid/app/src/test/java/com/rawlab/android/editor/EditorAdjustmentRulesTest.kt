@@ -159,7 +159,7 @@ class EditorAdjustmentRulesTest {
             contrast = -.25f, saturation = .125f, toneCurve = .3f, sharpening = .7f,
             hsl = HslSettings(List(24) { if (it == 0) 80f else .5f }), exposureMode = 0)
         val expected = listOf(
-            listOf(0f, -0f, 0f, -0f, 0f, 0f, 0f),
+            listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f),
             listOf(.375f, -.125f, .0625f, -.125f, .0625f, 40f, .25f),
             listOf(.75f, -.25f, .125f, -.25f, .125f, 80f, .5f),
             listOf(1.5f, -.5f, .25f, -.5f, .25f, 100f, 1f))

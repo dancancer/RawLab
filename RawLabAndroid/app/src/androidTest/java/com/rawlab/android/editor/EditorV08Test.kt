@@ -143,6 +143,14 @@ class EditorV08ControlsTest {
 
 class EditorV08DraftTest {
     val compose = createAndroidComposeRule<MainActivity>()
+    private fun selectGeometryTool(id: Int = 17) {
+        compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-geometry"))
+        compose.onNodeWithTag("editor-group-geometry").performClick()
+        if (id != 17) {
+            compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag("editor-tool-$id"))
+            compose.onNodeWithTag("editor-tool-$id").performClick()
+        }
+    }
     @get:Rule val rule = org.junit.rules.RuleChain.outerRule(LanguageTestRule()).around(compose)
 
     @Test fun failedDraftSaveKeepsCommittedDraftAndRecordUntilRetry() {
@@ -154,7 +162,7 @@ class EditorV08DraftTest {
         val model = compose.activity.model
         fun ready() {
             compose.waitUntil(180_000) { model.state.value.error != null ||
-                model.state.value.exact && !model.state.value.rendering }
+                model.state.value.exact && !model.state.value.rendering && !model.state.value.committingAdjustments }
             assertNull(model.state.value.error)
         }
         instrumentation.context.assets.open("sample.RAW").use { input -> source.outputStream().use { input.copyTo(it) } }
@@ -176,7 +184,8 @@ class EditorV08DraftTest {
             assertTrue(record.renameTo(backup))
             assertTrue(record.mkdir())
             File(record, "occupied").writeText("keep")
-            compose.runOnUiThread { assertFalse(model.applyDraft()) }
+            compose.runOnUiThread { model.applyDraft { assertFalse(it) } }
+            compose.waitUntil(30_000) { !model.state.value.committingAdjustments }
             assertEquals("Failed save must keep committed edits", original, model.state.value.edits)
             assertEquals("Failed save must keep the same draft", draft, model.state.value.draft)
             assertEquals(EditSaveState.FAILED, model.state.value.saveState)
@@ -214,8 +223,7 @@ class EditorV08DraftTest {
             ready()
             val original = model.state.value.edits
             val identity = model.state.value.photo!!.identity
-            compose.onNodeWithContentDescription(context.getString(R.string.all_tools)).performClick()
-            compose.onNodeWithTag("editor-tool-17").performScrollTo().performClick()
+            selectGeometryTool()
             compose.waitUntil(180_000) { model.state.value.draftReady }
             compose.onNodeWithTag("draft.apply").assertIsNotEnabled()
             compose.runOnUiThread { model.changeDraft(model.state.value.visibleEdits.copy(geometry = GeometrySettings(cropWidth = .75f))) }
@@ -227,6 +235,7 @@ class EditorV08DraftTest {
             compose.waitForIdle()
             compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
             compose.onNode(hasText(context.getString(R.string.adjustment_apply)) and hasAnyAncestor(isDialog())).performClick()
+            compose.waitUntil(30_000) { !model.state.value.committingAdjustments }
             assertEquals(original, model.state.value.edits)
             assertEquals(draft, model.state.value.draft)
             compose.onNodeWithText(context.getString(R.string.adjustment_leave)).assertIsDisplayed()
@@ -264,8 +273,7 @@ class EditorV08DraftTest {
             assertNull(model.state.value.error)
         }
         fun select(id: Int) {
-            compose.onNodeWithContentDescription(context.getString(R.string.all_tools)).performClick()
-            compose.onNodeWithTag("editor-tool-$id").performScrollTo().performClick()
+            selectGeometryTool(id)
             compose.waitUntil(180_000) { model.state.value.draftReady }
         }
         instrumentation.context.assets.open("sample.RAW").use { input -> source.outputStream().use { input.copyTo(it) } }
@@ -282,6 +290,7 @@ class EditorV08DraftTest {
             assertTrue(record.mkdir())
             File(record, "occupied").writeText("keep")
             compose.onNodeWithTag("draft.apply").performClick()
+            compose.waitUntil(30_000) { !model.state.value.committingAdjustments }
             assertEquals(original, model.state.value.edits)
             assertNotNull(model.state.value.draft)
             compose.onNodeWithTag("draft.apply").assertIsDisplayed()
@@ -334,8 +343,7 @@ class EditorV08DraftTest {
             if (dock.top >= photo.bottom) assertTrue(photo.bottom <= ruler.top)
             else assertTrue(photo.right <= ruler.left)
             capture("exposure")
-            compose.onNodeWithContentDescription("全部工具").performClick()
-            compose.onNodeWithTag("editor-tool-17").performScrollTo().performClick()
+            selectGeometryTool()
             compose.waitUntil(30_000) { model.state.value.draftReady }
             compose.onNodeWithTag("editor-tool-17").assertIsDisplayed()
             compose.onNodeWithTag("draft.cancel").assertIsDisplayed()
@@ -359,7 +367,7 @@ class EditorV08DraftTest {
         val source = File(context.cacheDir, "v08-${System.nanoTime()}.ARW")
         instrumentation.context.assets.open("sample.RAW").use { input -> source.outputStream().use { input.copyTo(it) } }
         var model = compose.activity.model
-        fun ready() = compose.waitUntil(180_000) { !model.state.value.rendering && model.state.value.exact }
+        fun ready() = compose.waitUntil(180_000) { !model.state.value.rendering && model.state.value.exact && !model.state.value.committingAdjustments }
         try {
             compose.runOnUiThread { model.importPhoto(Uri.fromFile(source)) }
             ready()
@@ -376,7 +384,7 @@ class EditorV08DraftTest {
             assertEquals(original, model.state.value.edits)
             assertEquals(.75f, model.state.value.visibleEdits.geometry.cropWidth, 0f)
             compose.runOnUiThread {
-                assertFalse(model.beginExport())
+                model.beginExport { assertFalse(it) }
                 model.beginBatch()
                 model.importLooks(listOf(Uri.parse("file:///missing.cube")))
                 model.renameLook("missing", "Renamed")
@@ -396,8 +404,9 @@ class EditorV08DraftTest {
             compose.runOnUiThread {
                 model.beginDraft(AdjustmentGroup.GEOMETRY)
                 model.changeDraft(original.copy(geometry = GeometrySettings(cropWidth = .75f)))
-                model.applyDraft()
             }
+            compose.waitUntil(180_000) { model.state.value.canApplyDraft }
+            compose.runOnUiThread { model.applyDraft() }
             ready()
             val applied = model.state.value.edits
             assertEquals(.75f, applied.geometry.cropWidth, 0f)

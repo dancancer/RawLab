@@ -24,7 +24,7 @@ public partial class MainWindow
         ResultCanvas.HslTargetCancelled+=CancelHslTarget;
         ResultCanvas.HslTargetKey+=KeyHslTarget;
         ResultCanvas.HslTargetRejected+=()=>{CancelHslTarget();hslTargetNotice=HslTargetAvailability.Outside;RefreshHslTarget();};
-        ResultCanvas.HslTargetAllowed=point=>new FrameworkElement[]{NeutralLabel,FilmLabel,InfoOverlay,InfoEntryButton}.All(element=>
+        ResultCanvas.HslTargetAllowed=point=>new FrameworkElement[]{NeutralLabel,FilmLabel,InfoOverlay,InfoEntryButton,HslTargetBanner}.All(element=>
             !element.IsVisible || !new Rect(element.TranslatePoint(new Point(),ResultCanvas),element.RenderSize).Contains(point));
     }
     private void SetHslTargetMode(bool enabled,int axis)
@@ -36,9 +36,12 @@ public partial class MainWindow
     private void RefreshHslTarget()
     {
         ResultCanvas.HslTargetEnabled=hslTargetEnabled && choosingHsl && expandedGroup!=null && !transform.Active;
+        HslTargetBanner.Visibility=ResultCanvas.HslTargetEnabled && AdjustmentPanel.Visibility!=Visibility.Visible ? Visibility.Visible : Visibility.Collapsed;
+        HslTargetBannerTitle.Text=Loc.Format("目标调整：{0}",Loc.Text(hslTargetAxis switch {1=>"饱和度",2=>"明度",_=>"色相"}));
         ResultCanvas.HslTargetPoint=hslTargetPoint;
         HslEditor.SetTarget(hslTargetEnabled,hslTargetAxis,hslTarget.Waiting,hslTarget.Selection,hslTargetNotice);
     }
+    private void ExitHslTargetClicked(object sender,RoutedEventArgs e)=>SetHslTargetMode(false,hslTargetAxis);
     private void BeginHslTarget(Point point,double? keyDelta=null)
     {
         CancelHslTarget(false);
@@ -81,7 +84,11 @@ public partial class MainWindow
     private void EndHslTarget()
     {
         hslTarget.End();
-        if(hslHistoryActive){hslHistoryActive=false;interacting=false;MarkEdited();Schedule();}
+        if(hslHistoryActive) {
+            hslHistoryActive=false;interacting=false;
+            try { MarkEdited();Schedule(); }
+            finally { editGesture=null; }
+        }
         RefreshHslTarget();
     }
     private void CancelHslTarget()=>CancelHslTarget(true);

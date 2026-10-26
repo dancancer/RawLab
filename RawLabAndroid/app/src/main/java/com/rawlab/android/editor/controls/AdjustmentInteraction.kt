@@ -1,5 +1,6 @@
 package com.rawlab.android.editor.controls
 
+import com.rawlab.android.settings.canonicalZero
 import kotlin.math.abs
 import kotlin.math.round
 import java.math.BigDecimal
@@ -25,17 +26,17 @@ internal data class AdjustmentScale(
     val reciprocal: Boolean = false,
     val compactPercent: Boolean = false,
 ) {
-    fun quantize(value: Float): Float = (round(value / step) * step).coerceIn(range)
+    fun quantize(value: Float): Float = (round(value / step) * step).coerceIn(range).canonicalZero()
 
     fun parse(text: String, locale: Locale = Locale.ROOT, current: Float? = null): Float? {
         val parsed = parseAdjustmentNumber(text, locale)
         if (current != null && current.isFinite() && current in range && parsed != null) {
             val displayed = if (compactPercent) formatCropPercent(current, locale) else formatAdjustmentNumber(current.toString().toDouble(), locale)
-            if (parsed == parseAdjustmentNumber(displayed, locale)) return current
+            if (parsed == parseAdjustmentNumber(displayed, locale)) return current.canonicalZero()
         }
         return parsed?.takeIf { it.isFinite() && it in range.start.toDouble()..range.endInclusive.toDouble() }
             ?.takeIf { it == current?.toString()?.toDouble() || BigDecimal(it.toString()).remainder(BigDecimal(step.toString())).signum() == 0 }
-            ?.toFloat()
+            ?.toFloat()?.canonicalZero()
     }
 
     fun fraction(value: Float): Float {

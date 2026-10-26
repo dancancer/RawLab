@@ -11,7 +11,7 @@ internal sealed partial class RenderEngine
     internal static bool AIAvailable=>Native.sony2fuji_ai_available()!=0;
     internal static string BundledAIModel=>Path.Combine(AppContext.BaseDirectory,"AI","DualDn");
     internal static bool HasBundledAIModel=>File.Exists(Path.Combine(BundledAIModel,"manifest.json"));
-    internal static int AIBackendForGpuMode(int mode)=>mode==0 ? 0 : mode==2 ? 3 : 2;
+    internal static int AIBackendForGpuMode(int mode)=>mode==2 ? 3 : 2;
     internal string LastAIBackend=>Marshal.PtrToStringUTF8(Native.sony2fuji_session_get_ai_backend(session)) ?? "";
     private void ConfigureAI(bool enabled)
     {

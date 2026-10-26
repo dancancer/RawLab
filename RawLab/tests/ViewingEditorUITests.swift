@@ -82,6 +82,10 @@ final class ViewingEditorUITests: XCTestCase {
         XCTAssertTrue(toggle.waitForExistence(timeout: 5)); toggle.tap()
         app.buttons["Lightness"].tap()
         wait(app) { $0["ready"] as? Bool == true && $0["hslTargetEnabled"] as? Bool == true && $0["hslTargetAxis"] as? String == "lightness" }
+        app.buttons["editor.adjustments"].tap()
+        wait(app) { $0["expanded"] as? Bool == false && $0["hslTargetEnabled"] as? Bool == true }
+        XCTAssertTrue(app.buttons["hsl.target.exit"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Target adjustment: Lightness"].exists)
         let before = receipt(app)
         let history = before["historyCount"] as! Int
         let values = before["hslValues"] as! [Double]
@@ -102,6 +106,11 @@ final class ViewingEditorUITests: XCTestCase {
         wait(app) { $0["ready"] as? Bool == true && $0["hslTargetWaiting"] as? Bool == false }
         XCTAssertEqual(receipt(app)["hslValues"] as? [Double], adjusted, "A second finger cancels target input before zoom")
         XCTAssertEqual(receipt(app)["historyCount"] as? Int, history + 1)
+        app.buttons["hsl.target.exit"].tap()
+        wait(app) { $0["hslTargetEnabled"] as? Bool == false }
+        XCTAssertFalse(app.buttons["hsl.target.exit"].exists)
+        app.buttons["editor.adjustments"].tap()
+        XCTAssertEqual(app.buttons["hsl.target"].value as? String, "Close")
     }
 
     func testBatchCollectionMicroEditAndFrozenExport() {

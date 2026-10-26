@@ -867,7 +867,8 @@ sony2fuji_status loadRawImage(
     std::string fileKey = std::string(request.input_path) + ":" +
         std::to_string(modifiedNanoseconds) + ":" + std::to_string(fileSize);
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
-    if (aiEnabled(session)) fileKey += ":ai-source:" + sony2fuji::ai::sourceIdentityKey(request.input_path);
+    const auto aiSourceIdentity = aiEnabled(session) ? sony2fuji::ai::sourceIdentityKey(request.input_path) : std::string();
+    if (aiEnabled(session)) fileKey += ":ai-source:" + aiSourceIdentity;
 #endif
     const bool useAI = applyAI && aiEnabled(session);
     const int rawNoiseReduction = aiEnabled(session) ? 0 : session->raw_noise_reduction;
@@ -875,7 +876,7 @@ sony2fuji_status loadRawImage(
     auto wbOptions = rawWhiteBalanceOptions(session, request);
     std::string aiKey;
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
-    if (useAI) aiKey = ":ai:" + session->ai->renderKey(request.input_path, wbOptions);
+    if (useAI) aiKey = ":ai:" + session->ai->renderKey(request.input_path, wbOptions, aiSourceIdentity);
 #endif
     const bool interactive = !useAI && session->interactive_preview && session->raw_noise_reduction == 0 && session->chroma_denoise == 0 &&
         !session->photo_effects.active() &&
@@ -941,7 +942,7 @@ sony2fuji_status loadRawImage(
         if (useAI) {
             sony2fuji::RAWBayerSource metadata;
             const bool bayer = processor.getBayerMetadata(metadata);
-            prepared = &session->ai->result(request.input_path,wbOptions,bayer ? &metadata : nullptr);
+            prepared = &session->ai->result(request.input_path,wbOptions,bayer ? &metadata : nullptr,aiSourceIdentity);
             if (!prepared->isSceneRGB()) options.bayerOverride = &prepared->bayer;
         }
 #endif
@@ -1334,13 +1335,14 @@ sony2fuji_status sony2fuji_session_set_ai_denoise(sony2fuji_session* session, co
         (config->enabled && (isEmptyString(config->model_directory) || isEmptyString(config->cache_directory))))
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
+    if (config->enabled && config->backend == SONY2FUJI_AI_CPU) return SONY2FUJI_STATUS_UNSUPPORTED;
     try {
         if (!session->ai) session->ai = std::make_unique<sony2fuji::ai::AISession>();
         const auto backend = config->backend == SONY2FUJI_AI_CPU ? sony2fuji::ai::Backend::Cpu :
             config->backend == SONY2FUJI_AI_COREML ? sony2fuji::ai::Backend::CoreML :
             config->backend == SONY2FUJI_AI_DIRECTML ? sony2fuji::ai::Backend::DirectML : sony2fuji::ai::Backend::Auto;
-        session->ai->configure(config->model_directory ? config->model_directory : "", config->cache_directory ? config->cache_directory : "", backend);
         session->ai->enabled = config->enabled != 0;
+        session->ai->configure(config->model_directory ? config->model_directory : "", config->cache_directory ? config->cache_directory : "", backend);
         return SONY2FUJI_STATUS_OK;
     } catch (const std::bad_alloc&) { return SONY2FUJI_STATUS_OUT_OF_MEMORY; }
     catch (const std::exception&) { return SONY2FUJI_STATUS_INVALID_ARGUMENT; }

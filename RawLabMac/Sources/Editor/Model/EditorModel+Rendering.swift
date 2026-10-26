@@ -140,6 +140,7 @@ extension EditorModel {
 
     private func finish(_ request: RenderRequest<RenderWork>, neutral: RenderedImage?, result: RenderedImage?, failure: Error?) {
         workerActive = false
+        if failure == nil { acceptedOriginalSource = request.value.source }
         let completion = scheduler.finish(request)
         let sameFile = request.value.file.standardizedFileURL == file?.standardizedFileURL
         switch completion {
@@ -207,5 +208,6 @@ extension EditorModel {
 
     func refreshBusy() {
         busy = workerActive || scheduler.isBusy || viewportResizeWork != nil
+        resumeHSLTargetKeys()
     }
 }

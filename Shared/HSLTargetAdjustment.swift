@@ -108,4 +108,5 @@ struct HSLTargetCanvasInput {
     let cancel: () -> Void
     let key: (Double) -> Void
     let reject: () -> Void
+    var exit: (() -> Void)? = nil
 }

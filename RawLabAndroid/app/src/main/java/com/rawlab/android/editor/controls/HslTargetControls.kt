@@ -56,3 +56,19 @@ internal fun HslTargetControls(target: HslTargetActions, enabled: Boolean) {
         }
     }
 }
+
+@Composable
+internal fun HslTargetCanvasControls(target: HslTargetActions, modifier: Modifier = Modifier) {
+    val axis = listOf(R.string.hsl_hue, R.string.saturation, R.string.hsl_lightness)[target.state.axis]
+    Surface(modifier.widthIn(max = 560.dp).testTag("hsl-target-canvas"), shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = .95f)) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(stringResource(R.string.hsl_target_active, stringResource(axis)), style = MaterialTheme.typography.titleSmall)
+            TextButton(onClick = { target.enabled(false) }, modifier = Modifier.heightIn(min = 48.dp).testTag("hsl-target-exit")) {
+                Text(stringResource(R.string.hsl_target_exit))
+            }
+            Text(stringResource(R.string.hsl_target_pan_hint), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}

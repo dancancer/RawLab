@@ -40,6 +40,9 @@ internal fun BatchSelectionScreen(model: EditorViewModel, onBack: () -> Unit, on
     val editor by model.state.collectAsStateWithLifecycle()
     var album by remember { mutableStateOf(false) }
     var scope by remember { mutableStateOf(false) }
+    var captureGeneration by remember { mutableIntStateOf(0) }
+    fun closeScope() { captureGeneration++; scope = false }
+    DisposableEffect(model) { onDispose { captureGeneration++ } }
     var synchronization by remember { mutableStateOf<CollectionSynchronization?>(null) }
     var history by remember { mutableStateOf(false) }
     var export by remember { mutableStateOf(false) }
@@ -80,7 +83,7 @@ internal fun BatchSelectionScreen(model: EditorViewModel, onBack: () -> Unit, on
                                 Text(photo.displayName, Modifier.weight(1f).padding(horizontal = 8.dp))
                                 TextButton(onClick = {
                                     if (editor.photo != null && model.collectionDraftFailure(editor.photo!!.identity.value) != null) pendingEdit = photo.id
-                                    else if (model.editCollectionPhoto(photo.id)) onEdit()
+                                    else model.editCollectionPhoto(photo.id) { if (it) onEdit() }
                                 }, enabled = !collection.busy && photo.id !in collection.failures, modifier = Modifier.testTag("collection-edit-${photo.id}")) { Text(stringResource(R.string.collection_edit)) }
                             }
                             collection.failures[photo.id]?.let {
@@ -106,14 +109,14 @@ internal fun BatchSelectionScreen(model: EditorViewModel, onBack: () -> Unit, on
         AlertDialog(onDismissRequest = { pendingEdit = null }, title = { Text(stringResource(R.string.collection_resolve_draft)) },
             text = { Text(collectionMessage(model.collectionDraftFailure(editor.photo?.identity?.value.orEmpty()).orEmpty())) },
             confirmButton = { TextButton(onClick = {
-                if (model.resolveCollectionDraft(true) && model.editCollectionPhoto(id)) { pendingEdit = null; onEdit() }
+                model.resolveCollectionDraft(true) { accepted -> if (accepted) model.editCollectionPhoto(id) { if (it) { pendingEdit = null; onEdit() } } }
             }) { Text(stringResource(R.string.collection_apply_draft)) } },
             dismissButton = { Row {
-                TextButton(onClick = { if (model.resolveCollectionDraft(false) && model.editCollectionPhoto(id)) { pendingEdit = null; onEdit() } }) { Text(stringResource(R.string.collection_discard_draft)) }
+                TextButton(onClick = { model.resolveCollectionDraft(false) { accepted -> if (accepted) model.editCollectionPhoto(id) { if (it) { pendingEdit = null; onEdit() } } } }) { Text(stringResource(R.string.collection_discard_draft)) }
                 TextButton(onClick = { pendingEdit = null }) { Text(stringResource(R.string.cancel)) }
             } })
     }
-    if (scope) ModalBottomSheet(onDismissRequest = { scope = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    if (scope) ModalBottomSheet(onDismissRequest = ::closeScope, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxHeight(.9f).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.collection_sync), style = MaterialTheme.typography.titleLarge)
             Text(stringResource(R.string.collection_source_targets, editor.photo?.name.orEmpty(), editor.photo?.let { collection.synchronizationTargets(it.identity.value).size } ?: 0))
@@ -123,10 +126,13 @@ internal fun BatchSelectionScreen(model: EditorViewModel, onBack: () -> Unit, on
                 TextButton(onClick = { model.resolveCollectionDraft(true) }) { Text(stringResource(R.string.collection_apply_draft)) }
                 TextButton(onClick = { model.resolveCollectionDraft(false) }) { Text(stringResource(R.string.collection_discard_draft)) }
             }
-            AdjustmentScopeEditor(stringResource(R.string.collection_check_targets), "collection-sync-preflight", enabled = draft == null) { selected ->
-                model.captureCollectionSynchronization(selected)?.let { scope = false; synchronization = it }
+            AdjustmentScopeEditor(stringResource(R.string.collection_check_targets), "collection-sync-preflight", enabled = draft == null && !editor.committingAdjustments) { selected ->
+                val generation = ++captureGeneration
+                model.captureCollectionSynchronization(selected) { captured ->
+                    if (scope && generation == captureGeneration) captured?.let { closeScope(); synchronization = it }
+                }
             }
-            TextButton(onClick = { scope = false }) { Text(stringResource(R.string.cancel)) }
+            TextButton(onClick = ::closeScope) { Text(stringResource(R.string.cancel)) }
         }
     }
     synchronization?.let { operation ->

@@ -7,7 +7,7 @@ enum class ToneCurveMode(val id: String, val nativeValue: Int) { LEGACY("legacy"
 data class ToneCurvePoint(val x: Double, val y: Double)
 
 class ToneCurveSettings(val mode: ToneCurveMode = ToneCurveMode.LEGACY, points: List<ToneCurvePoint> = emptyList()) {
-    val points: List<ToneCurvePoint> = java.util.Collections.unmodifiableList(points.toList())
+    val points: List<ToneCurvePoint> = java.util.Collections.unmodifiableList(points.map { ToneCurvePoint(it.x.canonicalZero(), it.y.canonicalZero()) })
     init {
         require(if (mode == ToneCurveMode.LEGACY) this.points.isEmpty() else
             this.points.size in 2..33 && this.points.first() == ToneCurvePoint(0.0, 0.0) &&

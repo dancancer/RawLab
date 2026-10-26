@@ -25,11 +25,12 @@ internal object OriginalPhotoSource {
             catch (_: UnsupportedOperationException) { null } catch (_: IOException) { null }
         descriptor?.use {
             val stat = Os.fstat(it.parcelFileDescriptor.fileDescriptor)
-            if (Build.VERSION.SDK_INT >= 27 && OsConstants.S_ISREG(stat.st_mode) && it.startOffset == 0L &&
+            if (OsConstants.S_ISREG(stat.st_mode) && it.startOffset == 0L &&
                 (it.declaredLength < 0 || it.declaredLength == stat.st_size)) return Stamp.File(stat.st_dev, stat.st_ino, stat.st_size,
-                stat.st_mtim.tv_sec, stat.st_mtim.tv_nsec)
+                if (Build.VERSION.SDK_INT >= 27) stat.st_mtim.tv_sec else stat.st_mtime,
+                if (Build.VERSION.SDK_INT >= 27) stat.st_mtim.tv_nsec else 0L)
         }
-        // 分段文件、流式 provider 和 API 26 没有完整的稳定元数据，退回内容摘要；读取失败阻断保存。
+        // 分段文件与流式 provider 没有完整的稳定元数据，退回内容摘要；读取失败阻断保存。
         val digest = MessageDigest.getInstance("SHA-256")
         (resolver.openInputStream(uri) ?: throw IOException("Photo source is unavailable")).use { input ->
             val buffer = ByteArray(64 * 1024)

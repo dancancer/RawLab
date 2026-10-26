@@ -24,12 +24,12 @@ std::vector<float> readFloats(const std::filesystem::path& path) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc < 2 || argc > 5) throw std::runtime_error("usage: dualdn_onnx_tests FIXTURE_DIR [cpu|auto|coreml|directml] [--diagnostic [MODEL_DIR]]");
+        if (argc < 2 || argc > 5) throw std::runtime_error("usage: dualdn_onnx_tests FIXTURE_DIR [auto|coreml|directml] [--diagnostic [MODEL_DIR]]");
         const bool diagnostic = argc >= 4 && std::string(argv[3]) == "--diagnostic";
         if (argc >= 4 && !diagnostic) throw std::invalid_argument("unknown diagnostic flag");
         const std::filesystem::path root = std::filesystem::u8path(argv[1]);
-        const std::string requested = argc >= 3 ? argv[2] : "cpu";
-        const auto backend = requested == "cpu" ? Backend::Cpu : requested == "auto" ? Backend::Auto :
+        const std::string requested = argc >= 3 ? argv[2] : "auto";
+        const auto backend = requested == "auto" ? Backend::Auto :
             requested == "coreml" ? Backend::CoreML : requested == "directml" ? Backend::DirectML : throw std::invalid_argument("unknown backend");
         std::ifstream stream(root / "manifest.json");
         Json manifest; stream >> manifest;
@@ -80,8 +80,7 @@ int main(int argc, char** argv) {
                 maximum = std::max(maximum, error); mean += error / actual.size();
                 if (error > 1e-4) ++exceeding;
             }
-            const bool cpu = model.backend() == "CPU";
-            const bool parityPass = maximum <= (cpu ? 1e-4 : 3e-4) && mean <= (cpu ? 1e-5 : 2e-5);
+            const bool parityPass = maximum <= 3e-4 && mean <= 2e-5;
             if (!parityPass && !diagnostic)
                 throw std::runtime_error(std::string(name) + " parity failed: " + std::to_string(maximum));
             bool rejected = false;

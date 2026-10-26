@@ -97,6 +97,14 @@ internal static class UpdateStoreChecks
             check(Rejected(() => store.RepairableState()), "Partial installation state remains blocked without its backup");
             File.WriteAllText(store.StatePath, "{\"PendingUpdate\":{\"PreviousVersion\":\"0.8.2\"}}");
             check(Rejected(() => store.RepairableState()), "Previous installation identity blocks ambiguous state repair");
+            var orphanManager=new UpdateDataBackup(root,store.DirectoryPath);
+            var orphan=orphanManager.Create("0.8.2","0.9.1","14");
+            File.WriteAllText(store.StatePath,"{\"AutomaticCheck\":\"broken\",\"PendingUpdate\":{\"Format\":1,\"Phase\":0}}");
+            check(Rejected(() => store.RepairableState()) && Directory.Exists(orphan), "Incomplete installation state cannot prove a backup is orphaned");
+            var nonInstallation=System.Text.Json.JsonSerializer.SerializeToNode(new UpdatePreferences())!;
+            nonInstallation["AutomaticCheck"]="broken"; File.WriteAllText(store.StatePath,nonInstallation.ToJsonString());
+            store.RepairState(store.RepairableState());
+            check(!Directory.Exists(orphan),"Known non-install state can be rebuilt and cleans verified orphan backup after saving");
             File.WriteAllBytes(store.StatePath, damaged); var backups = Path.Combine(store.DirectoryPath, "Backups");
             Directory.CreateDirectory(Path.Combine(backups, "prior"));
             check(Rejected(() => store.RepairableState()), "Installation evidence blocks uncertain state repair");

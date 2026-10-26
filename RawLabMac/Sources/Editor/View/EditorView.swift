@@ -77,12 +77,17 @@ struct EditorView: View {
                     }
                     .accessibilityValue(model.busy ? L10n.text("正在显影…") : model.previewOutdated ? L10n.text("预览未更新") : L10n.text("预览已更新"))
                     .overlay(alignment: .bottom) {
+                        VStack(spacing: 8) {
+                        if adjustmentPanel.collapsed && model.hslTargetActive {
+                            HSLTargetCanvasControls(axis: model.hslTargetAxis, onExit: exitHSLTarget).padding(8)
+                        }
                         if model.previewOutdated {
                             HStack(spacing: 8) {
                                 Label(L10n.text("预览未更新"), systemImage: "exclamationmark.triangle")
                                 Button(L10n.text("重试"), action: model.schedule)
                             }.font(.callout).padding(8).background(.black.opacity(0.7)).padding(8)
                         }
+                    }
                     }
                     .overlay { if dropTarget { Rectangle().stroke(Color.accentColor, lineWidth: 3) } }
                     .onDrop(of: [.fileURL], isTargeted: $dropTarget) { providers in
@@ -125,12 +130,12 @@ struct EditorView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             model.cancelHSLTarget()
-            if model.adjustmentNavigation.tool == .colorGrading { model.cancelAdjustmentInteraction() }
+            if [.colorGrading, .toneCurve].contains(model.adjustmentNavigation.tool) { model.cancelAdjustmentInteraction() }
             model.saveEdits()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
             model.cancelHSLTarget()
-            if model.adjustmentNavigation.tool == .colorGrading { model.cancelAdjustmentInteraction() }
+            if [.colorGrading, .toneCurve].contains(model.adjustmentNavigation.tool) { model.cancelAdjustmentInteraction() }
             model.saveEdits()
         }
         .toolbar { editorToolbar }
@@ -138,7 +143,7 @@ struct EditorView: View {
             if kind == .presets { AdjustmentPresetView(model: model) }
             else { AdjustmentTransferView(model: model, kind: kind) }
         }
-        .onExitCommand { model.cancelHSLTarget(); model.cancelAdjustmentInteraction() }
+        .onExitCommand { exitHSLTarget(); model.cancelAdjustmentInteraction() }
         .background(MacViewingKeyboard(canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) },
             onInformation: { infoMode = infoMode.next }).frame(width: 0, height: 0))
         .background(MacGeometryWindowGuard(model: model).frame(width: 0, height: 0))
@@ -494,7 +499,8 @@ struct EditorView: View {
             begin: { if current() { model.beginHSLTarget($0) } },
             change: { if current() { model.moveHSLTarget($0) } },
             end: { if current() { model.endHSLTarget() } }, cancel: { if current() { model.cancelHSLTarget() } },
-            key: { if current() { model.keyHSLTarget($0) } }, reject: { if current() { model.rejectHSLTarget() } })
+            key: { if current() { model.keyHSLTarget($0) } }, reject: { if current() { model.rejectHSLTarget() } },
+            exit: exitHSLTarget)
     }
 
     private func imagePane(_ frame: RenderedImage, title: String, showMask: Bool, wipe: Bool = false) -> some View {
@@ -523,6 +529,10 @@ struct EditorView: View {
                     }
                 }
             }
+    }
+
+    private func exitHSLTarget() {
+        model.cancelHSLTarget(); model.hslTargetEnabled = false
     }
 
     private func collapsePanel() {

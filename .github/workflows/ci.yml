@@ -166,6 +166,14 @@ jobs:
           exec > >(tee build/ci/macos-models.log) 2>&1
           git rev-parse HEAD
           bash scripts/ci/apple-models.sh macos
+      - name: Prepare GPU AI inputs for full checks
+        if: needs.changes.outputs.checks == 'full'
+        shell: bash
+        run: python scripts/ci/ai-inputs.py --platform macos --arch "$RAWLAB_ARCH"
+      - name: Install offline GLES shader validator
+        if: needs.changes.outputs.native == 'true'
+        shell: bash
+        run: brew list glslang >/dev/null 2>&1 || brew install glslang
       - name: Build default app and exercise selected native suites
         if: needs.changes.outputs.build == 'true'
         shell: bash
@@ -203,7 +211,7 @@ jobs:
             ci_timed dcp-compiler env RAWLAB_LUTPREP_PYTHON="$lutprep_python" bash RawLabMac/tests/dcp-compiler.sh
             ci_timed look-library bash RawLabMac/tests/look-library.sh
             ci_timed look-import-model bash RawLabMac/tests/look-import-model.sh
-            ctest_exclude='native_dcp_metal|gpu_photo|metal_denoise'
+            ctest_exclude='native_dcp_metal|gpu_photo|metal_denoise|dualdn_onnx|dualdn_directml'
             [[ "$RAWLAB_ARCH" != x86_64 ]] || ctest_exclude="$ctest_exclude|metal_workspace"
             ci_timed ctest ctest --test-dir lutools/build-macos --parallel 2 --output-on-failure --no-tests=error \
               -E "^($ctest_exclude)$" \
@@ -280,6 +288,7 @@ jobs:
           @(
             "DOTNET_INSTALL_DIR=$ciRoot\dotnet"
             "RAWLAB_LENS_SOURCE_CACHE=$ciRoot\cache\lens-sources"
+            "RAWLAB_AI_SHARED_CACHE=$ciRoot\cache"
             "JOBS=$jobs"
             "CMAKE_BUILD_PARALLEL_LEVEL=$jobs"
             "CL_MPCount=$compilerProcesses"
@@ -323,6 +332,12 @@ jobs:
             & ./RawLabWindows/tests/RunnerSelectionChecks.ps1 -Output 'build/ci/runner-checks'
           }
           finally { Stop-Transcript }
+      - name: Prepare GPU AI inputs for full checks
+        if: needs.changes.outputs.checks == 'full'
+        shell: pwsh
+        run: |
+          python scripts/ci/ai-inputs.py --platform windows --arch x86_64
+          if ($LASTEXITCODE -ne 0) { throw 'Provision the pinned AI model before full checks.' }
       - name: Build default self-contained app and exercise selected native suites
         if: needs.changes.outputs.build == 'true'
         shell: pwsh
@@ -341,12 +356,14 @@ jobs:
             Invoke-Checked git @('rev-parse', 'HEAD')
             Invoke-Checked dotnet @('--info')
             Invoke-Checked python @('-m', 'pip', 'install', '-r', 'lutools/requirements-lutprep.txt')
-            & ./RawLabWindows/build.ps1 -SelfContained -Python (Get-Command python).Source
+            $ai = @{}
+            if ($env:RAWLAB_DUALDN -eq '1') { $ai.DualDnModel = $env:RAWLAB_DUALDN_MODEL_DIR }
+            & ./RawLabWindows/build.ps1 -SelfContained -Python (Get-Command python).Source @ai
             $package = Join-Path $PWD 'build/RawLab-Windows'
             $env:PATH = "$package;$env:PATH"
             if ($env:RAWLAB_CI_NATIVE -eq 'true') {
-              $tests = '^(dcp_compiler|windows_display_image|raw_formats|sony_arw6|sony_arw6_bounds|display_render|edit_recipe|edit_recipe_raster|edit_recipe_geometry|geometry_cli|agent_preview|raw_info_cli|agent_commands|edit_recipe_cli|edit_recipe_schema)$'
-              Invoke-Checked ctest @('--test-dir', 'build/windows-native', '-C', 'Release', '--output-on-failure', '--no-tests=error', '-R', $tests, '--output-junit', "$PWD/build/ci/windows-ctest.xml")
+              $tests = '^(dcp_compiler|windows_display_image|raw_formats|sony_arw6|sony_arw6_bounds|display_render|edit_recipe|edit_recipe_raster|edit_recipe_geometry|geometry_cli|agent_preview|raw_info_cli|agent_commands|edit_recipe_cli|edit_recipe_schema|d3d11_shader|wavelet_restore|dualdn_.*|scene_rgb_adapter|raw_noise_estimate)$'
+              Invoke-Checked ctest @('--test-dir', 'build/windows-native', '-C', 'Release', '--output-on-failure', '--no-tests=error', '-R', $tests, '-E', '^dualdn_onnx$', '--output-junit', "$PWD/build/ci/windows-ctest.xml")
               Invoke-Checked python @('lutools/tests/test_dcp_compiler.py', 'build/windows-native/bin/Release/dcp_compiler_tests.exe')
               $raw = Join-Path $PWD 'lutools/examples/DJI_20250602164503_0444_D.DNG'
               $env:RAWLAB_TEST_DCP_NATIVE_LIB = Join-Path $package 'sony2fuji.dll'

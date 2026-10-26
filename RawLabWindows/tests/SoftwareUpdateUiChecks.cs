@@ -120,18 +120,27 @@ internal static class SoftwareUpdateUiChecks
             check(repair.RequiresRecovery && !Button(repairWindow,"updates.check").IsEnabled && File.ReadAllText(repair.StateArchive!)=="{broken",
                 "Native repair action preserves damaged state and requires reopening");
             var repairedStartup=new DesktopUpdateController(new Adapter(),new(),repairStore,"0.8.2","14");
-            repairedStartup.FinishStartupHealthCheck(window.UpdateDataHealthy);
+            repairedStartup.FinishStartupHealthCheckAsync(window.UpdateDataHealthy).GetAwaiter().GetResult();
             check(!repairedStartup.RequiresRecovery && !repairedStartup.RequiresStartupHealthCheck,"Real editor data health completes repair on fresh startup");
             repairWindow.Close();
             var beforeFailure=store.VersionedState(photo);
+            Invoke(window,"ShowCollection");var collection=Get<BatchSelectionWindow>(window,"collectionWindow");
             adapter.RejectInstall=true;controller.CheckAsync(true).GetAwaiter().GetResult();
             var downloading=controller.DownloadAsync();adapter.Download.TrySetResult();
             InteractionChecks.PumpUntil(()=>downloading.IsCompleted && controller.State.Phase==UpdatePhase.PackageReady);
             var installing=controller.ChooseAsync(UpdateInstallChoice.RestartNow);
             InteractionChecks.PumpUntil(()=>installing.IsCompleted && !controller.PreparingInstallation);
-            check(controller.State.Failure?.Stage==UpdatePhase.Installing && !window.IsEnabled &&
+            check(controller.State.Failure?.Stage==UpdatePhase.Installing && !window.EditorShell.IsEnabled && window.UpdateLockBanner.IsVisible &&
                 store.VersionedState(photo).SameAs(beforeFailure),
                 "A failed installer dispatch disables the real editor and preserves saved edits");
+            check(!collection.IsEnabled,"Installation lock also disables an existing collection window");
+            collection.Close();Invoke(window,"ShowCollection");collection=Get<BatchSelectionWindow>(window,"collectionWindow");
+            check(!collection.IsEnabled,"A collection window created during the installation lock starts disabled");
+            collection.Close();Click(Button(window,"updates.lock.open"));
+            InteractionChecks.PumpUntil(()=>Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow").IsVisible);
+            check(Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow").IsEnabled,
+                "Visible lock banner reopens the usable software update window");
+            Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow").Close();
             Console.WriteLine("UPDATE_UI_OUTPUT="+output);
         } finally {controller.Cancel();Invoke(window,"CancelTransformDraft");Invoke(window,"CancelParameterInputs");window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);}
     }

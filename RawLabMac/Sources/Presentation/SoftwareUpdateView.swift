@@ -42,6 +42,11 @@ struct SoftwareUpdateView: View {
                 } else if updates.state.phase == .checking || updates.state.phase == .verifying || updates.preparingInstallation {
                     ProgressView().controlSize(.small)
                 }
+                if let error = updates.startupTrustError, updates.requiresStartupHealthCheck, !updates.requiresRecovery {
+                    Text(error).font(detailFont).textSelection(.enabled)
+                    Button(L10n.text("重试")) { updates.retryStartup?() }
+                        .disabled(updates.checkingStartupTrust).accessibilityIdentifier("updates.retryStartup")
+                }
                 if let failure = updates.state.failure {
                     Label(L10n.text("更新未完成，请查看恢复说明"), systemImage: "exclamationmark.triangle")
                     Text(L10n.text(UpdatePresentation.phase(failure.stage))).font(detailFont)
@@ -79,7 +84,7 @@ struct SoftwareUpdateView: View {
                 Divider()
                 DisclosureGroup(L10n.text("安装支持与恢复说明")) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(L10n.text("Mac 需要同架构、已签名并公证的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。"))
+                        Text(L10n.text("Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。"))
                         Text(L10n.text("查看此说明不会启用自动安装。失败后请保留现有应用和数据，使用官方可信安装包恢复；不要用旧版覆盖新版编辑记录。"))
                     }.font(detailFont)
                 }

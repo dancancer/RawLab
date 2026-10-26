@@ -5,6 +5,8 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace RawLab.Windows;
 
+public sealed class TemporaryUpdateTrustException(string message) : IOException(message);
+
 public static class AuthenticodeTrust
 {
     private static readonly Guid VerifyAction = new("00AAC56B-CD44-11d0-8CC2-00C04FC295EE");
@@ -21,7 +23,10 @@ public static class AuthenticodeTrust
             var action = VerifyAction;
             try
             {
-                if (WinVerifyTrust(new IntPtr(-1), ref action, ref data) != 0) throw new CryptographicException("Authenticode validation failed");
+                var status = WinVerifyTrust(new IntPtr(-1), ref action, ref data);
+                if (unchecked((uint)status) is 0x80092013 or 0x800B010E)
+                    throw new TemporaryUpdateTrustException("Certificate revocation status is temporarily unavailable");
+                if (status != 0) throw new CryptographicException("Authenticode validation failed");
             }
             finally { data.StateAction = 2; _ = WinVerifyTrust(new IntPtr(-1), ref action, ref data); }
         }

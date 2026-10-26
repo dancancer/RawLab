@@ -147,6 +147,7 @@ final class EditorModel: ObservableObject {
     @Published var hslTargetPoint: CGPoint?
     @Published var hslTargetNotice: HSLTargetAvailability?
     var hslTargetHistoryActive = false
+    var hslPendingKeyDelta: Double = 0
     var hslAcceptedRequest: RenderRequest<RenderWork>?
     var hslAcceptedSettings: Adjustments?
     var hslSourceRevision: UInt64 = 1
@@ -210,6 +211,8 @@ final class EditorModel: ObservableObject {
     var viewportResizeWork: DispatchWorkItem?
     var workerActive = false
     var engine: RenderEngine?
+    // 仅渲染队列读写；主线程使用已发布的来源身份。
+    var acceptedOriginalSource: MacReferenceSource?
     var originalCache: (key: MacNeutralReferenceKey, frame: RenderedImage)?
     var geometryReferenceCache: (key: MacNeutralReferenceKey, frame: RenderedImage)?
     var editStore: EditPersistence? {

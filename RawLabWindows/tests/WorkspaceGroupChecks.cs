@@ -16,7 +16,7 @@ internal static class WorkspaceGroupChecks
     {
         var groupIds=new[]{"looks","light","color","effects","detail","geometry"};
         var defaults=new[]{EditorAdjustmentTool.Film,EditorAdjustmentTool.Exposure,EditorAdjustmentTool.WhiteBalance,
-            EditorAdjustmentTool.Vignette,EditorAdjustmentTool.Denoise,EditorAdjustmentTool.Geometry};
+            EditorAdjustmentTool.Clarity,EditorAdjustmentTool.Denoise,EditorAdjustmentTool.Geometry};
         check(window.Groups.Children.OfType<Button>().Select(AutomationProperties.GetAutomationId).SequenceEqual(groupIds.Select(id=>"editor.group."+id)),
             "Six persistent groups have stable ordered IDs");
         Invoke(window,"SelectTool",EditorAdjustmentTool.Exposure);

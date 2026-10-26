@@ -192,7 +192,7 @@ public partial class MainWindow
     }
     private void ShowBatch(BatchJob job)
     {
-        var window = new BatchExportWindow(job, batchJournal) { Owner = this };
+        var window = new BatchExportWindow(job, batchJournal) { Owner = this, IsEnabled = !UpdateInstallationActive };
         batchWindow = window;
         window.RunCompleted += (before, after, runFailedCount) =>
         {

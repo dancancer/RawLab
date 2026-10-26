@@ -37,6 +37,7 @@ class AdjustmentPresetUITest {
         val node = compose.onNodeWithTag(tag)
         if (compose.onAllNodes(hasTestTag(tag) and hasAnyAncestor(hasScrollAction())).fetchSemanticsNodes().isNotEmpty()) node.performScrollTo()
         node.performClick(); compose.waitForIdle()
+        if (tag == "preset-save") compose.waitUntil(60_000) { !model.state.value.committingAdjustments }
     }
     private fun library() {
         compose.onNode(hasContentDescription(compose.activity.getString(R.string.more)) and !hasAnyAncestor(hasTestTag("adjustment-dock"))).performClick()
@@ -60,6 +61,25 @@ class AdjustmentPresetUITest {
     }
     private fun cleanup(original: Set<String>) {
         model.presetStore.list().filter { it.id !in original }.forEach { model.presetStore.delete(it) }
+    }
+
+    @Test fun closingPresetSheetCancelsPendingCaptureWithoutCreatingPreset() {
+        val before = model.presetStore.list().map { it.id }.toSet()
+        val source = fixture("preset-cancel-capture")
+        val release = java.util.concurrent.CountDownLatch(1)
+        try {
+            compose.runOnUiThread { model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }; ready()
+            library(); click("preset-create"); enterName("Cancelled capture")
+            val field = EditorViewModel::class.java.getDeclaredField("adjustmentQueue").apply { isAccessible = true }
+            val queue = field.get(model) as com.rawlab.android.editor.render.SerialWorkQueue
+            queue.submit({ release.await(30, java.util.concurrent.TimeUnit.SECONDS) }, {})
+            compose.onNodeWithTag("preset-save").performScrollTo().performClick()
+            compose.waitUntil(10_000) { model.state.value.committingAdjustments }
+            click("preset-close"); release.countDown()
+            compose.waitUntil(30_000) { !model.state.value.committingAdjustments }
+            compose.onNodeWithTag("preset-root").assertDoesNotExist()
+            assertEquals(before, model.presetStore.list().map { it.id }.toSet())
+        } finally { release.countDown(); cleanup(before); source.delete() }
     }
 
     @Test fun scopeCrudSourceIndependenceAndPresetHistory() {

@@ -262,8 +262,8 @@ ITER-10 的 [atmosphere v1 数值合同](../../../lutools/docs/atmosphere-v1.md)
 
 ### 10.1 路线选择与旧安装迁移
 
-- macOS 采用 Sparkle 2：复用 `.app` ZIP 作为传输容器，集成 framework/helper、appcast、固定公钥与 EdDSA 包签名；这是其官方接入机制。[接入](https://sparkle-project.org/documentation/)、[发布与签名](https://sparkle-project.org/documentation/publishing/)。RawLab 本方案另外把 Developer ID 与公证设为开放自动安装的发布门槛；当前 ad-hoc ZIP 不满足该项目门槛，不能只加一个下载按钮就宣称可自动更新。
-- Windows 采用 Velopack，首批**仅支持 x64、当前用户 Setup 安装形态**自动更新；裸 ZIP 与 portable 不在自动安装支持矩阵，继续提供发布页手动下载。安装 App ID 拟为 `RawLab.Desktop`，安装目录与现有 `%LOCALAPPDATA%/RawLab` 数据目录分离，保持原数据路径。由现有发布目录生成正式 package/feed 与 Setup/Update；启动最早阶段在 WPF 初始化前接框架生命周期，Check/Download/Apply/restart 由平台 adapter 包装。[打包](https://docs.velopack.io/packaging/overview)、[集成](https://docs.velopack.io/integrating/overview)、[签名](https://docs.velopack.io/packaging/signing)。本方案要求 Authenticode 发行身份和经信任的更新元数据。
+- macOS 采用 Sparkle 2：复用 `.app` ZIP 作为传输容器，集成 framework/helper、appcast、固定公钥与 EdDSA 包签名；这是其官方接入机制。[接入](https://sparkle-project.org/documentation/)、[发布与签名](https://sparkle-project.org/documentation/publishing/)。默认发行使用固定自签名代码证书及 EdDSA 包/feed 签名；Developer ID 加公证保留为可选严格模式。ad-hoc 开发包不满足自动安装资格。自签名模式严格校验主程序和嵌套代码，并固定叶证书指纹；不启用会阻止无 Team ID 运行库加载的 hardened runtime 库校验。
+- Windows 采用 Velopack，首批**仅支持 x64、当前用户 Setup 安装形态**自动更新；裸 ZIP 与 portable 不在自动安装支持矩阵，继续提供发布页手动下载。安装 App ID 拟为 `RawLab.Desktop`，安装目录与现有 `%LOCALAPPDATA%/RawLab` 数据目录分离，保持原数据路径。由现有发布目录生成正式 package/feed 与 Setup/Update；启动最早阶段在 WPF 初始化前接框架生命周期，Check/Download/Apply/restart 由平台 adapter 包装。[打包](https://docs.velopack.io/packaging/overview)、[集成](https://docs.velopack.io/integrating/overview)、[签名](https://docs.velopack.io/packaging/signing)。默认以固定 P-256 公钥验证发布描述，绑定包的大小、SHA-256、版本、架构、渠道与有效期；`PublisherKeySha256` 为空表示此模式。非空时启用保留的 Authenticode 严格模式；格式错误不能退回默认模式。
 - 当前 0.8.2 客户端没有 updater，不可能无修改自举为自动安装。第一版携带 updater 的“种子版”需通过现有发布页手动安装/迁移；之后才验收种子版→后续版自动升级。Windows 旧 ZIP 用户先退出旧进程，再手动运行可信 Setup，安装版读取原用户数据并核对记录/外观/任务，不自动删除旧目录；新安装版以更新/运行锁约束受管理实例，迁移与启动发现仍运行的旧 RawLab 时阻止写入并提示退出。旧客户端不遵循新锁，与安装版并行写同一数据不属于支持场景，不能声称新锁能约束旧程序。macOS 对当前 arm64/x86_64 各自提供签名种子 `.app`，保留 bundle ID/数据容器，由用户按安装引导替换旧应用；非可写位置先解决权限。种子版与后续包均在发布说明标明支持范围。
 
 安装支持说明页只读，不改变当前安装资格；只有受信任种子版迁移成功且数据核对完成才开放自动安装。
@@ -272,7 +272,7 @@ ITER-10 的 [atmosphere v1 数值合同](../../../lutools/docs/atmosphere-v1.md)
 
 ### 10.2 元数据与状态
 
-更新 descriptor 至少包含 version/build、OS/arch/channel、最小可升级版本、asset URL、size、SHA-256、签名/发行身份与发布说明。Mac 按 Sparkle 的可信 appcast/EdDSA；Windows 由可信发行渠道提供签名描述并绑定 package hash，校验 package 和 Authenticode publisher，不能信任“任意 feed 的 hash 与它自己提供的文件一致”。私钥不入库，公钥和来源固定在正式应用配置。
+更新 descriptor 至少包含 version/build、OS/arch/channel、最小可升级版本、asset URL、size、SHA-256、签名/发行身份与发布说明。Mac 按 Sparkle 的可信 appcast/EdDSA；Windows 由固定公钥验证发布描述并绑定 package hash；配置了 Authenticode publisher 时追加严格发行身份校验。两端 feed 和包都来自 GitHub Release。Windows 手动跟随有上限的 HTTPS 跳转，仅允许 GitHub 与其 Release 下载域名；首个包地址仍须与 feed 同主机，重定向不改变签名描述的大小/hash 约束。不能信任“任意 feed 的 hash 与它自己提供的文件一致”。私钥不入库，公钥和来源固定在正式应用配置。
 
 统一状态机：idle → checking → available → downloading → verifying → package_ready（等待本次选择）→ 安装准入 → waiting_for_tasks/ready_to_install → installing → pending_restart/complete；校验成功后才进入准入，阻挡解除且任务/journal 完成后重新准入，不能从下载或等待直接绕过检查安装；各阶段可失败并带重试/手动下载。业务状态通用，安装行为由两端框架分别负责，不自写一个跨平台文件替换脚本。
 
@@ -288,7 +288,9 @@ ITER-10 的 [atmosphere v1 数值合同](../../../lutools/docs/atmosphere-v1.md)
 
 更新框架完成受信任替换，失败不覆盖可启动版本；迁移前保留用户数据备份，首次启动健康标记在开放编辑之前落下。安装/首次启动失败使用前一可信版本及相应数据备份恢复，保留新格式文件副本，不用旧程序覆盖无法识别的新记录。用户已经在新版开始编辑后不自动降级，改为保留数据的手动恢复路径。
 
-验收种子版→新版、arm64/x86_64 Mac 与 Windows x64 支持形态、只读/权限/错误架构、损坏/伪造包、断网、取消、重复安装锁、等待任务、重启失败和数据保留。签名/公证/发布 feed 与正式包上传另需授权；本轮文档不访问密钥、不发布。
+验收种子版→新版、arm64/x86_64 Mac 与 Windows x64 支持形态、只读/权限/错误架构、损坏/伪造包、断网、取消、重复安装锁、等待任务、重启失败和数据保留。自签名 Mac 另验 Gatekeeper/App 管理提示、隐私权限保留和不同证书拒绝。签名、可选公证、发布 feed 与正式包上传另需授权；私钥仅在发布机本地保管并离线备份，不放 CI secrets。
+
+未来改用付费签名时，Mac 必须保留同一个 Sparkle EdDSA 密钥，再使用 Developer ID 签包并切换 TeamID 严格模式；Windows 在新版本配置 `PublisherKeySha256` 并给应用/updater 做 Authenticode 签名。两端均重跑真实升级验收，不更换数据格式或自写安装替换器。
 
 ## 11. 原生与设计资产落点
 

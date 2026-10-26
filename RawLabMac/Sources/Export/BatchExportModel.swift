@@ -6,7 +6,12 @@ private final class BatchCancellation {
     private let lock = NSLock()
     private var value = false
     var cancelled: Bool { lock.lock(); defer { lock.unlock() }; return value }
-    func cancel() { lock.lock(); value = true; lock.unlock() }
+    private var progress: AIPreparation?
+    func attach(_ progress: AIPreparation?) {
+        lock.lock(); self.progress = progress; let cancelled = value; lock.unlock()
+        if cancelled { progress?.cancel() }
+    }
+    func cancel() { lock.lock(); value = true; let progress = progress; lock.unlock(); progress?.cancel() }
 }
 
 final class BatchExportModel: ObservableObject {
@@ -81,13 +86,17 @@ final class BatchExportModel: ObservableObject {
         guard !added.isEmpty else { return }
         validating = true
         let candidates = added
-        let validationSettings = job.settings.neutralSettings
+        let validationJob = job
         queue.async { [self] in
             for item in candidates {
                 var failure: String?
                 do {
                     if engine == nil { engine = try RenderEngine() }
-                    _ = try engine!.render(item.input, settings: validationSettings, lut: nil, edge: 180, interactive: true)
+                    let snapshot = try validationJob.snapshot(for: item)
+                    if snapshot.settings.aiDenoiseEnabled {
+                        try engine!.prepareAI(item.input, settings: snapshot.settings, progress: AIPreparation { _, _, _ in })
+                    }
+                    _ = try engine!.render(item.input, settings: snapshot.settings, lut: snapshot.look, edge: 180, interactive: true)
                 } catch { failure = error.localizedDescription }
                 let message = failure
                 DispatchQueue.main.async {
@@ -169,6 +178,12 @@ final class BatchExportModel: ObservableObject {
                     DispatchQueue.main.async { self.job = updated }
                 }) { input, settings, look, output in
                     if self.engine == nil { self.engine = try RenderEngine() }
+                    if settings.aiDenoiseEnabled {
+                        let progress = AIPreparation { _, _, _ in }
+                        cancellation.attach(progress)
+                        defer { cancellation.attach(nil) }
+                        try self.engine!.prepareAI(input, settings: settings, progress: progress)
+                    }
                     _ = try self.engine!.render(input, settings: settings, lut: look, edge: 32)
                     let item = snapshot.items.first { $0.input == input }!
                     let longEdge = try snapshot.snapshot(for: item).longEdge
@@ -219,6 +234,9 @@ final class BatchExportModel: ObservableObject {
                     try snapshot.verifyLook()
                 }
                 if engine == nil { engine = try RenderEngine() }
+                if snapshot.settings.aiDenoiseEnabled {
+                    try engine!.prepareAI(item.input, settings: snapshot.settings, progress: AIPreparation { _, _, _ in })
+                }
                 return try engine!.render(item.input, settings: snapshot.settings, lut: snapshot.look, edge: 1600)
             }
             DispatchQueue.main.async {

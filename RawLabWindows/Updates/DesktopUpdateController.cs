@@ -25,6 +25,9 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     public string CurrentVersion => currentVersion;
     public string? StorageError { get; private set; }
     public bool PreparingInstallation { get; private set; }
+    public bool CheckingStartupTrust { get; private set; }
+    public string? StartupTrustError { get; private set; }
+    public Func<Task>? RetryStartup { get; set; }
     public bool BlocksEditing => StorageError != null || PreparingInstallation || RequiresStartupHealthCheck || RequiresRecovery;
     public bool Recovering { get; private set; }
     public bool RecoveryNeedsRestart { get; private set; }
@@ -59,6 +62,9 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             var next = preferences.Copy(); next.PendingUpdate.RestoreAfterLaunch(currentVersion, currentBuild, false);
             if (next.PendingUpdate.Phase != State.Phase) Save(next);
         }
+        if (StorageError == null && !RequiresStartupHealthCheck && !RequiresRecovery && File.Exists(store.StatePath)) {
+            try { backup.DiscardUnreferencedBackups(State.BackupPath); } catch { }
+        }
     }
     public void RepairState()
     {
@@ -76,6 +82,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         Recovering = true; RecoveryError = null; Notify();
         try
         {
+            await adapter.ValidateHostTrustAsync();
             var target = State.Release?.Version;
             var receipt = await Task.Run(() => {
                 var manifest = backup.Verify(path);
@@ -86,12 +93,12 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             var next = preferences.Copy(); next.SkippedVersion = State.Release?.Identity;
             next.AutomaticInstall = false; next.PendingUpdate = new(); next.RecoveryReceipt = receipt;
             RecoveryNeedsRestart = true;
-            if (Save(next)) backup.FinishRecovery(receipt);
+            if (Save(next, discardObsoleteBackup: false)) { backup.FinishRecovery(receipt); try { backup.Discard(path); } catch { } }
         }
         catch (Exception error) { RecoveryError = error.Message; }
         finally { Recovering = false; Notify(); }
     }
-    public void FinishStartupHealthCheck(bool healthy)
+    public async Task FinishStartupHealthCheckAsync(bool healthy)
     {
         if (!RequiresStartupHealthCheck || backup.HasPendingRecovery || RecoveryNeedsRestart) return;
         if (preferences.StateRepairReceipt != null)
@@ -99,11 +106,20 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             if (!healthy) { repairHealthFailed = true; RecoveryError = "User data failed startup validation"; Notify(); return; }
             var repaired = preferences.Copy(); repaired.StateRepairReceipt = null; Save(repaired); return;
         }
+        if (CheckingStartupTrust) return;
+        CheckingStartupTrust = true; StartupTrustError = null; Notify();
+        var trusted = false;
+        try { await adapter.ValidateHostTrustAsync(); trusted = true; }
+        catch (Exception error) when (error is TemporaryUpdateTrustException or TimeoutException) {
+            StartupTrustError = error.Message; CheckingStartupTrust = false; Notify(); return;
+        }
+        catch (Exception error) { StartupTrustError = error.Message; }
+        CheckingStartupTrust = false;
         var backupValid=false;
         try {
             if(State.BackupPath is {} path) {var manifest=backup.Verify(path);backupValid=manifest.TargetVersion==State.Release?.Version && manifest.PreviousVersion==State.PreviousVersion && manifest.PreviousBuild==State.PreviousBuild;}
         } catch(Exception error) { RecoveryError = error.Message; }
-        var next = preferences.Copy(); next.PendingUpdate.RestoreAfterLaunch(currentVersion, currentBuild, healthy && backupValid && adapter.UnavailableReason == null); Save(next);
+        var next = preferences.Copy(); next.PendingUpdate.RestoreAfterLaunch(currentVersion, currentBuild, healthy && backupValid && trusted); Save(next);
     }
     public void SetAutomaticCheck(bool value) {
         if (StorageError != null || RequiresStartupHealthCheck || RequiresRecovery) return;
@@ -200,9 +216,14 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     {
         if (PreparingInstallation || Recovering) return false;
         if (State.Phase is (UpdatePhase.Installing or UpdatePhase.PendingRestart) && State.Choice != UpdateInstallChoice.None) return true;
-        if (State.Choice == UpdateInstallChoice.OnQuit || State.Choice == UpdateInstallChoice.AutomaticOnQuit && preferences.AutomaticInstall)
-            return await InstallPreparedAsync(false);
-        Cancel();
+        var selected = State.Choice == UpdateInstallChoice.OnQuit || State.Choice == UpdateInstallChoice.AutomaticOnQuit && preferences.AutomaticInstall;
+        if (selected) {
+            if (await InstallPreparedAsync(false)) return true;
+            if (StorageError != null || RequiresRecovery) return false;
+            operation?.Cancel(); automaticDownload = false;
+            var next = preferences.Copy(); next.PendingUpdate.Cancel(preservingChoice: true);
+            if (!Save(next)) return false;
+        } else Cancel();
         var deadline = DateTime.UtcNow.AddSeconds(30);
         while (operation != null && DateTime.UtcNow < deadline) await Task.Delay(50);
         return operation == null;
@@ -214,19 +235,26 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         var next = preferences.Copy(); if (!next.PendingUpdate.Admit(gate.Prepare())) { Save(next); return false; }
         if (!Save(next)) return false;
         var attempt = State.Attempt; PreparingInstallation = true; Notify();
+        string? path = null; var installationRecorded = false;
         try
         {
-            var path = await Task.Run(() => backup.Create(currentVersion, release.Version, currentBuild)); backup.Verify(path);
+            path = await Task.Run(() => backup.Create(currentVersion, release.Version, currentBuild)); backup.Verify(path);
             if (State.Attempt != attempt) return false;
             next = preferences.Copy(); if (!next.PendingUpdate.Admit(gate.Prepare())) { Save(next); return false; }
             next.PendingUpdate.BackupPath = path; next.PendingUpdate.PreviousVersion = currentVersion;
             next.PendingUpdate.PreviousBuild = currentBuild; next.RecoveryReceipt = null;
-            if (!next.PendingUpdate.Installing(attempt) || !Save(next)) return false;
+            if (!next.PendingUpdate.Installing(attempt)) return false;
+            // 原子替换后的保存异常无法证明磁盘未引用此备份。
+            installationRecorded = true;
+            if (!Save(next)) return false;
             await Task.Run(()=>adapter.Install(release, restart));
             next = preferences.Copy(); next.PendingUpdate.AwaitingRestart(attempt); return Save(next);
         }
         catch (Exception error) { Fail(error, attempt); return false; }
-        finally { PreparingInstallation = false; Notify(); }
+        finally {
+            if (!installationRecorded && path != null) { try { backup.Discard(path); } catch { } }
+            PreparingInstallation = false; Notify();
+        }
     }
     private CancellationTokenSource BeginOperation()
     {
@@ -241,10 +269,15 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     {
         var next = preferences.Copy(); if (next.PendingUpdate.Fail("operation", error.Message, attempt)) Save(next);
     }
-    private bool Save(UpdatePreferences next)
+    private bool Save(UpdatePreferences next, bool discardObsoleteBackup = true)
     {
         if (StorageError != null) return false;
-        try { store.Save(next); preferences = next; Notify(); return true; }
+        try {
+            var obsolete = preferences.PendingUpdate.BackupPath;
+            store.Save(next); preferences = next;
+            if (discardObsoleteBackup && obsolete != null && obsolete != next.PendingUpdate.BackupPath) { try { backup.Discard(obsolete); } catch { } }
+            Notify(); return true;
+        }
         catch (Exception error) { StorageError = error.Message; preferences.PendingUpdate.Cancel(); operation?.Cancel(); Notify(); return false; }
     }
     public void RefreshLanguage() => Notify();

@@ -125,6 +125,13 @@ extension ContentView {
                         .id(viewModel.sourceRevision)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .allowsHitTesting(!geometrySelected)
+                        .overlay(alignment: .bottom) {
+                            if !adjustmentsExpanded && hslTargetActive {
+                                HSLTargetCanvasControls(axis: hslTargetAxis) {
+                                    cancelHSLTarget(); hslTargetEnabled = false
+                                }.padding(8)
+                            }
+                        }
                         .overlay {
                             if geometrySelected && !geometryPerspective {
                                 EditorCropOverlay(settings: geometryDraftBinding, imageSize: image.size,

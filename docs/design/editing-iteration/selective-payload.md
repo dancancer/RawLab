@@ -45,7 +45,7 @@ Mac 的 UI 百分比、native snapshot 或 Agent render recipe。
 默认和 modified 范围排除 `geometry`；all 明确包含几何与镜头。modified 比较来源逻辑值
 和该照片有效默认，包含强度为零时仍保留的逻辑修改；不从撤销历史推断修改状态。
 
-桌面实验性的 AI 降噪尚无 v1 交换字段。AI 依赖目标照片的全尺寸计算与缓存，不能作为
+桌面 AI 降噪尚无 v1 交换字段。AI 依赖目标照片的全尺寸计算与缓存，不能作为
 普通降噪值复制。来源启用 AI 时，all/modified 明确阻挡；用户可选择自定义范围复制已有
 普通字段。目标启用 AI 时，选择普通降噪字段会报告不兼容，要求先关闭 AI 或取消选择
 这些字段；其他选中字段保留目标 AI 状态。历史仍保存完整本端快照，包括 AI 开关，
@@ -66,6 +66,9 @@ Mac 的 UI 百分比、native snapshot 或 Agent render recipe。
 | `light.exposure_mode` | `scene/preview/sensor`；raster 来源只允许 sensor。 |
 | `detail.sharpening` | `[0,2]`。 |
 | `color.hsl.<axis>.<channel>` | 24 个独立数值，`[-100,100]`，保留小数。 |
+| `color.grading.shadows/midtones/highlights` | 每个明暗区为完整 `{hue,saturation}` 对象；hue 为 `[0,360)` 度，saturation 为 `[0,100]`。即使 saturation 为 0，仍保留待用 hue；不随配方强度缩放。 |
+| `light.curve` | 完整 `{mode,points}` 对象。`legacy` 的 points 必须为空；`custom` 为 2～33 个 `[x,y]`，值在 `[0,1]`，固定端点 `[0,0]`、`[1,1]`，x 严格递增、y 非递减。与 `light.s_curve` 独立选择，custom 渲染不叠加旧 scalar。 |
+| `effects.clarity`、`effects.dehaze` | `[-100,100]`，默认 0；不随配方强度缩放。native/Agent 边界除以 100，交换与存储保留原值。 |
 | `effects.vignette.*`、`effects.grain.*` | 各辅助值独立；范围沿原字段目录。 |
 | `color.white_balance.mode` | `camera/temperature/none`；RAW 不能声明 none，raster 只能声明 none。 |
 | `color.white_balance.temperature_kelvin` | 固定 Kelvin `[2000,50000]`，或 null 表示 camera 请求；null 不是来源推算温度。 |

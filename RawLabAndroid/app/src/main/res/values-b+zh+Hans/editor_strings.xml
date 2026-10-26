@@ -157,11 +157,14 @@
     <string name="grading_reset_message">"恢复阴影、中间调和高光的颜色分级默认值？"</string>
     <string name="grading_reset_zone">"重置当前分区"</string>
     <string name="hsl_target">"目标调整"</string>
+    <string name="hsl_target_active">"目标调整：%1$s"</string>
     <string name="hsl_target_axis">"调整轴"</string>
+    <string name="hsl_target_exit">"退出目标调整"</string>
     <string name="hsl_target_failed">"取色失败，请重试。"</string>
     <string name="hsl_target_gray">"颜色接近灰色，无法选择色域。"</string>
     <string name="hsl_target_instructions">"在照片上取色并上下拖动"</string>
     <string name="hsl_target_outside">"请在调整后的照片区域取色。"</string>
+    <string name="hsl_target_pan_hint">"拖动照片调整颜色；退出目标模式后可平移。"</string>
     <string name="hsl_target_ranges">"受影响色域：%1$s"</string>
     <string name="hsl_target_stale">"预览已变化，请重新取色。"</string>
     <string name="hsl_target_unavailable">"此像素不可取样。"</string>

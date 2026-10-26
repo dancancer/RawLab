@@ -100,6 +100,18 @@ import Foundation
         try Data(#"{"pendingUpdate":{"previousVersion":"0.8.2"}}"#.utf8).write(to: store.stateURL)
         try check(rejected { _ = try store.repairableState() }, "Previous installation identity blocks ambiguous state repair")
         try damaged.write(to: store.stateURL)
+        let orphanManager = UpdateDataBackup(dataRoot: root, updateRoot: store.directory)
+        let orphan = try orphanManager.create(previous: "0.8.2", target: "0.9.1")
+        try Data(#"{"automaticCheck":"broken","pendingUpdate":{"format":1,"phase":"idle"}}"#.utf8).write(to: store.stateURL)
+        try check(rejected { _ = try store.repairableState() } && FileManager.default.fileExists(atPath: orphan.path),
+            "Incomplete installation state cannot prove a backup is orphaned")
+        var nonInstallation = try JSONSerialization.jsonObject(with: JSONEncoder().encode(UpdatePreferences())) as! [String: Any]
+        nonInstallation["automaticCheck"] = "broken"
+        try JSONSerialization.data(withJSONObject: nonInstallation).write(to: store.stateURL)
+        _ = try store.repairState(expected: store.repairableState())
+        try check(!FileManager.default.fileExists(atPath: orphan.path),
+            "Known non-install state can be rebuilt and removes a verified orphan backup after saving")
+        try damaged.write(to: store.stateURL)
         let backups = store.directory.appendingPathComponent("Backups/prior")
         try FileManager.default.createDirectory(at: backups, withIntermediateDirectories: true)
         try check(rejected { _ = try store.repairableState() }, "Installation evidence blocks uncertain state repair")

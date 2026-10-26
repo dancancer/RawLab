@@ -17,6 +17,7 @@ import com.rawlab.android.geometry.GeometrySettings
 /** Stable source identity. A picker URI is preferred; content:<digest> is used only when no URI exists. */
 @JvmInline
 value class PhotoIdentity(val value: String) {
+
     init { require(value.isNotBlank()) }
 }
 
@@ -33,6 +34,21 @@ class EditStore(private val directory: File,
         val properties: Properties = Properties()) {
         fun record(identity: PhotoIdentity) = VersionedPhotoEdit(identity, records[identity], revisions[identity])
     }
+
+    private data class FileStamp(val key: Any?, val size: Long, val modified: Any, val changed: Any)
+    private var cachedStamp: FileStamp? = null
+    private var cachedSnapshot: Snapshot? = null
+    private fun fileStamp(): FileStamp? = try {
+        if (android.os.Build.VERSION.SDK_INT in 1..26) null
+        else if (android.os.Build.VERSION.SDK_INT >= 27) {
+            val stat = android.system.Os.stat(file.absolutePath)
+            FileStamp(stat.st_dev to stat.st_ino, stat.st_size,
+                stat.st_mtim.tv_sec to stat.st_mtim.tv_nsec, stat.st_ctim.tv_sec to stat.st_ctim.tv_nsec)
+        } else {
+            val attributes = Files.readAttributes(file.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java)
+            FileStamp(attributes.fileKey(), attributes.size(), attributes.lastModifiedTime(), Files.getAttribute(file.toPath(), "unix:ctime"))
+        }
+    } catch (_: Exception) { null }
 
     init {
         if (directory.exists() && !directory.isDirectory) throw IOException("Edit store path is not a directory")
@@ -69,7 +85,8 @@ class EditStore(private val directory: File,
         }
     }
 
-    private fun commit(current: Snapshot, identity: PhotoIdentity, settings: EditSettings?): VersionedPhotoEdit {
+    private fun commit(current: Snapshot, identity: PhotoIdentity, requested: EditSettings?): VersionedPhotoEdit {
+        val settings = requested?.canonicalZeros()
         if (current.records[identity] == settings) return current.record(identity)
         val records = current.records.toMutableMap()
         if (settings == null) records.remove(identity) else records[identity] = settings
@@ -83,6 +100,8 @@ class EditStore(private val directory: File,
     private fun read(): Snapshot {
         if (file.exists() && !file.isFile) throw IOException("Edit record path is not a file")
         if (!file.exists()) return Snapshot(emptyMap(), emptyMap()).also { lastReadableRecords = it.records }
+        val stamp = fileStamp()
+        if (stamp != null && stamp == cachedStamp) cachedSnapshot?.let { return it }
         val properties = Properties()
         file.inputStream().use(properties::load)
         require(properties.getProperty("format.version") in setOf(null, "1")) { "Unsupported edit store version" }
@@ -109,15 +128,18 @@ class EditStore(private val directory: File,
             val film = runCatching { String(Base64.getUrlDecoder().decode(storedFilm), StandardCharsets.UTF_8) }
                 .getOrDefault(storedFilm)
             val encodedSettings = properties.getProperty(key)
-            records[identity] = if (encodedSettings.startsWith("v2:")) StructuredSettingsCodec.decode(encodedSettings, "photo_edit")
+            records[identity] = (if (encodedSettings.startsWith("v2:")) StructuredSettingsCodec.decode(encodedSettings, "photo_edit")
             else decode(encodedSettings, film).copy(
                 recipeID = properties.getProperty("record.$encoded.recipe"),
                 lens = LensSettings.decode(properties.getProperty("record.$encoded.lens")),
                 geometry = GeometrySettings.decode(properties.getProperty("record.$encoded.geometry")),
-                processing = ProcessingIdentity.decode(properties.getProperty("record.$encoded.processing")))
+                processing = ProcessingIdentity.decode(properties.getProperty("record.$encoded.processing")))).canonicalZeros()
         }
         lastReadableRecords = records.toMap()
-        return Snapshot(records, revisions, properties)
+        return Snapshot(records, revisions, properties).also {
+            cachedSnapshot = it
+            cachedStamp = stamp?.takeIf { before -> before == fileStamp() }
+        }
     }
 
     private fun encodeIdentity(identity: PhotoIdentity) = Base64.getUrlEncoder().withoutPadding()
@@ -137,7 +159,10 @@ class EditStore(private val directory: File,
         try {
             temporary.outputStream().use { properties.store(it, null) }
             replaceFile(temporary, file)
+            cachedSnapshot = updated.copy(properties = properties)
+            cachedStamp = fileStamp()
         } catch (error: Throwable) {
+            cachedStamp = null; cachedSnapshot = null
             temporary.delete()
             throw if (error is IOException) error else IOException("Cannot save edit store", error)
         }

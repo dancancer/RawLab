@@ -2,7 +2,8 @@
 #include "sony2fuji/raw_processor.h"
 #include "ai/dualdn_cache.h"
 #include "ai/model_package.h"
-#include "ai/onnx_graph.h"
+#include "ai/network_graph.h"
+#include "ai/directml_device.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -36,6 +37,13 @@ int main(int argc, char** argv) {
         const std::vector<uint8_t> original(firstBytes,firstBytes+buffer.size_bytes);
         sony2fuji_release_buffer(&buffer);
         config.enabled = 1;
+        require(sony2fuji_session_set_ai_denoise(session, &config) == SONY2FUJI_STATUS_UNSUPPORTED,
+                "CPU AI mode must be unsupported");
+#ifdef _WIN32
+        config.backend = SONY2FUJI_AI_DIRECTML;
+#else
+        config.backend = SONY2FUJI_AI_COREML;
+#endif
         if (!sony2fuji_ai_available()) {
             require(sony2fuji_session_set_ai_denoise(session, &config) == SONY2FUJI_STATUS_UNSUPPORTED, "unsupported build accepted AI");
         } else {
@@ -52,8 +60,18 @@ int main(int argc, char** argv) {
                     "cancelled AI preparation did not stop");
             require(!std::filesystem::exists(argv[3]), "cancelled AI preparation wrote cache");
             auto cancelInference = [](void*,int32_t phase,uint64_t,uint64_t) -> int32_t { return phase < 2; };
-            require(sony2fuji_session_prepare_ai(session,&request,cancelInference,nullptr) == SONY2FUJI_STATUS_CANCELLED,
-                    "uncalibrated fixture did not reach model preparation");
+            const auto preparation = sony2fuji_session_prepare_ai(session,&request,cancelInference,nullptr);
+            bool gpuAvailable = true;
+#if defined(_WIN32) && defined(RAWLAB_TEST_AI)
+            try { sony2fuji::ai::findDirectMLAdapter(); }
+            catch (const std::runtime_error&) { gpuAvailable = false; }
+#elif defined(__APPLE__) && defined(RAWLAB_TEST_AI)
+            gpuAvailable = sony2fuji::ai::CoreMLGraph::available();
+#endif
+            require(gpuAvailable ? preparation == SONY2FUJI_STATUS_CANCELLED :
+                    preparation == SONY2FUJI_STATUS_PROCESSING_ERROR && sony2fuji_session_get_ai_error(session)[0],
+                    "model preparation neither cancelled nor rejected missing GPU hardware");
+            if (!gpuAvailable) std::cout << "PASS unavailable GPU rejected; hardware inference NOT REACHED\n";
             require(!std::filesystem::exists(argv[3]), "cancelled inference wrote a partial cache");
             const auto missingModel = std::string(argv[2])+"-missing";
             config.model_directory = missingModel.c_str();
@@ -76,9 +94,9 @@ int main(int argc, char** argv) {
             require(decoder.loadFile(argv[1]) == ErrorCode::Success && decoder.process(options, source) == ErrorCode::Success,
                     "synthetic cache source");
             const auto package = loadModelPackage(argv[2]);
-            const auto runtimeIdentity = package.digest + ":" + OnnxGraph::runtimeVersion();
+            const auto runtimeIdentity = package.digest + ":" + NetworkGraph::runtimeVersion(static_cast<Backend>(config.backend));
             const auto identity = sha256Bytes(runtimeIdentity.data(), runtimeIdentity.size());
-            const auto rawKey = rawCacheKey(argv[1], identity, static_cast<int>(Backend::Cpu));
+            const auto rawKey = rawCacheKey(argv[1], identity, static_cast<int>(config.backend));
             DenoiseCache cache(argv[3]);
             const auto sceneKey = sceneRGBCacheKey(rawKey,options);
             std::vector<float> zero(source.pixels.size()*3,0);

@@ -10,6 +10,14 @@ The [workflow](../../.github/workflows/ci.yml) verifies PRs targeting `developme
 runs. There is no scheduled full cold build. It does not run on tags, publish,
 deploy, sign, notarize or create releases. Verification is not release authorization.
 
+Full macOS and Windows checks compile with the pinned GPU AI models and inference
+runtimes. Model provisioning and shared-cache paths are specified in
+[desktop release packaging](desktop-release.md). No signing keys are used in CI.
+Native checks include direct HLSL compilation without a hardware adapter and
+GLES source validation with glslang. CPU neural-inference validation is excluded;
+ordinary CPU photo processing and deterministic ISP tests remain applicable.
+Hardware-unavailable skips do not satisfy the separate release GPU acceptance gate.
+
 ## Verification Levels
 
 | Event or request | Automatic coverage |

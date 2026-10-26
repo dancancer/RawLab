@@ -55,7 +55,7 @@ AI 降噪与 Mac 共用 float32 模型、640 分块、颜色桥接和缓存协�
 DualDn，噪声参数来自匹配标定或当前 RAW 的通用估计；X-Trans、线性/Stage3 DNG 及
 不能可靠进入 DualDn 的输入使用 Restormer RGB 路径。支持范围依赖原生全尺寸解码，
 预算上限为 128 MP，不等于所有机型均完成画质认证。
-普通构建不包含模型，也不显示实验入口。使用
+开发构建可不包含模型；正式发布开关要求完整模型和更新配置，见[桌面发布流程](../docs/process/desktop-release.md)。本地 GPU 验证使用
 [模型导出工具](../lutools/tools/dualdn/README.md)生成基础 ONNX 包后构建：
 
 ```powershell
@@ -76,14 +76,14 @@ DirectML 1.23.0、DirectML 1.15.4；依赖下载和校验在 `build-ai-dependenc
 批量导出保留 AI 启用状态与请求后端；目标照片必须已有对应结果，缺失时明确失败，
 不会自动跳过 AI。Agent JSON v5 暂不表达 AI 降噪，复制配方会要求先关闭 AI。
 
-设置中的 CPU 使用 ONNX CPU；Auto 优先使用硬件 DirectML，失败时整阶段回退 CPU；
-Force 要求 RAW/RGB 网络使用 DirectML，软件适配器和不可用硬件会报错。
+AI 不支持 CPU 模式。普通显影选择 CPU 时，AI 仍请求硬件 DirectML；Auto 和 Force
+的神经网络失败都直接报错，软件适配器和不可用硬件不能替代硬件 GPU。
 官方 ISP 始终使用 CPU。DirectML 要求可用的 D3D12 硬件和驱动；普通显影的 D3D11
 后端与 AI 推理后端分别记录。算法边界见[接入契约](../docs/architecture/dualdn-inline-denoise.md)。
 
 带模型构建的 `-Test` 会加入 DirectML 数值检查及 AI 窗口生命周期检查。
 完整照片验证需要另行使用受支持样片运行 `dualdn_probe`，再执行测试程序的
-`--ai-denoise <model> <raw> <cache> <CPU|DirectML>`；它检查缓存复用、实际后端、
+`--ai-denoise <model> <raw> <cache> <Auto|DirectML>`；它检查缓存复用、实际后端、
 普通降噪旁路、自动曝光、预览与导出一致性和白平衡失效。界面六语布局可单独运行
 `--ai-panel <output>`。硬件检查通过范围以实际设备和日志为准。
 

@@ -307,7 +307,7 @@ public partial class MainWindow
     private void LibraryDropped(object sender,DragEventArgs e)
     {
         e.Handled=true;e.Effects=DragDropEffects.None;
-        if(exporting || closing || (e.AllowedEffects & DragDropEffects.Copy)==0 || e.Data.GetData(DataFormats.FileDrop) is not string[] paths)return;
+        if(UpdateInstallationActive || exporting || closing || (e.AllowedEffects & DragDropEffects.Copy)==0 || e.Data.GetData(DataFormats.FileDrop) is not string[] paths)return;
         var folders=paths.Where(Directory.Exists).ToArray();
         if(folders.Length>0)
         {
@@ -322,7 +322,7 @@ public partial class MainWindow
     private void FilesDropped(object sender,DragEventArgs e)
     {
         e.Handled=true;e.Effects=DragDropEffects.None;
-        if(exporting || closing || (e.AllowedEffects & DragDropEffects.Copy)==0 || e.Data.GetData(DataFormats.FileDrop) is not string[] paths)return;
+        if(UpdateInstallationActive || exporting || closing || (e.AllowedEffects & DragDropEffects.Copy)==0 || e.Data.GetData(DataFormats.FileDrop) is not string[] paths)return;
         var folders=paths.Where(Directory.Exists).ToArray();
         try{foreach(var path in folders)library.Add(path);if(folders.Length>0)e.Effects=DragDropEffects.Copy;}catch(Exception ex){Report(ex);}
         if(paths.FirstOrDefault(path=>File.Exists(path) && LibraryEntry.IsImage(path)) is {} raw){OpenFile(raw);e.Effects=DragDropEffects.Copy;}

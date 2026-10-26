@@ -278,8 +278,10 @@ internal fun PhotoCanvas(
             if (showOverlays) {
                 if (hslTarget == null) {
                     BoxWithConstraints(Modifier.fillMaxSize()) { PhotoInfoOverlay(info, infoMode, onInfoClick, maxHeight, if (compare) 112.dp else 64.dp) }
-                    Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = bottomOverlayInset)) { bottomOverlay() }
                 }
+                DisposableEffect(Unit) { onDispose { labelBounds.remove("bottom-overlay") } }
+                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = bottomOverlayInset)
+                    .onGloballyPositioned { labelBounds["bottom-overlay"] = it.boundsInWindow() }) { bottomOverlay() }
                 if (compare) {
                     var menu by remember { mutableStateOf(false) }
                     Box(Modifier.align(Alignment.TopEnd).padding(end = 56.dp)) {

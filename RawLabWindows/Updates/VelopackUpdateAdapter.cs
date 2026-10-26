@@ -8,6 +8,7 @@ namespace RawLab.Windows;
 public interface IDesktopUpdateAdapter
 {
     string? UnavailableReason { get; }
+    Task ValidateHostTrustAsync() => UnavailableReason == null ? Task.CompletedTask : Task.FromException(new InvalidDataException(UnavailableReason));
     Task<UpdateDescriptor?> CheckAsync(CancellationToken token);
     Task DownloadAsync(UpdateDescriptor release, Action<int> progress, CancellationToken token);
     Task VerifyAsync(UpdateDescriptor release, CancellationToken token);
@@ -50,17 +51,20 @@ public sealed class VelopackUpdateAdapter : IDesktopUpdateAdapter
         var local = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)) + Path.DirectorySeparatorChar;
         if (locator.RootAppDir == null || !Path.GetFullPath(locator.RootAppDir).StartsWith(local, StringComparison.OrdinalIgnoreCase) ||
             locator.AppContentDir == null || locator.UpdateExePath == null) return new UnavailableUpdateAdapter("installation");
-        try
-        {
-            AuthenticodeTrust.Verify(Path.Combine(locator.AppContentDir, "RawLab.exe"), trust.PublisherKeySha256);
-            AuthenticodeTrust.Verify(Path.Combine(locator.AppContentDir, "RawLab.dll"), trust.PublisherKeySha256);
-            AuthenticodeTrust.Verify(locator.UpdateExePath, trust.PublisherKeySha256);
-            return new VelopackUpdateAdapter(trust, locator, currentVersion);
-        }
-        catch { return new UnavailableUpdateAdapter("identity"); }
+        return new VelopackUpdateAdapter(trust, locator, currentVersion);
+    }
+    public Task ValidateHostTrustAsync()
+    {
+        if (string.IsNullOrEmpty(trust.PublisherKeySha256)) return Task.CompletedTask;
+        return Task.Run(() => {
+            AuthenticodeTrust.Verify(Path.Combine(locator.AppContentDir!, "RawLab.exe"), trust.PublisherKeySha256);
+            AuthenticodeTrust.Verify(Path.Combine(locator.AppContentDir!, "RawLab.dll"), trust.PublisherKeySha256);
+            AuthenticodeTrust.Verify(locator.UpdateExePath!, trust.PublisherKeySha256);
+        }).WaitAsync(TimeSpan.FromSeconds(30));
     }
     public async Task<UpdateDescriptor?> CheckAsync(CancellationToken token)
     {
+        await ValidateHostTrustAsync(); token.ThrowIfCancellationRequested();
         verifiedIdentity = null; source.CheckCancellation = token;
         update = await manager.CheckForUpdatesAsync(); token.ThrowIfCancellationRequested();
         return update == null ? null : source.Manifest?.Descriptor ?? throw new InvalidDataException("Missing signed descriptor");
@@ -81,7 +85,7 @@ public sealed class VelopackUpdateAdapter : IDesktopUpdateAdapter
         Require(release);
         if (verifiedIdentity != release.Identity || source.Manifest!.ExpiresAt <= DateTimeOffset.UtcNow) throw new InvalidDataException("Reverify the package before installation");
         UpdatePackageVerifier.Verify(PackagePath(), source.Manifest, trust.PublisherKeySha256);
-        AuthenticodeTrust.Verify(locator.UpdateExePath!, trust.PublisherKeySha256);
+        if (!string.IsNullOrEmpty(trust.PublisherKeySha256)) AuthenticodeTrust.Verify(locator.UpdateExePath!, trust.PublisherKeySha256);
         // 框架等待本进程正常退出；不调用会立即结束进程的 ApplyUpdatesAndRestart。
         manager.WaitExitThenApplyUpdates(update!.TargetFullRelease, silent: true, restart: restart);
     }

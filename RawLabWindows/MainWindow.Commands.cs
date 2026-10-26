@@ -74,7 +74,7 @@ public partial class MainWindow
     }
     private sealed record PendingAllReset(string File,long OpenRevision,EditorAdjustmentTool Tool,EditorAdjustmentGroup? Group);
     private PendingAllReset? pendingAllReset;
-    private bool pendingResetReady,resetContinuationQueued;
+    private bool resetContinuationQueued;
     private void RequestReset(EditorResetScope scope)
     {
         if(file==null || exporting || closing || pendingAllReset!=null)return;
@@ -83,23 +83,22 @@ public partial class MainWindow
             if(!transform.Dirty && !GeometryEditor.HasInvalidInput && WorkspaceEdit() is {} unchanged &&
                 EditorAdjustmentRules.PrepareReset(scope,unchanged).Status==EditorResetStatus.NoChange)return;
             pendingAllReset=new(file,openRevision,CurrentTool,expandedGroup);
-            if(!ResolveTransformDraft()) {pendingAllReset=null;RefreshControls();return;}
-            pendingResetReady=true;RefreshControls();QueuePendingReset();return;
+            if(!ResolveTransformDraft()) {ClearPendingAllReset();RefreshControls();return;}
+            ExecuteReset(scope);RefreshControls();QueuePendingReset();return;
         }
         ExecuteReset(scope);
     }
+    private void ClearPendingAllReset() { pendingAllReset=null;resetContinuationQueued=false; }
     private void QueuePendingReset()
     {
-        if(pendingAllReset==null || !pendingResetReady || resetContinuationQueued || !exactReady || scheduler.Busy || previewResize.IsEnabled)return;
+        if(pendingAllReset==null || resetContinuationQueued || !exactReady || scheduler.Busy || previewResize.IsEnabled)return;
         resetContinuationQueued=true;
         Dispatcher.BeginInvoke(new Action(()=>{
             resetContinuationQueued=false;
-            if(pendingAllReset is not {} intent || !pendingResetReady)return;
-            if(file!=intent.File || openRevision!=intent.OpenRevision || closing) {pendingAllReset=null;pendingResetReady=false;return;}
+            if(pendingAllReset is not {} intent)return;
+            if(file!=intent.File || openRevision!=intent.OpenRevision || closing) {ClearPendingAllReset();return;}
             if(!exactReady || scheduler.Busy || previewResize.IsEnabled)return;
-            pendingResetReady=false;
-            ExecuteReset(new(EditorResetKind.All));
-            pendingAllReset=null;
+            ClearPendingAllReset();
             // The explicit Apply/Discard survives cancellation of the second confirmation.
             // Re-entry always uses the new committed settings, never the abandoned draft.
             SelectTool(intent.Tool);expandedGroup=intent.Group;RefreshControls();

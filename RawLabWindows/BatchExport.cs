@@ -114,6 +114,8 @@ public sealed class BatchJob
             throw new InvalidDataException(Loc.Text("无法读取此版本的批量任务。"));
         if (AIBackend is not (0 or 2 or 3)) throw new InvalidDataException("Invalid Windows AI backend in batch journal.");
         _ = Settings.Restore();
+        if (AIBackend == 0 && (Settings.AIDenoiseEnabled || Items.Any(item => item.Frozen?.Settings.AIDenoiseEnabled == true)))
+            throw new InvalidDataException(Loc.Text("AI 降噪不支持 CPU，请重新创建使用 GPU 的批量任务。"));
         if (Mode != PerTargetFrozen)
         {
             if (Version == 3 || Items.Any(x => x.Frozen != null)) throw new InvalidDataException("Frozen items require per-target mode.");

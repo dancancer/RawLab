@@ -45,7 +45,9 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
                 val photo = work.collectionPhotos[identity.value] ?: work.currentPhoto?.takeIf { it.identity == identity } ?: storage.import(uri).also { owned[identity.value] = it.file }
                 displayName = photo.name
                 val sourceValidator = EditorAdjustmentHistory.sourceValidation(photo)
-                val validate = { work.validateCollection?.invoke(identity.value); sourceValidator() }
+                work.validateCollection?.invoke(identity.value)
+                sourceValidator()
+                val validate = sourceValidator
                 val saved = store.versionedState(identity)
                 val neutral = EditSettings(processing = saved.settings?.processing ?: EditSettings().processing)
                 val database = storage.lensDatabase()
@@ -62,7 +64,8 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
                             throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "target lens calibration unavailable")
                     })
                 AdjustmentTransferTarget(identity, displayName, EditSettings(), transferContext,
-                    isCurrent = { work.isCurrent(identity.value) }, validateSource = validate)
+                    isCurrent = { work.isCurrent(identity.value) }, validateSource = validate,
+                    validateHistorySource = EditorAdjustmentHistory.historySourceValidation(photo))
             } catch (error: Exception) {
                 owned.remove(identity.value)?.delete()
                 AdjustmentTransferTarget(identity, displayName, EditSettings(), AdjustmentTransferContext(identity.value, true),

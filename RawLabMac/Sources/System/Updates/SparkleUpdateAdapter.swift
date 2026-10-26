@@ -25,6 +25,11 @@ import Sparkle
 
     init(trust: MacUpdateTrust) { self.trust = trust }
 
+    func validateHostTrust() async throws {
+        let trust = self.trust
+        try await Task.detached { try trust.validateHost() }.value
+    }
+
     func check(token: UUID, emit: @escaping (UUID, UpdateAdapterEvent) -> Void) throws {
         guard canCheck else { throw UpdateAdapterError(code: "busy", detail: "") }
         self.token = token; self.emit = emit; cancelled = false; extracting = false; installAuthorized = false

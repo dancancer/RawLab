@@ -8,7 +8,7 @@ public partial class MainWindow
     internal BatchSelectionSession Collection {get;}=new();
     private BatchSelectionWindow? collectionWindow;
     internal string? CollectionSourcePath=>file;
-    internal bool CollectionBusy=>closing || exporting || transferPreparing;
+    internal bool CollectionBusy=>closing || exporting || transferPreparing || UpdateInstallationActive;
     internal bool CollectionHasExport=>CurrentBatch!=null;
     internal string? CollectionSourceID {
         get {try{return file==null ? null : OriginalIdentity.Read(file).StableKey;}catch{return null;}}
@@ -32,7 +32,7 @@ public partial class MainWindow
     {
         Collection.RefreshFailures();
         if(collectionWindow==null) {
-            collectionWindow=new(this);
+            collectionWindow=new(this){IsEnabled=!UpdateInstallationActive};
             collectionWindow.Closed+=(_,_)=>{collectionWindow=null;};
         }
         collectionWindow.Refresh(restorePosition:true);collectionWindow.Show();collectionWindow.Activate();RefreshControls();

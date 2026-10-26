@@ -8,6 +8,9 @@ import Combine
     @Published private(set) var recovering = false
     @Published private(set) var recoveryError: String?
     @Published private(set) var recoveryNeedsRestart = false
+    @Published private(set) var startupTrustError: String?
+    @Published private(set) var checkingStartupTrust = false
+    var retryStartup: (() -> Void)?
     let adapter: UpdateAdapter
     let gate: UpdateInstallGate
     let currentVersion: String
@@ -56,6 +59,10 @@ import Combine
             preferences.pendingUpdate.restoreAfterLaunch(version: currentVersion, build: currentBuild, trusted: false)
             if preferences.pendingUpdate != old { _ = save(preferences) }
         }
+        if storageError == nil, !requiresStartupHealthCheck, !requiresRecovery,
+           FileManager.default.fileExists(atPath: store.stateURL.path) {
+            try? backup.discardUnreferencedBackups(retaining: state.backupPath)
+        }
     }
 
     func repairState() {
@@ -71,6 +78,7 @@ import Combine
         recovering = true; recoveryError = nil
         defer { recovering = false }
         do {
+            try await adapter.validateHostTrust()
             let backup = self.backup, previous = currentVersion, build = currentBuild, target = state.release?.version
             let receipt = try await Task.detached {
                 let directory = URL(fileURLWithPath: path), manifest = try backup.verify(URL(fileURLWithPath: path))
@@ -82,8 +90,9 @@ import Combine
             var next = preferences; next.skippedVersion = state.release?.identity
             next.automaticInstall = false; next.pendingUpdate = UpdateTaskState(); next.recoveryReceipt = receipt.path
             recoveryNeedsRestart = true
-            guard save(next) else { return }
+            guard save(next, discardObsoleteBackup: false) else { return }
             try backup.finishRecovery(receipt.path)
+            try? backup.discard(URL(fileURLWithPath: path))
         } catch { recoveryError = error.localizedDescription }
     }
 
@@ -96,20 +105,29 @@ import Combine
     }
     func stopPolling() { timer?.invalidate(); timer = nil }
 
-    func finishStartupHealthCheck(healthy: Bool) {
+    func finishStartupHealthCheck(healthy: Bool) async {
         guard requiresStartupHealthCheck, !backup.hasPendingRecovery, !recoveryNeedsRestart else { return }
         if preferences.stateRepairReceipt != nil {
             guard healthy else { repairHealthFailed = true; recoveryError = "User data failed startup validation"; return }
             var next = preferences; next.stateRepairReceipt = nil
             _ = save(next); return
         }
+        guard !checkingStartupTrust else { return }
+        checkingStartupTrust = true; startupTrustError = nil
+        defer { checkingStartupTrust = false }
+        var trusted = false
+        do { try await adapter.validateHostTrust(); trusted = true }
+        catch let error as UpdateAdapterError where error.code == "trust_temporary" {
+            startupTrustError = error.localizedDescription
+            return
+        } catch { startupTrustError = error.localizedDescription }
         var backupValid = false
         if let path = state.backupPath, let manifest = try? backup.verify(URL(fileURLWithPath: path)) {
             backupValid = manifest.targetVersion == state.release?.version && manifest.previousVersion == state.previousVersion && manifest.previousBuild == state.previousBuild
         }
         var next = preferences
         next.pendingUpdate.restoreAfterLaunch(version: currentVersion, build: currentBuild,
-            trusted: healthy && backupValid && adapter.unavailableReason == nil)
+            trusted: healthy && backupValid && trusted)
         _ = save(next)
     }
 
@@ -198,11 +216,20 @@ import Combine
         guard cancelForQuit == nil, !preparingInstallation else { completion(false); return }
         let selected = state.choice == .onQuit || state.choice == .automaticOnQuit && preferences.automaticInstall
         if selected && canChooseInstall {
-            Task { completion(await self.installPrepared(restart: false)) }; return
+            Task {
+                if await self.installPrepared(restart: false) { completion(true) }
+                else if self.requiresRecovery || self.storageError != nil { completion(false) }
+                else { self.cancelInstallerForQuit(preservingChoice: true, completion) }
+            }; return
         }
+        cancelInstallerForQuit(preservingChoice: selected, completion)
+    }
+
+    private func cancelInstallerForQuit(preservingChoice: Bool, _ completion: @escaping (Bool) -> Void) {
+        var next = preferences; next.pendingUpdate.cancel(preservingChoice: preservingChoice)
+        guard save(next) else { completion(false); return }
         guard adapter.hasActiveSession, let token = adapterToken else { completion(true); return }
         cancelForQuit = (token, completion)
-        var next = preferences; next.pendingUpdate.cancel(); _ = save(next)
         adapter.cancel()
         DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
             guard let self, let pending = self.cancelForQuit, pending.0 == token else { return }
@@ -221,13 +248,18 @@ import Combine
         do {
             let backup = self.backup, previous = currentVersion, build = currentBuild
             let path = try await Task.detached { try backup.create(previous: previous, target: target, previousBuild: build) }.value
+            var installationRecorded = false
+            defer { if !installationRecorded { try? backup.discard(path) } }
             _ = try backup.verify(path)
             guard state.attempt == token else { return false }
             next = preferences
             guard next.pendingUpdate.admit(blockedBy: gate.prepare()) else { _ = save(next); return false }
             next.pendingUpdate.backupPath = path.path; next.pendingUpdate.previousVersion = previous
             next.pendingUpdate.previousBuild = build; next.recoveryReceipt = nil
-            guard next.pendingUpdate.installing(token: token), save(next) else { return false }
+            guard next.pendingUpdate.installing(token: token) else { return false }
+            // 保存失败可能发生在原子替换之后；此时不能删除可能已被磁盘状态引用的备份。
+            installationRecorded = true
+            guard save(next) else { return false }
             try await adapter.install(restart: restart)
             next = preferences; _ = next.pendingUpdate.awaitingRestart(token: token); return save(next)
         } catch { fail(error, token: token); return false }
@@ -270,9 +302,16 @@ import Combine
         var next = preferences
         if next.pendingUpdate.fail((error as? UpdateAdapterError)?.code ?? "operation", detail: error.localizedDescription, token: token) { _ = save(next); adapter.cancel() }
     }
-    @discardableResult private func save(_ next: UpdatePreferences) -> Bool {
+    @discardableResult private func save(_ next: UpdatePreferences, discardObsoleteBackup: Bool = true) -> Bool {
         guard storageError == nil else { return false }
-        do { try store.save(next); preferences = next; return true }
+        do {
+            let obsolete = preferences.pendingUpdate.backupPath
+            try store.save(next); preferences = next
+            if discardObsoleteBackup, let obsolete, obsolete != next.pendingUpdate.backupPath {
+                try? backup.discard(URL(fileURLWithPath: obsolete))
+            }
+            return true
+        }
         catch {
             storageError = error.localizedDescription; preferences.pendingUpdate.cancel(); adapter.cancel(); return false
         }

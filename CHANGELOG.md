@@ -3,6 +3,53 @@
 Release history is kept here rather than in the project READMEs. Detailed
 release notes include assets, installation requirements and validation limits.
 
+## [Unreleased]
+
+### Changed
+
+- Active HSL adjustments preserve out-of-range color detail after contrast and
+  saturation instead of clamping it away. Existing edits can render visibly
+  differently; there is no switch to restore the old HSL behavior.
+- HSL target adjustment stays active when the adjustment panel is collapsed.
+  The canvas shows the selected axis and an exit control.
+- This release does not support downgrading. Android 0.8.2 cannot read the new
+  edit library. Saving photos after reverting macOS, iOS or Windows discards
+  the newly added adjustment fields and processing-version markers.
+- Windows allows one running RawLab instance. Opening another file through
+  Open With or launching another instance asks the user to quit other RawLab
+  instances, then exits the new process.
+
+### Desktop AI denoising and updates
+
+- macOS and Windows release packages include DualDn models and their inference
+  runtimes. AI denoising requires a full-resolution first calculation; cached
+  results are reused for subsequent exposure and look changes. The model and
+  runtime files increase download size. Per-architecture package sizes and
+  measured first-run time and memory requirements belong to the final release
+  acceptance record.
+- AI denoising requires a GPU backend: native Core ML on Apple Silicon with
+  macOS 14 or later, or hardware DirectML/D3D12 on Windows x64. AI CPU mode is
+  unsupported and Auto does not retry neural inference on CPU. Ordinary photo
+  processing and the deterministic ISP may still use CPU. iOS and Android do
+  not include AI denoising in this release. Intel builds do not support AI denoising.
+- DualDn weights and converted models remain under CC BY-NC 4.0, with upstream
+  attribution and conversion notices. They are not relicensed under RawLab's GPL.
+- This is the first release intended to include automatic desktop updates.
+  Upgrading from 0.8.2 requires one manual installation. Windows automatic
+  updates require the current-user Setup installation; ZIP packages use manual
+  downloads. The Mac app must be in a location writable by the current user.
+  Update packages are downloaded from GitHub Releases.
+- The default distribution uses a fixed self-signed Mac code-signing
+  certificate plus Sparkle EdDSA signatures, and a signed Windows release
+  manifest binding the package size and SHA-256. It does not use Apple
+  notarization or Windows Authenticode. First installation may require
+  **System Settings → Privacy & Security → Open Anyway** on macOS, or
+  **More info → Run anyway** in Windows SmartScreen.
+- The move from 0.8.2 changes the Mac signing identity and may require granting
+  folder access again. Permission retention across subsequent updates,
+  Gatekeeper/App Management prompts and signed seed-to-update installation
+  still require release acceptance with the actual signing identities.
+
 ## [0.8.2] - 2026-10-20
 
 ### Added

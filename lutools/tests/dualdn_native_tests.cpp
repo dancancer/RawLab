@@ -48,10 +48,7 @@ int main(int argc, char** argv) {
             try { NetworkGraph wrongSignature(invalid,GraphKind::BlindRGB,Backend::Auto); }
             catch (const ModelContractError&) { rejected = true; }
             require(rejected,"Auto hid native model signature mismatch with CPU fallback");
-            rejected = false;
-            try { OnnxGraph wrongSignature(package.paths[0],GraphKind::BlindRGB,640); }
-            catch (const ModelContractError&) { rejected = true; }
-            require(rejected,"ONNX signature mismatch lost model-error classification");
+
         }
         for (const auto kind : {GraphKind::Raw, GraphKind::RGB, GraphKind::BlindRGB}) {
             if (kind == GraphKind::BlindRGB && package.blindRGBPath.empty()) continue;
@@ -76,13 +73,14 @@ int main(int argc, char** argv) {
             try { graph.run(invalid); } catch (const std::invalid_argument&) { rejected = true; }
             require(rejected, "native graph accepted wrong tensor size");
             auto legacy = package; legacy.coreMLPaths = {}; legacy.blindRGBCoreMLPath.clear();
-            NetworkGraph fallback(legacy, kind, Backend::Auto);
-            require(fallback.backend() == "CPU" && !fallback.fallbackReason().empty(), "Auto did not report missing native model fallback");
-            compare(fallback.run(inputs), expected);
+            rejected = false;
+            try { NetworkGraph automatic(legacy, kind, Backend::Auto); }
+            catch (const std::runtime_error&) { rejected = true; }
+            require(rejected, "Auto accepted a missing native model instead of requiring GPU");
             rejected = false; try { NetworkGraph forced(legacy, kind, Backend::CoreML); }
             catch (const std::runtime_error&) { rejected = true; }
             require(rejected, "forced Core ML accepted a missing native model");
         }
-        std::cout << "PASS native float32 Core ML, tensor validation, Auto fallback and Force failure\n"; return 0;
+        std::cout << "PASS native float32 Core ML, tensor validation, GPU-only Auto and Force failure\n"; return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

@@ -21,6 +21,12 @@ import com.rawlab.android.geometry.moveCrop
 import com.rawlab.android.geometry.withAspect
 
 class AdjustmentInteractionTest {
+    @Test fun negativeZeroInputAndDragProducePositiveZero() {
+        val scale = AdjustmentScale(-1f..1f, .01f, 0f)
+        assertEquals(0, scale.parse("-0")!!.toRawBits())
+        assertEquals(0, scale.quantize(-0.001f).toRawBits())
+    }
+
     @Test fun cropDisplayAndUnchangedInputPreserveTheExactOriginal() {
         val original = 33.333332f
         val scale = AdjustmentScale(0f..100f, .01f, 100f, compactPercent = true)

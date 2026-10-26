@@ -53,6 +53,11 @@ public sealed class SoftwareUpdateWindow : Window
                 AutomationProperties.SetName(progress,Loc.Text(UpdatePresentation.Phase(updates.State.Phase)));panel.Children.Add(progress);
                 if(updates.State.Phase==UpdatePhase.Downloading)AddText($"{updates.State.Progress:P0}",localized:true);
             }
+            if(updates.StartupTrustError is {} trustError && updates.RequiresStartupHealthCheck && !updates.RequiresRecovery) {
+                AddText(trustError,localized:true);
+                var retryActions=new WrapPanel();panel.Children.Add(retryActions);
+                ActionButton(retryActions,"重试",()=>updates.RetryStartup?.Invoke() ?? Task.CompletedTask,"updates.retryStartup",!updates.CheckingStartupTrust);
+            }
             if(updates.State.Failure is {} failure) {
                 AddText("更新未完成，请查看恢复说明",true);AddText(UpdatePresentation.Phase(failure.Stage));
                 panel.Children.Add(Disclosure("错误详情",Text(failure.Code+"\n"+failure.Detail)));
@@ -94,7 +99,7 @@ public sealed class SoftwareUpdateWindow : Window
             if(updates.CanCancel)ActionButton(actions,"取消更新",()=>{updates.Cancel();return Task.CompletedTask;},"updates.cancel");
             if(updates.State.Phase==UpdatePhase.Failed && updates.CanCheck)ActionButton(actions,"重试",updates.RetryAsync,"updates.retry");
             var support=new StackPanel();
-            support.Children.Add(Text(Loc.Text("Mac 需要同架构、已签名并公证的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。")));
+            support.Children.Add(Text(Loc.Text("Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。")));
             support.Children.Add(Text(Loc.Text("查看此说明不会启用自动安装。失败后请保留现有应用和数据，使用官方可信安装包恢复；不要用旧版覆盖新版编辑记录。")));
             var disclosure=Disclosure("安装支持与恢复说明",support);disclosure.Margin=new Thickness(0,8,0,12);panel.Children.Add(disclosure);
             var links=new WrapPanel();panel.Children.Add(links);

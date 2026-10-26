@@ -333,13 +333,13 @@ extension EditorModel {
         let url = (try? BatchExportItem.resourceKey(url)).flatMap { batchSelectionPhotos[$0]?.url } ?? url
         guard !exporting else { return }
         cancelHSLTarget()
-        if file == url && result != nil, originalCache?.key.source == MacReferenceSource(url, raster: RenderEngine.isRasterInput(url)) { return }
+        if file == url && result != nil, acceptedOriginalSource == MacReferenceSource(url, raster: RenderEngine.isRasterInput(url)) { return }
         ParameterValueField.cancelPendingInputs()
         if geometryDraft != nil {
             requestLeavingGeometryDraft { [weak self] in self?.open(url) }
             return
         }
-        if adjustmentNavigation.tool == .colorGrading { cancelAdjustmentInteraction() }
+        if [.colorGrading, .toneCurve].contains(adjustmentNavigation.tool) { cancelAdjustmentInteraction() }
         if scheduler.interacting { setInteracting(false) }
         guard saveEdits() else { return }
         let restoredRecord: VersionedPhotoEdit

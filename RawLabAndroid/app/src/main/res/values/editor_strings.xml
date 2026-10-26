@@ -157,11 +157,14 @@
     <string name="grading_reset_message">"Restore default color grading for shadows, midtones, and highlights?"</string>
     <string name="grading_reset_zone">"Reset current range"</string>
     <string name="hsl_target">"Targeted adjustment"</string>
+    <string name="hsl_target_active">"Target adjustment: %1$s"</string>
     <string name="hsl_target_axis">"Adjustment axis"</string>
+    <string name="hsl_target_exit">"Exit target adjustment"</string>
     <string name="hsl_target_failed">"Could not sample. Try again."</string>
     <string name="hsl_target_gray">"This color is too close to gray to select a range."</string>
     <string name="hsl_target_instructions">"Sample the photo and drag up or down"</string>
     <string name="hsl_target_outside">"Sample within the edited photo."</string>
+    <string name="hsl_target_pan_hint">"Drag the photo to adjust color. Exit target mode to pan."</string>
     <string name="hsl_target_ranges">"Affected ranges: %1$s"</string>
     <string name="hsl_target_stale">"The preview changed. Sample again."</string>
     <string name="hsl_target_unavailable">"This pixel cannot be sampled."</string>

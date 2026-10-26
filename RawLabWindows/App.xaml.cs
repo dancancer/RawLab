@@ -29,12 +29,20 @@ public partial class App : Application
         if (updates.StorageError == null && !updates.RequiresRecovery)
         {
             editor = new MainWindow(new UsageAnalytics(), null, desktopUpdates: updates);
-            updates.FinishStartupHealthCheck(editor.UpdateDataHealthy);
+            await updates.FinishStartupHealthCheckAsync(editor.UpdateDataHealthy);
         }
-        if (updates.StorageError != null || updates.RequiresRecovery)
+        if (updates.StorageError != null || updates.RequiresRecovery || updates.RequiresStartupHealthCheck)
         {
             var recovery = new SoftwareUpdateWindow(updates, legacy) { Title = Loc.Text("更新恢复需要处理，编辑暂未开放") };
-            MainWindow = recovery; recovery.Show();
+            MainWindow = recovery;
+            updates.RetryStartup = async () => {
+                if (editor == null || updates.CheckingStartupTrust) return;
+                await updates.FinishStartupHealthCheckAsync(editor.UpdateDataHealthy);
+                if (updates.BlocksEditing) return;
+                updates.RetryStartup = null;
+                MainWindow = editor; editor.Show(); recovery.Close();
+            };
+            recovery.Show();
         }
         else { MainWindow = editor; editor!.Show(); }
         ShutdownMode = ShutdownMode.OnMainWindowClose;

@@ -5,6 +5,8 @@ import android.net.Uri
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.geometry.Offset
+import com.rawlab.android.editor.controls.HslTargetActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
@@ -35,17 +37,24 @@ class EditorWorkspaceGroupsTest {
     private var draftApplySucceeds = true
     private var delayReady = false
     private var begins = 0
+    private var target by mutableStateOf(HslTargetState())
+    private var targetBegins = 0
+    private var targetEnds = 0
+    private val targetMoves = mutableListOf<Float>()
     private fun session() = EditorResetSession(photo.identity, photo.file.absolutePath, 1, 1, state.edits,
         state.draft, 1, state.resetContext())
     private fun show() {
         compose.setContent {
             RawLabTheme { Surface { EditorScreen(state, {}, {}, { next, _ -> edits++; state = state.copy(edits = next) },
                 {}, {}, {}, {}, {},
+                hslTarget = HslTargetActions(target, enabled = { target = target.copy(enabled = it) },
+                    axis = { target = target.copy(axis = it) }, begin = { _, _ -> targetBegins++ },
+                    move = { targetMoves += it }, end = { targetEnds++ }),
                 onBeginDraft = { group -> begins++; state = state.copy(draft = AdjustmentDraft.begin(group, state.edits)) },
                 onDraftEdit = { next, _ -> state = state.copy(draft = state.draft?.update(next)) },
-                onApplyDraft = {
-                    if (draftApplySucceeds) { draftApplies++; state = state.copy(edits = state.visibleEdits, draft = null, exact = !delayReady, rendering = delayReady); true }
-                    else false
+                onApplyDraft = { completed ->
+                    if (draftApplySucceeds) { draftApplies++; state = state.copy(edits = state.visibleEdits, draft = null, exact = !delayReady, rendering = delayReady); completed(true) }
+                    else completed(false)
                 },
                 onDiscardDraft = { draftDiscards++; state = state.copy(draft = null) },
                 onPrepareReset = { scope -> EditorResetTransaction.prepare(scope, session()) },
@@ -75,6 +84,22 @@ class EditorWorkspaceGroupsTest {
     private fun capture(name: String) {
         val dir = File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null), "workspace-groups").apply { mkdirs() }
         File(dir, "$name.png").outputStream().use { compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    @Test fun collapsedHslTargetKeepsCanvasGestureAndExplicitExit() {
+        show(); group("color"); tool(14)
+        compose.onNodeWithTag("hsl-target").performScrollTo().performClick()
+        compose.onNode(hasContentDescription("更多") and hasAnyAncestor(hasTestTag("adjustment-dock"))).performClick()
+        compose.onNodeWithText("收起调整栏").performClick()
+        compose.onNodeWithTag("hsl-target-canvas").assertIsDisplayed()
+        compose.onNodeWithText("目标调整：色相").assertIsDisplayed()
+        compose.onNodeWithTag("photo-canvas").performTouchInput {
+            down(center); moveBy(Offset(0f, -30f)); up()
+        }
+        compose.runOnIdle { assertEquals(1, targetBegins); assertTrue(targetMoves.isNotEmpty()); assertEquals(1, targetEnds) }
+        compose.onNodeWithTag("hsl-target-exit").performClick()
+        compose.onNodeWithTag("hsl-target-canvas").assertDoesNotExist()
+        compose.runOnIdle { assertFalse(target.enabled) }
     }
 
     @Test fun onePanelFineResetsOnlyAfterActualToolOrGroupNavigation() {
@@ -164,7 +189,7 @@ class EditorWorkspaceGroupsTest {
     @Test fun sixGroupsChooseDefaultToolsKeepPanelBoundsAndNeverEdit() {
         show()
         val bounds = compose.onNodeWithTag("adjustment-dock").fetchSemanticsNode().boundsInRoot
-        for ((group, tool) in listOf("looks" to 0, "light" to 2, "color" to 8, "effects" to 12, "detail" to 11, "geometry" to 17)) {
+        for ((group, tool) in listOf("looks" to 0, "light" to 2, "color" to 8, "effects" to 22, "detail" to 11, "geometry" to 17)) {
             if (group != "looks") group(group)
             compose.onNodeWithTag("editor-tool-$tool").assertIsSelected()
             assertEquals(bounds, compose.onNodeWithTag("adjustment-dock").fetchSemanticsNode().boundsInRoot)

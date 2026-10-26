@@ -46,6 +46,9 @@ static void AIDenoisePersistenceChecks()
     var frozen = BatchJob.Create("photo.arw", snapshot, null, "Neutral");
     Check(JsonSerializer.SerializeToNode(frozen.Copy().Settings)!["AIDenoiseEnabled"]?.GetValue<bool>() == true,
         "Batch snapshot preserves requested AI appearance");
+    frozen.AIBackend=0;
+    var rejectedCpu=false;try{frozen.Validate();}catch(InvalidDataException){rejectedCpu=true;}
+    Check(rejectedCpu,"Legacy CPU AI batch journals are rejected before preflight");
     frozen.AIBackend=3;
     Check(JsonSerializer.Deserialize<BatchJob>(JsonSerializer.Serialize(frozen.Copy()))!.AIBackend==3,
         "Frozen batch preserves requested AI backend through copy and JSON");

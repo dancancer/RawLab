@@ -44,10 +44,11 @@ data class EditorState(
     val gpuEnabled: Boolean = true,
     val draft: AdjustmentDraft? = null,
     val adjustmentRevision: Long = 0,
+    val committingAdjustments: Boolean = false,
 ) {
     val canExport get() = photo != null && preview != null && exact && !rendering && !previewResizePending &&
-        operation == Operation.NONE && draft == null && saveState != EditSaveState.FAILED
-    val controlsEnabled get() = photo != null && operation == Operation.NONE
+        operation == Operation.NONE && !committingAdjustments && draft == null && saveState != EditSaveState.FAILED
+    val controlsEnabled get() = photo != null && operation == Operation.NONE && !committingAdjustments
     val visibleEdits get() = draft?.project(edits) ?: edits
     val draftReady get() = draft != null && controlsEnabled && exact && !rendering && !previewResizePending && error == null
     val canApplyDraft get() = draftReady && draft?.changed == true

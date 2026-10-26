@@ -25,7 +25,7 @@ public sealed class SignedUpdateSource : IUpdateSource
     {
         if ((appId != null && appId != "RawLab.Desktop") || channel != "stable") throw new InvalidDataException("Unsupported application or channel");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(CheckCancellation); timeout.CancelAfter(TimeSpan.FromSeconds(30));
-        using var response = await client.GetAsync(trust.FeedUrl, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+        using var response = await GetResponseAsync(new Uri(trust.FeedUrl), timeout.Token);
         response.EnsureSuccessStatusCode();
         await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token);
         using var memory = new MemoryStream();
@@ -42,7 +42,7 @@ public sealed class SignedUpdateSource : IUpdateSource
     {
         var manifest = Manifest ?? throw new InvalidOperationException("Check the signed feed first");
         if (releaseEntry != Asset(manifest) || manifest.ExpiresAt <= now()) throw new InvalidDataException("Package does not match the verified descriptor");
-        using var response = await client.GetAsync(manifest.AssetUrl, HttpCompletionOption.ResponseHeadersRead, cancelToken);
+        using var response = await GetResponseAsync(new Uri(manifest.AssetUrl), cancelToken);
         response.EnsureSuccessStatusCode();
         if (response.Content.Headers.ContentLength is { } length && length != manifest.Size) throw new InvalidDataException("Unexpected package size");
         try
@@ -64,6 +64,26 @@ public sealed class SignedUpdateSource : IUpdateSource
         }
         catch { try { File.Delete(localFile); } catch (IOException) { } throw; }
     }
+    private async Task<HttpResponseMessage> GetResponseAsync(Uri first, CancellationToken token)
+    {
+        var feed = new Uri(trust.FeedUrl);
+        if (first.Scheme != "https" || first.UserInfo.Length != 0 || first.Host != feed.Host || first.Port != feed.Port)
+            throw new InvalidDataException("Update request is outside the configured source");
+        var current = first;
+        for (var redirects = 0; ; redirects++) {
+            var response = await client.GetAsync(current, HttpCompletionOption.ResponseHeadersRead, token);
+            if ((int)response.StatusCode is not (301 or 302 or 303 or 307 or 308)) return response;
+            var location = response.Headers.Location;
+            response.Dispose();
+            if (redirects >= 5 || location == null) throw new InvalidDataException("Too many or incomplete update redirects");
+            var next = location.IsAbsoluteUri ? location : new Uri(current, location);
+            if (next.Scheme != "https" || next.UserInfo.Length != 0 || next.Port != 443 ||
+                next.Host is not ("github.com" or "release-assets.githubusercontent.com"))
+                throw new InvalidDataException("Update redirect is outside the allowed download hosts");
+            current = next;
+        }
+    }
+
     private static VelopackAsset Asset(SignedUpdatePayload value) => new() {
         PackageId = value.PackageId, Version = SemanticVersion.Parse(value.Version), Type = VelopackAssetType.Full,
         FileName = value.FileName, SHA1 = value.Sha1, SHA256 = value.Sha256, Size = value.Size, NotesMarkdown = value.Notes, NotesHTML = ""

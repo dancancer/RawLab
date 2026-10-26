@@ -468,7 +468,7 @@ enum EditorAdjustmentRules {
             case .recipe: return snapshot.masterRecipeID != nil || settings.masterRecipeID != nil
             case .strength: return settings.strength != 1
             case .exposure: return settings.exposure != 0 || (context.isRaw && settings.exposureMode != context.defaultExposureMode)
-            case .whiteBalance: return (context.isRaw && (!settings.isWhiteBalanceDefault || !settings.usesAsShotWhiteBalance)) || (settings.masterRecipe != nil && settings.tint != 0)
+            case .whiteBalance: return (context.isRaw && (!settings.isWhiteBalanceDefault || !settings.usesAsShotWhiteBalance)) || (context.isRaw && settings.masterRecipe != nil && settings.tint != 0)
             case .toneCurve: return settings.toneCurve != 0 || !settings.curveSettings.isDefault
             case .colorGrading: return !settings.gradingSettings.isDefault
             case .hsl: return !settings.hslSettings.isIdentity
@@ -497,7 +497,7 @@ enum EditorAdjustmentRules {
         case .group(.color):
             return settings.saturation != 0 || settings.vibrance != 0 || !settings.hslSettings.isIdentity || !settings.gradingSettings.isDefault ||
                 (context.isRaw && (!settings.isWhiteBalanceDefault || !settings.usesAsShotWhiteBalance)) ||
-                (settings.masterRecipe != nil && settings.tint != 0)
+                (context.isRaw && settings.masterRecipe != nil && settings.tint != 0)
         case .group(.effects): return settings.effectSettings != PhotoEffectsSettings() || !settings.atmosphereSettings.isIdentity
         case .group(.detail):
             return settings.aiDenoiseEnabled || settings.sharpening != 0 || settings.rawNoiseReduction != 0 ||

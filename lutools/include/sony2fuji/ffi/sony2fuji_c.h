@@ -380,7 +380,7 @@ typedef struct sony2fuji_hsl_probe_result {
 } sony2fuji_hsl_probe_result;
 
 typedef enum sony2fuji_ai_backend {
-    SONY2FUJI_AI_CPU = 0,
+    SONY2FUJI_AI_CPU = 0, // Reserved ABI value; enabled CPU requests return UNSUPPORTED.
     SONY2FUJI_AI_COREML = 1,
     SONY2FUJI_AI_AUTO = 2,
     SONY2FUJI_AI_DIRECTML = 3

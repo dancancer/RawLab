@@ -99,10 +99,11 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     var selectedPreset by remember { mutableStateOf<AdjustmentPreset?>(null) }
     var presetAction by remember { mutableStateOf<AdjustmentPresetAction?>(null) }
     fun history(undo: Boolean) {
-        val results = if (undo) model.undoAdjustment() else model.redoAdjustment()
-        if (results.any { it.status in setOf(com.rawlab.android.adjustments.AdjustmentStatus.BLOCKED,
-                com.rawlab.android.adjustments.AdjustmentStatus.CONFLICT, com.rawlab.android.adjustments.AdjustmentStatus.FAILED) })
-            adjustmentSheet = AdjustmentSheet.HISTORY
+        model.performAdjustmentHistory(undo, completed = { results ->
+            if (results.any { it.status in setOf(com.rawlab.android.adjustments.AdjustmentStatus.BLOCKED,
+                    com.rawlab.android.adjustments.AdjustmentStatus.CONFLICT, com.rawlab.android.adjustments.AdjustmentStatus.FAILED) })
+                adjustmentSheet = AdjustmentSheet.HISTORY
+        })
     }
     var album by rememberSaveable { mutableStateOf(false) }
     var collectionOpen by rememberSaveable { mutableStateOf(false) }
@@ -166,7 +167,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
                 model::cancelHslTarget, model::keyHslTarget, model::rejectHslTarget),
             onEdit = model::edit, onRetry = model::retry,
             onPrepareReset = model::prepareReset, onCommitReset = model::commitReset,
-            onSaveRetry = model::retrySave,
+            onSaveRetry = { model.retrySave() },
             adjustmentReloadRequired = model.adjustmentReloadRequired, onReloadAdjustments = model::reloadSavedAdjustments,
             onCancelAdjustment = model::cancelAdjustmentInteraction,
             canUndoAdjustment = model.canUndoAdjustment, canRedoAdjustment = model.canRedoAdjustment,
@@ -190,13 +191,13 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
                 exportSizeKey = ExportSizeChoice.ORIGINAL.key
                 exportCustomSize = ""
                 format = ExportFormat.JPEG
-                if (model.beginExport()) exportDialog = true
+                model.beginExport { if (it) exportDialog = true }
             },
             onBatchExport = model::beginBatch,
             collectionEditing = collection.currentID != null && collection.currentID == state.photo?.identity?.value,
             onCollection = {
                 if (collection.currentID != null) {
-                    if (model.returnToCollection()) collectionOpen = true
+                    model.returnToCollection { if (it) collectionOpen = true }
                 } else { model.retainCurrentInCollection(); collectionOpen = true }
             },
             onMessageDismiss = model::dismissMessage, onLicenses = { licenses = true }, onGpuChange = model::setGpuEnabled,

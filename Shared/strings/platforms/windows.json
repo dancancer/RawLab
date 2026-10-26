@@ -3313,6 +3313,40 @@
     "查看保留的更新状态文件": {
       "source": "查看保留的更新状态文件",
       "formats": []
+    },
+    "目标调整：{0}": {
+      "source": "目标调整：{0}",
+      "formats": [
+        "{0}"
+      ]
+    },
+    "退出目标调整": {
+      "source": "退出目标调整",
+      "formats": []
+    },
+    "拖动照片调整颜色；退出目标模式后可平移。": {
+      "source": "拖动照片调整颜色；退出目标模式后可平移。",
+      "formats": []
+    },
+    "AI 降噪结果连续未就绪，请重试。": {
+      "formats": [],
+      "source": "AI 降噪结果连续未就绪，请重试。"
+    },
+    "正在处理更新，编辑暂不可用。": {
+      "formats": [],
+      "source": "正在处理更新，编辑暂不可用。"
+    },
+    "Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。": {
+      "formats": [],
+      "source": "Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。"
+    },
+    "Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。": {
+      "formats": [],
+      "source": "Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。"
+    },
+    "AI 降噪不支持 CPU，请重新创建使用 GPU 的批量任务。": {
+      "formats": [],
+      "source": "AI 降噪不支持 CPU，请重新创建使用 GPU 的批量任务。"
     }
   },
   "overrides": {
@@ -4793,6 +4827,14 @@
       "fr": "Choisissez un dossier de sortie.",
       "ja": "出力先フォルダーを選択してください。",
       "zh-Hans": "请选择输出文件夹。"
+    },
+    "AI 降噪不支持 CPU，请重新创建使用 GPU 的批量任务。": {
+      "en": "AI denoise does not support CPU. Create a new batch task using GPU.",
+      "zh-Hans": "AI 降噪不支持 CPU，请重新创建使用 GPU 的批量任务。",
+      "de": "KI-Entrauschung unterstützt keine CPU. Erstelle einen neuen Stapelauftrag mit GPU.",
+      "es": "La reducción de ruido con IA no admite CPU. Crea una nueva tarea por lotes con GPU.",
+      "fr": "La réduction du bruit par IA ne prend pas en charge le CPU. Créez une nouvelle tâche par lots avec le GPU.",
+      "ja": "AIノイズ除去はCPUに対応していません。GPUを使用する新しいバッチタスクを作成してください。"
     }
   }
 }

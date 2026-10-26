@@ -49,7 +49,7 @@ class MasterRecipeTest {
         for (strength in listOf(0f, .5f, 1f, 2f)) {
             val state = edited.copy(strength = strength)
             assertEquals(37f * strength, state.renderHsl.value(0, 7))
-            assertEquals((-80f * strength).coerceIn(-100f, 100f), state.renderHsl.value(1, 5))
+            assertEquals(if (strength == 0f) 0f else (-80f * strength).coerceIn(-100f, 100f), state.renderHsl.value(1, 5))
             assertEquals(edited.hsl, state.hsl)
             assertEquals(state, SettingsCodec.decode(SettingsCodec.encode(state)))
         }

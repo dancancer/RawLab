@@ -6,7 +6,7 @@
 完成后曝光、曲线、外观、裁剪和导出复用结果，不因拖动普通滑杆重新运行网络。
 关闭 AI 即恢复原来的显影路径；旧编辑记录缺少 AI 字段时等价于关闭。
 
-桌面实验入口覆盖 Mac 与 Windows，共用 C++ 核心；移动端随后验证，
+桌面发布入口覆盖 Mac 与 Windows，共用 C++ 核心；移动端未纳入本次交付，
 未支持的平台不得把带 AI 的编辑记录当作已经执行 AI。现有 C5 保留。
 不训练新权重，不生成独立增强 DNG，不把 AI 隐式应用于缩略图或所有照片。
 
@@ -111,19 +111,20 @@ RGB/线性缓存额外包含白平衡、相机矩阵和桥接协议。曝光、�
 即使稍后返回也不得覆盖当前照片。缓存采用有版本的原子写入，损坏或不匹配就重建。
 预览和导出读取同一份全尺寸完成结果；导出不得静默使用较低分辨率或部分 AI 结果。
 
-CPU 是必需后端。Auto 可在加速失败后从干净状态重跑 CPU，并报告实际执行后端；
-Force 不能把 CPU 回退当作加速成功。CoreML 算子覆盖、真实硬件分配、速度和内存都以
-测量为准，不能把注册 CoreML provider 等同于整图在 GPU/ANE 上运行。
+AI 仅支持 GPU 后端。C ABI 保留 CPU 枚举数值以保持布局兼容，但启用 CPU AI 返回
+`UNSUPPORTED`；Auto 和 Force 的网络失败都直接报告，不重跑 CPU。普通显影的 CPU
+回退规则与确定性 ISP 不受此限制。Core ML 算子覆盖、真实硬件分配、速度和内存以
+测量为准；选择原生 Core ML 不代表每个算子都在 GPU 上运行。
 
 Mac 的 Auto 使用直接转换的 float32 Core ML MLProgram 执行 RAW/RGB 网络，
 `CPUAndGPU` 且禁用 GPU 低精度累加；不经 ONNX CoreML provider 拆分子图。
 官方 ISP 固定为 ONNX CPU，强制 CoreML 也只要求两个神经网络使用原生 Core ML。
-目标为 Apple Silicon/macOS 14 及以上；其他环境通过 Auto 回退 CPU。
+目标为 Apple Silicon/macOS 14 及以上且原生 Core ML GPU 可用的设备；Intel 的 AI 不受支持，不回退 CPU。
 原生包包含逐文件摘要，拒绝符号链接、越界路径及未列入 manifest 的文件。
 网络输入、权重、float32、640 分块和 halo 均保持现有协议。
 
 Windows 的 Auto 使用 ONNX Runtime DirectML 执行 RAW/RGB 网络，禁用会话内隐式
-CPU provider 回退；若阶段失败，则现有 Auto 逻辑从干净状态重跑 CPU。Force 使用
+CPU provider 回退；Auto 与 Force 都使用硬件 DirectML，失败时明确报错。
 DirectML，拒绝 DXGI 软件适配器和 WARP。固定 ONNX Runtime DirectML 1.23.0 与
 DirectML 1.15.4，不启用半精度，官方 ISP 仍为 ONNX CPU。运行库放在程序旁，避免
 Windows 搜索顺序加载系统旧版 ONNX DLL。缓存身份包含 DirectML 运行库、实际适配器
@@ -142,8 +143,21 @@ Windows 批量任务固定请求后端，检查和导出使用相同后端缓存
 计算成功后才保存启用状态并允许导出。已经启用的记录若缓存失效/缺失，则导出等待准备完成，
 失败或取消时阻止该次导出并说明原因；用户关闭 AI 后可正常导出，不能静默删掉启用字段。
 
+Windows 的原片摘要缓存同时使用文件身份和 RH oplock 变更通知，不能仅依赖可能重复的
+`ChangeTime`。外部写入或替换会使通知失效并释放句柄；不支持可靠变更通知的文件系统
+退回内容校验，优先避免复用旧结果。模型资源也采用同一失效依据。
+
 ## 交付边界
 
 模型权重、RAW 样片、校准原片、缓存、测量输出和本机路径不入库；可复现的导出工具、
 协议、回归测试及必要的标量配置可以入库。产品资源需保留上游来源和许可。
-转换后的模型保留上游 CC BY-NC 4.0 许可；实验接入不包含模型分发、发布或商业使用授权。
+DualDn 转换模型保留上游 CC BY-NC 4.0；通用 RGB 的 Restormer 保留 Academic Public License（非商业）。两者不随 RawLab 项目代码改为 GPL。
+项目负责人已于 2026-10-26 确认本项目为非商业使用，并要求 Mac、Windows 发布包
+包含 DualDn 模型与运行库、启用 AI 降噪。随包保留作者与来源、原许可及模型转换说明；
+该决定不赋予模型商业使用权，也不授权上传发布包或签名。
+
+发布构建必须校验模型 manifest、逐文件 SHA-256 和固定运行库版本，缺失输入时失败。
+Mac 包含原生 `raw.mlmodelc`、`rgb.mlmodelc`、`blind_rgb.mlmodelc` 与 ONNX Runtime 1.23.2；Windows
+包含 ONNX 模型与 ONNX Runtime DirectML 1.23.0。模型与依赖仅存于按版本和校验值
+区分的共享缓存，不能用占位模型或未验证的本机路径声明已启用。系统、硬件、首次计算
+耗时和包体积以实际发布产物的验收结果为准。

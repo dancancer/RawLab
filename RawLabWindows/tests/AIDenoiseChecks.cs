@@ -4,9 +4,9 @@ using RawLab.Windows;
 
 internal static class AIDenoiseChecks
 {
-    internal static void Run(string model,string raw,string cache,Action<bool,string> check,string backend="CPU")
+    internal static void Run(string model,string raw,string cache,Action<bool,string> check,string backend="DirectML")
     {
-        using var engine=new RenderEngine(gpuMode:0,aiModelDirectory:model,aiCacheDirectory:cache,aiBackend:2);
+        using var engine=new RenderEngine(gpuMode:0,aiModelDirectory:model,aiCacheDirectory:cache,aiBackend:3);
         var settings=new Adjustments { AIDenoiseEnabled=true };
         using var cancelled=new AIPreparation((_,_,_)=>{});cancelled.Cancel();
         try { engine.PrepareAI(raw,settings,cancelled);throw new Exception("Cancelled AI started"); }
@@ -17,9 +17,9 @@ internal static class AIDenoiseChecks
         using var progress=new AIPreparation((phase,done,total)=>phases.Add((phase,done,total)));
         engine.PrepareAI(raw,settings,progress);
         check(phases.Where(v=>v.Phase is 2 or 3).All(v=>v.Done==1 && v.Total==1),"Prepared Windows AI cache is reused");
-        var rgbBackend=backend=="CPU" ? "CPU" : "ISP:CPU/RGB:"+backend;
+        var rgbBackend="ISP:CPU/RGB:"+backend;
         var expected=engine.LastAIBackend.StartsWith("SceneRGB=") ? $"SceneRGB={backend}" : $"RAW={backend}; RGB={rgbBackend}";
-        check(engine.LastAIBackend==expected,"Windows Auto truthfully reports actual AI producers: "+engine.LastAIBackend);
+        check(engine.LastAIBackend==expected,"Windows GPU inference truthfully reports actual AI producers: "+engine.LastAIBackend);
         check(double.IsFinite(engine.AutoExposure(raw,settings)),"Auto exposure reads the selected AI backend cache");
         var a=engine.RenderPreview(raw,settings,null,512,false,false,false).Result;
         settings.Denoise=DenoiseSettings.Clean;settings.DisplayChromaDenoise=2;

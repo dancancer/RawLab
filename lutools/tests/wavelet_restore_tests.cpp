@@ -1,6 +1,7 @@
 #include "../src/core/wavelet_denoise.cpp"
 #include <iostream>
 #include <stdexcept>
+#include <cstring>
 
 namespace {
 constexpr float shot = .005f;
@@ -30,6 +31,20 @@ float restored(float value, float variance, float residualSign = 1) {
     require(std::abs(result[0] - result[1]) < 1e-6 && std::abs(result[0] - result[2]) < 1e-6,
         "neutral restoration must not introduce a color cast");
     return result[0];
+}
+
+void checkLegacyOpponent() {
+    cv::RNG random(12345);
+    for (const auto size : {cv::Size(1, 1), cv::Size(257, 263), cv::Size(1031, 1043)}) {
+        cv::Mat source(size, CV_32FC3); random.fill(source, cv::RNG::UNIFORM, -2.f, 4.f);
+        for (const auto matrix : {opponent(), opponent().t()}) {
+            cv::Mat expected, actual;
+            cv::transform(source, expected, matrix);
+            transformOpponent(source, actual, matrix);
+            require(std::memcmp(expected.data, actual.data, actual.total() * actual.elemSize()) == 0,
+                "Legacy opponent transform differs from v0.8.2 cv::transform");
+        }
+    }
 }
 
 void checkZeroContinuity() {
@@ -71,6 +86,7 @@ void checkBoundarySlopes() {
 
 int main() {
     try {
+        checkLegacyOpponent();
         checkZeroContinuity();
         checkSymmetricVariance();
         checkBoundarySlopes();

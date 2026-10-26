@@ -41,6 +41,7 @@ struct UpdateStore {
     func repairableState() throws -> Data {
         try requireOrdinary(directory); try requireOrdinary(stateURL)
         let data = try Data(contentsOf: stateURL)
+        var knownNonInstallation = false
         if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             func knownString(_ value: Any?, _ accepts: (String) -> Bool) -> Bool {
                 guard let value else { return true }
@@ -65,6 +66,13 @@ struct UpdateStore {
                   !installationPhases.contains(failure?["stage"] as? String ?? "") else {
                 throw UpdateAdapterError(code: "storage", detail: "Unsupported update state cannot be rebuilt")
             }
+            if let pending,
+               let pendingData = try? JSONSerialization.data(withJSONObject: pending),
+               let decoded = try? JSONDecoder().decode(UpdateTaskState.self, from: pendingData) {
+                knownNonInstallation = decoded.phase != .failed || decoded.failure.map {
+                    ![.idle, .available, .complete, .failed].contains($0.stage) && !$0.code.isEmpty
+                } == true
+            }
         }
         guard (try? load(automaticCheck: false)) == nil else {
             throw UpdateAdapterError(code: "storage", detail: "Update state is readable; reopen the app")
@@ -73,8 +81,18 @@ struct UpdateStore {
             let path = directory.appendingPathComponent(name)
             if FileManager.default.fileExists(atPath: path.path) {
                 try requireOrdinary(path)
-                guard try FileManager.default.contentsOfDirectory(atPath: path.path).isEmpty else {
-                    throw UpdateAdapterError(code: "storage", detail: "Installation or data recovery status is unknown")
+                let entries = try FileManager.default.contentsOfDirectory(at: path, includingPropertiesForKeys: nil)
+                if !entries.isEmpty {
+                    guard name == "Backups", knownNonInstallation else {
+                        throw UpdateAdapterError(code: "storage", detail: "Installation or data recovery status is unknown")
+                    }
+                    let backups = UpdateDataBackup(dataRoot: directory.deletingLastPathComponent(), updateRoot: directory)
+                    for entry in entries {
+                        guard UUID(uuidString: entry.lastPathComponent) != nil else {
+                            throw UpdateAdapterError(code: "storage", detail: "Unknown backup entry")
+                        }
+                        _ = try backups.verify(entry)
+                    }
                 }
             }
         }
@@ -98,6 +116,9 @@ struct UpdateStore {
         guard try repairableState() == expected else { throw UpdateAdapterError(code: "storage", detail: "Update state changed") }
         var next = UpdatePreferences(); next.automaticCheck = false; next.stateRepairReceipt = receipt
         try save(next)
+        let backups = UpdateDataBackup(dataRoot: directory.deletingLastPathComponent(), updateRoot: directory)
+        let entries = (try? FileManager.default.contentsOfDirectory(at: directory.appendingPathComponent("Backups"), includingPropertiesForKeys: nil)) ?? []
+        for entry in entries { try? backups.discard(entry) }
         return next
     }
     private func requireOrdinary(_ path: URL) throws {
@@ -190,6 +211,25 @@ struct UpdateDataBackup {
             guard try digest(file) == hash else { throw UpdateAdapterError(code: "backup", detail: path) }
         }
         return manifest
+    }
+
+    func discard(_ directory: URL) throws {
+        guard UUID(uuidString: directory.lastPathComponent) != nil else {
+            throw UpdateAdapterError(code: "backup", detail: "Invalid backup name")
+        }
+        _ = try verify(directory)
+        try FileManager.default.removeItem(at: directory)
+    }
+
+    func discardUnreferencedBackups(retaining: String?) throws {
+        guard !hasPendingRecovery else { return }
+        let root = updateRoot.appendingPathComponent("Backups")
+        guard FileManager.default.fileExists(atPath: root.path) else { return }
+        try requireOrdinary(root)
+        for entry in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+            where entry.path != retaining {
+            try? discard(entry)
+        }
     }
 
     private struct Recovery: Codable {

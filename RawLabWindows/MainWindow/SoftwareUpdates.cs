@@ -58,8 +58,11 @@ public partial class MainWindow
             desktopUpdates.UnavailableReason!=null ? updates.Available?.Version : null;
         UpdateNotice.Content=version==null ? "" : Loc.Format("RawLab {0} 已发布",version);
         UpdateNotice.Visibility=version==null ? Visibility.Collapsed : Visibility.Visible;
-        if(!closing)IsEnabled=!UpdateInstallationActive;
+        if(!closing)IsEnabled=true;
+        EditorShell.IsEnabled=!UpdateInstallationActive;
+        UpdateLockBanner.Visibility=UpdateInstallationActive ? Visibility.Visible : Visibility.Collapsed;
         if(batchWindow!=null)batchWindow.IsEnabled=!UpdateInstallationActive;
+        if(collectionWindow!=null)collectionWindow.IsEnabled=!UpdateInstallationActive;
     }
     private void RestartForUpdate() => Close();
     private void PreserveUpdateNavigation()

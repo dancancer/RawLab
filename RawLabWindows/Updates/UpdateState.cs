@@ -28,7 +28,7 @@ public sealed class UpdateTaskState
     public Guid BeginCheck()
     {
         Attempt = Guid.NewGuid(); Phase = UpdatePhase.Checking; Failure = null; Choice = UpdateInstallChoice.None;
-        Release = null; Progress = 0; Blockers = []; BackupPath = null; return Attempt;
+        Release = null; Progress = 0; Blockers = []; BackupPath = null; PreviousVersion = null; PreviousBuild = null; return Attempt;
     }
     public bool Found(UpdateDescriptor? release, Guid token)
     {
@@ -82,19 +82,22 @@ public sealed class UpdateTaskState
         Failure = new(Phase, code, detail); Phase = UpdatePhase.Failed; Choice = UpdateInstallChoice.None;
         Attempt = Guid.NewGuid(); Blockers = []; return true;
     }
-    public void Cancel()
+    public void Cancel(bool preservingChoice = false)
     {
         if (Phase is UpdatePhase.Installing or UpdatePhase.PendingRestart) return;
         Attempt = Guid.NewGuid(); Phase = Release == null ? UpdatePhase.Idle : UpdatePhase.Available;
-        Choice = UpdateInstallChoice.None; Failure = null; Progress = 0; Blockers = [];
+        if (!preservingChoice) Choice = UpdateInstallChoice.None;
+        Failure = null; Progress = 0; Blockers = [];
+        BackupPath = null; PreviousVersion = null; PreviousBuild = null;
     }
     public void DisableAutomaticInstallation() { if (Choice == UpdateInstallChoice.AutomaticOnQuit) Cancel(); }
     public void RestoreAfterLaunch(string version, string build, bool trusted)
     {
-        Attempt = Guid.NewGuid(); Choice = UpdateInstallChoice.None; Blockers = [];
+        Attempt = Guid.NewGuid(); Blockers = [];
+        if (Phase != UpdatePhase.Available) Choice = UpdateInstallChoice.None;
         if (Phase is UpdatePhase.Failed or UpdatePhase.Complete or UpdatePhase.Idle or UpdatePhase.Available) return;
         if (Phase is (UpdatePhase.Installing or UpdatePhase.PendingRestart) && trusted && Release?.Version == version && Release?.Build == build)
-        { Phase = UpdatePhase.Complete; Failure = null; }
+        { Phase = UpdatePhase.Complete; Failure = null; BackupPath = null; PreviousVersion = null; PreviousBuild = null; }
         else { Failure = new(Phase, "interrupted", ""); Phase = UpdatePhase.Failed; }
     }
     [JsonIgnore] public bool Prepared => Phase is UpdatePhase.PackageReady or UpdatePhase.WaitingForTasks or UpdatePhase.ReadyToInstall;

@@ -2,6 +2,7 @@
     Title="RawLab · Windows" Style="{StaticResource {x:Type Window}}" Width="1440" Height="920" MinWidth="1000" MinHeight="680" Icon="AppIcon.png" AllowDrop="True" Drop="FilesDropped" PreviewKeyDown="KeyPressed">
 
   <Grid TextElement.Foreground="{DynamicResource Foreground}" Background="{DynamicResource CanvasSurface}">
+  <Grid x:Name="EditorShell">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <Menu x:Name="MainMenu" MinHeight="28" Background="{DynamicResource RaisedSurface}" Padding="8,0" FocusManager.IsFocusScope="True">
       <MenuItem Header="{DynamicResource '文件(_F)'}">
@@ -125,6 +126,12 @@
           <Grid.ColumnDefinitions><ColumnDefinition x:Name="NeutralColumn" Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
           <local:PhotoCanvas x:Name="NeutralCanvas" Grid.Row="1" Margin="0"/>
           <local:PhotoCanvas x:Name="ResultCanvas" Grid.Row="1" Grid.Column="1"/>
+          <Border x:Name="HslTargetBanner" Grid.RowSpan="2" Grid.ColumnSpan="2" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Bottom" MaxWidth="560" Margin="12" Padding="10" Background="{DynamicResource OverlaySurface}" CornerRadius="8" AutomationProperties.AutomationId="hsl.target.canvas">
+            <StackPanel>
+              <WrapPanel><TextBlock x:Name="HslTargetBannerTitle" TextWrapping="Wrap" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/><Button Content="{DynamicResource '退出目标调整'}" Click="ExitHslTargetClicked" AutomationProperties.AutomationId="hsl.target.exit"/></WrapPanel>
+              <TextBlock Text="{DynamicResource '拖动照片调整颜色；退出目标模式后可平移。'}" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" FontSize="{DynamicResource EditorCaptionSize}" Margin="0,6,0,0"/>
+            </StackPanel>
+          </Border>
           <Grid x:Name="BusyIndicator" Grid.RowSpan="2" Grid.ColumnSpan="2" Height="2" VerticalAlignment="Top" Visibility="Collapsed" IsHitTestVisible="False" AutomationProperties.Name="{DynamicResource '正在显影…'}"><ProgressBar x:Name="BusyAnimation" Height="2" Foreground="{DynamicResource Indicator}" Background="{DynamicResource ProgressSurface}" IsIndeterminate="True"/><Border x:Name="BusyStill" Background="{DynamicResource Indicator}" Visibility="Collapsed"/></Grid>
           <Canvas x:Name="PhotoLabels" Grid.RowSpan="2" Grid.ColumnSpan="2" IsHitTestVisible="False" ClipToBounds="True">
             <Border x:Name="NeutralLabel" Background="{DynamicResource OverlaySurface}" CornerRadius="4" Padding="9,5" Visibility="Collapsed"><TextBlock Text="{DynamicResource '调整前'}" FontSize="{DynamicResource EditorBodySize}" TextWrapping="Wrap"/></Border>
@@ -260,6 +267,13 @@
 
         <TextBlock x:Name="Status" Text="{DynamicResource '就绪'}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" AutomationProperties.LiveSetting="Polite"/>
       </DockPanel>
+    </Border>
+  </Grid>
+    <Border x:Name="UpdateLockBanner" Visibility="Collapsed" Background="{DynamicResource RaisedSurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="1" CornerRadius="8" Padding="20" MaxWidth="560" HorizontalAlignment="Center" VerticalAlignment="Center" AutomationProperties.AutomationId="updates.lock">
+      <StackPanel>
+        <TextBlock Text="{DynamicResource '正在处理更新，编辑暂不可用。'}" TextWrapping="Wrap" FontWeight="SemiBold"/>
+        <Button Content="{DynamicResource '软件更新'}" Click="SoftwareUpdatesClicked" Margin="0,12,0,0" AutomationProperties.AutomationId="updates.lock.open"/>
+      </StackPanel>
     </Border>
   </Grid>
 </Window>

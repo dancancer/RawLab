@@ -9,6 +9,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.rawlab.android.adjustments.AdjustmentStatus
 import com.rawlab.android.adjustments.AdjustmentField
+import com.rawlab.android.adjustments.AdjustmentPayload
 import com.rawlab.android.adjustments.AdjustmentScope
 import com.rawlab.android.adjustments.AdjustmentTransferSession
 import com.rawlab.android.geometry.GeometrySettings
@@ -30,6 +31,18 @@ class AdjustmentHistoryInstrumentedTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
     private fun main(action: () -> Unit) = instrumentation.runOnMainSync(action)
+    private fun <T> result(action: ((T) -> Unit) -> Unit): T {
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var answer: T? = null
+        main { action { answer = it; latch.countDown() } }
+        assertTrue("Background adjustment did not finish", latch.await(60, java.util.concurrent.TimeUnit.SECONDS))
+        return answer!!
+    }
+    private fun paste(model: EditorViewModel, operation: com.rawlab.android.adjustments.PreparedAdjustmentTransfer) =
+        result<List<com.rawlab.android.adjustments.AdjustmentOutcome>> { model.applyAdjustmentPaste(operation, completed = it) }
+    private fun undo(model: EditorViewModel) = result<List<com.rawlab.android.adjustments.AdjustmentOutcome>> { model.undoAdjustment(it) }
+    private fun history(model: EditorViewModel, undo: Boolean, id: UUID) =
+        result<List<com.rawlab.android.adjustments.AdjustmentOutcome>> { model.performAdjustmentHistory(undo, id, true, completed = it) }
     private fun await(model: EditorViewModel, predicate: (EditorState) -> Boolean) {
         val deadline = SystemClock.uptimeMillis() + 60_000
         while (SystemClock.uptimeMillis() < deadline) {
@@ -61,6 +74,85 @@ class AdjustmentHistoryInstrumentedTest {
         } finally { main { owner.clear() }; edits.reset(identity); root.deleteRecursively() }
     }
 
+    @Test fun defaultScopeReceiptUndoAndRedoStayOffMainThreadAndCanonical() = withModel { model, edits, identity ->
+        main { model.edit(model.state.value.edits.copy(exposure = .75f)) }; await(model) { it.canExport }
+        main { model.copyAdjustments(AdjustmentScope.Custom(AdjustmentField.entries.filter { it.group != "geometry" }.toSet())) }
+        main { model.edit(model.state.value.edits.copy(exposure = .25f)) }; await(model) { it.canExport }
+        main { model.prepareAdjustmentPaste(model.adjustmentClipboard!!, listOf(model.state.value.photo!!.uri)) }
+        val deadline = SystemClock.uptimeMillis() + 60_000
+        while (model.adjustmentTransfer.value.preparing && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(20)
+        val prepared = requireNotNull(model.adjustmentTransfer.value.prepared)
+        val violations = java.util.Collections.synchronizedList(mutableListOf<String>())
+        lateinit var old: android.os.StrictMode.ThreadPolicy
+        main {
+            old = android.os.StrictMode.getThreadPolicy()
+            android.os.StrictMode.setThreadPolicy(android.os.StrictMode.ThreadPolicy.Builder().detectDiskReads().detectDiskWrites()
+                .penaltyListener(java.util.concurrent.Executor { it.run() }) { violations += it.toString() }.build())
+        }
+        try {
+            assertEquals(AdjustmentStatus.APPLIED, paste(model, prepared).single().status)
+            await(model) { it.canExport && it.edits.exposure == .75f }
+            assertEquals(AdjustmentStatus.APPLIED, undo(model).single().status)
+            await(model) { it.canExport && it.edits.exposure == .25f }
+            result<List<com.rawlab.android.adjustments.AdjustmentOutcome>> { model.redoAdjustment(it) }
+            await(model) { it.canExport && it.edits.exposure == .75f }
+            val captured = result<Result<AdjustmentPayload>> { model.capturePresetAdjustments(AdjustmentScope.All, it) }
+            assertTrue(captured.isSuccess)
+        } finally { main { android.os.StrictMode.setThreadPolicy(old) } }
+        assertTrue("Disk access on editor main thread: $violations", violations.isEmpty())
+        assertEquals(model.state.value.edits, edits.versionedState(identity).settings)
+        assertEquals(0, model.state.value.edits.highlights.toRawBits())
+    }
+
+    @Test fun switchingEditedPhotosReleasesOldWorkingCopiesButKeepsHistory() = withModel { model, _, firstID ->
+        val first = model.state.value.photo!!.uri
+        val second = File(context.cacheDir, "switch-target-${UUID.randomUUID()}.png").also(::png)
+        try {
+            repeat(3) { round ->
+                main { model.edit(model.state.value.edits.copy(exposure = .25f + round * .1f)) }; await(model) { it.canExport }
+                val old = model.state.value.photo!!.file
+                val next = if (model.state.value.photo!!.identity == firstID) Uri.fromFile(second) else first
+                main { model.importPhoto(next) }; await(model) { it.canExport && it.photo!!.uri == next }
+                assertFalse("Previously edited working copy retained", old.exists())
+                assertEquals(1, model.state.value.photo!!.file.parentFile!!.listFiles()!!.count { it.extension == "input" })
+            }
+            main { model.importPhoto(first) }; await(model) { it.canExport && it.photo!!.uri == first }
+            assertEquals(AdjustmentStatus.APPLIED, undo(model).single().status)
+            await(model) { it.canExport }
+        } finally { second.delete(); EditStore(File(context.filesDir, "edits")).reset(PhotoIdentity(Uri.fromFile(second).toString())) }
+    }
+
+    @Test fun batchEntryReleasesDecodedRasterAndReturningEditorRebuildsIt() = withModel { model, _, _ ->
+        val source = File(context.cacheDir, "large-batch-${UUID.randomUUID()}.png")
+        val generated = Bitmap.createBitmap(4096, 4096, Bitmap.Config.ARGB_8888)
+        generated.eraseColor(0xff4a799b.toInt())
+        source.outputStream().use { generated.compress(Bitmap.CompressFormat.PNG, 100, it) }; generated.recycle()
+        try {
+            main { model.importPhoto(Uri.fromFile(source)) }; await(model) { it.canExport && it.photo!!.uri == Uri.fromFile(source) }
+            val renderer = EditorViewModel::class.java.getDeclaredField("renderer").apply { isAccessible = true }.get(model)
+            val processorField = renderer.javaClass.getDeclaredField("processor").apply { isAccessible = true }
+            fun cachedBitmap(): Bitmap {
+                val processor = processorField.get(renderer)!!
+                val decoded = processor.javaClass.getDeclaredField("raster").apply { isAccessible = true }.get(processor) as com.rawlab.android.raster.DecodedRaster
+                return decoded.bitmap
+            }
+            val decoded = cachedBitmap()
+            val decodedBytes = decoded.allocationByteCount
+            val before = android.os.Debug.getNativeHeapAllocatedSize()
+            main { model.beginBatch() }
+            val deadline = SystemClock.uptimeMillis() + 60_000
+            while (model.batch.value == null && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(20)
+            assertNotNull(model.batch.value)
+            val after = android.os.Debug.getNativeHeapAllocatedSize()
+            println("RASTER_CACHE bytes=$decodedBytes native_before=$before native_after=$after")
+            assertTrue("Batch entry retains the editor's full decoded raster", decoded.isRecycled)
+            main { model.closeBatch(); model.edit(model.state.value.edits.copy(exposure = .2f)) }
+            await(model) { it.canExport && it.edits.exposure == .2f }
+            assertFalse(cachedBitmap().isRecycled)
+            assertNotSame(decoded, cachedBitmap())
+        } finally { source.delete() }
+    }
+
     @Test fun dragIsOneDurableEditAndCancellationRestoresBeforeState() = withModel { model, edits, identity ->
         assertNull(edits.load(identity))
         main {
@@ -75,7 +167,7 @@ class AdjustmentHistoryInstrumentedTest {
         main { model.updatePreviewSize(512) }
         await(model) { it.canExport && maxOf(it.preview!!.result.width, it.preview.result.height) <= 512 }
         assertEquals(receipt, edits.versionedState(identity))
-        main { assertEquals(AdjustmentStatus.APPLIED, model.undoAdjustment().single().status) }
+        assertEquals(AdjustmentStatus.APPLIED, undo(model).single().status)
         await(model) { it.canExport && it.edits.exposure == 0f }
         assertNull(edits.load(identity))
         main { model.redoAdjustment() }
@@ -138,7 +230,7 @@ class AdjustmentHistoryInstrumentedTest {
         assertTrue(model.adjustmentReloadRequired)
         assertEquals(1.5f, edits.load(identity)!!.exposure)
         assertEquals(count, model.adjustmentTransactions.size)
-        main { assertTrue(model.reloadSavedAdjustments()) }
+        main { model.reloadSavedAdjustments { assertTrue(it) } }
         await(model) { it.canExport && it.edits.exposure == 1.5f }
         main { model.edit(model.state.value.edits.copy(exposure = .75f)) }
         await(model) { it.canExport }
@@ -151,7 +243,7 @@ class AdjustmentHistoryInstrumentedTest {
         assertNull(edits.load(identity)); assertTrue(model.adjustmentTransactions.isEmpty())
         main { model.edit(model.state.value.edits) }
         await(model) { it.canExport }
-        main { assertTrue(model.beginExport()); model.cancelExport() }
+        main { model.beginExport { assertTrue(it); model.cancelExport() } }
         await(model) { it.canExport }
         assertNull(edits.load(identity)); assertTrue(model.adjustmentTransactions.isEmpty())
         main { model.edit(model.state.value.edits.copy(exposure = .5f)) }
@@ -205,10 +297,8 @@ class AdjustmentHistoryInstrumentedTest {
         val original = File(model.state.value.photo!!.uri.path!!)
         val replacement = File(original.parentFile, "replacement-history.png"); png(replacement)
         Files.move(replacement.toPath(), original.toPath(), StandardCopyOption.REPLACE_EXISTING)
-        main {
-            assertEquals(AdjustmentStatus.CONFLICT, model.applyAdjustmentPaste(operation).single().status)
-            assertEquals(AdjustmentStatus.CONFLICT, model.undoAdjustment().single().status)
-        }
+        assertEquals(AdjustmentStatus.CONFLICT, paste(model, operation).single().status)
+        assertEquals(AdjustmentStatus.CONFLICT, undo(model).single().status)
         assertEquals(before, edits.versionedState(identity))
     }
 
@@ -227,7 +317,7 @@ class AdjustmentHistoryInstrumentedTest {
             model.acceptAdjustmentOutcomes(results)
             assertTrue(model.adjustmentReloadRequired)
             assertEquals(EditSaveState.FAILED, model.state.value.saveState)
-            assertTrue(model.reloadSavedAdjustments())
+            model.reloadSavedAdjustments { assertTrue(it) }
         }
         await(model) { it.canExport && it.edits.exposure == 1.5f }
     }
@@ -239,7 +329,7 @@ class AdjustmentHistoryInstrumentedTest {
         val encoded = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(secondID.value.toByteArray())
         val factory: (File) -> EditStore = { directory -> EditStore(directory) { from, to ->
             val values = Properties().also { from.inputStream().use(it::load) }.getProperty("record.$encoded.values")
-            if (failSecond && values?.split(',')?.get(1)?.toFloat() == .5f) throw IOException("injected target B replacement failure")
+            if (failSecond && values?.let { com.rawlab.android.settings.StructuredSettingsCodec.decode(it, "photo_edit").exposure } == .5f) throw IOException("injected target B replacement failure")
             Files.move(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING)
         } }
         try {
@@ -256,18 +346,18 @@ class AdjustmentHistoryInstrumentedTest {
                 while (model.adjustmentTransfer.value.preparing && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(30)
                 val operation = requireNotNull(model.adjustmentTransfer.value.prepared)
                 assertTrue(operation.targets.all { it.error == null })
-                main { assertEquals(listOf(AdjustmentStatus.APPLIED, AdjustmentStatus.FAILED), model.applyAdjustmentPaste(operation).map { it.status }) }
+                assertEquals(listOf(AdjustmentStatus.APPLIED, AdjustmentStatus.FAILED), paste(model, operation).map { it.status })
                 await(model) { it.canExport && it.edits.exposure == .5f }
                 main { model.undoAdjustment() }
                 await(model) { it.canExport && it.edits.exposure == .9f }
                 val receipt = edits.versionedState(firstID)
                 failSecond = false
-                main { assertTrue(model.applyAdjustmentPaste(operation).all { it.status == AdjustmentStatus.APPLIED }) }
+                assertTrue(paste(model, operation).all { it.status == AdjustmentStatus.APPLIED })
                 assertEquals(receipt, edits.versionedState(firstID)); assertEquals(.9f, model.state.value.edits.exposure)
                 assertEquals(.5f, edits.load(secondID)!!.exposure); assertEquals(.6f, edits.load(secondID)!!.geometry.cropWidth)
-                main { assertEquals(listOf(secondID.value), model.performAdjustmentHistory(true, operation.id, true).map { it.targetID }) }
+                assertEquals(listOf(secondID.value), history(model, true, operation.id).map { it.targetID })
                 assertEquals(-.2f, edits.load(secondID)!!.exposure)
-                main { assertEquals(2, model.performAdjustmentHistory(false, operation.id, true).size) }
+                assertEquals(2, history(model, false, operation.id).size)
                 await(model) { it.canExport && it.edits.exposure == .5f }
                 assertEquals(.5f, edits.load(secondID)!!.exposure)
             }
@@ -282,8 +372,10 @@ class AdjustmentHistoryInstrumentedTest {
         val receipt = edits.versionedState(identity)
         val history = model.adjustmentTransactions
         lateinit var preset: com.rawlab.android.presets.AdjustmentPreset
-        main { preset = model.presetStore.create("Native-${UUID.randomUUID()}",
-            model.capturePresetAdjustments(AdjustmentScope.Custom(setOf(AdjustmentField.EXPOSURE)))) }
+        val payload = result<Result<AdjustmentPayload>> {
+            model.capturePresetAdjustments(AdjustmentScope.Custom(setOf(AdjustmentField.EXPOSURE)), it)
+        }.getOrThrow()
+        main { preset = model.presetStore.create("Native-${UUID.randomUUID()}", payload) }
         try {
             assertEquals(setOf(AdjustmentField.EXPOSURE), preset.payload.fields)
             assertEquals(clipboard, model.adjustmentClipboard)
@@ -295,7 +387,7 @@ class AdjustmentHistoryInstrumentedTest {
             val deadline = SystemClock.uptimeMillis() + 60_000
             while (model.adjustmentTransfer.value.preparing && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(30)
             val prepared = requireNotNull(model.adjustmentTransfer.value.prepared)
-            main { assertEquals(AdjustmentStatus.APPLIED, model.applyAdjustmentPaste(prepared).single().status) }
+            assertEquals(AdjustmentStatus.APPLIED, paste(model, prepared).single().status)
             await(model) { it.canExport && it.edits.exposure == 1.25f }
             assertEquals(.2f, edits.load(identity)!!.contrast)
             assertEquals(com.rawlab.android.adjustments.AdjustmentHistoryTransaction.Action.PRESET, model.adjustmentTransactions.last().action)
@@ -313,12 +405,13 @@ class AdjustmentHistoryInstrumentedTest {
         } }) { model, _, _ ->
             main { model.beginDraft(AdjustmentGroup.GEOMETRY) }
             await(model) { it.draftReady }
-            main { assertTrue(runCatching { model.capturePresetAdjustments(AdjustmentScope.All) }.isFailure); model.discardDraft() }
+            assertTrue(result<Result<AdjustmentPayload>> { model.capturePresetAdjustments(AdjustmentScope.All, it) }.isFailure)
+            main { model.discardDraft() }
             await(model) { it.canExport }
             failWrite = true
             main { model.edit(model.state.value.edits.copy(exposure = .7f)) }
             await(model) { it.saveState == EditSaveState.FAILED && !it.rendering }
-            main { assertTrue(runCatching { model.capturePresetAdjustments(AdjustmentScope.All) }.isFailure) }
+            assertTrue(result<Result<AdjustmentPayload>> { model.capturePresetAdjustments(AdjustmentScope.All, it) }.isFailure)
             assertNull(model.adjustmentClipboard)
         }
     }
@@ -330,9 +423,9 @@ class AdjustmentHistoryInstrumentedTest {
         val history = model.adjustmentTransactions
         edits.save(identity, model.state.value.edits.copy(exposure = 1.6f))
         val receipt = edits.versionedState(identity)
-        main { assertTrue("Stale committed snapshot cannot be captured", runCatching {
-            model.capturePresetAdjustments(AdjustmentScope.Custom(setOf(AdjustmentField.EXPOSURE)))
-        }.isFailure) }
+        assertTrue("Stale committed snapshot cannot be captured", result<Result<AdjustmentPayload>> {
+            model.capturePresetAdjustments(AdjustmentScope.Custom(setOf(AdjustmentField.EXPOSURE)), it)
+        }.isFailure)
         assertEquals(receipt, edits.versionedState(identity)); assertEquals(history, model.adjustmentTransactions)
     }
 
@@ -354,20 +447,22 @@ class AdjustmentHistoryInstrumentedTest {
             waitFor { !model.collection.value.busy }
             assertEquals(2, model.collection.value.photos.size)
             val clipboard = model.adjustmentClipboard
-            lateinit var sync: CollectionSynchronization
-            main { sync = model.captureCollectionSynchronization(AdjustmentScope.Custom(setOf(AdjustmentField.EXPOSURE)))!!
-                model.prepareAdjustmentPaste(sync.payload, sync.targets, com.rawlab.android.adjustments.AdjustmentHistoryTransaction.Action.SYNCHRONIZE) }
+            val sync = result<CollectionSynchronization?> {
+                model.captureCollectionSynchronization(AdjustmentScope.Custom(setOf(AdjustmentField.EXPOSURE)), it)
+            }!!
+            main { model.prepareAdjustmentPaste(sync.payload, sync.targets, com.rawlab.android.adjustments.AdjustmentHistoryTransaction.Action.SYNCHRONIZE) }
             waitFor { !model.adjustmentTransfer.value.preparing }
             val prepared = model.adjustmentTransfer.value.prepared!!
             assertEquals(listOf(targetID.value), prepared.targets.map { it.id })
-            main { assertEquals(AdjustmentStatus.APPLIED, model.applyAdjustmentPaste(prepared).single().status) }
+            assertEquals(AdjustmentStatus.APPLIED, paste(model, prepared).single().status)
             assertEquals(clipboard, model.adjustmentClipboard)
             assertEquals(prepared.id, model.collection.value.lastSynchronization)
-            main { model.closeAdjustmentOperation(); assertTrue(model.editCollectionPhoto(targetID.value)) }
+            main { model.closeAdjustmentOperation() }
+            assertTrue(result<Boolean> { model.editCollectionPhoto(targetID.value, it) })
             await(model) { it.canExport && it.photo?.identity == targetID }
             main { model.edit(model.state.value.edits.copy(contrast = .3f)) }
             await(model) { it.canExport }
-            main { assertTrue(model.returnToCollection()) }
+            assertTrue(result<Boolean> { model.returnToCollection(it) })
             assertEquals(setOf(sourceID.value, targetID.value), model.collection.value.selected)
             assertEquals(prepared.id, model.collection.value.lastSynchronization)
             main { model.beginDraft(AdjustmentGroup.GEOMETRY) }
@@ -380,7 +475,7 @@ class AdjustmentHistoryInstrumentedTest {
             waitFor { !model.collection.value.busy }
             assertTrue(review!!.ready); assertEquals(listOf(sourceID.value), review!!.rows.map { it.target.id })
             assertNotNull(model.state.value.draft); assertEquals(2, model.collection.value.selected.size)
-            main { assertTrue(model.resolveCollectionDraft(false)) }
+            main { model.resolveCollectionDraft(false) { assertTrue(it) } }
             await(model) { it.canExport }
             main { model.prepareCollectionExport(emptySet(), com.rawlab.android.format.ExportFormat.JPEG, 256, null) { review = it } }
             waitFor { !model.collection.value.busy }

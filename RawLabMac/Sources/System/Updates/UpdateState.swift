@@ -44,7 +44,7 @@ struct UpdateTaskState: Codable, Equatable {
 
     mutating func beginCheck() -> UUID {
         attempt = UUID(); phase = .checking; failure = nil; choice = .none
-        release = nil; progress = 0; blockers = []; backupPath = nil
+        release = nil; progress = 0; blockers = []; backupPath = nil; previousVersion = nil; previousBuild = nil
         return attempt
     }
 
@@ -100,10 +100,11 @@ struct UpdateTaskState: Codable, Equatable {
         phase = .failed; choice = .none; attempt = UUID(); blockers = []; return true
     }
 
-    mutating func cancel() {
+    mutating func cancel(preservingChoice: Bool = false) {
         guard phase != .installing && phase != .pendingRestart else { return }
         attempt = UUID(); phase = release == nil ? .idle : .available
-        choice = .none; failure = nil; progress = 0; blockers = []
+        if !preservingChoice { choice = .none }
+        failure = nil; progress = 0; blockers = []; backupPath = nil; previousVersion = nil; previousBuild = nil
     }
 
     mutating func disableAutomaticInstallation() {
@@ -111,11 +112,13 @@ struct UpdateTaskState: Codable, Equatable {
     }
 
     mutating func restoreAfterLaunch(version: String, build: String, trusted: Bool) {
-        attempt = UUID(); choice = .none; blockers = []
+        attempt = UUID(); blockers = []
+        if phase != .available { choice = .none }
         guard phase != .failed && phase != .complete && phase != .idle && phase != .available else { return }
         if [.installing, .pendingRestart].contains(phase), trusted,
            release?.version == version, release?.build == build {
             phase = .complete; failure = nil
+            backupPath = nil; previousVersion = nil; previousBuild = nil
         } else {
             failure = UpdateFailure(stage: phase, code: "interrupted", detail: "")
             phase = .failed

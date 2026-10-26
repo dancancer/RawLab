@@ -22,7 +22,9 @@
 "AI 降噪失败：%@" = "Error en la reducción de ruido con IA: %@";
 "AI 降噪已取消。" = "Reducción de ruido con IA cancelada.";
 "AI 降噪暂不支持复制。请选择自定义范围，只复制其他调整。" = "La reducción de ruido con IA aún no se puede copiar. Elige Personalizado para copiar otros ajustes.";
+"AI 降噪结果连续未就绪，请重试。" = "El resultado de la reducción de ruido con IA sigue sin estar disponible. Inténtalo de nuevo.";
 "AI 降噪（实验）" = "Reducción de ruido con IA (experimental)";
+"Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。" = "Las recetas de Agent no admiten la reducción de ruido con IA. Desactívala primero.";
 "DCP 使用三光源 HueSatMap，暂不支持转换。" = "El DCP utiliza un HueSatMap de tres iluminantes, que aún no se admite para la conversión.";
 "DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。" = "El DCP contiene ganancias espaciales, procesamiento HDR o tablas RGB no compatibles y no se puede convertir.";
 "DCP 文件或外观数据超过安全大小限制。" = "El archivo DCP o los datos del look superan el límite de tamaño seguro.";
@@ -40,6 +42,7 @@
 "GitHub 仓库" = "Repositorio de GitHub";
 "HSL" = "HSL";
 "Mac 需要同架构、已签名并公证的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。" = "En Mac se necesita una aplicación firmada y notarizada de la misma arquitectura. En Windows se necesita un instalador Setup x64 para el usuario actual. Migra primero las instalaciones antiguas en ZIP desde la página oficial de versiones a una versión compatible con actualizaciones.";
+"Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。" = "Mac requiere una app de la misma arquitectura y con la misma identidad de firma. Windows requiere una instalación Setup x64 por usuario. Si usas una versión ZIP antigua, instala primero una versión compatible con actualizaciones desde la página oficial.";
 "PNG · 16-bit…" = "PNG · 16 bits…";
 "RAW 照片" = "Foto RAW";
 "RAW 降噪" = "Reducción de ruido RAW";
@@ -325,6 +328,7 @@
 "拉直" = "Enderezar";
 "拍摄参数" = "Parámetros de captura";
 "拍摄时设置" = "Ajuste según la toma";
+"拖动照片调整颜色；退出目标模式后可平移。" = "Arrastra la foto para ajustar el color. Sal del modo dirigido para desplazarla.";
 "拖动边角裁切，拖动画面内移动选区。" = "Arrastre una esquina para recortar; arrastre dentro de la selección para moverla.";
 "指定长边" = "Especificar borde largo";
 "按各自调整导出" = "Exportar con ajustes individuales";
@@ -488,6 +492,7 @@
 "正在准备编辑画布…" = "Preparando el lienzo de edición…";
 "正在取色…" = "Muestreando…";
 "正在处理 RAW 噪声" = "Procesando ruido RAW";
+"正在处理更新，编辑暂不可用。" = "Se está procesando una actualización. La edición no está disponible temporalmente.";
 "正在处理颜色噪声" = "Procesando ruido de color";
 "正在安装更新…" = "Instalando actualización…";
 "正在导出" = "Exportando";
@@ -572,6 +577,7 @@
 "目标所需的外观不可用，请先导入外观。" = "El aspecto necesario no está disponible. Impórtalo primero.";
 "目标无法保留未选参数，请调整复制范围。" = "No se pueden conservar los ajustes no seleccionados. Cambia el alcance de la copia.";
 "目标调整" = "Ajuste selectivo";
+"目标调整：%@" = "Ajuste dirigido: %@";
 "目标：%@ 张照片" = "Fotos de destino: %@";
 "直方图" = "Histograma";
 "确认并冻结任务" = "Confirmar y fijar tarea";
@@ -715,6 +721,7 @@
 "返回调整后" = "Volver a después";
 "返回选片集合" = "Volver a la colección de fotos";
 "这些修改尚未应用。应用并离开，放弃修改，或继续编辑。" = "Estos cambios aún no se han aplicado. Aplícalos y sal, descártalos o sigue editando.";
+"退出目标调整" = "Salir del ajuste dirigido";
 "适合窗口" = "Ajustar a la ventana";
 "选择 %@" = "Seleccionar %@";
 "选择一组照片，再同步调整或逐张微调。" = "Elige fotos para sincronizar los ajustes o afinar cada foto.";

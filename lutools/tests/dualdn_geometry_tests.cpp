@@ -55,24 +55,12 @@ int main() {
         rejects<ModelContractError>([&] { runTiles(input, {8, 2}, 1, [](const Tensor& x) {
             auto bad = x; bad.values[0] = std::numeric_limits<float>::quiet_NaN(); return bad;
         }); });
-        InferenceReport report;
         calls = 0;
-        auto restored = runTilesWithFallback(input, {8, 2}, 1,
-            [&](const Tensor& x) { if (++calls == 2) throw std::runtime_error("test provider failed");
-                auto altered = x; for (auto& v : altered.values) v += 10; return altered; },
-            [](const Tensor& x) { return x; }, report);
-        require(restored.values == input.values && report.fallbackUsed && calls == 2, "fallback mixed partial output");
-        int cpuCalls = 0;
-        rejects<ModelContractError>([&] { runTilesWithFallback(input,{8,2},1,
-            [](Tensor tile) { tile.values[0] = std::numeric_limits<float>::quiet_NaN(); return tile; },
-            [&](const Tensor& tile) { ++cpuCalls; return tile; },report); });
-        require(cpuCalls == 0 && !report.fallbackUsed, "Auto hid invalid model output with CPU fallback");
-        rejects<ModelContractError>([&] { runTilesWithFallback(input,{8,2},1,
-            [](const Tensor&) { return Tensor{4,4,1,std::vector<float>(16)}; },
-            [&](const Tensor& tile) { ++cpuCalls; return tile; },report); });
-        require(cpuCalls == 0, "Auto hid wrong output shape with CPU fallback");
-        rejects<Cancelled>([&] { runTilesWithFallback(input, {8, 2}, 1,
-            [](const Tensor&) -> Tensor { throw Cancelled(); }, [](const Tensor& x) { return x; }, report); });
+        rejects<std::runtime_error>([&] { runTiles(input, {8, 2}, 1, [&](const Tensor& x) {
+            if (++calls == 2) throw std::runtime_error("GPU provider failed");
+            return x;
+        }); });
+        require(calls == 2 && input.values == copy, "GPU failure published partial output or retried another backend");
         const auto low = selectNoiseProfile("ILCE-7CM2", 100);
         const auto high = selectNoiseProfile("ILCE-7CM2", 12800);
         require(low.k == 1.4017175356283488e-05f && low.b == 4.012456627349693e-09f && !low.interpolated,
@@ -98,7 +86,7 @@ int main() {
             if (field == 4) mismatch.black[3] = 511;
             rejects<std::invalid_argument>([&] { selectNoiseProfile(mismatch); });
         }
-        std::cout << "PASS DualDn CFA, normalization, tiling, cancellation, fallback and noise profile\n";
+        std::cout << "PASS DualDn CFA, normalization, tiling, cancellation, GPU failure and noise profile\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

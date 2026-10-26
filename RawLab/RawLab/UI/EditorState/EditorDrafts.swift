@@ -250,7 +250,7 @@ extension ContentView {
     }
 
     func completeAdjustmentExpansion(_ expanded: Bool) {
-        if !expanded { cancelSliderInteraction() }
+        if !expanded && !hslTargetEnabled { cancelSliderInteraction() }
         if expanded {
             if let tool = collapsedEditorTool { activateEditorTool(tool) }
         } else if isEditorDraftActive {

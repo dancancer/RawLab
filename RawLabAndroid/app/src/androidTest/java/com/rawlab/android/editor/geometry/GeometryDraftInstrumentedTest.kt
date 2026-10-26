@@ -146,7 +146,7 @@ class GeometryDraftInstrumentedTest {
                 compose.runOnUiThread {
                     model.changeDraft(model.state.value.visibleEdits.copy(geometry = beforeTransform.copy(quarterTurns = 1, straightenDegrees = 7f)))
                     assertFalse(model.state.value.canApplyDraft)
-                    assertFalse(model.beginExport())
+                    model.beginExport { assertFalse(it) }
                     model.beginBatch()
                     assertNull(model.batch.value)
                     newestCrop = model.state.value.visibleEdits.geometry.moveCrop(.03f, -.02f)

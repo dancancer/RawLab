@@ -115,7 +115,7 @@ data class LensSettings(val distortion: Boolean = false, val tca: Boolean = fals
 enum class DenoisePreset { DETAIL, CLEAN, CUSTOM }
 
 class HslSettings(values: List<Float> = List(24) { 0f }) {
-    private val values = values.toList()
+    private val values = values.map { it.canonicalZero() }
     init { require(this.values.size == 24 && this.values.all { it.isFinite() && it in -100f..100f }) }
     val isIdentity get() = values.all { it == 0f }
     fun packed() = values.toFloatArray()
@@ -185,7 +185,7 @@ data class PhotoEffectsSettings(
     fun withEffect(parameter: PhotoEffectParameter, value: Float): PhotoEffectsSettings {
         if (!value.isFinite()) return this
         val rounded = if (value >= 0f) floor(value + .5f) else ceil(value - .5f)
-        val normalized = rounded.coerceIn(parameter.range.start, parameter.range.endInclusive)
+        val normalized = rounded.coerceIn(parameter.range.start, parameter.range.endInclusive).canonicalZero()
         return when (parameter) {
             PhotoEffectParameter.VIGNETTE_AMOUNT -> copy(vignetteAmount = normalized)
             PhotoEffectParameter.VIGNETTE_MIDPOINT -> copy(vignetteMidpoint = normalized)
@@ -292,7 +292,7 @@ internal fun EditSettings.independentForReset(
         contrast = scaledContrast, saturation = scaledSaturation, hsl = renderHsl,
         customWb = if (convertWb) true else customWb,
         temperature = if (convertWb) before.temperature else temperature,
-        tint = if (convertWb) before.tint else if (input == PhotoInputKind.RAW && recipeID != null) 0f else tint)
+        tint = if (convertWb) before.tint else if (input == PhotoInputKind.RAW && recipeID != null) 0f else tint).canonicalZeros()
     val after = candidate.resetRenderValues(input, asShotTemperature, asShotTint) ?: return null
     return candidate.takeIf { before.core.size == after.core.size && before.core.zip(after.core).all { (a, b) -> a == b } }
 }
