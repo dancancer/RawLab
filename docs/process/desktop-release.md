@@ -103,9 +103,15 @@ prepared before packaging.
 The script requires all inputs, publishes a fresh self-contained x64 app,
 copies models/runtimes/licenses, validates the packaged model, and only then
 runs pinned vpk 1.2.161 for `RawLab.Desktop` / `stable`. Keep the generated
-current-user Setup, full nupkg and manual-install ZIP. ZIP is not eligible for
-automatic installation. `-NoRumSdk` explicitly selects an offline validation
-build and must be recorded when used.
+current-user Setup, full nupkg and manual-install ZIP
+(`RawLab-Windows-<version>-x64.zip`). ZIP is not eligible for automatic
+installation. `-NoRumSdk` explicitly selects an offline validation build and
+must be recorded when used.
+
+Velopack also writes `RawLab.Desktop-stable-Portable.zip`, `RELEASES-stable`,
+`releases.stable.json` and `assets.stable.json`. Do not upload them: the
+updater trusts only the signed `windows-stable.json`, and the portable package
+duplicates the manual-install ZIP.
 
 Sign and verify the release description using the same verifier as the app:
 
