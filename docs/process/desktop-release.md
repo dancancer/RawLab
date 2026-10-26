@@ -7,7 +7,8 @@ release branch. Ordinary development builds keep their existing defaults.
 
 ## Shared model input
 
-Release packages contain DualDn and Restormer, with GPU neural inference only.
+Apple Silicon macOS and Windows release packages contain DualDn and Restormer,
+with GPU neural inference only. Intel macOS packages contain no AI component.
 DualDn retains CC BY-NC 4.0; Restormer retains its Academic Public License for
 noncommercial use. Keep their notices, model provenance and conversion records.
 The deterministic ISP can use CPU; there is no CPU neural-inference fallback.
@@ -46,13 +47,16 @@ Set these inputs before invoking `RAWLAB_RELEASE=1 bash RawLabMac/build.sh`:
 - `RAWLAB_CODESIGN_IDENTITY`; optionally `RAWLAB_CODESIGN_KEYCHAIN` for an isolated keychain.
 - `RAWLAB_UPDATE_CERTIFICATE_SHA256` for the fixed self-signed leaf certificate.
 - `RAWLAB_SPARKLE_PUBLIC_KEY`, the base64 EdDSA public key.
-- `RAWLAB_DUALDN_MODEL_DIR`, `RAWLAB_DUALDN_MANIFEST_SHA256`, `RAWLAB_ONNXRUNTIME_ROOT`.
+- For `arm64` only: `RAWLAB_DUALDN_MODEL_DIR`, `RAWLAB_DUALDN_MANIFEST_SHA256`,
+  `RAWLAB_ONNXRUNTIME_ROOT`.
 - `RAWLAB_ARCH=arm64` or `x86_64`, as appropriate for the requested package.
 
-Release mode requires the complete model package and enables AI compilation.
-The current runtime exposes AI on Apple Silicon with an available Core ML GPU;
-Intel packages do not fall back to CPU AI. Intel application and updater
-acceptance remains separate from Apple Silicon GPU validation.
+Apple Silicon release mode requires the complete model package and enables AI
+compilation; the runtime exposes AI when a Core ML GPU is available. Intel has no
+supported GPU backend, so an `x86_64` release build disables AI compilation and
+omits the models, ONNX Runtime and AI controls; it rejects `RAWLAB_DUALDN=1`.
+Intel application and updater acceptance remains separate from Apple Silicon GPU
+validation.
 
 The script builds into a fresh version/build directory, sets the public update
 configuration, signs Mach-O files and nested bundles from inside out, verifies

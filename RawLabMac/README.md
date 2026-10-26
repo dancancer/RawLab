@@ -6,10 +6,10 @@ A native SwiftUI/AppKit desktop editor sharing the C++ pipeline with the CLI and
 
 ## 功能预览 / Preview
 
-正式发布构建要求打包 DualDn 与 Restormer，并只使用 GPU AI 后端；开发构建默认关闭。
+Apple Silicon 正式发布构建要求打包 DualDn 与 Restormer，并只使用 GPU AI 后端；Intel 发布构建不含 AI；开发构建默认关闭。
 适用 RAW、模型准备、后台处理、缓存和已知限制见 [DualDn 构建与使用说明](../lutools/tools/dualdn/README.md)，
 签名与发布配置见[桌面发布流程](../docs/process/desktop-release.md)。
-Release builds require packaged DualDn/Restormer models and a GPU AI backend.
+Apple Silicon release builds require packaged DualDn/Restormer models and a GPU AI backend; Intel release builds exclude AI.
 Development builds keep AI optional. The linked guides cover inputs, packaging and validation limits.
 
 单张及批量导出新增“DNG · 渲染型”。完整渲染当前外观、白平衡、曝光、明暗、HSL、

@@ -9,7 +9,7 @@ import re
 import sys
 
 
-def configuration(env=os.environ):
+def configuration(env=os.environ, arch="arm64"):
     def required(name):
         value = env.get(name, "").strip()
         if not value:
@@ -30,13 +30,17 @@ def configuration(env=os.environ):
         raise ValueError("Invalid signing certificate SHA-256")
     if team and not re.fullmatch(r"[A-Z0-9]{10}", team):
         raise ValueError("Invalid Developer ID Team ID")
-    model = Path(required("RAWLAB_DUALDN_MODEL_DIR"))
-    expected = required("RAWLAB_DUALDN_MANIFEST_SHA256").lower()
-    if hashlib.sha256((model / "manifest.json").read_bytes()).hexdigest() != expected:
-        raise ValueError("DualDn manifest SHA-256 does not match the release input")
-    for resource in ("raw.mlmodelc", "rgb.mlmodelc", "blind_rgb.mlmodelc"):
-        if not (model / resource).is_dir():
-            raise ValueError(f"Release package is missing native GPU model {resource}")
+    if arch not in ("arm64", "x86_64"):
+        raise ValueError("Release architecture must be arm64 or x86_64")
+    # 只有 Apple Silicon 包含 GPU AI；Intel 发布包不带模型。
+    if arch == "arm64":
+        model = Path(required("RAWLAB_DUALDN_MODEL_DIR"))
+        expected = required("RAWLAB_DUALDN_MANIFEST_SHA256").lower()
+        if hashlib.sha256((model / "manifest.json").read_bytes()).hexdigest() != expected:
+            raise ValueError("DualDn manifest SHA-256 does not match the release input")
+        for resource in ("raw.mlmodelc", "rgb.mlmodelc", "blind_rgb.mlmodelc"):
+            if not (model / resource).is_dir():
+                raise ValueError(f"Release package is missing native GPU model {resource}")
     values = dict(CFBundleShortVersionString=version, CFBundleVersion=build, SUPublicEDKey=key,
                   SUVerifyUpdateBeforeExtraction=True, SURequireSignedFeed=True,
                   SUSignedFeedFailureExpirationInterval=0)
@@ -45,12 +49,14 @@ def configuration(env=os.environ):
 
 
 def main():
-    values = configuration()
-    if sys.argv[1:] == ["validate"]:
+    usage = "Usage: macos_config.py validate arm64|x86_64 | configure Info.plist arm64|x86_64"
+    if len(sys.argv) == 3 and sys.argv[1] == "validate":
+        configuration(arch=sys.argv[2])
         return
-    if len(sys.argv) != 4 or sys.argv[1] != "configure" or sys.argv[3] not in ("arm64", "x86_64"):
-        raise ValueError("Usage: macos_config.py validate | configure Info.plist arm64|x86_64")
+    if len(sys.argv) != 4 or sys.argv[1] != "configure":
+        raise ValueError(usage)
     path = Path(sys.argv[2]); arch = sys.argv[3]
+    values = configuration(arch=arch)
     with path.open("rb") as stream:
         info = plistlib.load(stream)
     info.pop("RawLabUpdateCertificateSHA256", None); info.pop("RawLabUpdateTeamID", None)

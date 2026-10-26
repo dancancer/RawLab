@@ -48,8 +48,8 @@ release notes include assets, installation requirements and validation limits.
 
 ### Desktop AI denoising and updates
 
-- macOS and Windows release packages include DualDn models and their inference
-  runtimes. AI denoising requires a full-resolution first calculation; cached
+- Apple Silicon macOS and Windows release packages include DualDn models and
+  their inference runtimes. AI denoising requires a full-resolution first calculation; cached
   results are reused for subsequent exposure and look changes. The model and
   runtime files increase download size. Per-architecture package sizes and
   measured first-run time and memory requirements belong to the final release
@@ -58,7 +58,8 @@ release notes include assets, installation requirements and validation limits.
   macOS 14 or later, or hardware DirectML/D3D12 on Windows x64. AI CPU mode is
   unsupported and Auto does not retry neural inference on CPU. Ordinary photo
   processing and the deterministic ISP may still use CPU. iOS and Android do
-  not include AI denoising in this release. Intel builds do not support AI denoising.
+  not include AI denoising in this release. Intel Mac packages do not include AI
+  denoising, its models or its runtime.
 - DualDn weights and converted models remain under CC BY-NC 4.0, and the
   Restormer generic RGB model keeps its upstream Academic Public License. Both
   are limited to noncommercial use, ship with upstream attribution and
