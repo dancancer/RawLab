@@ -12,17 +12,19 @@ struct AtmosphereOptions {
     bool active() const { return clarity != 0 || dehaze != 0; }
 };
 
-// 固定源图分析，不随窗口、强度和下游调色变化。内容签名也覆盖 buffer 原地更新。
+// 完整源尺寸固定分析尺度；内容签名和工作尺寸区分视口近似与完整源分析。
 struct DehazeAnalysis {
     uint64_t fingerprint = 0;
     uint64_t builds = 0;
     int sourceWidth = 0, sourceHeight = 0;
+    int workingWidth = 0, workingHeight = 0;
     int width = 0, height = 0;
     RGB airlight;
     std::vector<float> slope, intercept, variance;
 };
 
-void applyDehaze(ImageData& image, float amount, DehazeAnalysis* cache = nullptr);
-void applyClarity(ImageData& image, float amount);
+void applyDehaze(ImageData& image, float amount, DehazeAnalysis* cache = nullptr,
+    int sourceWidth = 0, int sourceHeight = 0);
+void applyClarity(ImageData& image, float amount, int sourceWidth = 0, int sourceHeight = 0);
 
 } // namespace sony2fuji

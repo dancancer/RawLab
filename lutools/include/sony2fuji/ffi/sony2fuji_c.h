@@ -561,8 +561,9 @@ sony2fuji_status sony2fuji_session_set_tone_controls(
 
 // Additive CPU v1 stages; request v2 and photo_effects v1 stay unchanged.
 // Dehaze runs after the look, clarity after denoising and before sharpening.
-// Nonzero uses the complete source for preview/export consistency. GPU Auto
-// uses CPU for the whole render; Force returns UNSUPPORTED. Invalid configs
+// FINAL/export use the complete source; viewport PREVIEW+BUFFER may reduce
+// working pixels at the full-source analysis scale. GPU Auto uses CPU for the
+// whole render; Force returns UNSUPPORTED. Invalid configs
 // retain previous state. Reused sessions must set both fields, including zero.
 sony2fuji_status sony2fuji_session_set_atmosphere(
     sony2fuji_session* session, const sony2fuji_atmosphere_config* config
