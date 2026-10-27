@@ -1,4 +1,5 @@
 #include "photo_tone_controls.h"
+#include "parallel_pixels.h"
 #include <algorithm>
 #include <cmath>
 
@@ -87,6 +88,8 @@ void applyBlackWhite(ImageData& image, const ToneControlsOptions& options) {
 
 void applyVibrance(ImageData& image, const ToneControlsOptions& options) {
     if (options.vibrance == 0) return;
-    for (auto& p : image.pixels) p = applyVibrance(p,options);
+    parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+        for (size_t i=first;i<last;++i) image.pixels[i]=applyVibrance(image.pixels[i],options);
+    });
 }
 } // namespace sony2fuji

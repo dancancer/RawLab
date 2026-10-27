@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include "core/parallel_pixels.h"
 #include <cmath>
 #include <cstring>
 #include <cstdlib>
@@ -700,11 +701,12 @@ void applySharpening(sony2fuji::ImageData& image, float amount) {
     });
 }
 
-void applyDetailAdjustments(sony2fuji::ImageData& image, const sony2fuji_request& request, float clarity) {
+void applyDetailAdjustments(sony2fuji::ImageData& image, const sony2fuji_request& request, float clarity,
+    int sourceWidth, int sourceHeight) {
     if (request.noise_reduction > 0.0f) {
         applyNoiseReduction(image, request.noise_reduction);
     }
-    sony2fuji::applyClarity(image, clarity);
+    sony2fuji::applyClarity(image, clarity, sourceWidth, sourceHeight);
     if (request.sharpening > 0.0f) {
         applySharpening(image, request.sharpening);
     }
@@ -746,7 +748,12 @@ sony2fuji_status applyPhotoLook(sony2fuji::ImageData& image,
     float strength, bool displayInput, const sony2fuji::GpuConfig& config) {
     const auto encode = displayInput ? sony2fuji::GammaConverter::applySRGBGamma : sony2fuji::neutralDisplay;
     if (!lut && !dcp) {
-        for (auto& p : image.pixels) p = sony2fuji::RGB(encode(p.r), encode(p.g), encode(p.b));
+        sony2fuji::parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+            for (size_t i = first; i < last; ++i) {
+                auto& p = image.pixels[i];
+                p = sony2fuji::RGB(encode(p.r), encode(p.g), encode(p.b));
+            }
+        });
         return SONY2FUJI_STATUS_OK;
     }
     sony2fuji::GammaConverter::FLog2Diagnostics diagnostics;
@@ -1703,7 +1710,7 @@ static sony2fuji_status processImpl(
     const bool geometryActive = session->geometry.active();
     if (geometryActive && session->gpu_config.mode == sony2fuji::GpuMode::Force)
         return SONY2FUJI_STATUS_UNSUPPORTED;
-    const bool viewportPreview = !atmosphereActive && session->viewport_preview && local.intent == SONY2FUJI_INTENT_PREVIEW &&
+    bool viewportPreview = session->viewport_preview && local.intent == SONY2FUJI_INTENT_PREVIEW &&
         local.output_target == SONY2FUJI_TARGET_BUFFER;
 #if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
     const bool cpuOnlyStages = atmosphereActive || !session->tone_curve.gpuSupported();
@@ -1746,6 +1753,8 @@ static sony2fuji_status processImpl(
     bool is_linear = false;
     if (local.input_type == SONY2FUJI_INPUT_RAW) {
         auto raw_request = local;
+        // Atmosphere 的分析尺度和 native 元信息仍以精确 RAW 为准；交互和 settled
+        // 视口共用该缓存，只缩小后续工作图，避免 half-size 解码改变空间尺度。
         if (geometryActive || atmosphereActive) raw_request.intent = SONY2FUJI_INTENT_FINAL;
         status = loadRawImage(session, raw_request, image, &color_space, &is_linear, false);
         if (status == SONY2FUJI_STATUS_OK && !viewportPreview && (!gpuPipeline || waveletActive)) {
@@ -1764,6 +1773,7 @@ static sony2fuji_status processImpl(
     status = ensureLinear(image, color_space, &is_linear);
     if (status != SONY2FUJI_STATUS_OK) return status;
     if (color_space == SONY2FUJI_COLOR_SONY_NATIVE) return SONY2FUJI_STATUS_UNSUPPORTED;
+    const int atmosphereSourceWidth = image.width, atmosphereSourceHeight = image.height;
     const auto native = sony2fuji::geometryOutputSize(image.width, image.height, session->geometry);
     const uint32_t native_width = native.first, native_height = native.second;
 
@@ -1771,26 +1781,32 @@ static sony2fuji_status processImpl(
         uint32_t width, height;
         status = computeTargetSize(local, native_width, native_height, &width, &height);
         if (status != SONY2FUJI_STATUS_OK) return status;
-        const auto& source = local.input_type == SONY2FUJI_INPUT_RAW ? session->raw_cache : image;
-        std::pair<int, int> sourceSize;
-        if (geometryActive) {
-            sourceSize = sony2fuji::geometryViewportSourceSize(source.width, source.height,
-                session->geometry, width, height);
+        // Atmosphere 只近似缩小预览；原生及放大请求保留原请求的尺寸和精确输出。
+        if (atmosphereActive && width >= native_width && height >= native_height) {
+            viewportPreview = false;
+            if (local.input_type == SONY2FUJI_INPUT_RAW) image = session->raw_cache;
         } else {
-            const double scale = std::min({1.0, double(source.width) / width, double(source.height) / height});
-            width = std::max(1u, static_cast<uint32_t>(std::lround(width * scale)));
-            height = std::max(1u, static_cast<uint32_t>(std::lround(height * scale)));
-            sourceSize = {width, height};
+            const auto& source = local.input_type == SONY2FUJI_INPUT_RAW ? session->raw_cache : image;
+            std::pair<int, int> sourceSize;
+            if (geometryActive) {
+                sourceSize = sony2fuji::geometryViewportSourceSize(source.width, source.height,
+                    session->geometry, width, height);
+            } else {
+                const double scale = std::min({1.0, double(source.width) / width, double(source.height) / height});
+                width = std::max(1u, static_cast<uint32_t>(std::lround(width * scale)));
+                height = std::max(1u, static_cast<uint32_t>(std::lround(height * scale)));
+                sourceSize = {width, height};
+            }
+            // 新图可能比上一次视口需求小；后续阶段也必须沿用已限制的尺寸。
+            local.preview_long_edge = 0;
+            local.size_mode = SONY2FUJI_SIZE_EXACT;
+            local.target_width = width; local.target_height = height;
+            // RAW 缓存保持不变，直接读取源像素，避免先拷贝完整大图。
+            if (sourceSize.first != source.width || sourceSize.second != source.height)
+                image = resizeBilinear(source, sourceSize.first, sourceSize.second);
+            else if (local.input_type == SONY2FUJI_INPUT_RAW)
+                image = source;
         }
-        // 新图可能比上一次视口需求小；后续阶段也必须沿用已限制的尺寸。
-        local.preview_long_edge = 0;
-        local.size_mode = SONY2FUJI_SIZE_EXACT;
-        local.target_width = width; local.target_height = height;
-        // RAW 缓存保持不变，直接读取源像素，避免先拷贝完整大图。
-        if (sourceSize.first != source.width || sourceSize.second != source.height)
-            image = resizeBilinear(source, sourceSize.first, sourceSize.second);
-        else if (local.input_type == SONY2FUJI_INPUT_RAW)
-            image = source;
     }
 
     // Absolute RAW WB already ran in camera space. Legacy RGB controls compensate
@@ -1948,7 +1964,8 @@ static sony2fuji_status processImpl(
         lookConfig.mode = sony2fuji::GpuMode::Off;
     status = applyPhotoLook(image, lut, dcp, local.lut_strength, displayInput, lookConfig);
     if (status != SONY2FUJI_STATUS_OK) return status;
-    sony2fuji::applyDehaze(image, session->atmosphere.dehaze, &session->dehaze_analysis);
+    sony2fuji::applyDehaze(image, session->atmosphere.dehaze, &session->dehaze_analysis,
+        atmosphereSourceWidth, atmosphereSourceHeight);
     sony2fuji::applyBlackWhite(image, session->tone_controls);
     applyToneAdjustments(image, local, session->tone_curve);
     sony2fuji::applyVibrance(image, session->tone_controls);
@@ -1961,7 +1978,7 @@ static sony2fuji_status processImpl(
     sony2fuji::applyColorGrading(image, session->color_grading);
     const auto chromaResult = sony2fuji::applyChromaDenoiseWorking(image, chromaMode);
     if (chromaResult != sony2fuji::ErrorCode::Success) return mapError(chromaResult);
-    applyDetailAdjustments(image, local, session->atmosphere.clarity);
+    applyDetailAdjustments(image, local, session->atmosphere.clarity, atmosphereSourceWidth, atmosphereSourceHeight);
     sony2fuji::applyPhotoEffects(image, session->photo_effects);
 
     return finishOutput(session, local, image, out_buffer, native_width, native_height);

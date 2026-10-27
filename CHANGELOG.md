@@ -19,7 +19,9 @@ release notes include assets, installation requirements and validation limits.
 - Black point, white point and vibrance; shadow/midtone/highlight color
   grading; a multi-point tone curve that keeps the previous S-curve control;
   clarity and dehaze in both directions. Agent recipes and exports support the
-  new adjustments.
+  new adjustments. Clarity and dehaze previews refresh immediately; the
+  fit-to-window view approximates them at screen size, while 100% view and
+  export use the full image.
 - Pick a color on the photo to adjust the matching HSL range directly.
 - Photo collections: sync adjustments across photos, fine-tune one photo, and
   export each photo with its own frozen settings after confirmation.

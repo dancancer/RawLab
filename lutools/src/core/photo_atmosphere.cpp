@@ -1,4 +1,5 @@
 #include "photo_atmosphere.h"
+#include "parallel_pixels.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -23,27 +24,30 @@ RGB encoded(const RGB& p) {
 }
 
 // 面积平均先解 sRGB，避免高频纹理混叠进中尺度信号；完整源图只读一次。
-ImageData analysisImage(const ImageData& source) {
-    const double scale=std::min(1.,double(analysisLongEdge)/std::max(source.width,source.height));
-    const int width=std::max(1,int(std::lround(source.width*scale)));
-    const int height=std::max(1,int(std::lround(source.height*scale)));
+ImageData analysisImage(const ImageData& source, int sourceWidth, int sourceHeight) {
+    const double scale=std::min(1.,double(analysisLongEdge)/std::max(sourceWidth,sourceHeight));
+    const int width=std::max(1,int(std::lround(sourceWidth*scale)));
+    const int height=std::max(1,int(std::lround(sourceHeight*scale)));
     ImageData result(width,height);
     const double sx=double(source.width)/width, sy=double(source.height)/height;
-    for(int y=0;y<height;++y) for(int x=0;x<width;++x) {
-        const double left=x*sx,right=(x+1)*sx,top=y*sy,bottom=(y+1)*sy;
-        double r=0,g=0,b=0;
-        for(int iy=int(top);iy<std::min(source.height,int(std::ceil(bottom)));++iy)
-            for(int ix=int(left);ix<std::min(source.width,int(std::ceil(right)));++ix) {
-                const double weight=(std::min(right,double(ix+1))-std::max(left,double(ix)))*
-                    (std::min(bottom,double(iy+1))-std::max(top,double(iy)));
-                const auto& p=source.at(ix,iy);
-                // 扩展工作值仅在统计里限幅；应用阶段保留其连续的工作范围。
-                r+=weight*decode(std::clamp(p.r,0.f,1.f));
-                g+=weight*decode(std::clamp(p.g,0.f,1.f));
-                b+=weight*decode(std::clamp(p.b,0.f,1.f));
-            }
-        result.at(x,y)=RGB(r/(sx*sy),g/(sx*sy),b/(sx*sy));
-    }
+    parallelPixelRanges(result.pixels.size(), [&](size_t first, size_t last) {
+        for(size_t index=first;index<last;++index) {
+            const int y=static_cast<int>(index / width), x=static_cast<int>(index % width);
+            const double left=x*sx,right=(x+1)*sx,top=y*sy,bottom=(y+1)*sy;
+            double r=0,g=0,b=0;
+            for(int iy=int(top);iy<std::min(source.height,int(std::ceil(bottom)));++iy)
+                for(int ix=int(left);ix<std::min(source.width,int(std::ceil(right)));++ix) {
+                    const double weight=(std::min(right,double(ix+1))-std::max(left,double(ix)))*
+                        (std::min(bottom,double(iy+1))-std::max(top,double(iy)));
+                    const auto& p=source.at(ix,iy);
+                    // 扩展工作值仅在统计里限幅；应用阶段保留其连续的工作范围。
+                    r+=weight*decode(std::clamp(p.r,0.f,1.f));
+                    g+=weight*decode(std::clamp(p.g,0.f,1.f));
+                    b+=weight*decode(std::clamp(p.b,0.f,1.f));
+                }
+            result.at(x,y)=RGB(r/(sx*sy),g/(sx*sy),b/(sx*sy));
+        }
+    });
     return result;
 }
 std::vector<float> lumaPlane(const ImageData& image) {
@@ -182,9 +186,10 @@ RGB softBoundedMove(const RGB& p,const RGB& delta) {
 bool AtmosphereOptions::valid() const {
     return std::isfinite(clarity) && std::abs(clarity)<=1 && std::isfinite(dehaze) && std::abs(dehaze)<=1;
 }
-void applyClarity(ImageData& image,float amount) {
+void applyClarity(ImageData& image,float amount,int sourceWidth,int sourceHeight) {
     if(amount==0 || image.width<=0 || image.height<=0) return;
-    const auto analysis=analysisImage(image);
+    if(sourceWidth<=0 || sourceHeight<=0) { sourceWidth=image.width; sourceHeight=image.height; }
+    const auto analysis=analysisImage(image,sourceWidth,sourceHeight);
     const int width=analysis.width,height=analysis.height;
     const int radius=std::max(1,int(std::lround(std::max(width,height)*.01)));
     const auto guide=lumaPlane(analysis);
@@ -196,56 +201,65 @@ void applyClarity(ImageData& image,float amount) {
         const float edge=1/(1+base.variance[i]/.002f);
         residual[i]=std::clamp(difference,-.08f,.08f)*edge*edge*smooth(std::abs(difference)/.001f);
     }
-    for(int y=0;y<image.height;++y) for(int x=0;x<image.width;++x) {
-        auto& encodedPixel=image.at(x,y); if(!finite(encodedPixel)) continue;
-        const bool bounded=inGamut(encodedPixel);
-        const auto p=linear(encodedPixel); const float luma=luminance(p);
-        const float ax=(x+.5f)*width/image.width-.5f,ay=(y+.5f)*height/image.height-.5f;
-        const float coarse=sample(medium,width,height,ax,ay);
-        const float fineGuard=1-smooth(std::abs(luma-coarse)/.08f);
-        const float lightGuard=smooth((luma-.01f)/.12f)*(1-smooth((luma-.65f)/.3f));
-        const float delta=1.5f*amount*sample(residual,width,height,ax,ay)*fineGuard*lightGuard;
-        if(std::abs(delta)<1e-8f || luma<=0) continue;
-        const float gain=std::max(-1.f,delta/luma);
-        if (bounded) encodedPixel=encoded(boundedMove(p,RGB(p.r*gain,p.g*gain,p.b*gain)));
-        // 收缩扩展工作值仍连续；向外扩张在色域边界停止，不能先截断旧 tone/LUT。
-        else if (gain<0) encodedPixel=encodedExtended(RGB(p.r*(1+gain),p.g*(1+gain),p.b*(1+gain)));
-    }
+    parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+        for(size_t index=first;index<last;++index) {
+            const int y=static_cast<int>(index / image.width), x=static_cast<int>(index % image.width);
+            auto& encodedPixel=image.at(x,y); if(!finite(encodedPixel)) continue;
+            const bool bounded=inGamut(encodedPixel);
+            const auto p=linear(encodedPixel); const float luma=luminance(p);
+            const float ax=(x+.5f)*width/image.width-.5f,ay=(y+.5f)*height/image.height-.5f;
+            const float coarse=sample(medium,width,height,ax,ay);
+            const float fineGuard=1-smooth(std::abs(luma-coarse)/.08f);
+            const float lightGuard=smooth((luma-.01f)/.12f)*(1-smooth((luma-.65f)/.3f));
+            const float delta=1.5f*amount*sample(residual,width,height,ax,ay)*fineGuard*lightGuard;
+            if(std::abs(delta)<1e-8f || luma<=0) continue;
+            const float gain=std::max(-1.f,delta/luma);
+            if (bounded) encodedPixel=encoded(boundedMove(p,RGB(p.r*gain,p.g*gain,p.b*gain)));
+            // 收缩扩展工作值仍连续；向外扩张在色域边界停止，不能先截断旧 tone/LUT。
+            else if (gain<0) encodedPixel=encodedExtended(RGB(p.r*(1+gain),p.g*(1+gain),p.b*(1+gain)));
+        }
+    });
 }
-void applyDehaze(ImageData& image,float amount,DehazeAnalysis* cache) {
+void applyDehaze(ImageData& image,float amount,DehazeAnalysis* cache,int sourceWidth,int sourceHeight) {
     if(amount==0 || image.width<=0 || image.height<=0) return;
-    const auto analysis=analysisImage(image);
+    if(sourceWidth<=0 || sourceHeight<=0) { sourceWidth=image.width; sourceHeight=image.height; }
+    const auto analysis=analysisImage(image,sourceWidth,sourceHeight);
     DehazeAnalysis local; auto& state=cache ? *cache : local;
     const auto key=fingerprint(analysis);
-    if(state.slope.empty() || state.fingerprint!=key || state.sourceWidth!=image.width || state.sourceHeight!=image.height) {
+    if(state.slope.empty() || state.fingerprint!=key || state.sourceWidth!=sourceWidth || state.sourceHeight!=sourceHeight ||
+        state.workingWidth!=image.width || state.workingHeight!=image.height) {
         analyzeDehaze(analysis,state); state.fingerprint=key;
-        state.sourceWidth=image.width;state.sourceHeight=image.height;
+        state.sourceWidth=sourceWidth;state.sourceHeight=sourceHeight;
+        state.workingWidth=image.width;state.workingHeight=image.height;
     }
     const auto a=state.airlight;
-    for(int y=0;y<image.height;++y) for(int x=0;x<image.width;++x) {
-        auto& encodedPixel=image.at(x,y); if(!finite(encodedPixel)) continue;
-        const bool bounded=inGamut(encodedPixel);
-        if (amount>0 && !bounded) continue;
-        const auto p=linear(encodedPixel); const float luma=luminance(p);
-        const float ax=(x+.5f)*state.width/image.width-.5f,ay=(y+.5f)*state.height/image.height-.5f;
-        const float t=std::clamp(sample(state.slope,state.width,state.height,ax,ay)*luma+
-            sample(state.intercept,state.width,state.height,ax,ay),.5f,1.f);
-        RGB delta;
-        if(amount>0) {
-            const float variance=sample(state.variance,state.width,state.height,ax,ay);
-            const float flatBright=smooth((luma-.08f)/.22f)*(1-smooth(variance/.001f));
-            // 有理暗部权重避免 smoothstep 的陡导数在灰阶渐变里造成反转。
-            const float protect=(luma/(luma+.03f))*(1-.8f*smooth((luma-.5f)/.4f))*(1-.75f*flatBright);
-            const float effective=std::max(.5f,1-amount*protect*(1-t));
-            const float gain=1/effective-1;
-            delta=RGB((p.r-a.r)*gain,(p.g-a.g)*gain,(p.b-a.b)*gain);
-        } else {
-            const float haze=-amount*.45f*(.25f+.75f*(1-t));
-            delta=RGB((a.r-p.r)*haze,(a.g-p.g)*haze,(a.b-p.b)*haze);
+    parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+        for(size_t index=first;index<last;++index) {
+            const int y=static_cast<int>(index / image.width), x=static_cast<int>(index % image.width);
+            auto& encodedPixel=image.at(x,y); if(!finite(encodedPixel)) continue;
+            const bool bounded=inGamut(encodedPixel);
+            if (amount>0 && !bounded) continue;
+            const auto p=linear(encodedPixel); const float luma=luminance(p);
+            const float ax=(x+.5f)*state.width/image.width-.5f,ay=(y+.5f)*state.height/image.height-.5f;
+            const float t=std::clamp(sample(state.slope,state.width,state.height,ax,ay)*luma+
+                sample(state.intercept,state.width,state.height,ax,ay),.5f,1.f);
+            RGB delta;
+            if(amount>0) {
+                const float variance=sample(state.variance,state.width,state.height,ax,ay);
+                const float flatBright=smooth((luma-.08f)/.22f)*(1-smooth(variance/.001f));
+                // 有理暗部权重避免 smoothstep 的陡导数在灰阶渐变里造成反转。
+                const float protect=(luma/(luma+.03f))*(1-.8f*smooth((luma-.5f)/.4f))*(1-.75f*flatBright);
+                const float effective=std::max(.5f,1-amount*protect*(1-t));
+                const float gain=1/effective-1;
+                delta=RGB((p.r-a.r)*gain,(p.g-a.g)*gain,(p.b-a.b)*gain);
+            } else {
+                const float haze=-amount*.45f*(.25f+.75f*(1-t));
+                delta=RGB((a.r-p.r)*haze,(a.g-p.g)*haze,(a.b-p.b)*haze);
+            }
+            if(std::max({std::abs(delta.r),std::abs(delta.g),std::abs(delta.b)})<1e-8f) continue;
+            encodedPixel=bounded ? encoded(amount>0 ? softBoundedMove(p,delta) : boundedMove(p,delta)) :
+                encodedExtended(RGB(p.r+delta.r,p.g+delta.g,p.b+delta.b));
         }
-        if(std::max({std::abs(delta.r),std::abs(delta.g),std::abs(delta.b)})<1e-8f) continue;
-        encodedPixel=bounded ? encoded(amount>0 ? softBoundedMove(p,delta) : boundedMove(p,delta)) :
-            encodedExtended(RGB(p.r+delta.r,p.g+delta.g,p.b+delta.b));
-    }
+    });
 }
 } // namespace sony2fuji

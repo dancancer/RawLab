@@ -156,7 +156,7 @@ identity rules are in [the DualDn contract](../../docs/architecture/dualdn-inlin
 2. Run optional linear-sRGB wavelet denoising, then apply relative white balance and `2^exposure_ev * brightness` in linear sRGB. Custom RAW WB multipliers are applied once, during decode.
 3. Generate the neutral reference with a fixed log-logistic display curve, then sRGB encode. For positive x the linear display value is `1 / (1 + ((1-g)/g) * (g/x)^1.5)`, with `g=0.1845`; black is 0 and highlights approach 1 smoothly. This independently implemented mathematical subset follows the same curve family as darktable sigmoid, but does not reproduce its primaries adjustment, hue-preservation or full default pipeline.
 4. For a film CUBE: start from the un-tonemapped linear input, transform to its declared F-Gamut or F-Gamut C and encode F-Log, F-Log2 or F-Log2C, then interpolate the CUBE. Named display outputs bypass the neutral curve. Explicit Log outputs are decoded back to linear BT.709/sRGB, then rendered with the neutral display curve. A compiled DCP `.rlook` instead evaluates its preserved matrix/HSV/tone stages directly from common linear sRGB, without F-Log2, an RGB CUBE or an extra neutral curve. Log encoding itself never normalizes exposure, and there is no linear clamp at 1 before it.
-5. Blend neutral and film outputs in the same display-encoded RGB convention. Strength 0 is continuous with the no-LUT rendering. Optional Dehaze precedes black/white endpoint controls and the tone/curve/contrast/saturation sequence. The curve slot selects either the unchanged legacy S scalar or the [custom PCHIP curve](tone-curve-v1.md), with custom identity bypassing all arithmetic; optional vibrance follows it, then HSL, color grading, optional display-chroma and legacy detail denoising, Clarity, sharpening, vignette and grain, optional geometry, and final resizing. Each new zero control bypasses arithmetic and clamping exactly. Versioned formulas and quality admission are in [tone controls v1](tone-controls-v1.md) and [atmosphere v1](atmosphere-v1.md). Active Clarity/Dehaze uses the complete source and CPU for previews and export; GPU Auto falls back for the whole path and Force returns unsupported.
+5. Blend neutral and film outputs in the same display-encoded RGB convention. Strength 0 is continuous with the no-LUT rendering. Optional Dehaze precedes black/white endpoint controls and the tone/curve/contrast/saturation sequence. The curve slot selects either the unchanged legacy S scalar or the [custom PCHIP curve](tone-curve-v1.md), with custom identity bypassing all arithmetic; optional vibrance follows it, then HSL, color grading, optional display-chroma and legacy detail denoising, Clarity, sharpening, vignette and grain, optional geometry, and final resizing. Each new zero control bypasses arithmetic and clamping exactly. Versioned formulas and quality admission are in [tone controls v1](tone-controls-v1.md) and [atmosphere v1](atmosphere-v1.md). Active Clarity/Dehaze uses CPU; FINAL/export and previews without viewport reduction use the complete source. Viewport PREVIEW+BUFFER may compute on a reduced source with the full-source analysis scale, as described below. GPU Auto falls back for the whole path and Force returns unsupported. CPU parallel execution preserves output bytes for the same input and preview policy at any thread count.
 
 Geometry uses the oriented, lens-processed source: clockwise quarter turns,
 flips in that canvas, centered horizontal/vertical perspective, centered inscribed
@@ -584,7 +584,13 @@ No post-demosaic RGB tint approximation replaces camera-space white balance.
 `sony2fuji_session_set_viewport_preview` is a separate, default-off session opt-in
 for PREVIEW+BUFFER only, without changing request v2. It reduces linear input before
 wavelet, tone/LUT, chroma, sharpening and photo effects on CPU/GPU, including active
-geometry. Requested output dimensions are computed from the full-resolution
+geometry and nonzero Clarity/Dehaze. Atmosphere retains exact RAW decode and
+reuses that cache during dragging; it does not combine atmosphere with half-size
+RAW proxies. Its analysis grid and radii derive from the complete source, while
+analysis samples and Clarity's fine-detail guard read the reduced working image.
+The dehaze cache includes grid-content bits, full-source dimensions and working
+dimensions to isolate reduced and complete-source analyses. Requested output
+dimensions are computed from the full-resolution
 geometry canvas; the reduced source is the smallest proportional integer canvas
 whose geometry covers both requested dimensions, capped at the source size.
 Final geometry resizing never enlarges a reduced result. Output dimensions and
@@ -604,8 +610,8 @@ another photo or switching to actual pixels cancels obsolete resize work. Both
 numeric edits and settled fit previews opt in; actual-pixel viewing returns to the exact
 source-resolution path after dragging ends. Original comparison frames remain
 native and immutable. Exports and FINAL requests always ignore the opt-in.
-Pixel-radius denoising/sharpening and grain appearance in the viewport are
-approximations, not export-detail proofs. Inspect them at 100% when settled.
+Pixel-radius denoising/sharpening, Clarity/Dehaze and grain appearance in the
+viewport are approximations, not export-detail proofs. Inspect them at 100% when settled.
 Initial RAW decode, absolute WB reprocessing and legacy FBDD still incur their
 CPU costs; this mode does not perform viewport-region RAW decoding.
 

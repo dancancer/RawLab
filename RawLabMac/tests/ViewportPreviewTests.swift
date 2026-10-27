@@ -21,6 +21,8 @@ struct ViewportPreviewTests {
             try modelChecks(raw: raw, lut: lut, output: output)
             return
         }
+        try atmosphereChecks(raw: raw, output: output)
+        if CommandLine.arguments.contains("--atmosphere-only") { return }
         let cpu = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
         let metal = try RenderEngine(gpuMode: SONY2FUJI_GPU_AUTO)
         var detail = Adjustments()
@@ -82,6 +84,39 @@ struct ViewportPreviewTests {
         try denoiseExportChecks(raw: raw, lut: lut, output: output, engine: metal)
         try interactiveWhiteBalanceChecks(raw: raw, lut: lut)
         try modelChecks(raw: raw, lut: lut, output: output)
+    }
+
+    static func atmosphereChecks(raw: URL, output: URL) throws {
+        for clarity in [-100.0, 100.0] {
+            let engine = try RenderEngine(gpuMode: SONY2FUJI_GPU_AUTO)
+            var settings = Adjustments()
+            settings.atmosphere = AtmosphereSettings(clarity: clarity, dehaze: 60)
+            settings.exposureMode = .scene
+            settings.set(.temperature, to: 8000)
+            let exact = try engine.render(raw, settings: settings, lut: nil, edge: 768)!
+            let settled = try engine.render(raw, settings: settings, lut: nil, edge: 768, viewportPreview: true)!
+            let interactive = try engine.render(raw, settings: settings, lut: nil, edge: 768,
+                                                 interactive: true, viewportPreview: true)!
+            check(engine.lastBackend == SONY2FUJI_BACKEND_CPU, "atmosphere Auto reports CPU")
+            check(max(interactive.image.width, interactive.image.height) == 768,
+                  "interactive atmosphere uses viewport dimensions")
+            check(interactive.nativeWidth == exact.nativeWidth && interactive.nativeHeight == exact.nativeHeight &&
+                  settled.nativeWidth == exact.nativeWidth && settled.nativeHeight == exact.nativeHeight,
+                  "atmosphere viewport retains full RAW native metadata with custom WB")
+            check(pixels(interactive.image) == pixels(settled.image), "interactive and settled atmosphere use the same reduced source")
+            let restored = try engine.render(raw, settings: settings, lut: nil, edge: 768)!
+            check(pixels(restored.image) == pixels(exact.image), "atmosphere viewport does not contaminate exact RAW")
+            let a = output.appendingPathComponent("atmosphere-\(clarity)-fresh.png")
+            let b = output.appendingPathComponent("atmosphere-\(clarity)-viewport.png")
+            let fresh = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
+            _ = try fresh.render(raw, settings: settings, lut: nil, edge: nil, output: a, exportLongEdge: 768)
+            _ = try engine.render(raw, settings: settings, lut: nil, edge: 512, interactive: true, viewportPreview: true)
+            _ = try engine.render(raw, settings: settings, lut: nil, edge: nil, output: b,
+                                  interactive: true, exportLongEdge: 768, viewportPreview: true)
+            let ia = CGImageSourceCreateImageAtIndex(CGImageSourceCreateWithURL(a as CFURL, nil)!, 0, nil)!
+            let ib = CGImageSourceCreateImageAtIndex(CGImageSourceCreateWithURL(b as CFURL, nil)!, 0, nil)!
+            check(ia.bitsPerComponent == 16 && pixels(ia) == pixels(ib), "atmosphere FINAL PNG16 survives viewport history")
+        }
     }
 
     static func denoiseExportChecks(raw: URL, lut: URL, output: URL, engine: RenderEngine) throws {

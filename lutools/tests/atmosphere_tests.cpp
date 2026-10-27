@@ -8,6 +8,9 @@
 #include <limits>
 #include <random>
 #include <stdexcept>
+#if defined(SONY2FUJI_ENABLE_CHROMA_DENOISE) || defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
+#include <opencv2/core.hpp>
+#endif
 
 using namespace sony2fuji;
 static void require(bool value, const char* message) {
@@ -193,8 +196,54 @@ static void referenceVectors() {
             std::abs(a.b-e[2].get<float>())<tolerance,"independent binary64 atmospheric reference");
     }
 }
+static void viewportScaleAndThreads() {
+    const auto source=wave(2051,128,.3f,.035f);
+    ImageData proxy(1025,64);
+    for(int y=0;y<proxy.height;++y) for(int x=0;x<proxy.width;++x)
+        proxy.at(x,y)=source.at(x*2,y*2);
+    DehazeAnalysis cache;
+    auto reduced=proxy;
+    applyDehaze(reduced,.6f,&cache,source.width,source.height);
+    const int gridHeight=std::max(1,int(std::lround(source.height*1024./source.width)));
+    require(cache.width==1024 && cache.height==gridHeight,"viewport analysis grid uses full source dimensions");
+    require(cache.workingWidth==proxy.width && cache.sourceWidth==source.width,"cache distinguishes working and source dimensions");
+    auto full=source;applyDehaze(full,.6f,&cache);
+    require(cache.builds==2,"full source cannot reuse reduced analysis");
+    auto again=proxy;applyDehaze(again,.6f,&cache,source.width,source.height);
+    require(cache.builds==3 && std::memcmp(again.pixels.data(),reduced.pixels.data(),again.pixels.size()*sizeof(RGB))==0,
+        "small-full-small analysis matches fresh reduced pixels");
+    DehazeAnalysis constantCache;
+    uint64_t constantKey=0;
+    for(const auto size:std::vector<std::pair<int,int>>{{1024,64},{512,64},{512,32}}) {
+        ImageData constant(size.first,size.second);
+        std::fill(constant.pixels.begin(),constant.pixels.end(),RGB(.5f,.5f,.5f));
+        applyDehaze(constant,.6f,&constantCache,source.width,source.height);
+        if(constantCache.builds==1) constantKey=constantCache.fingerprint;
+        require(constantCache.fingerprint==constantKey,"constant grids deliberately have identical content fingerprints");
+        require(constantCache.workingWidth==size.first && constantCache.workingHeight==size.second,
+            "cache records both working dimensions");
+    }
+    require(constantCache.builds==3,"identical grid fingerprints cannot bypass working-width or height isolation");
+#if defined(SONY2FUJI_ENABLE_CHROMA_DENOISE) || defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
+    struct RestoreThreads { int count=cv::getNumThreads(); ~RestoreThreads() { cv::setNumThreads(count); } } restore;
+    for(const auto values:std::vector<std::vector<float>>{{1,0},{-1,0},{0,1},{0,-1},{.5f,-.5f}}) {
+        for(bool viewport:{false,true}) {
+            ImageData serial;
+            for(int threads:{1,2,4}) {
+                cv::setNumThreads(threads);
+                auto current=viewport ? proxy : source;
+                applyDehaze(current,values[1],nullptr,source.width,source.height);
+                applyClarity(current,values[0],source.width,source.height);
+                if(threads==1) serial=current;
+                else require(std::memcmp(current.pixels.data(),serial.pixels.data(),current.pixels.size()*sizeof(RGB))==0,
+                    "full and viewport float pixels are byte-identical at 1/2/4 threads");
+            }
+        }
+    }
+#endif
+}
 int main() {
-    try { identityAndRange(); clarityScaleAndProtection(); hazeDirectionAndCache();smoothSkyNoise();extendedWorkingContinuity();scaleCacheAndGradients();coloredHighlightHeadroom();referenceVectors();
+    try { identityAndRange(); clarityScaleAndProtection(); hazeDirectionAndCache();smoothSkyNoise();extendedWorkingContinuity();scaleCacheAndGradients();coloredHighlightHeadroom();referenceVectors();viewportScaleAndThreads();
         std::cout << "Atmosphere controls tests passed\n"; return 0;
     } catch(const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }

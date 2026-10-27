@@ -35,7 +35,7 @@ import ImageIO
             require(config.version == 1 && config.struct_size == 16, "atmosphere native adapter uses the versioned ABI")
             let changed = try bytes(settings)
             require(changed != baseline, "each signed atmosphere control changes native pixels")
-            _ = try engine.render(url, settings: settings, lut: nil, edge: 73, interactive: true)
+            _ = try engine.render(url, settings: settings, lut: nil, edge: 73, interactive: true, viewportPreview: true)
             require(try bytes(settings) == changed, "FINAL atmosphere pixels survive interactive preview")
             let auto = try RenderEngine(gpuMode: SONY2FUJI_GPU_AUTO)
             require(try auto.render(url, settings: settings, lut: nil, edge: nil)!.image.dataProvider!.data! as Data == changed,
