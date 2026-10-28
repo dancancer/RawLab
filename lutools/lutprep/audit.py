@@ -17,7 +17,7 @@ OCIO_SUFFIXES = frozenset({
     ".cube", ".spi1d", ".spi3d", ".clf", ".ctf", ".3dl", ".lut",
     ".csp", ".cc", ".ccc", ".cdl",
 })
-KNOWN_SUFFIXES = frozenset({".dcp", ".rlook", ".xmp", *OCIO_SUFFIXES})
+KNOWN_SUFFIXES = frozenset({".dcp", ".rlook", ".xmp", ".vlt", *OCIO_SUFFIXES})
 OCIO_FORMATS = frozenset(suffix[1:] for suffix in OCIO_SUFFIXES)
 KNOWN_FORMATS = frozenset(suffix[1:] for suffix in KNOWN_SUFFIXES)
 MAX_XMP_BYTES = 16 * 1024 * 1024
@@ -246,7 +246,7 @@ def _inspect_file(path, fmt):
         return _inspect_dcp(path)
     if fmt == "rlook":
         return _inspect_rlook(path)
-    if fmt == "cube":
+    if fmt in ("cube", "vlt"):
         return _inspect_cube(path)
     if fmt == "xmp":
         return _inspect_xmp(path)
@@ -289,7 +289,7 @@ def _compile_status(path, fmt, read_status, diagnostics, metadata, verify_compil
                     "readback": {"status": "passed", "metadata": readback_metadata}}
     if fmt == "rlook":
         return {"status": "not_run", "reason": "Source is already a compiled RLOOK"}
-    if fmt == "cube":
+    if fmt in ("cube", "vlt"):
         if metadata.get("canonical", False):
             return {"status": "not_run", "reason": "Source is already a canonical CUBE"}
         if metadata.get("native_photo_compatible", False):

@@ -28,15 +28,24 @@ def _compact(value):
 def _cube_info(path):
     comments, keywords = {}, {}
     metadata = None
-    native_safe, rows = True, 0
+    native_safe, rows, explicit_contract = True, 0, False
+    color_keys, duplicate_color, lumix_style = set(), False, None
     with path.open(encoding="utf-8-sig") as stream:
         for line in stream:
             line = line.strip()
             if not line:
                 continue
             if line.startswith("#"):
+                if line.startswith("#LUMIXPHOTOSTYLE "):
+                    duplicate_color |= "lumixphotostyle" in color_keys
+                    color_keys.add("lumixphotostyle")
+                    lumix_style = line.split()[-1]
                 key, separator, value = line[1:].partition(":")
                 if separator:
+                    if _compact(key) in {"gamma", "gamut"}:
+                        duplicate_color |= _compact(key) in color_keys
+                        color_keys.add(_compact(key))
+                    if _compact(key) == "rawlabcolorcontract": explicit_contract = True
                     comments[_compact(key)] = _compact(value)
                     if _compact(key) == "rawlab":
                         metadata = json.loads(value)
@@ -53,6 +62,12 @@ def _cube_info(path):
                     rows += 1
                 except ValueError:
                     native_safe = False
+    if explicit_contract:
+        from .native_lut import inspect_lut
+        return inspect_lut(path)
+    if duplicate_color or lumix_style and color_keys & {"gamma", "gamut"}:
+        from .native_lut import inspect_lut
+        return inspect_lut(path)
     size = int(keywords.get("LUT_3D_SIZE", [0])[0])
     minimum = [float(v) for v in keywords.get("DOMAIN_MIN", [0, 0, 0])]
     maximum = [float(v) for v in keywords.get("DOMAIN_MAX", [1, 1, 1])]
@@ -66,6 +81,10 @@ def _cube_info(path):
     native = (native_safe and 2 <= size <= 256 and rows == size ** 3 and valid_domain
               and input_transfer in log_transfers and bool(output)
               and comments.get("gamut") == expected_gamut + "toiturbt709")
+    display_srgb = (native_safe and 2 <= size <= 256 and rows == size ** 3 and valid_domain
+                    and gamma == "srgbtosrgb" and comments.get("gamut") == "iturbt709toiturbt709")
+    native = native or display_srgb
+    if display_srgb: expected_gamut = "bt709"
     output_transfer = output if output in log_transfers else "display-srgb"
     contract = ({"input_transfer": input_transfer, "input_gamut": expected_gamut,
                  "output_transfer": output_transfer, "output_gamut": "bt709",
@@ -75,13 +94,18 @@ def _cube_info(path):
                  and comments.get("outputtransfer", "srgb") == "srgb")
     return {"canonical": bool(canonical), "size": size or None, "domain_min": minimum,
             "domain_max": maximum, "metadata": metadata,
-            "native_photo_compatible": bool(native), "photo_contract": contract}
+            "native_photo_compatible": bool(native), "photo_contract": contract,
+            "color_state": "legacy_declaration" if native else "missing_color",
+            "appearance": "unverified", "lumix_photo_style": lumix_style}
 
 
 def inspect_source(source):
     source = Path(source)
     if not source.is_file():
         raise FileNotFoundError(source)
+    if source.suffix.lower() == ".vlt":
+        from .native_lut import inspect_lut
+        return {"source": source.name, **inspect_lut(source)}
     if source.suffix.lower() == ".dcp":
         return {"source": source.name, **DCPProfile.read(source).describe()}
     if source.suffix.lower() == ".rlook":

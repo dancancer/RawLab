@@ -12,6 +12,13 @@ FGAMUT_TO_XYZ = np.array([[.6369580, .1446169, .1688810],
                          [.2627002, .6779981, .0593017],
                          [0., .0280727, 1.0609851]])
 FGAMUT_TO_SRGB = np.linalg.solve(SRGB_TO_XYZ, FGAMUT_TO_XYZ)
+# OCIO's Sony IDTs use CAT02 for D65 -> ACES D60. Undo that same adaptation;
+# following it with Bradford leaves a chromatic error even though gray round-trips.
+AP0_TO_XYZ_D65_CAT02 = np.array([
+    [.9386309487502731, -.005741920550374038, .017566898851772303],
+    [.3380935949220215, .7272139028114358, -.06530749773345718],
+    [.0007231215113411635, .0008184418492447288, 1.0875161873992927],
+])
 
 
 def srgb_encode(value):
@@ -116,7 +123,10 @@ class ColorSpaces:
                 group = ocio.GroupTransform()
                 if name in SCENE_BUILTINS:
                     group.appendTransform(ocio.BuiltinTransform(style=SCENE_BUILTINS[name]))
-                    group.appendTransform(ocio.BuiltinTransform(style="UTILITY - ACES-AP0_to_CIE-XYZ-D65_BFD"))
+                    if name in {"slog3-sgamut3", "slog3-sgamut3-cine"}:
+                        group.appendTransform(matrix_transform(AP0_TO_XYZ_D65_CAT02))
+                    else:
+                        group.appendTransform(ocio.BuiltinTransform(style="UTILITY - ACES-AP0_to_CIE-XYZ-D65_BFD"))
                 else:
                     group.appendTransform(ocio.BuiltinTransform(style=DISPLAY_BUILTINS[name],
                                                                direction=ocio.TRANSFORM_DIR_INVERSE))

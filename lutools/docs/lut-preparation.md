@@ -1,5 +1,11 @@
 # LUT Preparation
 
+For evidenced CUBE/VLT contracts, prefer [native original-table import](../../docs/reference/formats/lut-color-contract-v1.md)
+using `attach-contract` and the native probe. It supports explicit V-Log, S-Log3,
+sRGB and gamma 2.4 without baking through F-Log2. Missing colors/reference evidence
+remain blocked and appearance remains unverified. The baking workflow below is
+still available where a canonical legacy CUBE is required, with its error gate.
+
 `lutools.lutprep` adapts explicitly described LUTs to the existing RawLab photo
 pipeline. Preparation happens once on a desktop. Generic LUTs produce an ordinary
 F-Gamut/F-Log2 to display-sRGB CUBE. Supported DCPs can instead compile to `.rlook`,
@@ -292,10 +298,11 @@ Copying an old CUBE byte-for-byte does not repair its already baked transform.
 
 ## Clients And Verification
 
-macOS and Windows custom look pickers accept `.cube` and `.rlook`. Import the
-**prepared or compiled** file, not the source DCP or JSON. iOS/Android share the
-native core, but their current interfaces have no custom-LUT file picker. In-app
-generic color selectors and mobile import are not part of this first delivery.
+All four clients accept compatible `.cube`, `.vlt`, `.rlook` and supported `.dcp`
+files. DCP is compiled during import. Generic CUBE/VLT sources need the explicit
+[native color contract](../../docs/reference/formats/lut-color-contract-v1.md) or
+an appropriately prepared legacy CUBE; a JSON manifest alone is not an importable
+look. The clients do not guess unknown input/output colors or camera base styles.
 
 ```bash
 cmake --build lutools/build-macos -j 6

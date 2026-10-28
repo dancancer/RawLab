@@ -449,6 +449,13 @@ and [stable combined-coordinate API](https://github.com/lensfun/lensfun/blob/v0.
 
 ## LUT Contracts
 
+External CUBE/VLT files may use the versioned [native color contract](../../docs/reference/formats/lut-color-contract-v1.md).
+It preserves the original table and explicitly handles sRGB, gamma 2.4, V-Log/V-Gamut
+and S-Log3/S-Gamut3(.Cine), full/legal ranges, base rendering and interpolation.
+Missing colors/reference evidence are blocked. Accepted declarations remain
+appearance-unverified. New contracts use CPU, Auto fallback and Force rejection;
+the legacy contracts and GPU behavior below remain unchanged.
+
 The generic CUBE library implements standard R-fast storage, DOMAIN_MIN/MAX, float outputs and trilinear interpolation. It does not clamp table values. CPU and GPU normalize the same input domain.
 
 The standalone Android GLES LUT path streams pixel blocks bounded by 16 MiB,

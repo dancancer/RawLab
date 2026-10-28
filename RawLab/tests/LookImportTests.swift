@@ -92,6 +92,39 @@ struct LookImportTests {
         try check(snapshot.map { $0.record.id } == result.imported.map { $0.record.id } &&
                   snapshot.allSatisfy { manager.fileExists(atPath: $0.url.path) },
                   "managed look IDs and files survive a fresh startup snapshot")
+        let unknown = root.appendingPathComponent("Unknown.cube")
+        try "LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n".write(to: unknown, atomically: true, encoding: .utf8)
+        var prompts = 0
+        let cancelled = try awaitResult { completion in
+            coordinator.importLooks(from: [unknown], compatibilityPrompt: { _, _, reply in
+                prompts += 1; reply(nil)
+            }, completion: completion)
+        }
+        try check(prompts == 1 && cancelled.imported.isEmpty && cancelled.failures.isEmpty,
+                  "cancelling compatibility skips installation without an error")
+        try check(LookImportSelection.decision(previousID: previousSelection, imported: cancelled.imported) == .preserve(previousSelection),
+                  "cancelled compatibility keeps the current look")
+        let confirmed = try awaitResult { completion in
+            coordinator.importLooks(from: [cube, unknown], compatibilityPrompt: { _, draft, reply in
+                prompts += 1
+                var configured = draft
+                configured.contract.selectInput("srgb")
+                configured.contract.selectOutput("srgb")
+                reply(configured)
+            }, completion: completion)
+        }
+        try check(prompts == 2 && confirmed.imported.count == 2 && confirmed.imported.last?.record.isCompatibility == true,
+                  "normal import remains silent and a mixed batch resumes after compatibility confirmation")
+        let renameTarget = confirmed.imported.last!
+        let renameBytes = try Data(contentsOf: renameTarget.url)
+        let renamed: Result<ManagedLook, LookImportFailureReason> = try awaitResult { completion in
+            coordinator.rename(id: renameTarget.record.id, name: "  My compatible look  ", completion: completion)
+        }
+        guard case .success(let changed) = renamed else { throw LookImportTestError.message("rename failed") }
+        try check(changed.record.name == "My compatible look" && changed.record.id == renameTarget.record.id && changed.record.isCompatibility,
+                  "rename changes the display name and preserves look identity and compatibility state")
+        let renamedBytes = try Data(contentsOf: changed.url)
+        try check(renamedBytes == renameBytes, "renaming never rewrites LUT bytes")
         print("PASS: iOS look import regression suite")
     }
 }

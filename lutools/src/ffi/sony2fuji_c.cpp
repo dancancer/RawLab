@@ -14,6 +14,8 @@
 #include "core/photo_tone_curve.h"
 #include "core/photo_geometry.h"
 #include "core/photo_lut.h"
+#include "core/photo_lut_contract.h"
+#include "core/lut_compatibility.h"
 #include "gpu/image_stats.h"
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
 #include "ai/ai_session.h"
@@ -761,6 +763,11 @@ sony2fuji_status applyPhotoLook(sony2fuji::ImageData& image,
     diagnostics.max_linear = std::numeric_limits<float>::lowest();
     const bool diagnosticBlocks = config.mode == sony2fuji::GpuMode::Off && lut &&
         lut->inputTransfer() == sony2fuji::LUTTransfer::FLog2 && isLutDiagnosticsEnabled();
+    std::unique_ptr<sony2fuji::ContractLUTEvaluator> contract;
+    if (lut && lut->hasColorContract()) {
+        contract = std::make_unique<sony2fuji::ContractLUTEvaluator>(lut);
+        if (!contract->supportsInput(displayInput)) return SONY2FUJI_STATUS_UNSUPPORTED;
+    }
     auto render = [&](sony2fuji::ImageData& working) {
         auto base = working;
         for (auto& p : base.pixels) p = sony2fuji::RGB(encode(p.r), encode(p.g), encode(p.b));
@@ -770,6 +777,12 @@ sony2fuji_status applyPhotoLook(sony2fuji::ImageData& image,
 #pragma omp parallel for if (count >= (1u << 16))
 #endif
             for (size_t i = 0; i < count; ++i) working.pixels[i] = dcp->apply(working.pixels[i]);
+        } else if (contract) {
+            for (auto& pixel : working.pixels) {
+                pixel = contract->apply(pixel);
+                if (!std::isfinite(pixel.r) || !std::isfinite(pixel.g) || !std::isfinite(pixel.b))
+                    return SONY2FUJI_STATUS_PROCESSING_ERROR;
+            }
         } else {
             if (lut->inputTransfer() == sony2fuji::LUTTransfer::SRGB) working = base;
             else if (lut->inputTransfer() != sony2fuji::LUTTransfer::FLog2)
@@ -1163,12 +1176,13 @@ sony2fuji_status sony2fuji_validate_look(
             if (!look) return SONY2FUJI_STATUS_UNSUPPORTED;
             if (format_version) *format_version = look->formatVersion();
             if (format) *format = SONY2FUJI_LOOK_RLOOK;
-        } else if (kind == "cube") {
+        } else if (kind == "cube" || kind == "vlt") {
             std::shared_ptr<sony2fuji::LUT3D> lut;
             const auto status = loadLUT(path, &lut);
             if (status != SONY2FUJI_STATUS_OK) return status;
             if (!lut->isPhotoLUT()) return SONY2FUJI_STATUS_UNSUPPORTED;
-            if (format) *format = SONY2FUJI_LOOK_CUBE;
+            if (format) *format = kind == "vlt" ? SONY2FUJI_LOOK_VLT : SONY2FUJI_LOOK_CUBE;
+            if (format_version && kind == "vlt") *format_version = 1;
         } else {
             return SONY2FUJI_STATUS_UNSUPPORTED;
         }
@@ -1180,6 +1194,15 @@ sony2fuji_status sony2fuji_validate_look(
     } catch (const std::exception&) {
         return SONY2FUJI_STATUS_UNSUPPORTED;
     }
+}
+
+sony2fuji_lut_color_state sony2fuji_inspect_lut_color(const char* path) {
+    if (isEmptyString(path)) return SONY2FUJI_LUT_UNREADABLE;
+    try {
+        const auto lut = sony2fuji::LUTParser::loadLUT(path);
+        if (!lut) return SONY2FUJI_LUT_UNREADABLE;
+        return static_cast<sony2fuji_lut_color_state>(lut->contractState());
+    } catch (...) { return SONY2FUJI_LUT_UNREADABLE; }
 }
 
 // ============================================================================
@@ -1670,7 +1693,8 @@ static sony2fuji_status processImpl(
     sony2fuji_session* session,
     const sony2fuji_request* request,
     sony2fuji_buffer* out_buffer,
-    sony2fuji::ImageData* pre_hsl = nullptr
+    sony2fuji::ImageData* pre_hsl = nullptr,
+    std::shared_ptr<sony2fuji::LUT3D> preview_lut = nullptr
 ) {
     if (!session) {
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
@@ -1725,7 +1749,9 @@ static sony2fuji_status processImpl(
     std::shared_ptr<sony2fuji::LUT3D> lut;
     std::shared_ptr<const sony2fuji::DcpLook> dcp;
     if (use_lut) {
-        if (sony2fuji::LUTParser::detectFormat(local.lut_path) == "rlook") {
+        if(preview_lut) {
+            lut=std::move(preview_lut);
+        } else if (sony2fuji::LUTParser::detectFormat(local.lut_path) == "rlook") {
             dcp = sony2fuji::DcpLook::loadCached(local.lut_path);
             if (!dcp) return SONY2FUJI_STATUS_UNSUPPORTED;
 #if !defined(SONY2FUJI_ENABLE_METAL)
@@ -1747,6 +1773,11 @@ static sony2fuji_status processImpl(
     // Reuse the reference stages; scene-view GPU shaders retain their existing
     // contract. Auto explicitly falls back for display-referred input.
     if (displayInput) gpuPipeline = false;
+    const bool contractCPU = lut && lut->requiresCPU();
+    if (contractCPU) {
+        if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_UNSUPPORTED;
+        gpuPipeline = false;
+    }
 
     sony2fuji::ImageData image;
     sony2fuji_color_space color_space = SONY2FUJI_COLOR_SRGB;
@@ -1960,7 +1991,7 @@ static sony2fuji_status processImpl(
     for (auto& pixel : image.pixels) applyExposureAndWhiteBalance(pixel, exposure, wb);
 
     auto lookConfig = session->gpu_config;
-    if (gpuPipeline || atmosphereActive || hslActive || toneControlsActive || colorGradingActive || chromaMode != 0 || waveletActive || effectsActive)
+    if (contractCPU || gpuPipeline || atmosphereActive || hslActive || toneControlsActive || colorGradingActive || chromaMode != 0 || waveletActive || effectsActive)
         lookConfig.mode = sony2fuji::GpuMode::Off;
     status = applyPhotoLook(image, lut, dcp, local.lut_strength, displayInput, lookConfig);
     if (status != SONY2FUJI_STATUS_OK) return status;
@@ -1999,6 +2030,22 @@ sony2fuji_status sony2fuji_process(sony2fuji_session* session,
     } catch (const std::exception&) {
         return SONY2FUJI_STATUS_PROCESSING_ERROR;
     }
+}
+
+sony2fuji_status sony2fuji_preview_lut_compatibility(sony2fuji_session* session,
+    const sony2fuji_request* request,const char* configuration,sony2fuji_buffer* buffer) {
+    if(!buffer) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    sony2fuji_release_buffer(buffer);
+    if(!session || !request || !configuration || !*configuration || isEmptyString(request->lut_path) ||
+        request->intent!=SONY2FUJI_INTENT_PREVIEW || request->output_target!=SONY2FUJI_TARGET_BUFFER ||
+        request->preview_long_edge<1 || request->preview_long_edge>1024)
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    try {
+        auto lut=sony2fuji::loadLUTCompatibilityPreview(request->lut_path,configuration);
+        return processImpl(session,request,buffer,nullptr,std::move(lut));
+    } catch(const std::bad_alloc&) {return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch(const std::filesystem::filesystem_error&) {return SONY2FUJI_STATUS_IO_ERROR;
+    } catch(const std::exception&) {return SONY2FUJI_STATUS_UNSUPPORTED;}
 }
 
 sony2fuji_status sony2fuji_session_create_hsl_probe(sony2fuji_session* session,

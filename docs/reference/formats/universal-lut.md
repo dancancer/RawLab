@@ -74,9 +74,10 @@ tolerance (default 0.02) fails unless `--allow-approximation` is explicit.
 ## First Delivery And Verification
 
 Deliver the preparation CLI, strict contract, DCP appearance adaptation, tests and usage
-examples. macOS and Windows can import prepared CUBE files through existing
-pickers. iOS/Android native rendering accepts this contract, but adding their
-custom-file pickers and in-app generic color selectors is a separate UI phase.
+examples. All four clients now import looks. Evidenced CUBE/VLT files can instead
+use the [native original-table contract](lut-color-contract-v1.md), which preserves
+the source table and marks appearance as unverified. Missing colors or references
+remain blocked; no in-app automatic color guessing is provided.
 
 Tests cover unknown contracts, range/domain ordering, channel order, Log round
 trips, scene/display curve placement, serialized cube accuracy, malformed DCPs,

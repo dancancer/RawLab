@@ -18,7 +18,7 @@ public partial class MainWindow : Window
     internal Slider ValueSlider => OrdinaryParameter.Slider;
     internal TextBox ValueText => OrdinaryParameter.Number;
     private Button ResetParameterButton => OrdinaryParameter.ResetButton;
-    private record Film(string Name,string? Path,string? Artwork,FilmGroup Group=FilmGroup.Other);
+    private record Film(string Name,string? Path,string? Artwork,FilmGroup Group=FilmGroup.Other,bool AppearanceUnverified=false,int CompatibilityMode=0);
     private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Clipping,bool Refine,long TransformGeneration,long OpenRevision,OriginalIdentity Source,AIDenoiseIdentity? AIIdentity,HslProbeWork? Probe=null);
     private readonly Library library=new();
     private LookLibrary? lookLibrary;
@@ -159,7 +159,7 @@ public partial class MainWindow : Window
                 FilmGrouping.ForBuiltIn(Path.GetFileName(path))));
         }
         foreach(var look in lookLibrary?.Looks ?? [])
-            films.Add(new(look.Name,look.Path,null));
+            films.Add(new(look.Name,look.Path,null,AppearanceUnverified:look.AppearanceUnverified,CompatibilityMode:look.CompatibilityMode));
         BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu();
         DenoiseEditor.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;

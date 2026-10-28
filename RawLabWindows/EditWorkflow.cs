@@ -137,7 +137,9 @@ public partial class MainWindow
         lut = saved == null ? null : ResolveLook(saved);
         if (settings.MasterRecipeID == null && lut != null && !films.Any(f => StringComparer.OrdinalIgnoreCase.Equals(f.Path, lut)))
         {
-            films.Add(new(Path.GetFileNameWithoutExtension(lut), lut, null)); BuildFilms();
+            var managed=lookLibrary?.Looks.FirstOrDefault(look=>StringComparer.OrdinalIgnoreCase.Equals(look.Path,lut));
+            films.Add(new(managed?.Name ?? lookLibrary?.DisplayName(lut,Path.GetFileNameWithoutExtension(lut)) ?? Path.GetFileNameWithoutExtension(lut), lut, null,
+                AppearanceUnverified:managed?.AppearanceUnverified ?? false, CompatibilityMode:managed?.CompatibilityMode ?? 0)); BuildFilms();
         }
         editDirty = false;
         if (saved != null) SetSaveNotice("已恢复上次调整", "", false);

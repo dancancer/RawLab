@@ -23,6 +23,9 @@ import com.rawlab.android.looks.DcpCompiler
 import com.rawlab.android.looks.LookLibrary
 import com.rawlab.android.looks.LookValidator
 import com.rawlab.android.looks.ManagedLook
+import com.rawlab.android.looks.LUTCompatibility
+import com.rawlab.android.engine.NativeProcessor
+import com.rawlab.android.editor.PendingLookCompatibility
 import com.rawlab.android.looks.MasterRecipe
 import com.rawlab.android.looks.NativeDcpCompiler
 import com.rawlab.android.looks.NativeLookValidator
@@ -128,20 +131,45 @@ class PhotoStorage(
     }
 
     fun looks(): List<LookChoice> = films.map { LookChoice(it.id, it.name, managed = false) } + lookLibrary.list().map {
-        LookChoice(it.id, it.name, managed = true, available = it.available)
+        LookChoice(it.id, it.name, managed = true, available = it.available, appearanceUnverified = it.appearanceUnverified, compatibilityMode = it.compatibilityMode)
     }
     fun builtinLookIDs(): Map<String, String> = films.mapNotNull { film -> film.fileName?.let { it to film.id } }.toMap()
 
-    fun importLook(uri: Uri): ManagedLook {
-        val name = runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
+    private fun lookSourceName(uri: Uri): String = runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
             if (it.moveToFirst()) it.getString(0) else null
         } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Look"
+
+    fun importLook(uri: Uri, compatibility: LUTCompatibility? = null): ManagedLook {
+        val name = lookSourceName(uri)
         try {
             val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot open look")
-            return stream.use { lookLibrary.importLook(it, name) }
+            return stream.use { lookLibrary.importLook(it, name, compatibility) }
         } catch (error: Exception) {
             throw IOException("${name}: ${error.message ?: error.javaClass.simpleName}", error)
         }
+    }
+
+    fun inspectLookCompatibility(uri: Uri): PendingLookCompatibility? {
+        val name = lookSourceName(uri)
+        val suffix = name.substringAfterLast('.', "").lowercase()
+        if (suffix !in listOf("cube", "vlt")) return null
+        directory.mkdirs()
+        val temporary = File.createTempFile("lut-compatibility-", ".$suffix", directory)
+        try {
+            (resolver.openInputStream(uri) ?: throw IOException("Cannot open look")).use { input ->
+                temporary.outputStream().use { output ->
+                    val buffer = ByteArray(65536); var total = 0L
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        if (total > 256L * 1024 * 1024) throw IOException("LUT exceeds size limit")
+                        output.write(buffer, 0, count)
+                    }
+                }
+            }
+            return LUTCompatibility.parse(NativeProcessor.inspectLutCompatibility(temporary))?.let { PendingLookCompatibility(uri, name, it) }
+        } finally { temporary.delete() }
     }
 
     fun renameLook(id: String, name: String): ManagedLook = lookLibrary.rename(id, name)

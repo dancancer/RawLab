@@ -86,7 +86,60 @@ struct LookLibraryTests {
         try cube(at: untagged, tagged: false)
         let beforeNames = try manager.contentsOfDirectory(atPath: directory.path).sorted()
         rejects("untagged look is rejected before installation") { _ = try renamed.importLook(from: untagged) }
+        do { _ = try renamed.importLook(from: untagged); check(false, "missing color is diagnosed") }
+        catch { check(error.localizedDescription.contains("缺少输入或输出颜色信息"), "missing color is distinct from a damaged file") }
         check(try manager.contentsOfDirectory(atPath: directory.path).sorted() == beforeNames, "failed validation leaves no staged files or index entries")
+        if var compatibility = try LUTCompatibility.inspect(untagged) {
+            check(!compatibility.canImport, "unknown input and output require a user choice")
+            check(compatibility.candidates?.count == 10, "Swift preserves native hypotheses without selecting one")
+            if let candidate = compatibility.candidates?.first {
+                let photo = compatibility.applying(candidate, displayInput: false)
+                let raster = compatibility.applying(candidate, displayInput: true)
+                check(photo?.contract.baseRendering == "rawlab-neutral-v1" && raster?.contract.baseRendering == "source-display",
+                      "Candidate bases follow the preview source without inventing camera rendering")
+                let previewJSON = try JSONSerialization.jsonObject(with: Data(try photo!.previewRequest().utf8)) as! [String: Any]
+                check(previewJSON["confirmed"] == nil && previewJSON.count == 2, "Preview requests carry no import confirmation")
+            }
+            if let log = compatibility.candidates?.first(where: { $0.contract.input.reference == "scene" }) {
+                check(compatibility.applying(log, displayInput: true) == nil, "Raster photos cannot preview a scene Log hypothesis")
+            }
+            var conditions = LUTReferenceConditions()
+            check(!conditions.canCompare, "Reference metrics start unavailable")
+            conditions.sameSource = true; conditions.sameGeometry = true; conditions.sameProcessing = true; conditions.knownSRGB = true
+            check(!conditions.canCompare, "Reference metrics need provenance as well as matching conditions")
+            conditions.referenceSource = "Independent renderer, same source, EV 0, as-shot WB, LUT 100%, sRGB"
+            check(conditions.canCompare, "Explicit matching conditions enable descriptive comparison")
+            compatibility.contract.selectInput("srgb")
+            compatibility.contract.selectOutput("srgb")
+            check(compatibility.canImport, "explicit display choices produce a complete compatibility draft")
+            check(try manager.contentsOfDirectory(atPath: directory.path).sorted() == beforeNames, "inspecting or cancelling a compatibility draft installs nothing")
+            let original = try Data(contentsOf: untagged)
+            let imported = try renamed.importLook(from: untagged, compatibility: compatibility)
+            check(imported.isCompatibility && imported.colorState == "approximate-base", "confirmed neutral-base import carries the compatibility badge state")
+            check(try Data(contentsOf: untagged) == original, "compatibility never modifies the original LUT")
+            check(try Data(contentsOf: renamed.url(for: imported)).starts(with: original), "managed compatibility asset preserves original bytes")
+            rejects("reimporting a compatibility file requires another explicit confirmation") {
+                _ = try renamed.importLook(from: renamed.url(for: imported))
+            }
+            let reopened = try LookLibrary(directory: directory)
+            check(reopened.looks.first(where: { $0.id == imported.id })?.isCompatibility == true, "compatibility badge survives restart")
+            try renamed.remove(id: imported.id)
+        } else { check(false, "untagged valid CUBE offers compatibility") }
+        let vlt = root.appendingPathComponent("Documented.vlt")
+        let contract = #"{"version":1,"input":{"space":"vlog-vgamut","reference":"scene","range":"full"},"output":{"space":"srgb","reference":"display","range":"full"},"interpolation":"linear","base_rendering":"none","evidence":{"source":"Synthetic reference","conditions":"Black identity fixture"}}"#
+        let vltText = "# panasonic vlt file version 1.0\n# source vlt file \"\"\nLUT_3D_SIZE 17\n\n" +
+            Array(repeating: "0 0 0\n", count: 4913).joined() + "#RawLabColorContract:\(contract)\n"
+        try vltText.write(to: vlt, atomically: true, encoding: .utf8)
+        do {
+            let imported = try renamed.importLook(from: vlt)
+            check(imported.format == "vlt" && imported.formatVersion == 1, "VLT retains its format and original sampling")
+            check(try Data(contentsOf: renamed.url(for: imported)) == Data(contentsOf: vlt), "VLT stores original table and color evidence together")
+            let persisted = try String(contentsOf: directory.appendingPathComponent("registry.json"), encoding: .utf8)
+            check(persisted.contains("declared-unverified"), "declared color evidence is not persisted as verified appearance")
+            let restart = try LookLibrary(directory: directory)
+            check(restart.looks.contains { $0.id == imported.id }, "VLT and its status survive restart")
+            try renamed.remove(id: imported.id)
+        } catch { check(false, "documented VLT imports successfully: \(error)") }
         let invalid = root.appendingPathComponent("bad.rlook")
         try Data("not a profile".utf8).write(to: invalid)
         rejects("malformed native profile cannot enter library") { _ = try renamed.importLook(from: invalid) }

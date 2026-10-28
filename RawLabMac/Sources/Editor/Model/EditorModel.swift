@@ -278,7 +278,7 @@ final class EditorModel: ObservableObject {
         do {
             let library = try LookLibrary(directory: lookDirectory)
             lookLibrary = library
-            films += library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id) }
+            films += library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id, colorNotice: $0.colorNotice, isCompatibility: $0.isCompatibility) }
         } catch {
             self.error = error.localizedDescription
         }

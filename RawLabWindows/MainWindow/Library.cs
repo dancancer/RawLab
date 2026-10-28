@@ -24,68 +24,84 @@ public partial class MainWindow
     private async void ImportClicked(object sender,RoutedEventArgs e)
     {
         if(exporting || !ResolveTransformDraft())return;
-        var dialog=new OpenFileDialog{Title=Loc.Text("导入外观"),Multiselect=true,Filter=Loc.Text("胶片外观|*.cube;*.rlook;*.dcp|CUBE LUT|*.cube|RawLab RLOOK 外观|*.rlook|DCP 外观|*.dcp")};
+        var dialog=new OpenFileDialog{Title=Loc.Text("导入外观"),Multiselect=true,Filter=Loc.Text("胶片外观|*.cube;*.vlt;*.rlook;*.dcp|CUBE / VLT LUT|*.cube;*.vlt|RawLab RLOOK 外观|*.rlook|DCP 外观|*.dcp")};
         if(dialog.ShowDialog(this)!=true)return;
         var errors=await ImportLookFiles(dialog.FileNames);
         if(errors.Count>0 && !closing)MessageBox.Show(this,string.Join("\n\n",errors),Loc.Text("导入外观"),MessageBoxButton.OK,MessageBoxImage.Warning);
     }
     internal async Task<IReadOnlyList<string>> ImportLookFiles(IEnumerable<string> paths)
     {
-        if(exporting || transform.Active)return [];
+        if(exporting || foregroundBusy || transform.Active)return [];
         var input=file;
         var library=lookLibrary;
         var libraryLoadError=lookLibraryLoadError;
         var selected=paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         foregroundBusy=true;RefreshControls();SetStatus(()=>Loc.Text("正在显影…"));
-        var errors=new List<string>();var accepted=new List<(string Path,string Name)>();
+        var errors=new List<string>();var accepted=new List<(string Path,string Name,bool AppearanceUnverified,int CompatibilityMode)>();
         try
         {
-            await Task.Run(()=>{
-                RenderEngine? validator=null;
+            foreach(var path in selected)
+            {
+                if(closing) break;
                 try
                 {
-                    foreach(var path in selected)
+                    try { accepted.Add(await ImportOne(path,null)); }
+                    catch(LookLibraryException error) when(error.Error is LookLibraryError.MissingColor or LookLibraryError.MissingReference)
                     {
-                        try
-                        {
-                            if (Path.GetExtension(path).Equals(".dcp",StringComparison.OrdinalIgnoreCase))
-                            {
-                                if (library == null)
-                                    throw libraryLoadError ?? new LookLibraryException(LookLibraryError.InvalidRegistry);
-                                // DCP compilation is independent of the current photo and GPU. ImportLook
-                                // validates and commits the converted RLOOK transactionally.
-                                var imported=library.ImportLook(path);
-                                accepted.Add((imported.Path,imported.Name));
-                            }
-                            else
-                            {
-                                // Keep the existing external-path workflow, but reject malformed files
-                                // before rendering (and allow validation-only import without a RAW).
-                                _ = LookLibrary.ValidateExternal(path);
-                                if (input is not null)
-                                {
-                                    validator ??= new RenderEngine(0);
-                                    validator.Render(input,new Adjustments(),path,64,statistics:false,clipping:false,viewportPreview:true);
-                                }
-                                accepted.Add((path,Path.GetFileNameWithoutExtension(path)));
-                            }
-                        }
-                        catch(Exception error){errors.Add(Path.GetFileName(path)+": "+error.Message);}
+                        var draft=await Task.Run(()=>LUTCompatibility.Inspect(path));
+                        if(closing) break;
+                        if(draft==null) throw;
+                        var dialog=new LUTCompatibilityDialog(this,path,draft,input,this.library.Roots.Select(entry=>entry.Path).ToArray());
+                        if(dialog.ShowDialog()==true) accepted.Add(await ImportOne(path,dialog.Draft));
                     }
                 }
-                finally { validator?.Dispose(); }
-            });
+                catch(Exception error){errors.Add(Path.GetFileName(path)+": "+error.Message);}
+            }
             if(!closing && accepted.Count>0)
             {
-                foreach(var look in accepted)if(!films.Any(f=>StringComparer.OrdinalIgnoreCase.Equals(f.Path,look.Path)))films.Add(new(look.Name,look.Path,null));
-                BuildFilms();
-                settings.ClearMasterRecipe(file == null || PhotoInput.IsRaw(file));
-                lut=accepted[^1].Path;previewDeferred=true;MarkEdited();
+                foreach(var look in accepted)if(!films.Any(f=>StringComparer.OrdinalIgnoreCase.Equals(f.Path,look.Path)))films.Add(new(look.Name,look.Path,null,AppearanceUnverified:look.AppearanceUnverified,CompatibilityMode:look.CompatibilityMode));
+                try
+                {
+                    settings.ClearMasterRecipe(file == null || PhotoInput.IsRaw(file));
+                    lut=accepted[^1].Path;previewDeferred=true;MarkEdited();
+                }
+                finally { BuildFilms(); }
             }
         }
         catch(Exception error){errors.Add(error.Message);}
         finally{foregroundBusy=false;RefreshControls();if(closing)FinishClose();else ResumePreview();}
         return errors;
+
+        Task<(string Path,string Name,bool AppearanceUnverified,int CompatibilityMode)> ImportOne(string path,LUTCompatibility? compatibility) => Task.Run(()=>{
+            var suffix=Path.GetExtension(path).ToLowerInvariant();
+            if(compatibility!=null || suffix is ".dcp" or ".vlt" || suffix==".cube" && PInvokeNative.InspectLutColor(path) is 4 or 7 or 8)
+            {
+                if(library==null) throw libraryLoadError ?? new LookLibraryException(LookLibraryError.InvalidRegistry);
+                var imported=library.ImportLook(path,compatibility);
+                return (imported.Path,imported.Name,imported.AppearanceUnverified,imported.CompatibilityMode);
+            }
+            _=LookLibrary.ValidateExternal(path);
+            if(input is not null) { using var validator=new RenderEngine(0);validator.Render(input,new Adjustments(),path,64,statistics:false,clipping:false,viewportPreview:true); }
+            return (path,library?.DisplayName(path,Path.GetFileNameWithoutExtension(path)) ?? Path.GetFileNameWithoutExtension(path),false,0);
+        });
+    }
+
+    private async void RenameImportedLook(string path)
+    {
+        if(exporting || foregroundBusy || transform.Active || lookLibrary==null)return;
+        var current=films.FirstOrDefault(f=>StringComparer.OrdinalIgnoreCase.Equals(f.Path,path));
+        if(current==null)return;
+        var dialog=new LookRenameDialog(this,current.Name);
+        if(dialog.ShowDialog()!=true)return;
+        var newName=dialog.LookName;
+        foregroundBusy=true;RefreshControls();
+        try {
+            await Task.Run(()=>lookLibrary.RenamePath(path,newName));
+            for(var index=0;index<films.Count;index++)
+                if(StringComparer.OrdinalIgnoreCase.Equals(films[index].Path,path))films[index]=films[index] with { Name=lookLibrary.DisplayName(path,newName) };
+            BuildFilms();
+        } catch(Exception error){Report(error);}
+        finally{foregroundBusy=false;RefreshControls();if(closing)FinishClose();}
     }
     private void AddFolderClicked(object sender,RoutedEventArgs e)
     {

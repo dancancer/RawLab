@@ -215,8 +215,16 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                                     if (edits.film == look.id) MaterialTheme.colorScheme.primary else Color.Transparent).padding(3.dp), contentAlignment = Alignment.Center) {
                                     if (artwork != null) Image(artwork.asImageBitmap(), null, Modifier.fillMaxSize().testTag("film-artwork-${look.id}"))
                                     else Icon(Icons.Outlined.Image, null, Modifier.size(32.dp))
+                                    if (look.compatibilityMode != 0) Icon(Icons.Outlined.Warning,
+                                        stringResource(R.string.lut_compatibility_title), Modifier.align(Alignment.TopStart).size(20.dp)
+                                            .testTag("film-compatibility-${look.id}"), tint = MaterialTheme.colorScheme.primary)
                                 }
-                                Text(if (look.id == "neutral") stringResource(R.string.neutral_look) else look.name,
+                                Text(if (look.id == "neutral") stringResource(R.string.neutral_look) else
+                                    look.name + when (look.compatibilityMode) {
+                                        7 -> " · " + stringResource(R.string.lut_compatibility_notice)
+                                        8 -> " · " + stringResource(R.string.lut_approximate_badge)
+                                        else -> if (look.appearanceUnverified) " · " + stringResource(R.string.lut_appearance_unverified) else ""
+                                    },
                                     Modifier.heightIn(min = 42.dp).padding(top = 4.dp), style = MaterialTheme.typography.labelSmall)
                             }
                             if (look.managed) {
