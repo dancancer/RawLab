@@ -3,14 +3,14 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 
 MasterRecipeRefinementChecks.Run();
-if (args.Contains("--master-recipes")) {
-    AdjustmentTransferChecks.Run(); AdjustmentPresetChecks.Run(); BatchFrozenChecks.Run();
-    return;
-}
 ToneControlsChecks.Run();
 AtmosphereChecks.Run();
 ColorGradingChecks.Run();
 ToneCurveChecks.Run();
+if (args.Contains("--master-recipes")) {
+    AdjustmentTransferChecks.Run(); AdjustmentPresetChecks.Run(); BatchFrozenChecks.Run();
+    return;
+}
 HslTargetChecks.Run();
 BatchFrozenChecks.Run();
 BatchSelectionChecks.Run();

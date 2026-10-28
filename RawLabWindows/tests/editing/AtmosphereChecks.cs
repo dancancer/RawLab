@@ -39,10 +39,12 @@ internal static class AtmosphereChecks
         Check(merged.Atmosphere == new AtmosphereSettings(71,42.5) && merged.Effects == target.Effects, "Partial atmosphere paste leaves clarity and grain unchanged");
         var oldPayload = AdjustmentTransfer.Capture(AdjustmentScope.Custom([F.Exposure]), Edit(new()), context);
         Check(AdjustmentTransfer.Prepare(oldPayload, Edit(target), context).Settings.Restore().Atmosphere == target.Atmosphere, "Legacy copy preserves target atmosphere");
-        state.ApplyMasterRecipe(MasterRecipe.All[0]); state.Set(Parameter.Strength,0);
-        target.ApplyMasterRecipe(MasterRecipe.All[0]); target.Set(Parameter.Strength,0);
+        var legacyRecipe = MasterRecipe.All[0] with { SettingsVersion = 3,
+            Tone = null, Atmosphere = null, Grading = null, Curve = null };
+        state.ApplyMasterRecipe(legacyRecipe); state.Set(Parameter.Strength,0);
+        target.ApplyMasterRecipe(legacyRecipe); target.Set(Parameter.Strength,0);
         var recipe = AdjustmentTransfer.Capture(AdjustmentScope.Custom(fields), Edit(state), context);
-        Check(AdjustmentTransfer.Prepare(recipe,Edit(target),context).Settings.Restore().Atmosphere == atmosphere, "Atmosphere is independent of zero recipe strength");
+        Check(AdjustmentTransfer.Prepare(recipe,Edit(target),context).Settings.Restore().Atmosphere == atmosphere, "Atmosphere is independent of zero v3 recipe strength");
         state = snapshot.Restore(); state.ToneControls = new(Vibrance:19);
         Check(EditorAdjustmentRules.IsModified(new(EditorResetKind.Group,EditorAdjustmentGroup.Effects),Edit(state)), "Atmosphere-only edits mark effects modified");
         var reset = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.Group,EditorAdjustmentGroup.Effects),Edit(state));

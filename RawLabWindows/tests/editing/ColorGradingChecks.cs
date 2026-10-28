@@ -58,10 +58,12 @@ internal static class ColorGradingChecks
             "Partial grading paste preserves sibling values");
         var legacy = AdjustmentTransfer.Capture(AdjustmentScope.Custom([F.Exposure]), Edit(new()), context);
         Check(AdjustmentTransfer.Prepare(legacy, Edit(target), context).Settings.Restore().ColorGrading == target.ColorGrading, "Legacy payload preserves target grading");
-        state.ApplyMasterRecipe(MasterRecipe.All[0]); state.Set(Parameter.Strength, 0);
-        target.ApplyMasterRecipe(MasterRecipe.All[0]); target.Set(Parameter.Strength, 0);
+        var legacyRecipe = MasterRecipe.All[0] with { SettingsVersion = 3,
+            Tone = null, Atmosphere = null, Grading = null, Curve = null };
+        state.ApplyMasterRecipe(legacyRecipe); state.Set(Parameter.Strength, 0);
+        target.ApplyMasterRecipe(legacyRecipe); target.Set(Parameter.Strength, 0);
         copy = AdjustmentTransfer.Capture(AdjustmentScope.Custom(fields), Edit(state), context);
-        Check(AdjustmentTransfer.Prepare(copy, Edit(target), context).Settings.Restore().ColorGrading == grading, "Grading is independent of recipe strength");
+        Check(AdjustmentTransfer.Prepare(copy, Edit(target), context).Settings.Restore().ColorGrading == grading, "Grading is independent of v3 recipe strength");
         state = new() { ColorGrading = grading };
         var zone = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.GradingZone, Zone: ColorGradingZone.Midtones), Edit(state));
         Check(zone.Status == EditorResetStatus.Ready && zone.Candidate!.Settings.Restore().ColorGrading == (grading with { Midtones = new() }), "Zone reset preserves both sibling zones");
