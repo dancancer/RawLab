@@ -43,9 +43,10 @@ extension MacAdjustmentTransfer {
         var request = sony2fuji_request(); settings.apply(to: &request)
         var result: [Field: Double] = [
             .strength: settings.strength, .exposure: Double(request.exposure_ev), .contrast: Double(request.contrast),
-            .highlights: Double(request.highlights), .shadows: Double(request.shadows), .sCurve: Double(Float(settings.toneCurve / 100)),
+            .highlights: Double(request.highlights), .shadows: Double(request.shadows), .sCurve: Double(Float(min(100, max(-100, settings.toneCurve * settings.refinementScale)) / 100)),
             .saturation: Double(request.saturation), .sharpening: Double(request.sharpening),
-            .blackPoint: settings.blackPoint, .whitePoint: settings.whitePoint, .vibrance: settings.vibrance, .clarity: settings.clarity, .dehaze: settings.dehaze
+            .blackPoint: settings.renderToneSettings.blackPoint, .whitePoint: settings.renderToneSettings.whitePoint,
+            .vibrance: settings.renderToneSettings.vibrance, .clarity: settings.renderAtmosphereSettings.clarity, .dehaze: settings.renderAtmosphereSettings.dehaze
         ]
         for field in Field.allCases {
             if let location = field.hslLocation {
@@ -108,12 +109,6 @@ extension MacAdjustmentTransfer {
 
     static func applyObjects(_ payload: AdjustmentTransferPayload, to settings: inout Adjustments,
                              context: MacAdjustmentTransferContext) throws {
-        if let curve = payload[.curve]?.curve, curve != settings.curveSettings { settings.curveSettings = curve }
-        for field in payload.fields {
-            if let zone = field.gradingZone, let wheel = payload[field]?.object {
-                settings.gradingSettings[zone] = ColorGradingWheel(hue: wheel["hue"]!.number!, saturation: wheel["saturation"]!.number!)
-            }
-        }
         if let value = payload[.postRGBDenoise]?.number, value != 0 {
             throw AdjustmentTransferError.incompatible(Field.postRGBDenoise.rawValue)
         }

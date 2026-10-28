@@ -336,6 +336,7 @@ class EditorViewModel @JvmOverloads constructor(
                             if (failure.invalid) message + "\n" + text(R.string.look_invalid_file) else message
                         }
                 mutable.value = mutation.state.copy(looks = result.looks, lookImportReport = report,
+                    error = if (mutation.blockedRecipeSelection) text(R.string.editor_reset_unrepresentable) else mutation.state.error,
                     message = if (result.imported.isEmpty()) null else text(R.string.look_imported))
                 scheduleLookPreview(mutation.preview)
             }
@@ -436,6 +437,20 @@ class EditorViewModel @JvmOverloads constructor(
         if (mutable.value.committingAdjustments || mutable.value.operation != Operation.NONE || mutable.value.draft != null) return
         mutable.value = mutable.value.copy(operation = Operation.IMPORT_LOOK, error = null)
         lookRevision = lookQueue.submit(LookWork.Delete(id))
+    }
+
+    fun selectFilm(id: String): Boolean {
+        val current = mutable.value
+        if (!current.controlsEnabled || current.draft != null) return false
+        val candidate = try {
+            current.edits.selectFilm(id, current.preview?.tint, current.preview?.temperature, current.photo!!.inputKind)
+        } catch (_: IllegalArgumentException) {
+            mutable.value = current.copy(error = AppStrings.text(if (current.preview == null)
+                R.string.editor_reset_missing_wb else R.string.editor_reset_unrepresentable))
+            return false
+        }
+        edit(candidate, false)
+        return mutable.value.edits == candidate
     }
 
     fun edit(requested: EditSettings, interactive: Boolean = false) {

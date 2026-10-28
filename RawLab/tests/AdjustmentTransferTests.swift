@@ -1,6 +1,13 @@
 import Foundation
 
 @main struct IOSAdjustmentTransferTests {
+    static var legacyRecipe: MasterRecipe {
+        // 固定测试旧版本的独立控制语义，不随 bundled catalog 的版本升级。
+        let data = try! JSONEncoder().encode(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
+        var row = try! JSONSerialization.jsonObject(with: data) as! [String: Any]
+        for key in ["settingsVersion", "tone", "atmosphere", "grading", "curve"] { row.removeValue(forKey: key) }
+        return try! JSONDecoder().decode(MasterRecipe.self, from: JSONSerialization.data(withJSONObject: row))
+    }
     static func check(_ value: Bool, _ label: String) {
         guard value else { fatalError(label) }; print("PASS: \(label)")
     }
@@ -58,8 +65,8 @@ import Foundation
         let legacy = try IOSAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: state(), context: raw)
         check(try IOSAdjustmentTransfer.prepare(payload: legacy, target: state(target), context: raw).settings.atmosphereSettings == target.atmosphereSettings,
             "Legacy payload preserves target atmosphere")
-        source.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!); source.lutStrength = 0
-        target.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!); target.lutStrength = 0
+        source.applyMasterRecipe(legacyRecipe); source.lutStrength = 0
+        target.applyMasterRecipe(legacyRecipe); target.lutStrength = 0
         let recipe = try IOSAdjustmentTransfer.capture(scope: .custom(fields), snapshot: state(source), context: raw)
         check(try IOSAdjustmentTransfer.prepare(payload: recipe, target: state(target), context: raw).settings.atmosphereSettings == source.atmosphereSettings,
             "Atmosphere is independent of zero recipe strength")
@@ -99,9 +106,9 @@ import Foundation
         let legacy = try IOSAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: state(), context: raw)
         check(try IOSAdjustmentTransfer.prepare(payload: legacy, target: state(target), context: raw).settings.toneSettings == target.toneSettings,
             "Legacy payload omitting tone fields does not reset target tone")
-        source.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
+        source.applyMasterRecipe(legacyRecipe)
         source.lutStrength = 0
-        target.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
+        target.applyMasterRecipe(legacyRecipe)
         target.lutStrength = 0
         let recipeCopy = try IOSAdjustmentTransfer.capture(scope: .custom(fields), snapshot: state(source), context: raw)
         let recipeMerged = try IOSAdjustmentTransfer.prepare(payload: recipeCopy, target: state(target), context: raw)
@@ -170,8 +177,8 @@ import Foundation
         let legacy = try IOSAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: state(), context: raw)
         check(try IOSAdjustmentTransfer.prepare(payload: legacy, target: state(target), context: raw).settings.gradingSettings == target.gradingSettings,
             "Old payloads do not reset grading")
-        source.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
-        target.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
+        source.applyMasterRecipe(legacyRecipe)
+        target.applyMasterRecipe(legacyRecipe)
         source.lutStrength = 0; target.lutStrength = 0
         let recipeCopy = try IOSAdjustmentTransfer.capture(scope: .custom(fields), snapshot: state(source), context: raw)
         check(try IOSAdjustmentTransfer.prepare(payload: recipeCopy, target: state(target), context: raw).settings.gradingSettings == source.gradingSettings,
@@ -236,6 +243,7 @@ import Foundation
     }
 
     static func main() throws {
+        try refinedRecipeTransfers()
         try toneCurve()
         try colorGrading()
         try atmospherePersistence()
@@ -247,6 +255,71 @@ import Foundation
         try objects()
         try manualLensSelectionTransport()
         try fixtures()
+    }
+
+    static func refinedRecipeTransfers() throws {
+        let recipe = try JSONDecoder().decode(MasterRecipe.self,
+            from: Data(contentsOf: URL(fileURLWithPath: "Shared/fixtures/master-recipe-v4.json")))
+        var source = RawSettings.default; source.applyMasterRecipe(recipe)
+        let fields: Set<AdjustmentTransferField> = [.blackPoint, .whitePoint, .vibrance, .clarity, .dehaze,
+            .curve, .sCurve, .gradingShadows, .gradingMidtones, .gradingHighlights]
+        for strength in [0.0, 0.5, 1, 2] {
+            source.lutStrength = strength
+            let expected = source.renderedRecipe(cameraTemperature: 5200, cameraTint: 10)
+            var cleared = source
+            let removal = cleared.clearMasterRecipe(context: .init(isRaw: true, defaultExposureMode: .preview,
+                cameraTemperature: 5200, cameraTint: 10))
+            check(removal == nil && cleared.masterRecipeID == nil && cleared.toneSettings == expected.toneSettings &&
+                  cleared.curveSettings == expected.curveSettings && cleared.gradingSettings == expected.gradingSettings &&
+                  cleared.atmosphereSettings == expected.atmosphereSettings && cleared.exposure == expected.exposure &&
+                  cleared.editorEffectiveValues(isRaw: true, cameraTemperature: 5200, cameraTint: 10) ==
+                    source.editorEffectiveValues(isRaw: true, cameraTemperature: 5200, cameraTint: 10),
+                  "Direct recipe removal materializes current controls once")
+            let partial = try IOSAdjustmentTransfer.capture(scope: .custom(fields), snapshot: state(source), context: raw)
+            let plain = try IOSAdjustmentTransfer.prepare(payload: partial, target: state(), context: raw).settings
+            check(plain.masterRecipeID == nil && plain.toneSettings == expected.toneSettings && plain.atmosphereSettings == expected.atmosphereSettings &&
+                  plain.gradingSettings == expected.gradingSettings && plain.curveSettings == expected.curveSettings,
+                  "V4 partial transfer materializes new controls once at \(strength)")
+            let full = try IOSAdjustmentTransfer.capture(scope: .all, snapshot: state(source), context: raw)
+            let restored = try IOSAdjustmentTransfer.prepare(payload: full, target: state(), context: raw).settings
+            check(restored.masterRecipeSettingsVersion == 4 && restored.toneSettings == source.toneSettings &&
+                  restored.gradingSettings == source.gradingSettings && restored.curveSettings == source.curveSettings,
+                  "Full v4 transfer preserves version and manual logical controls")
+        }
+        source.lutStrength = 0.5
+        var extreme = source; extreme.exposure = 4; extreme.lutStrength = 2
+        let unchanged = extreme
+        check(extreme.clearMasterRecipe(context: .init(isRaw: true, defaultExposureMode: .preview,
+            cameraTemperature: 5200, cameraTint: 10)) == .unrepresentable && extreme == unchanged,
+              "Unrepresentable direct removal keeps the original edit")
+        let removed = source.renderedRecipe(cameraTemperature: 5200, cameraTint: 10)
+        let reported = Set(EditorAdjustmentRules.materializedFields(before: source, after: removed))
+        check(Set(["黑场", "白场", "鲜艳度", "清晰度", "去朦胧", "曲线", "颜色分级"]).isSubset(of: reported),
+              "Recipe removal reports every materialized modern control")
+        let oldSelection = try IOSAdjustmentTransfer.capture(scope: .custom(AdjustmentTransferField.recipeDependencies), snapshot: state(source), context: raw)
+        let separated = try IOSAdjustmentTransfer.prepare(payload: oldSelection, target: state(), context: raw).settings
+        check(separated.masterRecipeID == nil && separated.lutID == "recipe-lut:hamada_daylight_v2",
+              "V4 requires modern dependencies before preserving recipe context")
+        var target = source; target.tint = 0; source.lutStrength = 1
+        let strengthOnly = try IOSAdjustmentTransfer.capture(scope: .custom([.strength]), snapshot: state(source), context: raw)
+        let changed = try IOSAdjustmentTransfer.prepare(payload: strengthOnly, target: state(target), context: raw).settings
+        let before = target.renderedRecipe(cameraTemperature: 5200, cameraTint: 10)
+        let after = changed.renderedRecipe(cameraTemperature: 5200, cameraTint: 10)
+        check(after.toneSettings == before.toneSettings && after.atmosphereSettings == before.atmosphereSettings &&
+              after.gradingSettings == before.gradingSettings && after.curveSettings == before.curveSettings,
+              "Strength-only paste preserves unselected effective v4 objects")
+        source.lutStrength = 0.7
+        let rounded = try IOSAdjustmentTransfer.capture(scope: .all, snapshot: state(source), context: raw)
+        var preciseValues = rounded.values
+        preciseValues[AdjustmentTransferField.strength.rawValue] = .number(0.7)
+        let precise = try AdjustmentTransferPayload(source: .init(identifier: "desktop", isRaw: true, processingVersion: 2,
+            recipe: .init(id: recipe.id, strength: 0.7, settingsVersion: 4)), values: preciseValues)
+        let preciseResult = try IOSAdjustmentTransfer.prepare(payload: precise, target: state(), context: raw).settings
+        let preciseCurve = preciseResult.renderedRecipe(cameraTemperature: 5200, cameraTint: 10).curveSettings
+        for (actual, expected) in zip(preciseCurve.points, source.curveSettings.scaled(by: 0.7).points) {
+            check(actual.x == expected.x && abs(actual.y - expected.y) < 1e-12,
+                  "Desktop Double strength survives the iOS Float strength projection")
+        }
     }
     static func scopes() throws {
         var source = RawSettings.default

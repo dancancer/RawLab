@@ -18,6 +18,17 @@ class ToneCurveSettings(val mode: ToneCurveMode = ToneCurveMode.LEGACY, points: 
     val isDefault get() = mode == ToneCurveMode.LEGACY
     val isIdentity get() = isDefault || points.all { it.x == it.y }
     val progress get() = points.maxOfOrNull { kotlin.math.abs(it.y - it.x) } ?: 0.0
+    fun scaled(strength: Float): ToneCurveSettings = scaled(strength.toDouble())
+    fun scaled(strength: Double): ToneCurveSettings {
+        if (mode != ToneCurveMode.CUSTOM || strength == 1.0) return this
+        if (strength == 0.0) return identity
+        var previous = 0.0
+        return ToneCurveSettings(mode, points.map { point ->
+            val y = (point.x + (point.y - point.x) * strength).coerceIn(previous, 1.0)
+            previous = y
+            ToneCurvePoint(point.x, y)
+        })
+    }
     fun packed() = points.flatMap { listOf(it.x, it.y) }.toDoubleArray()
     fun isInterior(index: Int) = mode == ToneCurveMode.CUSTOM && index > 0 && index + 1 < points.size
     fun inserting(x: Double, y: Double): ToneCurveSettings {

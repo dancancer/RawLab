@@ -74,6 +74,13 @@ internal fun EditorResetConfirmation(prepared: PreparedEditorReset, onDismiss: (
         "hsl" -> R.string.hsl
         "temperature" -> R.string.temperature
         "tint" -> R.string.tint
+        "blackPoint" -> R.string.black_point
+        "whitePoint" -> R.string.white_point
+        "vibrance" -> R.string.vibrance
+        "clarity" -> R.string.clarity
+        "dehaze" -> R.string.dehaze
+        "curve" -> R.string.curve_title
+        "colorGrading" -> R.string.color_grading
         else -> R.string.white_balance
     }) }.distinct().joinToString(", ")
     AlertDialog(onDismissRequest = onDismiss, title = { Text(resetScopeTitle(scope)) },

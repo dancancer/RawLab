@@ -49,8 +49,10 @@ data class EditSettings(
     val dehaze: Float = 0f,
     val colorGrading: ColorGradingSettings = ColorGradingSettings(),
     val curve: ToneCurveSettings = ToneCurveSettings(),
+    val masterRecipeSettingsVersion: Int = 3,
 ) {
     init {
+        require(masterRecipeSettingsVersion in 2..4)
         require(listOf(blackPoint, whitePoint, vibrance, clarity, dehaze).all { it.isFinite() && it in -100f..100f })
         require(exposureMode in 0..2)
         require(strength.isFinite() && strength in 0f..2f)
@@ -81,15 +83,23 @@ data class EditSettings(
         tint = if (recipeID == null) asShotTint ?: 0f else 0f,
     )
     val recipeScale get() = if (recipeID == null) 1f else strength
-    val renderHsl get() = hsl.scaled(recipeScale)
-    val renderToneCurve get() = if (curve.mode == ToneCurveMode.CUSTOM) 0f else toneCurve
-    fun selectFilm(id: String, cameraTint: Float? = null): EditSettings {
+    val refinementScale get() = if (masterRecipeSettingsVersion >= 4) recipeScale else 1f
+    val renderHsl get() = hsl.scaled(if (masterRecipeSettingsVersion >= 3) recipeScale else 1f)
+    val renderBlackPoint get() = (blackPoint * refinementScale).coerceIn(-100f, 100f).canonicalZero()
+    val renderWhitePoint get() = (whitePoint * refinementScale).coerceIn(-100f, 100f).canonicalZero()
+    val renderVibrance get() = (vibrance * refinementScale).coerceIn(-100f, 100f).canonicalZero()
+    val renderClarity get() = (clarity * refinementScale).coerceIn(-100f, 100f).canonicalZero()
+    val renderDehaze get() = (dehaze * refinementScale).coerceIn(-100f, 100f).canonicalZero()
+    val renderCurve get() = curve.scaled(refinementScale)
+    val renderColorGrading get() = colorGrading.scaled(refinementScale)
+    val renderToneCurve get() = if (curve.mode == ToneCurveMode.CUSTOM) 0f else (toneCurve * refinementScale).coerceIn(-1f, 1f).canonicalZero()
+    fun selectFilm(id: String, cameraTint: Float? = null, cameraTemperature: Float? = null,
+        input: PhotoInputKind = PhotoInputKind.RAW): EditSettings {
         if (recipeID == null) return copy(film = id)
-        val baseTint = cameraTint?.takeIf { it.isFinite() }
-        val independent = if (!customWb && (tint == 0f || baseTint == null))
-            copy(recipeID = null, tint = baseTint ?: 0f)
-        else copy(recipeID = null, customWb = true, tint = ((baseTint ?: 0f) + tint).coerceIn(-150f, 150f))
-        return independent.copy(film = id)
+        val independent = requireNotNull(independentForReset(input, cameraTemperature, cameraTint)) {
+            "Recipe values cannot be represented without loss"
+        }
+        return independent.copy(film = id, strength = strength)
     }
 }
 
@@ -264,9 +274,12 @@ internal fun EditSettings.resetRenderValues(
         custom = true
     }
     return ResetRenderValues(listOf(exposure * recipeScale, -highlights * recipeScale, shadows * recipeScale,
-        1f + contrast * recipeScale, toneCurve, 1f + saturation * recipeScale, sharpening,
+        1f + contrast * recipeScale, renderToneCurve, 1f + saturation * recipeScale, sharpening,
         effective.exposureMode.toFloat(), if (custom) 1f else 0f,
-        if (custom) kelvin else 6500f, if (custom) wbTint else 0f) + renderHsl.packed().toList(), kelvin, wbTint)
+        if (custom) kelvin else 6500f, if (custom) wbTint else 0f) + renderHsl.packed().toList() +
+        listOf(renderBlackPoint, renderWhitePoint, renderVibrance, renderClarity, renderDehaze) +
+        ColorGradingZone.entries.flatMap { listOf(renderColorGrading[it].hue, renderColorGrading[it].saturation) } +
+        listOf(renderCurve.mode.nativeValue.toFloat()) + renderCurve.packed().map(Double::toFloat), kelvin, wbTint)
 }
 
 // Float 上先加 0.5 会把 0.49999997 提前进位；转成 Double 后再取整才能对应 std::round(float)。
@@ -287,7 +300,10 @@ internal fun EditSettings.independentForReset(
     if (scaledExposure !in -4f..4f ||
         listOf(scaledHighlights, scaledShadows, scaledContrast, scaledSaturation).any { it !in -1f..1f } ||
         (convertWb && (before.temperature !in 2000f..50000f || before.tint !in -150f..150f))) return null
-    val candidate = copy(film = "neutral", recipeID = null, strength = 1f,
+    val candidate = copy(film = "neutral", recipeID = null, strength = 1f, masterRecipeSettingsVersion = 3,
+        blackPoint = renderBlackPoint, whitePoint = renderWhitePoint, vibrance = renderVibrance,
+        clarity = renderClarity, dehaze = renderDehaze, colorGrading = renderColorGrading, curve = renderCurve,
+        toneCurve = (toneCurve * refinementScale).coerceIn(-1f, 1f),
         exposure = scaledExposure, highlights = scaledHighlights, shadows = scaledShadows,
         contrast = scaledContrast, saturation = scaledSaturation, hsl = renderHsl,
         customWb = if (convertWb) true else customWb,

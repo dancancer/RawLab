@@ -68,13 +68,21 @@ public sealed class Adjustments
     public AtmosphereSettings Atmosphere { get; set; } = new();
     public ToneControlsSettings ToneControls { get; set; } = new();
     public string? MasterRecipeID { get; private set; }
+    public int MasterRecipeSettingsVersion { get; private set; } = 3;
     public LensSettings Lens { get; set; } = new();
     public GeometrySettings Geometry { get; set; } = new();
     public MasterRecipe? Recipe => MasterRecipeID == null ? null : MasterRecipe.Find(MasterRecipeID);
-    public HslSettings RenderHsl => Hsl.Scaled(MasterRecipeID == null ? 1 : this[Parameter.Strength] / 100);
+    public double RefinementScale => MasterRecipeID != null && MasterRecipeSettingsVersion >= 4 ? this[Parameter.Strength] / 100 : 1;
+    public HslSettings RenderHsl => Hsl.Scaled(MasterRecipeID == null || MasterRecipeSettingsVersion < 3 ? 1 : this[Parameter.Strength] / 100);
+    public ToneControlsSettings RenderToneControls => ToneControls.Scaled(RefinementScale);
+    public AtmosphereSettings RenderAtmosphere => Atmosphere.Scaled(RefinementScale);
+    public ColorGradingSettings RenderGrading => ColorGrading.Scaled(RefinementScale);
+    public ToneCurveSettings RenderCurve => Curve.Scaled(RefinementScale);
     public void ApplyMasterRecipe(MasterRecipe recipe)
     {
+        recipe.Validate();
         MasterRecipeID = recipe.Id;
+        MasterRecipeSettingsVersion = recipe.SettingsVersion;
         values[0] = 100;
         values[(int)Parameter.Exposure] = recipe.ExposureDelta;
         values[(int)Parameter.Shadows] = recipe.ShadowsDelta;
@@ -83,14 +91,38 @@ public sealed class Adjustments
         values[(int)Parameter.Saturation] = recipe.SaturationDelta;
         values[(int)Parameter.Tint] = recipe.TintDelta;
         Hsl = recipe.Hsl.Settings();
+        if (recipe.SettingsVersion >= 4) {
+            ToneControls = recipe.Tone!; Atmosphere = recipe.Atmosphere!;
+            ColorGrading = recipe.Grading!; Curve = recipe.Curve!;
+            values[(int)Parameter.ToneCurve] = 0;
+        }
     }
-    public void ClearMasterRecipe()
+    public void ClearMasterRecipe(bool isRaw = true)
     {
         if (MasterRecipeID == null) return;
-        var offset = this[Parameter.Tint];
+        var scale = this[Parameter.Strength] / 100;
+        var offset = this[Parameter.Tint] * scale;
+        if (isRaw && (!CameraWhiteBalance || offset != 0) && AsShot == null)
+            throw new System.IO.InvalidDataException(Loc.Text("缺少拍摄时白平衡数据，无法保留配方效果。"));
+        var snapshot = Capture().Copy();
+        foreach (var parameter in new[] { Parameter.Exposure, Parameter.Highlights, Parameter.Shadows, Parameter.Contrast, Parameter.Saturation })
+            snapshot.Values[(int)parameter] *= scale;
+        var request = Request("", null, 0, null);
+        snapshot.Values[(int)Parameter.Tint] = !isRaw ? 0 : request.WbMode == 3
+            ? Math.Clamp((AsShot?.Tint ?? 0) + offset, -150, 150) : AsShot?.Tint ?? 0;
+        if (!isRaw) snapshot.Values[(int)Parameter.Temperature] = 6500;
+        snapshot.Values[(int)Parameter.ToneCurve] = Math.Clamp(this[Parameter.ToneCurve] * RefinementScale, -100, 100);
+        snapshot = snapshot with { MasterRecipeID = null, MasterRecipeSettingsVersion = 3, Hsl = RenderHsl,
+            ToneControls = RenderToneControls, Atmosphere = RenderAtmosphere, ColorGrading = RenderGrading, Curve = RenderCurve,
+            CameraWhiteBalance = !isRaw || request.WbMode != 3,
+            AsShotTemperature = isRaw ? snapshot.AsShotTemperature : null, AsShotTint = isRaw ? snapshot.AsShotTint : null };
+        // 先验证独立状态可表示，失败时不改动当前编辑。
+        var independent = FromSnapshot(snapshot);
+        values = independent.values; Hsl = independent.Hsl; ToneControls = independent.ToneControls;
+        Atmosphere = independent.Atmosphere; ColorGrading = independent.ColorGrading; Curve = independent.Curve;
+        CameraWhiteBalance = independent.CameraWhiteBalance; AsShot = independent.AsShot;
         MasterRecipeID = null;
-        if (CameraWhiteBalance && (offset == 0 || AsShot == null)) ResetWhiteBalance();
-        else { values[(int)Parameter.Tint] = Math.Clamp((AsShot?.Tint ?? 0) + offset, -150, 150); CameraWhiteBalance = false; }
+        MasterRecipeSettingsVersion = 3;
     }
     private int displayChromaDenoise;
     public int DisplayChromaDenoise
@@ -109,6 +141,7 @@ public sealed class Adjustments
     public AdjustmentSnapshot Capture() => new((double[])values.Clone(), ExposureMode, CameraWhiteBalance, AsShot?.Temperature, AsShot?.Tint,
         Denoise, Effects, DisplayChromaDenoise, Hsl, MasterRecipeID, Lens, Geometry) {
         Processing = ProcessingIdentity.Require(Processing), AIDenoiseEnabled = AIDenoiseEnabled,
+        MasterRecipeSettingsVersion = MasterRecipeSettingsVersion,
         Atmosphere = Atmosphere.IsIdentity ? null : Atmosphere,
         ToneControls = ToneControls.IsIdentity ? null : ToneControls,
         ColorGrading = ColorGrading.IsDefault ? null : ColorGrading,
@@ -116,6 +149,8 @@ public sealed class Adjustments
     };
     public static Adjustments FromSnapshot(AdjustmentSnapshot snapshot)
     {
+        if (snapshot.MasterRecipeSettingsVersion is not (2 or 3 or 4))
+            throw new System.IO.InvalidDataException("Invalid master recipe version");
         if (snapshot.Values.Length != ParameterSpec.All.Length || snapshot.ExposureMode is < 0 or > 2 ||
             snapshot.Values.Where((value, index) => !double.IsFinite(value) || value < ParameterSpec.All[index].Min || value > ParameterSpec.All[index].Max).Any())
             throw new System.IO.InvalidDataException(Loc.Text("调整记录无效，原有文件未被覆盖。"));
@@ -144,6 +179,7 @@ public sealed class Adjustments
             Curve = snapshot.Curve ?? new(),
             Hsl = snapshot.Hsl ?? new HslSettings(),
             MasterRecipeID = snapshot.MasterRecipeID,
+            MasterRecipeSettingsVersion = snapshot.MasterRecipeSettingsVersion,
             Lens = snapshot.Lens ?? new(),
             Geometry = geometry,
             DisplayChromaDenoise = snapshot.DisplayChromaDenoise,
@@ -217,7 +253,7 @@ public sealed class Adjustments
         if (group == "镜头") Lens = new();
         if (group == "几何") Geometry = new();
     }
-    public void ResetAll() { Atmosphere = new(); Curve = new(); ColorGrading = new(); ToneControls = new(); AIDenoiseEnabled = false; MasterRecipeID = null; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); }
+    public void ResetAll() { Atmosphere = new(); Curve = new(); ColorGrading = new(); ToneControls = new(); AIDenoiseEnabled = false; MasterRecipeID = null; MasterRecipeSettingsVersion = 3; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); }
     internal Native.Request Request(string path, string? lut, int edge, string? output, int? longEdge = null)
     {
         if (longEdge is { } requested && !ExportSize.IsValid(requested))
@@ -234,7 +270,7 @@ public sealed class Adjustments
             ExposureEv=(float)(this[Parameter.Exposure]*scale), Brightness=1, Contrast=1+(float)(this[Parameter.Contrast]*scale)/100,
             Saturation=1+(float)(this[Parameter.Saturation]*scale)/100, Temperature=temperatureWb ? (float)this[Parameter.Temperature] : 6500,
             Tint=temperatureWb ? (float)tint : 0, Highlights=-(float)(this[Parameter.Highlights]*scale)/100,
-            Shadows=(float)(this[Parameter.Shadows]*scale)/100,ToneCurve=Curve.Mode == ToneCurveMode.Custom ? 0 : (float)this[Parameter.ToneCurve]/100,Sharpening=(float)this[Parameter.Sharpening]/100,
+            Shadows=(float)(this[Parameter.Shadows]*scale)/100,ToneCurve=Curve.Mode == ToneCurveMode.Custom ? 0 : (float)Math.Clamp(this[Parameter.ToneCurve]*RefinementScale,-100,100)/100,Sharpening=(float)this[Parameter.Sharpening]/100,
             // SizeMode 4 is the shared final long-edge contract. PreviewLongEdge
             // remains independent and is never used to size an export.
             SizeMode=limitedFinal ? 4 : 3,LongEdge=limitedFinal ? (uint)longEdge!.Value : 0,

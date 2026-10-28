@@ -63,6 +63,11 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
         Set([.look, .strength, .exposure, .contrast, .highlights, .shadows, .saturation]).union(whiteBalanceFields)
             .union(allCases.filter { $0.hslLocation != nil })
     }
+    static let refinementScalars: Set<Self> = [.sCurve, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze]
+    static let refinementObjects: Set<Self> = [.curve, .gradingShadows, .gradingMidtones, .gradingHighlights]
+    static func recipeDependencies(version: Int) -> Set<Self> {
+        version >= 4 ? recipeDependencies.union(refinementScalars).union(refinementObjects) : recipeDependencies
+    }
     var hslLocation: (axis: String, channel: Int)? {
         let parts = rawValue.split(separator: ".").map(String.init)
         guard parts.count == 4, parts[1] == "hsl",
@@ -142,10 +147,93 @@ extension ToneCurveSettings {
     }
 }
 
+extension ColorGradingWheel {
+    var transferValue: AdjustmentTransferValue { .object(["hue": .number(hue), "saturation": .number(saturation)]) }
+}
+
+// 曲线和色轮在完整复制时保留逻辑值；部分复制只转换一次实际效果。
+enum AdjustmentTransferRefinement {
+    typealias Value = AdjustmentTransferValue
+    typealias Field = AdjustmentTransferField
+
+    static func values(curve: ToneCurveSettings, grading: ColorGradingSettings) -> [Field: Value] {
+        var result: [Field: Value] = [.curve: curve.transferValue]
+        for field in Field.refinementObjects {
+            if let zone = field.gradingZone { result[field] = grading[zone].transferValue }
+        }
+        return result
+    }
+
+    static func applying(_ payload: AdjustmentTransferPayload, original: [Field: Value],
+                         previousScale: Double, targetScale: Double, fullRecipe: Bool) throws -> [Field: Value] {
+        var result = original
+        for field in Field.refinementObjects {
+            let expected = try payload[field].map {
+                try scaled($0, field: field, by: payload.source.recipe?.refinementScale ?? 1)
+            } ?? scaled(original[field]!, field: field, by: previousScale)
+            // 完整复制优先保留原逻辑值；移动端强度经过 Float 投影时仅反解必要的差值。
+            let preferred = fullRecipe ? payload[field] ?? original[field]! : original[field]!
+            let value = try logical(expected, field: field, strength: targetScale, preserving: preferred)
+            guard equivalent(try scaled(value, field: field, by: targetScale), expected, field: field) else {
+                throw AdjustmentTransferError.unrepresentable(field.rawValue)
+            }
+            result[field] = value
+        }
+        return result
+    }
+
+    static func scaled(_ value: Value, field: Field, by strength: Double) throws -> Value {
+        if field == .curve, let curve = value.curve { return curve.scaled(by: strength).transferValue }
+        guard field.gradingZone != nil, let wheel = value.object,
+              let hue = wheel["hue"]?.number, let saturation = wheel["saturation"]?.number else {
+            throw AdjustmentTransferError.invalidPayload(field.rawValue)
+        }
+        return ColorGradingWheel(hue: hue, saturation: min(100, max(0, saturation * strength))).transferValue
+    }
+
+    static func logical(_ effective: Value, field: Field, strength: Double, preserving current: Value) throws -> Value {
+        if equivalent(try scaled(current, field: field, by: strength), effective, field: field) { return current }
+        let result: Value
+        if field == .curve, let curve = effective.curve {
+            if curve.mode == .legacy || strength == 0 && curve.isIdentity { return effective }
+            guard strength != 0 else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
+            let inverse = ToneCurveSettings(mode: .custom, points: curve.points.map {
+                ToneCurvePoint(x: $0.x, y: $0.x + ($0.y - $0.x) / strength)
+            })
+            guard inverse.isValid else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
+            result = inverse.transferValue
+        } else if field.gradingZone != nil, let wheel = effective.object,
+                  let hue = wheel["hue"]?.number, let saturation = wheel["saturation"]?.number {
+            guard strength != 0 || saturation == 0 else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
+            let inverse = ColorGradingWheel(hue: hue, saturation: strength == 0 ? 0 : saturation / strength)
+            guard inverse.isValid else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
+            result = inverse.transferValue
+        } else { throw AdjustmentTransferError.invalidPayload(field.rawValue) }
+        guard equivalent(try scaled(result, field: field, by: strength), effective, field: field) else {
+            throw AdjustmentTransferError.unrepresentable(field.rawValue)
+        }
+        return result
+    }
+
+    static func equivalent(_ a: Value, _ b: Value, field: Field) -> Bool {
+        if field == .curve, let first = a.curve, let second = b.curve {
+            guard first.mode == second.mode else { return false }
+            if first.isIdentity && second.isIdentity { return true }
+            return first.points.count == second.points.count && zip(first.points, second.points).allSatisfy {
+                $0.x == $1.x && abs($0.y - $1.y) <= 1e-12
+            }
+        }
+        guard let first = a.object, let second = b.object,
+              let firstSat = first["saturation"]?.number, let secondSat = second["saturation"]?.number else { return false }
+        return first["hue"] == second["hue"] && Float(firstSat) == Float(secondSat)
+    }
+}
+
 struct AdjustmentRecipeContext: Codable, Equatable {
     let id: String
     let strength: Double
     let settingsVersion: Int
+    var refinementScale: Double { settingsVersion >= 4 ? strength : 1 }
     enum CodingKeys: String, CodingKey { case id, strength; case settingsVersion = "settings_version" }
     init(id: String, strength: Double, settingsVersion: Int) {
         self.id = id; self.strength = strength; self.settingsVersion = settingsVersion
@@ -216,7 +304,7 @@ struct AdjustmentTransferPayload: Codable, Equatable {
         }
         if let recipe = source.recipe {
             guard !recipe.id.isEmpty, recipe.strength.isFinite, (0...2).contains(recipe.strength),
-                  [2, 3].contains(recipe.settingsVersion) else { throw AdjustmentTransferError.invalidPayload("recipe") }
+                  [2, 3, 4].contains(recipe.settingsVersion) else { throw AdjustmentTransferError.invalidPayload("recipe") }
             if let strength = self[.strength]?.number, strength != recipe.strength {
                 throw AdjustmentTransferError.invalidPayload("recipe.strength")
             }

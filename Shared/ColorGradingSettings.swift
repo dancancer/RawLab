@@ -57,6 +57,13 @@ struct ColorGradingSettings: Codable, Equatable, Hashable {
     var isDefault: Bool { ColorGradingZone.allCases.allSatisfy { self[$0].isDefault } }
     var isIdentity: Bool { ColorGradingZone.allCases.allSatisfy { self[$0].isIdentity } }
     var isValid: Bool { ColorGradingZone.allCases.allSatisfy { self[$0].isValid } }
+    func scaled(by strength: Double) -> Self {
+        var result = self
+        for zone in ColorGradingZone.allCases {
+            result[zone].saturation = min(100, max(0, self[zone].saturation * strength))
+        }
+        return result
+    }
     var progress: Double { ColorGradingZone.allCases.map { self[$0].saturation / 100 }.max() ?? 0 }
     subscript(_ zone: ColorGradingZone) -> ColorGradingWheel {
         get { switch zone { case .shadows: return shadows; case .midtones: return midtones; case .highlights: return highlights } }

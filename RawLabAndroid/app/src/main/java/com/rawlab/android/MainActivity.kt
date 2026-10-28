@@ -165,7 +165,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             hslTarget = HslTargetActions(hslTarget, model::setHslTargetEnabled, model::setHslTargetAxis,
                 { x, y -> model.beginHslTarget(x, y) }, model::moveHslTarget, model::endHslTarget,
                 model::cancelHslTarget, model::keyHslTarget, model::rejectHslTarget),
-            onEdit = model::edit, onRetry = model::retry,
+            onEdit = model::edit, onRetry = model::retry, onSelectFilm = model::selectFilm,
             onPrepareReset = model::prepareReset, onCommitReset = model::commitReset,
             onSaveRetry = { model.retrySave() },
             adjustmentReloadRequired = model.adjustmentReloadRequired, onReloadAdjustments = model::reloadSavedAdjustments,

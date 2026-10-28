@@ -127,7 +127,11 @@ final class EditorModel: ObservableObject {
             if selectedFilmID.hasPrefix("recipe-lut:") { independentRecipeLookIDs.insert(selectedFilmID) }
             if !updatingMetadata && (oldValue != selectedFilmID || settings.masterRecipeID != nil) {
                 if settings.masterRecipeID != nil {
-                    settings.clearMasterRecipe()
+                    guard settings.clearMasterRecipe(isRaw: adjustmentContext.isRaw) else {
+                        updatingMetadata = true; selectedFilmID = oldValue; updatingMetadata = false
+                        resetBlockedMessage = L10n.text("现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。")
+                        return
+                    }
                 }
                 edited()
             }

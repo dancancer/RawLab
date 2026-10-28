@@ -77,9 +77,10 @@ public partial class MainWindow
             });
             if(!closing && accepted.Count>0)
             {
-                settings.ClearMasterRecipe();
                 foreach(var look in accepted)if(!films.Any(f=>StringComparer.OrdinalIgnoreCase.Equals(f.Path,look.Path)))films.Add(new(look.Name,look.Path,null));
-                lut=accepted[^1].Path;previewDeferred=true;MarkEdited();BuildFilms();
+                BuildFilms();
+                settings.ClearMasterRecipe(file == null || PhotoInput.IsRaw(file));
+                lut=accepted[^1].Path;previewDeferred=true;MarkEdited();
             }
         }
         catch(Exception error){errors.Add(error.Message);}

@@ -107,6 +107,9 @@ enum class AdjustmentField(val id: String) {
         val DENOISE = setOf(RAW_DENOISE, POST_RGB_DENOISE, CHROMA_DENOISE, WAVELET_DENOISE)
         val RECIPE_DEPENDENCIES = setOf(LOOK, STRENGTH, EXPOSURE, CONTRAST, HIGHLIGHTS, SHADOWS, SATURATION) +
             WHITE_BALANCE + entries.filter { it.hslLocation != null }
+        val REFINEMENT_SCALARS = setOf(S_CURVE, BLACK_POINT, WHITE_POINT, VIBRANCE, CLARITY, DEHAZE)
+        val REFINEMENT_OBJECTS = setOf(CURVE, GRADING_SHADOWS, GRADING_MIDTONES, GRADING_HIGHLIGHTS)
+        fun recipeDependencies(version: Int) = if (version >= 4) RECIPE_DEPENDENCIES + REFINEMENT_SCALARS + REFINEMENT_OBJECTS else RECIPE_DEPENDENCIES
         fun fromID(id: String) = entries.firstOrNull { it.id == id }
     }
 }

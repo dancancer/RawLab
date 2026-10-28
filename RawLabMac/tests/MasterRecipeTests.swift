@@ -13,7 +13,33 @@ struct MasterRecipeTests {
         }
     }
 
+    static func directRecipeRemoval() throws {
+        let recipe = try JSONDecoder().decode(MasterRecipe.self,
+            from: Data(contentsOf: URL(fileURLWithPath: "Shared/fixtures/master-recipe-v4.json")))
+        for strength in [0.0, 0.5, 2.0] {
+            var source = Adjustments(); source.applyMasterRecipe(recipe)
+            source.resolveWhiteBalance(WhiteBalance(temperature: 5300, tint: 8)); source.strength = strength
+            var before = sony2fuji_request(); source.apply(to: &before)
+            let tone = source.renderToneSettings, curve = source.renderCurveSettings
+            let grading = source.renderGradingSettings, atmosphere = source.renderAtmosphereSettings
+            var removed = source; removed.clearMasterRecipe()
+            var after = sony2fuji_request(); removed.apply(to: &after)
+            check(removed.masterRecipeID == nil && removed.toneSettings == tone && removed.curveSettings == curve &&
+                  removed.gradingSettings == grading && removed.atmosphereSettings == atmosphere &&
+                  removed.renderHSLSettings == source.renderHSLSettings && before.exposure_ev == after.exposure_ev &&
+                  before.contrast == after.contrast && before.tint == after.tint && before.wb_mode == after.wb_mode,
+                  "Direct recipe removal preserves effective controls at \(strength)")
+        }
+        var extreme = Adjustments(); extreme.applyMasterRecipe(recipe)
+        extreme.resolveWhiteBalance(WhiteBalance(temperature: 5300, tint: 8)); extreme.exposure = 4; extreme.strength = 2
+        let unchanged = extreme
+        check(!extreme.clearMasterRecipe() && extreme == unchanged,
+              "Unrepresentable direct removal keeps the original edit unchanged")
+    }
+
     static func main() throws {
+        try refinedRecipeApplication()
+        try directRecipeRemoval()
         // 1. Definition and parameter verification
         let recipe = MasterRecipe.hamadaDaylightV2
         check(recipe.id == "hamada_daylight_v2", "Recipe has expected ID")
@@ -21,7 +47,7 @@ struct MasterRecipeTests {
         check(recipe.exposureDelta == 0.40, "Sony exposure delta is +0.40 EV")
         check(recipe.shadowsDelta == 20.0, "Sony shadows delta is +20.0")
         check(recipe.highlightsDelta == -15.0, "Sony highlights delta is -15.0")
-        check(recipe.contrastDelta == -15.0, "Sony contrast delta is -15.0")
+        check(recipe.contrastDelta == -5.0, "Refined recipe reduces the uniform contrast offset")
         check(recipe.saturationDelta == -8.0, "Sony saturation delta is -8.0")
         check(recipe.tintDelta == 5.0, "Sony tint delta is +5.0")
         check(recipe.lutURL() != nil, "Recipe CUBE URL resolves successfully")
@@ -149,6 +175,7 @@ struct MasterRecipeTests {
         legacyZero.strength = 2
         check(legacyZero.renderHSLSettings.value(.lightness, channel: 3) == 100,
               "Two hundred percent clamps HSL at the native range")
+        legacyZero.resolveWhiteBalance(WhiteBalance(temperature: 6500, tint: 0))
         legacyZero.clearMasterRecipe()
         check(legacyZero.renderHSLSettings == legacyZero.hslSettings,
               "Clearing the recipe leaves visible HSL unscaled")
@@ -172,7 +199,7 @@ struct MasterRecipeTests {
         check(abs(request.exposure_ev - 0.40) < 1e-4, "Strength 1.0 applies +0.40 EV exposure")
         check(abs(request.shadows - 0.20) < 1e-4, "Strength 1.0 applies +0.20 shadows (+20)")
         check(abs(request.highlights - 0.15) < 1e-4, "Strength 1.0 applies +0.15 core highlights (-15 UI)")
-        check(abs(request.contrast - 0.85) < 1e-4, "Strength 1.0 applies 0.85 contrast (-15)")
+        check(abs(request.contrast - 0.95) < 1e-4, "Strength 1.0 applies the refined contrast")
         check(abs(request.saturation - 0.92) < 1e-4, "Strength 1.0 applies 0.92 saturation (-8)")
         check(abs(request.tint - 5.0) < 1e-4, "Strength 1.0 applies +5.0 tint")
 
@@ -182,7 +209,7 @@ struct MasterRecipeTests {
         check(abs(request.exposure_ev - 0.20) < 1e-4, "Strength 0.5 scales exposure to +0.20 EV")
         check(abs(request.shadows - 0.10) < 1e-4, "Strength 0.5 scales shadows to +0.10")
         check(abs(request.highlights - 0.075) < 1e-4, "Strength 0.5 scales highlights to +0.075")
-        check(abs(request.contrast - 0.85 - 0.075) < 1e-4, "Strength 0.5 scales contrast to 0.925")
+        check(abs(request.contrast - 0.975) < 1e-4, "Strength 0.5 scales the refined contrast")
         check(abs(request.saturation - 0.92 - 0.04) < 1e-4, "Strength 0.5 scales saturation to 0.96")
         check(abs(request.tint - 2.5) < 1e-4, "Strength 0.5 scales tint to +2.5")
 
@@ -307,5 +334,62 @@ struct MasterRecipeTests {
             exit(1)
         }
         print("PASS: All MasterRecipe unit tests passed successfully!")
+    }
+
+    private static func refinedRecipeApplication() throws {
+        let data = try Data(contentsOf: URL(fileURLWithPath: "Shared/fixtures/master-recipe-v4.json"))
+        let recipe = try JSONDecoder().decode(MasterRecipe.self, from: data)
+        var state = Adjustments()
+        state.blackPoint = -20; state.whitePoint = 30; state.vibrance = -25
+        state.clarity = -40; state.dehaze = 20; state.toneCurve = 35
+        state.temperature = 8000; state.sharpening = 75
+        state.applyMasterRecipe(recipe)
+        check(state.recipeSettingsVersion == 4, "Refined recipe stores version four only on explicit application")
+        check(state.blackPoint == 50 && state.whitePoint == -60 && state.vibrance == 15,
+              "Refined recipe replaces all visible tone controls")
+        check(state.clarity == 12 && state.dehaze == -6,
+              "Refined recipe replaces visible atmosphere controls")
+        check(state.gradingSettings.shadows == ColorGradingWheel(hue: 210, saturation: 8) &&
+              state.gradingSettings.highlights == ColorGradingWheel(hue: 50, saturation: 12),
+              "Refined recipe replaces visible grading controls")
+        check(state.curveSettings.mode == .custom && state.curveSettings.points.count == 5 && state.toneCurve == 0,
+              "Refined recipe selects its custom curve and clears inactive legacy S curve")
+        check(state.temperature == 8000 && state.sharpening == 75,
+              "Refinement preserves independent temperature and sharpening")
+        let restored = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(state))
+        check(restored == state && restored.recipeSettingsVersion == 4,
+              "Refined recipe settings round-trip without catalog reinjection")
+        for strength in [0.0, 0.5, 1.0, 2.0] {
+            state.strength = strength
+            check(state.renderToneSettings.blackPoint == min(100, 50 * strength) &&
+                  state.renderToneSettings.whitePoint == max(-100, -60 * strength) &&
+                  state.renderToneSettings.vibrance == 15 * strength &&
+                  state.renderAtmosphereSettings.clarity == 12 * strength && state.renderAtmosphereSettings.dehaze == -6 * strength,
+                  "V4 \(strength): current tone and atmosphere values scale with native limits")
+            check(state.renderGradingSettings.shadows.hue == 210 && state.renderGradingSettings.shadows.saturation == 8 * strength,
+                  "V4 \(strength): grading amount scales but hue stays fixed")
+            let curve = state.renderCurveSettings
+            check(curve.isValid && (strength != 0 || curve.isIdentity), "V4 \(strength): effective curve remains valid")
+            check(state.blackPoint == 50 && state.curveSettings.points.count == 5,
+                  "V4 \(strength): rendering does not rewrite visible controls")
+        }
+        state.blackPoint = 13.5; state.gradingSettings.shadows.saturation = 17.5
+        let edited = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(state))
+        check(edited.blackPoint == 13.5 && edited.renderToneSettings.blackPoint == 27 &&
+              edited.renderGradingSettings.shadows.saturation == 35,
+              "Saved manual refinements are rendered without reinjecting catalog defaults")
+        for version in [2, 3] {
+            var legacy = state
+            legacy.setTransferRecipe(recipe.id, settingsVersion: version)
+            legacy.strength = 0
+            check(legacy.renderToneSettings == legacy.toneSettings && legacy.renderCurveSettings == legacy.curveSettings &&
+                  legacy.renderGradingSettings == legacy.gradingSettings && legacy.renderAtmosphereSettings == legacy.atmosphereSettings,
+                  "Version \(version) preserves independent refinements even at zero recipe strength")
+        }
+        state.curveSettings = ToneCurveSettings()
+        state.toneCurve = 30; state.strength = 0.5
+        var request = sony2fuji_request()
+        state.apply(to: &request)
+        check(abs(request.tone_curve - 0.15) < 1e-6, "V4 manually selected legacy curve participates in strength")
     }
 }

@@ -82,7 +82,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     onResetScope: (EditorResetScope) -> Unit, sideDock: Boolean, navigationEnabled: Boolean, compactNavigation: Boolean,
     onGeometryLock: () -> Unit = {}, onGeometrySwap: () -> Unit = {}, onGeometryGrid: () -> Unit = {},
     onPresets: () -> Unit = {}, gradingZone: ColorGradingZone = ColorGradingZone.SHADOWS,
-    onGradingZoneChange: (ColorGradingZone) -> Unit = {}, hslTarget: HslTargetActions = HslTargetActions()) {
+    onGradingZoneChange: (ColorGradingZone) -> Unit = {}, hslTarget: HslTargetActions = HslTargetActions(),
+    onSelectFilm: (String) -> Boolean = { false }) {
     val edits = state.visibleEdits
     val context = LocalContext.current
     val rawInput = state.photo?.inputKind == PhotoInputKind.RAW
@@ -203,8 +204,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                             Column(Modifier.fillMaxWidth().selectable(selected = edits.film == look.id,
                                 enabled = state.controlsEnabled && look.available,
                                 role = Role.RadioButton, onClick = {
-                                    onEdit(edits.selectFilm(look.id, state.preview?.tint), false)
-                                    if (filmSelectionChanged(edits, look.id)) onFilmSelected(when {
+                                    if (onSelectFilm(look.id) && filmSelectionChanged(edits, look.id)) onFilmSelected(when {
                                         look.managed -> UsageFilmKind.Custom
                                         look.id == "neutral" -> UsageFilmKind.None
                                         else -> UsageFilmKind.BuiltIn
@@ -319,7 +319,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 onDraftEdit(edits.copy(geometry = value), dragging)
             }
             15 -> MasterRecipePicker(recipes, edits.recipeID, state.controlsEnabled) { recipe ->
-                onEdit(if (recipe == null) edits.selectFilm("neutral", state.preview?.tint) else edits.applyRecipe(recipe), false)
+                if (recipe == null) onSelectFilm("neutral") else onEdit(edits.applyRecipe(recipe), false)
             }
             18 -> NumericControl(R.string.black_point, edits.blackPoint, -100f..100f, "%", state.controlsEnabled,
                 { value, dragging -> onEdit(edits.copy(blackPoint = value), dragging) }, { onEdit(edits.copy(blackPoint = 0f), false) })

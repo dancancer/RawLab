@@ -6,6 +6,7 @@ import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.LookChoice
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.looks.ManagedLook
+import com.rawlab.android.format.PhotoInputKind
 
 // ============================================================================
 //  编辑器的界面状态：当前照片、参数、预览与进行中的操作
@@ -55,7 +56,7 @@ data class EditorState(
 }
 
 // 纯状态转换：渲染结束、外观加载/导入/改名/删除后的界面状态
-internal data class EditorMutation(val state: EditorState, val preview: EditSettings?)
+internal data class EditorMutation(val state: EditorState, val preview: EditSettings?, val blockedRecipeSelection: Boolean = false)
 
 internal object EditorStateReducer {
     fun renderFinished(current: EditorState): EditorState = current.copy(
@@ -70,17 +71,20 @@ internal object EditorStateReducer {
     }
 
     fun lookImported(current: EditorState, look: ManagedLook): EditorMutation {
-        val edits = current.edits.selectFilm(look.id, current.preview?.tint)
+        val selected = try { current.edits.selectFilm(look.id, current.preview?.tint,
+            current.preview?.temperature, current.photo?.inputKind ?: PhotoInputKind.RAW) }
+            catch (_: IllegalArgumentException) { null }
+        val edits = selected ?: current.edits
         val hasPhoto = current.photo != null
         val state = current.copy(
             looks = current.looks.filterNot { it.id == look.id } + LookChoice(look.id, look.name, managed = true),
             edits = edits,
             operation = Operation.NONE,
-            rendering = if (hasPhoto) true else current.rendering,
-            exact = if (hasPhoto) false else current.exact,
-            error = null,
+            rendering = if (selected != null && hasPhoto) true else current.rendering,
+            exact = if (selected != null && hasPhoto) false else current.exact,
+            error = if (selected == null) current.error else null,
         )
-        return EditorMutation(state, edits.takeIf { hasPhoto })
+        return EditorMutation(state, selected?.takeIf { hasPhoto }, blockedRecipeSelection = selected == null)
     }
 
     fun lookRenamed(current: EditorState, look: ManagedLook): EditorMutation {

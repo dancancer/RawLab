@@ -37,7 +37,11 @@ public partial class MainWindow
             button.Click += (_, _) => {
                 if (exporting || !ResolveTransformDraft()) return;
                 if (recipe != null) { settings.ApplyMasterRecipe(recipe); lut = recipe.LutPath; }
-                else { settings.ClearMasterRecipe(); lut = null; }
+                else {
+                    try { settings.ClearMasterRecipe(file == null || PhotoInput.IsRaw(file)); }
+                    catch (Exception error) { Report(error); return; }
+                    lut = null;
+                }
                 MarkEdited(); RefreshControls(); Schedule();
             };
             RecipeStrip.Children.Add(button); recipeButtons[recipe?.Id ?? ""] = button;

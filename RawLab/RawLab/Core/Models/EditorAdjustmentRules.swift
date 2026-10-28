@@ -1,5 +1,19 @@
 import Foundation
 
+extension RawSettings {
+    mutating func clearMasterRecipe(context: EditorAdjustmentContext) -> EditorAdjustmentResetBlock? {
+        guard masterRecipeID != nil else { return nil }
+        let strength = lutStrength
+        switch EditorAdjustmentRules.prepareReset(.tool(.recipe), snapshot: PhotoEditState(settings: self), context: context) {
+        case .candidate(let candidate, _):
+            self = candidate.settings; lutStrength = strength
+            return nil
+        case .blocked(let reason): return reason
+        case .unchanged: return .unrepresentable
+        }
+    }
+}
+
 enum EditorToolSelection: Hashable {
     case adjustment(AdjustmentKind)
     case film, recipe, lens, geometry
@@ -191,6 +205,13 @@ enum EditorAdjustmentRules {
             fields.append("白平衡")
         }
         if before.hsl != after.hsl { fields.append("HSL") }
+        if before.blackPoint != after.blackPoint { fields.append("黑场") }
+        if before.whitePoint != after.whitePoint { fields.append("白场") }
+        if before.vibrance != after.vibrance { fields.append("鲜艳度") }
+        if before.clarity != after.clarity { fields.append("清晰度") }
+        if before.dehaze != after.dehaze { fields.append("去朦胧") }
+        if before.curveSettings != after.curveSettings { fields.append("曲线") }
+        if before.gradingSettings != after.gradingSettings { fields.append("颜色分级") }
         return fields
     }
 

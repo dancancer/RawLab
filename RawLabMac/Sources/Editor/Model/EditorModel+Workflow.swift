@@ -182,11 +182,14 @@ extension EditorModel {
         let before = prepared.original.settings, after = prepared.candidate.settings
         guard before.masterRecipeID != nil, after.masterRecipeID == nil else { return [] }
         var changes = [String]()
-        for parameter in [AdjustmentParameter.exposure, .contrast, .highlights, .shadows, .saturation, .temperature, .tint] {
+        for parameter in [AdjustmentParameter.exposure, .contrast, .highlights, .shadows, .saturation, .temperature, .tint,
+                          .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze] {
             if before[keyPath: parameter.spec.keyPath] != after[keyPath: parameter.spec.keyPath] { changes.append(parameter.spec.title) }
         }
         if before.whiteBalanceMode != after.whiteBalanceMode { changes.append(L10n.text("白平衡")) }
         if before.hslSettings != after.hslSettings { changes.append("HSL") }
+        if before.toneCurve != after.toneCurve || before.curveSettings != after.curveSettings { changes.append(L10n.text("曲线")) }
+        if before.gradingSettings != after.gradingSettings { changes.append(L10n.text("颜色分级")) }
         return changes
     }
 
@@ -209,7 +212,11 @@ extension EditorModel {
             settings.applyMasterRecipe(recipe)
             selectedFilmID = ""
         } else {
-            settings.clearMasterRecipe()
+            guard settings.clearMasterRecipe(isRaw: adjustmentContext.isRaw) else {
+                updatingMetadata = false
+                resetBlockedMessage = L10n.text("现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。")
+                return
+            }
         }
         updatingMetadata = false
         edited()
@@ -219,6 +226,7 @@ extension EditorModel {
         guard (id != selectedFilmID || settings.masterRecipeID != nil),
               id.isEmpty || filmChoices.contains(where: { $0.id == id }) else { return }
         selectedFilmID = id
+        guard selectedFilmID == id, settings.masterRecipeID == nil else { return }
         onUsage(.filmSelected(id.isEmpty ? .none : selectedFilm?.managedID == nil ? .builtIn : .custom))
     }
 

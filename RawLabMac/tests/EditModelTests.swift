@@ -291,6 +291,23 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
                   model.editState(settings: model.settings).filmID == "builtin:reset.cube",
                   "ordinary reset preserves UI film ID while persistence keeps storage ID")
         model.selectMasterRecipe(.hamadaDaylightV2)
+        model.settings.strength = 0.5
+        let refinedTone = model.settings.renderToneSettings
+        let refinedCurve = model.settings.renderCurveSettings
+        let conversions = model.resetConversions(try prepared(.tool(.recipe)))
+        try check(conversions.contains(L10n.text("曲线")) && conversions.contains(L10n.text("颜色分级")),
+                  "recipe reset reports modern materialized controls")
+        model.selectFilm(lut.path)
+        try check(model.settings.masterRecipeID == nil && model.selectedFilmID == lut.path &&
+                  model.settings.toneSettings == refinedTone && model.settings.curveSettings == refinedCurve,
+                  "direct film selection uses the same lossless recipe conversion")
+        model.selectMasterRecipe(.hamadaDaylightV2)
+        model.settings.exposure = 4; model.settings.strength = 2
+        let beforeBlockedSelection = model.settings
+        model.selectFilm(lut.path)
+        try check(model.settings == beforeBlockedSelection && model.selectedFilmID.isEmpty && model.resetBlockedMessage != nil,
+                  "unrepresentable film selection keeps the original edit and reports the block")
+        model.selectMasterRecipe(.hamadaDaylightV2)
         let looks = try prepared(.group(.looks))
         let beforeLooks = model.scheduler.latest!.id
         try check(model.commitReset(looks) && model.selectedFilmID.isEmpty &&
@@ -382,7 +399,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try check(selection.settings.masterRecipeID == MasterRecipe.hamadaDaylightV2.id && selection.selectedFilmID.isEmpty,
                   "selecting a recipe clears film selection without clearing the recipe")
         try check(selection.settings.exposure == 0.4 && selection.settings.shadows == 20 &&
-                  selection.settings.highlights == -15 && selection.settings.contrast == -15 &&
+                  selection.settings.highlights == -15 && selection.settings.contrast == -5 &&
                   selection.settings.saturation == -8 && selection.settings.tint == 5,
                   "applying a recipe overwrites its six adjustment fields")
         try check(selection.settings.temperature == 8000 && selection.settings.sharpening == 75 &&
@@ -390,6 +407,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         selection.settings.exposure = 1
         selection.selectMasterRecipe(.hamadaDaylightV2)
         try check(selection.settings.exposure == 0.4, "explicitly reapplying the same recipe overwrites manual changes")
+        selection.settings.resolveWhiteBalance(WhiteBalance(temperature: 5300, tint: 8))
         selection.selectedFilmID = ""
         try check(selection.settings.masterRecipeID == nil, "selecting neutral clears an active recipe")
         selection.selectMasterRecipe(.hamadaDaylightV2)

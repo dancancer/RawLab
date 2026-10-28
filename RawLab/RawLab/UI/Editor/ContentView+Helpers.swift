@@ -299,7 +299,9 @@ extension ContentView {
                 if case .select(let selectedID) = LookImportSelection.decision(previousID: settings.lutID,
                                                                                 imported: report.imported) {
                     var updated = settings
-                    updated.clearMasterRecipe(cameraTint: viewModel.rawWhiteBalance?.tint)
+                    if let reason = updated.clearMasterRecipe(context: resetContext) {
+                        viewModel.statusMessage = resetBlockedMessage(reason); return
+                    }
                     updated.lutID = selectedID
                     applySettingsChange(updated)
                 }

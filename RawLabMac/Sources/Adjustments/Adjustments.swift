@@ -77,6 +77,11 @@ struct Adjustments: Equatable, Codable {
 
     var masterRecipe: MasterRecipe? { MasterRecipe.recipe(for: masterRecipeID) }
     var recipeSettingsVersion: Int { masterRecipeSettingsVersion ?? 2 }
+    var refinementScale: Double { masterRecipe != nil && recipeSettingsVersion >= 4 ? strength : 1 }
+    var renderToneSettings: ToneControlsSettings { toneSettings.scaled(by: refinementScale) }
+    var renderAtmosphereSettings: AtmosphereSettings { atmosphereSettings.scaled(by: refinementScale) }
+    var renderGradingSettings: ColorGradingSettings { gradingSettings.scaled(by: refinementScale) }
+    var renderCurveSettings: ToneCurveSettings { curveSettings.scaled(by: refinementScale) }
     mutating func setTransferRecipe(_ id: String?, settingsVersion: Int = 3) {
         masterRecipeID = id
         masterRecipeSettingsVersion = settingsVersion
@@ -233,7 +238,7 @@ struct Adjustments: Equatable, Codable {
 
     mutating func applyMasterRecipe(_ recipe: MasterRecipe) {
         masterRecipeID = recipe.id
-        masterRecipeSettingsVersion = 3
+        masterRecipeSettingsVersion = recipe.version
         strength = 1
         exposure = recipe.exposureDelta
         shadows = recipe.shadowsDelta
@@ -242,20 +247,23 @@ struct Adjustments: Equatable, Codable {
         saturation = recipe.saturationDelta
         tint = recipe.tintDelta
         hsl = recipe.hsl.isIdentity ? nil : recipe.hsl
+        if recipe.version >= 4 {
+            toneControls = recipe.tone?.isIdentity == true ? nil : recipe.tone
+            atmosphere = recipe.atmosphere?.isIdentity == true ? nil : recipe.atmosphere
+            gradingSettings = recipe.grading ?? ColorGradingSettings()
+            curveSettings = recipe.curve ?? ToneCurveSettings()
+            toneCurve = 0
+        }
     }
 
-    mutating func clearMasterRecipe() {
-        masterRecipeSettingsVersion = 3
-        guard masterRecipe != nil else { masterRecipeID = nil; return }
-        let cameraWB = usesAsShotWhiteBalance
-        let offset = tint
-        masterRecipeID = nil
-        if cameraWB && (offset == 0 || asShotWhiteBalance == nil) {
-            resetWhiteBalance()
-        } else {
-            tint = min(150, max(-150, (asShotWhiteBalance?.tint ?? 0) + offset))
-            whiteBalanceMode = .custom
-        }
+    @discardableResult mutating func clearMasterRecipe(isRaw: Bool = true) -> Bool {
+        guard masterRecipeID != nil else { return true }
+        let context = EditorAdjustmentContext(isRaw: isRaw, defaultExposureMode: exposureMode, neutralFilmID: "")
+        guard var independent = try? detachingRecipeForReset(context: context) else { return false }
+        // 选用下一个胶片时保留外观强度；独立的调整值已经展开一次。
+        independent.strength = strength
+        self = independent
+        return true
     }
 
     func apply(to request: inout sony2fuji_request) {
@@ -276,15 +284,17 @@ struct Adjustments: Equatable, Codable {
         // The core's positive highlight value compresses light; UI positive brightens.
         request.highlights = Float(-highlights * scale / 100)
         request.shadows = Float(shadows * scale / 100)
-        request.tone_curve = curveSettings.mode == .custom ? 0 : Float(toneCurve / 100)
+        request.tone_curve = curveSettings.mode == .custom ? 0 : Float(min(100, max(-100, toneCurve * refinementScale)) / 100)
         request.sharpening = Float(sharpening / 100)
     }
 
     mutating func reset(_ group: AdjustmentGroup) {
+        if group == .film {
+            guard clearMasterRecipe() else { return }
+        }
         for parameter in group.parameters {
             set(parameter, to: parameter.spec(for: self).defaultValue)
         }
-        if group == .film { clearMasterRecipe() }
         if group == .input { exposureMode = .preview; resetWhiteBalance() }
         if group == .color { hsl = nil; colorGrading = nil }
         if group == .tone { toneCurveConfig = nil }
@@ -397,7 +407,7 @@ struct Adjustments: Equatable, Codable {
             }
         }
         if masterRecipeID != nil {
-            guard masterRecipe != nil, [2, 3].contains(masterRecipeSettingsVersion ?? 2) else {
+            guard masterRecipe != nil, [2, 3, 4].contains(masterRecipeSettingsVersion ?? 2) else {
                 throw EditorResetBlockedReason.invalidSnapshot("masterRecipe")
             }
         }
@@ -407,10 +417,15 @@ struct Adjustments: Equatable, Codable {
         let effective = context.isRaw ? self : resolvedForRaster
         var request = sony2fuji_request()
         effective.apply(to: &request)
+        let tone = effective.renderToneSettings, atmosphere = effective.renderAtmosphereSettings
+        let grading = effective.renderGradingSettings, curve = effective.renderCurveSettings
         return [Float(request.wb_mode.rawValue), request.exposure_ev, request.brightness, request.temperature,
                 request.tint, request.contrast, request.saturation, request.highlights, request.shadows,
                 request.tone_curve, request.sharpening] +
-            (effective.renderHSLSettings.hue + effective.renderHSLSettings.saturation + effective.renderHSLSettings.lightness).map(Float.init)
+            (effective.renderHSLSettings.hue + effective.renderHSLSettings.saturation + effective.renderHSLSettings.lightness).map(Float.init) +
+            [tone.blackPoint, tone.whitePoint, tone.vibrance, atmosphere.clarity, atmosphere.dehaze].map(Float.init) +
+            ColorGradingZone.allCases.flatMap { [Float(grading[$0].hue), Float(grading[$0].saturation)] } +
+            [curve.mode == .custom ? 1 : 0] + curve.points.flatMap { [Float($0.x), Float($0.y)] }
     }
 
     fileprivate func detachingRecipeForReset(context: EditorAdjustmentContext) throws -> Adjustments {
@@ -418,6 +433,12 @@ struct Adjustments: Equatable, Codable {
         var result = self
         let renderedHSL = renderHSLSettings
         if masterRecipe != nil {
+            let tone = renderToneSettings, atmosphere = renderAtmosphereSettings
+            result.toneControls = tone.isIdentity ? nil : tone
+            result.atmosphere = atmosphere.isIdentity ? nil : atmosphere
+            result.gradingSettings = renderGradingSettings
+            result.curveSettings = renderCurveSettings
+            result.toneCurve = min(100, max(-100, toneCurve * refinementScale))
             let scale = strength
             result.exposure = exposure * scale
             result.contrast = contrast * scale
@@ -634,16 +655,20 @@ extension Adjustments {
         masterRecipeID = try values.decodeIfPresent(String.self, forKey: .masterRecipeID)
         let version = try values.decodeIfPresent(Int.self, forKey: .masterRecipeSettingsVersion)
         masterRecipeSettingsVersion = masterRecipeID == nil ? 3 : (version ?? 2)
+        guard [2, 3, 4].contains(version ?? 3) else {
+            throw DecodingError.dataCorruptedError(forKey: .masterRecipeSettingsVersion, in: values, debugDescription: "Invalid master recipe version")
+        }
         if version == nil, let recipe = masterRecipe {
             // 旧记录只保存基础值；一次性合入预设，之后由新规则整体缩放这些当前值。
+            let defaults = recipe.migrationDefaults
             let cameraWB = whiteBalanceMode == .asShot ||
                 (temperature == asShotWhiteBalance?.temperature && tint == asShotWhiteBalance?.tint)
-            exposure += recipe.exposureDelta
-            shadows += recipe.shadowsDelta
-            highlights += recipe.highlightsDelta
-            contrast += recipe.contrastDelta
-            saturation += recipe.saturationDelta
-            tint = (cameraWB ? 0 : tint - (asShotWhiteBalance?.tint ?? 0)) + recipe.tintDelta
+            exposure += defaults.exposureDelta
+            shadows += defaults.shadowsDelta
+            highlights += defaults.highlightsDelta
+            contrast += defaults.contrastDelta
+            saturation += defaults.saturationDelta
+            tint = (cameraWB ? 0 : tint - (asShotWhiteBalance?.tint ?? 0)) + defaults.tintDelta
             if cameraWB { whiteBalanceMode = .asShot }
         }
     }

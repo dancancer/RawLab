@@ -41,6 +41,9 @@ data class ColorGradingSettings(
     val isDefault get() = ColorGradingZone.entries.all { this[it].isDefault }
     val isIdentity get() = ColorGradingZone.entries.all { this[it].isIdentity }
     val progress get() = ColorGradingZone.entries.maxOf { this[it].saturation } / 100f
+    fun scaled(strength: Float) = ColorGradingZone.entries.fold(this) { result, zone ->
+        result.with(zone, this[zone].copy(saturation = (this[zone].saturation * strength).coerceIn(0f, 100f)))
+    }
     operator fun get(zone: ColorGradingZone) = when (zone) {
         ColorGradingZone.SHADOWS -> shadows; ColorGradingZone.MIDTONES -> midtones; ColorGradingZone.HIGHLIGHTS -> highlights
     }

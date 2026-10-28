@@ -321,21 +321,25 @@ struct RawSettings: Codable, Equatable {
     var lutStrength: Double
     var whiteBalanceMode: RawWhiteBalanceMode
     var masterRecipeID: String?
+    var masterRecipeSettingsVersion = 3
     var hasLook: Bool { lutID != nil || masterRecipeID != nil }
     var masterRecipe: MasterRecipe? { MasterRecipe.recipe(for: masterRecipeID) }
     var recipeScale: Double { masterRecipeID == nil ? 1 : Double(clampedLUTStrength) }
+    var refinementScale: Double { masterRecipeSettingsVersion >= 4 ? recipeScale : 1 }
     mutating func applyMasterRecipe(_ recipe: MasterRecipe) {
         masterRecipeID = recipe.id; lutID = nil; lutStrength = 1
+        masterRecipeSettingsVersion = recipe.version
         exposure = recipe.exposureDelta; shadows = recipe.shadowsDelta / 100
         highlights = -recipe.highlightsDelta / 100
         contrast = 1 + recipe.contrastDelta / 100; saturation = 1 + recipe.saturationDelta / 100
         tint = recipe.tintDelta; hsl = recipe.hsl
-    }
-    mutating func clearMasterRecipe(cameraTint: Double?) {
-        guard masterRecipeID != nil else { return }
-        masterRecipeID = nil
-        if whiteBalanceMode == .camera && (tint == 0 || cameraTint == nil) { tint = cameraTint ?? 0 }
-        else { tint = min(150, max(-150, (cameraTint ?? 0) + tint)); whiteBalanceMode = .custom }
+        if recipe.version >= 4 {
+            toneControls = recipe.tone?.isIdentity == true ? nil : recipe.tone
+            atmosphere = recipe.atmosphere?.isIdentity == true ? nil : recipe.atmosphere
+            gradingSettings = recipe.grading ?? ColorGradingSettings()
+            curveSettings = recipe.curve ?? ToneCurveSettings()
+            toneCurve = 0
+        }
     }
     func renderedRecipe(cameraTemperature: Double, cameraTint: Double) -> RawSettings {
         guard masterRecipeID != nil else { return self }
@@ -343,11 +347,20 @@ struct RawSettings: Codable, Equatable {
         let scale = recipeScale
         result.exposure *= scale; result.shadows *= scale; result.highlights *= scale
         result.contrast = 1 + (contrast - 1) * scale; result.saturation = 1 + (saturation - 1) * scale
-        result.hsl = hsl.scaled(by: scale)
+        result.hsl = hsl.scaled(by: masterRecipeSettingsVersion >= 3 ? scale : 1)
+        if masterRecipeSettingsVersion >= 4 {
+            let tone = toneSettings.scaled(by: scale), atmosphere = atmosphereSettings.scaled(by: scale)
+            result.toneControls = tone.isIdentity ? nil : tone
+            result.atmosphere = atmosphere.isIdentity ? nil : atmosphere
+            result.gradingSettings = gradingSettings.scaled(by: scale)
+            result.curveSettings = curveSettings.scaled(by: scale)
+            result.toneCurve = min(1, max(-1, toneCurve * scale))
+        }
         if whiteBalanceMode == .camera { result.temperature = cameraTemperature }
         result.tint = min(150, max(-150, cameraTint + tint * scale))
         if tint * scale != 0 { result.whiteBalanceMode = .custom }
         result.masterRecipeID = nil
+        result.masterRecipeSettingsVersion = 3
         return result
     }
 
@@ -355,7 +368,7 @@ struct RawSettings: Codable, Equatable {
         case exposure, contrast, saturation, temperature, tint, highlights, shadows
         case toneCurve, noiseReduction, sharpening, lutID, lutStrength, whiteBalanceMode
         case denoise, photoEffects, displayChromaDenoise, exposureMode, hsl
-        case masterRecipeID, lensCorrection, geometry, processing, toneControls, atmosphere, colorGrading, toneCurveConfig
+        case masterRecipeID, masterRecipeSettingsVersion, lensCorrection, geometry, processing, toneControls, atmosphere, colorGrading, toneCurveConfig
     }
 
     var clampedLUTStrength: Float {
@@ -451,6 +464,10 @@ struct RawSettings: Codable, Equatable {
         sharpening = try values.decodeIfPresent(Double.self, forKey: .sharpening) ?? 0
         lutID = try values.decodeIfPresent(String.self, forKey: .lutID)
         masterRecipeID = try values.decodeIfPresent(String.self, forKey: .masterRecipeID)
+        masterRecipeSettingsVersion = try values.decodeIfPresent(Int.self, forKey: .masterRecipeSettingsVersion) ?? 3
+        guard [2, 3, 4].contains(masterRecipeSettingsVersion) else {
+            throw DecodingError.dataCorruptedError(forKey: .masterRecipeSettingsVersion, in: values, debugDescription: "Invalid master recipe version")
+        }
         lutStrength = try values.decodeIfPresent(Double.self, forKey: .lutStrength) ?? 1
         whiteBalanceMode = try values.decodeIfPresent(RawWhiteBalanceMode.self, forKey: .whiteBalanceMode) ?? .camera
         denoise = try values.decodeIfPresent(RawDenoiseSettings.self, forKey: .denoise) ?? RawDenoiseSettings()
@@ -516,6 +533,17 @@ struct MasterRecipe: Codable, Identifiable, Hashable {
     let saturationDelta: Double
     let tintDelta: Double
     let hsl: HSLSettings
+    let settingsVersion: Int?
+    let tone: ToneControlsSettings?
+    let atmosphere: AtmosphereSettings?
+    let grading: ColorGradingSettings?
+    let curve: ToneCurveSettings?
+    var version: Int { settingsVersion ?? 3 }
+    var isValid: Bool {
+        guard hsl.isValid, [3, 4].contains(version) else { return false }
+        if version == 3 { return tone == nil && atmosphere == nil && grading == nil && curve == nil }
+        return tone?.isValid == true && atmosphere?.isValid == true && grading?.isValid == true && curve?.isValid == true
+    }
     static let allRecipes: [MasterRecipe] = {
         let paths = [Bundle.main.url(forResource: "master-recipes", withExtension: "json"),
                      ProcessInfo.processInfo.environment["RAWLAB_MASTER_RECIPE_CATALOG"].map { URL(fileURLWithPath: $0) },
@@ -523,7 +551,7 @@ struct MasterRecipe: Codable, Identifiable, Hashable {
                      URL(fileURLWithPath: "../Shared/master-recipes.json")].compactMap { $0 }
         guard let path = paths.first(where: { FileManager.default.fileExists(atPath: $0.path) }),
               let data = try? Data(contentsOf: path), let recipes = try? JSONDecoder().decode([MasterRecipe].self, from: data),
-              recipes.count == 14, Set(recipes.map(\.id)).count == 14, recipes.allSatisfy({ $0.hsl.isValid }) else {
+              recipes.count == 14, Set(recipes.map(\.id)).count == 14, recipes.allSatisfy({ $0.isValid }) else {
             preconditionFailure("Missing or invalid master recipe catalog")
         }
         return recipes

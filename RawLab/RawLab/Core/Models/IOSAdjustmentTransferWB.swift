@@ -39,7 +39,7 @@ extension IOSAdjustmentTransfer {
         }
         guard context.isRaw || !payload.source.isRaw else { throw AdjustmentTransferError.incompatible("color.white_balance") }
         let previousValues = values(target, context: context)
-        let previousRecipe = target.masterRecipeID.map { AdjustmentRecipeContext(id: $0, strength: target.recipeScale, settingsVersion: 3) }
+        let previousRecipe = target.masterRecipeID.map { AdjustmentRecipeContext(id: $0, strength: target.recipeScale, settingsVersion: target.masterRecipeSettingsVersion) }
         if !contextChanged && context.isRaw == payload.source.isRaw && previousRecipe == payload.source.recipe
             && selected.allSatisfy({ payload[$0] == previousValues[$0.rawValue] }) { return }
         if selected == Field.whiteBalanceFields {

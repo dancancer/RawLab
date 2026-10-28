@@ -352,12 +352,21 @@ struct ControlGroupTests {
         check(coreValues(asShotResult.settings) == coreValues(asShotWithoutCamera),
               "As-shot RAW white balance with zero relative tint needs no calibration")
 
-        var future = try JSONSerialization.jsonObject(with: JSONEncoder().encode(rgb)) as! [String: Any]
-        future["masterRecipeSettingsVersion"] = 4
-        let futureSettings = try JSONDecoder().decode(Adjustments.self, from: JSONSerialization.data(withJSONObject: future))
+        var futureSettings = rgb
+        futureSettings.setTransferRecipe(rgb.masterRecipeID, settingsVersion: 5)
         if case .blocked(.invalidSnapshot("masterRecipe")) = EditorAdjustmentRules.prepareReset(scope: .group(.looks), snapshot: state(futureSettings), context: rawContext) {
             check(true, "Unknown recipe settings versions are blocked without migration")
         } else { check(false, "Unknown recipe settings versions are blocked without migration") }
+        let refinedRecipe = try JSONDecoder().decode(MasterRecipe.self,
+            from: Data(contentsOf: URL(fileURLWithPath: "Shared/fixtures/master-recipe-v4.json")))
+        var refined = Adjustments()
+        refined.resolveWhiteBalance(WhiteBalance(temperature: 5300, tint: 8.2))
+        refined.applyMasterRecipe(refinedRecipe); refined.strength = 0.5
+        let refinedDetached = candidate(.group(.looks), state(refined)).settings
+        check(refinedDetached.masterRecipeID == nil && refinedDetached.toneSettings == refined.renderToneSettings &&
+              refinedDetached.atmosphereSettings == refined.renderAtmosphereSettings &&
+              refinedDetached.gradingSettings == refined.renderGradingSettings && refinedDetached.curveSettings == refined.renderCurveSettings,
+              "Looks reset bakes v4 refinements once while preserving their rendered effect")
         rgb.masterRecipeID = "missing-recipe"
         if case .blocked = EditorAdjustmentRules.prepareReset(scope: .group(.looks), snapshot: state(rgb), context: rawContext) {
             check(true, "Unknown recipe identity is not guessed")
@@ -381,11 +390,13 @@ struct ControlGroupTests {
         let color = candidate(.group(.color), state(coupled))
         var expected = coupled
         expected.resetWhiteBalance(); expected.saturation = 0; expected.hsl = nil
+        expected.vibrance = 0; expected.gradingSettings = ColorGradingSettings()
         check(color.settings == expected && color.settings.strength == 0.5 && color.masterRecipeID == coupled.masterRecipeID,
               "Color reset clears only logical color fields and does not replay the recipe")
         let light = candidate(.group(.light), state(coupled))
         expected = coupled
         expected.exposure = 0; expected.contrast = 0; expected.highlights = 0; expected.shadows = 0; expected.toneCurve = 0
+        expected.blackPoint = 0; expected.whitePoint = 0; expected.curveSettings = ToneCurveSettings()
         check(light.settings == expected, "Light reset preserves color values and the recipe scale")
         var selected = state(coupled); selected.filmID = "film"
         let all = candidate(.all, selected)
