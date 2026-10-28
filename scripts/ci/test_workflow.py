@@ -297,7 +297,11 @@ class WorkflowContractTests(unittest.TestCase):
             tests = root / "RawLabMac/tests"
             tests.mkdir(parents=True)
             (tests / "presentation.sh").write_text(source)
-            (tests / "native-env.sh").write_text("")
+            (tests / "native-env.sh").write_text("CORE_LINK=(/unused/libsony2fuji.a)\n")
+            shared_tests = root / "Shared/tests"
+            shared_tests.mkdir(parents=True)
+            (shared_tests / "hdr-native-sources.sh").write_text(
+                (ROOT / "Shared/tests/hdr-native-sources.sh").read_text())
             for name in ("mac-viewing", "mac-canvas-input"):
                 (tests / (name + ".sh")).write_text(f'echo {name} >> "$PROBE_LOG"\n')
             tools = root / "bin"
