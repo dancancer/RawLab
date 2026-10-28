@@ -10,27 +10,56 @@ extension RawEditorViewModel {
     }
 
     func queueSettingsSave(_ settings: RawSettings) {
-        guard sourceIdentity != nil else { return }
+        guard let source = editorEditSource else { return }
+        retainEditMetadata(currentEditState(settings: settings))
         pendingSettings = settings
-        editSaveWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in _ = self?.saveCurrentSettings(settings) }
+        cancelQueuedSettingsSave()
+        guard adjustmentInteraction == nil else { return }
+        let revision = settingsSaveRevision
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.editorEditSource == source, self.settingsSaveRevision == revision else { return }
+            _ = self.saveCurrentSettings(settings)
+        }
         editSaveWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 
     @discardableResult func saveCurrentSettings(_ settings: RawSettings) -> Bool {
+        cancelQueuedSettingsSave()
+        guard adjustmentInteraction == nil else { return false }
+        guard !hasFailedDraftSave else { return false }
+        guard let source = editorEditSource, pendingSettings != nil else { return true }
+        return persistEditCandidate(currentEditState(settings: settings), source: source)
+    }
+
+    func cancelQueuedSettingsSave() {
         editSaveWork?.cancel()
-        guard let sourceIdentity, pendingSettings != nil else { return true }
-        do {
-            if editPersistence == nil { editPersistence = try EditPersistence.appStore() }
-            try editPersistence!.save(sourceIdentity, state: PhotoEditState(settings: settings))
-            pendingSettings = nil
-            setEditNotice(.saved)
-            return true
-        } catch {
-            editSaveState = .failed(error.localizedDescription)
+        editSaveWork = nil
+        settingsSaveRevision = UUID()
+    }
+
+    func persistEditCandidate(_ candidate: PhotoEditState, source: EditorEditSource) -> Bool {
+        guard editorEditSource == source else { return false }
+        guard let expected = loadedEditRecord, expected.identity == source.identity, let session = adjustmentSession else {
+            adjustmentReloadRequired = true
+            editSaveState = .failed(L10n.text("调整记录已恢复，请重新选择照片载入。"))
             return false
         }
+        let outcome = session.commitEdit(expected: expected, state: candidate, displayName: sourceDisplayName,
+            defaultState: PhotoEditState(settings: .default), isCurrent: { self.editorEditSource == source },
+            validateSource: adjustmentSourceValidator)
+        if let saved = outcome.saved {
+            adjustmentReloadRequired = false
+            loadedEditRecord = saved
+            retainEditMetadata(saved.state ?? candidate)
+            pendingSettings = nil
+            adjustmentHistoryRevision = UUID()
+            if outcome.status == .applied { setEditNotice(.saved) }
+            return true
+        }
+        adjustmentReloadRequired = outcome.status == .conflict
+        editSaveState = .failed(outcome.error?.localizedDescription ?? L10n.text("调整记录已恢复，请重新选择照片载入。"))
+        return false
     }
 
     func setEditNotice(_ state: EditSaveState) {
@@ -47,6 +76,7 @@ extension RawEditorViewModel {
         if editPersistence == nil && pendingSettings == nil {
             do {
                 editPersistence = try EditPersistence.appStore()
+                adjustmentSession = editPersistence.map(IOSAdjustmentTransferSession.init(store:))
                 editSaveState = .idle
                 statusMessage = L10n.text("调整记录已恢复，请重新选择照片载入。")
             } catch { editSaveState = .failed(error.localizedDescription) }
@@ -74,7 +104,7 @@ extension RawEditorViewModel {
     func exportJPEG(settings: RawSettings, longEdge: Int? = nil,
                     completion: @escaping (Result<Data, Error>) -> Void) {
         dispatchPrecondition(condition: .onQueue(.main))
-        guard !previewRendering, !previewResizePending, !isBusy else {
+        guard !previewRendering, !previewResizePending, !previewFailed, !isBusy else {
             completion(.failure(BatchExportError.global(L10n.text("请等待预览完成后导出。"))))
             return
         }
@@ -214,7 +244,7 @@ extension RawEditorViewModel {
         DispatchQueue.global(qos: .userInitiated).async {
             sourceFile.withReadAccess { url in
                 do {
-                    let rawPreview = try self.buildRawPreviewBase(url: url, geometry: settings.geometry)
+                    let rawPreview = try self.buildRawPreviewBase(url: url, geometry: settings.geometry, processing: settings.processing, lens: settings.lensSettings)
                     let previewResult = try self.processor.processRaw(
                         url: url,
                         settings: settings,
@@ -225,10 +255,7 @@ extension RawEditorViewModel {
                         from: previewResult.buffer,
                         orientation: previewResult.orientation ?? rawPreview.orientation
                     )
-                    let previewHistogram = self.processor.computeHistogram(
-                        from: previewResult.buffer,
-                        bins: self.histogramBins
-                    )
+                    let previewHistogram = self.processor.computeRGBHistogram(from: previewResult.buffer)
 
                     let fullResult = try self.processor.processRaw(
                         url: url,
@@ -253,6 +280,7 @@ extension RawEditorViewModel {
                         self.basePreviewImage = rawPreview.basePreviewImage
                         self.baseHistogram = rawPreview.baseHistogram
                         self.basePreviewGeometry = settings.geometry
+                        self.basePreviewProcessing = settings.processing
                         self.lensInfo = previewResult.lensInfo
                         self.rawLUTID = settings.lutID
                         self.rawLUTApplied = settings.lutID != nil && settings.lutStrength > 0
@@ -262,6 +290,7 @@ extension RawEditorViewModel {
                         self.hasImage = rawPreview.basePreviewImage != nil || previewImage != nil
                         self.isBusy = false
                         self.sourceRevision = UUID()
+                        self.recordImportedComparison(settings: settings)
                         let sizeKB = Double(data.count) / 1024.0
                         let message = String(format: "Sample decode OK: %.1f KB JPEG", sizeKB)
                         self.statusMessage = message
@@ -284,8 +313,8 @@ extension RawEditorViewModel {
                         self.rawLUTApplied = false
                         self.hasImage = false
                         self.lensInfo = nil
-                        self.histogram = []
-                        self.baseHistogram = []
+                        self.histogram = nil
+                        self.baseHistogram = nil
                         self.sourceRevision = UUID()
                         self.writeSmokeTestResult("FAIL: \(error.localizedDescription)")
                     }

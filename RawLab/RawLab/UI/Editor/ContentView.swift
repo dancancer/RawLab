@@ -15,8 +15,19 @@ struct ContentView: View {
     @StateObject var viewModel = RawEditorViewModel()
     @State var settings = RawSettings.default
     @State private var didAutoLoadSample = false
-    @State var showingBefore = false
-    @State var selectedAdjustment: AdjustmentKind? = .exposure
+    @State var photoViewing = PhotoViewingState()
+    @State var photoViewport = PhotoViewport()
+    @State var photoComparisonControlBounds = CGRect.zero
+    @State var pendingPhotoImport = false
+    @State var pendingFileImport = false
+    var showingBefore: Bool {
+        get { photoViewing.holdingBefore }
+        nonmutating set {
+            if newValue { photoViewing.beginHolding(isDraft: isEditorDraftActive) }
+            else { photoViewing.endTemporaryViewing() }
+        }
+    }
+    @State var selectedAdjustment: AdjustmentKind? = nil
     @State var lensSelected = false
     @State var geometrySelected = false
     @State var choosingMasterRecipe = false
@@ -29,17 +40,54 @@ struct ContentView: View {
     @State var rulerFocusTask: Task<Void, Never>?
     @State var geometryDraft: GeometrySettings?
     @State var geometryAspectPreset: CropAspectPreset = .free
+    @State var geometryLockedRatio: Double?
+    @State var geometryAspectSwapped = false
+    @State var geometryGrid = true
+    @State var geometryPerspective = false
+    @State var showingProcessingContext = false
+    @State var adjustmentSheet: IOSAdjustmentSheet?
+    @State var pendingAdjustmentAction: IOSAdjustmentAction?
+    @State var queuedPresetAction: IOSAdjustmentAction?
+    @State var applyingPreset: AdjustmentPreset?
+    @State var returnToPresetLibrary = false
+    @State var adjustmentReloadPresented = false
     @State var lensDraft: RawSettings?
     @State var draftExitPresented = false
     @State var pendingToolSelection: EditorToolSelection?
+    @State var selectedGroup = EditorAdjustmentGroup.looks
+    @State var hslChannel = 0
+    @State var hslTargetEnabled = false
+    @State var hslTargetAxis: HSLAxis = .hue
+    @State var hslTargetInteraction = HSLTargetInteraction()
+    @State var hslTargetPoint: CGPoint?
+    @State var hslTargetNotice: HSLTargetAvailability?
+    @State var hslTargetHistoryActive = false
+    @State var gradingZone: ColorGradingZone = .shadows
+    @State var adjustmentFine = false
+    @State var pendingAdjustmentExpansion: Bool?
+    @State var collapsedEditorTool: EditorToolSelection?
+    @State var preparedReset: PreparedEditorReset?
+    @State var preparedResetScope: EditorAdjustmentScope?
+    @State var resetConfirmationPresented = false
+    @State var resetRestoreTool: EditorToolSelection?
+    @State var resetIntentSource: EditorEditSource?
+    @State var resetDraftSuspended = false
+    @State var resetWaitingForReady = false
+    @State var suppressNextDraftPreview = false
     @State var autoExposing = false
     @State var settingsRevision = UUID()
     @State var selectedPhotoItem: PhotosPickerItem?
     @State var photoImportTask: Task<Void, Never>?
     @State var photoImportRequestID: UUID?
+    @State var showingPhotoImporter = false
     @State var showingFileImporter = false
     @State var showingLookImporter = false
     @State private var checkedBatchRecovery = false
+    @State var showingBatchSelection = false
+    @State var queuedCollectionEdit: String?
+    @State var queuedCollectionBatch: BatchExportModel?
+    @State var queuedCollectionExistingBatch = false
+    @State var pendingCollectionNavigation: IOSCollectionNavigation?
     @State var showingBatchExport = false
     @State var batchModel: BatchExportModel?
     @State var photoInfoMode = PhotoInfoMode.hidden
@@ -50,9 +98,9 @@ struct ContentView: View {
     @State var singleExportFormat: BatchOutputFormat = .jpeg
     @State var fileExportRequest: FileExportRequest?
     @ScaledMetric(relativeTo: .caption) var toolWidth = 62.0
-    @ScaledMetric(relativeTo: .caption) var toolHeight = 92.0
+    @ScaledMetric(relativeTo: .caption) var toolHeight = 44.0
     @ScaledMetric(relativeTo: .caption) var filmSize = 72.0
-    @ScaledMetric(relativeTo: .body) var panelHeight = 256.0
+    @ScaledMetric(relativeTo: .body) var panelHeight = 220.0
     @ScaledMetric(relativeTo: .subheadline) var panelHeaderHeight = 44.0
 
     var body: some View {
@@ -63,6 +111,7 @@ struct ContentView: View {
         let draftObserved = applyEditorDraftObservers(to: dataObserved)
         let interactionObserved = applyEditorInteractionObservers(to: draftObserved)
         return applyEditorSheets(to: interactionObserved)
+            .sheet(isPresented: $showingProcessingContext) { processingContextSheet }
     }
 
     private var editorNavigation: some View {
@@ -86,6 +135,7 @@ struct ContentView: View {
             .navigationTitle(horizontalSizeClass == .compact ? "" : "RawLab")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { editorToolbar }
+            .toolbar(photoViewing.previewOnly ? .hidden : .visible, for: .navigationBar)
             .toolbarBackground(Color(.secondarySystemBackground), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
         }
@@ -95,6 +145,8 @@ struct ContentView: View {
         content
         .preferredColorScheme(.dark)
         .tint(.yellow)
+        .photosPicker(isPresented: $showingPhotoImporter, selection: $selectedPhotoItem,
+                      matching: .images, preferredItemEncoding: .current)
         .sheet(isPresented: $showingPrivacy) { UsagePrivacyView() }
         .fileImporter(isPresented: $showingFileImporter,
                       allowedContentTypes: PhotoImportFile.supportedContentTypes,
@@ -124,19 +176,16 @@ struct ContentView: View {
         content
         .onChange(of: settings) { _, newValue in
             settingsRevision = UUID()
+            viewModel.committedPreviewSettings = newValue
             if viewModel.consumeRestoredSettings(newValue) { return }
-            showingBefore = false
-            viewModel.queueSettingsSave(newValue)
-            if isAdjustingSlider {
-                viewModel.schedulePreviewUpdate(
-                    settings: draftPreviewSettings,
-                    delay: 0.08,
-                    includeHistogram: false,
-                    quality: .interactive
-                )
-            } else {
-                viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
-            }
+            if viewModel.consumePersistedEditorSettings(newValue) { return }
+            queueEditorSettingsChange(newValue)
+        }
+        .onChange(of: viewModel.adjustmentRestoredSettings) { _, restored in
+            guard let restored else { return }
+            settings = restored
+            viewModel.adjustmentRestoredSettings = nil
+            viewModel.updatePreview(settings: restored, includeHistogram: true, quality: .final)
         }
         .onChange(of: selectedPhotoItem) { _, newItem in
             guard let newItem else { return }
@@ -150,25 +199,50 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background || phase == .inactive {
+                cancelSliderInteraction()
                 viewModel.saveCurrentSettings(settings)
             }
             if phase == .background { batchModel?.cancel(forBackground: true) }
-            if phase != .active { cancelRulerFocus() }
+            if phase != .active { cancelRulerFocus(); photoViewing.endTemporaryViewing() }
         }
     }
 
     private func applyEditorDraftObservers<Content: View>(to content: Content) -> some View {
         content
-        .onChange(of: geometryDraft) { _, draft in
-            if draft != nil { previewEditorDraft() }
-        }
-        .onChange(of: lensDraft) { _, draft in
-            if draft != nil { previewEditorDraft() }
+        .onChange(of: editorDraftSnapshot) { old, draft in
+            viewModel.hasAdjustmentDraft = draft.isActive
+            if (old.geometry != draft.geometry || old.lens != draft.lens),
+               draft.geometry != nil || draft.lens != nil {
+                if suppressNextDraftPreview { suppressNextDraftPreview = false }
+                else { previewEditorDraft() }
+            }
         }
         .onChange(of: viewModel.sourceRevision) { _, _ in
+            cancelHSLTarget()
+            gradingZone = .shadows
+            photoViewing.sourceChanged()
+            photoComparisonControlBounds = .zero
+            photoViewport = PhotoViewport()
+            pendingFileImport = false
+            pendingPhotoImport = false
+            pendingAdjustmentAction = nil
+            queuedPresetAction = nil
+            applyingPreset = nil
+            returnToPresetLibrary = false
+            if adjustmentSheet == .presetSave || adjustmentSheet == .presetApply { adjustmentSheet = nil }
+            adjustmentFine = false
             geometryDraft = nil
             lensDraft = nil
             pendingToolSelection = nil
+            pendingAdjustmentExpansion = nil
+            preparedReset = nil
+            preparedResetScope = nil
+            resetConfirmationPresented = false
+            resetRestoreTool = nil
+            resetIntentSource = nil
+            resetDraftSuspended = false
+            resetWaitingForReady = false
+            suppressNextDraftPreview = false
             draftExitPresented = false
             cancelRulerFocus()
             // Import renders the committed crop; the retained geometry tool needs the full image.
@@ -177,10 +251,19 @@ struct ContentView: View {
             }
         }
         .onChange(of: viewModel.isBusy) { _, busy in
+            if !busy, let current = viewModel.batchSelection.selection.current, current != viewModel.sourceIdentity?.key {
+                viewModel.batchSelection.selection.returnToCollection()
+            }
             if !busy && photoImportTask == nil {
                 isImporting = false
                 photoImportRequestID = nil
             }
+            continuePendingAllReset()
+        }
+        .onChange(of: viewModel.previewRendering) { _, _ in continuePendingAllReset() }
+        .onChange(of: viewModel.previewResizePending) { _, _ in continuePendingAllReset() }
+        .onChange(of: viewModel.basePreviewImage) { _, image in
+            if image == nil { photoViewing.endTemporaryViewing() }
         }
         .onChange(of: viewModel.hasImage) { _, hasImage in
             if hasImage { adjustmentsExpanded = true }
@@ -190,15 +273,30 @@ struct ContentView: View {
     private func applyEditorInteractionObservers<Content: View>(to content: Content) -> some View {
         content
         .onChange(of: adjustmentsExpanded) { _, expanded in
-            if !expanded && isAdjustingSlider { setSliderEditing(false) }
+            if !expanded && isAdjustingSlider && !hslTargetEnabled { setSliderEditing(false) }
+            if expanded, let tool = collapsedEditorTool { activateEditorTool(tool) }
         }
-        .onChange(of: geometrySelected) { _, _ in
+        .onChange(of: geometrySelected) { _, active in
+            if active {
+                photoViewing.sourceChanged()
+                photoComparisonControlBounds = .zero
+                // 裁切 controller 使用 fit 画布，进入时显式收敛唯一视口。
+                photoViewport = PhotoViewport()
+            }
             if isAdjustingSlider { setSliderEditing(false) }
+        }
+        .onChange(of: lensSelected) { _, active in
+            if active { photoViewing.sourceChanged() }
         }
         .onChange(of: selectedAdjustment) { _, _ in
-            if isAdjustingSlider { setSliderEditing(false) }
+            cancelHSLTarget(); hslTargetEnabled = false
+            if isAdjustingSlider { cancelSliderInteraction() }
             cancelRulerFocus()
         }
+        .onChange(of: gradingZone) { _, _ in cancelSliderInteraction() }
+        .onChange(of: hslChannel) { _, _ in cancelHSLTarget(); cancelSliderInteraction() }
+        .onChange(of: hslTargetEnabled) { _, _ in photoViewing.endTemporaryViewing() }
+        .onChange(of: adjustmentFine) { _, _ in cancelSliderInteraction() }
         .onAppear {
             viewModel.loadLUTsIfNeeded()
             handleEditorAppear()
@@ -207,6 +305,29 @@ struct ContentView: View {
 
     private func applyEditorSheets<Content: View>(to content: Content) -> some View {
         content
+        .sheet(item: $adjustmentSheet, onDismiss: finishAdjustmentSheet) { kind in
+            switch kind {
+            case .presets, .presetSave:
+                IOSAdjustmentPresetView(model: viewModel, settings: settings, initialSave: kind == .presetSave,
+                    requestPhotoAction: queuePresetAction)
+            case .presetApply:
+                if let applyingPreset {
+                    IOSAdjustmentTransferView(model: viewModel, kind: .paste, settings: settings, preset: applyingPreset)
+                }
+            default:
+                IOSAdjustmentTransferView(model: viewModel, kind: kind, settings: settings)
+            }
+        }
+        .sheet(isPresented: $showingBatchSelection, onDismiss: finishBatchSelection) {
+            IOSBatchSelectionView(model: viewModel, collection: viewModel.batchSelection, settings: settings,
+                hasPendingBatch: batchModel != nil, resolveDraft: resolveCollectionDraft,
+                editPhoto: { queuedCollectionEdit = $0; showingBatchSelection = false },
+                showExistingBatch: { queuedCollectionExistingBatch = true; showingBatchSelection = false },
+                created: { job, journal in
+                    queuedCollectionBatch = BatchExportModel(job: job, journalStore: journal)
+                    showingBatchSelection = false
+                })
+        }
         .sheet(isPresented: $showingBatchExport) {
             if let batchModel {
                 BatchExportView(model: batchModel)
@@ -235,10 +356,30 @@ struct ContentView: View {
         }
         .alert(L10n.text("保留这次几何或镜头修改？"), isPresented: $draftExitPresented) {
             Button(L10n.text("应用")) { finishDraftNavigation(apply: true) }
+                .disabled(editorBusy || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || isAdjustingSlider)
             Button(L10n.text("放弃修改"), role: .destructive) { finishDraftNavigation(apply: false) }
-            Button(L10n.text("继续编辑"), role: .cancel) { pendingToolSelection = nil }
+            Button(L10n.text("继续编辑"), role: .cancel) { cancelDraftNavigation() }
         }
-        .onDisappear { cancelRulerFocus(); cancelPhotoImport() }
+        .alert(resetConfirmationTitle, isPresented: $resetConfirmationPresented) {
+            Button(L10n.text("重置"), role: .destructive) { confirmEditorReset() }
+            Button(L10n.text("取消"), role: .cancel) { cancelEditorReset() }
+        } message: { Text(resetConfirmationMessage) }
+        .alert(L10n.text("重新载入已保存调整"), isPresented: $adjustmentReloadPresented) {
+            Button(L10n.text("重新载入已保存调整"), role: .destructive) {
+                guard viewModel.reloadSavedAdjustments() else { return }
+                if let restored = viewModel.adjustmentRestoredSettings { settings = restored }
+                cancelDraftNavigation()
+                discardEditorDraft()
+                activateEditorTool(.adjustment(.exposure))
+            }
+            Button(L10n.text("继续编辑"), role: .cancel) {}
+        } message: { Text(L10n.text("重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。")) }
+        .onDisappear {
+            cancelSliderInteraction()
+            viewModel.saveCurrentSettings(settings)
+            photoViewing.endTemporaryViewing()
+            cancelPhotoImport()
+        }
     }
 
     private func handleEditorAppear() {

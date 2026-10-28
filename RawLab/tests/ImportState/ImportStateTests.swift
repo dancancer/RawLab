@@ -22,7 +22,18 @@ struct ImportStateTests {
         try check(f.model.hasImage && !f.model.isBusy && f.model.sourceIdentity == identity &&
                   f.model.sourceDisplayName == url.lastPathComponent, "Current generated raster publishes its source and finishes import")
         try check(f.model.previewImage != nil && f.model.basePreviewImage != nil && f.model.nativeImageSize != nil &&
-                  !f.model.histogram.isEmpty && !f.model.baseHistogram.isEmpty, "Current raster publishes pixels, dimensions and both histograms")
+                  f.model.histogram != nil && f.model.baseHistogram != nil, "Current raster publishes pixels, dimensions and both histograms")
+        try checkHistogram(f.model.histogram, image: f.model.previewImage, label: "after import")
+        try checkHistogram(f.model.baseHistogram, image: f.model.basePreviewImage, label: "neutral import")
+    }
+    private static func checkHistogram(_ histogram: Sony2FujiProcessor.RGBHistogram?, image: UIImage?, label: String) throws {
+        guard let histogram, let image = image?.cgImage else { throw TestFailure.message("\(label): missing image/statistics") }
+        try check(histogram.width == image.width && histogram.height == image.height,
+                  "\(label): statistics dimensions match the actual displayed pixel buffer")
+        for channel in 0..<3 {
+            let count = histogram.counts[(channel * 256)..<((channel + 1) * 256)].reduce(UInt64(0)) { $0 + UInt64($1) }
+            try check(count == UInt64(image.width * image.height), "\(label): channel \(channel) counts every displayed pixel")
+        }
     }
     private static func renderHeld(_ f: Fixture, settings: RawSettings) throws -> [() -> Void] {
         f.model.updatePreview(settings: settings, includeHistogram: true, quality: .final, histogramDelay: 0)
@@ -38,6 +49,8 @@ struct ImportStateTests {
         let original = PublishedContent(f.model)
         var changed = f.aSettings
         changed.exposure = 0.7; changed.geometry.cropX = 0.2; changed.geometry.cropWidth = 0.6
+        // 直接调用 VM 的已提交编辑，补齐 ContentView settings observer 的接线。
+        f.model.committedPreviewSettings = changed
         let results = try renderHeld(f, settings: changed)
         try check(f.model.previewRendering, "Normal preview stays pending until publication")
         try deliver(results)
@@ -165,6 +178,36 @@ struct ImportStateTests {
         try check(!f.model.previewRendering && f.model.previewImage?.pngData() != publishedB.preview &&
                   f.model.histogram != publishedB.histogram && f.model.sourceIdentity == f.bIdentity,
                   "B's preview and histogram still publish normally after old results are rejected")
+    }
+    private static func delayedHistogram(_ f: Fixture) throws {
+        try importCurrent(f, url: f.aURL, identity: f.aIdentity)
+        let imported = PublishedContent(f.model)
+        var first = f.aSettings; first.exposure = 0.75
+        let old = try renderHeld(f, settings: first)
+        try check(old.count == 3, "Render publishes image, completion and delayed statistics separately")
+        try deliver(Array(old.dropLast()))
+        try check(f.model.previewImage?.pngData() != imported.preview && f.model.histogram == nil,
+                  "Accepted new pixels clear previous statistics before delayed RGB arrives")
+        var second = first; second.exposure = 1.5; second.geometry.cropWidth = 0.6
+        let current = try renderHeld(f, settings: second)
+        try check(current.count == 3, "Second render retains the separate RGB publication boundary")
+        try deliver(Array(current.dropLast()))
+        let accepted = f.model.previewImage?.pngData()
+        try deliver([old.last!])
+        try check(f.model.histogram == nil && f.model.previewImage?.pngData() == accepted,
+                  "Late RGB from an older frame cannot fill the accepted newer image")
+        try deliver([current.last!])
+        try checkHistogram(f.model.histogram, image: f.model.previewImage, label: "delayed after")
+        try checkHistogram(f.model.baseHistogram, image: f.model.basePreviewImage, label: "delayed neutral")
+
+        let invalid = Sony2FujiProcessor.Buffer(data: Data([0, 0, 0, 255]), width: 2, height: 1,
+            stride: 8, pixelFormat: SONY2FUJI_PIXEL_RGBA8, semantic: .display)
+        f.model.scheduleHistogramUpdate(for: invalid, renderID: f.model.acceptedPreviewFrameID!,
+                                        sourceRevision: f.model.sourceRevision, delay: 0)
+        f.model.renderQueue.sync {}
+        try deliver(f.collector.take())
+        try check(f.model.histogram == nil && f.model.previewImage?.pngData() == accepted && !f.model.previewFailed,
+                  "Statistics failure clears bins while preserving the accepted image and preview success")
     }
     private static func cropSessions() throws {
         let initial = CGRect(x: 0.2, y: 0.2, width: 0.6, height: 0.6)
@@ -364,6 +407,7 @@ struct ImportStateTests {
         try busyPreview(Fixture(directory: root.appendingPathComponent("busy-preview")))
         try latePreview(Fixture(directory: root.appendingPathComponent("late-preview")), fails: false)
         try latePreview(Fixture(directory: root.appendingPathComponent("late-preview-error")), fails: true)
+        try delayedHistogram(Fixture(directory: root.appendingPathComponent("delayed-histogram")))
         try asyncLoader(Fixture(directory: root.appendingPathComponent("loader")))
         try resizeBeforeDNG(Fixture(directory: root.appendingPathComponent("resize-before-dng-success")), succeeds: true)
         try resizeBeforeDNG(Fixture(directory: root.appendingPathComponent("resize-before-dng-failure")), succeeds: false)

@@ -2,15 +2,29 @@ name: Hosted CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [development, 'release/**', main]
   push:
-    branches: [development, main]
+    branches: [development]
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to verify'
+        type: choice
+        options: [all, macos, windows, android, ios]
+        default: all
+      checks:
+        description: 'Verification group (UI checks run locally)'
+        type: choice
+        options: [contracts, models, build, native, full]
+        default: models
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # Manual verification must not cancel, or be cancelled by, automatic PR/push checks.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -19,8 +33,45 @@ env:
   CMAKE_BUILD_PARALLEL_LEVEL: '2'
 
 jobs:
+  changes:
+    name: Select affected platforms
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # Pushes compare with the last successful push run.
+      actions: read
+    outputs:
+      macos: ${{ steps.select.outputs.macos }}
+      windows: ${{ steps.select.outputs.windows }}
+      android: ${{ steps.select.outputs.android }}
+      ios: ${{ steps.select.outputs.ios }}
+      cold: ${{ steps.select.outputs.cold }}
+      draft: ${{ steps.select.outputs.draft }}
+      windows_runner: ${{ steps.select.outputs.windows_runner }}
+      mode: ${{ steps.select.outputs.mode }}
+      scope: ${{ steps.select.outputs.scope }}
+      checks: ${{ steps.select.outputs.checks }}
+      contracts: ${{ steps.select.outputs.contracts }}
+      models: ${{ steps.select.outputs.models }}
+      build: ${{ steps.select.outputs.build }}
+      native: ${{ steps.select.outputs.native }}
+      macos_matrix: ${{ steps.select.outputs.macos_matrix }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Select platforms from the event and changed files
+        id: select
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/affected_platforms.py select
+
   contracts:
     name: Contracts and CI policy
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -53,6 +104,8 @@ jobs:
           python RawLabMac/tests/test_single_preview.py
           python RawLabMac/tests/test_tool_group_ui.py
           python -m unittest Shared/tests/test_bundled_looks.py Shared/tests/test_lut_source_audit.py Shared/tests/test_prepare_bundled_looks.py -v
+          python -m pip install uv==0.9.5
+          uv run --project tools/mcp --frozen python -m unittest discover -s tools/mcp/tests -v
           git diff --check
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
@@ -62,22 +115,19 @@ jobs:
           retention-days: 7
 
   macos:
-    name: macOS build and parity (${{ matrix.arch }})
+    name: macOS ${{ needs.changes.outputs.checks }} (${{ matrix.arch }}, ${{ matrix.suite }})
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - runner: [self-hosted, macOS, ARM64, rawlab-apple]
-            arch: arm64
-            jobs: '6'
-          - runner: macos-26-intel
-            arch: x86_64
-            jobs: '4'
+        include: ${{ fromJSON(needs.changes.outputs.macos_matrix) }}
     env:
       MACOSX_DEPLOYMENT_TARGET: '14.0'
       RAWLAB_ARCH: ${{ matrix.arch }}
+      RAWLAB_MAC_SUITE: ${{ matrix.suite }}
       JOBS: ${{ matrix.jobs }}
       CMAKE_BUILD_PARALLEL_LEVEL: ${{ matrix.jobs }}
     steps:
@@ -90,6 +140,7 @@ jobs:
           python-version: '3.12'
       - name: Identify native dependency cache
         id: native-key
+        if: needs.changes.outputs.build == 'true'
         shell: bash
         run: |
           if [[ "$RAWLAB_ARCH" == x86_64 ]]; then
@@ -98,18 +149,37 @@ jobs:
           python -c 'import sys; assert sys.version_info[:2] == (3, 12)'
           python -m pip install -r scripts/ci/requirements.txt
           python scripts/ci/native_cache.py key --platform macos --arch "$RAWLAB_ARCH"
-      - name: Restore PR dependencies or look up push cache
+      - name: Restore native dependencies, or only look them up for a cold build
         id: native-cache
+        if: needs.changes.outputs.build == 'true'
         continue-on-error: true
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
-          lookup-only: ${{ github.event_name == 'push' }}
-      - name: Build default app and exercise CPU-safe regression suites
+          lookup-only: ${{ needs.changes.outputs.cold == 'true' }}
+      - name: Run standalone macOS models
+        if: needs.changes.outputs.models == 'true' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          mkdir -p build/ci
+          exec > >(tee build/ci/macos-models.log) 2>&1
+          git rev-parse HEAD
+          bash scripts/ci/apple-models.sh macos
+      - name: Prepare GPU AI inputs for full checks
+        if: needs.changes.outputs.checks == 'full' && matrix.arch == 'arm64'
+        shell: bash
+        run: python scripts/ci/ai-inputs.py --platform macos --arch "$RAWLAB_ARCH"
+      - name: Install offline GLES shader validator
+        if: needs.changes.outputs.native == 'true'
+        shell: bash
+        run: brew list glslang >/dev/null 2>&1 || brew install glslang
+      - name: Build default app and exercise selected native suites
+        if: needs.changes.outputs.build == 'true'
         shell: bash
         env:
-          RAWLAB_CI_CACHE_HIT: ${{ github.event_name == 'pull_request' && steps.native-cache.outputs.cache-hit == 'true' }}
+          RAWLAB_CI_NATIVE: ${{ needs.changes.outputs.native }}
+          RAWLAB_CI_CACHE_HIT: ${{ needs.changes.outputs.cold != 'true' && steps.native-cache.outputs.cache-hit == 'true' }}
         run: |
           mkdir -p build/ci
           exec > >(tee build/ci/macos.log) 2>&1
@@ -129,40 +199,48 @@ jobs:
           export DEVELOPER_DIR
           SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
           export SDKROOT
+          # "all" runs every group; Intel shards run core, agent or render. Only "all" runs model.
+          in_suite() { [[ "$RAWLAB_CI_NATIVE" == true && ( "$RAWLAB_MAC_SUITE" == all || "$RAWLAB_MAC_SUITE" == "$1" ) ]]; }
           python -m pip install -r lutools/requirements-lutprep.txt
-          python RawLabMac/tests/test_photo_copy.py
-          python RawLabMac/tests/test_build_environment.py
-          python lutools/tests/test_lens_dependencies.py
-          python scripts/ci/test_native_cache_xcode.py
-          bash RawLabMac/tests/horizontal-picker.sh
-          bash RawLabMac/tests/horizontal-picker-native.sh
+          if in_suite core; then
+            python scripts/ci/test_native_cache_xcode.py
+          fi
           ci_timed app-build bash RawLabMac/build.sh
           lutprep_python="$(command -v python)"
-          ci_timed dcp-compiler env RAWLAB_LUTPREP_PYTHON="$lutprep_python" bash RawLabMac/tests/dcp-compiler.sh
-          ci_timed look-library bash RawLabMac/tests/look-library.sh
-          ci_timed look-import-model bash RawLabMac/tests/look-import-model.sh
-          ci_timed ctest ctest --test-dir lutools/build-macos --parallel 2 --output-on-failure --no-tests=error \
-            -E '^(native_dcp_metal|gpu_photo|metal_denoise)$' \
-            --output-junit "$PWD/build/ci/macos-ctest.xml"
+          if in_suite core; then
+            ci_timed dcp-compiler env RAWLAB_LUTPREP_PYTHON="$lutprep_python" bash RawLabMac/tests/dcp-compiler.sh
+            ci_timed look-library bash RawLabMac/tests/look-library.sh
+            ci_timed look-import-model bash RawLabMac/tests/look-import-model.sh
+            ctest_exclude='native_dcp_metal|gpu_photo|metal_denoise|dualdn_onnx|dualdn_directml'
+            [[ "$RAWLAB_ARCH" != x86_64 ]] || ctest_exclude="$ctest_exclude|metal_workspace"
+            ci_timed ctest ctest --test-dir lutools/build-macos --parallel 2 --output-on-failure --no-tests=error \
+              -E "^($ctest_exclude)$" \
+              --output-junit "$PWD/build/ci/macos-ctest.xml"
+          fi
           raw="$PWD/lutools/examples/DJI_20250602164503_0444_D.DNG"
           cli="$PWD/lutools/build-macos/sony2fuji"
-          RAWLAB_STRAIGHTEN_PREVIEW_OUTPUT_DIR="$RUNNER_TEMP/rawlab-straighten-preview" \
-            ci_timed straighten-preview bash RawLabMac/tests/mac-straighten-preview.sh "$raw"
-          ci_timed agent-recipe-render bash RawLabMac/tests/agent-recipe-render.sh "$raw" "$cli"
-          ci_timed raster-render bash RawLabMac/tests/raster-render.sh "$raw" "$cli"
-          ci_timed batch-export bash RawLabMac/tests/batch-export.sh
-          ci_timed edit-model bash RawLabMac/tests/edit-model.sh
-          ci_timed presentation bash RawLabMac/tests/presentation.sh
-          ci_timed control-groups bash RawLabMac/tests/control-groups.sh
-          ci_timed usage-analytics bash Shared/tests/usage-analytics.sh
-          ci_timed usage-transport bash Shared/tests/usage-transport.sh
-          ci_timed usage-model bash RawLabMac/tests/usage-model.sh
-          ci_timed usage-termination bash RawLabMac/tests/usage-termination.sh
-          ci_timed rum-configuration bash RawLabMac/tests/rum-configuration.sh
-          ci_timed localization bash RawLabMac/tests/localization.sh
+          if in_suite agent; then
+            ci_timed agent-recipe-render bash RawLabMac/tests/agent-recipe-render.sh "$raw" "$cli"
+          fi
+          if in_suite render; then
+            ci_timed raster-render bash RawLabMac/tests/raster-render.sh "$raw" "$cli"
+            python -m pip install uv==0.9.5
+            ci_timed mcp-cli-parity env RAWLAB_MCP_CLI="$cli" uv run --project tools/mcp --frozen python -m unittest discover -s tools/mcp/tests -p test_real_cli.py -v
+          fi
+          if in_suite model; then
+            ci_timed batch-export bash RawLabMac/tests/batch-export.sh
+            ci_timed batch-selection bash Shared/tests/batch-selection.sh
+            ci_timed batch-selection-model bash RawLabMac/tests/batch-selection-model.sh
+            ci_timed edit-model bash RawLabMac/tests/edit-model.sh
+            ci_timed adjustment-history-model bash RawLabMac/tests/adjustment-history-model.sh
+            ci_timed presentation bash RawLabMac/tests/presentation.sh --models-only
+            ci_timed usage-model bash RawLabMac/tests/usage-model.sh
+            ci_timed usage-termination bash RawLabMac/tests/usage-termination.sh
+          fi
           python scripts/ci/native_cache.py inventory --platform macos --arch "$RAWLAB_ARCH"
       - name: Save successful native dependencies
-        if: success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
+        # Intel shards share one key; the core shard alone saves it.
+        if: success() && (matrix.suite == 'all' || matrix.suite == 'core' || matrix.suite == 'build') && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
@@ -170,7 +248,7 @@ jobs:
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
-          name: macos-${{ matrix.arch }}-results
+          name: macos-${{ matrix.arch }}-${{ matrix.suite }}-results
           path: |
             build/ci/*.log
             build/ci/*.json
@@ -178,19 +256,45 @@ jobs:
           retention-days: 7
 
   windows:
-    name: Windows build and parity
-    runs-on: [self-hosted, windows, x64, rawlab-windows]
+    name: Windows ${{ needs.changes.outputs.checks }}
+    needs: changes
+    if: needs.changes.outputs.windows == 'true'
+    runs-on: ${{ fromJSON(needs.changes.outputs.windows_runner) }}
     timeout-minutes: 120
     env:
-      DOTNET_INSTALL_DIR: 'E:\RawLabCI\dotnet'
-      RAWLAB_LENS_SOURCE_CACHE: 'E:\RawLabCI\cache\lens-sources'
-      JOBS: '8'
-      CMAKE_BUILD_PARALLEL_LEVEL: '8'
+      # MSBuild otherwise compiles each project's sources one at a time. The multi-tool task
+      # schedules cl.exe across projects; the setup step caps processes for each runner type.
+      UseMultiToolTask: 'true'
+      EnforceProcessCountAcrossBuilds: 'true'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Configure Windows runner limits and cache paths
+        id: windows-env
+        shell: pwsh
+        env:
+          CI_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:CI_RUNNER_ENVIRONMENT -notin @('github-hosted', 'self-hosted')) {
+            throw 'Unknown Windows runner environment.'
+          }
+          $dedicated = $env:CI_RUNNER_ENVIRONMENT -eq 'self-hosted'
+          if (!$dedicated -and !$env:RUNNER_TEMP) { throw 'Hosted Windows requires RUNNER_TEMP.' }
+          $ciRoot = if ($dedicated) { 'E:\RawLabCI' } else { "$env:RUNNER_TEMP\rawlab-ci" }
+          $jobs = if ($dedicated) { 16 } else { 4 }
+          $compilerProcesses = if ($dedicated) { 24 } else { 4 }
+          @(
+            "DOTNET_INSTALL_DIR=$ciRoot\dotnet"
+            "RAWLAB_LENS_SOURCE_CACHE=$ciRoot\cache\lens-sources"
+            "RAWLAB_AI_SHARED_CACHE=$ciRoot\cache"
+            "JOBS=$jobs"
+            "CMAKE_BUILD_PARALLEL_LEVEL=$jobs"
+            "CL_MPCount=$compilerProcesses"
+          ) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        if: needs.changes.outputs.build == 'true'
         with:
           python-version: '3.12'
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
@@ -198,24 +302,48 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Identify native dependency cache
         id: native-key
+        if: needs.changes.outputs.build == 'true'
         shell: pwsh
         run: |
           python -m pip install -r scripts/ci/requirements.txt
           if ($LASTEXITCODE -ne 0) { throw 'Cannot install CI Python requirements' }
           python scripts/ci/native_cache.py key --platform windows --arch x86_64
           if ($LASTEXITCODE -ne 0) { throw 'Cannot identify native dependency cache' }
-      - name: Restore PR dependencies or look up push cache
+      - name: Restore native dependencies, or only look them up for a cold build
         id: native-cache
+        if: needs.changes.outputs.build == 'true'
         continue-on-error: true
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
-          lookup-only: ${{ github.event_name == 'push' }}
-      - name: Build default self-contained app and exercise CPU-safe suites
+          lookup-only: ${{ needs.changes.outputs.cold == 'true' }}
+      - name: Run standalone Windows models and runner checks
+        if: needs.changes.outputs.models == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force build/ci | Out-Null
+          Start-Transcript -Path build/ci/windows-models.log
+          try {
+            git rev-parse HEAD
+            & ./scripts/ci/windows-models.ps1
+            & ./RawLabWindows/tests/CheckProcessChecks.ps1 -Output 'build/ci/process-checks'
+            & ./RawLabWindows/tests/RunnerSelectionChecks.ps1 -Output 'build/ci/runner-checks'
+          }
+          finally { Stop-Transcript }
+      - name: Prepare GPU AI inputs for full checks
+        if: needs.changes.outputs.checks == 'full'
+        shell: pwsh
+        run: |
+          python scripts/ci/ai-inputs.py --platform windows --arch x86_64
+          if ($LASTEXITCODE -ne 0) { throw 'Provision the pinned AI model before full checks.' }
+      - name: Build default self-contained app and exercise selected native suites
+        if: needs.changes.outputs.build == 'true'
         shell: pwsh
         env:
-          RAWLAB_CI_CACHE_HIT: ${{ github.event_name == 'pull_request' && steps.native-cache.outputs.cache-hit == 'true' }}
+          RAWLAB_CI_NATIVE: ${{ needs.changes.outputs.native }}
+          RAWLAB_CI_CACHE_HIT: ${{ needs.changes.outputs.cold != 'true' && steps.native-cache.outputs.cache-hit == 'true' }}
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force build/ci | Out-Null
@@ -228,18 +356,25 @@ jobs:
             Invoke-Checked git @('rev-parse', 'HEAD')
             Invoke-Checked dotnet @('--info')
             Invoke-Checked python @('-m', 'pip', 'install', '-r', 'lutools/requirements-lutprep.txt')
-            & ./RawLabWindows/build.ps1 -SelfContained -Python (Get-Command python).Source
+            $ai = @{}
+            if ($env:RAWLAB_DUALDN -eq '1') { $ai.DualDnModel = $env:RAWLAB_DUALDN_MODEL_DIR }
+            & ./RawLabWindows/build.ps1 -SelfContained -Python (Get-Command python).Source @ai
             $package = Join-Path $PWD 'build/RawLab-Windows'
             $env:PATH = "$package;$env:PATH"
-            $tests = '^(dcp_compiler|windows_display_image|raw_formats|sony_arw6|sony_arw6_bounds|display_render|edit_recipe|edit_recipe_raster|edit_recipe_geometry|geometry_cli|agent_preview|raw_info_cli|agent_commands|edit_recipe_cli|edit_recipe_schema)$'
-            Invoke-Checked ctest @('--test-dir', 'build/windows-native', '-C', 'Release', '--output-on-failure', '--no-tests=error', '-R', $tests, '--output-junit', "$PWD/build/ci/windows-ctest.xml")
-            Invoke-Checked python @('lutools/tests/test_dcp_compiler.py', 'build/windows-native/bin/Release/dcp_compiler_tests.exe')
-            Invoke-Checked dotnet @('run', '--project', 'RawLabWindows/tests/usage/UsageAnalytics.Tests.csproj', '-c', 'Release')
-            $raw = Join-Path $PWD 'lutools/examples/DJI_20250602164503_0444_D.DNG'
-            $env:RAWLAB_TEST_DCP_NATIVE_LIB = Join-Path $package 'sony2fuji.dll'
-            $env:RAWLAB_TEST_DCP_FIXTURE_DIR = Join-Path $PWD 'build/ci/dcp-fixtures'
-            Invoke-Checked python @('lutools/tests/test_dcp_compiler.py', '--fixtures', $env:RAWLAB_TEST_DCP_FIXTURE_DIR)
-            & ./RawLabWindows/tests/run-v08.ps1 -RawPath $raw -NativeArtifacts $package -Only 'editing,denoise-model,localization,profile-isolation,agent-recipe,raster,comparison-default,tool-groups,ui-details,looks'
+            if ($env:RAWLAB_CI_NATIVE -eq 'true') {
+              $tests = '^(dcp_compiler|windows_display_image|raw_formats|sony_arw6|sony_arw6_bounds|display_render|edit_recipe|edit_recipe_raster|edit_recipe_geometry|geometry_cli|agent_preview|raw_info_cli|agent_commands|edit_recipe_cli|edit_recipe_schema|d3d11_shader|wavelet_restore|dualdn_.*|scene_rgb_adapter|raw_noise_estimate)$'
+              Invoke-Checked ctest @('--test-dir', 'build/windows-native', '-C', 'Release', '--output-on-failure', '--no-tests=error', '-R', $tests, '-E', '^dualdn_onnx$', '--output-junit', "$PWD/build/ci/windows-ctest.xml")
+              Invoke-Checked python @('lutools/tests/test_dcp_compiler.py', 'build/windows-native/bin/Release/dcp_compiler_tests.exe')
+              $raw = Join-Path $PWD 'lutools/examples/DJI_20250602164503_0444_D.DNG'
+              $env:RAWLAB_TEST_DCP_NATIVE_LIB = Join-Path $package 'sony2fuji.dll'
+              $env:RAWLAB_TEST_DCP_FIXTURE_DIR = Join-Path $PWD 'build/ci/dcp-fixtures'
+              Invoke-Checked python @('lutools/tests/test_dcp_compiler.py', '--fixtures', $env:RAWLAB_TEST_DCP_FIXTURE_DIR)
+              & ./RawLabWindows/tests/run-v08.ps1 -RawPath $raw -NativeArtifacts $package -Only 'agent-recipe,raster,looks'
+            }
+            else {
+              Invoke-Checked dotnet @('build', 'RawLabWindows/tests/RawLabWindows.Tests.csproj', '-c', 'Release')
+              Invoke-Checked dotnet @('build', 'RawLabWindows/tests/localization-ui/LocalizationUiChecks.csproj', '-c', 'Release')
+            }
             Invoke-Checked python @('scripts/ci/native_cache.py', 'inventory', '--platform', 'windows', '--arch', 'x86_64')
           }
           finally {
@@ -262,17 +397,21 @@ jobs:
             build/ci/*.log
             build/ci/*.json
             build/ci/*.xml
+            build/ci/windows-models/*.log
+            build/ci/windows-models/*.json
+            build/ci/process-checks/**/*.log
+            build/ci/process-checks/**/*.json
+            build/ci/runner-checks/**/*.log
+            build/ci/runner-checks/**/*.json
+            build/ci/runner-checks/**/*.jsonl
           retention-days: 7
 
   android:
-    name: Android build and JVM tests
-    runs-on: [self-hosted, linux, x64, rawlab-android]
+    name: Android ${{ needs.changes.outputs.checks }}
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
-    env:
-      ANDROID_HOME: /opt/android-sdk
-      RAWLAB_LENS_SOURCE_CACHE: /var/cache/rawlab-ci/lens-sources
-      JOBS: '8'
-      CMAKE_BUILD_PARALLEL_LEVEL: '8'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -286,34 +425,49 @@ jobs:
           python-version: '3.12'
       - name: Install toolchain and identify native dependency cache
         id: native-key
+        if: needs.changes.outputs.build == 'true'
         shell: bash
         run: |
           python -m pip install -r scripts/ci/requirements.txt
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
           python scripts/ci/native_cache.py key --platform android --arch arm64-x86_64
-      - name: Restore PR dependencies or look up push cache
+      - name: Restore native dependencies, or only look them up for a cold build
         id: native-cache
+        if: needs.changes.outputs.build == 'true'
         continue-on-error: true
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
-          lookup-only: ${{ github.event_name == 'push' }}
-      - name: Build both ABIs, JVM tests, lint and instrumentation test APK
+          lookup-only: ${{ needs.changes.outputs.cold == 'true' }}
+      - name: Run Android JVM models
+        if: needs.changes.outputs.models == 'true'
+        shell: bash
+        run: |
+          mkdir -p build/ci
+          exec > >(tee build/ci/android-models.log) 2>&1
+          git rev-parse HEAD
+          cd RawLabAndroid
+          ./gradlew :app:testDebugUnitTest --no-daemon --max-workers=2
+          find app/build/test-results/testDebugUnitTest -name 'TEST-*.xml' -exec cp {} ../build/ci/ \;
+      - name: Build both ABIs, lint and instrumentation test APK
+        if: needs.changes.outputs.build == 'true'
         shell: bash
         env:
-          RAWLAB_CI_CACHE_HIT: ${{ github.event_name == 'pull_request' && steps.native-cache.outputs.cache-hit == 'true' }}
+          RAWLAB_CI_NATIVE: ${{ needs.changes.outputs.native }}
+          RAWLAB_CI_CACHE_HIT: ${{ needs.changes.outputs.cold != 'true' && steps.native-cache.outputs.cache-hit == 'true' }}
         run: |
           mkdir -p build/ci
           exec > >(tee build/ci/android.log) 2>&1
           git rev-parse HEAD
           java -version
           cd RawLabAndroid
-          ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --max-workers=8
+          ./gradlew :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --max-workers=2
           bash scripts/check-native.sh
-          find app/build/test-results/testDebugUnitTest -name 'TEST-*.xml' -exec cp {} ../build/ci/ \;
           cd ..
-          RAWLAB_TEST_ANDROID_CACHE=1 python scripts/ci/test_native_cache_android.py
+          if [[ "$RAWLAB_CI_NATIVE" == true ]]; then
+            RAWLAB_TEST_ANDROID_CACHE=1 python scripts/ci/test_native_cache_android.py
+          fi
           python scripts/ci/native_cache.py inventory --platform android --arch arm64-x86_64
       - name: Save successful native dependencies
         if: success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
@@ -332,7 +486,9 @@ jobs:
           retention-days: 7
 
   ios:
-    name: iOS framework and unsigned app
+    name: iOS ${{ needs.changes.outputs.checks }}
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
     runs-on: [self-hosted, macOS, ARM64, rawlab-apple]
     timeout-minutes: 180
     env:
@@ -344,23 +500,35 @@ jobs:
           persist-credentials: false
       - name: Identify native dependency cache
         id: native-key
+        if: needs.changes.outputs.build == 'true'
         shell: bash
         run: |
           python -c 'import sys; assert sys.version_info[:2] == (3, 12)'
           python -m pip install -r scripts/ci/requirements.txt
           python scripts/ci/native_cache.py key --platform ios --arch arm64-x86_64
-      - name: Restore PR dependencies or look up push cache
+      - name: Restore native dependencies, or only look them up for a cold build
         id: native-cache
+        if: needs.changes.outputs.build == 'true'
         continue-on-error: true
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
-          lookup-only: ${{ github.event_name == 'push' }}
+          lookup-only: ${{ needs.changes.outputs.cold == 'true' }}
+      - name: Run standalone iOS models
+        if: needs.changes.outputs.models == 'true'
+        shell: bash
+        run: |
+          mkdir -p build/ci
+          exec > >(tee build/ci/ios-models.log) 2>&1
+          git rev-parse HEAD
+          bash scripts/ci/apple-models.sh ios
       - name: Build all framework slices and compile simulator app and tests
+        if: needs.changes.outputs.build == 'true'
         shell: bash
         env:
-          RAWLAB_CI_CACHE_HIT: ${{ github.event_name == 'pull_request' && steps.native-cache.outputs.cache-hit == 'true' }}
+          RAWLAB_CI_NATIVE: ${{ needs.changes.outputs.native }}
+          RAWLAB_CI_CACHE_HIT: ${{ needs.changes.outputs.cold != 'true' && steps.native-cache.outputs.cache-hit == 'true' }}
         run: |
           mkdir -p build/ci
           exec > >(tee build/ci/ios.log) 2>&1
@@ -375,7 +543,9 @@ jobs:
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/ci-ios ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
             CODE_SIGNING_ALLOWED=NO build-for-testing
-          bash RawLab/tests/look-import.sh
+          if [[ "$RAWLAB_CI_NATIVE" == true ]]; then
+            bash RawLab/tests/look-import.sh
+          fi
           python scripts/ci/native_cache.py inventory --platform ios --arch arm64-x86_64
       - name: Save successful native dependencies
         if: success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
@@ -391,3 +561,20 @@ jobs:
             build/ci/*.log
             build/ci/*.json
           retention-days: 7
+
+  result:
+    name: ${{ github.event_name == 'workflow_dispatch' && format('Manual verification ({0}, {1})', inputs.platform, inputs.checks) || 'CI result' }}
+    needs: [changes, contracts, macos, windows, android, ios]
+    # Drafts defer platform checks, so their result stays skipped instead of reporting a pass.
+    if: ${{ !cancelled() && needs.changes.outputs.draft != 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/ci
+      - name: Require every selected check and no unselected one
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/ci/affected_platforms.py verify

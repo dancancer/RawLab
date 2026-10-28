@@ -5,7 +5,7 @@ struct FilmDock: View {
     @ObservedObject var model: EditorModel
     var body: some View {
         let _ = localizationLocale
-        let sections = FilmGroup.sections(model.films, group: { $0.group })
+        let sections = FilmGroup.sections(model.filmChoices, group: { $0.group })
         GeometryReader { geometry in
             let itemHeight = max(66, geometry.size.height - 16)
             let imageSize = max(32, min(96, itemHeight - 34))
@@ -20,7 +20,7 @@ struct FilmDock: View {
                             filmButton(name: film.name, id: film.id, imageSize: imageSize, height: itemHeight,
                                        isCustom: film.managedID != nil)
                                 .contextMenu {
-                                    if film.managedID != nil {
+                                    if film.managedID != nil && !film.isIndependentRecipe {
                                         Text(L10n.format("用户外观 · %@", String(describing: film.url.pathExtension.uppercased())))
                                         Button(L10n.text("重命名…"), systemImage: "pencil") { model.renameLookPanel(film) }
                                             .disabled(model.lookLibraryBusy || model.exporting)

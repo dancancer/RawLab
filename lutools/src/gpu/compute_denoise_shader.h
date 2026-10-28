@@ -103,7 +103,9 @@ void filterPixel(uint i) {
         else {
             float variance = sigma * sigma, value = readA(i);
             float threshold = strength * variance / sqrt(max(energy - variance, .05 * variance));
-            writeA(i, (value < 0.0 ? -1.0 : 1.0) * max(abs(value) - threshold, 0.0) * float(1u << level));
+            float magnitude = max(abs(value) - threshold, 0.0);
+            if (firmThreshold != 0u) magnitude = min(abs(value), 2.0 * magnitude);
+            writeA(i, (value < 0.0 ? -1.0 : 1.0) * magnitude * float(1u << level));
         }
     } else if (stage == 4u || stage == 5u) {
         float value = 0.0;

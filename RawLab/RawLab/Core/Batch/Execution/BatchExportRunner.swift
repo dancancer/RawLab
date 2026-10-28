@@ -14,6 +14,7 @@ struct BatchExportRunner {
                     didUpdate: @escaping (BatchExportJob) -> Void = { _ in },
                     onlyIDs: Set<String>? = nil) throws -> BatchExportJob {
         var job = job
+        try job.validate()
         job.status = .running
         job.globalError = nil
         try journalStore?.save(job)
@@ -38,7 +39,9 @@ struct BatchExportRunner {
             try journalStore?.save(job)
             didUpdate(job)
             do {
-                let payload = try render(job.targets[index], job.source.settings)
+                let target = job.targets[index]
+                if job.settingsMode == .perTargetFrozen { try target.frozen!.verifyFiles(input: target.sourceURL) }
+                let payload = try render(target, job.settings(for: target))
                 defer { cleanup(payload) }
                 job.targets[index].status = .publishing
                 try journalStore?.save(job)

@@ -127,8 +127,10 @@ internal static class RenderedDngChecks
             Check(ExportPair(cpu, source, settings, look, output, "cpu") == 0, "CPU DNG export reports the CPU backend");
             Reject(1, () => cpu.Render(source, settings, look, 0, output: source), "Direct input overwrite is rejected");
             var existing = Path.Combine(output, "cpu.dng"); var hash = Digest(existing);
-            Reject(3, () => cpu.Render(Path.Combine(output, "missing.ARW"), settings, look, 0, output: existing),
-                "Missing source remains a source I/O failure");
+            var missingRejected=false;
+            try { cpu.Render(Path.Combine(output, "missing.ARW"), settings, look, 0, output: existing); }
+            catch(FileNotFoundException) { missingRejected=true; }
+            Check(missingRejected,"Missing source is rejected by the managed input check before native export");
             Check(hash.SequenceEqual(Digest(existing)), "Failed input cannot replace a completed DNG");
             var alias = Path.Combine(output, "source-alias.dng");
             if (CreateHardLink(alias, source, IntPtr.Zero))
@@ -150,17 +152,11 @@ internal static class RenderedDngChecks
             var backend = ExportPair(auto, source, settings, look, output, "auto");
             Check(backend is 0 or 3, "Auto DNG reports CPU fallback or actual Direct3D 11");
             auto.SetGpuMode(2);
-            if (backend == 3) Check(ExportPair(auto, source, settings, look, output, "force") == 3,
-                "Force DNG actually completes on Direct3D 11");
-            else
-            {
-                Console.WriteLine("SKIP actual Direct3D 11 DNG parity: Auto completed on CPU");
-                var rejected = false; var forced = Path.Combine(output, "force.dng");
-                try { auto.Render(source, settings, look, 0, output: forced, longEdge: 128); }
-                catch (InvalidOperationException error) when (error.Message == StatusMessage(2) || error.Message == StatusMessage(4))
-                { rejected = true; Console.WriteLine("FORCE rejection=" + error.Message); }
-                Check(rejected && !File.Exists(forced), "Unavailable Force DNG cannot silently publish CPU output");
-            }
+            var rejected = false; var forced = Path.Combine(output, "force.dng");
+            try { auto.Render(source, settings, look, 0, output: forced, longEdge: 128); }
+            catch (InvalidOperationException error) when (error.Message == StatusMessage(2) || error.Message == StatusMessage(4))
+            { rejected = true; Console.WriteLine("FORCE rejection=" + error.Message); }
+            Check(rejected && !File.Exists(forced), "Force cannot publish CPU C5 as GPU output");
         }
         Check(frozen.SameAs(settings.Capture()), "Native exports do not change the frozen adjustments");
         var sentinel = Path.Combine(output, "target-a-Velvia.dng"); File.WriteAllText(sentinel, "existing output");

@@ -33,6 +33,8 @@ class BatchJournal(private val directory: File) {
 
     @Synchronized
     fun save(job: BatchJob) {
+        // 旧实例不得覆盖另一个版本已经保存的新格式。
+        if (contains(job.id)) load(job.id)
         generations.remove(job.id)
         val generation = UUID.randomUUID().toString()
         replace(journalFile(job.id)) { JournalCodec.snapshot(job, generation).store(it, null) }

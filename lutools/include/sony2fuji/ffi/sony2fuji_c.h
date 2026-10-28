@@ -13,6 +13,7 @@ extern "C" {
 
 #define SONY2FUJI_REQUEST_VERSION 2u
 #define SONY2FUJI_GPU_CONFIG_VERSION 1u
+#define SONY2FUJI_AI_DENOISE_CONFIG_VERSION 1u
 
 // ============================================================================
 // Status
@@ -25,7 +26,9 @@ typedef enum sony2fuji_status {
     SONY2FUJI_STATUS_IO_ERROR = 3,
     SONY2FUJI_STATUS_PROCESSING_ERROR = 4,
     SONY2FUJI_STATUS_OUT_OF_MEMORY = 5,
-    SONY2FUJI_STATUS_OUTPUT_IO_ERROR = 6
+    SONY2FUJI_STATUS_OUTPUT_IO_ERROR = 6,
+    SONY2FUJI_STATUS_CANCELLED = 7,
+    SONY2FUJI_STATUS_AI_NOT_READY = 8
 } sony2fuji_status;
 
 // ============================================================================
@@ -127,6 +130,11 @@ typedef enum sony2fuji_raw_exposure_mode {
     SONY2FUJI_EXPOSURE_SENSOR = 2
 } sony2fuji_raw_exposure_mode;
 
+typedef enum sony2fuji_processing_version {
+    SONY2FUJI_PROCESSING_LEGACY = 1,
+    SONY2FUJI_PROCESSING_C5_V2 = 2
+} sony2fuji_processing_version;
+
 // ============================================================================
 // Request/Buffer
 // ============================================================================
@@ -227,6 +235,50 @@ typedef struct sony2fuji_hsl_config {
     float lightness[SONY2FUJI_HSL_CHANNELS];  // +/-0.5 display-HSL lightness.
 } sony2fuji_hsl_config;
 
+#define SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION 1u
+typedef struct sony2fuji_tone_controls_config {
+    uint32_t version;
+    uint32_t struct_size;
+    float black_point; // -1..1, default 0. Display black endpoint, not sensor metadata.
+    float white_point; // -1..1, default 0. Display white endpoint.
+    float vibrance;    // -1..1, default 0. Independent of legacy saturation.
+} sony2fuji_tone_controls_config;
+
+#define SONY2FUJI_ATMOSPHERE_CONFIG_VERSION 1u
+typedef struct sony2fuji_atmosphere_config {
+    uint32_t version;
+    uint32_t struct_size;
+    float clarity; // -1..1, default 0. Medium-scale local contrast.
+    float dehaze;  // -1..1, default 0. Negative adds atmosphere.
+} sony2fuji_atmosphere_config;
+
+#define SONY2FUJI_COLOR_GRADING_CONFIG_VERSION 1u
+typedef struct sony2fuji_color_grading_config {
+    uint32_t version;
+    uint32_t struct_size;
+    float shadows_hue;         // [0,360), degrees; zero saturation retains dormant hue.
+    float shadows_saturation;  // 0..100, default 0.
+    float midtones_hue;
+    float midtones_saturation;
+    float highlights_hue;
+    float highlights_saturation;
+} sony2fuji_color_grading_config;
+
+#define SONY2FUJI_TONE_CURVE_CONFIG_VERSION 1u
+#define SONY2FUJI_TONE_CURVE_MAX_POINTS 33u
+typedef enum sony2fuji_curve_mode {
+    SONY2FUJI_CURVE_LEGACY = 0,
+    SONY2FUJI_CURVE_CUSTOM = 1
+} sony2fuji_curve_mode;
+typedef struct sony2fuji_curve_point { double x, y; } sony2fuji_curve_point;
+typedef struct sony2fuji_tone_curve_config {
+    uint32_t version;
+    uint32_t struct_size;
+    sony2fuji_curve_mode mode;
+    uint32_t count;
+    sony2fuji_curve_point points[SONY2FUJI_TONE_CURVE_MAX_POINTS];
+} sony2fuji_tone_curve_config;
+
 #define SONY2FUJI_GEOMETRY_CONFIG_VERSION 1u
 typedef struct sony2fuji_geometry_config {
     uint32_t version;
@@ -298,6 +350,55 @@ typedef struct sony2fuji_lens_report {
 
 typedef struct sony2fuji_session sony2fuji_session;
 
+typedef struct sony2fuji_hsl_probe sony2fuji_hsl_probe;
+#define SONY2FUJI_HSL_PROBE_VERSION 1
+typedef enum sony2fuji_hsl_probe_availability {
+    SONY2FUJI_HSL_PROBE_AVAILABLE = 0,
+    SONY2FUJI_HSL_PROBE_NEAR_GRAY = 1,
+    SONY2FUJI_HSL_PROBE_OUTSIDE = 2,
+    SONY2FUJI_HSL_PROBE_STALE = 3,
+    SONY2FUJI_HSL_PROBE_NONFINITE = 4
+} sony2fuji_hsl_probe_availability;
+typedef enum sony2fuji_hsl_probe_quality {
+    SONY2FUJI_HSL_PROBE_EXACT_CPU = 0,
+    SONY2FUJI_HSL_PROBE_PREVIEW_CPU = 1
+} sony2fuji_hsl_probe_quality;
+typedef struct sony2fuji_hsl_probe_query {
+    uint32_t version, struct_size;
+    uint64_t source_revision, request_revision;
+    float x, y;
+} sony2fuji_hsl_probe_query;
+typedef struct sony2fuji_hsl_probe_result {
+    uint32_t version, struct_size;
+    uint64_t source_revision, request_revision;
+    uint32_t width, height;
+    sony2fuji_hsl_probe_availability availability;
+    sony2fuji_hsl_probe_quality quality;
+    float rgb[3]; // Display-encoded working sRGB, possibly outside [0,1].
+    float hsl[3]; // Hue degrees [0,360), saturation/lightness [0,1].
+    float weights[8]; // Same channel order as hsl_config; available samples sum to 1.
+} sony2fuji_hsl_probe_result;
+
+typedef enum sony2fuji_ai_backend {
+    SONY2FUJI_AI_CPU = 0, // Reserved ABI value; enabled CPU requests return UNSUPPORTED.
+    SONY2FUJI_AI_COREML = 1,
+    SONY2FUJI_AI_AUTO = 2,
+    SONY2FUJI_AI_DIRECTML = 3
+} sony2fuji_ai_backend;
+
+typedef struct sony2fuji_ai_denoise_config {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t enabled;
+    sony2fuji_ai_backend backend;
+    const char* model_directory;
+    const char* cache_directory;
+} sony2fuji_ai_denoise_config;
+
+// Phase: 1 loading, 2 RAW network, 3 RGB network, 4 saving. Return 0 to cancel.
+// Called synchronously on the prepare worker, never on a UI thread implicitly.
+typedef int32_t (*sony2fuji_ai_progress_callback)(void* context, int32_t phase, uint64_t completed, uint64_t total);
+
 typedef enum sony2fuji_render_backend {
     SONY2FUJI_BACKEND_CPU = 0,
     SONY2FUJI_BACKEND_METAL = 1,
@@ -310,6 +411,11 @@ typedef enum sony2fuji_render_backend {
 // ============================================================================
 
 sony2fuji_status sony2fuji_session_create(sony2fuji_session** out_session);
+
+// New sessions use LEGACY. Unsupported versions leave the session unchanged.
+sony2fuji_status sony2fuji_session_set_processing_version(
+    sony2fuji_session* session, sony2fuji_processing_version version
+);
 
 // File adapters: single-frame opaque 8-bit SDR RGB.
 // macOS/iOS ImageIO accepts JPEG/PNG/TIFF/HEIF; Windows WIC accepts JPEG/PNG/TIFF.
@@ -374,6 +480,24 @@ sony2fuji_status sony2fuji_session_set_raw_exposure_mode(
 // Unsupported inputs return UNSUPPORTED at processing time, never a silent no-op.
 sony2fuji_status sony2fuji_session_set_raw_noise_reduction(sony2fuji_session* session, int32_t level);
 
+// Additive desktop experiment; old requests and clients remain AI-off by default.
+// Copies the directory strings. Configuration does not start inference.
+// Active AI bypasses FBDD, wavelet and display chroma denoising while preserving their settings.
+int32_t sony2fuji_ai_available(void);
+// Read-only native GPU probe. Does not load models or start inference; 0 means no supported hardware.
+int32_t sony2fuji_ai_hardware_available(void);
+sony2fuji_status sony2fuji_session_set_ai_denoise(sony2fuji_session* session, const sony2fuji_ai_denoise_config* config);
+// Explicit full-resolution preparation. Use a separate worker-owned session so previews remain responsive.
+// Cache keys exclude exposure/LUT/geometry, include WB and processing version for RGB, and retain reusable RAW output.
+// Missing/corrupt results make process/export return AI_NOT_READY; process never starts inference or silently disables AI.
+sony2fuji_status sony2fuji_session_prepare_ai(sony2fuji_session* session, const sony2fuji_request* request,
+    sony2fuji_ai_progress_callback progress, void* context);
+// Valid until the next AI operation on this session. Always returns a non-null string.
+const char* sony2fuji_session_get_ai_error(const sony2fuji_session* session);
+// Actual producers of the last prepared/loaded result, including cache hits; empty before completion.
+// CoreML describes the native CPU/GPU runtime, not exclusive GPU execution. ISP remains CPU.
+const char* sony2fuji_session_get_ai_backend(const sony2fuji_session* session);
+
 // Display-sRGB chroma denoising after tone/LUT, before sharpening and resizing.
 // 0 off (default), 1 detail priority, 2 noise priority. Does not change request v2.
 // Requires a core built with SONY2FUJI_ENABLE_CHROMA_DENOISE; otherwise nonzero
@@ -385,8 +509,9 @@ sony2fuji_status sony2fuji_session_set_chroma_denoise(sony2fuji_session* session
 // Linear-sRGB wavelets before user exposure, tone/LUT and sharpening. Additive ABI.
 // Exact previews and exports filter at source resolution. Explicit interactive
 // buffer previews may use a reduced image; final/file output is never downgraded.
-// Metal/GLES/D3D11 accelerate tiled SWT; estimation/calibration remain on CPU.
-// Auto falls back to CPU; Force requires the platform GPU to succeed.
+// Version 1 retains tiled SWT acceleration on Metal/GLES/D3D11 and CPU fallback.
+// Version 2 (C5) filters on CPU; Auto may retain GPU display rendering.
+// Force rejects active C5 filtering; it never substitutes CPU for a required GPU.
 // Old FBDD/display-chroma settings are independent; clients choose whether to stack.
 sony2fuji_status sony2fuji_session_set_wavelet_denoise(
     sony2fuji_session* session, const sony2fuji_wavelet_denoise_config* config
@@ -407,6 +532,64 @@ sony2fuji_status sony2fuji_session_set_photo_effects(
 sony2fuji_status sony2fuji_session_set_hsl(
     sony2fuji_session* session, const sony2fuji_hsl_config* config
 );
+
+// Immutable CPU reference after tone/vibrance, before HSL, with the same geometry
+// and requested sizing. Only BUFFER requests are accepted; this never exports.
+// PREVIEW retains the caller's proxy policy and is not exact-source/GPU parity.
+// Serialize capture with session rendering. GPU policy and last render metadata
+// are preserved. The snapshot owns its pixels and out_probe is null on failure.
+sony2fuji_status sony2fuji_session_create_hsl_probe(sony2fuji_session* session,
+    const sony2fuji_request* request, uint64_t source_revision, uint64_t request_revision,
+    sony2fuji_hsl_probe** out_probe);
+// Coordinates [0,1] address first/last pixel centers of the geometry result.
+// Revision labels must match the snapshot. The caller must additionally match
+// them to its current displayed photo/frame before applying an asynchronous result.
+// Gray (<1/255 channel spread), outside, stale and nonfinite pixels return no weights.
+// Nonfinite query coordinates are OUTSIDE; NONFINITE describes sampled pixels.
+// Errors clear result; an OK call may still report an unavailable sample.
+sony2fuji_status sony2fuji_hsl_probe_sample(const sony2fuji_hsl_probe* probe,
+    const sony2fuji_hsl_probe_query* query, sony2fuji_hsl_probe_result* result);
+void sony2fuji_hsl_probe_destroy(sony2fuji_hsl_probe* probe);
+
+// Additive API; request v2 stays unchanged. All zero is an exact bypass.
+// Display-encoded sRGB: black/white precede legacy tone, vibrance precedes HSL.
+// Invalid values preserve the previous state; reused sessions must explicitly
+// set the complete configuration, including zero for an unadjusted next photo.
+sony2fuji_status sony2fuji_session_set_tone_controls(
+    sony2fuji_session* session, const sony2fuji_tone_controls_config* config
+);
+
+// Additive CPU v1 stages; request v2 and photo_effects v1 stay unchanged.
+// Dehaze runs after the look, clarity after denoising and before sharpening.
+// FINAL/export use the complete source; viewport PREVIEW+BUFFER may reduce
+// working pixels at the full-source analysis scale. GPU Auto uses CPU for the
+// whole render; Force returns UNSUPPORTED. Invalid configs
+// retain previous state. Reused sessions must set both fields, including zero.
+sony2fuji_status sony2fuji_session_set_atmosphere(
+    sony2fuji_session* session, const sony2fuji_atmosphere_config* config
+);
+
+// Display-linear grading after HSL, before chroma denoise. All saturation zero
+// bypasses exactly. Invalid values retain prior state. Set all zones on each
+// request, including identity when reusing a session for an ungraded photo.
+sony2fuji_status sony2fuji_session_set_color_grading(
+    sony2fuji_session* session, const sony2fuji_color_grading_config* config
+);
+
+// Legacy mode has count=0 and uses request.tone_curve unchanged. Custom mode
+// requires 2..33 finite normalized points, fixed (0,0)/(1,1), increasing x and
+// nondecreasing y; request.tone_curve must be zero. Identity is an exact bypass.
+// PCHIP runs after highlights/shadows, before contrast/saturation. Invalid
+// setters retain state; configure every reused session, including legacy reset.
+// Precision-limited custom curves use CPU Auto; Force returns UNSUPPORTED.
+sony2fuji_status sony2fuji_session_set_tone_curve(
+    sony2fuji_session* session, const sony2fuji_tone_curve_config* config
+);
+// Stateless custom-curve samples for editor canvases; same evaluator as render.
+// Custom mode, nonzero count and finite x are required. Invalid input leaves y
+// untouched. x and y may be the same array; no session/render lock is needed.
+sony2fuji_status sony2fuji_sample_tone_curve(const sony2fuji_tone_curve_config* config,
+    const double* x, double* y, uint32_t count);
 
 // Additive API; request v2 is unchanged. Identity is an exact bypass.
 // Already-oriented pixels rotate, flip, apply perspective, straighten within a

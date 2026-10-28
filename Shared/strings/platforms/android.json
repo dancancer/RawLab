@@ -2303,6 +2303,1792 @@
       "formats": [],
       "source": "适合窗口",
       "types": []
+    },
+    "editor_adjusted": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "已调整",
+      "types": []
+    },
+    "editor_group_collapse": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "收起{0}组",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_group_color": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "颜色",
+      "types": []
+    },
+    "editor_group_detail": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "细节",
+      "types": []
+    },
+    "editor_group_effects": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "效果",
+      "types": []
+    },
+    "editor_group_expand": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "展开{0}组",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_group_geometry": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "几何与镜头",
+      "types": []
+    },
+    "editor_group_light": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "光线",
+      "types": []
+    },
+    "editor_group_looks": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "外观",
+      "types": []
+    },
+    "editor_reset_all": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重置全部调整…",
+      "types": []
+    },
+    "editor_reset_all_message": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "恢复当前照片的全部调整，不改写原始照片。",
+      "types": []
+    },
+    "editor_reset_all_title": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重置全部调整？",
+      "types": []
+    },
+    "editor_reset_blocked_title": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "无法重置调整",
+      "types": []
+    },
+    "editor_reset_confirm": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重置",
+      "types": []
+    },
+    "editor_reset_conversion_message": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "将以下项目转为独立调整，以保留其他分组的当前效果：{0}",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_reset_group": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "重置{0}组…",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_reset_group_message": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "此操作只恢复{0}组内的调整，其他分组保持不变。",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_reset_group_title": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "重置{0}组？",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_reset_hsl_all": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重置全部 HSL…",
+      "types": []
+    },
+    "editor_reset_hsl_all_message": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。",
+      "types": []
+    },
+    "editor_reset_hsl_all_title": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重置全部 HSL？",
+      "types": []
+    },
+    "editor_reset_hsl_color": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "重置当前颜色（{0}）",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_reset_invalid": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "当前照片或调整记录无效，无法安全重置。",
+      "types": []
+    },
+    "editor_reset_missing_wb": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "缺少拍摄时白平衡数据，无法保留配方效果。",
+      "types": []
+    },
+    "editor_reset_not_ready": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "预览尚未就绪，请稍后重试。",
+      "types": []
+    },
+    "editor_reset_stale": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "照片或调整已变化，请重新确认重置。",
+      "types": []
+    },
+    "editor_reset_tool": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "重置{0}",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_reset_tool_title": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "重置{0}？",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_reset_unknown_recipe": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "当前配方不可用，无法安全重置外观。",
+      "types": []
+    },
+    "editor_reset_unrepresentable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。",
+      "types": []
+    },
+    "editor_fine_hint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "拖动灵敏度为普通模式的四分之一。",
+      "types": []
+    },
+    "editor_hsl_hue_direction": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "色相：向相邻颜色偏移。",
+      "types": []
+    },
+    "editor_hsl_lightness_direction": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "明度：从暗到亮。",
+      "types": []
+    },
+    "editor_hsl_saturation_direction": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "饱和度：从灰色到彩色。",
+      "types": []
+    },
+    "editor_numeric_help": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s",
+        "%2$s",
+        "%3$s",
+        "%4$s"
+      ],
+      "source": "默认值：{0}；范围：{1} 至 {2}；步进：{3}。",
+      "types": [
+        "s",
+        "s",
+        "s",
+        "s"
+      ]
+    },
+    "editor_numeric_reset_hint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "双击名称或轨道恢复默认值。",
+      "types": []
+    },
+    "editor_numeric_step_error": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "请使用 {0} 的步进。",
+      "types": [
+        "s"
+      ]
+    },
+    "editor_parameter_pair": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s",
+        "%2$s"
+      ],
+      "source": "{0} · {1}",
+      "types": [
+        "s",
+        "s"
+      ]
+    },
+    "editor_compare_before": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "调整前",
+      "types": []
+    },
+    "editor_compare_disable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "关闭对比",
+      "types": []
+    },
+    "editor_compare_enable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "开启对比",
+      "types": []
+    },
+    "editor_compare_hold_before": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "查看调整前",
+      "types": []
+    },
+    "editor_compare_mode": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "对比方式",
+      "types": []
+    },
+    "editor_compare_reset_split": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重置分割线",
+      "types": []
+    },
+    "editor_compare_show_after": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "返回调整后",
+      "types": []
+    },
+    "editor_compare_side_by_side": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "并排",
+      "types": []
+    },
+    "editor_compare_split": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "分割位置",
+      "types": []
+    },
+    "editor_compare_wipe": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "分割线",
+      "types": []
+    },
+    "editor_photo_info": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "照片信息",
+      "types": []
+    },
+    "editor_photo_margin": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "照片四周留白",
+      "types": []
+    },
+    "editor_preview_enter": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "进入纯预览",
+      "types": []
+    },
+    "editor_preview_exit": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "退出纯预览",
+      "types": []
+    },
+    "editor_preview_outdated": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "预览未更新",
+      "types": []
+    },
+    "editor_preview_updated": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "预览已更新",
+      "types": []
+    },
+    "editor_zoom_display": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "缩放与显示",
+      "types": []
+    },
+    "editor_rgb_histogram": {
+      "source": "RGB 直方图",
+      "file": "editor_strings.xml",
+      "types": [],
+      "formats": []
+    },
+    "editor_statistics_unavailable": {
+      "source": "统计不可用",
+      "file": "editor_strings.xml",
+      "types": [],
+      "formats": []
+    },
+    "editor_expand_histogram": {
+      "source": "展开直方图",
+      "file": "editor_strings.xml",
+      "types": [],
+      "formats": []
+    },
+    "editor_collapse_histogram": {
+      "source": "收起直方图",
+      "file": "editor_strings.xml",
+      "types": [],
+      "formats": []
+    },
+    "geometry_lock_current_aspect": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "锁定当前比例",
+      "types": []
+    },
+    "geometry_position_size": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "位置与尺寸",
+      "types": []
+    },
+    "photo_processing_settings": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "照片处理设置",
+      "types": []
+    },
+    "geometry_crop_tool": {
+      "source": "裁切",
+      "formats": [],
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "geometry_perspective_tool": {
+      "source": "透视",
+      "formats": [],
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "geometry_grid": {
+      "source": "三分网格",
+      "formats": [],
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "transfer_copy": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "复制调整",
+      "types": []
+    },
+    "transfer_paste": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "粘贴调整",
+      "types": []
+    },
+    "transfer_history": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "本次会话历史",
+      "types": []
+    },
+    "transfer_undo": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "撤销",
+      "types": []
+    },
+    "transfer_redo": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重做",
+      "types": []
+    },
+    "transfer_scope": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "复制范围",
+      "types": []
+    },
+    "transfer_all": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "全部",
+      "types": []
+    },
+    "transfer_modified": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "仅已修改",
+      "types": []
+    },
+    "transfer_custom": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "自定义",
+      "types": []
+    },
+    "transfer_geometry_hint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "几何与镜头仅在“全部”或显式选择时包含。",
+      "types": []
+    },
+    "transfer_selected": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "已选 {0} 项",
+      "types": [
+        "s"
+      ]
+    },
+    "transfer_clear": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "清空选择",
+      "types": []
+    },
+    "transfer_select_group": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "选择此组",
+      "types": []
+    },
+    "transfer_source": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s",
+        "%2$s"
+      ],
+      "source": "来源：{0} · {1} 项调整",
+      "types": [
+        "s",
+        "s"
+      ]
+    },
+    "transfer_targets": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "目标：{0} 张照片",
+      "types": [
+        "s"
+      ]
+    },
+    "transfer_range": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "查看调整范围",
+      "types": []
+    },
+    "transfer_choose_files": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "从文件导入",
+      "types": []
+    },
+    "transfer_preflight": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "检查目标",
+      "types": []
+    },
+    "transfer_preparing": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "正在检查目标…",
+      "types": []
+    },
+    "transfer_empty_targets": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "没有可处理目标，请重新选择照片。",
+      "types": []
+    },
+    "transfer_apply": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "应用并保存",
+      "types": []
+    },
+    "transfer_retry": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重试未完成项",
+      "types": []
+    },
+    "transfer_no_clipboard": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "尚未复制调整。请先从一张照片复制所需范围。",
+      "types": []
+    },
+    "transfer_skip": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "跳过",
+      "types": []
+    },
+    "transfer_history_hint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "历史仅保留在本次会话；已保存的调整会在重新打开时恢复。",
+      "types": []
+    },
+    "transfer_no_history": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "暂无编辑历史。",
+      "types": []
+    },
+    "transfer_edit": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "调整照片",
+      "types": []
+    },
+    "transfer_undo_count": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "撤销 {0} 张",
+      "types": [
+        "s"
+      ]
+    },
+    "transfer_redo_count": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "重做 {0} 张",
+      "types": [
+        "s"
+      ]
+    },
+    "transfer_history_failed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "以下目标尚未完成本次历史操作，请检查原因后重试。",
+      "types": []
+    },
+    "transfer_history_skip": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "跳过以上目标后重试",
+      "types": []
+    },
+    "transfer_applied": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "已保存",
+      "types": []
+    },
+    "transfer_unchanged": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "未变化",
+      "types": []
+    },
+    "transfer_skipped": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "已跳过",
+      "types": []
+    },
+    "transfer_blocked": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "待处理",
+      "types": []
+    },
+    "transfer_conflict": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "调整已变化",
+      "types": []
+    },
+    "transfer_failed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "保存失败",
+      "types": []
+    },
+    "transfer_undone": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "已撤销",
+      "types": []
+    },
+    "transfer_conflict_message": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "照片或调整已变化，请重新检查目标。",
+      "types": []
+    },
+    "transfer_empty_scope": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "没有可复制的调整，请选择其他范围。",
+      "types": []
+    },
+    "transfer_draft_message": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "请先应用或放弃未完成的输入和几何草稿。",
+      "types": []
+    },
+    "transfer_missing_look": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "目标所需的外观不可用，请先导入外观。",
+      "types": []
+    },
+    "transfer_unrepresentable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "目标无法保留未选参数，请调整复制范围。",
+      "types": []
+    },
+    "transfer_incompatible": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "所选调整与目标不兼容，请调整范围或跳过目标。",
+      "types": []
+    },
+    "transfer_invalid_payload": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "调整内容无法读取，请重新复制。",
+      "types": []
+    },
+    "transfer_error": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "操作未完成，请重试。",
+      "types": []
+    },
+    "transfer_reload": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重新载入已保存调整",
+      "types": []
+    },
+    "transfer_reload_body": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。",
+      "types": []
+    },
+    "transfer_summary": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s",
+        "%2$s",
+        "%3$s",
+        "%4$s",
+        "%5$s"
+      ],
+      "source": "已保存 {0} 张 · 未变化 {1} 张 · 已跳过 {2} 张 · 已撤销 {3} 张 · 未完成 {4} 张",
+      "types": [
+        "s",
+        "s",
+        "s",
+        "s",
+        "s"
+      ]
+    },
+    "transfer_field_look": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "外观",
+      "types": []
+    },
+    "transfer_field_strength": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "强度",
+      "types": []
+    },
+    "transfer_field_exposure": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "曝光",
+      "types": []
+    },
+    "transfer_field_exposure_mode": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "曝光模式",
+      "types": []
+    },
+    "transfer_field_contrast": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "对比度",
+      "types": []
+    },
+    "transfer_field_highlights": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "高光",
+      "types": []
+    },
+    "transfer_field_shadows": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "阴影",
+      "types": []
+    },
+    "transfer_field_s_curve": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "S 曲线",
+      "types": []
+    },
+    "transfer_field_white_balance_mode": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "白平衡模式",
+      "types": []
+    },
+    "transfer_field_temperature": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "色温",
+      "types": []
+    },
+    "transfer_field_tint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "色调",
+      "types": []
+    },
+    "transfer_field_saturation": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "饱和度",
+      "types": []
+    },
+    "transfer_field_vignette_amount": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "暗角",
+      "types": []
+    },
+    "transfer_field_vignette_midpoint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "中点",
+      "types": []
+    },
+    "transfer_field_vignette_roundness": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "圆度",
+      "types": []
+    },
+    "transfer_field_vignette_feather": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "羽化",
+      "types": []
+    },
+    "transfer_field_vignette_highlights": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "高光保护",
+      "types": []
+    },
+    "transfer_field_grain_amount": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "颗粒",
+      "types": []
+    },
+    "transfer_field_grain_size": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "大小",
+      "types": []
+    },
+    "transfer_field_grain_roughness": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "粗糙度",
+      "types": []
+    },
+    "transfer_field_sharpening": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "锐化",
+      "types": []
+    },
+    "transfer_field_raw_denoise": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "RAW 降噪",
+      "types": []
+    },
+    "transfer_field_post_rgb_denoise": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "旧版降噪",
+      "types": []
+    },
+    "transfer_field_chroma_denoise": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "色度降噪",
+      "types": []
+    },
+    "transfer_field_wavelet_denoise": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "降噪参数",
+      "types": []
+    },
+    "transfer_field_crop_x": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "水平位置",
+      "types": []
+    },
+    "transfer_field_crop_y": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "垂直位置",
+      "types": []
+    },
+    "transfer_field_crop_width": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "宽度",
+      "types": []
+    },
+    "transfer_field_crop_height": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "高度",
+      "types": []
+    },
+    "transfer_field_quarter_turns": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "旋转",
+      "types": []
+    },
+    "transfer_field_flip_horizontal": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "水平翻转",
+      "types": []
+    },
+    "transfer_field_flip_vertical": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "垂直翻转",
+      "types": []
+    },
+    "transfer_field_straighten": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "拉直",
+      "types": []
+    },
+    "transfer_field_perspective_horizontal": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "水平透视",
+      "types": []
+    },
+    "transfer_field_perspective_vertical": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "垂直透视",
+      "types": []
+    },
+    "transfer_field_lens_distortion": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "畸变校正",
+      "types": []
+    },
+    "transfer_field_lens_tca": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "横向色差",
+      "types": []
+    },
+    "transfer_field_lens_auto_crop": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "自动裁切",
+      "types": []
+    },
+    "transfer_field_lens_profile": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "镜头配置",
+      "types": []
+    },
+    "transfer_group_looks": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "外观",
+      "types": []
+    },
+    "transfer_group_light": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "光线",
+      "types": []
+    },
+    "transfer_group_color": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "颜色",
+      "types": []
+    },
+    "transfer_group_effects": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "效果",
+      "types": []
+    },
+    "transfer_group_detail": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "细节",
+      "types": []
+    },
+    "transfer_group_geometry": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "几何与镜头",
+      "types": []
+    },
+    "transfer_channel_0": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "红",
+      "types": []
+    },
+    "transfer_channel_1": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "橙",
+      "types": []
+    },
+    "transfer_channel_2": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "黄",
+      "types": []
+    },
+    "transfer_channel_3": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "绿",
+      "types": []
+    },
+    "transfer_channel_4": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "青",
+      "types": []
+    },
+    "transfer_channel_5": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "蓝",
+      "types": []
+    },
+    "transfer_channel_6": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "紫",
+      "types": []
+    },
+    "transfer_channel_7": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "洋红",
+      "types": []
+    },
+    "transfer_axis_0": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "色相",
+      "types": []
+    },
+    "transfer_axis_1": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "饱和度",
+      "types": []
+    },
+    "transfer_axis_2": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "明度",
+      "types": []
+    },
+    "preset_another_name": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "请输入不同的预设名称。",
+      "types": []
+    },
+    "preset_apply": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "应用预设",
+      "types": []
+    },
+    "preset_changed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "预设已变化，请重新载入列表后重试。",
+      "types": []
+    },
+    "preset_corrupt": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "预设库无法读取，原文件保持不变。请从备份恢复后重试。",
+      "types": []
+    },
+    "preset_create": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "保存当前调整为预设…",
+      "types": []
+    },
+    "preset_delete_confirm": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "删除预设？",
+      "types": []
+    },
+    "preset_duplicate_name": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "同名预设已存在，请使用其他名称。",
+      "types": []
+    },
+    "preset_empty": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "尚无用户预设",
+      "types": []
+    },
+    "preset_empty_hint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "保存所选调整，之后可应用到其他照片。",
+      "types": []
+    },
+    "preset_enter_name": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "请输入预设名称。",
+      "types": []
+    },
+    "preset_error": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "预设操作未完成：{0}",
+      "types": [
+        "s"
+      ]
+    },
+    "preset_future": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "此预设库来自更新版本，请更新应用后重试。",
+      "types": []
+    },
+    "preset_identity_error": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "无法创建新的预设标识，请重试。",
+      "types": []
+    },
+    "preset_library": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "我的预设",
+      "types": []
+    },
+    "preset_manage": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "管理预设：{0}",
+      "types": [
+        "s"
+      ]
+    },
+    "preset_name": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "预设名称",
+      "types": []
+    },
+    "preset_new_name": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "新预设",
+      "types": []
+    },
+    "preset_overwrite": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "覆盖",
+      "types": []
+    },
+    "preset_overwrite_confirm": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "覆盖预设？",
+      "types": []
+    },
+    "preset_rename": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重命名预设",
+      "types": []
+    },
+    "preset_save": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "保存预设",
+      "types": []
+    },
+    "preset_save_as": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "另存",
+      "types": []
+    },
+    "preset_scope": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "调整范围",
+      "types": []
+    },
+    "preset_delete": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "删除",
+      "types": []
+    },
+    "preset_rename_action": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重命名",
+      "types": []
+    },
+    "preset_reload": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重新载入",
+      "types": []
+    },
+    "black_point": {
+      "formats": [],
+      "source": "黑场",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "white_point": {
+      "formats": [],
+      "source": "白场",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "vibrance": {
+      "formats": [],
+      "source": "鲜艳度",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "invalid_tone_controls": {
+      "formats": [],
+      "source": "无效的黑白场或鲜艳度参数",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "color_grading": {
+      "formats": [],
+      "source": "颜色分级",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "grading_midtones": {
+      "formats": [],
+      "source": "中间调",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "invalid_color_grading": {
+      "formats": [],
+      "source": "无效的颜色分级参数",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "grading_reset_zone": {
+      "formats": [],
+      "source": "重置当前分区",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "grading_reset_all": {
+      "formats": [],
+      "source": "重置颜色分级",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "grading_reset_message": {
+      "formats": [],
+      "source": "恢复阴影、中间调和高光的颜色分级默认值？",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "hsl_target": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "目标调整",
+      "types": []
+    },
+    "hsl_target_axis": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "调整轴",
+      "types": []
+    },
+    "hsl_target_failed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "取色失败，请重试。",
+      "types": []
+    },
+    "hsl_target_gray": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "颜色接近灰色，无法选择色域。",
+      "types": []
+    },
+    "hsl_target_instructions": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "在照片上取色并上下拖动",
+      "types": []
+    },
+    "hsl_target_outside": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "请在调整后的照片区域取色。",
+      "types": []
+    },
+    "hsl_target_ranges": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "受影响色域：{0}",
+      "types": [
+        "s"
+      ]
+    },
+    "hsl_target_stale": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "预览已变化，请重新取色。",
+      "types": []
+    },
+    "hsl_target_unavailable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "此像素不可取样。",
+      "types": []
+    },
+    "hsl_target_waiting": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "正在取色…",
+      "types": []
+    },
+    "collection_add": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "添加照片",
+      "types": []
+    },
+    "collection_apply_draft": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "应用并保存草稿",
+      "types": []
+    },
+    "collection_check_targets": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "检查同步目标",
+      "types": []
+    },
+    "collection_choose_source": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "先进入一张照片，将它作为同步来源。",
+      "types": []
+    },
+    "collection_deselect_all": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "取消全选",
+      "types": []
+    },
+    "collection_discard_draft": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "放弃草稿",
+      "types": []
+    },
+    "collection_draft_error": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "请应用、放弃或跳过这张照片的草稿。",
+      "types": []
+    },
+    "collection_draft_hint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "草稿可逐张应用、放弃或跳过。检查完成后，请再次确认最终参数。",
+      "types": []
+    },
+    "collection_edit": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "编辑",
+      "types": []
+    },
+    "collection_empty": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "添加照片后，可同步调整、逐张微调并导出。",
+      "types": []
+    },
+    "collection_existing_job": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "请先结束或完成当前导出任务。",
+      "types": []
+    },
+    "collection_export": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "逐张导出",
+      "types": []
+    },
+    "collection_export_count": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$d"
+      ],
+      "source": "实际导出 {0} 张",
+      "types": [
+        "d"
+      ]
+    },
+    "collection_freeze": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "确认并冻结导出任务",
+      "types": []
+    },
+    "collection_frozen": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "逐张参数已冻结",
+      "types": []
+    },
+    "collection_frozen_summary": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$d",
+        "%2$s",
+        "%3$s"
+      ],
+      "source": "{0} 张 · {1} · {2}",
+      "types": [
+        "d",
+        "s",
+        "s"
+      ]
+    },
+    "collection_look_changed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "外观已变化，请重新检查。",
+      "types": []
+    },
+    "collection_look_unavailable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "外观不可用。",
+      "types": []
+    },
+    "collection_no_export_targets": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "没有可导出的照片，请取消跳过或重新选择。",
+      "types": []
+    },
+    "collection_no_sync_targets": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "排除来源照片后没有可同步的目标。",
+      "types": []
+    },
+    "collection_output_directory": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "选择输出目录",
+      "types": []
+    },
+    "collection_resolve_draft": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "处理当前照片的草稿",
+      "types": []
+    },
+    "collection_return": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "返回批量集合",
+      "types": []
+    },
+    "collection_review": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "检查并查看最终参数",
+      "types": []
+    },
+    "collection_saved_settings": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "最终已保存参数",
+      "types": []
+    },
+    "collection_select_all": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "全选",
+      "types": []
+    },
+    "collection_selected_count": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$d"
+      ],
+      "source": "已选择 {0} 张",
+      "types": [
+        "d"
+      ]
+    },
+    "collection_selection_changed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "照片选择已变化，请重新检查。",
+      "types": []
+    },
+    "collection_skip": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "仅本次跳过",
+      "types": []
+    },
+    "collection_source_changed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "原始文件已被替换，请重新选择照片。",
+      "types": []
+    },
+    "collection_source_targets": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s",
+        "%2$d"
+      ],
+      "source": "来源：{0} · 目标 {1} 张",
+      "types": [
+        "s",
+        "d"
+      ]
+    },
+    "collection_source_unavailable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "照片文件不可用，请重新添加。",
+      "types": []
+    },
+    "collection_storage_error": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "无法保存导出任务，请检查存储空间后重试。",
+      "types": []
+    },
+    "collection_sync": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "同步调整",
+      "types": []
+    },
+    "collection_sync_history": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "上次同步记录",
+      "types": []
+    },
+    "collection_title": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "批量编辑",
+      "types": []
+    },
+    "curve_title": {
+      "formats": [],
+      "source": "曲线",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_custom": {
+      "formats": [],
+      "source": "多点曲线",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_switch_title": {
+      "formats": [],
+      "source": "切换曲线模式",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_switch_custom": {
+      "formats": [],
+      "source": "多点曲线将从直线开始，旧 S 曲线数值会保留。",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_switch_legacy": {
+      "formats": [],
+      "source": "切换到 S 曲线将移除当前控制点，可撤销此操作。",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_switch": {
+      "formats": [],
+      "source": "切换",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_add_point": {
+      "formats": [],
+      "source": "添加控制点",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_remove_point": {
+      "formats": [],
+      "source": "删除控制点",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_reset_identity": {
+      "formats": [],
+      "source": "重置为直线",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_input": {
+      "formats": [],
+      "source": "输入坐标",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_output": {
+      "formats": [],
+      "source": "输出坐标",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_fixed_endpoint": {
+      "formats": [],
+      "source": "端点固定",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_hint": {
+      "formats": [],
+      "source": "点击曲线区域添加控制点，拖动中间点调整。",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "transfer_field_curve": {
+      "formats": [],
+      "source": "曲线模式与控制点",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "invalid_tone_curve": {
+      "formats": [],
+      "source": "无效的曲线参数",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "curve_point_number": {
+      "formats": [
+        "%1$d"
+      ],
+      "source": "控制点 {0}",
+      "file": "editor_strings.xml",
+      "types": [
+        "d"
+      ]
+    },
+    "curve_summary": {
+      "formats": [
+        "%1$d"
+      ],
+      "source": "多点曲线（{0} 个控制点）",
+      "file": "editor_strings.xml",
+      "types": [
+        "d"
+      ]
+    },
+    "clarity": {
+      "formats": [],
+      "source": "清晰度",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "dehaze": {
+      "formats": [],
+      "source": "去朦胧",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "invalid_atmosphere": {
+      "formats": [],
+      "source": "无效的清晰度或去朦胧参数",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "hsl_target_active": {
+      "source": "目标调整：{0}",
+      "formats": [
+        "%1$s"
+      ],
+      "file": "editor_strings.xml",
+      "types": [
+        "s"
+      ]
+    },
+    "hsl_target_exit": {
+      "source": "退出目标调整",
+      "formats": [],
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "hsl_target_pan_hint": {
+      "source": "拖动照片调整颜色；退出目标模式后可平移。",
+      "formats": [],
+      "file": "editor_strings.xml",
+      "types": []
     }
   },
   "overrides": {
@@ -2326,6 +4112,17 @@
         "fr": "Galerie photo",
         "ja": "フォトギャラリー",
         "zh-Hans": "照片图库"
+      }
+    },
+    "双击名称或轨道恢复默认值。": {
+      "reason": "移动端使用双击触摸手势，桌面使用鼠标双击；提示仅用于普通输入，不覆盖读屏激活操作。",
+      "values": {
+        "de": "Doppeltippe auf den Namen oder die Spur, um den Standardwert wiederherzustellen.",
+        "en": "Double-tap the name or track to restore the default.",
+        "es": "Toca dos veces el nombre o la pista para restablecer el valor predeterminado.",
+        "fr": "Touchez deux fois le nom ou la piste pour rétablir la valeur par défaut.",
+        "ja": "名前またはトラックをダブルタップすると、デフォルト値に戻ります。",
+        "zh-Hans": "双击名称或轨道恢复默认值。"
       }
     }
   },
@@ -3161,6 +4958,46 @@
       "fr": "Limite du grand côté (px)",
       "ja": "長辺の上限（px）",
       "zh-Hans": "长边上限（px）"
+    },
+    "{0} 张 · {1} · {2}": {
+      "de": "Fotos: {0} · {1} · {2}",
+      "en": "Photos: {0} · {1} · {2}",
+      "es": "Fotos: {0} · {1} · {2}",
+      "fr": "Photos : {0} · {1} · {2}",
+      "ja": "{0}枚 · {1} · {2}",
+      "zh-Hans": "{0} 张 · {1} · {2}"
+    },
+    "处理当前照片的草稿": {
+      "de": "Entwurf des aktuellen Fotos bearbeiten",
+      "en": "Resolve the current photo’s draft",
+      "es": "Resolver el borrador de la foto actual",
+      "fr": "Traiter le brouillon de la photo actuelle",
+      "ja": "現在の写真の下書きを処理",
+      "zh-Hans": "处理当前照片的草稿"
+    },
+    "无法保存导出任务，请检查存储空间后重试。": {
+      "de": "Die Exportaufgabe konnte nicht gespeichert werden. Prüfen Sie den Speicherplatz und versuchen Sie es erneut.",
+      "en": "Could not save the export task. Check storage space and try again.",
+      "es": "No se pudo guardar la tarea de exportación. Comprueba el espacio e inténtalo de nuevo.",
+      "fr": "Impossible d’enregistrer la tâche d’export. Vérifiez l’espace disponible et réessayez.",
+      "ja": "書き出しタスクを保存できません。空き容量を確認して再試行してください。",
+      "zh-Hans": "无法保存导出任务，请检查存储空间后重试。"
+    },
+    "照片文件不可用，请重新添加。": {
+      "de": "Die Fotodatei ist nicht verfügbar. Fügen Sie sie erneut hinzu.",
+      "en": "The photo file is unavailable. Add it again.",
+      "es": "El archivo de foto no está disponible. Añádelo de nuevo.",
+      "fr": "Le fichier photo est indisponible. Ajoutez-le à nouveau.",
+      "ja": "写真ファイルを利用できません。もう一度追加してください。",
+      "zh-Hans": "照片文件不可用，请重新添加。"
+    },
+    "选择输出目录": {
+      "de": "Ausgabeordner wählen",
+      "en": "Choose output directory",
+      "es": "Elegir directorio de salida",
+      "fr": "Choisir le dossier de sortie",
+      "ja": "出力先を選択",
+      "zh-Hans": "选择输出目录"
     }
   }
 }

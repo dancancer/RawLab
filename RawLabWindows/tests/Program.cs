@@ -37,9 +37,29 @@ static class Program
         try
         {
             if(args.Length==1 && args[0]=="--white-balance") { WhiteBalanceChecks.Run(Check);Console.WriteLine($"PASS {checks} white balance checks");return 0; }
+            if(args.Length==3 && args[0]=="--histogram") { ViewComparisonChecks.NeutralChecks(args[1],args[2],Check);Console.WriteLine($"PASS {checks} histogram checks");return 0; }
+            if(args.Length==3 && args[0]=="--atmosphere-ui") { AtmosphereUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} atmosphere UI checks");return 0; }
+            if(args.Length==3 && args[0]=="--update-ui") { SoftwareUpdateUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} update UI checks");return 0; }
+            if(args.Length==4 && args[0]=="--atmosphere-render") { AtmosphereRenderChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} atmosphere render checks");return 0; }
+            if(args.Length==4 && args[0]=="--tone-render") { ToneControlsRenderChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} tone render checks");return 0; }
+            if(args.Length==4 && args[0]=="--grading-render") { ColorGradingRenderChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} grading render checks");return 0; }
+            if(args.Length==4 && args[0]=="--curve-render") { ToneCurveRenderChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} curve render checks");return 0; }
+            if(args.Length==3 && args[0]=="--curve-ui") { ToneCurveUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} curve UI checks");return 0; }
+            if(args.Length==3 && args[0]=="--hsl-target-render") { HslTargetRenderChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HSL target render checks");return 0; }
+            if(args.Length==3 && args[0]=="--hsl-target") { HslTargetUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HSL target UI checks");return 0; }
             TestWindowState.PreserveExistingBatch(journalDirectory);
             Loc.Initialize("zh-Hans");
+            if(args.Length==4 && args[0]=="--ai-batch") { AIBatchWindowChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} AI batch checks");return 0; }
+            if(args.Length==5 && args[0]=="--ai-real-window") { AIDenoiseRealWindowChecks.Run(args[1],args[2],args[3],args[4],Check);Console.WriteLine($"PASS {checks} real AI window checks");return 0; }
+            if(args.Length==4 && args[0]=="--ai-capability") { AICapabilityWindowChecks.Run(args[1],args[2],args[3]=="hardware",Check);Console.WriteLine($"PASS {checks} AI capability checks");return 0; }
+            if(args.Length==3 && args[0]=="--ai-window") { AIDenoiseWindowChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} AI window checks");return 0; }
+            if(args.Length==2 && args[0]=="--ai-panel") { AIDenoisePanelChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} AI panel checks");return 0; }
+            if(args.Length is 4 or 5 && args[0]=="--ai-denoise") { AIDenoiseChecks.Run(args[1],args[2],args[3],Check,args.Length==5 ? args[4] : "DirectML");Console.WriteLine($"PASS {checks} AI denoise checks");return 0; }
             if(args.Length>=1 && args[0]=="--first-preview") { FirstPreviewChecks.Run(args.Skip(1),Check);Console.WriteLine($"PASS {checks} first preview checks");return 0; }
+            if(args.Length==3 && args[0]=="--view-compare") { ViewComparisonChecks.Run(args[1],args[2],Check);return 0; }
+            if(args.Length==3 && args[0]=="--view-pointer") { ViewComparisonChecks.Run(args[1],args[2],Check,pointerOnly:true);return 0; }
+            if(args.Length==3 && args[0]=="--view-labels") { ViewComparisonChecks.Run(args[1],args[2],Check,labelsOnly:true);return 0; }
+            if(args.Length==2 && args[0]=="--view-source-identity") { ViewComparisonChecks.SourceIdentityChecks(args[1],Check);return 0; }
             if(args.Length==3 && args[0]=="--comparison-default") { ComparisonDefaultChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} comparison default checks");return 0; }
             if(args.Length==3 && args[0]=="--comparison-ui-host")return ComparisonDefaultChecks.Host(args[1],args[2]);
             if(args.Length==4 && args[0]=="--raster") { RasterChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} raster checks");return 0; }
@@ -54,6 +74,9 @@ static class Program
             if(args.Length==2 && args[0]=="--editor-shell") { EditorShellChecks.Run(args[1],Check);return 0; }
             if(args.Length==2 && args[0]=="--ui-details") { UiDetailChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} UI detail checks");return 0; }
             if(args.Length==3 && args[0]=="--transform-ui") { TransformUiChecks.Run(args[1],args[2],Check);return 0; }
+            if(args.Length==3 && args[0]=="--adjustment-presets") { AdjustmentPresetUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} adjustment preset checks");return 0; }
+            if(args.Length==3 && args[0]=="--batch-selection") { BatchSelectionUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} batch selection UI checks");return 0; }
+            if(args.Length==3 && args[0]=="--adjustment-history") { AdjustmentHistoryUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} adjustment history checks");return 0; }
             if(args.Length==1 && args[0]=="--about") { AboutChecks.Run(Check);Console.WriteLine($"PASS {checks} about checks");return 0; }
             if(args.Length==3 && args[0]=="--geometry") { GeometryChecks.Run(args[1],args[2],Check);return 0; }
             if(args.Length==3 && args[0]=="--lens") { LensChecks.Run(args[1],args[2],Check);return 0; }
@@ -83,8 +106,8 @@ static class Program
             Check(settings[Parameter.Strength]==200 && settings.Request("test.arw","test.cube",2000,null).LutStrength==2,
                 "Film strength clamps at 200% and reaches the native renderer");
             var strengthSpec=ParameterSpec.All[(int)Parameter.Strength];
-            Check(strengthSpec.Parse("150")==150 && strengthSpec.Parse("201")==200 && strengthSpec.Value(.5)==100,
-                "Film slider and numeric input support 0-200%");
+            Check(strengthSpec.Parse("150")==150 && strengthSpec.Parse("201")==null && strengthSpec.Value(.5)==100,
+                "Film slider supports 0-200% and numeric input rejects out-of-range text");
             settings.Reset(Parameter.Strength); Check(settings[Parameter.Strength]==100,"Film strength resets to 100%");
             ExportMetadataChecks.Run(output,Check);
             var wb=(Temperature:4870.0,Tint:17.0);settings.ResolveWhiteBalance(wb);
@@ -126,7 +149,7 @@ static class Program
                 settings.Reset(Parameter.Strength);
                 Check(float.IsFinite(rendered.Baseline) && rendered.WhiteBalance!=null,"Selected exposure baseline and calibrated as-shot WB");
                 Check(Math.Abs(engine.Render(unicodeRaw,new Adjustments { ExposureMode=0 },null,32,statistics:false,clipping:false)!.Baseline-.7)<.001,"Explicit scene mode keeps the declared baseline");
-                Check(rendered.Histogram.Take(256).Sum(x=>(long)x)==rendered.Image.PixelWidth*rendered.Image.PixelHeight,"Native histogram counts each pixel");
+                ViewComparisonChecks.CheckHistogram(rendered,Check,"rendered output");
                 var lean=engine.Render(unicodeRaw,settings,unicodeLut,800,clipping:false)!;
                 Check(lean.Clipping==null && lean.Histogram.SequenceEqual(rendered.Histogram) && lean.Shadows==rendered.Shadows && lean.Highlights==rendered.Highlights && Pixels(lean.Image).SequenceEqual(Pixels(rendered.Image)),"Optional clipping mask preserves pixels and exact statistics");
                 var referenceOnly=engine.Render(unicodeRaw,settings,null,800,statistics:false,clipping:false)!;
@@ -204,6 +227,7 @@ static class Program
             }
             Check(originalHash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(unicodeRaw))),"RAW source remains byte-identical");
             // Exercise the real WPF window and asynchronous worker using its dispatcher.
+            if(args.Length==3 && args[0]=="--hsl-target") { HslTargetUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HSL target UI checks");return 0; }
             TestWindowState.PreserveExistingBatch(journalDirectory);
             var app=TestWindowState.CreateApplication();
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());

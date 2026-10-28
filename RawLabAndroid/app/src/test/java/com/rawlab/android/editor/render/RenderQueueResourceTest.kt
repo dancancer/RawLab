@@ -1,0 +1,38 @@
+package com.rawlab.android.editor.render
+
+import org.junit.Assert.*
+import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+
+class RenderQueueResourceTest {
+    @Test fun lifecycleWorkDrainsBeforeResourceCloseAndCannotBeCoalesced() {
+        val started = CountDownLatch(1); val resume = CountDownLatch(1); val closed = CountDownLatch(1)
+        val order = java.util.Collections.synchronizedList(mutableListOf<Int>())
+        val queue = RenderQueue<Int, Int>({ started.countDown(); resume.await(); order += 1; it }, { _, _ -> },
+            { order += 3; closed.countDown() })
+        queue.submit(1); assertTrue(started.await(5, TimeUnit.SECONDS))
+        queue.performAfterPending { order += 2 }
+        queue.close(); resume.countDown()
+        assertTrue(closed.await(5, TimeUnit.SECONDS)); assertEquals(listOf(1, 2, 3), order)
+    }
+    @Test fun supersededResultIsDisposedAndOnlyLatestResultIsPublished() {
+        val started = CountDownLatch(1); val resume = CountDownLatch(1)
+        val discarded = CountDownLatch(1); val published = CountDownLatch(1); val closed = CountDownLatch(1)
+        val queue = RenderQueue<Int, Int>({ value -> if (value == 1) { started.countDown(); resume.await() }; value },
+            { _, result -> assertEquals(2, result.getOrThrow()); published.countDown() },
+            { closed.countDown() }, { value -> assertEquals(1, value); discarded.countDown() })
+        queue.submit(1); assertTrue(started.await(5, TimeUnit.SECONDS)); queue.submit(2); resume.countDown()
+        assertTrue(discarded.await(5, TimeUnit.SECONDS)); assertTrue(published.await(5, TimeUnit.SECONDS))
+        queue.close(); assertTrue(closed.await(5, TimeUnit.SECONDS))
+    }
+    @Test fun closingDuringWorkDisposesCompletedResultBeforeReleasingResources() {
+        val started = CountDownLatch(1); val resume = CountDownLatch(1); val closed = CountDownLatch(1)
+        var discarded = false
+        val queue = RenderQueue<Int, Int>({ started.countDown(); resume.await(); it },
+            { _, _ -> fail("Closed queue must not publish") },
+            { assertTrue(discarded); closed.countDown() }, { discarded = true })
+        queue.submit(1); assertTrue(started.await(5, TimeUnit.SECONDS)); queue.close(); resume.countDown()
+        assertTrue(closed.await(5, TimeUnit.SECONDS))
+    }
+}

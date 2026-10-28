@@ -63,6 +63,7 @@ val testAssets = layout.buildDirectory.dir("generated/rawlabTestAssets")
 val prepareTestAssets by tasks.registering(Sync::class) {
     into(testAssets)
     from(repo.resolve("lutools/tests/fixtures/jpeg-lossy.dng"))
+    from(repo.resolve("Shared/fixtures/adjustment-presets-v1.json"))
     if (testRaw.isPresent) from(testRaw.get()) { rename { "sample.RAW" } }
     if (testRaster.isPresent) from(testRaster.get()) { rename { "sample.jpg" } }
     if (testSonyArw6.isPresent) from(testSonyArw6.get()) { rename { "sony-arw6.ARW" } }
@@ -121,8 +122,8 @@ android {
         applicationId = "com.rawlab.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.8.2"
+        versionCode = 15
+        versionName = "0.9.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         externalNativeBuild { cmake { arguments += listOf("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON", "-DANDROID_STL=c++_shared") } }
@@ -174,6 +175,8 @@ dependencies {
     // Keep ActivityScenario helpers in the debug app instead of launching another package.
     debugImplementation("androidx.test:core:1.6.1")
     testImplementation("junit:junit:4.13.2")
+    // JVM 合同测试使用真实 JSON parser；设备端继续使用 Android 的 org.json。
+    testImplementation("org.json:json:20240303")
     androidTestImplementation(platform("androidx.compose:compose-bom:2025.04.01"))
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")

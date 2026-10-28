@@ -10,17 +10,19 @@ internal sealed record PreviewFrame(RenderedImage Neutral,RenderedImage Result);
 internal sealed record EmbeddedPreview(BitmapSource? Image,int Width,int Height);
 internal sealed partial class RenderEngine : IDisposable
 {
+    internal delegate int StatisticsAnalyzer(ref Native.Buffer buffer,bool clipping,uint[] bins,out uint shadows,out uint highlights,out Native.Buffer mask);
     private Native.Session session = new();
     private int gpuMode;
-    private sealed record Stamp(string Path,long Length,long Time);
-    private sealed record PreviewKey(Native.Request Request,DenoiseSettings Denoise,PhotoEffectsSettings Effects,int DisplayChromaDenoise,
-        int ExposureMode,HslSettings Hsl,LensSettings Lens,GeometrySettings Geometry,int Mode,bool Compare,bool Clipping,Stamp Raw,Stamp? Lut);
+    private readonly StatisticsAnalyzer statisticsAnalyzer;
+    private sealed record Stamp(string Path,long Length,long Time,long Created=0);
+    private sealed record PreviewKey(Native.Request Request,DenoiseSettings Denoise,PhotoEffectsSettings Effects,ToneControlsSettings ToneControls,AtmosphereSettings Atmosphere,ColorGradingSettings ColorGrading,ToneCurveSettings Curve,int DisplayChromaDenoise,
+        int ExposureMode,HslSettings Hsl,LensSettings Lens,GeometrySettings Geometry,ProcessingIdentity Processing,bool AIEnabled,int Mode,bool Compare,bool Clipping,Stamp Raw,Stamp? Lut);
     private readonly string lensDatabase;
     private Stamp? lensStamp;
     private LensCandidate[] lensCandidates = [];
     private PreviewKey? previewKey;
     private (Stamp Raw,Stamp? Lut)? sourceStamp;
-    private (Stamp Raw,int Edge,GeometrySettings Geometry,RenderedImage Frame)? original;
+    private (NeutralReferenceKey Key,RenderedImage Frame)? original;
     private readonly Dictionary<int,PreviewFrame> previews=new();
     // The optional result cache is separate from the active comparison image.
     internal long CachedPreviewBytes=>previews.Values.Sum(FrameBytes);
@@ -28,9 +30,13 @@ internal sealed partial class RenderEngine : IDisposable
     private static long FrameBytes(PreviewFrame frame)=>ImageBytes(frame.Result)+
         (ReferenceEquals(frame.Neutral,frame.Result) ? 0 : ImageBytes(frame.Neutral));
     public int LastBackend => Native.sony2fuji_session_get_last_backend(session);
-    public RenderEngine(int gpuMode=1, string? lensDatabase=null)
+    public RenderEngine(int gpuMode=1, string? lensDatabase=null,StatisticsAnalyzer? statisticsAnalyzer=null,string? aiModelDirectory=null,string? aiCacheDirectory=null,int? aiBackend=null)
     {
+        this.statisticsAnalyzer=statisticsAnalyzer ?? AnalyzeStatistics;
         this.lensDatabase = lensDatabase ?? Path.Combine(AppContext.BaseDirectory,"Lensfun");
+        this.aiModelDirectory=aiModelDirectory ?? BundledAIModel;
+        this.aiCacheDirectory=aiCacheDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RawLab","Cache","DualDn");
+        aiBackendOverride=aiBackend;
         try { InitializeSession(); SetGpuMode(gpuMode); }
         catch { session.Dispose(); throw; }
     }
@@ -41,42 +47,49 @@ internal sealed partial class RenderEngine : IDisposable
     {
         settings = PrepareRecipe(path, settings);
         EnsureInput(path);
+        SetProcessing(settings.Processing);SetTone(settings.ToneControls);SetAtmosphere(settings.Atmosphere);SetGrading(settings.ColorGrading);SetCurve(settings.Curve);
+        ConfigureAI(settings.AIDenoiseEnabled);
         SetLens(settings.Lens);
         SetGeometry(settings.Geometry);
         Native.Check(Native.sony2fuji_session_set_raw_exposure_mode(session,settings.ExposureMode));
         var request=settings.Request(path,null,0,null);
         SetInput(ref request,path);
-        Native.Check(Native.sony2fuji_session_estimate_auto_exposure(session,ref request,out var ev));
+        var status=Native.sony2fuji_session_estimate_auto_exposure(session,ref request,out var ev);
+        if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status);
         return ev;
     }
     public PreviewFrame RenderPreview(string path,Adjustments settings,string? lut,int edge,bool interactive,bool compare,bool clipping)
     {
         settings=PrepareInputSettings(path,settings);
-        static Stamp FileStamp(string file) {var info=new FileInfo(file);return new(info.FullName,info.Length,info.LastWriteTimeUtc.Ticks);}
+        static Stamp FileStamp(string file) {var info=new FileInfo(file);return new(info.FullName,info.Length,info.LastWriteTimeUtc.Ticks,info.CreationTimeUtc.Ticks);}
         var rawStamp=FileStamp(path);var lutStamp=lut==null ? null : FileStamp(lut);
         // Replaced files must invalidate the native decoded data as well as WPF frames.
         if(sourceStamp is {} previous &&
             ((previous.Raw.Path==rawStamp.Path && previous.Raw!=rawStamp) ||
              (previous.Lut?.Path==lutStamp?.Path && previous.Lut!=lutStamp)))
-        {session.Dispose();session=new();InitializeSession();SetGpuMode(gpuMode);lensStamp=null;}
-        sourceStamp=(rawStamp,lutStamp);
-        var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.Effects,settings.DisplayChromaDenoise,
-            settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,gpuMode,compare,clipping,rawStamp,lutStamp);
-        if(previewKey!=key){previews.Clear();previewKey=key;}
-        var cacheEdge=edge;
-        if(previews.TryGetValue(cacheEdge,out var cached)) {
-            original=compare ? (rawStamp,cacheEdge,settings.Geometry,cached.Neutral) : null;
-            return cached;
+        {
+            if(previous.Raw!=rawStamp){Native.sony2fuji_release_buffer(ref displayInput);inputStamp=null;}
+            session.Dispose();session=new();InitializeSession();SetGpuMode(gpuMode);lensStamp=null;
         }
-        if(original?.Raw!=rawStamp || original?.Geometry!=settings.Geometry)original=null;
-        if(!compare)original=null;
-        var originalEdge=edge==0 || (interactive && original?.Edge==0) ? 0 : 2000;
-        if(compare && (original==null || original.Value.Edge!=originalEdge))
-            original=(rawStamp,originalEdge,settings.Geometry,Render(path,new Adjustments { Geometry=settings.Geometry },null,originalEdge,statistics:false,clipping:false)!);
-        var neutral=compare ? original!.Value.Frame : null;
+        sourceStamp=(rawStamp,lutStamp);
+        var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.Effects,settings.ToneControls,settings.Atmosphere,settings.ColorGrading,settings.Curve,settings.DisplayChromaDenoise,
+            settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,settings.AIDenoiseEnabled,gpuMode,compare,clipping,rawStamp,lutStamp);
+        if(previewKey!=key){previews.Clear();previewKey=key;}
+        var referenceKey=new NeutralReferenceKey(new(rawStamp.Path,rawStamp.Length,rawStamp.Time,rawStamp.Created),
+            PhotoInput.IsRaster(path),settings.Processing,settings.Geometry,settings.Lens,edge);
+        if(original?.Key!=referenceKey)original=null;
+        var cacheEdge=edge;
+        // AI 模型或磁盘结果可在 WPF 帧之外变化，必须经过 native 的完整性与身份检查。
+        if(!settings.AIDenoiseEnabled && previews.TryGetValue(cacheEdge,out var cached))return cached;
+        var neutral=compare ? original?.Frame : null;
+        if(compare && neutral==null)
+        {
+            neutral=Render(path,NeutralReference.Settings(path,settings),null,edge,clipping:false,viewportPreview:true)!;
+            if(neutral.Histogram.Length==768)original=(referenceKey,neutral);
+        }
         var result=Render(path,settings,lut,edge,interactive,clipping:clipping,viewportPreview:true)!;
         var frame=new PreviewFrame(neutral ?? result,result);
-        if(!interactive)
+        if(!interactive && !settings.AIDenoiseEnabled && result.Histogram.Length==768 && (!compare || neutral?.Histogram.Length==768))
         {
             const long budget=256L*1024*1024;
             var bytes=FrameBytes(frame);
@@ -90,8 +103,51 @@ internal sealed partial class RenderEngine : IDisposable
     }
     public RenderedImage? Render(string path, Adjustments settings, string? lut, int edge, bool interactive = false, string? output = null, bool statistics = true, bool clipping = true, int? longEdge = null, bool viewportPreview = false)
     {
+        (settings,var request)=PrepareRequest(path,settings,lut,edge,interactive,output,longEdge,viewportPreview);
+        var format=output==null ? (ExportFormat?)null : ExportFormatExtensions.FromPath(output);
+        Native.Buffer buffer = default, mask = default;
+        try
+        {
+            var status = Native.sony2fuji_process(session,ref request,out buffer);
+            if (output != null && (status == 6 || (status == 3 && format != ExportFormat.RenderedDng)))
+                throw new OutputWriteException(Loc.Text("无法写入成片，请检查输出位置和剩余空间。"));
+            if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status);
+            if (output != null) {
+                if (format != ExportFormat.RenderedDng)
+                {
+                    try { ExportMetadata.Preserve(path,output); }
+                    catch (IOException error) { throw new OutputWriteException(Loc.Text("无法完成成片元数据写入：") + error.Message, error); }
+                }
+                return null;
+            }
+            Native.Check(Native.sony2fuji_session_get_geometry_size(session,out var nativeWidth,out var nativeHeight));
+            var bins = statistics || clipping ? new uint[768] : Array.Empty<uint>();
+            uint shadows=0,highlights=0;
+            var statisticsAvailable=false;
+            if(statistics || clipping)
+            {
+                // 显示像素已在 CPU；统计失败只清空统计，不丢弃成功的照片或改变照片 GPU 模式。
+                var analysis=statisticsAnalyzer(ref buffer,clipping,bins,out shadows,out highlights,out mask);
+                statisticsAvailable=analysis==0 && Enumerable.Range(0,3).All(c=>bins.Skip(c*256).Take(256).Sum(v=>(long)v)==(long)buffer.Width*buffer.Height);
+                if(!statisticsAvailable){bins=Array.Empty<uint>();shadows=highlights=0;}
+            }
+            float baseline=0,temperature=6500,tint=0;
+            var raster=LibraryEntry.IsRaster(path);
+            if(!raster)Native.Check(Native.sony2fuji_session_get_raw_exposure(session,out baseline,out _));
+            var calibrated = !raster && Native.sony2fuji_session_get_raw_white_balance(session,out temperature,out tint) == 0;
+            var count = (double)buffer.Width * buffer.Height;
+            // Statistics consume RGBA before the private output buffers are swizzled for WPF.
+            return new(Bitmap(buffer),!statisticsAvailable || mask.Data==IntPtr.Zero ? null : Bitmap(mask,false),bins,shadows/count,highlights/count,baseline,
+                calibrated ? RoundCameraWhiteBalance(temperature,tint) : null,LastBackend,raster ? null : ReadLens(path),checked((int)nativeWidth),checked((int)nativeHeight));
+        }
+        finally { Native.sony2fuji_release_buffer(ref buffer); Native.sony2fuji_release_buffer(ref mask); }
+    }
+    private (Adjustments,Native.Request) PrepareRequest(string path,Adjustments settings,string? lut,int edge,bool interactive,string? output,int? longEdge,bool viewportPreview)
+    {
         settings = PrepareRecipe(path, settings);
         EnsureInput(path);
+        SetProcessing(settings.Processing);SetTone(settings.ToneControls);SetAtmosphere(settings.Atmosphere);SetGrading(settings.ColorGrading);SetCurve(settings.Curve);
+        ConfigureAI(settings.AIDenoiseEnabled);
         SetLens(settings.Lens);
         SetGeometry(settings.Geometry);
         Native.Check(Native.sony2fuji_session_set_raw_exposure_mode(session,settings.ExposureMode));
@@ -104,42 +160,56 @@ internal sealed partial class RenderEngine : IDisposable
         var effects=settings.Effects.NativeConfig();
         Native.Check(Native.sony2fuji_session_set_photo_effects(session,ref effects));
         Native.Check(Native.sony2fuji_session_set_chroma_denoise(session,settings.DisplayChromaDenoise));
-        var format = output == null ? (ExportFormat?)null : ExportFormatExtensions.FromPath(output);
         var request = settings.Request(path,lut,edge,output,longEdge);
         SetInput(ref request,path);
-        Native.Buffer buffer = default, mask = default;
-        try
-        {
-            var status = Native.sony2fuji_process(session,ref request,out buffer);
-            if (output != null && (status == 6 || (status == 3 && format != ExportFormat.RenderedDng)))
-                throw new OutputWriteException(Loc.Text("无法写入成片，请检查输出位置和剩余空间。"));
-            Native.Check(status);
-            if (output != null) {
-                if (format != ExportFormat.RenderedDng)
-                {
-                    try { ExportMetadata.Preserve(path,output); }
-                    catch (IOException error) { throw new OutputWriteException(Loc.Text("无法完成成片元数据写入：") + error.Message, error); }
-                }
-                return null;
-            }
-            Native.Check(Native.sony2fuji_session_get_geometry_size(session,out var nativeWidth,out var nativeHeight));
-            var bins = statistics || clipping ? new uint[768] : Array.Empty<uint>();
-            uint shadows=0,highlights=0;
-            if(clipping) Native.Check(Native.sony2fuji_analyze_image(ref buffer,0,bins,out shadows,out highlights,out mask));
-            else if(statistics) Native.Check(Native.AnalyzeWithoutMask(ref buffer,0,bins,out shadows,out highlights,IntPtr.Zero));
-            float baseline=0,temperature=6500,tint=0;
-            var raster=LibraryEntry.IsRaster(path);
-            if(!raster)Native.Check(Native.sony2fuji_session_get_raw_exposure(session,out baseline,out _));
-            var calibrated = !raster && Native.sony2fuji_session_get_raw_white_balance(session,out temperature,out tint) == 0;
-            var count = (double)buffer.Width * buffer.Height;
-            // Statistics consume RGBA before the private output buffers are swizzled for WPF.
-            return new(Bitmap(buffer),mask.Data==IntPtr.Zero ? null : Bitmap(mask,false),bins,shadows/count,highlights/count,baseline,
-                calibrated ? RoundCameraWhiteBalance(temperature,tint) : null,LastBackend,raster ? null : ReadLens(path),checked((int)nativeWidth),checked((int)nativeHeight));
-        }
-        finally { Native.sony2fuji_release_buffer(ref buffer); Native.sony2fuji_release_buffer(ref mask); }
+        return (settings,request);
+    }
+    internal HslTargetSample SampleHsl(string path,Adjustments settings,string? lut,int edge,bool interactive,HslTargetRevision revision,double x,double y)
+    {
+        if(!double.IsFinite(x) || !double.IsFinite(y))return HslTargetSample.Unavailable(revision,HslTargetAvailability.Nonfinite);
+        if(x<0 || x>1 || y<0 || y>1)return HslTargetSample.Unavailable(revision,HslTargetAvailability.Outside);
+        var prepared=PrepareRequest(path,settings,lut,edge,interactive,null,null,true);
+        var request=prepared.Item2;
+        IntPtr probe=IntPtr.Zero;
+        try {
+            Native.Check(Native.sony2fuji_session_create_hsl_probe(session,ref request,revision.Source,revision.Request,out probe));
+            var query=new Native.HslProbeQuery {Version=1,StructSize=(uint)Marshal.SizeOf<Native.HslProbeQuery>(),SourceRevision=revision.Source,RequestRevision=revision.Request,X=(float)x,Y=(float)y};
+            Native.Check(Native.sony2fuji_hsl_probe_sample(probe,ref query,out var sample));
+            if(sample.SourceRevision!=revision.Source || sample.RequestRevision!=revision.Request)
+                return HslTargetSample.Unavailable(revision,HslTargetAvailability.Stale);
+            return new(revision,(HslTargetAvailability)sample.Availability,sample.Rgb.Select(v=>(double)v),sample.Weights.Select(v=>(double)v),sample.Quality==1);
+        } finally { if(probe!=IntPtr.Zero)Native.sony2fuji_hsl_probe_destroy(probe); }
+    }
+    internal static int AnalyzeStatistics(ref Native.Buffer buffer,bool clipping,uint[] bins,out uint shadows,out uint highlights,out Native.Buffer mask)
+    {
+        if(clipping)return Native.sony2fuji_analyze_image(ref buffer,0,bins,out shadows,out highlights,out mask);
+        mask=default;
+        return Native.AnalyzeWithoutMask(ref buffer,0,bins,out shadows,out highlights,IntPtr.Zero);
     }
     internal static (double Temperature,double Tint) RoundCameraWhiteBalance(float temperature,float tint) =>
         (Math.Round(temperature,MidpointRounding.AwayFromZero),Math.Round(tint,MidpointRounding.AwayFromZero));
+    private void SetGrading(ColorGradingSettings value)
+    {
+        var config = value.NativeConfig();
+        Native.Check(Native.sony2fuji_session_set_color_grading(session, ref config));
+    }
+    private void SetCurve(ToneCurveSettings value)
+    {
+        var config = value.NativeConfig();
+        Native.Check(Native.sony2fuji_session_set_tone_curve(session, ref config));
+    }
+    private void SetAtmosphere(AtmosphereSettings value)
+    {
+        var config = value.NativeConfig();
+        Native.Check(Native.sony2fuji_session_set_atmosphere(session, ref config));
+    }
+    private void SetTone(ToneControlsSettings value)
+    {
+        var config = value.NativeConfig();
+        Native.Check(Native.sony2fuji_session_set_tone_controls(session, ref config));
+    }
+    private void SetProcessing(ProcessingIdentity value) =>
+        Native.Check(Native.sony2fuji_session_set_processing_version(session,ProcessingIdentity.Require(value).Version));
     private void SetLens(LensSettings value)
     {
         var config = new Native.LensConfig { Version=1,StructSize=(uint)Marshal.SizeOf<Native.LensConfig>(),
@@ -172,7 +242,7 @@ internal sealed partial class RenderEngine : IDisposable
         if(LibraryEntry.IsRaster(path))return PrepareInputSettings(path,settings);
         if (settings.MasterRecipeID == null || (settings.CameraWhiteBalance && settings[Parameter.Tint] * settings[Parameter.Strength] == 0)) return settings;
         // 配方色调属于目标 RAW 的拍摄白平衡，不沿用冻结来源的相机值。
-        var neutral = new Adjustments { ExposureMode = settings.ExposureMode };
+        var neutral = new Adjustments { ExposureMode = settings.ExposureMode, Processing = settings.Processing };
         var camera = Render(path, neutral, null, 32, statistics: false, clipping: false)?.WhiteBalance
             ?? throw new InvalidOperationException(Loc.Text("此 RAW 无法解析拍摄白平衡，不能应用配方色调。"));
         var prepared = settings.Clone();

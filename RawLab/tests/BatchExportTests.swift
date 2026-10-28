@@ -23,6 +23,7 @@ struct BatchExportTests {
         defer { UserDefaults.standard.register(defaults: [L10n.preferenceKey: "system"]) }
         var settings = RawSettings.default
         settings.exposure = 0.5
+        settings.blackPoint = -30; settings.whitePoint = 40; settings.vibrance = 20
         settings.whiteBalanceMode = .custom
         let rows = BatchSettingsSummary.headline(settings) + BatchSettingsSummary.details(settings)
         let titles = rows.map(\.title)
@@ -30,8 +31,14 @@ struct BatchExportTests {
         check(Set(titles).count == titles.count, "batch summary lists each setting once: \(titles)")
         check(!rows.contains { $0.title == $0.value }, "batch summary values do not repeat their names")
         check(value("曝光") == "+0,50 EV", "batch exposure uses the editor name and interface number format")
+        check(value("黑场") == "-30 %" && value("白场") == "+40 %" && value("鲜艳度") == "+20 %",
+              "batch summary includes each tone value in the editor units")
         check(value("降噪") != nil && value("粗色斑抑制") != nil,
               "batch denoise rows use the editor's toggle and parameter names")
+        settings.curveSettings = .identity.inserting(x: 0.25123456789, y: 0.456789)
+        let curveRows = BatchSettingsSummary.details(settings)
+        check(curveRows.contains { $0.value == "0,25 → 0,46" }, "Batch curve summary limits localized coordinates to two decimals")
+        check(settings.curveSettings.points[1].x == 0.25123456789, "Formatting a summary preserves curve precision")
         // 目录里"关闭"是关闭按钮（Close / Schließen），关着的开关要用"停用"（Off / Aus），与 Mac 一致
         check(value("降噪") == L10n.text("停用") && value("畸变矫正") == L10n.text("停用"),
               "switched-off settings read Off rather than the Close button's label")
@@ -52,13 +59,16 @@ struct BatchExportTests {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("rawlab-batch-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try checkBatchSelection(root)
         defer { try? FileManager.default.removeItem(at: root) }
+        try checkPerTargetSnapshots(root)
         try BatchSourceJournalTests.run(root: root.appendingPathComponent("source-journal"))
 
         let sourceURL = root.appendingPathComponent("source.ARW")
         try Data("source".utf8).write(to: sourceURL)
         var settings = RawSettings.default
         settings.applyMasterRecipe(MasterRecipe.allRecipes[0])
+        settings.blackPoint = -32.75; settings.whitePoint = 46.5; settings.vibrance = 21.25
         settings.geometry.cropX = 0.2
         settings.geometry.cropWidth = 0.6
         settings.geometry.quarterTurns = 3
@@ -91,7 +101,7 @@ struct BatchExportTests {
         check(rawTargetSettings.geometry == rasterSettings.geometry &&
               rawTargetSettings.hsl == rasterSettings.hsl &&
               rawTargetSettings.photoEffects == rasterSettings.photoEffects &&
-              rawTargetSettings.denoise == rasterSettings.denoise,
+              rawTargetSettings.denoise == rasterSettings.denoise && rawTargetSettings.toneSettings == rasterSettings.toneSettings,
               "mixed batch keeps raster style settings frozen while resolving target camera defaults")
         check(rasterSource.settings(for: .raster) == rasterSettings,
               "raster target keeps its frozen settings without mutating the batch source")
@@ -107,6 +117,7 @@ struct BatchExportTests {
         let reopenedJob = try journal.load(id: job.id)
         let pendingJobs = try journal.pendingJobs()
         check(reopenedJob?.source.settings.geometry == settings.geometry, "journal freezes geometry settings")
+        check(reopenedJob?.source.settings.toneSettings == settings.toneSettings, "journal freezes independent tone controls")
         check(reopenedJob?.targets.count == 6, "journal round-trips the selected rows")
         check(reopenedJob?.source.settings.lensCorrection == settings.lensCorrection &&
               reopenedJob?.source.settings.lensSettings.coreProfileID.isEmpty == true,
@@ -406,4 +417,70 @@ struct BatchExportTests {
                   "DNG directory failure preserves the existing blocking file")
         }
     }
+}
+
+private func checkPerTargetSnapshots(_ root: URL) throws {
+    let sourceURL = root.appendingPathComponent("frozen-source.raw")
+    try Data("source".utf8).write(to: sourceURL)
+    let source = BatchSourceSnapshot(identity: PhotoIdentity(resourceIdentifier: "source"),
+        sourceFile: .externallyManaged(sourceURL), displayName: "source.raw", settings: .default)
+    let targets = try (0...2).map { index -> BatchTarget in
+        let url = root.appendingPathComponent("frozen-\(index).raw")
+        try Data("input \(index)".utf8).write(to: url)
+        return BatchTarget(identity: PhotoIdentity(resourceIdentifier: "\(index)"), sourceURL: url, displayName: "same.raw")
+    }
+    let job = BatchExportJob(source: source, targets: targets, outputFormat: .renderedDNG, longEdge: 1024)
+    var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(job)) as! [String: Any]
+    object["settings_mode"] = "per_target_frozen"
+    let journal = try BatchJournalStore(directory: root.appendingPathComponent("per-target"))
+    var rejected = false
+    do {
+        let invalid = try JSONDecoder().decode(BatchExportJob.self, from: JSONSerialization.data(withJSONObject: object))
+        try journal.save(invalid)
+    } catch { rejected = true }
+    try BatchExportTests.require(rejected, "per-target mode cannot silently become a uniform legacy job")
+    object["version"] = 2
+    var rows = object["targets"] as! [[String: Any]]
+    for index in rows.indices {
+        var settings = RawSettings.default; settings.exposure = Double(index + 1) / 2
+        rows[index]["frozen"] = ["version": 1, "settingsVersion": 1, "ordinal": index,
+            "settings": try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)),
+            "inputSHA256": try PhotoIdentity.fallback(for: targets[index].sourceURL).contentIdentifier!,
+            "outputFormat": "dng", "longEdge": 1024]
+    }
+    object["targets"] = rows
+    let frozen = try JSONDecoder().decode(BatchExportJob.self, from: JSONSerialization.data(withJSONObject: object))
+    var downgraded = object; downgraded.removeValue(forKey: "settings_mode")
+    var downgradeRejected = false
+    do { _ = try JSONDecoder().decode(BatchExportJob.self, from: JSONSerialization.data(withJSONObject: downgraded)) }
+    catch { downgradeRejected = true }
+    try BatchExportTests.require(downgradeRejected, "frozen items cannot silently downgrade to uniform settings")
+    var missingSnapshots = downgraded
+    missingSnapshots["targets"] = rows.map { row -> [String: Any] in
+        var copy = row; copy.removeValue(forKey: "frozen"); return copy
+    }
+    var missingRejected = false
+    do { _ = try JSONDecoder().decode(BatchExportJob.self, from: JSONSerialization.data(withJSONObject: missingSnapshots)) }
+    catch { missingRejected = true }
+    try BatchExportTests.require(missingRejected, "new per-target job version cannot fall back to uniform after losing its mode and snapshots")
+
+    var exposures: [Double] = []
+    _ = try BatchExportRunner.run(job: frozen, journalStore: journal, render: { _, settings in
+        exposures.append(settings.exposure)
+    }, write: { _, _, _, _ in }, shouldCancel: { exposures.count == 1 })
+    var restored = try journal.load(id: frozen.id)!
+    try BatchExportTests.require(exposures == [0.5], "cancel retains first item's distinct setting")
+    restored = try BatchExportRunner.run(job: restored, journalStore: journal, render: { target, settings in
+        exposures.append(settings.exposure)
+        if target.id == targets[1].id { throw BatchExportError.target("retry me") }
+    }, write: { _, _, _, _ in })
+    try BatchExportTests.require(exposures == [0.5, 1, 1.5], "resume preserves per-photo differences and order")
+    _ = try BatchExportRunner.retryFailed(job: restored, journalStore: journal, render: { _, settings in
+        exposures.append(settings.exposure)
+    }, write: { _, _, _, _ in })
+    try BatchExportTests.require(exposures == [0.5, 1, 1.5, 1], "failed-only retry does not repeat successful items")
+    try Data("changed".utf8).write(to: targets[0].sourceURL)
+    let changed = try BatchExportRunner.run(job: frozen, journalStore: nil, render: { _, _ in }, write: { _, _, _, _ in })
+    try BatchExportTests.require(changed.targets[0].status == .failed && changed.targets[1].status == .succeeded,
+                                "changed input fails only its frozen target")
 }

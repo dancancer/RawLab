@@ -2,7 +2,7 @@ import SwiftUI
 
 struct AboutView: View {
     @Environment(\.locale) private var localizationLocale
-    @ObservedObject var updates: UpdateChecker
+    let currentVersion: String
     @AppStorage(L10n.preferenceKey) private var languagePreference = AppLanguage.system.rawValue
     @ObservedObject private var usage = UsageAnalytics.shared
 
@@ -13,7 +13,7 @@ struct AboutView: View {
                 Image(nsImage: NSApplication.shared.applicationIconImage).resizable().frame(width: 64, height: 64)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("RawLab").font(.title2.bold())
-                    Text(L10n.format("版本 %@", String(describing: updates.currentVersion))).foregroundStyle(.secondary)
+                    Text(L10n.format("版本 %@", currentVersion)).foregroundStyle(.secondary)
                 }
             }
             Divider()
@@ -24,21 +24,6 @@ struct AboutView: View {
             Picker(L10n.text("语言"), selection: $languagePreference) {
                 ForEach(AppLanguage.allCases) { Text($0.nativeName).tag($0.rawValue) }
             }.id(localizationLocale.identifier).accessibilityIdentifier("settings.language")
-            Toggle(L10n.text("自动检查更新"), isOn: $updates.automatic)
-            Text(updates.status).font(.callout).foregroundStyle(.secondary)
-            HStack {
-                Button { Task { await updates.check(manual: true) } } label: {
-                    Label(L10n.text("检查更新"), systemImage: "arrow.clockwise")
-                }.disabled(updates.checking)
-                if updates.checking { ProgressView().controlSize(.small) }
-                if let release = updates.available {
-                    Link(L10n.format("前往下载 %@", String(describing: release.version)), destination: release.url)
-                }
-            }
-            if let release = updates.available, !release.notes.isEmpty {
-                ScrollView { Text(release.notes).font(.callout).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
-                    .frame(maxHeight: 180)
-            }
             Divider()
             Toggle(L10n.text("允许使用统计"), isOn: Binding(get: { usage.isEnabled }, set: { usage.setEnabled($0) }))
                 .disabled(!usage.isAvailable && !usage.isEnabled)

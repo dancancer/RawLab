@@ -18,7 +18,18 @@ archive=${3:?Pass the verified runner archive}
 root="$(cd "$root" && pwd -P)"
 home="$(cd "$HOME" && pwd -P)"
 if [[ "$root" != "$home/"* ]]; then
-    echo 'Keep runner startup files and Python inside the CI user home. Use --work for an external build volume.' >&2
+    echo 'Keep runner startup files inside the CI user home. Use --work for an external build volume.' >&2
+    exit 1
+fi
+# Native dependency outputs embed the workspace, Xcode and Python paths. Every pool Mac uses
+# the same volume path so that one machine's cache is valid on the other.
+pool=${RAWLAB_APPLE_POOL_ROOT:-/Volumes/RawLabCI}
+if [[ ! -d "$pool" || -L "$pool" || ! -w "$pool" || "$(cd "$pool" && pwd -P)" != "$pool" ]]; then
+    echo "Create a writable case-sensitive APFS volume at $pool first." >&2
+    exit 1
+fi
+if [[ "$xcode" != "$pool/tools/Xcode.app" ]]; then
+    echo "Copy the selected Xcode to $pool/tools/Xcode.app on every pool Mac." >&2
     exit 1
 fi
 [[ -d "$xcode/Contents/Developer" && -r "$xcode/Contents/Info.plist" ]]
@@ -38,23 +49,26 @@ if not any(runtime.get("platform") == "iOS" and runtime.get("isAvailable") and r
            for runtime in runtimes):
     sys.exit("Install an available iOS simulator runtime before registering this Apple runner.")
 '
-for tool in brew cmake pkg-config autoconf automake glibtoolize; do command -v "$tool"; done
+for tool in brew pkg-config autoconf automake glibtoolize; do command -v "$tool"; done
 brew list --versions autoconf automake libtool m4 pkgconf
 printf '%s  %s\n' df4cebda25c86a886ed204e49fee63f5c2e7cec5f447b5c98440a826bbdf9df2 "$archive" | shasum -a 256 -c -
-mkdir -p "$root/runner" "$root/_work" "$root/tmp" "$root/cache/pip" "$root/cache/lens-sources" "$root/cache/macos-sources"
-chmod 700 "$root"
+mkdir -p "$root/runner" "$root/tmp" "$root/cache/pip" "$root/cache/lens-sources" "$root/cache/macos-sources" \
+    "$pool/_work"
+chmod 700 "$root" "$pool"
 if [[ ! -x "$root/runner/bin/Runner.Listener" ]]; then
     tar -xzf "$archive" -C "$root/runner"
 fi
-if [[ ! -x "$root/venv/bin/python" ]]; then "$python" -m venv "$root/venv"; fi
+if [[ ! -x "$pool/venv/bin/python" ]]; then "$python" -m venv "$pool/venv"; fi
+"$pool/venv/bin/python" -m pip install -r "$(dirname "$0")/requirements-apple-runner.txt"
+"$pool/venv/bin/cmake" --version
 # setup-python's macOS distribution requires a privileged, fixed framework install.
 # Use a prepared Python 3.12 venv instead; jobs never need sudo or global pip writes.
-printf '%s\n' "$root/venv/bin:$PATH" > "$root/runner/.path"
+printf '%s\n' "$pool/venv/bin:$PATH" > "$root/runner/.path"
 printf '%s\n' \
-    "PATH=$root/venv/bin:$PATH" \
+    "PATH=$pool/venv/bin:$PATH" \
     "DEVELOPER_DIR=$DEVELOPER_DIR" "TMPDIR=$root/tmp/" \
     "PIP_CACHE_DIR=$root/cache/pip" "RAWLAB_LENS_SOURCE_CACHE=$root/cache/lens-sources" \
     "RAWLAB_SOURCE_CACHE=$root/cache/macos-sources" \
     'LANG=en_US.UTF-8' 'LC_ALL=en_US.UTF-8' \
     'HOMEBREW_NO_AUTO_UPDATE=1' 'HOMEBREW_NO_INSTALL_CLEANUP=1' > "$root/runner/.env"
-echo 'Tools are ready. Register the runner separately and install its user LaunchAgent from the selected user login session.'
+echo "Tools are ready. Register the runner with --work $pool/_work and install its user LaunchAgent from the selected user login session."

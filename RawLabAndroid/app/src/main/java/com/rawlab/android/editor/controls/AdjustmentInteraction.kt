@@ -1,7 +1,11 @@
 package com.rawlab.android.editor.controls
 
+import com.rawlab.android.settings.canonicalZero
 import kotlin.math.abs
 import kotlin.math.round
+import java.math.BigDecimal
+import java.math.RoundingMode
+import java.text.DecimalFormatSymbols
 import java.text.NumberFormat
 import java.text.ParsePosition
 import java.util.Locale
@@ -20,16 +24,24 @@ internal data class AdjustmentScale(
     val step: Float,
     val default: Float,
     val reciprocal: Boolean = false,
+    val compactPercent: Boolean = false,
 ) {
-    fun quantize(value: Float): Float = (round(value / step) * step).coerceIn(range)
+    fun quantize(value: Float): Float = (round(value / step) * step).coerceIn(range).canonicalZero()
 
     fun parse(text: String, locale: Locale = Locale.ROOT, current: Float? = null): Float? {
-        val input = text.trim()
-        val position = ParsePosition(0)
-        val localized = NumberFormat.getNumberInstance(locale).apply { isGroupingUsed = false }.parse(input, position)
-            ?.takeIf { position.index == input.length }?.toFloat()
-        return (input.toFloatOrNull() ?: localized)?.takeIf { it.isFinite() && it in range }
-            ?.let { if (reciprocal && (it == default || it == current)) it else quantize(it) }
+        val parsed = parseAdjustmentNumber(text, locale)
+        if (current != null && current.isFinite() && current in range && parsed != null) {
+            val displayed = if (compactPercent) formatCropPercent(current, locale) else formatAdjustmentNumber(current.toString().toDouble(), locale)
+            if (parsed == parseAdjustmentNumber(displayed, locale)) return current.canonicalZero()
+        }
+        return parsed?.takeIf { it.isFinite() && it in range.start.toDouble()..range.endInclusive.toDouble() }
+            ?.takeIf { it == current?.toString()?.toDouble() || BigDecimal(it.toString()).remainder(BigDecimal(step.toString())).signum() == 0 }
+            ?.toFloat()?.canonicalZero()
+    }
+
+    fun fraction(value: Float): Float {
+        val width = position(range.endInclusive) - position(range.start)
+        return if (width <= 0f) 0f else ((position(value) - position(range.start)) / width).coerceIn(0f, 1f)
     }
 
     fun position(value: Float): Float = if (reciprocal) -1f / value else value
@@ -50,4 +62,37 @@ internal data class AdjustmentScale(
     }
 }
 
-internal fun editorUsesSideDock(width: Float, height: Float): Boolean = width >= 600f && width > height
+internal fun formatAdjustmentNumber(value: Double, locale: Locale = Locale.ROOT): String =
+    BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+        .replace('.', DecimalFormatSymbols.getInstance(locale).decimalSeparator)
+
+internal fun formatAdjustmentStep(step: Float, locale: Locale = Locale.ROOT): String =
+    if (step == .001f) "1/1000" else formatAdjustmentNumber(step.toString().toDouble(), locale)
+
+internal fun formatCropPercent(value: Float, locale: Locale = Locale.ROOT): String =
+    NumberFormat.getNumberInstance(locale).apply {
+        isGroupingUsed = false; minimumFractionDigits = 0; maximumFractionDigits = 2
+    }.format(value)
+
+internal fun editorUsesSideDock(width: Float, height: Float, fontScale: Float = 1f): Boolean =
+    width >= 600f && width > height && fontScale < 1.3f
+
+internal data class EditorDockLayout(val height: Float, val compactNavigation: Boolean)
+
+internal fun editorDockLayout(availableHeight: Float, fontScale: Float, sideDock: Boolean, expanded: Boolean): EditorDockLayout {
+    val regular = 332f + 96f * (fontScale - 1f).coerceAtLeast(0f)
+    // 普通竖屏容纳两行导航和 HSL 三轴；短窗将工具行纳入参数滚动。
+    val maximum = if (sideDock) availableHeight else (availableHeight - 96f).coerceAtLeast(0f)
+    val compact = maximum < regular
+    return EditorDockLayout(if (sideDock) availableHeight else if (!expanded) {
+        48f * fontScale.coerceAtLeast(1f)
+    } else regular.coerceAtMost(maximum), compact)
+}
+
+internal fun parseAdjustmentNumber(text: String, locale: Locale): Double? {
+    val input = text.trim()
+    val position = ParsePosition(0)
+    val localized = NumberFormat.getNumberInstance(locale).apply { isGroupingUsed = false }.parse(input, position)
+        ?.takeIf { position.index == input.length }?.toDouble()
+    return input.toDoubleOrNull() ?: localized
+}

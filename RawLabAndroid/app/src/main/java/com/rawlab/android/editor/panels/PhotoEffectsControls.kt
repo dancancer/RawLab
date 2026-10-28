@@ -30,7 +30,7 @@ import com.rawlab.android.ui.ToolIcon
 internal fun PhotoEffectsControls(
     value: PhotoEffectsSettings,
     vignette: Boolean,
-    enabled: Boolean,
+    enabled: Boolean, onReset: (() -> Unit)? = null,
     onChange: (PhotoEffectsSettings, Boolean) -> Unit,
 ) {
     val amount = if (vignette) PhotoEffectParameter.VIGNETTE_AMOUNT else PhotoEffectParameter.GRAIN_AMOUNT
@@ -54,7 +54,7 @@ internal fun PhotoEffectsControls(
             }
             if (!vignette || advanced) ToolIcon(Icons.Outlined.RestartAlt, resetLabel,
                 enabled = enabled && !value.isEffectDefault(vignette)) {
-                    onChange(value.resetEffects(vignette), false)
+                    onReset?.invoke() ?: onChange(value.resetEffects(vignette), false)
                 }
         }
         parameters.forEach { parameter ->

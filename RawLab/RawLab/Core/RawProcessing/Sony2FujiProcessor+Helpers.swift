@@ -41,8 +41,53 @@ extension Sony2FujiProcessor {
         _ = sony2fuji_session_destroy(session)
     }
 
+    func configureProcessing(_ session: OpaquePointer, identity: ProcessingIdentity) throws {
+        let processing = identity.version == 1 ? SONY2FUJI_PROCESSING_LEGACY : SONY2FUJI_PROCESSING_C5_V2
+        let processingStatus = sony2fuji_session_set_processing_version(session, processing)
+        guard processingStatus == SONY2FUJI_STATUS_OK else {
+            throw ProcessorError.processFailed(statusMessage(processingStatus))
+        }
+    }
+
+    func configureCurve(_ session: OpaquePointer, settings: ToneCurveSettings) throws {
+        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的曲线参数")) }
+        var config = settings.nativeConfig
+        guard sony2fuji_session_set_tone_curve(session, &config) == SONY2FUJI_STATUS_OK else {
+            throw ProcessorError.processFailed(L10n.text("无效的曲线参数"))
+        }
+    }
+
+    func configureGrading(_ session: OpaquePointer, settings: ColorGradingSettings) throws {
+        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的颜色分级参数")) }
+        var config = settings.nativeConfig
+        guard sony2fuji_session_set_color_grading(session, &config) == SONY2FUJI_STATUS_OK else {
+            throw ProcessorError.processFailed(L10n.text("无效的颜色分级参数"))
+        }
+    }
+
+    func configureTone(_ session: OpaquePointer, settings: ToneControlsSettings) throws {
+        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的黑白场或鲜艳度参数")) }
+        var config = settings.nativeConfig
+        guard sony2fuji_session_set_tone_controls(session, &config) == SONY2FUJI_STATUS_OK else {
+            throw ProcessorError.processFailed(L10n.text("无效的黑白场或鲜艳度参数"))
+        }
+    }
+
+    func configureAtmosphere(_ session: OpaquePointer, settings: AtmosphereSettings) throws {
+        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的清晰度或去朦胧参数")) }
+        var config = settings.nativeConfig
+        guard sony2fuji_session_set_atmosphere(session, &config) == SONY2FUJI_STATUS_OK else {
+            throw ProcessorError.processFailed(L10n.text("无效的清晰度或去朦胧参数"))
+        }
+    }
+
     func configureSession(_ session: OpaquePointer, settings: RawSettings, interactive: Bool,
                           viewportPreview: Bool = false) throws {
+        try configureProcessing(session, identity: settings.processing)
+        try configureTone(session, settings: settings.toneSettings)
+        try configureAtmosphere(session, settings: settings.atmosphereSettings)
+        try configureCurve(session, settings: settings.curveSettings)
+        try configureGrading(session, settings: settings.gradingSettings)
         try configureGeometry(session, settings: settings.geometry)
         try configureLens(session, settings: settings.lensSettings)
         let exposureMode = sony2fuji_raw_exposure_mode(rawValue: UInt32(settings.exposureMode.rawValue))
@@ -138,8 +183,8 @@ extension Sony2FujiProcessor {
         if settings.whiteBalanceMode == .camera && settings.tint * settings.recipeScale == 0 {
             return settings.renderedRecipe(cameraTemperature: settings.temperature, cameraTint: 0)
         }
-        let camera = try recipeWhiteBalance.resolve(url: url) {
-            try loadRecipeWhiteBalance(session: session, url: url, exposureMode: settings.exposureMode)
+        let camera = try recipeWhiteBalance.resolve(url: url, processing: settings.processing) {
+            try loadRecipeWhiteBalance(session: session, url: url, exposureMode: settings.exposureMode, processing: settings.processing)
         }
         return settings.renderedRecipe(cameraTemperature: camera.temperature, cameraTint: camera.tint)
     }
@@ -158,9 +203,10 @@ extension Sony2FujiProcessor {
     }
 
     func loadRecipeWhiteBalance(session: OpaquePointer, url: URL,
-                               exposureMode: RawExposureMode) throws -> RawWhiteBalance {
+                               exposureMode: RawExposureMode, processing: ProcessingIdentity) throws -> RawWhiteBalance {
         // Read the target RAW once; saved recipe values are not its as-shot WB.
         var neutral = RawSettings.default
+        neutral.processing = processing
         neutral.exposureMode = exposureMode
         try configureSession(session, settings: neutral, interactive: false)
         var request = makeBaseRequest(settings: neutral, inputType: SONY2FUJI_INPUT_RAW)
@@ -200,7 +246,7 @@ extension Sony2FujiProcessor {
             : Float(settings.tint)
         request.highlights = Float(settings.highlights)
         request.shadows = Float(settings.shadows)
-        request.tone_curve = Float(settings.toneCurve)
+        request.tone_curve = settings.curveSettings.mode == .custom ? 0 : Float(settings.toneCurve)
         request.noise_reduction = displayInput || settings.denoise.enabled ? 0 : Float(settings.noiseReduction)
         request.sharpening = Float(settings.sharpening)
         return request
@@ -323,7 +369,7 @@ extension Sony2FujiProcessor {
         }
     }
 
-    func copyBuffer(_ buffer: sony2fuji_buffer, semantic: Buffer.Semantic = .legacy) throws -> Buffer {
+    func takeBuffer(_ buffer: inout sony2fuji_buffer, semantic: Buffer.Semantic = .legacy) throws -> Buffer {
         guard let baseAddress = buffer.data,
               buffer.width > 0,
               buffer.height > 0,
@@ -332,13 +378,20 @@ extension Sony2FujiProcessor {
             throw ProcessorError.bufferCopyFailed
         }
 
-        let data = Data(bytes: baseAddress, count: Int(buffer.size_bytes))
+        let native = buffer
+        let data = Data(bytesNoCopy: baseAddress, count: Int(native.size_bytes), deallocator: .custom { pointer, _ in
+            var released = sony2fuji_buffer()
+            released.data = pointer
+            sony2fuji_release_buffer(&released)
+        })
+        // 保留调用方 defer 的错误路径清理；成功后只由 Data 释放原生内存。
+        buffer = sony2fuji_buffer()
         return Buffer(
             data: data,
-            width: Int(buffer.width),
-            height: Int(buffer.height),
-            stride: Int(buffer.stride_bytes),
-            pixelFormat: buffer.pixel_format,
+            width: Int(native.width),
+            height: Int(native.height),
+            stride: Int(native.stride_bytes),
+            pixelFormat: native.pixel_format,
             semantic: semantic
         )
     }

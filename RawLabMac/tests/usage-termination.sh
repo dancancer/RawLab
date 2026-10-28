@@ -10,6 +10,14 @@ for mode in default rum local; do
     if [[ "$mode" != default ]]; then flags+=(-D RAWLAB_RUM); fi
     if [[ "$mode" == local ]]; then flags+=(-D RAWLAB_RUM_LOCAL); fi
     swiftc "${flags[@]}" \
+        "$ROOT/Shared/Localization.swift" \
+        "$ROOT/RawLabMac/Sources/Inputs/ParameterPrecision.swift" \
+        "$ROOT/RawLabMac/Sources/Inputs/ParameterValueField.swift" \
+        "$ROOT/RawLabMac/Sources/System/Updates/UpdateState.swift" \
+        "$ROOT/RawLabMac/Sources/System/Updates/UpdateAdapter.swift" \
+        "$ROOT/RawLabMac/Sources/System/Updates/UpdateStore.swift" \
+        "$ROOT/RawLabMac/Sources/System/Updates/UpdateInstallGate.swift" \
+        "$ROOT/RawLabMac/Sources/System/Updates/DesktopUpdateController.swift" \
         "$ROOT/RawLabMac/Sources/System/MacGeometryWindowGuard.swift" \
         "$ROOT/RawLabMac/tests/UsageTerminationTests.swift" -o "$OUT/$mode"
     "$OUT/$mode"

@@ -30,7 +30,7 @@ import com.rawlab.android.geometry.moveCrop
 
 @Composable
 internal fun GeometryCropCanvas(pair: PreviewPair, value: GeometrySettings, enabled: Boolean,
-    physicalAspect: Float? = null, onChange: (GeometrySettings) -> Unit) {
+    physicalAspect: Float? = null, showsGrid: Boolean = true, onChange: (GeometrySettings) -> Unit) {
     val current by rememberUpdatedState(value)
     val change by rememberUpdatedState(onChange)
     val description = stringResource(R.string.geometry_drag_hint)
@@ -86,7 +86,7 @@ internal fun GeometryCropCanvas(pair: PreviewPair, value: GeometrySettings, enab
             drawRect(shade, Offset(image.left, crop.top), Size((crop.left - image.left).coerceAtLeast(0f), crop.height))
             drawRect(shade, Offset(crop.right, crop.top), Size((image.right - crop.right).coerceAtLeast(0f), crop.height))
             drawRect(Color.White, crop.topLeft, crop.size, style = Stroke(1.5.dp.toPx()))
-            for (step in 1..2) {
+            if (showsGrid) for (step in 1..2) {
                 val x = crop.left + crop.width * step / 3f
                 val y = crop.top + crop.height * step / 3f
                 drawLine(Color.White.copy(alpha = .6f), Offset(x, crop.top), Offset(x, crop.bottom), 1.dp.toPx())

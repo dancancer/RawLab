@@ -25,12 +25,16 @@ function checkCropAccessibility(state) {
             actual, count: matches.length, adjustable });
     }
     for (const parameter of ["cropX", "cropY", "cropWidth", "cropHeight"]) {
-        for (const control of ["value", "slider", "reset"]) {
+        for (const control of ["value"]) {
             const id = "geometry." + control + "." + parameter;
             const matches = byID(id);
-            const role = control === "value" ? /文本栏/ : control === "reset" ? /按钮/ : /settable, float|滑块/;
+            const role = /文本栏|text field/i;
             checks.push({ id, pass: matches.length === 1 && role.test(matches[0]), count: matches.length });
         }
+        const id = "geometry.adjustment." + parameter;
+        const matches = byID(id);
+        const adjustable = matches[0]?.includes("Increment") && matches[0]?.includes("Decrement");
+        checks.push({ id, pass: matches.length === 1 && adjustable, count: matches.length, adjustable });
     }
     const header = byID("geometry.preciseCrop");
     checks.push({ id: "geometry.preciseCrop",

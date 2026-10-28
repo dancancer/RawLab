@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Velopack" Version="1.2.161" />
+    <Compile Include="../../Updates/UpdateState.cs" Link="UpdateState.cs" />
+    <Compile Include="../../Updates/UpdateTrust.cs" Link="UpdateTrust.cs" />
+    <Compile Include="../../Updates/SignedUpdateSource.cs" Link="SignedUpdateSource.cs" />
+    <Compile Include="../../Updates/AuthenticodeTrust.cs" Link="AuthenticodeTrust.cs" />
+    <Compile Include="../../Updates/UpdatePackageVerifier.cs" Link="UpdatePackageVerifier.cs" />
+    <Compile Include="../../Updates/VelopackUpdateAdapter.cs" Link="VelopackUpdateAdapter.cs" />
+    <Compile Include="../../Updates/UpdateStore.cs" Link="UpdateStore.cs" />
+    <Compile Include="../../Updates/UpdateInstallGate.cs" Link="UpdateInstallGate.cs" />
+    <Compile Include="../../Updates/DesktopUpdateController.cs" Link="DesktopUpdateController.cs" />
+  </ItemGroup>
+</Project>

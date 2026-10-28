@@ -3,37 +3,35 @@ param([Parameter(Mandatory=$true)][string]$RawPath,
       [Parameter(Mandatory=$true)][string]$NativeArtifacts,
       [string]$DotNet='dotnet',
       [string]$DenoiseRaw='',
-      [string]$Only='')
+      [string]$Only='',
+      [ValidateRange(1,86400)][int]$CheckTimeoutSeconds=600)
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'CheckProcess.ps1')
 $repo=Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $results=Join-Path $repo 'build/windows-v08-results'
 if(!$DenoiseRaw){$DenoiseRaw=Join-Path $repo 'build/windows-fixtures/denoise.dng'}
 New-Item -ItemType Directory -Force $results | Out-Null
 $summary=@()
 $selected=@()
-$names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','editor-shell','ui-details','geometry','transform-ui','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
+$names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','ai-panel','ai-window','editor-shell','ui-details','geometry','transform-ui','adjustment-history','hsl-target','adjustment-presets','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
 [IO.File]::WriteAllText((Join-Path $results 'summary.json'),'[]')
+function Record-CheckResult([string]$Name,$Result) {
+    $script:summary+=@{name=$Name;exitCode=$Result.exitCode;log=($Name+'.log');timedOut=$Result.timedOut;durationSeconds=$Result.durationSeconds;pid=$Result.pid}
+    ConvertTo-Json -InputObject @($script:summary) -Depth 4 | Set-Content (Join-Path $results 'summary.json') -Encoding utf8
+}
 function Invoke-Check([string]$Name,[string[]]$Arguments) {
     if($Name -notlike 'build*' -and $selected.Count -gt 0 -and $Name -notin $selected){return}
     $log=Join-Path $results ($Name+'.log')
-    $preference=$ErrorActionPreference
-    Push-Location $repo
-    try {
-        $ErrorActionPreference='Continue'
-        $global:LASTEXITCODE=$null
-        & $DotNet @Arguments 2>&1 | ForEach-Object {"$_"} | Out-File -FilePath $log -Encoding utf8 -Width 4096 -ErrorAction Stop
-        $code=if($null -eq $LASTEXITCODE){1}else{[int]$LASTEXITCODE}
-    }
-    finally {$ErrorActionPreference=$preference;Pop-Location}
-    $script:summary+=@{name=$Name;exitCode=$code;log=$log}
-    Write-Host "$Name exit=$code log=$log"
-    if($Name -like 'build*' -and $code -ne 0){throw 'Managed WPF build failed.'}
+    $result=Invoke-CheckProcess -Name $Name -Executable $DotNet -Arguments $Arguments -Directory $repo -Log $log -TimeoutSeconds $CheckTimeoutSeconds
+    Record-CheckResult $Name $result
+    if($Name -like 'build*' -and $result.exitCode -ne 0){throw 'Managed WPF build failed.'}
 }
 function Resolve-Target([string]$Project){
-    $global:LASTEXITCODE=$null
-    $value=@(& $DotNet msbuild $Project -getProperty:TargetDir -p:Configuration=Release)
-    if($null -eq $LASTEXITCODE -or $LASTEXITCODE -ne 0){throw "Cannot resolve test output: $Project"}
-    $path=($value -join [Environment]::NewLine).Trim()
+    $name='target-'+[IO.Path]::GetFileNameWithoutExtension($Project)
+    $result=Invoke-CheckProcess -Name $name -Executable $DotNet -Arguments @('msbuild',$Project,'-getProperty:TargetDir','-p:Configuration=Release') -Directory $repo -Log (Join-Path $results ($name+'.log')) -TimeoutSeconds $CheckTimeoutSeconds -CaptureOutput
+    Record-CheckResult $name $result
+    if($result.exitCode -ne 0){throw "Cannot resolve test output: $Project (exit=$($result.exitCode), timeout=$($result.timedOut))"}
+    $path=($result.stdout -join [Environment]::NewLine).Trim()
     if(!$path){throw "Empty test output: $Project"}
     return $path
 }
@@ -54,6 +52,10 @@ Get-ChildItem -LiteralPath $NativeArtifacts -File -Filter '*.dll' |
     Where-Object {$_.Name -match '^(vcruntime|msvcp|vcomp|concrt)'} |
     Copy-Item -Destination $destination -Force
 Copy-Item (Join-Path $NativeArtifacts 'ExifTool') -Destination $destination -Recurse -Force
+if(Test-Path (Join-Path $NativeArtifacts 'AI/DualDn/manifest.json')) {
+    foreach($name in @('onnxruntime.dll','onnxruntime_providers_shared.dll','DirectML.dll')) { Copy-Item (Join-Path $NativeArtifacts $name) $destination -Force }
+    Copy-Item (Join-Path $NativeArtifacts 'AI') $destination -Recurse -Force
+}
 }
 $runner=Join-Path $target 'RawLabWindows.Tests.dll'
 $localizationRunner=Join-Path $uiTarget 'LocalizationUiChecks.dll'
@@ -69,9 +71,13 @@ Invoke-Check 'profile-isolation' @($runner,'--profile-isolation',"$results/profi
 Invoke-Check 'localization-ui' @($localizationRunner)
 Invoke-Check 'status-layout' @($runner,'--status-layout',"$results/status-layout")
 Invoke-Check 'appearance' @($runner,'--appearance',"$results/appearance")
+Invoke-Check 'ai-panel' @($runner,'--ai-panel',"$results/ai-panel")
+if(Test-Path (Join-Path $NativeArtifacts 'AI/DualDn/manifest.json')) {
+    Invoke-Check 'ai-window' @($runner,'--ai-window',"$repo/lutools/tests/fixtures/bayer-demosaic.dng","$results/ai-window")
+}
 Invoke-Check 'editor-shell' @($runner,'--editor-shell',"$results/screenshots")
 Invoke-Check 'ui-details' @($runner,'--ui-details',"$results/ui-details")
-foreach($name in @('geometry','transform-ui','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens')){
+foreach($name in @('geometry','transform-ui','adjustment-history','hsl-target','adjustment-presets','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens')){
     $arguments=@($runner,('--'+$name),$repo,$RawPath)
     if($name -eq 'denoise'){$arguments+=$DenoiseRaw}
     Invoke-Check $name $arguments

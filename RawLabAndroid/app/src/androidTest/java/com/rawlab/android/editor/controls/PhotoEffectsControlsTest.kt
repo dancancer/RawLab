@@ -36,7 +36,7 @@ class PhotoEffectsControlsTest {
         compose.setContent {
             RawLabTheme {
                 Surface(Modifier.width(360.dp).testTag("effects-controls").verticalScroll(rememberScrollState())) {
-                    PhotoEffectsControls(value, vignette = true, enabled = true) { next, _ -> value = next }
+                    PhotoEffectsControls(value, vignette = true, enabled = true, onReset = { value = value.resetEffects(true) }) { next, _ -> value = next }
                 }
             }
         }
@@ -56,7 +56,7 @@ class PhotoEffectsControlsTest {
         compose.setContent {
             RawLabTheme {
                 Surface(Modifier.width(360.dp).testTag("effects-controls").verticalScroll(rememberScrollState())) {
-                    PhotoEffectsControls(value, vignette = true, enabled = true) { next, _ -> value = next }
+                    PhotoEffectsControls(value, vignette = true, enabled = true, onReset = { value = value.resetEffects(true) }) { next, _ -> value = next }
                 }
             }
         }
@@ -68,7 +68,10 @@ class PhotoEffectsControlsTest {
         compose.onNodeWithText("展开暗角参数").performClick()
         compose.onNodeWithText("中点").assertIsDisplayed()
         compose.onNodeWithContentDescription("重置暗角").assertIsDisplayed()
-        compose.onAllNodesWithContentDescription("重置此项").assertCountEquals(5)
+        compose.onAllNodesWithContentDescription("重置此项").assertCountEquals(0)
+        compose.onAllNodesWithTag("adjustment-slider").assertCountEquals(5)
+        val actions = compose.onAllNodesWithTag("adjustment-slider").onFirst().fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.CustomActions]
+        assertEquals(listOf("重置此项"), actions.map { it.label })
     }
 
     @Test fun grainToolShowsIndependentParameterSet() {

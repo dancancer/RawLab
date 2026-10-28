@@ -1,6 +1,49 @@
 import XCTest
 
 extension EditorUITests {
+    func testCollectionMicroEditAndFrozenConfirmation() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-RawLab.language", "zh-Hans"]
+        app.launch()
+        importPhoto(in: app)
+        app.buttons["editor.privacy"].tap()
+        app.buttons["collection.open"].tap()
+        XCTAssertTrue(app.staticTexts["已选 1 张"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["collection.synchronize"].isEnabled, "The checked source is excluded from synchronization")
+        let edit = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "collection.edit.")).firstMatch
+        XCTAssertTrue(edit.waitForExistence(timeout: 10), app.debugDescription)
+        edit.tap()
+        XCTAssertTrue(app.buttons["collection.return"].waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["tool.exposure"].tap()
+        dragRuler(app.descendants(matching: .any)["adjustment.ruler"])
+        let exposure = app.buttons["tool.exposure"].value as? String
+        app.buttons["collection.return"].tap()
+        XCTAssertTrue(app.staticTexts["已选 1 张"].waitForExistence(timeout: 10), app.debugDescription)
+        let export = app.buttons["collection.export"]
+        for _ in 0..<3 where !export.isHittable { app.swipeUp() }
+        export.tap()
+        let preflight = app.buttons["collection.export.preflight"]
+        XCTAssertTrue(preflight.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["collection.export.freeze"].exists, "Freezing requires a separate final confirmation")
+        preflight.tap()
+        let freeze = app.buttons["collection.export.freeze"]
+        XCTAssertTrue(freeze.waitForExistence(timeout: 60), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["将按各自调整导出 1 张照片。"].exists)
+        capture("collection-final-confirmation")
+        freeze.tap()
+        XCTAssertTrue(app.buttons["batch.export"].waitForExistence(timeout: 60), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["每张照片使用确认时冻结的独立调整。"].exists)
+        XCTAssertFalse(app.buttons["batch.pick"].isEnabled)
+        capture("collection-frozen-job")
+        app.buttons["任务操作"].tap()
+        app.buttons["放弃任务"].tap()
+        let discard = app.buttons["放弃任务"].firstMatch
+        XCTAssertTrue(discard.waitForExistence(timeout: 5), app.debugDescription)
+        discard.tap()
+        XCTAssertTrue(app.buttons["tool.exposure"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(app.buttons["tool.exposure"].value as? String, exposure, "Finishing the export task preserves the photo edit")
+    }
+
     func testEditMemoryAndBatchWorkflow() {
         let app = XCUIApplication()
         app.launchArguments += ["-RawLab.language", "zh-Hans"]

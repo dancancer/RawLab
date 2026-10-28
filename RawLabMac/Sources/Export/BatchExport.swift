@@ -1,4 +1,42 @@
 import Foundation
+import CryptoKit
+
+enum BatchSettingsMode: String, Codable {
+    case uniformFrozen = "uniform_frozen", perTargetFrozen = "per_target_frozen"
+}
+
+struct BatchFrozenSettings: Codable {
+    var version = 1
+    var settingsVersion = 1
+    let ordinal: Int
+    let settings: Adjustments
+    let look: URL?
+    let lookSHA256: String?
+    let lookName: String
+    let outputFormat: ExportFormat
+    let longEdge: Int?
+
+    static func checksum(_ url: URL) throws -> String {
+        SHA256.hash(data: try Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    func validate() throws {
+        guard version == 1, settingsVersion == 1, ordinal >= 0,
+              longEdge == nil || (1...65535).contains(longEdge!),
+              settings.masterRecipeID == nil || look != nil,
+              (look == nil && lookSHA256 == nil) || (look != nil && lookSHA256?.count == 64 &&
+                lookSHA256!.allSatisfy { "0123456789abcdef".contains($0) }) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+    }
+
+    func verifyLook() throws {
+        guard let look else { return }
+        guard let expected = lookSHA256, (try? Self.checksum(look)) == expected else {
+            throw BatchExportFailure.missingLook
+        }
+    }
+}
 
 enum BatchItemStatus: String, Codable {
     case waiting, running, publishing, succeeded, failed
@@ -22,11 +60,22 @@ struct BatchExportItem: Codable, Identifiable {
     var completedIdentity: OriginalFileIdentity?
     var error: String?
     var validationError: String?
+    var frozen: BatchFrozenSettings?
+    var resourceIdentifier: String?
 
     init(url: URL) throws {
         id = UUID()
         input = url.resolvingSymlinksInPath().standardizedFileURL
         identity = try OriginalFileIdentity(input)
+        resourceIdentifier = try Self.resourceKey(input)
+    }
+
+    static func resourceKey(_ url: URL) throws -> String {
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        let attributes = try FileManager.default.attributesOfItem(atPath: path)
+        guard let device = attributes[.systemNumber] as? NSNumber,
+              let inode = attributes[.systemFileNumber] as? NSNumber else { return path }
+        return "\(device.uint64Value):\(inode.uint64Value)"
     }
 }
 
@@ -46,6 +95,42 @@ struct BatchExportJob: Codable {
     var interrupted = false
     var cancelled = false
     var failure: String?
+    var settingsMode: BatchSettingsMode?
+
+    enum CodingKeys: String, CodingKey {
+        case version, id, source, settings, look, lookName, items, outputDirectory, png, outputFormat,
+             longEdge, started, interrupted, cancelled, failure
+        case settingsMode = "settings_mode"
+    }
+
+    var mode: BatchSettingsMode { settingsMode ?? .uniformFrozen }
+
+    func validate() throws {
+        guard (1...3).contains(version) else { throw CocoaError(.fileReadCorruptFile) }
+        guard mode == .perTargetFrozen else {
+            guard version < 3, items.allSatisfy({ $0.frozen == nil }) else { throw CocoaError(.fileReadCorruptFile) }
+            return
+        }
+        guard version == 3, !items.isEmpty, Set(items.map(\.id)).count == items.count,
+              Set(items.map { $0.resourceIdentifier ?? $0.identity.path }).count == items.count,
+              Set(items.map(\.input)).count == items.count else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        for (index, item) in items.enumerated() {
+            guard let frozen = item.frozen, frozen.ordinal == index else { throw CocoaError(.fileReadCorruptFile) }
+            try frozen.validate()
+        }
+    }
+
+    func snapshot(for item: BatchExportItem) throws -> BatchFrozenSettings {
+        if mode == .perTargetFrozen {
+            guard let frozen = item.frozen else { throw CocoaError(.fileReadCorruptFile) }
+            try frozen.validate()
+            return frozen
+        }
+        return BatchFrozenSettings(ordinal: 0, settings: settings(for: item.input), look: look,
+            lookSHA256: nil, lookName: lookName, outputFormat: format, longEdge: longEdge)
+    }
 
     init(source: URL, settings: Adjustments, look: URL?, lookName: String) {
         id = UUID()
@@ -61,7 +146,7 @@ struct BatchExportJob: Codable {
     var remainingCount: Int { selectedCount - succeededCount - failedCount }
     var format: ExportFormat {
         get { outputFormat ?? (png ? .png : .jpeg) }
-        set { outputFormat = newValue; png = newValue == .png; version = 2 }
+        set { outputFormat = newValue; png = newValue == .png; version = max(version, 2) }
     }
     var suffix: String { format.suffix }
 
@@ -91,6 +176,8 @@ final class BatchJournal {
     init(directory: URL = BatchJournal.defaultDirectory) { self.directory = directory }
 
     func save(_ job: BatchExportJob) throws {
+        _ = try readJob()
+        try job.validate()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try JSONEncoder().encode(job).write(to: url, options: .atomic)
     }
@@ -103,10 +190,15 @@ final class BatchJournal {
         return copy
     }
 
-    func load() throws -> BatchExportJob? {
+    private func readJob() throws -> BatchExportJob? {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        var job = try JSONDecoder().decode(BatchExportJob.self, from: Data(contentsOf: url))
-        guard (1...2).contains(job.version) else { throw CocoaError(.fileReadCorruptFile) }
+        let job = try JSONDecoder().decode(BatchExportJob.self, from: Data(contentsOf: url))
+        try job.validate()
+        return job
+    }
+
+    func load() throws -> BatchExportJob? {
+        guard var job = try readJob() else { return nil }
         for index in job.items.indices where [.running, .publishing].contains(job.items[index].status) {
             let item = job.items[index]
             if item.status == .publishing, let output = item.output, let expected = item.completedIdentity,
@@ -124,17 +216,28 @@ final class BatchJournal {
     }
 
     func discard(_ job: BatchExportJob) throws {
-        for item in job.items { cleanup(job, item: item) }
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
-        if let look = job.look, look.deletingLastPathComponent() == directory,
+        releaseResources(job)
+    }
+
+    func releaseResources(_ job: BatchExportJob) {
+        for item in job.items { cleanup(job, item: item) }
+        if let look = job.look, look.deletingLastPathComponent().standardizedFileURL.path == directory.standardizedFileURL.path,
            look.deletingPathExtension().lastPathComponent == job.id.uuidString {
             try? FileManager.default.removeItem(at: look)
+        }
+        for item in job.items {
+            if let look = item.frozen?.look, look.deletingLastPathComponent().standardizedFileURL.path == directory.standardizedFileURL.path,
+               look.deletingPathExtension().lastPathComponent == item.id.uuidString {
+                try? FileManager.default.removeItem(at: look)
+            }
         }
     }
 
     private func cleanup(_ job: BatchExportJob, item: BatchExportItem) {
         guard let directory = job.outputDirectory else { return }
-        let temp = directory.appendingPathComponent(".rawlab-\(job.id)-\(item.id).\(job.suffix)")
+        let suffix = (try? job.snapshot(for: item).outputFormat.suffix) ?? job.suffix
+        let temp = directory.appendingPathComponent(".rawlab-\(job.id)-\(item.id).\(suffix)")
         try? FileManager.default.removeItem(at: temp)
     }
 }
@@ -165,9 +268,10 @@ enum BatchExportRunner {
     static func run(job: inout BatchExportJob, journal: BatchJournal, scope: BatchRunScope,
                     shouldCancel: () -> Bool, didUpdate: (BatchExportJob) -> Void = { _ in },
                     render: Render) throws {
+        try job.validate()
         guard let directory = job.outputDirectory else { throw BatchExportFailure.destination }
         guard job.selectedCount > 0 else { throw BatchExportFailure.noSelection }
-        if let look = job.look, !FileManager.default.isReadableFile(atPath: look.path) {
+        if job.mode == .uniformFrozen, let look = job.look, !FileManager.default.isReadableFile(atPath: look.path) {
             throw BatchExportFailure.missingLook
         }
         try verifyDestination(directory)
@@ -184,8 +288,9 @@ enum BatchExportRunner {
                 job.items[index].error = nil
                 try journal.save(job)
                 didUpdate(job)
-                try export(index, job: &job, journal: journal, directory: directory, render: render)
+                try export(index, job: &job, journal: journal, directory: directory, shouldCancel: shouldCancel, render: render)
                 didUpdate(job)
+                if shouldCancel() { job.cancelled = true; break }
             }
         } catch {
             job.interrupted = true; job.failure = error.localizedDescription
@@ -198,13 +303,23 @@ enum BatchExportRunner {
     }
 
     private static func export(_ index: Int, job: inout BatchExportJob, journal: BatchJournal,
-                               directory: URL, render: Render) throws {
+                               directory: URL, shouldCancel: () -> Bool, render: Render) throws {
         let item = job.items[index]
-        let temp = directory.appendingPathComponent(".rawlab-\(job.id)-\(item.id).\(job.suffix)")
+        let snapshot = try job.snapshot(for: item)
+        let temp = directory.appendingPathComponent(".rawlab-\(job.id)-\(item.id).\(snapshot.outputFormat.suffix)")
         defer { try? FileManager.default.removeItem(at: temp) }
         do {
             guard try OriginalFileIdentity(item.input) == item.identity else { throw BatchExportFailure.changedInput }
-            try render(item.input, job.settings(for: item.input), job.look, temp)
+            if job.mode == .perTargetFrozen {
+                guard try BatchExportItem.resourceKey(item.input) == item.resourceIdentifier else { throw BatchExportFailure.changedInput }
+                try snapshot.verifyLook()
+            }
+            try render(item.input, snapshot.settings, snapshot.look, temp)
+        } catch RenderError.aiCancelled where shouldCancel() {
+            job.items[index].status = .waiting
+            job.items[index].error = nil
+            try journal.save(job)
+            return
         } catch {
             job.items[index].status = .failed
             job.items[index].error = error.localizedDescription
@@ -213,8 +328,8 @@ enum BatchExportRunner {
             try verifyDestination(directory)
             return
         }
-        let name = item.input.deletingPathExtension().lastPathComponent + "-" + safeName(job.lookName)
-        let output = uniqueOutput(directory: directory, name: name, suffix: job.suffix)
+        let name = item.input.deletingPathExtension().lastPathComponent + "-" + safeName(snapshot.lookName)
+        let output = uniqueOutput(directory: directory, name: name, suffix: snapshot.outputFormat.suffix)
         // 在发布前记录 inode；重启能识别已发布但尚未来得及记成功的成片。
         job.items[index].output = output
         job.items[index].completedIdentity = try OriginalFileIdentity(temp)

@@ -5,8 +5,9 @@ extension ContentView {
     var valuePanel: some View {
         if geometrySelected {
             IOSGeometryControls(settings: geometryDraftBinding, onEditingChanged: setSliderEditing,
-                                    canvasSize: geometrySourceCanvasSize,
-                                    aspectPreset: $geometryAspectPreset)
+                                    canvasSize: geometryEditingCanvasSize, aspectPreset: $geometryAspectPreset,
+                                    lockedRatio: $geometryLockedRatio, aspectSwapped: $geometryAspectSwapped,
+                                    showsGrid: $geometryGrid, perspective: geometryPerspective)
             .padding(.horizontal, 16)
             .disabled(!viewModel.hasImage || editingLocked)
         } else if lensSelected {
@@ -15,21 +16,40 @@ extension ContentView {
             .disabled(!viewModel.hasImage || editingLocked || viewModel.sourceKind != .raw)
         } else if choosingMasterRecipe {
             masterRecipePanel
-        } else if selectedAdjustment == .hsl {
-            IOSHSLMixer(settings: Binding(get: { settings.hsl }, set: { settings.hsl = $0 }),
-                        onEditingChanged: setSliderEditing)
+        } else if selectedAdjustment == .toneCurve {
+            IOSToneCurveControls(settings: Binding(get: { settings.curveSettings }, set: { settings.curveSettings = $0 }),
+                legacy: $settings.toneCurve, onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
                 .disabled(!viewModel.hasImage || editingLocked)
+        } else if selectedAdjustment == .colorGrading {
+            IOSColorGradingControls(settings: Binding(get: { settings.gradingSettings }, set: { settings.gradingSettings = $0 }),
+                zone: $gradingZone, onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
+                .disabled(!viewModel.hasImage || editingLocked)
+        } else if selectedAdjustment == .hsl {
+            VStack(spacing: 8) {
+                HSLTargetControls(enabled: $hslTargetEnabled, axis: $hslTargetAxis,
+                    sample: hslTargetInteraction.selection, waiting: hslTargetInteraction.isWaiting,
+                    notice: hslTargetNotice, onCancel: cancelHSLTarget).padding(.horizontal, 16)
+                IOSHSLMixer(settings: Binding(get: { settings.hsl }, set: { settings.hsl = $0 }),
+                    onEditingChanged: { editing in
+                        if editing { cancelHSLTarget() }
+                        setSliderEditing(editing)
+                    }, channel: $hslChannel)
+            }.disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .vignette || selectedAdjustment == .grain {
             IOSPhotoEffectsControls(effect: selectedAdjustment ?? .vignette, settings: Binding(
                 get: { settings.photoEffects }, set: { settings.photoEffects = $0 }
-            ), onEditingChanged: setSliderEditing)
+            ), onEditingChanged: setSliderEditing,
+                onReset: { requestEditorReset(.tool(currentEditorTool)) },
+                resetEnabled: resetModified(.tool(currentEditorTool)))
                 .padding(.horizontal, 16)
                 .disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .noiseReduction {
             IOSDenoiseControls(settings: Binding(
                 get: { settings.denoise },
                 set: { settings.denoise = $0; settings.noiseReduction = 0 }
-            ), onEditingChanged: setSliderEditing)
+            ), onEditingChanged: setSliderEditing,
+                onReset: { requestEditorReset(.tool(currentEditorTool)) },
+                resetEnabled: resetModified(.tool(currentEditorTool)))
                 .padding(.horizontal, 16)
                 .disabled(!viewModel.hasImage || editingLocked)
         } else if let adjustment = selectedAdjustment {
@@ -49,24 +69,28 @@ extension ContentView {
         return buffer.nativeSize ?? CGSize(width: buffer.width, height: buffer.height)
     }
 
+    var geometryEditingCanvasSize: CGSize {
+        viewModel.nativeImageSize ?? currentPreviewImage?.size ?? geometrySourceCanvasSize
+    }
+
     var geometryDraftAspectRatio: Double? {
-        let source = geometrySourceCanvasSize
-        let geometry = geometryDraft ?? settings.geometry
-        let oriented = geometry.quarterTurns % 2 == 0 ? source : CGSize(width: source.height, height: source.width)
-        return geometryAspectPreset.ratio(for: oriented)
+        if let geometryLockedRatio { return geometryAspectSwapped ? 1 / geometryLockedRatio : geometryLockedRatio }
+        return geometryAspectPreset.ratio(for: geometryEditingCanvasSize, swapped: geometryAspectSwapped)
     }
 
     var editorDraftActions: some View {
         HStack(spacing: 12) {
-            Button(L10n.text("取消"), action: cancelEditorDraft)
-                .frame(maxWidth: .infinity, minHeight: 44)
+            Button(action: cancelEditorDraft) {
+                Text(L10n.text("取消")).frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+            }
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("editor.draft.cancel")
-            Button(L10n.text("应用"), action: applyEditorDraft)
-                .frame(maxWidth: .infinity, minHeight: 44)
+            Button(action: applyEditorDraft) {
+                Text(L10n.text("应用")).frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+            }
                 .buttonStyle(.borderedProminent)
                 .foregroundStyle(.black)
-                .disabled(!isEditorDraftChanged || viewModel.previewRendering || viewModel.previewResizePending || isAdjustingSlider)
+                .disabled(!isEditorDraftChanged || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || isAdjustingSlider)
                 .accessibilityIdentifier("editor.draft.apply")
         }
     }
@@ -78,7 +102,7 @@ extension ContentView {
                               defaultValue: adjustment.value(from: .default),
                               unit: adjustment.unit,
                               formatter: adjustment.formatted,
-                              reciprocal: adjustment == .temperature,
+                              reciprocal: adjustment == .temperature, displayScale: adjustment == .strength ? 100 : 1,
                               identifier: "adjustment", onEditingChanged: setSliderEditing)
                 .id(adjustment.rawValue)
             if adjustment == .exposure {

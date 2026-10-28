@@ -39,8 +39,9 @@ internal static class LensChecks
             : automatic.Lens!.State == 5, "Windows automatic matching never guesses");
         settings.Lens = new(true, true, true, true, candidate.Id);
         var comparison = cpu.RenderPreview(raw, settings, null, 300, false, true, false);
-        check(comparison.Neutral.Lens!.State == 0 && comparison.Result.Lens!.AppliedDistortion,
-            "Windows neutral comparison stays uncorrected");
+        // “调整前”参考带当前已提交的几何与镜头，构图才与结果一致
+        check(comparison.Neutral.Lens!.AppliedDistortion && comparison.Result.Lens!.AppliedDistortion,
+            "Windows neutral comparison keeps the committed lens correction");
         check(Pixels(cpu.Render(raw, new(), null, 300)!.Image).SequenceEqual(Pixels(off.Image)), "Windows lens reset restores exact baseline");
         var output = Path.Combine(repo, "build/windows-verification/lens-corrected.png");
         Directory.CreateDirectory(Path.GetDirectoryName(output)!);

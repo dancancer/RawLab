@@ -1,5 +1,42 @@
 import Foundation
 
+struct ProcessingIdentity: Equatable, Hashable, Codable {
+    let family: String
+    let version: Int
+    let quality: String
+    static let legacy = ProcessingIdentity(version: 1)
+    static let current = ProcessingIdentity(version: 2)
+    private init(version: Int) {
+        family = "rawlab"
+        self.version = version
+        quality = "standard"
+    }
+
+    private struct Field: CodingKey {
+        let stringValue: String
+        var intValue: Int? { nil }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { return nil }
+    }
+
+    init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: Field.self).allKeys
+        guard fields.allSatisfy({ CodingKeys(stringValue: $0.stringValue) != nil }) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                debugDescription: "Unsupported processing identity field"))
+        }
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        family = try values.decode(String.self, forKey: .family)
+        version = try values.decode(Int.self, forKey: .version)
+        quality = try values.decode(String.self, forKey: .quality)
+        guard family == "rawlab", version == 1 || version == 2, quality == "standard" else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                debugDescription: "Unsupported processing identity"))
+        }
+    }
+}
+
+
 enum RawDenoisePreset: String, CaseIterable, Identifiable {
     case detail = "细节优先", clean = "去噪优先", custom = "自定义"
     var id: String { rawValue }
@@ -213,6 +250,53 @@ struct RawSettings: Codable, Equatable {
     static let temperatureRange: ClosedRange<Double> = 2000...50000
     static let tintRange: ClosedRange<Double> = -150...150
 
+    var toneCurveConfig: ToneCurveSettings?
+    var curveSettings: ToneCurveSettings {
+        get { toneCurveConfig ?? ToneCurveSettings() }
+        set { toneCurveConfig = newValue.isDefault ? nil : newValue }
+    }
+    var colorGrading: ColorGradingSettings?
+    var gradingSettings: ColorGradingSettings {
+        get { colorGrading ?? ColorGradingSettings() }
+        set { colorGrading = newValue.isDefault ? nil : newValue }
+    }
+    var atmosphere: AtmosphereSettings?
+    var atmosphereSettings: AtmosphereSettings { atmosphere ?? AtmosphereSettings() }
+    var clarity: Double {
+        get { atmosphereSettings.clarity }
+        set { setAtmosphere(\.clarity, to: newValue) }
+    }
+    var dehaze: Double {
+        get { atmosphereSettings.dehaze }
+        set { setAtmosphere(\.dehaze, to: newValue) }
+    }
+    private mutating func setAtmosphere(_ key: WritableKeyPath<AtmosphereSettings, Double>, to value: Double) {
+        var state = atmosphereSettings
+        state[keyPath: key] = value
+        atmosphere = state.isIdentity ? nil : state
+    }
+
+    var toneControls: ToneControlsSettings?
+    var toneSettings: ToneControlsSettings { toneControls ?? ToneControlsSettings() }
+    var blackPoint: Double {
+        get { toneSettings.blackPoint }
+        set { setTone(\.blackPoint, to: newValue) }
+    }
+    var whitePoint: Double {
+        get { toneSettings.whitePoint }
+        set { setTone(\.whitePoint, to: newValue) }
+    }
+    var vibrance: Double {
+        get { toneSettings.vibrance }
+        set { setTone(\.vibrance, to: newValue) }
+    }
+    private mutating func setTone(_ key: WritableKeyPath<ToneControlsSettings, Double>, to value: Double) {
+        var state = toneSettings
+        state[keyPath: key] = value
+        toneControls = state.isIdentity ? nil : state
+    }
+
+    var processing = ProcessingIdentity.current
     var geometry = GeometrySettings()
     var denoise = RawDenoiseSettings()
     var lensCorrection: LensCorrectionSettings?
@@ -271,7 +355,7 @@ struct RawSettings: Codable, Equatable {
         case exposure, contrast, saturation, temperature, tint, highlights, shadows
         case toneCurve, noiseReduction, sharpening, lutID, lutStrength, whiteBalanceMode
         case denoise, photoEffects, displayChromaDenoise, exposureMode, hsl
-        case masterRecipeID, lensCorrection, geometry
+        case masterRecipeID, lensCorrection, geometry, processing, toneControls, atmosphere, colorGrading, toneCurveConfig
     }
 
     var clampedLUTStrength: Float {
@@ -332,9 +416,23 @@ struct RawSettings: Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        processing = values.contains(.processing)
+            ? try values.decode(ProcessingIdentity.self, forKey: .processing) : .legacy
         geometry = try values.decodeIfPresent(GeometrySettings.self, forKey: .geometry) ?? GeometrySettings()
         guard geometry.isValid else {
             throw DecodingError.dataCorruptedError(forKey: .geometry, in: values, debugDescription: "Invalid geometry parameters")
+        }
+        toneCurveConfig = try values.decodeIfPresent(ToneCurveSettings.self, forKey: .toneCurveConfig)
+        colorGrading = try values.decodeIfPresent(ColorGradingSettings.self, forKey: .colorGrading)
+        if colorGrading?.isDefault == true { colorGrading = nil }
+        atmosphere = try values.decodeIfPresent(AtmosphereSettings.self, forKey: .atmosphere)
+        guard atmosphere?.isValid ?? true else {
+            throw DecodingError.dataCorruptedError(forKey: .atmosphere, in: values, debugDescription: "Invalid atmosphere controls")
+        }
+        if atmosphere?.isIdentity == true { atmosphere = nil }
+        toneControls = try values.decodeIfPresent(ToneControlsSettings.self, forKey: .toneControls)
+        guard toneControls?.isValid ?? true else {
+            throw DecodingError.dataCorruptedError(forKey: .toneControls, in: values, debugDescription: "Invalid tone controls")
         }
         exposureMode = RawExposureMode(rawValue: try values.decodeIfPresent(Int.self, forKey: .exposureMode) ?? 0) ?? .scene
         hsl = try values.decodeIfPresent(HSLSettings.self, forKey: .hsl) ?? HSLSettings()
@@ -371,6 +469,12 @@ struct RawSettings: Codable, Equatable {
     }
 
     var usesCustomWhiteBalance: Bool { whiteBalanceMode == .custom }
+
+    func resettingAdjustments() -> RawSettings {
+        var neutral = Self.default
+        neutral.processing = processing
+        return neutral
+    }
 
     func customWhiteBalance(cameraTemperature: Double, cameraTint: Double) -> RawSettings {
         var result = self
@@ -438,5 +542,21 @@ struct MasterRecipe: Codable, Identifiable, Hashable {
     }
     private func existingFile(_ path: String) -> URL? {
         FileManager.default.fileExists(atPath: path) ? URL(fileURLWithPath: path) : nil
+    }
+}
+
+extension RawSettings {
+    // 只用于候选的等价校验：先消费现有配方转换，再按 processor 的输入限制捕获 core Float。
+    func editorEffectiveValues(isRaw: Bool, cameraTemperature: Double, cameraTint: Double) -> [Float] {
+        var effective = renderedRecipe(cameraTemperature: cameraTemperature, cameraTint: cameraTint)
+        if !isRaw || effective.whiteBalanceMode == .camera {
+            effective.temperature = 6500; effective.tint = 0
+        }
+        let noise = !isRaw || effective.denoise.enabled ? 0 : effective.noiseReduction
+        return [effective.exposure, effective.contrast, effective.saturation, effective.temperature,
+                effective.tint, effective.highlights, effective.shadows, effective.toneCurve,
+                noise, effective.sharpening].map(Float.init) +
+            [Float(isRaw && effective.whiteBalanceMode == .custom ? 1 : 0)] +
+            (effective.hsl.hue + effective.hsl.saturation + effective.hsl.lightness).map(Float.init)
     }
 }

@@ -12,7 +12,7 @@ internal static class AgentRecipeChecks
     internal static void Run(string repo,string raw,string cli,Action<bool,string> check)
     {
         var method=typeof(RenderEngine).GetMethod("AgentRecipe",BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic);
-        check(method!=null,"Windows exposes effective-state Agent v4 serialization");
+        check(method!=null,"Windows exposes effective-state Agent v5 serialization");
         var output=Path.Combine(repo,"build","windows-agent-recipe",DateTime.UtcNow.ToString("yyyyMMdd-HHmmss")+"-"+Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(output);var hash=SHA256.HashData(File.ReadAllBytes(raw));
         using var engine=new RenderEngine(0);
@@ -22,13 +22,15 @@ internal static class AgentRecipeChecks
         File.WriteAllText(unicodeRecipe,Recipe(raw,new Adjustments(),null,Path.Combine(output,"unicode.png"),128));
         RunCli("--recipe",unicodeRecipe,"--print-recipe");
         var look=Path.Combine(repo,"lutools","flog-2-new","FLog2_to_PROVIA_65grid_V.1.00.cube");
-        var mixed=new Adjustments{ExposureMode=2,Hsl=new HslSettings().WithValue(0,0,18).WithValue(1,4,-27).WithValue(2,7,13),
+        var mixed=new Adjustments{ExposureMode=2,ToneControls=new(-32.75,46.5,21.25),Hsl=new HslSettings().WithValue(0,0,18).WithValue(1,4,-27).WithValue(2,7,13),
             Effects=new(-28,63,19,72,34,18,31,42),Denoise=new(true,8,51,63),DisplayChromaDenoise=2,
             Geometry=new(.07,.08,.8,.76,1,true,false,3.5,.04,-.03)};
         mixed.Set(Parameter.Exposure,.35);mixed.Set(Parameter.Contrast,23.5);mixed.Set(Parameter.Saturation,-17.8);
         mixed.Set(Parameter.Highlights,21.4);mixed.Set(Parameter.Shadows,14.8);mixed.Set(Parameter.ToneCurve,-18.2);mixed.Set(Parameter.Sharpening,35.7);
         mixed.Set(Parameter.Temperature,5300);mixed.Set(Parameter.Tint,12.4);mixed.Set(Parameter.Strength,73);
         Verify(raw,mixed,look,"mixed",257);
+        var legacy=mixed.Clone();legacy.Processing=ProcessingIdentity.Legacy;
+        Verify(raw,legacy,look,"legacy-processing",257);
         Verify(raw,new Adjustments(),null,"defaults",128);
         var target=Path.Combine(repo,"lutools","tests","fixtures","linear-lens.dng");
         var targetHash=SHA256.HashData(File.ReadAllBytes(target));
@@ -97,7 +99,11 @@ internal static class AgentRecipeChecks
             var text=Recipe(input,state,film,agent,edge);using var json=JsonDocument.Parse(text);
             if(state.MasterRecipeID!=null)AssertTargetWhiteBalance(input,state,text,name);
             var root=json.RootElement;var edits=root.GetProperty("edits");
-            check(root.GetProperty("schema_version").GetInt32()==4 && root.GetProperty("input").GetProperty("type").GetString()=="raw","Agent emits explicit RAW v4: "+name);
+            check(root.GetProperty("schema_version").GetInt32()==5 && root.GetProperty("input").GetProperty("type").GetString()=="raw","Agent emits explicit RAW v5: "+name);
+            var processing=root.GetProperty("processing");
+            check(processing.GetProperty("family").GetString()==state.Processing.Family &&
+                processing.GetProperty("version").GetInt32()==state.Processing.Version &&
+                processing.GetProperty("quality").GetString()==state.Processing.Quality,"Agent preserves processing identity: "+name);
             check(new[]{"exposure","white_balance","look","tone","detail","hsl","effects","denoise","lens_correction","geometry"}.All(key=>edits.TryGetProperty(key,out _)),"Agent emits every effective edit group: "+name);
             check(edits.GetProperty("hsl").EnumerateObject().All(p=>p.Value.GetArrayLength()==8),"Agent emits all 24 HSL channels: "+name);
             var denoise=edits.GetProperty("denoise");check(denoise.GetProperty("raw_level").GetInt32()==0 &&

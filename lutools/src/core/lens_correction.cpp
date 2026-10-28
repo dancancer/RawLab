@@ -89,7 +89,19 @@ bool LensCorrectionDatabase::available() {
 std::shared_ptr<LensCorrectionDatabase> LensCorrectionDatabase::load(const std::string& path) {
 #ifdef SONY2FUJI_ENABLE_LENSFUN
     auto result = std::shared_ptr<LensCorrectionDatabase>(new LensCorrectionDatabase());
-    if (path.empty()) return result->impl_->database.Load() == LF_NO_ERROR ? result : nullptr;
+    auto finish = [&]() {
+        const auto& database = result->impl_->database;
+        std::unique_ptr<char, decltype(&lf_free)> xml(lfDatabase::Save(database.GetMounts(),
+            database.GetCameras(), database.GetLenses()), &lf_free);
+        if (!xml) return std::shared_ptr<LensCorrectionDatabase>{};
+        // 指纹来自实际载入的标定内容；路径和 profile ID 不足以标识系数更新。
+        uint64_t hash = 14695981039346656037ULL, bytes = 0;
+        for (const auto* p = reinterpret_cast<const unsigned char*>(xml.get()); *p; ++p, ++bytes)
+            hash = (hash ^ *p) * 1099511628211ULL;
+        result->cacheIdentity_ = "lensfun-xml-v1:" + std::to_string(bytes) + ":" + std::to_string(hash);
+        return result;
+    };
+    if (path.empty()) return result->impl_->database.Load() == LF_NO_ERROR ? finish() : nullptr;
     std::error_code error;
     const auto source = std::filesystem::u8path(path);
     if (std::filesystem::is_directory(source, error)) {
@@ -100,9 +112,9 @@ std::shared_ptr<LensCorrectionDatabase> LensCorrectionDatabase::load(const std::
         std::sort(files.begin(), files.end());
         for (const auto& file : files)
             if (result->impl_->database.Load(file.u8string().c_str()) != LF_NO_ERROR) return nullptr;
-        return result;
+        return finish();
     }
-    return result->impl_->database.Load(path.c_str()) == LF_NO_ERROR ? result : nullptr;
+    return result->impl_->database.Load(path.c_str()) == LF_NO_ERROR ? finish() : nullptr;
 #else
     (void)path;
     return nullptr;

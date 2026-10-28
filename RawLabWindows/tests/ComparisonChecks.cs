@@ -31,6 +31,11 @@ static class ComparisonChecks
         }
         var split=Render();var left=(30*200+30)*4;var right=(30*200+170)*4;
         check(split[left+2]==255 && split[left]==0 && split[right]==255 && split[right+2]==0,"Wipe shows neutral on left and edit on right");
+        canvas.SetImage(BitmapSource.Create(400,200,96,96,PixelFormats.Bgra32,null,Enumerable.Repeat(new byte[]{255,0,0,255},400*200).SelectMany(x=>x).ToArray(),1600),null);
+        canvas.Viewport!.SetSourceSize(400,200);canvas.Divider=.5;
+        var letterbox=Render();var top=(10*200+100)*4;
+        check(canvas.ImageBounds==new Rect(0,50,200,100) && letterbox[top+2]<100,"Wipe divider remains inside the photograph and does not cross letterbox margins");
+        canvas.SetImage(Solid(255,0,0),null);canvas.Viewport.SetSourceSize(1,1);
         canvas.Divider=0;check(Render()[left]==255,"Wipe left endpoint reveals the full edit");
         canvas.Divider=1;check(Render()[right+2]==255,"Wipe right endpoint reveals the full neutral image");
         canvas.ComparisonEnabled=false;check(Render()[left]==255,"Disabling wipe restores the edited image");
@@ -40,7 +45,8 @@ static class ComparisonChecks
             "Native zoom immediately scales the existing preview using source pixels and DPI");
         var contentVersion=canvas.ContentVersion;var bounds=canvas.ImageBounds;
         view.Move(new Vector(21,-13));
-        check(canvas.ContentVersion==contentVersion && canvas.ImageBounds.X==bounds.X+21 && canvas.ImageBounds.Y==bounds.Y-13,
+        // 平移经归一化焦点重新投影，允许浮点舍入误差
+        check(canvas.ContentVersion==contentVersion && Math.Abs(canvas.ImageBounds.X-(bounds.X+21))<1e-6 && Math.Abs(canvas.ImageBounds.Y-(bounds.Y-13))<1e-6,
             "Panning changes retained transforms without rebuilding image drawings");
         canvas.SetImage(Solid(255,0,0),null);
         check(view.ActualPixels && view.Pan==new Vector(21,-13) && canvas.ImageBounds.Width==bounds.Width,

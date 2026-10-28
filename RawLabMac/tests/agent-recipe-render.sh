@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$ROOT/RawLabMac/tests/native-env.sh"
 INPUT="${1:?Pass a real RAW fixture}"
+BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 CLI="${2:?Pass the sony2fuji CLI executable}"
 LENS_DATABASE="${3:-$ROOT/lutools/tests/fixtures/lenses.xml}"
 LENS_RAW="${4:-$ROOT/lutools/tests/fixtures/linear-lens.dng}"
@@ -20,11 +21,11 @@ swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" \
   -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
   "$ROOT/RawLabMac/Sources/Rendering/Engine.swift" "$ROOT/RawLabMac/Sources/Rendering/RenderError.swift" "$ROOT/RawLabMac/Sources/Looks/Film.swift" "$ROOT/RawLabMac/Sources/Rendering/AgentRecipe.swift" \
   "$ROOT/Shared/ExportMetadata.swift" "$ROOT/RawLabMac/Sources/Adjustments/Adjustments.swift" "$ROOT/RawLabMac/Sources/Adjustments/AdjustmentTypes.swift" \
-  "$ROOT/RawLabMac/Sources/Looks/MasterRecipe.swift" "$ROOT/Shared/HSLSettings.swift" \
-  "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HSLNative.swift" \
+  "$ROOT/RawLabMac/Sources/Looks/MasterRecipe.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/HSLTargetAdjustment.swift" \
+  "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/AtmosphereSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/HSLTargetNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" \
   "$ROOT/RawLabMac/Sources/Editor/Storage/EditPersistence.swift" "$ROOT/RawLabMac/Sources/Export/BatchExport.swift" \
   "$ROOT/RawLabMac/tests/AgentRecipeRenderTests.swift" \
-  "$ROOT/lutools/build-macos/libsony2fuji_core.a" \
+  "${CORE_LINK[@]}" \
   -L "$(pkg-config --variable=libdir libraw)" \
   -lraw $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
   -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \

@@ -4,8 +4,35 @@
 #include "sony2fuji/lens_correction.h"
 #include <string>
 #include <memory>
+#include <array>
 
 namespace sony2fuji {
+
+enum class BayerDemosaicMethod {
+    Legacy,
+    VNG,
+    DHT
+};
+
+// 有效 sensor 区域，尚未白平衡或旋转。相机标定与原始 RAW 一起保存。
+struct RAWBayerSource {
+    int width = 0, height = 0, flip = 0;
+    std::vector<uint16_t> pixels;
+    std::array<int, 4> pattern{};
+    std::array<float, 4> black{}, whiteBalance{};
+    float white = 0, iso = 0, shutterSeconds = 0;
+    unsigned rawBits = 0, sonyRawType = 0;
+    std::string cameraModel;
+    std::array<std::array<float, 3>, 3> cameraCalibration{}, cameraToSrgb{};
+};
+
+// 只在一次 process 调用中覆盖内存像素，不修改源文件或保留的解包数据。
+struct RAWBayerOverride {
+    int width = 0, height = 0;
+    std::vector<float> normalizedMosaic;
+    // 未旋转 sensor 坐标；已白平衡并以绿色归一化的相机通道线性修正。
+    std::vector<RGB> cameraCorrection;
+};
 
 /**
  * @brief RAW 处理选项
@@ -25,10 +52,12 @@ struct RAWProcessOptions {
     int outputBitsPerSample;    // 8/16 display precision; linear working data stays float
     bool halfSize;              // LibRaw half-resolution demosaic for interactive previews
     int rawNoiseReduction;      // FBDD: 0 off, 1 light, 2 full; requires Bayer RAW
+    BayerDemosaicMethod bayerDemosaic; // 非 Bayer 保留 LibRaw 原有插值路径
     bool matchEmbeddedPreviewExposure; // Optional JPEG-based approximation, not the default
     bool applyBaselineExposure; // Scene default + DNG BaselineExposure; ignored by preview match
     std::shared_ptr<const LensCorrectionDatabase> lensDatabase;
     LensCorrectionOptions lensCorrection;
+    const RAWBayerOverride* bayerOverride = nullptr;
 
     RAWProcessOptions()
         : useAutoWhiteBalance(false)
@@ -45,6 +74,7 @@ struct RAWProcessOptions {
         , outputBitsPerSample(16)
         , halfSize(false)
         , rawNoiseReduction(0)
+        , bayerDemosaic(BayerDemosaicMethod::Legacy)
         , matchEmbeddedPreviewExposure(false)
         , applyBaselineExposure(true)
     {}
@@ -78,6 +108,8 @@ public:
      * @return 错误码
      */
     ErrorCode process(const RAWProcessOptions& options, ImageData& output);
+    ErrorCode readBayerSource(const RAWProcessOptions& options, RAWBayerSource& output);
+    bool getBayerMetadata(RAWBayerSource& output) const;
 
     /**
      * @brief 获取原始图像信息

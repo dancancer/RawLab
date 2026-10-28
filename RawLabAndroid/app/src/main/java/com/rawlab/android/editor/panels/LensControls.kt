@@ -1,6 +1,7 @@
 package com.rawlab.android.editor.panels
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -25,7 +26,7 @@ import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.settings.LensSettings
 
 @Composable
-fun LensControls(value: LensSettings, info: LensInfo?, enabled: Boolean, loading: Boolean = false, change: (LensSettings) -> Unit) {
+fun LensControls(value: LensSettings, info: LensInfo?, enabled: Boolean, loading: Boolean = false, onReset: (() -> Unit)? = null, change: (LensSettings) -> Unit) {
     var choosing by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -41,7 +42,7 @@ fun LensControls(value: LensSettings, info: LensInfo?, enabled: Boolean, loading
                         }) { Text(titleText) }
                 }
             }
-            IconButton(onClick = { change(LensSettings()) }, enabled = enabled && value != LensSettings(),
+            IconButton(onClick = { onReset?.invoke() ?: change(LensSettings()) }, enabled = enabled && value != LensSettings(),
                 modifier = Modifier.testTag("lens.reset")) { Icon(Icons.Outlined.RestartAlt, stringResource(R.string.lens_reset)) }
         }
         val candidate = if (value.manual) info?.candidates?.firstOrNull { it.id == value.profileId }
@@ -52,7 +53,7 @@ fun LensControls(value: LensSettings, info: LensInfo?, enabled: Boolean, loading
         LensToggle(R.string.lens_auto_crop, value.autoCrop, enabled, "lens.crop") { change(value.copy(autoCrop = it)) }
         val selected = if (value.manual) info?.candidates?.firstOrNull { it.id == value.profileId }?.title
             else info?.selectedLens?.takeIf { it.isNotEmpty() }
-        TextButton(onClick = { choosing = true }, modifier = Modifier.fillMaxWidth().testTag("lens.profile"),
+        TextButton(onClick = { choosing = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("lens.profile"),
             enabled = enabled && value.manual && info?.candidates?.isNotEmpty() == true) {
             Text(selected ?: stringResource(if (value.manual) R.string.lens_choose else R.string.lens_unmatched))
         }
@@ -74,13 +75,10 @@ fun LensControls(value: LensSettings, info: LensInfo?, enabled: Boolean, loading
 private fun LensToggle(title: Int, checked: Boolean, enabled: Boolean, tag: String, change: (Boolean) -> Unit) {
     val label = stringResource(title)
     val stateLabel = stringResource(if (checked) R.string.message_on else R.string.disabled)
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = change)
+        .testTag(tag).semantics { contentDescription = label; stateDescription = stateLabel }, verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Switch(checked = checked, onCheckedChange = change, enabled = enabled,
-            modifier = Modifier.testTag(tag).semantics {
-                contentDescription = label
-                stateDescription = stateLabel
-            })
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
 }
 

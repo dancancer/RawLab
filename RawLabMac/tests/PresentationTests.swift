@@ -7,10 +7,9 @@ struct PresentationTests {
         print("PASS: \(message)")
     }
     static func main() throws {
-        check(AdjustmentParameter.photoTools.contains { $0.rawValue == "vignetteAmount" },
-              "Photo tools include vignette controls")
-        check(AdjustmentParameter.photoTools.contains { $0.rawValue == "grainAmount" },
-              "Photo tools include film grain controls")
+        let tools = EditorAdjustmentGroup.allCases.flatMap(\.tools)
+        check(tools.contains(.vignette), "Editor tools include vignette controls")
+        check(tools.contains(.grain), "Editor tools include film grain controls")
         var effects = Adjustments()
         check(effects.effectSettings == PhotoEffectsSettings() && effects.isDefault(.effects),
               "Photo effects start disabled with canonical defaults")
@@ -68,14 +67,12 @@ struct PresentationTests {
         check(sameWhiteBalance.wb_mode == SONY2FUJI_WB_CAMERA,
               "Choosing Custom at the displayed as-shot values does not shift the image")
         var panel = AdjustmentPanelLayout()
-        check(panel.height(available: 800) == 252, "Adjustment panel starts at its default height")
-        panel.selectHeight(288)
-        check(panel.height(available: 800) == 288, "Grouped tools request their readable editor height")
-        check(AdjustmentPanelLayout.effectsHeight(rows: 1) == 252, "A single effect row keeps the default height")
-        check(AdjustmentPanelLayout.effectsHeight(rows: 3) > 252, "Grain rows and their hint get more than the default height")
-        panel.selectHeight(AdjustmentPanelLayout.effectsHeight(rows: 5))
-        check(panel.height(available: 700) == AdjustmentPanelLayout.effectsHeight(rows: 5),
-              "Advanced vignette and its hint fit in a default-size window")
+        check(panel.height(available: 800) == 320 && panel.height(available: 620) == 310,
+              "One panel budget follows available window space")
+        let stable = panel.height(available: 800)
+        for group in EditorAdjustmentGroup.allCases {
+            for _ in group.tools { check(panel.height(available: 800) == stable, "Tool contents never change the panel boundary") }
+        }
         panel.resize(to: 340, available: 800)
         check(panel.height(available: 800) == 340, "Adjustment panel accepts a dragged height")
         panel.collapsed = true
@@ -86,8 +83,9 @@ struct PresentationTests {
         check(panel.height(available: 620) == 220, "Minimum panel size keeps controls usable")
         panel.resize(to: 1000, available: 620)
         check(panel.height(available: 620) <= 310, "Panel resizing preserves half the small window for the canvas")
-        let tools = AdjustmentParameter.photoTools
-        check(tools.filter(\.isWhiteBalance) == [.temperature],
+        let parameters = tools.compactMap(\.parameter).filter { $0 != .strength }
+        check(tools.filter { $0.parameter?.isWhiteBalance == true } == [.whiteBalance] &&
+              parameters.filter(\.isWhiteBalance) == [.temperature],
               "White balance has one tool while retaining separate temperature and tint parameters")
         wb.resetWhiteBalance()
         check(wb.isWhiteBalanceDefault, "Unified white balance starts unchanged at the camera baseline")
@@ -106,10 +104,12 @@ struct PresentationTests {
         check(wb.isWhiteBalanceDefault && wb.temperature == 5274 && wb.tint == 0 &&
               wb.masterRecipeID == recipeID && wb.exposure == recipeExposure,
               "White-balance group reset keeps the recipe and restores its zero tint offset")
-        check(Set(tools) == Set(AdjustmentParameter.allCases.filter { $0 != .strength && $0 != .rawNoiseReduction && $0 != .tint }),
-              "Photo tools expose each adjustment group exactly once")
-        check(tools.count == 11 && tools.contains(.denoiseMode) && !tools.contains(.rawNoiseReduction),
-              "Photo tools replace legacy FBDD with chroma denoising")
+        let expectedParameters = Set(AdjustmentParameter.allCases.filter { $0 != .strength && $0 != .rawNoiseReduction && $0 != .tint })
+        check(Set(parameters) == expectedParameters && parameters.count == expectedParameters.count,
+              "Editor groups expose each adjustment parameter exactly once")
+        check(tools.contains(.denoise) && EditorAdjustmentTool.denoise.parameter == .denoiseMode &&
+              !parameters.contains(.rawNoiseReduction),
+              "Editor tools replace legacy RAW noise reduction with unified denoising")
         for tool in tools {
             check(NSImage(systemSymbolName: tool.symbol, accessibilityDescription: nil) != nil,
                   "Native symbol exists for \(tool.rawValue)")

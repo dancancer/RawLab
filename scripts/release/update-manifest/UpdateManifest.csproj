@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <RawLabWindowsSourceRoot Condition="'$(RawLabWindowsSourceRoot)' == ''">$(MSBuildThisFileDirectory)../../../RawLabWindows</RawLabWindowsSourceRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(RawLabWindowsSourceRoot)/Updates/UpdateTrust.cs" Link="UpdateTrust.cs" />
+    <Compile Include="$(RawLabWindowsSourceRoot)/Updates/UpdateState.cs" Link="UpdateState.cs" />
+    <Compile Include="$(RawLabWindowsSourceRoot)/Updates/UpdatePackageVerifier.cs" Link="UpdatePackageVerifier.cs" />
+    <Compile Include="$(RawLabWindowsSourceRoot)/Updates/AuthenticodeTrust.cs" Link="AuthenticodeTrust.cs" />
+  </ItemGroup>
+</Project>

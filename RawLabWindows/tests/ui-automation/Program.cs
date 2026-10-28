@@ -1,8 +1,9 @@
 using System.Diagnostics;
 using System.Windows.Automation;
 using System.Windows.Automation.Provider;
+using System.Runtime.InteropServices;
 
-internal static class Program
+internal static partial class Program
 {
     private static readonly TimeSpan TotalTimeout = TimeSpan.FromMinutes(8);
 
@@ -28,7 +29,7 @@ internal static class Program
         }
     }
 
-    private sealed class DriverContext
+    private sealed partial class DriverContext
     {
         private readonly int hostPid;
         private readonly string profile, raw, png, jpeg, phase;
@@ -58,10 +59,9 @@ internal static class Program
             {
                 OpenPhoto(raw);
                 WaitMode("off");
-                var slider = FindById(main, "ParameterValueSlider") ??
-                    throw new InvalidOperationException("ParameterValueSlider UIA control is missing.");
-                var value = GetRangeValue(slider);
+                var value = GetRangeValue("ParameterValueSlider");
                 Check(Math.Abs(value - 1.25) < .02, "Restarted profile restores RAW exposure history");
+                if (Environment.GetEnvironmentVariable("RAWLAB_PRESET_UI") == "1") PresetRestartFlow();
                 CloseMainWindow();
                 return 0;
             }
@@ -80,8 +80,11 @@ internal static class Program
                 SetRangeValue("ParameterValueSlider", 1.25);
             });
             WaitMode("swipe");
-            Check(Math.Abs(GetRangeValue(FindById(main,"ResultCanvas")!) - 35)<.01,
+            Check(Math.Abs(GetRangeValue("ResultCanvas") - 35)<.01,
                 "Async exposure preserves the native swipe divider");
+
+            if(Environment.GetEnvironmentVariable("RAWLAB_ADJUSTMENT_UI")=="1")AdjustmentFlows();
+            if(Environment.GetEnvironmentVariable("RAWLAB_PRESET_UI")=="1")PresetFlows();
 
             OpenPhoto(png);
             WaitMode("off");
@@ -89,8 +92,7 @@ internal static class Program
             WaitMode("off");
             OpenPhoto(raw);
             WaitMode("off");
-            Check(Math.Abs(GetRangeValue(FindById(main, "ParameterValueSlider") ??
-                throw new InvalidOperationException("ParameterValueSlider UIA control is missing.")) - 1.25) < .02,
+            Check(Math.Abs(GetRangeValue("ParameterValueSlider") - 1.25) < .02,
                 "Same-profile RAW reopen restores the edited exposure");
             CloseMainWindow();
             return 0;
@@ -133,22 +135,27 @@ internal static class Program
                 var invocation = Task.Run(() => Invoke(open));
                 var dialog = Wait(() => FindDialog(), TimeSpan.FromSeconds(15));
                 if (dialog == null) throw new InvalidOperationException("OpenFileDialog did not appear through UIA.");
+                Trace("open-dialog " + System.IO.Path.GetFileName(path) + " name=" + dialog.Current.Name + " hwnd=" + dialog.Current.NativeWindowHandle);
                 if (invocation.IsFaulted) throw invocation.Exception!.GetBaseException();
                 var edit = Wait(() => dialog.FindFirst(TreeScope.Descendants,
-                    new PropertyCondition(AutomationElement.AutomationIdProperty, "1148"))) ??
+                    new PropertyCondition(AutomationElement.AutomationIdProperty, "1148")), TimeSpan.FromSeconds(10)) ??
                     dialog.FindFirst(TreeScope.Descendants,
                         new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit));
                 if (edit == null) throw new InvalidOperationException("OpenFileDialog file-name edit is missing.");
+                Trace("open-filename-found " + edit.Current.ControlType.ProgrammaticName);
                 SetValue(edit, path);
+                Trace("open-filename-set " + System.IO.Path.GetFileName(path));
                 var accept = FindByNames(dialog, "打开", "Open", "选择", "Select") ??
                     dialog.FindFirst(TreeScope.Descendants, new AndCondition(
                         new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button),
                         new PropertyCondition(AutomationElement.AutomationIdProperty, "1")));
                 if (accept == null) throw new InvalidOperationException("OpenFileDialog accept button is missing.");
                 Invoke(accept);
+                Trace("open-accepted " + System.IO.Path.GetFileName(path));
                 if (!invocation.Wait(TimeSpan.FromSeconds(10)))
                     throw new TimeoutException("OpenPhoto modal Invoke did not return.");
                 Wait(() => main.Current.Name.EndsWith(System.IO.Path.GetFileName(path), StringComparison.OrdinalIgnoreCase));
+                Trace("open-title " + System.IO.Path.GetFileName(path));
             });
             Trace("open-ready " + System.IO.Path.GetFileName(path));
             var raster=path.Equals(png,StringComparison.OrdinalIgnoreCase) || path.Equals(jpeg,StringComparison.OrdinalIgnoreCase);
@@ -166,19 +173,87 @@ internal static class Program
             var condition = new AndCondition(
                 new PropertyCondition(AutomationElement.ProcessIdProperty, hostPid),
                 new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window));
-            return main.FindFirst(TreeScope.Children, condition) ??
-                root.FindAll(TreeScope.Children, condition).Cast<AutomationElement>()
-                .FirstOrDefault(element => element.Current.NativeWindowHandle != main.Current.NativeWindowHandle);
+            // WPF 会保留无标题辅助窗口；只接系统文件选择器，避免第二次打开时选到它。
+            return main.FindAll(TreeScope.Children, condition).Cast<AutomationElement>()
+                .Concat(root.FindAll(TreeScope.Children, condition).Cast<AutomationElement>())
+                .FirstOrDefault(element => element.Current.NativeWindowHandle != main.Current.NativeWindowHandle &&
+                    !element.Current.IsOffscreen && element.Current.ClassName == "#32770");
         }
 
         private void SelectMode(string mode)
         {
-            var compare = FindById(main, "CompareButton") ?? throw new InvalidOperationException("CompareButton UIA control is missing.");
+            var compare = FindById(main, "CompareModeButton") ?? throw new InvalidOperationException("Comparison mode UIA control is missing.");
             Invoke(compare);
             var item = Wait(() => FindById(root, "Compare" + char.ToUpperInvariant(mode[0]) + mode[1..])) ??
                 throw new InvalidOperationException("Comparison mode UIA item is missing: " + mode);
             Invoke(item);
             WaitMode(mode);
+        }
+
+        private void EditCommand(string id)
+        {
+            Trace("edit-command-start "+id);
+            SetForegroundWindow(new IntPtr(main.Current.NativeWindowHandle));
+            var menu=Wait(()=>FindById(main,"adjustment.edit-menu"),TimeSpan.FromSeconds(5))!;
+            menu.SetFocus();
+            var expansion=(ExpandCollapsePattern)menu.GetCurrentPattern(ExpandCollapsePattern.Pattern);expansion.Expand();
+            Trace("edit-menu-state "+expansion.Current.ExpandCollapseState);
+            foreach(AutomationElement child in menu.FindAll(TreeScope.Children,Condition.TrueCondition))
+                Trace("edit-menu-child id="+child.Current.AutomationId+" name="+child.Current.Name+" pid="+child.Current.ProcessId);
+            var item=Wait(()=>menu.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.AutomationIdProperty,id)),TimeSpan.FromSeconds(10))!;
+            Wait(()=>item.Current.IsEnabled);Invoke(item);
+            Trace("edit-command-return "+id);
+        }
+        private void PasteCurrent()
+        {
+            EditCommand("adjustment.paste.open");
+            var dialog=Wait(()=>FindById(root,"adjustment.results"))!;
+            var apply=Wait(()=>FindById(dialog,"adjustment.results.apply"))!;Wait(()=>apply.Current.IsEnabled);Invoke(apply);
+            Wait(()=>!apply.Current.IsEnabled);
+            Invoke(FindById(dialog,"adjustment.results.close")!);Wait(()=>FindById(root,"adjustment.results")==null);WaitReady();
+        }
+        private void AdjustmentFlows()
+        {
+            EditCommand("adjustment.copy.open");
+            var copy=Wait(()=>FindById(root,"adjustment.copy"))!;
+            var scope=FindById(copy,"adjustment.copy.scope")!;
+            ((ExpandCollapsePattern)scope.GetCurrentPattern(ExpandCollapsePattern.Pattern)).Expand();
+            var custom=Wait(()=>FindByNames(scope,"自定义","Custom","Benutzerdefiniert","Personnalisé","カスタム","Personalizado"))!;
+            ((SelectionItemPattern)custom.GetCurrentPattern(SelectionItemPattern.Pattern)).Select();
+            Invoke(Wait(()=>FindById(copy,"adjustment.copy.clear"))!);
+            var exposure=Wait(()=>FindById(copy,"adjustment.field.light.exposure"))!;
+            ((TogglePattern)exposure.GetCurrentPattern(TogglePattern.Pattern)).Toggle();
+            Invoke(FindById(copy,"adjustment.copy.confirm")!);Wait(()=>FindById(root,"adjustment.copy")==null);
+            WaitBusyThenReady(()=>SetRangeValue("ParameterValueSlider",2));
+            PasteCurrent();Check(Math.Abs(GetRangeValue("ParameterValueSlider")-1.25)<.0001,"Native scope copy remains frozen after source edit and paste restores only selected exposure");
+            EditCommand("adjustment.undo");WaitReady();Wait(()=>Math.Abs(GetRangeValue("ParameterValueSlider")-2)<.0001);
+            EditCommand("adjustment.redo");WaitReady();Wait(()=>Math.Abs(GetRangeValue("ParameterValueSlider")-1.25)<.0001);
+            Check(true,"Native Edit menu undo/redo traverses the paste transaction");
+
+            var number=FindById(main,"ParameterValueText")!;number.SetFocus();
+            Keys(0x11,0x41);Keys(0x33);Wait(()=>((ValuePattern)number.GetCurrentPattern(ValuePattern.Pattern)).Current.Value=="3");
+            Keys(0x11,0x5a);Wait(()=>((ValuePattern)number.GetCurrentPattern(ValuePattern.Pattern)).Current.Value!="3");
+            Check(Math.Abs(GetRangeValue("ParameterValueSlider")-1.25)<.0001,"Real Ctrl+Z in numeric text preserves photo history and undoes the text draft");
+            Keys(0x1b);FindById(main,"ResultCanvas")!.SetFocus();
+            Keys(0x11,0x5a);Wait(()=>Math.Abs(GetRangeValue("ParameterValueSlider")-2)<.0001);WaitReady();
+            Keys(0x11,0x59);Wait(()=>Math.Abs(GetRangeValue("ParameterValueSlider")-1.25)<.0001);WaitReady();
+            Check(true,"Real Ctrl+Z/Ctrl+Y outside text traverses photo history");
+            EditCommand("adjustment.history.open");var history=Wait(()=>FindById(root,"adjustment.history"))!;
+            Check(history.Current.IsEnabled,"Native session history dialog is accessible");Invoke(FindById(history,"adjustment.history.close")!);
+            Wait(()=>FindById(root,"adjustment.history")==null);
+
+            OpenPhoto(png);WaitReady();PasteCurrent();
+            Check(Math.Abs(GetRangeValue("ParameterValueSlider")-1.25)<.0001,"Frozen RAW exposure payload applies to a native raster target");
+            EditCommand("adjustment.undo");Wait(()=>Math.Abs(GetRangeValue("ParameterValueSlider"))<.0001);WaitReady();
+            OpenPhoto(raw);WaitReady();
+            Check(Math.Abs(GetRangeValue("ParameterValueSlider")-1.25)<.0001,"Raster undo preserves the independently edited RAW");
+        }
+        [DllImport("user32.dll")] private static extern void keybd_event(byte key,byte scan,uint flags,UIntPtr extra);
+        [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
+        private static void Keys(params byte[] keys)
+        {
+            try {foreach(var key in keys)keybd_event(key,0,0,UIntPtr.Zero);}
+            finally {foreach(var key in keys.Reverse())keybd_event(key,0,2,UIntPtr.Zero);}
         }
 
         private void WaitReady()
@@ -190,16 +265,17 @@ internal static class Program
 
         private void WaitMode(string mode,bool loaded=true)
         {
-            Wait(() => string.Equals(FindById(main, "CompareButton")?.Current.ItemStatus,
-                mode, StringComparison.OrdinalIgnoreCase));
+            Wait(() => !string.IsNullOrWhiteSpace(FindById(main, "CompareButton")?.Current.ItemStatus));
             if(loaded)
             {
-                var canvas=FindById(main,"ResultCanvas") ?? throw new InvalidOperationException("Result canvas is missing.");
+                var canvas=Wait(()=>FindById(main,"ResultCanvas"),TimeSpan.FromSeconds(10)) ?? throw new InvalidOperationException("Result canvas is missing.");
+                Wait(()=>canvas.TryGetCurrentPattern(RangeValuePattern.Pattern,out _)==(mode=="swipe"));
                 var range=canvas.TryGetCurrentPattern(RangeValuePattern.Pattern,out _);
                 Check(range==(mode=="swipe"),"Native canvas range support matches "+mode);
+                Wait(()=>{var current=FindById(main,"NeutralCanvas");return (current!=null && !current.Current.IsOffscreen)==(mode=="side");});
                 var neutral=FindById(main,"NeutralCanvas");
                 Check((neutral!=null && !neutral.Current.IsOffscreen)==(mode=="side"),"Native neutral canvas visibility matches "+mode);
-                Invoke(FindById(main,"CompareButton")!);
+                Invoke(FindById(main,"CompareModeButton")!);
                 AutomationElement? selected=null;
                 foreach(var option in new[]{"off","side","swipe"})
                 {
@@ -208,6 +284,7 @@ internal static class Program
                     Check((toggle.Current.ToggleState==ToggleState.On)==(option==mode),"Native comparison menu selection "+option+" in "+mode);
                     if(option==mode)selected=item;
                 }
+                Check(FindById(main,"CompareButton")!.Current.ItemStatus==selected!.Current.Name,"Comparison status uses the selected localized mode label");
                 Invoke(selected!);
             }
             Trace("mode " + mode);
@@ -230,6 +307,7 @@ internal static class Program
             {
                 if (!export.Current.IsEnabled) Interlocked.Exchange(ref busy, 1);
                 action();
+                Trace("wait-busy observed=" + Volatile.Read(ref busy) + " enabled=" + export.Current.IsEnabled);
                 Wait(() => Volatile.Read(ref busy) != 0 || !export.Current.IsEnabled);
                 Wait(() => export.Current.IsEnabled);
             }
@@ -239,18 +317,15 @@ internal static class Program
             }
         }
 
-        private void SetRangeValue(string id, double value)
+        private RangeValuePattern RangePattern(string id) => Wait(() =>
         {
-            var element = FindById(main, id) ?? throw new InvalidOperationException("Range UIA control is missing: " + id);
-            var pattern = (RangeValuePattern)element.GetCurrentPattern(RangeValuePattern.Pattern);
-            pattern.SetValue(value);
-        }
+            var element = FindById(main, id);
+            return element != null && element.TryGetCurrentPattern(RangeValuePattern.Pattern, out var pattern)
+                ? pattern as RangeValuePattern : null;
+        }, TimeSpan.FromSeconds(10)) ?? throw new InvalidOperationException("Range UIA control is unavailable: " + id);
 
-        private static double GetRangeValue(AutomationElement element)
-        {
-            var pattern = (RangeValuePattern)element.GetCurrentPattern(RangeValuePattern.Pattern);
-            return pattern.Current.Value;
-        }
+        private void SetRangeValue(string id, double value) => RangePattern(id).SetValue(value);
+        private double GetRangeValue(string id) => RangePattern(id).Current.Value;
 
         private void CloseMainWindow()
         {

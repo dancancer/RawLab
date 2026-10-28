@@ -1,6 +1,53 @@
 import Foundation
 
 struct Adjustments: Equatable, Codable {
+    var toneCurveConfig: ToneCurveSettings?
+    var curveSettings: ToneCurveSettings {
+        get { toneCurveConfig ?? ToneCurveSettings() }
+        set { toneCurveConfig = newValue.isDefault ? nil : newValue }
+    }
+    var colorGrading: ColorGradingSettings?
+    var gradingSettings: ColorGradingSettings {
+        get { colorGrading ?? ColorGradingSettings() }
+        set { colorGrading = newValue.isDefault ? nil : newValue }
+    }
+    var atmosphere: AtmosphereSettings?
+    var atmosphereSettings: AtmosphereSettings { atmosphere ?? AtmosphereSettings() }
+    var clarity: Double {
+        get { atmosphereSettings.clarity }
+        set { setAtmosphere(\.clarity, to: newValue) }
+    }
+    var dehaze: Double {
+        get { atmosphereSettings.dehaze }
+        set { setAtmosphere(\.dehaze, to: newValue) }
+    }
+    private mutating func setAtmosphere(_ key: WritableKeyPath<AtmosphereSettings, Double>, to value: Double) {
+        var state = atmosphereSettings
+        state[keyPath: key] = value
+        atmosphere = state.isIdentity ? nil : state
+    }
+
+    var toneControls: ToneControlsSettings?
+    var toneSettings: ToneControlsSettings { toneControls ?? ToneControlsSettings() }
+    var blackPoint: Double {
+        get { toneSettings.blackPoint }
+        set { setTone(\.blackPoint, to: newValue) }
+    }
+    var whitePoint: Double {
+        get { toneSettings.whitePoint }
+        set { setTone(\.whitePoint, to: newValue) }
+    }
+    var vibrance: Double {
+        get { toneSettings.vibrance }
+        set { setTone(\.vibrance, to: newValue) }
+    }
+    private mutating func setTone(_ key: WritableKeyPath<ToneControlsSettings, Double>, to value: Double) {
+        var state = toneSettings
+        state[keyPath: key] = value
+        toneControls = state.isIdentity ? nil : state
+    }
+
+    var processing = ProcessingIdentity.current
     var exposureMode = ExposureMode.preview
     var exposure = 0.0
     var temperature = 6500.0
@@ -19,6 +66,7 @@ struct Adjustments: Equatable, Codable {
     var chromaNoiseReduction: Double?
     // nil 保留旧算法语义，显式启用或选择预设后才迁移。
     var waveletNoiseReduction: WaveletDenoiseSettings?
+    var aiDenoiseEnabled = false
     var photoEffects: PhotoEffectsSettings?
     var hsl: HSLSettings?
     var lensCorrection: LensCorrectionSettings?
@@ -28,6 +76,11 @@ struct Adjustments: Equatable, Codable {
     private var masterRecipeSettingsVersion: Int? = 3
 
     var masterRecipe: MasterRecipe? { MasterRecipe.recipe(for: masterRecipeID) }
+    var recipeSettingsVersion: Int { masterRecipeSettingsVersion ?? 2 }
+    mutating func setTransferRecipe(_ id: String?, settingsVersion: Int = 3) {
+        masterRecipeID = id
+        masterRecipeSettingsVersion = settingsVersion
+    }
     var effectSettings: PhotoEffectsSettings { photoEffects ?? PhotoEffectsSettings() }
     var hslSettings: HSLSettings { hsl ?? HSLSettings() }
     var renderHSLSettings: HSLSettings {
@@ -63,10 +116,16 @@ struct Adjustments: Equatable, Codable {
         geometry = state.isIdentity ? nil : state
     }
 
+    var neutralSettings: Adjustments {
+        var neutral = Adjustments()
+        neutral.processing = processing
+        return neutral
+    }
+
     // Compare the color edit on the same geometric canvas without changing the
     // immutable original cached by EditorModel.
     var neutralGeometrySettings: Adjustments {
-        var neutral = Adjustments()
+        var neutral = neutralSettings
         neutral.geometry = geometry
         neutral.lensCorrection = lensCorrection
         return neutral
@@ -111,8 +170,9 @@ struct Adjustments: Equatable, Codable {
 
     var waveletSettings: WaveletDenoiseSettings { waveletNoiseReduction ?? WaveletDenoiseSettings() }
     var hasLegacyDenoise: Bool { waveletNoiseReduction == nil && denoiseMode > 0 }
-    var isDenoiseEnabled: Bool { waveletNoiseReduction?.enabled ?? (denoiseMode > 0) }
+    var isDenoiseEnabled: Bool { aiDenoiseEnabled || (waveletNoiseReduction?.enabled ?? (denoiseMode > 0)) }
     var denoiseSummary: String {
+        if aiDenoiseEnabled { return L10n.text("AI 降噪") }
         if let settings = waveletNoiseReduction {
             return settings.enabled ? settings.preset.title : L10n.text("停用")
         }
@@ -165,6 +225,12 @@ struct Adjustments: Equatable, Codable {
             (masterRecipe == nil && temperature == asShotWhiteBalance?.temperature && tint == asShotWhiteBalance?.tint)
     }
 
+    var aiWhiteBalanceSignature: [Float] {
+        var request = sony2fuji_request()
+        apply(to: &request)
+        return [Float(request.wb_mode.rawValue), request.temperature, request.tint]
+    }
+
     mutating func applyMasterRecipe(_ recipe: MasterRecipe) {
         masterRecipeID = recipe.id
         masterRecipeSettingsVersion = 3
@@ -210,7 +276,7 @@ struct Adjustments: Equatable, Codable {
         // The core's positive highlight value compresses light; UI positive brightens.
         request.highlights = Float(-highlights * scale / 100)
         request.shadows = Float(shadows * scale / 100)
-        request.tone_curve = Float(toneCurve / 100)
+        request.tone_curve = curveSettings.mode == .custom ? 0 : Float(toneCurve / 100)
         request.sharpening = Float(sharpening / 100)
     }
 
@@ -220,8 +286,10 @@ struct Adjustments: Equatable, Codable {
         }
         if group == .film { clearMasterRecipe() }
         if group == .input { exposureMode = .preview; resetWhiteBalance() }
-        if group == .color { hsl = nil }
-        if group == .effects { photoEffects = nil }
+        if group == .color { hsl = nil; colorGrading = nil }
+        if group == .tone { toneCurveConfig = nil }
+        if group == .detail { aiDenoiseEnabled = false }
+        if group == .effects { photoEffects = nil; atmosphere = nil }
         if group == .lens { lensCorrection = nil }
         if group == .geometry { geometry = nil }
     }
@@ -229,9 +297,10 @@ struct Adjustments: Equatable, Codable {
     func isDefault(_ group: AdjustmentGroup) -> Bool {
         group.parameters.allSatisfy { self[keyPath: $0.spec.keyPath] == $0.spec(for: self).defaultValue }
             && (group != .input || exposureMode == .preview)
-            && (group != .color || hslSettings.isIdentity)
+            && (group != .tone || curveSettings.isDefault)
+            && (group != .color || hslSettings.isIdentity && gradingSettings.isDefault)
             && (group != .detail || !isDenoiseEnabled)
-            && (group != .effects || effectSettings == PhotoEffectsSettings())
+            && (group != .effects || effectSettings == PhotoEffectsSettings() && atmosphereSettings.isIdentity)
             && (group != .film || masterRecipeID == nil)
             && (group != .lens || lensSettings == LensCorrectionSettings())
             && (group != .geometry || geometrySettings.isIdentity)
@@ -276,20 +345,264 @@ struct Adjustments: Equatable, Codable {
     }
 
     mutating func resetAll() {
+        let identity = processing
         let camera = asShotWhiteBalance
         let noiseReductionSupport = supportsRawNoiseReduction
         self = Adjustments()
+        processing = identity
         resolveWhiteBalance(camera)
         resolveRawNoiseReductionSupport(noiseReductionSupport)
     }
 
     var isDefault: Bool { AdjustmentGroup.allCases.allSatisfy { isDefault($0) } }
+
+    // 与实际渲染共用普通图片的有效设置，避免 reset 校验把 RAW 元数据当成 RGB 白平衡。
+    var resolvedForRaster: Adjustments {
+        var state = self
+        state.exposureMode = .sensor
+        state.whiteBalanceMode = .asShot
+        state.resolveWhiteBalance(nil)
+        state.temperature = 6500
+        state.tint = 0
+        state.rawNoiseReduction = 0
+        state.lensCorrection = nil
+        return state
+    }
+
+    func validateResetValues() throws {
+        for parameter in [AdjustmentParameter.strength, .exposure, .temperature, .tint, .contrast,
+                          .highlights, .shadows, .toneCurve, .blackPoint, .whitePoint, .vibrance, .saturation, .sharpening, .rawNoiseReduction] {
+            let value = self[keyPath: parameter.spec.keyPath]
+            guard value.isFinite, parameter.spec.range.contains(value) else {
+                throw EditorResetBlockedReason.invalidSnapshot(parameter.rawValue)
+            }
+        }
+        guard rawNoiseReduction.rounded() == rawNoiseReduction,
+              chromaNoiseReduction.map({ $0.isFinite && (0...2).contains($0) && $0.rounded() == $0 }) ?? true,
+              DenoiseParameter.allCases.allSatisfy({
+                  let value = waveletSettings[keyPath: $0.keyPath]
+                  return value.isFinite && (0...100).contains(value)
+              }) else { throw EditorResetBlockedReason.invalidSnapshot("denoise") }
+        guard PhotoEffectParameter.allCases.allSatisfy({
+            let value = effectSettings[keyPath: $0.keyPath]
+            return value.isFinite && $0.range.contains(value)
+        }), hslSettings.isValid, geometrySettings.isValid, atmosphereSettings.isValid, gradingSettings.isValid, curveSettings.isValid else {
+            throw EditorResetBlockedReason.invalidSnapshot("effects/hsl/geometry")
+        }
+        if let camera = asShotWhiteBalance {
+            guard camera.temperature.isFinite, camera.tint.isFinite,
+                  AdjustmentParameter.temperature.spec.range.contains(camera.temperature),
+                  AdjustmentParameter.tint.spec.range.contains(camera.tint) else {
+                throw EditorResetBlockedReason.invalidSnapshot("asShotWhiteBalance")
+            }
+        }
+        if masterRecipeID != nil {
+            guard masterRecipe != nil, [2, 3].contains(masterRecipeSettingsVersion ?? 2) else {
+                throw EditorResetBlockedReason.invalidSnapshot("masterRecipe")
+            }
+        }
+    }
+
+    private func resetCoreValues(context: EditorAdjustmentContext) -> [Float] {
+        let effective = context.isRaw ? self : resolvedForRaster
+        var request = sony2fuji_request()
+        effective.apply(to: &request)
+        return [Float(request.wb_mode.rawValue), request.exposure_ev, request.brightness, request.temperature,
+                request.tint, request.contrast, request.saturation, request.highlights, request.shadows,
+                request.tone_curve, request.sharpening] +
+            (effective.renderHSLSettings.hue + effective.renderHSLSettings.saturation + effective.renderHSLSettings.lightness).map(Float.init)
+    }
+
+    fileprivate func detachingRecipeForReset(context: EditorAdjustmentContext) throws -> Adjustments {
+        try validateResetValues()
+        var result = self
+        let renderedHSL = renderHSLSettings
+        if masterRecipe != nil {
+            let scale = strength
+            result.exposure = exposure * scale
+            result.contrast = contrast * scale
+            result.highlights = highlights * scale
+            result.shadows = shadows * scale
+            result.saturation = saturation * scale
+            if context.isRaw {
+                if (tint * scale != 0 || !usesAsShotWhiteBalance) && asShotWhiteBalance == nil {
+                    throw EditorResetBlockedReason.missingAsShotWhiteBalance
+                }
+                var before = sony2fuji_request()
+                apply(to: &before)
+                result.masterRecipeID = nil
+                if before.wb_mode == SONY2FUJI_WB_CAMERA {
+                    result.resetWhiteBalance()
+                } else {
+                    result.whiteBalanceMode = .custom
+                    result.temperature = Double(before.temperature)
+                    result.tint = Double(before.tint)
+                }
+            } else {
+                result.masterRecipeID = nil
+                result.whiteBalanceMode = .asShot
+                result.temperature = 6500
+                result.tint = 0
+            }
+            // 捕获旧版本的实际 HSL，不调用会再次量化的用户输入 setter。
+            result.hsl = renderedHSL.isIdentity ? nil : renderedHSL
+        }
+        result.masterRecipeID = nil
+        result.masterRecipeSettingsVersion = 3
+        result.strength = 1
+        try result.validateResetValues()
+        guard result.resetCoreValues(context: context) == resetCoreValues(context: context) else {
+            throw EditorResetBlockedReason.unrepresentableRecipe
+        }
+        return result
+    }
+}
+
+enum EditorAdjustmentRules {
+    static func isModified(scope: EditorResetScope, snapshot: PhotoEditState, context: EditorAdjustmentContext) -> Bool {
+        let settings = snapshot.settings
+        switch scope {
+        case .tool(let tool):
+            switch tool {
+            case .film: return snapshot.filmID != context.neutralFilmID || snapshot.masterRecipeID != nil || settings.masterRecipeID != nil
+            case .recipe: return snapshot.masterRecipeID != nil || settings.masterRecipeID != nil
+            case .strength: return settings.strength != 1
+            case .exposure: return settings.exposure != 0 || (context.isRaw && settings.exposureMode != context.defaultExposureMode)
+            case .whiteBalance: return (context.isRaw && (!settings.isWhiteBalanceDefault || !settings.usesAsShotWhiteBalance)) || (context.isRaw && settings.masterRecipe != nil && settings.tint != 0)
+            case .toneCurve: return settings.toneCurve != 0 || !settings.curveSettings.isDefault
+            case .colorGrading: return !settings.gradingSettings.isDefault
+            case .hsl: return !settings.hslSettings.isIdentity
+            case .vignette: return PhotoEffectParameter.allCases.filter(\.isVignette).contains { settings.effectSettings[keyPath: $0.keyPath] != $0.defaultValue }
+            case .grain: return PhotoEffectParameter.allCases.filter { !$0.isVignette }.contains { settings.effectSettings[keyPath: $0.keyPath] != $0.defaultValue }
+            case .denoise: return settings.aiDenoiseEnabled || settings.rawNoiseReduction != 0 || (settings.chromaNoiseReduction ?? 0) != 0 || settings.waveletSettings != WaveletDenoiseSettings()
+            case .geometry: return !settings.geometrySettings.isIdentity
+            case .lens: return settings.lensSettings != LensCorrectionSettings()
+            default: return settings[keyPath: tool.parameter!.spec.keyPath] != tool.parameter!.spec.defaultValue
+            }
+        case .all:
+            return EditorAdjustmentGroup.allCases.contains { isModified(scope: .group($0), snapshot: snapshot, context: context) }
+        case .allGrading: return !settings.gradingSettings.isDefault
+        case .gradingZone(let zone): return !settings.gradingSettings[zone].isDefault
+        case .hslAll: return !settings.hslSettings.isIdentity
+        case .hslColor(let channel):
+            guard (0..<8).contains(channel), settings.hslSettings.isValid else { return true }
+            return HSLAxis.allCases.contains { settings.hslSettings.value($0, channel: channel) != 0 }
+        case .group(.looks):
+            return snapshot.filmID != context.neutralFilmID || snapshot.masterRecipeID != nil ||
+                settings.masterRecipeID != nil || settings.strength != 1
+        case .group(.light):
+            return (context.isRaw && settings.exposureMode != context.defaultExposureMode) || settings.exposure != 0 ||
+                settings.contrast != 0 || settings.highlights != 0 || settings.shadows != 0 || settings.toneCurve != 0 || !settings.curveSettings.isDefault ||
+                settings.blackPoint != 0 || settings.whitePoint != 0
+        case .group(.color):
+            return settings.saturation != 0 || settings.vibrance != 0 || !settings.hslSettings.isIdentity || !settings.gradingSettings.isDefault ||
+                (context.isRaw && (!settings.isWhiteBalanceDefault || !settings.usesAsShotWhiteBalance)) ||
+                (context.isRaw && settings.masterRecipe != nil && settings.tint != 0)
+        case .group(.effects): return settings.effectSettings != PhotoEffectsSettings() || !settings.atmosphereSettings.isIdentity
+        case .group(.detail):
+            return settings.aiDenoiseEnabled || settings.sharpening != 0 || settings.rawNoiseReduction != 0 ||
+                (settings.chromaNoiseReduction ?? 0) != 0 || settings.waveletSettings != WaveletDenoiseSettings()
+        case .group(.geometry):
+            return !settings.geometrySettings.isIdentity || settings.lensSettings != LensCorrectionSettings()
+        }
+    }
+
+    static func prepareReset(scope: EditorResetScope, snapshot: PhotoEditState, context: EditorAdjustmentContext) -> EditorResetResult {
+        var result = snapshot
+        do {
+            try snapshot.settings.validateResetValues()
+            if case .hslColor(let channel) = scope, !(0..<8).contains(channel) {
+                throw EditorResetBlockedReason.invalidHSLChannel
+            }
+            guard isModified(scope: scope, snapshot: snapshot, context: context) else { return .unchanged }
+            switch scope {
+            case .tool(let tool):
+                switch tool {
+                case .film, .recipe:
+                    if snapshot.masterRecipeID != nil || snapshot.settings.masterRecipeID != nil {
+                        guard snapshot.masterRecipeID == snapshot.settings.masterRecipeID else { throw EditorResetBlockedReason.invalidSnapshot("masterRecipeID") }
+                        result.settings = try result.settings.detachingRecipeForReset(context: context)
+                        result.masterRecipeID = nil
+                    }
+                    result.filmID = context.neutralFilmID
+                case .exposure: result.settings.exposure = 0; result.settings.exposureMode = context.defaultExposureMode
+                case .whiteBalance: result.settings.resetWhiteBalance()
+                case .toneCurve: result.settings.toneCurve = 0; result.settings.toneCurveConfig = nil
+                case .colorGrading: result.settings.colorGrading = nil
+                case .hsl: result.settings.hsl = nil
+                case .vignette: result.settings.resetEffect(.vignetteAmount)
+                case .grain: result.settings.resetEffect(.grainAmount)
+                case .denoise:
+                    result.settings.aiDenoiseEnabled = false
+                    result.settings.rawNoiseReduction = 0; result.settings.chromaNoiseReduction = nil; result.settings.waveletNoiseReduction = nil
+                case .geometry: result.settings.geometry = nil
+                case .lens: result.settings.lensCorrection = nil
+                default: result.settings[keyPath: tool.parameter!.spec.keyPath] = tool.parameter!.spec.defaultValue
+                }
+            case .all:
+                result.settings.resetAll()
+                result.settings.exposureMode = context.defaultExposureMode
+                if !context.isRaw { result.settings = result.settings.resolvedForRaster }
+                result.filmID = context.neutralFilmID
+                result.masterRecipeID = nil
+            case .group(.looks):
+                guard snapshot.masterRecipeID == snapshot.settings.masterRecipeID else {
+                    throw EditorResetBlockedReason.invalidSnapshot("masterRecipeID")
+                }
+                result.settings = try result.settings.detachingRecipeForReset(context: context)
+                result.filmID = context.neutralFilmID
+                result.masterRecipeID = nil
+            case .group(.light):
+                result.settings.exposureMode = context.defaultExposureMode
+                result.settings.exposure = 0; result.settings.contrast = 0
+                result.settings.highlights = 0; result.settings.shadows = 0; result.settings.toneCurve = 0; result.settings.toneCurveConfig = nil
+                result.settings.blackPoint = 0; result.settings.whitePoint = 0
+            case .group(.color):
+                result.settings.saturation = 0; result.settings.vibrance = 0; result.settings.colorGrading = nil
+                result.settings.resetWhiteBalance()
+                result.settings.hsl = nil
+            case .group(.effects): result.settings.photoEffects = nil; result.settings.atmosphere = nil
+            case .group(.detail):
+                result.settings.aiDenoiseEnabled = false
+                result.settings.sharpening = 0; result.settings.rawNoiseReduction = 0
+                result.settings.chromaNoiseReduction = nil; result.settings.waveletNoiseReduction = nil
+            case .group(.geometry): result.settings.geometry = nil; result.settings.lensCorrection = nil
+            case .allGrading: result.settings.colorGrading = nil
+            case .gradingZone(let zone): result.settings.gradingSettings[zone] = ColorGradingWheel()
+            case .hslAll: result.settings.hsl = nil
+            case .hslColor(let channel):
+                var hsl = result.settings.hslSettings
+                hsl.reset(channel: channel)
+                result.settings.hsl = hsl.isIdentity ? nil : hsl
+            }
+            try result.settings.validateResetValues()
+            return result == snapshot ? .unchanged : .candidate(result)
+        } catch let reason as EditorResetBlockedReason {
+            return .blocked(reason)
+        } catch {
+            return .blocked(.invalidSnapshot(String(describing: error)))
+        }
+    }
 }
 
 extension Adjustments {
     init(from decoder: Decoder) throws {
         self.init()
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        processing = values.contains(.processing) ?
+            try values.decode(ProcessingIdentity.self, forKey: .processing) : .legacy
+        toneCurveConfig = try values.decodeIfPresent(ToneCurveSettings.self, forKey: .toneCurveConfig)
+        colorGrading = try values.decodeIfPresent(ColorGradingSettings.self, forKey: .colorGrading)
+        if colorGrading?.isDefault == true { colorGrading = nil }
+        atmosphere = try values.decodeIfPresent(AtmosphereSettings.self, forKey: .atmosphere)
+        guard atmosphereSettings.isValid else {
+            throw DecodingError.dataCorruptedError(forKey: .atmosphere, in: values, debugDescription: "Invalid atmosphere controls")
+        }
+        if atmosphere?.isIdentity == true { atmosphere = nil }
+        toneControls = try values.decodeIfPresent(ToneControlsSettings.self, forKey: .toneControls)
+        guard toneSettings.isValid else {
+            throw DecodingError.dataCorruptedError(forKey: .toneControls, in: values, debugDescription: "Invalid tone controls")
+        }
         exposureMode = try values.decodeIfPresent(ExposureMode.self, forKey: .exposureMode) ?? .scene
         exposure = try values.decodeIfPresent(Double.self, forKey: .exposure) ?? 0
         temperature = try values.decodeIfPresent(Double.self, forKey: .temperature) ?? 6500
@@ -306,6 +619,7 @@ extension Adjustments {
         rawNoiseReduction = try values.decodeIfPresent(Double.self, forKey: .rawNoiseReduction) ?? 0
         chromaNoiseReduction = try values.decodeIfPresent(Double.self, forKey: .chromaNoiseReduction)
         waveletNoiseReduction = try values.decodeIfPresent(WaveletDenoiseSettings.self, forKey: .waveletNoiseReduction)
+        aiDenoiseEnabled = try values.decodeIfPresent(Bool.self, forKey: .aiDenoiseEnabled) ?? false
         photoEffects = try values.decodeIfPresent(PhotoEffectsSettings.self, forKey: .photoEffects)
         hsl = try values.decodeIfPresent(HSLSettings.self, forKey: .hsl)
         lensCorrection = try values.decodeIfPresent(LensCorrectionSettings.self, forKey: .lensCorrection)
@@ -338,6 +652,7 @@ extension Adjustments {
 struct PhotoViewport: Equatable {
     private(set) var magnification: CGFloat = 1
     private(set) var pixelMode = false
+    var focus = CGPoint(x: 0.5, y: 0.5)
     mutating func fit() { self = PhotoViewport() }
     mutating func actualPixels() { magnification = 1; pixelMode = true }
     mutating func toggleActualPixels() {
@@ -350,8 +665,15 @@ struct PhotoViewport: Equatable {
         let pixelFactor = sourceWidth / max(1, renderedWidth) / max(1, displayScale)
         return (pixelMode ? pixelFactor : fit) * magnification
     }
-    func previewLongEdge(canvas: CGSize, displayScale: CGFloat, source: CGSize) -> Int {
-        let width = max(1, canvas.width - 24), height = max(1, canvas.height - 24)
+    func pan(displayed: CGSize) -> CGSize {
+        CGSize(width: (0.5 - focus.x) * displayed.width, height: (0.5 - focus.y) * displayed.height)
+    }
+    mutating func moveFocus(from origin: CGPoint, translation: CGSize, displayed: CGSize) {
+        focus = CGPoint(x: min(1, max(0, origin.x - translation.width / max(1, displayed.width))),
+                        y: min(1, max(0, origin.y - translation.height / max(1, displayed.height))))
+    }
+    func previewLongEdge(canvas: CGSize, displayScale: CGFloat, source: CGSize, margin: CGFloat = 12) -> Int {
+        let width = max(1, canvas.width - 2 * margin), height = max(1, canvas.height - 2 * margin)
         let sourceEdge = max(source.width, source.height)
         guard source.width > 0, source.height > 0, sourceEdge.isFinite else { return 2000 }
         let fit = min(width / source.width, height / source.height)

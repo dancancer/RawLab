@@ -255,6 +255,14 @@
     "ja": "前回の一括書き出しはまだ完了していません",
     "zh-Hans": "上次批量任务尚未完成"
   },
+  "不支持此处理版本，原有记录未被覆盖。": {
+    "de": "Diese Verarbeitungsversion wird nicht unterstützt. Die gespeicherten Bearbeitungen wurden nicht überschrieben.",
+    "en": "This processing version is not supported. Saved edits have not been overwritten.",
+    "es": "Esta versión de procesamiento no es compatible. Las ediciones guardadas no se han sobrescrito.",
+    "fr": "Cette version de traitement n'est pas prise en charge. Les réglages enregistrés n'ont pas été écrasés.",
+    "ja": "この処理バージョンには対応していません。保存済みの編集内容は上書きされていません。",
+    "zh-Hans": "不支持此处理版本，原有记录未被覆盖。"
+  },
   "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。": {
     "de": "Dieses Foto, dieser Look oder diese Verarbeitungsart wird nicht unterstützt. Prüfen Sie die Dateikompatibilität und Verarbeitungseinstellungen.",
     "en": "This photo, look, or processing mode is not supported. Check file compatibility and processing settings.",
@@ -711,6 +719,22 @@
     "ja": "垂直パース",
     "zh-Hans": "垂直透视"
   },
+  "处理 v1（旧版）": {
+    "de": "Verarbeitung v1 (alt)",
+    "en": "Processing v1 (Legacy)",
+    "es": "Procesamiento v1 (anterior)",
+    "fr": "Traitement v1 (ancien)",
+    "ja": "処理 v1（旧版）",
+    "zh-Hans": "处理 v1（旧版）"
+  },
+  "处理 v2": {
+    "de": "Verarbeitung v2",
+    "en": "Processing v2",
+    "es": "Procesamiento v2",
+    "fr": "Traitement v2",
+    "ja": "処理 v2",
+    "zh-Hans": "处理 v2"
+  },
   "处理失败：{0}": {
     "de": "Verarbeitung fehlgeschlagen: {0}",
     "en": "Processing failed: {0}",
@@ -718,6 +742,14 @@
     "fr": "Échec du traitement : {0}",
     "ja": "処理に失敗しました: {0}",
     "zh-Hans": "处理失败：{0}"
+  },
+  "处理版本": {
+    "de": "Verarbeitungsversion",
+    "en": "Processing version",
+    "es": "Versión de procesamiento",
+    "fr": "Version de traitement",
+    "ja": "処理バージョン",
+    "zh-Hans": "处理版本"
   },
   "外观名称不能为空或包含控制字符。": {
     "de": "Der Name des Looks darf nicht leer sein und keine Steuerzeichen enthalten.",
@@ -3382,5 +3414,2405 @@
     "fr": "Look de film haut de gamme à l'heure dorée, sujet lumineux en fort contraste, ombres profondes et contour doré des cheveux",
     "ja": "ゴールデンアワーの映画的な質感、高コントラストでも柔らかく透明な人物、深い影と金色の髪の輪郭光",
     "zh-Hans": "黄金时刻质感大片，大光比下人物温润通透，深邃阴影与金黄发丝轮廓"
+  },
+  "光线": {
+    "de": "Licht",
+    "en": "Light",
+    "es": "Luz",
+    "fr": "Lumière",
+    "ja": "ライト",
+    "zh-Hans": "光线"
+  },
+  "八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。": {
+    "de": "Farbton, Sättigung und Helligkeit aller acht Farbbereiche werden auf 0 zurückgesetzt. Andere Anpassungen bleiben unverändert.",
+    "en": "Hue, saturation and lightness will return to 0 for all eight colors. Other adjustments will stay unchanged.",
+    "es": "El tono, la saturación y la luminosidad de los ocho colores volverán a 0. Los demás ajustes no cambiarán.",
+    "fr": "La teinte, la saturation et la luminosité des huit couleurs reviendront à 0. Les autres réglages resteront inchangés.",
+    "ja": "8色すべての色相・彩度・明度を0に戻します。他の調整は変更されません。",
+    "zh-Hans": "八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。"
+  },
+  "几何与镜头": {
+    "de": "Geometrie und Objektiv",
+    "en": "Geometry & Lens",
+    "es": "Geometría y objetivo",
+    "fr": "Géométrie et objectif",
+    "ja": "ジオメトリとレンズ",
+    "zh-Hans": "几何与镜头"
+  },
+  "外观": {
+    "de": "Looks",
+    "en": "Looks",
+    "es": "Aspectos",
+    "fr": "Rendus",
+    "ja": "ルック",
+    "zh-Hans": "外观"
+  },
+  "将以下项目转为独立调整，以保留其他分组的当前效果：{0}": {
+    "de": "Die folgenden Werte werden in unabhängige Anpassungen umgewandelt, damit die aktuelle Wirkung anderer Gruppen erhalten bleibt: {0}",
+    "en": "The following will become independent adjustments to preserve the current appearance of other groups: {0}",
+    "es": "Los siguientes valores se convertirán en ajustes independientes para conservar el aspecto actual de los demás grupos: {0}",
+    "fr": "Les éléments suivants seront convertis en réglages indépendants pour préserver le rendu actuel des autres groupes : {0}",
+    "ja": "他のグループの現在の効果を保つため、次の項目を独立した調整に変換します：{0}",
+    "zh-Hans": "将以下项目转为独立调整，以保留其他分组的当前效果：{0}"
+  },
+  "展开{0}组": {
+    "de": "Gruppe „{0}“ aufklappen",
+    "en": "Expand {0} group",
+    "es": "Expandir el grupo {0}",
+    "fr": "Développer le groupe {0}",
+    "ja": "「{0}」グループを展開",
+    "zh-Hans": "展开{0}组"
+  },
+  "当前照片或调整记录无效，无法安全重置。": {
+    "de": "Das aktuelle Foto oder der gespeicherte Bearbeitungsstand ist ungültig und kann nicht sicher zurückgesetzt werden.",
+    "en": "The current photo or edit record is invalid and cannot be reset safely.",
+    "es": "La foto actual o su registro de ajustes no son válidos y no se pueden restablecer de forma segura.",
+    "fr": "La photo actuelle ou ses réglages enregistrés sont invalides et ne peuvent pas être réinitialisés en toute sécurité.",
+    "ja": "現在の写真または調整記録が無効なため、安全にリセットできません。",
+    "zh-Hans": "当前照片或调整记录无效，无法安全重置。"
+  },
+  "当前配方不可用，无法安全重置外观。": {
+    "de": "Das aktuelle Rezept ist nicht verfügbar. Der Look kann daher nicht sicher zurückgesetzt werden.",
+    "en": "The current recipe is unavailable, so its look cannot be reset safely.",
+    "es": "La receta actual no está disponible, por lo que su aspecto no se puede restablecer de forma segura.",
+    "fr": "La recette actuelle est indisponible ; son rendu ne peut donc pas être réinitialisé en toute sécurité.",
+    "ja": "現在のレシピが利用できないため、ルックを安全にリセットできません。",
+    "zh-Hans": "当前配方不可用，无法安全重置外观。"
+  },
+  "恢复当前照片的全部调整，不改写原始照片。": {
+    "de": "Alle Anpassungen des aktuellen Fotos zurücksetzen. Das Originalfoto wird nicht verändert.",
+    "en": "Reset all adjustments for the current photo. The original photo will not be modified.",
+    "es": "Restablece todos los ajustes de la foto actual. La foto original no se modificará.",
+    "fr": "Réinitialiser tous les réglages de la photo actuelle. La photo d’origine ne sera pas modifiée.",
+    "ja": "現在の写真のすべての調整をリセットします。元の写真は変更されません。",
+    "zh-Hans": "恢复当前照片的全部调整，不改写原始照片。"
+  },
+  "收起{0}组": {
+    "de": "Gruppe „{0}“ zuklappen",
+    "en": "Collapse {0} group",
+    "es": "Contraer el grupo {0}",
+    "fr": "Réduire le groupe {0}",
+    "ja": "「{0}」グループを折りたたむ",
+    "zh-Hans": "收起{0}组"
+  },
+  "无法重置调整": {
+    "de": "Anpassungen können nicht zurückgesetzt werden",
+    "en": "Cannot reset adjustments",
+    "es": "No se pueden restablecer los ajustes",
+    "fr": "Impossible de réinitialiser les réglages",
+    "ja": "調整をリセットできません",
+    "zh-Hans": "无法重置调整"
+  },
+  "此操作只恢复{0}组内的调整，其他分组保持不变。": {
+    "de": "Nur Anpassungen in der Gruppe „{0}“ werden zurückgesetzt. Andere Gruppen bleiben unverändert.",
+    "en": "Only adjustments in the {0} group will be reset. Other groups will stay unchanged.",
+    "es": "Solo se restablecerán los ajustes del grupo {0}. Los demás grupos no cambiarán.",
+    "fr": "Seuls les réglages du groupe {0} seront réinitialisés. Les autres groupes resteront inchangés.",
+    "ja": "「{0}」グループ内の調整のみをリセットします。他のグループは変更されません。",
+    "zh-Hans": "此操作只恢复{0}组内的调整，其他分组保持不变。"
+  },
+  "照片或调整已变化，请重新确认重置。": {
+    "de": "Das Foto oder seine Anpassungen haben sich geändert. Bestätigen Sie das Zurücksetzen erneut.",
+    "en": "The photo or its adjustments have changed. Confirm the reset again.",
+    "es": "La foto o sus ajustes han cambiado. Confirma de nuevo el restablecimiento.",
+    "fr": "La photo ou ses réglages ont changé. Confirmez à nouveau la réinitialisation.",
+    "ja": "写真または調整が変更されました。リセットを再度確認してください。",
+    "zh-Hans": "照片或调整已变化，请重新确认重置。"
+  },
+  "现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。": {
+    "de": "Die verfügbaren Parameterbereiche können die Wirkung des Rezepts nicht vollständig erhalten. Brechen Sie ab oder bestätigen Sie separat das Zurücksetzen aller Anpassungen.",
+    "en": "The available parameter ranges cannot preserve the recipe's full appearance. Cancel, or separately confirm resetting all adjustments.",
+    "es": "Los rangos disponibles de los parámetros no permiten conservar todo el aspecto de la receta. Cancela o confirma por separado el restablecimiento de todos los ajustes.",
+    "fr": "Les plages de paramètres disponibles ne permettent pas de préserver entièrement le rendu de la recette. Annulez ou confirmez séparément la réinitialisation de tous les réglages.",
+    "ja": "現在のパラメーター範囲ではレシピの効果を完全に保持できません。キャンセルするか、別途確認してすべての調整をリセットしてください。",
+    "zh-Hans": "现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。"
+  },
+  "缺少拍摄时白平衡数据，无法保留配方效果。": {
+    "de": "Die Weißabgleichsdaten der Aufnahme fehlen. Die Wirkung des Rezepts kann daher nicht beibehalten werden.",
+    "en": "As-shot white balance data is missing, so the recipe's appearance cannot be preserved.",
+    "es": "Faltan los datos del balance de blancos de la toma, por lo que no se puede conservar el aspecto de la receta.",
+    "fr": "Les données de balance des blancs à la prise de vue sont manquantes ; le rendu de la recette ne peut donc pas être préservé.",
+    "ja": "撮影時のホワイトバランスデータがないため、レシピの効果を保持できません。",
+    "zh-Hans": "缺少拍摄时白平衡数据，无法保留配方效果。"
+  },
+  "重置": {
+    "de": "Zurücksetzen",
+    "en": "Reset",
+    "es": "Restablecer",
+    "fr": "Réinitialiser",
+    "ja": "リセット",
+    "zh-Hans": "重置"
+  },
+  "重置{0}组…": {
+    "de": "Gruppe „{0}“ zurücksetzen…",
+    "en": "Reset {0} group…",
+    "es": "Restablecer el grupo {0}…",
+    "fr": "Réinitialiser le groupe {0}…",
+    "ja": "「{0}」グループをリセット…",
+    "zh-Hans": "重置{0}组…"
+  },
+  "重置{0}组？": {
+    "de": "Gruppe „{0}“ zurücksetzen?",
+    "en": "Reset the {0} group?",
+    "es": "¿Restablecer el grupo {0}?",
+    "fr": "Réinitialiser le groupe {0} ?",
+    "ja": "「{0}」グループをリセットしますか？",
+    "zh-Hans": "重置{0}组？"
+  },
+  "重置{0}？": {
+    "de": "{0} zurücksetzen?",
+    "en": "Reset {0}?",
+    "es": "¿Restablecer {0}?",
+    "fr": "Réinitialiser {0} ?",
+    "ja": "{0}をリセットしますか？",
+    "zh-Hans": "重置{0}？"
+  },
+  "重置全部 HSL…": {
+    "de": "Alle HSL-Werte zurücksetzen…",
+    "en": "Reset all HSL…",
+    "es": "Restablecer todos los valores HSL…",
+    "fr": "Réinitialiser tous les réglages HSL…",
+    "ja": "すべてのHSLをリセット…",
+    "zh-Hans": "重置全部 HSL…"
+  },
+  "重置全部 HSL？": {
+    "de": "Alle HSL-Werte zurücksetzen?",
+    "en": "Reset all HSL?",
+    "es": "¿Restablecer todos los valores HSL?",
+    "fr": "Réinitialiser tous les réglages HSL ?",
+    "ja": "すべてのHSLをリセットしますか？",
+    "zh-Hans": "重置全部 HSL？"
+  },
+  "重置全部调整…": {
+    "de": "Alle Anpassungen zurücksetzen…",
+    "en": "Reset all adjustments…",
+    "es": "Restablecer todos los ajustes…",
+    "fr": "Réinitialiser tous les réglages…",
+    "ja": "すべての調整をリセット…",
+    "zh-Hans": "重置全部调整…"
+  },
+  "重置全部调整？": {
+    "de": "Alle Anpassungen zurücksetzen?",
+    "en": "Reset all adjustments?",
+    "es": "¿Restablecer todos los ajustes?",
+    "fr": "Réinitialiser tous les réglages ?",
+    "ja": "すべての調整をリセットしますか？",
+    "zh-Hans": "重置全部调整？"
+  },
+  "重置当前颜色（{0}）": {
+    "de": "Aktuelle Farbe ({0}) zurücksetzen",
+    "en": "Reset current color ({0})",
+    "es": "Restablecer el color actual ({0})",
+    "fr": "Réinitialiser la couleur actuelle ({0})",
+    "ja": "現在の色（{0}）をリセット",
+    "zh-Hans": "重置当前颜色（{0}）"
+  },
+  "预览尚未就绪，请稍后重试。": {
+    "de": "Die Vorschau ist noch nicht bereit. Versuchen Sie es gleich erneut.",
+    "en": "The preview is not ready yet. Try again shortly.",
+    "es": "La vista previa aún no está lista. Vuelve a intentarlo en breve.",
+    "fr": "L’aperçu n’est pas encore prêt. Réessayez dans un instant.",
+    "ja": "プレビューの準備ができていません。しばらくしてから再試行してください。",
+    "zh-Hans": "预览尚未就绪，请稍后重试。"
+  },
+  "颜色": {
+    "de": "Farbe",
+    "en": "Color",
+    "es": "Color",
+    "fr": "Couleur",
+    "ja": "カラー",
+    "zh-Hans": "颜色"
+  },
+  "{0} · {1}": {
+    "de": "{0} · {1}",
+    "en": "{0} · {1}",
+    "es": "{0} · {1}",
+    "fr": "{0} · {1}",
+    "ja": "{0}・{1}",
+    "zh-Hans": "{0} · {1}"
+  },
+  "双击名称或轨道恢复默认值。": {
+    "de": "Doppelklicke auf den Namen oder die Spur, um den Standardwert wiederherzustellen.",
+    "en": "Double-click the name or track to restore the default.",
+    "es": "Haz doble clic en el nombre o la pista para restablecer el valor predeterminado.",
+    "fr": "Double-cliquez sur le nom ou la piste pour rétablir la valeur par défaut.",
+    "ja": "名前またはトラックをダブルクリックすると、デフォルト値に戻ります。",
+    "zh-Hans": "双击名称或轨道恢复默认值。"
+  },
+  "拖动灵敏度为普通模式的四分之一。": {
+    "de": "Die Empfindlichkeit beim Ziehen beträgt ein Viertel der normalen Empfindlichkeit.",
+    "en": "Dragging uses one quarter of the normal sensitivity.",
+    "es": "Al arrastrar, la sensibilidad es una cuarta parte de la normal.",
+    "fr": "La sensibilité du glissement est réduite au quart de la normale.",
+    "ja": "ドラッグ時の感度は通常の4分の1です。",
+    "zh-Hans": "拖动灵敏度为普通模式的四分之一。"
+  },
+  "明度：从暗到亮。": {
+    "de": "Helligkeit: von dunkel zu hell.",
+    "en": "Lightness: from dark to light.",
+    "es": "Luminosidad: de oscuro a claro.",
+    "fr": "Luminosité : du sombre au clair.",
+    "ja": "明度：暗い色から明るい色へ変化します。",
+    "zh-Hans": "明度：从暗到亮。"
+  },
+  "色相：向相邻颜色偏移。": {
+    "de": "Farbton: Verschiebung zu benachbarten Farben.",
+    "en": "Hue: shift toward neighboring colors.",
+    "es": "Tono: desplaza hacia los colores adyacentes.",
+    "fr": "Teinte : décalage vers les couleurs voisines.",
+    "ja": "色相：隣り合う色へ変化します。",
+    "zh-Hans": "色相：向相邻颜色偏移。"
+  },
+  "请使用 {0} 的步进。": {
+    "de": "Verwende eine Schrittweite von {0}.",
+    "en": "Use increments of {0}.",
+    "es": "Usa incrementos de {0}.",
+    "fr": "Utilisez un pas de {0}.",
+    "ja": "{0}刻みで入力してください。",
+    "zh-Hans": "请使用 {0} 的步进。"
+  },
+  "饱和度：从灰色到彩色。": {
+    "de": "Sättigung: von Grau zu Farbe.",
+    "en": "Saturation: from gray to color.",
+    "es": "Saturación: de gris a color.",
+    "fr": "Saturation : du gris à la couleur.",
+    "ja": "彩度：グレーから鮮やかな色へ変化します。",
+    "zh-Hans": "饱和度：从灰色到彩色。"
+  },
+  "默认值：{0}；范围：{1} 至 {2}；步进：{3}。": {
+    "de": "Standard: {0}; Bereich: {1} bis {2}; Schrittweite: {3}.",
+    "en": "Default: {0}; range: {1} to {2}; increment: {3}.",
+    "es": "Valor predeterminado: {0}; rango: de {1} a {2}; incremento: {3}.",
+    "fr": "Valeur par défaut : {0} ; plage : de {1} à {2} ; pas : {3}.",
+    "ja": "デフォルト：{0}、範囲：{1}～{2}、刻み：{3}。",
+    "zh-Hans": "默认值：{0}；范围：{1} 至 {2}；步进：{3}。"
+  },
+  "关闭对比": {
+    "de": "Vergleich ausschalten",
+    "en": "Turn off comparison",
+    "es": "Desactivar comparación",
+    "fr": "Désactiver la comparaison",
+    "ja": "比較をオフ",
+    "zh-Hans": "关闭对比"
+  },
+  "分割位置": {
+    "de": "Position der Trennlinie",
+    "en": "Split position",
+    "es": "Posición de la división",
+    "fr": "Position de la séparation",
+    "ja": "分割位置",
+    "zh-Hans": "分割位置"
+  },
+  "分割线": {
+    "de": "Trennlinie",
+    "en": "Wipe",
+    "es": "Línea divisoria",
+    "fr": "Ligne de séparation",
+    "ja": "分割線",
+    "zh-Hans": "分割线"
+  },
+  "对比方式": {
+    "de": "Vergleichsmodus",
+    "en": "Comparison mode",
+    "es": "Modo de comparación",
+    "fr": "Mode de comparaison",
+    "ja": "比較方法",
+    "zh-Hans": "对比方式"
+  },
+  "并排": {
+    "de": "Nebeneinander",
+    "en": "Side by side",
+    "es": "En paralelo",
+    "fr": "Côte à côte",
+    "ja": "並べて表示",
+    "zh-Hans": "并排"
+  },
+  "开启对比": {
+    "de": "Vergleich einschalten",
+    "en": "Turn on comparison",
+    "es": "Activar comparación",
+    "fr": "Activer la comparaison",
+    "ja": "比較をオン",
+    "zh-Hans": "开启对比"
+  },
+  "查看调整前": {
+    "de": "Vorher anzeigen",
+    "en": "Show before",
+    "es": "Ver antes",
+    "fr": "Afficher avant",
+    "ja": "補正前を表示",
+    "zh-Hans": "查看调整前"
+  },
+  "照片四周留白": {
+    "de": "Abstand um das Foto",
+    "en": "Space around photo",
+    "es": "Espacio alrededor de la foto",
+    "fr": "Marge autour de la photo",
+    "ja": "写真の周囲に余白",
+    "zh-Hans": "照片四周留白"
+  },
+  "缩放与显示": {
+    "de": "Zoom und Anzeige",
+    "en": "Zoom and display",
+    "es": "Zoom y visualización",
+    "fr": "Zoom et affichage",
+    "ja": "ズームと表示",
+    "zh-Hans": "缩放与显示"
+  },
+  "调整前": {
+    "de": "Vorher",
+    "en": "Before",
+    "es": "Antes",
+    "fr": "Avant",
+    "ja": "補正前",
+    "zh-Hans": "调整前"
+  },
+  "返回调整后": {
+    "de": "Nachher anzeigen",
+    "en": "Return to after",
+    "es": "Volver a después",
+    "fr": "Revenir à après",
+    "ja": "補正後に戻る",
+    "zh-Hans": "返回调整后"
+  },
+  "进入纯预览": {
+    "de": "Reine Vorschau öffnen",
+    "en": "Enter immersive preview",
+    "es": "Entrar en vista previa inmersiva",
+    "fr": "Ouvrir l’aperçu immersif",
+    "ja": "プレビューのみ表示",
+    "zh-Hans": "进入纯预览"
+  },
+  "退出纯预览": {
+    "de": "Reine Vorschau schließen",
+    "en": "Exit immersive preview",
+    "es": "Salir de vista previa inmersiva",
+    "fr": "Quitter l’aperçu immersif",
+    "ja": "編集画面に戻る",
+    "zh-Hans": "退出纯预览"
+  },
+  "重置分割线": {
+    "de": "Trennlinie zurücksetzen",
+    "en": "Reset split",
+    "es": "Restablecer división",
+    "fr": "Réinitialiser la séparation",
+    "ja": "分割線をリセット",
+    "zh-Hans": "重置分割线"
+  },
+  "预览已更新": {
+    "de": "Vorschau aktualisiert",
+    "en": "Preview updated",
+    "es": "Vista previa actualizada",
+    "fr": "Aperçu actualisé",
+    "ja": "プレビューを更新しました",
+    "zh-Hans": "预览已更新"
+  },
+  "预览未更新": {
+    "de": "Vorschau nicht aktualisiert",
+    "en": "Preview not updated",
+    "es": "Vista previa sin actualizar",
+    "fr": "Aperçu non actualisé",
+    "ja": "プレビューが更新されていません",
+    "zh-Hans": "预览未更新"
+  },
+  "RGB 直方图": {
+    "de": "RGB-Histogramm",
+    "en": "RGB Histogram",
+    "es": "Histograma RGB",
+    "fr": "Histogramme RVB",
+    "ja": "RGB ヒストグラム",
+    "zh-Hans": "RGB 直方图"
+  },
+  "统计不可用": {
+    "de": "Statistik nicht verfügbar",
+    "en": "Statistics unavailable",
+    "es": "Estadísticas no disponibles",
+    "fr": "Statistiques indisponibles",
+    "ja": "統計を利用できません",
+    "zh-Hans": "统计不可用"
+  },
+  "AI 降噪": {
+    "de": "KI-Entrauschen",
+    "en": "AI denoise",
+    "es": "Reducción de ruido con IA",
+    "fr": "Débruitage IA",
+    "ja": "AI ノイズ除去",
+    "zh-Hans": "AI 降噪"
+  },
+  "AI 降噪仅支持 RAW 照片。": {
+    "de": "KI-Entrauschen unterstützt nur RAW-Fotos.",
+    "en": "AI denoising only supports RAW photos.",
+    "es": "La reducción de ruido con IA solo admite fotos RAW.",
+    "fr": "Le débruitage IA prend uniquement en charge les photos RAW.",
+    "ja": "AI ノイズ除去は RAW 写真のみ対応しています。",
+    "zh-Hans": "AI 降噪仅支持 RAW 照片。"
+  },
+  "AI 降噪失败": {
+    "de": "KI-Entrauschen fehlgeschlagen",
+    "en": "AI denoising failed",
+    "es": "La reducción de ruido con IA falló",
+    "fr": "Échec du débruitage IA",
+    "ja": "AI ノイズ除去に失敗しました",
+    "zh-Hans": "AI 降噪失败"
+  },
+  "AI 降噪失败：{0}": {
+    "de": "KI-Entrauschen fehlgeschlagen: {0}",
+    "en": "AI denoising failed: {0}",
+    "es": "Error en la reducción de ruido con IA: {0}",
+    "fr": "Échec du débruitage IA : {0}",
+    "ja": "AI ノイズ除去に失敗しました：{0}",
+    "zh-Hans": "AI 降噪失败：{0}"
+  },
+  "AI 降噪已取消。": {
+    "de": "KI-Entrauschen abgebrochen.",
+    "en": "AI denoising cancelled.",
+    "es": "Reducción de ruido con IA cancelada.",
+    "fr": "Débruitage IA annulé.",
+    "ja": "AI ノイズ除去をキャンセルしました。",
+    "zh-Hans": "AI 降噪已取消。"
+  },
+  "AI 降噪（实验）": {
+    "de": "KI-Entrauschen (experimentell)",
+    "en": "AI denoise (experimental)",
+    "es": "Reducción de ruido con IA (experimental)",
+    "fr": "Débruitage IA (expérimental)",
+    "ja": "AI ノイズ除去（実験的）",
+    "zh-Hans": "AI 降噪（实验）"
+  },
+  "支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。": {
+    "de": "Unterstützt verschiedene RAW-Formate. Die erste Verarbeitung hängt vom Gerät ab; fertige Ergebnisse können wiederverwendet werden.",
+    "en": "Supports multiple RAW formats. Initial processing time depends on your device; completed results can be reused.",
+    "es": "Admite varios formatos RAW. El tiempo de procesamiento inicial depende del dispositivo; los resultados se pueden reutilizar.",
+    "fr": "Prend en charge plusieurs formats RAW. La durée du premier traitement dépend de votre appareil ; les résultats peuvent ensuite être réutilisés.",
+    "ja": "複数の RAW 形式に対応。初回の処理時間はデバイスによって異なり、完了後は結果を再利用できます。",
+    "zh-Hans": "支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。"
+  },
+  "保存": {
+    "de": "Speichern",
+    "en": "Save",
+    "es": "Guardar",
+    "fr": "Enregistrer",
+    "ja": "保存",
+    "zh-Hans": "保存"
+  },
+  "关闭 AI 降噪": {
+    "de": "KI-Entrauschen deaktivieren",
+    "en": "Turn off AI denoise",
+    "es": "Desactivar reducción de ruido con IA",
+    "fr": "Désactiver le débruitage IA",
+    "ja": "AI ノイズ除去を無効にする",
+    "zh-Hans": "关闭 AI 降噪"
+  },
+  "已应用": {
+    "de": "Angewendet",
+    "en": "Applied",
+    "es": "Aplicado",
+    "fr": "Appliqué",
+    "ja": "適用済み",
+    "zh-Hans": "已应用"
+  },
+  "已应用 AI 降噪；曝光和外观调整复用结果。": {
+    "de": "KI-Entrauschen angewendet. Belichtungs- und Look-Anpassungen verwenden das Ergebnis erneut.",
+    "en": "AI denoise applied. Exposure and look adjustments reuse the result.",
+    "es": "Reducción de ruido con IA aplicada. Los ajustes de exposición y apariencia reutilizan el resultado.",
+    "fr": "Débruitage IA appliqué. Les réglages d’exposition et de rendu réutilisent le résultat.",
+    "ja": "AI ノイズ除去を適用しました。露出やルックの調整では結果を再利用します。",
+    "zh-Hans": "已应用 AI 降噪；曝光和外观调整复用结果。"
+  },
+  "普通降噪参数已保留，关闭 AI 降噪即可恢复。": {
+    "de": "Die üblichen Entrauschungseinstellungen bleiben erhalten. Deaktivieren Sie KI-Entrauschen, um sie wieder zu verwenden.",
+    "en": "Standard denoise settings are retained. Turn off AI denoise to restore them.",
+    "es": "Los ajustes normales de reducción de ruido se conservan. Desactiva la IA para restaurarlos.",
+    "fr": "Les réglages habituels de débruitage sont conservés. Désactivez le débruitage IA pour les rétablir.",
+    "ja": "通常のノイズ除去設定は保持されています。AI ノイズ除去をオフにすると元に戻ります。",
+    "zh-Hans": "普通降噪参数已保留，关闭 AI 降噪即可恢复。"
+  },
+  "正在保存 AI 结果": {
+    "de": "KI-Ergebnis wird gespeichert",
+    "en": "Saving AI result",
+    "es": "Guardando resultado de IA",
+    "fr": "Enregistrement du résultat IA",
+    "ja": "AI 処理結果を保存中",
+    "zh-Hans": "正在保存 AI 结果"
+  },
+  "正在准备 AI 降噪": {
+    "de": "KI-Entrauschen wird vorbereitet",
+    "en": "Preparing AI denoise",
+    "es": "Preparando reducción de ruido con IA",
+    "fr": "Préparation du débruitage IA",
+    "ja": "AI ノイズ除去を準備中",
+    "zh-Hans": "正在准备 AI 降噪"
+  },
+  "正在处理 RAW 噪声": {
+    "de": "RAW-Rauschen wird verarbeitet",
+    "en": "Processing RAW noise",
+    "es": "Procesando ruido RAW",
+    "fr": "Traitement du bruit RAW",
+    "ja": "RAW ノイズを処理中",
+    "zh-Hans": "正在处理 RAW 噪声"
+  },
+  "正在处理颜色噪声": {
+    "de": "Farbrauschen wird verarbeitet",
+    "en": "Processing color noise",
+    "es": "Procesando ruido de color",
+    "fr": "Traitement du bruit chromatique",
+    "ja": "カラーノイズを処理中",
+    "zh-Hans": "正在处理颜色噪声"
+  },
+  "此构建未安装 AI 降噪模型。": {
+    "de": "Dieses Build enthält kein KI-Entrauschungsmodell.",
+    "en": "This build does not include the AI denoise model.",
+    "es": "Esta compilación no incluye el modelo de reducción de ruido con IA.",
+    "fr": "Cette version ne contient pas le modèle de débruitage IA.",
+    "ja": "このビルドには AI ノイズ除去モデルが含まれていません。",
+    "zh-Hans": "此构建未安装 AI 降噪模型。"
+  },
+  "此照片或构建尚不能使用 AI 降噪。": {
+    "de": "KI-Entrauschen ist für dieses Foto oder Build nicht verfügbar.",
+    "en": "AI denoising is unavailable for this photo or build.",
+    "es": "La reducción de ruido con IA no está disponible para esta foto o compilación.",
+    "fr": "Le débruitage IA est indisponible pour cette photo ou cette version.",
+    "ja": "この写真またはビルドでは AI ノイズ除去を使用できません。",
+    "zh-Hans": "此照片或构建尚不能使用 AI 降噪。"
+  },
+  "请先完成此照片的 AI 降噪，再预览或导出。": {
+    "de": "Schließe die KI-Entrauschung dieses Fotos vor Vorschau oder Export ab.",
+    "en": "Complete AI denoising for this photo before previewing or exporting.",
+    "es": "Completa la reducción de ruido con IA de esta foto antes de previsualizarla o exportarla.",
+    "fr": "Terminez le débruitage IA de cette photo avant de la prévisualiser ou de l’exporter.",
+    "ja": "プレビューや書き出しの前に、この写真の AI ノイズ除去を完了してください。",
+    "zh-Hans": "请先完成此照片的 AI 降噪，再预览或导出。"
+  },
+  "位置与尺寸": {
+    "de": "Position und Größe",
+    "en": "Position and size",
+    "es": "Posición y tamaño",
+    "fr": "Position et dimensions",
+    "ja": "位置とサイズ",
+    "zh-Hans": "位置与尺寸"
+  },
+  "已启用": {
+    "de": "Aktiviert",
+    "en": "Enabled",
+    "es": "Activado",
+    "fr": "Activé",
+    "ja": "有効",
+    "zh-Hans": "已启用"
+  },
+  "照片处理设置": {
+    "de": "Fotoverarbeitung",
+    "en": "Photo processing settings",
+    "es": "Ajustes de procesamiento",
+    "fr": "Réglages de traitement photo",
+    "ja": "写真の処理設定",
+    "zh-Hans": "照片处理设置"
+  },
+  "锁定当前比例": {
+    "de": "Aktuelles Seitenverhältnis sperren",
+    "en": "Lock current aspect ratio",
+    "es": "Bloquear la proporción actual",
+    "fr": "Verrouiller le rapport actuel",
+    "ja": "現在の縦横比を固定",
+    "zh-Hans": "锁定当前比例"
+  },
+  "已保存": {
+    "de": "Gespeichert",
+    "en": "Saved",
+    "es": "Guardado",
+    "fr": "Enregistré",
+    "ja": "保存済み",
+    "zh-Hans": "已保存"
+  },
+  "已停用": {
+    "de": "Deaktiviert",
+    "en": "Disabled",
+    "es": "Desactivado",
+    "fr": "Désactivé",
+    "ja": "無効",
+    "zh-Hans": "已停用"
+  },
+  "RAW 降噪": {
+    "de": "RAW-Rauschreduzierung",
+    "en": "RAW noise reduction",
+    "es": "Reducción de ruido RAW",
+    "fr": "Réduction du bruit RAW",
+    "ja": "RAW ノイズ低減",
+    "zh-Hans": "RAW 降噪"
+  },
+  "仅已修改": {
+    "de": "Nur geändert",
+    "en": "Modified only",
+    "es": "Solo modificados",
+    "fr": "Modifiés uniquement",
+    "ja": "変更した項目のみ",
+    "zh-Hans": "仅已修改"
+  },
+  "以下目标尚未完成本次历史操作，请检查原因后重试。": {
+    "de": "Der Verlaufsschritt ist für diese Fotos unvollständig. Prüfe den Grund und versuche es erneut.",
+    "en": "The history operation is incomplete for these photos. Check the reason and retry.",
+    "es": "La operación de historial no se ha completado para estas fotos. Comprueba el motivo y vuelve a intentarlo.",
+    "fr": "L’opération d’historique est incomplète pour ces photos. Vérifiez la cause et réessayez.",
+    "ja": "次の写真では履歴操作が完了していません。原因を確認して再試行してください。",
+    "zh-Hans": "以下目标尚未完成本次历史操作，请检查原因后重试。"
+  },
+  "保存失败": {
+    "de": "Speichern fehlgeschlagen",
+    "en": "Save failed",
+    "es": "Error al guardar",
+    "fr": "Échec de l’enregistrement",
+    "ja": "保存に失敗",
+    "zh-Hans": "保存失败"
+  },
+  "全部": {
+    "de": "Alle",
+    "en": "All",
+    "es": "Todo",
+    "fr": "Tout",
+    "ja": "すべて",
+    "zh-Hans": "全部"
+  },
+  "几何与镜头仅在“全部”或显式选择时包含。": {
+    "de": "Geometrie und Objektiv werden nur mit „Alle“ oder bei ausdrücklicher Auswahl übernommen.",
+    "en": "Geometry and lens settings are included only with All or an explicit selection.",
+    "es": "La geometría y el objetivo solo se incluyen con Todo o al seleccionarlos expresamente.",
+    "fr": "La géométrie et l’objectif sont inclus uniquement avec « Tout » ou une sélection explicite.",
+    "ja": "ジオメトリとレンズは「すべて」または明示的に選択した場合のみ含まれます。",
+    "zh-Hans": "几何与镜头仅在“全部”或显式选择时包含。"
+  },
+  "历史仅保留在本次会话；已保存的调整会在重新打开时恢复。": {
+    "de": "Der Verlauf gilt für diese Sitzung. Gespeicherte Anpassungen werden beim erneuten Öffnen wiederhergestellt.",
+    "en": "History lasts for this session. Saved adjustments are restored when you reopen a photo.",
+    "es": "El historial dura esta sesión. Los ajustes guardados se restauran al volver a abrir una foto.",
+    "fr": "L’historique est limité à cette session. Les réglages enregistrés sont restaurés à la réouverture.",
+    "ja": "履歴はこのセッション中のみ保持されます。保存済みの調整は写真を再度開くと復元されます。",
+    "zh-Hans": "历史仅保留在本次会话；已保存的调整会在重新打开时恢复。"
+  },
+  "垂直位置": {
+    "de": "Vertikale Position",
+    "en": "Vertical position",
+    "es": "Posición vertical",
+    "fr": "Position verticale",
+    "ja": "垂直位置",
+    "zh-Hans": "垂直位置"
+  },
+  "复制范围": {
+    "de": "Kopierumfang",
+    "en": "Copy scope",
+    "es": "Alcance de la copia",
+    "fr": "Éléments à copier",
+    "ja": "コピーする範囲",
+    "zh-Hans": "复制范围"
+  },
+  "复制调整": {
+    "de": "Anpassungen kopieren",
+    "en": "Copy Adjustments",
+    "es": "Copiar ajustes",
+    "fr": "Copier les réglages",
+    "ja": "調整をコピー",
+    "zh-Hans": "复制调整"
+  },
+  "完成": {
+    "de": "Fertig",
+    "en": "Done",
+    "es": "Listo",
+    "fr": "Terminé",
+    "ja": "完了",
+    "zh-Hans": "完成"
+  },
+  "宽度": {
+    "de": "Breite",
+    "en": "Width",
+    "es": "Anchura",
+    "fr": "Largeur",
+    "ja": "幅",
+    "zh-Hans": "宽度"
+  },
+  "尚未复制调整。请先从一张照片复制所需范围。": {
+    "de": "Noch keine Anpassungen kopiert. Kopieren Sie zuerst die gewünschten Einstellungen eines Fotos.",
+    "en": "No adjustments copied yet. Copy the desired settings from a photo first.",
+    "es": "Aún no se han copiado ajustes. Copia primero los ajustes deseados de una foto.",
+    "fr": "Aucun réglage copié. Copiez d’abord les réglages souhaités d’une photo.",
+    "ja": "調整はまだコピーされていません。写真から必要な項目をコピーしてください。",
+    "zh-Hans": "尚未复制调整。请先从一张照片复制所需范围。"
+  },
+  "已保存 {0} 张 · 未变化 {1} 张 · 已跳过 {2} 张 · 已撤销 {3} 张 · 未完成 {4} 张": {
+    "de": "Gespeichert {0} · Unverändert {1} · Übersprungen {2} · Rückgängig {3} · Offen {4}",
+    "en": "Saved {0} · Unchanged {1} · Skipped {2} · Undone {3} · Incomplete {4}",
+    "es": "Guardadas {0} · Sin cambios {1} · Omitidas {2} · Deshechas {3} · Pendientes {4}",
+    "fr": "Enregistrées {0} · Inchangées {1} · Ignorées {2} · Annulées {3} · Inachevées {4}",
+    "ja": "保存済み {0} 枚 · 変更なし {1} 枚 · スキップ {2} 枚 · 取り消し済み {3} 枚 · 未完了 {4} 枚",
+    "zh-Hans": "已保存 {0} 张 · 未变化 {1} 张 · 已跳过 {2} 张 · 已撤销 {3} 张 · 未完成 {4} 张"
+  },
+  "已撤销": {
+    "de": "Rückgängig gemacht",
+    "en": "Undone",
+    "es": "Deshecho",
+    "fr": "Annulé",
+    "ja": "取り消し済み",
+    "zh-Hans": "已撤销"
+  },
+  "已撤销 {0} 张 · 未完成 {1} 张": {
+    "de": "Rückgängig {0} · Offen {1}",
+    "en": "Undone {0} · Incomplete {1}",
+    "es": "Deshechas {0} · Pendientes {1}",
+    "fr": "Annulées {0} · Inachevées {1}",
+    "ja": "取り消し済み {0} 枚 · 未完了 {1} 枚",
+    "zh-Hans": "已撤销 {0} 张 · 未完成 {1} 张"
+  },
+  "已跳过": {
+    "de": "Übersprungen",
+    "en": "Skipped",
+    "es": "Omitida",
+    "fr": "Ignorée",
+    "ja": "スキップ済み",
+    "zh-Hans": "已跳过"
+  },
+  "已选 {0} 项": {
+    "de": "{0} ausgewählt",
+    "en": "{0} selected",
+    "es": "{0} seleccionados",
+    "fr": "{0} sélectionnés",
+    "ja": "{0} 項目を選択中",
+    "zh-Hans": "已选 {0} 项"
+  },
+  "已重做 {0} 张 · 未完成 {1} 张": {
+    "de": "Wiederholt {0} · Offen {1}",
+    "en": "Redone {0} · Incomplete {1}",
+    "es": "Rehechas {0} · Pendientes {1}",
+    "fr": "Rétablies {0} · Inachevées {1}",
+    "ja": "やり直し済み {0} 枚 · 未完了 {1} 枚",
+    "zh-Hans": "已重做 {0} 张 · 未完成 {1} 张"
+  },
+  "应用并保存": {
+    "de": "Anwenden und speichern",
+    "en": "Apply and Save",
+    "es": "Aplicar y guardar",
+    "fr": "Appliquer et enregistrer",
+    "ja": "適用して保存",
+    "zh-Hans": "应用并保存"
+  },
+  "待处理": {
+    "de": "Aktion erforderlich",
+    "en": "Needs attention",
+    "es": "Requiere atención",
+    "fr": "À traiter",
+    "ja": "対応が必要",
+    "zh-Hans": "待处理"
+  },
+  "所选调整与目标不兼容，请调整范围或跳过目标。": {
+    "de": "Diese Anpassungen sind mit dem Foto nicht kompatibel. Ändern Sie den Umfang oder überspringen Sie es.",
+    "en": "These adjustments are incompatible with this photo. Change the scope or skip it.",
+    "es": "Estos ajustes no son compatibles con esta foto. Cambia el alcance u omítela.",
+    "fr": "Ces réglages sont incompatibles avec cette photo. Modifiez la sélection ou ignorez-la.",
+    "ja": "選択した調整はこの写真に対応していません。範囲を変更するか、スキップしてください。",
+    "zh-Hans": "所选调整与目标不兼容，请调整范围或跳过目标。"
+  },
+  "撤销": {
+    "de": "Rückgängig",
+    "en": "Undo",
+    "es": "Deshacer",
+    "fr": "Annuler",
+    "ja": "取り消す",
+    "zh-Hans": "撤销"
+  },
+  "撤销 {0} 张": {
+    "de": "Fotos rückgängig machen: {0}",
+    "en": "Undo photos: {0}",
+    "es": "Deshacer fotos: {0}",
+    "fr": "Annuler les photos : {0}",
+    "ja": "{0} 枚を取り消す",
+    "zh-Hans": "撤销 {0} 张"
+  },
+  "操作未完成，请重试。": {
+    "de": "Der Vorgang ist nicht abgeschlossen. Versuchen Sie es erneut.",
+    "en": "The operation is incomplete. Try again.",
+    "es": "La operación no se ha completado. Inténtalo de nuevo.",
+    "fr": "L’opération est inachevée. Réessayez.",
+    "ja": "操作が完了していません。再試行してください。",
+    "zh-Hans": "操作未完成，请重试。"
+  },
+  "旋转": {
+    "de": "Drehung",
+    "en": "Rotation",
+    "es": "Rotación",
+    "fr": "Rotation",
+    "ja": "回転",
+    "zh-Hans": "旋转"
+  },
+  "旧版降噪": {
+    "de": "Frühere Rauschreduzierung",
+    "en": "Legacy noise reduction",
+    "es": "Reducción de ruido anterior",
+    "fr": "Ancienne réduction du bruit",
+    "ja": "従来のノイズ低減",
+    "zh-Hans": "旧版降噪"
+  },
+  "暂无编辑历史。": {
+    "de": "Noch kein Bearbeitungsverlauf.",
+    "en": "No edit history yet.",
+    "es": "Aún no hay historial de edición.",
+    "fr": "Aucun historique de modification.",
+    "ja": "編集履歴はまだありません。",
+    "zh-Hans": "暂无编辑历史。"
+  },
+  "曝光模式": {
+    "de": "Belichtungsmodus",
+    "en": "Exposure mode",
+    "es": "Modo de exposición",
+    "fr": "Mode d’exposition",
+    "ja": "露出モード",
+    "zh-Hans": "曝光模式"
+  },
+  "未变化": {
+    "de": "Unverändert",
+    "en": "Unchanged",
+    "es": "Sin cambios",
+    "fr": "Inchangée",
+    "ja": "変更なし",
+    "zh-Hans": "未变化"
+  },
+  "本次会话历史": {
+    "de": "Sitzungsverlauf",
+    "en": "Session History",
+    "es": "Historial de la sesión",
+    "fr": "Historique de la session",
+    "ja": "セッション履歴",
+    "zh-Hans": "本次会话历史"
+  },
+  "来源：{0} · {1} 项调整": {
+    "de": "Quelle: {0} · {1} Anpassungen",
+    "en": "Source: {0} · {1} adjustments",
+    "es": "Origen: {0} · {1} ajustes",
+    "fr": "Source : {0} · {1} réglages",
+    "ja": "コピー元：{0} · {1} 項目",
+    "zh-Hans": "来源：{0} · {1} 项调整"
+  },
+  "查看调整范围": {
+    "de": "Anpassungsumfang anzeigen",
+    "en": "View Adjustment Scope",
+    "es": "Ver alcance de los ajustes",
+    "fr": "Voir les réglages sélectionnés",
+    "ja": "調整範囲を表示",
+    "zh-Hans": "查看调整范围"
+  },
+  "检查目标": {
+    "de": "Fotos prüfen",
+    "en": "Check Photos",
+    "es": "Comprobar fotos",
+    "fr": "Vérifier les photos",
+    "ja": "対象を確認",
+    "zh-Hans": "检查目标"
+  },
+  "正在检查目标…": {
+    "de": "Fotos werden geprüft…",
+    "en": "Checking photos…",
+    "es": "Comprobando fotos…",
+    "fr": "Vérification des photos…",
+    "ja": "対象を確認中…",
+    "zh-Hans": "正在检查目标…"
+  },
+  "水平位置": {
+    "de": "Horizontale Position",
+    "en": "Horizontal position",
+    "es": "Posición horizontal",
+    "fr": "Position horizontale",
+    "ja": "水平位置",
+    "zh-Hans": "水平位置"
+  },
+  "没有可处理目标，请重新选择照片。": {
+    "de": "Keine Fotos zum Verarbeiten übrig. Wählen Sie erneut Fotos aus.",
+    "en": "No photos remain to process. Select photos again.",
+    "es": "No quedan fotos que procesar. Vuelve a seleccionar fotos.",
+    "fr": "Aucune photo à traiter. Sélectionnez à nouveau des photos.",
+    "ja": "処理する写真がありません。写真を選び直してください。",
+    "zh-Hans": "没有可处理目标，请重新选择照片。"
+  },
+  "没有可复制的调整，请选择其他范围。": {
+    "de": "Keine Anpassungen zum Kopieren. Wählen Sie einen anderen Umfang.",
+    "en": "No adjustments to copy. Choose a different scope.",
+    "es": "No hay ajustes que copiar. Elige otro alcance.",
+    "fr": "Aucun réglage à copier. Choisissez une autre sélection.",
+    "ja": "コピーする調整がありません。別の範囲を選択してください。",
+    "zh-Hans": "没有可复制的调整，请选择其他范围。"
+  },
+  "清空选择": {
+    "de": "Auswahl aufheben",
+    "en": "Clear Selection",
+    "es": "Borrar selección",
+    "fr": "Effacer la sélection",
+    "ja": "選択を解除",
+    "zh-Hans": "清空选择"
+  },
+  "照片或调整已变化，请重新检查目标。": {
+    "de": "Das Foto oder seine Anpassungen wurden geändert. Prüfen Sie das Ziel erneut.",
+    "en": "The photo or its adjustments have changed. Check the target again.",
+    "es": "La foto o sus ajustes han cambiado. Comprueba de nuevo el destino.",
+    "fr": "La photo ou ses réglages ont changé. Vérifiez à nouveau la cible.",
+    "ja": "写真または調整が変更されました。対象を再確認してください。",
+    "zh-Hans": "照片或调整已变化，请重新检查目标。"
+  },
+  "畸变校正": {
+    "de": "Verzeichnungskorrektur",
+    "en": "Distortion correction",
+    "es": "Corrección de distorsión",
+    "fr": "Correction de la distorsion",
+    "ja": "歪曲補正",
+    "zh-Hans": "畸变校正"
+  },
+  "白平衡模式": {
+    "de": "Weißabgleichmodus",
+    "en": "White balance mode",
+    "es": "Modo de balance de blancos",
+    "fr": "Mode de balance des blancs",
+    "ja": "ホワイトバランスモード",
+    "zh-Hans": "白平衡模式"
+  },
+  "目标所需的外观不可用，请先导入外观。": {
+    "de": "Der benötigte Look ist nicht verfügbar. Importieren Sie ihn zuerst.",
+    "en": "The required look is unavailable. Import it first.",
+    "es": "El aspecto necesario no está disponible. Impórtalo primero.",
+    "fr": "Le rendu requis est indisponible. Importez-le d’abord.",
+    "ja": "必要な外観を利用できません。先に読み込んでください。",
+    "zh-Hans": "目标所需的外观不可用，请先导入外观。"
+  },
+  "目标无法保留未选参数，请调整复制范围。": {
+    "de": "Nicht ausgewählte Einstellungen können nicht erhalten bleiben. Ändern Sie den Kopierumfang.",
+    "en": "The target cannot preserve unselected settings. Change the copy scope.",
+    "es": "No se pueden conservar los ajustes no seleccionados. Cambia el alcance de la copia.",
+    "fr": "Les réglages non sélectionnés ne peuvent pas être préservés. Modifiez la sélection à copier.",
+    "ja": "未選択の設定を保持できません。コピー範囲を変更してください。",
+    "zh-Hans": "目标无法保留未选参数，请调整复制范围。"
+  },
+  "目标：{0} 张照片": {
+    "de": "Zielfotos: {0}",
+    "en": "Target photos: {0}",
+    "es": "Fotos de destino: {0}",
+    "fr": "Photos cibles : {0}",
+    "ja": "対象：{0} 枚",
+    "zh-Hans": "目标：{0} 张照片"
+  },
+  "粘贴调整": {
+    "de": "Anpassungen einfügen",
+    "en": "Paste Adjustments",
+    "es": "Pegar ajustes",
+    "fr": "Coller les réglages",
+    "ja": "調整を貼り付け",
+    "zh-Hans": "粘贴调整"
+  },
+  "自动裁切": {
+    "de": "Automatischer Zuschnitt",
+    "en": "Automatic crop",
+    "es": "Recorte automático",
+    "fr": "Recadrage automatique",
+    "ja": "自動クロップ",
+    "zh-Hans": "自动裁切"
+  },
+  "色度降噪": {
+    "de": "Reduzierung des Chroma-Rauschens",
+    "en": "Chroma noise reduction",
+    "es": "Reducción de ruido cromático",
+    "fr": "Réduction du bruit chroma",
+    "ja": "クロマノイズ低減",
+    "zh-Hans": "色度降噪"
+  },
+  "请先应用或放弃未完成的输入和几何草稿。": {
+    "de": "Wenden Sie offene Eingaben und Geometrieentwürfe zuerst an oder verwerfen Sie sie.",
+    "en": "Apply or discard unfinished input and geometry drafts first.",
+    "es": "Aplica o descarta primero las entradas y los borradores de geometría pendientes.",
+    "fr": "Appliquez ou abandonnez d’abord les saisies et les brouillons de géométrie en cours.",
+    "ja": "未完了の入力とジオメトリの下書きを先に適用または破棄してください。",
+    "zh-Hans": "请先应用或放弃未完成的输入和几何草稿。"
+  },
+  "调整内容无法读取，请重新复制。": {
+    "de": "Die Anpassungen können nicht gelesen werden. Kopieren Sie sie erneut.",
+    "en": "The adjustments cannot be read. Copy them again.",
+    "es": "No se pueden leer los ajustes. Vuelve a copiarlos.",
+    "fr": "Les réglages ne peuvent pas être lus. Copiez-les à nouveau.",
+    "ja": "調整内容を読み取れません。もう一度コピーしてください。",
+    "zh-Hans": "调整内容无法读取，请重新复制。"
+  },
+  "调整已变化": {
+    "de": "Anpassungen geändert",
+    "en": "Adjustments changed",
+    "es": "Ajustes modificados",
+    "fr": "Réglages modifiés",
+    "ja": "調整が変更されました",
+    "zh-Hans": "调整已变化"
+  },
+  "调整照片": {
+    "de": "Fotoanpassung",
+    "en": "Photo Adjustment",
+    "es": "Ajuste de foto",
+    "fr": "Réglage de photo",
+    "ja": "写真の調整",
+    "zh-Hans": "调整照片"
+  },
+  "跳过": {
+    "de": "Überspringen",
+    "en": "Skip",
+    "es": "Omitir",
+    "fr": "Ignorer",
+    "ja": "スキップ",
+    "zh-Hans": "跳过"
+  },
+  "跳过以上目标后重试": {
+    "de": "Aufgeführte Fotos überspringen und erneut versuchen",
+    "en": "Skip Listed Photos and Retry",
+    "es": "Omitir las fotos indicadas y reintentar",
+    "fr": "Ignorer les photos ci-dessus et réessayer",
+    "ja": "上記の写真をスキップして再試行",
+    "zh-Hans": "跳过以上目标后重试"
+  },
+  "选择此组": {
+    "de": "Gruppe auswählen",
+    "en": "Select Group",
+    "es": "Seleccionar grupo",
+    "fr": "Sélectionner ce groupe",
+    "ja": "このグループを選択",
+    "zh-Hans": "选择此组"
+  },
+  "重做": {
+    "de": "Wiederholen",
+    "en": "Redo",
+    "es": "Rehacer",
+    "fr": "Rétablir",
+    "ja": "やり直す",
+    "zh-Hans": "重做"
+  },
+  "重做 {0} 张": {
+    "de": "Fotos wiederherstellen: {0}",
+    "en": "Redo photos: {0}",
+    "es": "Rehacer fotos: {0}",
+    "fr": "Rétablir les photos : {0}",
+    "ja": "{0} 枚をやり直す",
+    "zh-Hans": "重做 {0} 张"
+  },
+  "重试未完成项": {
+    "de": "Offene erneut versuchen",
+    "en": "Retry Incomplete",
+    "es": "Reintentar pendientes",
+    "fr": "Réessayer les inachevées",
+    "ja": "未完了の項目を再試行",
+    "zh-Hans": "重试未完成项"
+  },
+  "降噪参数": {
+    "de": "Rauschminderungseinstellungen",
+    "en": "Noise reduction settings",
+    "es": "Ajustes de reducción de ruido",
+    "fr": "Réglages de réduction du bruit",
+    "ja": "ノイズ低減設定",
+    "zh-Hans": "降噪参数"
+  },
+  "高度": {
+    "de": "Höhe",
+    "en": "Height",
+    "es": "Altura",
+    "fr": "Hauteur",
+    "ja": "高さ",
+    "zh-Hans": "高度"
+  },
+  "重新载入已保存调整": {
+    "de": "Gespeicherte Anpassungen neu laden",
+    "en": "Reload Saved Adjustments",
+    "es": "Recargar ajustes guardados",
+    "fr": "Recharger les réglages enregistrés",
+    "ja": "保存済みの調整を読み直す",
+    "zh-Hans": "重新载入已保存调整"
+  },
+  "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。": {
+    "de": "Beim Neuladen werden ungespeicherte Anpassungen verworfen und der aktuell gespeicherte Stand dieses Fotos geladen.",
+    "en": "Reloading discards unsaved adjustments and reads the current saved record for this photo.",
+    "es": "Al recargar se descartan los ajustes sin guardar y se lee el registro guardado actual de esta foto.",
+    "fr": "Le rechargement abandonne les réglages non enregistrés et lit les réglages actuellement enregistrés pour cette photo.",
+    "ja": "読み直すと未保存の調整を破棄し、この写真に現在保存されている設定を読み込みます。",
+    "zh-Hans": "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。"
+  },
+  "复制调整…": {
+    "de": "Anpassungen kopieren…",
+    "en": "Copy Adjustments…",
+    "es": "Copiar ajustes…",
+    "fr": "Copier les réglages…",
+    "ja": "調整をコピー…",
+    "zh-Hans": "复制调整…"
+  },
+  "本次会话历史…": {
+    "de": "Sitzungsverlauf…",
+    "en": "Session History…",
+    "es": "Historial de la sesión…",
+    "fr": "Historique de la session…",
+    "ja": "セッション履歴…",
+    "zh-Hans": "本次会话历史…"
+  },
+  "粘贴调整…": {
+    "de": "Anpassungen einfügen…",
+    "en": "Paste Adjustments…",
+    "es": "Pegar ajustes…",
+    "fr": "Coller les réglages…",
+    "ja": "調整を貼り付け…",
+    "zh-Hans": "粘贴调整…"
+  },
+  "保存当前调整为预设…": {
+    "de": "Aktuelle Anpassungen als Vorgabe speichern…",
+    "en": "Save Current Adjustments as Preset…",
+    "es": "Guardar ajustes actuales como preajuste…",
+    "fr": "Enregistrer les réglages actuels comme préréglage…",
+    "ja": "現在の調整をプリセットとして保存…",
+    "zh-Hans": "保存当前调整为预设…"
+  },
+  "保存所选调整，之后可应用到其他照片。": {
+    "de": "Speichern Sie ausgewählte Anpassungen, um sie später auf andere Fotos anzuwenden.",
+    "en": "Save selected adjustments to apply them to other photos later.",
+    "es": "Guarda los ajustes seleccionados para aplicarlos después a otras fotos.",
+    "fr": "Enregistrez les réglages sélectionnés pour les appliquer ensuite à d’autres photos.",
+    "ja": "選択した調整を保存すると、後で他の写真に適用できます。",
+    "zh-Hans": "保存所选调整，之后可应用到其他照片。"
+  },
+  "保存预设": {
+    "de": "Vorgabe speichern",
+    "en": "Save Preset",
+    "es": "Guardar ajuste preestablecido",
+    "fr": "Enregistrer le préréglage",
+    "ja": "プリセットを保存",
+    "zh-Hans": "保存预设"
+  },
+  "删除预设？": {
+    "de": "Vorgabe löschen?",
+    "en": "Delete Preset?",
+    "es": "¿Eliminar el ajuste?",
+    "fr": "Supprimer le préréglage ?",
+    "ja": "プリセットを削除しますか？",
+    "zh-Hans": "删除预设？"
+  },
+  "另存": {
+    "de": "Speichern unter",
+    "en": "Save As",
+    "es": "Guardar como",
+    "fr": "Enregistrer sous",
+    "ja": "別名で保存",
+    "zh-Hans": "另存"
+  },
+  "同名预设已存在，请使用其他名称。": {
+    "de": "Eine Vorgabe mit diesem Namen ist bereits vorhanden. Verwenden Sie einen anderen Namen.",
+    "en": "A preset with this name already exists. Use another name.",
+    "es": "Ya existe un ajuste con este nombre. Usa otro nombre.",
+    "fr": "Un préréglage porte déjà ce nom. Utilisez un autre nom.",
+    "ja": "同じ名前のプリセットが存在します。別の名前を使用してください。",
+    "zh-Hans": "同名预设已存在，请使用其他名称。"
+  },
+  "尚无用户预设": {
+    "de": "Noch keine eigenen Vorgaben",
+    "en": "No User Presets Yet",
+    "es": "Aún no hay ajustes propios",
+    "fr": "Aucun préréglage personnel",
+    "ja": "ユーザープリセットはまだありません",
+    "zh-Hans": "尚无用户预设"
+  },
+  "应用预设": {
+    "de": "Vorgabe anwenden",
+    "en": "Apply Preset",
+    "es": "Aplicar ajuste preestablecido",
+    "fr": "Appliquer le préréglage",
+    "ja": "プリセットを適用",
+    "zh-Hans": "应用预设"
+  },
+  "我的预设": {
+    "de": "Meine Vorgaben",
+    "en": "My Presets",
+    "es": "Mis ajustes preestablecidos",
+    "fr": "Mes préréglages",
+    "ja": "マイプリセット",
+    "zh-Hans": "我的预设"
+  },
+  "新预设": {
+    "de": "Neue Vorgabe",
+    "en": "New Preset",
+    "es": "Nuevo ajuste preestablecido",
+    "fr": "Nouveau préréglage",
+    "ja": "新しいプリセット",
+    "zh-Hans": "新预设"
+  },
+  "无法创建新的预设标识，请重试。": {
+    "de": "Es konnte keine neue Vorgabenkennung erstellt werden. Versuchen Sie es erneut.",
+    "en": "Could not create a new preset identifier. Try again.",
+    "es": "No se pudo crear un identificador para el ajuste. Inténtalo de nuevo.",
+    "fr": "Impossible de créer un nouvel identifiant de préréglage. Réessayez.",
+    "ja": "新しいプリセット識別子を作成できませんでした。再試行してください。",
+    "zh-Hans": "无法创建新的预设标识，请重试。"
+  },
+  "此预设库来自更新版本，请更新应用后重试。": {
+    "de": "Diese Vorgabenbibliothek stammt aus einer neueren Version. Aktualisieren Sie die App und versuchen Sie es erneut.",
+    "en": "This preset library was created by a newer version. Update the app and try again.",
+    "es": "Esta biblioteca de ajustes procede de una versión más reciente. Actualiza la aplicación e inténtalo de nuevo.",
+    "fr": "Cette bibliothèque de préréglages provient d’une version plus récente. Mettez l’application à jour, puis réessayez.",
+    "ja": "このプリセットライブラリは新しいバージョンで作成されています。アプリを更新して再試行してください。",
+    "zh-Hans": "此预设库来自更新版本，请更新应用后重试。"
+  },
+  "管理预设：{0}": {
+    "de": "Vorgabe verwalten: {0}",
+    "en": "Manage preset: {0}",
+    "es": "Administrar ajuste: {0}",
+    "fr": "Gérer le préréglage : {0}",
+    "ja": "プリセットを管理：{0}",
+    "zh-Hans": "管理预设：{0}"
+  },
+  "覆盖": {
+    "de": "Überschreiben",
+    "en": "Overwrite",
+    "es": "Sobrescribir",
+    "fr": "Remplacer",
+    "ja": "上書き",
+    "zh-Hans": "覆盖"
+  },
+  "覆盖预设？": {
+    "de": "Vorgabe überschreiben?",
+    "en": "Overwrite Preset?",
+    "es": "¿Sobrescribir el ajuste?",
+    "fr": "Remplacer le préréglage ?",
+    "ja": "プリセットを上書きしますか？",
+    "zh-Hans": "覆盖预设？"
+  },
+  "请输入不同的预设名称。": {
+    "de": "Geben Sie einen anderen Namen für die Vorgabe ein.",
+    "en": "Enter a different preset name.",
+    "es": "Introduce otro nombre para el ajuste.",
+    "fr": "Saisissez un autre nom pour le préréglage.",
+    "ja": "別のプリセット名を入力してください。",
+    "zh-Hans": "请输入不同的预设名称。"
+  },
+  "请输入预设名称。": {
+    "de": "Geben Sie einen Namen für die Vorgabe ein.",
+    "en": "Enter a preset name.",
+    "es": "Introduce un nombre para el ajuste.",
+    "fr": "Saisissez un nom pour le préréglage.",
+    "ja": "プリセット名を入力してください。",
+    "zh-Hans": "请输入预设名称。"
+  },
+  "调整范围": {
+    "de": "Anpassungsumfang",
+    "en": "Adjustment Scope",
+    "es": "Alcance de los ajustes",
+    "fr": "Réglages à inclure",
+    "ja": "調整範囲",
+    "zh-Hans": "调整范围"
+  },
+  "重命名预设": {
+    "de": "Vorgabe umbenennen",
+    "en": "Rename Preset",
+    "es": "Renombrar ajuste preestablecido",
+    "fr": "Renommer le préréglage",
+    "ja": "プリセット名を変更",
+    "zh-Hans": "重命名预设"
+  },
+  "预设名称": {
+    "de": "Name der Vorgabe",
+    "en": "Preset Name",
+    "es": "Nombre del ajuste",
+    "fr": "Nom du préréglage",
+    "ja": "プリセット名",
+    "zh-Hans": "预设名称"
+  },
+  "预设已变化，请重新载入列表后重试。": {
+    "de": "Die Vorgabe wurde geändert. Laden Sie die Liste neu und versuchen Sie es erneut.",
+    "en": "The preset has changed. Reload the list and try again.",
+    "es": "El ajuste ha cambiado. Recarga la lista e inténtalo de nuevo.",
+    "fr": "Le préréglage a changé. Rechargez la liste, puis réessayez.",
+    "ja": "プリセットが変更されています。一覧を再読み込みしてから再試行してください。",
+    "zh-Hans": "预设已变化，请重新载入列表后重试。"
+  },
+  "预设库无法读取，原文件保持不变。请从备份恢复后重试。": {
+    "de": "Die Vorgabenbibliothek kann nicht gelesen werden. Die Originaldatei bleibt unverändert. Stellen Sie eine Sicherung wieder her und versuchen Sie es erneut.",
+    "en": "The preset library cannot be read. The original file is unchanged. Restore a backup and try again.",
+    "es": "No se puede leer la biblioteca de ajustes. El archivo original no ha cambiado. Restaura una copia de seguridad y vuelve a intentarlo.",
+    "fr": "La bibliothèque de préréglages est illisible. Le fichier original est conservé. Restaurez une sauvegarde, puis réessayez.",
+    "ja": "プリセットライブラリを読み込めません。元のファイルは変更されていません。バックアップから復元して再試行してください。",
+    "zh-Hans": "预设库无法读取，原文件保持不变。请从备份恢复后重试。"
+  },
+  "预设操作未完成：{0}": {
+    "de": "Vorgabenaktion fehlgeschlagen: {0}",
+    "en": "Preset operation failed: {0}",
+    "es": "No se completó la operación del ajuste: {0}",
+    "fr": "Échec de l’opération sur le préréglage : {0}",
+    "ja": "プリセットの操作を完了できませんでした：{0}",
+    "zh-Hans": "预设操作未完成：{0}"
+  },
+  "删除": {
+    "de": "Löschen",
+    "en": "Delete",
+    "es": "Eliminar",
+    "fr": "Supprimer",
+    "ja": "削除",
+    "zh-Hans": "删除"
+  },
+  "重命名": {
+    "de": "Umbenennen",
+    "en": "Rename",
+    "es": "Renombrar",
+    "fr": "Renommer",
+    "ja": "名前を変更",
+    "zh-Hans": "重命名"
+  },
+  "重新载入": {
+    "de": "Neu laden",
+    "en": "Reload",
+    "es": "Recargar",
+    "fr": "Recharger",
+    "ja": "再読み込み",
+    "zh-Hans": "重新载入"
+  },
+  "黑场": {
+    "de": "Schwarzpunkt",
+    "en": "Black point",
+    "es": "Punto negro",
+    "fr": "Point noir",
+    "ja": "黒レベル",
+    "zh-Hans": "黑场"
+  },
+  "白场": {
+    "de": "Weißpunkt",
+    "en": "White point",
+    "es": "Punto blanco",
+    "fr": "Point blanc",
+    "ja": "白レベル",
+    "zh-Hans": "白场"
+  },
+  "鲜艳度": {
+    "de": "Dynamik",
+    "en": "Vibrance",
+    "es": "Intensidad",
+    "fr": "Vibrance",
+    "ja": "自然な彩度",
+    "zh-Hans": "鲜艳度"
+  },
+  "无效的黑白场或鲜艳度参数": {
+    "de": "Ungültige Werte für Schwarzpunkt, Weißpunkt oder Dynamik",
+    "en": "Invalid black point, white point, or vibrance values",
+    "es": "Valores de punto negro, punto blanco o intensidad no válidos",
+    "fr": "Valeurs de point noir, de point blanc ou de vibrance non valides",
+    "ja": "黒レベル、白レベル、自然な彩度の値が無効です",
+    "zh-Hans": "无效的黑白场或鲜艳度参数"
+  },
+  "颜色分级": {
+    "de": "Color-Grading",
+    "en": "Color grading",
+    "es": "Gradación de color",
+    "fr": "Étalonnage des couleurs",
+    "ja": "カラーグレーディング",
+    "zh-Hans": "颜色分级"
+  },
+  "中间调": {
+    "de": "Mitteltöne",
+    "en": "Midtones",
+    "es": "Medios tonos",
+    "fr": "Tons moyens",
+    "ja": "中間調",
+    "zh-Hans": "中间调"
+  },
+  "无效的颜色分级参数": {
+    "de": "Ungültige Color-Grading-Werte",
+    "en": "Invalid color grading values",
+    "es": "Valores de gradación de color no válidos",
+    "fr": "Valeurs d’étalonnage des couleurs non valides",
+    "ja": "カラーグレーディングの値が無効です",
+    "zh-Hans": "无效的颜色分级参数"
+  },
+  "重置当前分区": {
+    "de": "Aktuellen Tonwertbereich zurücksetzen",
+    "en": "Reset current range",
+    "es": "Restablecer el rango actual",
+    "fr": "Réinitialiser la plage actuelle",
+    "ja": "現在の階調範囲をリセット",
+    "zh-Hans": "重置当前分区"
+  },
+  "重置颜色分级": {
+    "de": "Color-Grading zurücksetzen",
+    "en": "Reset color grading",
+    "es": "Restablecer la gradación de color",
+    "fr": "Réinitialiser l’étalonnage des couleurs",
+    "ja": "カラーグレーディングをリセット",
+    "zh-Hans": "重置颜色分级"
+  },
+  "恢复阴影、中间调和高光的颜色分级默认值？": {
+    "de": "Color-Grading für Schatten, Mitteltöne und Lichter zurücksetzen?",
+    "en": "Restore default color grading for shadows, midtones, and highlights?",
+    "es": "¿Restaurar la gradación de color predeterminada de sombras, medios tonos y luces?",
+    "fr": "Rétablir l’étalonnage par défaut des ombres, tons moyens et hautes lumières ?",
+    "ja": "シャドウ、中間調、ハイライトのカラーグレーディングを初期値に戻しますか？",
+    "zh-Hans": "恢复阴影、中间调和高光的颜色分级默认值？"
+  },
+  "上下拖动调整，方向键微调，Esc 取消": {
+    "de": "Zum Anpassen nach oben oder unten ziehen, mit Pfeiltasten feinjustieren, mit Esc abbrechen",
+    "en": "Drag up or down to adjust, use arrow keys for fine changes, Esc to cancel",
+    "es": "Arrastra hacia arriba o abajo para ajustar, usa las flechas para cambios precisos y Esc para cancelar",
+    "fr": "Faites glisser vers le haut ou le bas pour régler, utilisez les flèches pour affiner et Échap pour annuler",
+    "ja": "上下にドラッグして調整、矢印キーで微調整、Esc でキャンセル",
+    "zh-Hans": "上下拖动调整，方向键微调，Esc 取消"
+  },
+  "取色失败，请重试。": {
+    "de": "Die Farbe konnte nicht erfasst werden. Versuchen Sie es erneut.",
+    "en": "Could not sample. Try again.",
+    "es": "No se pudo tomar la muestra. Inténtalo de nuevo.",
+    "fr": "Impossible de prélever la couleur. Réessayez.",
+    "ja": "色を取得できませんでした。もう一度お試しください。",
+    "zh-Hans": "取色失败，请重试。"
+  },
+  "受影响色域：{0}": {
+    "de": "Betroffene Farbbereiche: {0}",
+    "en": "Affected ranges: {0}",
+    "es": "Gamas afectadas: {0}",
+    "fr": "Plages affectées : {0}",
+    "ja": "対象の色域：{0}",
+    "zh-Hans": "受影响色域：{0}"
+  },
+  "在照片上取色并上下拖动": {
+    "de": "Wählen Sie eine Farbe im Foto und ziehen Sie nach oben oder unten",
+    "en": "Sample the photo and drag up or down",
+    "es": "Toma una muestra en la foto y arrastra hacia arriba o abajo",
+    "fr": "Prélevez une couleur dans la photo, puis faites glisser vers le haut ou le bas",
+    "ja": "写真の色を選び、上下にドラッグ",
+    "zh-Hans": "在照片上取色并上下拖动"
+  },
+  "正在取色…": {
+    "de": "Farbe wird erfasst…",
+    "en": "Sampling…",
+    "es": "Muestreando…",
+    "fr": "Échantillonnage…",
+    "ja": "色を取得中…",
+    "zh-Hans": "正在取色…"
+  },
+  "此像素不可取样。": {
+    "de": "Dieses Pixel kann nicht erfasst werden.",
+    "en": "This pixel cannot be sampled.",
+    "es": "No se puede tomar una muestra de este píxel.",
+    "fr": "Ce pixel ne peut pas être échantillonné.",
+    "ja": "このピクセルからは色を取得できません。",
+    "zh-Hans": "此像素不可取样。"
+  },
+  "目标调整": {
+    "de": "Zielgerichtete Anpassung",
+    "en": "Targeted adjustment",
+    "es": "Ajuste selectivo",
+    "fr": "Réglage ciblé",
+    "ja": "ターゲット調整",
+    "zh-Hans": "目标调整"
+  },
+  "请在调整后的照片区域取色。": {
+    "de": "Wählen Sie eine Farbe im bearbeiteten Foto.",
+    "en": "Sample within the edited photo.",
+    "es": "Toma una muestra dentro de la foto editada.",
+    "fr": "Prélevez une couleur dans la photo retouchée.",
+    "ja": "調整後の写真内で色を選択してください。",
+    "zh-Hans": "请在调整后的照片区域取色。"
+  },
+  "调整轴": {
+    "de": "Anpassungsachse",
+    "en": "Adjustment axis",
+    "es": "Eje de ajuste",
+    "fr": "Axe de réglage",
+    "ja": "調整軸",
+    "zh-Hans": "调整轴"
+  },
+  "预览已变化，请重新取色。": {
+    "de": "Die Vorschau hat sich geändert. Wählen Sie die Farbe erneut.",
+    "en": "The preview changed. Sample again.",
+    "es": "La vista previa ha cambiado. Toma otra muestra.",
+    "fr": "L’aperçu a changé. Prélevez à nouveau la couleur.",
+    "ja": "プレビューが変わりました。もう一度色を選択してください。",
+    "zh-Hans": "预览已变化，请重新取色。"
+  },
+  "颜色接近灰色，无法选择色域。": {
+    "de": "Diese Farbe liegt zu nahe an Grau, um einen Farbbereich auszuwählen.",
+    "en": "This color is too close to gray to select a range.",
+    "es": "Este color es demasiado cercano al gris para seleccionar una gama.",
+    "fr": "Cette couleur est trop proche du gris pour sélectionner une plage.",
+    "ja": "グレーに近いため、色域を選択できません。",
+    "zh-Hans": "颜色接近灰色，无法选择色域。"
+  },
+  "上次同步记录": {
+    "de": "Letzter Synchronisierungsverlauf",
+    "en": "Last sync history",
+    "es": "Historial de la última sincronización",
+    "fr": "Historique de la dernière synchronisation",
+    "ja": "前回の同期履歴",
+    "zh-Hans": "上次同步记录"
+  },
+  "仅本次跳过": {
+    "de": "Nur diesmal überspringen",
+    "en": "Skip this time only",
+    "es": "Omitir solo esta vez",
+    "fr": "Ignorer cette fois uniquement",
+    "ja": "今回のみスキップ",
+    "zh-Hans": "仅本次跳过"
+  },
+  "先进入一张照片，将它作为同步来源。": {
+    "de": "Öffnen Sie ein Foto als Quelle für die Synchronisierung.",
+    "en": "Open a photo to use it as the sync source.",
+    "es": "Abre una foto para usarla como origen de sincronización.",
+    "fr": "Ouvrez une photo pour l’utiliser comme source de synchronisation.",
+    "ja": "写真を1枚開いて同期元にしてください。",
+    "zh-Hans": "先进入一张照片，将它作为同步来源。"
+  },
+  "单张微调": {
+    "de": "Foto feinjustieren",
+    "en": "Fine-tune photo",
+    "es": "Afinar foto",
+    "fr": "Affiner la photo",
+    "ja": "写真を微調整",
+    "zh-Hans": "单张微调"
+  },
+  "取消全选": {
+    "de": "Auswahl aufheben",
+    "en": "Deselect all",
+    "es": "Deseleccionar todo",
+    "fr": "Tout désélectionner",
+    "ja": "すべて選択解除",
+    "zh-Hans": "取消全选"
+  },
+  "同步调整": {
+    "de": "Anpassungen synchronisieren",
+    "en": "Sync adjustments",
+    "es": "Sincronizar ajustes",
+    "fr": "Synchroniser les réglages",
+    "ja": "調整を同期",
+    "zh-Hans": "同步调整"
+  },
+  "外观不可用。": {
+    "de": "Der Look ist nicht verfügbar.",
+    "en": "The look is unavailable.",
+    "es": "El aspecto no está disponible.",
+    "fr": "Le rendu est indisponible.",
+    "ja": "ルックを利用できません。",
+    "zh-Hans": "外观不可用。"
+  },
+  "外观已变化，请重新检查。": {
+    "de": "Der Look hat sich geändert. Prüfen Sie ihn erneut.",
+    "en": "The look changed. Review it again.",
+    "es": "El aspecto ha cambiado. Revísalo de nuevo.",
+    "fr": "Le rendu a changé. Vérifiez-le à nouveau.",
+    "ja": "ルックが変わりました。もう一度確認してください。",
+    "zh-Hans": "外观已变化，请重新检查。"
+  },
+  "实际导出 {0} 张": {
+    "de": "Fotos zum Exportieren: {0}",
+    "en": "Photos to export: {0}",
+    "es": "Fotos que exportar: {0}",
+    "fr": "Photos à exporter : {0}",
+    "ja": "書き出し対象 {0}枚",
+    "zh-Hans": "实际导出 {0} 张"
+  },
+  "已选择 {0} 张": {
+    "de": "Ausgewählte Fotos: {0}",
+    "en": "Selected photos: {0}",
+    "es": "Fotos seleccionadas: {0}",
+    "fr": "Photos sélectionnées : {0}",
+    "ja": "{0}枚を選択中",
+    "zh-Hans": "已选择 {0} 张"
+  },
+  "应用并保存草稿": {
+    "de": "Entwurf übernehmen und speichern",
+    "en": "Apply and save draft",
+    "es": "Aplicar y guardar borrador",
+    "fr": "Appliquer et enregistrer le brouillon",
+    "ja": "下書きを適用して保存",
+    "zh-Hans": "应用并保存草稿"
+  },
+  "应用草稿": {
+    "de": "Entwurf anwenden",
+    "en": "Apply Draft",
+    "es": "Aplicar borrador",
+    "fr": "Appliquer le brouillon",
+    "ja": "下書きを適用",
+    "zh-Hans": "应用草稿"
+  },
+  "批量编辑": {
+    "de": "Stapelbearbeitung",
+    "en": "Batch editing",
+    "es": "Edición por lotes",
+    "fr": "Retouche par lot",
+    "ja": "一括編集",
+    "zh-Hans": "批量编辑"
+  },
+  "排除来源照片后没有可同步的目标。": {
+    "de": "Nach Ausschluss der Quelle bleiben keine Zielfotos übrig.",
+    "en": "No target photos remain after excluding the source.",
+    "es": "No quedan fotos de destino tras excluir el origen.",
+    "fr": "Aucune photo cible après exclusion de la source.",
+    "ja": "元の写真を除くと同期対象がありません。",
+    "zh-Hans": "排除来源照片后没有可同步的目标。"
+  },
+  "放弃草稿": {
+    "de": "Entwurf verwerfen",
+    "en": "Discard Draft",
+    "es": "Descartar borrador",
+    "fr": "Abandonner le brouillon",
+    "ja": "下書きを破棄",
+    "zh-Hans": "放弃草稿"
+  },
+  "最终已保存参数": {
+    "de": "Endgültige gespeicherte Einstellungen",
+    "en": "Final saved settings",
+    "es": "Ajustes finales guardados",
+    "fr": "Réglages finaux enregistrés",
+    "ja": "保存済みの最終設定",
+    "zh-Hans": "最终已保存参数"
+  },
+  "来源：{0} · 目标 {1} 张": {
+    "de": "Quelle: {0} · Ziele: {1}",
+    "en": "Source: {0} · Targets: {1}",
+    "es": "Origen: {0} · Destinos: {1}",
+    "fr": "Source : {0} · Cibles : {1}",
+    "ja": "元の写真：{0} · 対象 {1}枚",
+    "zh-Hans": "来源：{0} · 目标 {1} 张"
+  },
+  "检查同步目标": {
+    "de": "Synchronisierungsziele prüfen",
+    "en": "Check sync targets",
+    "es": "Comprobar destinos de sincronización",
+    "fr": "Vérifier les cibles de synchronisation",
+    "ja": "同期対象を確認",
+    "zh-Hans": "检查同步目标"
+  },
+  "检查并查看最终参数": {
+    "de": "Endgültige Einstellungen prüfen und anzeigen",
+    "en": "Check and review final settings",
+    "es": "Comprobar y revisar ajustes finales",
+    "fr": "Vérifier et afficher les réglages finaux",
+    "ja": "最終設定を確認して表示",
+    "zh-Hans": "检查并查看最终参数"
+  },
+  "没有可导出的照片，请取消跳过或重新选择。": {
+    "de": "Keine Fotos zum Exportieren. Heben Sie das Überspringen auf oder wählen Sie erneut.",
+    "en": "No photos to export. Unskip photos or select again.",
+    "es": "No hay fotos que exportar. Deja de omitir fotos o vuelve a seleccionarlas.",
+    "fr": "Aucune photo à exporter. Réincluez des photos ou sélectionnez-en à nouveau.",
+    "ja": "書き出す写真がありません。スキップを解除するか選び直してください。",
+    "zh-Hans": "没有可导出的照片，请取消跳过或重新选择。"
+  },
+  "添加照片后，可同步调整、逐张微调并导出。": {
+    "de": "Fügen Sie Fotos hinzu, um Anpassungen zu synchronisieren, Fotos einzeln zu bearbeiten und zu exportieren.",
+    "en": "Add photos to sync adjustments, fine-tune individually and export.",
+    "es": "Añade fotos para sincronizar ajustes, afinarlas individualmente y exportarlas.",
+    "fr": "Ajoutez des photos pour synchroniser les réglages, les affiner individuellement et les exporter.",
+    "ja": "写真を追加すると、調整の同期、個別の微調整、書き出しができます。",
+    "zh-Hans": "添加照片后，可同步调整、逐张微调并导出。"
+  },
+  "照片选择已变化，请重新检查。": {
+    "de": "Die Fotoauswahl hat sich geändert. Prüfen Sie sie erneut.",
+    "en": "The photo selection changed. Review it again.",
+    "es": "La selección de fotos ha cambiado. Revísala de nuevo.",
+    "fr": "La sélection de photos a changé. Vérifiez-la à nouveau.",
+    "ja": "写真の選択が変わりました。もう一度確認してください。",
+    "zh-Hans": "照片选择已变化，请重新检查。"
+  },
+  "确认并冻结任务": {
+    "de": "Bestätigen und Aufgabe festschreiben",
+    "en": "Confirm and freeze task",
+    "es": "Confirmar y fijar tarea",
+    "fr": "Confirmer et figer la tâche",
+    "ja": "確認してタスクを確定",
+    "zh-Hans": "确认并冻结任务"
+  },
+  "确认并冻结导出任务": {
+    "de": "Export bestätigen und festschreiben",
+    "en": "Confirm and freeze export task",
+    "es": "Confirmar y fijar exportación",
+    "fr": "Confirmer et figer l’export",
+    "ja": "確認して書き出しタスクを確定",
+    "zh-Hans": "确认并冻结导出任务"
+  },
+  "编辑": {
+    "de": "Bearbeiten",
+    "en": "Edit",
+    "es": "Editar",
+    "fr": "Modifier",
+    "ja": "編集",
+    "zh-Hans": "编辑"
+  },
+  "草稿可逐张应用、放弃或跳过。检查完成后，请再次确认最终参数。": {
+    "de": "Übernehmen, verwerfen oder überspringen Sie jeden Entwurf. Bestätigen Sie nach der Prüfung die endgültigen Einstellungen.",
+    "en": "Apply, discard or skip each draft. After checking, confirm the final settings again.",
+    "es": "Aplica, descarta u omite cada borrador. Tras la comprobación, confirma los ajustes finales.",
+    "fr": "Appliquez, abandonnez ou ignorez chaque brouillon. Après vérification, confirmez les réglages finaux.",
+    "ja": "下書きは写真ごとに適用、破棄、スキップできます。確認後、最終設定をもう一度確認してください。",
+    "zh-Hans": "草稿可逐张应用、放弃或跳过。检查完成后，请再次确认最终参数。"
+  },
+  "请先结束或完成当前导出任务。": {
+    "de": "Schließen Sie zuerst den aktuellen Export ab oder beenden Sie ihn.",
+    "en": "Finish or end the current export task first.",
+    "es": "Primero completa o finaliza la exportación actual.",
+    "fr": "Terminez d’abord la tâche d’export actuelle.",
+    "ja": "先に現在の書き出しタスクを完了するか終了してください。",
+    "zh-Hans": "请先结束或完成当前导出任务。"
+  },
+  "请应用、放弃或跳过这张照片的草稿。": {
+    "de": "Übernehmen, verwerfen oder überspringen Sie den Entwurf dieses Fotos.",
+    "en": "Apply, discard or skip this photo’s draft.",
+    "es": "Aplica, descarta u omite el borrador de esta foto.",
+    "fr": "Appliquez, abandonnez ou ignorez le brouillon de cette photo.",
+    "ja": "この写真の下書きを適用、破棄、またはスキップしてください。",
+    "zh-Hans": "请应用、放弃或跳过这张照片的草稿。"
+  },
+  "返回批量集合": {
+    "de": "Zur Stapelsammlung zurück",
+    "en": "Return to batch collection",
+    "es": "Volver a la colección por lotes",
+    "fr": "Revenir à la collection par lot",
+    "ja": "一括編集の一覧に戻る",
+    "zh-Hans": "返回批量集合"
+  },
+  "逐张参数已冻结": {
+    "de": "Individuelle Einstellungen festgeschrieben",
+    "en": "Per-photo settings frozen",
+    "es": "Ajustes de cada foto fijados",
+    "fr": "Réglages par photo figés",
+    "ja": "各写真の設定を確定済み",
+    "zh-Hans": "逐张参数已冻结"
+  },
+  "逐张导出": {
+    "de": "Export mit individuellen Anpassungen",
+    "en": "Per-photo export",
+    "es": "Exportación por foto",
+    "fr": "Export par photo",
+    "ja": "写真ごとに書き出す",
+    "zh-Hans": "逐张导出"
+  },
+  "曲线": {
+    "de": "Kurve",
+    "en": "Curve",
+    "es": "Curva",
+    "fr": "Courbe",
+    "ja": "カーブ",
+    "zh-Hans": "曲线"
+  },
+  "多点曲线": {
+    "de": "Punktkurve",
+    "en": "Point curve",
+    "es": "Curva de puntos",
+    "fr": "Courbe à points",
+    "ja": "ポイントカーブ",
+    "zh-Hans": "多点曲线"
+  },
+  "切换曲线模式": {
+    "de": "Kurvenmodus wechseln",
+    "en": "Switch curve mode",
+    "es": "Cambiar el modo de curva",
+    "fr": "Changer le mode de courbe",
+    "ja": "カーブモードを切り替え",
+    "zh-Hans": "切换曲线模式"
+  },
+  "多点曲线将从直线开始，旧 S 曲线数值会保留。": {
+    "de": "Die Punktkurve beginnt als Gerade. Der S-Kurvenwert bleibt erhalten.",
+    "en": "The point curve starts as a straight line. Your S-curve value is retained.",
+    "es": "La curva de puntos comienza como una línea recta. Se conserva el valor de la curva S.",
+    "fr": "La courbe à points commence par une droite. La valeur de courbe en S est conservée.",
+    "ja": "ポイントカーブは直線から始まります。Sカーブの値は保持されます。",
+    "zh-Hans": "多点曲线将从直线开始，旧 S 曲线数值会保留。"
+  },
+  "切换到 S 曲线将移除当前控制点，可撤销此操作。": {
+    "de": "Beim Wechsel zur S-Kurve werden die aktuellen Kontrollpunkte entfernt. Dies lässt sich rückgängig machen.",
+    "en": "Switching to the S-curve removes the current control points. You can undo this change.",
+    "es": "Al cambiar a la curva S se eliminan los puntos actuales. Puedes deshacer este cambio.",
+    "fr": "Le passage à la courbe en S supprime les points actuels. Cette modification peut être annulée.",
+    "ja": "Sカーブに切り替えると現在の制御点が削除されます。この変更は取り消せます。",
+    "zh-Hans": "切换到 S 曲线将移除当前控制点，可撤销此操作。"
+  },
+  "切换": {
+    "de": "Wechseln",
+    "en": "Switch",
+    "es": "Cambiar",
+    "fr": "Changer",
+    "ja": "切り替え",
+    "zh-Hans": "切换"
+  },
+  "添加控制点": {
+    "de": "Punkt hinzufügen",
+    "en": "Add point",
+    "es": "Añadir punto",
+    "fr": "Ajouter un point",
+    "ja": "制御点を追加",
+    "zh-Hans": "添加控制点"
+  },
+  "删除控制点": {
+    "de": "Punkt löschen",
+    "en": "Delete point",
+    "es": "Eliminar punto",
+    "fr": "Supprimer le point",
+    "ja": "制御点を削除",
+    "zh-Hans": "删除控制点"
+  },
+  "重置为直线": {
+    "de": "Auf Gerade zurücksetzen",
+    "en": "Reset to straight line",
+    "es": "Restablecer línea recta",
+    "fr": "Rétablir une droite",
+    "ja": "直線にリセット",
+    "zh-Hans": "重置为直线"
+  },
+  "输入坐标": {
+    "de": "Eingabe",
+    "en": "Input",
+    "es": "Entrada",
+    "fr": "Entrée",
+    "ja": "入力",
+    "zh-Hans": "输入坐标"
+  },
+  "输出坐标": {
+    "de": "Ausgabe",
+    "en": "Output",
+    "es": "Salida",
+    "fr": "Sortie",
+    "ja": "出力",
+    "zh-Hans": "输出坐标"
+  },
+  "端点固定": {
+    "de": "Endpunkte sind fest",
+    "en": "Endpoints are fixed",
+    "es": "Los extremos son fijos",
+    "fr": "Les extrémités sont fixes",
+    "ja": "端点は固定されています",
+    "zh-Hans": "端点固定"
+  },
+  "点击曲线区域添加控制点，拖动中间点调整。": {
+    "de": "Zum Hinzufügen in die Kurvenfläche tippen. Innere Punkte zum Anpassen ziehen.",
+    "en": "Tap the curve area to add a point. Drag interior points to adjust.",
+    "es": "Toca el área de la curva para añadir un punto. Arrastra los puntos interiores para ajustar.",
+    "fr": "Touchez la zone de courbe pour ajouter un point. Faites glisser les points intérieurs pour ajuster.",
+    "ja": "カーブ領域をタップして点を追加します。中間の点をドラッグして調整します。",
+    "zh-Hans": "点击曲线区域添加控制点，拖动中间点调整。"
+  },
+  "曲线模式与控制点": {
+    "de": "Kurvenmodus und Punkte",
+    "en": "Curve mode and points",
+    "es": "Modo de curva y puntos",
+    "fr": "Mode de courbe et points",
+    "ja": "カーブモードと制御点",
+    "zh-Hans": "曲线模式与控制点"
+  },
+  "无效的曲线参数": {
+    "de": "Ungültige Kurvenwerte",
+    "en": "Invalid curve values",
+    "es": "Valores de curva no válidos",
+    "fr": "Valeurs de courbe non valides",
+    "ja": "カーブの値が無効です",
+    "zh-Hans": "无效的曲线参数"
+  },
+  "控制点 {0}": {
+    "de": "Punkt {0}",
+    "en": "Point {0}",
+    "es": "Punto {0}",
+    "fr": "Point {0}",
+    "ja": "制御点 {0}",
+    "zh-Hans": "控制点 {0}"
+  },
+  "多点曲线（{0} 个控制点）": {
+    "de": "Punktkurve ({0} Punkte)",
+    "en": "Point curve ({0} points)",
+    "es": "Curva de puntos ({0} puntos)",
+    "fr": "Courbe à points ({0} points)",
+    "ja": "ポイントカーブ（{0}点）",
+    "zh-Hans": "多点曲线（{0} 个控制点）"
+  },
+  "清晰度": {
+    "en": "Clarity",
+    "de": "Klarheit",
+    "fr": "Clarté",
+    "ja": "明瞭度",
+    "es": "Claridad",
+    "zh-Hans": "清晰度"
+  },
+  "去朦胧": {
+    "en": "Dehaze",
+    "de": "Dunst entfernen",
+    "fr": "Correction du voile",
+    "ja": "かすみの除去",
+    "es": "Borrar neblina",
+    "zh-Hans": "去朦胧"
+  },
+  "无效的清晰度或去朦胧参数": {
+    "en": "Invalid clarity or dehaze values",
+    "de": "Ungültige Werte für Klarheit oder Dunstentfernung",
+    "fr": "Valeurs de clarté ou de correction du voile non valides",
+    "ja": "明瞭度またはかすみの除去の値が無効です",
+    "es": "Valores de claridad o borrado de neblina no válidos",
+    "zh-Hans": "无效的清晰度或去朦胧参数"
+  },
+  "Mac 需要同架构、已签名并公证的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。": {
+    "de": "Für Mac ist eine signierte und notarisierte App derselben Architektur erforderlich. Für Windows ist ein x64-Setup-Installationsprogramm für den aktuellen Benutzer erforderlich. Migrieren Sie alte ZIP-Installationen zuerst über die offizielle Release-Seite auf eine updatefähige Version.",
+    "en": "Mac requires a signed and notarized app for the same architecture. Windows requires an x64 per-user Setup installer. Migrate old ZIP installations from the official release page to a version that supports updates first.",
+    "es": "En Mac se necesita una aplicación firmada y notarizada de la misma arquitectura. En Windows se necesita un instalador Setup x64 para el usuario actual. Migra primero las instalaciones antiguas en ZIP desde la página oficial de versiones a una versión compatible con actualizaciones.",
+    "fr": "Sur Mac, l’application doit être signée, notarisée et utiliser la même architecture. Sous Windows, un programme d’installation Setup x64 pour l’utilisateur actuel est requis. Migrez d’abord les anciennes installations ZIP depuis la page officielle des versions vers une version compatible avec les mises à jour.",
+    "ja": "Mac では同じアーキテクチャの署名・公証済みアプリが必要です。Windows では x64 の現在のユーザー用 Setup インストーラーが必要です。古い ZIP 版は、まず公式リリースページからアップデート対応版へ移行してください。",
+    "zh-Hans": "Mac 需要同架构、已签名并公证的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。"
+  },
+  "RawLab 更新": {
+    "de": "RawLab-Update",
+    "en": "RawLab Update",
+    "es": "Actualización de RawLab",
+    "fr": "Mise à jour de RawLab",
+    "ja": "RawLab アップデート",
+    "zh-Hans": "RawLab 更新"
+  },
+  "下次退出时安装": {
+    "de": "Beim nächsten Beenden installieren",
+    "en": "Install on next quit",
+    "es": "Instalar al salir la próxima vez",
+    "fr": "Installer à la prochaine fermeture",
+    "ja": "次回終了時にインストール",
+    "zh-Hans": "下次退出时安装"
+  },
+  "任务结束后安装": {
+    "de": "Nach Abschluss der Aufgaben installieren",
+    "en": "Install after tasks finish",
+    "es": "Instalar cuando terminen las tareas",
+    "fr": "Installer après la fin des tâches",
+    "ja": "タスクの完了後にインストール",
+    "zh-Hans": "任务结束后安装"
+  },
+  "取消更新": {
+    "de": "Update abbrechen",
+    "en": "Cancel update",
+    "es": "Cancelar actualización",
+    "fr": "Annuler la mise à jour",
+    "ja": "アップデートをキャンセル",
+    "zh-Hans": "取消更新"
+  },
+  "安装支持与恢复说明": {
+    "de": "Installationshilfe und Wiederherstellungsanleitung",
+    "en": "Installation support and recovery instructions",
+    "es": "Asistencia para la instalación e instrucciones de recuperación",
+    "fr": "Assistance à l’installation et instructions de récupération",
+    "ja": "インストールのサポートと復旧手順",
+    "zh-Hans": "安装支持与恢复说明"
+  },
+  "安装更新": {
+    "de": "Update installieren",
+    "en": "Install update",
+    "es": "Instalar actualización",
+    "fr": "Installer la mise à jour",
+    "ja": "アップデートをインストール",
+    "zh-Hans": "安装更新"
+  },
+  "官方手动下载": {
+    "de": "Manuell von der offiziellen Seite herunterladen",
+    "en": "Download manually from the official site",
+    "es": "Descargar manualmente desde el sitio oficial",
+    "fr": "Télécharger manuellement depuis le site officiel",
+    "ja": "公式サイトから手動でダウンロード",
+    "zh-Hans": "官方手动下载"
+  },
+  "将在下次正常退出时重新检查并安装": {
+    "de": "Beim nächsten regulären Beenden wird erneut nach dem Update gesucht und es wird installiert",
+    "en": "The update will be checked again and installed the next time you quit normally",
+    "es": "La actualización se comprobará de nuevo y se instalará la próxima vez que salgas normalmente",
+    "fr": "La mise à jour sera vérifiée à nouveau et installée lors de la prochaine fermeture normale",
+    "ja": "次回、通常終了時にアップデートを再確認してインストールします",
+    "zh-Hans": "将在下次正常退出时重新检查并安装"
+  },
+  "尚未发现可安装的更新": {
+    "de": "Kein installierbares Update gefunden",
+    "en": "No installable update found",
+    "es": "No se encontró ninguna actualización instalable",
+    "fr": "Aucune mise à jour installable trouvée",
+    "ja": "インストール可能なアップデートは見つかりません",
+    "zh-Hans": "尚未发现可安装的更新"
+  },
+  "已具备安装条件": {
+    "de": "Installationsbereit",
+    "en": "Ready to install",
+    "es": "Lista para instalar",
+    "fr": "Prêt à installer",
+    "ja": "インストールの準備ができました",
+    "zh-Hans": "已具备安装条件"
+  },
+  "批量任务记录尚未安全保存": {
+    "de": "Der Batch-Aufgabenverlauf wurde noch nicht sicher gespeichert",
+    "en": "The batch task record has not been saved safely yet",
+    "es": "El registro de la tarea por lotes aún no se ha guardado de forma segura",
+    "fr": "L’enregistrement de la tâche par lots n’est pas encore enregistré en toute sécurité",
+    "ja": "バッチタスクの記録はまだ安全に保存されていません",
+    "zh-Hans": "批量任务记录尚未安全保存"
+  },
+  "更新失败": {
+    "de": "Update fehlgeschlagen",
+    "en": "Update failed",
+    "es": "Actualización fallida",
+    "fr": "Échec de la mise à jour",
+    "ja": "アップデートに失敗しました",
+    "zh-Hans": "更新失败"
+  },
+  "更新已完成": {
+    "de": "Update abgeschlossen",
+    "en": "Update complete",
+    "es": "Actualización completada",
+    "fr": "Mise à jour terminée",
+    "ja": "アップデートが完了しました",
+    "zh-Hans": "更新已完成"
+  },
+  "更新已校验，请选择安装时间": {
+    "de": "Update überprüft; Installationszeit auswählen",
+    "en": "Update verified; choose when to install",
+    "es": "Actualización verificada; elige cuándo instalarla",
+    "fr": "Mise à jour vérifiée ; choisissez l’heure d’installation",
+    "ja": "アップデートを検証しました。インストール時間を選択してください",
+    "zh-Hans": "更新已校验，请选择安装时间"
+  },
+  "更新恢复需要处理，编辑暂未开放": {
+    "de": "Die Wiederherstellung des Updates erfordert Aufmerksamkeit; die Bearbeitung ist noch nicht verfügbar",
+    "en": "Update recovery requires attention; editing is not yet available",
+    "es": "La recuperación de la actualización requiere atención; la edición aún no está disponible",
+    "fr": "La récupération de la mise à jour nécessite une intervention ; l’édition n’est pas encore disponible",
+    "ja": "アップデートの復旧が必要なため、編集はまだ利用できません",
+    "zh-Hans": "更新恢复需要处理，编辑暂未开放"
+  },
+  "更新未完成，请查看恢复说明": {
+    "de": "Update nicht abgeschlossen; siehe die Wiederherstellungsanleitung",
+    "en": "Update incomplete; see the recovery instructions",
+    "es": "La actualización no se ha completado; consulta las instrucciones de recuperación",
+    "fr": "Mise à jour incomplète ; consultez les instructions de récupération",
+    "ja": "アップデートが完了していません。復旧手順を確認してください",
+    "zh-Hans": "更新未完成，请查看恢复说明"
+  },
+  "有可用更新": {
+    "de": "Update verfügbar",
+    "en": "Update available",
+    "es": "Actualización disponible",
+    "fr": "Mise à jour disponible",
+    "ja": "利用可能なアップデート",
+    "zh-Hans": "有可用更新"
+  },
+  "查看更新前的数据备份": {
+    "de": "Datensicherung vor dem Update anzeigen",
+    "en": "View the data backup from before the update",
+    "es": "Ver la copia de seguridad de los datos anterior a la actualización",
+    "fr": "Afficher la sauvegarde des données avant la mise à jour",
+    "ja": "アップデート前のデータバックアップを表示",
+    "zh-Hans": "查看更新前的数据备份"
+  },
+  "查看此说明不会启用自动安装。失败后请保留现有应用和数据，使用官方可信安装包恢复；不要用旧版覆盖新版编辑记录。": {
+    "de": "Das Anzeigen dieser Anleitung aktiviert die automatische Installation nicht. Bewahren Sie nach einem Fehler die vorhandene App und Daten auf, stellen Sie sie mit einem vertrauenswürdigen offiziellen Installationsprogramm wieder her und überschreiben Sie Bearbeitungen einer neueren Version nicht mit einer älteren.",
+    "en": "Viewing these instructions does not enable automatic installation. After a failure, keep the existing app and data, use a trusted official installer to recover, and do not overwrite edits from a newer version with an older one.",
+    "es": "Consultar estas instrucciones no activa la instalación automática. Tras un fallo, conserva la aplicación y los datos existentes, usa un instalador oficial de confianza para recuperarlos y no sobrescribas los registros de edición de una versión nueva con una antigua.",
+    "fr": "La consultation de ces instructions n’active pas l’installation automatique. Après un échec, conservez l’application et les données existantes, utilisez un programme d’installation officiel de confiance pour récupérer l’installation et n’écrasez pas les réglages d’une version plus récente avec une ancienne.",
+    "ja": "この説明を表示しても自動インストールは有効になりません。失敗した場合は既存のアプリとデータを保持し、信頼できる公式インストーラーで復旧してください。古いバージョンで新しいバージョンの編集記録を上書きしないでください。",
+    "zh-Hans": "查看此说明不会启用自动安装。失败后请保留现有应用和数据，使用官方可信安装包恢复；不要用旧版覆盖新版编辑记录。"
+  },
+  "正在下载更新…": {
+    "de": "Update wird geladen…",
+    "en": "Downloading update…",
+    "es": "Descargando actualización…",
+    "fr": "Téléchargement de la mise à jour…",
+    "ja": "アップデートをダウンロード中…",
+    "zh-Hans": "正在下载更新…"
+  },
+  "正在安装更新…": {
+    "de": "Update wird installiert…",
+    "en": "Installing update…",
+    "es": "Instalando actualización…",
+    "fr": "Installation de la mise à jour…",
+    "ja": "アップデートをインストール中…",
+    "zh-Hans": "正在安装更新…"
+  },
+  "正在校验并准备更新…": {
+    "de": "Update wird überprüft und vorbereitet…",
+    "en": "Verifying and preparing update…",
+    "es": "Verificando y preparando la actualización…",
+    "fr": "Vérification et préparation de la mise à jour…",
+    "ja": "アップデートを検証して準備中…",
+    "zh-Hans": "正在校验并准备更新…"
+  },
+  "正在检查启动状态…": {
+    "de": "Startstatus wird geprüft…",
+    "en": "Checking startup status…",
+    "es": "Comprobando el estado de inicio…",
+    "fr": "Vérification de l’état du démarrage…",
+    "ja": "起動状態を確認中…",
+    "zh-Hans": "正在检查启动状态…"
+  },
+  "正在等待编辑和任务处理完成": {
+    "de": "Warte auf den Abschluss der Bearbeitung und Aufgaben",
+    "en": "Waiting for editing and task processing to finish",
+    "es": "Esperando a que terminen la edición y el procesamiento de tareas",
+    "fr": "En attente de la fin des modifications et du traitement des tâches",
+    "ja": "編集とタスク処理の完了を待機中",
+    "zh-Hans": "正在等待编辑和任务处理完成"
+  },
+  "正在等待预览、导出或批量任务结束": {
+    "de": "Warte auf den Abschluss der Vorschau, des Exports oder der Batch-Aufgabe",
+    "en": "Waiting for the preview, export, or batch task to finish",
+    "es": "Esperando a que terminen la vista previa, la exportación o la tarea por lotes",
+    "fr": "En attente de la fin de l’aperçu, de l’exportation ou de la tâche par lots",
+    "ja": "プレビュー、書き出し、またはバッチタスクの完了を待機中",
+    "zh-Hans": "正在等待预览、导出或批量任务结束"
+  },
+  "此安装暂不支持自动安装更新": {
+    "de": "Diese Installation unterstützt automatische Updates noch nicht",
+    "en": "This installation does not support automatic updates yet",
+    "es": "Esta instalación todavía no admite actualizaciones automáticas",
+    "fr": "Cette installation ne prend pas encore en charge les mises à jour automatiques",
+    "ja": "このインストール形式は自動アップデートにまだ対応していません",
+    "zh-Hans": "此安装暂不支持自动安装更新"
+  },
+  "照片编辑保存失败，请先重试保存": {
+    "de": "Fotobearbeitungen konnten nicht gespeichert werden; versuchen Sie zuerst erneut zu speichern",
+    "en": "Could not save photo edits; try saving again first",
+    "es": "No se pudieron guardar las ediciones de la foto; intenta guardarlas de nuevo",
+    "fr": "Impossible d’enregistrer les modifications de la photo ; réessayez d’abord",
+    "ja": "写真の編集を保存できませんでした。先にもう一度保存してください",
+    "zh-Hans": "照片编辑保存失败，请先重试保存"
+  },
+  "照片编辑尚未保存": {
+    "de": "Fotobearbeitungen wurden noch nicht gespeichert",
+    "en": "Photo edits have not been saved",
+    "es": "Las ediciones de la foto aún no se han guardado",
+    "fr": "Les modifications de la photo ne sont pas encore enregistrées",
+    "ja": "写真の編集はまだ保存されていません",
+    "zh-Hans": "照片编辑尚未保存"
+  },
+  "稍后提醒": {
+    "de": "Später erinnern",
+    "en": "Remind me later",
+    "es": "Recordármelo más tarde",
+    "fr": "Me le rappeler plus tard",
+    "ja": "後で通知",
+    "zh-Hans": "稍后提醒"
+  },
+  "立即重启安装": {
+    "de": "Jetzt neu starten und installieren",
+    "en": "Restart and install now",
+    "es": "Reiniciar e instalar ahora",
+    "fr": "Redémarrer et installer maintenant",
+    "ja": "今すぐ再起動してインストール",
+    "zh-Hans": "立即重启安装"
+  },
+  "等待重新启动": {
+    "de": "Warten auf Neustart",
+    "en": "Waiting for restart",
+    "es": "Esperando el reinicio",
+    "fr": "En attente du redémarrage",
+    "ja": "再起動を待機中",
+    "zh-Hans": "等待重新启动"
+  },
+  "自动下载并在退出时安装": {
+    "de": "Updates automatisch laden und beim Beenden installieren",
+    "en": "Automatically download and install on quit",
+    "es": "Descargar automáticamente e instalar al salir",
+    "fr": "Télécharger automatiquement et installer à la fermeture",
+    "ja": "自動でダウンロードし、終了時にインストール",
+    "zh-Hans": "自动下载并在退出时安装"
+  },
+  "自动安装默认关闭。安装前会保存已提交的编辑，并等待草稿和任务处理完成。": {
+    "de": "Die automatische Installation ist standardmäßig deaktiviert. Vor der Installation werden übernommene Bearbeitungen gespeichert und der Abschluss von Entwürfen und Aufgaben abgewartet.",
+    "en": "Automatic installation is off by default. Before installing, committed edits are saved and the app waits for drafts and tasks to finish.",
+    "es": "La instalación automática está desactivada de forma predeterminada. Antes de instalar, se guardan las ediciones confirmadas y se espera a que terminen los borradores y las tareas.",
+    "fr": "L’installation automatique est désactivée par défaut. Avant l’installation, les modifications validées sont enregistrées et l’application attend la fin des brouillons et des tâches.",
+    "ja": "自動インストールはデフォルトでオフです。インストール前に適用済みの編集を保存し、下書きとタスクの完了を待ちます。",
+    "zh-Hans": "自动安装默认关闭。安装前会保存已提交的编辑，并等待草稿和任务处理完成。"
+  },
+  "请保留现有应用和数据，处理问题后重新启动。": {
+    "de": "Behalten Sie die vorhandene App und die Daten, beheben Sie das Problem und starten Sie anschließend neu.",
+    "en": "Keep the existing app and data, resolve the issue, then restart.",
+    "es": "Conserva la aplicación y los datos existentes, resuelve el problema y reinicia.",
+    "fr": "Conservez l’application et les données existantes, corrigez le problème, puis redémarrez.",
+    "ja": "現在のアプリとデータを保持し、問題を解決してから再起動してください。",
+    "zh-Hans": "请保留现有应用和数据，处理问题后重新启动。"
+  },
+  "请先退出其他 RawLab 实例": {
+    "de": "Beenden Sie zuerst die andere RawLab-Instanz",
+    "en": "Quit the other RawLab instance first",
+    "es": "Cierra primero la otra instancia de RawLab",
+    "fr": "Quittez d’abord l’autre instance de RawLab",
+    "ja": "先に他の RawLab のインスタンスを終了してください",
+    "zh-Hans": "请先退出其他 RawLab 实例"
+  },
+  "请返回编辑器应用或放弃草稿和未提交输入": {
+    "de": "Kehren Sie zum Editor zurück und übernehmen oder verwerfen Sie den Entwurf und nicht übernommene Eingaben.",
+    "en": "Return to the editor, then apply or discard the draft and uncommitted input",
+    "es": "Vuelve al editor y aplica o descarta el borrador y las entradas no aplicadas.",
+    "fr": "Revenez à l’éditeur, puis appliquez ou abandonnez le brouillon et les entrées non validées.",
+    "ja": "エディタに戻り、下書きと未適用の入力を適用するか破棄してください。",
+    "zh-Hans": "请返回编辑器应用或放弃草稿和未提交输入"
+  },
+  "跳过此版本": {
+    "de": "Diese Version überspringen",
+    "en": "Skip this version",
+    "es": "Omitir esta versión",
+    "fr": "Ignorer cette version",
+    "ja": "このバージョンをスキップ",
+    "zh-Hans": "跳过此版本"
+  },
+  "软件更新": {
+    "de": "Softwareupdate",
+    "en": "Software Update",
+    "es": "Actualización de software",
+    "fr": "Mise à jour logicielle",
+    "ja": "ソフトウェアアップデート",
+    "zh-Hans": "软件更新"
+  },
+  "软件更新…": {
+    "de": "Softwareupdate…",
+    "en": "Software Update…",
+    "es": "Actualización de software…",
+    "fr": "Mise à jour logicielle…",
+    "ja": "ソフトウェアアップデート…",
+    "zh-Hans": "软件更新…"
+  },
+  "选择安装时间": {
+    "de": "Installationszeit auswählen",
+    "en": "Choose installation time",
+    "es": "Elegir cuándo instalar",
+    "fr": "Choisir l’heure d’installation",
+    "ja": "インストール時間を選択",
+    "zh-Hans": "选择安装时间"
+  },
+  "错误详情": {
+    "de": "Fehlerdetails",
+    "en": "Error details",
+    "es": "Detalles del error",
+    "fr": "Détails de l’erreur",
+    "ja": "エラーの詳細",
+    "zh-Hans": "错误详情"
+  },
+  "恢复更新前的数据": {
+    "zh-Hans": "恢复更新前的数据",
+    "en": "Restore data from before the update",
+    "de": "Daten vom Stand vor dem Update wiederherstellen",
+    "fr": "Restaurer les données d’avant la mise à jour",
+    "ja": "アップデート前のデータを復元",
+    "es": "Restaurar los datos anteriores a la actualización"
+  },
+  "请先安装更新前的同一可信版本，再恢复数据。当前数据会另存保留；恢复后需退出并重新打开应用。": {
+    "zh-Hans": "请先安装更新前的同一可信版本，再恢复数据。当前数据会另存保留；恢复后需退出并重新打开应用。",
+    "en": "First install the same trusted version that was used before the update, then restore the data. The current data will be kept in a separate copy; after restoring, quit and reopen the app.",
+    "de": "Installieren Sie zuerst dieselbe vertrauenswürdige Version wie vor dem Update und stellen Sie anschließend die Daten wieder her. Die aktuellen Daten werden separat aufbewahrt; beenden Sie die App nach der Wiederherstellung und öffnen Sie sie erneut.",
+    "fr": "Installez d’abord la même version fiable qu’avant la mise à jour, puis restaurez les données. Les données actuelles seront conservées dans une copie séparée ; après la restauration, quittez et rouvrez l’application.",
+    "ja": "まずアップデート前と同じ信頼できるバージョンをインストールしてから、データを復元してください。現在のデータは別のコピーとして保持されます。復元後はアプリを終了して、もう一度開いてください。",
+    "es": "Primero instala la misma versión de confianza que estaba instalada antes de la actualización y después restaura los datos. Los datos actuales se conservarán en una copia aparte; tras restaurarlos, cierra y vuelve a abrir la aplicación."
+  },
+  "正在恢复更新前的数据…": {
+    "zh-Hans": "正在恢复更新前的数据…",
+    "en": "Restoring data from before the update…",
+    "de": "Daten vom Stand vor dem Update werden wiederhergestellt…",
+    "fr": "Restauration des données d’avant la mise à jour…",
+    "ja": "アップデート前のデータを復元中…",
+    "es": "Restaurando los datos anteriores a la actualización…"
+  },
+  "数据已恢复，请退出并重新打开应用": {
+    "zh-Hans": "数据已恢复，请退出并重新打开应用",
+    "en": "Data restored. Quit and reopen the app.",
+    "de": "Daten wiederhergestellt. Beenden Sie die App und öffnen Sie sie erneut.",
+    "fr": "Données restaurées. Quittez et rouvrez l’application.",
+    "ja": "データを復元しました。アプリを終了して、もう一度開いてください。",
+    "es": "Datos restaurados. Cierra y vuelve a abrir la aplicación."
+  },
+  "查看恢复时保留的数据": {
+    "zh-Hans": "查看恢复时保留的数据",
+    "en": "View the data kept during recovery",
+    "de": "Während der Wiederherstellung aufbewahrte Daten anzeigen",
+    "fr": "Afficher les données conservées lors de la récupération",
+    "ja": "復元時に保持されたデータを表示",
+    "es": "Ver los datos conservados durante la recuperación"
+  },
+  "重建更新设置": {
+    "zh-Hans": "重建更新设置",
+    "en": "Rebuild update settings",
+    "de": "Update-Einstellungen neu erstellen",
+    "fr": "Reconstruire les réglages de mise à jour",
+    "ja": "更新設定を再作成",
+    "es": "Restablecer los ajustes de actualización"
+  },
+  "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。": {
+    "zh-Hans": "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。",
+    "en": "Keep the damaged file and rebuild update settings. Data will be checked after restarting; automatic updates stay off.",
+    "de": "Die beschädigte Datei wird aufbewahrt und die Update-Einstellungen werden neu erstellt. Nach dem Neustart werden die Daten geprüft; automatische Updates bleiben deaktiviert.",
+    "fr": "Le fichier endommagé sera conservé et les réglages de mise à jour reconstruits. Les données seront vérifiées au redémarrage ; les mises à jour automatiques resteront désactivées.",
+    "ja": "破損したファイルを保持し、更新設定を再作成します。再起動後にデータを確認し、自動更新は無効のままにします。",
+    "es": "Se conservará el archivo dañado y se restablecerán los ajustes. Los datos se comprobarán al reiniciar; las actualizaciones automáticas seguirán desactivadas."
+  },
+  "无法确认更新或恢复状态，请保留全部文件并联系支持。": {
+    "zh-Hans": "无法确认更新或恢复状态，请保留全部文件并联系支持。",
+    "en": "The update or recovery status is uncertain. Keep all files and contact support.",
+    "de": "Der Update- oder Wiederherstellungsstatus ist unklar. Bewahren Sie alle Dateien auf und kontaktieren Sie den Support.",
+    "fr": "L’état de la mise à jour ou de la récupération est incertain. Conservez tous les fichiers et contactez l’assistance.",
+    "ja": "更新または復元の状態を確認できません。すべてのファイルを保持し、サポートにお問い合わせください。",
+    "es": "No se puede confirmar el estado de actualización o recuperación. Conserva todos los archivos y contacta con soporte."
+  },
+  "更新设置已重建，请退出并重新打开应用": {
+    "zh-Hans": "更新设置已重建，请退出并重新打开应用",
+    "en": "Update settings rebuilt. Quit and reopen the app.",
+    "de": "Update-Einstellungen neu erstellt. Beenden Sie die App und öffnen Sie sie erneut.",
+    "fr": "Réglages de mise à jour reconstruits. Quittez et rouvrez l’application.",
+    "ja": "更新設定を再作成しました。アプリを終了して、もう一度開いてください。",
+    "es": "Ajustes restablecidos. Cierra y vuelve a abrir la aplicación."
+  },
+  "数据检查未通过，编辑暂未开放。请保留文件并联系支持。": {
+    "zh-Hans": "数据检查未通过，编辑暂未开放。请保留文件并联系支持。",
+    "en": "Data validation failed and editing is unavailable. Keep the files and contact support.",
+    "de": "Die Datenprüfung ist fehlgeschlagen; die Bearbeitung ist gesperrt. Bewahren Sie die Dateien auf und kontaktieren Sie den Support.",
+    "fr": "La validation des données a échoué et la modification est indisponible. Conservez les fichiers et contactez l’assistance.",
+    "ja": "データの確認に失敗したため、編集を開始できません。ファイルを保持し、サポートにお問い合わせください。",
+    "es": "La validación de datos falló y la edición no está disponible. Conserva los archivos y contacta con soporte."
+  },
+  "查看保留的更新状态文件": {
+    "zh-Hans": "查看保留的更新状态文件",
+    "en": "View the preserved update state file",
+    "de": "Aufbewahrte Update-Statusdatei anzeigen",
+    "fr": "Afficher le fichier d’état conservé",
+    "ja": "保持された更新状態ファイルを表示",
+    "es": "Ver el archivo de estado conservado"
+  },
+  "目标调整：{0}": {
+    "zh-Hans": "目标调整：{0}",
+    "en": "Target adjustment: {0}",
+    "de": "Gezielte Anpassung: {0}",
+    "es": "Ajuste dirigido: {0}",
+    "fr": "Réglage ciblé : {0}",
+    "ja": "ターゲット調整：{0}"
+  },
+  "退出目标调整": {
+    "zh-Hans": "退出目标调整",
+    "en": "Exit target adjustment",
+    "de": "Gezielte Anpassung beenden",
+    "es": "Salir del ajuste dirigido",
+    "fr": "Quitter le réglage ciblé",
+    "ja": "ターゲット調整を終了"
+  },
+  "拖动照片调整颜色；退出目标模式后可平移。": {
+    "zh-Hans": "拖动照片调整颜色；退出目标模式后可平移。",
+    "en": "Drag the photo to adjust color. Exit target mode to pan.",
+    "de": "Foto ziehen, um Farben anzupassen. Zum Verschieben den Zielmodus beenden.",
+    "es": "Arrastra la foto para ajustar el color. Sal del modo dirigido para desplazarla.",
+    "fr": "Faites glisser la photo pour régler la couleur. Quittez le mode ciblé pour la déplacer.",
+    "ja": "写真をドラッグして色を調整します。移動するにはターゲットモードを終了してください。"
+  },
+  "AI 降噪结果连续未就绪，请重试。": {
+    "en": "AI denoise results are still unavailable. Please retry.",
+    "de": "Das KI-Entrauschungsergebnis ist weiterhin nicht verfügbar. Bitte erneut versuchen.",
+    "es": "El resultado de la reducción de ruido con IA sigue sin estar disponible. Inténtalo de nuevo.",
+    "fr": "Le résultat de la réduction du bruit par IA reste indisponible. Réessayez.",
+    "ja": "AIノイズ除去の結果を取得できません。もう一度お試しください。",
+    "zh-Hans": "AI 降噪结果连续未就绪，请重试。"
+  },
+  "正在处理更新，编辑暂不可用。": {
+    "en": "An update is in progress. Editing is temporarily unavailable.",
+    "de": "Ein Update wird verarbeitet. Die Bearbeitung ist vorübergehend nicht verfügbar.",
+    "es": "Se está procesando una actualización. La edición no está disponible temporalmente.",
+    "fr": "Une mise à jour est en cours. La retouche est temporairement indisponible.",
+    "ja": "更新を処理しています。編集は一時的に利用できません。",
+    "zh-Hans": "正在处理更新，编辑暂不可用。"
+  },
+  "Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。": {
+    "en": "Agent recipes do not support AI denoise. Turn off AI denoise first.",
+    "de": "Agent-Rezepte unterstützen keine KI-Entrauschung. Deaktivieren Sie diese zuerst.",
+    "es": "Las recetas de Agent no admiten la reducción de ruido con IA. Desactívala primero.",
+    "fr": "Les recettes Agent ne prennent pas en charge la réduction du bruit par IA. Désactivez-la d’abord.",
+    "ja": "AgentレシピはAIノイズ除去に対応していません。先にAIノイズ除去をオフにしてください。",
+    "zh-Hans": "Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。"
+  },
+  "Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。": {
+    "en": "Mac requires an app with the same architecture and matching signing identity. Windows requires an x64 per-user Setup installation. For an older ZIP version, first install an update-capable version from the official releases page.",
+    "de": "Mac benötigt eine App mit gleicher Architektur und passender Signaturidentität. Windows benötigt eine x64-Setup-Installation für den aktuellen Benutzer. Installieren Sie bei einer älteren ZIP-Version zuerst eine updatefähige Version von der offiziellen Release-Seite.",
+    "es": "Mac requiere una app de la misma arquitectura y con la misma identidad de firma. Windows requiere una instalación Setup x64 por usuario. Si usas una versión ZIP antigua, instala primero una versión compatible con actualizaciones desde la página oficial.",
+    "fr": "Mac nécessite une app de même architecture avec une identité de signature correspondante. Windows nécessite une installation Setup x64 par utilisateur. Pour une ancienne version ZIP, installez d’abord une version compatible avec les mises à jour depuis la page officielle.",
+    "ja": "Macでは同じアーキテクチャと一致する署名IDのアプリが必要です。Windowsではx64のユーザー単位Setupインストールが必要です。旧ZIP版は、公式リリースページから更新対応版を先にインストールしてください。",
+    "zh-Hans": "Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。"
   }
 }

@@ -33,6 +33,52 @@ constexpr int kParallelThreshold = 1 << 16;
 namespace sony2fuji {
 
 namespace {
+float sampleCameraCorrection(const std::vector<RGB>& pixels, int width, int height, int channel, float x, float y) {
+    if (!std::isfinite(x) || !std::isfinite(y) || x < -1e-4f || y < -1e-4f ||
+        x > width - 1 + 1e-4f || y > height - 1 + 1e-4f) return 0;
+    x = std::clamp(x, 0.f, float(width - 1)); y = std::clamp(y, 0.f, float(height - 1));
+    const int x0 = int(std::floor(x)), y0 = int(std::floor(y));
+    const int x1 = std::min(x0 + 1, width - 1), y1 = std::min(y0 + 1, height - 1);
+    auto at = [&](int col, int row) {
+        const auto& value = pixels[size_t(row) * width + col];
+        return channel == 0 ? value.r : channel == 1 ? value.g : value.b;
+    };
+    const float dx = x - x0, dy = y - y0;
+    return ((1-dx)*at(x0,y0) + dx*at(x1,y0))*(1-dy) + ((1-dx)*at(x0,y1) + dx*at(x1,y1))*dy;
+}
+
+class BayerOverrideScope {
+public:
+    BayerOverrideScope(LibRaw& raw, const RAWBayerSource& source, const RAWBayerOverride* replacement)
+        : raw_(raw) {
+        if (!replacement) return;
+        original_ = raw.imgdata.rawdata.raw_image;
+        pitch_ = raw.imgdata.sizes.raw_pitch / sizeof(uint16_t);
+        left_ = raw.imgdata.sizes.left_margin; top_ = raw.imgdata.sizes.top_margin;
+        width_ = source.width; height_ = source.height;
+        backup_.resize(size_t(width_) * height_);
+        for (int y = 0; y < height_; ++y)
+            std::copy_n(original_ + (size_t(y) + top_) * pitch_ + left_, width_, backup_.data() + size_t(y) * width_);
+        for (int y = 0; y < height_; ++y) for (int x = 0; x < width_; ++x) {
+            const float black = source.black[source.pattern[(y % 2) * 2 + x % 2]];
+            const float value = std::clamp(replacement->normalizedMosaic[size_t(y) * width_ + x], 0.f, 1.f);
+            original_[(size_t(y) + top_) * pitch_ + left_ + x] = uint16_t(std::lround(value * (source.white - black) + black));
+        }
+    }
+    ~BayerOverrideScope() {
+        // LibRaw 的致命错误可能自行 recycle，此时原地址已失效。
+        if (!original_ || raw_.imgdata.rawdata.raw_image != original_) return;
+        for (int y = 0; y < height_; ++y)
+            std::copy_n(backup_.data() + size_t(y) * width_, width_, original_ + (size_t(y) + top_) * pitch_ + left_);
+    }
+private:
+    LibRaw& raw_;
+    uint16_t* original_ = nullptr;
+    size_t pitch_ = 0;
+    int left_ = 0, top_ = 0, width_ = 0, height_ = 0;
+    std::vector<uint16_t> backup_;
+};
+
 LensMetadata lensMetadata(const LibRaw& processor, bool sdkStage3 = false) {
     const auto& data = processor.imgdata;
     LensMetadata metadata;
@@ -88,6 +134,9 @@ public:
         if (options.rawNoiseReduction < 0 || options.rawNoiseReduction > 2 ||
             (options.rawNoiseReduction > 0 && !supportsNoiseReduction()))
             return ErrorCode::InvalidFormat;
+        if (options.bayerDemosaic != BayerDemosaicMethod::Legacy &&
+            options.bayerDemosaic != BayerDemosaicMethod::VNG && options.bayerDemosaic != BayerDemosaicMethod::DHT)
+            return ErrorCode::InvalidFormat;
         if (options.outputBitsPerSample != 8 && options.outputBitsPerSample != 16)
             return ErrorCode::InvalidFormat;
         if (!std::isfinite(options.exposure) || !std::isfinite(options.brightness) ||
@@ -106,6 +155,9 @@ public:
         params.fbdd_noiserd = options.rawNoiseReduction;
         const ErrorCode identificationResult = ensureIdentificationMode(cameraWB, autoWB);
         if (identificationResult != ErrorCode::Success) return identificationResult;
+        // 非 Bayer 必须重置，避免复用处理器时把 X-Trans 误送入 VNG。
+        params.user_qual = bayerSource_ && options.bayerDemosaic != BayerDemosaicMethod::Legacy ?
+            (options.bayerDemosaic == BayerDemosaicMethod::VNG ? 1 : 11) : -1;
         params.use_camera_matrix = 3;
         params.use_camera_wb = cameraWB ? 1 : 0;
         params.use_auto_wb = autoWB ? 1 : 0;
@@ -125,6 +177,16 @@ public:
         params.gamm[0] = params.gamm[1] = 1;
         params.bright = 1;
         params.exp_correc = 0;
+        const auto* replacement = options.bayerOverride;
+        if (replacement && (!bayerMetadataReady_ || options.halfSize || options.rawNoiseReduction != 0 || autoWB ||
+            replacement->width != bayerMetadata_.width || replacement->height != bayerMetadata_.height ||
+            replacement->normalizedMosaic.size() != size_t(bayerMetadata_.width) * bayerMetadata_.height ||
+            (!replacement->cameraCorrection.empty() && replacement->cameraCorrection.size() != replacement->normalizedMosaic.size()) ||
+            !std::all_of(replacement->normalizedMosaic.begin(), replacement->normalizedMosaic.end(), [](float x) { return std::isfinite(x); }) ||
+            !std::all_of(replacement->cameraCorrection.begin(), replacement->cameraCorrection.end(), [](const RGB& p) {
+                return std::isfinite(p.r) && std::isfinite(p.g) && std::isfinite(p.b);
+            }))) return ErrorCode::InvalidFormat;
+        BayerOverrideScope overrideScope(*rawProcessor_, bayerMetadata_, replacement);
         if (rawProcessor_->dcraw_process() != LIBRAW_SUCCESS) {
             // Fatal LibRaw processing errors may recycle unpacked data internally.
             // Require a fresh load rather than advertising a reusable source.
@@ -150,6 +212,10 @@ public:
              std::abs(data.sizes.pixel_aspect - 1.0) > .005);
         const int width = postprocessGeometry ? data.sizes.width : data.sizes.iwidth;
         const int height = postprocessGeometry ? data.sizes.height : data.sizes.iheight;
+        if (replacement && (width != replacement->width || height != replacement->height)) {
+            rawProcessor_->free_image();
+            return ErrorCode::InvalidFormat;
+        }
         if (width <= 0 || height <= 0) {
             rawProcessor_->free_image();
             return ErrorCode::ProcessingError;
@@ -177,6 +243,14 @@ public:
             }
             for (int dst=0;dst<3;++dst) for (int c=0;c<channels;++c)
                 rgb[dst]+=data.color.rgb_cam[dst][c]*camera[c]*scale;
+            if (replacement && !replacement->cameraCorrection.empty()) {
+                const auto& value = replacement->cameraCorrection[size_t(row) * width + col];
+                for (int c = 0; c < 3; ++c) {
+                    const float delta = coordinates ? sampleCameraCorrection(replacement->cameraCorrection, width, height, c,
+                        coordinates[c*2], coordinates[c*2+1]) : c == 0 ? value.r : c == 1 ? value.g : value.b;
+                    if (delta != 0) for (int dst = 0; dst < 3; ++dst) rgb[dst] += data.color.rgb_cam[dst][c] * delta;
+                }
+            }
             return RGB(rgb[0],rgb[1],rgb[2]);
         };
         auto linearRGB=[&](int row,int col) {
@@ -249,6 +323,38 @@ public:
         return ErrorCode::Success;
     }
 
+    ErrorCode readBayerSource(const RAWProcessOptions& options, RAWBayerSource& output) {
+        output = {};
+        if (!sourceReady_ || !bayerMetadataReady_ || options.useAutoWhiteBalance ||
+            !rawProcessor_->imgdata.rawdata.raw_image) return ErrorCode::InvalidFormat;
+        output = bayerMetadata_;
+        if (options.useTemperatureWhiteBalance) {
+            if (!whiteBalance_ || !whiteBalance_->multipliers(options.temperature, options.tint, output.whiteBalance.data())) {
+                output = {}; return ErrorCode::InvalidFormat;
+            }
+        } else if (options.useCustomWhiteBalance) {
+            std::copy_n(options.customWhiteBalance, 4, output.whiteBalance.begin());
+        } else if (!options.useCameraWhiteBalance) {
+            output.whiteBalance = bayerDaylightWB_;
+        }
+        if (output.whiteBalance[3] == 0) output.whiteBalance[3] = output.whiteBalance[1];
+        if (!std::all_of(output.whiteBalance.begin(), output.whiteBalance.end(), [](float x) { return std::isfinite(x) && x > 0; })) {
+            output = {}; return ErrorCode::InvalidFormat;
+        }
+        output.pixels.resize(size_t(output.width) * output.height);
+        const auto& data = rawProcessor_->imgdata;
+        const size_t pitch = data.sizes.raw_pitch / sizeof(uint16_t);
+        for (int y = 0; y < output.height; ++y)
+            std::copy_n(data.rawdata.raw_image + (size_t(y) + data.sizes.top_margin) * pitch + data.sizes.left_margin,
+                        output.width, output.pixels.data() + size_t(y) * output.width);
+        return ErrorCode::Success;
+    }
+
+    bool getBayerMetadata(RAWBayerSource& output) const {
+        output = sourceReady_ && bayerMetadataReady_ ? bayerMetadata_ : RAWBayerSource{};
+        return sourceReady_ && bayerMetadataReady_;
+    }
+
     int getWidth() const {
         return sourceReady_ ? width_ : 0;
     }
@@ -279,7 +385,7 @@ public:
         return true;
     }
 
-    bool supportsNoiseReduction() const { return sourceReady_ && noiseReductionSupported_; }
+    bool supportsNoiseReduction() const { return sourceReady_ && bayerSource_; }
     LensCorrectionReport getLensCorrectionReport() const { return lensReport_; }
 
     bool getCameraColorMatrix(float matrix[3][3]) const {
@@ -301,7 +407,7 @@ private:
         cameraModel_.clear();
         whiteBalance_.reset();
         cameraColorMatrixValid_ = false;
-        noiseReductionSupported_ = false;
+        bayerSource_ = false;
         previewExposureEV_ = 0;
         baselineExposureEV_ = 0;
         metadataExposureEV_ = 0;
@@ -309,6 +415,7 @@ private:
         sdkStage3_ = false;
         lensReport_ = {};
         outputSpace_ = ColorSpace::sRGB;
+        bayerMetadata_ = {}; bayerMetadataReady_ = false; bayerDaylightWB_ = {};
     }
 
     int openAndUnpack(bool cameraWB, bool autoWB) {
@@ -357,7 +464,7 @@ private:
 
     void snapshotCalibration() {
         const auto& data = rawProcessor_->imgdata;
-        noiseReductionSupported_ = data.idata.colors == 3 && data.idata.filters > 1000 && !data.idata.is_foveon;
+        bayerSource_ = data.idata.colors == 3 && data.idata.filters > 1000 && !data.idata.is_foveon;
         width_ = data.sizes.width;
         height_ = data.sizes.height;
         cameraMake_ = data.idata.make;
@@ -377,6 +484,45 @@ private:
             for (int k=0; k<3; ++k)
                 cameraColorMatrix_[row][col] += xyz[row][k] * data.color.rgb_cam[k][col];
         }
+        snapshotBayerMetadata();
+    }
+
+    void snapshotBayerMetadata() {
+        bayerMetadataReady_ = false; bayerMetadata_ = {};
+        const auto& data = rawProcessor_->imgdata;
+        if (!bayerSource_ || sdkStage3_ || fujiRotate_ || !data.rawdata.raw_image ||
+            !std::isfinite(data.sizes.pixel_aspect) || std::abs(data.sizes.pixel_aspect - 1) > .005 ||
+            width_ < 2 || height_ < 2 || uint64_t(width_) * height_ > 128000000 ||
+            data.sizes.raw_pitch % sizeof(uint16_t) || data.sizes.raw_pitch / sizeof(uint16_t) < data.sizes.raw_width ||
+            uint64_t(data.sizes.left_margin) + width_ > data.sizes.raw_width ||
+            uint64_t(data.sizes.top_margin) + height_ > data.sizes.raw_height) return;
+        double spatialBlack = 0;
+        if (data.color.cblack[4] || data.color.cblack[5]) {
+            const uint64_t count = uint64_t(data.color.cblack[4]) * data.color.cblack[5];
+            if (!count || count > 4096 || !std::all_of(data.color.cblack + 6, data.color.cblack + 6 + count,
+                    [&](unsigned value) { return value == data.color.cblack[6]; })) return;
+            spatialBlack = data.color.cblack[6];
+        }
+        auto& source = bayerMetadata_;
+        source.width = width_; source.height = height_; source.flip = data.sizes.flip;
+        source.white = data.color.maximum; source.iso = data.other.iso_speed; source.shutterSeconds = data.other.shutter;
+        source.cameraModel = data.idata.model; source.rawBits = data.color.raw_bps;
+        source.sonyRawType = data.makernotes.sony.SonyRawFileType;
+        for (int c = 0; c < 4; ++c) {
+            source.pattern[c] = rawProcessor_->COLOR(c / 2, c % 2);
+            source.black[c] = float(double(data.color.black) + data.color.cblack[c] + spatialBlack);
+            if (!std::isfinite(source.black[c]) || source.black[c] < 0 || source.white <= source.black[c] || source.white > 65535) return;
+            source.whiteBalance[c] = data.color.cam_mul[0] == 0 ? data.color.pre_mul[c] : data.color.cam_mul[c];
+            bayerDaylightWB_[c] = data.color.pre_mul[c];
+        }
+        if (source.whiteBalance[3] == 0) source.whiteBalance[3] = source.whiteBalance[1];
+        auto pattern = source.pattern; std::sort(pattern.begin(), pattern.end());
+        if (pattern != std::array<int, 4>{0, 1, 2, 3}) return;
+        for (int row = 0; row < 3; ++row) for (int col = 0; col < 3; ++col) {
+            source.cameraCalibration[row][col] = data.color.cam_xyz[row][col];
+            source.cameraToSrgb[row][col] = data.color.rgb_cam[row][col];
+        }
+        bayerMetadataReady_ = true;
     }
 
     ErrorCode ensureIdentificationMode(bool cameraWB, bool autoWB) {
@@ -412,7 +558,7 @@ private:
     std::unique_ptr<CameraWhiteBalance> whiteBalance_;
     std::array<std::array<float,3>,3> cameraColorMatrix_{};
     bool cameraColorMatrixValid_ = false;
-    bool noiseReductionSupported_ = false;
+    bool bayerSource_ = false;
     bool sourceReady_ = false;
     bool identificationCameraWB_ = false;
     bool identificationAutoWB_ = false;
@@ -425,6 +571,9 @@ private:
     float previewExposureEV_ = 0;
     float baselineExposureEV_ = 0;
     float metadataExposureEV_ = 0;
+    RAWBayerSource bayerMetadata_;
+    std::array<float, 4> bayerDaylightWB_{};
+    bool bayerMetadataReady_ = false;
 };
 
 // ============================================================================
@@ -444,6 +593,11 @@ ErrorCode RAWProcessor::loadFile(const std::string& filepath) {
 ErrorCode RAWProcessor::process(const RAWProcessOptions& options, ImageData& output) {
     return pImpl_->process(options, output);
 }
+
+ErrorCode RAWProcessor::readBayerSource(const RAWProcessOptions& options, RAWBayerSource& output) {
+    return pImpl_->readBayerSource(options, output);
+}
+bool RAWProcessor::getBayerMetadata(RAWBayerSource& output) const { return pImpl_->getBayerMetadata(output); }
 
 int RAWProcessor::getWidth() const {
     return pImpl_->getWidth();

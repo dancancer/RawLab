@@ -20,6 +20,32 @@ struct RenderSchedulingTests {
         proxyCannotWinAfterExactWork()
         numericChangesAreExact()
         busyCoversInteractiveAndPendingExactWork()
+        invalidationWaitsForPreparedInputs()
+    }
+
+    private static func invalidationWaitsForPreparedInputs() {
+        var scheduler = RenderScheduler<Work>()
+        let old = scheduler.submit(Work(fileID: "one", revision: 1), fileID: "one")
+        _ = scheduler.startNext()
+        _ = scheduler.submit(Work(fileID: "one", revision: 2), fileID: "one")
+        scheduler.invalidatePending()
+        check(!scheduler.hasPending && scheduler.finish(old) == .discard,
+              "Waiting for AI discards old rendering and does not launch an unprepared frame")
+        check(!scheduler.isBusy, "Discarded preparation does not leave the render queue busy")
+        let ready = scheduler.submit(Work(fileID: "one", revision: 2), fileID: "one")
+        check(scheduler.startNext() == ready && scheduler.finish(ready) == .publishExact,
+              "Prepared inputs resume exact rendering")
+
+        scheduler.setInteracting(true)
+        let staleProxy = scheduler.submit(Work(fileID: "one", revision: 3), fileID: "one")
+        _ = scheduler.startNext()
+        scheduler.invalidatePending()
+        scheduler.setInteracting(false)
+        let prepared = scheduler.submit(Work(fileID: "one", revision: 4), fileID: "one")
+        check(scheduler.finish(staleProxy) == .discard,
+              "Invalidated interactive work cannot publish after AI preparation finishes")
+        check(scheduler.startNext() == prepared && scheduler.finish(prepared) == .publishExact,
+              "The prepared exact request follows the discarded interactive work")
     }
 
     private static func latestOnlyCoalescesPendingWork() {

@@ -96,7 +96,7 @@ class AgentCommands(unittest.TestCase):
 
     def test_capabilities_and_flag_order(self):
         expected = {
-            "recipe_versions": [1, 2, 3, 4],
+            "recipe_versions": [1, 2, 3, 4, 5],
             "commands": ["capabilities", "validate_recipe", "info", "preview", "export"],
             "input_types": ["raw", "raster"] if sys.platform in ("darwin", "win32") else ["raw"],
             "output_formats": ["jpeg", "png", "dng"],
@@ -109,6 +109,25 @@ class AgentCommands(unittest.TestCase):
                 for key, value in expected.items():
                     self.assertEqual(result["result"][key], value)
                 features = result["result"]["optional_features"]
+                self.assertEqual(result["result"]["tone_controls"], {
+                    "version": 1, "recipe_min_version": 5, "range": [-1, 1],
+                    "fields": ["tone.black_point", "tone.white_point", "color.vibrance"],
+                })
+                self.assertEqual(result["result"]["color_grading"], {
+                    "version": 1, "recipe_min_version": 5, "zones": ["shadows", "midtones", "highlights"],
+                    "hue_degrees": {"minimum": 0, "exclusive_maximum": 360}, "saturation_range": [0, 100],
+                })
+                self.assertEqual(result["result"]["tone_curve"], {
+                    "version": 1, "recipe_min_version": 5, "modes": ["legacy", "custom"],
+                    "max_points": 33, "interpolation": "pchip", "fixed_endpoints": True, "monotone": True,
+                })
+                self.assertEqual(result["result"]["atmosphere"], {
+                    "version": 1, "recipe_min_version": 5, "range": [-1, 1],
+                    "fields": ["effects.clarity", "effects.dehaze"], "backend": "cpu",
+                    "gpu_force": "unsupported", "preview": "complete_source",
+                })
+                if sys.platform in ("darwin", "win32"):
+                    self.assertEqual(result["result"]["raster_input"]["max_pixels"], 128_000_000)
                 if sys.platform == "win32":
                     self.assertEqual(result["result"]["raster_input"]["formats"], ["jpeg", "png", "tiff"])
                 self.assertEqual(set(features), {"wavelet_denoise", "chroma_denoise", "lens_correction"})

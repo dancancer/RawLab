@@ -1,5 +1,7 @@
 #include <jni.h>
+#include <android/bitmap.h>
 #include "render_request.h"
+#include "recipe_probe_stages.h"
 #include <cstring>
 #include <limits>
 #include <memory>
@@ -16,12 +18,18 @@ static_assert(sizeof(sony2fuji_geometry_config) == 40,
     "Geometry config ABI must remain a versioned 40-byte struct");
 static_assert(sizeof(sony2fuji_perspective_config) == 16,
     "Perspective config ABI must remain a versioned 16-byte struct");
+static_assert(sizeof(sony2fuji_tone_curve_config) == 544, "Curve v1 retains binary64 control points");
 
 namespace {
 struct SessionDeleter {
     void operator()(sony2fuji_session* session) const { sony2fuji_session_destroy(session); }
 };
-using Session = std::unique_ptr<sony2fuji_session, SessionDeleter>;
+struct Session {
+    std::unique_ptr<sony2fuji_session, SessionDeleter> value;
+    rawlab::RecipeProbeStages stages;
+    explicit Session(sony2fuji_session* pointer) : value(pointer) {}
+    sony2fuji_session* get() const { return value.get(); }
+};
 // Opaque IDs keep stale Java handles from becoming native pointers.
 std::mutex sessionsMutex;
 std::unordered_map<jlong, Session> sessions;
@@ -62,6 +70,20 @@ void check(sony2fuji_status status) {
         throw NativeStatusError(status);
     rawlab::checkStatus(status);
 }
+sony2fuji_tone_curve_config curveConfig(JNIEnv* env, jint mode, jdoubleArray points) {
+    if (!points) throw std::invalid_argument("Missing curve points");
+    const jsize length = env->GetArrayLength(points);
+    if (length % 2 || length > 2 * SONY2FUJI_TONE_CURVE_MAX_POINTS || (mode != 0 && mode != 1))
+        throw std::invalid_argument("Invalid curve points");
+    sony2fuji_tone_curve_config config{};
+    config.version = SONY2FUJI_TONE_CURVE_CONFIG_VERSION; config.struct_size = sizeof(config);
+    config.mode = static_cast<sony2fuji_curve_mode>(mode); config.count = static_cast<uint32_t>(length / 2);
+    std::vector<double> values(static_cast<size_t>(length));
+    if (length) env->GetDoubleArrayRegion(points, 0, length, values.data());
+    if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read curve points");
+    for (uint32_t i = 0; i < config.count; ++i) config.points[i] = {values[i * 2], values[i * 2 + 1]};
+    return config;
+}
 struct UtfChars {
     JNIEnv* env;
     jstring value;
@@ -70,6 +92,48 @@ struct UtfChars {
         if (s && !chars) throw std::bad_alloc();
     }
     ~UtfChars() { if (chars) env->ReleaseStringUTFChars(value, chars); }
+};
+struct BitmapPixels {
+    JNIEnv* env;
+    jobject value;
+    void* locked = nullptr;
+    const void* bytes = nullptr;
+    std::vector<uint8_t> packed;
+    BitmapPixels(JNIEnv* e, jobject bitmap, jint width, jint height, jint format) : env(e), value(bitmap) {
+        if (!bitmap) {
+            if (width != 0 || height != 0 || format != 0) throw std::invalid_argument("Invalid RAW image buffer");
+            return;
+        }
+        AndroidBitmapInfo info{};
+        if (width <= 0 || height <= 0 || format != SONY2FUJI_PIXEL_RGBA8 ||
+            AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS ||
+            info.format != ANDROID_BITMAP_FORMAT_RGBA_8888 || info.width != static_cast<uint32_t>(width) ||
+            info.height != static_cast<uint32_t>(height) || info.stride < uint64_t(width) * 4)
+            throw std::invalid_argument("Invalid display bitmap");
+        const size_t rowBytes = static_cast<size_t>(width) * 4;
+        if (static_cast<size_t>(height) > std::numeric_limits<size_t>::max() / rowBytes)
+            throw std::invalid_argument("Display bitmap is too large");
+        const auto result = AndroidBitmap_lockPixels(env, bitmap, &locked);
+        if (result == ANDROID_BITMAP_RESULT_ALLOCATION_FAILED) throw std::bad_alloc();
+        if (result != ANDROID_BITMAP_RESULT_SUCCESS) throw std::runtime_error("Unable to lock display bitmap");
+        try {
+            if (!locked) throw std::runtime_error("Display bitmap has no pixels");
+            bytes = locked;
+            // C ABI 接收紧凑 RGBA；只有平台给出填充行时才在原生内存重新排布。
+            if (info.stride != rowBytes) {
+                packed.resize(rowBytes * height);
+                for (int y = 0; y < height; ++y)
+                    std::memcpy(packed.data() + size_t(y) * rowBytes,
+                        static_cast<const uint8_t*>(locked) + size_t(y) * info.stride, rowBytes);
+                bytes = packed.data();
+            }
+        } catch (...) {
+            AndroidBitmap_unlockPixels(env, value);
+            locked = nullptr;
+            throw;
+        }
+    }
+    ~BitmapPixels() { if (locked) AndroidBitmap_unlockPixels(env, value); }
 };
 struct ByteArrayElements {
     JNIEnv* env;
@@ -88,9 +152,11 @@ struct DcpBlob {
     sony2fuji_blob value{};
     ~DcpBlob() { sony2fuji_release_blob(&value); }
 };
-void prepareRecipeWb(sony2fuji_session* session, const char* input, bool active, float strength,
+void prepareRecipeWb(Session& owner, const char* input, bool active, float strength,
     bool& custom, float& temperature, float& tint) {
     if (!active || (!custom && tint * strength == 0)) return;
+    auto* session = owner.get();
+    rawlab::RecipeProbeStageScope stages(session, owner.stages);
     // 临时显影只解析目标 RAW 的拍摄白平衡，随后正式请求重设完整配置。
     sony2fuji_hsl_config hsl{SONY2FUJI_HSL_CONFIG_VERSION, sizeof(sony2fuji_hsl_config)};
     sony2fuji_wavelet_denoise_config denoise{SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION, sizeof(sony2fuji_wavelet_denoise_config)};
@@ -162,6 +228,68 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeSetLensCorrection(JNIEnv* e
         sony2fuji_lens_correction_config config{SONY2FUJI_LENS_CORRECTION_CONFIG_VERSION,
             sizeof(config), distortion ? 1 : 0, tca ? 1 : 0, crop ? 1 : 0, value.c_str()};
         check(sony2fuji_session_set_lens_correction(sessionFor(id), &config));
+    } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_rawlab_android_engine_NativeProcessor_nativeSetToneCurve(JNIEnv* env, jobject, jlong id,
+    jint mode, jdoubleArray points) {
+    try {
+        const auto config = curveConfig(env, mode, points);
+        std::lock_guard<std::mutex> lock(sessionsMutex);
+        check(sony2fuji_session_set_tone_curve(sessionFor(id), &config));
+        sessions.at(id).stages.curve = config;
+    } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
+}
+
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_com_rawlab_android_engine_ToneCurveSampling_nativeSamples(JNIEnv* env, jclass, jdoubleArray points, jint count) {
+    try {
+        if (count < 2 || count > 4097) throw std::invalid_argument("Invalid curve sample count");
+        const auto config = curveConfig(env, SONY2FUJI_CURVE_CUSTOM, points);
+        std::vector<double> values(static_cast<size_t>(count));
+        for (jint i = 0; i < count; ++i) values[i] = double(i) / (count - 1);
+        check(sony2fuji_sample_tone_curve(&config, values.data(), values.data(), static_cast<uint32_t>(count)));
+        auto result = env->NewDoubleArray(count);
+        if (result) env->SetDoubleArrayRegion(result, 0, count, values.data());
+        return result;
+    } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); return nullptr; }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_rawlab_android_engine_NativeProcessor_nativeSetColorGrading(JNIEnv* env, jobject, jlong id,
+    jfloat shadowsHue, jfloat shadowsSaturation, jfloat midtonesHue, jfloat midtonesSaturation,
+    jfloat highlightsHue, jfloat highlightsSaturation) {
+    try {
+        std::lock_guard<std::mutex> lock(sessionsMutex);
+        sony2fuji_color_grading_config config{SONY2FUJI_COLOR_GRADING_CONFIG_VERSION, sizeof(config),
+            shadowsHue, shadowsSaturation, midtonesHue, midtonesSaturation, highlightsHue, highlightsSaturation};
+        check(sony2fuji_session_set_color_grading(sessionFor(id), &config));
+        sessions.at(id).stages.grading = config;
+    } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_rawlab_android_engine_NativeProcessor_nativeSetToneControls(JNIEnv* env, jobject, jlong id,
+    jfloat blackPoint, jfloat whitePoint, jfloat vibrance) {
+    try {
+        std::lock_guard<std::mutex> lock(sessionsMutex);
+        sony2fuji_tone_controls_config config{SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION, sizeof(config),
+            blackPoint, whitePoint, vibrance};
+        check(sony2fuji_session_set_tone_controls(sessionFor(id), &config));
+        sessions.at(id).stages.tone = config;
+    } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_rawlab_android_engine_NativeProcessor_nativeSetAtmosphere(JNIEnv* env, jobject, jlong id,
+    jfloat clarity, jfloat dehaze) {
+    try {
+        std::lock_guard<std::mutex> lock(sessionsMutex);
+        sony2fuji_atmosphere_config config{SONY2FUJI_ATMOSPHERE_CONFIG_VERSION, sizeof(config),
+            clarity, dehaze};
+        check(sony2fuji_session_set_atmosphere(sessionFor(id), &config));
+        sessions.at(id).stages.atmosphere = config;
     } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
 }
 
@@ -367,7 +495,7 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeSetGpuMode(JNIEnv* env, job
 
 extern "C" JNIEXPORT jobject JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlong id,
-    jstring input, jbyteArray inputPixels, jint inputWidth, jint inputHeight, jint inputPixelFormat,
+    jstring input, jobject inputPixels, jint inputWidth, jint inputHeight, jint inputPixelFormat,
     jstring lut, jstring output, jfloat strength, jfloat exposure,
     jboolean customWb, jfloat temperature, jfloat tint, jfloat highlights, jfloat shadows,
     jfloat contrast, jfloat toneCurve, jfloat saturation, jfloat sharpening,
@@ -375,30 +503,23 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
     jboolean denoiseEnabled, jfloat luma, jfloat chroma, jfloat coarse, jint displayChromaDenoise,
     jfloat vignetteAmount, jfloat vignetteMidpoint, jfloat vignetteRoundness, jfloat vignetteFeather,
     jfloat vignetteHighlights, jfloat grainAmount, jfloat grainSize, jfloat grainRoughness,
-    jint exposureMode, jfloatArray hslValues, jboolean recipeActive, jintArray backendOut) {
+    jint exposureMode, jfloatArray hslValues, jboolean recipeActive, jint processingVersion, jintArray backendOut,
+    jlong sourceRevision, jlong requestRevision, jfloatArray hslProbe) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         const auto found = sessions.find(id);
         if (found == sessions.end()) throw std::invalid_argument("Processor is closed");
         auto* session = found->second.get();
+        check(sony2fuji_session_set_processing_version(session, static_cast<sony2fuji_processing_version>(processingVersion)));
         if (backendOut && env->GetArrayLength(backendOut) != 1) throw std::invalid_argument("Invalid backend output");
         check(sony2fuji_session_set_raw_exposure_mode(session, static_cast<sony2fuji_raw_exposure_mode>(exposureMode)));
         UtfChars in(env, input), film(env, lut), out(env, output);
-        ByteArrayElements inputBytes(env, inputPixels);
+        BitmapPixels inputBytes(env, inputPixels, inputWidth, inputHeight, inputPixelFormat);
         const bool displayInput = inputPixels != nullptr;
-        if (displayInput) {
-            if (inputWidth <= 0 || inputHeight <= 0 || inputPixelFormat != SONY2FUJI_PIXEL_RGBA8)
-                throw std::invalid_argument("Invalid display image dimensions");
-            const uint64_t expected = static_cast<uint64_t>(inputWidth) * static_cast<uint64_t>(inputHeight) * 4;
-            if (expected > static_cast<uint64_t>(std::numeric_limits<jsize>::max()) ||
-                env->GetArrayLength(inputPixels) < static_cast<jsize>(expected))
-                throw std::invalid_argument("Invalid display image buffer");
-        } else if (inputWidth != 0 || inputHeight != 0 || inputPixelFormat != 0) {
-            throw std::invalid_argument("Invalid RAW image buffer");
-        }
+
         bool effectiveCustom = customWb;
         if (!displayInput)
-            prepareRecipeWb(session, in.chars, recipeActive, strength, effectiveCustom, temperature, tint);
+            prepareRecipeWb(found->second, in.chars, recipeActive, strength, effectiveCustom, temperature, tint);
         if (!hslValues || env->GetArrayLength(hslValues) != 24) throw std::invalid_argument("Invalid HSL values");
         float hslData[24];
         env->GetFloatArrayRegion(hslValues, 0, 24, hslData);
@@ -438,6 +559,24 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
             vignetteFeather, vignetteHighlights, grainAmount, grainSize, grainRoughness};
         check(sony2fuji_session_set_photo_effects(session, &effects));
         check(sony2fuji_session_set_chroma_denoise(session, displayChromaDenoise));
+        if (hslProbe) {
+            if (out.chars || env->GetArrayLength(hslProbe) != 13) throw std::invalid_argument("Invalid HSL probe output");
+            float point[2]; env->GetFloatArrayRegion(hslProbe, 0, 2, point);
+            if (env->ExceptionCheck()) return nullptr;
+            sony2fuji_hsl_probe* snapshot = nullptr;
+            check(sony2fuji_session_create_hsl_probe(session, &request, static_cast<uint64_t>(sourceRevision),
+                static_cast<uint64_t>(requestRevision), &snapshot));
+            std::unique_ptr<sony2fuji_hsl_probe, decltype(&sony2fuji_hsl_probe_destroy)> owned(snapshot, sony2fuji_hsl_probe_destroy);
+            sony2fuji_hsl_probe_query query{SONY2FUJI_HSL_PROBE_VERSION, sizeof(query),
+                static_cast<uint64_t>(sourceRevision), static_cast<uint64_t>(requestRevision), point[0], point[1]};
+            sony2fuji_hsl_probe_result sample{};
+            check(sony2fuji_hsl_probe_sample(snapshot, &query, &sample));
+            float values[13]{static_cast<float>(sample.availability), static_cast<float>(sample.quality),
+                sample.rgb[0], sample.rgb[1], sample.rgb[2]};
+            std::copy(std::begin(sample.weights), std::end(sample.weights), values+5);
+            env->SetFloatArrayRegion(hslProbe, 0, 13, values);
+            return nullptr;
+        }
         Buffer buffer;
         check(sony2fuji_process(session, &request, &buffer.value));
         if (backendOut) {
@@ -458,6 +597,21 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
                 reinterpret_cast<const jbyte*>(b.data) + y * b.stride_bytes);
         }
         if (env->ExceptionCheck()) return nullptr;
+        jintArray histogram = nullptr;
+        if (!interactive) {
+            uint32_t counts[768]{};
+            uint32_t shadows = 0, highlights = 0;
+            // 统计当前 CPU 显示 buffer，独立于照片渲染 backend；失败仍交付像素。
+            if (sony2fuji_analyze_image(&b, SONY2FUJI_GPU_OFF, counts, &shadows, &highlights, nullptr) == SONY2FUJI_STATUS_OK) {
+                jint signedCounts[768];
+                static_assert(sizeof(signedCounts) == sizeof(counts));
+                std::memcpy(signedCounts, counts, sizeof(counts));
+                histogram = env->NewIntArray(768);
+                if (!histogram) return nullptr;
+                env->SetIntArrayRegion(histogram, 0, 768, signedCounts);
+                if (env->ExceptionCheck()) return nullptr;
+            }
+        }
         float kelvin = NAN, wbTint = NAN;
         if (!displayInput) {
             sony2fuji_session_get_raw_white_balance(session, &kelvin, &wbTint);
@@ -465,10 +619,10 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
         }
         auto type = env->FindClass("com/rawlab/android/engine/NativeFrame");
         if (!type) return nullptr;
-        auto constructor = env->GetMethodID(type, "<init>", "(II[BFFI)V");
+        auto constructor = env->GetMethodID(type, "<init>", "(II[BFFI[I)V");
         if (!constructor) return nullptr;
         return env->NewObject(type, constructor, static_cast<jint>(b.width),
-            static_cast<jint>(b.height), pixels, kelvin, wbTint, static_cast<jint>(sony2fuji_session_get_last_backend(session)));
+            static_cast<jint>(b.height), pixels, kelvin, wbTint, static_cast<jint>(sony2fuji_session_get_last_backend(session)), histogram);
     } catch (const NativeStatusError& error) {
         throwNativeStatus(env, error);
     } catch (const std::bad_alloc&) {
@@ -485,27 +639,21 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
 
 extern "C" JNIEXPORT jfloat JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeAutoExposure(JNIEnv* env, jobject, jlong id,
-    jstring input, jbyteArray inputPixels, jint inputWidth, jint inputHeight, jint inputPixelFormat,
-    jboolean customWb, jfloat temperature, jfloat tint, jint exposureMode, jboolean recipeActive, jfloat strength) {
+    jstring input, jobject inputPixels, jint inputWidth, jint inputHeight, jint inputPixelFormat,
+    jboolean customWb, jfloat temperature, jfloat tint, jint exposureMode, jboolean recipeActive, jfloat strength, jint processingVersion) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         const auto found = sessions.find(id);
         if (found == sessions.end()) throw std::invalid_argument("Processor is closed");
         UtfChars in(env, input);
-        ByteArrayElements inputBytes(env, inputPixels);
+        BitmapPixels inputBytes(env, inputPixels, inputWidth, inputHeight, inputPixelFormat);
         const bool displayInput = inputPixels != nullptr;
-        if (displayInput) {
-            if (inputWidth <= 0 || inputHeight <= 0 || inputPixelFormat != SONY2FUJI_PIXEL_RGBA8)
-                throw std::invalid_argument("Invalid display image dimensions");
-            const uint64_t expected = static_cast<uint64_t>(inputWidth) * static_cast<uint64_t>(inputHeight) * 4;
-            if (expected > static_cast<uint64_t>(std::numeric_limits<jsize>::max()) ||
-                env->GetArrayLength(inputPixels) < static_cast<jsize>(expected))
-                throw std::invalid_argument("Invalid display image buffer");
-        }
+
+        check(sony2fuji_session_set_processing_version(found->second.get(), static_cast<sony2fuji_processing_version>(processingVersion)));
         check(sony2fuji_session_set_raw_exposure_mode(found->second.get(), static_cast<sony2fuji_raw_exposure_mode>(exposureMode)));
         bool effectiveCustom = customWb;
         if (!displayInput)
-            prepareRecipeWb(found->second.get(), in.chars, recipeActive, strength, effectiveCustom, temperature, tint);
+            prepareRecipeWb(found->second, in.chars, recipeActive, strength, effectiveCustom, temperature, tint);
         auto request = displayInput
             ? rawlab::makeDisplayRequest(in.chars, inputBytes.bytes, static_cast<uint32_t>(inputWidth),
                 static_cast<uint32_t>(inputHeight), static_cast<sony2fuji_pixel_format>(inputPixelFormat),

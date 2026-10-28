@@ -78,21 +78,22 @@ struct AdjustmentTests {
                   "Reset all retains per-photo camera white balance metadata")
         }
         check(!original.isFullResolution, "Bounded previews do not claim native pixel size")
-        let controls: [AdjustmentParameter]=[.contrast,.highlights,.shadows,.toneCurve,.saturation,.sharpening,.vignetteAmount,.grainAmount]
+        let controls: [AdjustmentParameter]=[.clarity,.dehaze,.blackPoint,.whitePoint,.vibrance,.contrast,.highlights,.shadows,.toneCurve,.saturation,.sharpening,.vignetteAmount,.grainAmount]
         for parameter in controls {
             var changed=Adjustments()
             changed[keyPath: parameter.spec.keyPath]=parameter == .sharpening ? 100 : 60
             let rendered=try engine.render(raw,settings: changed,lut: lut,edge: 400)!
             // Core tests separately isolate sharpening from preview resizing effects.
-            check(rendered.histogram != original.histogram,"\(parameter) changes a real RAW render")
+            check((rendered.image.dataProvider!.data! as Data) != (original.image.dataProvider!.data! as Data),"\(parameter) changes a real RAW render")
             check(rendered.baselineEV == original.baselineEV,"\(parameter) preserves the RAW exposure baseline")
             if parameter == .highlights || parameter == .shadows {
+                check(rendered.histogram.count == 3 && original.histogram.count == 3, "Brightness comparison requires available RGB statistics")
                 let mean: ([[Double]]) -> Double = { bins in bins.flatMap { $0.enumerated().map { Double($0.offset)*$0.element } }.reduce(0,+) }
                 check(mean(rendered.histogram)>mean(original.histogram),"Positive \(parameter) brightens instead of darkening")
             }
         }
         let restored=try engine.render(raw,settings: Adjustments(),lut: lut,edge: 400)!
-        check(restored.histogram == original.histogram,"Reset restores the original image")
+        check((restored.image.dataProvider!.data! as Data) == (original.image.dataProvider!.data! as Data),"Reset restores the original image")
 
         // Export the adjusted image from the same engine and verify encoded pixels against
         // the full-resolution display buffer, not just the existence of an output file.

@@ -3,17 +3,36 @@ using System.Globalization;
 namespace RawLab.Windows;
 
 public sealed record NumericRange(double Min, double Max, double Grid = .1, double Wheel = 1,
-    double FineWheel = .1, bool Reciprocal = false, int FixedDecimals = -1)
+    double FineWheel = .1, bool Reciprocal = false, int FixedDecimals = -1, bool CompactPercent = false, bool AllowOffGrid = false)
 {
     public double Clamp(double value) => Math.Clamp(Math.Round(value / Grid, MidpointRounding.AwayFromZero) * Grid, Min, Max);
-    public double Position(double value) => Reciprocal
+    public double Position(double value) => Max<=Min ? 0 : Reciprocal
         ? (1 / Min - 1 / value) / (1 / Min - 1 / Max) : (value - Min) / (Max - Min);
     public double Value(double position) => Clamp(Reciprocal
         ? 1 / (1 / Min - Math.Clamp(position, 0, 1) * (1 / Min - 1 / Max))
         : Min + Math.Clamp(position, 0, 1) * (Max - Min));
-    public double? Parse(string text) => double.TryParse(text, NumberStyles.Float, CultureInfo.GetCultureInfo(Loc.Language), out var value)
-        && double.IsFinite(value) ? Clamp(value) : null;
-    public string Format(double value) => value.ToString(FixedDecimals >= 0 ? "F" + FixedDecimals : "0.########", CultureInfo.GetCultureInfo(Loc.Language));
+    public NumericInputError Validate(string text, double? original, out double value)
+    {
+        if(!double.TryParse(text,NumberStyles.Float,CultureInfo.GetCultureInfo(Loc.Language),out value) || !double.IsFinite(value))return NumericInputError.Invalid;
+        if(original is {} current && double.IsFinite(current) && current>=Min && current<=Max && double.TryParse(Format(current),NumberStyles.Float,
+            CultureInfo.GetCultureInfo(Loc.Language),out var displayed) && value==displayed)
+        {value=current;return NumericInputError.None;}
+        if(value<Min || value>Max)return NumericInputError.Range;
+        if(value==original)return NumericInputError.None;
+        if(AllowOffGrid)return NumericInputError.None;
+        var units=value/Grid;
+        return Math.Abs(units-Math.Round(units))<=1e-8*Math.Max(1,Math.Abs(units)) ? NumericInputError.None : NumericInputError.Grid;
+    }
+    public double? Parse(string text,double? original=null) => Validate(text,original,out var value)==NumericInputError.None ? value : null;
+    public string Format(double value)
+    {
+        var culture=CultureInfo.GetCultureInfo(Loc.Language);
+        var clean=Math.Abs(value)<.005 ? 0 : value;
+        return clean.ToString(!CompactPercent && FixedDecimals>=0 ? "F"+Math.Min(2,FixedDecimals) : "0.##",culture);
+    }
+    public string StepText(double step) => step==.001 ? "1/1000" : Format(step);
+
+    public (double Start,double End) Fill(double origin,double current) => (Math.Min(Position(origin),Position(current)),Math.Max(Position(origin),Position(current)));
     public static NumericRange For(ParameterSpec spec) => new(spec.Min, spec.Max, spec.Step,
         spec.Id == Parameter.Exposure ? .1 : spec.Id == Parameter.Temperature ? 100 : 1,
         spec.Id == Parameter.Exposure ? .01 : spec.Id == Parameter.Temperature ? 10 : .1,
@@ -43,5 +62,36 @@ public sealed class ParameterWheel
         if (lastStep != null && milliseconds - lastStep < 125) return (true, 0);
         lastStep = milliseconds;
         return (true, direction);
+    }
+}
+
+public enum NumericInputError { None, Invalid, Range, Grid }
+
+// 只持有输入草稿；源和字段身份变化时丢弃，不能把旧文本交给新的回调。
+public sealed class NumericInputSession
+{
+    private object? source,scope;
+    private NumericRange range=new(0,100);
+    private bool bound;
+    public double Original { get; private set; }
+    public string Text { get; private set; }="";
+    public bool Dirty { get; private set; }
+    public NumericInputError Error { get; private set; }
+    public bool Bind(object? nextSource,object? nextScope,NumericRange limits,double current)
+    {
+        var changed=!bound || !Equals(source,nextSource) || !Equals(scope,nextScope) ||
+            (range!=limits && !(limits.CompactPercent && Dirty)) || Original!=current;
+        source=nextSource;scope=nextScope;range=limits;bound=true;
+        if(changed){Original=current;Cancel();}
+        return changed;
+    }
+    public void Edit(string text){Text=text;Dirty=true;Error=NumericInputError.None;}
+    public void Cancel(){Text=range.Format(Original);Dirty=false;Error=NumericInputError.None;}
+    public double? Commit()
+    {
+        if(!Dirty)return null;
+        Error=range.Validate(Text,Original,out var next);
+        if(Error!=NumericInputError.None)return null;
+        var changed=next!=Original;Original=next;Cancel();return changed ? next : null;
     }
 }

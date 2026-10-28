@@ -63,14 +63,14 @@ class RenderedDngInstrumentedTest {
         return hash.digest()
     }
 
-    @Test fun nativeDngBakesAllAdjustmentsOnCpuAndForcedGles() {
+    @Test fun nativeDngBakesAllAdjustmentsOnCpuAndAutoGles() {
         val root = File(context.cacheDir, "dng-native-${UUID.randomUUID()}").apply { mkdirs() }
         val input = raw(root, "source.ARW")
         val before = digest(input)
         try {
             PhotoStorage(context).use { storage ->
                 val look = storage.filmPath("velvia")
-                for ((name, mode) in listOf("cpu" to NativeProcessor.CPU, "gles" to NativeProcessor.FORCE)) {
+                for ((name, mode) in listOf("cpu" to NativeProcessor.CPU, "gles" to NativeProcessor.AUTO)) {
                     NativeProcessor(mode).use { processor ->
                         val started = SystemClock.elapsedRealtime()
                         val preview = processor.preview(input, look, settings(), 128, false)
@@ -139,7 +139,7 @@ class RenderedDngInstrumentedTest {
             single = DocumentsContract.createDocument(context.contentResolver, parent, ExportFormat.DNG.mimeType,
                 "single-${UUID.randomUUID()}.dng")!!
             ownedOutputs += single!!
-            compose.runOnUiThread { assertTrue(model.beginExport()); model.export(single, ExportFormat.DNG, 128) }
+            compose.runOnUiThread { model.beginExport { assertTrue(it); model.export(single, ExportFormat.DNG, 128) } }
             compose.waitUntil(300_000) { model.state.value.canExport || model.state.value.error != null }
             assertNull(model.state.value.error)
             val singleBytes = context.contentResolver.openInputStream(single!!)!!.use { it.readBytes() }

@@ -42,7 +42,11 @@ static std::vector<float> waveletReference(const std::vector<float>& input, int 
     for (int scale = 0; scale < settings.depth; ++scale) {
         const int level = settings.depth - scale;
         const float divisor = float(1 << level);
-        const int window = level > 4 ? (1 << (level - 1)) + 1 : 7;
+        constexpr int lumaWindows[] = {7, 15, 29, 57, 113, 113};
+        constexpr int chromaWindows[] = {7, 15, 29, 57, 17, 33};
+        constexpr int legacyWindows[] = {7, 7, 7, 7, 17, 33};
+        const int window = (settings.processingVersion == ProcessingVersion::Legacy ? legacyWindows :
+            settings.luminance ? lumaWindows : chromaWindows)[level - 1];
         for (int direction = 0; direction < 3; ++direction) {
             double* block = coefficients + (1 + scale * 3 + direction) * count;
             cv::Mat band(height, width, CV_32F), power;
@@ -53,7 +57,13 @@ static std::vector<float> waveletReference(const std::vector<float>& input, int 
                 const float value = band.ptr<float>()[i];
                 const float threshold = settings.thresholdScale[scale] * variance /
                     std::sqrt(std::max(power.ptr<float>()[i] - variance, .05f * variance));
-                block[i] = std::copysign(std::max(std::abs(value) - threshold, 0.f), value) * divisor;
+                const float magnitude = std::abs(value);
+                float filtered = std::max(magnitude - threshold, 0.f);
+                if (settings.processingVersion != ProcessingVersion::Legacy && !settings.luminance && level >= 2 && level <= 4) {
+                    if (magnitude >= 2 * threshold) filtered = magnitude;
+                    else if (magnitude > threshold) filtered = 2 * (magnitude - threshold);
+                }
+                block[i] = std::copysign(filtered, value) * divisor;
             }
         }
     }
@@ -65,7 +75,8 @@ static std::vector<float> waveletReference(const std::vector<float>& input, int 
 static void waveletTests() {
     std::mt19937 random(42);
     std::normal_distribution<float> noise(0, .7f);
-    for (int depth : {4, 6}) for (bool shrink : {false, true}) {
+    for (auto version : {ProcessingVersion::Legacy})
+    for (int depth : {4, 6}) for (bool shrink : {false, true}) for (bool luminance : {false, true}) {
         const int width = depth == 6 ? 320 : 192, height = depth == 6 ? 256 : 128;
         std::vector<float> input(width * height), result(input.size(), -999);
         for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x)
@@ -73,6 +84,8 @@ static void waveletTests() {
         input[0] = 25; input.back() = -20;
         WaveletFilterSettings settings;
         settings.depth = depth;
+        settings.luminance = luminance;
+        settings.processingVersion = version;
         std::fill(std::begin(settings.sigma), std::end(settings.sigma), .4f);
         std::fill(std::begin(settings.thresholdScale), std::end(settings.thresholdScale), shrink ? 1.5f : 0.f);
         assert(gpuWaveletFilter(input.data(), width, height, settings, result.data()));
@@ -81,6 +94,10 @@ static void waveletTests() {
         auto repeated = result;
         assert(gpuWaveletFilter(input.data(), width, height, settings, repeated.data()));
         assert(repeated == result);
+        settings.processingVersion = static_cast<ProcessingVersion>(99);
+        assert(!gpuWaveletFilter(input.data(), width, height, settings, repeated.data()));
+        assert(repeated == result);
+        settings.processingVersion = version;
         settings.depth = 7;
         assert(!gpuWaveletFilter(input.data(), width, height, settings, repeated.data()));
         assert(repeated == result);
@@ -123,8 +140,11 @@ static void denoiserTests() {
         const float level = x < 280 ? .18f : .4f;
         image.at(x, y) = {level + noise(random), level + noise(random), level + noise(random)};
     }
-    for (const WaveletDenoiseOptions settings : {WaveletDenoiseOptions{true, 60, 0, 0},
-         WaveletDenoiseOptions{true, 0, 70, 100}, WaveletDenoiseOptions{true, 100, 100, 0}}) {
+    for (auto version : {ProcessingVersion::Legacy})
+    for (WaveletDenoiseOptions settings : {WaveletDenoiseOptions{true, 60, 0, 0},
+         WaveletDenoiseOptions{true, 0, 70, 100}, WaveletDenoiseOptions{true, 100, 100, 0},
+         WaveletDenoiseOptions{true, 10, 72, 100}, WaveletDenoiseOptions{true, 10, 0, 0}}) {
+        settings.processingVersion = version;
         auto cpu = image, gpu = image;
         WaveletDenoiseDiagnostics diagnostics;
         assert(applyWaveletDenoise(cpu, settings) == ErrorCode::Success);
@@ -139,6 +159,24 @@ static void denoiserTests() {
         assert(applyChromaDenoise(gpu, mode, &diagnostics, GpuMode::Force) == ErrorCode::Success);
         assert(diagnostics.applied && diagnostics.gpuUsed);
         compare(pixels(cpu), pixels(gpu), .0002f, .0002f, "complete chroma denoiser");
+    }
+    auto colored = image;
+    for (int y = 0; y < image.height; ++y) for (int x = 0; x < image.width; ++x) {
+        const float texture = x > 96 && x < 500 && y > 96 && y < 300 ?
+            .04f * std::sin(.3f * x) * std::cos(.2f * y) : 0;
+        const float edge = x > 350 ? .025f : -.025f;
+        auto& pixel = colored.at(x, y);
+        pixel.r += texture + edge; pixel.g -= .5f * texture; pixel.b -= .5f * texture + edge;
+    }
+    for (WaveletDenoiseOptions settings : {WaveletDenoiseOptions{true, 10, 72, 100},
+         WaveletDenoiseOptions{true, 0, 46, 50}, WaveletDenoiseOptions{true, 0, 72, 0}}) {
+        settings.processingVersion = ProcessingVersion::Legacy;
+        auto cpu = colored, gpu = colored;
+        WaveletDenoiseDiagnostics diagnostics;
+        assert(applyWaveletDenoise(cpu, settings) == ErrorCode::Success);
+        assert(applyWaveletDenoise(gpu, settings, &diagnostics, GpuMode::Force) == ErrorCode::Success);
+        assert(diagnostics.applied && diagnostics.gpuUsed);
+        compare(pixels(cpu), pixels(gpu), 5e-5f, 5e-5f, "colored wavelet denoiser");
     }
     auto unchanged = image;
     assert(applyWaveletDenoise(unchanged, {false, 50, 50, 50}, nullptr, GpuMode::Force) == ErrorCode::Success);

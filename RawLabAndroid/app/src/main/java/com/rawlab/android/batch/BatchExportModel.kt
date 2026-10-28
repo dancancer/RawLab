@@ -55,12 +55,18 @@ data class BatchExportState(
     val unfinishedCount: Int get() = job.rows.count { it.status !in setOf(BatchRowStatus.SUCCESS, BatchRowStatus.NEEDS_CONFIRMATION) }
 
     fun canStart(retry: Boolean) = phase !in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING) &&
-        job.rows.isNotEmpty() && (!retry || unfinishedCount > 0)
+        job.rows.isNotEmpty() && (!retry || failedCount > 0)
 
-    fun configuredFor(format: ExportFormat, destination: Uri?, longEdge: Int?) = copy(
+    fun configuredFor(format: ExportFormat, destination: Uri?, longEdge: Int?): BatchExportState {
+        require(job.settingsMode != BatchSettingsMode.PER_TARGET_FROZEN ||
+            (format == job.outputFormat && longEdge == job.outputLongEdge && destination?.toString() == job.destination)) {
+            "Frozen export settings cannot be changed"
+        }
+        return copy(
         job = job.copy(outputFormat = format, destination = destination?.toString(), outputLongEdge = longEdge,
             rows = job.rows.map { if (it.status == BatchRowStatus.SUCCESS) it else it.copy(outputName = it.outputName.substringBeforeLast('.') + format.suffix) }),
         phase = BatchPhase.PREPARING, outputFormat = format, destination = destination, error = null, stopping = false)
+    }
 }
 
 private fun BatchJob.confirmedOutput(id: String, saved: Boolean) = withRows(rows.map {
@@ -111,7 +117,8 @@ class BatchExportModel(
                     if (initial != null) reconcile(initial) else freeze(initialJob)
                 }
                 mutable.update { it.copy(job = ready, stopping = false,
-                    phase = if (initial == null) BatchPhase.SELECTING else BatchPhase.CANCELLED) }
+                    phase = if (initial == null || (initial.settingsMode == BatchSettingsMode.PER_TARGET_FROZEN &&
+                        ready.rows.all { it.status == BatchRowStatus.PENDING })) BatchPhase.SELECTING else BatchPhase.CANCELLED) }
             } catch (error: Exception) {
                 mutable.update { it.copy(phase = BatchPhase.FAILED, error = error.message, stopping = false) }
             }
@@ -119,7 +126,7 @@ class BatchExportModel(
     }
 
     fun addUris(uris: List<Uri>) {
-        if (uris.isEmpty()) return
+        if (uris.isEmpty() || mutable.value.job.settingsMode != BatchSettingsMode.UNIFORM_FROZEN) return
         val previous = mutable.getAndUpdate {
             if (it.phase == BatchPhase.SELECTING) it.copy(phase = BatchPhase.PREPARING) else it
         }
@@ -145,7 +152,7 @@ class BatchExportModel(
 
     fun remove(id: String) {
         mutable.update { current ->
-            if (current.phase != BatchPhase.SELECTING) current else {
+            if (current.phase != BatchPhase.SELECTING || current.job.settingsMode != BatchSettingsMode.UNIFORM_FROZEN) current else {
                 val targets = current.job.rows.filterNot { it.id == id }.map { it.target }
                 current.copy(job = BatchJob(current.job.source, targets,
                     id = current.job.id, outputFormat = current.job.outputFormat,
@@ -160,6 +167,9 @@ class BatchExportModel(
 
     private fun startInternal(format: ExportFormat, destination: Uri?, longEdge: Int?, retry: Boolean) {
         val validationError = when {
+            mutable.value.job.settingsMode == BatchSettingsMode.PER_TARGET_FROZEN &&
+                (format != mutable.value.job.outputFormat || longEdge != mutable.value.job.outputLongEdge ||
+                    destination?.toString() != mutable.value.job.destination) -> "Frozen export settings cannot be changed"
             !ExportSize.isValid(longEdge) -> AppStrings.text(R.string.message_enter_a_pixel_count_between_1_and)
             destination == null && !format.allowsGallery -> AppStrings.text(R.string.dng_file_only)
             else -> null
@@ -187,10 +197,10 @@ class BatchExportModel(
         running = scope.launch(Dispatchers.IO) {
             try {
                 val materialized = configured
-                if (!materialized.source.sourceFile.isFile) {
+                if (materialized.settingsMode == BatchSettingsMode.UNIFORM_FROZEN && !materialized.source.sourceFile.isFile) {
                     throw BatchGlobalFailure(AppStrings.text(R.string.message_task_source_unavailable))
                 }
-                if ((materialized.source.settings.film != "neutral" || materialized.source.settings.recipeID != null) && materialized.source.lookFile?.isFile != true) {
+                if (materialized.settingsMode == BatchSettingsMode.UNIFORM_FROZEN && (materialized.source.settings.film != "neutral" || materialized.source.settings.recipeID != null) && materialized.source.lookFile?.isFile != true) {
                     throw BatchGlobalFailure(AppStrings.text(R.string.message_the_task_source_or_look_file_is))
                 }
                 val journal = BatchJournal(journalRoot)
@@ -203,7 +213,8 @@ class BatchExportModel(
                         didUpdate = {
                             attempted.addAll(it.rows.filter { row -> row.status == BatchRowStatus.PROCESSING }.map { row -> row.id })
                             mutable.update { current -> current.copy(job = it) }
-                        }, dispose = { it.delete() }, publish = { rendered, name, _, checkpoint -> output.publish(rendered, name, checkpoint) })
+                        }, dispose = { it.delete() }, publish = { rendered, name, _, checkpoint -> output.publish(rendered, name, checkpoint) },
+                        onlyIDs = if (retry) materialized.rows.filter { it.status == BatchRowStatus.FAILED }.map { it.id }.toSet() else null)
                 } finally { processor.close() }
                 mutable.value = BatchExportState(result,
                     phase = when {
@@ -219,6 +230,11 @@ class BatchExportModel(
                 reportTerminal(mutable.value.job, UsageBatchOutcome.Interrupted)
             }
         }
+    }
+
+    fun continueUnfinished() {
+        val current = mutable.value
+        startInternal(current.outputFormat, current.destination, current.job.outputLongEdge, retry = false)
     }
 
     fun retryFailed() {
@@ -238,12 +254,13 @@ class BatchExportModel(
         val name = displayName(uri)
         val inputKind = PhotoFiles.kind(name, resolver.getType(uri))
             ?: throw IOException(AppStrings.text(R.string.message_not_a_supported_raw_file))
-        val destination = inputFile(mutable.value.job.id, identity, name)
+        val snapshot = mutable.value.job
+        val destination = inputFile(snapshot.id, identity, name)
         if (!destination.exists()) {
             val input = resolver.openInputStream(uri) ?: throw IOException(AppStrings.text(R.string.message_unable_to_read_file))
             try { input.use { source -> destination.outputStream().use { source.copyTo(it) } }
                 processorFactory(gpuMode, storage.lensDatabase()).use {
-                    it.preview(destination, null, EditSettings(), 256, false, inputKind)
+                    it.preview(destination, null, EditSettings(processing = snapshot.source.settings.processing), 256, false, inputKind)
                 }
             } catch (error: Exception) { destination.delete(); throw error }
         }
@@ -279,10 +296,12 @@ class BatchExportModel(
     suspend fun preview(target: BatchTarget): android.graphics.Bitmap = withContext(Dispatchers.IO) {
         // 取消对话框不能中断 JNI；所有预览仍由 model 持有，关闭后等它们退出再删输入。
         val work = scope.async(Dispatchers.IO) {
-            val source = mutable.value.job.source
+            val snapshot = mutable.value.job
+            snapshot.validate()
+            if (snapshot.settingsMode == BatchSettingsMode.PER_TARGET_FROZEN) target.frozen!!.verifyFiles(target.sourceFile)
             // 效果查看先限长再降噪，最终导出仍保留完整质量。
             processorFactory(gpuMode, storage.lensDatabase()).use {
-                it.preview(target.sourceFile, source.lookFile, source.settingsFor(target.inputKind), 1280, true, target.inputKind)
+                it.preview(target.sourceFile, snapshot.lookFor(target), snapshot.settingsFor(target), 1280, true, target.inputKind)
             }
         }
         try { work.await().bitmap() } finally { work.cancel() }
@@ -312,7 +331,9 @@ class BatchExportModel(
         catch (error: Exception) { mutable.update { it.copy(error = error.message) } }
     }
 
-    fun setDestination(destination: Uri?) { mutable.update { it.copy(destination = destination) } }
+    fun setDestination(destination: Uri?) { mutable.update {
+        if (it.job.settingsMode == BatchSettingsMode.PER_TARGET_FROZEN) it else it.copy(destination = destination)
+    } }
 
     fun discardDraftOrCompleted(): Deferred<Unit>? {
         val job = mutable.value.job

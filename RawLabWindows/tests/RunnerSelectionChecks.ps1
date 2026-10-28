@@ -5,6 +5,7 @@ if(!$Output){$Output=Join-Path ([IO.Path]::GetTempPath()) ('rawlab-runner-'+[gui
 $root=Join-Path ([IO.Path]::GetFullPath($Output)) ([guid]::NewGuid().ToString('N').Substring(0,8)+' runner cases')
 $tests=Join-Path $root 'RawLabWindows/tests';New-Item -ItemType Directory -Force $tests | Out-Null
 $runner=Join-Path $tests 'run-v08.ps1';Copy-Item (Join-Path $PSScriptRoot 'run-v08.ps1') $runner
+Copy-Item (Join-Path $PSScriptRoot 'CheckProcess.ps1') $tests
 $native=Join-Path $root 'native';New-Item -ItemType Directory -Force (Join-Path $native 'ExifTool') | Out-Null
 foreach($name in @('sony2fuji.dll','raw.dll','ExifTool/sentinel')){[IO.File]::WriteAllText((Join-Path $native $name),'private test artifact')}
 $stub=Join-Path $root 'dotnet-stub.cmd'
@@ -15,6 +16,10 @@ ConvertTo-Json -InputObject @($args) -Compress | Add-Content -LiteralPath $env:R
 if(($env:RAWLAB_RUNNER_FAIL -eq 'build' -and $args[0] -eq 'build') -or
    ($env:RAWLAB_RUNNER_FAIL -eq 'msbuild' -and $args[0] -eq 'msbuild') -or
    ($env:RAWLAB_RUNNER_FAIL -eq 'about' -and $args -contains '--about')){exit 7}
+if($env:RAWLAB_RUNNER_FAIL -eq 'timeout' -and $args -contains '--about'){
+    Write-Output 'suite reached timeout probe';Start-Sleep -Seconds 90
+}
+if($env:RAWLAB_RUNNER_FAIL -eq 'msbuild-timeout' -and $args[0] -eq 'msbuild'){Start-Sleep -Seconds 90}
 if($args[0] -eq 'msbuild'){
     $name=if($args[1] -like '*localization-ui*'){'ui'}else{'main'}
     $path=Join-Path $env:RAWLAB_RUNNER_TARGET $name
@@ -23,7 +28,7 @@ if($args[0] -eq 'msbuild'){
 }
 exit 0
 '@)
-$names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','editor-shell','ui-details','geometry','transform-ui','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
+$names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','ai-panel','editor-shell','ui-details','geometry','transform-ui','adjustment-history','hsl-target','adjustment-presets','editor-review','tool-groups','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
 $saved=@{};foreach($key in @('RAWLAB_RUNNER_CALLS','RAWLAB_RUNNER_TARGET','RAWLAB_RUNNER_FAIL')){$saved[$key]=[Environment]::GetEnvironmentVariable($key)}
 $checks=0;$index=0
 function Check([bool]$Success,[string]$Name){if(!$Success){throw $Name};$script:checks++;Write-Output "PASS $Name"}
@@ -41,11 +46,12 @@ function Run([string]$Selection,[string]$Failure){
         $ErrorActionPreference='Continue'
         $arguments=@('-NoProfile','-ExecutionPolicy','Bypass','-File',$runner,'-RawPath',(Join-Path $root 'fixture.arw'),'-NativeArtifacts',$artifacts,'-DotNet',$dotnet)
         if($Selection.Length -gt 0){$arguments+=@('-Only',$Selection)}
+        if($Failure -in @('timeout','msbuild-timeout')){$arguments+=@('-CheckTimeoutSeconds','3')}
         & powershell.exe @arguments 2>&1 | Out-File $log -Encoding utf8 -Width 4096
         $code=$LASTEXITCODE
     }finally{$ErrorActionPreference=$preference}
     $calls=@();if(Test-Path -LiteralPath $env:RAWLAB_RUNNER_CALLS){$calls=@(Get-Content -LiteralPath $env:RAWLAB_RUNNER_CALLS)}
-    [pscustomobject]@{Code=$code;Rows=@(Get-Content -LiteralPath $summary -Raw | ConvertFrom-Json);Calls=$calls;Text=(Get-Content $log -Raw)}
+    [pscustomobject]@{Code=$code;Rows=@(Get-Content -LiteralPath $summary -Raw | ConvertFrom-Json | ForEach-Object {$_});Calls=$calls;Text=(Get-Content $log -Raw)}
 }
 try{
     $env:RAWLAB_RUNNER_TARGET=Join-Path $root 'targets'
@@ -57,20 +63,42 @@ try{
     }
     foreach($selection in @(' about ','ABOUT','about,, ,ABOUT')){
         $result=Run $selection ''
-        Check ($result.Code -eq 0 -and ($result.Rows.name -join ',') -eq 'build,build-localization-ui,about') "Trim, case and duplicates select exactly one suite: $selection"
+        Check ($result.Code -eq 0 -and ($result.Rows.name -join ',') -eq 'build,build-localization-ui,target-RawLabWindows.Tests,target-LocalizationUiChecks,about') "Trim, case and duplicates select exactly one suite: $selection"
+        Check (@($result.Rows | Where-Object {$_.log -ne ($_.name+'.log')}).Count -eq 0) "Summary log paths stay valid beside downloaded logs: $selection"
         Check ($result.Calls.Count -eq 5) "Only two builds, two target queries and the selected suite run: $selection"
         $last=ConvertFrom-Json $result.Calls[-1]
         Check ($last[1] -eq '--about' -and $last[0] -like '*RawLabWindows.Tests.dll') "Selected suite uses its actual DLL mode: $selection"
     }
     $result=Run '' ''
-    Check ($result.Code -eq 0 -and ($result.Rows.name -join ',') -eq ($names -join ',') -and @($result.Rows | Where-Object {$_.exitCode -ne 0}).Count -eq 0 -and $result.Calls.Count -eq $names.Count+2) 'Empty selection runs the complete declared suite list successfully'
-    foreach($failure in @('build','msbuild','about','log','missing-command','missing-artifacts')){
+    $expected=@($names[0..1])+@('target-RawLabWindows.Tests','target-LocalizationUiChecks')+@($names[2..($names.Count-1)])
+    Check ($result.Code -eq 0 -and ($result.Rows.name -join ',') -eq ($expected -join ',') -and @($result.Rows | Where-Object {$_.exitCode -ne 0}).Count -eq 0 -and $result.Calls.Count -eq $names.Count+2) 'Empty selection runs the complete declared suite list successfully'
+    $result=Run 'ai-panel' ''
+    Check ($result.Code -eq 0 -and 'ai-panel' -in $result.Rows.name -and (ConvertFrom-Json $result.Calls[-1])[1] -eq '--ai-panel') 'AI panel is selectable without an installed model'
+    $result=Run 'ai-window' ''
+    Check ($result.Code -ne 0 -and $result.Text -match 'Selected suites did not run: ai-window' -and 'ai-window' -notin $result.Rows.name) 'Explicit AI window selection cannot pass without its model'
+    $model=Join-Path $native 'AI/DualDn';New-Item -ItemType Directory -Force $model | Out-Null
+    foreach($name in @('AI/DualDn/manifest.json','onnxruntime.dll','onnxruntime_providers_shared.dll','DirectML.dll')){[IO.File]::WriteAllText((Join-Path $native $name),'private AI test artifact')}
+    $result=Run 'ai-window' ''
+    Check ($result.Code -eq 0 -and 'ai-window' -in $result.Rows.name -and (ConvertFrom-Json $result.Calls[-1])[1] -eq '--ai-window') 'Installed model enables the explicitly selected AI window suite'
+    foreach($target in @('main','ui')){
+        $destination=Join-Path $env:RAWLAB_RUNNER_TARGET $target
+        Check ((Test-Path (Join-Path $destination 'AI/DualDn/manifest.json')) -and (Test-Path (Join-Path $destination 'DirectML.dll'))) "AI model and runtime reach the $target test output"
+    }
+    foreach($failure in @('build','msbuild','about','log','missing-command','missing-artifacts','timeout','msbuild-timeout')){
         $result=Run 'about,profile-isolation' $failure
         Check ($result.Code -ne 0 -and $result.Text -notmatch 'PASS: Windows v08') "External failure stays nonzero: $failure"
         Check (@($result.Rows | Where-Object {$_.exitCode -ne 0}).Count -gt 0 -and @($result.Rows | Where-Object {$_.name -eq 'old-success'}).Count -eq 0) "Early/suite failure replaces stale summary: $failure"
         if($failure -in @('build','about')){Check (@($result.Rows | Where-Object {$_.name -eq $failure -and $_.exitCode -eq 7}).Count -eq 1) "Summary preserves native exit code: $failure"}
-        if($failure -eq 'about'){Check (@($result.Rows | Where-Object {$_.name -eq 'profile-isolation' -and $_.exitCode -eq 0}).Count -eq 1) 'A failed suite does not hide subsequent selected suite results'}
+        if($failure -in @('about','timeout')){Check (@($result.Rows | Where-Object {$_.name -eq 'profile-isolation' -and $_.exitCode -eq 0}).Count -eq 1) "A failed suite does not hide subsequent selected suite results: $failure"}
+        if($failure -eq 'timeout'){Check (@($result.Rows | Where-Object {$_.name -eq 'about' -and $_.exitCode -eq 124 -and $_.timedOut}).Count -eq 1 -and $result.Text -match 'TIMEOUT') 'Timeout remains nonzero with an explicit summary and live diagnostic'}
+        if($failure -in @('msbuild','msbuild-timeout')) {
+            $query=$result.Rows|Where-Object {$_.name -eq 'target-RawLabWindows.Tests'}
+            $expectedCode=if($failure -eq 'msbuild'){7}else{124}
+            Check ($query.exitCode -eq $expectedCode -and $query.pid -gt 0 -and $query.durationSeconds -gt 0 -and $query.timedOut -eq ($failure -eq 'msbuild-timeout') -and 'about' -notin $result.Rows.name) "Failed target query preserves its process evidence and stops dependent tests: $failure"
+        }
     }
     Write-Output "PASS $checks runner selection checks; fixtures: $root"
 }
 finally{foreach($key in $saved.Keys){[Environment]::SetEnvironmentVariable($key,$saved[$key])}}
+# 失败探针会留下非零 LASTEXITCODE；只有全部断言通过才向 CI 返回成功。
+exit 0

@@ -106,6 +106,7 @@ struct MacCropOverlay: View {
     var imageOutline: Path? = nil
     var onChange: ((GeometrySettings) -> Void)? = nil
     var onEditingChanged: ((Bool) -> Void)? = nil
+    var prepareInteraction: (GeometrySettings) -> Bool = { _ in true }
 
     @Environment(\.locale) private var localizationLocale
     @State private var pointer = MacCropPointerState()
@@ -241,6 +242,7 @@ struct MacCropOverlay: View {
     }
 
     private func adjust(_ handle: MacCropHandle, translation: CGSize) {
+        guard prepareInteraction(settings) else { return }
         let result = pointer.discreteAdjustment(settings: settings, imageBounds: imageBounds, canvasSize: canvasSize,
             aspectRatio: aspectRatio, previewIdentity: previewIdentity, handle: handle, translation: translation)
         onChange?(result)
@@ -252,6 +254,7 @@ struct MacCropOverlay: View {
         DragGesture(minimumDistance: 0, coordinateSpace: .named("mac.crop.canvas"))
             .onChanged { value in
                 guard editable, !pointer.ignoresCurrentGesture else { return }
+                if pointer.session == nil && !prepareInteraction(settings) { return }
                 focusedHandle = handle
                 if pointer.begin(MacCropDragSession(handle: handle, settings: settings, imageBounds: imageBounds,
                     canvasSize: canvasSize, aspectRatio: aspectRatio, previewIdentity: previewIdentity)) {

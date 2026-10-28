@@ -7,16 +7,16 @@ struct MacGeometryWorkspace: View {
 
     var body: some View {
         let _ = localizationLocale
-        VStack(spacing: 10) {
+        VStack(spacing: 6) {
             HStack(spacing: 12) {
-                Text(L10n.text("几何编辑")).font(.system(size: 13, weight: .semibold))
                 ForEach(MacGeometryTab.allCases, id: \.self) { tab in
                     Button {
-                        finishInput()
-                        _ = model.selectGeometryDraftTab(tab)
+                        ParameterValueField.cancelPendingInputs()
+                        model.selectAdjustmentGeometryTab(tab)
                     } label: {
-                        Text(tab.title).font(.system(size: 13))
-                            .padding(.vertical, 7)
+                        Label(tab.title, systemImage: tab == .crop ? "crop.rotate" : tab == .perspective ? "perspective" : "camera.filters")
+                            .font(.system(size: 12)).fixedSize()
+                            .padding(.vertical, 5)
                             .overlay(alignment: .bottom) {
                                 if model.geometryDraftTab == tab { Capsule().fill(.yellow).frame(height: 2) }
                             }
@@ -24,18 +24,16 @@ struct MacGeometryWorkspace: View {
                         .foregroundStyle(model.geometryDraftTab == tab ? Color.yellow : Color.secondary)
                         .accessibilityIdentifier("geometry.tab.\(tab.rawValue)")
                         .accessibilityAddTraits(model.geometryDraftTab == tab ? .isSelected : [])
-                        .disabled((!model.invalidGeometryDraftInputs.isEmpty && model.geometryDraftTab != tab) ||
-                                  (tab == .lens && RenderEngine.isRasterInput(model.file)))
+                        .disabled(tab == .lens && RenderEngine.isRasterInput(model.file))
                 }
                 Spacer(minLength: 8)
                 Button {
-                    finishInput()
-                    if model.geometryDraftTab == .lens { model.resetLensDraft() }
-                    else { model.resetGeometryDraft() }
+                    ParameterValueField.cancelPendingInputs()
+                    model.requestAdjustmentReset(.tool(model.geometryDraftTab == .lens ? .lens : .geometry))
                 } label: { Image(systemName: "arrow.counterclockwise").frame(width: 28, height: 28) }
                     .buttonStyle(.borderless).help(L10n.text("重置本工具"))
                     .accessibilityLabel(L10n.text("重置本工具")).accessibilityIdentifier("geometry.draft.reset")
-                Button(L10n.text("取消")) { finishInput(); model.cancelGeometryDraft() }
+                Button(L10n.text("取消")) { ParameterValueField.cancelPendingInputs(); model.cancelGeometryDraft() }
                     .accessibilityLabel(L10n.text("取消几何和镜头编辑"))
                     .accessibilityIdentifier("geometry.draft.cancel")
                 Button(L10n.text("应用")) { finishInput(); _ = model.applyGeometryDraft() }
@@ -43,7 +41,7 @@ struct MacGeometryWorkspace: View {
                     .disabled(!model.geometryDraftCanApply)
                     .accessibilityLabel(L10n.text("应用几何和镜头编辑"))
                     .accessibilityIdentifier("geometry.draft.apply")
-            }.controlSize(.small).padding(.horizontal, 16).frame(minHeight: 38)
+            }.controlSize(.small).padding(.horizontal, 16).frame(minHeight: 32)
             ScrollView(.vertical) {
                 if model.geometryDraftTab == .lens { LensControls(model: model) }
                 else { GeometryControls(model: model, tab: model.geometryDraftTab) }

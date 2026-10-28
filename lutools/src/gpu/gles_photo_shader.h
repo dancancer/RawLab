@@ -1,9 +1,13 @@
 #pragma once
+#include "photo_tone_shader.h"
+#include "photo_color_grading_shader.h"
+#include "photo_tone_curve_shader.h"
 
 namespace sony2fuji {
-inline constexpr const char* kPhotoComputeShader = R"glsl(#version 310 es
+inline const std::string kPhotoComputeShader = std::string(R"glsl(#version 310 es
 precision highp float;
 precision highp int;
+)glsl") + toneControlsShader("vec3") + colorGradingShader("vec3") + kToneCurveShader + R"glsl(
 layout(local_size_x = 128) in;
 layout(std430, binding = 0) readonly buffer Source { float src[]; };
 layout(std430, binding = 1) writeonly buffer Destination { float dst[]; };
@@ -28,7 +32,11 @@ uniform vec3 domainMin;
 uniform vec3 domainMax;
 uniform vec4 tone; // contrast, saturation, highlights, shadows
 uniform float curve;
+uniform int customCurveCount;
+uniform vec4 curveRanges[32], curveTangents[32];
 uniform bool hslActive;
+uniform vec3 toneControls;
+uniform vec3 colorGrading[3];
 uniform vec4 hslHue[2];
 uniform vec4 hslSaturation[2];
 uniform vec4 hslLightness[2];
@@ -82,6 +90,14 @@ float toneCurve(float x) {
     if (x <= 0.75) return mix(points.y, points.z, (x - 0.5) * 4.0);
     return mix(points.z, 1.0, (x - 0.75) * 4.0);
 }
+float customToneCurve(float x) {
+    if (x <= 0.0) return 0.0;
+    if (x >= 1.0) return 1.0;
+    int i = 0;
+    while (i + 1 < customCurveCount && x > curveRanges[i].y) ++i;
+    vec4 r = curveRanges[i];
+    return pchipSegment(x, r.x, r.y, r.z, r.w, curveTangents[i].x, curveTangents[i].y);
+}
 vec3 applyHsl(vec3 pixel) {
     if (!hslActive) return pixel;
     float maximum = max(pixel.r, max(pixel.g, pixel.b));
@@ -106,6 +122,11 @@ vec3 applyHsl(vec3 pixel) {
     if (dh == 0.0 && ds == 0.0 && dl == 0.0) return pixel;
     float lightness = clamp((maximum + minimum) * 0.5, 0.0, 1.0);
     float saturation = delta / max(1e-6, 1.0 - abs(2.0 * lightness - 1.0));
+    vec3 residual = vec3(0.0);
+    if (minimum < 0.0 || maximum > 1.0) {
+        float baseChroma = (1.0 - abs(2.0 * lightness - 1.0)) * clamp(saturation, 0.0, 1.0);
+        residual = pixel - ((pixel - minimum) * (baseChroma / delta) + (lightness - baseChroma * 0.5));
+    }
     hue = mod(hue + dh * 0.3 + 360.0, 360.0);
     saturation = clamp(saturation * (1.0 + ds * 0.01), 0.0, 1.0);
     lightness = clamp(lightness + dl * 0.005, 0.0, 1.0);
@@ -114,7 +135,7 @@ vec3 applyHsl(vec3 pixel) {
     vec3 rgb = hue < 60.0 ? vec3(chroma,x,0) : hue < 120.0 ? vec3(x,chroma,0) :
         hue < 180.0 ? vec3(0,chroma,x) : hue < 240.0 ? vec3(0,x,chroma) :
         hue < 300.0 ? vec3(x,0,chroma) : vec3(chroma,0,x);
-    return rgb + (lightness - chroma * 0.5);
+    return rgb + (lightness - chroma * 0.5) + residual;
 }
 
 vec3 evaluate(vec3 inputColor) {
@@ -126,6 +147,7 @@ vec3 evaluate(vec3 inputColor) {
         if (outputIsLog) look = vec3(neutral(decodeLog(look.r)), neutral(decodeLog(look.g)), neutral(decodeLog(look.b)));
         pixel = mix(pixel, look, strength);
     }
+    pixel = tcBlackWhite(pixel, toneControls.x, toneControls.y);
     if (tone.z != 0.0 || tone.w != 0.0) {
         float luminance = dot(pixel, vec3(0.2126, 0.7152, 0.0722));
         float adjusted = luminance;
@@ -133,13 +155,14 @@ vec3 evaluate(vec3 inputColor) {
         if (tone.z != 0.0) adjusted = 1.0 - pow(1.0 - clamp(adjusted, 0.0, 1.0), 1.0 - tone.z * 0.5);
         pixel = luminance > 0.0 ? pixel * (adjusted / luminance) : vec3(adjusted);
     }
-    if (curve != 0.0) pixel = vec3(toneCurve(pixel.r), toneCurve(pixel.g), toneCurve(pixel.b));
+    if (customCurveCount != 0) pixel = vec3(customToneCurve(pixel.r), customToneCurve(pixel.g), customToneCurve(pixel.b));
+    else if (curve != 0.0) pixel = vec3(toneCurve(pixel.r), toneCurve(pixel.g), toneCurve(pixel.b));
     if (tone.x != 1.0 || tone.y != 1.0) {
         pixel = (pixel - 0.5) * tone.x + 0.5;
         float luminance = dot(pixel, vec3(0.2126, 0.7152, 0.0722));
         pixel = vec3(luminance) + (pixel - luminance) * tone.y;
     }
-    return applyHsl(pixel);
+    return cgApply(applyHsl(tcVibrance(pixel, toneControls.z)),colorGrading[0],colorGrading[1],colorGrading[2]);
 }
 void main() {
     uint i = gl_GlobalInvocationID.x;

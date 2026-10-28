@@ -16,6 +16,7 @@ class BuildEnvironmentTests(unittest.TestCase):
             for name in ("RawLabMac/build-env.sh", "RawLabMac/build-dependencies.sh",
                          "lutools/cmake/libraw/CMakeLists.txt", "lutools/cmake/patch-libraw.cmake",
                          "lutools/cmake/libraw-cameras.cmake", "lutools/cmake/libraw-sony-arw6.cmake",
+                         "lutools/cmake/libraw-vng.cmake", "lutools/third_party/libraw/vng_parallel.inc",
                          "lutools/third_party/rawspeed-camera-calibration.inc",
                          "lutools/third_party/nikon_he/entropy.cpp",
                          "lutools/third_party/libraw/sony_arw6.cpp"):
@@ -39,7 +40,8 @@ class BuildEnvironmentTests(unittest.TestCase):
             stamp.write_text(fingerprint.stdout)
             self.assertEqual(invoke("rawlab_libraw_patch_current").returncode, 0)
             for name in ("lutools/third_party/nikon_he/entropy.cpp",
-                         "lutools/third_party/libraw/sony_arw6.cpp", "lutools/cmake/libraw-cameras.cmake"):
+                         "lutools/third_party/libraw/sony_arw6.cpp", "lutools/cmake/libraw-cameras.cmake",
+                         "lutools/cmake/libraw-vng.cmake", "lutools/third_party/libraw/vng_parallel.inc"):
                 with self.subTest(source=name):
                     source = root / name
                     source.touch()
@@ -101,6 +103,30 @@ class BuildEnvironmentTests(unittest.TestCase):
                 self.assertIn('-whole-module-optimization', source)
                 self.assertIn('-num-threads "${JOBS:-$(sysctl -n hw.ncpu)}"', source)
                 self.assertNotIn('-Ounchecked', source)
+
+    def test_acceptance_scripts_link_the_requested_build_not_a_stale_default(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binaries = root / "bin"
+            binaries.mkdir()
+            compiler = binaries / "swiftc"
+            compiler.write_text('#!/bin/bash\nprintf "%s\\n" "$@"\nexit 73\n')
+            package_config = binaries / "pkg-config"
+            package_config.write_text("#!/bin/bash\nexit 0\n")
+            compiler.chmod(0o755)
+            package_config.chmod(0o755)
+            build = root / "release candidate"
+            env = {**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}",
+                   "RAWLAB_ARCH": "arm64", "RAWLAB_BUILD_DIR": str(build)}
+            for script in ("wavelet-render.sh", "agent-recipe-render.sh", "edit-model.sh"):
+                with self.subTest(script=script):
+                    result = subprocess.run(["bash", str(ROOT / "RawLabMac/tests" / script),
+                                             "/unused/raw", "/unused/cli"], env=env,
+                                            capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 73, result.stderr)
+                    self.assertIn(str(build / "libsony2fuji_core.a"), result.stdout.splitlines())
+                    self.assertNotIn(str(ROOT / "lutools/build-macos/libsony2fuji_core.a"),
+                                     result.stdout.splitlines())
 
 
 if __name__ == "__main__":

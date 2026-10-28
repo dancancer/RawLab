@@ -15,7 +15,7 @@ private struct EffectsPreview: View {
             }.padding(12).frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(nsColor: NSColor(white: 0.12, alpha: 1)))
             AdjustmentDock(model: model, selected: .constant(tool), resetVersion: 0)
-                .frame(height: 166)
+                .frame(height: 266)
         }.preferredColorScheme(.dark)
     }
 }
@@ -43,27 +43,20 @@ struct PhotoEffectsPresentationTests {
         guard !model.busy, model.result != nil else { throw RenderError.failed("Render timed out") }
     }
 
-    // ------------------------------------------------------------------------
-    //  调整栏为效果面板要的高度，必须放得下面板全部内容（含底部提示）
-    //  颗粒工具曾在按下时要 288，面板出现时又被改回 252，提示被截掉
-    // ------------------------------------------------------------------------
     @MainActor static func checkRequestedHeights(_ model: EditorModel) async throws {
-        for tool in [AdjustmentParameter.vignetteAmount, .grainAmount] {
-            var requested: CGFloat = 0
-            let dock = AdjustmentDock(model: model, selected: .constant(tool), resetVersion: 0,
-                                      onPreferredHeight: { requested = $0 })
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 400),
-                                  styleMask: [.titled], backing: .buffered, defer: false)
-            window.contentView = NSHostingView(rootView: dock)
-            window.orderFront(nil)
-            try await Task.sleep(for: .milliseconds(400))
-            window.orderOut(nil)
-            let content = NSHostingView(rootView: PhotoEffectsControls(model: model, tool: tool).frame(width: 1100))
-            let needed = AdjustmentPanelLayout.chrome + content.fittingSize.height
-            guard requested >= needed else {
-                throw RenderError.failed("\(tool.rawValue) asks for \(requested) pt but needs \(needed) pt")
-            }
-            print("PASS: \(tool.rawValue) panel asks for \(Int(requested)) pt, content needs \(Int(needed)) pt")
+        for tool in [EditorAdjustmentTool.vignette, .grain] {
+            model.selectAdjustmentTool(tool)
+            var requests: [CGFloat] = []
+            let dock = AdjustmentDock(model: model, selected: .constant(tool.parameter), resetVersion: 0,
+                                      onPreferredHeight: { requests.append($0) })
+            let host = NSHostingView(rootView: dock)
+            host.frame = NSRect(x: 0, y: 0, width: 650, height: 266)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false; window.contentView = host
+            try await Task.sleep(for: .milliseconds(200))
+            guard requests.isEmpty else { throw RenderError.failed("Tool content must not request a panel resize") }
+            window.contentView = nil; window.close()
+            print("PASS: \(tool.rawValue) preserves the user-owned panel height and scrolls its contents")
         }
     }
 
@@ -88,6 +81,7 @@ struct PhotoEffectsPresentationTests {
         // Reserve the editor's maximum 300-point file browser at both window sizes.
         for (name, size) in [("compact", NSSize(width: 650, height: 550)), ("wide", NSSize(width: 1140, height: 830))] {
             for tool in [AdjustmentParameter.vignetteAmount, .grainAmount] {
+                model.selectAdjustmentTool(tool == .vignetteAmount ? .vignette : .grain)
                 let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                                       styleMask: [.titled], backing: .buffered, defer: false)
                 window.contentView = NSHostingView(rootView: EffectsPreview(model: model, tool: tool))

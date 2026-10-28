@@ -1,6 +1,14 @@
 package com.rawlab.android.editor.geometry
 
 import android.net.Uri
+import android.os.FileObserver
+import android.os.SystemClock
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import androidx.lifecycle.ViewModelStore
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -46,7 +54,7 @@ class GeometryDraftInstrumentedTest {
         }
         fun ready(draft: Boolean = false) {
             compose.waitUntil(180_000) { model.state.value.error != null ||
-                if (draft) model.state.value.canApplyDraft else model.state.value.canExport }
+                if (draft) model.state.value.draftReady else model.state.value.canExport }
             assertNull(model.state.value.error)
         }
         try {
@@ -100,7 +108,7 @@ class GeometryDraftInstrumentedTest {
         var model = compose.activity.model
         fun ready(draft: Boolean = false) {
             compose.waitUntil(180_000) { model.state.value.error != null ||
-                if (draft) model.state.value.canApplyDraft else model.state.value.canExport }
+                if (draft) model.state.value.draftReady else model.state.value.canExport }
             assertNull(model.state.value.error)
         }
         fun hash() = MessageDigest.getInstance("SHA-256").digest(source.readBytes()).joinToString("") { "%02x".format(it) }
@@ -138,7 +146,7 @@ class GeometryDraftInstrumentedTest {
                 compose.runOnUiThread {
                     model.changeDraft(model.state.value.visibleEdits.copy(geometry = beforeTransform.copy(quarterTurns = 1, straightenDegrees = 7f)))
                     assertFalse(model.state.value.canApplyDraft)
-                    assertFalse(model.beginExport())
+                    model.beginExport { assertFalse(it) }
                     model.beginBatch()
                     assertNull(model.batch.value)
                     newestCrop = model.state.value.visibleEdits.geometry.moveCrop(.03f, -.02f)
@@ -178,10 +186,48 @@ class GeometryDraftInstrumentedTest {
             }
             assertTrue("Run the prepare invocation before the process-restart resume", source.isFile && expectedFile.isFile && hashFile.isFile)
             val expected = SettingsCodec.decode(expectedFile.readText())
-            compose.runOnUiThread { model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }
-            ready()
-            assertEquals(expected, model.state.value.edits)
-            assertEquals(EditSaveState.RESTORED, model.state.value.saveState)
+            val record = File(context.filesDir, "edits/edits.properties")
+            val writes = AtomicInteger()
+            val observer = object : FileObserver(record.parentFile!!.absolutePath, FileObserver.MOVED_TO) {
+                override fun onEvent(event: Int, path: String?) { if (path == record.name) writes.incrementAndGet() }
+            }
+            val events = CopyOnWriteArrayList<Pair<Long, EditSaveState>>()
+            var restoredRecord: ByteArray? = null
+            var restoredInode: Long? = null
+            var observation: Job? = null
+            try {
+                compose.runOnUiThread {
+                    observation = CoroutineScope(Dispatchers.Main.immediate).launch {
+                        model.state.collect { current ->
+                            if (current.saveState == EditSaveState.RESTORED && restoredRecord == null) {
+                                restoredRecord = record.readBytes()
+                                restoredInode = android.system.Os.stat(record.absolutePath).st_ino
+                                observer.startWatching()
+                            }
+                            if (restoredRecord != null && events.lastOrNull()?.second != current.saveState)
+                                events += SystemClock.elapsedRealtime() to current.saveState
+                        }
+                    }
+                    model.setGpuEnabled(false)
+                    model.importPhoto(Uri.fromFile(source))
+                }
+                ready()
+                compose.runOnUiThread { observation?.cancel(); observer.stopWatching() }
+                assertEquals(expected, model.state.value.edits)
+                assertNotNull("Restoration must actually be observed before any transient notice expiry", restoredRecord)
+                assertEquals(EditSaveState.RESTORED, events.first().second)
+                assertArrayEquals(restoredRecord!!, record.readBytes())
+                assertEquals(restoredInode, android.system.Os.stat(record.absolutePath).st_ino)
+                assertEquals("Viewport convergence must not save restored edits", 0, writes.get())
+                if (events.last().second != EditSaveState.RESTORED) {
+                    assertEquals(listOf(EditSaveState.RESTORED, EditSaveState.NONE), events.map { it.second })
+                    assertTrue("Only the existing 3-second notice expiry may follow restoration: $events",
+                        events.last().first - events.first().first >= 3000)
+                } else assertEquals(listOf(EditSaveState.RESTORED), events.map { it.second })
+                android.util.Log.i("RawLabRestoreEvidence", "events=${events.map { (it.first - events.first().first) to it.second }} writes=${writes.get()} inodeUnchanged=true settingsEqual=true")
+            } finally {
+                compose.runOnUiThread { observation?.cancel(); observer.stopWatching() }
+            }
             assertNull(model.state.value.draft)
             assertEquals(hashFile.readText(), hash())
             compose.runOnUiThread { model.beginDraft(AdjustmentGroup.GEOMETRY) }

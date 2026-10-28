@@ -1,5 +1,6 @@
 #include "sony2fuji/edit_recipe.h"
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -225,6 +226,7 @@ void completeEdits() {
              R"(,"effects":{"grain_size":101})", R"(,"effects":{"vignette_roundness":-101})",
              R"(,"effects":{"grain_amount":1e999})", R"(,"effects":{"vignette_amount":null})",
              R"(,"denoise":{"raw_level":3})", R"(,"denoise":{"raw_level":1.0})", R"(,"denoise":{"chroma_mode":-1})",
+             R"(,"denoise":{"ai":{"enabled":true}})",
              R"(,"denoise":{"wavelet":{"enabled":1}})", R"(,"denoise":{"wavelet":{"luma":101}})",
              R"(,"denoise":{"wavelet":{"coarse":-1}})", R"(,"lens_correction":{"tca":0})",
              R"(,"lens_correction":{"profile_id":""})", R"(,"tone":{"contrast":1,"contrast":2})"})
@@ -244,7 +246,7 @@ void invalidFields() {
              {replaceOnce(minimal, R"("edits":{"exposure":{"mode":"scene"}},)", ""), "recipe.edits"},
              {replaceOnce(minimal, R"("output":{"path":"out.jpg","format":"jpeg"})", R"("output":{})"), "output.path"},
              {replaceOnce(minimal, R"("format":"jpeg")", R"("format":null)"), "output.format"},
-             {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":5)"), "schema_version"},
+             {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":6)"), "schema_version"},
              {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":0)"), "schema_version"},
              {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":1.0)"), "schema_version"},
              {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":"1")"), "schema_version"},
@@ -333,6 +335,39 @@ void malformedAndUnicode() {
     reject(std::string(1024 * 1024 + 1, ' '), "oversized document", "1 MiB");
 }
 
+void atmosphereCompatibility() {
+    auto recipe=sentinel();
+    const auto old=sony2fuji::serializeEditRecipe(recipe);
+    check(old.find("clarity")==std::string::npos && old.find("dehaze")==std::string::npos,"v4 bytes omit new identity fields");
+    recipe.schemaVersion=5;recipe.atmosphere.clarity=.625f;recipe.atmosphere.dehaze=-.375f;
+    const auto saved=sony2fuji::serializeEditRecipe(recipe);
+    const auto restored=parse(saved);
+    check(restored.atmosphere.clarity==.625f && restored.atmosphere.dehaze==-.375f,"atmosphere signed values round trip");
+    for(int version=1;version<=4;++version) {
+        auto invalid=recipe;invalid.schemaVersion=version;
+        bool rejected=false;
+        try { sony2fuji::serializeEditRecipe(invalid); }catch(const std::invalid_argument&){rejected=true;}
+        check(rejected,"old serializer rejects active atmosphere "+std::to_string(version));
+    }
+    for(int field=0;field<2;++field) for(float bad:{-1.01f,1.01f,std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()}) {
+        auto invalid=recipe;(field==0?invalid.atmosphere.clarity:invalid.atmosphere.dehaze)=bad;
+        bool rejected=false;
+        try { sony2fuji::serializeEditRecipe(invalid); }catch(const std::invalid_argument&){rejected=true;}
+        check(rejected,"serializer validates atmosphere finite range");
+    }
+    for(int kind=0;kind<2;++kind) {
+        auto invalid=recipe;if(kind==0)++invalid.atmosphere.version;else --invalid.atmosphere.struct_size;
+        bool rejected=false;
+        try { sony2fuji::serializeEditRecipe(invalid); }catch(const std::invalid_argument&){rejected=true;}
+        check(rejected,"serializer validates atmosphere ABI");
+    }
+    auto destination=recipe;std::string error;
+    const auto bad=replaceOnce(saved,"\"clarity\": 0.625","\"clarity\": 1.01");
+    check(!sony2fuji::parseEditRecipe(bad,destination,error) && sameRecipe(destination,recipe),"invalid atmosphere parse retains destination");
+    check(sony2fuji::parseEditRecipe(old,destination,error) && destination.atmosphere.clarity==0 && destination.atmosphere.dehaze==0,
+        "old recipe clears previously active atmosphere on reused destination");
+}
+
 } // namespace
 
 int main() {
@@ -345,6 +380,7 @@ int main() {
         invalidFields();
         unknownAndDuplicateKeys();
         malformedAndUnicode();
+        atmosphereCompatibility();
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';
         return 1;

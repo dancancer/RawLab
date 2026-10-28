@@ -26,6 +26,11 @@ internal static class TestWindowState
         var previous=(UpdateChecker)typeof(MainWindow).GetField("updates",flags)!.GetValue(window)!;
         var path=Path.Combine(root,"updates.json");File.WriteAllText(path,"{\"Automatic\":false,\"LastAttempt\":0}");
         var updates=new UpdateChecker(previous.CurrentVersion,path,updatesClient);Set("updates",updates);
+        var desktop=typeof(MainWindow).GetField("desktopUpdates",flags)!.GetValue(window)!;
+        var updateDirectory=Path.Combine(root,"Updates");
+        typeof(DesktopUpdateController).GetField("store",flags)!.SetValue(desktop,new UpdateStore(updateDirectory));
+        typeof(DesktopUpdateController).GetField("backup",flags)!.SetValue(desktop,new UpdateDataBackup(root,updateDirectory));
+        typeof(DesktopUpdateController).GetField("preferences",flags)!.SetValue(desktop,new UpdatePreferences{AutomaticCheck=false});
         // 统计默认开启；测试窗口显式写入私有的“关闭”，既不沿用默认同意，也不生成安装标识
         var usage=Path.Combine(root,"usage.json");File.WriteAllText(usage,"{\"Enabled\":false}");
         Set("usageAnalytics",new UsageAnalytics(usage,new UnavailableUsageAnalyticsTransport()));
@@ -33,6 +38,7 @@ internal static class TestWindowState
         notice.Visibility=updates.HasUpdate ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         updates.PropertyChanged+=(_,_)=>notice.Visibility=updates.HasUpdate ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         Set("editStore",new EditStore(Path.Combine(root,"edits")));
+        Set("presetStore",new AdjustmentPresetStore(Path.Combine(root,"presets")));
         Set("batchJournal",new BatchJournal(Path.Combine(root,"batch")));
         var library=typeof(MainWindow).GetField("library",flags)!.GetValue(window)!;
         library.GetType().GetField("settingsPath",flags)!.SetValue(library,Path.Combine(root,"folders.json"));

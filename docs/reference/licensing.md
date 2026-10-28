@@ -96,6 +96,25 @@ Its source and license are retained in
 [the dependency directory](../../lutools/third_party/nlohmann/README.md).
 CLI installations include its MIT license; native clients do not link this adapter.
 
+## DualDn Models and Desktop Inference Runtimes
+
+The next Apple Silicon macOS and Windows release packages include DualDn/Restormer models
+and the corresponding inference runtimes. The project owner confirmed the
+noncommercial use and model packaging decision on 26 October 2026. The original
+DualDn weights and converted ONNX/Core ML resources retain
+[CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/). The separate
+Restormer generic RGB model retains its upstream Academic Public License for
+noncommercial use. Neither becomes GPL-licensed when bundled with RawLab. Redistribution must preserve the supplied
+attribution, license link, source and conversion notices, and remain within the
+model license's noncommercial terms. Free availability of RawLab does not grant
+commercial model rights to downstream users.
+
+Model revision, original weight SHA-256, conversion protocol and packaging
+boundaries are recorded in [the DualDn contract](../architecture/dualdn-inline-denoise.md).
+Each release must identify the exact converted package checksum and retain its
+license files. ONNX Runtime, DirectML, Restormer source, Sparkle and Velopack keep
+their separate component licenses in the desktop dependency notices.
+
 ## Historical MIT Notice
 
 Earlier RawLab releases were published under MIT. Their published license is

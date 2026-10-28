@@ -43,11 +43,7 @@ public partial class MainWindow
             RecipeStrip.Children.Add(button); recipeButtons[recipe?.Id ?? ""] = button;
         }
     }
-    private void MasterRecipeCategoryClicked(object sender, RoutedEventArgs e)
-    {
-        if(!ResolveTransformDraft())return;
-        choosingRecipes = true; choosingFilm = choosingDenoise = choosingPhotoEffects = choosingHsl = choosingWhiteBalance = choosingLens = choosingGeometry = false; RefreshControls();
-    }
+    private void MasterRecipeCategoryClicked(object sender, RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.MasterRecipe);
     private void RecipeScrollLeftClicked(object sender, RoutedEventArgs e) => RecipeScroller.ScrollToHorizontalOffset(RecipeScroller.HorizontalOffset - RecipeScroller.ViewportWidth * .8);
     private void RecipeScrollRightClicked(object sender, RoutedEventArgs e) => RecipeScroller.ScrollToHorizontalOffset(RecipeScroller.HorizontalOffset + RecipeScroller.ViewportWidth * .8);
     private void RecipeScrollChanged(object sender, ScrollChangedEventArgs e) => UpdateScrollButtons(RecipeScroller, RecipeScrollLeft, RecipeScrollRight);
@@ -58,19 +54,12 @@ public partial class MainWindow
     // │ 60 是 72 宽按钮扣掉内边距与边框后的文字宽度。单个词放不下时把按钮撑宽，      │
     // │ 不让 “Weißabgleic/h”“コントラス/ト” 这样从词中间断开                          │
     // └──────────────────────────────────────────────────────────────────────────────┘
-    private const double ToolCaptionWidth = 60;
     private void FitToolCaptions()
     {
-        foreach (var button in Tools.Children.OfType<Button>())
-        {
-            if (button.Content is not StackPanel stack || stack.Children[stack.Children.Count - 1] is not TextBlock caption) continue;
-            var typeface = new Typeface(caption.FontFamily, caption.FontStyle, caption.FontWeight, caption.FontStretch);
-            // 按文字实际的排版模式量宽度（Display 模式会把字宽取整到像素），再留 1 像素余量
-            var mode = TextOptions.GetTextFormattingMode(caption);
-            var widest = Regex.Split(caption.Text, @"(?<=[\s-])").Max(word => new FormattedText(word.Trim(), CultureInfo.CurrentUICulture,
-                FlowDirection.LeftToRight, typeface, caption.FontSize, Brushes.Black, null, mode, 1).WidthIncludingTrailingWhitespace);
-            caption.MaxWidth = Math.Max(ToolCaptionWidth, Math.Ceiling(widest) + 1);
-            if (caption.MaxWidth > ToolCaptionWidth) button.Width = caption.MaxWidth + 12; else button.ClearValue(WidthProperty);
+        foreach(var button in Tools.Children.OfType<Button>()) {
+            if(button.Content is not StackPanel stack || stack.Children[stack.Children.Count-1] is not TextBlock caption)continue;
+            caption.MaxWidth=double.PositiveInfinity;caption.TextWrapping=TextWrapping.NoWrap;
+            button.ClearValue(WidthProperty);
         }
     }
     private static void UpdateScrollButtons(ScrollViewer scroller, Button left, Button right)

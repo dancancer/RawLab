@@ -1,4 +1,4 @@
-"""Recipe v4 schema and CLI normalization contract tests."""
+"""Recipe v4/v5 schema and CLI normalization contract tests."""
 import argparse
 import copy
 import json
@@ -57,6 +57,168 @@ class EditRecipeSchema(unittest.TestCase):
         self.assertEqual(envelope["error"]["code"], "invalid_recipe")
         self.assertIsNone(envelope["error"]["status"])
         self.assertIn(field, envelope["error"]["message"])
+
+    def test_v5_tone_controls(self):
+        schema = json.loads((ROOT / "docs" / "edit-json-v5.schema.json").read_text())
+        document = self.full()
+        document["schema_version"] = 5
+        document["processing"] = {"family": "rawlab", "version": 2, "quality": "standard"}
+        document["edits"]["tone"].update(black_point=.25, white_point=-.5)
+        document["edits"]["color"] = {"vibrance": .75}
+        normalized = self.normalize(document)
+        for group, field, expected in (("tone", "black_point", .25), ("tone", "white_point", -.5), ("color", "vibrance", .75)):
+            self.assertEqual(normalized["edits"][group][field], expected)
+            for value in (-1.01, 1.01, True, "0", None):
+                invalid = copy.deepcopy(document)
+                invalid["edits"][group][field] = value
+                self.reject(invalid, f"edits.{group}.{field}")
+                if jsonschema:
+                    self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(invalid))
+        if jsonschema:
+            jsonschema.Draft202012Validator(schema).validate(document)
+            jsonschema.Draft202012Validator(schema).validate(normalized)
+        invalid = copy.deepcopy(document)
+        invalid["edits"]["color"]["unknown"] = 0
+        self.reject(invalid, "edits.color.unknown")
+        document["schema_version"] = 4
+        del document["processing"]
+        self.reject(document, "edits.color")
+        del document["edits"]["color"]
+        self.reject(document, "edits.tone.black_point")
+
+    def test_v5_atmosphere(self):
+        schema = json.loads((ROOT / "docs" / "edit-json-v5.schema.json").read_text())
+        document = self.full()
+        document["schema_version"] = 5
+        document["processing"] = {"family": "rawlab", "version": 2, "quality": "standard"}
+        document["edits"]["effects"].update(clarity=.625, dehaze=-.375)
+        normalized = self.normalize(document)
+        for field, expected in (("clarity", .625), ("dehaze", -.375)):
+            self.assertEqual(normalized["edits"]["effects"][field], expected)
+            for value in (-1.01, 1.01, True, "0", None):
+                invalid = copy.deepcopy(document)
+                invalid["edits"]["effects"][field] = value
+                self.reject(invalid, f"edits.effects.{field}")
+                if jsonschema:
+                    self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(invalid))
+        if jsonschema:
+            jsonschema.Draft202012Validator(schema).validate(document)
+            jsonschema.Draft202012Validator(schema).validate(normalized)
+        document["edits"]["effects"].update(clarity=0, dehaze=0)
+        normalized = self.normalize(document)
+        self.assertNotIn("clarity", normalized["edits"]["effects"])
+        self.assertNotIn("dehaze", normalized["edits"]["effects"])
+        document["schema_version"] = 4
+        del document["processing"]
+        self.reject(document, "edits.effects.clarity")
+
+    def test_v5_color_grading(self):
+        schema = json.loads((ROOT / "docs" / "edit-json-v5.schema.json").read_text())
+        document = self.full()
+        document.update(schema_version=5, processing={"family": "rawlab", "version": 2, "quality": "standard"})
+        document["edits"]["color_grading"] = {
+            "shadows": {"hue": 220, "saturation": 75},
+            "midtones": {"hue": 110, "saturation": 0},
+            "highlights": {"hue": 35.25, "saturation": 16.5},
+        }
+        normalized = self.normalize(document)
+        self.assertEqual(normalized["edits"]["color_grading"], document["edits"]["color_grading"])
+        if jsonschema:
+            jsonschema.Draft202012Validator(schema).validate(document)
+            jsonschema.Draft202012Validator(schema).validate(normalized)
+        for zone in ("shadows", "midtones", "highlights"):
+            for field, bad_values in (("hue", (-.000001, 360, True, "0", None)),
+                                      ("saturation", (-.000001, 100.000001, True, "0", None))):
+                for value in bad_values:
+                    invalid = copy.deepcopy(document)
+                    invalid["edits"]["color_grading"][zone][field] = value
+                    self.reject(invalid, f"edits.color_grading.{zone}.{field}")
+                    if jsonschema:
+                        self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(invalid))
+                missing = copy.deepcopy(document)
+                del missing["edits"]["color_grading"][zone][field]
+                self.reject(missing, f"edits.color_grading.{zone}.{field}")
+                if jsonschema:
+                    self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(missing))
+        document["schema_version"] = 4
+        del document["processing"]
+        self.reject(document, "edits.color_grading")
+
+    def test_v5_tone_curve(self):
+        schema = json.loads((ROOT / "docs" / "edit-json-v5.schema.json").read_text())
+        document = self.full()
+        document.update(schema_version=5, processing={"family": "rawlab", "version": 2, "quality": "standard"})
+        document["edits"]["tone"].update(s_curve=0, curve={"mode": "custom", "points": [[0, 0], [.25, .12], [.75, .88], [1, 1]]})
+        normalized = self.normalize(document)
+        self.assertEqual(normalized["edits"]["tone"]["curve"], document["edits"]["tone"]["curve"])
+        if jsonschema:
+            jsonschema.Draft202012Validator(schema).validate(normalized)
+        for curve in (
+            {"mode": "future", "points": []}, {"mode": "custom", "points": [[0, 0]]},
+            {"mode": "custom", "points": [[0, 0], [True, 1]]},
+            {"mode": "custom", "points": [[0, 0], [1, 1, 1]]},
+            {"mode": "custom", "points": [[0, 0], [1.000001, 1]]},
+            {"mode": "legacy", "points": [[0, 0], [1, 1]]},
+            {"mode": "custom", "points": [[0, 0], [1, 1]], "channel": "red"},
+        ):
+            invalid = copy.deepcopy(document)
+            invalid["edits"]["tone"]["curve"] = curve
+            self.reject(invalid, "edits.tone.curve")
+            if jsonschema:
+                self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(invalid))
+        for points in ([[0, .1], [1, 1]], [[0, 0], [.5, .7], [.5, .9], [1, 1]],
+                       [[0, 0], [.5, .7], [.7, .5], [1, 1]]):
+            invalid = copy.deepcopy(document)
+            invalid["edits"]["tone"]["curve"]["points"] = points
+            self.reject(invalid, "edits.tone.curve")
+        invalid = copy.deepcopy(document)
+        invalid["edits"]["tone"]["s_curve"] = .1
+        self.reject(invalid, "s_curve")
+        if jsonschema:
+            self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(invalid))
+        document["schema_version"] = 4
+        del document["processing"]
+        self.reject(document, "edits.tone.curve")
+
+    def test_processing_identity(self):
+        schema = json.loads((ROOT / "docs" / "edit-json-v5.schema.json").read_text())
+        document = self.full()
+        document["schema_version"] = 5
+        for version in (1, 2):
+            document["processing"] = {"family": "rawlab", "version": version, "quality": "standard"}
+            normalized = self.normalize(document)
+            self.assertEqual(normalized["processing"], document["processing"])
+            self.assertEqual(normalized["schema_version"], 5)
+            if jsonschema:
+                jsonschema.Draft202012Validator(schema).validate(normalized)
+        output = self.root / "protected.png"
+        output.write_bytes(b"existing output")
+        document["output"]["path"] = str(output)
+        for identity in (
+            None, {}, {"family": "other", "version": 1, "quality": "standard"},
+            {"family": "rawlab", "version": 99, "quality": "standard"},
+            {"family": "rawlab", "version": True, "quality": "standard"},
+            {"family": "rawlab", "version": 1, "quality": "fast"},
+            {"family": "rawlab", "version": 1},
+            {"family": "rawlab", "version": 1, "quality": "standard", "extra": 0},
+        ):
+            document["processing"] = identity
+            self.reject(document, "processing")
+            if jsonschema:
+                self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(document))
+            process = subprocess.run([str(CLI), "--recipe", str(self.recipe), "--json"],
+                                     capture_output=True, text=True, timeout=120)
+            self.assertNotEqual(process.returncode, 0)
+            self.assertEqual(json.loads(process.stdout)["error"]["code"], "invalid_recipe")
+            self.assertEqual(output.read_bytes(), b"existing output")
+        del document["processing"]
+        self.reject(document, "processing")
+        for version in range(1, 5):
+            old = self.base()
+            old["schema_version"] = version
+            self.assertNotIn("processing", self.normalize(old))
+            old["processing"] = {"family": "rawlab", "version": 1, "quality": "standard"}
+            self.reject(old, "processing")
 
     @staticmethod
     def base():

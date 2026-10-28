@@ -12,18 +12,10 @@ extension ContentView {
         settings.masterRecipe?.title ?? viewModel.availableLUTs.first { $0.id == settings.lutID }?.name ?? (settings.lutID == nil ? L10n.text("中性") : L10n.text("外观不可用"))
     }
 
-    var currentPreviewImage: UIImage? {
-        if showingBefore {
-            return viewModel.basePreviewImage ?? viewModel.previewImage
-        }
-        return viewModel.previewImage ?? viewModel.basePreviewImage
-    }
+    var currentPreviewImage: UIImage? { viewModel.previewImage ?? viewModel.basePreviewImage }
 
-    var currentHistogram: [CGFloat] {
-        if showingBefore {
-            return viewModel.baseHistogram.isEmpty ? viewModel.histogram : viewModel.baseHistogram
-        }
-        return viewModel.histogram.isEmpty ? viewModel.baseHistogram : viewModel.histogram
+    var currentHistogram: Sony2FujiProcessor.RGBHistogram? {
+        showingBefore ? viewModel.baseHistogram : viewModel.histogram
     }
 
     func adjustmentProgress(_ adjustment: AdjustmentKind) -> Double {
@@ -106,6 +98,18 @@ extension ContentView {
         settings = newSettings
     }
 
+    func queueEditorSettingsChange(_ newSettings: RawSettings) {
+        showingBefore = false
+        viewModel.queueSettingsSave(newSettings)
+        if isAdjustingSlider {
+            viewModel.schedulePreviewUpdate(settings: draftPreviewSettings, delay: 0.08,
+                                           includeHistogram: false, quality: .interactive)
+        } else {
+            _ = viewModel.saveCurrentSettings(newSettings)
+            viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
+        }
+    }
+
     func adjustmentBinding(_ adjustment: AdjustmentKind) -> Binding<Double> {
         Binding(
             get: { adjustment.value(from: settings) },
@@ -141,24 +145,15 @@ extension ContentView {
     }
 
     func resetTool(_ adjustment: AdjustmentKind) {
-        if adjustment == .temperature || adjustment == .tint {
-            resetWhiteBalance()
-        } else {
-            reset(adjustment)
-        }
+        requestEditorReset(.tool(.adjustment(adjustment)))
     }
 
     func resetSelectedAdjustment() {
-        guard let selectedAdjustment else { return }
-        resetTool(selectedAdjustment)
+        requestEditorReset(.tool(currentEditorTool))
     }
 
     func resetWhiteBalance() {
-        var updated = settings
-        AdjustmentKind.resetWhiteBalance(in: &updated,
-                                          cameraTemperature: viewModel.rawWhiteBalance?.temperature,
-                                          cameraTint: viewModel.rawWhiteBalance?.tint)
-        applySettingsChange(updated)
+        requestEditorReset(.tool(.adjustment(.temperature)))
     }
 
     func setWhiteBalanceMode(_ mode: RawWhiteBalanceMode) {
@@ -231,6 +226,13 @@ extension ContentView {
             return
         }
         let wasEditing = isAdjustingSlider
+        if !isEditorDraftActive {
+            if editing && !wasEditing {
+                guard viewModel.beginAdjustmentInteraction(settings: settings) else { return }
+            } else if !editing && (wasEditing || viewModel.adjustmentInteractionRejected) {
+                _ = viewModel.endAdjustmentInteraction(settings: settings)
+            }
+        }
         isAdjustingSlider = editing
         updateRulerFocus(editing: editing, wasEditing: wasEditing)
         if !editing {
@@ -238,25 +240,50 @@ extension ContentView {
         }
     }
 
-    func photoImportButton(isEnabled: Bool) -> some View {
-        PhotosPicker(selection: $selectedPhotoItem, matching: .images,
-                     preferredItemEncoding: .current, photoLibrary: .shared()) {
-            Image(systemName: "photo.badge.plus")
+    func cancelSliderInteraction() {
+        hslTargetInteraction.cancel(); hslTargetHistoryActive = false
+        hslTargetPoint = nil; hslTargetNotice = nil
+        if let original = viewModel.cancelAdjustmentInteraction() {
+            settings = original
+            viewModel.updatePreview(settings: original, includeHistogram: true, quality: .final)
         }
-        .accessibilityLabel(L10n.text("导入照片"))
-        .help(L10n.text("从照片图库导入"))
-        .accessibilityIdentifier("editor.import")
-        .disabled(!isEnabled)
+        isAdjustingSlider = false
+        cancelRulerFocus()
+    }
+
+    func photoImportButton(isEnabled: Bool) -> some View {
+        Button { requestEditorImport(file: false) } label: { Image(systemName: "photo.badge.plus") }
+            .accessibilityLabel(L10n.text("导入照片"))
+            .help(L10n.text("从照片图库导入"))
+            .accessibilityIdentifier("editor.import")
+            .disabled(!isEnabled)
     }
 
     func fileImportButton(isEnabled: Bool) -> some View {
-        Button { showingFileImporter = true } label: {
-            Image(systemName: "folder.badge.plus")
-        }
-        .accessibilityLabel(L10n.text("从文件导入"))
-        .help(L10n.text("从文件导入"))
-        .accessibilityIdentifier("editor.import.file")
-        .disabled(!isEnabled)
+        Button { requestEditorImport(file: true) } label: { Image(systemName: "folder.badge.plus") }
+            .accessibilityLabel(L10n.text("从文件导入"))
+            .help(L10n.text("从文件导入"))
+            .accessibilityIdentifier("editor.import.file")
+            .disabled(!isEnabled)
+    }
+
+    func requestEditorImport(file: Bool) {
+        guard !editorBusy else { return }
+        photoViewing.endTemporaryViewing()
+        pendingFileImport = file
+        pendingPhotoImport = !file
+        if isEditorDraftChanged { draftExitPresented = true; return }
+        if isEditorDraftActive { activateEditorTool(.adjustment(.exposure)) }
+        continueEditorImport()
+    }
+
+    func continueEditorImport() {
+        guard pendingFileImport || pendingPhotoImport else { return }
+        guard viewModel.saveCurrentSettings(settings) else { return }
+        showingFileImporter = pendingFileImport
+        showingPhotoImporter = pendingPhotoImport
+        pendingFileImport = false
+        pendingPhotoImport = false
     }
 
     @MainActor
@@ -289,7 +316,7 @@ extension ContentView {
 
     @MainActor
     func importFromPhotoItem(_ item: PhotosPickerItem, requestID: UUID) async {
-        guard photoImportRequestID == requestID, !Task.isCancelled else { return }
+        guard photoImportRequestID == requestID, !Task.isCancelled, !isEditorDraftActive else { return }
         guard viewModel.saveCurrentSettings(settings) else {
             selectedPhotoItem = nil
             photoImportTask = nil

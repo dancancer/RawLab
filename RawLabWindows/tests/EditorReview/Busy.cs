@@ -41,8 +41,9 @@ internal static partial class EditorReviewChecks
                     InteractionChecks.PumpUntil(()=>preflight.IsCompleted);preflight.GetAwaiter().GetResult();
                     check(!foreground!.IsCompleted && !batch.Busy,"Batch completion leaves foreground work active: "+name);
                 }
-                check(!window.AdjustmentPanel.IsEnabled && !window.ExportPng.IsEnabled && !window.BatchExportMenu.IsEnabled &&
-                    window.BusyIndicator.Visibility==Visibility.Visible,"The remaining busy owner keeps editing and export gated: "+name);
+                // 预览指示器只表示显影；导入和批量任务仍须独立守住编辑与导出入口。
+                check(!window.AdjustmentPanel.IsEnabled && !window.ExportPng.IsEnabled && !window.BatchExportMenu.IsEnabled,
+                    "The remaining busy owner keeps editing and export gated: "+name);
                 window.OpenFile(other);
                 check(Get<string>(window,"file")==photo,"The remaining busy owner blocks photo switching: "+name);
                 if(resumePreview)

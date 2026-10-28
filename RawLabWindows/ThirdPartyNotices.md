@@ -1,5 +1,18 @@
 # Third-party components
 
+- Velopack 1.2.161 (MIT), Copyright 2021 Caelan Sayler and 2024 Velopack Ltd.
+  https://github.com/velopack/velopack; original notice: `Licenses/Velopack-MIT.txt`.
+  The net8.0 dependency graph has no additional NuGet dependencies.
+
+- AI denoise in release packages: DualDn by OpenImagingLab
+  (https://github.com/OpenImagingLab/DualDn), CC BY-NC 4.0, OpenImagingLab 2024. The exported package
+  carries the upstream license and model/checkpoint provenance. ONNX Runtime
+  DirectML 1.23.0 is MIT-licensed; DirectML 1.15.4 is distributed under Microsoft's
+  package license. AI-enabled builds include their original notices under
+  `Licenses/DualDn`; development builds may omit these components. Restormer real denoising
+  (https://github.com/swz30/Restormer) retains its upstream Academic Public License for noncommercial use
+  in `Licenses/DualDn/Restormer-LICENSE.txt`.
+
 - Lens correction: Lensfun 0.3.4 (LGPL-3.0-or-later), GLib 2.84.4
   (LGPL-2.1-or-later), PCRE2 10.44 (BSD), proxy-libintl (LGPL-2.0-or-later)
   and upstream bundled TRE. Statically linked into sony2fuji.dll.

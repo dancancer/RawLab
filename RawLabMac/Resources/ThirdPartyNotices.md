@@ -4,11 +4,15 @@ The application bundles libraries rebuilt from pinned upstream sources in
 `RawLabMac/build-dependencies.sh` and `RawLabMac/build-lens-dependency.sh`,
 targeting macOS 14 arm64/x86_64. Their original license and copyright notices are
 included alongside this document. Packaging changes only Mach-O install names
-and ad-hoc code signatures. LibRaw also includes the source patches described below.
+and code signatures. LibRaw also includes the source patches described below.
 
 | Component | Version | Source | Notices |
 | --- | --- | --- | --- |
+| Sparkle | 2.10.0 | https://github.com/sparkle-project/Sparkle/tree/2.10.0 | Sparkle-LICENSE.txt (MIT) |
+| Restormer real denoising | Upstream pretrained checkpoint | https://github.com/swz30/Restormer | DualDn/Restormer-LICENSE.txt (Academic Public License, noncommercial) |
 | JSON for Modern C++ | Vendored header | https://github.com/nlohmann/json | nlohmann-JSON-MIT.txt |
+| DualDn Big | 7ec5f6a21c04321beb0d3297d6e9ac5f50635555 | https://github.com/OpenImagingLab/DualDn | DualDn/LICENSE (CC BY-NC 4.0, OpenImagingLab 2024) |
+| ONNX Runtime | 1.23.2 | https://github.com/microsoft/onnxruntime/tree/v1.23.2 | DualDn/ONNX-Runtime-LICENSE, DualDn/ONNX-Runtime-ThirdPartyNotices.txt |
 | LibRaw | 0.22.2 | https://github.com/LibRaw/LibRaw/tree/0.22.2 | LibRaw-LICENSE.CDDL, LibRaw-LICENSE.LGPL, LibRaw-COPYRIGHT |
 | Nikon HE decoder | Local C++ adaptation of dnglab 0f044c2c and LibRaw PR 826 | https://github.com/dnglab/dnglab/pull/835 | nikon-he/README.md, nikon-he/LICENSE.LGPL-2.1 |
 | LLVM OpenMP runtime | 21.1.8 | https://github.com/llvm/llvm-project/tree/llvmorg-21.1.8/openmp | libomp-LICENSE.TXT |
@@ -28,7 +32,7 @@ and ad-hoc code signatures. LibRaw also includes the source patches described be
 | libcurl (bundled inside the RUM PC SDK) | 7.68.0-DEV | https://curl.se/ | libcurl-COPYING.txt |
 
 The Alibaba Cloud RUM SDK and its libcurl are unmodified vendor binaries; packaging changes
-only their Mach-O install names and ad-hoc signatures. They are present only in builds with
+only their Mach-O install names and code signatures. They are present only in builds with
 usage analytics (the default release build); `RAWLAB_RUM=0` builds omit both.
 
 Lensfun is built unmodified from a checksum-pinned source archive using
@@ -54,6 +58,13 @@ filter's BSD notice and the installed third-party notices are included in
 `OpenCV/`. No darktable denoising implementation or executable is bundled.
 
 This software is based in part on the work of the Independent JPEG Group.
+
+The optional DualDn package retains the original trained weights. Local changes
+split the model into fixed-size RAW, ISP and RGB ONNX graphs and add tiled execution
+and a scene-linear bridge in RawLab. The model manifest records source and weight
+checksums. DualDn and its converted model retain their upstream license; they are
+not relicensed under RawLab's license. Apple Silicon release builds bundle these
+components; development and Intel release builds do not.
 
 This product includes DNG technology under license by Adobe.
 JPEG XL DNG decoding uses the DNG SDK only for the JPEG XL decoder path.

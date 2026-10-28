@@ -7,6 +7,18 @@ import java.nio.file.Files
 import com.rawlab.android.geometry.GeometrySettings
 
 class EditPersistenceTest {
+    @Test fun concurrentStoreInstancesDoNotReplaceUnrelatedRecords() {
+        val directory = Files.createTempDirectory("rawlab-edit-instances").toFile()
+        try {
+            val first = EditStore(directory)
+            val second = EditStore(directory)
+            first.save(PhotoIdentity("a"), EditSettings(exposure = .5f))
+            second.save(PhotoIdentity("b"), EditSettings(exposure = -.5f))
+            assertEquals(.5f, EditStore(directory).load(PhotoIdentity("a"))?.exposure)
+            assertEquals(-.5f, first.load(PhotoIdentity("b"))?.exposure)
+        } finally { directory.deleteRecursively() }
+    }
+
     @Test fun failedReplacementKeepsLastDurableValueInMemory() {
         val root = Files.createTempDirectory("rawlab-atomic").toFile()
         try {
@@ -39,7 +51,14 @@ class EditPersistenceTest {
             val file = File(directory, "edits.properties")
             val properties = java.util.Properties().also { file.inputStream().use(it::load) }
             val key = properties.stringPropertyNames().first { it.endsWith(".values") }
-            val geometryKey = key.removeSuffix(".values") + ".geometry"
+            // 独立构造旧版记录，继续验证旧 CSV 与独立扩展字段 reader。
+            properties.setProperty(key, legacyCSVSettings(changed))
+            val record = key.removeSuffix(".values")
+            properties.setProperty("$record.recipe", changed.recipeID!!)
+            properties.setProperty("$record.film", java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(changed.film.toByteArray()))
+            properties.setProperty("$record.processing", changed.processing.encode())
+            properties.setProperty("$record.lens", changed.lens.encode())
+            val geometryKey = "$record.geometry"
             properties.setProperty(geometryKey, "1,0.2,0.1,0.8,0.7,3,1,1,-10.0")
             file.outputStream().use { properties.store(it, null) }
             assertEquals(changed.copy(geometry = changed.geometry.copy(perspectiveHorizontal = 0f,

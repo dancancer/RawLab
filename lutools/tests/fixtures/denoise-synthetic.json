@@ -1,0 +1,562 @@
+{
+  "version": 1,
+  "description": "Deterministic post-demosaic RGB tests, not calibrated camera/CFA noise. Holdout seed/content disjoint from tune.",
+  "cases": [
+    {
+      "id": "flat-tune",
+      "split": "tune",
+      "capture_group": "flat-tune",
+      "input": {
+        "kind": "synthetic",
+        "pattern": "flat",
+        "seed": 137,
+        "width": 384,
+        "height": 384,
+        "shot": 0.001,
+        "read": 0.005
+      },
+      "regions": [
+        {
+          "id": "full",
+          "kind": "flat",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "center",
+          "kind": "flat",
+          "rect": [
+            0.25,
+            0.25,
+            0.5,
+            0.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "flat-holdout",
+      "split": "holdout",
+      "capture_group": "flat-holdout",
+      "input": {
+        "kind": "synthetic",
+        "pattern": "flat",
+        "seed": 10137,
+        "width": 384,
+        "height": 384,
+        "shot": 0.001,
+        "read": 0.005
+      },
+      "regions": [
+        {
+          "id": "full",
+          "kind": "flat",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "center",
+          "kind": "flat",
+          "rect": [
+            0.25,
+            0.25,
+            0.5,
+            0.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "levels-tune",
+      "split": "tune",
+      "capture_group": "levels-tune",
+      "input": {
+        "kind": "synthetic",
+        "pattern": "levels",
+        "seed": 220,
+        "width": 384,
+        "height": 384,
+        "shot": 0.001,
+        "read": 0.005
+      },
+      "regions": [
+        {
+          "id": "full",
+          "kind": "levels",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "center",
+          "kind": "levels",
+          "rect": [
+            0.25,
+            0.25,
+            0.5,
+            0.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "levels-holdout",
+      "split": "holdout",
+      "capture_group": "levels-holdout",
+      "input": {
+        "kind": "synthetic",
+        "pattern": "levels",
+        "seed": 10220,
+        "width": 384,
+        "height": 384,
+        "shot": 0.001,
+        "read": 0.005
+      },
+      "regions": [
+        {
+          "id": "full",
+          "kind": "levels",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "center",
+          "kind": "levels",
+          "rect": [
+            0.25,
+            0.25,
+            0.5,
+            0.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "texture-tune",
+      "split": "tune",
+      "capture_group": "texture-tune",
+      "input": {
+        "kind": "synthetic",
+        "pattern": "texture",
+        "seed": 303,
+        "width": 384,
+        "height": 384,
+        "shot": 0.001,
+        "read": 0.005
+      },
+      "regions": [
+        {
+          "id": "full",
+          "kind": "texture",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "center",
+          "kind": "texture",
+          "rect": [
+            0.25,
+            0.25,
+            0.5,
+            0.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "texture-holdout",
+      "split": "holdout",
+      "capture_group": "texture-holdout",
+      "input": {
+        "kind": "synthetic",
+        "pattern": "texture",
+        "seed": 10303,
+        "width": 384,
+        "height": 384,
+        "shot": 0.001,
+        "read": 0.005
+      },
+      "regions": [
+        {
+          "id": "full",
+          "kind": "texture",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "center",
+          "kind": "texture",
+          "rect": [
+            0.25,
+            0.25,
+            0.5,
+            0.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "color_edge-tune",
+      "split": "tune",
+      "capture_group": "color_edge-tune",
+      "input": {
+        "kind": "synthetic",
+        "pattern": "color_edge",
+        "seed": 386,
+        "width": 384,
+        "height": 384,
+        "shot": 0.001,
+        "read": 0.005
+      },
+      "regions": [
+        {
+          "id": "full",
+          "kind": "color_edge",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "center",
+          "kind": "color_edge",
+          "rect": [
+            0.25,
+            0.25,
+            0.5,
+            0.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "color_edge-holdout",
+      "split": "holdout",
+      "capture_group": "color_edge-holdout",
+      "input": {
+        "kind": "synthetic",
+        "pattern": "color_edge",
+        "seed": 10386,
+        "width": 384,
+        "height": 384,
+        "shot": 0.001,
+        "read": 0.005
+      },
+      "regions": [
+        {
+          "id": "full",
+          "kind": "color_edge",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "center",
+          "kind": "color_edge",
+          "rect": [
+            0.25,
+            0.25,
+            0.5,
+            0.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gradient-tune",
+      "split": "tune",
+      "capture_group": "gradient-tune",
+      "input": {
+        "kind": "synthetic",
+        "pattern": "gradient",
+        "seed": 469,
+        "width": 384,
+        "height": 384,
+        "shot": 0.001,
+        "read": 0.005
+      },
+      "regions": [
+        {
+          "id": "full",
+          "kind": "gradient",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "center",
+          "kind": "gradient",
+          "rect": [
+            0.25,
+            0.25,
+            0.5,
+            0.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gradient-holdout",
+      "split": "holdout",
+      "capture_group": "gradient-holdout",
+      "input": {
+        "kind": "synthetic",
+        "pattern": "gradient",
+        "seed": 10469,
+        "width": 384,
+        "height": 384,
+        "shot": 0.001,
+        "read": 0.005
+      },
+      "regions": [
+        {
+          "id": "full",
+          "kind": "gradient",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "center",
+          "kind": "gradient",
+          "rect": [
+            0.25,
+            0.25,
+            0.5,
+            0.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "periodic-tune",
+      "split": "tune",
+      "capture_group": "periodic-tune",
+      "input": {
+        "kind": "synthetic",
+        "pattern": "periodic",
+        "seed": 552,
+        "width": 384,
+        "height": 384,
+        "shot": 0,
+        "read": 0
+      },
+      "regions": [
+        {
+          "id": "full",
+          "kind": "periodic",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "center",
+          "kind": "periodic",
+          "rect": [
+            0.25,
+            0.25,
+            0.5,
+            0.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "periodic-holdout",
+      "split": "holdout",
+      "capture_group": "periodic-holdout",
+      "input": {
+        "kind": "synthetic",
+        "pattern": "periodic",
+        "seed": 10552,
+        "width": 384,
+        "height": 384,
+        "shot": 0,
+        "read": 0.005
+      },
+      "regions": [
+        {
+          "id": "full",
+          "kind": "periodic",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "center",
+          "kind": "periodic",
+          "rect": [
+            0.25,
+            0.25,
+            0.5,
+            0.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "extended-tune",
+      "split": "tune",
+      "capture_group": "extended-tune",
+      "input": {
+        "kind": "synthetic",
+        "pattern": "extended",
+        "seed": 635,
+        "width": 384,
+        "height": 384,
+        "shot": 0,
+        "read": 0.005
+      },
+      "regions": [
+        {
+          "id": "full",
+          "kind": "extended",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "center",
+          "kind": "extended",
+          "rect": [
+            0.25,
+            0.25,
+            0.5,
+            0.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "extended-holdout",
+      "split": "holdout",
+      "capture_group": "extended-holdout",
+      "input": {
+        "kind": "synthetic",
+        "pattern": "extended",
+        "seed": 10635,
+        "width": 384,
+        "height": 384,
+        "shot": 0,
+        "read": 0.005
+      },
+      "regions": [
+        {
+          "id": "full",
+          "kind": "extended",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        {
+          "id": "center",
+          "kind": "extended",
+          "rect": [
+            0.25,
+            0.25,
+            0.5,
+            0.5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "no-noise",
+      "split": "tune",
+      "capture_group": "no-noise",
+      "input": {
+        "kind": "synthetic",
+        "pattern": "flat",
+        "seed": 139,
+        "width": 256,
+        "height": 256,
+        "shot": 0,
+        "read": 0
+      },
+      "regions": [
+        {
+          "id": "full",
+          "kind": "flat",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "small",
+      "split": "holdout",
+      "capture_group": "small",
+      "input": {
+        "kind": "synthetic",
+        "pattern": "flat",
+        "seed": 141,
+        "width": 32,
+        "height": 32,
+        "shot": 0.001,
+        "read": 0.005
+      },
+      "regions": [
+        {
+          "id": "full",
+          "kind": "flat",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -43,12 +43,15 @@ data class EditorState(
     val lookImportReport: String? = null,
     val gpuEnabled: Boolean = true,
     val draft: AdjustmentDraft? = null,
+    val adjustmentRevision: Long = 0,
+    val committingAdjustments: Boolean = false,
 ) {
     val canExport get() = photo != null && preview != null && exact && !rendering && !previewResizePending &&
-        operation == Operation.NONE && draft == null && saveState != EditSaveState.FAILED
-    val controlsEnabled get() = photo != null && operation == Operation.NONE
+        operation == Operation.NONE && !committingAdjustments && draft == null && saveState != EditSaveState.FAILED
+    val controlsEnabled get() = photo != null && operation == Operation.NONE && !committingAdjustments
     val visibleEdits get() = draft?.project(edits) ?: edits
-    val canApplyDraft get() = draft != null && controlsEnabled && exact && !rendering && error == null
+    val draftReady get() = draft != null && controlsEnabled && exact && !rendering && !previewResizePending && error == null
+    val canApplyDraft get() = draftReady && draft?.changed == true
 }
 
 // 纯状态转换：渲染结束、外观加载/导入/改名/删除后的界面状态
@@ -104,3 +107,12 @@ internal object EditorStateReducer {
         return EditorMutation(state, edits.takeIf { rerender })
     }
 }
+
+/** 界面查询不触发保存或渲染；忙状态只影响动作可用性。 */
+internal fun EditorState.resetContext(): EditorResetContext = EditorResetContext(
+    photo?.inputKind ?: com.rawlab.android.format.PhotoInputKind.RAW,
+    EditSettings(),
+    preview?.takeIf { it.temperature.isFinite() && it.tint.isFinite() }
+        ?.let { AsShotWhiteBalance(it.temperature, it.tint) },
+    edits.recipeID?.let(::setOf) ?: emptySet(),
+)

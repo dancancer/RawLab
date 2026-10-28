@@ -177,6 +177,10 @@
       "formats": [],
       "source": "上次批量任务尚未完成"
     },
+    "不支持此处理版本，原有记录未被覆盖。": {
+      "formats": [],
+      "source": "不支持此处理版本，原有记录未被覆盖。"
+    },
     "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。": {
       "formats": [],
       "source": "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。"
@@ -516,11 +520,23 @@
       "formats": [],
       "source": "基础曝光偏移"
     },
+    "处理 v1（旧版）": {
+      "formats": [],
+      "source": "处理 v1（旧版）"
+    },
+    "处理 v2": {
+      "formats": [],
+      "source": "处理 v2"
+    },
     "处理失败：%@": {
       "formats": [
         "%@"
       ],
       "source": "处理失败：{0}"
+    },
+    "处理版本": {
+      "formats": [],
+      "source": "处理版本"
     },
     "处理结果为空": {
       "formats": [],
@@ -2172,6 +2188,1334 @@
         "%@"
       ],
       "source": "黑位 {0}"
+    },
+    "光线": {
+      "formats": [],
+      "source": "光线"
+    },
+    "八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。": {
+      "formats": [],
+      "source": "八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。"
+    },
+    "几何与镜头": {
+      "formats": [],
+      "source": "几何与镜头"
+    },
+    "外观": {
+      "formats": [],
+      "source": "外观"
+    },
+    "将以下项目转为独立调整，以保留其他分组的当前效果：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "将以下项目转为独立调整，以保留其他分组的当前效果：{0}"
+    },
+    "展开%@组": {
+      "formats": [
+        "%@"
+      ],
+      "source": "展开{0}组"
+    },
+    "已调整": {
+      "formats": [],
+      "source": "已调整"
+    },
+    "未调整": {
+      "formats": [],
+      "source": "未调整"
+    },
+    "当前照片或调整记录无效，无法安全重置。": {
+      "formats": [],
+      "source": "当前照片或调整记录无效，无法安全重置。"
+    },
+    "当前配方不可用，无法安全重置外观。": {
+      "formats": [],
+      "source": "当前配方不可用，无法安全重置外观。"
+    },
+    "恢复当前照片的全部调整，不改写原始照片。": {
+      "formats": [],
+      "source": "恢复当前照片的全部调整，不改写原始照片。"
+    },
+    "收起%@组": {
+      "formats": [
+        "%@"
+      ],
+      "source": "收起{0}组"
+    },
+    "无法重置调整": {
+      "formats": [],
+      "source": "无法重置调整"
+    },
+    "此操作只恢复%@组内的调整，其他分组保持不变。": {
+      "formats": [
+        "%@"
+      ],
+      "source": "此操作只恢复{0}组内的调整，其他分组保持不变。"
+    },
+    "照片或调整已变化，请重新确认重置。": {
+      "formats": [],
+      "source": "照片或调整已变化，请重新确认重置。"
+    },
+    "现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。": {
+      "formats": [],
+      "source": "现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。"
+    },
+    "缺少拍摄时白平衡数据，无法保留配方效果。": {
+      "formats": [],
+      "source": "缺少拍摄时白平衡数据，无法保留配方效果。"
+    },
+    "重置": {
+      "formats": [],
+      "source": "重置"
+    },
+    "重置%@组…": {
+      "formats": [
+        "%@"
+      ],
+      "source": "重置{0}组…"
+    },
+    "重置%@组？": {
+      "formats": [
+        "%@"
+      ],
+      "source": "重置{0}组？"
+    },
+    "重置%@？": {
+      "formats": [
+        "%@"
+      ],
+      "source": "重置{0}？"
+    },
+    "重置全部 HSL…": {
+      "formats": [],
+      "source": "重置全部 HSL…"
+    },
+    "重置全部 HSL？": {
+      "formats": [],
+      "source": "重置全部 HSL？"
+    },
+    "重置全部调整…": {
+      "formats": [],
+      "source": "重置全部调整…"
+    },
+    "重置全部调整？": {
+      "formats": [],
+      "source": "重置全部调整？"
+    },
+    "重置当前颜色（%@）": {
+      "formats": [
+        "%@"
+      ],
+      "source": "重置当前颜色（{0}）"
+    },
+    "预览尚未就绪，请稍后重试。": {
+      "formats": [],
+      "source": "预览尚未就绪，请稍后重试。"
+    },
+    "颜色": {
+      "formats": [],
+      "source": "颜色"
+    },
+    "%@ · %@": {
+      "formats": [
+        "%@",
+        "%@"
+      ],
+      "source": "{0} · {1}"
+    },
+    "双击名称或轨道恢复默认值。": {
+      "formats": [],
+      "source": "双击名称或轨道恢复默认值。"
+    },
+    "明度：从暗到亮。": {
+      "formats": [],
+      "source": "明度：从暗到亮。"
+    },
+    "色相：向相邻颜色偏移。": {
+      "formats": [],
+      "source": "色相：向相邻颜色偏移。"
+    },
+    "请使用 %@ 的步进。": {
+      "formats": [
+        "%@"
+      ],
+      "source": "请使用 {0} 的步进。"
+    },
+    "饱和度：从灰色到彩色。": {
+      "formats": [],
+      "source": "饱和度：从灰色到彩色。"
+    },
+    "默认值：%@；范围：%@ 至 %@；步进：%@。": {
+      "formats": [
+        "%@",
+        "%@",
+        "%@",
+        "%@"
+      ],
+      "source": "默认值：{0}；范围：{1} 至 {2}；步进：{3}。"
+    },
+    "关闭对比": {
+      "formats": [],
+      "source": "关闭对比"
+    },
+    "分割位置": {
+      "formats": [],
+      "source": "分割位置"
+    },
+    "分割线": {
+      "formats": [],
+      "source": "分割线"
+    },
+    "对比方式": {
+      "formats": [],
+      "source": "对比方式"
+    },
+    "并排": {
+      "formats": [],
+      "source": "并排"
+    },
+    "开启对比": {
+      "formats": [],
+      "source": "开启对比"
+    },
+    "查看调整前": {
+      "formats": [],
+      "source": "查看调整前"
+    },
+    "照片四周留白": {
+      "formats": [],
+      "source": "照片四周留白"
+    },
+    "缩放与显示": {
+      "formats": [],
+      "source": "缩放与显示"
+    },
+    "调整前": {
+      "formats": [],
+      "source": "调整前"
+    },
+    "返回调整后": {
+      "formats": [],
+      "source": "返回调整后"
+    },
+    "重置分割线": {
+      "formats": [],
+      "source": "重置分割线"
+    },
+    "预览已更新": {
+      "formats": [],
+      "source": "预览已更新"
+    },
+    "预览未更新": {
+      "formats": [],
+      "source": "预览未更新"
+    },
+    "RGB 直方图": {
+      "source": "RGB 直方图",
+      "formats": []
+    },
+    "统计不可用": {
+      "source": "统计不可用",
+      "formats": []
+    },
+    "位置与尺寸": {
+      "formats": [],
+      "source": "位置与尺寸"
+    },
+    "照片处理设置": {
+      "formats": [],
+      "source": "照片处理设置"
+    },
+    "锁定当前比例": {
+      "formats": [],
+      "source": "锁定当前比例"
+    },
+    "仅已修改": {
+      "formats": [],
+      "source": "仅已修改"
+    },
+    "保存失败": {
+      "formats": [],
+      "source": "保存失败"
+    },
+    "全部": {
+      "formats": [],
+      "source": "全部"
+    },
+    "几何与镜头仅在“全部”或显式选择时包含。": {
+      "formats": [],
+      "source": "几何与镜头仅在“全部”或显式选择时包含。"
+    },
+    "历史仅保留在本次会话；已保存的调整会在重新打开时恢复。": {
+      "formats": [],
+      "source": "历史仅保留在本次会话；已保存的调整会在重新打开时恢复。"
+    },
+    "垂直位置": {
+      "formats": [],
+      "source": "垂直位置"
+    },
+    "复制范围": {
+      "formats": [],
+      "source": "复制范围"
+    },
+    "复制调整": {
+      "formats": [],
+      "source": "复制调整"
+    },
+    "复制调整…": {
+      "formats": [],
+      "source": "复制调整…"
+    },
+    "宽度": {
+      "formats": [],
+      "source": "宽度"
+    },
+    "尚未复制调整。请先从一张照片复制所需范围。": {
+      "formats": [],
+      "source": "尚未复制调整。请先从一张照片复制所需范围。"
+    },
+    "已保存": {
+      "formats": [],
+      "source": "已保存"
+    },
+    "已跳过": {
+      "formats": [],
+      "source": "已跳过"
+    },
+    "应用并保存": {
+      "formats": [],
+      "source": "应用并保存"
+    },
+    "应用有效输入、放弃输入，或返回继续编辑。": {
+      "formats": [],
+      "source": "应用有效输入、放弃输入，或返回继续编辑。"
+    },
+    "应用草稿": {
+      "formats": [],
+      "source": "应用草稿"
+    },
+    "应用输入": {
+      "formats": [],
+      "source": "应用输入"
+    },
+    "待处理": {
+      "formats": [],
+      "source": "待处理"
+    },
+    "所选调整与目标不兼容，请调整范围或跳过目标。": {
+      "formats": [],
+      "source": "所选调整与目标不兼容，请调整范围或跳过目标。"
+    },
+    "按实际生效值应用，已包含配方强度。": {
+      "formats": [],
+      "source": "按实际生效值应用，已包含配方强度。"
+    },
+    "撤销": {
+      "formats": [],
+      "source": "撤销"
+    },
+    "撤销 %@ 张": {
+      "formats": [
+        "%@"
+      ],
+      "source": "撤销 {0} 张"
+    },
+    "操作未完成，请重试。": {
+      "formats": [],
+      "source": "操作未完成，请重试。"
+    },
+    "放弃草稿": {
+      "formats": [],
+      "source": "放弃草稿"
+    },
+    "放弃输入": {
+      "formats": [],
+      "source": "放弃输入"
+    },
+    "数值输入尚未提交": {
+      "formats": [],
+      "source": "数值输入尚未提交"
+    },
+    "旋转": {
+      "formats": [],
+      "source": "旋转"
+    },
+    "暂无编辑历史。": {
+      "formats": [],
+      "source": "暂无编辑历史。"
+    },
+    "曝光模式": {
+      "formats": [],
+      "source": "曝光模式"
+    },
+    "更多编辑操作": {
+      "formats": [],
+      "source": "更多编辑操作"
+    },
+    "未变化": {
+      "formats": [],
+      "source": "未变化"
+    },
+    "本次会话历史": {
+      "formats": [],
+      "source": "本次会话历史"
+    },
+    "本次会话历史…": {
+      "formats": [],
+      "source": "本次会话历史…"
+    },
+    "来源：%@ · %@ 项调整": {
+      "formats": [
+        "%@",
+        "%@"
+      ],
+      "source": "来源：{0} · {1} 项调整"
+    },
+    "查看调整范围": {
+      "formats": [],
+      "source": "查看调整范围"
+    },
+    "检查目标": {
+      "formats": [],
+      "source": "检查目标"
+    },
+    "正在检查目标…": {
+      "formats": [],
+      "source": "正在检查目标…"
+    },
+    "此照片有未应用的几何或镜头草稿。": {
+      "formats": [],
+      "source": "此照片有未应用的几何或镜头草稿。"
+    },
+    "水平位置": {
+      "formats": [],
+      "source": "水平位置"
+    },
+    "没有可处理目标，请重新选择照片。": {
+      "formats": [],
+      "source": "没有可处理目标，请重新选择照片。"
+    },
+    "没有可复制的调整，请选择其他范围。": {
+      "formats": [],
+      "source": "没有可复制的调整，请选择其他范围。"
+    },
+    "照片或调整已变化，请重新检查目标。": {
+      "formats": [],
+      "source": "照片或调整已变化，请重新检查目标。"
+    },
+    "畸变校正": {
+      "formats": [],
+      "source": "畸变校正"
+    },
+    "白平衡模式": {
+      "formats": [],
+      "source": "白平衡模式"
+    },
+    "目标所需的外观不可用，请先导入外观。": {
+      "formats": [],
+      "source": "目标所需的外观不可用，请先导入外观。"
+    },
+    "目标无法保留未选参数，请调整复制范围。": {
+      "formats": [],
+      "source": "目标无法保留未选参数，请调整复制范围。"
+    },
+    "目标：%@ 张照片": {
+      "formats": [
+        "%@"
+      ],
+      "source": "目标：{0} 张照片"
+    },
+    "粘贴调整": {
+      "formats": [],
+      "source": "粘贴调整"
+    },
+    "粘贴调整…": {
+      "formats": [],
+      "source": "粘贴调整…"
+    },
+    "自动裁切": {
+      "formats": [],
+      "source": "自动裁切"
+    },
+    "请先应用或放弃未完成的输入和几何草稿。": {
+      "formats": [],
+      "source": "请先应用或放弃未完成的输入和几何草稿。"
+    },
+    "调整内容无法读取，请重新复制。": {
+      "formats": [],
+      "source": "调整内容无法读取，请重新复制。"
+    },
+    "调整已变化": {
+      "formats": [],
+      "source": "调整已变化"
+    },
+    "调整照片": {
+      "formats": [],
+      "source": "调整照片"
+    },
+    "跳过": {
+      "formats": [],
+      "source": "跳过"
+    },
+    "选择此组": {
+      "formats": [],
+      "source": "选择此组"
+    },
+    "重做": {
+      "formats": [],
+      "source": "重做"
+    },
+    "重做 %@ 张": {
+      "formats": [
+        "%@"
+      ],
+      "source": "重做 {0} 张"
+    },
+    "重试未完成项": {
+      "formats": [],
+      "source": "重试未完成项"
+    },
+    "降噪参数": {
+      "formats": [],
+      "source": "降噪参数"
+    },
+    "高度": {
+      "formats": [],
+      "source": "高度"
+    },
+    "%@ · 独立外观": {
+      "formats": [
+        "%@"
+      ],
+      "source": "{0} · 独立外观"
+    },
+    "已选 %@ 项": {
+      "formats": [
+        "%@"
+      ],
+      "source": "已选 {0} 项"
+    },
+    "清空选择": {
+      "formats": [],
+      "source": "清空选择"
+    },
+    "跳过以上目标后重试": {
+      "formats": [],
+      "source": "跳过以上目标后重试"
+    },
+    "已撤销": {
+      "formats": [],
+      "source": "已撤销"
+    },
+    "已撤销 %@ 张 · 未完成 %@ 张": {
+      "formats": [
+        "%@",
+        "%@"
+      ],
+      "source": "已撤销 {0} 张 · 未完成 {1} 张"
+    },
+    "已重做 %@ 张 · 未完成 %@ 张": {
+      "formats": [
+        "%@",
+        "%@"
+      ],
+      "source": "已重做 {0} 张 · 未完成 {1} 张"
+    },
+    "已保存 %@ 张 · 未变化 %@ 张 · 已跳过 %@ 张 · 已撤销 %@ 张 · 未完成 %@ 张": {
+      "formats": [
+        "%@",
+        "%@",
+        "%@",
+        "%@",
+        "%@"
+      ],
+      "source": "已保存 {0} 张 · 未变化 {1} 张 · 已跳过 {2} 张 · 已撤销 {3} 张 · 未完成 {4} 张"
+    },
+    "以下目标尚未完成本次历史操作，请检查原因后重试。": {
+      "formats": [],
+      "source": "以下目标尚未完成本次历史操作，请检查原因后重试。"
+    },
+    "完成": {
+      "formats": [],
+      "source": "完成"
+    },
+    "旧版降噪": {
+      "formats": [],
+      "source": "旧版降噪"
+    },
+    "AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。": {
+      "formats": [],
+      "source": "AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。"
+    },
+    "AI 降噪": {
+      "formats": [],
+      "source": "AI 降噪"
+    },
+    "AI 降噪仅支持 RAW 照片。": {
+      "formats": [],
+      "source": "AI 降噪仅支持 RAW 照片。"
+    },
+    "AI 降噪失败": {
+      "formats": [],
+      "source": "AI 降噪失败"
+    },
+    "AI 降噪失败：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "AI 降噪失败：{0}"
+    },
+    "AI 降噪已取消。": {
+      "formats": [],
+      "source": "AI 降噪已取消。"
+    },
+    "AI 降噪（实验）": {
+      "formats": [],
+      "source": "AI 降噪（实验）"
+    },
+    "支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。": {
+      "formats": [],
+      "source": "支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。"
+    },
+    "关闭 AI 降噪": {
+      "formats": [],
+      "source": "关闭 AI 降噪"
+    },
+    "已应用 AI 降噪；曝光和外观调整复用结果。": {
+      "formats": [],
+      "source": "已应用 AI 降噪；曝光和外观调整复用结果。"
+    },
+    "普通降噪参数已保留，关闭 AI 降噪即可恢复。": {
+      "formats": [],
+      "source": "普通降噪参数已保留，关闭 AI 降噪即可恢复。"
+    },
+    "正在保存 AI 结果": {
+      "formats": [],
+      "source": "正在保存 AI 结果"
+    },
+    "正在准备 AI 降噪": {
+      "formats": [],
+      "source": "正在准备 AI 降噪"
+    },
+    "正在处理 RAW 噪声": {
+      "formats": [],
+      "source": "正在处理 RAW 噪声"
+    },
+    "正在处理颜色噪声": {
+      "formats": [],
+      "source": "正在处理颜色噪声"
+    },
+    "此构建未安装 AI 降噪模型。": {
+      "formats": [],
+      "source": "此构建未安装 AI 降噪模型。"
+    },
+    "此照片或构建尚不能使用 AI 降噪。": {
+      "formats": [],
+      "source": "此照片或构建尚不能使用 AI 降噪。"
+    },
+    "照片或白平衡已变化，请重新准备 AI 降噪。": {
+      "formats": [],
+      "source": "照片或白平衡已变化，请重新准备 AI 降噪。"
+    },
+    "请先完成此照片的 AI 降噪，再预览或导出。": {
+      "formats": [],
+      "source": "请先完成此照片的 AI 降噪，再预览或导出。"
+    },
+    "AI 降噪暂不支持复制。请选择自定义范围，只复制其他调整。": {
+      "formats": [],
+      "source": "AI 降噪暂不支持复制。请选择自定义范围，只复制其他调整。"
+    },
+    "目标已启用 AI 降噪。请先关闭 AI，或取消选择普通降噪字段。": {
+      "formats": [],
+      "source": "目标已启用 AI 降噪。请先关闭 AI，或取消选择普通降噪字段。"
+    },
+    "保存当前调整为预设…": {
+      "formats": [],
+      "source": "保存当前调整为预设…"
+    },
+    "保存所选调整，之后可应用到其他照片。": {
+      "formats": [],
+      "source": "保存所选调整，之后可应用到其他照片。"
+    },
+    "保存预设": {
+      "formats": [],
+      "source": "保存预设"
+    },
+    "删除预设？": {
+      "formats": [],
+      "source": "删除预设？"
+    },
+    "另存": {
+      "formats": [],
+      "source": "另存"
+    },
+    "同名预设已存在，请使用其他名称。": {
+      "formats": [],
+      "source": "同名预设已存在，请使用其他名称。"
+    },
+    "尚无用户预设": {
+      "formats": [],
+      "source": "尚无用户预设"
+    },
+    "应用预设": {
+      "formats": [],
+      "source": "应用预设"
+    },
+    "我的预设": {
+      "formats": [],
+      "source": "我的预设"
+    },
+    "新预设": {
+      "formats": [],
+      "source": "新预设"
+    },
+    "无法创建新的预设标识，请重试。": {
+      "formats": [],
+      "source": "无法创建新的预设标识，请重试。"
+    },
+    "此预设库来自更新版本，请更新应用后重试。": {
+      "formats": [],
+      "source": "此预设库来自更新版本，请更新应用后重试。"
+    },
+    "管理预设：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "管理预设：{0}"
+    },
+    "覆盖": {
+      "formats": [],
+      "source": "覆盖"
+    },
+    "覆盖预设？": {
+      "formats": [],
+      "source": "覆盖预设？"
+    },
+    "请输入不同的预设名称。": {
+      "formats": [],
+      "source": "请输入不同的预设名称。"
+    },
+    "请输入预设名称。": {
+      "formats": [],
+      "source": "请输入预设名称。"
+    },
+    "调整范围": {
+      "formats": [],
+      "source": "调整范围"
+    },
+    "重命名预设": {
+      "formats": [],
+      "source": "重命名预设"
+    },
+    "预设名称": {
+      "formats": [],
+      "source": "预设名称"
+    },
+    "预设已变化，请重新载入列表后重试。": {
+      "formats": [],
+      "source": "预设已变化，请重新载入列表后重试。"
+    },
+    "预设库无法读取，原文件保持不变。请从备份恢复后重试。": {
+      "formats": [],
+      "source": "预设库无法读取，原文件保持不变。请从备份恢复后重试。"
+    },
+    "预设操作未完成：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "预设操作未完成：{0}"
+    },
+    "删除": {
+      "formats": [],
+      "source": "删除"
+    },
+    "重命名": {
+      "formats": [],
+      "source": "重命名"
+    },
+    "重新载入": {
+      "formats": [],
+      "source": "重新载入"
+    },
+    "黑场": {
+      "formats": [],
+      "source": "黑场"
+    },
+    "白场": {
+      "formats": [],
+      "source": "白场"
+    },
+    "鲜艳度": {
+      "formats": [],
+      "source": "鲜艳度"
+    },
+    "无效的黑白场或鲜艳度参数": {
+      "formats": [],
+      "source": "无效的黑白场或鲜艳度参数"
+    },
+    "颜色分级": {
+      "formats": [],
+      "source": "颜色分级"
+    },
+    "中间调": {
+      "formats": [],
+      "source": "中间调"
+    },
+    "无效的颜色分级参数": {
+      "formats": [],
+      "source": "无效的颜色分级参数"
+    },
+    "重置当前分区": {
+      "formats": [],
+      "source": "重置当前分区"
+    },
+    "重置颜色分级": {
+      "formats": [],
+      "source": "重置颜色分级"
+    },
+    "恢复阴影、中间调和高光的颜色分级默认值？": {
+      "formats": [],
+      "source": "恢复阴影、中间调和高光的颜色分级默认值？"
+    },
+    "上下拖动调整，方向键微调，Esc 取消": {
+      "formats": [],
+      "source": "上下拖动调整，方向键微调，Esc 取消"
+    },
+    "取色失败，请重试。": {
+      "formats": [],
+      "source": "取色失败，请重试。"
+    },
+    "受影响色域：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "受影响色域：{0}"
+    },
+    "正在取色…": {
+      "formats": [],
+      "source": "正在取色…"
+    },
+    "此像素不可取样。": {
+      "formats": [],
+      "source": "此像素不可取样。"
+    },
+    "目标调整": {
+      "formats": [],
+      "source": "目标调整"
+    },
+    "请在调整后的照片区域取色。": {
+      "formats": [],
+      "source": "请在调整后的照片区域取色。"
+    },
+    "调整轴": {
+      "formats": [],
+      "source": "调整轴"
+    },
+    "预览已变化，请重新取色。": {
+      "formats": [],
+      "source": "预览已变化，请重新取色。"
+    },
+    "颜色接近灰色，无法选择色域。": {
+      "formats": [],
+      "source": "颜色接近灰色，无法选择色域。"
+    },
+    "%@ · 曝光 %@ · 查看最终调整": {
+      "formats": [
+        "%@",
+        "%@"
+      ],
+      "source": "{0} · 曝光 {1} · 查看最终调整"
+    },
+    "任务已冻结。之后的照片编辑不会改变本次导出。": {
+      "formats": [],
+      "source": "任务已冻结。之后的照片编辑不会改变本次导出。"
+    },
+    "保留任务": {
+      "formats": [],
+      "source": "保留任务"
+    },
+    "先处理每张照片的未保存调整，再检查最终设置。跳过只影响本次导出。": {
+      "formats": [],
+      "source": "先处理每张照片的未保存调整，再检查最终设置。跳过只影响本次导出。"
+    },
+    "单张微调": {
+      "formats": [],
+      "source": "单张微调"
+    },
+    "同步历史…": {
+      "formats": [],
+      "source": "同步历史…"
+    },
+    "同步所选照片": {
+      "formats": [],
+      "source": "同步所选照片"
+    },
+    "同步调整范围": {
+      "formats": [],
+      "source": "同步调整范围"
+    },
+    "在照片上取色并上下拖动": {
+      "formats": [],
+      "source": "在照片上取色并上下拖动"
+    },
+    "尚有未保存的调整": {
+      "formats": [],
+      "source": "尚有未保存的调整"
+    },
+    "已导出的文件会保留。剩余照片不再继续导出。": {
+      "formats": [],
+      "source": "已导出的文件会保留。剩余照片不再继续导出。"
+    },
+    "已有批量任务，请先完成或结束该任务。": {
+      "formats": [],
+      "source": "已有批量任务，请先完成或结束该任务。"
+    },
+    "应用调整并保存到所选照片": {
+      "formats": [],
+      "source": "应用调整并保存到所选照片"
+    },
+    "应用调整并保存到所选照片…": {
+      "formats": [],
+      "source": "应用调整并保存到所选照片…"
+    },
+    "当前照片": {
+      "formats": [],
+      "source": "当前照片"
+    },
+    "批量编辑": {
+      "formats": [],
+      "source": "批量编辑"
+    },
+    "批量编辑…": {
+      "formats": [],
+      "source": "批量编辑…"
+    },
+    "按各自调整导出": {
+      "formats": [],
+      "source": "按各自调整导出"
+    },
+    "按各自调整导出…": {
+      "formats": [],
+      "source": "按各自调整导出…"
+    },
+    "最终导出：%@ 张": {
+      "formats": [
+        "%@"
+      ],
+      "source": "最终导出：{0} 张"
+    },
+    "来源已排除。未选中的调整保持每张照片的原值。": {
+      "formats": [],
+      "source": "来源已排除。未选中的调整保持每张照片的原值。"
+    },
+    "来源有未完成的调整，请先应用或放弃。": {
+      "formats": [],
+      "source": "来源有未完成的调整，请先应用或放弃。"
+    },
+    "来源：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "来源：{0}"
+    },
+    "检查最终调整": {
+      "formats": [],
+      "source": "检查最终调整"
+    },
+    "检查目标…": {
+      "formats": [],
+      "source": "检查目标…"
+    },
+    "此照片有尚未保存的调整。应用或放弃后，请重新检查目标。": {
+      "formats": [],
+      "source": "此照片有尚未保存的调整。应用或放弃后，请重新检查目标。"
+    },
+    "每张照片自己的最终调整": {
+      "formats": [],
+      "source": "每张照片自己的最终调整"
+    },
+    "没有可同步的目标。请返回集合，选择来源以外的照片。": {
+      "formats": [],
+      "source": "没有可同步的目标。请返回集合，选择来源以外的照片。"
+    },
+    "没有可导出的照片。请取消部分跳过，或返回集合重新选择。": {
+      "formats": [],
+      "source": "没有可导出的照片。请取消部分跳过，或返回集合重新选择。"
+    },
+    "添加照片…": {
+      "formats": [],
+      "source": "添加照片…"
+    },
+    "确认并冻结任务": {
+      "formats": [],
+      "source": "确认并冻结任务"
+    },
+    "结束任务": {
+      "formats": [],
+      "source": "结束任务"
+    },
+    "结束任务…": {
+      "formats": [],
+      "source": "结束任务…"
+    },
+    "结束此批量任务？": {
+      "formats": [],
+      "source": "结束此批量任务？"
+    },
+    "草稿已处理，请重新检查最终调整。": {
+      "formats": [],
+      "source": "草稿已处理，请重新检查最终调整。"
+    },
+    "请先完成或关闭现有批量任务。": {
+      "formats": [],
+      "source": "请先完成或关闭现有批量任务。"
+    },
+    "请返回编辑器完成有效输入后重试。": {
+      "formats": [],
+      "source": "请返回编辑器完成有效输入后重试。"
+    },
+    "跳过本次导出": {
+      "formats": [],
+      "source": "跳过本次导出"
+    },
+    "返回选片集合": {
+      "formats": [],
+      "source": "返回选片集合"
+    },
+    "选择一组照片，再同步调整或逐张微调。": {
+      "formats": [],
+      "source": "选择一组照片，再同步调整或逐张微调。"
+    },
+    "选择要编辑的照片": {
+      "formats": [],
+      "source": "选择要编辑的照片"
+    },
+    "曲线": {
+      "formats": [],
+      "source": "曲线"
+    },
+    "多点曲线": {
+      "formats": [],
+      "source": "多点曲线"
+    },
+    "切换曲线模式": {
+      "formats": [],
+      "source": "切换曲线模式"
+    },
+    "多点曲线将从直线开始，旧 S 曲线数值会保留。": {
+      "formats": [],
+      "source": "多点曲线将从直线开始，旧 S 曲线数值会保留。"
+    },
+    "切换到 S 曲线将移除当前控制点，可撤销此操作。": {
+      "formats": [],
+      "source": "切换到 S 曲线将移除当前控制点，可撤销此操作。"
+    },
+    "切换": {
+      "formats": [],
+      "source": "切换"
+    },
+    "添加控制点": {
+      "formats": [],
+      "source": "添加控制点"
+    },
+    "删除控制点": {
+      "formats": [],
+      "source": "删除控制点"
+    },
+    "重置为直线": {
+      "formats": [],
+      "source": "重置为直线"
+    },
+    "输入坐标": {
+      "formats": [],
+      "source": "输入坐标"
+    },
+    "输出坐标": {
+      "formats": [],
+      "source": "输出坐标"
+    },
+    "端点固定": {
+      "formats": [],
+      "source": "端点固定"
+    },
+    "点击曲线区域添加控制点，拖动中间点调整。": {
+      "formats": [],
+      "source": "点击曲线区域添加控制点，拖动中间点调整。"
+    },
+    "曲线模式与控制点": {
+      "formats": [],
+      "source": "曲线模式与控制点"
+    },
+    "无效的曲线参数": {
+      "formats": [],
+      "source": "无效的曲线参数"
+    },
+    "控制点 %d": {
+      "formats": [
+        "%d"
+      ],
+      "source": "控制点 {0}"
+    },
+    "多点曲线（%d 个控制点）": {
+      "formats": [
+        "%d"
+      ],
+      "source": "多点曲线（{0} 个控制点）"
+    },
+    "清晰度": {
+      "formats": [],
+      "source": "清晰度"
+    },
+    "去朦胧": {
+      "formats": [],
+      "source": "去朦胧"
+    },
+    "无效的清晰度或去朦胧参数": {
+      "formats": [],
+      "source": "无效的清晰度或去朦胧参数"
+    },
+    "Mac 需要同架构、已签名并公证的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。": {
+      "formats": [],
+      "source": "Mac 需要同架构、已签名并公证的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。"
+    },
+    "RawLab 更新": {
+      "formats": [],
+      "source": "RawLab 更新"
+    },
+    "下次退出时安装": {
+      "formats": [],
+      "source": "下次退出时安装"
+    },
+    "任务结束后安装": {
+      "formats": [],
+      "source": "任务结束后安装"
+    },
+    "取消更新": {
+      "formats": [],
+      "source": "取消更新"
+    },
+    "安装支持与恢复说明": {
+      "formats": [],
+      "source": "安装支持与恢复说明"
+    },
+    "安装更新": {
+      "formats": [],
+      "source": "安装更新"
+    },
+    "官方手动下载": {
+      "formats": [],
+      "source": "官方手动下载"
+    },
+    "将在下次正常退出时重新检查并安装": {
+      "formats": [],
+      "source": "将在下次正常退出时重新检查并安装"
+    },
+    "尚未发现可安装的更新": {
+      "formats": [],
+      "source": "尚未发现可安装的更新"
+    },
+    "已具备安装条件": {
+      "formats": [],
+      "source": "已具备安装条件"
+    },
+    "批量任务记录尚未安全保存": {
+      "formats": [],
+      "source": "批量任务记录尚未安全保存"
+    },
+    "更新失败": {
+      "formats": [],
+      "source": "更新失败"
+    },
+    "更新已完成": {
+      "formats": [],
+      "source": "更新已完成"
+    },
+    "更新已校验，请选择安装时间": {
+      "formats": [],
+      "source": "更新已校验，请选择安装时间"
+    },
+    "更新恢复需要处理，编辑暂未开放": {
+      "formats": [],
+      "source": "更新恢复需要处理，编辑暂未开放"
+    },
+    "更新未完成，请查看恢复说明": {
+      "formats": [],
+      "source": "更新未完成，请查看恢复说明"
+    },
+    "有可用更新": {
+      "formats": [],
+      "source": "有可用更新"
+    },
+    "查看更新前的数据备份": {
+      "formats": [],
+      "source": "查看更新前的数据备份"
+    },
+    "查看此说明不会启用自动安装。失败后请保留现有应用和数据，使用官方可信安装包恢复；不要用旧版覆盖新版编辑记录。": {
+      "formats": [],
+      "source": "查看此说明不会启用自动安装。失败后请保留现有应用和数据，使用官方可信安装包恢复；不要用旧版覆盖新版编辑记录。"
+    },
+    "正在下载更新…": {
+      "formats": [],
+      "source": "正在下载更新…"
+    },
+    "正在安装更新…": {
+      "formats": [],
+      "source": "正在安装更新…"
+    },
+    "正在校验并准备更新…": {
+      "formats": [],
+      "source": "正在校验并准备更新…"
+    },
+    "正在检查启动状态…": {
+      "formats": [],
+      "source": "正在检查启动状态…"
+    },
+    "正在等待编辑和任务处理完成": {
+      "formats": [],
+      "source": "正在等待编辑和任务处理完成"
+    },
+    "正在等待预览、导出或批量任务结束": {
+      "formats": [],
+      "source": "正在等待预览、导出或批量任务结束"
+    },
+    "此安装暂不支持自动安装更新": {
+      "formats": [],
+      "source": "此安装暂不支持自动安装更新"
+    },
+    "照片编辑保存失败，请先重试保存": {
+      "formats": [],
+      "source": "照片编辑保存失败，请先重试保存"
+    },
+    "照片编辑尚未保存": {
+      "formats": [],
+      "source": "照片编辑尚未保存"
+    },
+    "稍后提醒": {
+      "formats": [],
+      "source": "稍后提醒"
+    },
+    "立即重启安装": {
+      "formats": [],
+      "source": "立即重启安装"
+    },
+    "等待重新启动": {
+      "formats": [],
+      "source": "等待重新启动"
+    },
+    "自动下载并在退出时安装": {
+      "formats": [],
+      "source": "自动下载并在退出时安装"
+    },
+    "自动安装默认关闭。安装前会保存已提交的编辑，并等待草稿和任务处理完成。": {
+      "formats": [],
+      "source": "自动安装默认关闭。安装前会保存已提交的编辑，并等待草稿和任务处理完成。"
+    },
+    "请保留现有应用和数据，处理问题后重新启动。": {
+      "formats": [],
+      "source": "请保留现有应用和数据，处理问题后重新启动。"
+    },
+    "请先退出其他 RawLab 实例": {
+      "formats": [],
+      "source": "请先退出其他 RawLab 实例"
+    },
+    "请返回编辑器应用或放弃草稿和未提交输入": {
+      "formats": [],
+      "source": "请返回编辑器应用或放弃草稿和未提交输入"
+    },
+    "跳过此版本": {
+      "formats": [],
+      "source": "跳过此版本"
+    },
+    "软件更新": {
+      "formats": [],
+      "source": "软件更新"
+    },
+    "软件更新…": {
+      "formats": [],
+      "source": "软件更新…"
+    },
+    "选择安装时间": {
+      "formats": [],
+      "source": "选择安装时间"
+    },
+    "错误详情": {
+      "formats": [],
+      "source": "错误详情"
+    },
+    "恢复更新前的数据": {
+      "source": "恢复更新前的数据",
+      "formats": []
+    },
+    "请先安装更新前的同一可信版本，再恢复数据。当前数据会另存保留；恢复后需退出并重新打开应用。": {
+      "source": "请先安装更新前的同一可信版本，再恢复数据。当前数据会另存保留；恢复后需退出并重新打开应用。",
+      "formats": []
+    },
+    "正在恢复更新前的数据…": {
+      "source": "正在恢复更新前的数据…",
+      "formats": []
+    },
+    "数据已恢复，请退出并重新打开应用": {
+      "source": "数据已恢复，请退出并重新打开应用",
+      "formats": []
+    },
+    "查看恢复时保留的数据": {
+      "source": "查看恢复时保留的数据",
+      "formats": []
+    },
+    "重建更新设置": {
+      "source": "重建更新设置",
+      "formats": []
+    },
+    "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。": {
+      "source": "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。",
+      "formats": []
+    },
+    "无法确认更新或恢复状态，请保留全部文件并联系支持。": {
+      "source": "无法确认更新或恢复状态，请保留全部文件并联系支持。",
+      "formats": []
+    },
+    "更新设置已重建，请退出并重新打开应用": {
+      "source": "更新设置已重建，请退出并重新打开应用",
+      "formats": []
+    },
+    "数据检查未通过，编辑暂未开放。请保留文件并联系支持。": {
+      "source": "数据检查未通过，编辑暂未开放。请保留文件并联系支持。",
+      "formats": []
+    },
+    "查看保留的更新状态文件": {
+      "source": "查看保留的更新状态文件",
+      "formats": []
+    },
+    "目标调整：%@": {
+      "source": "目标调整：{0}",
+      "formats": [
+        "%@"
+      ]
+    },
+    "退出目标调整": {
+      "source": "退出目标调整",
+      "formats": []
+    },
+    "拖动照片调整颜色；退出目标模式后可平移。": {
+      "source": "拖动照片调整颜色；退出目标模式后可平移。",
+      "formats": []
+    },
+    "AI 降噪结果连续未就绪，请重试。": {
+      "formats": [],
+      "source": "AI 降噪结果连续未就绪，请重试。"
+    },
+    "正在处理更新，编辑暂不可用。": {
+      "formats": [],
+      "source": "正在处理更新，编辑暂不可用。"
+    },
+    "Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。": {
+      "formats": [],
+      "source": "Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。"
+    },
+    "Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。": {
+      "formats": [],
+      "source": "Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。"
     }
   },
   "overrides": {},
@@ -2183,14 +3527,6 @@
       "fr": "0 à 100",
       "ja": "0～100",
       "zh-Hans": "0 至 100"
-    },
-    "RAW 降噪": {
-      "de": "RAW-Rauschreduzierung",
-      "en": "RAW noise reduction",
-      "es": "Reducción de ruido RAW",
-      "fr": "Réduction du bruit RAW",
-      "ja": "RAW ノイズ低減",
-      "zh-Hans": "RAW 降噪"
     },
     "RGB 输出直方图": {
       "de": "RGB-Ausgabehistogramm",
@@ -2311,14 +3647,6 @@
       "fr": "Utiliser cet objectif",
       "ja": "このレンズを使用",
       "zh-Hans": "使用此镜头"
-    },
-    "保存": {
-      "de": "Speichern",
-      "en": "Save",
-      "es": "Guardar",
-      "fr": "Enregistrer",
-      "ja": "保存",
-      "zh-Hans": "保存"
     },
     "保留旧编辑记录的降噪算法": {
       "de": "Behält die Rauschreduzierung früherer Bearbeitungen bei",
@@ -2488,14 +3816,6 @@
       "ja": "目盛りを左右にドラッグして傾きを補正。方向キーで 0.1° ずつ調整します。",
       "zh-Hans": "左右拖动刻度尺拉直；方向键每次调整 0.1°"
     },
-    "已停用": {
-      "de": "Deaktiviert",
-      "en": "Disabled",
-      "es": "Desactivado",
-      "fr": "Désactivé",
-      "ja": "無効",
-      "zh-Hans": "已停用"
-    },
     "已关闭": {
       "de": "Aus",
       "en": "Off",
@@ -2520,14 +3840,6 @@
       "ja": "プロファイル一致 · 補正はオフ",
       "zh-Hans": "已匹配配置 · 校正尚未开启"
     },
-    "已启用": {
-      "de": "Aktiviert",
-      "en": "Enabled",
-      "es": "Activado",
-      "fr": "Activé",
-      "ja": "有効",
-      "zh-Hans": "已启用"
-    },
     "已导出：{0}": {
       "de": "Exportiert: {0}",
       "en": "Exported: {0}",
@@ -2535,14 +3847,6 @@
       "fr": "Exporté : {0}",
       "ja": "書き出し済み: {0}",
       "zh-Hans": "已导出：{0}"
-    },
-    "已应用": {
-      "de": "Angewendet",
-      "en": "Applied",
-      "es": "Aplicado",
-      "fr": "Appliqué",
-      "ja": "適用済み",
-      "zh-Hans": "已应用"
     },
     "已开启": {
       "de": "Ein",
@@ -2952,14 +4256,6 @@
       "ja": "フィルムシミュレーション",
       "zh-Hans": "胶片模拟"
     },
-    "色度降噪": {
-      "de": "Reduzierung des Chroma-Rauschens",
-      "en": "Chroma noise reduction",
-      "es": "Reducción de ruido cromático",
-      "fr": "Réduction du bruit chroma",
-      "ja": "クロマノイズ低減",
-      "zh-Hans": "色度降噪"
-    },
     "色相、饱和度和明度": {
       "de": "Farbton, Sättigung und Helligkeit",
       "en": "Hue, saturation, and lightness",
@@ -3119,6 +4415,398 @@
       "fr": "Niveau de noir {0}",
       "ja": "黒レベル {0}",
       "zh-Hans": "黑位 {0}"
+    },
+    "应用有效输入、放弃输入，或返回继续编辑。": {
+      "de": "Gültige Eingaben anwenden, verwerfen oder weiter bearbeiten.",
+      "en": "Apply valid input, discard it, or return to editing.",
+      "es": "Aplica la entrada válida, descártala o vuelve a editar.",
+      "fr": "Appliquez la saisie valide, abandonnez-la ou reprenez la modification.",
+      "ja": "有効な入力を適用するか、破棄するか、編集に戻ってください。",
+      "zh-Hans": "应用有效输入、放弃输入，或返回继续编辑。"
+    },
+    "应用输入": {
+      "de": "Eingabe anwenden",
+      "en": "Apply Input",
+      "es": "Aplicar entrada",
+      "fr": "Appliquer la saisie",
+      "ja": "入力を適用",
+      "zh-Hans": "应用输入"
+    },
+    "按实际生效值应用，已包含配方强度。": {
+      "de": "Anwendung mit wirksamen Werten einschließlich Rezeptstärke.",
+      "en": "Applied at effective values, including recipe strength.",
+      "es": "Se aplican los valores efectivos, incluida la intensidad de la receta.",
+      "fr": "Application des valeurs effectives, intensité de la recette comprise.",
+      "ja": "レシピの強度を含む実効値で適用します。",
+      "zh-Hans": "按实际生效值应用，已包含配方强度。"
+    },
+    "放弃输入": {
+      "de": "Eingabe verwerfen",
+      "en": "Discard Input",
+      "es": "Descartar entrada",
+      "fr": "Abandonner la saisie",
+      "ja": "入力を破棄",
+      "zh-Hans": "放弃输入"
+    },
+    "数值输入尚未提交": {
+      "de": "Nicht übernommene Zahleneingabe",
+      "en": "Uncommitted Number Input",
+      "es": "Entrada numérica sin confirmar",
+      "fr": "Valeur non validée",
+      "ja": "数値入力が未確定です",
+      "zh-Hans": "数值输入尚未提交"
+    },
+    "更多编辑操作": {
+      "de": "Weitere Bearbeitungsaktionen",
+      "en": "More Editing Actions",
+      "es": "Más acciones de edición",
+      "fr": "Autres actions de modification",
+      "ja": "その他の編集操作",
+      "zh-Hans": "更多编辑操作"
+    },
+    "此照片有未应用的几何或镜头草稿。": {
+      "de": "Dieses Foto hat einen nicht angewendeten Geometrie- oder Objektiventwurf.",
+      "en": "This photo has an unapplied geometry or lens draft.",
+      "es": "Esta foto tiene un borrador de geometría u objetivo sin aplicar.",
+      "fr": "Cette photo a un brouillon de géométrie ou d’objectif non appliqué.",
+      "ja": "この写真には未適用のジオメトリまたはレンズの下書きがあります。",
+      "zh-Hans": "此照片有未应用的几何或镜头草稿。"
+    },
+    "{0} · 独立外观": {
+      "en": "{0} · Independent Look",
+      "de": "{0} · Eigenständiger Look",
+      "fr": "{0} · Rendu indépendant",
+      "ja": "{0} · 独立した外観",
+      "es": "{0} · Aspecto independiente",
+      "zh-Hans": "{0} · 独立外观"
+    },
+    "AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。": {
+      "de": "KI-Entrauschen ist aktiv. Die üblichen Einstellungen bleiben erhalten. Änderungen am Weißabgleich erfordern eine erneute Verarbeitung.",
+      "en": "AI denoising is active. Standard denoise settings are retained. White balance changes require reprocessing.",
+      "es": "La reducción de ruido con IA está activa. Los ajustes normales se conservan. Cambiar el balance de blancos requiere volver a procesar.",
+      "fr": "Le débruitage IA est actif. Les réglages habituels sont conservés. Modifier la balance des blancs nécessite un nouveau traitement.",
+      "ja": "AI ノイズ除去が有効です。通常の設定は保持されます。ホワイトバランスを変更すると再処理が必要です。",
+      "zh-Hans": "AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。"
+    },
+    "照片或白平衡已变化，请重新准备 AI 降噪。": {
+      "de": "Foto oder Weißabgleich haben sich geändert. Bereite die KI-Entrauschung erneut vor.",
+      "en": "The photo or white balance changed. Prepare AI denoising again.",
+      "es": "La foto o el balance de blancos han cambiado. Prepara de nuevo la reducción de ruido con IA.",
+      "fr": "La photo ou la balance des blancs a changé. Préparez à nouveau le débruitage IA.",
+      "ja": "写真またはホワイトバランスが変更されました。AI ノイズ除去を再度準備してください。",
+      "zh-Hans": "照片或白平衡已变化，请重新准备 AI 降噪。"
+    },
+    "AI 降噪暂不支持复制。请选择自定义范围，只复制其他调整。": {
+      "en": "AI denoising cannot be copied yet. Choose Custom to copy other adjustments.",
+      "de": "KI-Entrauschen kann noch nicht kopiert werden. Wähle Benutzerdefiniert, um andere Anpassungen zu kopieren.",
+      "es": "La reducción de ruido con IA aún no se puede copiar. Elige Personalizado para copiar otros ajustes.",
+      "fr": "Le débruitage IA ne peut pas encore être copié. Choisissez Personnalisé pour copier les autres réglages.",
+      "ja": "AI ノイズ除去はまだコピーできません。カスタム範囲で他の調整を選択してください。",
+      "zh-Hans": "AI 降噪暂不支持复制。请选择自定义范围，只复制其他调整。"
+    },
+    "目标已启用 AI 降噪。请先关闭 AI，或取消选择普通降噪字段。": {
+      "en": "AI denoising is enabled on the target. Turn it off first, or deselect the standard denoise fields.",
+      "de": "KI-Entrauschen ist für das Zielfoto aktiviert. Deaktiviere es zuerst oder wähle die normalen Entrauschungsfelder ab.",
+      "es": "La reducción de ruido con IA está activada en el destino. Desactívala primero o desmarca los campos de reducción de ruido normal.",
+      "fr": "Le débruitage IA est activé sur la photo cible. Désactivez-le ou désélectionnez les réglages de débruitage standard.",
+      "ja": "対象の写真で AI ノイズ除去が有効です。先に無効にするか、通常のノイズ除去項目を選択解除してください。",
+      "zh-Hans": "目标已启用 AI 降噪。请先关闭 AI，或取消选择普通降噪字段。"
+    },
+    "{0} · 曝光 {1} · 查看最终调整": {
+      "de": "{0} · Belichtung {1} · Endgültige Anpassungen anzeigen",
+      "en": "{0} · Exposure {1} · View final adjustments",
+      "es": "{0} · Exposición {1} · Ver ajustes finales",
+      "fr": "{0} · Exposition {1} · Voir les réglages finaux",
+      "ja": "{0} · 露出 {1} · 最終調整を表示",
+      "zh-Hans": "{0} · 曝光 {1} · 查看最终调整"
+    },
+    "任务已冻结。之后的照片编辑不会改变本次导出。": {
+      "de": "Die Aufgabe ist festgeschrieben. Spätere Bearbeitungen ändern diesen Export nicht.",
+      "en": "The task is frozen. Later edits will not change this export.",
+      "es": "La tarea está fijada. Los cambios posteriores no modificarán esta exportación.",
+      "fr": "La tâche est figée. Les retouches ultérieures ne modifieront pas cet export.",
+      "ja": "タスクを確定しました。その後の編集は今回の書き出しに影響しません。",
+      "zh-Hans": "任务已冻结。之后的照片编辑不会改变本次导出。"
+    },
+    "保留任务": {
+      "de": "Aufgabe behalten",
+      "en": "Keep task",
+      "es": "Conservar tarea",
+      "fr": "Conserver la tâche",
+      "ja": "タスクを保持",
+      "zh-Hans": "保留任务"
+    },
+    "先处理每张照片的未保存调整，再检查最终设置。跳过只影响本次导出。": {
+      "de": "Klären Sie die ungespeicherten Anpassungen jedes Fotos und prüfen Sie dann die endgültigen Einstellungen. Überspringen gilt nur für diesen Export.",
+      "en": "Resolve each photo’s unsaved adjustments, then review the final settings. Skipping only affects this export.",
+      "es": "Resuelve los ajustes sin guardar de cada foto y revisa los ajustes finales. Omitir solo afecta a esta exportación.",
+      "fr": "Traitez les réglages non enregistrés de chaque photo, puis vérifiez les réglages finaux. Ignorer ne concerne que cet export.",
+      "ja": "各写真の未保存の調整を処理してから最終設定を確認してください。スキップは今回の書き出しにのみ適用されます。",
+      "zh-Hans": "先处理每张照片的未保存调整，再检查最终设置。跳过只影响本次导出。"
+    },
+    "同步历史…": {
+      "de": "Synchronisierungsverlauf…",
+      "en": "Sync history…",
+      "es": "Historial de sincronización…",
+      "fr": "Historique de synchronisation…",
+      "ja": "同期履歴…",
+      "zh-Hans": "同步历史…"
+    },
+    "同步所选照片": {
+      "de": "Ausgewählte Fotos synchronisieren",
+      "en": "Sync selected photos",
+      "es": "Sincronizar fotos seleccionadas",
+      "fr": "Synchroniser les photos sélectionnées",
+      "ja": "選択した写真を同期",
+      "zh-Hans": "同步所选照片"
+    },
+    "同步调整范围": {
+      "de": "Zu synchronisierende Anpassungen",
+      "en": "Adjustments to sync",
+      "es": "Ajustes que sincronizar",
+      "fr": "Réglages à synchroniser",
+      "ja": "同期する調整",
+      "zh-Hans": "同步调整范围"
+    },
+    "尚有未保存的调整": {
+      "de": "Ungespeicherte Anpassungen",
+      "en": "Unsaved adjustments",
+      "es": "Ajustes sin guardar",
+      "fr": "Réglages non enregistrés",
+      "ja": "未保存の調整があります",
+      "zh-Hans": "尚有未保存的调整"
+    },
+    "已导出的文件会保留。剩余照片不再继续导出。": {
+      "de": "Exportierte Dateien bleiben erhalten. Die übrigen Fotos werden nicht mehr exportiert.",
+      "en": "Exported files will be kept. Remaining photos will not be exported.",
+      "es": "Se conservarán los archivos exportados. No se exportarán las fotos restantes.",
+      "fr": "Les fichiers exportés seront conservés. Les photos restantes ne seront plus exportées.",
+      "ja": "書き出し済みのファイルは保持されます。残りの写真は書き出されません。",
+      "zh-Hans": "已导出的文件会保留。剩余照片不再继续导出。"
+    },
+    "已有批量任务，请先完成或结束该任务。": {
+      "de": "Schließen Sie zuerst die vorhandene Stapelaufgabe ab oder beenden Sie sie.",
+      "en": "Finish or end the existing batch task first.",
+      "es": "Primero completa o finaliza la tarea por lotes existente.",
+      "fr": "Terminez d’abord la tâche par lot existante.",
+      "ja": "先に既存の一括処理を完了するか終了してください。",
+      "zh-Hans": "已有批量任务，请先完成或结束该任务。"
+    },
+    "应用调整并保存到所选照片": {
+      "de": "Anpassungen auf ausgewählte Fotos anwenden und speichern",
+      "en": "Apply and save adjustments to selected photos",
+      "es": "Aplicar y guardar ajustes en las fotos seleccionadas",
+      "fr": "Appliquer et enregistrer les réglages sur les photos sélectionnées",
+      "ja": "選択した写真に調整を適用して保存",
+      "zh-Hans": "应用调整并保存到所选照片"
+    },
+    "应用调整并保存到所选照片…": {
+      "de": "Anpassungen auf ausgewählte Fotos anwenden und speichern…",
+      "en": "Apply and save adjustments to selected photos…",
+      "es": "Aplicar y guardar ajustes en las fotos seleccionadas…",
+      "fr": "Appliquer et enregistrer les réglages sur les photos sélectionnées…",
+      "ja": "選択した写真に調整を適用して保存…",
+      "zh-Hans": "应用调整并保存到所选照片…"
+    },
+    "当前照片": {
+      "de": "Aktuelles Foto",
+      "en": "Current photo",
+      "es": "Foto actual",
+      "fr": "Photo actuelle",
+      "ja": "現在の写真",
+      "zh-Hans": "当前照片"
+    },
+    "批量编辑…": {
+      "de": "Stapelbearbeitung…",
+      "en": "Batch editing…",
+      "es": "Edición por lotes…",
+      "fr": "Retouche par lot…",
+      "ja": "一括編集…",
+      "zh-Hans": "批量编辑…"
+    },
+    "按各自调整导出": {
+      "de": "Mit individuellen Anpassungen exportieren",
+      "en": "Export with individual adjustments",
+      "es": "Exportar con ajustes individuales",
+      "fr": "Exporter avec les réglages individuels",
+      "ja": "個別の調整で書き出す",
+      "zh-Hans": "按各自调整导出"
+    },
+    "按各自调整导出…": {
+      "de": "Mit individuellen Anpassungen exportieren…",
+      "en": "Export with individual adjustments…",
+      "es": "Exportar con ajustes individuales…",
+      "fr": "Exporter avec les réglages individuels…",
+      "ja": "個別の調整で書き出す…",
+      "zh-Hans": "按各自调整导出…"
+    },
+    "最终导出：{0} 张": {
+      "de": "Endgültiger Export · Fotos: {0}",
+      "en": "Final export · Photos: {0}",
+      "es": "Exportación final · Fotos: {0}",
+      "fr": "Export final · Photos : {0}",
+      "ja": "書き出し対象：{0}枚",
+      "zh-Hans": "最终导出：{0} 张"
+    },
+    "来源已排除。未选中的调整保持每张照片的原值。": {
+      "de": "Die Quelle ist ausgeschlossen. Nicht ausgewählte Anpassungen behalten die ursprünglichen Werte jedes Fotos.",
+      "en": "The source is excluded. Unselected adjustments keep each photo’s original values.",
+      "es": "Se excluye la foto de origen. Los ajustes no seleccionados conservan los valores de cada foto.",
+      "fr": "La source est exclue. Les réglages non sélectionnés conservent les valeurs de chaque photo.",
+      "ja": "元の写真は除外されます。選択していない調整は各写真の値を維持します。",
+      "zh-Hans": "来源已排除。未选中的调整保持每张照片的原值。"
+    },
+    "来源有未完成的调整，请先应用或放弃。": {
+      "de": "Übernehmen oder verwerfen Sie zuerst die ausstehenden Anpassungen der Quelle.",
+      "en": "Apply or discard unfinished source adjustments first.",
+      "es": "Primero aplica o descarta los ajustes pendientes del origen.",
+      "fr": "Appliquez ou abandonnez d’abord les réglages en cours de la source.",
+      "ja": "先に元の写真の未確定の調整を適用するか破棄してください。",
+      "zh-Hans": "来源有未完成的调整，请先应用或放弃。"
+    },
+    "来源：{0}": {
+      "de": "Quelle: {0}",
+      "en": "Source: {0}",
+      "es": "Origen: {0}",
+      "fr": "Source : {0}",
+      "ja": "元の写真：{0}",
+      "zh-Hans": "来源：{0}"
+    },
+    "检查最终调整": {
+      "de": "Endgültige Anpassungen prüfen",
+      "en": "Review final adjustments",
+      "es": "Revisar ajustes finales",
+      "fr": "Vérifier les réglages finaux",
+      "ja": "最終調整を確認",
+      "zh-Hans": "检查最终调整"
+    },
+    "检查目标…": {
+      "de": "Zielfotos prüfen…",
+      "en": "Check target photos…",
+      "es": "Comprobar fotos de destino…",
+      "fr": "Vérifier les photos cibles…",
+      "ja": "対象写真を確認…",
+      "zh-Hans": "检查目标…"
+    },
+    "此照片有尚未保存的调整。应用或放弃后，请重新检查目标。": {
+      "de": "Dieses Foto hat ungespeicherte Anpassungen. Übernehmen oder verwerfen Sie sie und prüfen Sie die Zielfotos erneut.",
+      "en": "This photo has unsaved adjustments. Apply or discard them, then check the targets again.",
+      "es": "Esta foto tiene ajustes sin guardar. Aplícalos o descártalos y vuelve a comprobar los destinos.",
+      "fr": "Cette photo contient des réglages non enregistrés. Appliquez-les ou abandonnez-les, puis vérifiez à nouveau les cibles.",
+      "ja": "この写真には未保存の調整があります。適用または破棄してから、対象を再確認してください。",
+      "zh-Hans": "此照片有尚未保存的调整。应用或放弃后，请重新检查目标。"
+    },
+    "每张照片自己的最终调整": {
+      "de": "Endgültige Anpassungen jedes Fotos",
+      "en": "Each photo’s final adjustments",
+      "es": "Ajustes finales de cada foto",
+      "fr": "Réglages finaux de chaque photo",
+      "ja": "各写真の最終調整",
+      "zh-Hans": "每张照片自己的最终调整"
+    },
+    "没有可同步的目标。请返回集合，选择来源以外的照片。": {
+      "de": "Keine Fotos zum Synchronisieren. Kehren Sie zur Sammlung zurück und wählen Sie andere Fotos als die Quelle.",
+      "en": "No photos to sync. Return to the collection and select photos other than the source.",
+      "es": "No hay fotos que sincronizar. Vuelve a la colección y selecciona fotos distintas del origen.",
+      "fr": "Aucune photo à synchroniser. Revenez à la collection et sélectionnez d’autres photos que la source.",
+      "ja": "同期先がありません。一覧に戻り、元の写真以外を選択してください。",
+      "zh-Hans": "没有可同步的目标。请返回集合，选择来源以外的照片。"
+    },
+    "没有可导出的照片。请取消部分跳过，或返回集合重新选择。": {
+      "de": "Keine Fotos zum Exportieren. Heben Sie das Überspringen auf oder wählen Sie Fotos in der Sammlung erneut aus.",
+      "en": "No photos to export. Unskip some photos or return to the collection to select again.",
+      "es": "No hay fotos que exportar. Deja de omitir algunas o vuelve a seleccionarlas en la colección.",
+      "fr": "Aucune photo à exporter. Réincluez certaines photos ou revenez à la collection pour les sélectionner.",
+      "ja": "書き出す写真がありません。一部のスキップを解除するか、一覧で選び直してください。",
+      "zh-Hans": "没有可导出的照片。请取消部分跳过，或返回集合重新选择。"
+    },
+    "添加照片…": {
+      "de": "Fotos hinzufügen…",
+      "en": "Add photos…",
+      "es": "Añadir fotos…",
+      "fr": "Ajouter des photos…",
+      "ja": "写真を追加…",
+      "zh-Hans": "添加照片…"
+    },
+    "结束任务": {
+      "de": "Aufgabe beenden",
+      "en": "End task",
+      "es": "Finalizar tarea",
+      "fr": "Terminer la tâche",
+      "ja": "タスクを終了",
+      "zh-Hans": "结束任务"
+    },
+    "结束任务…": {
+      "de": "Aufgabe beenden…",
+      "en": "End task…",
+      "es": "Finalizar tarea…",
+      "fr": "Terminer la tâche…",
+      "ja": "タスクを終了…",
+      "zh-Hans": "结束任务…"
+    },
+    "结束此批量任务？": {
+      "de": "Diese Stapelaufgabe beenden?",
+      "en": "End this batch task?",
+      "es": "¿Finalizar esta tarea por lotes?",
+      "fr": "Terminer cette tâche par lot ?",
+      "ja": "この一括処理を終了しますか？",
+      "zh-Hans": "结束此批量任务？"
+    },
+    "草稿已处理，请重新检查最终调整。": {
+      "de": "Der Entwurf wurde verarbeitet. Prüfen Sie die endgültigen Anpassungen erneut.",
+      "en": "The draft has been resolved. Review the final adjustments again.",
+      "es": "Se ha resuelto el borrador. Revisa de nuevo los ajustes finales.",
+      "fr": "Le brouillon a été traité. Vérifiez à nouveau les réglages finaux.",
+      "ja": "下書きを処理しました。最終調整をもう一度確認してください。",
+      "zh-Hans": "草稿已处理，请重新检查最终调整。"
+    },
+    "请先完成或关闭现有批量任务。": {
+      "de": "Schließen Sie zuerst die aktuelle Stapelaufgabe ab oder schließen Sie sie.",
+      "en": "Finish or close the current batch task first.",
+      "es": "Primero completa o cierra la tarea por lotes actual.",
+      "fr": "Terminez ou fermez d’abord la tâche par lot actuelle.",
+      "ja": "先に現在の一括処理を完了するか閉じてください。",
+      "zh-Hans": "请先完成或关闭现有批量任务。"
+    },
+    "请返回编辑器完成有效输入后重试。": {
+      "de": "Kehren Sie zum Editor zurück, geben Sie einen gültigen Wert ein und versuchen Sie es erneut.",
+      "en": "Return to the editor, enter a valid value and try again.",
+      "es": "Vuelve al editor, introduce un valor válido e inténtalo de nuevo.",
+      "fr": "Revenez à l’éditeur, saisissez une valeur valide et réessayez.",
+      "ja": "エディターに戻って有効な値を入力し、再試行してください。",
+      "zh-Hans": "请返回编辑器完成有效输入后重试。"
+    },
+    "跳过本次导出": {
+      "de": "Bei diesem Export überspringen",
+      "en": "Skip this export",
+      "es": "Omitir en esta exportación",
+      "fr": "Ignorer pour cet export",
+      "ja": "今回の書き出しでスキップ",
+      "zh-Hans": "跳过本次导出"
+    },
+    "返回选片集合": {
+      "de": "Zur Fotosammlung zurück",
+      "en": "Return to photo collection",
+      "es": "Volver a la colección de fotos",
+      "fr": "Revenir à la collection de photos",
+      "ja": "写真一覧に戻る",
+      "zh-Hans": "返回选片集合"
+    },
+    "选择一组照片，再同步调整或逐张微调。": {
+      "de": "Wählen Sie Fotos aus, um Anpassungen zu synchronisieren oder jedes Foto einzeln zu verfeinern.",
+      "en": "Choose photos, then sync adjustments or fine-tune each photo.",
+      "es": "Elige fotos para sincronizar los ajustes o afinar cada foto.",
+      "fr": "Choisissez des photos, puis synchronisez les réglages ou affinez chaque photo.",
+      "ja": "写真を選び、調整を同期するか、1枚ずつ微調整できます。",
+      "zh-Hans": "选择一组照片，再同步调整或逐张微调。"
+    },
+    "选择要编辑的照片": {
+      "de": "Fotos zum Bearbeiten wählen",
+      "en": "Choose photos to edit",
+      "es": "Elige fotos para editar",
+      "fr": "Choisir les photos à retoucher",
+      "ja": "編集する写真を選択",
+      "zh-Hans": "选择要编辑的照片"
     }
   }
 }

@@ -1,0 +1,1018 @@
+[
+  {
+    "id": "stable-independent-preset",
+    "valid": true,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "future-registry",
+    "valid": false,
+    "registry": {
+      "registry_version": 2,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "unknown-registry-field",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ],
+      "future": true
+    }
+  },
+  {
+    "id": "unknown-preset-field",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          },
+          "future": true
+        }
+      ]
+    }
+  },
+  {
+    "id": "future-payload",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 2,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "future-scope",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 2,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "unknown-selected-field",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25,
+              "future.control": 2
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "empty-name",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "untrimmed-name",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": " Name ",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "invalid-id",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "0",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "source-identity-mismatch",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "/original.ARW",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "negative-timestamp",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Daylight",
+          "created_at": -1,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "reversed-timestamps",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "fractional-timestamp",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000.5,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "duplicate-id",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        },
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "duplicate-name",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        },
+        {
+          "id": "f2f61749-64dc-4e16-84e9-7c3245f10162",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:f2f61749-64dc-4e16-84e9-7c3245f10162",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "invalid-retired-id",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ],
+      "retired_ids": [
+        "bad"
+      ]
+    }
+  },
+  {
+    "id": "overlapping-retired-id",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ],
+      "retired_ids": [
+        "24374231-bddb-4f5e-9f13-d196a6723365"
+      ]
+    }
+  },
+  {
+    "id": "duplicate-retired-id",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ],
+      "retired_ids": [
+        "b615eab5-1fd5-40f3-a495-d78a80323288",
+        "b615eab5-1fd5-40f3-a495-d78a80323288"
+      ]
+    }
+  },
+  {
+    "id": "registry-decimal",
+    "valid": false,
+    "registry_json": "{\"registry_version\":1.0,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":1792800000000,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "registry-exponent",
+    "valid": false,
+    "registry_json": "{\"registry_version\":1e0,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":1792800000000,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "registry-rounded-fraction",
+    "valid": false,
+    "registry_json": "{\"registry_version\":1.0000000000000000001,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":1792800000000,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "registry-boolean",
+    "valid": false,
+    "registry_json": "{\"registry_version\":true,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":1792800000000,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "registry-string",
+    "valid": false,
+    "registry_json": "{\"registry_version\":\"1\",\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":1792800000000,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "registry-null",
+    "valid": false,
+    "registry_json": "{\"registry_version\":null,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":1792800000000,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "timestamp-decimal",
+    "valid": false,
+    "registry_json": "{\"registry_version\":1,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":1792800000000.0,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "timestamp-exponent",
+    "valid": false,
+    "registry_json": "{\"registry_version\":1,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":1e12,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "timestamp-rounded-fraction",
+    "valid": false,
+    "registry_json": "{\"registry_version\":1,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":9007199254740993.1,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "timestamp-boolean",
+    "valid": false,
+    "registry_json": "{\"registry_version\":1,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":true,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "timestamp-string",
+    "valid": false,
+    "registry_json": "{\"registry_version\":1,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":\"1792800000000\",\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "timestamp-null",
+    "valid": false,
+    "registry_json": "{\"registry_version\":1,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":null,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "timestamp-overflow",
+    "valid": false,
+    "registry_json": "{\"registry_version\":1,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":9223372036854775808,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "timestamp-negative",
+    "valid": false,
+    "registry_json": "{\"registry_version\":1,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":-1,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "timestamp-max-integer",
+    "valid": true,
+    "registry_json": "{\"registry_version\":1,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":1792800000000,\"updated_at\":9223372036854775807,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "zero-integer-time",
+    "valid": true,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Daylight",
+          "created_at": 0,
+          "updated_at": 0,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "nfd-name",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Café",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "nfc-name",
+    "valid": true,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Café",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "nbsp-only-name",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": " ",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "zero-width-space-edges",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "​Name​",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "word-joiner-name",
+    "valid": true,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "⁠Name⁠",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "byte-order-mark-name",
+    "valid": true,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "﻿Name﻿",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "quoted-metadata-name",
+    "valid": true,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-bddb-4f5e-9f13-d196a6723365",
+          "name": "Preset \"created_at\": 1.5, \\ \"registry_version\": 1e0",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-bddb-4f5e-9f13-d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "uppercase-id",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231-BDDB-4F5E-9F13-D196A6723365",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231-BDDB-4F5E-9F13-D196A6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "braced-id",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "{24374231-bddb-4f5e-9f13-d196a6723365}",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:{24374231-bddb-4f5e-9f13-d196a6723365}",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "compact-id",
+    "valid": false,
+    "registry": {
+      "registry_version": 1,
+      "presets": [
+        {
+          "id": "24374231bddb4f5e9f13d196a6723365",
+          "name": "Daylight",
+          "created_at": 1792800000000,
+          "updated_at": 1792800000000,
+          "payload": {
+            "payload_version": 1,
+            "scope_version": 1,
+            "source": {
+              "identifier": "preset:24374231bddb4f5e9f13d196a6723365",
+              "is_raw": true,
+              "processing_version": 2
+            },
+            "values": {
+              "light.exposure": 1.25,
+              "color.hsl.hue.red": 37.25
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "escaped-integer-key",
+    "valid": false,
+    "registry_json": "{\"registry_version\": 1, \"presets\": [{\"id\": \"24374231-bddb-4f5e-9f13-d196a6723365\", \"name\": \"Daylight\", \"\\u0063reated_at\": 1.0, \"updated_at\": 1792800000000, \"payload\": {\"payload_version\": 1, \"scope_version\": 1, \"source\": {\"identifier\": \"preset:24374231-bddb-4f5e-9f13-d196a6723365\", \"is_raw\": true, \"processing_version\": 2}, \"values\": {\"light.exposure\": 1.25, \"color.hsl.hue.red\": 37.25}}}]}"
+  },
+  {
+    "id": "json-unquoted-metadata-key",
+    "valid": false,
+    "registry_json": "{registry_version:1.0,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":1792800000000,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "json-single-quoted-key",
+    "valid": false,
+    "registry_json": "{'registry_version':1,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":1792800000000,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "json-trailing-document",
+    "valid": false,
+    "registry_json": "{\"registry_version\":1,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":1792800000000,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]} true"
+  },
+  {
+    "id": "json-trailing-comma",
+    "valid": false,
+    "registry_json": "{\"registry_version\":1,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":1792800000000,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}],}"
+  },
+  {
+    "id": "json-comment",
+    "valid": false,
+    "registry_json": "{/*metadata*/\"registry_version\":1,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":1792800000000,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "duplicate-root-key",
+    "valid": false,
+    "registry_json": "{\"registry_version\":1,\"registry_version\":1,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":1792800000000,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "duplicate-entry-key",
+    "valid": false,
+    "registry_json": "{\"registry_version\":1,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"name\":\"Daylight\",\"created_at\":1792800000000,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "duplicate-payload-value",
+    "valid": false,
+    "registry_json": "{\"registry_version\":1,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":1792800000000,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  },
+  {
+    "id": "duplicate-escaped-root-key",
+    "valid": false,
+    "registry_json": "{\"registry_version\":1,\"registry_\\u0076ersion\":1,\"presets\":[{\"id\":\"24374231-bddb-4f5e-9f13-d196a6723365\",\"name\":\"Daylight\",\"created_at\":1792800000000,\"updated_at\":1792800000000,\"payload\":{\"payload_version\":1,\"scope_version\":1,\"source\":{\"identifier\":\"preset:24374231-bddb-4f5e-9f13-d196a6723365\",\"is_raw\":true,\"processing_version\":2},\"values\":{\"light.exposure\":1.25,\"color.hsl.hue.red\":37.25}}}]}"
+  }
+]

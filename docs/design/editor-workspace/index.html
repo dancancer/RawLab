@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>RawLab · 四端交互设计评审</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #f2f2ef;
+      color: #20211e;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+    }
+    button,
+    select {
+      font: inherit;
+    }
+    button {
+      cursor: pointer;
+    }
+    header {
+      padding: 28px 36px 0;
+      max-width: 1600px;
+      margin: auto;
+    }
+    h1 {
+      font-size: 28px;
+      letter-spacing: -0.5px;
+      margin: 0 0 8px;
+      font-weight: 650;
+    }
+    .subtitle {
+      color: #60635b;
+      font-size: 14px;
+      line-height: 1.6;
+      margin: 0;
+    }
+    .platforms {
+      display: flex;
+      gap: 26px;
+      border-bottom: 1px solid #d4d5cf;
+      margin-top: 23px;
+    }
+    .platforms button {
+      border: 0;
+      background: none;
+      padding: 12px 0;
+      color: #62645e;
+      border-bottom: 3px solid transparent;
+      font-size: 15px;
+    }
+    .platforms button[aria-selected="true"] {
+      color: #171913;
+      border-bottom-color: #b99a19;
+      font-weight: 650;
+    }
+    .controls {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      flex-wrap: wrap;
+      padding: 18px 0;
+      font-size: 13px;
+    }
+    label {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      color: #55584e;
+    }
+    select {
+      background: #fff;
+      border: 1px solid #c9ccc2;
+      border-radius: 5px;
+      padding: 7px 25px 7px 10px;
+      color: #25281f;
+    }
+    input {
+      accent-color: #a98b13;
+    }
+    .stage {
+      max-width: 1600px;
+      margin: auto;
+      padding: 0 36px 20px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 250px;
+      gap: 28px;
+      align-items: start;
+    }
+    .preview-area {
+      background: #dddeda;
+      border: 1px solid #cdd0c7;
+      min-height: 650px;
+      display: flex;
+      justify-content: center;
+      padding: 28px;
+      overflow: auto;
+    }
+    .frame-holder {
+      position: relative;
+      flex: none;
+      background: #1f1f20;
+      box-shadow: 0 16px 35px #17201524;
+      overflow: hidden;
+    }
+    iframe {
+      border: 0;
+      position: absolute;
+      left: 0;
+      top: 0;
+      transform-origin: 0 0;
+      background: #1f1f20;
+    }
+    aside {
+      padding-top: 9px;
+    }
+    aside h2 {
+      font-size: 17px;
+      margin: 0 0 12px;
+    }
+    aside p,
+    aside li {
+      font-size: 13px;
+      line-height: 1.8;
+      color: #55594e;
+    }
+    aside ul {
+      padding-left: 18px;
+    }
+    aside .rule {
+      border-top: 1px solid #d2d5ca;
+      margin-top: 24px;
+      padding-top: 16px;
+    }
+    .note {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 0 36px 30px;
+      font-size: 12px;
+      line-height: 1.7;
+      color: #64685f;
+    }
+    .version {
+      font-variant-numeric: tabular-nums;
+      font-size: 12px;
+      color: #7a7d74;
+      float: right;
+      margin-top: 10px;
+    }
+    button:focus-visible,
+    select:focus-visible {
+      outline: 2px solid #9c7f10;
+      outline-offset: 4px;
+    }
+    @media (max-width: 900px) {
+      header {
+        padding: 22px 18px 0;
+      }
+      .stage {
+        padding: 0 18px 20px;
+        grid-template-columns: 1fr;
+      }
+      .preview-area {
+        padding: 16px;
+        min-height: 0;
+      }
+      aside {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+      aside .rule {
+        margin: 0;
+        padding: 0;
+        border: 0;
+      }
+      .note {
+        padding: 0 18px 24px;
+      }
+      .platforms {
+        gap: 18px;
+      }
+      h1 {
+        font-size: 23px;
+      }
+      .version {
+        float: none;
+        display: block;
+      }
+    }
+  </style>
+  <header>
+    <span class="version" id="design-version"></span>
+    <h1>RawLab 四端应用设计资产</h1>
+    <p class="subtitle">
+      现有功能完整界面与本轮新增提案。按功能、平台和状态持续维护，确认后再定稿需求与技术方案。
+    </p>
+    <nav class="platforms" aria-label="平台">
+      <button data-platform="ios" role="tab">iOS / iPadOS</button
+      ><button data-platform="android" role="tab">Android</button
+      ><button data-platform="macos" role="tab">macOS</button
+      ><button data-platform="windows" role="tab">Windows</button>
+    </nav>
+    <div class="controls">
+      <a href="coverage.html" style="color: #6b5a19">界面覆盖表</a>
+      <label>功能范围<select id="area"></select></label
+      ><label>界面状态<select id="scene"></select></label
+      ><label>窗口尺寸<select id="size"></select></label
+      ><label><input type="checkbox" id="large" />大字号</label
+      ><button
+        id="next"
+        style="
+          border: 0;
+          background: none;
+          text-decoration: underline;
+          text-underline-offset: 4px;
+        "
+      >
+        下一个状态
+      </button>
+    </div>
+  </header>
+  <main class="stage">
+    <div class="preview-area">
+      <div class="frame-holder">
+        <iframe title="RawLab 交互设计原型"></iframe>
+      </div>
+    </div>
+    <aside>
+      <section>
+        <h2 id="state-title"></h2>
+        <p id="state-copy"></p>
+        <ul id="state-list"></ul>
+      </section>
+      <section class="rule">
+        <h2>本轮评审重点</h2>
+        <p>
+          本轮包含工作区、调整复制粘贴与历史、用户预设、新调色工具、批量同步和逐张导出；桌面另含更新、安装准入与恢复。请从正常入口连续操作，并核对取消、阻挡、重试和返回后的照片身份及状态。
+        </p>
+        <p>
+          原型内的入口可以进入完整流程。顶部“功能范围”和“界面状态”也可直接定位各屏；界面覆盖表记录适用平台与来源。
+        </p>
+      </section>
+    </aside>
+  </main>
+  <p class="note">
+    这是 HTML
+    交互设计原型，不是原生运行截图。照片复用既有设计资产，示例参数不执行真实渲染、保存、下载或安装；原型不访问应用数据。本轮调整复用、预设、新调色与更新流程均为待评审设计，原生功能尚未实现，算法和取色结果仍为交互示例。
+  </p>
+  <script src="manifest.js"></script>
+  <script src="shared/model.js"></script>
+  <script src="shared/iteration-model.js"></script>
+  <script src="shared/screens.js"></script>
+  <script>
+    const { descriptions } = RawLabDesign;
+    const areaSelect = document.querySelector("#area");
+    document.querySelector("#large").checked =
+      new URLSearchParams(location.search).get("largeText") === "true";
+    let platform =
+      new URLSearchParams(location.search).get("platform") || "ios";
+    let scene = new URLSearchParams(location.search).get("scene") || "groups";
+    const frame = document.querySelector("iframe"),
+      holder = document.querySelector(".frame-holder"),
+      sceneSelect = document.querySelector("#scene"),
+      size = document.querySelector("#size");
+    function isMobile() {
+      return ["ios", "android"].includes(platform);
+    }
+    function setPlatform(p) {
+      platform = p;
+      document
+        .querySelectorAll("[data-platform]")
+        .forEach((b) =>
+          b.setAttribute("aria-selected", b.dataset.platform === p),
+        );
+      const available = RawLabDesignScreens.filter((screen) =>
+        screen.platforms.includes(p),
+      );
+      const areas = [...new Set(available.map((screen) => screen.area))];
+      const wanted =
+        areaSelect.value ||
+        available.find((screen) => screen.states.includes(scene))?.area ||
+        "编辑";
+      areaSelect.innerHTML = areas
+        .map((area) => `<option>${area}</option>`)
+        .join("");
+      areaSelect.value = areas.includes(wanted) ? wanted : "编辑";
+      updateScenes();
+      const sizes = RawLabDesign.viewports[p];
+      size.innerHTML = sizes
+        .map(([w, h, t]) => `<option value="${w},${h}">${t}</option>`)
+        .join("");
+      render();
+    }
+    function updateScenes() {
+      const candidates = RawLabDesignScreens.filter(
+        (screen) =>
+          screen.area === areaSelect.value &&
+          screen.platforms.includes(platform),
+      );
+      const options = candidates.flatMap((screen) =>
+        screen.states
+          .filter((id) => RawLabDesign.supportsScreen(screen, id, platform))
+          .map((id) => [
+            id,
+            RawLabDesign.descriptions[id]?.[0] || screen.title,
+          ]),
+      );
+      const unique = [...new Map(options.map((o) => [o[0], o])).values()];
+      sceneSelect.innerHTML = unique
+        .map(([id, title]) => `<option value="${id}">${title}</option>`)
+        .join("");
+      if (!unique.some(([id]) => id === scene))
+        scene = unique[0]?.[0] || "groups";
+      sceneSelect.value = scene;
+    }
+    areaSelect.onchange = () => {
+      updateScenes();
+      render();
+    };
+    function fit() {
+      const [w, h] = size.value.split(",").map(Number);
+      const width = document.querySelector(".preview-area").clientWidth - 48;
+      const scale = Math.min(1, width / w);
+      holder.style.width = w * scale + "px";
+      holder.style.height = h * scale + "px";
+      frame.style.width = w + "px";
+      frame.style.height = h + "px";
+      frame.style.transform = `scale(${scale})`;
+    }
+    function render() {
+      scene = sceneSelect.value || scene;
+      const d = descriptions[scene];
+      document.querySelector("#state-title").textContent = d[0];
+      document.querySelector("#state-copy").textContent = d[1];
+      document.querySelector("#state-list").innerHTML = d[2]
+        .map((t) => `<li>${t}</li>`)
+        .join("");
+      frame.src = `preview.html?platform=${platform}&scene=${scene}&largeText=${document.querySelector("#large").checked}`;
+      fit();
+      history.replaceState(
+        null,
+        "",
+        `?platform=${platform}&scene=${scene}&largeText=${document.querySelector("#large").checked}`,
+      );
+    }
+    document
+      .querySelectorAll("[data-platform]")
+      .forEach((b) => (b.onclick = () => setPlatform(b.dataset.platform)));
+    sceneSelect.onchange = render;
+    size.onchange = fit;
+    document.querySelector("#large").onchange = render;
+    document.querySelector("#next").onclick = () => {
+      sceneSelect.selectedIndex =
+        (sceneSelect.selectedIndex + 1) % sceneSelect.options.length;
+      render();
+    };
+    window.onresize = fit;
+    const m = RawLabDesignManifest;
+    document.querySelector("#design-version").textContent =
+      "设计稿 " +
+      m.designVersion +
+      " · " +
+      m.updatedAt +
+      " · " +
+      ({
+        draft: "草案",
+        in_review: "待评审",
+        approved: "已确认",
+        archived: "已归档",
+      }[m.status] || m.status);
+    setPlatform(platform);
+  </script>
+</html>

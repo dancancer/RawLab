@@ -6,6 +6,12 @@ A native SwiftUI/AppKit desktop editor sharing the C++ pipeline with the CLI and
 
 ## 功能预览 / Preview
 
+Apple Silicon 正式发布构建要求打包 DualDn 与 Restormer，并只使用 GPU AI 后端；Intel 发布构建不含 AI；开发构建默认关闭。
+适用 RAW、模型准备、后台处理、缓存和已知限制见 [DualDn 构建与使用说明](../lutools/tools/dualdn/README.md)，
+签名与发布配置见[桌面发布流程](../docs/process/desktop-release.md)。
+Apple Silicon release builds require packaged DualDn/Restormer models and a GPU AI backend; Intel release builds exclude AI.
+Development builds keep AI optional. The linked guides cover inputs, packaging and validation limits.
+
 单张及批量导出新增“DNG · 渲染型”。完整渲染当前外观、白平衡、曝光、明暗、HSL、
 降噪、锐化、暗角和颗粒后，以输出参考的线性 sRGB 浮点 RGB 写入 DNG 1.4。
 支持原尺寸及长边限制，不导出低分辨率预览。调整固化在像素中，不是可逐项撤销的
@@ -199,23 +205,37 @@ Packaging checks verify the architecture, minimum OS, signature, and dependency 
 强度、大小和粗糙度，相同参数重复渲染保持一致。两项默认关闭，支持单参数、整项及效果组
 重置；新参数跟随逐照片调整状态，缺少新字段的旧序列化记录按关闭处理。
 
-100% 视图和导出的暗角和颗粒在 Metal 上按原图分辨率执行；普通预览在缩小后的线性输入上处理。小波降噪的 SWT 分解、阈值和重建，
+100% 视图和导出的暗角和颗粒在 Metal 上按原图分辨率执行；普通预览在缩小后的线性输入上处理。旧处理版本的小波降噪 SWT 分解、阈值和重建，
 以及色度降噪的引导滤波也支持 Metal，可与暗角和颗粒同时启用。GPU 失败时 Auto 回退 CPU；
 Force 不隐藏失败。噪声估计/校准、OpenCV 色彩转换及部分辅助处理仍在 CPU，旧 FBDD、RAW
 解码和文件编码也仍在 CPU。结果不是 Lightroom 像素级复刻或实测胶片模型。
 
 The dock adds Vignette (Amount, Midpoint, Roundness, Feather, Highlights) and
 Grain (Amount, Size, Roughness), both defaulting off. Settled 100% views and exports
-run effects at source resolution on Metal; ordinary previews use reduced input. Metal also accelerates wavelet SWT filtering
+run effects at source resolution on Metal; ordinary previews use reduced input. Metal also accelerates legacy SWT filtering
 and display-chroma guided filtering, retaining CPU estimation/calibration and
 OpenCV color/resampling semantics. Auto has CPU fallback; Force does not hide GPU
 failure. Legacy FBDD, RAW decoding and file encoding remain CPU operations.
+新处理版本 2 使用 C5，亮度、色度和粗色斑强度均可调。提高强度会减少噪声，也可能压低弱纹理；
+低强度更适合保留细节。C5 在 CPU 上分块滤波，Auto 可继续使用 Metal 显示渲染；Force 不支持需要执行 C5 的请求。
+旧记录保留版本 1，新编辑采用版本 2；重置调整不自动升级处理版本。
+
+Processing version 2 uses tiled CPU C5 with adjustable luma, chroma and coarse strengths.
+Lower strengths retain more detail; stronger denoising may suppress weak texture. Auto can
+continue Metal display rendering, while Force rejects an active C5 filter request.
+Existing records retain version 1; new edits use version 2.
+
 See the [shared contract](../lutools/docs/color-contract.md#gpu-denoising).
 
 ## 验证 / Verification
 
 RAW 样片不再随仓库分发。运行真实 RAW 测试前设置 `RAWLAB_TEST_RAW=/path/to/sample.ARW`；
 独立 CMake 构建使用 `-DSONY2FUJI_TEST_RAW=/path/to/sample.ARW`。下面的历史报告可能引用已删除的旧样片。
+
+启用 AI 的原生构建可运行 `bash RawLabMac/tests/ai-batch-native.sh "$MODEL_DIR" "$RAWLAB_TEST_RAW"`。
+该测试使用隔离的应用资源与缓存，验证轻量预检、普通图片排除、导出阶段 GPU 准备的进度与取消、
+继续导出、集合快照、缓存复用和关闭 AI；
+不会运行 CPU 神经网络，也不修改原片或用户数据。
 
 验证文档中的 `/tmp` 和 `.impeccable/review` 路径记录本机产物，不随 Git 发布；本地 RAW 样片也不随本次提交上传。缺少可选样片时，CMake 会跳过对应测试。
 

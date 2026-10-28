@@ -5,6 +5,21 @@ import kotlin.math.floor
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
 
+data class ProcessingIdentity(val family: String = "rawlab", val version: Int = 2, val quality: String = "standard") {
+    init { require(family == "rawlab" && version in 1..2 && quality == "standard") }
+    fun encode() = "$family,$version,$quality"
+    companion object {
+        val LEGACY = ProcessingIdentity(version = 1)
+        val CURRENT = ProcessingIdentity()
+        fun decode(value: String?): ProcessingIdentity {
+            if (value == null) return LEGACY
+            val fields = value.split(',')
+            require(fields.size == 3)
+            return ProcessingIdentity(fields[0], fields[1].toInt(), fields[2])
+        }
+    }
+}
+
 data class EditSettings(
     val film: String = "neutral",
     val strength: Float = 1f,
@@ -26,8 +41,17 @@ data class EditSettings(
     val recipeID: String? = null,
     val lens: LensSettings = LensSettings(),
     val geometry: GeometrySettings = GeometrySettings(),
+    val processing: ProcessingIdentity = ProcessingIdentity.CURRENT,
+    val blackPoint: Float = 0f,
+    val whitePoint: Float = 0f,
+    val vibrance: Float = 0f,
+    val clarity: Float = 0f,
+    val dehaze: Float = 0f,
+    val colorGrading: ColorGradingSettings = ColorGradingSettings(),
+    val curve: ToneCurveSettings = ToneCurveSettings(),
 ) {
     init {
+        require(listOf(blackPoint, whitePoint, vibrance, clarity, dehaze).all { it.isFinite() && it in -100f..100f })
         require(exposureMode in 0..2)
         require(strength.isFinite() && strength in 0f..2f)
         require(exposure.isFinite() && exposure in -4f..4f)
@@ -41,7 +65,7 @@ data class EditSettings(
         require(sharpening.isFinite() && sharpening in 0f..2f)
         require(displayChromaDenoise in 0..2)
     }
-    fun reset() = EditSettings(film = film)
+    fun reset() = EditSettings(film = film, processing = processing)
 
     /** Camera-only controls are resolved per target; the persisted edit remains unchanged. */
     fun effectiveFor(input: PhotoInputKind): EditSettings = if (input == PhotoInputKind.RASTER) copy(
@@ -58,11 +82,13 @@ data class EditSettings(
     )
     val recipeScale get() = if (recipeID == null) 1f else strength
     val renderHsl get() = hsl.scaled(recipeScale)
+    val renderToneCurve get() = if (curve.mode == ToneCurveMode.CUSTOM) 0f else toneCurve
     fun selectFilm(id: String, cameraTint: Float? = null): EditSettings {
         if (recipeID == null) return copy(film = id)
-        val independent = if (!customWb && (tint == 0f || cameraTint == null))
-            copy(recipeID = null, tint = cameraTint ?: 0f)
-        else copy(recipeID = null, customWb = true, tint = ((cameraTint ?: 0f) + tint).coerceIn(-150f, 150f))
+        val baseTint = cameraTint?.takeIf { it.isFinite() }
+        val independent = if (!customWb && (tint == 0f || baseTint == null))
+            copy(recipeID = null, tint = baseTint ?: 0f)
+        else copy(recipeID = null, customWb = true, tint = ((baseTint ?: 0f) + tint).coerceIn(-150f, 150f))
         return independent.copy(film = id)
     }
 }
@@ -89,7 +115,7 @@ data class LensSettings(val distortion: Boolean = false, val tca: Boolean = fals
 enum class DenoisePreset { DETAIL, CLEAN, CUSTOM }
 
 class HslSettings(values: List<Float> = List(24) { 0f }) {
-    private val values = values.toList()
+    private val values = values.map { it.canonicalZero() }
     init { require(this.values.size == 24 && this.values.all { it.isFinite() && it in -100f..100f }) }
     val isIdentity get() = values.all { it == 0f }
     fun packed() = values.toFloatArray()
@@ -159,7 +185,7 @@ data class PhotoEffectsSettings(
     fun withEffect(parameter: PhotoEffectParameter, value: Float): PhotoEffectsSettings {
         if (!value.isFinite()) return this
         val rounded = if (value >= 0f) floor(value + .5f) else ceil(value - .5f)
-        val normalized = rounded.coerceIn(parameter.range.start, parameter.range.endInclusive)
+        val normalized = rounded.coerceIn(parameter.range.start, parameter.range.endInclusive).canonicalZero()
         return when (parameter) {
             PhotoEffectParameter.VIGNETTE_AMOUNT -> copy(vignetteAmount = normalized)
             PhotoEffectParameter.VIGNETTE_MIDPOINT -> copy(vignetteMidpoint = normalized)
@@ -212,4 +238,61 @@ data class LookChoice(val id: String, val name: String, val managed: Boolean, va
 
         private fun Film.toChoice() = LookChoice(id, name, managed = false)
     }
+}
+
+internal data class ResetRenderValues(
+    val core: List<Float>, val temperature: Float, val tint: Float,
+)
+
+/**
+ * 重置外观前捕获 JNI 非外观 Float 值。
+ * 计算顺序对应 rawlab_jni.cpp 的 prepareRecipeWb/recipeActive 分支及 render_request.h；
+ * HSL 直接消费既有 renderHsl，避免把旧记录的小数再次送进输入控件量化。
+ */
+internal fun EditSettings.resetRenderValues(
+    input: PhotoInputKind, asShotTemperature: Float?, asShotTint: Float?,
+): ResetRenderValues? {
+    val effective = effectiveFor(input)
+    var custom = effective.customWb
+    var kelvin = effective.temperature
+    var wbTint = effective.tint
+    if (input == PhotoInputKind.RAW && recipeID != null && (custom || tint * strength != 0f)) {
+        if (asShotTemperature == null || asShotTint == null ||
+            !asShotTemperature.isFinite() || !asShotTint.isFinite()) return null
+        if (!custom) kelvin = nativeRound(asShotTemperature)
+        wbTint = (nativeRound(asShotTint) + tint * strength).coerceIn(-150f, 150f)
+        custom = true
+    }
+    return ResetRenderValues(listOf(exposure * recipeScale, -highlights * recipeScale, shadows * recipeScale,
+        1f + contrast * recipeScale, toneCurve, 1f + saturation * recipeScale, sharpening,
+        effective.exposureMode.toFloat(), if (custom) 1f else 0f,
+        if (custom) kelvin else 6500f, if (custom) wbTint else 0f) + renderHsl.packed().toList(), kelvin, wbTint)
+}
+
+// Float 上先加 0.5 会把 0.49999997 提前进位；转成 Double 后再取整才能对应 std::round(float)。
+internal fun nativeRound(value: Float): Float =
+    (if (value >= 0f) floor(value.toDouble() + .5) else ceil(value.toDouble() - .5)).toFloat()
+
+/** 无法用现有字段精确表示时返回 null；不夹紧物化后的普通调整值。 */
+internal fun EditSettings.independentForReset(
+    input: PhotoInputKind, asShotTemperature: Float?, asShotTint: Float?,
+): EditSettings? {
+    val before = resetRenderValues(input, asShotTemperature, asShotTint) ?: return null
+    val scaledExposure = exposure * recipeScale
+    val scaledHighlights = highlights * recipeScale
+    val scaledShadows = shadows * recipeScale
+    val scaledContrast = contrast * recipeScale
+    val scaledSaturation = saturation * recipeScale
+    val convertWb = input == PhotoInputKind.RAW && recipeID != null && (customWb || tint * strength != 0f)
+    if (scaledExposure !in -4f..4f ||
+        listOf(scaledHighlights, scaledShadows, scaledContrast, scaledSaturation).any { it !in -1f..1f } ||
+        (convertWb && (before.temperature !in 2000f..50000f || before.tint !in -150f..150f))) return null
+    val candidate = copy(film = "neutral", recipeID = null, strength = 1f,
+        exposure = scaledExposure, highlights = scaledHighlights, shadows = scaledShadows,
+        contrast = scaledContrast, saturation = scaledSaturation, hsl = renderHsl,
+        customWb = if (convertWb) true else customWb,
+        temperature = if (convertWb) before.temperature else temperature,
+        tint = if (convertWb) before.tint else if (input == PhotoInputKind.RAW && recipeID != null) 0f else tint).canonicalZeros()
+    val after = candidate.resetRenderValues(input, asShotTemperature, asShotTint) ?: return null
+    return candidate.takeIf { before.core.size == after.core.size && before.core.zip(after.core).all { (a, b) -> a == b } }
 }

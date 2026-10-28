@@ -6,6 +6,33 @@ import com.rawlab.android.looks.MasterRecipe
 import com.rawlab.android.looks.applyRecipe
 
 class MasterRecipeTest {
+    @Test fun leavingRecipeWithoutCameraWhiteBalanceKeepsNeutralSettingsFinite() {
+        for (cameraTint in listOf(null, Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY)) {
+            for (recipeTint in listOf(0f, 2f)) {
+                for (filmID in listOf("neutral", "provia")) {
+                    val selected = EditSettings(recipeID = "takashi_yasui_zen", tint = recipeTint)
+                        .selectFilm(filmID, cameraTint)
+                    assertNull(selected.recipeID)
+                    assertEquals(filmID, selected.film)
+                    assertEquals(0f, selected.tint)
+                    assertFalse(selected.customWb)
+                }
+            }
+        }
+    }
+
+    @Test fun leavingRecipeWithCustomWhiteBalanceIgnoresUnavailableCameraTint() {
+        for (cameraTint in listOf(null, Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY)) {
+            val selected = EditSettings(recipeID = "takashi_yasui_zen", customWb = true,
+                temperature = 8000f, tint = 24f).selectFilm("provia", cameraTint)
+            assertNull(selected.recipeID)
+            assertEquals("provia", selected.film)
+            assertEquals(24f, selected.tint)
+            assertEquals(8000f, selected.temperature)
+            assertTrue(selected.customWb)
+        }
+    }
+
     @Test fun recipeIdentityMustBelongToEditSettings() {
         assertNotNull("Master recipe identity is missing", EditSettings::class.java.methods.firstOrNull { it.name == "getRecipeID" })
     }
@@ -22,7 +49,7 @@ class MasterRecipeTest {
         for (strength in listOf(0f, .5f, 1f, 2f)) {
             val state = edited.copy(strength = strength)
             assertEquals(37f * strength, state.renderHsl.value(0, 7))
-            assertEquals((-80f * strength).coerceIn(-100f, 100f), state.renderHsl.value(1, 5))
+            assertEquals(if (strength == 0f) 0f else (-80f * strength).coerceIn(-100f, 100f), state.renderHsl.value(1, 5))
             assertEquals(edited.hsl, state.hsl)
             assertEquals(state, SettingsCodec.decode(SettingsCodec.encode(state)))
         }

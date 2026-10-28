@@ -4,15 +4,27 @@
     <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../AdjustmentPayload.cs" Link="AdjustmentPayload.cs" />
+    <Compile Include="../../AdjustmentPresetStore.cs" Link="AdjustmentPresetStore.cs" />
+    <Compile Include="../../AdjustmentTransfer*.cs" Link="%(Filename)%(Extension)" />
     <Compile Include="../../Localization.cs" Link="Localization.cs" />
     <Compile Include="../../GeometrySettings.cs" Link="GeometrySettings.cs" />
+    <Compile Include="../../EditorAdjustmentRules.cs" Link="EditorAdjustmentRules.cs" />
+    <Compile Include="../../EditorResetTransaction.cs" Link="EditorResetTransaction.cs" />
     <Compile Include="../../Adjustments.cs" Link="Adjustments.cs" />
+    <Compile Include="../../EditorViewState.cs" Link="EditorViewState.cs" />
+    <Compile Include="../../AIDenoiseJob.cs" Link="AIDenoiseJob.cs" />
     <Compile Include="../../ParameterInteraction.cs" Link="ParameterInteraction.cs" />
     <Compile Include="../../TransformDraft.cs" Link="TransformDraft.cs" />
     <Compile Include="../../CropInteraction.cs" Link="CropInteraction.cs" />
     <Compile Include="../../MasterRecipe.cs" Link="MasterRecipe.cs" />
     <Compile Include="../../HslSettings.cs" Link="HslSettings.cs" />
+    <Compile Include="../../HslTargetAdjustment.cs" />
     <Compile Include="../../DenoiseSettings.cs" Link="DenoiseSettings.cs" />
+    <Compile Include="../../ToneControlsSettings.cs" />
+    <Compile Include="../../AtmosphereSettings.cs" />
+    <Compile Include="../../ColorGradingSettings.cs" />
+    <Compile Include="../../ToneCurveSettings.cs" />
     <Compile Include="../../PhotoEffectsSettings.cs" Link="PhotoEffectsSettings.cs" />
     <Compile Include="../../Native.cs" Link="Native.cs" />
     <Compile Include="../../ExportSize.cs" Link="ExportSize.cs" />
@@ -22,6 +34,7 @@
     <Compile Include="../../PhotoInput.cs" Link="PhotoInput.cs" />
     <Compile Include="../FeatureRegressionChecks.cs" Link="FeatureRegressionChecks.cs" />
     <Compile Include="../../EditPersistence.cs" Link="EditPersistence.cs" Condition="Exists('../../EditPersistence.cs')" />
+    <Compile Include="../../BatchSelection.cs" />
     <Compile Include="../../BatchExport.cs" Link="BatchExport.cs" Condition="Exists('../../BatchExport.cs')" />
   </ItemGroup>
 </Project>

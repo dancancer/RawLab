@@ -3,7 +3,9 @@ package com.rawlab.android.editor.render
 import android.graphics.Bitmap
 import android.net.Uri
 import com.rawlab.android.engine.LensInfo
+import com.rawlab.android.engine.RgbHistogram
 import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.looks.ManagedLook
 import com.rawlab.android.looks.DcpCompilationException
@@ -11,7 +13,12 @@ import com.rawlab.android.looks.DcpFailureReason
 import com.rawlab.android.looks.InvalidLookException
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.photo.PhotoStorage
+import com.rawlab.android.settings.ProcessingIdentity
+import com.rawlab.android.settings.PhotoIdentity
+import com.rawlab.android.settings.HslTargetRevision
+import com.rawlab.android.settings.HslTargetSample
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.VersionedPhotoEdit
 import com.rawlab.android.settings.LensSettings
 import com.rawlab.android.settings.LookChoice
 
@@ -22,11 +29,17 @@ import com.rawlab.android.settings.LookChoice
 data class PreviewPair(val neutral: Bitmap, val result: Bitmap, val temperature: Float, val tint: Float,
     val lens: LensInfo? = null, val comparisonWidth: Float = neutral.width.toFloat(),
     val comparisonHeight: Float = neutral.height.toFloat(),
-    val originalAspect: Float = neutral.width.toFloat() / neutral.height)
+    val originalAspect: Float = neutral.width.toFloat() / neutral.height,
+    val neutralHistogram: RgbHistogram? = null, val resultHistogram: RgbHistogram? = null)
 
 /** A transformed comparison must never reuse the uncropped original or another viewport. */
 internal data class ComparisonPreviewKey(val inputPath: String, val geometry: GeometrySettings,
-    val lens: LensSettings, val edge: Int, val interactive: Boolean)
+    val lens: LensSettings, val edge: Int, val interactive: Boolean,
+    val processing: ProcessingIdentity = ProcessingIdentity.CURRENT,
+    val sourceIdentity: PhotoIdentity = PhotoIdentity(inputPath), val inputKind: PhotoInputKind = PhotoInputKind.RAW)
+
+internal data class NeutralSourceKey(val sourceIdentity: PhotoIdentity, val inputPath: String,
+    val inputKind: PhotoInputKind, val processing: ProcessingIdentity)
 
 /** Mobile 100% remains the fixed comparison-preview pixels, independent of current render demand. */
 internal fun comparisonDimensions(width: Int, height: Int): Pair<Float, Float> {
@@ -37,17 +50,20 @@ internal fun comparisonDimensions(width: Int, height: Int): Pair<Float, Float> {
 
 
 internal sealed interface Work {
-    data class Import(val uri: Uri, val gpuMode: Int) : Work
+    data class Import(val uri: Uri, val gpuMode: Int, val retained: ImportedPhoto? = null) : Work
     data class Preview(val photo: ImportedPhoto, val edits: EditSettings, val interactive: Boolean,
         val gpuMode: Int, val importing: Boolean = false, val restored: Boolean = false,
-        val edge: Int = 1600, val draft: Boolean = false) : Work
+        val edge: Int = 1600, val draft: Boolean = false, val importedRecord: VersionedPhotoEdit? = null) : Work
+    data class HslProbe(val preview: Preview, val before: EditSettings, val revision: HslTargetRevision,
+        val token: Long, val axis: Int, val x: Float, val y: Float) : Work
     data class Export(val photo: ImportedPhoto, val edits: EditSettings, val destination: Uri?, val format: ExportFormat,
         val longEdge: Int?, val gpuMode: Int) : Work
     data class AutoExposure(val photo: ImportedPhoto, val edits: EditSettings) : Work
 }
 internal sealed interface WorkResult {
     data class Preview(val request: Work.Preview, val pair: PreviewPair) : WorkResult
-    data class MissingLook(val photo: ImportedPhoto, val edits: EditSettings) : WorkResult
+    data class MissingLook(val photo: ImportedPhoto, val edits: EditSettings, val importedRecord: VersionedPhotoEdit?) : WorkResult
+    data class HslProbe(val request: Work.HslProbe, val sample: HslTargetSample) : WorkResult
     data object Export : WorkResult
     data class AutoExposure(val request: Work.AutoExposure, val exposure: Float) : WorkResult
 }

@@ -15,37 +15,46 @@ using Microsoft.Win32;
 namespace RawLab.Windows;
 public partial class MainWindow
 {
-    private void CompareClicked(object sender,RoutedEventArgs e)=>ZoomClicked(sender,e);
+    private void CompareClicked(object sender,RoutedEventArgs e)
+    {if(compare)SetComparisonMode(false,false);else SetComparisonMode(true,view.PreferredMode==ComparisonMode.Wipe);}
     private void ExportMenuClicked(object sender,RoutedEventArgs e)=>ZoomClicked(sender,e);
     private void CompareOffClicked(object sender,RoutedEventArgs e)=>SetComparisonMode(false,false);
     private void CompareSideClicked(object sender,RoutedEventArgs e)=>SetComparisonMode(true,false);
     private void CompareSwipeClicked(object sender,RoutedEventArgs e)=>SetComparisonMode(true,true);
     internal void SetComparisonMode(bool enabled,bool sliding)
     {
-        if(transform.Active && !ResolveTransformDraft()){RefreshComparisonSelection();return;}
-        var changed=compare!=enabled;
-        compare=enabled;swipe=enabled && sliding;
-        RefreshComparisonLayout();
-        RefreshComparisonToolTip();
-        RefreshControls();
-        if(changed)Schedule();
+        if(transform.Active || file==null || exporting){RefreshComparisonSelection();return;}
+        CancelViewingInput();
+        if(enabled)view.Select(sliding ? ComparisonMode.Wipe : ComparisonMode.SideBySide);else view.SetEnabled(false);
+        RefreshComparisonLayout();RefreshComparisonToolTip();RefreshControls();RefreshViewingFrames();
+        if(view.NeedsReference && !ReferenceCurrent)Schedule();
     }
     private void RefreshComparisonSelection()
     {
-        Grid.SetColumnSpan(NeutralLabel,swipe ? 2 : 1);
-        FilmLabel.HorizontalAlignment=swipe ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+
         CompareOff.IsChecked=MenuCompareOff.IsChecked=!compare;
         CompareSide.IsChecked=MenuCompareSide.IsChecked=compare && !swipe;
         CompareSwipe.IsChecked=MenuCompareSwipe.IsChecked=swipe;
         CompareButton.Tag=compare ? "selected" : null;
-        AutomationProperties.SetItemStatus(CompareButton,!compare ? "off" : swipe ? "swipe" : "side");
+        AutomationProperties.SetItemStatus(CompareButton,Loc.Text(!compare ? "关闭对比" : swipe ? "分割线" : "并排"));
+        CompareButton.ToolTip=Loc.Text(compare ? "关闭对比" : "开启对比");AutomationProperties.SetName(CompareButton,(string)CompareButton.ToolTip);
+        BeforeViewMenu.IsChecked=view.HoldingBefore;
+        BeforeViewMenu.Header=Loc.Text(view.HoldingBefore ? "返回调整后" : "查看调整前");
+        BeforeViewMenu.IsEnabled=file!=null && !transform.Active && !compare && !exporting;
+        CompareModeButton.IsEnabled=CompareButton.IsEnabled;
+        CompareOff.IsEnabled=CompareSide.IsEnabled=CompareSwipe.IsEnabled=MenuCompareOff.IsEnabled=MenuCompareSide.IsEnabled=MenuCompareSwipe.IsEnabled=file!=null && !transform.Active && !exporting;
     }
     private void RefreshComparisonLayout()
     {
         var sideBySide=file!=null && compare && !swipe;
+        var vertical=sideBySide && PhotoArea.ActualHeight>PhotoArea.ActualWidth;
         NeutralCanvas.Visibility=sideBySide ? Visibility.Visible : Visibility.Collapsed;
-        NeutralColumn.Width=sideBySide ? new(1,GridUnitType.Star) : new(0);
-        ResultCanvas.ComparisonEnabled=file!=null && swipe;
+        NeutralColumn.Width=sideBySide && !vertical ? new(1,GridUnitType.Star) : new(0);
+        NeutralRow.Height=vertical ? new(1,GridUnitType.Star) : new(0);
+        Grid.SetRow(NeutralCanvas,vertical ? 0 : 1);Grid.SetRow(ResultCanvas,1);
+        Grid.SetColumn(NeutralCanvas,vertical ? 1 : 0);
+        ResultCanvas.ComparisonEnabled=file!=null && swipe && ReferenceCurrent;
+        RefreshPhotoLabels();
     }
     private void RefreshComparisonToolTip() => ResultCanvas.ToolTip=file==null ? null : swipe ? Loc.Text("拖动分隔线对比；方向键微调，Home 居中。拖动照片平移，滚轮缩放。") : Loc.Text("拖动平移，滚轮缩放，双击适合窗口。");
     private void RefreshCopyLabels()
@@ -68,21 +77,35 @@ public partial class MainWindow
             Loc.Text(HistogramPanel.Visibility==Visibility.Visible ? "收起直方图" : "展开直方图") : null;
         AdjustToggleButton.ToolTip=Loc.Text(AdjustmentPanel.Visibility==Visibility.Visible ? "收起调整栏" : "展开调整栏");
     }
+    private EditorAdjustmentTool? hiddenTransformTool;
     private void DockToggle(object sender,RoutedEventArgs e)
     {
-        if(file==null)return;
+        if(file==null || pendingAllReset!=null)return;
+        CancelParameterInputs();
         var visible=AdjustmentPanel.Visibility==Visibility.Visible;
-        if(visible)dockHeight=DockRow.ActualHeight;
+        if(visible) {
+            var previousTool=transform.Active ? CurrentTool : (EditorAdjustmentTool?)null;
+            var previousGroup=expandedGroup;
+            if(!ResolveTransformDraft())return;
+            hiddenTransformTool=previousTool;expandedGroup=previousGroup;
+        } else if(hiddenTransformTool is {} tool) {
+            hiddenTransformTool=null;SelectTool(tool);
+        }
+        if(visible && expandedGroup!=null)dockHeight=DockRow.ActualHeight;
         AdjustmentPanel.Visibility=visible ? Visibility.Collapsed : Visibility.Visible;
         AdjustmentSplitter.Visibility=visible ? Visibility.Collapsed : Visibility.Visible;
-        DockRow.MinHeight=visible ? 0 : 216; DockRow.Height=new(visible ? 0 : dockHeight);SplitterRow.Height=new(visible ? 0 : 6);
+        DockRow.MinHeight=visible || expandedGroup==null ? 0 : 216;
+        DockRow.Height=visible ? new(0) : expandedGroup==null ? GridLength.Auto : new(dockHeight);
+        RefreshHslTarget();
+        AdjustmentSplitter.Visibility=visible || expandedGroup==null ? Visibility.Collapsed : Visibility.Visible;
+        SplitterRow.Height=new(visible || expandedGroup==null ? 0 : 6);
         RefreshControls();
         RefreshStateToolTips();
         UpdateDockMinimum();
     }
     private void UpdateDockMinimum()
     {
-        if(AdjustmentPanel.Visibility==Visibility.Visible && EditorArea.ActualHeight>0)
+        if(AdjustmentPanel.Visibility==Visibility.Visible && expandedGroup!=null && EditorArea.ActualHeight>0)
         {
             DockRow.MinHeight=216;
             DockRow.MaxHeight=Math.Max(216,EditorArea.ActualHeight-166);
@@ -97,17 +120,31 @@ public partial class MainWindow
     private void ClippingClicked(object sender,RoutedEventArgs e) { clipping=!clipping;NeutralCanvas.ShowClipping=ResultCanvas.ShowClipping=clipping;NeutralCanvas.InvalidateVisual();ResultCanvas.InvalidateVisual();RefreshControls();Schedule(); }
     // 工具栏下拉菜单贴着按钮下沿弹出；默认的 MousePoint 在键盘打开时会跑到鼠标所在的任意位置
     private void ZoomClicked(object sender,RoutedEventArgs e) { if(sender is Button button && button.ContextMenu is {} menu){menu.PlacementTarget=button;menu.Placement=PlacementMode.Bottom;menu.IsOpen=true;} }
-    private void FitClicked(object sender,RoutedEventArgs e) {if(!transform.Active)viewport.Fit();}
-    private void ActualClicked(object sender,RoutedEventArgs e) {if(!transform.Active)viewport.Actual();}
-    private void ZoomInClicked(object sender,RoutedEventArgs e) {if(!transform.Active)viewport.Magnify(1.25);}
-    private void ZoomOutClicked(object sender,RoutedEventArgs e) {if(!transform.Active)viewport.Magnify(.8);}
+    private void FitClicked(object sender,RoutedEventArgs e) {CancelViewingInput();if(!transform.Active)viewport.Fit();}
+    private void ActualClicked(object sender,RoutedEventArgs e) {CancelViewingInput();if(!transform.Active)viewport.Actual();}
+    private void ZoomInClicked(object sender,RoutedEventArgs e) {CancelViewingInput();if(!transform.Active)viewport.Magnify(1.25);}
+    private void ZoomOutClicked(object sender,RoutedEventArgs e) {CancelViewingInput();if(!transform.Active)viewport.Magnify(.8);}
     private void KeyPressed(object sender,KeyEventArgs e)
     {
+        // 编辑区已禁用；让横幅和菜单继续收到 Tab、Enter、空格等标准导航键。
+        if(UpdateInstallationActive)return;
+        var viewingKey=ViewingKey(e);
+        var startsBeforeKey=viewingKey==Key.Oem5 && !beforeKeyDown;
+        if(viewingKey==Key.Oem5)beforeKeyDown=true;
         if(e.OriginalSource is TextBoxBase or ComboBox || Keyboard.FocusedElement is TextBoxBase or ComboBox)return;
+        if(e.Key==Key.Escape && hslTargetEnabled){SetHslTargetMode(false,hslTargetAxis);e.Handled=true;return;}
+        if(e.Key==Key.Escape && editGesture!=null){CancelParameterInputs();CancelEditGesture();e.Handled=true;return;}
+        if(e.Key==Key.Z && Keyboard.Modifiers==ModifierKeys.Control){RunPhotoHistory(true);e.Handled=true;return;}
+        if(e.Key==Key.Y && Keyboard.Modifiers==ModifierKeys.Control || e.Key==Key.Z && Keyboard.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift))
+            {RunPhotoHistory(false);e.Handled=true;return;}
+        if(e.Key==Key.C && Keyboard.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift)){CopyAdjustmentsClicked(sender,e);e.Handled=true;return;}
+        if(e.Key==Key.V && Keyboard.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift)){PasteAdjustmentsClicked(sender,e);e.Handled=true;return;}
+        if((viewingKey is Key.I or Key.Oem5) && (ViewInputBlocked || Keyboard.Modifiers!=ModifierKeys.None))return;
+        if(viewingKey==Key.Oem5){if(startsBeforeKey)BeginHoldingBefore();e.Handled=true;return;}
         if(e.Key==Key.O && Keyboard.Modifiers==ModifierKeys.Control)OpenClicked(sender,e);
         else if(e.Key==Key.F)FitClicked(sender,e); else if(e.Key==Key.D1)ActualClicked(sender,e);
         else if(e.Key is Key.Add or Key.OemPlus)ZoomInClicked(sender,e); else if(e.Key is Key.Subtract or Key.OemMinus)ZoomOutClicked(sender,e);
-        else if(e.Key==Key.I)InfoClicked(sender,e);
+        else if(viewingKey==Key.I)InfoClicked(sender,e);
     }
     private void ExportJpegClicked(object sender,RoutedEventArgs e)=>Export(ExportFormat.Jpeg);
     private void ExportPngClicked(object sender,RoutedEventArgs e)=>Export(ExportFormat.Png);
@@ -138,7 +175,7 @@ public partial class MainWindow
     }
     private async void Export(ExportFormat format)
     {
-        if(!exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null || engine==null)return;
+        if(AIBlocksOutput || !exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null || engine==null)return;
         var suffix=format.Suffix();
         var dialog=new SaveFileDialog{Title=Loc.Text("导出"),Filter=format switch {
                 ExportFormat.Jpeg => format.Title()+"|*.jpg;*.jpeg",
@@ -160,7 +197,7 @@ public partial class MainWindow
     }
     internal async Task ExportPhoto(ExportFormat format,string destination)
     {
-        if(!exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null || engine==null || closing)return;
+        if(AIBlocksOutput || !exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null || engine==null || closing)return;
         if(Path.GetFullPath(destination).Equals(Path.GetFullPath(file),StringComparison.OrdinalIgnoreCase)){SetStatus(() => Loc.Text("不能覆盖原始文件。"),true);return;}
         var input=file;var adjustment=settings.Clone();var film=lut;
         // Render to a sibling temporary file, then replace only after encoding succeeds.
@@ -186,30 +223,35 @@ public partial class MainWindow
             lastExportedPath=destination;ExportRevealButton.Visibility=Visibility.Visible;
             SetStatus(() => Loc.Format("已导出（{0}）：{1}", (engine.LastBackend==3 ? "Direct3D 11" : "CPU"), destination));
         }
-        catch(Exception ex){Report(ex);}
+        catch(Exception ex){if(!HandleAIFailure(ex))Report(ex);}
         finally {try{if(File.Exists(temp))File.Delete(temp);}catch(IOException){} foregroundBusy=false;RefreshControls();if(closing)FinishClose();else ResumePreview();}
     }
     private static bool IsBuiltInLook(string path) => StringComparer.OrdinalIgnoreCase.Equals(
         Path.GetFullPath(Path.GetDirectoryName(path) ?? ""), Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "LUTs")));
     private void WindowClosing(object? sender,CancelEventArgs e)
     {
+        if(!updateQuitApproved){e.Cancel=true;Dispatcher.BeginInvoke(new Action(()=>_=PrepareUpdateQuitAsync()));return;}
+        updateQuitApproved=false;
+        CancelParameterInputs();CancelViewingInput();
         if(!ResolveTransformDraft() || !SaveEdits()){e.Cancel=true;return;}
         closing=true;
+        ResetAITask();
         previewResize.Stop();
         if(batchWindow is {} batch)
         {
+            batch.PreserveOnUpdateExit=UpdateInstallationActive;
             batch.Close();
             if(batch.IsVisible && !batch.Busy){e.Cancel=true;RecoverFailedClose(batch);return;}
         }
         thumbnailRefresh.Stop();foreach(var entry in visibleThumbnails)entry.ReleaseThumbnail();visibleThumbnails.Clear();
-        if(scheduler.Busy || exporting){e.Cancel=true;closing=true;IsEnabled=false;SetStatus(() => Loc.Text("正在完成当前任务后关闭…"));return;}
+        if(scheduler.Busy || exporting || !aiJob.Completion.IsCompleted){e.Cancel=true;closing=true;IsEnabled=false;SetStatus(() => Loc.Text("正在完成当前任务后关闭…"));return;}
         e.Cancel = true;
         Dispatcher.BeginInvoke(new Action(FinishClose));
     }
     private async void FinishClose()
     {
         // 关闭时不再启动排队预览，只等待实际运行的 worker 释放引擎。
-        if (closeFinished || analyticsDisposed || scheduler.Active!=null || exporting) return;
+        if (closeFinished || analyticsDisposed || scheduler.Active!=null || exporting || !aiJob.Completion.IsCompleted) return;
         analyticsDisposed = true;
         IsEnabled = false;
         // 离线时 SDK 关闭可能一直等网络：最多等 ShutdownLimit，之后照常退出

@@ -52,6 +52,9 @@ class NativeDngMemoryTest {
         val previewEdge = args.getString("dngMemoryPreviewEdge")?.toInt() ?: 128
         val reference = args.getString("dngMemoryReference") == "true"
         val settings = settings(args.getString("dngMemoryProfile") ?: "all")
+        require(mode != NativeProcessor.FORCE || !settings.denoise.enabled) {
+            "C5 denoise is CPU-only; use auto or cpu for this diagnostic"
+        }
         val phase = AtomicReference("setup")
         val running = AtomicBoolean(true)
         val peak = AtomicLong()

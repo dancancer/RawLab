@@ -1,4 +1,5 @@
 #include "sony2fuji/edit_recipe.h"
+#include "core/photo_tone_curve.h"
 #include "nlohmann/json.hpp"
 #include <algorithm>
 #include <cmath>
@@ -75,14 +76,66 @@ void hslAxis(const Json& object, const char* key, float* destination) {
 }
 
 void completeEdits(const Json& edits, EditRecipe& parsed) {
+    if (edits.contains("color_grading")) {
+        const auto& grading=edits.at("color_grading");
+        fields(grading,"edits.color_grading",{"shadows","midtones","highlights"});
+        auto readWheel=[&](const char* zone,float& hue,float& saturation) {
+            if (!grading.contains(zone)) return;
+            const auto path=std::string("edits.color_grading.")+zone;
+            const auto& wheel=grading.at(zone);
+            fields(wheel,path,{"hue","saturation"});
+            required(wheel,"hue",path);required(wheel,"saturation",path);
+            hue=number(wheel,"hue",0,0,360,path);
+            if (wheel.at("hue").get<double>()>=360) throw std::invalid_argument(path+".hue is out of range");
+            // 合法 double 在 float 环回点舍入为 360 时，保持等价的 canonical 0。
+            if (hue==360) hue=0;
+            saturation=number(wheel,"saturation",0,0,100,path);
+        };
+        auto& config=parsed.colorGrading;
+        readWheel("shadows",config.shadows_hue,config.shadows_saturation);
+        readWheel("midtones",config.midtones_hue,config.midtones_saturation);
+        readWheel("highlights",config.highlights_hue,config.highlights_saturation);
+    }
     if (edits.contains("tone")) {
         const auto& tone = edits.at("tone");
-        fields(tone, "edits.tone", {"contrast", "saturation", "highlights", "shadows", "s_curve"});
+        if (parsed.schemaVersion >= 5)
+            fields(tone, "edits.tone", {"contrast", "saturation", "highlights", "shadows", "s_curve", "black_point", "white_point", "curve"});
+        else fields(tone, "edits.tone", {"contrast", "saturation", "highlights", "shadows", "s_curve"});
         parsed.contrast = number(tone, "contrast", 1, 0, 2, "edits.tone");
         parsed.saturation = number(tone, "saturation", 1, 0, 2, "edits.tone");
         parsed.highlights = number(tone, "highlights", 0, -1, 1, "edits.tone");
         parsed.shadows = number(tone, "shadows", 0, -1, 1, "edits.tone");
         parsed.sCurve = number(tone, "s_curve", 0, -1, 1, "edits.tone");
+        parsed.toneControls.black_point = number(tone, "black_point", 0, -1, 1, "edits.tone");
+        parsed.toneControls.white_point = number(tone, "white_point", 0, -1, 1, "edits.tone");
+        if (tone.contains("curve")) {
+            const auto& curve = tone.at("curve");
+            const std::string path = "edits.tone.curve";
+            fields(curve, path, {"mode", "points"});
+            const auto mode = text(required(curve, "mode", path), path + ".mode");
+            auto& config = parsed.toneCurve;
+            if (mode == "legacy") config.mode = SONY2FUJI_CURVE_LEGACY;
+            else if (mode == "custom") config.mode = SONY2FUJI_CURVE_CUSTOM;
+            else throw std::invalid_argument(path + ".mode is unsupported");
+            const auto& points = required(curve, "points", path);
+            if (!points.is_array() || points.size() > SONY2FUJI_TONE_CURVE_MAX_POINTS)
+                throw std::invalid_argument(path + ".points must be an array of at most 33 points");
+            config.count = static_cast<uint32_t>(points.size());
+            for (size_t i = 0; i < points.size(); ++i) {
+                const auto& point = points[i];
+                if (!point.is_array() || point.size() != 2 || !point[0].is_number() || !point[1].is_number())
+                    throw std::invalid_argument(path + ".points must contain [x,y] pairs");
+                config.points[i] = {point[0].get<double>(), point[1].get<double>()};
+            }
+            if (!validToneCurve(config)) throw std::invalid_argument(path + ".points are invalid for the selected mode");
+            if (config.mode == SONY2FUJI_CURVE_CUSTOM && parsed.sCurve != 0)
+                throw std::invalid_argument(path + " conflicts with nonzero edits.tone.s_curve");
+        }
+    }
+    if (edits.contains("color")) {
+        const auto& color = edits.at("color");
+        fields(color, "edits.color", {"vibrance"});
+        parsed.toneControls.vibrance = number(color, "vibrance", 0, -1, 1, "edits.color");
     }
     if (edits.contains("detail")) {
         const auto& detail = edits.at("detail");
@@ -98,8 +151,13 @@ void completeEdits(const Json& edits, EditRecipe& parsed) {
     }
     if (edits.contains("effects")) {
         const auto& fx = edits.at("effects");
-        fields(fx, "edits.effects", {"vignette_amount", "vignette_midpoint", "vignette_roundness",
+        if (parsed.schemaVersion >= 5)
+            fields(fx, "edits.effects", {"vignette_amount", "vignette_midpoint", "vignette_roundness",
+                "vignette_feather", "vignette_highlights", "grain_amount", "grain_size", "grain_roughness", "clarity", "dehaze"});
+        else fields(fx, "edits.effects", {"vignette_amount", "vignette_midpoint", "vignette_roundness",
             "vignette_feather", "vignette_highlights", "grain_amount", "grain_size", "grain_roughness"});
+        parsed.atmosphere.clarity = number(fx, "clarity", 0, -1, 1, "edits.effects");
+        parsed.atmosphere.dehaze = number(fx, "dehaze", 0, -1, 1, "edits.effects");
         auto& config = parsed.effects;
         config.vignette_amount = number(fx, "vignette_amount", 0, -100, 100, "edits.effects");
         config.vignette_midpoint = number(fx, "vignette_midpoint", 50, 0, 100, "edits.effects");
@@ -169,13 +227,24 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
             return true;
         };
         const auto root = Json::parse(document, checkKeys);
-        fields(root, "recipe", {"schema_version", "input", "edits", "output"});
         const auto version = integer(required(root, "schema_version", "recipe"), 1,
                                      std::numeric_limits<uint32_t>::max(), "schema_version");
-        if (version < 1 || version > 4) throw std::invalid_argument("Unsupported schema_version: " + std::to_string(version));
+        if (version < 1 || version > 5) throw std::invalid_argument("Unsupported schema_version: " + std::to_string(version));
+        if (version >= 5) fields(root, "recipe", {"schema_version", "processing", "input", "edits", "output"});
+        else fields(root, "recipe", {"schema_version", "input", "edits", "output"});
 
         EditRecipe parsed;
         parsed.schemaVersion = version;
+        if (version >= 5) {
+            const auto& processing = required(root, "processing", "recipe");
+            fields(processing, "processing", {"family", "version", "quality"});
+            if (text(required(processing, "family", "processing"), "processing.family") != "rawlab")
+                throw std::invalid_argument("Unsupported processing.family");
+            if (text(required(processing, "quality", "processing"), "processing.quality") != "standard")
+                throw std::invalid_argument("Unsupported processing.quality");
+            parsed.processingVersion = static_cast<sony2fuji_processing_version>(
+                integer(required(processing, "version", "processing"), 1, 2, "processing.version"));
+        }
         const auto& input = required(root, "input", "recipe");
         if (version >= 4) fields(input, "input", {"path", "type"});
         else fields(input, "input", {"path"});
@@ -189,7 +258,8 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
         const auto& edits = required(root, "edits", "recipe");
         if (version == 1) fields(edits, "edits", {"exposure", "white_balance", "look"});
         else if (version < 4) fields(edits, "edits", {"exposure", "white_balance", "look", "geometry"});
-        else fields(edits, "edits", {"exposure", "white_balance", "look", "geometry", "tone", "detail", "hsl", "effects", "denoise", "lens_correction"});
+        else if (version == 4) fields(edits, "edits", {"exposure", "white_balance", "look", "geometry", "tone", "detail", "hsl", "effects", "denoise", "lens_correction"});
+        else fields(edits, "edits", {"exposure", "white_balance", "look", "geometry", "tone", "color", "color_grading", "detail", "hsl", "effects", "denoise", "lens_correction"});
         if (version >= 4) completeEdits(edits, parsed);
         const auto& exposure = required(edits, "exposure", "edits");
         fields(exposure, "edits.exposure", {"mode", "ev", "brightness"});
@@ -301,8 +371,44 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
 }
 
 std::string serializeEditRecipe(const EditRecipe& recipe) {
-    if (recipe.schemaVersion < 1 || recipe.schemaVersion > 4)
+    if (!validToneCurve(recipe.toneCurve)) throw std::invalid_argument("Invalid tone curve configuration");
+    if (recipe.toneCurve.mode == SONY2FUJI_CURVE_CUSTOM && (recipe.schemaVersion < 5 || recipe.sCurve != 0))
+        throw std::invalid_argument("Custom tone curve requires schema_version 5 and zero s_curve");
+    if (recipe.schemaVersion < 1 || recipe.schemaVersion > 5)
         throw std::invalid_argument("Unsupported schema_version");
+    if (recipe.processingVersion != SONY2FUJI_PROCESSING_LEGACY && recipe.processingVersion != SONY2FUJI_PROCESSING_C5_V2)
+        throw std::invalid_argument("Unsupported processing.version");
+    if (recipe.schemaVersion < 5 && recipe.processingVersion != SONY2FUJI_PROCESSING_LEGACY)
+        throw std::invalid_argument("processing.version requires schema_version 5");
+    const auto& controls = recipe.toneControls;
+    if (controls.version != SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION || controls.struct_size != sizeof(controls))
+        throw std::invalid_argument("Invalid tone controls configuration");
+    for (float value : {controls.black_point,controls.white_point,controls.vibrance})
+        if (!std::isfinite(value) || std::abs(value)>1)
+            throw std::invalid_argument("Tone controls must be finite and within [-1,1]");
+    if (recipe.schemaVersion < 5 && (controls.black_point != 0 || controls.white_point != 0 || controls.vibrance != 0))
+        throw std::invalid_argument("Tone controls require schema_version 5");
+    const auto& atmosphere=recipe.atmosphere;
+    if (atmosphere.version!=SONY2FUJI_ATMOSPHERE_CONFIG_VERSION || atmosphere.struct_size!=sizeof(atmosphere))
+        throw std::invalid_argument("Invalid atmosphere configuration");
+    for (float value : {atmosphere.clarity,atmosphere.dehaze})
+        if (!std::isfinite(value) || std::abs(value)>1)
+            throw std::invalid_argument("Atmosphere controls must be finite and within [-1,1]");
+    if (recipe.schemaVersion<5 && (atmosphere.clarity!=0 || atmosphere.dehaze!=0))
+        throw std::invalid_argument("Atmosphere controls require schema_version 5");
+    const auto& grading=recipe.colorGrading;
+    if (grading.version!=SONY2FUJI_COLOR_GRADING_CONFIG_VERSION || grading.struct_size!=sizeof(grading))
+        throw std::invalid_argument("Invalid color grading configuration");
+    bool storedGrading=false;
+    for (const auto wheel : {std::pair{grading.shadows_hue,grading.shadows_saturation},
+             std::pair{grading.midtones_hue,grading.midtones_saturation},std::pair{grading.highlights_hue,grading.highlights_saturation}}) {
+        if (!std::isfinite(wheel.first) || wheel.first<0 || wheel.first>=360 ||
+            !std::isfinite(wheel.second) || wheel.second<0 || wheel.second>100)
+            throw std::invalid_argument("Color grading hue/saturation is out of range");
+        storedGrading=storedGrading || wheel.first!=0 || wheel.second!=0;
+    }
+    if (recipe.schemaVersion<5 && storedGrading)
+        throw std::invalid_argument("Color grading requires schema_version 5");
     const char* wbMode = nullptr;
     switch (recipe.whiteBalanceMode) {
         case SONY2FUJI_WB_CAMERA: wbMode = "camera"; break;
@@ -326,6 +432,9 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
                              {"strength", recipe.lookStrength}}}}},
         {"output", {{"path", recipe.outputPath}, {"format", formatName(recipe.outputFormat)},
                     {"jpeg_quality", recipe.jpegQuality}, {"size", size}}}};
+    if (recipe.schemaVersion >= 5)
+        document["processing"] = {{"family", "rawlab"}, {"version", static_cast<int>(recipe.processingVersion)},
+            {"quality", "standard"}};
     if (recipe.schemaVersion >= 2) {
         const auto& geo = recipe.geometry;
         document["edits"]["geometry"] = {{"crop", {{"x", geo.crop_x}, {"y", geo.crop_y},
@@ -341,6 +450,20 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
         auto& edits = document["edits"];
         edits["tone"] = {{"contrast", recipe.contrast}, {"saturation", recipe.saturation},
             {"highlights", recipe.highlights}, {"shadows", recipe.shadows}, {"s_curve", recipe.sCurve}};
+        if (recipe.schemaVersion >= 5) {
+            Json points = Json::array();
+            for (uint32_t i = 0; i < recipe.toneCurve.count; ++i)
+                points.push_back({recipe.toneCurve.points[i].x, recipe.toneCurve.points[i].y});
+            edits["tone"]["curve"] = {{"mode", recipe.toneCurve.mode == SONY2FUJI_CURVE_CUSTOM ? "custom" : "legacy"}, {"points", points}};
+        }
+        // Identity omits additive keys so existing normalized recipes stay byte-identical.
+        if (controls.black_point != 0) edits["tone"]["black_point"] = controls.black_point;
+        if (controls.white_point != 0) edits["tone"]["white_point"] = controls.white_point;
+        if (controls.vibrance != 0) edits["color"]["vibrance"] = controls.vibrance;
+        if (storedGrading) edits["color_grading"]={
+            {"shadows",{{"hue",grading.shadows_hue},{"saturation",grading.shadows_saturation}}},
+            {"midtones",{{"hue",grading.midtones_hue},{"saturation",grading.midtones_saturation}}},
+            {"highlights",{{"hue",grading.highlights_hue},{"saturation",grading.highlights_saturation}}}};
         edits["detail"] = {{"sharpening", recipe.sharpening}};
         edits["hsl"] = {{"hue", recipe.hsl.hue}, {"saturation", recipe.hsl.saturation}, {"lightness", recipe.hsl.lightness}};
         const auto& fx = recipe.effects;
@@ -348,6 +471,8 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
             {"vignette_roundness", fx.vignette_roundness}, {"vignette_feather", fx.vignette_feather},
             {"vignette_highlights", fx.vignette_highlights}, {"grain_amount", fx.grain_amount},
             {"grain_size", fx.grain_size}, {"grain_roughness", fx.grain_roughness}};
+        if (atmosphere.clarity!=0) edits["effects"]["clarity"]=atmosphere.clarity;
+        if (atmosphere.dehaze!=0) edits["effects"]["dehaze"]=atmosphere.dehaze;
         edits["denoise"] = {{"raw_level", recipe.rawNoiseReduction}, {"chroma_mode", recipe.chromaDenoise},
             {"wavelet", {{"enabled", recipe.wavelet.enabled != 0}, {"luma", recipe.wavelet.luma},
                 {"chroma", recipe.wavelet.chroma}, {"coarse", recipe.wavelet.coarse}}}};

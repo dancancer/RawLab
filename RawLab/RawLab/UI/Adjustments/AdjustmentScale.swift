@@ -6,16 +6,47 @@ struct AdjustmentScale: Equatable {
     let range: ClosedRange<Double>
     let step: Double
     let reciprocal: Bool
+    let compactDecimals: Int?
 
-    init(range: ClosedRange<Double>, step: Double, reciprocal: Bool = false) {
+    init(range: ClosedRange<Double>, step: Double, reciprocal: Bool = false, compactDecimals: Int? = nil) {
         self.range = range
         self.step = step.isFinite && step > 0 ? step : 1
         self.reciprocal = reciprocal && range.lowerBound > 0
+        self.compactDecimals = compactDecimals
     }
 
     var span: Double { range.upperBound - range.lowerBound }
     var intervalCount: Int { Int((span / step + 1e-8).rounded(.down)) }
     var tapeLength: Double { reciprocal ? 1_200 : min(max(Double(intervalCount) * 8, 400), 1_920) }
+
+    func window(at position: Double, width: Double) -> AdjustmentRulerWindow {
+        let span = min(1, max(1e-9, width / tapeLength))
+        let current = min(1, max(0, position.isFinite ? position : 0))
+        let start = min(max(current - span / 2, 0), 1 - span)
+        return AdjustmentRulerWindow(start: start, span: span, indicator: (current - start) / span)
+    }
+
+    func completeText(_ value: Double, displayScale: Double = 1, locale: Locale,
+                      formatter: (Double) -> String) -> String {
+        let ordinary = formatter(value)
+        if compactDecimals != nil { return ordinary }
+        let parser = NumberFormatter()
+        parser.locale = locale
+        parser.numberStyle = .decimal
+        if let displayed = parser.number(from: ordinary.hasPrefix("+") ? String(ordinary.dropFirst()) : ordinary)?.doubleValue {
+            let logical = displayed / displayScale
+            // 同一既有网格点保留正常格式，避免二进制长尾；旧非网格值仍须精确相等。
+            if logical == value || (contains(logical) && rounded(logical) == value) { return ordinary }
+        }
+        // 标签最多显示两位；候选 Double 仍保留原始值，不从标签反解析。
+        parser.minimumFractionDigits = 0
+        parser.maximumFractionDigits = 2
+        parser.usesGroupingSeparator = false
+        let displayed = value * displayScale
+        let clean = abs(displayed) < 0.005 ? 0 : displayed
+        let text = parser.string(from: NSNumber(value: clean)) ?? ordinary
+        return (ordinary.hasPrefix("+") && clean > 0 ? "+" : "") + text
+    }
 
     func contains(_ value: Double) -> Bool {
         value.isFinite && range.contains(value)
@@ -52,6 +83,24 @@ struct AdjustmentScale: Equatable {
     }
 
     func values(including extras: [Double] = []) -> [Double] {
+        if let compactDecimals {
+            let factor = pow(10, Double(compactDecimals))
+            var labels = Set<Double>()
+            var values = [Double]()
+            // 原值优先，不能让同一显示值的网格点或默认值替换它。
+            for value in extras.filter(contains) {
+                if labels.insert((value * factor).rounded()).inserted { values.append(value) }
+            }
+            let first = Int(ceil(range.lowerBound / step - 1e-8))
+            let last = Int(floor(range.upperBound / step + 1e-8))
+            if first <= last {
+                for index in first...last {
+                    let value = Double(index) * step
+                    if labels.insert((value * factor).rounded()).inserted { values.append(value) }
+                }
+            }
+            return values.sorted()
+        }
         var values = (0...intervalCount).map { range.lowerBound + Double($0) * step }
         values.append(range.upperBound)
         values.append(contentsOf: extras.filter(contains))
@@ -66,6 +115,11 @@ struct AdjustmentScale: Equatable {
     }
 
     func increment(_ value: Double, direction: Int) -> Double {
+        if compactDecimals != nil {
+            let index = direction > 0 ? floor(value / step + 1e-8) + 1 : ceil(value / step - 1e-8) - 1
+            let next = index * step
+            return range.contains(next) ? next : value
+        }
         let relative = (clamped(value) - range.lowerBound) / step
         let index = direction > 0 ? floor(relative + 1e-8) + 1 : ceil(relative - 1e-8) - 1
         return clamped(range.lowerBound + index * step)
@@ -142,4 +196,12 @@ struct AdjustmentTickMotion {
         let base = tick.major ? 22.0 : 13.0
         return base + (28 - base) * (reduceMotion ? 0 : amount(for: tick.id, at: time))
     }
+}
+
+struct AdjustmentRulerWindow {
+    let start: Double
+    let span: Double
+    let indicator: Double
+
+    func fraction(for position: Double) -> Double { (position - start) / span }
 }

@@ -19,10 +19,16 @@ data class AdjustmentDraft(
     val geometryPortrait: Boolean = false,
     val geometryOriginalAspect: Float = 1f,
     val geometryCanvasAspect: Float = 1f,
+    val geometryLockedRatio: Float? = null,
+    val geometryGrid: Boolean = true,
+    val includesPair: Boolean = false,
 ) {
-    val geometryAspect: Float? get() = geometryRatio.ratio(geometryOriginalAspect, geometryPortrait)
+    val geometryAspect: Float? get() = geometryLockedRatio?.let { if (geometryPortrait) 1f / it else it }
+        ?: geometryRatio.ratio(geometryOriginalAspect, geometryPortrait)
     val changed: Boolean get() = project(original) != original
-    fun project(settings: EditSettings): EditSettings = when (group) {
+    fun project(settings: EditSettings): EditSettings = if (includesPair)
+        settings.copy(geometry = value.geometry, lens = value.lens)
+    else when (group) {
         AdjustmentGroup.GEOMETRY -> settings.copy(geometry = value.geometry)
         AdjustmentGroup.LENS -> settings.copy(lens = value.lens)
     }
@@ -35,13 +41,37 @@ data class AdjustmentDraft(
         val breaksRatio = geometryAspect?.let { ratio ->
             abs(next.geometry.cropWidth * geometryCanvasAspect / next.geometry.cropHeight - ratio) > .0001f
         } ?: false
-        return copy(value = next, geometryRatio = if (resized && breaksRatio) GeometryRatio.FREE else geometryRatio)
+        val changedCanvas = next.geometry.quarterTurns != value.geometry.quarterTurns ||
+            next.geometry.straightenDegrees != value.geometry.straightenDegrees
+        val unlock = resized && breaksRatio && !changedCanvas
+        val originalTurned = geometryRatio == GeometryRatio.ORIGINAL && geometryLockedRatio == null &&
+            next.geometry.quarterTurns % 2 != value.geometry.quarterTurns % 2
+        return copy(value = next, geometryRatio = if (unlock) GeometryRatio.FREE else geometryRatio,
+            geometryLockedRatio = if (unlock) null else geometryLockedRatio,
+            geometryPortrait = if (originalTurned) !geometryPortrait else geometryPortrait)
     }
-    fun reset() = update(EditSettings()).copy(geometryRatio = GeometryRatio.FREE)
+    fun reset() = update(EditSettings()).copy(geometryRatio = GeometryRatio.FREE, geometryLockedRatio = null)
+
+    internal fun resetPair(settings: EditSettings) = copy(
+        value = value.copy(geometry = settings.geometry, lens = settings.lens),
+        includesPair = true, geometryRatio = GeometryRatio.FREE, geometryLockedRatio = null)
 
     fun selectGeometryRatio(ratio: GeometryRatio, portrait: Boolean): AdjustmentDraft {
         if (group != AdjustmentGroup.GEOMETRY) return this
-        val next = copy(geometryRatio = ratio, geometryPortrait = portrait)
+        val next = copy(geometryRatio = ratio, geometryPortrait = portrait, geometryLockedRatio = null)
+        return next.copy(value = value.copy(geometry = GeometryCropMath.preset(value.geometry, next.geometryAspect, geometryCanvasAspect)))
+    }
+
+    fun toggleGeometryLock(): AdjustmentDraft {
+        if (group != AdjustmentGroup.GEOMETRY) return this
+        if (geometryAspect != null) return copy(geometryRatio = GeometryRatio.FREE, geometryLockedRatio = null, geometryPortrait = false)
+        return copy(geometryRatio = GeometryRatio.FREE, geometryPortrait = false,
+            geometryLockedRatio = value.geometry.cropWidth * geometryCanvasAspect / value.geometry.cropHeight)
+    }
+
+    fun swapGeometryRatio(): AdjustmentDraft {
+        if (group != AdjustmentGroup.GEOMETRY || geometryAspect == null) return this
+        val next = copy(geometryPortrait = !geometryPortrait)
         return next.copy(value = value.copy(geometry = GeometryCropMath.preset(value.geometry, next.geometryAspect, geometryCanvasAspect)))
     }
 

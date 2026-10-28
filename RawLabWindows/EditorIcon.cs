@@ -13,6 +13,12 @@ public sealed class EditorIcon : FrameworkElement
         ["Info"]=Geometry.Parse("M12,2 A10,10 0 1 1 11.99,2 M12,11 V17 M12,7 V7.1"),
         ["Lens"]=Geometry.Parse("M9,3 H5 A2,2 0 0 0 3,5 V9 M15,3 H19 A2,2 0 0 1 21,5 V9 M21,15 V19 A2,2 0 0 1 19,21 H15 M9,21 H5 A2,2 0 0 1 3,19 V15 M12,8 A4,4 0 1 1 11.99,8"),
         ["Geometry"]=Geometry.Parse("M6,2 V18 H22 M2,6 H18 V22 M10,10 H14 V14 H10 Z"),
+        ["Perspective"]=Geometry.Parse("M5,4 L19,7 V17 L5,20 Z M5,12 H19 M12,5.5 V18.5"),
+        ["Processing"]=Geometry.Parse("M3,6 H21 M3,12 H21 M3,18 H21 M8,3 V9 M16,9 V15 M10,15 V21"),
+        ["Lock"]=Geometry.Parse("M6,10 H18 V21 H6 Z M8,10 V6 A4,4 0 0 1 16,6 V10 M12,14 V17"),
+        ["Unlock"]=Geometry.Parse("M6,10 H18 V21 H6 Z M8,10 V6 A4,4 0 0 1 16,6 M12,14 V17"),
+        ["FlipHorizontal"]=Geometry.Parse("M12,2 V22 M3,5 L9,12 3,19 Z M21,5 L15,12 21,19 Z"),
+        ["FlipVertical"]=Geometry.Parse("M2,12 H22 M5,3 L12,9 19,3 Z M5,21 L12,15 19,21 Z"),
         // Lucide Film, ISC license; converted from its SVG to WPF path geometry.
         ["Film"]=Geometry.Parse("M5,3 H19 A2,2 0 0 1 21,5 V19 A2,2 0 0 1 19,21 H5 A2,2 0 0 1 3,19 V5 A2,2 0 0 1 5,3 Z M7,3 V21 M3,7.5 H7 M3,12 H21 M3,16.5 H7 M17,3 V21 M17,7.5 H21 M17,16.5 H21"),
         ["Strength"]=Geometry.Parse("M12,3 A9,9 0 1 1 11.99,3 M12,7 A5,5 0 1 1 11.99,7"),
@@ -26,6 +32,12 @@ public sealed class EditorIcon : FrameworkElement
         ["Saturation"]=Geometry.Parse("M12,3 A9,9 0 1 1 11.99,3 M3,12 H21 M5,16 H19 M8,19 H16"),
         // 锐化用空心三角（与 Mac 一致），不带内部竖线，免得和裁切提示的警告三角混淆
         ["Sharpening"]=Geometry.Parse("M12,3 L22,21 H2 Z"),
+        ["BlackPoint"]=Geometry.Parse("M12,4 A8,8 0 1 1 11.99,4 M6,15 H18 M8,18 H16"),
+        ["WhitePoint"]=Geometry.Parse("M12,4 A8,8 0 1 1 11.99,4 M8,6 H16 M6,9 H18"),
+        ["ColorGrading"]=Geometry.Parse("M12,3 A9,9 0 1 1 11.99,3 M12,3 V12 L20,16 M12,12 L4,16 M12,8 A4,4 0 1 1 11.99,8"),
+        ["Clarity"]=Geometry.Parse("M12,3 A9,9 0 1 1 11.99,3 M12,7 V17 M7,12 H17"),
+        ["Dehaze"]=Geometry.Parse("M4,10 C1,6 5,3 8,5 C11,0 19,2 19,7 C24,7 24,12 19,12 H5 M3,16 H21 M6,20 H18"),
+        ["Vibrance"]=Geometry.Parse("M11,3 C8,8 4,11 4,15 A7,7 0 0 0 18,15 C18,11 14,7 11,3 M19,3 V9 M16,6 H22"),
         ["Neutral"]=Geometry.Parse("M12,3 A9,9 0 1 1 11.99,3 M12,3 V21"),
         ["Add"]=Geometry.Parse("M12,4 V20 M4,12 H20"),
         ["Reset"]=Geometry.Parse("M4,10 A8,8 0 1 1 5,18 M4,4 V10 H10"),
@@ -38,7 +50,7 @@ public sealed class EditorIcon : FrameworkElement
         ["Photo"]=Geometry.Parse("M3,4 H21 V20 H3 Z M3,17 L9,11 14,16 17,13 21,17 M15,7 A1.5,1.5 0 1 1 14.99,7")
         ,["Folder"]=Geometry.Parse("M3,6 H10 L12,8 H21 V20 H3 Z M3,6 V4 H9 L11,6")
         ,["Library"]=Geometry.Parse("M3,4 H21 V20 H3 Z M9,4 V20 M5,8 H7 M5,12 H7")
-        ,["Compare"]=Geometry.Parse("M12,2 V22 M9,5 H3 V19 H9 M15,5 H21 V19 H15 M5,12 H8 M16,12 H19")
+        ,["Compare"]=Geometry.Parse("M3,4 H21 V20 H3 Z M12,4 V20")
         ,["Zoom"]=Geometry.Parse("M10,3 A7,7 0 1 1 9.99,3 M15,15 L21,21 M7,10 H13 M10,7 V13")
         ,["Clipping"]=Geometry.Parse("M12,3 L22,21 H2 Z M12,9 V14 M12,17 V18")
         ,["Adjust"]=Geometry.Parse("M3,6 H8 M12,6 H21 M3,12 H14 M18,12 H21 M3,18 H6 M10,18 H21 M8,3 V9 H12 V3 Z M14,9 V15 H18 V9 Z M6,15 V21 H10 V15 Z")

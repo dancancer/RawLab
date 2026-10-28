@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <StartupObject>RawLab.Windows.Program</StartupObject>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
@@ -9,14 +10,17 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>RawLab</AssemblyName>
-    <Version>0.8.2</Version>
-    <FileVersion>0.8.2.14</FileVersion>
-    <InformationalVersion>0.8.2+build.14</InformationalVersion>
+    <Version>0.9.0</Version>
+    <FileVersion>0.9.0.15</FileVersion>
+    <InformationalVersion>0.9.0+build.15</InformationalVersion>
+    <RawLabUpdateTrustFile Condition="'$(RawLabUpdateTrustFile)' == ''">$(MSBuildThisFileDirectory)Updates/UpdateTrust.json</RawLabUpdateTrustFile>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
   </PropertyGroup>
   <!-- 阿里云 RUM PC SDK（使用统计）：Release 默认带，规则与开关见 RumSdk.targets -->
   <Import Project="RumSdk.targets" />
   <ItemGroup>
+    <PackageReference Include="Velopack" Version="1.2.161" />
+    <EmbeddedResource Include="$(RawLabUpdateTrustFile)" LogicalName="RawLab.UpdateTrust.json" />
     <RuntimeHostConfigurationOption Include="Switch.System.Windows.Media.EnableHardwareAccelerationInRdp" Value="true" />
     <Compile Remove="tests/**/*.cs" />
     <EmbeddedResource Include="Resources/Localization/*.json" />

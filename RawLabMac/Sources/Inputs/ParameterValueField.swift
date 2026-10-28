@@ -5,7 +5,16 @@ enum ParameterInvalidInputPolicy {
     case restore, retain
 }
 
+private struct ParameterInputScopeKey: EnvironmentKey { static let defaultValue = "" }
+extension EnvironmentValues {
+    var parameterInputScope: String {
+        get { self[ParameterInputScopeKey.self] }
+        set { self[ParameterInputScopeKey.self] = newValue }
+    }
+}
+
 struct ParameterValueField: NSViewRepresentable {
+    @Environment(\.parameterInputScope) private var sourceScope
     @Environment(\.isEnabled) private var isEnabled
     @Binding var value: Double
     let range: ClosedRange<Double>
@@ -13,10 +22,63 @@ struct ParameterValueField: NSViewRepresentable {
     let title: String
     let unit: String
     let identifier: String
+    var defaultValue: Double = 0
+    var fontSize: CGFloat = 13
+    var inputScope = ""
+    var onValidationMessage: (String?) -> Void = { _ in }
     var resetRevision = 0
     var onEditingChanged: (Bool) -> Void = { _ in }
     var invalidInputPolicy: ParameterInvalidInputPolicy = .restore
     var onValidityChange: (Bool) -> Void = { _ in }
+
+    static var hasPendingInputs: Bool { Coordinator.instances.allObjects.contains { $0.dirty } }
+
+    static func preserveInputsForUpdateNavigation() {
+        for coordinator in Coordinator.instances.allObjects where coordinator.dirty {
+            coordinator.preserveNextBlur = true
+        }
+    }
+
+    static func cancelPendingInputs() {
+        for coordinator in Coordinator.instances.allObjects { coordinator.cancel() }
+        NSApp?.keyWindow?.makeFirstResponder(nil)
+    }
+
+    static func resolvePendingInputs() -> Bool {
+        let pending = Coordinator.instances.allObjects.filter { $0.dirty }
+        guard !pending.isEmpty else { return true }
+        pending.forEach { $0.preflightPending = true }
+        defer { pending.forEach { $0.preflightPending = false } }
+        let alert = NSAlert()
+        alert.messageText = L10n.text("数值输入尚未提交")
+        alert.informativeText = L10n.text("应用有效输入、放弃输入，或返回继续编辑。")
+        alert.addButton(withTitle: L10n.text("应用输入"))
+        alert.addButton(withTitle: L10n.text("放弃输入"))
+        alert.addButton(withTitle: L10n.text("继续编辑"))
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            guard pending.allSatisfy({ $0.commit() }) else {
+                if let field = pending.first(where: { $0.dirty })?.field { field.window?.makeFirstResponder(field) }
+                return false
+            }
+            NSApp?.keyWindow?.makeFirstResponder(nil)
+            return true
+        case .alertSecondButtonReturn: cancelPendingInputs(); return true
+        default:
+            if let field = pending.first?.field { field.window?.makeFirstResponder(field) }
+            return false
+        }
+    }
+
+    @discardableResult static func commitPendingInputs() -> Bool {
+        let valid = Coordinator.instances.allObjects.map { $0.commit() }.allSatisfy { $0 }
+        if valid { NSApp?.keyWindow?.makeFirstResponder(nil) }
+        return valid
+    }
+
+    static func dismantleNSView(_ field: NumericTextField, coordinator: Coordinator) {
+        coordinator.cancel(deferred: true)
+    }
 
     private var signed: Bool { range.lowerBound < 0 }
 
@@ -29,8 +91,8 @@ struct ParameterValueField: NSViewRepresentable {
         field.isBezeled = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
-        field.textColor = .systemYellow
+        field.font = .monospacedDigitSystemFont(ofSize: fontSize, weight: .regular)
+        field.textColor = value == defaultValue ? .labelColor : .systemYellow
         field.alignment = .right
         field.cell?.font = field.font
         field.cell?.alignment = .right
@@ -46,7 +108,7 @@ struct ParameterValueField: NSViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NumericTextField, context: Context) -> CGSize? {
-        CGSize(width: 72, height: 26)
+        CGSize(width: max(72, (precision.text(value, signed: signed) as NSString).size(withAttributes: [.font: nsView.font!]).width + 24), height: max(26, fontSize + 13))
     }
 
     func updateNSView(_ field: NumericTextField, context: Context) {
@@ -56,50 +118,83 @@ struct ParameterValueField: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
+        static let instances = NSHashTable<Coordinator>.weakObjects()
         var parent: ParameterValueField
         weak var field: NumericTextField?
         var editing = false
         var dirty = false
+        var preflightPending = false
+        var preserveNextBlur = false
         var lastValue: Double
         var resetRevision: Int
         private(set) var isValid = true
         private var retainedInvalidDraft = false
         private var validityRevision = 0
+        private var validationRevision = 0
         private var wheelState = ParameterWheelAccumulator()
+        private var wheelInteracting = false
+        private var wheelRevision = 0
 
         init(_ parent: ParameterValueField) {
             self.parent = parent
             lastValue = parent.value
             resetRevision = parent.resetRevision
+            super.init()
+            Self.instances.add(self)
+            NotificationCenter.default.addObserver(self, selector: #selector(applicationWillHide), name: NSApplication.willHideNotification, object: nil)
         }
+
+        @objc private func applicationWillHide() { cancel() }
+        deinit { NotificationCenter.default.removeObserver(self) }
 
         func update(_ parent: ParameterValueField, isEnabled: Bool) {
             guard let field else { return }
             let externalChange = lastValue != parent.value
-            let reset = resetRevision != parent.resetRevision
+            let reset = resetRevision != parent.resetRevision || self.parent.inputScope != parent.inputScope || self.parent.sourceScope != parent.sourceScope
             self.parent = parent
             lastValue = parent.value
             resetRevision = parent.resetRevision
+            field.font = .monospacedDigitSystemFont(ofSize: parent.fontSize, weight: .regular)
+            field.cell?.font = field.font
+            field.textColor = parent.value == parent.defaultValue ? .labelColor : .systemYellow
+            field.setAccessibilityValueDescription(parent.value == parent.defaultValue ? L10n.text("未调整") : L10n.text("已调整"))
             field.isEnabled = isEnabled
             field.isEditable = isEnabled
             field.setAccessibilityIdentifier(parent.identifier)
             field.setAccessibilityLabel(L10n.format("%@数值", parent.title))
-            field.normalHelp = L10n.format("滚轮：%@；Shift：%@；范围：%@ 至 %@ %@",
+            let metadata = L10n.format("默认值：%@；范围：%@ 至 %@；步进：%@。",
+                parent.precision.text(parent.defaultValue) + parent.unit,
+                parent.precision.text(parent.range.lowerBound) + parent.unit,
+                parent.precision.text(parent.range.upperBound) + parent.unit,
+                parent.precision.fineStepText + parent.unit)
+            field.normalHelp = metadata + " " + L10n.format("滚轮：%@；Shift：%@；范围：%@ 至 %@ %@",
                                            parent.precision.text(parent.precision.normalStep),
-                                           parent.precision.text(parent.precision.fineStep),
+                                           parent.precision.fineStepText,
                                            parent.precision.text(parent.range.lowerBound),
                                            parent.precision.text(parent.range.upperBound), parent.unit)
-            if externalChange || reset || (!editing && !retainedInvalidDraft) {
+            if externalChange || reset || (!editing && !dirty && !retainedInvalidDraft) {
                 write(parent.precision.text(parent.value, signed: parent.signed))
                 dirty = false
                 if externalChange || reset {
                     retainedInvalidDraft = false
                     field.invalid = false
+                    field.validationMessage = nil
+                    reportValidation(nil, deferred: true)
                     // A representable update must not publish SwiftUI state synchronously.
                     setValidity(true, deferred: true)
                 }
             }
             field.needsDisplay = true
+        }
+
+        private func reportValidation(_ message: String?, deferred: Bool = false) {
+            validationRevision += 1
+            guard deferred else { parent.onValidationMessage(message); return }
+            let revision = validationRevision
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.validationRevision == revision else { return }
+                self.parent.onValidationMessage(message)
+            }
         }
 
         private func setValidity(_ valid: Bool, deferred: Bool = false) {
@@ -123,108 +218,169 @@ struct ParameterValueField: NSViewRepresentable {
         }
 
         func controlTextDidBeginEditing(_ notification: Notification) {
+            preserveNextBlur = false
             editing = true
             field?.editing = true
             field?.needsDisplay = true
-            parent.onEditingChanged(true)
+        }
+
+        private func validationMessage(_ text: String) -> String? {
+            if parent.precision.isUnchangedDisplay(text, original: parent.value) { return nil }
+            guard let value = parent.precision.parse(text) else { return L10n.text("请输入有效数字") }
+            guard parent.range.contains(value) else { return L10n.text("请输入范围内的有效数字") }
+            guard parent.precision.accepts(value, original: parent.value, in: parent.range) else {
+                return L10n.format("请使用 %@ 的步进。", parent.precision.fineStepText)
+            }
+            return nil
         }
 
         func controlTextDidChange(_ notification: Notification) {
             dirty = true
-            if parent.invalidInputPolicy == .retain, let field {
-                let valid = parent.precision.parse(field.currentEditor()?.string ?? field.stringValue) != nil
-                retainedInvalidDraft = !valid
-                field.invalid = !valid
-                setValidity(valid)
-            } else {
-                field?.invalid = false
-            }
+            guard let field else { return }
+            let message = validationMessage(field.currentEditor()?.string ?? field.stringValue)
+            retainedInvalidDraft = message != nil
+            field.validationMessage = message
+            field.invalid = message != nil
+            reportValidation(message)
+            if parent.invalidInputPolicy == .retain { setValidity(message == nil) }
+        }
+
+        func cancel(deferred: Bool = false) {
+            preserveNextBlur = false
+            write(parent.precision.text(parent.value, signed: parent.signed))
+            dirty = false
+            retainedInvalidDraft = false
+            field?.invalid = false
+            field?.validationMessage = nil
+            reportValidation(nil, deferred: deferred)
+            setValidity(true, deferred: deferred)
+            wheelState.reset()
+            editing = false
+            field?.editing = false
+            finishWheelInteraction(deferred: deferred)
         }
 
         func controlTextDidEndEditing(_ notification: Notification) {
-            commit()
+            if !preflightPending && !preserveNextBlur { commit() }
+            preserveNextBlur = false
             editing = false
             field?.editing = false
             field?.needsDisplay = true
-            parent.onEditingChanged(false)
+            finishWheelInteraction()
         }
 
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if parent.precision == .cropPercent {
+                if commandSelector == #selector(NSResponder.moveUp(_:)) || commandSelector == #selector(NSResponder.moveDown(_:)) {
+                    _ = step(commandSelector == #selector(NSResponder.moveUp(_:)) ? 1 : -1,
+                             fine: NSApp.currentEvent?.modifierFlags.contains(.shift) == true)
+                    return true
+                }
+            }
             if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-                write(parent.precision.text(parent.value, signed: parent.signed))
-                dirty = false
-                retainedInvalidDraft = false
-                field?.invalid = false
-                setValidity(true)
+                cancel()
                 field?.window?.makeFirstResponder(nil)
                 return true
             }
             if commandSelector == #selector(NSResponder.insertNewline(_:)) {
-                commit()
-                field?.window?.makeFirstResponder(nil)
+                if commit() { field?.window?.makeFirstResponder(nil) }
                 return true
             }
             return false
         }
 
-        private func commit() {
-            guard let field else { return }
-            // Merely focusing an as-shot value must not snap the camera default.
+        @discardableResult func commit() -> Bool {
+            guard let field else { return true }
             if dirty {
-                if let parsed = parent.precision.parse(field.currentEditor()?.string ?? field.stringValue) {
-                    parent.value = parent.precision.snapped(parsed, in: parent.range)
-                    lastValue = parent.value
-                    retainedInvalidDraft = false
-                    field.invalid = false
-                    setValidity(true)
-                } else {
+                let draft = field.currentEditor()?.string ?? field.stringValue
+                if let message = validationMessage(draft) {
+                    retainedInvalidDraft = true
+                    field.validationMessage = message
                     field.invalid = true
-                    if parent.invalidInputPolicy == .retain {
-                        retainedInvalidDraft = true
-                        setValidity(false)
-                    }
+                    reportValidation(message)
+                    if parent.invalidInputPolicy == .retain { setValidity(false) }
+                    write(draft)
                     if let app = NSApp {
-                        NSAccessibility.post(element: app, notification: .announcementRequested, userInfo: [
-                            .announcement: L10n.text("请输入有效数字"),
-                            .priority: NSAccessibilityPriorityLevel.high.rawValue
-                        ])
+                        NSAccessibility.post(element: app, notification: .announcementRequested,
+                            userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue])
                     }
-                    if parent.invalidInputPolicy == .retain {
-                        write(field.currentEditor()?.string ?? field.stringValue)
-                        field.needsDisplay = true
-                        return
-                    }
+                    return false
                 }
+                if !parent.precision.isUnchangedDisplay(draft, original: parent.value),
+                   let parsed = parent.precision.parse(draft), parsed != parent.value {
+                    parent.value = parsed
+                    lastValue = parent.value
+                }
+                retainedInvalidDraft = false
+                field.invalid = false
+                field.validationMessage = nil
+                reportValidation(nil)
+                setValidity(true)
             }
             write(parent.precision.text(parent.value, signed: parent.signed))
             dirty = false
             field.needsDisplay = true
+            return true
+        }
+
+        @discardableResult func step(_ direction: Int, fine: Bool) -> Bool {
+            guard let field, field.isEnabled, field.isEditable, commit() else { return false }
+            let next = parent.precision.stepped(parent.value, direction: direction, fine: fine, in: parent.range)
+            if next != parent.value { parent.value = next }
+            lastValue = parent.value
+            write(parent.precision.text(parent.value, signed: parent.signed))
+            return true
+        }
+
+        private func finishWheelInteraction(deferred: Bool = false) {
+            wheelRevision += 1
+            guard wheelInteracting else { return }
+            wheelInteracting = false
+            if deferred { DispatchQueue.main.async { [parent] in parent.onEditingChanged(false) } }
+            else { parent.onEditingChanged(false) }
+        }
+
+        private func beginWheelInteraction() {
+            if !wheelInteracting { wheelInteracting = true; parent.onEditingChanged(true) }
+            wheelRevision += 1
+            let revision = wheelRevision
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                guard let self, self.wheelRevision == revision else { return }
+                self.finishWheelInteraction()
+            }
         }
 
         func wheel(_ event: NSEvent) -> Bool {
             guard let field else { return false }
             let draft = field.currentEditor()?.string ?? field.stringValue
-            let starting = parent.precision.parse(draft)
+            let starting = parent.precision.isUnchangedDisplay(draft, original: parent.value)
+                ? parent.value : parent.precision.parse(draft)
             let fine = event.modifierFlags.contains(.shift)
             // Shift 滚轮可能由 AppKit 转为横轴；普通横向滚动仍交给父视图。
             let delta = event.scrollingDeltaY != 0 ? event.scrollingDeltaY : (fine ? event.scrollingDeltaX : 0)
             let result = wheelState.handle(verticalPixels: delta,
                                            timestamp: event.timestamp, fine: fine,
                                            editable: field.isEnabled && field.isEditable,
-                                           validValue: parent.value.isFinite && starting != nil,
+                                           validValue: parent.value.isFinite && starting != nil &&
+                                               (parent.precision != .cropPercent || validationMessage(draft) == nil),
                                            momentum: event.momentumPhase != [], discrete: !event.hasPreciseScrollingDeltas)
             switch result {
             case .pass: return false
             case .consume: return true
             case .step(let direction):
                 guard let starting else { return false }
-                parent.value = parent.precision.stepped(starting, direction: direction,
-                                                       fine: fine, in: parent.range)
+                let next = parent.precision.stepped(starting, direction: direction, fine: fine, in: parent.range)
+                if next != parent.value {
+                    beginWheelInteraction()
+                    parent.value = next
+                }
                 lastValue = parent.value
                 write(parent.precision.text(parent.value, signed: parent.signed))
                 dirty = false
                 retainedInvalidDraft = false
                 field.invalid = false
+                field.validationMessage = nil
+                reportValidation(nil)
                 setValidity(true)
                 field.acceptedUntil = event.timestamp + 0.18
                 field.needsDisplay = true
@@ -242,6 +398,7 @@ final class NumericTextField: NSTextField {
     var invalid = false {
         didSet { updateHelp(); needsDisplay = true }
     }
+    var validationMessage: String? { didSet { updateHelp() } }
     var normalHelp = "" {
         didSet { updateHelp() }
     }
@@ -254,7 +411,7 @@ final class NumericTextField: NSTextField {
     override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0) }
 
     private func updateHelp() {
-        let message = invalid ? L10n.text("请输入有效数字") : normalHelp
+        let message = invalid ? (validationMessage ?? L10n.text("请输入有效数字")) : normalHelp
         toolTip = message
         setAccessibilityHelp(message)
     }
@@ -295,6 +452,7 @@ final class NumericTextFieldCell: NSTextFieldCell {
     override func fieldEditor(for controlView: NSView) -> NSTextView? {
         editor.owner = controlView as? NumericTextField
         editor.isFieldEditor = true
+        editor.allowsUndo = true
         editor.isRichText = false
         editor.drawsBackground = false
         editor.insertionPointColor = .systemYellow

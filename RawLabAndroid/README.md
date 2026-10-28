@@ -11,6 +11,11 @@
 
 Native Kotlin / Jetpack Compose RAW editor using the shared C++ pipeline through JNI.
 
+新编辑使用处理身份 `rawlab/2/standard`（C5），旧记录缺少身份时按版本 1 恢复。
+预览、导出、自动曝光和批量快照均携带身份。C5 在 CPU 上分块处理，保留现有预览尺寸策略；
+Auto 可接续 GLES 显示渲染，Force 不支持需要执行 C5 的滤波。亮度、色度、粗色斑强度可调，
+由用户取舍细节和降噪；资源不足时报错，不静默替换算法。构建通过不等于设备内存或 GPU 验证通过。
+
 ## 功能 / Features
 
 - 几何面板支持百分比裁切、90° 旋转、水平/垂直翻转、±100% 水平/垂直透视及 ±45° 拉直；透视和拉直自动保留中心无黑边画面。所有操作在 RAW 方向校正之后、输出缩放之前执行，顺序为旋转/翻转→透视→拉直→裁切，裁切坐标基于变换后的画面。参数接入逐照片记忆与批量快照；旧基础几何记录保留原有设置并将透视设为零，无几何记录保持原图。原图对比使用同一几何，原始 RAW 不写回。当前几何在 CPU 执行，Auto 可回退，Force 不隐藏 CPU 混合处理。
@@ -60,6 +65,28 @@ RAW inputs only, not a JPEG/HEIC editor. Originals are never rewritten; edits pe
 外观导入不执行 Python/OCIO，也不修改源文件；CUBE、RLOOK 和受支持的 DCP 均通过 shared native 校验，DCP 会在 Android 上直接编译成托管 RLOOK。RLOOK 在 Android 使用 CPU，Auto 不会伪装成 GLES 原生 DCP 加速。可导入和可运行不等于已验证原厂或 Adobe 外观忠实度。卸载应用会移除托管外观，保留原始预设备份。
 
 Look import does not execute Python/OCIO or modify the source. CUBE, RLOOK, and supported DCP files pass shared native validation; DCP is compiled to a managed RLOOK on Android. RLOOK uses CPU, not native-DCP GLES acceleration. Runtime support is not manufacturer/Adobe appearance certification. Uninstalling the app removes its managed library.
+
+## 选择性调整与会话历史 / Selective adjustments and session history
+
+编辑页右上角“更多”提供复制调整、粘贴调整、撤销、重做及本次会话历史。复制可选
+全部、仅已修改或自定义范围，HSL 可逐轴、逐色域选择。默认范围不含几何与镜头；
+几何草稿需先应用或放弃。粘贴先冻结来源，再通过系统文件选择器添加目标并逐张预检；
+不兼容目标需明确跳过，保存失败可重试，已成功目标不会再次写入。
+
+The editor's top-right menu provides Copy Adjustments, Paste Adjustments, Undo, Redo and Session
+History. Copy supports All, Modified and explicit field selection, including individual HSL axes
+and channels. The default selection excludes geometry and lens requests. Resolve a geometry
+draft before transferring adjustments, then choose targets with the system document picker and
+review compatibility. Retrying incomplete targets preserves earlier successful saves.
+
+普通编辑与粘贴使用同一套逐照片历史，完成滑尺拖动只记一次，取消恢复起点。历史可按
+单张或整次粘贴撤销/重做，仅保留在当前会话；已保存参数可在重开照片后恢复。遇到外部
+记录变化时先明确确认重新载入，避免覆盖未保存修改。原始照片始终不写回。
+
+Ordinary edits and paste share per-photo history. A completed ruler drag creates one entry;
+cancellation restores its starting value. Undo/redo works per photo or across a paste transaction.
+History lasts for the current session, while saved adjustments survive reopening. External record
+changes require an explicit reload decision. Original photo data is never rewritten.
 
 ## 构建 / Build
 
@@ -183,6 +210,48 @@ bash scripts/check-native.sh
 c++ -std=c++17 -I RawLabAndroid/app/src/main/cpp -I lutools/include \
   RawLabAndroid/tests/request_test.cpp -o /tmp/rawlab-android-request-test
 /tmp/rawlab-android-request-test
+```
+
+独立 GLES LUT 回归直接编译当前源码并在 ARM64 真机运行，不安装 APK。覆盖分块边界、
+6100 万/1 亿像素，以及上传、计算、映射和读回失败后的 Auto 回退、Force 报错与恢复。
+需要 NDK 27.2.12479018；脚本会清理本机及设备上的临时文件。
+
+```bash
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SERIAL=<serial> \
+  bash RawLabAndroid/tests/gles-lut.sh
+```
+
+完整 RAW/显示输入回归使用独立目标 `rawlab_large_image_tests`，与 `rawlab_gpu_tests`
+一样显式构建，并将可执行文件、对应 `libraw.so`、`libc++_shared.so` 和样片/LUT 放进
+设备的专用临时目录。它检查非默认曝光、白平衡、LUT、色调和 HSL，第二块 GPU 失败后的
+完整 CPU 回退，以及同会话恢复；`export` 还逐字节比较成功 GPU JPEG 与已核验 buffer 的
+独立编码结果，以及回退 JPEG 与 CPU 导出文件。
+这两组真机测试不会由普通 APK 构建自动运行。
+
+```bash
+cmake --build <android-native-build> --target rawlab_large_image_tests
+# 在设备专用临时目录内执行；结束后删除该目录。
+LD_LIBRARY_PATH=. ./rawlab_large_image_tests display samalive.cube 6000x4000 export
+LD_LIBRARY_PATH=. ./rawlab_large_image_tests display samalive.cube 2560x3840 export
+LD_LIBRARY_PATH=. ./rawlab_large_image_tests scene velvia.cube 10000x10000 export
+LD_LIBRARY_PATH=. ./rawlab_large_image_tests photo.RAF velvia.cube 100000000 export
+```
+
+真实 RAW 的末个数字是要求的最小输出像素数，需按相机的有效裁切尺寸填写；合成输入使用
+明确宽高。JPEG/PNG 文件导入上限为 1.28 亿像素，覆盖富士/哈苏一亿像素机型的实际尺寸。
+默认保留 HSL 和 2 色阶的编码前 CPU/GPU 门禁；`RAWLAB_TEST_NO_HSL=1` 仅用于定位数值差异，
+其结果不能替代默认配置的验收。
+
+`LargeRasterInstrumentedTest` 另测真实 Bitmap 解码与像素读取，默认跳过，避免普通设备测试
+无条件分配一亿像素缓冲区。显式运行时，它验证 `11656×8742` JPEG 与 `11808×8754` PNG
+没有被拒绝或缩小，并检查大图 EXIF 旋转和资源释放。`RasterNativeInstrumentedTest` 的
+大图用例还使用外部一亿像素 JPEG，检查 Samalive 预览和全尺寸 PNG 导出的 CPU/Auto 一致性：
+
+```bash
+./gradlew :app:connectedDebugAndroidTest \
+  -PrawlabTestRaster=/path/to/100mp.jpg \
+  '-Pandroid.testInstrumentationRunnerArguments.class=com.rawlab.android.raster.LargeRasterInstrumentedTest,com.rawlab.android.raster.RasterNativeInstrumentedTest#mediumFormatImportPreviewAndExportPreserveAdjustments' \
+  -Pandroid.testInstrumentationRunnerArguments.largeRasterImport=true
 ```
 
 设备测试通过 `RAWLAB_TEST_RAW` 或 `-PrawlabTestRaw=/path/to/photo.ARW` 使用外部样片，只将其放入测试 APK，不放入正式应用 APK。v0.2 使用 Sony 样片验证了 7008x4672 原尺寸 JPEG / 16-bit PNG 和 EXIF，并在正式签名 APK 上通过了 10 项模拟器测试。

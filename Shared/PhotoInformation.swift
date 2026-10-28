@@ -46,6 +46,10 @@ struct PhotoInformation {
             guard let value = value as? NSNumber, value.doubleValue.isFinite, value.doubleValue > 0 else { return nil }
             return value.doubleValue
         }
+        func displayNumber(_ value: Double) -> String {
+            String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), value)
+                .replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
+        }
         let isRaw = UTType(filenameExtension: (fileName as NSString).pathExtension)?.conforms(to: .rawImage) == true
         let dng = properties[kCGImagePropertyDNGDictionary] as? [CFString: Any] ?? [:]
         let crop = dng[kCGImagePropertyDNGDefaultCropSize] as? [NSNumber] ?? []
@@ -79,12 +83,12 @@ struct PhotoInformation {
         if let lens = text(exif[kCGImagePropertyExifLensModel] ?? auxiliary[kCGImagePropertyExifAuxLensModel]) { capture.append(lens) }
         var exposure: [String] = []
         if let seconds = number(exif[kCGImagePropertyExifExposureTime]) {
-            exposure.append(seconds <= 0.5 ? String(format: "1/%.0f s", 1 / seconds) : String(format: "%g s", seconds))
+            exposure.append(seconds <= 0.5 ? String(format: "1/%.0f s", 1 / seconds) : displayNumber(seconds) + " s")
         }
-        if let aperture = number(exif[kCGImagePropertyExifFNumber]) { exposure.append(String(format: "f/%g", aperture)) }
+        if let aperture = number(exif[kCGImagePropertyExifFNumber]) { exposure.append("f/" + displayNumber(aperture)) }
         let ratings = exif[kCGImagePropertyExifISOSpeedRatings] as? [NSNumber]
-        if let iso = number(ratings?.first ?? exif[kCGImagePropertyExifISOSpeedRatings]) { exposure.append(String(format: "ISO %g", iso)) }
-        if let focalLength = number(exif[kCGImagePropertyExifFocalLength]) { exposure.append(String(format: "%g mm", focalLength)) }
+        if let iso = number(ratings?.first ?? exif[kCGImagePropertyExifISOSpeedRatings]) { exposure.append("ISO " + displayNumber(iso)) }
+        if let focalLength = number(exif[kCGImagePropertyExifFocalLength]) { exposure.append(displayNumber(focalLength) + " mm") }
         if !exposure.isEmpty { capture.append(exposure.joined(separator: " · ")) }
         captureDetails = capture.isEmpty ? ["未读取到拍摄参数"] : capture
     }

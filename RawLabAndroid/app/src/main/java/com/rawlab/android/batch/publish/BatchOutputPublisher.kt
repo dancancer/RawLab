@@ -30,10 +30,11 @@ internal class BatchOutputPublisher(
     private val resolver = context.contentResolver
 
     fun render(target: BatchTarget, settings: EditSettings): File {
-        val temporary = File.createTempFile("render-", job.outputFormat.suffix, context.filesDir)
+        val format = job.formatFor(target)
+        val temporary = File.createTempFile("render-", format.suffix, context.filesDir)
         try {
-            val backend = processor.export(target.sourceFile, job.source.lookFile, settings,
-                temporary, job.outputFormat, job.outputLongEdge, target.inputKind)
+            val backend = processor.export(target.sourceFile, job.lookFor(target), settings,
+                temporary, format, job.longEdgeFor(target), target.inputKind)
             android.util.Log.i("RawLabBatch", "job=${job.id} exportBackend=$backend")
             return temporary
         } catch (error: Throwable) {

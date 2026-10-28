@@ -1,0 +1,344 @@
+{
+  "fixture_id": "rawlab-atmosphere-v1-real-quality",
+  "version": 1,
+  "assets_root": "main workspace .cache/shared",
+  "notes": "External sources are not bundled. Regions fixed before inspecting atmosphere outputs. Full-source FINAL and matched-size overviews plus 100% crops are inspected. Source licenses and attribution apply to derived comparisons, which are explicitly marked as processing tests. Unpaired real-image measurements are descriptive, not recovered-detail ground truth.",
+  "processing": {
+    "family": "rawlab",
+    "version": 2,
+    "quality": "standard"
+  },
+  "variants": [
+    {
+      "id": "identity",
+      "clarity": 0,
+      "dehaze": 0
+    },
+    {
+      "id": "clarity-positive",
+      "clarity": 1,
+      "dehaze": 0
+    },
+    {
+      "id": "clarity-negative",
+      "clarity": -1,
+      "dehaze": 0
+    },
+    {
+      "id": "dehaze-positive",
+      "clarity": 0,
+      "dehaze": 1
+    },
+    {
+      "id": "dehaze-negative",
+      "clarity": 0,
+      "dehaze": -1
+    },
+    {
+      "id": "combined-half",
+      "clarity": 0.5,
+      "dehaze": 0.5
+    }
+  ],
+  "cases": [
+    {
+      "id": "holdout-canon-r50v-bench",
+      "input": {
+        "kind": "raw",
+        "path": "raw-reference/raw-pixls-20261019/955ff98710505498ce7f98cbcc5875793ef2d6941b3b5692ed3baf2817ee7c9f.CR3",
+        "sha256": "955ff98710505498ce7f98cbcc5875793ef2d6941b3b5692ed3baf2817ee7c9f"
+      },
+      "source_url": "https://raw.pixls.us/getfile.php/8403/nice/Canon%20-%20EOS%20R50%20V%20-%20RAW%20(3:2).CR3",
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "scene": "Outdoor bench, grass, book text and defocused playground; ISO 100",
+      "regions": [
+        {
+          "id": "sky",
+          "rect": [
+            0.63,
+            0.07,
+            0.13,
+            0.1
+          ]
+        },
+        {
+          "id": "saturated-playground",
+          "rect": [
+            0,
+            0.18,
+            0.2,
+            0.3
+          ]
+        },
+        {
+          "id": "grass",
+          "rect": [
+            0.15,
+            0.78,
+            0.18,
+            0.15
+          ]
+        }
+      ]
+    },
+    {
+      "id": "holdout-fuji-xt10-glass",
+      "input": {
+        "kind": "raw",
+        "path": "raw-reference/raw-pixls-denoise-20261020/4c09401975cc6f95b1284693aac39fef85498f70b55e35bf458a133c6e61885d.RAF",
+        "sha256": "4c09401975cc6f95b1284693aac39fef85498f70b55e35bf458a133c6e61885d"
+      },
+      "source_url": "https://raw.pixls.us/getfile.php/1192/nice/Fujifilm%20-%20X-T10%20-%2014bit%2014bit%20uncompressed%20%283:2%29.RAF",
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "scene": "Stained glass and dim wall in Cork; X-Trans, ISO 4000",
+      "regions": [
+        {
+          "id": "wall",
+          "kind": "low_contrast_surface",
+          "rect": [
+            0.02,
+            0.25,
+            0.11,
+            0.19
+          ]
+        },
+        {
+          "id": "upper-wall",
+          "kind": "low_contrast_surface",
+          "rect": [
+            0.56,
+            0.02,
+            0.28,
+            0.09
+          ]
+        },
+        {
+          "id": "red-glass",
+          "kind": "colored_structure",
+          "rect": [
+            0.42,
+            0.57,
+            0.14,
+            0.13
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nikon-d5600-night-street",
+      "input": {
+        "kind": "raw",
+        "path": "raw-reference/raw-pixls-denoise-20261021/4d9b49e6eb8a9e055b10be67f580a9c42538132e3a6e808d2fd08826c644827e.NEF",
+        "sha256": "4d9b49e6eb8a9e055b10be67f580a9c42538132e3a6e808d2fd08826c644827e"
+      },
+      "source_url": "https://raw.pixls.us/getfile.php/2260/nice/Nikon%20-%20D5600%20-%2014bit%2014bit%20compressed%20%28Lossy%20%28type%202%29%29%20%283:2%29.NEF",
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "scene": "Night street through dark foliage, buses and illuminated shop fronts",
+      "regions": [
+        {
+          "id": "foliage",
+          "kind": "dark_texture",
+          "rect": [
+            0.55,
+            0.4,
+            0.06,
+            0.08
+          ]
+        },
+        {
+          "id": "pole-edge",
+          "kind": "strong_edge",
+          "rect": [
+            0.8,
+            0.45,
+            0.06,
+            0.08
+          ]
+        },
+        {
+          "id": "wall",
+          "kind": "low_structure_candidate",
+          "rect": [
+            0.88,
+            0.12,
+            0.05,
+            0.07
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nasa-jemison",
+      "input": {
+        "kind": "raster",
+        "path": "raster-reference/tone-v1/b7e3c0d436dbdfbd7210ab737cb30b90212ec416e7174a9b2cf90002b4dd3e71.jpg",
+        "sha256": "b7e3c0d436dbdfbd7210ab737cb30b90212ec416e7174a9b2cf90002b4dd3e71"
+      },
+      "source_url": "https://www.nasa.gov/image-article/mae-jemison-first-african-american-woman-space/",
+      "download_url": "https://www.nasa.gov/wp-content/uploads/2023/03/mae_jemison_29487037511.jpg",
+      "license": "NASA media usage guidelines; factual internal evaluation",
+      "license_url": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "credit": "NASA",
+      "scene": "Photographic human faces with clothing, neutral panels and highlights",
+      "regions": [
+        {
+          "id": "face",
+          "rect": [
+            0.43,
+            0.29,
+            0.24,
+            0.37
+          ]
+        },
+        {
+          "id": "clothing",
+          "rect": [
+            0.65,
+            0.72,
+            0.25,
+            0.18
+          ]
+        },
+        {
+          "id": "neutral-panel",
+          "rect": [
+            0.82,
+            0.1,
+            0.14,
+            0.28
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nasa-collins",
+      "input": {
+        "kind": "raster",
+        "path": "raster-reference/tone-v1/294434d55c19f00bfe4c078da58a93c908bc3df20e6925daff7c71830986e667.jpg",
+        "sha256": "294434d55c19f00bfe4c078da58a93c908bc3df20e6925daff7c71830986e667"
+      },
+      "source_url": "https://www.nasa.gov/image-article/astronaut-eileen-collins-nasas-first-female-shuttle-commander/",
+      "download_url": "https://www.nasa.gov/wp-content/uploads/2024/07/sts093-309-027orig.jpg",
+      "license": "NASA media usage guidelines; factual internal evaluation",
+      "license_url": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "credit": "NASA",
+      "scene": "Photographic human faces with clothing, neutral panels and highlights",
+      "regions": [
+        {
+          "id": "face",
+          "rect": [
+            0.66,
+            0.2,
+            0.13,
+            0.22
+          ]
+        },
+        {
+          "id": "clothing",
+          "rect": [
+            0.6,
+            0.46,
+            0.17,
+            0.22
+          ]
+        },
+        {
+          "id": "neutral-panel",
+          "rect": [
+            0.86,
+            0.11,
+            0.1,
+            0.22
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fog-countryside",
+      "input": {
+        "kind": "raster",
+        "path": "raster-reference/atmosphere-v1/beff8392034a0d8c378c4cc3021127c2fcada046678559584f84a759e7681f37.jpg",
+        "sha256": "beff8392034a0d8c378c4cc3021127c2fcada046678559584f84a759e7681f37"
+      },
+      "source_url": "https://commons.wikimedia.org/wiki/File:Fog_over_the_countryside_(Unsplash).jpg",
+      "credit": "Ricardo Gomez Angel",
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "scene": "fog-countryside",
+      "regions": [
+        {
+          "id": "fog-trees",
+          "rect": [
+            0.35,
+            0.32,
+            0.3,
+            0.22
+          ]
+        },
+        {
+          "id": "tree-edges",
+          "rect": [
+            0.48,
+            0.5,
+            0.2,
+            0.25
+          ]
+        },
+        {
+          "id": "bright-fog",
+          "rect": [
+            0.1,
+            0.65,
+            0.22,
+            0.2
+          ]
+        }
+      ]
+    },
+    {
+      "id": "backlit-poppy",
+      "input": {
+        "kind": "raster",
+        "path": "raster-reference/atmosphere-v1/6ad214ff741dd95f5fbfd628090c219b33b35001831e64264ff564291435d6ba.jpg",
+        "sha256": "6ad214ff741dd95f5fbfd628090c219b33b35001831e64264ff564291435d6ba"
+      },
+      "source_url": "https://commons.wikimedia.org/wiki/File:Backlit_poppy_-_Acton_Arboretum.jpg",
+      "credit": "liz west",
+      "license": "CC-BY-2.0",
+      "license_url": "https://creativecommons.org/licenses/by/2.0/",
+      "scene": "backlit-poppy",
+      "regions": [
+        {
+          "id": "backlit-petals",
+          "rect": [
+            0.27,
+            0.15,
+            0.25,
+            0.22
+          ]
+        },
+        {
+          "id": "saturated-petals",
+          "rect": [
+            0.3,
+            0.45,
+            0.22,
+            0.25
+          ]
+        },
+        {
+          "id": "dark-background",
+          "rect": [
+            0.72,
+            0.65,
+            0.18,
+            0.2
+          ]
+        }
+      ]
+    }
+  ]
+}

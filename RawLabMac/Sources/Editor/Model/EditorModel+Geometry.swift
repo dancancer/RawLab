@@ -43,7 +43,8 @@ extension EditorModel {
         geometryDraftEpoch = UUID(); editRevision = UUID()
         geometryDraft = MacGeometryDraft(geometry: settings.geometrySettings, lens: settings.lensSettings)
         geometryDraftTab = tab; geometryDraftPreviewReady = false
-        cropAspectPreset = .free; cropAspectSwapped = false
+        adjustmentNavigation.selectTool(tab == .lens ? .lens : .geometry)
+        cropAspectPreset = .free; cropAspectSwapped = false; cropLockedRatio = nil
         invalidGeometryDraftInputs.removeAll()
         batch?.sourceEditingGeometry = true
         scheduler.setInteracting(false)
@@ -53,6 +54,7 @@ extension EditorModel {
 
     @discardableResult func selectGeometryDraftTab(_ tab: MacGeometryTab) -> Bool {
         if tab == .lens && RenderEngine.isRasterInput(file) { return false }
+        ParameterValueField.cancelPendingInputs()
         guard geometryDraft != nil, invalidGeometryDraftInputs.isEmpty else { return false }
         geometryDraftTab = tab
         return true
@@ -86,19 +88,32 @@ extension EditorModel {
         schedule()
     }
 
+    func geometryDraftParameterRange(_ parameter: GeometryParameter) -> ClosedRange<Double> {
+        let geometry = geometryDraftSettings
+        let base = parameter.range(for: geometry)
+        guard parameter == .cropWidth || parameter == .cropHeight,
+              let ratio = cropAspectRatio, geometryCanvasSize.width > 0, geometryCanvasSize.height > 0 else { return base }
+        let normalized = ratio * Double(geometryCanvasSize.height / geometryCanvasSize.width)
+        if parameter == .cropWidth {
+            let upper = min(base.upperBound, (1 - geometry.cropY) * normalized)
+            let lower = max(base.lowerBound, GeometryParameter.cropHeight.range(for: geometry).lowerBound * normalized)
+            return min(lower, upper)...upper
+        }
+        let upper = min(base.upperBound, (1 - geometry.cropX) / normalized)
+        let lower = max(base.lowerBound, GeometryParameter.cropWidth.range(for: geometry).lowerBound / normalized)
+        return min(lower, upper)...upper
+    }
+
     func setGeometryDraftParameter(_ parameter: GeometryParameter, to value: Double) {
         guard value.isFinite else { return }
+        let range = geometryDraftParameterRange(parameter)
+        guard range.contains(value) else { return }
         updateGeometryDraft { geometry in
-            let range = parameter.range(for: geometry)
-            geometry[keyPath: parameter.keyPath] = min(range.upperBound, max(range.lowerBound, value))
-            if (parameter == .cropWidth || parameter == .cropHeight), let ratio = cropAspectRatio {
-                if parameter == .cropHeight {
-                    geometry.cropWidth = min(1 - geometry.cropX,
-                        geometry.cropHeight * ratio * Double(geometryCanvasSize.height / geometryCanvasSize.width))
-                }
-                let rect = CropInteraction.dragging(CropInteraction.rect(from: geometry), handle: .bottomRight,
-                    translation: .zero, canvasSize: geometryCanvasSize, ratio: ratio)
-                geometry = CropInteraction.applying(rect: rect, to: geometry)
+            geometry[keyPath: parameter.keyPath] = value
+            if let ratio = cropAspectRatio, geometryCanvasSize.width > 0 {
+                let normalized = ratio * Double(geometryCanvasSize.height / geometryCanvasSize.width)
+                if parameter == .cropWidth { geometry.cropHeight = value / normalized }
+                if parameter == .cropHeight { geometry.cropWidth = value * normalized }
             }
         }
     }
@@ -118,8 +133,21 @@ extension EditorModel {
 
     func selectCropAspect(_ preset: CropAspectPreset) {
         guard geometryDraftPreviewReady else { return }
+        cropLockedRatio = nil
         cropAspectPreset = preset
         fitDraftCropAspect()
+    }
+
+    func toggleCropAspectLock() {
+        guard geometryDraftPreviewReady else { return }
+        if cropAspectRatio != nil {
+            cropAspectPreset = .free; cropAspectSwapped = false; cropLockedRatio = nil
+        } else {
+            let crop = geometryDraftSettings
+            cropAspectSwapped = false
+            cropLockedRatio = crop.cropWidth * Double(geometryCanvasSize.width) /
+                (crop.cropHeight * Double(geometryCanvasSize.height))
+        }
     }
 
     func swapCropAspect() {
@@ -134,7 +162,7 @@ extension EditorModel {
     }
 
     func resetGeometryDraft() {
-        cropAspectPreset = .free; cropAspectSwapped = false
+        cropAspectPreset = .free; cropAspectSwapped = false; cropLockedRatio = nil
         geometryDraftRevision &+= 1
         invalidGeometryDraftInputs.removeAll()
         updateGeometryDraft { $0 = GeometrySettings() }
@@ -146,16 +174,12 @@ extension EditorModel {
     }
 
     @discardableResult func applyGeometryDraft() -> Bool {
-        guard geometryDraftCanApply, let draft = geometryDraft, let file else { return false }
+        guard geometryDraftCanApply, let draft = geometryDraft, file != nil else { return false }
         var committed = settings
         committed.geometry = draft.geometry.isIdentity ? nil : draft.geometry
         committed.lensCorrection = draft.lens == LensCorrectionSettings() ? nil : draft.lens
-        do {
-            if editStore == nil { editStore = try EditPersistence(directory: editDirectory) }
-            try editStore!.save(file, state: editState(settings: committed))
-        } catch {
+        guard commitAdjustment(editState(settings: committed)) else {
             geometryDraftSaveFailed = true
-            saveError = L10n.format("调整未保存：%@", error.localizedDescription)
             return false
         }
         saveWork?.cancel()
@@ -163,7 +187,7 @@ extension EditorModel {
         dirty = false; saveError = nil; saveStatusKey = "调整已保存"
         // 精确渲染完成前沿用同一底图的已裁切显示，避免闪回未旋转画面。
         pendingGeometryPresentation = draft.geometry
-        clearSaveStatusLater(); endGeometryDraft(); schedule(forceExact: true)
+        clearSaveStatusLater(); endGeometryDraft(); synchronizeAI(); schedule(forceExact: true)
         return true
     }
 
@@ -177,6 +201,7 @@ extension EditorModel {
     }
 
     private func endGeometryDraft() {
+        if resetReturnTool == nil && !geometryDraftDeparturePending { adjustmentNavigation.selectTool(.exposure) }
         geometryDraft = nil; geometryDraftPreviewReady = false
         geometryCropInteracting = false; invalidGeometryDraftInputs.removeAll()
         geometryDraftEntrySaveError = nil; geometryDraftSaveFailed = false
@@ -188,9 +213,8 @@ extension EditorModel {
 
     func requestLeavingGeometryDraft(_ action: @escaping () -> Void, onStay: @escaping () -> Void = {}) {
         guard !geometryDraftDeparturePending else { return }
-        // A valid text draft can still be uncommitted when a file is dropped.
-        // Resolve the native field before deciding whether the task has changes.
-        NSApp?.keyWindow?.makeFirstResponder(nil)
+        // Navigation discards only uncommitted field text before inspecting the geometry transaction.
+        ParameterValueField.cancelPendingInputs()
         if geometryDraftHasChanges {
             geometryDepartureAction = action; geometryDepartureStay = onStay
             geometryDraftDeparturePending = true

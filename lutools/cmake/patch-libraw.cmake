@@ -23,6 +23,7 @@ endfunction()
 
 include("${CMAKE_CURRENT_LIST_DIR}/libraw-sony-arw6.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/libraw-cameras.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/libraw-vng.cmake")
 
 # 只替换 Nikon HE 像素解码，保留 LibRaw 的元数据、白平衡与显影流程。
 set(nikon_he_source "${CMAKE_CURRENT_LIST_DIR}/../third_party/nikon_he")

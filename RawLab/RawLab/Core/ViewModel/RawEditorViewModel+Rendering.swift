@@ -45,14 +45,18 @@ extension RawEditorViewModel {
             previewLongEdge = requestedPreviewLongEdge
         }
         let maxDimension = previewLongEdge
+        let referenceSettings = committedPreviewSettings ?? settings
+        let referenceKey = comparisonKey(settings: referenceSettings, longEdge: maxDimension)
+        let comparisonChanged = comparisonReferenceKey != referenceKey
         let request = PreviewRequest(settings: settings, quality: quality,
                                      includeHistogram: includeHistogram, longEdge: maxDimension)
-        if request == lastPreviewRequest, !previewRendering { return }
+        if request == lastPreviewRequest, !previewRendering, !previewFailed, !comparisonChanged { return }
         previewWorkItem?.cancel()
         previewWorkItem = nil
         guard isLookAvailable(for: settings) else {
             setLatestRenderID(UUID())
             previewRendering = false
+            previewFailed = true
             isBusy = false
             statusMessage = L10n.text("所选外观不可用，请重新选择外观。")
             return
@@ -60,6 +64,7 @@ extension RawEditorViewModel {
 
         lastPreviewRequest = request
         previewRendering = true
+        previewFailed = false
 
         let renderID = UUID()
         let sourceRevision = self.sourceRevision
@@ -73,7 +78,6 @@ extension RawEditorViewModel {
         let existingOrientation = sourceOrientation
         let usesRaw = sourceKind == .raw
         let sourceFile = self.sourceFile
-        let comparisonChanged = basePreviewGeometry != settings.geometry
 
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
@@ -90,13 +94,18 @@ extension RawEditorViewModel {
 
             if usesRaw {
                 guard let sourceFile else {
+                    self.resultDelivery {
+                        guard self.sourceRevision == sourceRevision, self.isLatestRenderID(renderID) else { return }
+                        self.previewFailed = true
+                    }
                     return
                 }
 
                 sourceFile.withReadAccess { sourceURL in
                     do {
                         let comparison = comparisonChanged ? try self.renderComparison(
-                            url: sourceURL, buffer: nil, geometry: settings.geometry) : nil
+                            url: sourceURL, buffer: nil, geometry: referenceSettings.geometry, processing: referenceSettings.processing,
+                            lens: referenceSettings.lensSettings, longEdge: maxDimension) : nil
                         let result = try self.processor.processRaw(
                             url: sourceURL,
                             settings: settings,
@@ -115,8 +124,14 @@ extension RawEditorViewModel {
                                 return
                             }
                             self.previewImage = previewImage
+                            self.acceptedPreviewFrameID = renderID
+                            self.acceptedPreviewRequest = request
+                            self.histogram = nil
                             self.nativeImageSize = result.buffer.nativeSize
-                            if let comparison { self.applyComparison(comparison, geometry: settings.geometry) }
+                            if let comparison {
+                                self.applyComparison(comparison, geometry: referenceSettings.geometry, processing: referenceSettings.processing,
+                                                     lens: referenceSettings.lensSettings, key: referenceKey)
+                            }
                             self.lensInfo = result.lensInfo
                             if self.sourceOrientation == nil {
                                 self.sourceOrientation = result.orientation
@@ -136,6 +151,7 @@ extension RawEditorViewModel {
                             guard self.sourceRevision == sourceRevision, self.isLatestRenderID(renderID) else {
                                 return
                             }
+                            self.previewFailed = true
                             self.statusMessage = error.localizedDescription
                         }
                     }
@@ -145,14 +161,19 @@ extension RawEditorViewModel {
 
             let inputBuffer = existingDraftBuffer ?? existingDraftPreview
             guard let inputBuffer else {
+                self.resultDelivery {
+                    guard self.sourceRevision == sourceRevision, self.isLatestRenderID(renderID) else { return }
+                    self.previewFailed = true
+                }
                 return
             }
 
             let outputBuffer: Sony2FujiProcessor.Buffer
-            let comparison: (UIImage?, [CGFloat])?
+            let comparison: (UIImage?, Sony2FujiProcessor.RGBHistogram?)?
             do {
                 comparison = comparisonChanged ? try self.renderComparison(
-                    url: nil, buffer: inputBuffer, geometry: settings.geometry) : nil
+                    url: nil, buffer: inputBuffer, geometry: referenceSettings.geometry, processing: referenceSettings.processing,
+                            lens: referenceSettings.lensSettings, longEdge: maxDimension) : nil
                 outputBuffer = try self.processor.processBuffer(
                     buffer: inputBuffer,
                     settings: settings,
@@ -166,6 +187,7 @@ extension RawEditorViewModel {
                     guard self.sourceRevision == sourceRevision, self.isLatestRenderID(renderID) else {
                         return
                     }
+                    self.previewFailed = true
                     self.statusMessage = error.localizedDescription
                 }
                 return
@@ -178,8 +200,14 @@ extension RawEditorViewModel {
                     return
                 }
                 self.previewImage = previewImage
+                self.acceptedPreviewFrameID = renderID
+                self.acceptedPreviewRequest = request
+                self.histogram = nil
                 self.nativeImageSize = outputBuffer.nativeSize
-                if let comparison { self.applyComparison(comparison, geometry: settings.geometry) }
+                if let comparison {
+                    self.applyComparison(comparison, geometry: referenceSettings.geometry, processing: referenceSettings.processing,
+                                         lens: referenceSettings.lensSettings, key: referenceKey)
+                }
                 self.lensInfo = nil
             }
 
@@ -197,25 +225,53 @@ extension RawEditorViewModel {
     }
 
     func renderComparison(url: URL?, buffer: Sony2FujiProcessor.Buffer?,
-                          geometry: GeometrySettings) throws -> (UIImage?, [CGFloat]) {
+                          geometry: GeometrySettings, processing: ProcessingIdentity,
+                          lens: LensCorrectionSettings = LensCorrectionSettings(), longEdge: Int? = nil) throws -> (UIImage?, Sony2FujiProcessor.RGBHistogram?) {
         var neutral = RawSettings.default
         neutral.geometry = geometry
+        neutral.processing = processing
+        neutral.lensCorrection = lens
         let output: Sony2FujiProcessor.Buffer
         if let url {
             output = try processor.processRaw(url: url, settings: neutral,
-                previewLongEdge: previewMaxDimension, lutURL: nil).buffer
+                previewLongEdge: CGFloat(longEdge ?? Int(previewMaxDimension)), lutURL: nil, viewportPreview: true).buffer
         } else if let buffer {
             output = try processor.processBuffer(buffer: buffer, settings: neutral,
-                previewLongEdge: previewMaxDimension, lutURL: nil)
+                previewLongEdge: CGFloat(longEdge ?? Int(previewMaxDimension)), lutURL: nil, viewportPreview: true)
         } else { throw EditorError.noImageLoaded }
         return (processor.makeUIImage(from: output, orientation: .up),
-                processor.computeHistogram(from: output, bins: histogramBins))
+                processor.computeRGBHistogram(from: output))
     }
 
-    func applyComparison(_ comparison: (UIImage?, [CGFloat]), geometry: GeometrySettings) {
+    func applyComparison(_ comparison: (UIImage?, Sony2FujiProcessor.RGBHistogram?), geometry: GeometrySettings, processing: ProcessingIdentity,
+                         lens: LensCorrectionSettings = LensCorrectionSettings(), key: ComparisonReferenceKey? = nil) {
         basePreviewImage = comparison.0
         baseHistogram = comparison.1
         basePreviewGeometry = geometry
+        basePreviewProcessing = processing
+        basePreviewLens = lens
+        comparisonReferenceKey = key
+    }
+
+    func comparisonKey(settings: RawSettings, longEdge: Int) -> ComparisonReferenceKey {
+        ComparisonReferenceKey(sourceRevision: sourceRevision, file: sourceFile, identity: sourceIdentity,
+                               kind: sourceKind, processing: settings.processing, geometry: settings.geometry,
+                               lens: settings.lensSettings, longEdge: longEdge)
+    }
+
+    func retryPreview(settings: RawSettings) {
+        guard !isBusy, !previewRendering, !previewResizePending else { return }
+        lastPreviewRequest = nil
+        updatePreview(settings: settings)
+    }
+
+    func recordImportedComparison(settings: RawSettings) {
+        committedPreviewSettings = settings
+        basePreviewLens = settings.lensSettings
+        comparisonReferenceKey = comparisonKey(settings: settings, longEdge: Int(previewMaxDimension))
+        acceptedPreviewFrameID = UUID()
+        acceptedPreviewRequest = PreviewRequest(settings: settings, quality: .final, includeHistogram: true, longEdge: Int(previewMaxDimension))
+        previewFailed = false
     }
 
     func schedulePreviewUpdate(
@@ -261,6 +317,10 @@ extension RawEditorViewModel {
         setLatestRenderID(UUID())
         lastPreviewRequest = nil
         previewRendering = false
+        previewFailed = false
+        comparisonReferenceKey = nil
+        acceptedPreviewFrameID = nil
+        acceptedPreviewRequest = nil
     }
 
     func setLatestRenderID(_ renderID: UUID) {
@@ -302,9 +362,10 @@ extension RawEditorViewModel {
                 return
             }
 
-            let histogram = self.computeHistogram(from: buffer, bins: self.histogramBins)
+            let histogram = self.processor.computeRGBHistogram(from: buffer)
             self.resultDelivery {
-                guard self.sourceRevision == sourceRevision, self.isLatestRenderID(renderID) else {
+                guard self.sourceRevision == sourceRevision, self.isLatestRenderID(renderID),
+                      self.acceptedPreviewFrameID == renderID else {
                     return
                 }
                 self.histogram = histogram
@@ -318,9 +379,5 @@ extension RawEditorViewModel {
         } else {
             renderQueue.async(execute: workItem)
         }
-    }
-
-    func computeHistogram(from buffer: Sony2FujiProcessor.Buffer, bins: Int) -> [CGFloat] {
-        processor.computeHistogram(from: buffer, bins: bins)
     }
 }

@@ -12,6 +12,10 @@
 
 namespace {
 
+constexpr size_t kTileBytes = 16 * 1024 * 1024;
+constexpr GLuint kWorkgroup = 256;
+static_assert(sizeof(sony2fuji::RGB) == 3 * sizeof(float));
+
 struct GlesContext {
     EGLDisplay display = EGL_NO_DISPLAY;
     EGLContext context = EGL_NO_CONTEXT;
@@ -20,6 +24,8 @@ struct GlesContext {
     GLint pixel_count_loc = -1;
     GLint lut_size_loc = -1;
     GLint lut_loc = -1;
+    size_t tile_pixels = 0;
+    GLint texture_limit = 0;
     bool ready = false;
 };
 
@@ -155,6 +161,21 @@ bool initContext(GlesContext& context) {
     if (major < 3 || (major == 3 && minor < 1)) {
         return false;
     }
+    GLint invocations = 0, group_size = 0, groups = 0;
+    GLint64 block_size = 0;
+    glGetIntegerv(GL_MAX_COMPUTE_WORK_GROUP_INVOCATIONS, &invocations);
+    glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 0, &group_size);
+    glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0, &groups);
+    glGetInteger64v(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, &block_size);
+    glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, &context.texture_limit);
+    if (glGetError() != GL_NO_ERROR || invocations < GLint(kWorkgroup) ||
+        group_size < GLint(kWorkgroup) || groups <= 0 || block_size < GLint64(sizeof(sony2fuji::RGB))) {
+        return false;
+    }
+    // 先限制字节数，避免整张大图超过 SSBO 上限，也避免窄平台上的乘法溢出。
+    const size_t tile_bytes = static_cast<size_t>(std::min<GLint64>(block_size, kTileBytes));
+    context.tile_pixels = static_cast<size_t>(std::min<uint64_t>(
+        tile_bytes / sizeof(sony2fuji::RGB), uint64_t(groups) * kWorkgroup));
     context.program = createProgram();
     if (context.program == 0) {
         return false;
@@ -162,7 +183,8 @@ bool initContext(GlesContext& context) {
     context.pixel_count_loc = glGetUniformLocation(context.program, "pixel_count");
     context.lut_size_loc = glGetUniformLocation(context.program, "lut_size");
     context.lut_loc = glGetUniformLocation(context.program, "lut");
-    context.ready = context.pixel_count_loc >= 0 && context.lut_size_loc >= 0 && context.lut_loc >= 0;
+    context.ready = context.pixel_count_loc >= 0 && context.lut_size_loc >= 0 && context.lut_loc >= 0 &&
+        glGetError() == GL_NO_ERROR;
     return context.ready;
 }
 
@@ -212,7 +234,7 @@ bool dispatchCompute(
     GLuint lut_texture,
     uint32_t pixel_count,
     int lut_size,
-    sony2fuji::ImageData& image
+    sony2fuji::RGB* pixels
 ) {
     glUseProgram(context.program);
     glUniform1i(context.pixel_count_loc, static_cast<GLint>(pixel_count));
@@ -222,23 +244,30 @@ bool dispatchCompute(
     glUniform1i(context.lut_loc, 0);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo);
 
-    const GLuint group_size = 256;
-    GLuint group_count = (pixel_count + group_size - 1u) / group_size;
-    glDispatchCompute(group_count, 1, 1);
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    glFinish();
-
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
-    void* mapped = glMapBufferRange(GL_SHADER_STORAGE_BUFFER,
-                                    0,
-                                    static_cast<GLsizeiptr>(pixel_count * sizeof(sony2fuji::RGB)),
-                                    GL_MAP_READ_BIT);
-    if (!mapped) {
+    if (glGetError() != GL_NO_ERROR) {
         return false;
     }
-    std::memcpy(image.pixels.data(), mapped, pixel_count * sizeof(sony2fuji::RGB));
-    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-    return true;
+    const GLuint group_count = (pixel_count + kWorkgroup - 1u) / kWorkgroup;
+    glDispatchCompute(group_count, 1, 1);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
+    if (glGetError() != GL_NO_ERROR) {
+        return false;
+    }
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+    const auto bytes = static_cast<GLsizeiptr>(pixel_count * sizeof(sony2fuji::RGB));
+    void* mapped = glMapBufferRange(GL_SHADER_STORAGE_BUFFER,
+                                    0,
+                                    bytes,
+                                    GL_MAP_READ_BIT);
+    const auto map_error = glGetError();
+    if (!mapped || map_error != GL_NO_ERROR) {
+        if (mapped) glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+        return false;
+    }
+    std::memcpy(pixels, mapped, static_cast<size_t>(bytes));
+    const auto unmapped = glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    return glGetError() == GL_NO_ERROR && unmapped == GL_TRUE;
 }
 
 } 
@@ -254,26 +283,34 @@ bool applyLutGles(const LUT3D& lut, ImageData& image) {
     if (!ensureContextCurrent(*context)) {
         return false;
     }
-    const uint32_t pixel_count = static_cast<uint32_t>(image.pixels.size());
-    if (pixel_count == 0) {
+    const size_t pixel_count = image.pixels.size();
+    if (pixel_count == 0 || lut.getSize() > context->texture_limit || glGetError() != GL_NO_ERROR) {
         return false;
     }
-
-    GLuint ssbo = 0;
-    glGenBuffers(1, &ssbo);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
-    glBufferData(GL_SHADER_STORAGE_BUFFER,
-                 static_cast<GLsizeiptr>(pixel_count * sizeof(sony2fuji::RGB)),
-                 image.pixels.data(),
-                 GL_DYNAMIC_DRAW);
 
     GLuint lut_texture = createLutTexture(lut);
     if (!lut_texture) {
-        glDeleteBuffers(1, &ssbo);
         return false;
     }
+    GLuint ssbo = 0;
+    const size_t tile_pixels = std::min(pixel_count, context->tile_pixels);
+    glGenBuffers(1, &ssbo);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+    glBufferData(GL_SHADER_STORAGE_BUFFER,
+                 static_cast<GLsizeiptr>(tile_pixels * sizeof(sony2fuji::RGB)),
+                 nullptr,
+                 GL_DYNAMIC_DRAW);
 
-    bool ok = dispatchCompute(*context, ssbo, lut_texture, pixel_count, lut.getSize(), image);
+    bool ok = glGetError() == GL_NO_ERROR && ssbo != 0;
+    for (size_t offset = 0; ok && offset < pixel_count; offset += tile_pixels) {
+        const auto count = static_cast<uint32_t>(std::min(tile_pixels, pixel_count - offset));
+        auto* pixels = image.pixels.data() + offset;
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0,
+            static_cast<GLsizeiptr>(count * sizeof(sony2fuji::RGB)), pixels);
+        ok = glGetError() == GL_NO_ERROR &&
+            dispatchCompute(*context, ssbo, lut_texture, count, lut.getSize(), pixels);
+    }
 
     glDeleteTextures(1, &lut_texture);
     glDeleteBuffers(1, &ssbo);

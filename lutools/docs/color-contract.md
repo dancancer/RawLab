@@ -7,9 +7,31 @@ photo settings in all four native clients instead select `preview` (embedded
 preview matching); a full/input-group reset also selects `preview`. Restoring a
 saved exposure mode never replaces it with the new default. Older saved records
 without an exposure-mode field retain `scene`, preserving their previous pixels.
+Previously unedited photos open with neutral adjustments and no film or master
+recipe selected in all four clients. Reopening an edited photo restores its saved
+adjustments and look.
 The scene-mode 0 EV baseline described below applies when that mode is selected.
 
 LibRaw performs black subtraction, active-area crop, white balance, demosaic and highlight blending in camera channels. WB must precede demosaic: the earlier no-auto-scale path produced a measurable difference from LibRaw's normal WB-before-demosaic processing. Histogram auto-bright, content-dependent maximum adjustment and integer output-color conversion remain disabled. `highlight=2` retains maximum-normalized WB before 16-bit demosaic and blends clipped highlight chroma after demosaic, before our camera matrix and LUT. The former `highlight=1` unclip mode preserved false magenta in saturated DSC06251 car-body highlights. Blending is not darktable's opposed-chroma reconstruction and cannot recover lost sensor detail; bright colors can become less saturated. We recover green-normalized camera RGB as `image16 / (65535 * post_scale_pre_mul[1])`, then apply the camera-to-sRGB matrix in float. Matrix negatives and values above 1 survive; we do not globally clamp scene RGB to 1. This is not an all-float demosaic: quantization and LibRaw's treatment of sensor-overrange values remain. The raw source is never written.
+
+Processing version 1 preserves LibRaw's released default interpolation choice
+(AHD for ordinary three-color Bayer); version 2 selects VNG. New C sessions and
+public `RAWProcessOptions` retain version-1 behavior. Mac, Windows, iOS and Android new edits
+explicitly select version 2, while records missing processing identity select
+version 1. The additive `sony2fuji_session_set_processing_version` selects the
+whole RAW/denoise profile without changing request v2. C++ callers may also select
+`RAWProcessOptions::bayerDemosaic = BayerDemosaicMethod::DHT` as an explicit
+alternative; this is not an automatic fallback or an extra denoise stage.
+Desktop clients expose a processing-version choice, not a separate demosaic selector.
+Non-Bayer inputs, including X-Trans and LinearRaw, retain LibRaw's original
+path; the quality parameter is reset on every process call, including decoder
+reuse and white-balance reload. With FBDD off, interactive half-size processing
+still bypasses full demosaic; enabling FBDD still forces full-size processing.
+VNG reduces directional color structure in the evaluated high-ISO Bayer scene but
+can increase false color on fine patterns; it is not a universal quality claim.
+Ordinary edits and resets do not upgrade old records. The
+[processing-version compatibility contract](processing-version.md) defines the
+released baseline, strict rejection and explicit conversion semantics.
 
 Default 0 EV is a declared scene-development baseline: **+0.7 EV plus valid DNG BaselineExposure**. The +0.7 is a workflow starting point, inspired by darktable's scene defaults, NOT sensor calibration or a claim that every camera needs this exact offset. DNG metadata is applied once (DJI fixture: +0.35, total +1.05 EV; Sony without that tag: +0.7 EV). Missing/sentinel/non-finite/out-of-range metadata falls back to zero metadata offset. User +1 EV still doubles the linear input. The default never decodes or meters the embedded JPEG. We deliberately do not undo a photographer's EXIF ExposureBiasValue, and do not invent undocumented camera-specific dynamic-range compensation.
 
@@ -68,6 +90,14 @@ floating-point/HDR, multi-frame/page and CMYK inputs are rejected, not flattened
 or silently quantized. Untagged grayscale/indexed images are not inferred to use
 a particular gray transfer function and are rejected.
 
+Raster import adapters accept up to 128,000,000 source pixels, including the
+roughly 102–105 MP dimensions of 100 MP medium-format cameras. Apple, Windows
+and Android use the same budget; the CLI advertises it in `raster_input`.
+Overflow checks and format/depth validation still run before allocation. This
+is a decode budget, not a promise that every device has enough free memory.
+The separate embedded-preview exposure-reference budget does not limit RAW
+main-image decoding.
+
 Display input is inverse-sRGB-decoded once, uses the existing linear exposure,
 wavelet, look, tone/HSL, chroma/detail/effects and geometry stages, and re-encodes
 sRGB instead of adding the RAW scene sigmoid. With defaults its RGB8 pixels
@@ -84,7 +114,14 @@ shaders have a matching display-input mode. Rendered DNG output preserves the
 result as output-referred float RGB; it does not turn an 8-bit source into RAW/HDR.
 The Apple adapter uses ImageIO. Windows has a separate WIC adapter for JPEG/PNG
 and classic single-page RGB8 TIFF, verified on Windows rather than inferred from
-Mac results; HEIF and BigTIFF are not enabled. Unknown non-sRGB PNG color metadata
+Mac results; HEIF and BigTIFF are not enabled.
+Windows chooses JPEG/PNG/TIFF validation from the file signature, so a misleading
+supported extension does not select the wrong metadata parser. Windows and
+Android accept a validated MPF baseline primary image with only VGA/Full HD large
+thumbnails, decoding the primary image at full resolution. Both continue to reject
+MPF gain maps, stereo/multi-angle images, unknown auxiliary types and invalid
+image ranges; this does not enable general multi-frame input.
+Unknown non-sRGB PNG color metadata
 without a supported ICC profile is rejected instead of guessed. Android uses a
 separate API-26-compatible platform decoder for validated JPEG/PNG files and
 passes their oriented opaque display-sRGB pixels through the same explicit
@@ -103,11 +140,23 @@ the [PR #62 delivery record](https://github.com/dancancer/RawLab/pull/62).
 
 ## Rendering Order
 
+The optional desktop DualDn experiment replaces the normalized Bayer input before
+native demosaic and supplies an exposure-independent camera-space RGB correction.
+It retains the current processing version's demosaic, native color conversion,
+highlight handling and exposure anchoring. The correction is derived from the
+difference between inverse-Rec.709 model output and its official ISP skip image;
+it is zero in protected highlight regions and is applied only once, before the
+existing lens/orientation/display path. Negative and super-white linear values
+remain representable. AI bypasses FBDD, wavelet and display-chroma denoising;
+sharpening and later edits keep their existing order. Full protocol and cache
+identity rules are in [the DualDn contract](../../docs/architecture/dualdn-inline-denoise.md).
+
+
 1. Decode RAW to linear RGB with the selected exposure baseline, or inverse-sRGB-decode an explicitly tagged raster buffer. Buffer inputs receive neither RAW metadata nor the +0.7 baseline.
 2. Run optional linear-sRGB wavelet denoising, then apply relative white balance and `2^exposure_ev * brightness` in linear sRGB. Custom RAW WB multipliers are applied once, during decode.
 3. Generate the neutral reference with a fixed log-logistic display curve, then sRGB encode. For positive x the linear display value is `1 / (1 + ((1-g)/g) * (g/x)^1.5)`, with `g=0.1845`; black is 0 and highlights approach 1 smoothly. This independently implemented mathematical subset follows the same curve family as darktable sigmoid, but does not reproduce its primaries adjustment, hue-preservation or full default pipeline.
 4. For a film CUBE: start from the un-tonemapped linear input, transform to its declared F-Gamut or F-Gamut C and encode F-Log, F-Log2 or F-Log2C, then interpolate the CUBE. Named display outputs bypass the neutral curve. Explicit Log outputs are decoded back to linear BT.709/sRGB, then rendered with the neutral display curve. A compiled DCP `.rlook` instead evaluates its preserved matrix/HSV/tone stages directly from common linear sRGB, without F-Log2, an RGB CUBE or an extra neutral curve. Log encoding itself never normalizes exposure, and there is no linear clamp at 1 before it.
-5. Blend neutral and film outputs in the same display-encoded RGB convention. Strength 0 is continuous with the no-LUT rendering. Contrast, saturation and curves follow, then HSL, optional display-chroma denoising, detail adjustments, vignette and grain, optional geometry, and final resizing.
+5. Blend neutral and film outputs in the same display-encoded RGB convention. Strength 0 is continuous with the no-LUT rendering. Optional Dehaze precedes black/white endpoint controls and the tone/curve/contrast/saturation sequence. The curve slot selects either the unchanged legacy S scalar or the [custom PCHIP curve](tone-curve-v1.md), with custom identity bypassing all arithmetic; optional vibrance follows it, then HSL, color grading, optional display-chroma and legacy detail denoising, Clarity, sharpening, vignette and grain, optional geometry, and final resizing. Each new zero control bypasses arithmetic and clamping exactly. Versioned formulas and quality admission are in [tone controls v1](tone-controls-v1.md) and [atmosphere v1](atmosphere-v1.md). Active Clarity/Dehaze uses CPU; FINAL/export and previews without viewport reduction use the complete source. Viewport PREVIEW+BUFFER may compute on a reduced source with the full-source analysis scale, as described below. GPU Auto falls back for the whole path and Force returns unsupported. CPU parallel execution preserves output bytes for the same input and preview policy at any thread count.
 
 Geometry uses the oriented, lens-processed source: clockwise quarter turns,
 flips in that canvas, centered horizontal/vertical perspective, centered inscribed
@@ -174,6 +223,11 @@ ill-conditioned near gray; applying a full lightness offset there amplified
 CPU/GPU floating-point differences into visible brightness speckles. This fade
 is shared by CPU and all three GPU backends, leaves hue/saturation controls
 unchanged and becomes exactly one at or above `1/255`.
+Tone and contrast may leave finite working RGB outside [0,1]. For those pixels,
+HSL applies only the change from its clamped neutral reconstruction and adds
+that change to the original RGB. Thus an arbitrarily small interpolated control
+does not suddenly clamp an otherwise untouched hue. CPU and all GPU backends
+preserve this out-of-range residual; SDR clipping still happens at output.
 RGB/HSL conversion follows the standard definition in
 [CSS Color](https://www.w3.org/TR/css-color-4/#hsl-to-rgb).
 
@@ -243,23 +297,52 @@ implementations is copied or embedded.
 
 ### GPU Denoising
 
-The existing denoise controls and saved parameters are unchanged. Optional
-`SONY2FUJI_ENABLE_WAVELET_DENOISE` and `SONY2FUJI_ENABLE_CHROMA_DENOISE` builds remain
-independent. Mac/iOS use Metal, Android uses GLES 3.1 compute, and Windows uses
-hardware D3D11 compute for heavy filtering; GPU failures in Auto fall back to CPU.
-Force requires successful platform filters and photo rendering, never a
-silent CPU replacement. A reliable-noise estimate is still required; off/zero
-strength and insufficient-evidence cases remain no-ops.
+The existing luma, chroma and coarse strengths remain independently adjustable from
+0 to 100. Presets are starting points: stronger noise removal can suppress weak
+texture, and lower strengths retain more detail. Turning denoising off or setting
+both luma and chroma to zero preserves the input exactly. Insufficient calibration
+evidence also leaves the input unchanged.
 
-Wavelet denoising stays in linear sRGB before user exposure and LUT evaluation.
-CPU retains flat-sample selection, noise-model fitting, normalization, opponent
-conversion, band calibration and variance-aware restoration. The GPU executes db2
-SWT analysis, box-energy thresholds and the transpose inverse per tile/channel.
-The original 4/6 levels, periodic SWT indices, REFLECT_101 energy boundaries and
-512/1024 tile centers with 96/256 halos are preserved. Bounded GPU tile jobs are
-serialized to avoid allocating full-image wavelet coefficients. Float GPU results
-are tested against the existing double wavelib implementation, not substituted
-with a different denoising algorithm.
+Denoising runs in linear sRGB before user exposure and LUT evaluation. Version 1
+preserves the released SWT sample selection, four-level luma, seven-pixel fine
+energy windows, soft thresholds, inverse formula and chroma-only coarse tiling.
+Its CPU/Metal/GLES/D3D11 paths retain their existing fallback and Force semantics.
+
+Version 2 uses C5, a six-level edge-aware wavelet (EAW) with separable binomial taps
+`[1,4,6,4,1]` applied as a joint 5x5 neighborhood at dilations 1/2/4/8/16/32.
+Weights use the normalized opponent-channel distance and
+`exp2(-max(0, 0.02 * distance - 9))`. Guide MAD is measured on up to 24 selected
+64x64 flat samples. Band MAD and mean squared coefficient energy are global,
+independent of tile boundaries. Every band uses soft thresholding. Luma relative
+strengths are 1/1/2/2/1/1 with gain 3.5928893089294434; chroma gains are
+3.5928893089294434/1/1/1/3.5928893089294434/3.5928893089294434. The coarse control
+scales chroma levels 4–6 and does not alter luma.
+
+C5 first collects global statistics, then filters serial 512-pixel tile centers.
+Its scratch coefficients are bounded by a tile and sample patches; a complete
+output is retained until filtering finishes so failures cannot partially overwrite
+the input. The six-level source support is 126 pixels. Variance-aware restoration
+adds 12 pixels (the pinned OpenCV float Gaussian at sigma 3), giving a 138-pixel
+combined halo. Neighborhoods are clipped only at true image edges; intermediate
+levels clamp there rather than at tile seams. Different tile partitions agree
+with the independent full-frame C5 reference within floating-point tolerance.
+
+Restoration averages the piecewise inverse at `n - sqrt(v)` and `n + sqrt(v)`,
+where `n` is the filtered normalized value and `v` is local residual variance.
+This joins the positive and negative branches continuously without clipping
+negative or over-white linear RGB. It is a symmetric two-point approximation,
+not an exact Gaussian unbiased inverse.
+
+A simple low-noise guard uses the maximum fitted RGB standard deviation at linear
+0.18, divided by 0.18. Values at or below 0.02 bypass C5; 0.02–0.04 linearly scale
+all strengths; values at or above 0.04 use the selected strengths unchanged.
+This is an engineering guard, not camera/ISO calibration. Clipping and unreliable
+noise fits can also lead to bypass; it does not establish a universal noise floor.
+
+C5 currently filters on CPU. Auto can retain GPU photo rendering and filtered
+output caching after CPU denoise; Force rejects an active C5 filter request.
+A skipped filter does not claim GPU work. Legacy SWT and display-chroma GPU
+backends remain available; no approximate mobile algorithm shares the C5 identity.
 
 Filtered RAW results use one exact slot and two recent viewport slots, with a
 128 MiB retained preview-image budget. Source keys include file identity, RAW
@@ -269,8 +352,9 @@ anchor across camera-WB/FBDD transitions. Output matching also requires
 the complete denoise options and execution mode. CPU/Auto/Force cannot reuse
 each other's filtered results. The small source-analysis cache retains flat
 samples, the fitted noise model and calibrated bands across strength changes;
-it does not retain full-image coefficients or replace filtering. Coarse-band
-analysis is prepared lazily when needed. Source/quality/size changes invalidate
+it does not retain full-image coefficients or replace filtering. Legacy coarse-band
+analysis remains lazy. C5 caches all six global band statistics together;
+its coarse-analysis reuse diagnostic follows reuse of that complete analysis. Source/quality/size changes invalidate
 that entry's analysis. Interactive wavelet previews may remain approximations;
 final/file requests never reuse viewport results.
 Active chroma or photo effects require the exact source-resolution path unless
@@ -366,6 +450,14 @@ and [stable combined-coordinate API](https://github.com/lensfun/lensfun/blob/v0.
 ## LUT Contracts
 
 The generic CUBE library implements standard R-fast storage, DOMAIN_MIN/MAX, float outputs and trilinear interpolation. It does not clamp table values. CPU and GPU normalize the same input domain.
+
+The standalone Android GLES LUT path streams pixel blocks bounded by 16 MiB,
+the device's shader-storage limit and its compute dispatch limit. Total image
+size does not determine a single GPU dispatch. Upload, dispatch, mapping and
+unmapping must all succeed before the staged image is committed. On failure,
+Auto applies the CPU LUT to the untouched input; Force returns an error. This
+path also serves display-input looks even though the full photo backend remains
+CPU. Its bounds do not change client decoder limits or remove host-memory needs.
 
 The PHOTO API is narrower. Supported files declare comments such as:
 
@@ -492,7 +584,13 @@ No post-demosaic RGB tint approximation replaces camera-space white balance.
 `sony2fuji_session_set_viewport_preview` is a separate, default-off session opt-in
 for PREVIEW+BUFFER only, without changing request v2. It reduces linear input before
 wavelet, tone/LUT, chroma, sharpening and photo effects on CPU/GPU, including active
-geometry. Requested output dimensions are computed from the full-resolution
+geometry and nonzero Clarity/Dehaze. Atmosphere retains exact RAW decode and
+reuses that cache during dragging; it does not combine atmosphere with half-size
+RAW proxies. Its analysis grid and radii derive from the complete source, while
+analysis samples and Clarity's fine-detail guard read the reduced working image.
+The dehaze cache includes grid-content bits, full-source dimensions and working
+dimensions to isolate reduced and complete-source analyses. Requested output
+dimensions are computed from the full-resolution
 geometry canvas; the reduced source is the smallest proportional integer canvas
 whose geometry covers both requested dimensions, capped at the source size.
 Final geometry resizing never enlarges a reduced result. Output dimensions and
@@ -512,8 +610,8 @@ another photo or switching to actual pixels cancels obsolete resize work. Both
 numeric edits and settled fit previews opt in; actual-pixel viewing returns to the exact
 source-resolution path after dragging ends. Original comparison frames remain
 native and immutable. Exports and FINAL requests always ignore the opt-in.
-Pixel-radius denoising/sharpening and grain appearance in the viewport are
-approximations, not export-detail proofs. Inspect them at 100% when settled.
+Pixel-radius denoising/sharpening, Clarity/Dehaze and grain appearance in the
+viewport are approximations, not export-detail proofs. Inspect them at 100% when settled.
 Initial RAW decode, absolute WB reprocessing and legacy FBDD still incur their
 CPU costs; this mode does not perform viewport-region RAW decoding.
 
@@ -565,7 +663,51 @@ and LUT, strength blend, tone/color, detail, final resize. RAW absolute WB and
 highlight reconstruction remain in LibRaw. Auto falls back to the unchanged CPU
 reference if Metal cannot render; Force reports an error. Request v2 layout is
 unchanged. `sony2fuji_session_get_last_backend` diagnoses the pixel pipeline, not
-LibRaw or file encoding. Two processing buffers are reused between GPU kernels.
+LibRaw or file encoding. Processing uses row bands with reusable buffers bounded
+by 16 MiB and the device's maximum buffer length. Bands preserve global resize
+and effect coordinates and include the source rows needed by detail filters and
+bilinear sampling. The destination is published only after every band succeeds;
+an error in a later band cannot expose partial output or modify the RAW source
+used by Auto fallback.
+
+Large-image processing bounds temporary working storage without reducing export
+resolution. CPU look blending uses fixed-size blocks; detail filters retain only
+original neighboring rows. Internal chroma uses bounded bands. On ARM64, reloadable
+Legacy wavelet normalizes in row bands, reconstructs one filter tile at a time from
+immutable RAW pixels, and restores in row bands. It retains two full images (the
+immutable source and work image) plus bounded tile/band scratch. Every opponent
+transform still uses `cv::transform`: the pinned OpenCV 4.12 ARM64 build preserves
+rounding for these opponent/inverse transforms across partitions, checked by
+bitwise regression (compiler auto-vectorization may still occur). x86 and ARM32 retain the full-frame transform,
+filter output and restoration path to preserve the released SIMD/tail rounding;
+Legacy calls without an immutable source also use that path. Global statistics,
+sampling rules and original filter halos are preserved. The private working image
+must be discarded on failure.
+The public chroma entry point retains its atomic input-update behavior.
+
+`wavelet_restore` checks ARM64 tile/band transforms bitwise against the full-frame
+OpenCV transform; `wavelet_denoise` compares the full Legacy result against the
+immutable-source path across tile seams, coarse settings and analysis-cache reuse.
+The ARM64 Unix `wavelet_legacy_memory_tests` target is built and run explicitly
+(it is excluded from ordinary builds/CTest):
+`cmake --build lutools/build-macos --target wavelet_legacy_memory_tests`, then
+`lutools/build-macos/wavelet_legacy_memory_tests 4` (or `1` for one OpenCV thread).
+It runs 62.9 MP CPU Legacy denoising including the immutable source, requires actual
+filtering and an unchanged source, and limits process peak RSS to two RGB float
+images plus 1280 MiB of scratch/runtime allowance (including allocator-retained
+pages). This core memory regression gate does not guarantee that an entire export
+fits every mobile device's memory limit.
+
+Filtered images above the 128 MiB retention budget are not cached. Final/file
+renders release large RAW pixel caches, while previews may retain one RAW source
+for repeated adjustments. Large RAW decoder storage is released after its metadata
+is captured. CPU may take ownership of an evicted RAW image; GPU retains an
+immutable source until successful completion or CPU fallback. Metadata remains
+available after pixel eviction. This bounds duplicate images, but RAW decoding,
+transactional GPU staging and full-resolution output still require host memory.
+The iOS adapter serializes use of its preview/export sessions, releases the preview
+session before final export, and transfers C output ownership into Swift Data
+without a second full-resolution byte copy.
 
 Android uses an OpenGL ES 3.1 compute photo pipeline with the same operation
 order and explicit trilinear LUT interpolation. Pointwise processing and resizing
@@ -602,3 +744,36 @@ Embedded JPEG decoding uses vendored [stb_image v2.30](https://github.com/nothin
 The bundled Sony ILCE-7CM2 sample has a 7008x4672 active inset within its padded RAW storage; the renderer applies LibRaw's inset crop before demosaic. iOS and macOS must not apply the original EXIF rotation a second time.
 
 Actual cross-brand accuracy requires controlled lighting, exposure/gray and color-chart measurements. Current sample smoke checks prove decoding/rendering, not calibrated Fuji JPEG equivalence. iOS/Android binaries must be rebuilt with the updated core; changing Swift source alone does not update an old xcframework.
+
+### HSL Target Sampling
+
+The additive `sony2fuji_session_create_hsl_probe` creates an immutable CPU
+reference snapshot after the complete look, black/white, legacy tone and
+vibrance stages, before HSL, grading, chroma/detail and effects. It applies the
+same geometry and requested resize as photo output; RAW orientation and lens
+processing have already happened and are not applied again by clients. Capture
+accepts buffer requests only and must run on the session's serialized worker.
+It preserves GPU policy, reported render backend/canvas and reusable large RAW
+pixels. The owned snapshot is released with `sony2fuji_hsl_probe_destroy`.
+
+`FINAL` reports `EXACT_CPU`, meaning the CPU reference at the requested output
+size. `PREVIEW` reports `PREVIEW_CPU` and inherits the caller's interactive and
+viewport approximation; it is not a full-resolution or GPU texture readback.
+The RGB values remain display-encoded working sRGB, including finite out-of-range
+residuals. H/S/L are hue degrees in `[0,360)` and saturation/lightness in `[0,1]`.
+The eight weights are the exact existing HSL smoothstep neighbors, summing to 1.
+Spread below `1/255` is too close to gray for selection and produces no weights.
+
+Queries use normalized geometry-result coordinates `[0,1]`, with endpoints at
+first/last pixel centers, and bilinear sample the snapshot before hue analysis.
+Out-of-range or nonfinite coordinates report `OUTSIDE`; nonfinite sampled RGB
+reports `NONFINITE`. Reference panes, wipe-before regions, labels, overlays and
+letterboxing must be rejected in the client canvas before submitting a query.
+
+Source/request revisions are caller-owned immutable labels. The core rejects a
+query whose labels differ from the snapshot; clients must separately compare
+asynchronous results to the current source, accepted frame and editing state.
+An old snapshot is not made current by reusing its labels. A gesture freezes its
+logical before-HSL values, axis and sample weights once, computes all deltas
+from that before-state, and commits once or rolls back without history. Only
+the resulting existing 24 HSL values persist; sampling never adds recipe fields.

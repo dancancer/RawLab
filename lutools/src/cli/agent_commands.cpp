@@ -128,14 +128,23 @@ int runAgentCommands(int argc, char* argv[]) {
             raster = {{"formats", {"jpeg", "png", "tiff", "heif"}}, {"bits_per_component", 8},
 #endif
                 {"alpha", "opaque_only"}, {"dynamic_range", "sdr"}, {"color_space", "srgb"},
-                {"backend", "cpu"}, {"max_pixels", 64000000}};
+                {"backend", "cpu"}, {"max_pixels", 128000000}};
 #endif
-            std::cout << machineJson(envelope(command, {{"recipe_versions", {1, 2, 3, 4}},
+            std::cout << machineJson(envelope(command, {{"recipe_versions", {1, 2, 3, 4, 5}},
                 {"commands", {"capabilities", "validate_recipe", "info", "preview", "export"}}, {"input_types", inputs},
                 {"raster_input", raster},
                 {"output_formats", {"jpeg", "png", "dng"}}, {"exposure_modes", {"scene", "preview", "sensor"}},
                 {"geometry_operations", {"crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten", "perspective"}},
-                {"edit_groups", {"exposure", "white_balance", "look", "geometry", "tone", "detail", "hsl", "effects", "denoise", "lens_correction"}},
+                {"edit_groups", {"exposure", "white_balance", "look", "geometry", "tone", "color", "color_grading", "detail", "hsl", "effects", "denoise", "lens_correction"}},
+                {"tone_controls", {{"version", 1}, {"recipe_min_version", 5}, {"range", {-1,1}},
+                    {"fields", {"tone.black_point","tone.white_point","color.vibrance"}}}},
+                {"color_grading", {{"version",1},{"recipe_min_version",5},{"zones",{"shadows","midtones","highlights"}},
+                    {"hue_degrees",{{"minimum",0},{"exclusive_maximum",360}}},{"saturation_range",{0,100}}}},
+                {"tone_curve", {{"version",1},{"recipe_min_version",5},{"modes",{"legacy","custom"}},
+                    {"max_points",33},{"interpolation","pchip"},{"fixed_endpoints",true},{"monotone",true}}},
+                {"atmosphere", {{"version",1},{"recipe_min_version",5},{"range",{-1,1}},
+                    {"fields",{"effects.clarity","effects.dehaze"}},{"backend","cpu"},
+                    {"gpu_force","unsupported"},{"preview","complete_source"}}},
                 {"optional_features", optionalFeatures()}})) << '\n';
             return 0;
         }
@@ -216,12 +225,22 @@ int runAgentCommands(int argc, char* argv[]) {
             status = sony2fuji_session_create(&pointer);
             auto destroy = [](sony2fuji_session* session) { sony2fuji_session_destroy(session); };
             const std::unique_ptr<sony2fuji_session, decltype(destroy)> session(pointer, destroy);
+            if (status == SONY2FUJI_STATUS_OK)
+                status = sony2fuji_session_set_processing_version(session.get(), recipe.processingVersion);
             if (status == SONY2FUJI_STATUS_OK && !lensDatabase.empty())
                 status = sony2fuji_session_set_lens_database(session.get(), lensDatabase.c_str());
             if (status == SONY2FUJI_STATUS_OK)
                 status = sony2fuji_session_set_raw_exposure_mode(session.get(), recipe.exposureMode);
             if (status == SONY2FUJI_STATUS_OK)
                 status = sony2fuji_session_set_hsl(session.get(), &recipe.hsl);
+            if (status == SONY2FUJI_STATUS_OK)
+                status = sony2fuji_session_set_tone_controls(session.get(), &recipe.toneControls);
+            if (status == SONY2FUJI_STATUS_OK)
+                status = sony2fuji_session_set_atmosphere(session.get(), &recipe.atmosphere);
+            if (status == SONY2FUJI_STATUS_OK)
+                status = sony2fuji_session_set_color_grading(session.get(), &recipe.colorGrading);
+            if (status == SONY2FUJI_STATUS_OK)
+                status = sony2fuji_session_set_tone_curve(session.get(), &recipe.toneCurve);
             if (status == SONY2FUJI_STATUS_OK)
                 status = sony2fuji_session_set_photo_effects(session.get(), &recipe.effects);
             if (status == SONY2FUJI_STATUS_OK)

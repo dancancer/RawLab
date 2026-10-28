@@ -1,6 +1,29 @@
 import SwiftUI
 import UIKit
 
+struct AdjustmentInputContext {
+    var id: AnyHashable = 0
+    var isCurrent: () -> Bool = { true }
+    var canChange: () -> Bool = { true }
+    var onInteractionCancelled: () -> Void = {}
+}
+
+private struct AdjustmentInputContextKey: EnvironmentKey {
+    static let defaultValue = AdjustmentInputContext()
+}
+private struct AdjustmentFineKey: EnvironmentKey { static let defaultValue = false }
+
+extension EnvironmentValues {
+    var adjustmentInputContext: AdjustmentInputContext {
+        get { self[AdjustmentInputContextKey.self] }
+        set { self[AdjustmentInputContextKey.self] = newValue }
+    }
+    var adjustmentFine: Bool {
+        get { self[AdjustmentFineKey.self] }
+        set { self[AdjustmentFineKey.self] = newValue }
+    }
+}
+
 struct AdjustmentControl: View {
     let title: String
     @Binding var value: Double
@@ -10,75 +33,115 @@ struct AdjustmentControl: View {
     let unit: String
     let formatter: (Double) -> String
     let reciprocal: Bool
-    let showsReset: Bool
+    let displayScale: Double
     let identifier: String
+    let directionColors: [Color]
+    let directionHint: String
+    let compactNumber: Bool
+    let compactDecimals: Int?
     let onEditingChanged: (Bool) -> Void
-    @State private var fine = false
     @State private var showingWheel = false
     @State private var wheelOriginal = 0.0
+    @State private var wheelID: UUID?
     @AccessibilityFocusState private var valueFocused: Bool
+    @ScaledMetric(relativeTo: .caption) private var unitWidth = 24
     @AppStorage("rawlab.adjustmentHaptics.enabled") private var haptics = true
-    @ScaledMetric(relativeTo: .caption2) private var rulerLabelHeight = 16
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @Environment(\.adjustmentFine) private var fine
+    @Environment(\.adjustmentInputContext) private var inputContext
 
     init(title: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double = 1,
          defaultValue: Double, unit: String = "", formatter: @escaping (Double) -> String,
-         reciprocal: Bool = false, showsReset: Bool = true, identifier: String,
+         reciprocal: Bool = false, displayScale: Double = 1, identifier: String,
+         directionColors: [Color] = [], directionHint: String = "",
+         compactNumber: Bool = false, compactDecimals: Int? = 2,
          onEditingChanged: @escaping (Bool) -> Void = { _ in }) {
-        self.title = title
-        _value = value
-        self.range = range
-        self.step = step
-        self.defaultValue = defaultValue
-        self.unit = unit
-        self.formatter = formatter
-        self.reciprocal = reciprocal
-        self.showsReset = showsReset
-        self.identifier = identifier
+        self.title = title; _value = value; self.range = range; self.step = step
+        self.defaultValue = defaultValue; self.unit = unit; self.formatter = formatter
+        self.reciprocal = reciprocal; self.displayScale = displayScale; self.identifier = identifier
+        self.directionColors = directionColors; self.directionHint = directionHint
+        self.compactNumber = compactNumber; self.compactDecimals = compactDecimals
         self.onEditingChanged = onEditingChanged
     }
 
-    private var scale: AdjustmentScale { AdjustmentScale(range: range, step: step, reciprocal: reciprocal) }
+    private var scale: AdjustmentScale { AdjustmentScale(range: range, step: step, reciprocal: reciprocal, compactDecimals: compactNumber ? compactDecimals : nil) }
     private var validDefault: Double? { scale.contains(defaultValue) ? defaultValue : nil }
-    private var completeValue: String { "\(formatter(value)) \(unit)".trimmingCharacters(in: .whitespaces) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) { titleLabel; Spacer(minLength: 0); valueButton; if showsReset { resetButton } }
-                VStack(alignment: .leading, spacing: 4) {
-                    titleLabel
-                    HStack(spacing: 12) { valueButton; Spacer(minLength: 0); if showsReset { resetButton } }
-                }
-            }
-            AdjustmentRuler(value: $value, scale: scale, defaultValue: validDefault,
-                            title: title, formatter: { "\(formatter($0)) \(unit)".trimmingCharacters(in: .whitespaces) },
-                            identifier: "\(identifier).ruler", fine: fine, haptics: haptics,
-                            reduceMotion: reduceMotion, onEditingChanged: onEditingChanged)
-                .frame(height: 60 + rulerLabelHeight)
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) { fineButton; Spacer(minLength: 0); referenceLabel }
-                VStack(alignment: .leading, spacing: 2) { fineButton; referenceLabel }
-            }
-        }
-        .onChange(of: showingWheel) { _, presented in
-            if !presented { valueFocused = true }
-        }
+    private var modified: Bool { validDefault.map { value != $0 } ?? false }
+    private func number(_ value: Double) -> String {
+        scale.completeText(value, displayScale: displayScale, locale: L10n.locale, formatter: formatter)
+    }
+    private func complete(_ value: Double) -> String { "\(number(value)) \(unit)".trimmingCharacters(in: .whitespaces) }
+    private var help: String {
+        L10n.format("默认值：%@；范围：%@ 至 %@；步进：%@。", validDefault.map(complete) ?? "—",
+                    complete(range.lowerBound), complete(range.upperBound), step * displayScale == 0.001 ? "1/1000 " + unit : complete(step))
     }
 
-    private var titleLabel: some View { Text(title).font(.subheadline).fixedSize(horizontal: false, vertical: true) }
+    var body: some View {
+        Group {
+            if compactNumber {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 4) { titleLabel; Spacer(minLength: 0); valueAndUnit }
+                    VStack(alignment: .leading, spacing: 0) { titleLabel; valueAndUnit.frame(maxWidth: .infinity, alignment: .trailing) }
+                }
+                .padding(.horizontal, 8)
+                .background(Color(.tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 6))
+            } else if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 4) {
+                    HStack(spacing: 8) { titleLabel; Spacer(minLength: 8); valueAndUnit }
+                    ruler.frame(height: 76)
+                }
+            } else {
+                HStack(spacing: 8) { titleLabel; ruler.frame(minWidth: 56, maxWidth: .infinity).frame(height: 44); valueAndUnit }
+            }
+        }
+        .onChange(of: inputContext.id) { _, _ in cancelInput() }
+        .onChange(of: value) { _, next in if showingWheel && next != wheelOriginal { cancelInput() } }
+        .onDisappear { cancelInput() }
+        .onChange(of: showingWheel) { _, presented in if !presented { valueFocused = true } }
+    }
+
+    private var titleLabel: some View {
+        Text(title).font(.subheadline).fixedSize(horizontal: false, vertical: true)
+            .frame(minHeight: 44)
+            .modifier(AdjustmentResetGesture(enabled: !voiceOver, action: reset))
+            .accessibilityAction(named: L10n.text("恢复默认"), reset)
+            .accessibilityHint(voiceOver ? help : help + " " + L10n.text("双击名称或轨道恢复默认值。"))
+            .accessibilityIdentifier("\(identifier).title")
+    }
+
+    private var ruler: some View {
+        AdjustmentRuler(value: Binding(get: { value }, set: { if inputContext.isCurrent() && inputContext.canChange() { value = $0 } }), scale: scale, defaultValue: validDefault, title: title,
+                        formatter: complete, identifier: "\(identifier).ruler", fine: fine,
+                        haptics: haptics, reduceMotion: reduceMotion, interactionID: inputContext.id, directionColors: directionColors,
+                        directionHint: directionHint,
+                        onEditingCancelled: inputContext.onInteractionCancelled,
+                        onEditingChanged: { editing in if inputContext.isCurrent() { onEditingChanged(editing) } })
+            .modifier(AdjustmentResetGesture(enabled: !voiceOver, action: reset))
+    }
+
+    private var valueAndUnit: some View {
+        HStack(spacing: 4) {
+            valueButton
+            Text(unit.isEmpty ? " " : unit).font(.caption).foregroundStyle(.secondary)
+                .fixedSize().frame(width: unitWidth, alignment: .leading).accessibilityHidden(true).accessibilityIdentifier("\(identifier).unit")
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
 
     private var valueButton: some View {
         Button {
-            valueFocused = false
-            wheelOriginal = value
-            showingWheel = true
+            valueFocused = false; wheelOriginal = value; wheelID = UUID(); showingWheel = true
         } label: {
-            Text(completeValue).font(.body.weight(.semibold)).monospacedDigit()
+            Text(number(value)).font(.body.weight(.semibold)).monospacedDigit()
                 .fixedSize(horizontal: true, vertical: false).frame(minWidth: 44, minHeight: 44)
+                .foregroundStyle(modified ? Color.yellow : Color.primary)
+                .overlay(alignment: .bottom) { if modified { Circle().fill(.yellow).frame(width: 4, height: 4) } }
         }
         .accessibilityLabel(L10n.format("%@数值", title))
-        .accessibilityValue(completeValue)
+        .accessibilityValue(complete(value))
+        .accessibilityHint(L10n.text(modified ? "已调整" : "未调整") + " " + help + " " + directionHint)
         .accessibilityIdentifier("\(identifier).value")
         .accessibilityFocused($valueFocused)
         .accessibilityAdjustableAction { direction in
@@ -88,75 +151,47 @@ struct AdjustmentControl: View {
             @unknown default: break
             }
         }
+        .accessibilityAction(named: L10n.text("恢复默认"), reset)
         .sheet(isPresented: wheelSheetPresented) { wheelEditor }
         .popover(isPresented: wheelPopoverPresented) { wheelEditor }
     }
 
     private var wheelSheetPresented: Binding<Bool> {
-        Binding(get: { showingWheel && UIDevice.current.userInterfaceIdiom != .pad },
-                set: { showingWheel = $0 })
+        Binding(get: { showingWheel && UIDevice.current.userInterfaceIdiom != .pad }, set: { showingWheel = $0 })
     }
-
     private var wheelPopoverPresented: Binding<Bool> {
-        Binding(get: { showingWheel && UIDevice.current.userInterfaceIdiom == .pad },
-                set: { showingWheel = $0 })
+        Binding(get: { showingWheel && UIDevice.current.userInterfaceIdiom == .pad }, set: { showingWheel = $0 })
     }
-
     private var wheelEditor: some View {
-        NativeValueWheel(title: title, original: wheelOriginal, scale: scale,
-                         defaultValue: validDefault, unit: unit, formatter: formatter,
-                         onCancel: { showingWheel = false }, onApply: { draft in
+        let session = wheelID
+        let context = inputContext
+        return NativeValueWheel(title: title, original: wheelOriginal, scale: scale,
+                                defaultValue: validDefault, unit: unit, formatter: number,
+                                help: help, onCancel: cancelInput, onApply: { draft in
+            guard showingWheel, session == wheelID, context.isCurrent(), context.id == inputContext.id else { cancelInput(); return }
             if draft != wheelOriginal { commit(draft) }
-            showingWheel = false
+            cancelInput()
         })
     }
-
-    private var resetButton: some View {
-        Button {
-            guard let validDefault, value != validDefault else { return }
-            AdjustmentFeedback.reset(enabled: haptics)
-            commit(validDefault)
-        } label: {
-            Image(systemName: "arrow.counterclockwise").frame(minWidth: 44, minHeight: 44)
-        }
-        .disabled(validDefault == nil || value == validDefault)
-        .accessibilityLabel(L10n.format("重置%@", title))
-        .accessibilityIdentifier("\(identifier).reset")
+    private func cancelInput() { showingWheel = false; wheelID = nil }
+    private func reset() {
+        guard let validDefault, value != validDefault else { return }
+        AdjustmentFeedback.reset(enabled: haptics); commit(validDefault)
     }
-
-    private var fineButton: some View {
-        Button { fine.toggle() } label: {
-            Label(L10n.text("精细"), systemImage: "scope")
-                .font(.subheadline).frame(minWidth: 44, minHeight: 44)
-        }
-        .buttonStyle(.bordered)
-        .tint(fine ? .yellow : .secondary)
-        .accessibilityValue(fine ? L10n.text("四分之一灵敏度") : L10n.text("标准灵敏度"))
-        .accessibilityAddTraits(fine ? .isSelected : [])
-        .accessibilityIdentifier("\(identifier).fine")
-    }
-
-    private var referenceLabel: some View {
-        VStack(alignment: .trailing, spacing: 2) {
-            if let validDefault { Text("\(L10n.text("默认")) \(formatter(validDefault)) \(unit)") }
-            Text("\(L10n.text("范围")) \(formatter(range.lowerBound)) – \(formatter(range.upperBound)) \(unit)")
-            if let limitNote { Text(limitNote) }
-        }
-        .font(.caption).foregroundStyle(.secondary).monospacedDigit()
-        .fixedSize(horizontal: false, vertical: true)
-        .accessibilityIdentifier("\(identifier).reference")
-    }
-
-    // 到达范围一端时的提示；范围只有一个值时（如未裁切时的裁切偏移）两端都不提
-    private var limitNote: String? {
-        guard range.lowerBound < range.upperBound else { return nil }
-        if value == range.lowerBound { return L10n.text("已到下限") }
-        return value == range.upperBound ? L10n.text("已到上限") : nil
-    }
-
     private func commit(_ newValue: Double) {
-        guard scale.contains(newValue), newValue != value else { return }
-        value = newValue
+        guard inputContext.isCurrent(), scale.contains(newValue), newValue != value else { return }
+        onEditingChanged(true)
+        if inputContext.canChange() { value = newValue }
+        onEditingChanged(false)
+    }
+}
+
+private struct AdjustmentResetGesture: ViewModifier {
+    let enabled: Bool
+    let action: () -> Void
+    @ViewBuilder func body(content: Content) -> some View {
+        if enabled { content.onTapGesture(count: 2, perform: action) }
+        else { content }
     }
 }
 

@@ -43,10 +43,10 @@ enum ExportFormat: String, CaseIterable, Codable, Identifiable {
 struct RenderedImage {
     let image: CGImage
     let isFullResolution: Bool
-    let clipping: CGImage
+    let clipping: CGImage?
     let histogram: [[Double]]
-    let shadows: Double
-    let highlights: Double
+    let shadows: Double?
+    let highlights: Double?
     let baselineEV: Double
     let metadataEV: Double
     let asShotWhiteBalance: WhiteBalance?
@@ -54,6 +54,34 @@ struct RenderedImage {
     var lensInfo: LensInfo? = nil
     var nativeWidth: Int? = nil
     var nativeHeight: Int? = nil
+}
+
+struct PreviewStatistics {
+    let histogram: [[Double]]
+    let clipping: CGImage
+    let shadows: Double
+    let highlights: Double
+
+    static func analyze(_ buffer: inout sony2fuji_buffer) -> PreviewStatistics? {
+        var bins = [UInt32](repeating: 0, count: 768)
+        var black: UInt32 = 0, white: UInt32 = 0
+        var mask = sony2fuji_buffer()
+        defer { sony2fuji_release_buffer(&mask) }
+        // 显示像素已在 CPU；统计失败不改变照片渲染的 GPU 模式或丢弃照片。
+        guard sony2fuji_analyze_image(&buffer, SONY2FUJI_GPU_OFF, &bins, &black, &white, &mask) == SONY2FUJI_STATUS_OK,
+              let pixels = mask.data else { return nil }
+        let width = Int(buffer.width), height = Int(buffer.height), count = Double(width * height)
+        let histogram = (0..<3).map { channel in (0..<256).map { Double(bins[channel * 256 + $0]) } }
+        guard count > 0, histogram.allSatisfy({ $0.reduce(0, +) == count }) else { return nil }
+        let data = Data(bytes: pixels, count: mask.size_bytes)
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB), let provider = CGDataProvider(data: data as CFData),
+              let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                bytesPerRow: Int(mask.stride_bytes), space: space,
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue), provider: provider,
+                decode: nil, shouldInterpolate: false, intent: .defaultIntent) else { return nil }
+        return PreviewStatistics(histogram: histogram, clipping: image,
+            shadows: Double(black) / count, highlights: Double(white) / count)
+    }
 }
 
 struct RawWhiteBalanceCacheKey: Equatable {
@@ -68,6 +96,20 @@ struct RawWhiteBalanceCacheKey: Equatable {
         modified = attributes[.modificationDate] as? Date
         size = (attributes[.size] as? NSNumber)?.uint64Value
         fileNumber = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
+    }
+}
+
+final class AIPreparation {
+    private let lock = NSLock()
+    private var cancelled = false
+    let progress: (Int, UInt64, UInt64) -> Void
+    init(progress: @escaping (Int, UInt64, UInt64) -> Void) { self.progress = progress }
+    func cancel() { lock.lock(); cancelled = true; lock.unlock() }
+    var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+    func report(phase: Int, completed: UInt64, total: UInt64) -> Int32 {
+        guard !isCancelled else { return 0 }
+        progress(phase, completed, total)
+        return isCancelled ? 0 : 1
     }
 }
 
@@ -109,8 +151,14 @@ final class RenderEngine {
         }
     }
     private var session: OpaquePointer?
+    private let aiModelDirectory: URL?
+    private let aiCacheDirectory: URL
+    private let aiBackend: sony2fuji_ai_backend
+    static var aiAvailable: Bool { sony2fuji_ai_available() != 0 }
+    static var bundledAIModel: URL? { Bundle.main.url(forResource: "DualDn", withExtension: nil, subdirectory: "AI") }
     private let gpuMode: sony2fuji_gpu_mode
-    private var whiteBalanceCache: (key: RawWhiteBalanceCacheKey, value: WhiteBalance?)?
+    private let statisticsProvider: (inout sony2fuji_buffer) -> PreviewStatistics?
+    private var whiteBalanceCache: (key: RawWhiteBalanceCacheKey, processing: ProcessingIdentity, value: WhiteBalance?)?
     private let lensDatabaseURL: URL?
     private struct LensCatalogKey: Equatable {
         let url: URL
@@ -119,9 +167,17 @@ final class RenderEngine {
     }
     private var lensCatalogKey: LensCatalogKey?
     private var lensCandidates: [LensCandidate] = []
-    init(gpuMode: sony2fuji_gpu_mode = SONY2FUJI_GPU_AUTO, lensDatabaseURL: URL? = nil) throws {
+    init(gpuMode: sony2fuji_gpu_mode = SONY2FUJI_GPU_AUTO, lensDatabaseURL: URL? = nil,
+         statisticsProvider: @escaping (inout sony2fuji_buffer) -> PreviewStatistics? = PreviewStatistics.analyze,
+         aiModelDirectory: URL? = RenderEngine.bundledAIModel, aiCacheDirectory: URL? = nil,
+         aiBackend: sony2fuji_ai_backend = SONY2FUJI_AI_AUTO) throws {
         self.gpuMode = gpuMode
+        self.statisticsProvider = statisticsProvider
         self.lensDatabaseURL = lensDatabaseURL
+        self.aiModelDirectory = aiModelDirectory
+        self.aiBackend = aiBackend
+        self.aiCacheDirectory = aiCacheDirectory ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("RawLab/DualDn", isDirectory: true)
         try resetSession()
     }
 
@@ -149,9 +205,117 @@ final class RenderEngine {
     deinit { sony2fuji_session_destroy(session) }
 
     var lastBackend: sony2fuji_render_backend { sony2fuji_session_get_last_backend(session) }
+    var lastAIBackend: String { String(cString: sony2fuji_session_get_ai_backend(session)) }
+
+    private func configureCurve(_ settings: ToneCurveSettings) throws {
+        guard settings.isValid else { throw RenderError.failed(L10n.text("无效的曲线参数")) }
+        var config = settings.nativeConfig
+        guard sony2fuji_session_set_tone_curve(session, &config) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed(L10n.text("无效的曲线参数"))
+        }
+    }
+
+    private func configureGrading(_ settings: ColorGradingSettings) throws {
+        guard settings.isValid else { throw RenderError.failed(L10n.text("无效的颜色分级参数")) }
+        var config = settings.nativeConfig
+        guard sony2fuji_session_set_color_grading(session, &config) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed(L10n.text("无效的颜色分级参数"))
+        }
+    }
+
+    private func configureTone(_ settings: ToneControlsSettings) throws {
+        guard settings.isValid else { throw RenderError.failed(L10n.text("无效的黑白场或鲜艳度参数")) }
+        var config = settings.nativeConfig
+        guard sony2fuji_session_set_tone_controls(session, &config) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed(L10n.text("无效的黑白场或鲜艳度参数"))
+        }
+    }
+
+    private func configureAtmosphere(_ settings: AtmosphereSettings) throws {
+        guard settings.isValid else { throw RenderError.failed(L10n.text("无效的清晰度或去朦胧参数")) }
+        var config = settings.nativeConfig
+        guard sony2fuji_session_set_atmosphere(session, &config) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed(L10n.text("无效的清晰度或去朦胧参数"))
+        }
+    }
+
+    private func configureProcessing(_ identity: ProcessingIdentity) throws {
+        guard sony2fuji_session_set_processing_version(session, identity.core) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed(L10n.text("不支持此处理版本，原有记录未被覆盖。"))
+        }
+    }
+
+    static func validateAIInput(_ url: URL) throws {
+        guard !isRasterInput(url) else { throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。")) }
+        guard aiAvailable, bundledAIModel != nil else { throw RenderError.aiFailed(L10n.text("此构建未安装 AI 降噪模型。")) }
+    }
+
+    private func configureAI(enabled: Bool) throws {
+        if enabled && (!Self.aiAvailable || aiModelDirectory == nil) {
+            throw RenderError.aiFailed(L10n.text("此构建未安装 AI 降噪模型。"))
+        }
+        var config = sony2fuji_ai_denoise_config()
+        config.version = SONY2FUJI_AI_DENOISE_CONFIG_VERSION
+        config.struct_size = UInt32(MemoryLayout<sony2fuji_ai_denoise_config>.size)
+        config.enabled = enabled ? 1 : 0
+        config.backend = aiBackend
+        let status = (aiModelDirectory?.path ?? "").withCString { model in
+            aiCacheDirectory.path.withCString { cache in
+                config.model_directory = model; config.cache_directory = cache
+                return sony2fuji_session_set_ai_denoise(session, &config)
+            }
+        }
+        guard status == SONY2FUJI_STATUS_OK else { throw aiError(status) }
+    }
+
+    private func aiError(_ status: sony2fuji_status) -> RenderError {
+        if status == SONY2FUJI_STATUS_CANCELLED { return .aiCancelled }
+        let detail = String(cString: sony2fuji_session_get_ai_error(session))
+        let message = detail.isEmpty ? String(cString: sony2fuji_status_message(status)) : detail
+        if status == SONY2FUJI_STATUS_AI_NOT_READY {
+            return .aiNotReady(L10n.text("请先完成此照片的 AI 降噪，再预览或导出。") + "\n" + message)
+        }
+        return .aiFailed(L10n.format("AI 降噪失败：%@", message))
+    }
+
+    func prepareAI(_ url: URL, settings: Adjustments, progress: AIPreparation) throws {
+        guard !progress.isCancelled else { throw RenderError.aiCancelled }
+        guard !Self.isRasterInput(url) else { throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。")) }
+        let settings = try resolvedSettings(url, settings: settings)
+        try configureProcessing(settings.processing)
+        try configureTone(settings.toneSettings)
+        try configureAtmosphere(settings.atmosphereSettings)
+        try configureCurve(settings.curveSettings)
+        try configureGrading(settings.gradingSettings)
+        try configureLens(settings.lensSettings)
+        try configureAI(enabled: true)
+        var request = sony2fuji_request()
+        request.version = SONY2FUJI_REQUEST_VERSION
+        request.struct_size = UInt32(MemoryLayout<sony2fuji_request>.size)
+        request.input_type = SONY2FUJI_INPUT_RAW
+        request.wb_mul = (1,1,1,1)
+        settings.apply(to: &request)
+        let context = Unmanaged.passUnretained(progress).toOpaque()
+        let status = url.path.withCString { path in
+            request.input_path = path
+            return sony2fuji_session_prepare_ai(session, &request, { context, phase, done, total in
+                guard let context else { return 0 }
+                return Unmanaged<AIPreparation>.fromOpaque(context).takeUnretainedValue()
+                    .report(phase: Int(phase), completed: done, total: total)
+            }, context)
+        }
+        guard status == SONY2FUJI_STATUS_OK else { throw aiError(status) }
+        guard !progress.isCancelled else { throw RenderError.aiCancelled }
+    }
 
     func autoExposure(_ url: URL, settings: Adjustments) throws -> Double {
         let settings = try resolvedSettings(url, settings: settings)
+        try configureProcessing(settings.processing)
+        try configureTone(settings.toneSettings)
+        try configureAtmosphere(settings.atmosphereSettings)
+        try configureCurve(settings.curveSettings)
+        try configureGrading(settings.gradingSettings)
+        try configureAI(enabled: settings.aiDenoiseEnabled)
         try configureLens(settings.lensSettings)
         try configureGeometry(settings.geometrySettings)
         guard sony2fuji_session_set_raw_exposure_mode(session, settings.exposureMode.core) == SONY2FUJI_STATUS_OK else {
@@ -169,6 +333,7 @@ final class RenderEngine {
         let status = try withInput(url, request: &request) { input in
             sony2fuji_session_estimate_auto_exposure(session, &input, &ev)
         }
+        if status == SONY2FUJI_STATUS_AI_NOT_READY { throw aiError(status) }
         guard status == SONY2FUJI_STATUS_OK else { throw RenderError.failed(L10n.format("无法自动调整曝光：%@", String(describing: String(cString: sony2fuji_status_message(status))))) }
         return Double(ev)
     }
@@ -176,15 +341,7 @@ final class RenderEngine {
     func resolvedSettings(_ url: URL, settings: Adjustments) throws -> Adjustments {
         if Self.isRasterInput(url) {
             // 批量可混合两类输入；相机专属状态不解释成普通图像的 RGB 白平衡或镜头参数。
-            var state = settings
-            state.exposureMode = .sensor
-            state.whiteBalanceMode = .asShot
-            state.resolveWhiteBalance(nil)
-            state.temperature = 6500
-            state.tint = 0
-            state.rawNoiseReduction = 0
-            state.lensCorrection = nil
-            return state
+            return settings.resolvedForRaster
         }
         let key = try? RawWhiteBalanceCacheKey(url)
         if let key, let cached = whiteBalanceCache, cached.key.file == key.file,
@@ -196,11 +353,11 @@ final class RenderEngine {
         if settings.masterRecipe != nil,
            settings.tint * settings.strength != 0 || !settings.usesAsShotWhiteBalance {
             let camera: WhiteBalance?
-            if let key, let cache = whiteBalanceCache, cache.key == key {
+            if let key, let cache = whiteBalanceCache, cache.key == key, cache.processing == settings.processing {
                 camera = cache.value
             } else {
                 // 拍摄白平衡属于当前 RAW，不能沿用批量任务或恢复记录里的源照片元数据。
-                camera = try render(url, settings: Adjustments(), lut: nil, edge: 32)?.asShotWhiteBalance
+                camera = try render(url, settings: settings.neutralSettings, lut: nil, edge: 32)?.asShotWhiteBalance
             }
             guard let camera else {
                 throw RenderError.failed(L10n.text("此 RAW 无法解析拍摄白平衡，不能应用配方色调。"))
@@ -210,12 +367,21 @@ final class RenderEngine {
         return settings
     }
 
-    func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, interactive: Bool = false, exportLongEdge: Int? = nil, viewportPreview: Bool = false) throws -> RenderedImage? {
+    private func photoRequest(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL?,
+                              interactive: Bool, exportLongEdge: Int?, viewportPreview: Bool) throws -> (Adjustments, sony2fuji_request) {
         if let exportLongEdge, !(1...65535).contains(exportLongEdge) {
             throw RenderError.failed(L10n.text("导出长边必须为 1-65535 像素。"))
         }
         let settings = try resolvedSettings(url, settings: settings)
-        let key = try? RawWhiteBalanceCacheKey(url)
+        try configureProcessing(settings.processing)
+        try configureTone(settings.toneSettings)
+        try configureAtmosphere(settings.atmosphereSettings)
+        try configureCurve(settings.curveSettings)
+        try configureGrading(settings.gradingSettings)
+        if settings.aiDenoiseEnabled && Self.isRasterInput(url) {
+            throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。"))
+        }
+        try configureAI(enabled: settings.aiDenoiseEnabled)
         let allowsProxy = settings.geometrySettings.isIdentity
         guard sony2fuji_session_set_interactive_preview(session, interactive && allowsProxy && output == nil ? 1 : 0) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed(L10n.text("无效的预览模式"))
@@ -278,6 +444,34 @@ final class RenderEngine {
         request.output_format = output == nil ? SONY2FUJI_OUTPUT_RGBA8 :
             ExportFormat.forOutput(output!).nativeFormat
         request.jpeg_quality = 95
+        return (settings, request)
+    }
+
+    func sampleHSL(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, interactive: Bool,
+                   revision: HSLTargetRevision, point: CGPoint) throws -> HSLTargetSample {
+        let (_, prepared) = try photoRequest(url, settings: settings, lut: lut, edge: edge, output: nil,
+            interactive: interactive, exportLongEdge: nil, viewportPreview: edge != nil)
+        var request = prepared
+        var sample: HSLTargetSample?
+        _ = try withInput(url, request: &request) { input in
+            (lut?.path ?? "").withCString { path in
+                input.lut_path = lut == nil ? nil : path
+                if let session {
+                    sample = HSLTargetSample.capture(session: session, request: &input,
+                        revision: revision, x: point.x, y: point.y)
+                }
+                return SONY2FUJI_STATUS_OK
+            }
+        }
+        guard let sample else { throw RenderError.failed(L10n.text("无法创建处理会话")) }
+        return sample
+    }
+
+    func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, interactive: Bool = false, exportLongEdge: Int? = nil, viewportPreview: Bool = false) throws -> RenderedImage? {
+        let (settings, prepared) = try photoRequest(url, settings: settings, lut: lut, edge: edge, output: output,
+            interactive: interactive, exportLongEdge: exportLongEdge, viewportPreview: viewportPreview)
+        var request = prepared
+        let key = try? RawWhiteBalanceCacheKey(url)
         var buffer = sony2fuji_buffer()
         defer { sony2fuji_release_buffer(&buffer) }
         let status = try withInput(url, request: &request) { inputRequest in
@@ -290,6 +484,10 @@ final class RenderEngine {
             }
         }
         guard status == SONY2FUJI_STATUS_OK else {
+            if status == SONY2FUJI_STATUS_AI_NOT_READY ||
+                (settings.aiDenoiseEnabled && sony2fuji_session_get_ai_error(session).pointee != 0) {
+                throw aiError(status)
+            }
             throw RenderError.processing(status, input: url, look: lut, output: output)
         }
         if let output {
@@ -309,7 +507,7 @@ final class RenderEngine {
         var noiseReductionSupported: Int32 = 0
         if !raster { _ = sony2fuji_session_get_raw_noise_reduction_support(session, &noiseReductionSupported) }
         let cameraWhiteBalance = calibrated ? WhiteBalance(temperature: Double(temperature).rounded(), tint: Double(tint).rounded()) : nil
-        if !raster { whiteBalanceCache = key.map { ($0, cameraWhiteBalance) } }
+        if !raster { whiteBalanceCache = key.map { ($0, settings.processing, cameraWhiteBalance) } }
         let width = Int(buffer.width), height = Int(buffer.height)
         var nativeWidth: UInt32 = 0, nativeHeight: UInt32 = 0
         guard sony2fuji_session_get_geometry_size(session, &nativeWidth, &nativeHeight) == SONY2FUJI_STATUS_OK else {
@@ -323,19 +521,9 @@ final class RenderEngine {
                 bitsPerPixel: 32, bytesPerRow: Int(buffer.stride_bytes), space: space,
                 bitmapInfo: bitmap, provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
         else { throw RenderError.failed(L10n.text("无法显示处理结果")) }
-        var bins = [UInt32](repeating: 0, count: 768)
-        var black: UInt32 = 0, white: UInt32 = 0
-        var clippingBuffer = sony2fuji_buffer()
-        defer { sony2fuji_release_buffer(&clippingBuffer) }
-        guard sony2fuji_analyze_image(&buffer, gpuMode, &bins, &black, &white, &clippingBuffer) == SONY2FUJI_STATUS_OK,
-              let clippingPixels = clippingBuffer.data else { throw RenderError.failed(L10n.text("无法计算直方图")) }
-        let histogram = (0..<3).map { channel in (0..<256).map { Double(bins[channel*256+$0]) } }
-        let overlay = Data(bytes: clippingPixels, count: clippingBuffer.size_bytes)
-        let mask = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
-            bytesPerRow: width*4, space: space, bitmapInfo: bitmap,
-            provider: CGDataProvider(data: overlay as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
-        return RenderedImage(image: image, isFullResolution: edge == nil, clipping: mask, histogram: histogram,
-            shadows: Double(black)/Double(width*height), highlights: Double(white)/Double(width*height),
+        let statistics = statisticsProvider(&buffer)
+        return RenderedImage(image: image, isFullResolution: edge == nil, clipping: statistics?.clipping, histogram: statistics?.histogram ?? [],
+            shadows: statistics?.shadows, highlights: statistics?.highlights,
             baselineEV: Double(baseline), metadataEV: Double(metadata), asShotWhiteBalance: cameraWhiteBalance,
             supportsRawNoiseReduction: noiseReductionSupported == 1, lensInfo: raster ? nil : lensInfo(for: url),
             nativeWidth: Int(nativeWidth), nativeHeight: Int(nativeHeight))

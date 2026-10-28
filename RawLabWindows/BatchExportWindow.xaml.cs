@@ -16,22 +16,29 @@ public partial class BatchExportWindow : Window
 {
     private BatchJob job;
     private readonly BatchJournal journal;
+    private readonly Func<int,RenderEngine> createEngine;
     private readonly ObservableCollection<BatchRow> rows = [];
     private CancellationTokenSource cancellation = new();
     private bool ready, refreshingSize, editingCustomSize,preflighting,closed;
     private volatile bool closeRequested;
     private Task? thumbnailLoading;
+    private AIDenoiseState? aiProgress;
     public bool Running { get; private set; }
     public bool Busy=>Running || preflighting;
+    public bool UpdateJournalFailed { get; private set; }
+    public bool PreserveOnUpdateExit { get; set; }
+    public bool UpdateTasksRunning => Busy || thumbnailLoading is { IsCompleted:false };
     public bool Discarded { get; private set; }
     public bool CloseFailed { get; private set; }
     public BatchJob Job => job;
+    private bool Frozen=>job.Mode==BatchJob.PerTargetFrozen;
     public event Action<bool>? BusyChanged;
     public event Action<BatchJob, BatchJob, int>? RunCompleted;
 
-    public BatchExportWindow(BatchJob job, BatchJournal journal)
+    public BatchExportWindow(BatchJob job, BatchJournal journal) : this(job,journal,backend=>new RenderEngine(aiBackend:backend)) { }
+    internal BatchExportWindow(BatchJob job, BatchJournal journal, Func<int,RenderEngine> createEngine)
     {
-        this.job = job; this.journal = journal;
+        this.job = job; this.journal = journal; this.createEngine=createEngine;
         InitializeComponent(); Targets.ItemsSource = rows;
         Loc.Changed += RefreshLanguage;
         Closed += (_, _) => {closed=true;Loc.Changed -= RefreshLanguage;};
@@ -46,7 +53,7 @@ public partial class BatchExportWindow : Window
         };
         Closing += (_, args) => {
             if(Running || preflighting){args.Cancel=true;closeRequested=true;if(Running)CancelExecution();return;}
-            if(!job.Started && !Discarded)try{journal.Discard(job);Discarded=true;CloseFailed=false;}catch(Exception error){args.Cancel=true;CloseFailed=true;closeRequested=false;job.Error=error.Message;Refresh();_=LoadThumbnails();}
+            if(!PreserveOnUpdateExit && !job.Started && !Discarded)try{journal.Discard(job);Discarded=true;CloseFailed=false;}catch(Exception error){args.Cancel=true;CloseFailed=true;closeRequested=false;job.Error=error.Message;Refresh();_=LoadThumbnails();}
         };
         ready = true;
         RefreshLanguage();
@@ -59,28 +66,12 @@ public partial class BatchExportWindow : Window
         var lookName = job.Look == null ? Loc.Text("中性") : job.LookName;
         SourceLook.Text = $"{lookName} · {job.Settings.Values[(int)Parameter.Strength]:0}%";
         SourceSummary.Text = Loc.Format("曝光  {0:+0.00;-0.00;0.00} EV\n白平衡  {1}\n曝光基准  {2}", state[Parameter.Exposure], raster ? Loc.Text("不适用") : state.CameraWhiteBalance ? Loc.Text("拍摄时设置") : Loc.Text("自定义"), raster ? Loc.Text("显示图像") : new[] { Loc.Text("标准显影"), Loc.Text("匹配内嵌预览"), Loc.Text("传感器基准") }[state.ExposureMode]);
-        AllSettings.Text = string.Join("\n", ParameterSpec.All.Select(spec => $"{Loc.Text(spec.Title)}  {(spec.Id is Parameter.Temperature or Parameter.Tint && raster ? Loc.Text("不适用") : spec.Id is Parameter.Temperature or Parameter.Tint && state.CameraWhiteBalance ? Loc.Text("按每张照片") : state[spec.Id].ToString("F" + spec.Decimals) + spec.Unit)}"));
-        AllSettings.Text += $"\nHSL  {(state.Hsl.IsIdentity ? Loc.Text("未调整") : Loc.Text("已调整"))}";
-        // 降噪与镜头逐行沿用编辑器里的名称；关着的开关写"停用"
-        AllSettings.Text += "\n" + string.Join("\n", new[] {
-            Row("降噪", OnOff(state.Denoise.Enabled)),
-            Row("亮度降噪", Number(state.Denoise.Luma)),
-            Row("色彩降噪", Number(state.Denoise.Chroma)),
-            Row("粗色斑抑制", Number(state.Denoise.Coarse)),
-            Row("镜头匹配", Loc.Text(state.Lens.Manual ? "手动" : "自动")),
-            Row("畸变矫正", OnOff(state.Lens.Distortion)),
-            Row("横向色差", OnOff(state.Lens.Tca)),
-            Row("自动裁边", OnOff(state.Lens.AutoCrop))
-        });
-        var geometry = state.Geometry;
-        AllSettings.Text += "\n" + Loc.Format("几何：左边 {0:0.##}% · 顶边 {1:0.##}% · 宽度 {2:0.##}% · 高度 {3:0.##}% · 旋转 {4}° · 拉直 {5:0.##}°",
-            geometry.CropX * 100, geometry.CropY * 100, geometry.CropWidth * 100, geometry.CropHeight * 100,
-            geometry.QuarterTurns * 90, geometry.StraightenDegrees);
-        AllSettings.Text += "\n"+Loc.Format("透视：水平 {0:0.###} · 垂直 {1:0.###}",geometry.PerspectiveHorizontal,geometry.PerspectiveVertical);
-        AllSettings.Text += $"\n{Loc.Text("水平翻转")}  {OnOff(geometry.FlipHorizontal)} · {Loc.Text("垂直翻转")}  {OnOff(geometry.FlipVertical)}";
-        var effects = state.Effects;
-        var chroma = state.DisplayChromaDenoise switch { 1 => Loc.Text("细节优先"), 2 => Loc.Text("去噪优先"), _ => Loc.Text("停用") };
-        AllSettings.Text += Loc.Format("\n显示色彩降噪  {0}\n暗角  强度 {1:+0.#;-0.#;0} · 中点 {2:0.#} · 圆度 {3:+0.#;-0.#;0} · 羽化 {4:0.#} · 高光保护 {5:0.#}\n颗粒  强度 {6:0.#} · 大小 {7:0.#} · 粗糙度 {8:0.#}", chroma, effects.VignetteAmount, effects.VignetteMidpoint, effects.VignetteRoundness, effects.VignetteFeather, effects.VignetteHighlights, effects.GrainAmount, effects.GrainSize, effects.GrainRoughness);
+        AllSettings.Text = Frozen ? string.Join("\n\n",job.Items.Select(item=>
+            Path.GetFileName(item.Input)+" · "+item.Frozen!.OutputFormat+" · "+(item.Frozen.LongEdge?.ToString() ?? Loc.Text("原尺寸"))+"\n"+
+            BatchSettingsText.Describe(item.Frozen.Settings,item.Frozen.LookName,item.Input))) :
+            BatchSettingsText.Describe(job.Settings,lookName,job.Source);
+        SourceHeading.Text=Loc.Text(Frozen ? "逐张参数已冻结" : "调整来源");
+        SourcePhoto.Visibility=SourceSummary.Visibility=Frozen ? Visibility.Collapsed : Visibility.Visible;
         Refresh();
     }
 
@@ -96,10 +87,17 @@ public partial class BatchExportWindow : Window
         ErrorText.Text = job.Error ?? ""; ErrorText.Visibility = string.IsNullOrEmpty(job.Error) ? Visibility.Collapsed : Visibility.Visible;
         Progress.Visibility = job.Started || preflighting ? Visibility.Visible : Visibility.Collapsed;Progress.IsIndeterminate=preflighting;
         Progress.Maximum = Math.Max(1, job.SelectedCount); Progress.Value = job.SucceededCount + job.FailedCount;
-        SelectionActions.Visibility = job.Started ? Visibility.Collapsed : Visibility.Visible;
+        AIStatus.Visibility=AIProgress.Visibility=aiProgress==null ? Visibility.Collapsed : Visibility.Visible;
+        if(aiProgress is {} ai) {
+            AIStatus.Text=Loc.Format("{0} · {1}/{2}",Loc.Text(ai.Phase switch {
+                2=>"正在处理 RAW 噪声",3=>"正在处理颜色噪声",4=>"正在保存 AI 结果",_=>"正在准备 AI 降噪"}),ai.Done,ai.Total);
+            AIProgress.IsIndeterminate=ai.Total==0;
+            AIProgress.Value=ai.Total==0 ? 0 : Math.Clamp((double)ai.Done/ai.Total,0,1);
+        }
+        SelectionActions.Visibility = job.Started || Frozen ? Visibility.Collapsed : Visibility.Visible;
         SelectionActions.IsEnabled=!preflighting;
-        FormatOptions.IsEnabled = !job.Started && !Running && !preflighting; ChooseFolder.IsEnabled = !Running && !preflighting;
-        SizeSelection.IsEnabled = CustomLongEdge.IsEnabled = !job.Started && !Running && !preflighting;
+        FormatOptions.IsEnabled = !Frozen && !job.Started && !Running && !preflighting; ChooseFolder.IsEnabled = !Frozen && !Running && !preflighting;
+        SizeSelection.IsEnabled = CustomLongEdge.IsEnabled = !Frozen && !job.Started && !Running && !preflighting;
         RefreshSizeControls();
         Destination.Text = job.OutputDirectory == null ? Loc.Text("未选择") : Path.GetFileName(job.OutputDirectory.TrimEnd(Path.DirectorySeparatorChar));
         Destination.ToolTip = job.OutputDirectory;
@@ -109,33 +107,39 @@ public partial class BatchExportWindow : Window
         {
             var row = rows.FirstOrDefault(row => row.Item.Id == item.Id);
             if (row == null) { row = new BatchRow(item, Select); rows.Add(row); }
-            row.Refresh(item, !job.Started && !preflighting, !Running && !preflighting && item.CanSelect);
+            row.Refresh(item, !Frozen && !job.Started && !preflighting, !Running && !preflighting && item.CanSelect);
         }
         CloseAction.Content = job.Started ? Loc.Text("关闭") : Loc.Text("取消"); CloseAction.IsEnabled = !Running;
         RevealFolder.Visibility = job.SucceededCount > 0 ? Visibility.Visible : Visibility.Collapsed;
         PrimaryAction.Content = Running ? cancellation.IsCancellationRequested ? Loc.Text("正在停止…") : Loc.Text("取消导出") :
             !job.Started ? Loc.Format("导出 {0} 张", job.SelectedCount) : job.RemainingCount > 0 ? Loc.Format("继续未完成的 {0} 张", job.SelectedCount - job.SucceededCount) : Loc.Format("重试失败的 {0} 张", job.FailedCount);
         PrimaryAction.Visibility = !Running && job.Started && job.SucceededCount == job.SelectedCount ? Visibility.Collapsed : Visibility.Visible;
-        Footnote.Text=Running ? Loc.Text("当前项完成后停止，已完成的输出会保留。") : Loc.Text("仅用于本次导出，保留各照片原有调整");
+        Footnote.Text=Running ? Loc.Text(aiProgress!=null ? "AI 准备可取消；已完成的输出会保留。" : "当前项完成后停止，已完成的输出会保留。") : Loc.Text(Frozen ? "使用每张照片已冻结的调整，保留逐张差异。" : "仅用于本次导出，保留各照片原有调整");
+        DiscardTask.IsEnabled=!Running && !preflighting;
         PrimaryAction.IsEnabled = !preflighting && (Running ? !cancellation.IsCancellationRequested : job.SelectedCount > 0 && job.OutputDirectory != null &&
             (!editingCustomSize || ExportSize.Parse(CustomLongEdge.Text) != null));
     }
 
     private void SaveDraft()
     {
-        try { journal.Save(job); job.Error = null; }
-        catch (Exception error) { job.Error = Loc.Format("任务未保存：{0}", error.Message); }
+        try { journal.Save(job); job.Error = null; UpdateJournalFailed=false; }
+        catch (Exception error) { UpdateJournalFailed=true;job.Error = Loc.Format("任务未保存：{0}", error.Message); }
         Refresh();
+    }
+    public bool PrepareForUpdate()
+    {
+        if(UpdateTasksRunning)return false;
+        SaveDraft();return !UpdateJournalFailed;
     }
     private void Select(Guid id, bool selected)
     {
-        if (job.Started || Running || preflighting) return;
+        if (Frozen || job.Started || Running || preflighting) return;
         var index = job.Items.FindIndex(x => x.Id == id);
         if (index >= 0 && job.Items[index].CanSelect) { job.Items[index] = job.Items[index] with { Selected = selected }; SaveDraft(); }
     }
     private async void AddClicked(object sender, RoutedEventArgs e)
     {
-        if (Running || job.Started || preflighting) return;
+        if (Frozen || Running || job.Started || preflighting) return;
         var picker = new OpenFileDialog { Title = Loc.Text("选择待导出的照片"), Multiselect = true,
             Filter = Loc.Text("照片|") + LibraryEntry.ImageFilter };
         if (picker.ShowDialog(this) != true) return;
@@ -143,20 +147,22 @@ public partial class BatchExportWindow : Window
     }
     internal async Task AddInputs(IEnumerable<string> inputs)
     {
-        if(Running || job.Started || preflighting || closed)return;
+        if(Frozen || Running || job.Started || preflighting || closed)return;
         CloseFailed=closeRequested=false;preflighting=true;BusyChanged?.Invoke(true);Refresh();var errors=new List<string>();
         var settings=job.Settings.Copy();var look=job.Look;
         try
         {
             var checkedItems=await Task.Run(()=>{
-                var accepted=new List<BatchItem>();using var validator=new RenderEngine(0);
+                var accepted=new List<BatchItem>();using var validator=new RenderEngine(0,aiBackend:job.AIBackend);
                 foreach(var input in inputs.Distinct(StringComparer.OrdinalIgnoreCase))
                 {
                     if(closeRequested)break;
                     try{
                         var item=BatchItem.Create(input);
                         try{var effective=RenderEngine.PrepareBatchSettings(job.Source,input,settings.Restore());
-                            validator.Render(input,effective,look,64,statistics:false,clipping:false,viewportPreview:true);item=item with{Selected=true};}
+                            if(effective.AIDenoiseEnabled)RenderEngine.ValidateAIInput(input);
+                            else validator.Render(input,effective,look,64,statistics:false,clipping:false,viewportPreview:true);
+                            item=item with{Selected=true};}
                         catch(Exception error){item=item with{ValidationError=error.Message,Selected=false};}
                         accepted.Add(item);
                     }
@@ -194,21 +200,22 @@ public partial class BatchExportWindow : Window
     private void SelectNoneClicked(object sender, RoutedEventArgs e) => SelectAll(false);
     private void SelectAll(bool value)
     {
-        if (job.Started || Running || preflighting) return;
+        if (Frozen || job.Started || Running || preflighting) return;
         job.Items = job.Items.Select(x => x with { Selected = value && x.CanSelect }).ToList(); SaveDraft();
     }
     private void RemoveClicked(object sender, RoutedEventArgs e)
     {
-        if (!job.Started && !Running && sender is FrameworkElement { DataContext: BatchRow row }) { job.Items.RemoveAll(x => x.Id == row.Item.Id); SaveDraft(); }
+        if (!Frozen && !job.Started && !Running && sender is FrameworkElement { DataContext: BatchRow row }) { job.Items.RemoveAll(x => x.Id == row.Item.Id); SaveDraft(); }
     }
     private void FolderClicked(object sender, RoutedEventArgs e)
     {
+        if(Frozen || Running || preflighting)return;
         var picker = new OpenFolderDialog { Title = Loc.Text("选择输出文件夹") };
         if (picker.ShowDialog(this) == true) { job.OutputDirectory = picker.FolderName; SaveDraft(); }
     }
     private void FormatChanged(object sender, RoutedEventArgs e)
     {
-        if (ready && !job.Started && !Running)
+        if (ready && !Frozen && !job.Started && !Running)
         {
             job.Format = Dng.IsChecked == true ? ExportFormat.RenderedDng :
                 Png.IsChecked == true ? ExportFormat.Png : ExportFormat.Jpeg;
@@ -233,7 +240,7 @@ public partial class BatchExportWindow : Window
     }
     private void ExportSizeChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!ready || refreshingSize || job.Started || Running || SizeSelection.SelectedItem is not ComboBoxItem { Tag: string tag }) return;
+        if (Frozen || !ready || refreshingSize || job.Started || Running || SizeSelection.SelectedItem is not ComboBoxItem { Tag: string tag }) return;
         if (tag == "custom")
         {
             editingCustomSize=true;
@@ -252,12 +259,13 @@ public partial class BatchExportWindow : Window
     private void CustomSizeCommitted(object sender, KeyboardFocusChangedEventArgs e) { if (!refreshingSize && SizeSelection.SelectedItem is ComboBoxItem { Tag: "custom" }) CommitCustomSize(); }
     private void CustomSizeTextChanged(object sender, TextChangedEventArgs e)
     {
-        if (!ready || refreshingSize || !editingCustomSize || job.Started || Running) return;
+        if (Frozen || !ready || refreshingSize || !editingCustomSize || job.Started || Running) return;
         SizeError.Text=ExportSize.Parse(CustomLongEdge.Text) == null ? Loc.Text("请输入 1 到 65535 之间的整数。") : "";
         PrimaryAction.IsEnabled=job.SelectedCount > 0 && job.OutputDirectory != null && ExportSize.Parse(CustomLongEdge.Text) != null;
     }
     private bool CommitCustomSize()
     {
+        if(Frozen)return true;
         var value=ExportSize.Parse(CustomLongEdge.Text);
         if (value is null)
         {
@@ -265,6 +273,12 @@ public partial class BatchExportWindow : Window
         }
         job.LongEdge=value; SizeError.Text=""; SaveDraft();
         return true;
+    }
+    private void DiscardTaskClicked(object sender,RoutedEventArgs e)
+    {
+        if(Running || preflighting)return;
+        if(MessageBox.Show(this,Loc.Text("结束此任务并保留已导出的照片？"),Loc.Text("结束导出任务"),MessageBoxButton.YesNo,MessageBoxImage.Question)!=MessageBoxResult.Yes)return;
+        try{journal.Discard(job);Discarded=true;Close();}catch(Exception error){job.Error=error.Message;Refresh();}
     }
     private void CloseClicked(object sender, RoutedEventArgs e)
     {
@@ -292,7 +306,7 @@ public partial class BatchExportWindow : Window
         {
             await Task.Run(() => {
                 if (work.Format != ExportFormat.RenderedDng) ExportMetadata.VerifyAvailable();
-                using var engine = new RenderEngine();
+                using var engine = createEngine(work.AIBackend);
                 BatchRunner.Run(work, journal, failuresOnly, cancellation.Token,
                     (updated, _) => {
                         foreach (var item in updated.Items)
@@ -304,6 +318,14 @@ public partial class BatchExportWindow : Window
                         Dispatcher.BeginInvoke(new Action(() => { job = updated; Refresh(); }));
                     },
                     (input, settings, look, destination, longEdge) => {
+                        if(settings.AIDenoiseEnabled) {
+                            using var progress=new AIPreparation((phase,done,total)=>
+                                Dispatcher.BeginInvoke(new Action(()=>{aiProgress=new(AIDenoiseStatus.Running,phase,done,total);Refresh();})));
+                            using var registration=cancellation.Token.Register(progress.Cancel);
+                            try { engine.PrepareAI(input,settings,progress); }
+                            finally { Dispatcher.BeginInvoke(new Action(()=>{aiProgress=null;Refresh();})); }
+                        }
+                        cancellation.Token.ThrowIfCancellationRequested();
                         engine.Render(input, settings, look, 32, statistics: false, clipping: false);
                         engine.Render(input, settings, look, 0, output: destination, longEdge: longEdge);
                     });
@@ -318,7 +340,7 @@ public partial class BatchExportWindow : Window
         {
             job = work;
             RunCompleted?.Invoke(before, job.Copy(), runFailed.Count);
-            Running = false; Refresh(); BusyChanged?.Invoke(false);
+            Running = false; aiProgress=null; Refresh(); BusyChanged?.Invoke(false);
             if (closeRequested && IsLoaded) Close();
         }
     }
@@ -336,12 +358,14 @@ public partial class BatchExportWindow : Window
         {
             var frame = await Task.Run(() => {
                 if (!row.Item.Identity.SameFile(OriginalIdentity.Read(row.Input))) throw new InvalidOperationException(Loc.Text("原始文件已被替换，请重新选择照片。"));
-                if (snapshot.Look != null && !File.Exists(snapshot.Look)) throw new InvalidOperationException(Loc.Text("任务使用的外观文件不可用，请重新创建任务。"));
-                using var engine = new RenderEngine();
-                var settings=RenderEngine.PrepareBatchSettings(snapshot.Source,row.Input,snapshot.Settings.Restore());
-                return engine.Render(row.Input, settings, snapshot.Look, 1600, statistics: false, clipping: false);
+                var frozen=snapshot.SnapshotFor(row.Item);
+                if(snapshot.Mode==BatchJob.PerTargetFrozen)frozen.VerifyLook();
+                else if (frozen.Look != null && !File.Exists(frozen.Look)) throw new InvalidOperationException(Loc.Text("任务使用的外观文件不可用，请重新创建任务。"));
+                using var engine = new RenderEngine(aiBackend:snapshot.AIBackend);
+                var settings=frozen.Settings.Restore();
+                return engine.Render(row.Input, settings, frozen.Look, 1600, statistics: false, clipping: false);
             });
-            if (preview.IsVisible) { image.Source = frame?.Image; title.Text = Loc.Format("{0} · 本次导出效果", snapshot.LookName); }
+            if (preview.IsVisible) { image.Source = frame?.Image; title.Text = Loc.Format("{0} · 本次导出效果", snapshot.SnapshotFor(row.Item).LookName); }
         }
         catch (Exception error) { if (preview.IsVisible) title.Text = error.Message; }
     }

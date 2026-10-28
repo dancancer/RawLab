@@ -49,6 +49,46 @@ Release 包默认带阿里云 RUM PC SDK 0.4.4（`alibabacloud_rum.dll`），使
 Debug 构建不带 SDK。
 未签名，不自动安装、不修改系统文件关联。第三方许可证与说明随程序复制。
 
+### 实验性 AI 降噪
+
+AI 降噪与 Mac 共用 float32 模型、640 分块、颜色桥接和缓存协议。普通 Bayer 使用
+DualDn，噪声参数来自匹配标定或当前 RAW 的通用估计；X-Trans、线性/Stage3 DNG 及
+不能可靠进入 DualDn 的输入使用 Restormer RGB 路径。支持范围依赖原生全尺寸解码，
+预算上限为 128 MP，不等于所有机型均完成画质认证。
+开发构建可不包含模型；正式发布开关要求完整模型和更新配置，见[桌面发布流程](../docs/process/desktop-release.md)。本地 GPU 验证使用
+[模型导出工具](../lutools/tools/dualdn/README.md)生成基础 ONNX 包后构建：
+
+```powershell
+./RawLabWindows/build.ps1 -SelfContained -DualDnModel 'C:/Models/DualDn'
+# 已准备好固定版本运行库时，可避免重新下载：
+./RawLabWindows/build.ps1 -SelfContained -DualDnModel 'C:/Models/DualDn' -OnnxRuntimeRoot 'C:/SDK/onnxruntime-directml'
+```
+
+脚本校验模型与运行库，随包复制模型、运行库及许可证。Windows 使用 ONNX Runtime
+DirectML 1.23.0、DirectML 1.15.4；依赖下载和校验在 `build-ai-dependencies.ps1`。
+模型源目录可以包含 Apple Core ML 资源；Windows 打包时移除相应 manifest 字段，
+只交付 ONNX 图。可加 `-NoRumSdk` 构建离线测试包。
+
+在“降噪”面板开启 AI 后，首次准备在后台执行，可取消或重试。成功后才保存启用状态，
+预览与导出使用同一份全尺寸结果；曝光和外观调整复用缓存，白平衡改变重算 RGB 阶段，
+镜头校正改变重算通用 RGB 路径。
+普通降噪参数会保留，关闭 AI 后恢复。缓存位于 `%LOCALAPPDATA%/RawLab/Cache/DualDn`。
+批量与集合导出保留 AI 启用状态、请求后端和冻结参数。预检只检查 RAW 类型与 AI 可用性；
+导出时自动准备缺失结果，显示进度并支持取消。取消准备后当前照片保留为待处理，已完成的输出保留。
+Agent JSON v5 暂不表达 AI 降噪，复制配方会要求先关闭 AI。
+
+AI 不支持 CPU 模式。普通显影选择 CPU 时，AI 仍请求硬件 DirectML；Auto 和 Force
+的神经网络失败都直接报错，软件适配器和不可用硬件不能替代硬件 GPU。
+官方 ISP 始终使用 CPU。DirectML 要求可用的 D3D12 硬件和驱动；普通显影的 D3D11
+后端与 AI 推理后端分别记录。算法边界见[接入契约](../docs/architecture/dualdn-inline-denoise.md)。
+
+带模型构建的 `-Test` 会加入 DirectML 数值检查及 AI 窗口生命周期检查。
+完整照片验证需要另行使用受支持样片运行 `dualdn_probe`，再执行测试程序的
+`--ai-denoise <model> <raw> <cache> <Auto|DirectML>`；它检查缓存复用、实际后端、
+普通降噪旁路、自动曝光、预览与导出一致性和白平衡失效。界面六语布局可单独运行
+`--ai-panel <output>`。`--ai-batch <model> <raw> <output>` 检查真实批量窗口的预检、进度、取消与继续导出。
+硬件检查通过范围以实际设备和日志为准。
+
 ### 从 Mac 远程编译
 
 已准备好的 Windows x64 OpenSSH 编译机可直接构建当前工作区，不需要先提交或切换到 Windows 真机：
@@ -268,10 +308,16 @@ VM 和 125 真实主机的原生通过结果、独立 PID/LUID 显存采样及�
 `run-v08.ps1 -Only` 接受逗号分隔的套件名，忽略首尾空格、大小写和重复项。省略或空字符串运行全部套件；
 非空但仅含空格/逗号的值、未知名称或未实际运行的选择项都会失败。构建始终执行。
 每次执行先清空旧 summary，提前失败也留下本轮非零结果，不会沿用上次 PASS。
+每个构建、输出目录查询和子测试默认最多运行 600 秒，可用 `-CheckTimeoutSeconds` 调整。
+stdout/stderr 实时写入终端和各自的检查日志；每个检查结束立即更新 summary，记录 PID、耗时和超时状态。
+超时终止该检查的进程树，以退出码 124 记录失败。非构建子测试失败后继续收集后续独立结果；
+构建或输出目录查询失败则停止，因为后续测试无法使用有效产物。summary 中的日志名相对于所在目录。
+UI 测试在本地交互桌面通过后再提交，CI 只运行该入口中的模型和原生/CLI 套件。
 可单独验证真实 PowerShell 入口（使用私有外部命令替身，不执行产品渲染）：
 
 ```powershell
 ./RawLabWindows/tests/RunnerSelectionChecks.ps1 -Output 'build/windows-runner-selection'
+./RawLabWindows/tests/CheckProcessChecks.ps1 -Output 'build/windows-process-checks'
 ```
 
 `--denoise` 专项同时使用外部真实 RAW 和受控 noisy RAW。真实照片可能不足共享算法要求的

@@ -1,4 +1,7 @@
 #include "gpu/photo_gpu.h"
+#include "gpu/photo_tone_shader.h"
+#include "gpu/photo_color_grading_shader.h"
+#include "gpu/photo_tone_curve_shader.h"
 #include "gpu/metal_dcp_shader.h"
 #include "gpu/metal_effects_shader.h"
 #include "core/photo_lut.h"
@@ -63,15 +66,23 @@ struct PhotoParams {
     uint32_t inputIsSRGB;
     uint32_t hslEnabled;
     float hslHue[8], hslSaturation[8], hslLightness[8];
+    uint32_t srcRowOffset, dstRowOffset, srcRows, dstRows;
+    float blackPoint, whitePoint, vibrance;
+    float colorGrading[9];
+    uint32_t customCurveCount;
+    float curveRanges[32][4], curveTangents[32][4];
 };
-static_assert(sizeof(PhotoParams) == 288, "Photo Metal parameter layout");
+static_assert(sizeof(PhotoParams) == 1380, "Photo Metal parameter layout");
 static_assert(offsetof(PhotoParams, hslHue) == 192, "HSL Metal options offset");
+static_assert(offsetof(PhotoParams, colorGrading) == 316, "Grading Metal options offset");
+static_assert(offsetof(PhotoParams, customCurveCount) == 352, "Curve Metal options offset");
 
 struct PhotoEffectsParams {
     uint32_t width, height;
     sony2fuji::PhotoEffectsOptions effects;
+    uint32_t rowOffset, rows;
 };
-static_assert(sizeof(PhotoEffectsParams) == 40, "Photo effects Metal parameter layout");
+static_assert(sizeof(PhotoEffectsParams) == 48, "Photo effects Metal parameter layout");
 static_assert(offsetof(PhotoEffectsParams, effects) == 8, "Photo effects Metal options offset");
 
 struct MetalContext {
@@ -115,10 +126,10 @@ struct CachedDcp {
 std::mutex gDcpCacheMutex;
 CachedDcp gDcpCache;
 
-static const char* kShaderSource = R"metal(
+static const std::string kShaderSource = std::string(R"metal(
 #include <metal_stdlib>
 using namespace metal;
-
+)metal") + sony2fuji::toneControlsShader("float3") + sony2fuji::colorGradingShader("float3") + sony2fuji::kToneCurveShader + R"metal(
 struct Params {
     uint srcWidth;
     uint srcHeight;
@@ -149,7 +160,21 @@ struct Params {
     uint inputIsSRGB;
     uint hslEnabled;
     float hslHue[8], hslSaturation[8], hslLightness[8];
+    uint srcRowOffset, dstRowOffset, srcRows, dstRows;
+    float blackPoint, whitePoint, vibrance;
+    float colorGrading[9];
+    uint customCurveCount;
+    float curveRanges[32][4], curveTangents[32][4];
 };
+
+inline float customToneCurve(float x, constant Params& p) {
+    if (x <= 0.0f) return 0.0f;
+    if (x >= 1.0f) return 1.0f;
+    uint i = 0;
+    while (i + 1 < p.customCurveCount && x > p.curveRanges[i][1]) ++i;
+    return pchipSegment(x, p.curveRanges[i][0], p.curveRanges[i][1], p.curveRanges[i][2],
+        p.curveRanges[i][3], p.curveTangents[i][0], p.curveTangents[i][1]);
+}
 
 inline float3 lerp3(float3 a, float3 b, float t) {
     return a + (b - a) * t;
@@ -168,7 +193,8 @@ inline float3 sampleBilinear(
     uint width,
     uint height,
     float x,
-    float y
+    float y,
+    uint rowOffset
 ) {
     uint x0 = uint(floor(x));
     uint y0 = uint(floor(y));
@@ -176,10 +202,10 @@ inline float3 sampleBilinear(
     uint y1 = min(y0 + 1u, height - 1u);
     float tx = x - float(x0);
     float ty = y - float(y0);
-    float3 c00 = pixelAt(pixels, width, x0, y0);
-    float3 c10 = pixelAt(pixels, width, x1, y0);
-    float3 c01 = pixelAt(pixels, width, x0, y1);
-    float3 c11 = pixelAt(pixels, width, x1, y1);
+    float3 c00 = pixelAt(pixels, width, x0, y0 - rowOffset);
+    float3 c10 = pixelAt(pixels, width, x1, y0 - rowOffset);
+    float3 c01 = pixelAt(pixels, width, x0, y1 - rowOffset);
+    float3 c11 = pixelAt(pixels, width, x1, y1 - rowOffset);
     float3 cx0 = lerp3(c00, c10, tx);
     float3 cx1 = lerp3(c01, c11, tx);
     return lerp3(cx0, cx1, ty);
@@ -358,18 +384,18 @@ kernel void resizeBilinear(
     device const packed_float3* source [[buffer(1)]],
     device packed_float3* destination [[buffer(2)]],
     uint gid [[thread_position_in_grid]]) {
-    uint count = params.dstWidth * params.dstHeight;
+    uint count = params.dstWidth * params.dstRows;
     if (gid >= count) {
         return;
     }
     uint x = gid % params.dstWidth;
-    uint y = gid / params.dstWidth;
+    uint y = gid / params.dstWidth + params.dstRowOffset;
     float scaleX = params.dstWidth == 1u ? 0.0f :
         float(params.srcWidth - 1u) / float(params.dstWidth - 1u);
     float scaleY = params.dstHeight == 1u ? 0.0f :
         float(params.srcHeight - 1u) / float(params.dstHeight - 1u);
     float3 result = sampleBilinear(source, params.srcWidth, params.srcHeight,
-        float(x) * scaleX, float(y) * scaleY);
+        float(x) * scaleX, float(y) * scaleY, params.srcRowOffset);
     destination[gid] = packed_float3(result);
 }
 
@@ -444,6 +470,11 @@ inline float3 applyHsl(float3 pixel, constant Params& params) {
     if (dh == 0.0f && ds == 0.0f && dl == 0.0f) return pixel;
     float lightness = clamp((maximum + minimum) * 0.5f, 0.0f, 1.0f);
     float saturation = delta / max(1e-6f, 1.0f - abs(2.0f * lightness - 1.0f));
+    float3 residual = float3(0.0f);
+    if (minimum < 0.0f || maximum > 1.0f) {
+        float baseChroma = (1.0f - abs(2.0f * lightness - 1.0f)) * clamp(saturation, 0.0f, 1.0f);
+        residual = pixel - ((pixel - minimum) * (baseChroma / delta) + (lightness - baseChroma * 0.5f));
+    }
     hue = fmod(hue + dh * 0.3f + 360.0f, 360.0f);
     saturation = clamp(saturation * (1.0f + ds * 0.01f), 0.0f, 1.0f);
     lightness = clamp(lightness + dl * 0.005f, 0.0f, 1.0f);
@@ -452,7 +483,13 @@ inline float3 applyHsl(float3 pixel, constant Params& params) {
     float3 rgb = hue < 60.0f ? float3(chroma,x,0) : hue < 120.0f ? float3(x,chroma,0) :
         hue < 180.0f ? float3(0,chroma,x) : hue < 240.0f ? float3(0,x,chroma) :
         hue < 300.0f ? float3(x,0,chroma) : float3(chroma,0,x);
-    return rgb + (lightness - chroma * 0.5f);
+    return rgb + (lightness - chroma * 0.5f) + residual;
+}
+
+float3 applyGrading(float3 pixel, constant Params& params) {
+    return cgApply(pixel,float3(params.colorGrading[0],params.colorGrading[1],params.colorGrading[2]),
+        float3(params.colorGrading[3],params.colorGrading[4],params.colorGrading[5]),
+        float3(params.colorGrading[6],params.colorGrading[7],params.colorGrading[8]));
 }
 
 kernel void toneAdjustments(
@@ -464,9 +501,9 @@ kernel void toneAdjustments(
     if (gid >= count) {
         return;
     }
-    float3 pixel = float3(source[gid]);
+    float3 pixel = tcBlackWhite(float3(source[gid]), params.blackPoint, params.whitePoint);
     if (params.toneEnabled == 0u) {
-        destination[gid] = packed_float3(applyHsl(pixel, params));
+        destination[gid] = packed_float3(applyGrading(applyHsl(tcVibrance(pixel, params.vibrance), params),params));
         return;
     }
     float highlights = clamp(params.highlights, -1.0f, 1.0f);
@@ -482,7 +519,9 @@ kernel void toneAdjustments(
             pixel = float3(adjusted);
         }
     }
-    if (params.toneCurve != 0.0f) {
+    if (params.customCurveCount != 0u) {
+        pixel = float3(customToneCurve(pixel.r, params), customToneCurve(pixel.g, params), customToneCurve(pixel.b, params));
+    } else if (params.toneCurve != 0.0f) {
         float curveStrength = signedPow(params.toneCurve, 1.2f);
         float p1 = clamp(0.25f - curveStrength * 0.2f, 0.0f, 1.0f);
         float p2 = clamp(0.5f + curveStrength * 0.05f, 0.0f, 1.0f);
@@ -502,7 +541,7 @@ kernel void toneAdjustments(
             luminance + (pixel.b - luminance) * saturation
         );
     }
-    destination[gid] = packed_float3(applyHsl(pixel, params));
+    destination[gid] = packed_float3(applyGrading(applyHsl(tcVibrance(pixel, params.vibrance), params),params));
 }
 
 kernel void noiseReduction(
@@ -570,7 +609,7 @@ MetalContext& metalContext() {
             if (!context.queue) {
                 return;
             }
-            NSString* source = [NSString stringWithUTF8String:kShaderSource];
+            NSString* source = [NSString stringWithUTF8String:kShaderSource.c_str()];
             NSError* error = nil;
             id<MTLLibrary> library =
                 [context.device newLibraryWithSource:source options:nil error:&error];
@@ -772,13 +811,17 @@ PhotoParams makeParams(
     const RGB& relativeWB,
     const CachedLUT* cachedLUT,
     float lutStrength,
-    const sony2fuji::HslOptions& hsl = {}
+    const sony2fuji::HslOptions& hsl = {},
+    const sony2fuji::ToneControlsOptions& toneControls = {},
+    const sony2fuji::ColorGradingOptions& colorGrading = {},
+    const sony2fuji::ToneCurve& customCurve = {}
 ) {
     PhotoParams params{};
     params.srcWidth = srcWidth;
     params.srcHeight = srcHeight;
     params.dstWidth = dstWidth;
     params.dstHeight = dstHeight;
+    params.srcRows = srcHeight; params.dstRows = dstHeight;
     params.lutSize = cachedLUT ? static_cast<uint32_t>(cachedLUT->size) : 0;
     params.useLut = cachedLUT ? 1u : 0u;
     params.toneEnabled =
@@ -787,7 +830,7 @@ PhotoParams makeParams(
         request.temperature != 6500.0f || request.tint != 0.0f ||
         request.wb_mode == SONY2FUJI_WB_CUSTOM ||
         request.highlights != 0.0f || request.shadows != 0.0f ||
-        request.tone_curve != 0.0f;
+        request.tone_curve != 0.0f || customCurve.active();
     size_t matrixOffset = 0;
     for (const auto& row : matrix) {
         for (float value : row) {
@@ -810,9 +853,19 @@ PhotoParams makeParams(
     params.highlights = request.highlights;
     params.shadows = request.shadows;
     params.toneCurve = request.tone_curve;
+    const auto custom = sony2fuji::toneCurveGpuParameters(customCurve);
+    params.customCurveCount = custom.count;
+    std::memcpy(params.curveRanges, custom.ranges, sizeof(custom.ranges));
+    std::memcpy(params.curveTangents, custom.tangents, sizeof(custom.tangents));
     params.noiseReduction = request.noise_reduction;
     params.sharpening = request.sharpening;
     params.hslEnabled = hsl.active();
+    params.blackPoint = toneControls.blackPoint; params.whitePoint = toneControls.whitePoint;
+    params.vibrance = toneControls.vibrance;
+    const auto grading=sony2fuji::colorGradingCoefficients(colorGrading);
+    for (size_t zone=0;zone<3;++zone) {
+        params.colorGrading[zone*3]=grading[zone].r;params.colorGrading[zone*3+1]=grading[zone].g;params.colorGrading[zone*3+2]=grading[zone].b;
+    }
     std::copy(hsl.hue.begin(), hsl.hue.end(), params.hslHue);
     std::copy(hsl.saturation.begin(), hsl.saturation.end(), params.hslSaturation);
     std::copy(hsl.lightness.begin(), hsl.lightness.end(), params.hslLightness);
@@ -904,7 +957,10 @@ bool renderPhotoMetalImpl(
     const sony2fuji::PhotoEffectsOptions& effects,
     int chromaDenoise,
     bool preserveSourceResolution,
-    const sony2fuji::HslOptions& hsl
+    const sony2fuji::HslOptions& hsl,
+    const sony2fuji::ToneControlsOptions& toneControls,
+    const sony2fuji::ColorGradingOptions& colorGrading,
+    const sony2fuji::ToneCurve& customCurve
 ) {
     if (input.width <= 0 || input.height <= 0 || targetWidth == 0 || targetHeight == 0 ||
         input.pixels.size() != static_cast<size_t>(input.width) * input.height ||
@@ -915,7 +971,7 @@ bool renderPhotoMetalImpl(
         !std::isfinite(request.tone_curve) || !std::isfinite(request.noise_reduction) ||
         !std::isfinite(request.sharpening) || !std::isfinite(request.lut_strength) ||
         !std::isfinite(relativeWB.r) || !std::isfinite(relativeWB.g) ||
-        !std::isfinite(relativeWB.b) || !effects.valid() || !hsl.valid() || chromaDenoise < 0 || chromaDenoise > 2) {
+        !std::isfinite(relativeWB.b) || !effects.valid() || !hsl.valid() || !toneControls.valid() || !colorGrading.valid() || !customCurve.gpuSupported() || (customCurve.custom() && request.tone_curve != 0) || chromaDenoise < 0 || chromaDenoise > 2) {
         return false;
     }
     size_t inputCount = 0;
@@ -980,120 +1036,151 @@ bool renderPhotoMetalImpl(
         return false;
     }
 
-    const size_t inputBytes = inputCount * sizeof(RGB);
-    const size_t processingBytes = processingCount * sizeof(RGB);
-    // Keep the input immutable and alternate every source-size stage through two buffers.
-    id<MTLBuffer> inputBuffer = makeBuffer(context.device, inputBytes);
-    id<MTLBuffer> processingA = makeBuffer(context.device, processingBytes);
-    id<MTLBuffer> processingB = makeBuffer(context.device, processingBytes);
-    if (!inputBuffer || !processingA || !processingB) {
-        return false;
-    }
-    std::memcpy(inputBuffer.contents, input.pixels.data(), inputBytes);
-
-    id<MTLCommandBuffer> commandBuffer = [context.queue commandBuffer];
-    if (!commandBuffer) {
-        return false;
-    }
-
-    id<MTLBuffer> currentBuffer = inputBuffer;
-    id<MTLBuffer> nextBuffer = processingA;
-    id<MTLBuffer> earlyResizeParams = nil;
-    if (earlyResize) {
-        const PhotoParams params = makeParams(
-            inputWidth, inputHeight, targetWidth, targetHeight, toSRGB, toFGamut,
-            request, relativeWB, useLUT ? &cachedLUT : nullptr, lutStrength
-        );
-        earlyResizeParams = makeParamsBuffer(context.device, params);
-        if (!earlyResizeParams || !encodeKernel(
-            commandBuffer, context.resizePipeline, earlyResizeParams, currentBuffer,
-            processingA, nil, processingCount
-        )) {
-            return false;
+    // 每个 GPU 缓冲区最多 16 MiB。主图只保留一份待提交结果；失败时调用方的
+    // 原始 RAW 和输出均不改变，Auto 可从同一参数、同一源像素重新走 CPU。
+    const size_t budget = std::min<size_t>(16u * 1024 * 1024, context.device.maxBufferLength);
+    auto runBands = [&](const ImageData& source, ImageData& destination, bool resizeFirst,
+                        bool beforeChroma, bool afterChroma, uint32_t resultWidth = 0, uint32_t resultHeight = 0) -> bool {
+        const uint32_t srcWidth = source.width, srcHeight = source.height;
+        const uint32_t dstWidth = resultWidth ? resultWidth : destination.width;
+        const uint32_t dstHeight = resultHeight ? resultHeight : destination.height;
+        const uint32_t workWidth = resizeFirst ? dstWidth : srcWidth;
+        const uint32_t workHeight = resizeFirst ? dstHeight : srcHeight;
+        const uint32_t halo = afterChroma ? uint32_t(request.noise_reduction > 0) + uint32_t(request.sharpening > 0) : 0;
+        const size_t srcRowBytes = size_t(srcWidth) * sizeof(RGB);
+        const size_t workRowBytes = size_t(workWidth) * sizeof(RGB);
+        const size_t dstRowBytes = size_t(dstWidth) * sizeof(RGB);
+        if (srcRowBytes > budget || workRowBytes > budget || dstRowBytes > budget) return false;
+        const bool inplace = &source == &destination;
+        if (inplace && (resizeFirst || srcWidth < dstWidth || srcHeight < dstHeight)) return false;
+        std::vector<RGB> previousRows;
+        uint32_t previousFirst = 0, previousEnd = 0;
+        const auto range = [](uint32_t row, uint32_t rows, uint32_t src, uint32_t dst, uint32_t padding) {
+            // 双线性 kernel 即使权重为零也会读取下一行，同尺寸也必须包含它。
+            if (src == dst) return std::pair<uint32_t, uint32_t>{row > padding ? row - padding : 0,
+                std::min(src, row + rows + padding + 1)};
+            const float scale = dst == 1 ? 0.f : float(src - 1) / float(dst - 1);
+            const uint32_t first = uint32_t(float(row) * scale);
+            const uint32_t last = uint32_t(float(row + rows - 1) * scale);
+            // 多留一行覆盖 CPU 与 GPU 的坐标舍入边界，卷积另加自己的 halo。
+            return std::pair<uint32_t, uint32_t>{first > padding + 1 ? first - padding - 1 : 0,
+                std::min(src, last + padding + 3)};
+        };
+        // 复用少量缓冲区，避免驱动缓存每一带已释放的分配而累积驻留内存。
+        id<MTLBuffer> uploaded = makeBuffer(context.device, std::min(budget, size_t(srcHeight) * srcRowBytes));
+        id<MTLBuffer> a = makeBuffer(context.device, std::min(budget, size_t(workHeight) * workRowBytes));
+        id<MTLBuffer> b = resizeFirst ? makeBuffer(context.device, std::min(budget, size_t(workHeight) * workRowBytes)) : uploaded;
+        id<MTLBuffer> final = makeBuffer(context.device, std::min(budget, size_t(dstHeight) * dstRowBytes));
+        if (!uploaded || !a || !b || !final) return false;
+        for (uint32_t row = 0; row < dstHeight;) {
+            @autoreleasepool {
+                uint32_t rows = std::min<size_t>(dstHeight - row, budget / dstRowBytes);
+                auto work = range(row, rows, workHeight, dstHeight, halo);
+                auto upload = resizeFirst ? range(work.first, work.second - work.first, srcHeight, workHeight, 0) : work;
+                while (rows > 1 && (size_t(work.second - work.first) * workRowBytes > budget ||
+                       size_t(upload.second - upload.first) * srcRowBytes > budget)) {
+                    rows = (rows + 1) / 2;
+                    work = range(row, rows, workHeight, dstHeight, halo);
+                    upload = resizeFirst ? range(work.first, work.second - work.first, srcHeight, workHeight, 0) : work;
+                }
+                const size_t uploadBytes = size_t(upload.second - upload.first) * srcRowBytes;
+                const size_t workBytes = size_t(work.second - work.first) * workRowBytes;
+                const size_t destinationBytes = size_t(rows) * dstRowBytes;
+                if (uploadBytes > budget || workBytes > budget) return false;
+                std::memcpy(uploaded.contents, source.pixels.data() + size_t(upload.first) * srcWidth, uploadBytes);
+                if (inplace && upload.first < previousEnd) {
+                    if (upload.first < previousFirst) return false;
+                    const size_t count = size_t(previousEnd - upload.first) * srcWidth;
+                    std::memcpy(uploaded.contents, previousRows.data() + size_t(upload.first - previousFirst) * srcWidth,
+                        count * sizeof(RGB));
+                }
+                if (inplace) {
+                    previousEnd = upload.second;
+                    previousFirst = row + rows < dstHeight ?
+                        range(row + rows, 1, srcHeight, dstHeight, halo).first : previousEnd;
+                    previousFirst = std::min(previousFirst, previousEnd);
+                    const auto* original = static_cast<const RGB*>(uploaded.contents);
+                    previousRows.assign(original + size_t(previousFirst - upload.first) * srcWidth,
+                        original + size_t(previousEnd - upload.first) * srcWidth);
+                }
+                id<MTLCommandBuffer> command = [context.queue commandBuffer];
+                if (!command) return false;
+                if (useDcp) *static_cast<uint32_t*>(invalid.contents) = 0;
+                id<MTLBuffer> current = uploaded, next = a;
+                if (resizeFirst) {
+                    auto params = makeParams(srcWidth, srcHeight, workWidth, workHeight,
+                        toSRGB, toFGamut, request, relativeWB, nullptr, lutStrength);
+                    params.srcRowOffset = upload.first; params.dstRowOffset = work.first;
+                    params.srcRows = upload.second - upload.first; params.dstRows = work.second - work.first;
+                    auto constants = makeParamsBuffer(context.device, params);
+                    if (!constants || !encodeKernel(command, context.resizePipeline, constants, current, a, nil,
+                        size_t(workWidth) * params.dstRows)) return false;
+                    current = a; next = b;
+                }
+                const auto params = makeParams(workWidth, work.second - work.first, dstWidth, dstHeight,
+                    toSRGB, toFGamut, request, relativeWB, useLUT ? &cachedLUT : nullptr, lutStrength, hsl, toneControls, colorGrading, customCurve);
+                auto constants = makeParamsBuffer(context.device, params);
+                if (!constants) return false;
+                auto run = [&](id<MTLComputePipelineState> pipeline, id<MTLTexture> texture,
+                               const CachedDcp* stages = nullptr) {
+                    if (!encodeKernel(command, pipeline, constants, current, next, texture,
+                        size_t(workWidth) * (work.second - work.first), stages, stages ? invalid : nil)) return false;
+                    std::swap(current, next);
+                    return true;
+                };
+                if (beforeChroma && (!run(context.matrixExposurePipeline, nil) ||
+                    !run(useDcp ? context.baseDcpPipeline : context.baseLutPipeline,
+                        useLUT ? cachedLUT.texture : nil, useDcp ? &cachedDcp : nullptr) ||
+                    !run(context.tonePipeline, nil))) return false;
+                if (afterChroma) {
+                    if (request.noise_reduction > 0 && !run(context.noisePipeline, nil)) return false;
+                    if (request.sharpening > 0 && !run(context.sharpenPipeline, nil)) return false;
+                    if (effects.active()) {
+                        const PhotoEffectsParams values{workWidth, workHeight, effects, work.first, work.second - work.first};
+                        id<MTLBuffer> effectConstants = [context.device newBufferWithBytes:&values
+                            length:sizeof(values) options:MTLResourceStorageModeShared];
+                        if (!effectConstants || !encodeKernel(command, context.effectsPipeline, effectConstants,
+                            current, next, nil, size_t(workWidth) * (work.second - work.first))) return false;
+                        std::swap(current, next);
+                    }
+                }
+                auto resize = makeParams(workWidth, workHeight, dstWidth, dstHeight,
+                    toSRGB, toFGamut, request, relativeWB, nullptr, lutStrength);
+                resize.srcRowOffset = work.first; resize.dstRowOffset = row;
+                resize.srcRows = work.second - work.first; resize.dstRows = rows;
+                auto resizeConstants = makeParamsBuffer(context.device, resize);
+                if (!resizeConstants || !encodeKernel(command, context.resizePipeline, resizeConstants,
+                    current, final, nil, size_t(dstWidth) * rows)) return false;
+                [command commit];
+                [command waitUntilCompleted];
+                if (command.status != MTLCommandBufferStatusCompleted ||
+                    (useDcp && *static_cast<const uint32_t*>(invalid.contents) != 0)) return false;
+                std::memcpy(destination.pixels.data() + size_t(row) * dstWidth, final.contents, destinationBytes);
+                row += rows;
+            }
         }
-        currentBuffer = processingA;
-        nextBuffer = processingB;
-    }
-
-    const PhotoParams params = makeParams(
-        processingWidth, processingHeight, targetWidth, targetHeight, toSRGB, toFGamut,
-        request, relativeWB, useLUT ? &cachedLUT : nullptr, lutStrength, hsl
-    );
-    id<MTLBuffer> paramsBuffer = makeParamsBuffer(context.device, params);
-    if (!paramsBuffer) {
-        return false;
-    }
-
-    auto runProcessingKernel = [&](id<MTLComputePipelineState> pipeline, id<MTLTexture> texture, const CachedDcp* stages = nullptr) {
-        if (!encodeKernel(commandBuffer, pipeline, paramsBuffer, currentBuffer, nextBuffer,
-            texture, processingCount, stages, stages ? invalid : nil)) {
-            return false;
-        }
-        id<MTLBuffer> completed = currentBuffer;
-        currentBuffer = nextBuffer;
-        nextBuffer = completed;
+        destination.width = dstWidth; destination.height = dstHeight;
+        destination.pixels.resize(size_t(dstWidth) * dstHeight);
         return true;
     };
-    if (!runProcessingKernel(context.matrixExposurePipeline, nil) ||
-        !runProcessingKernel(useDcp ? context.baseDcpPipeline : context.baseLutPipeline,
-            useLUT ? cachedLUT.texture : nil, useDcp ? &cachedDcp : nullptr) ||
-        !runProcessingKernel(context.tonePipeline, nil)) {
-        return false;
-    }
-
+    ImageData result;
     if (chromaDenoise != 0) {
-        // Preserve OpenCV's exact Lab conversion and sampled noise estimation.
-        // The denoiser dispatches its guided filters on Metal before we resume detail stages.
-        [commandBuffer commit];
-        [commandBuffer waitUntilCompleted];
-        if (commandBuffer.status != MTLCommandBufferStatusCompleted ||
-            (useDcp && *static_cast<const uint32_t*>(invalid.contents) != 0)) return false;
         ImageData display(static_cast<int>(processingWidth), static_cast<int>(processingHeight));
-        std::memcpy(display.pixels.data(), currentBuffer.contents, processingBytes);
-        if (sony2fuji::applyChromaDenoise(display, chromaDenoise, nullptr, sony2fuji::GpuMode::Force) !=
+        if (!runBands(input, display, earlyResize, true, false)) return false;
+        // 全图噪声模型只估计一次，不能让分带改变颜色降噪的统计或边界。
+        if (sony2fuji::applyChromaDenoiseWorking(display, chromaDenoise, nullptr, sony2fuji::GpuMode::Force) !=
             sony2fuji::ErrorCode::Success) return false;
-        std::memcpy(currentBuffer.contents, display.pixels.data(), processingBytes);
-        commandBuffer = [context.queue commandBuffer];
-        if (!commandBuffer) return false;
-    }
-
-    if (request.noise_reduction > 0.0f) {
-        if (!runProcessingKernel(context.noisePipeline, nil)) {
-            return false;
+        if (processingWidth >= targetWidth && processingHeight >= targetHeight) {
+            if (!runBands(display, display, false, false, true, targetWidth, targetHeight)) return false;
+            result = std::move(display);
+        } else {
+            result = ImageData(static_cast<int>(targetWidth), static_cast<int>(targetHeight));
+            if (!runBands(display, result, false, false, true)) return false;
         }
+    } else {
+        result = ImageData(static_cast<int>(targetWidth), static_cast<int>(targetHeight));
+        if (!runBands(input, result, earlyResize, true, true)) return false;
     }
-    if (request.sharpening > 0.0f) {
-        if (!runProcessingKernel(context.sharpenPipeline, nil)) {
-            return false;
-        }
-    }
-
-    if (effects.active()) {
-        const PhotoEffectsParams effectsParams{processingWidth, processingHeight, effects};
-        id<MTLBuffer> effectsBuffer = [context.device newBufferWithBytes:&effectsParams
-            length:sizeof(effectsParams) options:MTLResourceStorageModeShared];
-        if (!effectsBuffer || !encodeKernel(commandBuffer, context.effectsPipeline, effectsBuffer,
-            currentBuffer, nextBuffer, nil, processingCount)) return false;
-        std::swap(currentBuffer, nextBuffer);
-    }
-
-    id<MTLBuffer> finalBuffer = currentBuffer;
-    if (processingWidth != targetWidth || processingHeight != targetHeight) {
-        finalBuffer = makeBuffer(context.device, targetCount * sizeof(RGB));
-        if (!finalBuffer || !encodeKernel(commandBuffer, context.resizePipeline, paramsBuffer,
-            currentBuffer, finalBuffer, nil, targetCount)) {
-            return false;
-        }
-    }
-
-    [commandBuffer commit];
-    [commandBuffer waitUntilCompleted];
-    if (commandBuffer.status != MTLCommandBufferStatusCompleted) {
-        return false;
-    }
-    if (useDcp && *static_cast<const uint32_t*>(invalid.contents) != 0) return false;
-    ImageData result(static_cast<int>(targetWidth), static_cast<int>(targetHeight));
-    std::memcpy(result.pixels.data(), finalBuffer.contents, targetCount * sizeof(RGB));
     output = std::move(result);
     return true;
 }
@@ -1115,7 +1202,10 @@ bool renderPhotoMetal(
     const PhotoEffectsOptions& effects,
     int chromaDenoise,
     bool preserveSourceResolution,
-    const HslOptions& hsl
+    const HslOptions& hsl,
+    const ToneControlsOptions& toneControls,
+    const ColorGradingOptions& colorGrading,
+    const ToneCurve& customCurve
 ) {
     bool result = false;
     @try {
@@ -1123,7 +1213,7 @@ bool renderPhotoMetal(
             try {
                 result = renderPhotoMetalImpl(
                     input, inputSpace, request, lut, relativeWB,
-                    targetWidth, targetHeight, output, dcp, effects, chromaDenoise, preserveSourceResolution, hsl
+                    targetWidth, targetHeight, output, dcp, effects, chromaDenoise, preserveSourceResolution, hsl, toneControls, colorGrading, customCurve
                 );
             } catch (...) {
                 result = false;
@@ -1154,7 +1244,10 @@ bool renderPhotoMetal(
     const PhotoEffectsOptions&,
     int,
     bool,
-    const HslOptions&
+    const HslOptions&,
+    const ToneControlsOptions&,
+    const ColorGradingOptions&,
+    const ToneCurve&
 ) {
     return false;
 }

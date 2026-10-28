@@ -121,8 +121,8 @@ class BatchGpuModeInstrumentedTest {
             denoise = DenoiseSettings(true, 10f, 72f, 100f))
         for (resumed in listOf(true, false)) {
             withBatch(gpuEnabled = true, settings = settings, resumed = resumed, format = ExportFormat.JPEG) { batch ->
-                assertPreviewMatchesMode(batch, NativeProcessor.FORCE)
-                exportAndCompare(batch, NativeProcessor.FORCE, "${if (resumed) "resumed" else "new"}-auto-original-clean",
+                assertPreviewMatchesMode(batch, NativeProcessor.AUTO)
+                exportAndCompare(batch, NativeProcessor.AUTO, "${if (resumed) "resumed" else "new"}-auto-original-clean",
                     ExportFormat.JPEG, null)
             }
         }
@@ -240,7 +240,7 @@ class BatchGpuModeInstrumentedTest {
         val source = batch.state.value.job.source
         val target = batch.state.value.job.rows.single().target.sourceFile
         val cpu = NativeProcessor(NativeProcessor.CPU).use { it.preview(target, source.lookFile, source.settings, 1280, true) }
-        val gles = NativeProcessor(NativeProcessor.FORCE).use { it.preview(target, source.lookFile, source.settings, 1280, true) }
+        val gles = NativeProcessor(NativeProcessor.AUTO).use { it.preview(target, source.lookFile, source.settings, 1280, true) }
         assertEquals(0, cpu.backend)
         assertEquals(2, gles.backend)
         val cpuBitmap = cpu.bitmap()
@@ -271,7 +271,7 @@ class BatchGpuModeInstrumentedTest {
         val backendLog = android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(
             "logcat -d --pid=${android.os.Process.myPid()} -v raw -s RawLabBatch:I")).use { it.bufferedReader().readText() }
         val reports = backendLog.lineSequence().filter { it.startsWith("job=${completed.id} exportBackend=") }.toList()
-        val expectedBackend = if (referenceMode == NativeProcessor.FORCE) 2 else 0
+        val expectedBackend = if (referenceMode == NativeProcessor.CPU) 0 else 2
         assertEquals("The actual batch render must report its own backend exactly once",
             listOf("job=${completed.id} exportBackend=$expectedBackend"), reports)
         status("$label actualBatchExportBackend=$expectedBackend job=${completed.id}")
@@ -297,7 +297,7 @@ class BatchGpuModeInstrumentedTest {
         val file = File(target.parentFile, name)
         NativeProcessor(mode).use {
             val backend = it.export(target, job.source.lookFile, job.source.settings, file, job.outputFormat, job.outputLongEdge)
-            assertEquals("Reference export reports actual backend", if (mode == NativeProcessor.FORCE) 2 else 0, backend)
+            assertEquals("Reference export reports actual backend", if (mode == NativeProcessor.CPU) 0 else 2, backend)
             status("reference mode=$mode actualExportBackend=$backend")
         }
         return requireNotNull(BitmapFactory.decodeFile(file.path))

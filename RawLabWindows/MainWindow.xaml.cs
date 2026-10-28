@@ -19,7 +19,7 @@ public partial class MainWindow : Window
     internal TextBox ValueText => OrdinaryParameter.Number;
     private Button ResetParameterButton => OrdinaryParameter.ResetButton;
     private record Film(string Name,string? Path,string? Artwork,FilmGroup Group=FilmGroup.Other);
-    private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Clipping,bool Refine,long TransformGeneration);
+    private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Clipping,bool Refine,long TransformGeneration,long OpenRevision,OriginalIdentity Source,AIDenoiseIdentity? AIIdentity,HslProbeWork? Probe=null);
     private readonly Library library=new();
     private LookLibrary? lookLibrary;
     private Exception? lookLibraryLoadError;
@@ -34,15 +34,24 @@ public partial class MainWindow : Window
     private readonly Dictionary<string,Button> filmButtons=new(StringComparer.OrdinalIgnoreCase);
     private Adjustments settings=new();
     private Parameter selectedParameter=Parameter.Exposure;
+    private ToneControlParameter? selectedToneParameter;
+    private AtmosphereParameter? selectedAtmosphereParameter;
     private string? file,lut;
     private RenderEngine? engine;
     private bool ready,syncing,interacting,foregroundBusy,closing,closeFinished,exactReady;
     // The modeless batch owns its lifetime; foreground completion must not clear it.
     private bool exporting=>foregroundBusy || batchWindow?.Busy==true;
-    private bool compare,clipping,choosingFilm,choosingDenoise,choosingPhotoEffects,choosingLens,choosingGeometry,choosingWhiteBalance,swipe;
+    private readonly EditorViewState view=new();
+    private bool compare=>view.Enabled;
+    private bool swipe=>view.Enabled && view.PreferredMode==ComparisonMode.Wipe;
+    private bool clipping,choosingFilm,choosingDenoise,choosingPhotoEffects,choosingLens,choosingGeometry,choosingWhiteBalance;
+    private RenderedImage? neutralResult;
+    private long neutralRevision;
+    private NeutralReferenceKey? acceptedReference;
+    private NeutralReferenceKey? acceptedAfter;
     private PhotoEffectTool selectedEffect=PhotoEffectTool.Vignette;
     private bool renderFailed;
-    private bool choosingHsl,autoExposing;
+    private bool choosingHsl,choosingGrading,autoExposing;
     private long editRevision;
     private int? exportLongEdge;
     private string? lastExportedPath;
@@ -50,7 +59,7 @@ public partial class MainWindow : Window
     private PhotoInfoMode photoInfoMode;
     private long photoInfoRevision;
     private LibraryEntry? contextEntry;
-    private double dockHeight=288;
+    private double dockHeight=344;
     private double libraryWidth=244;
     private RenderedImage? result;
     private int renderedGpuMode;
@@ -71,14 +80,20 @@ public partial class MainWindow : Window
     public MainWindow() : this(new UsageAnalytics()) { }
     public MainWindow(UsageAnalytics usageAnalytics) : this(usageAnalytics,null) { }
     internal MainWindow(string lookLibraryDirectory) : this(new UsageAnalytics(),lookLibraryDirectory) { }
-    private MainWindow(UsageAnalytics usageAnalytics,string? lookLibraryDirectory)
+    internal MainWindow(UsageAnalytics usageAnalytics,string? lookLibraryDirectory,AIDenoiseJob? aiJob=null,DesktopUpdateController? desktopUpdates=null)
     {
         this.usageAnalytics = usageAnalytics;
+        this.desktopUpdates=desktopUpdates ?? new(new UnavailableUpdateAdapter("configuration"),new(),new(UpdateStore.DefaultDirectory),updates.CurrentVersion,"",updates.Automatic);
+        this.aiJob=aiJob ?? new((identity,snapshot,progress)=>{
+            using var worker=new RenderEngine(gpuMode:0,aiBackend:identity.Backend);
+            worker.PrepareAI(identity.Source.Path,snapshot,progress);
+        });
         InitializeComponent();
+        InitializeAI();
         if (!LookLibrary.TryLoad(lookLibraryDirectory, out lookLibrary, out lookLibraryLoadError))
             lookLibrary = null;
         AutomationProperties.SetAutomationId(this,"MainWindow");
-        foreach(var control in new FrameworkElement[]{OpenPhoto,CompareButton,CompareOff,CompareSide,CompareSwipe,
+        foreach(var control in new FrameworkElement[]{OpenPhoto,CompareButton,CompareModeButton,CompareOff,CompareSide,CompareSwipe,
             MenuCompareOff,MenuCompareSide,MenuCompareSwipe,NeutralCanvas,ResultCanvas,ExportButton,ExportPng,SaveState,Status,Files})
             AutomationProperties.SetAutomationId(control,control.Name);
         AutomationProperties.SetAutomationId(ValueSlider,"ParameterValueSlider");
@@ -87,7 +102,7 @@ public partial class MainWindow : Window
         void RefreshLanguage()
         {
             RecipeStrip.Children.Clear(); recipeButtons.Clear();
-            BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu(); HslEditor.RefreshLanguage();GeometryEditor.RefreshLanguage();
+            BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu(); HslEditor.RefreshLanguage();GradingEditor.RefreshLanguage();CurveEditor.RefreshLanguage();GeometryEditor.RefreshLanguage();
             RefreshControls(); RefreshPhotoInfo(); RefreshExportSizeMenu(); RefreshCopyLabels();
             RefreshRenderLabels();
             RefreshSaveNotice();
@@ -97,11 +112,13 @@ public partial class MainWindow : Window
         }
         Loc.Changed += RefreshLanguage;
         Closed += (_, _) => Loc.Changed -= RefreshLanguage;
-        UpdateNotice.DataContext = updates;
-        void RefreshUpdateNotice() => UpdateNotice.Visibility = updates.HasUpdate ? Visibility.Visible : Visibility.Collapsed;
+        void RefreshUpdateNotice() => UpdateChanged(null,new(null));
         updates.PropertyChanged += (_, _) => RefreshUpdateNotice();
         RefreshUpdateNotice();
         Closed += (_, _) => updateCancellation.Cancel();
+        foreach(var navigation in new UIElement[]{Groups,Tools,Files,OpenPhoto,AdjustToggleButton,MainMenu})
+            navigation.AddHandler(PreviewMouseDownEvent,new MouseButtonEventHandler(ParameterNavigationPressed),true);
+        PreviewKeyDown+=(_,e)=>{if(e.Key==Key.System && e.SystemKey is Key.F or Key.F4)CancelParameterInputs();};
         Files.ItemsSource=library.Roots;
         Files.PreviewKeyDown+=FilesContextKeyDown;
         AdjustmentPanel.Visibility=AdjustmentSplitter.Visibility=Visibility.Collapsed;DockRow.MinHeight=0;DockRow.Height=new(0);SplitterRow.Height=new(0);
@@ -114,6 +131,16 @@ public partial class MainWindow : Window
         ToolsScroller.SizeChanged+=(_,_)=>UpdateDockMinimum();
         NeutralCanvas.Viewport=ResultCanvas.Viewport=viewport;
         ResultCanvas.PreviewSizeChanged+=UpdatePreviewSize;
+        ResultCanvas.HoldStarted+=BeginHoldingBefore;
+        ResultCanvas.HoldEnded+=EndHoldingBefore;
+        NeutralCanvas.ImageBoundsChanged+=RefreshPhotoLabels;
+        ResultCanvas.ImageBoundsChanged+=RefreshPhotoLabels;
+        PreviewKeyUp+=ViewKeyReleased;
+        Activated+=(_,_)=>SyncBeforeKeyState();
+        AddHandler(Keyboard.GotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler((_,_)=>SyncBeforeKeyState()),true);
+        Deactivated+=(_,_)=>{if(!preservingUpdateNavigation){CancelViewingInput();GradingEditor.CancelInputs();CurveEditor.CancelInputs();}};
+        MainMenu.AddHandler(MenuItem.SubmenuOpenedEvent,new RoutedEventHandler((_,_)=>CancelViewingInput()));
+        CompareButton.ContextMenuOpening+=(_,_)=>CancelViewingInput();
         viewport.ResolutionChanged+=()=>{if(!syncing)UpdatePreviewSize(viewport.ActualPixels ? 0 : ResultCanvas.PreviewLongEdge);};
         previewResize.Tick+=(_,_)=>CommitPreviewSize();
         films.Add(new("中性",null,null));
@@ -133,7 +160,6 @@ public partial class MainWindow : Window
         }
         foreach(var look in lookLibrary?.Looks ?? [])
             films.Add(new(look.Name,look.Path,null));
-        lut=films.FirstOrDefault(f=>f.Name=="PROVIA")?.Path;
         BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu();
         DenoiseEditor.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
@@ -149,23 +175,48 @@ public partial class MainWindow : Window
         };
         WhiteBalanceEditor.ResetRequested+=()=>{
             if(!ready || syncing || exporting || transform.Active)return;
-            settings.ResetWhiteBalance();RefreshControls();MarkEdited();Schedule();
+            RequestReset(new(EditorResetKind.Tool,Tool:EditorAdjustmentTool.WhiteBalance));
         };
+        GradingEditor.ResetRequested+=RequestReset;
+        CurveEditor.Changed+=(value,dragging)=>{
+            if(!ready || syncing || exporting || transform.Active)return;
+            settings.Curve=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
+        };
+        CurveEditor.LegacyChanged+=(value,dragging)=>{
+            if(!ready || syncing || exporting || transform.Active)return;
+            settings.Set(Parameter.ToneCurve,value);interacting=dragging;RefreshControls();MarkEdited();Schedule();
+        };
+        GradingEditor.Changed+=(value,dragging)=>{
+            if(!ready || syncing || exporting || transform.Active)return;
+            settings.ColorGrading=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
+        };
+        InitializeHslTarget();
+        HslEditor.ResetRequested+=RequestReset;
+        PhotoEffectsEditor.ResetRequested+=()=>RequestReset(new(EditorResetKind.Tool,Tool:CurrentTool));
         HslEditor.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
             settings.Hsl=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
         };
+        DenoiseEditor.ResetRequested+=()=>RequestReset(new(EditorResetKind.Tool,Tool:EditorAdjustmentTool.Denoise));
+        GeometryEditor.ResetRequested+=()=>RequestReset(new(EditorResetKind.Tool,Tool:EditorAdjustmentTool.Geometry));
+        LensEditor.ResetRequested+=()=>RequestReset(new(EditorResetKind.Tool,Tool:EditorAdjustmentTool.Lens));
         LensEditor.Changed+=UpdateLensDraft;
         GeometryEditor.Changed+=UpdateGeometryDraft;
         GeometryEditor.OverlayChanged+=RefreshCropDraft;
         ResultCanvas.CropChanged+=UpdateGeometryDraft;
+        ResultCanvas.PrepareCropInteraction=GeometryEditor.CommitInputs;
         OrdinaryParameter.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
-            interacting=dragging;settings.Set(selectedParameter,value);MarkEdited();RefreshControls();Schedule();
+            interacting=dragging;
+            if(selectedAtmosphereParameter is {} atmosphere)settings.SetAtmosphere(atmosphere,value);
+            else if(selectedToneParameter is {} tone)settings.SetTone(tone,value);else settings.Set(selectedParameter,value);
+            MarkEdited();RefreshControls();Schedule();
         };
         OrdinaryParameter.InvalidInput+=()=>SetStatus(() => Loc.Text("请输入有效数字"),true);
+        SetPhotoMargin(true);
         ready=true; RefreshControls(); RefreshRenderLabels(); RefreshCopyLabels();
         InitializeEditWorkflow();
+        InitializeSoftwareUpdates();
         Closing+=WindowClosing;
         Loaded+=async (_,_)=> {
             if (!startupReported) { startupReported = true; this.usageAnalytics.BeginSession(); }
@@ -173,7 +224,10 @@ public partial class MainWindow : Window
                 SetStatus(() => lookLibraryLoadError is LookLibraryException ? lookLibraryLoadError.Message : Loc.Text("本地记录损坏。"), true);
             var input=Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(LibraryEntry.IsImage);
             if(input!=null)OpenFile(input);
-            await updates.CheckAsync(false, updateCancellation.Token);
+            if(updates.Automatic!=this.desktopUpdates.Preferences.AutomaticCheck)
+                updates.Automatic=this.desktopUpdates.Preferences.AutomaticCheck;
+            if(this.desktopUpdates.UnavailableReason!=null)await updates.CheckAsync(false, updateCancellation.Token);
+            else await this.desktopUpdates.CheckAsync(false);
         };
     }
 }

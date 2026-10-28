@@ -31,7 +31,7 @@ internal static class UiPanelChecks
             var kinds=UiDetailChecks.Descendants(panel).OfType<Button>()
                 .Where(button=>!UiDetailChecks.Descendants(panel).OfType<ParameterRow>().Any(row=>row.ResetButton==button))
                 .Select(button=>UiDetailChecks.Descendants(button).OfType<EditorIcon>().FirstOrDefault()?.Kind).OfType<string>().ToList();
-            check(kinds.Count==4 && kinds.Distinct().Count()==kinds.Count,"Geometry actions use different icons: "+string.Join(", ",kinds));
+            check(kinds.SequenceEqual(new[]{"Unlock","Swap","RotateLeft","RotateRight","Reset"}),"Geometry actions use different icons: "+string.Join(", ",kinds));
             foreach(var (a,b) in kinds.SelectMany((a,i)=>kinds.Skip(i+1).Select(b=>(a,b))))
             {
                 var similarity=Similarity(a,b);
@@ -84,7 +84,7 @@ internal static class UiPanelChecks
             var buttons=UiDetailChecks.Descendants(panel).OfType<Button>().Where(button=>button.IsVisible).ToList();
             var bare=buttons.Count(button=>button.Content is EditorIcon);
             var labeled=buttons.Count(button=>Equals(button.Content,Loc.Text("重置白平衡")));
-            check(bare==2 && labeled==1,$"White balance has one reset icon per row and a labeled group reset: {bare} icons, {labeled} labeled ({language})");
+            check(bare==0 && labeled==1,$"White balance keeps row reset actions in menus and one labeled tool reset: {bare} icons, {labeled} labeled ({language})");
         });
     }
     // 对齐与裁切：效果分组重置与行重置同列，HSL 色块完整，导出尺寸对话框按钮等高
@@ -93,18 +93,15 @@ internal static class UiPanelChecks
         var effects=new PhotoEffectsPanel();
         Host(effects,()=>{
             effects.Refresh(new PhotoEffectsSettings(),PhotoEffectTool.Grain);effects.UpdateLayout();
-            var group=effects.ResetGroupButton;
-            var row=UiDetailChecks.Descendants(effects).OfType<ParameterRow>().First(item=>item.IsVisible).ResetButton;
-            var groupCenter=group.TranslatePoint(new Point(group.ActualWidth/2,0),effects).X;
-            var rowCenter=row.TranslatePoint(new Point(row.ActualWidth/2,0),effects).X;
-            check(Math.Abs(groupCenter-rowCenter)<.5 && Math.Abs(group.ActualWidth-row.ActualWidth)<.5,
-                $"Effect group reset lines up with the row resets: {groupCenter:0.#}/{group.ActualWidth:0.#} vs {rowCenter:0.#}/{row.ActualWidth:0.#}");
+            var rows=UiDetailChecks.Descendants(effects).OfType<ParameterRow>().Where(item=>item.IsVisible).ToArray();
+            check(rows.Length==3 && rows.All(row=>row.ResetButton.Visibility==Visibility.Collapsed && row.ContextMenu!=null),
+                "All grain values expose semantic reset menus without persistent row reset buttons");
         });
         var hsl=new HslPanel();
         Host(hsl,()=>{
-            var clipped=UiDetailChecks.Descendants(hsl).OfType<Button>().Select(button=>button.Content).OfType<Ellipse>()
-                .Count(swatch=>VisualTreeHelper.GetParent(swatch) is FrameworkElement slot && slot.ActualWidth+.5<swatch.Width);
-            check(clipped==0,$"HSL color swatches are not clipped: {clipped} of 8 ({language})");
+            var swatches=UiDetailChecks.Descendants(hsl).OfType<Ellipse>().Where(swatch=>swatch.Width==20 && swatch.Height==20).ToArray();
+            var clipped=swatches.Count(swatch=>VisualTreeHelper.GetParent(swatch) is FrameworkElement slot && slot.ActualWidth+.5<swatch.Width);
+            check(swatches.Length==8 && clipped==0,$"Eight HSL color swatches are not clipped: {clipped} of {swatches.Length} ({language})");
         });
         var owner=new Window{Width=400,Height=300,ShowInTaskbar=false};owner.Show();
         var dialog=(Window)Activator.CreateInstance(typeof(LongEdgeDialog),BindingFlags.Instance|BindingFlags.NonPublic,null,new object?[]{null,owner},null)!;

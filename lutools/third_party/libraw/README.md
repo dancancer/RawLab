@@ -1,4 +1,34 @@
-# LibRaw decoder backports
+# LibRaw backports and local patches
+
+## Parallel VNG
+
+`vng_parallel.inc` preserves the active-channel integer arithmetic from the
+pinned LibRaw 0.22.2 `src/demosaic/misc_demosaic.cpp`. The companion
+`cmake/libraw-vng.cmake` inserts it after bilinear interpolation and the VNG
+lookup-table construction. It is a local optimization, not an upstream change
+or a different demosaic algorithm.
+
+For Bayer filters with OpenMP and more than one available worker, each batch reads an immutable
+snapshot of at most 256 output rows plus a two-row halo on each side. The last
+four source rows survive into the next batch before any overwritten image
+data can be read. Additional storage is bounded by `260 * width * 8` bytes,
+not a second full image. The original scalar path remains available without
+OpenMP, with one worker, or for non-Bayer filters. Progress and cancellation run on the calling thread
+at the original 256-row boundaries, outside parallel regions.
+
+`vng_parallel_tests.cpp` compares every active channel against fingerprints
+captured from the unmodified implementation, including borders, partial batches,
+three/four-color Bayer patterns and flat inputs. Separate CTest invocations
+select one and four OpenMP workers and check callback order and cancellation.
+`raw_decode_benchmark` is an opt-in Release diagnostic: it separates open/unpack,
+LibRaw processing, demosaic/mix-green and complete core processing with/without
+embedded-preview matching. Differences between separate timing runs are not
+reported as exact isolated conversion or preview costs.
+
+The original LibRaw LGPL 2.1 / CDDL 1.0 licensing also applies to the derived
+pixel arithmetic. Licenses are supplied and packaged with the pinned dependency.
+
+## Sony ARW6
 
 `sony_arw6.cpp` is backported from LibRaw commit
 [`e419de08001de28ae6988ecb22df47e52b9c5eaa`](https://github.com/LibRaw/LibRaw/tree/e419de08001de28ae6988ecb22df47e52b9c5eaa).

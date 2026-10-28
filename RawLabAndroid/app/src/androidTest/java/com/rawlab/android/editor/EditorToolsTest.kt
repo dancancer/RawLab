@@ -10,7 +10,10 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -42,6 +45,34 @@ import org.junit.Assert.assertTrue
 class EditorToolsTest {
     val compose = createComposeRule()
     @get:Rule val languageAndCompose = org.junit.rules.RuleChain.outerRule(LanguageTestRule()).around(compose)
+
+    @Test fun atmosphereToolsEditIndependentlyAndKeepRoundedOriginalPrecision() {
+        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        var edits by mutableStateOf(EditSettings(clarity = 37.251234f, dehaze = -42.5f))
+        var commits = 0
+        compose.setContent { RawLabTheme {
+            EditorScreen(state = EditorState(
+                photo = ImportedPhoto(Uri.parse("content://rawlab.test/atmosphere"), "fixture", File("fixture")),
+                edits = edits, preview = PreviewPair(bitmap, bitmap, temperature = 6500f, tint = 0f), exact = true),
+                onAlbum = {}, onFile = {}, onEdit = { next, dragging -> edits = next; if (!dragging) commits++ }, onRetry = {},
+                onExport = {}, onMessageDismiss = {}, onLicenses = {}, onGpuChange = {})
+        } }
+        compose.onNodeWithTag("editor-group-effects").performClick()
+        compose.onNodeWithTag("editor-tool-22").assertIsSelected()
+        compose.onNodeWithTag("adjustment-value-${com.rawlab.android.R.string.clarity}").assertTextContains("37.25").performClick()
+        compose.onNodeWithTag("adjustment-input-apply").performClick()
+        compose.runOnIdle { assertEquals(37.251234f, edits.clarity); assertEquals(0, commits) }
+        compose.onNodeWithTag("editor-tool-23").performClick()
+        compose.onNodeWithTag("adjustment-value-${com.rawlab.android.R.string.dehaze}").assertTextContains("-42.5").performClick()
+        compose.onNodeWithTag("adjustment-input").performTextReplacement("-25")
+        compose.onNodeWithTag("adjustment-input-apply").performClick()
+        compose.runOnIdle { assertEquals(-25f, edits.dehaze); assertEquals(37.251234f, edits.clarity); assertEquals(1, commits) }
+        compose.onNodeWithTag("editor-tool-22").performClick()
+        compose.onNodeWithTag("adjustment-value-${com.rawlab.android.R.string.clarity}").performClick()
+        compose.onNodeWithTag("adjustment-input").performTextReplacement("-30")
+        compose.onNodeWithTag("adjustment-input-apply").performClick()
+        compose.runOnIdle { assertEquals(-30f, edits.clarity); assertEquals(-25f, edits.dehaze); assertEquals(2, commits) }
+    }
 
     @Test fun whiteBalanceToolHasOneSelectedAccessibleEntryAndOneChangedIndicator() {
         val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
@@ -76,15 +107,19 @@ class EditorToolsTest {
                         preview = PreviewPair(bitmap, bitmap, temperature = 6500f, tint = 0f),
                         exact = true,
                     ),
-                    onAlbum = {}, onFile = {}, onEdit = { next, _ -> edits = next }, onReset = {}, onRetry = {},
+                    onAlbum = {}, onFile = {}, onEdit = { next, _ -> edits = next }, onRetry = {},
                     onExport = {}, onMessageDismiss = {}, onLicenses = {}, onGpuChange = {},
+                    onPrepareReset = { scope -> EditorResetTransaction.prepare(scope, EditorResetSession(
+                        com.rawlab.android.settings.PhotoIdentity("fixture"), "fixture", 1, 1, edits, null, 0,
+                        EditorResetContext(com.rawlab.android.format.PhotoInputKind.RAW, EditSettings(), AsShotWhiteBalance(6500f, 0f)))) },
+                    onCommitReset = { prepared -> edits = prepared.result.candidate; true },
                 )
             }
         }
         compose.onNodeWithContentDescription("全部工具").performClick()
         compose.onNodeWithContentDescription("白平衡").performClick()
         compose.onNodeWithText("色温").assertIsDisplayed()
-        compose.onNodeWithText("色调").assertIsDisplayed()
+        compose.onNodeWithText("色调").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("拍摄时设置").performClick()
         compose.runOnIdle {
             assertFalse(edits.customWb)
@@ -97,7 +132,7 @@ class EditorToolsTest {
     @Test fun moreMenuItemsShareOneTextColumn() {
         compose.setContent {
             RawLabTheme {
-                EditorScreen(state = EditorState(), onAlbum = {}, onFile = {}, onEdit = { _, _ -> }, onReset = {}, onRetry = {},
+                EditorScreen(state = EditorState(), onAlbum = {}, onFile = {}, onEdit = { _, _ -> }, onRetry = {},
                     onExport = {}, onMessageDismiss = {}, onLicenses = {}, onGpuChange = {}, updateVersion = "9.9.9")
             }
         }
@@ -108,8 +143,8 @@ class EditorToolsTest {
         assertEquals(lefts.toString(), 1, lefts.values.distinct().size)
     }
 
-    // 标题行的“重置调整”（全部重置）和参数行的“重置此项”紧挨着，两个按钮不能长得一模一样
-    @Test fun headerResetLooksDifferentFromTheParameterReset() {
+    // 面板重置保留可见入口；单参数重置通过语义动作提供，避免每行常驻按钮。
+    @Test fun headerResetRemainsVisibleAndParameterResetIsASemanticAction() {
         val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
         compose.setContent {
             RawLabTheme {
@@ -120,21 +155,16 @@ class EditorToolsTest {
                         preview = PreviewPair(bitmap, bitmap, temperature = 6500f, tint = 0f),
                         exact = true,
                     ),
-                    onAlbum = {}, onFile = {}, onEdit = { _, _ -> }, onReset = {}, onRetry = {},
+                    onAlbum = {}, onFile = {}, onEdit = { _, _ -> }, onRetry = {},
                     onExport = {}, onMessageDismiss = {}, onLicenses = {}, onGpuChange = {},
                 )
             }
         }
-        compose.onNodeWithTag("editor-tool-2").performClick()
-        val header = compose.onNodeWithContentDescription("重置调整").captureToImage().asAndroidBitmap()
-        val parameter = compose.onNodeWithContentDescription("重置此项").captureToImage().asAndroidBitmap()
-        // 只比较字形：按亮度二值化后逐点比，颜色或启用态的深浅不算区别
-        assertEquals(header.width, parameter.width)
-        assertEquals(header.height, parameter.height)
-        fun lit(b: Bitmap, x: Int, y: Int) = b.getPixel(x, y).let { (it shr 16 and 0xFF) + (it shr 8 and 0xFF) + (it and 0xFF) > 300 }
-        val total = header.width * header.height
-        val differing = (0 until total).count { lit(header, it % header.width, it / header.width) != lit(parameter, it % header.width, it / header.width) }
-        assertTrue("header reset and parameter reset render the same glyph ($differing of $total pixels differ)", differing * 50 > total)
+        compose.onNodeWithTag("editor-group-light").performClick()
+        compose.onNodeWithContentDescription("重置调整").assertIsDisplayed()
+        compose.onAllNodesWithContentDescription("重置此项").assertCountEquals(0)
+        val actions = compose.onNodeWithTag("adjustment-slider").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.CustomActions]
+        assertEquals(listOf("重置此项"), actions.map { it.label })
     }
 
     // 与 Mac、iOS 一致：“已调整”标记是工具名下方单独的小圆点，在圆圈外面；没调整时透明但仍占位，切换时工具条不跳动
@@ -145,7 +175,7 @@ class EditorToolsTest {
             edits = EditSettings(exposure = .5f),
             preview = PreviewPair(bitmap, bitmap, temperature = 6500f, tint = 0f),
         )
-        compose.setContent { RawLabTheme { Surface { EditorToolStrip(state, selected = 0) {} } } }
+        compose.setContent { RawLabTheme { Surface { EditorToolStrip(state, selected = 2, tools = EditorAdjustmentRules.tools(EditorAdjustmentGroup.LIGHT)) {} } } }
         fun bounds(tag: String) = compose.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val ring = bounds("editor-tool-ring-2")
         val marker = bounds("editor-tool-marker-2")

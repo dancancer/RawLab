@@ -62,16 +62,19 @@ extension BatchExportModel {
 
     func prepareTarget(_ source: PhotoImportSource, identity: PhotoIdentity, jobID: UUID,
                                journalStore: BatchJournalStore) async throws -> BatchTarget {
-        try await perform {
+        let processing = job.source.settings.processing
+        return try await perform {
             let owned = try BatchInputStore.copy(source.url, identity: identity, jobID: jobID,
                                                  root: journalStore.directory)
             let processor = Sony2FujiProcessor()
+            var neutral = RawSettings.default
+            neutral.processing = processing
             if source.isRaw {
-                _ = try processor.processRaw(url: owned, settings: .default,
+                _ = try processor.processRaw(url: owned, settings: neutral,
                                              previewLongEdge: 160, lutURL: nil)
             } else {
                 let raster = try processor.loadRasterBuffer(url: owned)
-                _ = try processor.processBuffer(buffer: raster.buffer, settings: .default,
+                _ = try processor.processBuffer(buffer: raster.buffer, settings: neutral,
                                                 previewLongEdge: 160, lutURL: nil)
             }
             return BatchTarget(identity: identity, sourceURL: owned,

@@ -63,12 +63,14 @@ class CachedMacTests(unittest.TestCase):
             root = Path(directory)
             scripts = root / "RawLabMac"
             scripts.mkdir()
-            for name in ("build.sh", "build-env.sh"):
+            for name in ("build.sh", "build-env.sh", "release-config.sh"):
                 shutil.copy2(ROOT / "RawLabMac" / name, scripts / name)
             for name in ("build-dependencies.sh", "build-chroma-dependency.sh",
                          "build-wavelet-dependency.sh", "build-tiff-dependency.sh"):
                 (scripts / name).write_text(f"echo 'Dependency build requested: {name}' >&2\nexit 29\n")
             (scripts / "build-lens-dependency.sh").write_text("echo 'Lensfun validation retained'\n")
+            # 本测试在产品配置处终止；Sparkle 打包由独立 bundle 检查负责。
+            (scripts / "prepare-sparkle.sh").write_text("printf '%s\\n' /unused/Sparkle.framework\n")
             tools = root / "tools"
             tools.mkdir()
             for name, content in (("pkg-config", "exit 0"),

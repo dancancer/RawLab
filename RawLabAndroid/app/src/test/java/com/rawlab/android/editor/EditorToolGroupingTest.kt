@@ -12,6 +12,20 @@ import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.editor.ui.editorToolIcons
 
 class EditorToolGroupingTest {
+    @Test fun everyGroupStartsAtItsDesignatedTool() {
+        assertEquals(listOf(0, 2, 8, 22, 11, 17), EditorAdjustmentGroup.entries.map(EditorAdjustmentRules::defaultTool))
+    }
+
+    @Test fun busyDoesNotHideStoredLegacyAuxiliaryObjectMarkers() {
+        val state = EditorState(edits = EditSettings(displayChromaDenoise = 2), rendering = true)
+        assertTrue(EditorAdjustmentRules.isModified(EditorResetScope.Tool(11), state.visibleEdits, state.resetContext()))
+        assertTrue(EditorAdjustmentRules.isModified(EditorResetScope.Group(EditorAdjustmentGroup.DETAIL), state.visibleEdits, state.resetContext()))
+    }
+
+    @Test fun toolsFollowTheSixWorkspaceGroupsWithStableIds() {
+        assertEquals(listOf(0, 15, 1, 2, 3, 4, 18, 19, 5, 6, 8, 7, 20, 14, 21, 22, 23, 12, 13, 11, 10, 17, 16), editorToolOrder)
+    }
+
     @Test fun whiteBalanceUsesOneToolEntryWithTheCombinedTitle() {
         assertEquals(1, editorToolOrder.count { it == 8 || it == 9 })
         assertTrue(editorToolOrder.contains(8))

@@ -1,0 +1,80 @@
+package com.rawlab.android.editor
+
+import com.rawlab.android.editor.controls.AdjustmentScale
+import com.rawlab.android.editor.controls.formatAdjustment
+import com.rawlab.android.editor.controls.editorDockLayout
+import org.junit.Assert.*
+import org.junit.Test
+import java.util.Locale
+
+class ParameterInputContractTest {
+    @Test fun gradingBoundsAreCheckedBeforeFloatRounding() {
+        val hue = AdjustmentScale(0f..360f, .1f, 0f)
+        val saturation = AdjustmentScale(0f..100f, .1f, 0f)
+        assertNull(hue.parse("360.0000001", current = 0f))
+        assertNull(saturation.parse("100.0000001", current = 0f))
+        assertNull(hue.parse("12.1000001", current = 12.1f))
+        assertEquals(360f, hue.parse("360", current = 0f)!!, 0f)
+        assertEquals(12.1f, hue.parse("12.10", current = 12.1f)!!, 0f)
+    }
+
+    @Test fun displayLimitsDecimalsWithoutChangingTheInteractionGrid() {
+        assertEquals("0.5", formatAdjustment(.5f, 1f))
+        assertEquals("12.34", formatAdjustment(12.34f, 1f))
+        assertEquals("5237", formatAdjustment(5237f, 10f))
+        assertEquals("0", formatAdjustment(.00001f, .05f))
+        assertEquals("12.35", formatAdjustment(12.3456f, 1f))
+        assertEquals("12,35", formatAdjustment(12.3456f, 1f, Locale.GERMAN))
+    }
+
+    @Test fun originalValueExceptionAppliesToEveryParameterAndEquivalentNumericText() {
+        val hsl = AdjustmentScale(-100f..100f, 1f, 0f)
+        assertEquals(.5f, hsl.parse("0.5", current = .5f)!!, 0f)
+        assertEquals(.5f, hsl.parse("0,50", Locale.GERMAN, .5f)!!, 0f)
+        val exposure = AdjustmentScale(-4f..4f, .05f, 0f)
+        assertEquals(.1234f, exposure.parse("0.12340", current = .1234f)!!, 0f)
+        assertEquals(.1234f, exposure.parse("0.12", current = .1234f)!!, 0f)
+        assertEquals(.00001f, exposure.parse("0", current = .00001f)!!, 0f)
+    }
+
+    @Test fun newOffGridTextIsRejectedInsteadOfSilentlySnapping() {
+        assertNull(AdjustmentScale(-100f..100f, 1f, 0f).parse("0.5", current = 0f))
+        assertNull(AdjustmentScale(-4f..4f, .05f, 0f).parse("0.36", current = 0f))
+        assertNull(AdjustmentScale(-4f..4f, .05f, 0f).parse("0.45000002", current = 0f))
+        assertNull(AdjustmentScale(2000f..50000f, 10f, 5237f, true).parse("5503", current = 5237f))
+        assertEquals(1f, AdjustmentScale(-100f..100f, 1f, 0f).parse("1", current = .5f)!!, 0f)
+    }
+
+    @Test fun standardPortraitReservesThreeAxesAndPhotoWithoutChangingForTool() {
+        val layout = editorDockLayout(652f, 1f, false, true)
+        assertFalse(layout.compactNavigation)
+        assertEquals(332f, layout.height, 0f)
+        assertTrue(layout.height - 48f * 2 >= 48f * 4)
+        assertTrue(652f - layout.height >= 96f)
+    }
+
+    @Test fun largePortraitKeepsFullNavigationAndScrollsParametersWithinOneWindowBudget() {
+        val layout = editorDockLayout(652f, 1.6f, false, true)
+        assertFalse("A standard narrow portrait must not split long labels into tiny inline viewports", layout.compactNavigation)
+        assertTrue(layout.height >= 332f && layout.height <= 440f)
+        assertTrue(652f - layout.height >= 96f)
+    }
+
+    @Test fun defaultAndCurrentFillUseTheSameMonotonicCoordinateIncludingKelvin() {
+        assertEquals(0f, AdjustmentScale(0f..0f, .1f, 0f).fraction(0f), 0f)
+        val tint = AdjustmentScale(-150f..150f, 1f, 30f)
+        assertEquals(.6f, tint.fraction(30f), .00001f)
+        assertTrue(tint.fraction(-60f) < tint.fraction(tint.default))
+        assertTrue(tint.fraction(90f) > tint.fraction(tint.default))
+        val kelvin = AdjustmentScale(2000f..50000f, 10f, 5237f, true)
+        assertEquals(0f, kelvin.fraction(2000f), 0f)
+        assertEquals(1f, kelvin.fraction(50000f), 0f)
+        assertTrue(kelvin.fraction(3000f) < kelvin.fraction(kelvin.default))
+        assertTrue(kelvin.fraction(8000f) > kelvin.fraction(kelvin.default))
+    }
+
+    @Test fun invalidOriginalTextStillCannotBypassFiniteOrRangeChecks() {
+        val scale = AdjustmentScale(-100f..100f, 1f, 0f)
+        listOf("", "NaN", "Infinity", "101", "-100.1", "1junk").forEach { assertNull(it, scale.parse(it, current = .5f)) }
+    }
+}

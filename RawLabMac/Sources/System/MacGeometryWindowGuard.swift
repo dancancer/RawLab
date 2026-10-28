@@ -42,7 +42,7 @@ struct MacGeometryWindowGuard: NSViewRepresentable {
 
         func windowShouldClose(_ sender: NSWindow) -> Bool {
             guard let model else { return previous?.windowShouldClose?(sender) ?? true }
-            NSApp.keyWindow?.makeFirstResponder(nil)
+            ParameterValueField.cancelPendingInputs()
             if model.geometryDraftHasChanges {
                 model.requestLeavingGeometryDraft { [weak self, weak sender] in
                     guard let self, let sender else { return }
@@ -77,13 +77,32 @@ struct MacGeometryWindowGuard: NSViewRepresentable {
     }
 }
 
-final class RawLabMacDelegate: NSObject, NSApplicationDelegate {
+@MainActor final class RawLabMacDelegate: NSObject, NSApplicationDelegate {
     // 退出时最多等统计 SDK 收尾这么久（秒）
     static let usageShutdownLimit: TimeInterval = 3
     weak var model: EditorModel?
+    weak var updates: DesktopUpdateController?
+    private var updateQuitPending = false
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        sender.keyWindow?.makeFirstResponder(nil)
+        guard !updateQuitPending else { return .terminateCancel }
+        guard let updates else { return continueTermination(sender) }
+        updateQuitPending = true
+        DispatchQueue.main.async { [weak self, weak sender] in
+            guard let self, let sender else { return }
+            updates.prepareForQuit { [weak self, weak sender] allow in
+                guard let self, let sender else { return }
+                self.updateQuitPending = false
+                guard allow else { sender.reply(toApplicationShouldTerminate: false); return }
+                let reply = self.continueTermination(sender)
+                if reply != .terminateLater { sender.reply(toApplicationShouldTerminate: reply == .terminateNow) }
+            }
+        }
+        return .terminateLater
+    }
+
+    private func continueTermination(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        ParameterValueField.cancelPendingInputs()
         guard let model else {
             return finishTermination(sender)
         }

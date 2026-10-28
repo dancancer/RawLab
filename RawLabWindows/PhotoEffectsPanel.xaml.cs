@@ -23,6 +23,7 @@ public partial class PhotoEffectsPanel : UserControl
         new("大小","颗粒大小","重置颗粒大小","颗粒大小数值"),
         new("粗糙度","颗粒粗糙度","重置颗粒粗糙度","颗粒粗糙度数值")];
     public event Action<PhotoEffectsSettings,bool>? Changed;
+    public event Action? ResetRequested;
     public PhotoEffectsPanel()
     {
         InitializeComponent();
@@ -62,10 +63,10 @@ public partial class PhotoEffectsPanel : UserControl
     {
         var showVignetteResets=tool==PhotoEffectTool.Grain || VignetteDetails.IsExpanded;
         ResetGroupButton.Visibility=showVignetteResets ? Visibility.Visible : Visibility.Collapsed;
-        rows[PhotoEffectParameter.VignetteAmount].ResetButton.Visibility=showVignetteResets ? Visibility.Visible : Visibility.Collapsed;
+
     }
     private void ResetGroupClicked(object sender,RoutedEventArgs e)
     {
-        var next=new Adjustments{Effects=value};next.ResetEffects(tool==PhotoEffectTool.Vignette);Publish(next.Effects);
+        if(!syncing && IsEnabled)ResetRequested?.Invoke();
     }
 }

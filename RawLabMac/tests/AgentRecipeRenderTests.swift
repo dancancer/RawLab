@@ -80,10 +80,14 @@ private func writeJSON(_ value: [String: Any], to url: URL) throws {
     try data.write(to: url, options: .atomic)
 }
 
-private func inspectRecipe(_ data: Data, label: String) throws -> [String: Any] {
+private func inspectRecipe(_ data: Data, label: String, processing: ProcessingIdentity = .current) throws -> [String: Any] {
     let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-    try check((root["schema_version"] as? NSNumber)?.intValue == 4,
-              "\(label): agent emits schema_version 4")
+    try check((root["schema_version"] as? NSNumber)?.intValue == 5,
+              "\(label): agent emits schema_version 5")
+    let identity = try dictionary(root["processing"], "processing")
+    try check(identity["family"] as? String == processing.family &&
+              (identity["version"] as? NSNumber)?.intValue == processing.version &&
+              identity["quality"] as? String == processing.quality, "\(label): processing identity is preserved")
     let edits = try dictionary(root["edits"], "edits")
     _ = try dictionary(edits["exposure"], "edits.exposure")
     _ = try dictionary(edits["white_balance"], "edits.white_balance")
@@ -149,7 +153,7 @@ private func runCLI(_ cli: URL, recipe: URL, preview: URL? = nil, longEdge: Int?
     let output = stdout.fileHandleForReading.readDataToEndOfFile()
     let diagnostics = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
     guard process.terminationStatus == 0 else {
-        throw fail("CLI failed (\(process.terminationStatus)): \(diagnostics)")
+        throw fail("CLI failed (\(process.terminationStatus)): \(diagnostics) \(String(data: output, encoding: .utf8) ?? "")")
     }
     let envelope = try JSONSerialization.jsonObject(with: output) as? [String: Any] ?? [:]
     try check((envelope["ok"] as? Bool) == true, "CLI returns a successful JSON envelope")
@@ -164,6 +168,11 @@ private func makeMixedSettings() -> Adjustments {
     settings.temperature = 5200
     settings.tint = 12
     settings.strength = 0.85
+    settings.clarity = 37.25; settings.dehaze = -42.5
+    settings.blackPoint = -32.75; settings.whitePoint = 46.5; settings.vibrance = 21.25
+    settings.gradingSettings[.shadows] = ColorGradingWheel(hue: 231.25, saturation: 32.375)
+    settings.gradingSettings[.midtones] = ColorGradingWheel(hue: 110.125, saturation: 0)
+    settings.gradingSettings[.highlights] = ColorGradingWheel(hue: 359.999999, saturation: 17.5)
     settings.contrast = 24.5
     settings.highlights = 31.5
     settings.shadows = -27.5
@@ -207,7 +216,7 @@ private func runAgentParity(_ context: AgentRecipeContext, engine: RenderEngine,
     let recipeURL = context.root.appendingPathComponent("\(label).json")
     let data = try engine.agentRecipe(input, settings: settings, lut: lut, output: apiOutput,
                                       exportLongEdge: edge)
-    let recipe = try inspectRecipe(data, label: label)
+    let recipe = try inspectRecipe(data, label: label, processing: settings.processing)
     do {
         _ = try engine.render(input, settings: settings, lut: lut, edge: nil, output: apiOutput,
                               exportLongEdge: edge)
@@ -385,6 +394,10 @@ struct AgentRecipeRenderTests {
         let mixed = makeMixedSettings()
         let mixedOutput = try runAgentParity(context, engine: cpu, input: input, settings: mixed,
                                              lut: lut, label: "mixed", previewCheck: true)
+        var legacy = mixed
+        legacy.processing = .legacy
+        _ = try runAgentParity(context, engine: cpu, input: input, settings: legacy,
+                               lut: lut, label: "legacy-processing", previewCheck: true)
         let recipeLUT = MasterRecipe.hamadaDaylightV2.lutURL()!
 
         var clamped = Adjustments()

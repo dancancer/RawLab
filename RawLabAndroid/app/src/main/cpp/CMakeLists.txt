@@ -3,10 +3,17 @@ project(rawlab_android LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 include(FetchContent)
+# libraw.org resets the TLS handshake from CMake 3.22's bundled client on some hosts.
+# Use a pre-fetched local copy when present; URL_HASH verifies either source.
+# CMake 3.22 rejects a local path inside a URL list, so this picks exactly one.
+set(LIBRAW_URL https://www.libraw.org/data/LibRaw-0.22.2.tar.gz)
+if(DEFINED ENV{RAWLAB_ANDROID_SOURCE_CACHE} AND EXISTS "$ENV{RAWLAB_ANDROID_SOURCE_CACHE}/LibRaw-0.22.2.tar.gz")
+    set(LIBRAW_URL "$ENV{RAWLAB_ANDROID_SOURCE_CACHE}/LibRaw-0.22.2.tar.gz")
+endif()
 FetchContent_Declare(libraw
     # CMake 3.22 preserves archive timestamps; isolate ABI versions from old objects.
     SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/_deps/libraw-0.22.2-src"
-    URL https://www.libraw.org/data/LibRaw-0.22.2.tar.gz
+    URL ${LIBRAW_URL}
     URL_HASH SHA256=de86b035655accff8d4010f1a221fdf50d353cb7b1422ba26f14a0db92612cfa
 )
 FetchContent_MakeAvailable(libraw)
@@ -49,12 +56,17 @@ foreach(denoise_target wavelib opencv_core opencv_imgproc)
 endforeach()
 add_library(rawlab-jni SHARED rawlab_jni.cpp)
 target_include_directories(rawlab-jni PRIVATE "${REPO}/lutools/include")
-target_link_libraries(rawlab-jni PRIVATE sony2fuji_core)
+target_link_libraries(rawlab-jni PRIVATE sony2fuji_core jnigraphics)
 target_link_options(rawlab-jni PRIVATE "-Wl,-z,max-page-size=16384")
 
 add_executable(rawlab_gpu_tests EXCLUDE_FROM_ALL "${REPO}/RawLabAndroid/tests/gpu_smoke.cpp")
-target_include_directories(rawlab_gpu_tests PRIVATE "${REPO}/lutools/include")
+target_include_directories(rawlab_gpu_tests PRIVATE "${REPO}/lutools/include" "${REPO}/lutools/src" "${REPO}/lutools/tests")
 target_link_libraries(rawlab_gpu_tests PRIVATE sony2fuji_core)
+
+add_executable(rawlab_large_image_tests EXCLUDE_FROM_ALL "${REPO}/RawLabAndroid/tests/large_image_smoke.cpp")
+target_include_directories(rawlab_large_image_tests PRIVATE "${REPO}/lutools/include" "${REPO}/lutools/src")
+target_link_libraries(rawlab_large_image_tests PRIVATE sony2fuji_core)
+target_link_options(rawlab_large_image_tests PRIVATE "-Wl,--wrap=glDispatchCompute")
 
 add_executable(rawlab_dng_tests EXCLUDE_FROM_ALL "${REPO}/lutools/tests/dng_jxl_tests.cpp")
 target_include_directories(rawlab_dng_tests PRIVATE "${REPO}/lutools/include")

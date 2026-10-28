@@ -10,12 +10,11 @@ extension EditorUITests {
 
         let ruler = app.descendants(matching: .any)["adjustment.ruler"]
         XCTAssertTrue(ruler.isEnabled)
-        let reset = app.buttons["adjustment.reset"]
-        if reset.isEnabled { reset.tap() }
+        resetParameterDefault("adjustment", expectedValue: "0.00 EV", in: app)
         XCTAssertEqual(app.buttons["tool.exposure"].value as? String, "+0.00 EV")
         dragRuler(ruler)
         XCTAssertNotEqual(app.buttons["tool.exposure"].value as? String, "+0.00 EV")
-        app.buttons["重置曝光"].tap()
+        app.staticTexts["adjustment.title"].doubleTap()
         XCTAssertEqual(app.buttons["tool.exposure"].value as? String, "+0.00 EV")
         tapTool("film", in: app)
         revealFilm("ETERNA", in: app)
@@ -45,8 +44,10 @@ extension EditorUITests {
         XCUIDevice.shared.orientation = .landscapeLeft
         revealRuler(ruler, in: app)
         XCTAssertTrue(ruler.isHittable)
-        XCTAssertGreaterThan(ruler.frame.minX, app.frame.width * 0.5,
-                             "Landscape adjustments leave room for the photo")
+        let panel = app.scrollViews["editor.panel"]
+        let photo = app.descendants(matching: .any)["editor.photo"]
+        XCTAssertTrue(app.frame.contains(panel.frame), "Landscape parameters remain inside the window")
+        XCTAssertFalse(photo.frame.intersects(panel.frame), "Landscape parameters leave the photo area unobscured")
         capture("photo-adjustment-landscape")
         XCUIDevice.shared.orientation = .portrait
         app.buttons["editor.export"].tap()

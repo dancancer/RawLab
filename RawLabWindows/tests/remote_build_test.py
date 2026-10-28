@@ -72,6 +72,7 @@ class SourcePackageTest(unittest.TestCase):
             for name in ['lutools/cmake/patch-libraw.cmake',
                          'lutools/third_party/rawspeed-camera-calibration.inc',
                          'LICENSE', 'LICENSE-ALIYUN-RUM-EXCEPTION', 'docs/reference/licensing.md',
+                         'lutools/tests/fixtures/bayer-demosaic.dng',
                          'lutools/tests/fixtures/linear-jxl.dng',
                          'lutools/tests/fixtures/linear-uncompressed.dng',
                          'lutools/tests/fixtures/linear-jxl-gain.dng',
@@ -113,6 +114,7 @@ class SourcePackageTest(unittest.TestCase):
                 self.assertIn('lutools/tests/fixtures/' + name, files)
             with zipfile.ZipFile(archive) as package:
                 self.assertEqual(package.read('RawLabWindows/build.ps1'), b'current dirty contents')
+                self.assertIn('lutools/tests/fixtures/bayer-demosaic.dng', package.namelist())
                 self.assertEqual(package.read('LICENSE-ALIYUN-RUM-EXCEPTION'), b'fixture')
 
 

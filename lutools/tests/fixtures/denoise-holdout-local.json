@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "notes": "Independent scenes selected after freezing the SWT candidate. Regions were selected from source renders, before inspecting denoised outputs. These are unpaired inputs, not clean references. Holdout status is relative to this frozen candidate; future tuning on these results makes them regression inputs.",
+  "assets_root": "main workspace .cache/shared",
+  "source": "https://raw.pixls.us/",
+  "license": "CC0-1.0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "cases": [
+    {
+      "id": "holdout-canon-r50v-bench",
+      "split": "holdout",
+      "capture_group": "rawpixls-8403",
+      "content_group": "rawpixls-bench-20250727",
+      "source_url": "https://raw.pixls.us/getfile.php/8403/nice/Canon%20-%20EOS%20R50%20V%20-%20RAW%20(3:2).CR3",
+      "scene": "Outdoor bench, grass, book text and defocused playground; ISO 100",
+      "input": {
+        "kind": "raw",
+        "path": "raw-reference/raw-pixls-20261019/955ff98710505498ce7f98cbcc5875793ef2d6941b3b5692ed3baf2817ee7c9f.CR3",
+        "sha256": "955ff98710505498ce7f98cbcc5875793ef2d6941b3b5692ed3baf2817ee7c9f"
+      },
+      "regions": [
+        {"id": "grass", "kind": "fine_structure", "rect": [0.15, 0.78, 0.18, 0.15]},
+        {"id": "bench", "kind": "low_contrast_surface", "rect": [0.36, 0.40, 0.19, 0.04]},
+        {"id": "book", "kind": "fine_structure", "rect": [0.50, 0.48, 0.11, 0.045]},
+        {"id": "sky", "kind": "smooth_background", "rect": [0.63, 0.07, 0.13, 0.10]}
+      ]
+    },
+    {
+      "id": "holdout-canon-v1-clouds",
+      "split": "holdout",
+      "capture_group": "rawpixls-8500",
+      "content_group": "rawpixls-cloud-street-20250817",
+      "source_url": "https://raw.pixls.us/getfile.php/8500/nice/Canon%20-%20PowerShot%20V1%20-%20CRAW%20(3:2).CR3",
+      "scene": "Clouds, street poles and trees; ISO 100. Source rendering has a color cast, not attributed to SWT.",
+      "input": {
+        "kind": "raw",
+        "path": "raw-reference/raw-pixls-20261019/0a0abfd81b3a34fa513ac8ed24c809275160d65b07e892c2eb4353b77c535a31.CR3",
+        "sha256": "0a0abfd81b3a34fa513ac8ed24c809275160d65b07e892c2eb4353b77c535a31"
+      },
+      "regions": [
+        {"id": "clouds", "kind": "low_contrast_structure", "rect": [0.31, 0.15, 0.25, 0.19]},
+        {"id": "tree", "kind": "fine_structure", "rect": [0.10, 0.64, 0.18, 0.18]},
+        {"id": "pole", "kind": "edge", "rect": [0.76, 0.52, 0.08, 0.19]},
+        {"id": "buildings", "kind": "fine_structure", "rect": [0.29, 0.84, 0.20, 0.13]}
+      ]
+    },
+    {
+      "id": "holdout-fuji-xt10-glass",
+      "split": "holdout",
+      "capture_group": "rawpixls-1192",
+      "content_group": "rawpixls-cork-glass-20170318",
+      "source_url": "https://raw.pixls.us/getfile.php/1192/nice/Fujifilm%20-%20X-T10%20-%2014bit%2014bit%20uncompressed%20%283:2%29.RAF",
+      "exif_url": "https://raw.pixls.us/getfile.php/1192/exif/DSCF8146.RAF.exif.txt",
+      "scene": "Stained glass and dim wall in Cork; X-Trans, ISO 4000",
+      "input": {
+        "kind": "raw",
+        "path": "raw-reference/raw-pixls-denoise-20261020/4c09401975cc6f95b1284693aac39fef85498f70b55e35bf458a133c6e61885d.RAF",
+        "sha256": "4c09401975cc6f95b1284693aac39fef85498f70b55e35bf458a133c6e61885d"
+      },
+      "regions": [
+        {"id": "wall", "kind": "low_contrast_surface", "rect": [0.02, 0.25, 0.11, 0.19]},
+        {"id": "upper-wall", "kind": "low_contrast_surface", "rect": [0.56, 0.02, 0.28, 0.09]},
+        {"id": "red-glass", "kind": "colored_structure", "rect": [0.42, 0.57, 0.14, 0.13]},
+        {"id": "face-lines", "kind": "fine_structure", "rect": [0.44, 0.25, 0.06, 0.09]},
+        {"id": "dim-glass", "kind": "weak_colored_structure", "rect": [0.21, 0.32, 0.11, 0.18]}
+      ]
+    },
+    {
+      "id": "holdout-nikon-z30-still-life",
+      "split": "holdout",
+      "capture_group": "rawpixls-5812",
+      "content_group": "rawpixls-still-life-20220726",
+      "source_url": "https://raw.pixls.us/getfile.php/5812/nice/Nikon%20-%20Z%2030%20-%2012bit%2012bit%20compressed%20%28Lossless%29%20%283:2%29.NEF",
+      "exif_url": "https://raw.pixls.us/getfile.php/5812/exif/_DSC0028.NEF.exif.txt",
+      "scene": "Painted still life against a dark textured background; Bayer, ISO 1800, portrait orientation",
+      "input": {
+        "kind": "raw",
+        "path": "raw-reference/raw-pixls-denoise-20261020/75249c11a3a845367c7a322a1c4e7076f33c785ec2518fc6594c34c185b41161.NEF",
+        "sha256": "75249c11a3a845367c7a322a1c4e7076f33c785ec2518fc6594c34c185b41161"
+      },
+      "regions": [
+        {"id": "dark-background", "kind": "low_contrast_surface", "rect": [0.13, 0.07, 0.55, 0.13]},
+        {"id": "red-lines", "kind": "weak_colored_structure", "rect": [0.30, 0.28, 0.15, 0.11]},
+        {"id": "colored-circles", "kind": "colored_edge", "rect": [0.39, 0.49, 0.23, 0.14]},
+        {"id": "lettering", "kind": "fine_structure", "rect": [0.39, 0.63, 0.22, 0.045]},
+        {"id": "table", "kind": "fine_structure", "rect": [0.28, 0.78, 0.39, 0.13]}
+      ]
+    }
+  ]
+}

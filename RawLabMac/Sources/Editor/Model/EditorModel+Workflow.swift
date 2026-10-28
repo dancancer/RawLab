@@ -8,6 +8,199 @@ extension EditorModel {
         return PhotoEditState(settings: settings, filmID: filmID, masterRecipeID: settings.masterRecipeID)
     }
 
+    func prepareReset(scope: EditorResetScope) -> ResetPreparation {
+        guard let file, let identity = try? OriginalFileIdentity(file) else { return .blocked(.sourceUnavailable) }
+        let isGeometry = scope.usesGeometryDraft
+        if geometryDraft != nil && !isGeometry { return .blocked(.geometryDraftActive) }
+        if isGeometry && geometryDraft == nil { return .blocked(.geometryDraftRequired) }
+        if scope == .tool(.geometry) && geometryDraftTab == .lens || scope == .tool(.lens) && geometryDraftTab != .lens {
+            return .blocked(.geometryDraftRequired)
+        }
+        guard invalidGeometryDraftInputs.isEmpty else { return .blocked(.invalidDraftInputs) }
+        let context = EditorAdjustmentContext(isRaw: !RenderEngine.isRasterInput(file),
+                                              defaultExposureMode: RenderEngine.isRasterInput(file) ? .sensor : Adjustments().exposureMode, neutralFilmID: "")
+        let original = editState(settings: settings)
+        var snapshot = original
+        if let draft = geometryDraft {
+            if case .blocked(let reason) = EditorAdjustmentRules.prepareReset(scope: scope, snapshot: original, context: context) {
+                return .blocked(.adjustment(reason))
+            }
+            snapshot.settings.geometry = draft.geometry.isIdentity ? nil : draft.geometry
+            snapshot.settings.lensCorrection = draft.lens == LensCorrectionSettings() ? nil : draft.lens
+        }
+        switch EditorAdjustmentRules.prepareReset(scope: scope, snapshot: snapshot, context: context) {
+        case .unchanged: return .unchanged
+        case .blocked(let reason): return .blocked(.adjustment(reason))
+        case .candidate(let candidate):
+            return .prepared(PreparedReset(scope: scope, source: file, identity: identity, revision: editRevision,
+                                           original: original, candidate: candidate,
+                                           selectedFilmID: selectedFilmID, draft: geometryDraft))
+        }
+    }
+
+    @discardableResult func commitReset(_ prepared: PreparedReset) -> Bool {
+        guard file == prepared.source, editRevision == prepared.revision,
+              (try? OriginalFileIdentity(prepared.source)) == prepared.identity,
+              editState(settings: settings) == prepared.original,
+              selectedFilmID == prepared.selectedFilmID, geometryDraft == prepared.draft,
+              invalidGeometryDraftInputs.isEmpty else { return false }
+        if var draft = prepared.draft {
+            let previousPreview = draft.previewGeometry, previousLens = draft.lens
+            draft.geometry = prepared.candidate.settings.geometrySettings
+            draft.lens = prepared.candidate.settings.lensSettings
+            guard draft != geometryDraft else { return true }
+            geometryDraft = draft
+            if draft.geometry != prepared.draft?.geometry { cropAspectPreset = .free; cropAspectSwapped = false }
+            geometryDraftRevision &+= 1
+            if previousPreview != draft.previewGeometry || previousLens != draft.lens {
+                geometryDraftPreviewReady = false
+                schedule()
+            }
+        } else {
+            guard prepared.candidate != prepared.original else { return true }
+            if [.all, .group(.detail), .tool(.denoise)].contains(prepared.scope) { resetAITask() }
+            updatingMetadata = true
+            settings = prepared.candidate.settings
+            // 普通组保留 UI selection；存储 ID 可能是 builtin:<filename>。
+            if prepared.candidate.filmID != prepared.original.filmID { selectedFilmID = "" }
+            updatingMetadata = false
+            edited()
+        }
+        return true
+    }
+
+    var adjustmentContext: EditorAdjustmentContext {
+        EditorAdjustmentContext(isRaw: !RenderEngine.isRasterInput(file),
+            defaultExposureMode: RenderEngine.isRasterInput(file) ? .sensor : Adjustments().exposureMode, neutralFilmID: "")
+    }
+
+    func isAdjustmentModified(_ scope: EditorResetScope) -> Bool {
+        var snapshot = editState(settings: settings)
+        if let draft = geometryDraft {
+            snapshot.settings.geometry = draft.geometry.isIdentity ? nil : draft.geometry
+            snapshot.settings.lensCorrection = draft.lens == LensCorrectionSettings() ? nil : draft.lens
+        }
+        return EditorAdjustmentRules.isModified(scope: scope, snapshot: snapshot, context: adjustmentContext)
+    }
+
+    func selectAdjustmentGroup(_ group: EditorAdjustmentGroup) {
+        var target = adjustmentNavigation
+        target.selectGroup(group)
+        navigateAdjustment(to: target)
+    }
+
+    func selectAdjustmentTool(_ tool: EditorAdjustmentTool) {
+        guard tool != adjustmentNavigation.tool || adjustmentNavigation.expandedGroup == nil else { return }
+        var target = adjustmentNavigation; target.selectTool(tool)
+        navigateAdjustment(to: target)
+    }
+
+    func selectAdjustmentGeometryTab(_ tab: MacGeometryTab) {
+        let tool: EditorAdjustmentTool = tab == .lens ? .lens : .geometry
+        if geometryDraft != nil && adjustmentNavigation.tool == tool {
+            _ = selectGeometryDraftTab(tab)
+            return
+        }
+        var target = adjustmentNavigation; target.selectTool(tool)
+        navigateAdjustment(to: target, geometryTab: tab)
+    }
+
+    private func navigateAdjustment(to target: EditorAdjustmentNavigation, geometryTab: MacGeometryTab? = nil) {
+        cancelHSLTarget(); hslTargetEnabled = false
+        if adjustmentNavigation.tool == .colorGrading || adjustmentNavigation.tool == .toneCurve { cancelAdjustmentInteraction() }
+        ParameterValueField.cancelPendingInputs()
+        guard resetReturnTool == nil, resetConfirmation == nil else { return }
+        let action = { [weak self] in
+            guard let self else { return }
+            if target.expandedGroup != nil && target.tool.usesGeometryDraft {
+                guard self.beginGeometryDraft(tab: geometryTab ?? (target.tool == .lens ? .lens : .crop)) else { return }
+            }
+            self.adjustmentNavigation = target
+        }
+        if geometryDraft != nil { requestLeavingGeometryDraft(action) }
+        else { action() }
+    }
+
+    func requestAdjustmentReset(_ scope: EditorResetScope) {
+        cancelHSLTarget()
+        ParameterValueField.cancelPendingInputs()
+        guard !busy, !exporting, !lookLibraryBusy, resetConfirmation == nil, resetReturnTool == nil else { return }
+        if scope == .all, geometryDraft != nil {
+            if !geometryDraftHasChanges && !isAdjustmentModified(.all) { return }
+            resetReturnTool = adjustmentNavigation.tool
+            resetReturnGeometryTab = geometryDraftTab
+            resetSource = file
+            requestLeavingGeometryDraft({ [weak self] in self?.prepareAdjustmentReset(scope) }, onStay: { [weak self] in
+                self?.resetReturnTool = nil; self?.resetReturnGeometryTab = nil; self?.resetSource = nil
+            })
+        } else { prepareAdjustmentReset(scope) }
+    }
+
+    private func prepareAdjustmentReset(_ scope: EditorResetScope) {
+        switch prepareReset(scope: scope) {
+        case .unchanged:
+            if [.all, .group(.detail), .tool(.denoise)].contains(scope) {
+                let wasPreparing = aiManuallyRequested
+                resetAITask()
+                if wasPreparing { schedule() }
+            }
+            resumeResetToolIfReady()
+        case .blocked(let reason): resetBlockedMessage = resetMessage(reason); resumeResetToolIfReady()
+        case .prepared(let prepared):
+            let needsConfirmation: Bool
+            switch scope {
+            case .all, .group, .hslAll, .allGrading, .tool(.hsl), .tool(.colorGrading): needsConfirmation = true
+            case .tool(.film), .tool(.recipe): needsConfirmation = !resetConversions(prepared).isEmpty
+            default: needsConfirmation = false
+            }
+            if needsConfirmation { resetConfirmationScope = scope; resetConfirmation = prepared }
+            else if !commitReset(prepared) { resetBlockedMessage = L10n.text("照片或调整已变化，请重新确认重置。") }
+        }
+    }
+
+    func finishAdjustmentReset(confirm: Bool) {
+        let candidate = resetConfirmation
+        resetConfirmation = nil; resetConfirmationScope = nil
+        if confirm, let candidate, !commitReset(candidate) {
+            resetBlockedMessage = L10n.text("照片或调整已变化，请重新确认重置。")
+        }
+        resumeResetToolIfReady()
+    }
+
+    func resumeResetToolIfReady() {
+        guard resetConfirmation == nil, let tool = resetReturnTool else { return }
+        guard file == resetSource else { resetReturnTool = nil; resetReturnGeometryTab = nil; resetSource = nil; return }
+        guard !busy, pendingGeometryPresentation == nil else { return }
+        if tool.usesGeometryDraft {
+            guard beginGeometryDraft(tab: resetReturnGeometryTab ?? (tool == .lens ? .lens : .crop)) else { return }
+        }
+        adjustmentNavigation.selectTool(tool)
+        resetReturnTool = nil; resetReturnGeometryTab = nil; resetSource = nil
+    }
+
+    func resetConversions(_ prepared: PreparedReset) -> [String] {
+        let before = prepared.original.settings, after = prepared.candidate.settings
+        guard before.masterRecipeID != nil, after.masterRecipeID == nil else { return [] }
+        var changes = [String]()
+        for parameter in [AdjustmentParameter.exposure, .contrast, .highlights, .shadows, .saturation, .temperature, .tint] {
+            if before[keyPath: parameter.spec.keyPath] != after[keyPath: parameter.spec.keyPath] { changes.append(parameter.spec.title) }
+        }
+        if before.whiteBalanceMode != after.whiteBalanceMode { changes.append(L10n.text("白平衡")) }
+        if before.hslSettings != after.hslSettings { changes.append("HSL") }
+        return changes
+    }
+
+    private func resetMessage(_ reason: ResetBlockedReason) -> String {
+        switch reason {
+        case .adjustment(.missingAsShotWhiteBalance): return L10n.text("缺少拍摄时白平衡数据，无法保留配方效果。")
+        case .adjustment(.unrepresentableRecipe): return L10n.text("现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。")
+        case .adjustment(.invalidSnapshot("masterRecipe")), .adjustment(.invalidSnapshot("masterRecipeID")):
+            return L10n.text("当前配方不可用，无法安全重置外观。")
+        case .geometryDraftActive, .geometryDraftRequired, .invalidDraftInputs: return L10n.text("预览尚未就绪，请稍后重试。")
+        default: return L10n.text("当前照片或调整记录无效，无法安全重置。")
+        }
+    }
+
     func selectMasterRecipe(_ recipe: MasterRecipe?) {
         guard geometryDraft == nil else { return }
         guard recipe != nil || settings.masterRecipeID != nil else { return }
@@ -24,7 +217,7 @@ extension EditorModel {
 
     func selectFilm(_ id: String) {
         guard (id != selectedFilmID || settings.masterRecipeID != nil),
-              id.isEmpty || films.contains(where: { $0.id == id }) else { return }
+              id.isEmpty || filmChoices.contains(where: { $0.id == id }) else { return }
         selectedFilmID = id
         onUsage(.filmSelected(id.isEmpty ? .none : selectedFilm?.managedID == nil ? .builtIn : .custom))
     }
@@ -32,28 +225,25 @@ extension EditorModel {
     func edited() {
         editRevision = UUID()
         guard file != nil else { return }
+        synchronizeAI()
         dirty = true
         saveStatusKey = ""
         saveWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in _ = self?.saveEdits() }
-        saveWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+        if !scheduler.interacting {
+            // 同一个原生事件的联动 setter 合为一次；拖动由 begin/end 明确提交。
+            let work = DispatchWorkItem { [weak self] in _ = self?.saveEdits() }
+            saveWork = work
+            DispatchQueue.main.async(execute: work)
+        }
         schedule()
     }
 
     @discardableResult func saveEdits() -> Bool {
         saveWork?.cancel()
-        guard let file, dirty else { return true }
-        do {
-            if editStore == nil { editStore = try EditPersistence(directory: editDirectory) }
-            try editStore!.save(file, state: editState(settings: settings))
-            dirty = false; saveError = nil; saveStatusKey = "调整已保存"
-            clearSaveStatusLater()
-            return true
-        } catch {
-            saveError = L10n.format("调整未保存：%@", String(describing: error.localizedDescription))
-            return false
-        }
+        guard file != nil, dirty else { return true }
+        guard !scheduler.interacting, commitAdjustment(editState(settings: settings)) else { return false }
+        dirty = false
+        return true
     }
 
     func clearSaveStatusLater() {
@@ -64,34 +254,44 @@ extension EditorModel {
     }
 
     @discardableResult func applyCurrentSettings(to urls: [URL]) throws -> Int {
-        guard file != nil, !exporting, !lookLibraryBusy, !missingFilm, !missingMasterRecipe, geometryDraft == nil else {
+        guard file != nil, !exporting, !aiState.isRunning, !lookLibraryBusy, !missingFilm, !missingMasterRecipe, geometryDraft == nil else {
             throw RenderError.failed(L10n.text("当前照片的设置尚不可用。"))
         }
-        let targets = Array(Set(urls.map { $0.resolvingSymlinksInPath().standardizedFileURL }))
+        let sourcePath = file!.resolvingSymlinksInPath().standardizedFileURL.path
+        let targets = Array(Set(urls.map { $0.resolvingSymlinksInPath().standardizedFileURL })).filter { $0.path != sourcePath }
         guard !targets.isEmpty else { return 0 }
-        let filmID = selectedFilm.map { $0.managedID ?? "builtin:\($0.url.lastPathComponent)" } ?? selectedFilmID
-        if editStore == nil { editStore = try EditPersistence(directory: editDirectory) }
-        try editStore!.save(targets, state: PhotoEditState(settings: settings, filmID: filmID, masterRecipeID: settings.masterRecipeID))
-        statusState = .applied(targets.count)
-        return targets.count
+        guard saveEdits(), let file else { throw AdjustmentTransferError.draftRequiresPreflight }
+        let payload = try MacAdjustmentTransfer.capture(scope: .standard, snapshot: editState(settings: settings),
+            context: adjustmentTransferContext(for: file))
+        let operation = try prepareAdjustmentPaste(payload: payload, targets: targets, excludingSource: sourcePath)
+        applyAdjustmentPaste(operation)
+        if let failure = adjustmentOutcomes.first(where: { [.blocked, .failed, .conflict].contains($0.status) }) {
+            throw failure.error ?? AdjustmentTransferError.incompatible("target")
+        }
+        let count = adjustmentOutcomes.filter { $0.status == .applied || $0.status == .unchanged }.count
+        statusState = .applied(count)
+        return count
     }
 
     func confirmApplySettings(to url: URL, directory: Bool) {
-        guard canApplySettings else { return }
+        guard canApplySettings, adjustmentSheet == nil, let file else { return }
         do {
-            let targets = directory ? try DirectoryContents.read(url).photos : [url]
-            guard !targets.isEmpty else { throw RenderError.failed(L10n.text("此目录没有照片。")) }
-            let alert = NSAlert()
-            alert.messageText = L10n.format("应用当前设置到 %@ 张照片？", String(describing: targets.count))
-            alert.informativeText = L10n.text("将替换目标照片的本机调整记录，不改写原始文件。") +
-                (directory ? L10n.text("仅包含此目录中的照片，不包含子目录。") : "")
-            alert.addButton(withTitle: L10n.text("应用当前设置")); alert.addButton(withTitle: L10n.text("取消"))
-            if alert.runModal() == .alertFirstButtonReturn { try applyCurrentSettings(to: targets) }
+            let sourcePath = file.resolvingSymlinksInPath().standardizedFileURL.path
+            let targets = (directory ? try DirectoryContents.read(url).photos : [url])
+                .filter { $0.resolvingSymlinksInPath().standardizedFileURL.path != sourcePath }
+            guard !targets.isEmpty else { throw RenderError.failed(L10n.text("没有可处理目标，请重新选择照片。")) }
+            guard ParameterValueField.resolvePendingInputs(), saveEdits() else { return }
+            adjustmentSheetPayload = try MacAdjustmentTransfer.capture(scope: .standard,
+                snapshot: editState(settings: settings), context: adjustmentTransferContext(for: file))
+            adjustmentSheetTargets = targets
+            adjustmentSheetExcludedSource = sourcePath
+            pendingAdjustmentHistory = nil
+            adjustmentSheetInCollection = false; adjustmentSheet = .paste
         } catch { self.error = error.localizedDescription }
     }
 
     func prepareBatch() -> Bool {
-        guard !busy, !exporting, !lookLibraryBusy, result != nil, !missingFilm, !missingMasterRecipe, geometryDraft == nil, let file else { return false }
+        guard canExport, let file else { return false }
         if batch?.validating == true || batch?.previewing == true { return true }
         if let batch, batch.job.started && batch.job.succeededCount < batch.job.selectedCount {
             let alert = NSAlert()
@@ -122,6 +322,7 @@ extension EditorModel {
     }
 
     func openPanel() {
+        ParameterValueField.cancelPendingInputs()
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
         panel.title = L10n.text("打开照片")
@@ -129,27 +330,42 @@ extension EditorModel {
         if panel.runModal() == .OK, let url = panel.url { open(url) }
     }
     func open(_ url: URL) {
+        let url = (try? BatchExportItem.resourceKey(url)).flatMap { batchSelectionPhotos[$0]?.url } ?? url
         guard !exporting else { return }
-        if file == url && result != nil { return }
+        cancelHSLTarget()
+        if file == url && result != nil, acceptedOriginalSource == MacReferenceSource(url, raster: RenderEngine.isRasterInput(url)) { return }
+        ParameterValueField.cancelPendingInputs()
         if geometryDraft != nil {
             requestLeavingGeometryDraft { [weak self] in self?.open(url) }
             return
         }
+        if [.colorGrading, .toneCurve].contains(adjustmentNavigation.tool) { cancelAdjustmentInteraction() }
+        if scheduler.interacting { setInteracting(false) }
         guard saveEdits() else { return }
+        let restoredRecord: VersionedPhotoEdit
+        do {
+            _ = try requireAdjustmentSession()
+            restoredRecord = try editStore!.versionedState(for: url)
+        } catch {
+            saveError = L10n.format("无法恢复调整：%@", String(describing: error.localizedDescription))
+            return
+        }
+        resetAITask()
         cancelViewportResize()
+        committedEdit = restoredRecord
+        let restored = restoredRecord.state
         editRevision = UUID()
         scheduler.setInteracting(false)
-        var restored: PhotoEditState?
-        do { restored = try editStore?.state(for: url) }
-        catch { saveError = L10n.format("无法恢复调整：%@", String(describing: error.localizedDescription)) }
-        file = url; neutral = nil; result = nil; error = nil; statusState = .none
+        sourceRevision = UUID()
+        file = url; neutral = nil; result = nil; error = nil; previewOutdated = false; statusState = .none
         pendingImportEvent = true
         updatingMetadata = true
         settings = restored?.settings ?? Adjustments()
+        if restored == nil && RenderEngine.isRasterInput(url) { settings.exposureMode = .sensor }
         if let masterRecipeID = restored?.masterRecipeID {
             settings.masterRecipeID = masterRecipeID
         }
-        let filmID = restored?.filmID ?? films.first(where: { $0.name == "PROVIA" })?.id ?? ""
+        let filmID = restored?.filmID ?? ""
         if settings.masterRecipeID != nil {
             selectedFilmID = ""
         } else {
@@ -281,7 +497,7 @@ extension EditorModel {
     }
 
     func export(format: ExportFormat) {
-        guard !busy, !exporting, !lookLibraryBusy, !missingFilm, !missingMasterRecipe, result != nil, geometryDraft == nil, let file else { return }
+        guard canExport, let file else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [format.contentType]
         let lookName = settings.masterRecipe?.title ?? selectedFilm?.name ?? "neutral"
@@ -291,8 +507,14 @@ extension EditorModel {
         sizePicker.frame = NSRect(x: 0, y: 0, width: 360, height: 110)
         panel.accessoryView = sizePicker
         guard panel.runModal() == .OK, let output = panel.url else { return }
+        export(to: output)
+    }
+
+    func export(to output: URL) {
+        guard canExport, let file else { return }
         exporting = true
         let settings = settings, lut = settings.masterRecipe?.lutURL() ?? selectedFilm?.url, longEdge = exportLongEdge
+        let generation = aiGeneration
         queue.async { [weak self] in
             guard let self else { return }
             do {
@@ -304,7 +526,12 @@ extension EditorModel {
                     self.onUsage(.exportCompleted)
                 }
             } catch {
-                DispatchQueue.main.async { self.exporting = false; self.error = error.localizedDescription }
+                DispatchQueue.main.async {
+                    self.exporting = false; self.error = error.localizedDescription
+                    if self.file == file, self.settings == settings, self.aiGeneration == generation {
+                        self.handleAIFailure(error)
+                    }
+                }
             }
         }
     }

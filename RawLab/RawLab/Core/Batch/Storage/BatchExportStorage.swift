@@ -18,6 +18,8 @@ final class BatchJournalStore {
     }
 
     func save(_ job: BatchExportJob) throws {
+        try job.validate()
+        _ = try load(id: job.id)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let destination = directory.appendingPathComponent("\(job.id.uuidString).json")
@@ -61,7 +63,11 @@ final class BatchJournalStore {
         var job = original
         job.source.sourceFile = job.source.sourceFile.withReadAccess { .externallyManaged(relocate($0)) }
         job.source.lookURL = job.source.lookURL.map(relocate)
-        for index in job.targets.indices { job.targets[index].sourceURL = relocate(job.targets[index].sourceURL) }
+        for index in job.targets.indices {
+            job.targets[index].sourceURL = relocate(job.targets[index].sourceURL)
+            let relocatedLook = job.targets[index].frozen?.lookURL.map(relocate)
+            job.targets[index].frozen?.lookURL = relocatedLook
+        }
         return job
     }
 

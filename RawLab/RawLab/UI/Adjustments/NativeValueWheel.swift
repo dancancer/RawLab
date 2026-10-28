@@ -8,6 +8,7 @@ struct NativeValueWheel: View {
     let defaultValue: Double?
     let unit: String
     let formatter: (Double) -> String
+    let help: String
     let onCancel: () -> Void
     let onApply: (Double) -> Void
     @State private var draft: Double
@@ -16,7 +17,7 @@ struct NativeValueWheel: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(title: String, original: Double, scale: AdjustmentScale, defaultValue: Double?, unit: String,
-         formatter: @escaping (Double) -> String, onCancel: @escaping () -> Void,
+         formatter: @escaping (Double) -> String, help: String = "", onCancel: @escaping () -> Void,
          onApply: @escaping (Double) -> Void) {
         self.title = title
         self.original = original
@@ -24,6 +25,7 @@ struct NativeValueWheel: View {
         self.defaultValue = defaultValue
         self.unit = unit
         self.formatter = formatter
+        self.help = help
         self.onCancel = onCancel
         self.onApply = onApply
         _draft = State(initialValue: original)
@@ -91,7 +93,7 @@ struct NativeValueWheel: View {
                 .font(.body).monospacedDigit()
                 .accessibilityLabel("\(L10n.text("临时选择")) \(formatter(draft)) \(unit)")
                 .accessibilityIdentifier("adjustment.wheel.draft")
-            Text(rangeLabel).font(.caption).foregroundStyle(.secondary)
+            Text(help.isEmpty ? rangeLabel : help).font(.caption).foregroundStyle(.secondary)
                 .accessibilityIdentifier("adjustment.wheel.range")
         }
         .multilineTextAlignment(.center)

@@ -6,6 +6,7 @@ struct PhotoEffectsControls: View {
     @ObservedObject var model: EditorModel
     let tool: AdjustmentParameter
     var onPreferredHeight: (CGFloat) -> Void = { _ in }
+    var onReset: () -> Void = {}
     @State private var advanced = false
 
     private var isVignette: Bool { tool == .vignetteAmount }
@@ -21,7 +22,7 @@ struct PhotoEffectsControls: View {
             HStack(spacing: 12) {
                 if isVignette {
                     Button(L10n.text(advanced ? "收起暗角参数" : "展开暗角参数")) {
-                        NSApp.keyWindow?.makeFirstResponder(nil)
+                        ParameterValueField.cancelPendingInputs()
                         advanced.toggle()
                     }
                         .buttonStyle(.borderless).font(.system(size: 11))
@@ -29,8 +30,8 @@ struct PhotoEffectsControls: View {
                 }
                 Spacer(minLength: 0)
                 if !isVignette || advanced { Button {
-                    NSApp.keyWindow?.makeFirstResponder(nil)
-                    model.settings.resetEffect(tool)
+                    ParameterValueField.cancelPendingInputs()
+                    onReset()
                 } label: {
                     Image(systemName: "arrow.counterclockwise").frame(width: 28, height: 28)
                 }.buttonStyle(.borderless)
@@ -46,8 +47,7 @@ struct PhotoEffectsControls: View {
                     get: { model.settings.effectSettings[keyPath: parameter.keyPath] },
                     set: { model.settings.setEffect(parameter, to: $0) }
                 ), range: parameter.range, defaultValue: parameter.defaultValue,
-                identifier: "effects.value.\(parameter.rawValue)", onEditingChanged: model.setInteracting,
-                showsReset: !isVignette || advanced)
+                identifier: "effects.value.\(parameter.rawValue)", onEditingChanged: model.setInteracting)
                     .disabled(isDisabled(parameter))
             }
             if let reason = disabledReason {
@@ -56,8 +56,7 @@ struct PhotoEffectsControls: View {
                     .accessibilityIdentifier("effects.disabledReason.\(tool.rawValue)")
             }
         }.frame(maxWidth: 720).padding(.horizontal, 16)
-            .onAppear { onPreferredHeight(AdjustmentPanelLayout.effectsHeight(rows: parameters.count)) }
-            .onChange(of: advanced) { _, _ in onPreferredHeight(AdjustmentPanelLayout.effectsHeight(rows: parameters.count)) }
+
     }
 
     private var disabledReason: String? {

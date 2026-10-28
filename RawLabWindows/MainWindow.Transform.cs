@@ -9,19 +9,26 @@ public partial class MainWindow
 {
     private readonly TransformDraft transform=new();
     private long transformGeneration;
-    private bool transformPreviewReady,savedTransformCompare,savedTransformSwipe;
+    private EditorEditSource? transformSource;
+    private bool transformSaveFailed;
+    private bool transformPreviewReady,savedTransformCompare;
     private GeometrySettings PreviewGeometry=>transform.Active ? transform.PreviewGeometry : settings.Geometry;
     private LensSettings PreviewLens=>transform.Active ? transform.Lens : settings.Lens;
-    private bool CanApplyTransform=>transform.Active && transformPreviewReady && !scheduler.Busy && !previewResize.IsEnabled &&
+    private bool CanApplyTransform=>transform.Dirty && transformPreviewReady && !scheduler.Busy && !previewResize.IsEnabled &&
         result!=null && !renderFailed && LookAvailable && !exporting && (transform.Tool!=TransformTool.Geometry || !GeometryEditor.HasInvalidInput);
     private void BeginTransform(TransformTool tool)
     {
         if(file==null || exporting || (transform.Active && transform.Tool==tool))return;
+        CancelViewingInput();
         if(!ResolveTransformDraft() || !SaveEdits())return;
-        savedTransformCompare=compare;savedTransformSwipe=swipe;
+        try { transformSource=new(file,openRevision,editRevision,CaptureCurrentEdit(),lut); }
+        catch(Exception error) when(error is System.IO.IOException or UnauthorizedAccessException)
+        { SetSaveNotice("调整未保存 · 重试",error.Message,true);return; }
+        transformSaveFailed=false;
+        savedTransformCompare=compare;
         transform.Begin(settings.Geometry,settings.Lens,tool);++transformGeneration;transformPreviewReady=false;
-        compare=swipe=false;NeutralCanvas.Visibility=Visibility.Collapsed;NeutralColumn.Width=new(0);ResultCanvas.ComparisonEnabled=false;
-        choosingRecipes=choosingHsl=choosingFilm=choosingDenoise=choosingPhotoEffects=choosingWhiteBalance=false;
+        view.SetEnabled(false);NeutralCanvas.Visibility=Visibility.Collapsed;NeutralColumn.Width=new(0);ResultCanvas.ComparisonEnabled=false;
+        choosingRecipes=choosingHsl=choosingGrading=choosingFilm=choosingDenoise=choosingPhotoEffects=choosingWhiteBalance=false;
         choosingGeometry=tool==TransformTool.Geometry;choosingLens=tool==TransformTool.Lens;
         if(choosingGeometry){GeometryEditor.Begin(transform.Geometry);ResultCanvas.GeometryEditing=true;}
         viewport.Fit();interacting=false;RefreshControls();Schedule();ResultCanvas.Focus();
@@ -48,20 +55,37 @@ public partial class MainWindow
         if(!transform.Active)return true;
         if(transform.Tool==TransformTool.Geometry && !GeometryEditor.CommitInputs())return false;
         if(!CanApplyTransform)return false;
-        (settings.Geometry,settings.Lens)=transform.Apply();EndTransform();MarkEdited();
-        var saved=SaveEdits();RefreshControls();Schedule();return saved;
+        try
+        {
+            if(file==null || transformSource==null || !transformSource.Matches(file,openRevision,editRevision,CaptureCurrentEdit(),lut))
+                throw new InvalidOperationException(Loc.Text("原始文件已被替换，请重新选择照片。"));
+            var candidate=settings.Capture() with{Geometry=transform.Geometry,Lens=transform.Lens};
+            editSaveTimer.Stop();
+            CommitCurrentEdit(candidate);
+        }
+        catch(Exception error)
+        {
+            if(error is EditPersistenceConflict){adjustmentReloadRequired=true;RefreshControls();}
+            transformSaveFailed=true;SetSaveNotice(adjustmentReloadRequired ? "照片或调整已变化，请重新打开后重试。" : "调整未保存 · 重试",error.Message,true);return false;
+        }
+        // 只有候选已落盘，才能提升草稿；不再排队保存旧 committed。
+        (settings.Geometry,settings.Lens)=transform.Apply();++editRevision;editDirty=false;
+        EndTransform();SetSaveNotice("调整已保存","",false);RefreshControls();Schedule();return true;
     }
     private void CancelTransformDraft()
     {
         if(!transform.Active)return;
+        if(transformSaveFailed)SetSaveNotice("已放弃未保存的修改","",false);
         transform.Cancel();EndTransform();RefreshControls();Schedule();
     }
     private void EndTransform()
     {
         ++transformGeneration;transformPreviewReady=false;exactReady=false;interacting=false;
-        choosingLens=choosingGeometry=false;ResultCanvas.GeometryEditing=false;ResultCanvas.SetCropDraft(null,null,false);
+        transformSource=null;transformSaveFailed=false;
+        choosingLens=choosingGeometry=choosingGrading=false;selectedParameter=Parameter.Exposure;selectedToneParameter=null;selectedAtmosphereParameter=null;expandedGroup=EditorAdjustmentGroup.Light;ResultCanvas.GeometryEditing=false;ResultCanvas.SetCropDraft(null,null,false);
         GeometryEditor.Begin(settings.Geometry);
-        SetComparisonMode(savedTransformCompare,savedTransformSwipe);viewport.Fit();
+        view.SetEnabled(savedTransformCompare);
+        RefreshComparisonLayout();RefreshComparisonToolTip();viewport.Fit();
     }
     private bool ResolveTransformDraft()
     {
@@ -74,17 +98,25 @@ public partial class MainWindow
             ResizeMode=ResizeMode.NoResize,ShowInTaskbar=false,WindowStartupLocation=WindowStartupLocation.CenterOwner};
         KeyboardNavigation.SetTabNavigation(dialog,KeyboardNavigationMode.Cycle);
         var panel=new StackPanel{Margin=new Thickness(24)};
-        panel.Children.Add(new TextBlock{Text=Loc.Text("这些修改尚未应用。应用并离开，放弃修改，或继续编辑。"),TextWrapping=TextWrapping.Wrap});
+        var message=new TextBlock{Text=Loc.Text("这些修改尚未应用。应用并离开，放弃修改，或继续编辑。"),TextWrapping=TextWrapping.Wrap};
+        panel.Children.Add(message);
         var actions=new WrapPanel{HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,16,0,0)};
         var choice=0;
         var stay=new Button{Content=Loc.Text("继续编辑"),IsCancel=true};stay.Click+=(_,_)=>dialog.Close();
         var discard=new Button{Content=Loc.Text("放弃修改")};discard.Click+=(_,_)=>{choice=1;dialog.Close();};
         var apply=new Button{Content=Loc.Text("应用并离开")};
         apply.SetBinding(IsEnabledProperty,new Binding(nameof(Button.IsEnabled)){Source=ApplyDraftButton,Mode=BindingMode.OneWay});
-        apply.Click+=(_,_)=>{choice=2;dialog.Close();};
+        apply.Click+=(_,_)=>{
+            if(!ApplyTransformDraft())
+            {
+                message.Text=Loc.Text("调整未保存 · 重试");message.ToolTip=SaveState.ToolTip;
+                message.SetResourceReference(TextBlock.ForegroundProperty,"ErrorForeground");return;
+            }
+            choice=2;dialog.Close();
+        };
         actions.Children.Add(stay);actions.Children.Add(discard);actions.Children.Add(apply);panel.Children.Add(actions);dialog.Content=panel;
         dialog.ShowDialog();if(focus is UIElement control && control.IsVisible)control.Focus();
-        if(choice==1){CancelTransformDraft();return true;}return choice==2 && ApplyTransformDraft();
+        if(choice==1){CancelTransformDraft();return true;}return choice==2;
     }
     private void ApplyDraftClicked(object sender,RoutedEventArgs e)=>ApplyTransformDraft();
     private void CancelDraftClicked(object sender,RoutedEventArgs e)=>CancelTransformDraft();

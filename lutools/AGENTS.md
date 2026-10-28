@@ -23,6 +23,8 @@ These instructions apply to `lutools/`, the C++17 RAW/LUT core and CLI shared by
 - Preserve the documented linear RAW -> F-Gamut/F-Log2 -> compatible display LUT contract. Do not apply Log-input LUTs directly to display-encoded RGB.
 - Apply absolute RAW white balance before demosaic; preserve exposure baselines, highlight handling, active crop and orientation.
 - Keep interactive proxies separate from exact rendering and export. GPU Auto must retain CPU fallback; Force must not disguise a GPU failure as success.
+  AI denoising is an exception: it runs only on hardware GPU backends (Mac Core ML, Windows DirectML).
+  If unavailable, report this explicitly without falling back to CPU neural-network inference; the CPU path for ordinary photo processing is unaffected.
 - Public C/C++ interfaces are shared across clients. Check affected callers when changing them, and never claim all camera models are calibrated from a few sample files.
 - Follow existing C++17 patterns and four-space indentation. Add abstractions only for a concrete benefit, not to meet arbitrary line-count or folder-size limits.
 

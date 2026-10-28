@@ -64,6 +64,10 @@ internal static class ComparisonDefaultChecks
 
             WaitBusyThenReady(window, () => window.OpenFile(raw));
             check(IsMode(window, "off"), "Opening RAW keeps the default single mode");
+            var initialSettings = (Adjustments)typeof(MainWindow).GetField("settings", Private)!.GetValue(window)!;
+            check(window.ActiveFilm.Text == Loc.Text("中性") && window.CurrentLookIdentity() == null && initialSettings.MasterRecipeID == null &&
+                  initialSettings[Parameter.Exposure] == 0,
+                "An unseen RAW opens with neutral settings and no film or master recipe");
 
             window.SetComparisonMode(true, false);
             window.UpdateLayout();
@@ -92,6 +96,10 @@ internal static class ComparisonDefaultChecks
                   window.LensCategory.IsEnabled == false && window.ExposureMode.IsEnabled == false &&
                   window.AsShotButton.IsEnabled == false,
                 "Raster switch resets comparison and disables RAW-only controls");
+            var rasterSettings = (Adjustments)typeof(MainWindow).GetField("settings", Private)!.GetValue(window)!;
+            check(window.ActiveFilm.Text == Loc.Text("中性") && window.CurrentLookIdentity() == null &&
+                  rasterSettings.MasterRecipeID == null && rasterSettings[Parameter.Exposure] == 0,
+                "An unseen raster opens without inheriting another photo's film or adjustments");
             check(window.GpuMode.SelectedIndex==1 && !window.GpuMode.IsEnabled,
                 "Opening raster from RAW Force GPU visibly selects CPU rather than failing or pretending Force succeeded");
             WaitBusyThenReady(window, () => window.OpenFile(fixtures.Jpeg));
@@ -135,6 +143,8 @@ internal static class ComparisonDefaultChecks
             WaitBusyThenReady(window, () => window.OpenFile(raw));
             check(IsMode(window, "off") && Math.Abs(window.ValueSlider.Value - .75) < .001,
                 "Reopening the same RAW restores history without comparison state");
+            window.Close();
+            ViewComparisonChecks.Run(repo,raw,check,app);
         }
         finally
         {
@@ -347,6 +357,8 @@ internal static class ComparisonDefaultChecks
     private static void UseProfile(MainWindow window, string profile)
     {
         Directory.CreateDirectory(profile);
+        typeof(MainWindow).GetField("presetStore", Private)!.SetValue(window,
+            new AdjustmentPresetStore(Path.Combine(profile, "presets")));
         typeof(MainWindow).GetField("editStore", Private)!.SetValue(window,
             new EditStore(Path.Combine(profile, "edits")));
         typeof(MainWindow).GetField("batchJournal", Private)!.SetValue(window,
@@ -378,7 +390,9 @@ internal static class ComparisonDefaultChecks
     private static string Mode(MainWindow window)
     {
         var status = AutomationProperties.GetItemStatus(window.CompareButton);
-        if (!string.IsNullOrWhiteSpace(status)) return status;
+        if(status==Loc.Text("关闭对比"))return "off";
+        if(status==Loc.Text("并排"))return "side";
+        if(status==Loc.Text("分割线"))return "swipe";
         if (window.CompareOff.IsChecked == true) return "off";
         if (window.CompareSwipe.IsChecked == true) return "swipe";
         if (window.CompareSide.IsChecked == true) return "side";
