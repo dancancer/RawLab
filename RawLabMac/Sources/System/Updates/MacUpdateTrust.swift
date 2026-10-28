@@ -47,12 +47,12 @@ struct MacUpdateTrust {
             team: bundle.object(forInfoDictionaryKey: "RawLabUpdateTeamID") as? String)
         let trust = MacUpdateTrust(feed: feed, mode: mode, architecture: architecture, bundle: bundle)
         // 普通启动只读取签名身份；完整代码校验与系统策略检查留到检查更新及升级首启。
-        _ = try trust.signingRequirement()
+        _ = try trust.signingRequirement(for: bundle)
         try trust.validateLocation()
         return trust
     }
 
-    private func signingRequirement() throws -> (SecStaticCode, SecRequirement) {
+    private func signingRequirement(for bundle: Bundle) throws -> (SecStaticCode, SecRequirement) {
         var code: SecStaticCode?
         guard SecStaticCodeCreateWithPath(bundle.bundleURL as CFURL, [], &code) == errSecSuccess, let code else {
             throw UpdateAdapterError(code: "identity", detail: "")
@@ -92,11 +92,16 @@ struct MacUpdateTrust {
     }
 
     func validateHost() throws {
-        let (code, requirement) = try signingRequirement()
+        try validateCode(in: bundle)
+        try validateLocation()
+    }
+
+    // 更新包必须符合正在运行版本的信任配置，不能自行声明新的固定证书。
+    func validateCode(in bundle: Bundle) throws {
+        let (code, requirement) = try signingRequirement(for: bundle)
         guard SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSCheckNestedCode | kSecCSStrictValidate), requirement) == errSecSuccess else {
             throw UpdateAdapterError(code: "identity", detail: "")
         }
-        try validateLocation()
         guard case .developerID = mode else { return }
         let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/sbin/spctl")
         process.arguments = ["--assess", "--type", "execute", "--ignore-cache", "--no-cache", bundle.bundlePath]
