@@ -67,7 +67,7 @@ enum MacAdjustmentTransfer {
             if kind != "neutral", !context.availableLookIDs.contains(lookup) {
                 throw AdjustmentTransferError.missingLook(lookup)
             }
-            fullRecipe = kind == "recipe" && Field.recipeDependencies.isSubset(of: selected)
+            fullRecipe = kind == "recipe" && Field.recipeDependencies(version: payload.source.recipe?.settingsVersion ?? 3).isSubset(of: selected)
             if fullRecipe {
                 guard let recipe = payload.source.recipe, MasterRecipe.recipe(for: recipe.id) != nil else {
                     throw AdjustmentTransferError.missingLook(lookup)
@@ -93,7 +93,7 @@ enum MacAdjustmentTransfer {
 
         for field in scalarKeys.keys {
             guard let value = payload[field]?.number else {
-                if contextChanged && isRecipeScaled(field) && effectiveNumbers(result.settings)[field] != oldEffective[field] {
+                if contextChanged && effectiveNumbers(result.settings)[field] != oldEffective[field] {
                     try assignEffective(oldEffective[field]!, field: field, to: &result.settings)
                 }
                 continue
@@ -126,6 +126,15 @@ enum MacAdjustmentTransfer {
             }
         }
         try applyObjects(payload, to: &result.settings, context: context)
+        let refinements = try AdjustmentTransferRefinement.applying(payload,
+            original: AdjustmentTransferRefinement.values(curve: target.settings.curveSettings, grading: target.settings.gradingSettings),
+            previousScale: target.settings.refinementScale, targetScale: result.settings.refinementScale, fullRecipe: fullRecipe)
+        result.settings.curveSettings = refinements[.curve]!.curve!
+        for field in Field.refinementObjects {
+            if let zone = field.gradingZone, let wheel = refinements[field]?.object {
+                result.settings.gradingSettings[zone] = ColorGradingWheel(hue: wheel["hue"]!.number!, saturation: wheel["saturation"]!.number!)
+            }
+        }
         do { try result.settings.validateResetValues() }
         catch { throw AdjustmentTransferError.unrepresentable("native range") }
 
@@ -144,8 +153,8 @@ enum MacAdjustmentTransfer {
         return result
     }
 
-    static func isRecipeScaled(_ field: Field) -> Bool {
-        [.exposure, .contrast, .highlights, .shadows, .saturation].contains(field)
+    static func isRecipeScaled(_ field: Field, version: Int = 3) -> Bool {
+        [.exposure, .contrast, .highlights, .shadows, .saturation].contains(field) || version >= 4 && Field.refinementScalars.contains(field)
     }
 
     static func sourceEffective(_ value: Double, field: Field, recipe: AdjustmentRecipeContext?) -> Double {
@@ -154,6 +163,10 @@ enum MacAdjustmentTransfer {
             return min(100, max(-100, value * ((recipe?.settingsVersion ?? 2) >= 3 ? scale : 1)))
         }
         if field == .contrast || field == .saturation { return 1 + (value - 1) * scale }
+        if (recipe?.settingsVersion ?? 3) >= 4 && Field.refinementScalars.contains(field) {
+            let limit = field == .sCurve ? 1.0 : 100.0
+            return min(limit, max(-limit, value * scale))
+        }
         return isRecipeScaled(field) ? value * scale : value
     }
 
@@ -166,7 +179,7 @@ enum MacAdjustmentTransfer {
             return
         }
         let identity: Double = field == .contrast || field == .saturation ? 1 : 0
-        if isRecipeScaled(field) {
+        if isRecipeScaled(field, version: settings.recipeSettingsVersion) {
             guard scale != 0 || value == identity else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
             assignLogical(scale == 0 ? identity : identity + (value - identity) / scale, field: field, to: &settings)
         } else { assignLogical(value, field: field, to: &settings) }

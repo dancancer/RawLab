@@ -166,6 +166,12 @@ public static class AdjustmentFields
     public static readonly IReadOnlySet<AdjustmentField> RecipeDependencies = new[] { AdjustmentField.Look, AdjustmentField.Strength, AdjustmentField.Exposure,
         AdjustmentField.Contrast, AdjustmentField.Highlights, AdjustmentField.Shadows, AdjustmentField.Saturation }
         .Concat(WhiteBalance).Concat(All.Where(f => f.HslIndex() != null)).ToHashSet();
+    public static readonly IReadOnlySet<AdjustmentField> RefinementScalars = new HashSet<AdjustmentField> {
+        AdjustmentField.SCurve, AdjustmentField.BlackPoint, AdjustmentField.WhitePoint, AdjustmentField.Vibrance, AdjustmentField.Clarity, AdjustmentField.Dehaze };
+    public static readonly IReadOnlySet<AdjustmentField> RefinementObjects = new HashSet<AdjustmentField> {
+        AdjustmentField.Curve, AdjustmentField.GradingShadows, AdjustmentField.GradingMidtones, AdjustmentField.GradingHighlights };
+    public static IReadOnlySet<AdjustmentField> DependenciesForRecipe(int version) => version >= 4
+        ? RecipeDependencies.Concat(RefinementScalars).Concat(RefinementObjects).ToHashSet() : RecipeDependencies;
     public static (double Min, double Max)? Range(this AdjustmentField field) => field.HslIndex() != null ? (-100,100) : field switch {
         AdjustmentField.Strength or AdjustmentField.Contrast or AdjustmentField.Saturation or AdjustmentField.Sharpening => (0,2),
         AdjustmentField.Exposure => (-20,20),
@@ -257,7 +263,7 @@ public sealed class AdjustmentPayload
         if (Values.Count==0) throw new AdjustmentTransferException(AdjustmentFailure.EmptyScope);
         if (string.IsNullOrEmpty(Source.Identifier) || Source.ProcessingVersion is not (1 or 2)) throw Invalid("source");
         if (Source.Recipe is {} recipe) {
-            if (string.IsNullOrEmpty(recipe.ID) || !double.IsFinite(recipe.Strength) || recipe.Strength is <0 or >2 || recipe.SettingsVersion is not (2 or 3)) throw Invalid("recipe");
+            if (string.IsNullOrEmpty(recipe.ID) || !double.IsFinite(recipe.Strength) || recipe.Strength is <0 or >2 || recipe.SettingsVersion is not (2 or 3 or 4)) throw Invalid("recipe");
             if (Number(this[AdjustmentField.Strength]) is {} strength && strength!=recipe.Strength) throw Invalid("recipe.strength");
         }
         foreach (var (field,value) in Values) if (!AdjustmentFields.All.Contains(field) || !Valid(field,value)) throw Invalid(field.ToString());

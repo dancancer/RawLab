@@ -2,10 +2,15 @@ using RawLab.Windows;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+MasterRecipeRefinementChecks.Run();
 ToneControlsChecks.Run();
 AtmosphereChecks.Run();
 ColorGradingChecks.Run();
 ToneCurveChecks.Run();
+if (args.Contains("--master-recipes")) {
+    AdjustmentTransferChecks.Run(); AdjustmentPresetChecks.Run(); BatchFrozenChecks.Run();
+    return;
+}
 HslTargetChecks.Run();
 BatchFrozenChecks.Run();
 BatchSelectionChecks.Run();
@@ -554,8 +559,9 @@ try
                 System.Text.Json.JsonSerializer.Serialize(preset.Capture()))!.Restore();
             Check(restoredRecipe.MasterRecipeID == recipe.Id && restoredRecipe.RenderHsl.Equals(preset.RenderHsl), "recipe snapshot roundtrip");
         }
-        preset.ClearMasterRecipe();
-        Check(preset.MasterRecipeID == null && preset.RenderHsl.Equals(originalHsl), "ordinary HSL remains independent of strength");
+        var effectiveHsl = preset.RenderHsl;
+        preset.ResolveWhiteBalance((6500, 0)); preset.ClearMasterRecipe();
+        Check(preset.MasterRecipeID == null && preset.RenderHsl.Equals(effectiveHsl), "Removing a recipe materializes its effective HSL");
     }
     var identityGeometry = new GeometrySettings();
     Check(typeof(GeometrySettings).GetProperty("PerspectiveHorizontal")!=null,

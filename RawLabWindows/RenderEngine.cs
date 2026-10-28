@@ -16,7 +16,7 @@ internal sealed partial class RenderEngine : IDisposable
     private readonly StatisticsAnalyzer statisticsAnalyzer;
     private sealed record Stamp(string Path,long Length,long Time,long Created=0);
     private sealed record PreviewKey(Native.Request Request,DenoiseSettings Denoise,PhotoEffectsSettings Effects,ToneControlsSettings ToneControls,AtmosphereSettings Atmosphere,ColorGradingSettings ColorGrading,ToneCurveSettings Curve,int DisplayChromaDenoise,
-        int ExposureMode,HslSettings Hsl,LensSettings Lens,GeometrySettings Geometry,ProcessingIdentity Processing,bool AIEnabled,int Mode,bool Compare,bool Clipping,Stamp Raw,Stamp? Lut);
+        int ExposureMode,HslSettings Hsl,LensSettings Lens,GeometrySettings Geometry,ProcessingIdentity Processing,int RecipeSettingsVersion,double Strength,bool AIEnabled,int Mode,bool Compare,bool Clipping,Stamp Raw,Stamp? Lut);
     private readonly string lensDatabase;
     private Stamp? lensStamp;
     private LensCandidate[] lensCandidates = [];
@@ -47,7 +47,7 @@ internal sealed partial class RenderEngine : IDisposable
     {
         settings = PrepareRecipe(path, settings);
         EnsureInput(path);
-        SetProcessing(settings.Processing);SetTone(settings.ToneControls);SetAtmosphere(settings.Atmosphere);SetGrading(settings.ColorGrading);SetCurve(settings.Curve);
+        SetProcessing(settings.Processing);SetTone(settings.RenderToneControls);SetAtmosphere(settings.RenderAtmosphere);SetGrading(settings.RenderGrading);SetCurve(settings.RenderCurve);
         ConfigureAI(settings.AIDenoiseEnabled);
         SetLens(settings.Lens);
         SetGeometry(settings.Geometry);
@@ -73,7 +73,7 @@ internal sealed partial class RenderEngine : IDisposable
         }
         sourceStamp=(rawStamp,lutStamp);
         var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.Effects,settings.ToneControls,settings.Atmosphere,settings.ColorGrading,settings.Curve,settings.DisplayChromaDenoise,
-            settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,settings.AIDenoiseEnabled,gpuMode,compare,clipping,rawStamp,lutStamp);
+            settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,settings.MasterRecipeSettingsVersion,settings[Parameter.Strength],settings.AIDenoiseEnabled,gpuMode,compare,clipping,rawStamp,lutStamp);
         if(previewKey!=key){previews.Clear();previewKey=key;}
         var referenceKey=new NeutralReferenceKey(new(rawStamp.Path,rawStamp.Length,rawStamp.Time,rawStamp.Created),
             PhotoInput.IsRaster(path),settings.Processing,settings.Geometry,settings.Lens,edge);
@@ -146,7 +146,7 @@ internal sealed partial class RenderEngine : IDisposable
     {
         settings = PrepareRecipe(path, settings);
         EnsureInput(path);
-        SetProcessing(settings.Processing);SetTone(settings.ToneControls);SetAtmosphere(settings.Atmosphere);SetGrading(settings.ColorGrading);SetCurve(settings.Curve);
+        SetProcessing(settings.Processing);SetTone(settings.RenderToneControls);SetAtmosphere(settings.RenderAtmosphere);SetGrading(settings.RenderGrading);SetCurve(settings.RenderCurve);
         ConfigureAI(settings.AIDenoiseEnabled);
         SetLens(settings.Lens);
         SetGeometry(settings.Geometry);

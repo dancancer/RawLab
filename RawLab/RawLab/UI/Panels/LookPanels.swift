@@ -82,7 +82,12 @@ extension ContentView {
         Button {
             var updated = settings
             if let recipe { updated.applyMasterRecipe(recipe) }
-            else { updated.clearMasterRecipe(cameraTint: viewModel.rawWhiteBalance?.tint); updated.lutID = nil }
+            else {
+                if let reason = updated.clearMasterRecipe(context: resetContext) {
+                    viewModel.statusMessage = resetBlockedMessage(reason); return
+                }
+                updated.lutID = nil
+            }
             applySettingsChange(updated)
         } label: {
             VStack(spacing: 6) {
@@ -123,7 +128,9 @@ extension ContentView {
                 UsageAnalytics.shared.record(.filmSelected(kind))
             }
             var updated = settings
-            updated.clearMasterRecipe(cameraTint: viewModel.rawWhiteBalance?.tint)
+            if let reason = updated.clearMasterRecipe(context: resetContext) {
+                viewModel.statusMessage = resetBlockedMessage(reason); return
+            }
             updated.lutID = id
             applySettingsChange(updated)
         } label: {

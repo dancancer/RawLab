@@ -68,8 +68,8 @@ internal static class AdjustmentTransferChecks
         var legacyResult=Prepare(legacy,defaults,context);
         Check(legacyResult.Settings.MasterRecipeID==recipe.Id && AdjustmentTransfer.EffectiveNumbers(legacyResult.Settings)[F.HslHueRed]==37.25f,
             "Full legacy HSL is inversely represented in the current Windows renderer");
-        Check(AdjustmentTransfer.Capture(AdjustmentScope.All,legacyResult,context).Source.Recipe!.SettingsVersion==3,
-            "Recapture describes the current target representation rather than false legacy provenance");
+        Check(AdjustmentTransfer.Capture(AdjustmentScope.All,legacyResult,context).Source.Recipe!.SettingsVersion==2,
+            "Recapture preserves the explicitly stored legacy HSL semantics");
         var partial=Prepare(Copy(source,F.Look),defaults,context);
         Check(partial.Settings.MasterRecipeID==null && partial.Look=="recipe-lut:"+recipe.Id,"partial recipe look becomes independent LUT");
         source.Set(Parameter.Strength,0);

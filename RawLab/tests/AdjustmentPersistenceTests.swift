@@ -9,6 +9,7 @@ import Foundation
         throw NSError(domain: label, code: 1)
     }
     static func main() throws {
+        try refinedRecipe()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let first = try EditPersistence(directory: root), second = try EditPersistence(directory: root)
@@ -49,6 +50,44 @@ import Foundation
         try corrupt(root.appendingPathComponent("corrupt"))
         try concurrent(root.appendingPathComponent("concurrent"))
         try unavailable(root.appendingPathComponent("unavailable"))
+    }
+
+    static func refinedRecipe() throws {
+        let recipe = try JSONDecoder().decode(MasterRecipe.self,
+            from: Data(contentsOf: URL(fileURLWithPath: "Shared/fixtures/master-recipe-v4.json")))
+        var state = RawSettings.default
+        state.blackPoint = -20; state.clarity = -40; state.toneCurve = 0.35
+        state.temperature = 8000; state.sharpening = 0.75
+        state.applyMasterRecipe(recipe)
+        try check(state.blackPoint == 50 && state.whitePoint == -60 && state.vibrance == 15 &&
+                  state.clarity == 12 && state.dehaze == -6 && state.curveSettings.mode == .custom &&
+                  state.gradingSettings.shadows.saturation == 8 && state.toneCurve == 0,
+                  "Explicit refined recipe replaces all visible new controls")
+        let restored = try JSONDecoder().decode(RawSettings.self, from: JSONEncoder().encode(state))
+        try check(restored == state, "Refined recipe survives photo settings round-trip")
+        for strength in [0.0, 0.5, 1.0, 2.0] {
+            state.lutStrength = strength
+            let rendered = state.renderedRecipe(cameraTemperature: 6000, cameraTint: 0)
+            try check(rendered.blackPoint == min(100, 50 * strength) && rendered.whitePoint == max(-100, -60 * strength) &&
+                      rendered.vibrance == 15 * strength && rendered.clarity == 12 * strength && rendered.dehaze == -6 * strength &&
+                      rendered.gradingSettings.shadows.hue == 210 && rendered.gradingSettings.shadows.saturation == 8 * strength,
+                      "V4 strength scales final new controls once, preserving hue")
+            try check(rendered.curveSettings.isValid && (strength != 0 || rendered.curveSettings.isIdentity),
+                      "V4 curve remains valid and bypasses exactly at zero")
+            try check(state.blackPoint == 50 && state.curveSettings.points.count == 5 && state.temperature == 8000 && state.sharpening == 0.75,
+                      "Rendering preserves stored controls and unrelated adjustments")
+        }
+        var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as! [String: Any]
+        legacy.removeValue(forKey: "masterRecipeSettingsVersion")
+        let old = try JSONDecoder().decode(RawSettings.self, from: JSONSerialization.data(withJSONObject: legacy))
+        let oldRendered = old.renderedRecipe(cameraTemperature: 6000, cameraTint: 0)
+        try check(oldRendered.blackPoint == 50 && oldRendered.gradingSettings.shadows.saturation == 8 &&
+                  oldRendered.curveSettings == old.curveSettings && oldRendered.hsl == old.hsl.scaled(by: 2),
+                  "Missing version retains old independent controls and scaled HSL")
+        legacy["masterRecipeSettingsVersion"] = 5
+        try rejects("Unknown recipe versions cannot silently change old photos") {
+            _ = try JSONDecoder().decode(RawSettings.self, from: JSONSerialization.data(withJSONObject: legacy))
+        }
     }
 
     static func unavailable(_ directory: URL) throws {

@@ -50,10 +50,12 @@ internal static class ToneCurveChecks
         Check(pasted.Curve == curve && pasted[Parameter.ToneCurve] == -25, "Curve-only paste leaves legacy scalar untouched");
         var scalar = AdjustmentTransfer.Capture(AdjustmentScope.Custom([F.SCurve]), Edit(state), context);
         Check(AdjustmentTransfer.Prepare(scalar, Edit(pasted), context).Settings.Restore().Curve == curve, "Legacy scalar-only paste keeps custom mode");
-        state.ApplyMasterRecipe(MasterRecipe.All[0]);
+        var legacyRecipe = MasterRecipe.All[0] with { SettingsVersion = 3,
+            Tone = null, Atmosphere = null, Grading = null, Curve = null };
+        state.ApplyMasterRecipe(legacyRecipe);
         foreach (var strength in new[] { 0.0, 50, 100, 200 }) {
             state.Set(Parameter.Strength, strength);
-            Check(state.Curve == curve && state.Request("curve.jpg", null, 32, null).ToneCurve == 0, "Curve is independent of recipe strength");
+            Check(state.Curve == curve && state.Request("curve.jpg", null, 32, null).ToneCurve == 0, "Curve is independent of v3 recipe strength");
         }
         state = snapshot.Restore();
         foreach (var scope in new[] { new EditorResetScope(EditorResetKind.Tool, Tool: EditorAdjustmentTool.ToneCurve), new(EditorResetKind.Group, EditorAdjustmentGroup.Light) }) {

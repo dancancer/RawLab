@@ -169,5 +169,12 @@ object EditorAdjustmentRules {
         if (before.customWb != after.customWb) add("whiteBalanceMode")
         if (before.temperature != after.temperature) add("temperature")
         if (before.tint != after.tint) add("tint")
+        if (before.blackPoint != after.blackPoint) add("blackPoint")
+        if (before.whitePoint != after.whitePoint) add("whitePoint")
+        if (before.vibrance != after.vibrance) add("vibrance")
+        if (before.clarity != after.clarity) add("clarity")
+        if (before.dehaze != after.dehaze) add("dehaze")
+        if (before.toneCurve != after.toneCurve || before.curve != after.curve) add("curve")
+        if (before.colorGrading != after.colorGrading) add("colorGrading")
     }
 }

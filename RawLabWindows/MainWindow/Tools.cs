@@ -258,7 +258,8 @@ public partial class MainWindow
             AutomationProperties.SetName(button,displayName);
             button.Click+=(_,_)=>{
                 if(exporting || !ResolveTransformDraft() || (settings.MasterRecipeID == null && lut == film.Path))return;
-                settings.ClearMasterRecipe();
+                try { settings.ClearMasterRecipe(file == null || PhotoInput.IsRaw(file)); }
+                catch (Exception error) { Report(error); return; }
                 lut=film.Path;
                 usageAnalytics.Record(new FilmSelectedEvent(film.Path == null ? FilmKind.None : IsBuiltInLook(film.Path) ? FilmKind.BuiltIn : FilmKind.Custom));
                 MarkEdited();RefreshControls();Schedule();

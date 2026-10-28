@@ -27,6 +27,12 @@ private func manualSettings(_ recipe: MasterRecipe, camera: WhiteBalance, streng
     settings.contrast = recipe.contrastDelta * strength
     settings.saturation = recipe.saturationDelta * strength
     settings.hsl = recipe.hsl.scaled(by: strength)
+    if recipe.version == 4 {
+        settings.toneControls = recipe.tone?.scaled(by: strength)
+        settings.curveSettings = (recipe.curve ?? ToneCurveSettings()).scaled(by: strength)
+        settings.gradingSettings = (recipe.grading ?? ColorGradingSettings()).scaled(by: strength)
+        settings.atmosphere = recipe.atmosphere?.scaled(by: strength)
+    }
     if strength != 0 {
         settings.whiteBalanceMode = .custom
         settings.temperature = camera.temperature
@@ -36,12 +42,41 @@ private func manualSettings(_ recipe: MasterRecipe, camera: WhiteBalance, streng
 }
 
 @main struct MasterRecipeRenderTests {
+    static func removal(_ engine: RenderEngine, input: URL) throws {
+        guard let camera = try engine.render(input, settings: Adjustments(), lut: nil, edge: 128)?.asShotWhiteBalance else {
+            throw RenderError.failed("Removal fixture needs calibrated white balance")
+        }
+        for recipe in MasterRecipe.allRecipes {
+            for strength in [0.0, 0.5, 2.0] {
+                var state = Adjustments(); state.applyMasterRecipe(recipe)
+                state.resolveWhiteBalance(camera); state.strength = strength
+                if recipe.id == MasterRecipe.allRecipes[0].id { state.clarity = 12; state.dehaze = -6 }
+                // 单独检查调整贡献；去掉 LUT 本身当然会改变外观。
+                let expected = try engine.render(input, settings: state, lut: nil, edge: 128)!
+                if recipe.id == MasterRecipe.allRecipes[0].id && strength == 0.5 {
+                    let automatic = try RenderEngine(gpuMode: SONY2FUJI_GPU_AUTO)
+                    let fallback = try automatic.render(input, settings: state, lut: nil, edge: 128)!
+                    try check(automatic.lastBackend == SONY2FUJI_BACKEND_CPU && pixels(fallback) == pixels(expected),
+                              "Manual v4 atmosphere uses the honest Auto CPU fallback")
+                }
+                try check(state.clearMasterRecipe(), "\(recipe.id) \(strength): direct removal is representable")
+                let actual = try engine.render(input, settings: state, lut: nil, edge: 128)!
+                try check(pixels(actual) == pixels(expected), "\(recipe.id) \(strength): direct removal preserves adjustment pixels")
+            }
+        }
+    }
+
     static func main() throws {
-        let inputs = CommandLine.arguments.dropFirst().map { URL(fileURLWithPath: $0) }
+        let removalOnly = CommandLine.arguments.contains("--removal-only")
+        let inputs = CommandLine.arguments.dropFirst().filter { $0 != "--removal-only" }.map { URL(fileURLWithPath: $0) }
         guard !inputs.isEmpty else {
             throw RenderError.failed("Pass a real RAW fixture and run from the repository root")
         }
         let cpu = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
+        if removalOnly {
+            for input in inputs { try removal(cpu, input: input) }
+            return
+        }
         let metal = try RenderEngine(gpuMode: SONY2FUJI_GPU_FORCE)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-recipe-\(UUID())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -111,6 +146,10 @@ private func manualSettings(_ recipe: MasterRecipe, camera: WhiteBalance, streng
             oldZeroPayload["masterRecipeSettingsVersion"] = 2
             let oldZero = try JSONDecoder().decode(Adjustments.self, from: JSONSerialization.data(withJSONObject: oldZeroPayload))
             var oldZeroReference = Adjustments(); oldZeroReference.hsl = zeroHSL.hsl
+            oldZeroReference.toneControls = zeroHSL.toneControls
+            oldZeroReference.curveSettings = zeroHSL.curveSettings
+            oldZeroReference.gradingSettings = zeroHSL.gradingSettings
+            oldZeroReference.atmosphere = zeroHSL.atmosphere
             let independentReference = try cpu.render(input, settings: oldZeroReference, lut: nil, edge: 128)!
             let oldZeroResult = try cpu.render(input, settings: oldZero, lut: MasterRecipe.hamadaDaylightV2.lutURL()!, edge: 128)!
             try check(pixels(oldZeroResult) == pixels(independentReference),

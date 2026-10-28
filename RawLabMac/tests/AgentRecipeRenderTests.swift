@@ -407,6 +407,7 @@ struct AgentRecipeRenderTests {
         clamped.saturation = -100
         clamped.highlights = 100
         clamped.shadows = -100
+        clamped.curveSettings = ToneCurveSettings()
         clamped.toneCurve = 100
         clamped.sharpening = 200
         let clampData = try cpu.agentRecipe(input, settings: clamped, lut: recipeLUT,

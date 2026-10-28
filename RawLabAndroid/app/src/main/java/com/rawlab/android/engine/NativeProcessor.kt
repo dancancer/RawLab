@@ -94,10 +94,10 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         val pixels = rasterInput(input, inputKind)
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
-        nativeSetToneCurve(handle, effective.curve.mode.nativeValue, effective.curve.packed())
-        nativeSetToneControls(handle, effective.blackPoint / 100f, effective.whitePoint / 100f, effective.vibrance / 100f)
-        nativeSetAtmosphere(handle, effective.clarity / 100f, effective.dehaze / 100f)
-        with(effective.colorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
+        nativeSetToneCurve(handle, effective.renderCurve.mode.nativeValue, effective.renderCurve.packed())
+        nativeSetToneControls(handle, effective.renderBlackPoint / 100f, effective.renderWhitePoint / 100f, effective.renderVibrance / 100f)
+        nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
+        with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
             midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
         return nativeProcess(handle, input.path, pixels?.bitmap, pixels?.width ?: 0,
             pixels?.height ?: 0, if (pixels == null) 0 else 1, lut?.path, null, effective.strength,
@@ -134,10 +134,10 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         val pixels = rasterInput(input, inputKind)
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
-        nativeSetToneCurve(handle, effective.curve.mode.nativeValue, effective.curve.packed())
-        nativeSetToneControls(handle, effective.blackPoint / 100f, effective.whitePoint / 100f, effective.vibrance / 100f)
-        nativeSetAtmosphere(handle, effective.clarity / 100f, effective.dehaze / 100f)
-        with(effective.colorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
+        nativeSetToneCurve(handle, effective.renderCurve.mode.nativeValue, effective.renderCurve.packed())
+        nativeSetToneControls(handle, effective.renderBlackPoint / 100f, effective.renderWhitePoint / 100f, effective.renderVibrance / 100f)
+        nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
+        with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
             midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
         val backend = intArrayOf(-1)
         nativeProcess(handle, input.path, pixels?.bitmap, pixels?.width ?: 0, pixels?.height ?: 0,
@@ -163,10 +163,10 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         val pixels = rasterInput(input, inputKind)
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
-        nativeSetToneCurve(handle, effective.curve.mode.nativeValue, effective.curve.packed())
-        nativeSetToneControls(handle, effective.blackPoint / 100f, effective.whitePoint / 100f, effective.vibrance / 100f)
-        nativeSetAtmosphere(handle, effective.clarity / 100f, effective.dehaze / 100f)
-        with(effective.colorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
+        nativeSetToneCurve(handle, effective.renderCurve.mode.nativeValue, effective.renderCurve.packed())
+        nativeSetToneControls(handle, effective.renderBlackPoint / 100f, effective.renderWhitePoint / 100f, effective.renderVibrance / 100f)
+        nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
+        with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
             midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
         return nativeAutoExposure(handle, input.path, pixels?.bitmap, pixels?.width ?: 0, pixels?.height ?: 0,
             if (pixels == null) 0 else 1, effective.customWb, effective.temperature, effective.tint,

@@ -109,24 +109,11 @@ public static class EditorAdjustmentRules
         else if (scope.Kind == EditorResetKind.Tool || scope.Group == EditorAdjustmentGroup.Looks) {
             if (source.MasterRecipeID != null) {
                 var state = source.Restore();
-                var scale = state[Parameter.Strength] / 100;
-                var tintOffset = state[Parameter.Tint] * scale;
-                if (PhotoInput.IsRaw(edit.Identity.Path) && (!state.CameraWhiteBalance || tintOffset != 0) && state.AsShot == null)
-                    return new(EditorResetStatus.Blocked, Reason: "Recipe white balance needs real as-shot calibration.");
-                var values = candidate.Values;
-                foreach (var parameter in ScaledParameters) values[(int)parameter] *= scale;
-                var effective = EffectiveRequest(edit.Identity.Path, state);
-                if (PhotoInput.IsRaster(edit.Identity.Path)) {
-                    values[(int)Parameter.Temperature] = 6500;
-                    values[(int)Parameter.Tint] = 0;
+                try { state.ClearMasterRecipe(PhotoInput.IsRaw(edit.Identity.Path)); }
+                catch (Exception error) when (error is ArgumentException or System.IO.InvalidDataException) {
+                    return new(EditorResetStatus.Blocked, Reason: error.Message);
                 }
-                else values[(int)Parameter.Tint] = effective.WbMode == 3
-                    ? Math.Clamp((state.AsShot?.Tint ?? 0) + tintOffset, -150, 150)
-                    : state.AsShot?.Tint ?? 0;
-                candidate = candidate with { MasterRecipeID = null, Hsl = state.RenderHsl,
-                    CameraWhiteBalance = effective.WbMode != 3,
-                    AsShotTemperature = PhotoInput.IsRaster(edit.Identity.Path) ? null : candidate.AsShotTemperature,
-                    AsShotTint = PhotoInput.IsRaster(edit.Identity.Path) ? null : candidate.AsShotTint };
+                candidate = state.Capture();
                 detached = true;
             }
             if (detached || scope.Kind != EditorResetKind.Tool) candidate.Values[(int)Parameter.Strength] = 100;
@@ -147,13 +134,21 @@ public static class EditorAdjustmentRules
                     materialized.Add(ParameterSpec.All[(int)parameter].Title);
             if (!(source.Hsl ?? new()).Equals(candidate.Hsl ?? new())) materialized.Add("HSL");
             if (source.CameraWhiteBalance != candidate.CameraWhiteBalance) materialized.Add("白平衡");
+            var beforeTone = source.ToneControls ?? new(); var afterTone = candidate.ToneControls ?? new();
+            if (beforeTone.BlackPoint != afterTone.BlackPoint) materialized.Add("黑场");
+            if (beforeTone.WhitePoint != afterTone.WhitePoint) materialized.Add("白场");
+            if (beforeTone.Vibrance != afterTone.Vibrance) materialized.Add("鲜艳度");
+            var beforeAtmosphere = source.Atmosphere ?? new(); var afterAtmosphere = candidate.Atmosphere ?? new();
+            if (beforeAtmosphere.Clarity != afterAtmosphere.Clarity) materialized.Add("清晰度");
+            if (beforeAtmosphere.Dehaze != afterAtmosphere.Dehaze) materialized.Add("去朦胧");
+            if (!(source.Curve ?? new()).Equals(candidate.Curve ?? new())) materialized.Add("曲线");
+            if ((source.ColorGrading ?? new()) != (candidate.ColorGrading ?? new())) materialized.Add("颜色分级");
         }
         return new(EditorResetStatus.Ready, result,
             scope.Kind is EditorResetKind.All or EditorResetKind.AllHsl or EditorResetKind.AllGrading or EditorResetKind.Group ||
             scope.Kind == EditorResetKind.Tool && scope.Tool is (EditorAdjustmentTool.Hsl or EditorAdjustmentTool.ColorGrading) || materialized.Count > 0,
             detached ? "Recipe values and white balance are materialized as independent adjustments." : null, materialized);
     }
-    private static readonly Parameter[] ScaledParameters = [Parameter.Exposure, Parameter.Contrast, Parameter.Highlights, Parameter.Shadows, Parameter.Saturation];
     private static readonly Parameter[] LightParameters = [Parameter.Exposure, Parameter.Contrast, Parameter.Highlights, Parameter.Shadows, Parameter.ToneCurve];
     private static readonly Parameter[] ColorParameters = [Parameter.Temperature, Parameter.Tint, Parameter.Saturation];
     private static SavedEdit Defaults(SavedEdit edit)
@@ -281,6 +276,6 @@ public static class EditorAdjustmentRules
             x.Shadows == y.Shadows && x.Saturation == y.Saturation && x.ToneCurve == y.ToneCurve && x.Sharpening == y.Sharpening &&
             x.WbMode == y.WbMode && x.Temperature == y.Temperature && x.Tint == y.Tint && a.ExposureMode == b.ExposureMode &&
             a.RenderHsl.Values.Select(v => (float)v).SequenceEqual(b.RenderHsl.Values.Select(v => (float)v)) &&
-            a.ToneControls == b.ToneControls && a.Atmosphere == b.Atmosphere && a.ColorGrading == b.ColorGrading && a.Curve == b.Curve && a.AIDenoiseEnabled == b.AIDenoiseEnabled && a.Effects == b.Effects && a.Denoise == b.Denoise && a.DisplayChromaDenoise == b.DisplayChromaDenoise && a.Geometry == b.Geometry && a.Lens == b.Lens;
+            a.RenderToneControls == b.RenderToneControls && a.RenderAtmosphere == b.RenderAtmosphere && a.RenderGrading == b.RenderGrading && a.RenderCurve == b.RenderCurve && a.AIDenoiseEnabled == b.AIDenoiseEnabled && a.Effects == b.Effects && a.Denoise == b.Denoise && a.DisplayChromaDenoise == b.DisplayChromaDenoise && a.Geometry == b.Geometry && a.Lens == b.Lens;
     }
 }

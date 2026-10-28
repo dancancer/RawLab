@@ -20,13 +20,13 @@ internal sealed partial class RenderEngine
         var exposure=state.ExposureMode switch{0=>"scene",1=>"preview",2=>"sensor",_=>throw new ArgumentOutOfRangeException(nameof(settings))};
         var format=ExportFormatExtensions.FromPath(output) switch{ExportFormat.Jpeg=>"jpeg",ExportFormat.Png=>"png",ExportFormat.RenderedDng=>"dng",_=>throw new ArgumentOutOfRangeException(nameof(output))};
         object size=longEdge is {} edge ? new{mode="limit_long_edge",long_edge=edge} : new{mode="native"};
-        var atmosphere=state.Atmosphere.NativeConfig();
-        var toneControls=state.ToneControls.NativeConfig();
+        var atmosphere=state.RenderAtmosphere.NativeConfig();
+        var toneControls=state.RenderToneControls.NativeConfig();
         var tone=new Dictionary<string,object> {
             ["contrast"]=Math.Clamp(request.Contrast,0,2),["saturation"]=Math.Clamp(request.Saturation,0,2),
             ["highlights"]=Math.Clamp(request.Highlights,-1,1),["shadows"]=Math.Clamp(request.Shadows,-1,1),["s_curve"]=Math.Clamp(request.ToneCurve,-1,1)
         };
-        tone["curve"] = state.Curve;
+        tone["curve"] = state.RenderCurve;
         if(toneControls.BlackPoint!=0)tone["black_point"]=toneControls.BlackPoint;
         if(toneControls.WhitePoint!=0)tone["white_point"]=toneControls.WhitePoint;
         var document=new{
@@ -55,14 +55,14 @@ internal sealed partial class RenderEngine
         };
         var options=new JsonSerializerOptions{WriteIndented=true};
         var json=JsonSerializer.Serialize(document,options);
-        _ = state.ColorGrading.NativeConfig();
-        if(toneControls.Vibrance==0 && state.ColorGrading.IsDefault)return json;
+        _ = state.RenderGrading.NativeConfig();
+        if(toneControls.Vibrance==0 && state.RenderGrading.IsDefault)return json;
         var result=System.Text.Json.Nodes.JsonNode.Parse(json)!;
         if(toneControls.Vibrance!=0) result["edits"]!["color"]=new System.Text.Json.Nodes.JsonObject { ["vibrance"]=toneControls.Vibrance };
-        if (!state.ColorGrading.IsDefault) {
+        if (!state.RenderGrading.IsDefault) {
             var grading = new System.Text.Json.Nodes.JsonObject();
             foreach (var zone in Enum.GetValues<ColorGradingZone>()) {
-                var wheel = state.ColorGrading[zone];
+                var wheel = state.RenderGrading[zone];
                 grading[zone.ToString().ToLowerInvariant()] = new System.Text.Json.Nodes.JsonObject {
                     ["hue"] = wheel.NativeHue, ["saturation"] = (float)wheel.Saturation };
             }

@@ -32,6 +32,23 @@ internal static class PreviewChecks
         check(masked.Neutral.Clipping==null && masked.Result.Clipping!=null,"Clipping affects only the edited frame");
         engine.SetGpuMode(0);var cpu=Frame();
         check(cpu.Result.Backend!=3,"CPU mode cannot reuse a GPU-labelled cached frame");engine.SetGpuMode(1);
+        var versioned = new Adjustments();
+        versioned.ApplyMasterRecipe(MasterRecipe.All[0]);
+        versioned.Set(Parameter.Strength, 50);
+        versioned.ToneControls = new(35, -20, 30);
+        versioned = (versioned.Capture() with { MasterRecipeSettingsVersion = 3 }).Restore();
+        var legacyFrame = engine.RenderPreview(raw, versioned, lut, 256, false, false, false);
+        check(ReferenceEquals(legacyFrame, engine.RenderPreview(raw, versioned, lut, 256, false, false, false)),
+            "Legacy recipe frame is cached before changing its settings version");
+        versioned = (versioned.Capture() with { MasterRecipeSettingsVersion = 4 }).Restore();
+        var refinedFrame = engine.RenderPreview(raw, versioned, lut, 256, false, false, false);
+        check(!ReferenceEquals(legacyFrame, refinedFrame), "Changing only recipe settings version invalidates preview pixels");
+        foreach (var parameter in new[] { Parameter.Exposure, Parameter.Contrast, Parameter.Saturation,
+            Parameter.Highlights, Parameter.Shadows, Parameter.Tint }) versioned.Set(parameter, 0);
+        var halfRefinement = engine.RenderPreview(raw, versioned, null, 256, false, false, false);
+        versioned.Set(Parameter.Strength, 100);
+        check(!ReferenceEquals(halfRefinement, engine.RenderPreview(raw, versioned, null, 256, false, false, false)),
+            "Modern controls invalidate the preview when only strength changes, including without a LUT");
         var originalTime=File.GetLastWriteTimeUtc(raw);
         try
         {

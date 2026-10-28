@@ -42,11 +42,11 @@ extension RenderEngine {
         guard state.toneSettings.isValid else { throw RenderError.failed(L10n.text("无效的黑白场或鲜艳度参数")) }
         guard state.curveSettings.isValid else { throw RenderError.failed(L10n.text("无效的曲线参数")) }
         guard state.atmosphereSettings.isValid else { throw RenderError.failed(L10n.text("无效的清晰度或去朦胧参数")) }
-        let atmosphereConfig = state.atmosphereSettings.nativeConfig
-        let toneConfig = state.toneSettings.nativeConfig
+        let atmosphereConfig = state.renderAtmosphereSettings.nativeConfig
+        let toneConfig = state.renderToneSettings.nativeConfig
         var tone: [String: Any] = ["contrast": min(2, max(0, request.contrast)), "saturation": min(2, max(0, request.saturation)),
             "highlights": min(1, max(-1, request.highlights)), "shadows": min(1, max(-1, request.shadows)), "s_curve": request.tone_curve]
-        tone["curve"] = ["mode": state.curveSettings.mode.rawValue, "points": state.curveSettings.points.map { [$0.x, $0.y] }]
+        tone["curve"] = ["mode": state.renderCurveSettings.mode.rawValue, "points": state.renderCurveSettings.points.map { [$0.x, $0.y] }]
         if toneConfig.black_point != 0 { tone["black_point"] = toneConfig.black_point }
         if toneConfig.white_point != 0 { tone["white_point"] = toneConfig.white_point }
         var document: [String: Any] = [
@@ -84,9 +84,9 @@ extension RenderEngine {
             document["edits"] = edits
         }
         guard state.gradingSettings.isValid else { throw RenderError.failed(L10n.text("无效的颜色分级参数")) }
-        if !state.gradingSettings.isDefault, var edits = document["edits"] as? [String: Any] {
+        if !state.renderGradingSettings.isDefault, var edits = document["edits"] as? [String: Any] {
             edits["color_grading"] = Dictionary(uniqueKeysWithValues: ColorGradingZone.allCases.map { zone in
-                let wheel = state.gradingSettings[zone]
+                let wheel = state.renderGradingSettings[zone]
                 return (zone.rawValue, ["hue": wheel.nativeHue, "saturation": Float(wheel.saturation)])
             })
             document["edits"] = edits

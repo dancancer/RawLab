@@ -15,6 +15,8 @@ public sealed record AtmosphereSpec(AtmosphereParameter Id, string Title)
 public sealed record AtmosphereSettings(double Clarity = 0, double Dehaze = 0)
 {
     [JsonIgnore] public bool IsIdentity => Clarity == 0 && Dehaze == 0;
+    public AtmosphereSettings Scaled(double strength) => new(Math.Clamp(Clarity * strength, -100, 100),
+        Math.Clamp(Dehaze * strength, -100, 100));
     public double this[AtmosphereParameter id] => id switch {
         AtmosphereParameter.Clarity => Clarity, AtmosphereParameter.Dehaze => Dehaze,
         _ => throw new ArgumentOutOfRangeException(nameof(id))

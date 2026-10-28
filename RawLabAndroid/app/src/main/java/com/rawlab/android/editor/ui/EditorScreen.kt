@@ -91,6 +91,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onGeometryRatio: (GeometryRatio, Boolean) -> Unit = { _, _ -> },
     onGeometryLock: () -> Unit = {}, onGeometrySwap: () -> Unit = {}, onGeometryGrid: () -> Unit = {},
     onFilmSelected: (UsageFilmKind) -> Unit = {},
+    onSelectFilm: (String) -> Boolean = { false },
     onPrepareReset: (EditorResetScope) -> EditorResetPreparation = {
         EditorResetPreparation(EditorResetResult.Blocked("The current preview is not ready"))
     },
@@ -313,7 +314,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             onAutoExposure, onDraftEdit, { applyAndLeave(); Unit }, { onDiscardDraft(); tool = 2 },
             onFilmSelected, onGeometryRatio, selectGroup, channel, { onCancelAdjustment(); channel = it }, requestReset, side, !pendingAll, compact,
             onGeometryLock, onGeometrySwap, onGeometryGrid, onPresets = { onCancelAdjustment(); onPresets() }, gradingZone = gradingZone,
-            onGradingZoneChange = { onCancelAdjustment(); gradingZone = it }, hslTarget = hslTarget)
+            onGradingZoneChange = { onCancelAdjustment(); gradingZone = it }, hslTarget = hslTarget, onSelectFilm = onSelectFilm)
     })
     // 纯预览与横竖布局只移动/暂不测量同一面板，保留 fine、滚动和本地输入状态。
     val retainedDock = remember { movableContentOf<Modifier, Boolean, Boolean> { modifier, side, compact -> currentDock(modifier, side, compact) } }

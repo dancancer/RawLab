@@ -31,7 +31,7 @@ enum IOSAdjustmentTransfer {
         }
         let settings = snapshot.settings
         let recipe = settings.masterRecipeID.map {
-            AdjustmentRecipeContext(id: $0, strength: settings.recipeScale, settingsVersion: 3)
+            AdjustmentRecipeContext(id: $0, strength: settings.recipeScale, settingsVersion: settings.masterRecipeSettingsVersion)
         }
         return try AdjustmentTransferPayload(source: .init(identifier: context.identifier, isRaw: context.isRaw,
             processingVersion: settings.processing.version, recipe: recipe),
@@ -51,14 +51,16 @@ enum IOSAdjustmentTransfer {
             guard kind == "neutral" || context.availableLookIDs.contains(lookup) else {
                 throw AdjustmentTransferError.missingLook(lookup)
             }
-            fullRecipe = kind == "recipe" && Field.recipeDependencies.isSubset(of: selected)
+            fullRecipe = kind == "recipe" && Field.recipeDependencies(version: payload.source.recipe?.settingsVersion ?? 3).isSubset(of: selected)
             if fullRecipe {
                 guard let recipe = payload.source.recipe, MasterRecipe.recipe(for: recipe.id) != nil else {
                     throw AdjustmentTransferError.missingLook(lookup)
                 }
                 result.masterRecipeID = recipe.id; result.lutID = nil; filmID = nil
+                result.masterRecipeSettingsVersion = recipe.settingsVersion
             } else {
                 result.masterRecipeID = nil
+                result.masterRecipeSettingsVersion = 3
                 switch kind {
                 case "neutral": result.lutID = nil
                 case "recipe", "recipe_lut": result.lutID = "recipe-lut:\(id!)"
@@ -72,18 +74,19 @@ enum IOSAdjustmentTransfer {
         }
         if let strength = payload[.strength]?.number { result.lutStrength = strength }
         let contextChanged = result.masterRecipeID != target.settings.masterRecipeID
+            || result.masterRecipeSettingsVersion != target.settings.masterRecipeSettingsVersion
             || result.recipeScale != target.settings.recipeScale
         for (field, key) in scalarKeys {
             if let value = payload[field]?.number {
                 if fullRecipe { result[keyPath: key] = value }
                 else { try assignEffective(sourceEffective(value, field: field, recipe: payload.source.recipe), field: field, to: &result) }
-            } else if contextChanged && isRecipeScaled(field) && effectiveNumbers(result)[field] != before[field] {
+            } else if contextChanged && effectiveNumbers(result)[field] != before[field] {
                 try assignEffective(before[field]!, field: field, to: &result)
             }
         }
         for field in Field.allCases where field.hslLocation != nil {
             if let value = payload[field]?.number {
-                if fullRecipe && payload.source.recipe?.settingsVersion == 3 { try assignHSL(value, field: field, to: &result) }
+                if fullRecipe { try assignHSL(value, field: field, to: &result) }
                 else { try assignEffective(sourceEffective(value, field: field, recipe: payload.source.recipe), field: field, to: &result) }
             } else if contextChanged && effectiveNumbers(result)[field] != before[field] {
                 try assignEffective(before[field]!, field: field, to: &result)
@@ -112,6 +115,15 @@ enum IOSAdjustmentTransfer {
             }
         }
         try applyObjects(payload, to: &result, context: context)
+        let refinements = try AdjustmentTransferRefinement.applying(payload,
+            original: AdjustmentTransferRefinement.values(curve: target.settings.curveSettings, grading: target.settings.gradingSettings),
+            previousScale: target.settings.refinementScale, targetScale: result.refinementScale, fullRecipe: fullRecipe)
+        result.curveSettings = refinements[.curve]!.curve!
+        for field in Field.refinementObjects {
+            if let zone = field.gradingZone, let wheel = refinements[field]?.object {
+                result.gradingSettings[zone] = ColorGradingWheel(hue: wheel["hue"]!.number!, saturation: wheel["saturation"]!.number!)
+            }
+        }
         if !selected.contains(.postRGBDenoise), target.settings.denoise.enabled != result.denoise.enabled,
            target.settings.noiseReduction != 0 {
             throw AdjustmentTransferError.unrepresentable("unselected \(Field.postRGBDenoise.rawValue)")
@@ -122,7 +134,8 @@ enum IOSAdjustmentTransfer {
             let expected = payload[field]?.number.map { sourceEffective($0, field: field, recipe: payload.source.recipe) } ?? before[field]!
             guard Float(actual[field]!) == Float(expected) else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
         }
-        if values(result, context: context) == values(target.settings, context: context) { return target }
+        if values(result, context: context) == values(target.settings, context: context)
+            && result.masterRecipeSettingsVersion == target.settings.masterRecipeSettingsVersion { return target }
         return target.replacing(settings: result, preservingFilmID: filmID)
     }
 
@@ -132,23 +145,28 @@ enum IOSAdjustmentTransfer {
             throw AdjustmentTransferError.missingLook("recipe:\(id)")
         }
     }
-    static func isRecipeScaled(_ field: Field) -> Bool {
-        [.exposure, .contrast, .highlights, .shadows, .saturation].contains(field)
+    static func isRecipeScaled(_ field: Field, version: Int = 3) -> Bool {
+        [.exposure, .contrast, .highlights, .shadows, .saturation].contains(field) || version >= 4 && Field.refinementScalars.contains(field)
     }
     static func sourceEffective(_ value: Double, field: Field, recipe: AdjustmentRecipeContext?) -> Double {
         let scale = recipe?.strength ?? 1
         if field.hslLocation != nil { return min(100, max(-100, value * ((recipe?.settingsVersion ?? 2) >= 3 ? scale : 1))) }
         if field == .contrast || field == .saturation { return 1 + (value - 1) * scale }
+        if (recipe?.settingsVersion ?? 3) >= 4 && Field.refinementScalars.contains(field) {
+            let limit = field == .sCurve ? 1.0 : 100.0
+            return min(limit, max(-limit, value * scale))
+        }
         return isRecipeScaled(field) ? value * scale : value
     }
     static func assignEffective(_ value: Double, field: Field, to settings: inout RawSettings) throws {
         let scale = settings.recipeScale
         if field.hslLocation != nil {
-            guard scale != 0 || value == 0 else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
-            try assignHSL(scale == 0 ? 0 : value / scale, field: field, to: &settings); return
+            let hslScale = settings.masterRecipeSettingsVersion >= 3 ? scale : 1
+            guard hslScale != 0 || value == 0 else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
+            try assignHSL(hslScale == 0 ? 0 : value / hslScale, field: field, to: &settings); return
         }
         let identity: Double = [.contrast, .saturation].contains(field) ? 1 : 0
-        if isRecipeScaled(field) {
+        if isRecipeScaled(field, version: settings.masterRecipeSettingsVersion) {
             guard scale != 0 || value == identity else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
             settings[keyPath: scalarKeys[field]!] = scale == 0 ? identity : identity + (value - identity) / scale
         } else { settings[keyPath: scalarKeys[field]!] = value }

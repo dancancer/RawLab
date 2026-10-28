@@ -18,6 +18,8 @@ public sealed record ToneControlSpec(ToneControlParameter Id, string Title, stri
 public sealed record ToneControlsSettings(double BlackPoint = 0, double WhitePoint = 0, double Vibrance = 0)
 {
     [JsonIgnore] public bool IsIdentity => BlackPoint == 0 && WhitePoint == 0 && Vibrance == 0;
+    public ToneControlsSettings Scaled(double strength) => new(Math.Clamp(BlackPoint * strength, -100, 100),
+        Math.Clamp(WhitePoint * strength, -100, 100), Math.Clamp(Vibrance * strength, -100, 100));
     public double this[ToneControlParameter id] => id switch {
         ToneControlParameter.BlackPoint => BlackPoint, ToneControlParameter.WhitePoint => WhitePoint,
         ToneControlParameter.Vibrance => Vibrance, _ => throw new ArgumentOutOfRangeException(nameof(id))

@@ -36,6 +36,20 @@ struct ToneCurveSettings: Equatable, Hashable, Codable {
         return true
     }
     var progress: Double { points.map { abs($0.y - $0.x) }.max() ?? 0 }
+    func scaled(by strength: Double) -> Self {
+        guard mode == .custom, strength != 1 else { return self }
+        guard strength != 0 else { return .identity }
+        var result = self
+        var previous = 0.0
+        for index in result.points.indices {
+            let point = points[index]
+            // 放大相对恒等线的偏移；极端手动曲线仍保持端点和明暗单调性。
+            let y = min(1, max(previous, point.x + (point.y - point.x) * strength))
+            result.points[index].y = y
+            previous = y
+        }
+        return result
+    }
     func isInterior(_ index: Int) -> Bool { mode == .custom && index > 0 && index + 1 < points.count }
     func inserting(x: Double, y: Double) -> Self {
         guard mode == .custom, isValid, points.count < 33, x.isFinite, y.isFinite, x > 0, x < 1,

@@ -2,6 +2,13 @@ import Foundation
 
 @main
 struct AdjustmentTransferTests {
+    static var legacyRecipe: MasterRecipe {
+        // 固定测试旧版本的独立控制语义，不随 bundled catalog 的版本升级。
+        let data = try! JSONEncoder().encode(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
+        var row = try! JSONSerialization.jsonObject(with: data) as! [String: Any]
+        for key in ["settingsVersion", "tone", "atmosphere", "grading", "curve"] { row.removeValue(forKey: key) }
+        return try! JSONDecoder().decode(MasterRecipe.self, from: JSONSerialization.data(withJSONObject: row))
+    }
     static func check(_ condition: Bool, _ message: String) {
         guard condition else { fatalError(message) }
         print("PASS: \(message)")
@@ -66,8 +73,8 @@ struct AdjustmentTransferTests {
         let legacy = try MacAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: state(), context: raw)
         check(try MacAdjustmentTransfer.prepare(payload: legacy, target: state(target), context: raw).settings.atmosphereSettings == target.atmosphereSettings,
             "Legacy payload preserves target atmosphere")
-        source.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!); source.strength = 0
-        target.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!); target.strength = 0
+        source.applyMasterRecipe(legacyRecipe); source.strength = 0
+        target.applyMasterRecipe(legacyRecipe); target.strength = 0
         let recipe = try MacAdjustmentTransfer.capture(scope: .custom(fields), snapshot: state(source), context: raw)
         check(try MacAdjustmentTransfer.prepare(payload: recipe, target: state(target), context: raw).settings.atmosphereSettings == source.atmosphereSettings,
             "Atmosphere is independent of zero recipe strength")
@@ -107,9 +114,9 @@ struct AdjustmentTransferTests {
         let legacy = try MacAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: state(), context: raw)
         check(try MacAdjustmentTransfer.prepare(payload: legacy, target: state(target), context: raw).settings.toneSettings == target.toneSettings,
             "Legacy payload omitting tone fields does not reset target tone")
-        source.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
+        source.applyMasterRecipe(legacyRecipe)
         source.strength = 0
-        target.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
+        target.applyMasterRecipe(legacyRecipe)
         target.strength = 0
         let recipeCopy = try MacAdjustmentTransfer.capture(scope: .custom(fields), snapshot: state(source), context: raw)
         let recipeMerged = try MacAdjustmentTransfer.prepare(payload: recipeCopy, target: state(target), context: raw)
@@ -177,8 +184,8 @@ struct AdjustmentTransferTests {
         let legacy = try MacAdjustmentTransfer.capture(scope: .custom([.exposure]), snapshot: state(), context: raw)
         check(try MacAdjustmentTransfer.prepare(payload: legacy, target: state(target), context: raw).settings.gradingSettings == target.gradingSettings,
             "Old payloads do not reset grading")
-        source.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
-        target.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
+        source.applyMasterRecipe(legacyRecipe)
+        target.applyMasterRecipe(legacyRecipe)
         source.strength = 0; target.strength = 0
         let recipeCopy = try MacAdjustmentTransfer.capture(scope: .custom(fields), snapshot: state(source), context: raw)
         check(try MacAdjustmentTransfer.prepare(payload: recipeCopy, target: state(target), context: raw).settings.gradingSettings == source.gradingSettings,
@@ -243,6 +250,7 @@ struct AdjustmentTransferTests {
     }
 
     static func main() throws {
+        try refinedRecipeTransfers()
         try toneCurve()
         try colorGrading()
         let pendingHue = Data(#"{"colorGrading":{"shadows":{"hue":231.25,"saturation":0},"midtones":{"hue":0,"saturation":0},"highlights":{"hue":0,"saturation":0}}}"#.utf8)
@@ -382,6 +390,54 @@ struct AdjustmentTransferTests {
         let restored = try MacAdjustmentTransfer.prepare(payload: full, target: state(), context: raw)
         check(restored.settings.masterRecipeID == source.masterRecipeID && restored.settings.contrast == source.contrast
             && restored.settings.strength == 0, "Full recipe retains zero-strength logical values")
+    }
+
+    static func refinedRecipeTransfers() throws {
+        let recipe = try JSONDecoder().decode(MasterRecipe.self,
+            from: Data(contentsOf: URL(fileURLWithPath: "Shared/fixtures/master-recipe-v4.json")))
+        let fields: Set<AdjustmentTransferField> = [.blackPoint, .whitePoint, .vibrance, .clarity, .dehaze,
+            .curve, .sCurve, .gradingShadows, .gradingMidtones, .gradingHighlights]
+        var source = Adjustments(); source.applyMasterRecipe(recipe)
+        var neutralTarget = Adjustments()
+        neutralTarget.resolveWhiteBalance(WhiteBalance(temperature: 5200, tint: 10))
+        for strength in [0.0, 0.5, 1, 2] {
+            source.strength = strength
+            let partial = try MacAdjustmentTransfer.capture(scope: .custom(fields), snapshot: state(source), context: raw)
+            let plain = try MacAdjustmentTransfer.prepare(payload: partial, target: state(), context: raw).settings
+            check(plain.masterRecipeID == nil && plain.toneSettings == source.renderToneSettings &&
+                  plain.atmosphereSettings == source.renderAtmosphereSettings && plain.gradingSettings == source.renderGradingSettings &&
+                  plain.curveSettings == source.renderCurveSettings, "V4 partial paste materializes every new group once at \(strength)")
+            let complete = try MacAdjustmentTransfer.capture(scope: .all, snapshot: state(source), context: raw)
+            let restored = try MacAdjustmentTransfer.prepare(payload: complete, target: state(neutralTarget), context: raw).settings
+            check(restored.recipeSettingsVersion == 4 && restored.strength == strength && restored.toneSettings == source.toneSettings &&
+                  restored.curveSettings == source.curveSettings && restored.gradingSettings == source.gradingSettings,
+                  "Complete v4 transfer preserves logical values and version, including zero strength")
+        }
+        source.strength = 0.5
+        let incomplete = try MacAdjustmentTransfer.capture(scope: .custom(AdjustmentTransferField.recipeDependencies), snapshot: state(source), context: raw)
+        let lutOnly = try MacAdjustmentTransfer.prepare(payload: incomplete, target: state(neutralTarget), context: raw)
+        check(lutOnly.settings.masterRecipeID == nil && lutOnly.filmID == "recipe-lut:hamada_daylight_v2",
+              "Old dependency selection cannot accidentally activate an incomplete v4 recipe")
+        var target = Adjustments(); target.applyMasterRecipe(recipe); target.strength = 2; target.tint = 0
+        let partial = try MacAdjustmentTransfer.capture(scope: .custom(fields), snapshot: state(source), context: raw)
+        let merged = try MacAdjustmentTransfer.prepare(payload: partial, target: state(target), context: raw).settings
+        check(merged.masterRecipeID == target.masterRecipeID && merged.renderToneSettings == source.renderToneSettings &&
+              merged.renderGradingSettings == source.renderGradingSettings,
+              "V4 partial paste into a recipe inversely maps current contributions")
+        for (a, b) in zip(merged.renderCurveSettings.points, source.renderCurveSettings.points) {
+            check(a.x == b.x && abs(a.y - b.y) < 1e-12, "Inverse curve transfer preserves effective points")
+        }
+        target.strength = 0
+        rejects("Nonidentity refinements cannot enter a zero-strength recipe target") {
+            _ = try MacAdjustmentTransfer.prepare(payload: partial, target: state(target), context: raw)
+        }
+        target.strength = 0.5; source.strength = 1
+        let strengthOnly = try MacAdjustmentTransfer.capture(scope: .custom([.strength]), snapshot: state(source), context: raw)
+        let changed = try MacAdjustmentTransfer.prepare(payload: strengthOnly, target: state(target), context: raw).settings
+        check(changed.strength == 1 && changed.renderToneSettings == target.renderToneSettings &&
+              changed.renderAtmosphereSettings == target.renderAtmosphereSettings && changed.renderGradingSettings == target.renderGradingSettings &&
+              changed.renderCurveSettings == target.renderCurveSettings,
+              "Changing recipe strength through partial paste preserves all unselected refinement effects")
     }
 
     static func whiteBalanceAndCompatibility() throws {
