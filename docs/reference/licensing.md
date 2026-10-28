@@ -98,7 +98,7 @@ CLI installations include its MIT license; native clients do not link this adapt
 
 ## DualDn Models and Desktop Inference Runtimes
 
-The next macOS and Windows release packages include DualDn/Restormer models
+The next Apple Silicon macOS and Windows release packages include DualDn/Restormer models
 and the corresponding inference runtimes. The project owner confirmed the
 noncommercial use and model packaging decision on 26 October 2026. The original
 DualDn weights and converted ONNX/Core ML resources retain

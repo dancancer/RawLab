@@ -484,8 +484,6 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
         if self == .tint { value.defaultValue = settings.masterRecipe != nil ? 0 : (settings.asShotWhiteBalance?.tint ?? 0) }
         return value
     }
-    static let photoTools: [Self] = [.exposure, .highlights, .shadows, .contrast, .toneCurve,
-                                    .saturation, .temperature, .denoiseMode, .sharpening, .clarity, .dehaze, .vignetteAmount, .grainAmount]
     var symbol: String {
         switch self {
         case .strength: return "camera.aperture"

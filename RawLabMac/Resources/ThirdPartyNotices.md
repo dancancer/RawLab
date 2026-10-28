@@ -63,8 +63,8 @@ The optional DualDn package retains the original trained weights. Local changes
 split the model into fixed-size RAW, ISP and RGB ONNX graphs and add tiled execution
 and a scene-linear bridge in RawLab. The model manifest records source and weight
 checksums. DualDn and its converted model retain their upstream license; they are
-not relicensed under RawLab's license. The normal build does not bundle these
-optional components.
+not relicensed under RawLab's license. Apple Silicon release builds bundle these
+components; development and Intel release builds do not.
 
 This product includes DNG technology under license by Adobe.
 JPEG XL DNG decoding uses the DNG SDK only for the JPEG XL decoder path.

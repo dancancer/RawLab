@@ -84,7 +84,7 @@ this is not reuse of an unverified product binary.
 | Contracts and CI policy | Ubuntu 24.04 | Static source/contracts, localization, LUT and MCP protocol checks |
 | macOS | Dedicated arm64 Mac; hosted Intel for heavier groups | Models run once on arm64. `build` runs once per architecture. `native/full` use arm64 all plus Intel core/agent/render shards |
 | Windows | Hosted Server 2022 for models; dedicated Windows 11 for explicit builds and cold gates | Six managed model projects and runner checks / self-contained package, CTest, DCP and RAW/raster CLI parity |
-| Android | Dedicated Ubuntu 24.04 / JDK 17 | JVM unit tests / lint, app and instrumentation APK builds, both native ABIs and alignment/cache checks |
+| Android | Hosted Ubuntu 24.04 / JDK 17 (dedicated guest paused) | JVM unit tests / lint, app and instrumentation APK builds, both native ABIs and alignment/cache checks |
 | iOS | Apple Silicon / Xcode | Standalone settings/viewing/persistence models / all framework slices, unsigned simulator app and UI-test compilation, simulator look-import integration |
 | CI result | Ubuntu 24.04 | Automatic gate: every selected job succeeds and every unselected job is skipped |
 | Manual verification (platform, group) | Ubuntu 24.04 | Checks the requested scope without presenting it as the automatic PR gate |
@@ -193,8 +193,17 @@ other PR or branch can use.
 
 ## Local Android Runner
 
+The Android job currently runs on GitHub's hosted `ubuntu-24.04` runner with two
+Gradle workers, and the dedicated guest below is paused. From that guest, the
+Android SDK's CMake 3.22 download client fails the TLS handshake to github.com,
+libraw.org and other upstream hosts, while the system `curl` succeeds.
+Prefetching LibRaw alone was not enough, because the native build fetches more
+archives from GitHub. Return the job to the guest only after its CMake client can
+download them: restore the runner label, the environment and eight-worker limit
+described below, and the LibRaw prefetch step, then update the workflow-policy test.
+
 GitHub Actions still owns triggers, check results, logs and dependency caches.
-The Android job selects `[self-hosted, linux, x64, rawlab-android]`. This label
+When enabled, the Android job selects `[self-hosted, linux, x64, rawlab-android]`. This label
 belongs only to a dedicated Ubuntu
 24.04 KVM guest with 32 vCPUs, 32 GiB memory and a 160 GiB disk. The physical
 Proxmox host must not carry a runner, JDK or Android toolchain.
@@ -214,6 +223,10 @@ from `lutools/cmake/lens-dependencies.json`, not compiled libraries. Pre-seed
 checksum-matching archives there when an upstream endpoint is unavailable;
 the existing builder verifies every archive again before use. Missing archives
 still download from their pinned upstream URL and failures remain fatal.
+`RAWLAB_ANDROID_SOURCE_CACHE=/var/cache/rawlab-ci/android-sources` holds the
+LibRaw source archive. On this guest the job prefetched the archive with the
+system `curl` and checked its SHA-256. The Android build uses a local copy there
+first when the variable is set; `URL_HASH` verifies it again.
 
 This is a persistent, trusted-contributor runner: SDKs, download caches and the
 runner installation survive jobs. Checkout cleanup is not a security boundary
@@ -224,16 +237,15 @@ Only one job runs in this runner workspace at a time. Checkout retains its
 default clean behavior, so product output and previous test results cannot
 make another job pass. Native dependencies still use the exact-key restore/save
 policy below; a persistent VM is not permission to bypass an explicitly selected cold build.
-The Android job caps Gradle workers at eight. Native tools can use their own
+On this guest, the Android job caps Gradle workers at eight. Native tools can use their own
 limits: AGP invokes Ninja directly, while Lensfun's builder retains four jobs;
 the guest's CPU and memory allocation is the overall resource boundary.
 This does not change parallelism or coverage on another platform.
 
-The runner must be online for required Android checks to finish. GitHub does
-not automatically fall back to hosted execution when a self-hosted runner is
-offline. To roll back, restore the Android `ubuntu-24.04` runner and its previous
-parallelism, and update the matching workflow-policy test. Do not skip the check
-or weaken branch protection. Keep device/GLES acceptance separate from this
+While the job uses the guest, the runner must be online for required Android
+checks to finish. GitHub does not automatically fall back to hosted execution
+when a self-hosted runner is offline. The hosted route above, with two Gradle
+workers, is the rollback. Do not skip the check or weaken branch protection. Keep device/GLES acceptance separate from this
 build-only runner.
 
 ## Windows Runner Scheduling

@@ -16,7 +16,7 @@ swiftc -parse-as-library -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple
     -module-cache-path "$OUT/ModuleCache" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT/RawLabMac/tests/MacViewingModelTests.swift" \
-    "$BUILD/libsony2fuji_core.a" $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) \
+    "${CORE_LINK[@]}" $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) \
     -Xlinker -rpath -Xlinker "$(pkg-config --variable=libdir opencv4)" \
     -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/test"
 "$OUT/test" "${1:?Pass RAW fixture}" "$OUT"

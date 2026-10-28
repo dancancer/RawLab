@@ -6,3 +6,4 @@ if ! pkg-config --exists libraw opencv4 wavelib rawlab-dng-sdk lensfun 'libtiff-
     echo "Build the Mac app and dependencies first: bash RawLabMac/build.sh" >&2
     exit 1
 fi
+source "$ROOT/RawLabMac/tests/core-link.sh"

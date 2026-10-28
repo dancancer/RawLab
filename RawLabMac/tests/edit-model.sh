@@ -29,7 +29,7 @@ swiftc "${TRANSFER_SOURCES[@]}" "$ROOT/Shared/Localization.swift" -swift-version
   -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
   "$ROOT/Shared/UsageAnalytics.swift" \
   "${SOURCES[@]}" "$ROOT/RawLabMac/tests/EditModelTests.swift" \
-  "$BUILD/libsony2fuji_core.a" -L "$(pkg-config --variable=libdir libraw)" \
+  "${CORE_LINK[@]}" -L "$(pkg-config --variable=libdir libraw)" \
   -lraw $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/test"
 "$OUT/test" "$@"
 

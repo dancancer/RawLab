@@ -105,6 +105,8 @@ struct UpdateTaskState: Codable, Equatable {
 
     mutating func cancel(preservingChoice: Bool = false) {
         guard phase != .installing && phase != .pendingRestart else { return }
+        // 安装或首启失败仍需旧版恢复，普通取消和正常退出不能丢弃恢复现场。
+        guard failure.map({ [.installing, .pendingRestart].contains($0.stage) }) != true else { return }
         attempt = UUID(); phase = release == nil ? .idle : .available
         if !preservingChoice { choice = .none }
         failure = nil; progress = 0; blockers = []; backupPath = nil; previousVersion = nil; previousBuild = nil

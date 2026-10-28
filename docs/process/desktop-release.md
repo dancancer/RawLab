@@ -7,7 +7,8 @@ release branch. Ordinary development builds keep their existing defaults.
 
 ## Shared model input
 
-Release packages contain DualDn and Restormer, with GPU neural inference only.
+Apple Silicon macOS and Windows release packages contain DualDn and Restormer,
+with GPU neural inference only. Intel macOS packages contain no AI component.
 DualDn retains CC BY-NC 4.0; Restormer retains its Academic Public License for
 noncommercial use. Keep their notices, model provenance and conversion records.
 The deterministic ISP can use CPU; there is no CPU neural-inference fallback.
@@ -46,13 +47,16 @@ Set these inputs before invoking `RAWLAB_RELEASE=1 bash RawLabMac/build.sh`:
 - `RAWLAB_CODESIGN_IDENTITY`; optionally `RAWLAB_CODESIGN_KEYCHAIN` for an isolated keychain.
 - `RAWLAB_UPDATE_CERTIFICATE_SHA256` for the fixed self-signed leaf certificate.
 - `RAWLAB_SPARKLE_PUBLIC_KEY`, the base64 EdDSA public key.
-- `RAWLAB_DUALDN_MODEL_DIR`, `RAWLAB_DUALDN_MANIFEST_SHA256`, `RAWLAB_ONNXRUNTIME_ROOT`.
+- For `arm64` only: `RAWLAB_DUALDN_MODEL_DIR`, `RAWLAB_DUALDN_MANIFEST_SHA256`,
+  `RAWLAB_ONNXRUNTIME_ROOT`.
 - `RAWLAB_ARCH=arm64` or `x86_64`, as appropriate for the requested package.
 
-Release mode requires the complete model package and enables AI compilation.
-The current runtime exposes AI on Apple Silicon with an available Core ML GPU;
-Intel packages do not fall back to CPU AI. Intel application and updater
-acceptance remains separate from Apple Silicon GPU validation.
+Apple Silicon release mode requires the complete model package and enables AI
+compilation; the runtime exposes AI when a Core ML GPU is available. Intel has no
+supported GPU backend, so an `x86_64` release build disables AI compilation and
+omits the models, ONNX Runtime and AI controls; it rejects `RAWLAB_DUALDN=1`.
+Intel application and updater acceptance remains separate from Apple Silicon GPU
+validation.
 
 The script builds into a fresh version/build directory, sets the public update
 configuration, signs Mach-O files and nested bundles from inside out, verifies
@@ -74,6 +78,15 @@ architecture and SHA-256 fields consumed by RawLab, then independently verifies
 both with the app's public key. Final feed URLs are GitHub Release
 `latest/download/appcast-arm64.xml` and `appcast-x86_64.xml`; enclosure URLs bind
 the version-specific Release asset.
+
+Before marking an update ready, RawLab also verifies the downloaded ZIP's size,
+SHA-256 and EdDSA signature, then checks its app identity and code signature against
+the running app's fixed certificate or Developer ID team. Sparkle permits code
+certificate rotation when EdDSA is valid and does not expose its extracted bundle,
+so this check downloads a second copy. Both copies must match the same signed
+appcast item's EdDSA signature; delta and non-ZIP updates are rejected. Keep this
+extra download in update bandwidth and disk-space estimates. Regression commands
+are `RawLabMac/tests/update-trust.sh` and `RawLabMac/tests/sparkle-adapter.sh`.
 
 To adopt Developer ID later, keep EdDSA unchanged, replace the signing identity,
 remove `RAWLAB_UPDATE_CERTIFICATE_SHA256`, and set `RAWLAB_UPDATE_TEAM_ID`. The
@@ -99,9 +112,15 @@ prepared before packaging.
 The script requires all inputs, publishes a fresh self-contained x64 app,
 copies models/runtimes/licenses, validates the packaged model, and only then
 runs pinned vpk 1.2.161 for `RawLab.Desktop` / `stable`. Keep the generated
-current-user Setup, full nupkg and manual-install ZIP. ZIP is not eligible for
-automatic installation. `-NoRumSdk` explicitly selects an offline validation
-build and must be recorded when used.
+current-user Setup, full nupkg and manual-install ZIP
+(`RawLab-Windows-<version>-x64.zip`). ZIP is not eligible for automatic
+installation. `-NoRumSdk` explicitly selects an offline validation build and
+must be recorded when used.
+
+Velopack also writes `RawLab.Desktop-stable-Portable.zip`, `RELEASES-stable`,
+`releases.stable.json` and `assets.stable.json`. Do not upload them: the
+updater trusts only the signed `windows-stable.json`, and the portable package
+duplicates the manual-install ZIP.
 
 Sign and verify the release description using the same verifier as the app:
 

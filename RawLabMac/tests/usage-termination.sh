@@ -13,6 +13,11 @@ for mode in default rum local; do
         "$ROOT/Shared/Localization.swift" \
         "$ROOT/RawLabMac/Sources/Inputs/ParameterPrecision.swift" \
         "$ROOT/RawLabMac/Sources/Inputs/ParameterValueField.swift" \
+        "$ROOT/RawLabMac/Sources/System/Updates/UpdateState.swift" \
+        "$ROOT/RawLabMac/Sources/System/Updates/UpdateAdapter.swift" \
+        "$ROOT/RawLabMac/Sources/System/Updates/UpdateStore.swift" \
+        "$ROOT/RawLabMac/Sources/System/Updates/UpdateInstallGate.swift" \
+        "$ROOT/RawLabMac/Sources/System/Updates/DesktopUpdateController.swift" \
         "$ROOT/RawLabMac/Sources/System/MacGeometryWindowGuard.swift" \
         "$ROOT/RawLabMac/tests/UsageTerminationTests.swift" -o "$OUT/$mode"
     "$OUT/$mode"

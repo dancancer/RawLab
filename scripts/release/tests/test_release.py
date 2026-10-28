@@ -32,6 +32,15 @@ class ReleaseInputs(unittest.TestCase):
             (model / "blind_rgb.mlmodelc").rmdir()
             with self.assertRaises(ValueError): config.configuration(env)
 
+    def test_intel_release_needs_no_model_but_keeps_signing_checks(self):
+        env = dict(RAWLAB_RELEASE_VERSION="0.9.1", RAWLAB_RELEASE_BUILD="19",
+                   RAWLAB_SPARKLE_PUBLIC_KEY=base64.b64encode(bytes(32)).decode(),
+                   RAWLAB_UPDATE_CERTIFICATE_SHA256="a" * 64)
+        self.assertEqual("0.9.1", config.configuration(env, "x86_64")["CFBundleShortVersionString"])
+        with self.assertRaises(ValueError): config.configuration(env)
+        with self.assertRaises(ValueError): config.configuration(env | {"RAWLAB_UPDATE_CERTIFICATE_SHA256": ""}, "x86_64")
+        with self.assertRaises(ValueError): config.configuration(env, "universal")
+
     @unittest.skipUnless(os.environ.get("RAWLAB_TEST_SPARKLE_BIN"), "requires the pinned local Sparkle tools")
     def test_appcast_and_archive_verify_with_public_key_and_reject_tampering(self):
         with tempfile.TemporaryDirectory() as temporary:

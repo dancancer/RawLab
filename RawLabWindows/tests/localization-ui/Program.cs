@@ -46,7 +46,15 @@ internal static class Program
                 Loc.Initialize(null,preferencePath);
                 ((Action?)typeof(Loc).GetField("Changed",BindingFlags.Static|BindingFlags.NonPublic)!.GetValue(null))?.Invoke();
                 Loc.Changed += LanguageChanged;
-                app.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,new Action(() => RunStartupChecks(app)));
+                // 启动先在后台准备更新适配器，之后才创建编辑器窗口；等窗口加载完成再检查。
+                var deadline=DateTime.UtcNow.AddSeconds(60);
+                var timer=new DispatcherTimer(DispatcherPriority.ApplicationIdle,app.Dispatcher){Interval=TimeSpan.FromMilliseconds(100)};
+                timer.Tick+=(_,_)=>
+                {
+                    if(!Application.Current.Windows.OfType<MainWindow>().Any(window=>window.IsLoaded) && DateTime.UtcNow<deadline) return;
+                    timer.Stop();RunStartupChecks(app);
+                };
+                timer.Start();
             };
             app.Run();
         }
@@ -69,7 +77,7 @@ internal static class Program
     {
         try
         {
-            var window = Application.Current.Windows.OfType<MainWindow>().FirstOrDefault()
+            var window = Application.Current.Windows.OfType<MainWindow>().FirstOrDefault(candidate => candidate.IsLoaded)
                 ?? throw new InvalidOperationException("Application startup did not create the editor window.");
 
             Check(Loc.Language == "en", "Startup test window uses its persisted private English preference");

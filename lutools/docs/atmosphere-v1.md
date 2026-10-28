@@ -23,12 +23,27 @@ strength.
 
 Each zero value bypasses its operation without arithmetic or clamping. Both
 zero preserve the previous pipeline, including its fast-preview choices and
-extended working values. Any nonzero atmosphere value selects a complete-source
-CPU render: RAW uses the exact decode, viewport/interactive early resizing is
-disabled, and final resize follows the effects. Thus a nonzero preview at a
-given output size is the same as the corresponding FINAL render. Enabling the
-first nonzero value can also refine the old zero-state proxy detail. This is a
-quality/performance policy, not a claim that the zero proxy was full resolution.
+extended working values. Nonzero atmosphere uses the CPU and exact RAW decode.
+FINAL, file output, sessions without viewport opt-in, and requests at or above
+native size retain complete-source processing followed by final resize.
+PREVIEW+BUFFER with viewport opt-in may reduce the linear source before the
+look and atmosphere stages, including during interaction. Interactive atmosphere
+reuses the exact RAW cache rather than requesting a half-size decode: the full
+source dimensions, exposure and native-size metadata remain stable. This reduces
+subsequent slider work, not the initial decode or a white-balance reprocess.
+
+The analysis grid dimensions and radii still derive from the complete source,
+even when a viewport is smaller than the grid. Its area averages then sample the
+reduced working image, so the preview is an approximation of a resized FINAL.
+Clarity's full-resolution fine-detail protection reads preview-resolution detail
+in this mode. Use a settled 100% view or export for exact detail assessment.
+
+Independent area-average and application pixels, the neutral look and vibrance
+may run in parallel using the existing OpenCV scheduler. Per-pixel arithmetic,
+area-footprint accumulation, airlight selection and reductions retain their
+original order. For the same input, preview policy and build, changing the
+thread count preserves every output byte; FINAL/export formulas are unchanged.
+Builds without OpenCV retain serial execution.
 
 GPU Auto uses the whole CPU path, including denoising/look. GPU Force returns
 `UNSUPPORTED` before rendering. It never reports a successful GPU atmosphere
@@ -138,18 +153,20 @@ clipping them. Changes below `1e-8` leave original bytes untouched.
 ## Analysis cache identity
 
 The session stores airlight, guided coefficients and variance. Cache identity is
-the analysis-grid float content (64-bit FNV-1a over explicit float bits) plus full
-source dimensions. This represents all inputs to that analysis: source content,
+the analysis-grid float content (64-bit FNV-1a over explicit float bits), full
+source dimensions and working-image dimensions. This represents all inputs to that analysis: source content,
 RAW/WB/exposure/processing/lens/AI results, wavelet and look changes that affect
 those samples. It excludes dehaze amount and downstream tone/HSL/clarity.
 
-The complete-source analysis image and its fingerprint are still produced on
-each request. A hit avoids dark-channel selection and guided-statistics work;
+The fixed-size analysis image and its fingerprint are still produced on each
+request from the current complete or reduced working image. Working dimensions
+prevent viewport analysis from serving a complete-source request, even if their
+grid fingerprints happen to match. A hit avoids dark-channel selection and guided-statistics work;
 it does not avoid the source scan, source development or area average. This
 tradeoff makes mutable buffer input safe without assuming pointer identity.
 Different sources or requests yielding exactly the same analysis values may
 reuse the same analysis, which is mathematically equivalent to rebuilding it.
-The full-resolution application always reads current pixels. A regression swaps
+The application always reads current working pixels. A regression swaps
 pixels within one downsample footprint and checks cached output against fresh
 analysis byte-for-byte. This is not a full-source provenance hash.
 
@@ -184,9 +201,27 @@ The synthetic/native gates cover:
 - No reversals on the frozen gray ramp; continuity at finite gamut boundaries;
   twice-resolution medium-scale comparison below `.002` encoded RGB.
 - Strength-independent analysis reuse, current-pixel behavior with identical
-  downsample averages, small/large/small preview equality, and a real-RAW exact
-  decode/clear round trip. The pre-HSL probe includes Dehaze before black/white
-  and excludes downstream Clarity.
+  downsample averages, small/full/small cache isolation, and a real-RAW exact
+  decode/clear round trip. Non-viewport and native-size previews retain FINAL
+  equality; viewport previews are compared with resized complete-source output.
+- Byte identity at 1/2/4 OpenCV threads for signed controls and their combination,
+  including fresh analysis, full and reduced float pixels, C ABI RGB8, PNG16
+  file bytes and an
+  optional external RAW supplied through `RAWLAB_TEST_RAW`. The pre-HSL probe
+  includes Dehaze before black/white and excludes downstream Clarity.
+
+Viewport approximation gates use absolute RGB8 channel differences against a
+complete-source FINAL resized to the same output dimensions, excluding alpha
+and row padding. The smooth synthetic fixture admits mean <= 1.5, 99.9th
+percentile <= 8 and maximum <= 16. The three external RAW viewport fixtures
+(DJI dehaze +60, Sony clarity +100 and -100, saved edits, long edge 1728) admit
+mean <= 0.5, 99.9th percentile <= 8 and maximum <= 48. Sub-code mean error bounds
+broad color drift; the percentile limits widespread local changes. The larger
+RAW maximum admits isolated high-frequency edges where the preview-resolution
+fine guard differs. These are fixture-specific approximation budgets, not
+export tolerances or a guarantee for arbitrary photographs. FINAL/file output
+and native-or-larger requests retain byte identity, including after viewport
+cache use. Actual measurements and external fixture paths belong in PR evidence.
 
 The fixed-set review includes the six variants (identity, each signed endpoint,
 and half-strength combination) at native-resolution crops and matched overviews.

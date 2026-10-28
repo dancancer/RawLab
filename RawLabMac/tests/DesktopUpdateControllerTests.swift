@@ -97,6 +97,14 @@ import Foundation
         let newer = DesktopUpdateController(adapter: FakeUpdateAdapter(), gate: UpdateInstallGate(), store: recoveryStore, currentVersion: "0.9.1", currentBuild: "19")
         await newer.finishStartupHealthCheck(healthy: false)
         check(newer.requiresRecovery && !newer.canCheck && !newer.canRestorePreviousData, "Failed first boot blocks editing and cannot restore old data into the newer app")
+        let failedBeforeQuit = newer.state
+        allowed = nil; newer.prepareForQuit { allowed = $0 }
+        check(allowed == true && newer.state == failedBeforeQuit,
+            "Normal quit preserves the failed startup state and permits closing the app")
+        let persistedFailure = try recoveryStore.load(automaticCheck: true).pendingUpdate
+        check(persistedFailure == failedBeforeQuit && FileManager.default.fileExists(atPath: saved.path),
+            "Normal quit keeps the durable recovery pointers and backup for the trusted previous version")
+        _ = try backups.verify(saved)
         try await malformedFailureStartup(store: recoveryStore, original: newer.preferences)
         let untrusted = DesktopUpdateController(adapter: UnavailableUpdateAdapter("identity"), gate: UpdateInstallGate(), store: recoveryStore, currentVersion: "0.8.2", currentBuild: "14")
         check(!untrusted.canRestorePreviousData, "Untrusted previous application cannot restore data")
@@ -217,6 +225,11 @@ import Foundation
             "A dispatch failure keeps the active editor blocked before any recovery")
         let preserved = try Data(contentsOf: photo)
         check(preserved == bytes, "Failed dispatch preserves committed editor data")
+        let beforeQuit = controller.state
+        var allowed: Bool?
+        controller.prepareForQuit { allowed = $0 }
+        check(allowed == true && controller.state == beforeQuit,
+            "Normal quit preserves an installation dispatch failure for recovery after reopening")
         let reopened = DesktopUpdateController(adapter: FakeUpdateAdapter(), gate: UpdateInstallGate(), store: store, currentVersion: "0.8.2", currentBuild: "14")
         check(reopened.blocksEditing && reopened.canRestorePreviousData, "Reopening offers recovery while editing remains blocked")
         await reopened.restorePreviousData()

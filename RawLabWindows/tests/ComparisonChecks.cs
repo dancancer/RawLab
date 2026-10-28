@@ -45,7 +45,8 @@ static class ComparisonChecks
             "Native zoom immediately scales the existing preview using source pixels and DPI");
         var contentVersion=canvas.ContentVersion;var bounds=canvas.ImageBounds;
         view.Move(new Vector(21,-13));
-        check(canvas.ContentVersion==contentVersion && canvas.ImageBounds.X==bounds.X+21 && canvas.ImageBounds.Y==bounds.Y-13,
+        // 平移经归一化焦点重新投影，允许浮点舍入误差
+        check(canvas.ContentVersion==contentVersion && Math.Abs(canvas.ImageBounds.X-(bounds.X+21))<1e-6 && Math.Abs(canvas.ImageBounds.Y-(bounds.Y-13))<1e-6,
             "Panning changes retained transforms without rebuilding image drawings");
         canvas.SetImage(Solid(255,0,0),null);
         check(view.ActualPixels && view.Pan==new Vector(21,-13) && canvas.ImageBounds.Width==bounds.Width,

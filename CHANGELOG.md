@@ -3,10 +3,39 @@
 Release history is kept here rather than in the project READMEs. Detailed
 release notes include assets, installation requirements and validation limits.
 
-## [Unreleased]
+## [0.9.0] - Unreleased
+
+### Added
+
+- A reorganized editor on macOS, iOS, Android and Windows: six adjustment
+  groups with change markers and per-group reset, single-line numeric inputs,
+  side-by-side and split comparison, and press-and-hold to view the photo
+  before adjustments. iOS and Android add a tap for a clean photo preview;
+  Android adds and iOS upgrades to a 256-bin RGB histogram.
+- Copy adjustments and paste selected items to other photos, with session
+  undo and redo.
+- Named user presets, separate from built-in looks and imported LUT/DCP
+  profiles.
+- Black point, white point and vibrance; shadow/midtone/highlight color
+  grading; a multi-point tone curve that keeps the previous S-curve control;
+  clarity and dehaze in both directions. Agent recipes and exports support the
+  new adjustments. Clarity and dehaze previews refresh immediately; the
+  fit-to-window view approximates them at screen size, while 100% view and
+  export use the full image.
+- Pick a color on the photo to adjust the matching HSL range directly.
+- Photo collections: sync adjustments across photos, fine-tune one photo, and
+  export each photo with its own frozen settings after confirmation.
+- A local MCP server in `tools/mcp` exposing five tools over the existing Agent
+  CLI on macOS and Windows.
+- Desktop AI denoising and automatic updates, described below.
 
 ### Changed
 
+- New edits use processing version 2: VNG demosaic for ordinary Bayer RAW
+  files and an updated denoiser. Existing edits keep processing version 1 and
+  their 0.8.2 rendering apart from the HSL change below; ordinary edits and
+  resets do not upgrade them. macOS and Windows offer a processing-version
+  choice.
 - Active HSL adjustments preserve out-of-range color detail after contrast and
   saturation instead of clamping it away. Existing edits can render visibly
   differently; there is no switch to restore the old HSL behavior.
@@ -21,8 +50,8 @@ release notes include assets, installation requirements and validation limits.
 
 ### Desktop AI denoising and updates
 
-- macOS and Windows release packages include DualDn models and their inference
-  runtimes. AI denoising requires a full-resolution first calculation; cached
+- Apple Silicon macOS and Windows release packages include DualDn models and
+  their inference runtimes. AI denoising requires a full-resolution first calculation; cached
   results are reused for subsequent exposure and look changes. The model and
   runtime files increase download size. Per-architecture package sizes and
   measured first-run time and memory requirements belong to the final release
@@ -31,7 +60,8 @@ release notes include assets, installation requirements and validation limits.
   macOS 14 or later, or hardware DirectML/D3D12 on Windows x64. AI CPU mode is
   unsupported and Auto does not retry neural inference on CPU. Ordinary photo
   processing and the deterministic ISP may still use CPU. iOS and Android do
-  not include AI denoising in this release. Intel builds do not support AI denoising.
+  not include AI denoising in this release. Intel Mac packages do not include AI
+  denoising, its models or its runtime.
 - DualDn weights and converted models remain under CC BY-NC 4.0, and the
   Restormer generic RGB model keeps its upstream Academic Public License. Both
   are limited to noncommercial use, ship with upstream attribution and
@@ -51,6 +81,17 @@ release notes include assets, installation requirements and validation limits.
   folder access again. Permission retention across subsequent updates,
   Gatekeeper/App Management prompts and signed seed-to-update installation
   still require release acceptance with the actual signing identities.
+
+### Fixed
+
+- Large-image processing and export on Android and iOS. JPEG/PNG input accepts
+  up to 128 million pixels, and iOS no longer runs out of memory on the tested
+  61 MP and 100 MP RAW files. Output keeps full resolution while temporary
+  processing memory stays bounded.
+
+Version `0.9.0`, build `15` (release preparation). See the
+[release notes](docs/releases/v0.9/v0.9.0.md) and
+[Chinese update announcement](docs/releases/v0.9/v0.9.0-xiaohongshu.md).
 
 ## [0.8.2] - 2026-10-20
 
