@@ -167,9 +167,18 @@ private struct IOSCollectionSyncView: View {
     let resolveDraft: (String, Bool) -> Bool
     @Environment(\.dismiss) private var dismiss
     @State private var scope = "custom"
-    @State private var fields = AdjustmentTransferField.common
+    @State private var fields: Set<AdjustmentTransferField>
     @State private var synchronization: IOSCollectionSynchronization?
     @State private var message: String?
+    private var sourceSettings: RawSettings {
+        model.loadedEditRecord?.state?.settings ?? model.sourceDefaultSettings
+    }
+    init(model: RawEditorViewModel, collection: IOSBatchSelection, settings: RawSettings,
+         resolveDraft: @escaping (String, Bool) -> Bool) {
+        self.model=model; self.collection=collection; self.settings=settings; self.resolveDraft=resolveDraft
+        let source=model.loadedEditRecord?.state?.settings ?? model.sourceDefaultSettings
+        _fields=State(initialValue:source.isHDREditing ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common)
+    }
     var body: some View {
         Group {
             if let synchronization {
@@ -177,7 +186,8 @@ private struct IOSCollectionSyncView: View {
             } else {
                 NavigationStack {
                     Form {
-                        IOSAdjustmentScopeEditor(scope: $scope, fields: $fields, titleKey: "同步范围", sourceName: model.sourceDisplayName)
+                        IOSAdjustmentScopeEditor(scope: $scope, fields: $fields, titleKey: "同步范围", sourceName: model.sourceDisplayName,
+                                                 allowed: sourceSettings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
                         Section {
                             Text(L10n.format("目标：%@ 张照片", String(collection.selection.targets(excluding: model.sourceIdentity?.key).count)))
                             Text(L10n.text("来源照片不参与同步。"))
@@ -189,7 +199,7 @@ private struct IOSCollectionSyncView: View {
                             Button(L10n.text("检查目标")) {
                                 do {
                                     synchronization = try model.captureCollectionSynchronization(
-                                        scope: scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields), settings: model.loadedEditRecord?.state?.settings ?? .default)
+                                        scope: scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields), settings: sourceSettings)
                                 } catch { message = model.adjustmentErrorMessage(error) }
                             }.disabled((scope == "custom" && fields.isEmpty) || collection.selection.targets(excluding: model.sourceIdentity?.key).isEmpty
                                 || model.sourceIdentity.map { !model.adjustmentTargetIsCurrent($0.key) } != false)
@@ -201,6 +211,8 @@ private struct IOSCollectionSyncView: View {
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("取消")) { dismiss() } } }
                 }
             }
+        }.onChange(of:sourceSettings.isHDREditing) { _, isHDR in
+            fields=isHDR ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common
         }
     }
     private func resolveSource(_ key: String, _ apply: Bool) {

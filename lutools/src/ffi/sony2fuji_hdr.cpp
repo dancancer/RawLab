@@ -252,6 +252,28 @@ void exportSDRDNG(const Owner& source,const sony2fuji_hdr_sdr_export_config_v1& 
 } // namespace
 
 extern "C" {
+sony2fuji_status sony2fuji_hdr_geometry_size(uint32_t nativeWidth, uint32_t nativeHeight,
+    const sony2fuji_hdr_request_v1* request, uint32_t* width, uint32_t* height,
+    sony2fuji_hdr_diagnostic_v1* diagnostic) {
+    return boundary(diagnostic, [&] {
+        header(request, SONY2FUJI_HDR_FIELD_REQUEST);
+        if (!width || !height || width == height || !nativeWidth || !nativeHeight ||
+            uint64_t(nativeWidth) * nativeHeight > 128000000 || request->flip_horizontal > 1 ||
+            request->flip_vertical > 1)
+            fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_REQUEST, "Invalid HDR geometry dimensions");
+        if (request->hdr_processing_version != 1)
+            fail(SONY2FUJI_HDR_REASON_UNSUPPORTED_VERSION, SONY2FUJI_HDR_FIELD_REQUEST,
+                "Unsupported HDR geometry version", SONY2FUJI_STATUS_UNSUPPORTED);
+        const GeometryOptions geometry{request->crop_x, request->crop_y, request->crop_width, request->crop_height,
+            request->quarter_turns, request->flip_horizontal != 0, request->flip_vertical != 0,
+            request->straighten_degrees, request->perspective_horizontal, request->perspective_vertical};
+        const auto size = geometryOutputSize(int(nativeWidth), int(nativeHeight), geometry);
+        if (size.first <= 0 || size.second <= 0)
+            fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_REQUEST, "Invalid HDR geometry");
+        *width = uint32_t(size.first); *height = uint32_t(size.second);
+    });
+}
+
 sony2fuji_status sony2fuji_hdr_render(sony2fuji_session* session, const sony2fuji_hdr_image_pair_v1* source,
     const sony2fuji_hdr_request_v1* request, sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic) {
     return boundary(diagnostic, [&] {

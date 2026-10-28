@@ -83,7 +83,8 @@ extension RawEditorViewModel {
                                 processing: ProcessingIdentity = .current, lens: LensCorrectionSettings = LensCorrectionSettings()) throws -> RasterPreviewBase {
         var neutral = RawSettings.default
         neutral.processing = processing
-        let rasterBase = try processor.loadRasterBuffer(url: url, applyingOrientation: true)
+        let rasterBase = try processor.loadRasterBuffer(url: url, applyingOrientation: true,
+                                                        previewLongEdge:Int(previewMaxDimension))
         let baseBuffer = try processor.processBuffer(
             buffer: rasterBase.buffer,
             settings: neutral,

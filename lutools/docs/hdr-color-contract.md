@@ -19,6 +19,10 @@ and preserves float bits. Exposure alone multiplies both renditions by `2^EV`.
 The input remains immutable. Geometry follows the existing
 [geometry contract](edit-json.md). Resize is bilinear with aligned end points;
 a one-pixel output dimension samples the center. A long-edge limit never enlarges.
+Apple builds use the existing OpenCV worker pool for independent edit/resize
+pixels when available. Pixel operation order and float results are unchanged;
+small inputs and builds without that backend retain the serial path. This is
+CPU parallelism, separate from Metal presentation and the GPU Force policy.
 
 ## Relative WB
 
@@ -104,6 +108,10 @@ geometry at that original resolution, using the core geometry rounding and
 ignoring `long_edge`. UI zoom and native-size labels use these output bounds,
 never a ratio inferred from cropped preview pixels. Borrowed input pairs may
 leave the output bounds zero; decoder/render results always populate them.
+SDR editing of an HDR container uses a bounded PREVIEW decode too. Its RGB8
+proxy retains the oriented native canvas and cannot become a FINAL input.
+`sony2fuji_hdr_geometry_size` computes proxy UI bounds without pixel allocation
+or an inferred scale ratio. JPEG/DNG export reloads the complete source.
 
 Native clients share one source-only 128 MiB LRU per process. A different source
 URL or fingerprint invalidates prior entries; edited results and current

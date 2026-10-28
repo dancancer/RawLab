@@ -187,8 +187,14 @@ extension RawEditorViewModel {
             }
 
             var inputBuffer = existingDraftBuffer ?? existingDraftPreview
+            if let existing=inputBuffer,existing.isProxy,let native=existing.nativeSize,
+               max(existing.width,existing.height)<min(maxDimension,Int(max(native.width,native.height))) {
+                inputBuffer=nil
+            }
             if inputBuffer==nil,let sourceFile {
-                do { inputBuffer=try sourceFile.withReadAccess { try self.processor.loadRasterBuffer(url:$0).buffer } }
+                do { inputBuffer=try sourceFile.withReadAccess {
+                    try self.processor.loadRasterBuffer(url:$0,previewLongEdge:maxDimension).buffer
+                } }
                 catch {
                     self.resultDelivery {
                         guard self.sourceRevision==sourceRevision,self.isLatestRenderID(renderID) else { return }

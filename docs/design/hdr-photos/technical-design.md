@@ -219,6 +219,10 @@ sony2fuji_status sony2fuji_hdr_probe(const char *path, sony2fuji_hdr_source_info
                                    sony2fuji_hdr_diagnostic_v1 *diagnostic);
 sony2fuji_status sony2fuji_hdr_decode(const char *path, const sony2fuji_hdr_decode_options_v1 *options,
                                     sony2fuji_hdr_image_pair_v1 *result, sony2fuji_hdr_diagnostic_v1 *diagnostic);
+sony2fuji_status sony2fuji_hdr_geometry_size(uint32_t native_width, uint32_t native_height,
+                                          const sony2fuji_hdr_request_v1 *request,
+                                          uint32_t *width, uint32_t *height,
+                                          sony2fuji_hdr_diagnostic_v1 *diagnostic);
 sony2fuji_status sony2fuji_hdr_render(sony2fuji_session *session, const sony2fuji_hdr_image_pair_v1 *source,
                                     const sony2fuji_hdr_request_v1 *request, sony2fuji_hdr_image_pair_v1 *result,
                                     sony2fuji_hdr_diagnostic_v1 *diagnostic);
@@ -232,6 +236,9 @@ void sony2fuji_hdr_release_pair(sony2fuji_hdr_image_pair_v1 *image);
 ```
 
 `path` 使用既有 UTF-8 路径约定。输入仅借用且在同步调用期间不可变；输出由核心拥有。
+`geometry_size` 是不分配像素的纯尺寸查询，消费已定向原片宽高和 request v1 的几何字段，
+遵守同一几何取整；失败保留输出值。SDR 编辑 HDR 来源的预览也先按 PREVIEW/longEdge 解码，
+用该查询保留原片几何尺寸；代理图不能用于 FINAL，保存时重新从原文件完整解码。
 输入配置填写 version=1 和本端 struct_size；输出对象先清零并填写版本/大小，核心校验后仅写入约定布局。
 复用前先释放再初始化；新接口不接受结果与输入 alias。失败清空新输出数据，保留输出头的版本/大小、
 输入、既有 session 状态及目标文件；release 可重复执行并将整个对象归零。

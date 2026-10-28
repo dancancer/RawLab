@@ -429,7 +429,7 @@ final class BatchExportModel: ObservableObject {
                 result = try processor.processRaw(url: target.sourceURL, settings: targetSettings,
                                                   previewLongEdge: 1280, lutURL: look)
             } else {
-                let raster = try processor.loadRasterBuffer(url: target.sourceURL)
+                let raster = try processor.loadRasterBuffer(url: target.sourceURL,previewLongEdge:1280)
                 let buffer = try processor.processBuffer(buffer: raster.buffer, settings: targetSettings,
                                                          previewLongEdge: 1280, lutURL: look)
                 result = Sony2FujiProcessor.ProcessResult(buffer: buffer, orientation: .up,

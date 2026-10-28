@@ -112,7 +112,7 @@ extension RawEditorViewModel {
             completion(.failure(BatchExportError.global(L10n.text("所选外观不可用，请重新选择外观。"))))
             return
         }
-        let source = (file: sourceFile, kind: sourceKind, buffer: draftBuffer, orientation: sourceOrientation)
+        let source = (file: sourceFile, kind: sourceKind, orientation: sourceOrientation)
         guard let sourceFile = source.file, let sourceKind = source.kind else {
             completion(.failure(EditorError.noImageLoaded))
             return
@@ -152,7 +152,7 @@ extension RawEditorViewModel {
                         )
                         data = output
                     } else {
-                        guard let sourceBuffer = source.buffer else { throw EditorError.noImageLoaded }
+                        let sourceBuffer = try self.processor.loadRasterBuffer(url:sourceURL).buffer
                         let outputBuffer = try self.processor.processBuffer(
                             buffer: sourceBuffer,
                             settings: settings,
@@ -192,7 +192,7 @@ extension RawEditorViewModel {
             completion(.failure(BatchExportError.global(L10n.text("所选外观不可用，请重新选择外观。"))))
             return
         }
-        let source = (file: sourceFile, kind: sourceKind, buffer: draftBuffer, orientation: sourceOrientation)
+        let source = (file: sourceFile, kind: sourceKind, orientation: sourceOrientation)
         guard let sourceFile = source.file, let sourceKind = source.kind else {
             completion(.failure(EditorError.noImageLoaded))
             return
@@ -218,7 +218,7 @@ extension RawEditorViewModel {
                         try self.processor.exportDNG(url: sourceURL, settings: settings, lutURL: lutURL,
                                                      outputURL: outputURL, exportLongEdge: longEdge)
                     } else {
-                        guard let sourceBuffer = source.buffer else { throw EditorError.noImageLoaded }
+                        let sourceBuffer = try self.processor.loadRasterBuffer(url:sourceURL).buffer
                         try self.processor.exportDNG(buffer: sourceBuffer, settings: settings, lutURL: lutURL,
                                                      outputURL: outputURL, exportLongEdge: longEdge)
                     }

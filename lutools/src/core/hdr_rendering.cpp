@@ -1,6 +1,8 @@
 #include "core/hdr_rendering.h"
+#include "core/parallel_pixels.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -94,11 +96,17 @@ void edit(ImageData& image, const HDRRenderOptions& o, bool hdr) {
     const bool colorActive = o.exposureEV != 0 || o.temperature != 6500 || o.tint != 0;
     const bool toneActive = o.contrast != 0 || o.highlights != 0 || o.shadows != 0 || o.saturation != 0;
     if (!colorActive && !toneActive) return;
-    for (auto& p : image.pixels) {
-        if (colorActive) p = {p.r * gain.r * exposure, p.g * gain.g * exposure, p.b * gain.b * exposure};
-        if (toneActive) p = hdr ? toneHDR(p, o) : toneSDR(p, o);
-        if (!finite(p)) throw std::overflow_error("HDR adjustments exceeded finite float range");
-    }
+    std::atomic<bool> overflow{false};
+    parallelPixelRanges(image.pixels.size(), [&](size_t begin, size_t end) {
+        for (size_t i = begin; i < end; ++i) {
+            auto& p = image.pixels[i];
+            if (colorActive) p = {p.r * gain.r * exposure, p.g * gain.g * exposure, p.b * gain.b * exposure};
+            if (toneActive) p = hdr ? toneHDR(p, o) : toneSDR(p, o);
+            if (!finite(p)) overflow.store(true, std::memory_order_relaxed);
+        }
+    });
+    if (overflow.load(std::memory_order_relaxed))
+        throw std::overflow_error("HDR adjustments exceeded finite float range");
 }
 
 void resize(ImageData& image, uint32_t longEdge) {
@@ -108,11 +116,12 @@ void resize(ImageData& image, uint32_t longEdge) {
     const int width = std::max(1, int(std::lround(image.width * scale)));
     const int height = std::max(1, int(std::lround(image.height * scale)));
     ImageData output(width, height);
-    for (int y = 0; y < height; ++y) {
-        const float sy = height > 1 ? float(y) * (image.height - 1) / (height - 1) : (image.height - 1) * .5f;
-        const int y0 = int(sy), y1 = std::min(y0 + 1, image.height - 1);
-        const float fy = sy - y0;
-        for (int x = 0; x < width; ++x) {
+    parallelPixelRanges(output.pixels.size(), [&](size_t begin, size_t end) {
+        for (size_t i = begin; i < end; ++i) {
+            const int y = int(i / width), x = int(i % width);
+            const float sy = height > 1 ? float(y) * (image.height - 1) / (height - 1) : (image.height - 1) * .5f;
+            const int y0 = int(sy), y1 = std::min(y0 + 1, image.height - 1);
+            const float fy = sy - y0;
             const float sx = width > 1 ? float(x) * (image.width - 1) / (width - 1) : (image.width - 1) * .5f;
             const int x0 = int(sx), x1 = std::min(x0 + 1, image.width - 1);
             const float fx = sx - x0;
@@ -123,7 +132,7 @@ void resize(ImageData& image, uint32_t longEdge) {
             };
             output.at(x, y) = {blend(a.r, b.r, c.r, d.r), blend(a.g, b.g, c.g, d.g), blend(a.b, b.b, c.b, d.b)};
         }
-    }
+    });
     image = std::move(output);
 }
 

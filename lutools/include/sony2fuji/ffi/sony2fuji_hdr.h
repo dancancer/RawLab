@@ -122,6 +122,10 @@ sony2fuji_status sony2fuji_hdr_probe(const char* path, sony2fuji_hdr_source_info
     sony2fuji_hdr_diagnostic_v1* diagnostic);
 sony2fuji_status sony2fuji_hdr_decode(const char* path, const sony2fuji_hdr_decode_options_v1* options,
     sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic);
+// 只计算已定向原片的几何输出尺寸，不解码或分配像素；失败时保留两个输出值。
+sony2fuji_status sony2fuji_hdr_geometry_size(uint32_t native_width, uint32_t native_height,
+    const sony2fuji_hdr_request_v1* request, uint32_t* width, uint32_t* height,
+    sony2fuji_hdr_diagnostic_v1* diagnostic);
 sony2fuji_status sony2fuji_hdr_render(sony2fuji_session* session, const sony2fuji_hdr_image_pair_v1* source,
     const sony2fuji_hdr_request_v1* request, sony2fuji_hdr_image_pair_v1* result,
     sony2fuji_hdr_diagnostic_v1* diagnostic);

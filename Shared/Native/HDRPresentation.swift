@@ -16,7 +16,11 @@ final class HDRPresentation: HDRDisplayImage {
             return try HDRStatistics.analyze(UnsafeBufferPointer(start:pointer.assumingMemoryBound(to:Float.self),
                 count:Int(buffer.size_bytes)/4),width:Int(buffer.width),height:Int(buffer.height),stride:Int(buffer.stride_bytes)/4)
         }
-        sdrImage=try image.withPair { pair in
+        sdrImage=try Self.makeSDRImage(image)
+    }
+
+    static func makeSDRImage(_ image: HDRImage) throws -> CGImage {
+        try image.withPair { pair in
             let buffer=pair.pointee.sdr
             guard let pointer=buffer.data else { throw HDRDisplayFailure.invalidBuffer }
             let values=pointer.assumingMemoryBound(to:Float.self)

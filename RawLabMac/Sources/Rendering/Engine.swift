@@ -122,11 +122,14 @@ final class AIPreparation {
 final class RenderEngine {
     private final class DisplayImage {
         var buffer = sony2fuji_buffer()
-        init(_ url: URL) throws {
+        var nativeSize: CGSize?
+        var isProxy=false
+        init(_ url: URL,edge: Int?,sources: HDRSourceCache) throws {
             if let info=try HDRSourceInfo.probe(url) {
-                let image=try HDRImage.decode(url,info:info,intent:SONY2FUJI_INTENT_FINAL)
-                let presentation=try HDRPresentation(image)
-                let data=presentation.sdrImage.dataProvider!.data!
+                let image: HDRImage
+                if let edge { image=try sources.preview(url,info:info,longEdge:edge) }
+                else { sources.clear(); image=try HDRImage.decode(url,info:info,intent:SONY2FUJI_INTENT_FINAL) }
+                let data=try HDRPresentation.makeSDRImage(image).dataProvider!.data!
                 let count=CFDataGetLength(data)
                 guard let owned=malloc(count) else { throw HDRDisplayFailure.invalidBuffer }
                 memcpy(owned,CFDataGetBytePtr(data),count)
@@ -134,8 +137,10 @@ final class RenderEngine {
                 buffer.width=UInt32(image.width); buffer.height=UInt32(image.height)
                 buffer.stride_bytes=UInt32(image.width*4); buffer.size_bytes=count
                 buffer.pixel_format=SONY2FUJI_PIXEL_RGBA8
+                nativeSize=CGSize(width:image.nativeWidth,height:image.nativeHeight); isProxy=image.isProxy
                 return
             }
+            sources.clear()
             let status = url.path.withCString { sony2fuji_load_display_image($0, &buffer) }
             guard status == SONY2FUJI_STATUS_OK else {
                 throw RenderError.displayImage(status)
@@ -143,7 +148,8 @@ final class RenderEngine {
         }
         deinit { sony2fuji_release_buffer(&buffer) }
     }
-    private var displayCache: (key: RawWhiteBalanceCacheKey, image: DisplayImage)?
+    private var displayCache: (key: RawWhiteBalanceCacheKey, edge: Int?, image: DisplayImage)?
+    var cachedRasterBytes: Int { Int(displayCache?.image.buffer.size_bytes ?? 0) }
     private let hdrSources=HDRSourceCache.shared
 
     static func isRasterInput(_ url: URL?) -> Bool {
@@ -153,10 +159,13 @@ final class RenderEngine {
 
     private func withInput(_ url: URL, request: inout sony2fuji_request,
                            operation: (inout sony2fuji_request) -> sony2fuji_status) throws -> sony2fuji_status {
-        hdrSources.clear()
         if Self.isRasterInput(url) {
             let key = try RawWhiteBalanceCacheKey(url)
-            if displayCache?.key != key { displayCache = (key, try DisplayImage(url)) }
+            let edge=request.intent==SONY2FUJI_INTENT_PREVIEW && request.preview_long_edge>0 ? Int(request.preview_long_edge) : nil
+            if displayCache?.key != key || (displayCache?.image.nativeSize != nil && displayCache?.edge != edge) {
+                displayCache = (key,edge,try DisplayImage(url,edge:edge,sources:hdrSources))
+            }
+            if displayCache?.image.nativeSize == nil { hdrSources.clear() }
             let image = displayCache!.image.buffer
             request.input_type = SONY2FUJI_INPUT_DISPLAY_BUFFER
             request.input_pixels = image.data.map(UnsafeRawPointer.init)
@@ -165,7 +174,7 @@ final class RenderEngine {
             request.input_pixel_format = image.pixel_format
             request.input_color_space = SONY2FUJI_COLOR_SRGB
             request.input_is_linear = 0
-        }
+        } else { hdrSources.clear() }
         return url.path.withCString { path in
             request.input_path = path
             return operation(&request)
@@ -537,6 +546,10 @@ final class RenderEngine {
         var nativeWidth: UInt32 = 0, nativeHeight: UInt32 = 0
         guard sony2fuji_session_get_geometry_size(session, &nativeWidth, &nativeHeight) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed(L10n.text("无效的几何参数"))
+        }
+        if raster,let cached=displayCache?.image,cached.isProxy,let sourceSize=cached.nativeSize {
+            let native=try hdrNativeGeometrySize(sourceSize,geometry:settings.geometrySettings)
+            nativeWidth=UInt32(native.width); nativeHeight=UInt32(native.height)
         }
         let data = Data(bytes: pointer, count: buffer.size_bytes)
         let space = CGColorSpace(name: CGColorSpace.sRGB)!

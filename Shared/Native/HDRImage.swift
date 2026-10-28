@@ -1,4 +1,21 @@
 import Foundation
+import CoreGraphics
+
+func hdrNativeGeometrySize(_ source: CGSize, geometry: GeometrySettings) throws -> CGSize {
+    let width=Double(source.width),height=Double(source.height)
+    guard width.isFinite,height.isFinite,width>0,height>0,width<=Double(UInt32.max),height<=Double(UInt32.max),
+          width.rounded()==width,height.rounded()==height else { throw HDRRequestError.invalidSettings }
+    var settings=HDRSettings(); settings.geometry=geometry
+    var request=try makeHDRRequest(settings:settings,intent:SONY2FUJI_INTENT_PREVIEW)
+    var outputWidth: UInt32=0,outputHeight: UInt32=0
+    var diagnostic=sony2fuji_hdr_diagnostic_v1(); diagnostic.version=1
+    diagnostic.struct_size=UInt32(MemoryLayout.size(ofValue:diagnostic))
+    let status=sony2fuji_hdr_geometry_size(UInt32(width),UInt32(height),&request,&outputWidth,&outputHeight,&diagnostic)
+    guard status==SONY2FUJI_STATUS_OK else {
+        throw HDRNativeError(status:status,reason:diagnostic.reason,field:diagnostic.field)
+    }
+    return CGSize(width:Int(outputWidth),height:Int(outputHeight))
+}
 
 final class HDRImage {
     private var storage: sony2fuji_hdr_image_pair_v1

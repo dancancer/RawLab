@@ -56,6 +56,19 @@ int main() {
         auto output = init<sony2fuji_hdr_image_pair_v1>();
         auto settings = request();
         auto diagnostic = init<sony2fuji_hdr_diagnostic_v1>();
+        uint32_t nativeWidth=7,nativeHeight=9;
+        check(sony2fuji_hdr_geometry_size(8000,6000,&settings,&nativeWidth,&nativeHeight,&diagnostic)==SONY2FUJI_STATUS_OK &&
+            nativeWidth==8000 && nativeHeight==6000,"native geometry query lost the original canvas");
+        auto cropped=settings; cropped.quarter_turns=1; cropped.crop_width=.5f;
+        check(sony2fuji_hdr_geometry_size(8000,6000,&cropped,&nativeWidth,&nativeHeight,&diagnostic)==SONY2FUJI_STATUS_OK &&
+            nativeWidth==3000 && nativeHeight==8000,"native geometry query changed core crop/rotation rounding");
+        cropped.crop_width=2;
+        check(sony2fuji_hdr_geometry_size(8000,6000,&cropped,&nativeWidth,&nativeHeight,&diagnostic)==SONY2FUJI_STATUS_INVALID_ARGUMENT &&
+            nativeWidth==3000 && nativeHeight==8000,"invalid geometry query changed output bounds");
+        check(sony2fuji_hdr_geometry_size(0,6000,&settings,&nativeWidth,&nativeHeight,&diagnostic)==SONY2FUJI_STATUS_INVALID_ARGUMENT,
+            "native geometry query accepted zero dimensions");
+        check(sony2fuji_hdr_geometry_size(8000,6000,&settings,nullptr,&nativeHeight,&diagnostic)==SONY2FUJI_STATUS_INVALID_ARGUMENT,
+            "native geometry query accepted a null output");
         auto render = [&] { return sony2fuji_hdr_render(session, &source.pair, &settings, &output, &diagnostic); };
         check(render() == SONY2FUJI_STATUS_OK, "float identity render failed");
         check(output.hdr.data != source.pair.hdr.data && output.sdr.data != source.pair.sdr.data && output.owner_token,

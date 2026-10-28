@@ -94,10 +94,11 @@ struct Sony2FujiProcessor {
         let pixelFormat: sony2fuji_pixel_format
         let semantic: Semantic
         var nativeSize: CGSize? = nil
+        var isProxy: Bool = false
 
         init(data: Data, width: Int, height: Int, stride: Int,
              pixelFormat: sony2fuji_pixel_format, semantic: Semantic = .legacy,
-             nativeSize: CGSize? = nil) {
+             nativeSize: CGSize? = nil, isProxy: Bool = false) {
             self.data = data
             self.width = width
             self.height = height
@@ -105,11 +106,12 @@ struct Sony2FujiProcessor {
             self.pixelFormat = pixelFormat
             self.semantic = semantic
             self.nativeSize = nativeSize
+            self.isProxy = isProxy
         }
 
         func withSemantic(_ semantic: Semantic) -> Buffer {
             Buffer(data: data, width: width, height: height, stride: stride,
-                   pixelFormat: pixelFormat, semantic: semantic, nativeSize: nativeSize)
+                   pixelFormat: pixelFormat, semantic: semantic, nativeSize: nativeSize, isProxy: isProxy)
         }
 
         func withCBuffer<T>(_ body: (inout sony2fuji_buffer) -> T) -> T? {
@@ -334,6 +336,10 @@ struct Sony2FujiProcessor {
         viewportPreview: Bool = false,
         exportLongEdge: Int? = nil
     ) throws -> Buffer {
+        if buffer.isProxy && (exportLongEdge != nil || (previewLongEdge.map({ $0 <= 0 }) ?? true)) {
+            throw HDRNativeError(status:SONY2FUJI_STATUS_INVALID_ARGUMENT,
+                reason:UInt32(SONY2FUJI_HDR_REASON_PREVIEW_SOURCE),field:UInt32(SONY2FUJI_HDR_FIELD_SOURCE))
+        }
         guard ExportSize.isValid(exportLongEdge) else {
             throw ProcessorError.invalidExportSize
         }
@@ -370,7 +376,10 @@ struct Sony2FujiProcessor {
             }
 
             var output = try takeBuffer(&outBuffer, semantic: buffer.semantic)
-            output.nativeSize = geometrySize(session)
+            if buffer.isProxy,let native=buffer.nativeSize {
+                output.nativeSize=try hdrNativeGeometrySize(native,geometry:settings.geometrySettings)
+            } else { output.nativeSize=geometrySize(session) }
+            output.isProxy = buffer.isProxy
             return output
         }
     }
@@ -414,6 +423,10 @@ struct Sony2FujiProcessor {
         outputURL: URL,
         exportLongEdge: Int? = nil
     ) throws {
+        guard !buffer.isProxy else {
+            throw HDRNativeError(status:SONY2FUJI_STATUS_INVALID_ARGUMENT,
+                reason:UInt32(SONY2FUJI_HDR_REASON_PREVIEW_SOURCE),field:UInt32(SONY2FUJI_HDR_FIELD_SOURCE))
+        }
         guard ExportSize.isValid(exportLongEdge) else {
             throw ProcessorError.invalidExportSize
         }
@@ -442,14 +455,17 @@ struct Sony2FujiProcessor {
         }
     }
 
-    func loadRasterBuffer(url: URL, applyingOrientation: Bool = true) throws -> ProcessResult {
+    func loadRasterBuffer(url: URL, applyingOrientation: Bool = true, previewLongEdge: Int? = nil) throws -> ProcessResult {
+        guard previewLongEdge.map({ (1...65535).contains($0) }) ?? true else { throw HDRRequestError.invalidSettings }
         if let info=try HDRSourceInfo.probe(url) {
-            let pair=try HDRImage.decode(url,info:info,intent:SONY2FUJI_INTENT_FINAL)
-            let image=try HDRPresentation(pair).sdrImage
+            let pair: HDRImage
+            if let edge=previewLongEdge { pair=try hdrSources.preview(url,info:info,longEdge:edge) }
+            else { hdrSources.clear(); pair=try HDRImage.decode(url,info:info,intent:SONY2FUJI_INTENT_FINAL) }
+            let image=try HDRPresentation.makeSDRImage(pair)
             guard let bytes=image.dataProvider?.data else { throw HDRDisplayFailure.invalidBuffer }
             return ProcessResult(buffer:Buffer(data:bytes as Data,width:image.width,height:image.height,
                 stride:image.bytesPerRow,pixelFormat:SONY2FUJI_PIXEL_RGBA8,semantic:.display,
-                nativeSize:CGSize(width:image.width,height:image.height)),orientation:.up,rawWhiteBalance:nil)
+                nativeSize:CGSize(width:pair.nativeWidth,height:pair.nativeHeight),isProxy:pair.isProxy),orientation:.up,rawWhiteBalance:nil)
         }
         var native = sony2fuji_buffer()
         defer { sony2fuji_release_buffer(&native) }

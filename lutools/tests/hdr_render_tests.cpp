@@ -8,6 +8,9 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#if defined(SONY2FUJI_ENABLE_CHROMA_DENOISE) || defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
+#include <opencv2/core.hpp>
+#endif
 
 using namespace sony2fuji;
 
@@ -145,6 +148,42 @@ void validation() {
     rejects([&] { renderHDRPair(source, {}); }, "nonfinite pixels accepted");
 }
 
+#if defined(SONY2FUJI_ENABLE_CHROMA_DENOISE) || defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
+void parallel() {
+    HDRImagePair source;
+    source.hdr=ImageData(512,384); source.sdr=ImageData(512,384);
+    source.nativeWidth=4096; source.nativeHeight=3072; source.sourceHeadroom=8;
+    for (size_t i=0;i<source.hdr.pixels.size();++i) {
+        const float value=-.01f+float(i%4096)/512;
+        source.hdr.pixels[i]={value,value*.75f,value*.5f};
+        source.sdr.pixels[i]={value/8,value*.75f/8,value*.5f/8};
+    }
+    const auto original=source;
+    for (int mode=0;mode<3;++mode) {
+        HDRRenderOptions options; options.intent=HDRQuality::Preview; options.exposureEV=.5f;
+        if (mode>0) { options.temperature=7200; options.tint=8; options.contrast=20;
+            options.highlights=-30; options.shadows=20; options.saturation=10; }
+        if (mode==2) { options.geometry.quarter_turns=1; options.longEdge=384; }
+        cv::setNumThreads(1); const auto scalar=renderHDRPair(source,options);
+        cv::setNumThreads(4); const auto multi=renderHDRPair(source,options);
+        check(scalar.hdr.width==multi.hdr.width && scalar.hdr.height==multi.hdr.height &&
+            scalar.outputNativeWidth==multi.outputNativeWidth && scalar.outputNativeHeight==multi.outputNativeHeight &&
+            scalar.editedHeadroom==multi.editedHeadroom,"parallel HDR metadata differs");
+        check(std::memcmp(scalar.hdr.pixels.data(),multi.hdr.pixels.data(),scalar.hdr.pixels.size()*sizeof(RGB))==0 &&
+            std::memcmp(scalar.sdr.pixels.data(),multi.sdr.pixels.data(),scalar.sdr.pixels.size()*sizeof(RGB))==0,
+            "parallel HDR/SDR pixels differ from scalar processing");
+    }
+    check(std::memcmp(source.hdr.pixels.data(),original.hdr.pixels.data(),source.hdr.pixels.size()*sizeof(RGB))==0 &&
+        std::memcmp(source.sdr.pixels.data(),original.sdr.pixels.data(),source.sdr.pixels.size()*sizeof(RGB))==0,
+        "parallel processing mutated its source");
+    source.hdr.pixels.back().r=std::numeric_limits<float>::max();
+    HDRRenderOptions overflow; overflow.exposureEV=4;
+    bool rejected=false;
+    try { renderHDRPair(source,overflow); } catch (const std::overflow_error&) { rejected=true; }
+    check(rejected,"parallel workers lost finite overflow validation");
+}
+#endif
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -155,6 +194,9 @@ int main(int argc, char* argv[]) {
         else if (name == "white_balance") whiteBalance();
         else if (name == "geometry") geometry();
         else if (name == "validation") validation();
+#if defined(SONY2FUJI_ENABLE_CHROMA_DENOISE) || defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
+        else if (name == "parallel") parallel();
+#endif
         else return 2;
         std::cout << "PASS hdr_" << name << '\n'; return 0;
     } catch (const std::exception& error) {
