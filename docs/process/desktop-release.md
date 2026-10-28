@@ -79,6 +79,15 @@ both with the app's public key. Final feed URLs are GitHub Release
 `latest/download/appcast-arm64.xml` and `appcast-x86_64.xml`; enclosure URLs bind
 the version-specific Release asset.
 
+Before marking an update ready, RawLab also verifies the downloaded ZIP's size,
+SHA-256 and EdDSA signature, then checks its app identity and code signature against
+the running app's fixed certificate or Developer ID team. Sparkle permits code
+certificate rotation when EdDSA is valid and does not expose its extracted bundle,
+so this check downloads a second copy. Both copies must match the same signed
+appcast item's EdDSA signature; delta and non-ZIP updates are rejected. Keep this
+extra download in update bandwidth and disk-space estimates. Regression commands
+are `RawLabMac/tests/update-trust.sh` and `RawLabMac/tests/sparkle-adapter.sh`.
+
 To adopt Developer ID later, keep EdDSA unchanged, replace the signing identity,
 remove `RAWLAB_UPDATE_CERTIFICATE_SHA256`, and set `RAWLAB_UPDATE_TEAM_ID`. The
 existing strict runtime mode requires Developer ID trust and notarization;
