@@ -2634,6 +2634,130 @@
     "拖动照片调整颜色；退出目标模式后可平移。": {
       "source": "拖动照片调整颜色；退出目标模式后可平移。",
       "formats": []
+    },
+    "HDR JPEG": {
+      "formats": [],
+      "source": "HDR JPEG"
+    },
+    "HDR JPEG 需要启用 HDR 编辑。": {
+      "formats": [],
+      "source": "HDR JPEG 需要启用 HDR 编辑。"
+    },
+    "HDR 亮度直方图": {
+      "formats": [],
+      "source": "HDR 亮度直方图"
+    },
+    "HDR 假色": {
+      "formats": [],
+      "source": "HDR 假色"
+    },
+    "HDR 增益图损坏，无法还原此照片。": {
+      "formats": [],
+      "source": "HDR 增益图损坏，无法还原此照片。"
+    },
+    "HDR 处理失败（%@）。": {
+      "formats": [
+        "%@"
+      ],
+      "source": "HDR 处理失败（{0}）。"
+    },
+    "HDR 显示不可用，当前显示 SDR。": {
+      "formats": [],
+      "source": "HDR 显示不可用，当前显示 SDR。"
+    },
+    "HDR 照片需要 macOS 15 或 iOS 18 及以上版本。": {
+      "formats": [],
+      "source": "HDR 照片需要 macOS 15 或 iOS 18 及以上版本。"
+    },
+    "HDR 编辑": {
+      "formats": [],
+      "source": "HDR 编辑"
+    },
+    "HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。": {
+      "formats": [],
+      "source": "HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。"
+    },
+    "SDR 兼容预览": {
+      "formats": [],
+      "source": "SDR 兼容预览"
+    },
+    "不支持此 HDR 格式或颜色描述。": {
+      "formats": [],
+      "source": "不支持此 HDR 格式或颜色描述。"
+    },
+    "保存 SDR JPEG": {
+      "formats": [],
+      "source": "保存 SDR JPEG"
+    },
+    "内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。": {
+      "formats": [],
+      "source": "内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。"
+    },
+    "内容容量 %@ EV": {
+      "formats": [
+        "%@"
+      ],
+      "source": "内容容量 {0} EV"
+    },
+    "原始照片已变化，请重新导入。": {
+      "formats": [],
+      "source": "原始照片已变化，请重新导入。"
+    },
+    "参考白以上 %@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "参考白以上 {0}"
+    },
+    "导出不能覆盖原始照片。请选择其他文件。": {
+      "formats": [],
+      "source": "导出不能覆盖原始照片。请选择其他文件。"
+    },
+    "屏幕容量 %@ EV": {
+      "formats": [
+        "%@"
+      ],
+      "source": "屏幕容量 {0} EV"
+    },
+    "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。": {
+      "formats": [],
+      "source": "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。"
+    },
+    "无法写入 HDR 导出文件，请检查可用空间和目标权限。": {
+      "formats": [],
+      "source": "无法写入 HDR 导出文件，请检查可用空间和目标权限。"
+    },
+    "此照片没有可编辑的 HDR 增益图。": {
+      "formats": [],
+      "source": "此照片没有可编辑的 HDR 增益图。"
+    },
+    "相对白平衡": {
+      "formats": [],
+      "source": "相对白平衡"
+    },
+    "自动 HDR": {
+      "formats": [],
+      "source": "自动 HDR"
+    },
+    "预览不能用于导出，请从原始照片重新生成。": {
+      "formats": [],
+      "source": "预览不能用于导出，请从原始照片重新生成。"
+    },
+    "预览方式": {
+      "formats": [],
+      "source": "预览方式"
+    },
+    "预览方式不会改变编辑或导出。": {
+      "formats": [],
+      "source": "预览方式不会改变编辑或导出。"
+    },
+    "当前显示 SDR 兼容预览。": {
+      "source": "当前显示 SDR 兼容预览。",
+      "formats": []
+    },
+    "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。": {
+      "source": "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。",
+      "formats": []
     }
   },
   "overrides": {
@@ -3433,6 +3557,14 @@
       "fr": "Sélectionnez des photos pour synchroniser les réglages, ou affinez une photo avant de revenir à la collection.",
       "ja": "写真を選んで調整を同期できます。1枚ずつ微調整した後、同じ一覧に戻ることもできます。",
       "zh-Hans": "选择照片后同步所需调整，也可进入单张微调，再返回原集合。"
+    },
+    "保存 SDR JPEG": {
+      "de": "SDR-JPEG speichern",
+      "en": "Save SDR JPEG",
+      "es": "Guardar JPEG SDR",
+      "fr": "Enregistrer en JPEG SDR",
+      "ja": "SDR JPEG を保存",
+      "zh-Hans": "保存 SDR JPEG"
     }
   }
 }

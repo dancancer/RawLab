@@ -25,6 +25,7 @@ extension AdjustmentTransferField {
             .blackPoint: "黑场", .whitePoint: "白场", .vibrance: "鲜艳度", .clarity: "清晰度", .dehaze: "去朦胧",
             .contrast: "对比度", .highlights: "高光", .shadows: "阴影", .sCurve: "S 曲线", .curve: "曲线模式与控制点",
             .whiteBalanceMode: "白平衡模式", .temperature: "色温", .tint: "色调", .saturation: "饱和度",
+            .hdrTemperature: "色温", .hdrTint: "色调",
             .vignetteAmount: "暗角", .vignetteMidpoint: "中点", .vignetteRoundness: "圆度",
             .vignetteFeather: "羽化", .vignetteHighlights: "高光保护", .grainAmount: "颗粒",
             .grainSize: "大小", .grainRoughness: "粗糙度", .sharpening: "锐化",

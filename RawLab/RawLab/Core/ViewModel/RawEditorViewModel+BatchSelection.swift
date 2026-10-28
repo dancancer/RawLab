@@ -46,6 +46,7 @@ extension RawEditorViewModel {
         let active = collectionActiveValidator()
         adjustmentQueue.async {
             let review = collection.prepareExport(store: store, skipping: skipping, format: format, longEdge: longEdge,
+                probeHDR: { try HDRSourceInfo.probe($0) != nil },
                 validateActive: active, resolveLook: { settings in
                     if let id = settings.masterRecipeID {
                         let recipe = MasterRecipe.recipe(for: id)

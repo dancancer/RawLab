@@ -80,11 +80,16 @@ extension ContentView {
 
             Menu {
                 Button(L10n.text("保存当前照片")) {
-                    singleExportFormat = .jpeg
+                    singleExportFormat = settings.isHDREditing ? .hdrJPEG : .jpeg
                     exportLongEdge = nil
                     showingExportSize = true
                 }
                 .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
+                if settings.isHDREditing {
+                    Button(L10n.text("保存 SDR JPEG")) {
+                        singleExportFormat = .jpeg; exportLongEdge=nil; showingExportSize=true
+                    }.disabled(editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewFailed)
+                }
                 Button(L10n.text("导出渲染型 DNG…")) {
                     singleExportFormat = .renderedDNG
                     exportLongEdge = nil
@@ -121,7 +126,8 @@ extension ContentView {
                                   interactionEnabled: !editorBusy && !draftExitPresented && !resetConfirmationPresented && !showingFileImporter && !showingLookImporter,
                                   overlayAvoidanceRect: photoComparisonControlBounds,
                                   onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) },
-                                  hslTarget: hslTargetActive ? hslTargetInput : nil, hslTargetPoint: hslTargetPoint)
+                                  hslTarget: hslTargetActive ? hslTargetInput : nil, hslTargetPoint: hslTargetPoint,
+                                  hdr:viewModel.hdrPresentation,referenceHDR:viewModel.hdrReference,hdrDisplay:hdrDisplay)
                         .id(viewModel.sourceRevision)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .allowsHitTesting(!geometrySelected)
@@ -178,7 +184,9 @@ extension ContentView {
             .overlay(alignment: .topTrailing) {
                 if viewModel.hasImage && !photoViewing.previewOnly {
                     FloatingHistogram(histogram: currentHistogram, showingBefore: showingBefore,
-                                      availableSize: geometry.size, expanded: $histogramExpanded)
+                                      availableSize: geometry.size, expanded: $histogramExpanded,
+                                      hdr:(showingBefore ? viewModel.hdrReference : viewModel.hdrPresentation)?.statistics,
+                                      headroom:hdrDisplay.headroom)
                         .frame(maxWidth: min(180, geometry.size.width * 0.48), alignment: .trailing)
                         .padding(12)
                         .opacity(rulerFocusOpacity)
@@ -278,7 +286,7 @@ extension ContentView {
     }
 
     var adjustmentPanel: some View {
-        valuePanel.disabled(resetDraftSuspended)
+        valuePanel.disabled(resetDraftSuspended || (settings.isHDREditing && !supportsHDR(currentEditorTool)))
             .environment(\.adjustmentFine, adjustmentFine)
             .environment(\.adjustmentInputContext, parameterInputContext)
             .padding(.vertical, 8)
@@ -337,6 +345,12 @@ extension ContentView {
                 Form {
                     Text(selectedFilmName)
                     editSaveStatus
+                    if viewModel.sourceIsHDR {
+                        Toggle(L10n.text("HDR 编辑"),isOn:Binding(get:{ settings.isHDREditing },set:setHDREditing))
+                            .disabled(isEditorDraftActive || editorBusy || viewModel.previewRendering)
+                            .accessibilityIdentifier("hdr.editMode")
+                    }
+                    if settings.isHDREditing { HDRMonitoringControls(state:hdrDisplay) }
                     if viewModel.sourceKind == .raw {
                         Picker(L10n.text("曝光基准"), selection: $settings.exposureMode) {
                             ForEach(RawExposureMode.allCases) { Text($0.title).tag($0) }
@@ -447,6 +461,7 @@ extension ContentView {
             .background(selectedGroup == group ? Color.yellow.opacity(0.12) : .clear)
         }
         .buttonStyle(.plain)
+        .disabled(settings.isHDREditing && !EditorAdjustmentRules.tools(group).contains(where:supportsHDR))
         .accessibilityLabel(L10n.format(adjustmentsExpanded && selectedGroup == group ? "收起%@组" : "展开%@组", group.title))
         .accessibilityValue(resetModified(.group(group)) ? L10n.text("已调整") : "")
         .accessibilityAddTraits(selectedGroup == group ? .isSelected : [])
@@ -480,7 +495,8 @@ extension ContentView {
                                     maximumWidth: accessibility ? max(44, width - 24) : nil)
                             }
                             .disabled((tool == .lens && viewModel.sourceKind != .raw) ||
-                                      (tool == .adjustment(.strength) && !settings.hasLook))
+                                      (tool == .adjustment(.strength) && !settings.hasLook) ||
+                                      (settings.isHDREditing && !supportsHDR(tool)))
                             .accessibilityLabel(tool.title)
                             .accessibilityValue(editorToolAccessibilityValue(tool))
                             .accessibilityHint(resetModified(.tool(tool)) ? L10n.text("已调整") : "")

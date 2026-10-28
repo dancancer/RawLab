@@ -40,6 +40,15 @@ for slice in ios-arm64 ios-arm64_x86_64-simulator; do
     done
     nm -gU "$binary" | grep -F '_sony2fuji_compile_dcp' >/dev/null
     nm -gU "$binary" | grep -F '_sony2fuji_release_blob' >/dev/null
+    for symbol in probe decode render export_jpeg export_sdr release_pair; do
+        nm -gU "$binary" | grep -F "_sony2fuji_hdr_$symbol" >/dev/null
+    done
+    for header in sony2fuji_c.h sony2fuji_hdr.h; do
+        cmp "$ROOT/include/sony2fuji/ffi/$header" "$(dirname "$binary")/Headers/$header"
+    done
+    for notice in LICENSE LICENSE-APACHE LICENSE-MIT; do
+        test -f "$(dirname "$binary")/Licenses/libultrahdr/$notice"
+    done
     dng_licenses="$(dirname "$binary")/Licenses/dng-sdk"
     test -d "$dng_licenses"
     for notice in Adobe-DNG-SDK-LICENSE.txt JPEG-XL-LICENSE.txt Brotli-LICENSE.txt \

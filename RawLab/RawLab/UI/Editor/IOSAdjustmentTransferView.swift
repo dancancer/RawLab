@@ -64,6 +64,7 @@ struct IOSAdjustmentTransferView: View {
         }
         .tint(.yellow)
         .onAppear {
+            if kind == .copy { fields=settings.isHDREditing ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common }
             if kind == .paste {
                 payload = synchronization?.payload ?? preset?.payload ?? model.adjustmentSession?.clipboard
                 sourceName = synchronization?.sourceName ?? preset?.name ?? model.adjustmentClipboardSourceName ?? payload?.source.identifier ?? ""
@@ -79,7 +80,7 @@ struct IOSAdjustmentTransferView: View {
     }
 
     @ViewBuilder private var copyContent: some View {
-        IOSAdjustmentScopeEditor(scope: $scope, fields: $fields, sourceName: model.sourceDisplayName ?? "")
+        IOSAdjustmentScopeEditor(scope:$scope,fields:$fields,sourceName:model.sourceDisplayName ?? "",allowed:settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
         Section {
             Button(L10n.text("复制调整")) {
                 do {

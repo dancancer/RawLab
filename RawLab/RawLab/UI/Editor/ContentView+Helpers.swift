@@ -6,6 +6,27 @@ import UIKit
 import UniformTypeIdentifiers
 
 extension ContentView {
+    func supportsHDR(_ tool: EditorToolSelection) -> Bool {
+        if tool == .geometry { return true }
+        if case .adjustment(let kind)=tool { return kind.hdrKeyPath != nil }
+        return false
+    }
+
+    func setHDREditing(_ enabled: Bool) {
+        guard viewModel.sourceIsHDR,enabled != settings.isHDREditing,!editorBusy,!isEditorDraftActive,
+              let source=viewModel.editorEditSource else { return }
+        guard viewModel.saveCurrentSettings(settings) else { return }
+        do {
+            let candidate=try settings.withHDRMode(enabled,sourceIsHDR:true,hasLook:settings.hasLook)
+            guard viewModel.persistEditCandidate(viewModel.currentEditState(settings:candidate),source:source) else { return }
+            viewModel.persistedEditorSettings=PersistedEditorSettings(source:source,settings:candidate)
+            viewModel.committedPreviewSettings=candidate
+            settings=candidate; selectEditorTool(.adjustment(.exposure))
+            viewModel.updatePreview(settings:candidate)
+        } catch HDRSettings.ModeError.conflicts {
+            viewModel.statusMessage=L10n.text("当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。")
+        } catch { viewModel.statusMessage=error.localizedDescription }
+    }
     var editingLocked: Bool { isImporting || isSaving || viewModel.isBusy || batchModel?.isRunning == true }
     var editorBusy: Bool { viewModel.isBusy || viewModel.isLoadingLUTs || viewModel.isImportingLooks || editingLocked }
     var selectedFilmName: String {
@@ -19,6 +40,7 @@ extension ContentView {
     }
 
     func adjustmentProgress(_ adjustment: AdjustmentKind) -> Double {
+        if settings.isHDREditing { return adjustment.progress(in:settings) }
         if viewModel.sourceKind == .raster && (adjustment == .temperature || adjustment == .tint) {
             return 0
         }
@@ -60,10 +82,10 @@ extension ContentView {
         return settings.customWhiteBalance(cameraTemperature: camera.temperature, cameraTint: camera.tint)
     }
 
-    func exportJPEG(longEdge: Int? = nil) {
+    func exportJPEG(longEdge: Int? = nil, keepHDR: Bool = true) {
         guard !isEditorDraftActive else { return }
         isSaving = true
-        viewModel.exportJPEG(settings: settings, longEdge: longEdge) { result in
+        viewModel.exportJPEG(settings: settings, longEdge: longEdge,keepHDR:keepHDR) { result in
             switch result {
             case .success(let data):
                 saveToPhotoLibrary(data)
@@ -173,6 +195,7 @@ extension ContentView {
     }
 
     var displayedTemperature: Double {
+        if settings.isHDREditing { return settings.hdr!.temperature }
         guard viewModel.sourceKind != .raster else { return RawSettings.default.temperature }
         if viewModel.sourceKind == .raw,
            settings.whiteBalanceMode == .camera,
@@ -183,6 +206,7 @@ extension ContentView {
     }
 
     var displayedTint: Double {
+        if settings.isHDREditing { return settings.hdr!.tint }
         guard viewModel.sourceKind != .raster else { return 0 }
         if settings.masterRecipeID != nil { return settings.tint }
         if viewModel.sourceKind == .raw,
@@ -198,7 +222,7 @@ extension ContentView {
             get: { RawSettings.reciprocalSliderValue(for: displayedTemperature) },
             set: { value in
                 var updated = manualWhiteBalanceSettings
-                updated.temperature = RawSettings.temperature(forReciprocalSliderValue: value)
+                AdjustmentKind.temperature.setValue(RawSettings.temperature(forReciprocalSliderValue:value),in:&updated)
                 if viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
                 applySettingsChange(updated)
             }
@@ -211,8 +235,8 @@ extension ContentView {
             set: { value in
                 guard value.isFinite else { return }
                 var updated = manualWhiteBalanceSettings
-                updated.temperature = min(max(value.rounded(), RawSettings.temperatureRange.lowerBound),
-                                          RawSettings.temperatureRange.upperBound)
+                AdjustmentKind.temperature.setValue(min(max(value.rounded(),RawSettings.temperatureRange.lowerBound),
+                    RawSettings.temperatureRange.upperBound),in:&updated)
                 if viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
                 applySettingsChange(updated)
             }
@@ -339,6 +363,7 @@ extension ContentView {
                 onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
                 guard photoImportRequestID == requestID else { return }
                 settings = restored
+                if restored.isHDREditing { activateEditorTool(.adjustment(.exposure)) }
             }
             selectedPhotoItem = nil
             photoImportTask = nil
@@ -400,6 +425,7 @@ extension ContentView {
                 viewModel.importImage(from: value.0, identity: value.1, settings: .default,
                                       onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
                     settings = restored
+                if restored.isHDREditing { activateEditorTool(.adjustment(.exposure)) }
                 }
             case .failure(let error):
                 photoImportTask = nil
@@ -427,7 +453,7 @@ extension ContentView {
         do {
             let journal = try BatchJournalStore.appStore()
             if let job = try journal.pendingJobs().first {
-                batchModel = BatchExportModel(job: job, journalStore: journal)
+                batchModel = BatchExportModel(job:job,journalStore:journal,editor:viewModel)
                 batchModel?.onUsage = { UsageAnalytics.shared.record($0) }
                 batchModel?.onDiscard = { batchModel = nil; showingBatchExport = false; recoverBatchExport() }
             }

@@ -67,6 +67,7 @@ extension RawEditorViewModel {
     }
 
     func lutURL(for settings: RawSettings) -> URL? {
+        if settings.isHDREditing { return nil }
         if let id = settings.masterRecipeID { return MasterRecipe.recipe(for: id)?.lutURL() }
         guard let lutID = settings.lutID else {
             return nil
@@ -84,6 +85,7 @@ extension RawEditorViewModel {
     }
 
     func isLookAvailable(for settings: RawSettings) -> Bool {
+        if settings.isHDREditing { return true }
         guard settings.hasLook else { return true }
         guard let url = lutURL(for: settings) else { return false }
         return FileManager.default.isReadableFile(atPath: url.path)

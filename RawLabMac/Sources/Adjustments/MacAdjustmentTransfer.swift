@@ -3,6 +3,7 @@ import Foundation
 struct MacAdjustmentTransferContext {
     var identifier: String
     var isRaw: Bool
+    var sourceIsHDR = false
     var availableLookIDs: Set<String> = []
     var defaultExposureMode = ExposureMode.preview
     var hasUncommittedDraft = false
@@ -16,6 +17,11 @@ enum MacAdjustmentTransfer {
     static func capture(scope: AdjustmentTransferScope, snapshot: PhotoEditState,
                         context: MacAdjustmentTransferContext) throws -> AdjustmentTransferPayload {
         guard !context.hasUncommittedDraft else { throw AdjustmentTransferError.draftRequiresPreflight }
+        if snapshot.settings.isHDREditing {
+            guard context.sourceIsHDR, !context.isRaw else { throw AdjustmentTransferError.incompatible("hdr.source") }
+            return try HDRAdjustmentTransfer.capture(settings: snapshot.settings.hdr!, identifier: context.identifier,
+                processingVersion: snapshot.settings.processing.version, scope: scope)
+        }
         if snapshot.settings.aiDenoiseEnabled {
             switch scope {
             case .all, .modified: throw AdjustmentTransferError.incompatible("ai.copy_scope")
@@ -32,7 +38,7 @@ enum MacAdjustmentTransfer {
         let neutral = values(PhotoEditState(settings: defaults, filmID: ""), isRaw: context.isRaw)
         let selected: Set<Field>
         switch scope {
-        case .all: selected = Set(Field.allCases)
+        case .all: selected = Field.legacyFields
         case .custom(let fields): selected = fields
         case .modified: selected = Set(Field.common.filter { original[$0.rawValue] != neutral[$0.rawValue] })
         }
@@ -49,6 +55,15 @@ enum MacAdjustmentTransfer {
                         context: MacAdjustmentTransferContext) throws -> PhotoEditState {
         guard !context.hasUncommittedDraft else { throw AdjustmentTransferError.draftRequiresPreflight }
         try payload.validate()
+        if target.settings.isHDREditing {
+            guard context.sourceIsHDR, !context.isRaw else { throw AdjustmentTransferError.incompatible("hdr.source") }
+            var result = target
+            result.settings.hdr = try HDRAdjustmentTransfer.prepare(payload: payload, target: target.settings.hdr!)
+            return result
+        }
+        if payload.source.isHDR {
+            return try prepare(payload: HDRAdjustmentTransfer.legacyPayload(payload), target: target, context: context)
+        }
         if target.settings.aiDenoiseEnabled && !payload.fields.isDisjoint(with: Field.denoiseFields) {
             throw AdjustmentTransferError.incompatible("ai.target_denoise")
         }

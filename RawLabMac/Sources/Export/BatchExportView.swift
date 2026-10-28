@@ -1,12 +1,21 @@
 import SwiftUI
 import AppKit
 
+struct BatchExportWindow: View {
+    @ObservedObject var model: EditorModel
+    var body: some View {
+        if let batch=model.batch { BatchExportView(model:batch) }
+        else { BatchExportEmptyView() }
+    }
+}
+
 struct BatchExportView: View {
     @Environment(\.locale) private var localizationLocale
     @ObservedObject var model: BatchExportModel
     @Environment(\.dismissWindow) private var dismissWindow
     @State private var showPreview = false
     @State private var confirmDiscard = false
+    @StateObject private var hdrDisplay=HDRDisplayState()
 
     var body: some View {
         let _ = localizationLocale
@@ -60,7 +69,7 @@ struct BatchExportView: View {
         .frame(minWidth: 900, minHeight: 620)
         .preferredColorScheme(.dark)
         .navigationTitle(L10n.text("批量导出"))
-        .sheet(isPresented: $showPreview) { previewSheet }
+        .sheet(isPresented:$showPreview,onDismiss:model.closePreview) { previewSheet }
         .onDisappear { model.cancel() }
         .alert(L10n.text("结束此批量任务？"), isPresented: $confirmDiscard) {
             Button(L10n.text("保留任务"), role: .cancel) {}
@@ -139,6 +148,9 @@ struct BatchExportView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            if model.job.settings.isHDREditing {
+                BatchSettingsSummary(settings:model.job.settings)
+            } else {
             valueRow(L10n.text("曝光"), AdjustmentParameter.exposure.spec.display(model.job.settings.exposure))
             valueRow(L10n.text("白平衡"), model.job.settings.whiteBalanceMode.title)
             valueRow(L10n.text("曝光基准"), model.job.settings.exposureMode.title)
@@ -170,10 +182,11 @@ struct BatchExportView: View {
                 }.padding(.top, 12)
             }
             }
+            }
             Divider().padding(.vertical, 4)
             Text(L10n.text("输出")).font(.headline)
             Picker(L10n.text("格式"), selection: Binding(get: { model.job.format }, set: model.setFormat)) {
-                ForEach(ExportFormat.allCases) { format in Text(format.title).tag(format) }
+                ForEach(ExportFormat.available(isHDR:model.job.settings.isHDREditing)) { format in Text(format.title).tag(format) }
             }.pickerStyle(.segmented).labelsHidden().id(localizationLocale.identifier)
                 .disabled(model.job.started || model.job.mode == .perTargetFrozen).accessibilityIdentifier("batch.format")
             ExportSizePicker(longEdge: Binding(get: { model.job.longEdge }, set: model.setLongEdge))
@@ -233,13 +246,18 @@ struct BatchExportView: View {
             }
             if model.previewing { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
             else if let frame = model.preview {
-                Image(decorative: frame.image, scale: 1).resizable().scaledToFit()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Group {
+                    if let hdr=frame.hdr {
+                        HDRCanvas(presentation:hdr,state:hdrDisplay)
+                            .aspectRatio(CGFloat(hdr.width)/CGFloat(hdr.height),contentMode:.fit)
+                    } else { Image(decorative:frame.image,scale:1).resizable().scaledToFit() }
+                }.frame(maxWidth:.infinity,maxHeight:.infinity)
             } else {
                 Text(model.error ?? L10n.text("无法生成预览")).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             Text(L10n.format("%@ · 本次导出效果", L10n.text(model.job.items.first { $0.input == model.previewFile }?.frozen?.lookName ?? model.job.lookName))).font(.caption).foregroundStyle(.secondary)
+            if model.preview?.hdr != nil { HDRMonitoringControls(state:hdrDisplay) }
         }.padding(20).frame(minWidth: 640, idealWidth: 800, minHeight: 440, idealHeight: 600)
     }
 

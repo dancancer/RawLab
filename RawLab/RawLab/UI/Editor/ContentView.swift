@@ -13,6 +13,7 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @StateObject var viewModel = RawEditorViewModel()
+    @StateObject var hdrDisplay=HDRDisplayState()
     @State var settings = RawSettings.default
     @State private var didAutoLoadSample = false
     @State var photoViewing = PhotoViewingState()
@@ -184,6 +185,7 @@ struct ContentView: View {
         .onChange(of: viewModel.adjustmentRestoredSettings) { _, restored in
             guard let restored else { return }
             settings = restored
+            if restored.isHDREditing { activateEditorTool(.adjustment(.exposure)) }
             viewModel.adjustmentRestoredSettings = nil
             viewModel.updatePreview(settings: restored, includeHistogram: true, quality: .final)
         }
@@ -324,7 +326,7 @@ struct ContentView: View {
                 editPhoto: { queuedCollectionEdit = $0; showingBatchSelection = false },
                 showExistingBatch: { queuedCollectionExistingBatch = true; showingBatchSelection = false },
                 created: { job, journal in
-                    queuedCollectionBatch = BatchExportModel(job: job, journalStore: journal)
+                    queuedCollectionBatch = BatchExportModel(job:job,journalStore:journal,editor:viewModel)
                     showingBatchSelection = false
                 })
         }
@@ -340,7 +342,7 @@ struct ContentView: View {
                 if singleExportFormat == .renderedDNG {
                     exportDNG(longEdge: exportLongEdge)
                 } else {
-                    exportJPEG(longEdge: exportLongEdge)
+                    exportJPEG(longEdge: exportLongEdge,keepHDR:singleExportFormat == .hdrJPEG)
                 }
             }
         }

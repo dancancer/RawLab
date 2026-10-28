@@ -60,6 +60,7 @@ RawLab 用于显影相机 RAW 文件、应用兼容的富士胶片模拟 LUT 和
 - [活动架构评审](architecture/architecture-and-performance-review-2026-10-18.md)和[跨相机路线图](architecture/cross-camera-presets-roadmap.md)
 - [本次迭代总需求](design/editing-iteration/requirements.md)与[总技术方案](design/editing-iteration/technical-design.md)：第一阶段收尾、第二阶段全量和桌面更新
 - [四端设计资产](design/README.md)、ITER-02 工作区的[详细子需求](design/editor-workspace/requirements.md)与[技术子方案](design/editor-workspace/technical-design.md)
+- [手机 HDR 照片技术方案](design/hdr-photos/technical-design.md)与[分阶段实施计划](integration/hdr-photos/implementation-plan.md)：首批 Mac/iOS 的手机增益图导入、基础编辑、双呈现与兼容 JPEG；尚未实现
 - [跨 PR 的发布、集成与评审历史](archive/README.md)；单个 PR 的过程证据放在 PR 描述，见[文档规则](../AGENTS.md#文档)。
 
 ## 许可

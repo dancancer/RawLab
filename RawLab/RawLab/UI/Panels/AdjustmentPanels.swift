@@ -111,7 +111,7 @@ extension ContentView {
                         .frame(minHeight: 44)
                 }
                 .buttonStyle(.bordered)
-                .disabled(autoExposing || viewModel.isBusy)
+                .disabled(autoExposing || viewModel.isBusy || settings.isHDREditing)
                 .accessibilityIdentifier("exposure.auto")
                 if viewModel.sourceKind == .raw {
                     Picker(L10n.text("曝光基准"), selection: $settings.exposureMode) {
@@ -130,8 +130,9 @@ extension ContentView {
     }
 
     var whiteBalancePanel: some View {
-        let isRaster = viewModel.sourceKind == .raster
+        let isRaster = viewModel.sourceKind == .raster && !settings.isHDREditing
         return VStack(alignment: .leading, spacing: 12) {
+            if settings.isHDREditing { Text(L10n.text("相对白平衡")).font(.caption).foregroundStyle(.secondary) }
             if viewModel.sourceKind == .raw {
                 Picker(L10n.text("白平衡"), selection: Binding(
                     get: { settings.whiteBalanceMode }, set: { setWhiteBalanceMode($0) }
@@ -208,7 +209,7 @@ extension ContentView {
                 return
             }
             var updated = settings
-            updated.tint = min(max(value.rounded(), RawSettings.tintRange.lowerBound), RawSettings.tintRange.upperBound)
+            AdjustmentKind.tint.setValue(min(max(value.rounded(),RawSettings.tintRange.lowerBound),RawSettings.tintRange.upperBound),in:&updated)
             if viewModel.sourceKind == .raw, updated.masterRecipeID == nil { updated.whiteBalanceMode = .custom }
             applySettingsChange(updated)
         })

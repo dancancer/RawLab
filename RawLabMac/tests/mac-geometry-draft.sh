@@ -20,7 +20,7 @@ for name in Localization BatchSelectionSession GeometrySettings HSLSettings HSLT
     SOURCES+=("$ROOT/Shared/$name.swift")
 done
 TRANSFER_SOURCES=(
-  "$ROOT/Shared/AdjustmentTransfer.swift"
+  "$ROOT/Shared/AdjustmentTransfer.swift" "$ROOT/Shared/HDRAdjustmentTransfer.swift"
   "$ROOT/Shared/AdjustmentPresetStore.swift"
   "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"
   "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"

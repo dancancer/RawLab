@@ -48,7 +48,7 @@ endif()
 
 # GPU acceleration (optional)
 option(SONY2FUJI_ENABLE_GPU "Enable GPU acceleration" ON)
-if(SONY2FUJI_ENABLE_GPU AND APPLE)
+if(APPLE)
     # 源码构建的 OpenCV 也使用 Objective-C++，需在共同父目录提前启用。
     enable_language(OBJCXX)
 endif()
@@ -160,6 +160,7 @@ set(CORE_SOURCES
     src/core/wavelet_denoise.cpp
     src/core/photo_effects.cpp
     src/core/photo_geometry.cpp
+    src/core/hdr_rendering.cpp
     src/core/photo_color.cpp
     src/core/photo_tone_controls.cpp
     src/core/photo_atmosphere.cpp
@@ -169,6 +170,7 @@ set(CORE_SOURCES
     src/core/preview_exposure.cpp
     src/core/rendered_dng.cpp
     src/ffi/sony2fuji_c.cpp
+    src/ffi/sony2fuji_hdr.cpp
     src/ffi/dcp_compiler_c.cpp
     src/gpu/lut_gpu.cpp
     src/gpu/image_stats.cpp
@@ -185,6 +187,15 @@ if(WIN32)
     list(APPEND CORE_SOURCES src/platform/display_image_windows.cpp)
 else()
     list(APPEND CORE_SOURCES src/platform/display_image.cpp)
+endif()
+if(APPLE)
+    list(APPEND CORE_SOURCES src/platform/hdr_image_apple.mm)
+    list(APPEND CORE_SOURCES src/core/hdr_jpeg.cpp)
+    enable_language(C)
+    include(cmake/hdr-codec.cmake)
+    set_source_files_properties(src/platform/hdr_image_apple.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc -Werror=unguarded-availability")
+else()
+    list(APPEND CORE_SOURCES src/platform/hdr_image_stub.cpp)
 endif()
 
 if(SONY2FUJI_ENABLE_GPU)
@@ -205,6 +216,9 @@ endif()
 
 # 创建核心库
 add_library(sony2fuji_core STATIC ${CORE_SOURCES})
+if(APPLE)
+    target_link_libraries(sony2fuji_core uhdr "-framework Foundation" "-framework CoreImage")
+endif()
 target_include_directories(sony2fuji_core PRIVATE third_party)
 if(WIN32)
     target_link_libraries(sony2fuji_core windowscodecs ole32)
@@ -258,7 +272,7 @@ if(BUILD_SHARED_LIB)
     endif()
     target_link_libraries(sony2fuji ${LIBRAW_LIBRARY})
     if(APPLE)
-        target_link_libraries(sony2fuji "-framework CoreGraphics" "-framework ImageIO" "-framework CoreFoundation")
+        target_link_libraries(sony2fuji uhdr "-framework CoreGraphics" "-framework ImageIO" "-framework CoreFoundation" "-framework Foundation" "-framework CoreImage")
     endif()
     if(SONY2FUJI_ENABLE_LENSFUN)
         target_link_libraries(sony2fuji ${LENSFUN_LIBRARY})
@@ -568,10 +582,26 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     add_executable(display_render_tests tests/display_render_tests.cpp)
     target_link_libraries(display_render_tests sony2fuji_core)
     add_test(NAME display_render COMMAND display_render_tests)
+    add_executable(hdr_render_tests tests/hdr_render_tests.cpp src/core/hdr_rendering.cpp src/core/photo_geometry.cpp)
+    foreach(case IN ITEMS identity tone white_balance geometry validation)
+        add_test(NAME hdr_render_${case} COMMAND hdr_render_tests ${case})
+    endforeach()
+    add_executable(hdr_api_tests tests/hdr_api_tests.cpp)
+    enable_language(C)
+    add_library(hdr_c_header_check OBJECT tests/hdr_c_header.c)
+    set_target_properties(hdr_c_header_check PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
+    target_link_libraries(hdr_api_tests sony2fuji_core)
+    add_test(NAME hdr_api_validation COMMAND hdr_api_tests)
     if(APPLE)
         add_executable(display_image_tests tests/display_image_tests.cpp)
         target_link_libraries(display_image_tests sony2fuji_core)
         add_test(NAME display_image COMMAND display_image_tests)
+        add_executable(hdr_image_tests tests/hdr_image_tests.mm)
+        target_include_directories(hdr_image_tests PRIVATE src)
+        target_compile_options(hdr_image_tests PRIVATE -fobjc-arc)
+        target_link_libraries(hdr_image_tests sony2fuji_core "-framework Foundation" "-framework CoreImage")
+        add_test(NAME hdr_image_decode COMMAND hdr_image_tests)
+        set_tests_properties(hdr_image_decode PROPERTIES SKIP_RETURN_CODE 77)
     endif()
     add_executable(photo_geometry_tests tests/photo_geometry_tests.cpp src/core/photo_geometry.cpp)
     add_test(NAME photo_geometry COMMAND photo_geometry_tests)
@@ -612,6 +642,14 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     target_include_directories(edit_recipe_raster_tests PRIVATE third_party)
     target_link_libraries(edit_recipe_raster_tests rawlab_edit_protocol)
     add_test(NAME edit_recipe_raster COMMAND edit_recipe_raster_tests)
+    add_executable(hdr_recipe_tests tests/hdr_recipe_tests.cpp)
+    target_include_directories(hdr_recipe_tests PRIVATE third_party)
+    target_link_libraries(hdr_recipe_tests rawlab_edit_protocol)
+    add_test(NAME hdr_recipe_roundtrip COMMAND hdr_recipe_tests)
+    add_executable(hdr_recipe_native_tests tests/hdr_recipe_native_tests.cpp)
+    target_include_directories(hdr_recipe_native_tests PRIVATE third_party)
+    target_link_libraries(hdr_recipe_native_tests rawlab_edit_protocol sony2fuji_core)
+    add_test(NAME hdr_recipe_native_parity COMMAND hdr_recipe_native_tests)
     add_executable(edit_recipe_geometry_tests tests/edit_recipe_geometry_tests.cpp)
     target_link_libraries(edit_recipe_geometry_tests rawlab_edit_protocol)
     add_test(NAME edit_recipe_geometry COMMAND edit_recipe_geometry_tests)
@@ -621,6 +659,11 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     if(BUILD_CLI)
         find_package(Python3 QUIET COMPONENTS Interpreter)
         if(Python3_Interpreter_FOUND)
+            if(APPLE)
+                add_test(NAME hdr_recipe_cli COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hdr_agent.py"
+                    --cli $<TARGET_FILE:sony2fuji_cli> --fixture $<TARGET_FILE:hdr_image_tests>)
+            endif()
             set(CLI_TEST_RAW "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG")
             if(WIN32 AND EXISTS "${SONY2FUJI_TEST_RAW}")
                 set(CLI_TEST_RAW "${SONY2FUJI_TEST_RAW}")

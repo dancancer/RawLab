@@ -140,6 +140,9 @@ extension EditorModel {
             do {
                 guard !draft else { throw AdjustmentTransferError.draftRequiresPreflight }
                 let snapshot = try collectionExportSnapshot(photo)
+                if format == .hdrJPEG && !snapshot.settings.isHDREditing {
+                    throw RenderError.failed(L10n.text("HDR JPEG 需要启用 HDR 编辑。"))
+                }
                 return .init(id: id, url: photo.url, hasDraft: false, skipped: false, snapshot: snapshot, error: nil)
             } catch {
                 return .init(id: id, url: photo.url, hasDraft: draft, skipped: false, snapshot: nil, error: error)
@@ -159,10 +162,12 @@ extension EditorModel {
         }
         var defaults = Adjustments()
         defaults.exposureMode = RenderEngine.isRasterInput(photo.url) ? .sensor : .preview
+        if record.state==nil,try HDRSourceInfo.probe(photo.url) != nil { defaults.hdr=HDRSettings() }
         let state = record.state ?? PhotoEditState(settings: defaults, filmID: "")
-        if state.settings.aiDenoiseEnabled { try RenderEngine.validateAIInput(photo.url) }
+        if !state.settings.isHDREditing && state.settings.aiDenoiseEnabled { try RenderEngine.validateAIInput(photo.url) }
         let look: URL?, lookName: String
-        if let recipeID = state.settings.masterRecipeID {
+        if state.settings.isHDREditing { look=nil; lookName="HDR" }
+        else if let recipeID = state.settings.masterRecipeID {
             guard let recipe = MasterRecipe.allRecipes.first(where: { $0.id == recipeID }), let url = recipe.lutURL() else {
                 throw BatchExportFailure.missingLook
             }

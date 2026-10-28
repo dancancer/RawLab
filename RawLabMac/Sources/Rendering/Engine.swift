@@ -5,12 +5,15 @@ import UniformTypeIdentifiers
 
 enum ExportFormat: String, CaseIterable, Codable, Identifiable {
     case jpeg, png
+    case hdrJPEG = "hdr_jpeg"
     case renderedDNG = "dng"
 
     var id: String { rawValue }
-    var suffix: String { self == .jpeg ? "jpg" : rawValue }
+    static func available(isHDR: Bool) -> [ExportFormat] { isHDR ? [.hdrJPEG,.jpeg,.png,.renderedDNG] : [.jpeg,.png,.renderedDNG] }
+    var suffix: String { self == .jpeg || self == .hdrJPEG ? "jpg" : rawValue }
     var title: String {
         switch self {
+        case .hdrJPEG: return L10n.text("HDR JPEG")
         case .jpeg: return "JPEG"
         case .png: return L10n.text("16-bit PNG")
         case .renderedDNG: return L10n.text("DNG · 渲染型")
@@ -18,6 +21,7 @@ enum ExportFormat: String, CaseIterable, Codable, Identifiable {
     }
     var contentType: UTType {
         switch self {
+        case .hdrJPEG: return .jpeg
         case .jpeg: return .jpeg
         case .png: return .png
         case .renderedDNG: return UTType(filenameExtension: "dng") ?? .rawImage
@@ -25,6 +29,7 @@ enum ExportFormat: String, CaseIterable, Codable, Identifiable {
     }
     var nativeFormat: sony2fuji_output_format {
         switch self {
+        case .hdrJPEG: return SONY2FUJI_OUTPUT_JPEG
         case .jpeg: return SONY2FUJI_OUTPUT_JPEG
         case .png: return SONY2FUJI_OUTPUT_PNG
         case .renderedDNG: return SONY2FUJI_OUTPUT_DNG
@@ -54,6 +59,7 @@ struct RenderedImage {
     var lensInfo: LensInfo? = nil
     var nativeWidth: Int? = nil
     var nativeHeight: Int? = nil
+    var hdr: HDRPresentation? = nil
 }
 
 struct PreviewStatistics {
@@ -117,6 +123,19 @@ final class RenderEngine {
     private final class DisplayImage {
         var buffer = sony2fuji_buffer()
         init(_ url: URL) throws {
+            if let info=try HDRSourceInfo.probe(url) {
+                let image=try HDRImage.decode(url,info:info,intent:SONY2FUJI_INTENT_FINAL)
+                let presentation=try HDRPresentation(image)
+                let data=presentation.sdrImage.dataProvider!.data!
+                let count=CFDataGetLength(data)
+                guard let owned=malloc(count) else { throw HDRDisplayFailure.invalidBuffer }
+                memcpy(owned,CFDataGetBytePtr(data),count)
+                buffer.data=owned
+                buffer.width=UInt32(image.width); buffer.height=UInt32(image.height)
+                buffer.stride_bytes=UInt32(image.width*4); buffer.size_bytes=count
+                buffer.pixel_format=SONY2FUJI_PIXEL_RGBA8
+                return
+            }
             let status = url.path.withCString { sony2fuji_load_display_image($0, &buffer) }
             guard status == SONY2FUJI_STATUS_OK else {
                 throw RenderError.displayImage(status)
@@ -125,6 +144,7 @@ final class RenderEngine {
         deinit { sony2fuji_release_buffer(&buffer) }
     }
     private var displayCache: (key: RawWhiteBalanceCacheKey, image: DisplayImage)?
+    private let hdrSources=HDRSourceCache.shared
 
     static func isRasterInput(_ url: URL?) -> Bool {
         guard let url, let type = UTType(filenameExtension: url.pathExtension.lowercased()) else { return false }
@@ -133,6 +153,7 @@ final class RenderEngine {
 
     private func withInput(_ url: URL, request: inout sony2fuji_request,
                            operation: (inout sony2fuji_request) -> sony2fuji_status) throws -> sony2fuji_status {
+        hdrSources.clear()
         if Self.isRasterInput(url) {
             let key = try RawWhiteBalanceCacheKey(url)
             if displayCache?.key != key { displayCache = (key, try DisplayImage(url)) }
@@ -467,7 +488,11 @@ final class RenderEngine {
         return sample
     }
 
-    func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, interactive: Bool = false, exportLongEdge: Int? = nil, viewportPreview: Bool = false) throws -> RenderedImage? {
+    func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, interactive: Bool = false, exportLongEdge: Int? = nil, viewportPreview: Bool = false, exportFormat: ExportFormat? = nil) throws -> RenderedImage? {
+        if settings.isHDREditing {
+            return try renderHDR(url,settings:settings,edge:edge,output:output,longEdge:exportLongEdge,format:exportFormat)
+        }
+        if exportFormat == .hdrJPEG { throw RenderError.failed(L10n.text("HDR JPEG 需要启用 HDR 编辑。")) }
         let (settings, prepared) = try photoRequest(url, settings: settings, lut: lut, edge: edge, output: output,
             interactive: interactive, exportLongEdge: exportLongEdge, viewportPreview: viewportPreview)
         var request = prepared
@@ -527,6 +552,38 @@ final class RenderEngine {
             baselineEV: Double(baseline), metadataEV: Double(metadata), asShotWhiteBalance: cameraWhiteBalance,
             supportsRawNoiseReduction: noiseReductionSupported == 1, lensInfo: raster ? nil : lensInfo(for: url),
             nativeWidth: Int(nativeWidth), nativeHeight: Int(nativeHeight))
+    }
+
+    private func renderHDR(_ url: URL,settings: Adjustments,edge: Int?,output: URL?,longEdge: Int?,format: ExportFormat?) throws -> RenderedImage? {
+        guard gpuMode != SONY2FUJI_GPU_FORCE else {
+            throw HDRNativeError(status:SONY2FUJI_STATUS_UNSUPPORTED,reason:UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU),field:UInt32(SONY2FUJI_HDR_FIELD_SESSION))
+        }
+        guard let session,let record=settings.hdr,record.isValid,
+              let info=try HDRSourceInfo.probe(url) else {
+            throw RenderError.failed(L10n.text("此照片没有可编辑的 HDR 增益图。"))
+        }
+        displayCache=nil
+        let final=edge==nil
+        let source=try final ? HDRImage.decode(url,info:info,intent:SONY2FUJI_INTENT_FINAL) :
+            hdrSources.preview(url,info:info,longEdge:edge!)
+        let rendered: HDRImage
+        if record==HDRSettings() && longEdge==nil {
+            rendered=source
+        } else {
+            rendered=try source.rendered(session:session,settings:record,
+                intent:final ? SONY2FUJI_INTENT_FINAL : SONY2FUJI_INTENT_PREVIEW,longEdge:final ? longEdge : edge)
+        }
+        if let output {
+            let selected=format ?? (ExportFormat.forOutput(output) == .jpeg ? .hdrJPEG : ExportFormat.forOutput(output))
+            if selected == .hdrJPEG { try rendered.exportJPEG(to:output) }
+            else { try rendered.exportSDR(to:output,format:selected.nativeFormat) }
+            return nil
+        }
+        let presentation=try HDRPresentation(rendered)
+        return RenderedImage(image:presentation.sdrImage,isFullResolution:final,clipping:nil,histogram:[],
+            shadows:nil,highlights:Double(presentation.statistics.aboveWhite)/Double(presentation.statistics.pixels),
+            baselineEV:0,metadataEV:0,asShotWhiteBalance:nil,supportsRawNoiseReduction:false,
+            nativeWidth:rendered.outputNativeWidth,nativeHeight:rendered.outputNativeHeight,hdr:presentation)
     }
 
     private func configureGeometry(_ settings: GeometrySettings) throws {

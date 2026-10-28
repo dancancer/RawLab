@@ -10,7 +10,8 @@ case "${1:-}" in
         python3 RawLabMac/tests/test_photo_copy.py
         python3 RawLabMac/tests/test_build_environment.py
         python3 lutools/tests/test_lens_dependencies.py
-        suites=(RawLabMac/tests/horizontal-picker.sh RawLabMac/tests/mac-viewing.sh
+        suites=(Shared/tests/hdr-settings.sh Shared/tests/hdr-native-request.sh Shared/tests/hdr-display.sh RawLabMac/tests/hdr-model.sh
+            RawLabMac/tests/horizontal-picker.sh RawLabMac/tests/mac-viewing.sh
             RawLabMac/tests/control-groups.sh RawLabMac/tests/adjustment-transfer.sh
             RawLabMac/tests/adjustment-transfer-session.sh Shared/tests/adjustment-presets.sh
             RawLabMac/tests/adjustment-preset-application.sh Shared/tests/usage-analytics.sh
@@ -19,7 +20,8 @@ case "${1:-}" in
             RawLabMac/tests/update-install.sh)
         ;;
     ios)
-        suites=(RawLab/tests/presentation.sh RawLab/tests/adjustment-scale.sh RawLab/tests/edit-memory.sh
+        suites=(Shared/tests/hdr-settings.sh Shared/tests/hdr-native-request.sh Shared/tests/hdr-display.sh RawLab/tests/hdr-model.sh
+            RawLab/tests/presentation.sh RawLab/tests/adjustment-scale.sh RawLab/tests/edit-memory.sh
             RawLab/tests/adjustment-transfer.sh RawLab/tests/adjustment-persistence.sh
             RawLab/tests/adjustment-transfer-session.sh Shared/tests/adjustment-presets.sh)
         ;;

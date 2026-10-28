@@ -23,6 +23,7 @@ struct PhotoCanvas: View {
     var onCropChange: ((GeometrySettings) -> Void)? = nil
     var onCropEditingChanged: ((Bool) -> Void)? = nil
     var prepareCropInteraction: (GeometrySettings) -> Bool = { _ in true }
+    var hdrDisplay: HDRDisplayState? = nil
     @Environment(\.displayScale) private var displayScale
     @State private var dragOrigin: CGPoint?
     @State private var labelRects: [CGRect] = []
@@ -59,11 +60,11 @@ struct PhotoCanvas: View {
             let visibleImage = sourceBounds.intersection(CGRect(origin: .zero, size: geometry.size))
             ZStack {
                 Color.clear
-                Image(decorative: frame.image, scale: 1).resizable().interpolation(.high)
+                photo(frame)
                     .frame(width: CGFloat(frame.image.width) * factor, height: CGFloat(frame.image.height) * factor)
                     .overlay(alignment: .leading) {
                         if let beforeFrame, let split {
-                            Image(decorative: beforeFrame.image, scale: 1).resizable().interpolation(.high)
+                            photo(beforeFrame)
                                 .mask(alignment: .leading) { Rectangle().frame(width: rendered.width * factor * split.wrappedValue) }
                         }
                     }
@@ -147,6 +148,11 @@ struct PhotoCanvas: View {
                 .onChange(of: viewport) { _, _ in hslTarget?.cancel() }
                 .onChange(of: previewEdge, initial: true) { _, edge in onPreviewSizeChange?(edge) }
         }
+    }
+    @ViewBuilder private func photo(_ frame: RenderedImage) -> some View {
+        if let presentation=frame.hdr,let hdrDisplay {
+            HDRCanvas(presentation:presentation,state:hdrDisplay)
+        } else { Image(decorative:frame.image,scale:1).resizable().interpolation(.high) }
     }
     private func photoLabel(_ text: String) -> some View {
         Text(text).font(.system(size: 11, weight: .medium)).padding(.horizontal, 7).padding(.vertical, 4)

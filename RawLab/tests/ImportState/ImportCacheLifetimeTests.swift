@@ -48,6 +48,8 @@ enum ImportCacheLifetimeTests {
 
     private static func currentFailure(_ f: Fixture, afterCopy: Bool) throws {
         try publish(f, url: f.aURL, identity: f.aIdentity)
+        let revision=f.model.sourceRevision
+        let preview=f.model.previewImage
         var reader = f.model.currentBatchSource(settings: .default)
         let oldURL = reader!.sourceFile.withReadAccess({ $0 })
         let original = try Data(contentsOf: oldURL)
@@ -58,13 +60,15 @@ enum ImportCacheLifetimeTests {
         try f.collector.take().forEach { $0() }
         try check(try Data(contentsOf: oldURL) == original && CGImageSourceCreateWithURL(oldURL as CFURL, nil) != nil,
                   "Current import failure \(afterCopy ? "after decode" : "during copy") cannot destroy a captured source")
-        try check(f.model.statusMessage != nil && !f.model.isBusy && f.model.sourceFile == nil,
-                  "Current failure still reports the error and clears the editor as before")
+        try check(f.model.statusMessage != nil && !f.model.isBusy && f.model.sourceFile?.withReadAccess({ $0 })==oldURL &&
+                  f.model.previewImage===preview && f.model.sourceRevision==revision,
+                  "Current failure reports the error while preserving the old canvas and source identity")
         try check(try files(near: oldURL) == baseline, "Failed import leaves no extra copy while the old reader is alive")
         withExtendedLifetime(reader) {}
         reader = nil
-        try check(try files(near: oldURL) == baseline.subtracting([oldURL]),
-                  "Last reader release removes the old photo after a failed import")
+        try check(try files(near:oldURL)==baseline,"Current canvas retains its original after the last external reader releases")
+        try publish(f,url:f.bURL,identity:f.bIdentity)
+        try check(!FileManager.default.fileExists(atPath:oldURL.path),"Successful replacement releases the old private original")
     }
 
     private static func batchSnapshot(_ f: Fixture) throws {

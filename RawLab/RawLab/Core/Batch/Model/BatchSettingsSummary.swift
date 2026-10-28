@@ -12,7 +12,12 @@ struct BatchSettingRow: Equatable {
 enum BatchSettingsSummary {
     // 常驻四行：曝光、曝光基准、HSL、白平衡
     static func headline(_ settings: RawSettings) -> [BatchSettingRow] {
-        [
+        if settings.isHDREditing {
+            return [row("HDR 编辑",L10n.text("开启")),
+                BatchSettingRow(title:AdjustmentKind.exposure.title,value:AdjustmentKind.exposure.displayValue(settings.hdr!.exposure)),
+                row("白平衡",L10n.text("相对白平衡"))]
+        }
+        return [
             BatchSettingRow(title: AdjustmentKind.exposure.title,
                             value: AdjustmentKind.exposure.displayValue(settings.exposure)),
             row("曝光基准", settings.exposureMode.title),
@@ -23,6 +28,11 @@ enum BatchSettingsSummary {
 
     // "全部调整"展开后：常驻行之外的工具，加上降噪、暗角、颗粒、镜头的各项参数
     static func details(_ settings: RawSettings) -> [BatchSettingRow] {
+        if settings.isHDREditing {
+            return [AdjustmentKind.highlights,.shadows,.contrast,.saturation,.temperature,.tint].map {
+                BatchSettingRow(title:$0.title,value:$0.displayValue($0.value(from:settings)))
+            } + geometry(settings.geometrySettings)
+        }
         let scalars: [AdjustmentKind] = [.strength, .highlights, .shadows, .contrast, .toneCurve, .blackPoint, .whitePoint, .saturation, .vibrance, .sharpening, .clarity, .dehaze]
         let tools = scalars.filter { settings.curveSettings.isDefault || $0 != .toneCurve }.map {
             BatchSettingRow(title: $0 == .toneCurve ? L10n.text("S 曲线") : $0.title, value: $0.displayValue($0.value(from: settings)))

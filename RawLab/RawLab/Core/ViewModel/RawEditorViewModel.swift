@@ -10,6 +10,10 @@ final class RawEditorViewModel: ObservableObject {
     }
 
     @Published var previewImage: UIImage?
+    @Published var hdrPresentation: HDRPresentation?
+    @Published var hdrReference: HDRPresentation?
+    @Published var sourceIsHDR=false
+    var importPreviousRevision: UUID?
     @Published var nativeImageSize: CGSize?
     @Published var basePreviewImage: UIImage?
     @Published var hasImage = false
@@ -33,6 +37,7 @@ final class RawEditorViewModel: ObservableObject {
         let geometry: GeometrySettings
         let lens: LensCorrectionSettings
         let longEdge: Int
+        let hdrMode: HDRSettings.Mode?
     }
     var comparisonReferenceKey: ComparisonReferenceKey?
     var basePreviewLens = LensCorrectionSettings()

@@ -22,6 +22,7 @@ struct EditorView: View {
     @State private var infoMode = PhotoInfoMode.hidden
     @State private var photoInformation: PhotoInformation?
     @State private var geometryViewState: GeometryViewState?
+    @StateObject private var hdrDisplay=HDRDisplayState()
     private struct GeometryViewState {
         let file: URL?
         let viewport: PhotoViewport
@@ -45,7 +46,8 @@ struct EditorView: View {
                     .overlay(alignment: .topTrailing) {
                         if model.geometryDraft == nil {
                             FloatingHistogram(frame: viewing.holdingBefore ? model.neutral : model.result,
-                                before: viewing.holdingBefore, clipping: $clipping, expanded: $histogramExpanded).padding(12)
+                                before: viewing.holdingBefore, clipping: $clipping, expanded: $histogramExpanded,
+                                hdrDisplay:hdrDisplay).padding(12)
                         }
                     }
                     .overlay(alignment: .topLeading) {
@@ -70,7 +72,7 @@ struct EditorView: View {
                         }.padding(8)
                     }
                     .overlay(alignment: .top) {
-                        if model.busy {
+                        if model.busy || model.importing {
                             if reduceMotion { Rectangle().fill(.yellow).frame(height: 2) }
                             else { ProgressView().progressViewStyle(.linear).frame(height: 2).clipped() }
                         }
@@ -198,12 +200,19 @@ struct EditorView: View {
                 resetMenu
             }.controlSize(.small)))
             .background(Color(nsColor: .windowBackgroundColor))
-            .disabled(model.file == nil || model.exporting)
+            .disabled(model.file == nil || model.exporting || model.importing)
     }
 
     private var processingSettings: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(L10n.text("照片处理设置")).font(.headline)
+            if model.sourceIsHDR {
+                Toggle(L10n.text("HDR 编辑"),isOn:Binding(get:{ model.settings.isHDREditing },set:model.setHDREditing))
+                    .disabled(!model.canExport).accessibilityIdentifier("hdr.editMode")
+            }
+            if model.settings.isHDREditing {
+                HDRMonitoringControls(state:hdrDisplay)
+            } else {
             Text(model.selectedMasterRecipe.map { L10n.format("%@ · 大师配方", String(describing: $0.title)) } ?? model.selectedFilm?.name ?? L10n.text("中性"))
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Picker(L10n.text("处理版本"), selection: $model.settings.processing) {
@@ -217,6 +226,7 @@ struct EditorView: View {
                 .disabled(RenderEngine.isRasterInput(model.file) || model.geometryDraft != nil)
             Text(RenderEngine.isRasterInput(model.file) ? "-- EV" : model.result.map { String(format: "%+.2f EV", $0.baselineEV) } ?? "-- EV")
                 .font(.caption).monospacedDigit().foregroundStyle(.secondary).help(L10n.text("基础曝光偏移"))
+            }
         }.padding(18).frame(width: 320)
     }
 
@@ -408,7 +418,7 @@ struct EditorView: View {
             }.accessibilityIdentifier("collection.open").disabled(model.exporting)
             Menu {
                 // 与批量导出的格式选择同名：JPEG、16 位 PNG、DNG · 渲染型
-                ForEach(ExportFormat.allCases) { format in
+                ForEach(ExportFormat.available(isHDR:model.settings.isHDREditing)) { format in
                     Button(format.title + "…") { model.export(format: format) }
                         .disabled(!model.canExport)
                 }
@@ -520,7 +530,7 @@ struct EditorView: View {
                     onCropEditingChanged: model.geometryCropInputEnabled ? model.setGeometryCropInteracting : nil,
                     prepareCropInteraction: { before in
                         ParameterValueField.commitPendingInputs() && model.geometryDraftSettings == before
-                    })
+                    },hdrDisplay:hdrDisplay)
             .accessibilityElement(children: .contain).accessibilityLabel(title)
             .accessibilityActions {
                 if canHoldBefore {
@@ -572,7 +582,9 @@ struct FloatingHistogram: View {
     @Environment(\.locale) private var localizationLocale
     @Binding var clipping: Bool
     @Binding var expanded: Bool
+    var hdrDisplay: HDRDisplayState? = nil
     private var source: String { L10n.text(before ? "调整前" : "调整后") }
+    private var title: String { L10n.text(frame?.hdr == nil ? "RGB 直方图" : "HDR 亮度直方图") }
     var body: some View {
         VStack(spacing: 10) {
         let _ = localizationLocale
@@ -580,7 +592,7 @@ struct FloatingHistogram: View {
                 Button { expanded.toggle() } label: {
                     Image(systemName: "chart.bar.xaxis").font(.system(size: 11, weight: .medium))
                 }.buttonStyle(.plain).help(expanded ? L10n.text("收起直方图") : L10n.text("展开直方图"))
-                    .accessibilityLabel(L10n.text("RGB 直方图") + " · " + source)
+                    .accessibilityLabel(title + " · " + source)
                     .accessibilityValue(source + " · " + (expanded ? L10n.text("已展开") : L10n.text("已收起")))
                     .accessibilityIdentifier("histogram.toggle")
                 if expanded {
@@ -595,24 +607,33 @@ struct FloatingHistogram: View {
             }
             if expanded {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(L10n.text("RGB 直方图")).font(.system(size: 12, weight: .semibold))
+                    Text(title).font(.system(size: 12, weight: .semibold))
                     Text(source).font(.system(size: 11))
                 }.frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel(L10n.text("RGB 直方图") + " · " + source)
+                    .accessibilityLabel(title + " · " + source)
                     .accessibilityIdentifier("histogram.source")
-                HistogramView(bins: frame?.histogram ?? []).frame(height: 68)
-                    .accessibilityLabel(L10n.text("RGB 直方图") + " · " + source)
+                Group {
+                    if let hdr=frame?.hdr {
+                        HDRLuminanceHistogram(statistics:hdr.statistics,headroom:hdrDisplay?.headroom ?? 1)
+                    } else { HistogramView(bins:frame?.histogram ?? []) }
+                }.frame(height:68)
+                    .accessibilityLabel(title + " · " + source)
                     .accessibilityIdentifier("histogram.plot")
-                if frame?.histogram.isEmpty != false {
+                if frame?.hdr == nil && frame?.histogram.isEmpty != false {
                     Text(L10n.text("统计不可用")).font(.system(size: 11))
                         .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("histogram.unavailable")
                 }
                 VStack(alignment: .leading, spacing: 4) {
+                    if let hdr=frame?.hdr {
+                        Text(L10n.format("参考白以上 %@",percent(Double(hdr.statistics.aboveWhite)/Double(hdr.statistics.pixels))))
+                        Text(L10n.format("内容容量 %@ EV",String(format:"%.2f",log2(Double(hdr.statistics.headroom)))))
+                    } else {
                     Text(L10n.format("高光 %@", String(describing: percent(frame?.highlights))))
                         .fixedSize(horizontal: false, vertical: true)
                     Text(L10n.format("黑位 %@", String(describing: percent(frame?.shadows))))
                         .fixedSize(horizontal: false, vertical: true)
+                    }
                 }.font(.system(size: 11)).monospacedDigit().foregroundStyle(Color.white.opacity(0.9))
             }
         }.padding(12).frame(width: expanded ? 242 : 66)

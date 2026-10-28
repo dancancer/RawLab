@@ -477,9 +477,26 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
     case vignetteAmount, grainAmount, clarity, dehaze
     var id: String { rawValue }
     var isWhiteBalance: Bool { self == .temperature || self == .tint }
+    var hdrKeyPath: WritableKeyPath<HDRSettings, Double>? {
+        switch self {
+        case .exposure: return \.exposure
+        case .temperature: return \.temperature
+        case .tint: return \.tint
+        case .contrast: return \.contrast
+        case .highlights: return \.highlights
+        case .shadows: return \.shadows
+        case .saturation: return \.saturation
+        default: return nil
+        }
+    }
+    func value(from settings: Adjustments) -> Double {
+        if settings.isHDREditing, let key = hdrKeyPath { return settings.hdr![keyPath: key] }
+        return settings[keyPath: spec.keyPath]
+    }
     var isPhotoEffect: Bool { self == .vignetteAmount || self == .grainAmount }
     func spec(for settings: Adjustments) -> AdjustmentSpec {
         var value = spec
+        if settings.isHDREditing { return value }
         if self == .temperature { value.defaultValue = settings.asShotWhiteBalance?.temperature ?? 6500 }
         if self == .tint { value.defaultValue = settings.masterRecipe != nil ? 0 : (settings.asShotWhiteBalance?.tint ?? 0) }
         return value

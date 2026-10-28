@@ -128,6 +128,7 @@ extension RawEditorViewModel {
         statusMessage = nil
         isBusy = true
         let importRevision = UUID()
+        if activeImportRevision==nil { importPreviousRevision=sourceRevision }
         activeImportRevision = importRevision
         sourceRevision = importRevision
         invalidatePreviewRequests()
@@ -152,12 +153,40 @@ extension RawEditorViewModel {
                     let resolvedIdentity = identity ?? (try? PhotoIdentity.fallback(for: inputURL))
                     let versioned = try resolvedIdentity.flatMap { try self.editPersistence?.versionedState(for: $0) }
                     let record = versioned?.state
-                    let restoredSettings = record?.settings ?? .default
-                    let missingLook = !self.isLookAvailable(for: restoredSettings)
+                    var restoredSettings = record?.settings ?? .default
                     let sourceFile = try PhotoSourceFile.copy(inputURL)
                     try sourceFile.withReadAccess { localURL in
-                        if sourceKind == .raw {
-                            let rawBase = try self.buildRawPreviewBase(url: localURL, geometry: restoredSettings.geometry, processing: restoredSettings.processing, lens: restoredSettings.lensSettings)
+                        let hdrInfo=sourceKind == .raster ? try HDRSourceInfo.probe(localURL) : nil
+                        if hdrInfo != nil && record==nil { restoredSettings.hdr=HDRSettings() }
+                        let restoredSettings=restoredSettings
+                        let missingLook = !self.isLookAvailable(for: restoredSettings)
+                        if let hdr=restoredSettings.hdr,restoredSettings.isHDREditing {
+                            let edited=try self.processor.processHDR(url:localURL,settings:hdr,previewLongEdge:Int(self.previewMaxDimension))
+                            var neutral=HDRSettings(); neutral.geometry=hdr.geometry
+                            let original=try self.processor.processHDR(url:localURL,settings:neutral,previewLongEdge:Int(self.previewMaxDimension))
+                            let presentation=try HDRPresentation(edited), reference=try HDRPresentation(original)
+                            self.resultDelivery {
+                                guard self.activeImportRevision==importRevision else { return }
+                                self.invalidatePreviewRequests(); self.activeImportRevision=nil; self.importPreviousRevision=nil
+                                self.sourceFile=sourceFile; self.sourceKind=sourceKind; self.sourceIdentity=resolvedIdentity
+                                self.sourceDisplayName=source.displayName; self.sourceIsHDR=true
+                                self.restoredSettings=restoredSettings; self.currentPreviewSettings=restoredSettings; self.pendingSettings=nil
+                                self.sourceOrientation = .up; self.draftBuffer=nil; self.draftPreviewBuffer=nil
+                                self.hdrPresentation=presentation; self.hdrReference=reference
+                                self.previewImage=UIImage(cgImage:presentation.sdrImage); self.basePreviewImage=UIImage(cgImage:reference.sdrImage)
+                                self.histogram=nil; self.baseHistogram=nil
+                                self.basePreviewGeometry=hdr.geometry; self.basePreviewProcessing=restoredSettings.processing
+                                self.rawLUTID=nil; self.rawLUTApplied=false; self.rawWhiteBalance=nil; self.lensInfo=nil
+                                self.nativeImageSize=CGSize(width:edited.outputNativeWidth,height:edited.outputNativeHeight)
+                                self.hasImage=true; self.isBusy=false; self.sourceRevision=UUID()
+                                self.recordImportedComparison(settings:restoredSettings)
+                                self.acceptImportedEditRecord(versioned,settings:restoredSettings)
+                                self.persistedEditorSettings=nil; self.failedDraftSource=nil
+                                if self.editPersistence != nil { self.setEditNotice(record==nil ? .idle : .restored) }
+                                onSettingsRestored?(restoredSettings); onImported?()
+                            }
+                        } else if sourceKind == .raw {
+                            let rawBase = try self.buildRawPreviewBase(url: localURL, geometry: restoredSettings.geometrySettings, processing: restoredSettings.processing, lens: restoredSettings.lensSettings)
                             let lutURL = self.lutURL(for: restoredSettings)
                             let previewResult = try self.processor.processRaw(
                                 url: localURL,
@@ -176,6 +205,8 @@ extension RawEditorViewModel {
                                 guard self.activeImportRevision == importRevision else { return }
                                 self.invalidatePreviewRequests()
                                 self.activeImportRevision = nil
+                                self.importPreviousRevision=nil
+                                self.hdrPresentation=nil; self.hdrReference=nil; self.sourceIsHDR=hdrInfo != nil
                                 self.sourceFile = sourceFile
                                 self.sourceKind = sourceKind
                                 self.sourceIdentity = resolvedIdentity
@@ -188,7 +219,7 @@ extension RawEditorViewModel {
                                 self.draftPreviewBuffer = rawBase.previewBuffer
                                 self.basePreviewImage = rawBase.basePreviewImage
                                 self.baseHistogram = rawBase.baseHistogram
-                                self.basePreviewGeometry = restoredSettings.geometry
+                                self.basePreviewGeometry = restoredSettings.geometrySettings
                                 self.basePreviewProcessing = restoredSettings.processing
                                 self.rawWhiteBalance = previewResult.rawWhiteBalance ?? rawBase.rawWhiteBalance
                                 self.lensInfo = previewResult.lensInfo
@@ -213,7 +244,7 @@ extension RawEditorViewModel {
                                 }
                             }
                         } else {
-                            let rasterBase = try self.buildRasterPreviewBase(url: localURL, geometry: restoredSettings.geometry, processing: restoredSettings.processing, lens: restoredSettings.lensSettings)
+                            let rasterBase = try self.buildRasterPreviewBase(url: localURL, geometry: restoredSettings.geometrySettings, processing: restoredSettings.processing, lens: restoredSettings.lensSettings)
                             let adjustedBuffer = try self.processor.processBuffer(
                                 buffer: rasterBase.buffer,
                                 settings: restoredSettings,
@@ -230,6 +261,8 @@ extension RawEditorViewModel {
                                 guard self.activeImportRevision == importRevision else { return }
                                 self.invalidatePreviewRequests()
                                 self.activeImportRevision = nil
+                                self.importPreviousRevision=nil
+                                self.hdrPresentation=nil; self.hdrReference=nil; self.sourceIsHDR=hdrInfo != nil
                                 self.sourceFile = sourceFile
                                 self.sourceKind = sourceKind
                                 self.sourceIdentity = resolvedIdentity
@@ -242,7 +275,7 @@ extension RawEditorViewModel {
                                 self.draftPreviewBuffer = rasterBase.previewBuffer
                                 self.basePreviewImage = rasterBase.basePreviewImage
                                 self.baseHistogram = rasterBase.baseHistogram
-                                self.basePreviewGeometry = restoredSettings.geometry
+                                self.basePreviewGeometry = restoredSettings.geometrySettings
                                 self.basePreviewProcessing = restoredSettings.processing
                                 self.rawLUTID = nil
                                 self.rawLUTApplied = false
@@ -275,33 +308,8 @@ extension RawEditorViewModel {
                         self.activeImportRevision = nil
                         self.statusMessage = error.localizedDescription
                         self.isBusy = false
-                        self.previewImage = nil
-                        self.basePreviewImage = nil
-                        self.nativeImageSize = nil
-                        self.draftPreviewBuffer = nil
-                        self.draftBuffer = nil
-                        self.sourceFile = nil
-                        self.sourceKind = nil
-                        self.sourceIdentity = nil
-                        self.loadedEditRecord = nil
-                        self.adjustmentSourceValidator = nil
-                        self.adjustmentInteraction = nil
-                        self.adjustmentInteractionRejected = false
-                        self.adjustmentRestoredSettings = nil
-                        self.editRecordMetadata = nil
-                        self.persistedEditorSettings = nil
-                        self.failedDraftSource = nil
-                        self.sourceDisplayName = nil
-                        self.sourceOrientation = nil
-                        self.rawLUTID = nil
-                        self.rawLUTApplied = false
-                        self.rawWhiteBalance = nil
-                        self.lensInfo = nil
-                        self.editSaveState = .idle
-                        self.hasImage = false
-                        self.histogram = nil
-                        self.baseHistogram = nil
-                        self.sourceRevision = UUID()
+                        if let previous=self.importPreviousRevision { self.sourceRevision=previous }
+                        self.importPreviousRevision=nil
                     }
                 }
             }
@@ -314,7 +322,8 @@ extension RawEditorViewModel {
               requestID == nil || requestID == activeImportRevision else { return }
         self.activeImportRevision = nil
         invalidatePreviewRequests()
-        sourceRevision = UUID()
+        sourceRevision = importPreviousRevision ?? UUID()
+        importPreviousRevision=nil
         isBusy = false
         if var metadata = editRecordMetadata, let source = editorEditSource,
            metadata.source.file == source.file, metadata.source.identity == source.identity {

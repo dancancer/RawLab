@@ -46,7 +46,7 @@ extension RawEditorViewModel {
             return false
         }
         let outcome = session.commitEdit(expected: expected, state: candidate, displayName: sourceDisplayName,
-            defaultState: PhotoEditState(settings: .default), isCurrent: { self.editorEditSource == source },
+            defaultState:PhotoEditState(settings:sourceDefaultSettings),isCurrent:{ self.editorEditSource==source },
             validateSource: adjustmentSourceValidator)
         if let saved = outcome.saved {
             adjustmentReloadRequired = false
@@ -101,7 +101,7 @@ extension RawEditorViewModel {
                                    settings: settings)
     }
 
-    func exportJPEG(settings: RawSettings, longEdge: Int? = nil,
+    func exportJPEG(settings: RawSettings, longEdge: Int? = nil, keepHDR: Bool = true,
                     completion: @escaping (Result<Data, Error>) -> Void) {
         dispatchPrecondition(condition: .onQueue(.main))
         guard !previewRendering, !previewResizePending, !previewFailed, !isBusy else {
@@ -129,7 +129,14 @@ extension RawEditorViewModel {
                     let lutURL = self.lutURL(for: settings)
                     let data: Data
 
-                    if sourceKind == .raw {
+                    if let hdr=settings.hdr,settings.isHDREditing {
+                        let pair=try self.processor.processHDR(url:sourceURL,settings:hdr,previewLongEdge:nil,exportLongEdge:longEdge)
+                        let output=FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-\(UUID().uuidString).jpg")
+                        defer { try? FileManager.default.removeItem(at:output) }
+                        if keepHDR { try pair.exportJPEG(to:output) }
+                        else { try pair.exportSDR(to:output,format:SONY2FUJI_OUTPUT_JPEG) }
+                        data=try Data(contentsOf:output)
+                    } else if sourceKind == .raw {
                         let result = try self.processor.processRaw(
                             url: sourceURL,
                             settings: settings,
@@ -204,7 +211,10 @@ extension RawEditorViewModel {
             sourceFile.withReadAccess { sourceURL in
                 do {
                     let lutURL = self.lutURL(for: settings)
-                    if sourceKind == .raw {
+                    if let hdr=settings.hdr,settings.isHDREditing {
+                        let pair=try self.processor.processHDR(url:sourceURL,settings:hdr,previewLongEdge:nil,exportLongEdge:longEdge)
+                        try pair.exportSDR(to:outputURL,format:SONY2FUJI_OUTPUT_DNG)
+                    } else if sourceKind == .raw {
                         try self.processor.exportDNG(url: sourceURL, settings: settings, lutURL: lutURL,
                                                      outputURL: outputURL, exportLongEdge: longEdge)
                     } else {

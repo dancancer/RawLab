@@ -145,15 +145,15 @@ struct AdjustmentHistoryModelTests {
         try check(model.batchSelection.selection.returnPosition == b.key && model.batchSelection.selection.selected == Set([a.key, b.key])
             && model.batchSelection.selection.lastSynchronization == operation.id, "micro-edit return preserves collection and synchronization history")
         model.hasAdjustmentDraft = true
-        let draft = model.batchSelection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: nil,
+        let draft = model.batchSelection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: nil, probeHDR: { _ in false },
             validateActive: model.validateCollectionActive, resolveLook: { _ in (nil, nil) })
         try check(!draft.ready && draft.rows.first { $0.id == b.key }?.error != nil, "native export preflight inspects the active editor draft")
-        let skipped = model.batchSelection.prepareExport(store: store, skipping: [b.key], format: .jpeg, longEdge: nil,
+        let skipped = model.batchSelection.prepareExport(store: store, skipping: [b.key], format: .jpeg, longEdge: nil, probeHDR: { _ in false },
             validateActive: model.validateCollectionActive, resolveLook: { _ in (nil, nil) })
         try check(skipped.ready && model.hasAdjustmentDraft && model.batchSelection.selection.selected.contains(b.key),
                   "native export Skip preserves the active draft and selection")
         model.hasAdjustmentDraft = false
-        let review = model.batchSelection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: nil,
+        let review = model.batchSelection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: nil, probeHDR: { _ in false },
             validateActive: model.validateCollectionActive, resolveLook: { _ in (nil, nil) })
         let journal = try BatchJournalStore(directory: directory.appendingPathComponent("collection-jobs"))
         let job = try model.batchSelection.freeze(review, store: store, journal: journal, validateActive: model.validateCollectionActive)

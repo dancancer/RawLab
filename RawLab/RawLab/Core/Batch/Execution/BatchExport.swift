@@ -24,6 +24,7 @@ final class BatchExportModel: ObservableObject {
     private let cancellation = NSLock()
     private var didCancel = false
     private var backgroundInterruption = false
+    private(set) var hdrPreparation: IOSHDRBatchPreparation?
 
     enum FileExportStatus: Equatable {
         case none
@@ -39,6 +40,10 @@ final class BatchExportModel: ObservableObject {
         jpegWriter = nil
         do { journalStore = try BatchJournalStore.appStore() }
         catch { journalStore = nil; validationMessage = L10n.format("任务未保存：%@", String(describing: error.localizedDescription)) }
+        if source.settings.isHDREditing {
+            job.outputFormat = .hdrJPEG
+            hdrPreparation=IOSHDRBatchPreparation(source:source,editor:editor)
+        }
         guard let journalStore else { return }
         let look = editor.lutURL(for: source.settings)
         var snapshot = job
@@ -56,13 +61,14 @@ final class BatchExportModel: ObservableObject {
         }
     }
 
-    init(job: BatchExportJob, journalStore: BatchJournalStore, jpegWriter: JPEGWriter? = nil) {
+    init(job: BatchExportJob, journalStore: BatchJournalStore, jpegWriter: JPEGWriter? = nil,editor: RawEditorViewModel? = nil) {
         let recovered = job.outputFormat == .renderedDNG
             ? job.recovered()
             : job.recovered(assetExists: PhotoLibraryBatchWriter.assetExists)
         self.job = recovered
         self.journalStore = journalStore
         self.jpegWriter = jpegWriter
+        if job.source.settings.isHDREditing,let editor { hdrPreparation=IOSHDRBatchPreparation(source:job.source,editor:editor) }
         isReady = true
         validationMessage = recovered.globalError
         if recovered.outputFormat == .renderedDNG {
@@ -178,6 +184,31 @@ final class BatchExportModel: ObservableObject {
     func start() { run(failuresOnly: false) }
     func retryFailed() { run(failuresOnly: true) }
 
+    private func freezeHDRJob(_ draft: BatchExportJob,journal: BatchJournalStore) throws -> BatchExportJob {
+        guard draft.settingsMode == .uniformFrozen,draft.source.settings.isHDREditing else { return draft }
+        guard let hdrPreparation else { throw BatchExportError.global(L10n.text("当前照片的设置尚不可用。")) }
+        var result=draft,owned=[URL](),published=false
+        defer { if !published { for url in owned { try? FileManager.default.removeItem(at:url) } } }
+        for index in result.targets.indices {
+            if isCancellationRequested { throw CancellationError() }
+            let prepared=try hdrPreparation.prepare(result.targets[index],ordinal:index,format:draft.outputFormat,longEdge:draft.longEdge)
+            guard draft.outputFormat != .hdrJPEG || prepared.settings.isHDREditing else {
+                throw BatchExportError.target(L10n.text("HDR JPEG 需要启用 HDR 编辑。")+" "+result.targets[index].displayName)
+            }
+            var frozen=prepared
+            if let original=prepared.lookURL {
+                let folder=try BatchInputStore.directory(for:draft.id,root:journal.directory).deletingLastPathComponent()
+                let copy=folder.appendingPathComponent("hdr-look-\(UUID().uuidString).\(original.pathExtension)")
+                try FileManager.default.copyItem(at:original,to:copy); owned.append(copy); frozen.lookURL=copy
+            }
+            try frozen.verifyFiles(input:result.targets[index].sourceURL)
+            result.targets[index].frozen=frozen
+        }
+        result.version=2; result.settingsMode = .perTargetFrozen
+        try result.validate(); try journal.save(result); published=true
+        return result
+    }
+
     private func run(failuresOnly: Bool) {
         guard canStart, let journalStore else { return }
         var snapshot = job.outputFormat == .renderedDNG
@@ -196,6 +227,7 @@ final class BatchExportModel: ObservableObject {
         queue.async { [self] in
             var attempted = Set<String>()
             do {
+                snapshot=try freezeHDRJob(snapshot,journal:journalStore)
                 let result: BatchExportJob
                 if snapshot.outputFormat == .renderedDNG {
                     result = try BatchExportRunner.run(job: snapshot, journalStore: journalStore,
@@ -221,7 +253,7 @@ final class BatchExportModel: ObservableObject {
                         render: { target, resolvedSettings in
                             return try self.render(target: target, settings: resolvedSettings,
                                                    look: snapshot.look(for: target),
-                                                   longEdge: snapshot.longEdge(for: target))
+                                                   longEdge: snapshot.longEdge(for: target),format:snapshot.outputFormat)
                         },
                         write: jpegWriter,
                         shouldCancel: { self.isCancellationRequested },
@@ -237,7 +269,7 @@ final class BatchExportModel: ObservableObject {
                         render: { target, resolvedSettings in
                             return try self.render(target: target, settings: resolvedSettings,
                                                    look: snapshot.look(for: target),
-                                                   longEdge: snapshot.longEdge(for: target))
+                                                   longEdge: snapshot.longEdge(for: target),format:snapshot.outputFormat)
                         },
                         write: { data, name, target, checkpoint in
                             try PhotoLibraryBatchWriter.write(data: data, outputName: name,
@@ -269,6 +301,8 @@ final class BatchExportModel: ObservableObject {
                     self.reportUsage(succeededBefore: succeededBefore, failed: failed)
                 }
             } catch {
+                let preparationFailed=snapshot.settingsMode == .uniformFrozen && snapshot.source.settings.isHDREditing && attempted.isEmpty
+                let cancelled=error is CancellationError
                 let recovered = snapshot.outputFormat == .renderedDNG
                     ? snapshot.recovered()
                     : snapshot.recovered(assetExists: PhotoLibraryBatchWriter.assetExists)
@@ -276,7 +310,8 @@ final class BatchExportModel: ObservableObject {
                 let failed = recovered.targets.filter { attempted.contains($0.id) && $0.status == .failed }.count
                 DispatchQueue.main.async {
                     self.job = recovered
-                    self.job.status = .interrupted
+                    // 预检没有生成或发布任何目标，保留草稿可编辑，允许改格式/移除不兼容项。
+                    self.job.status = preparationFailed ? (cancelled ? .cancelled : .draft) : .interrupted
                     self.job.globalError = message
                     self.validationMessage = message
                     self.isRunning = false; self.isStopping = false
@@ -366,18 +401,29 @@ final class BatchExportModel: ObservableObject {
         catch { validationMessage = error.localizedDescription; return false }
     }
 
-    func preview(target: BatchTarget) async throws -> UIImage {
+    struct Preview {
+        let image: UIImage
+        var hdr: HDRPresentation? = nil
+    }
+    func preview(target: BatchTarget) async throws -> Preview {
         guard !isRunning, !isPreparing else { throw BatchExportError.target(L10n.text("请等待当前任务完成。")) }
         let snapshot = job
         return try await perform {
             try snapshot.validate()
-            let targetSettings = try snapshot.settings(for: target)
-            let look = try snapshot.look(for: target)
+            let prepared=snapshot.settingsMode == .uniformFrozen ? try self.hdrPreparation?.prepare(target,ordinal:0,format:snapshot.outputFormat,longEdge:snapshot.longEdge) : nil
+            let targetSettings: RawSettings,look: URL?
+            if let prepared { targetSettings=prepared.settings; look=prepared.lookURL }
+            else { targetSettings=try snapshot.settings(for:target); look=try snapshot.look(for:target) }
             if snapshot.settingsMode == .perTargetFrozen { try target.frozen!.verifyFiles(input: target.sourceURL) }
             if targetSettings.hasLook && look.map({ FileManager.default.isReadableFile(atPath: $0.path) }) != true {
                 throw BatchExportError.global(L10n.text("任务使用的外观文件不可用，请重新创建任务。"))
             }
             let processor = Sony2FujiProcessor()
+            if targetSettings.isHDREditing,let hdr=targetSettings.hdr {
+                let pair=try processor.processHDR(url:target.sourceURL,settings:hdr,previewLongEdge:1280)
+                let presentation=try HDRPresentation(pair)
+                return Preview(image:UIImage(cgImage:presentation.sdrImage),hdr:presentation)
+            }
             let result: Sony2FujiProcessor.ProcessResult
             if target.sourceKind == .raw {
                 result = try processor.processRaw(url: target.sourceURL, settings: targetSettings,
@@ -392,7 +438,7 @@ final class BatchExportModel: ObservableObject {
             guard let image = processor.makeUIImage(from: result.buffer, orientation: result.orientation) else {
                 throw BatchExportError.target(L10n.text("无法显示处理结果"))
             }
-            return image
+            return Preview(image:image)
         }
     }
 

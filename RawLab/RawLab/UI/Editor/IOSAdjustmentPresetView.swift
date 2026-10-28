@@ -51,6 +51,7 @@ struct IOSAdjustmentPresetView: View {
             guard !started else { return }
             started = true
             if initialSave && libraryError == nil {
+                fields=settings.isHDREditing ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common
                 name = L10n.text("新预设"); editing = true; nameFocused = true
             }
         }
@@ -117,7 +118,7 @@ struct IOSAdjustmentPresetView: View {
         }
         if renaming == nil {
             IOSAdjustmentScopeEditor(scope: $scope, fields: $fields, identifier: "preset.save",
-                fieldIdentifier: "preset", titleKey: "调整范围")
+                fieldIdentifier:"preset",titleKey:"调整范围",allowed:settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
         }
         Section {
             Button(L10n.text("保存预设"), action: save)

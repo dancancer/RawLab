@@ -9,7 +9,8 @@ extension RawEditorViewModel {
         let recipes = MasterRecipe.allRecipes.filter { $0.lutURL().map { FileManager.default.isReadableFile(atPath: $0.path) } == true }
         let lookIDs = Set(available.map { $0.isCustom ? $0.id : "builtin:\($0.sourceURL.lastPathComponent)" })
             .union(recipes.map { "recipe:\($0.id)" })
-        return IOSAdjustmentTransferContext(identifier: identifier, isRaw: isRaw, availableLookIDs: lookIDs,
+        return IOSAdjustmentTransferContext(identifier: identifier, isRaw: isRaw,
+            sourceIsHDR:identifier==sourceIdentity?.key && sourceIsHDR,availableLookIDs: lookIDs,
             builtinLookIDs: builtins,
             cameraTemperature: whiteBalance?.isCalibrated == true ? whiteBalance?.temperature : nil,
             cameraTint: whiteBalance?.isCalibrated == true ? whiteBalance?.tint : nil)
@@ -80,11 +81,16 @@ extension RawEditorViewModel {
                             }
                         }
                     } else {
-                        _ = try file.withReadAccess { try Sony2FujiProcessor().loadRasterBuffer(url: $0) }
+                        context.sourceIsHDR=try file.withReadAccess { try HDRSourceInfo.probe($0) != nil }
+                        if context.sourceIsHDR {
+                            _ = try file.withReadAccess { try Sony2FujiProcessor().processHDR(url:$0,settings:HDRSettings(),previewLongEdge:128) }
+                        } else { _ = try file.withReadAccess { try Sony2FujiProcessor().loadRasterBuffer(url:$0) } }
                     }
                 } catch { validation = { throw error } }
+                var defaults=RawSettings.default
+                if context.sourceIsHDR { defaults.hdr=HDRSettings() }
                 return IOSAdjustmentTransferTarget(identity: photo.identity, displayName: photo.displayName,
-                    defaultState: PhotoEditState(settings: .default), context: context,
+                    defaultState: PhotoEditState(settings:defaults), context: context,
                     isCurrent: { validateCurrent(photo.id) }, validateSource: validation)
             }
             let result = Result { try session.prepare(payload: payload, targets: targets, action: action) }

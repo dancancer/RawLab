@@ -5814,5 +5814,229 @@
     "fr": "Mac nécessite une app de même architecture avec une identité de signature correspondante. Windows nécessite une installation Setup x64 par utilisateur. Pour une ancienne version ZIP, installez d’abord une version compatible avec les mises à jour depuis la page officielle.",
     "ja": "Macでは同じアーキテクチャと一致する署名IDのアプリが必要です。Windowsではx64のユーザー単位Setupインストールが必要です。旧ZIP版は、公式リリースページから更新対応版を先にインストールしてください。",
     "zh-Hans": "Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。"
+  },
+  "HDR JPEG": {
+    "de": "HDR-JPEG",
+    "en": "HDR JPEG",
+    "es": "JPEG HDR",
+    "fr": "JPEG HDR",
+    "ja": "HDR JPEG",
+    "zh-Hans": "HDR JPEG"
+  },
+  "HDR JPEG 需要启用 HDR 编辑。": {
+    "de": "Für HDR-JPEG muss die HDR-Bearbeitung aktiviert sein.",
+    "en": "Enable HDR Editing to export HDR JPEG.",
+    "es": "Activa la edición HDR para exportar JPEG HDR.",
+    "fr": "Activez l’édition HDR pour exporter en JPEG HDR.",
+    "ja": "HDR JPEG の書き出しには HDR 編集を有効にしてください。",
+    "zh-Hans": "HDR JPEG 需要启用 HDR 编辑。"
+  },
+  "HDR 亮度直方图": {
+    "de": "HDR-Luminanzhistogramm",
+    "en": "HDR Luminance Histogram",
+    "es": "Histograma de luminancia HDR",
+    "fr": "Histogramme de luminance HDR",
+    "ja": "HDR 輝度ヒストグラム",
+    "zh-Hans": "HDR 亮度直方图"
+  },
+  "HDR 假色": {
+    "de": "HDR-Falschfarben",
+    "en": "HDR False Color",
+    "es": "Falso color HDR",
+    "fr": "Fausses couleurs HDR",
+    "ja": "HDR フォールスカラー",
+    "zh-Hans": "HDR 假色"
+  },
+  "HDR 增益图损坏，无法还原此照片。": {
+    "de": "Die HDR-Gain-Map ist beschädigt. Das Foto kann nicht rekonstruiert werden.",
+    "en": "The HDR gain map is damaged. This photo cannot be reconstructed.",
+    "es": "El mapa de ganancia HDR está dañado. No se puede reconstruir esta foto.",
+    "fr": "La carte de gain HDR est endommagée. Impossible de reconstruire cette photo.",
+    "ja": "HDR ゲインマップが破損しているため、この写真を復元できません。",
+    "zh-Hans": "HDR 增益图损坏，无法还原此照片。"
+  },
+  "HDR 处理失败（{0}）。": {
+    "de": "HDR-Verarbeitung fehlgeschlagen ({0}).",
+    "en": "HDR processing failed ({0}).",
+    "es": "Error de procesamiento HDR ({0}).",
+    "fr": "Échec du traitement HDR ({0}).",
+    "ja": "HDR 処理に失敗しました（{0}）。",
+    "zh-Hans": "HDR 处理失败（{0}）。"
+  },
+  "HDR 显示不可用，当前显示 SDR。": {
+    "de": "HDR-Anzeige nicht verfügbar. SDR wird angezeigt.",
+    "en": "HDR display is unavailable. Showing SDR.",
+    "es": "La visualización HDR no está disponible. Se muestra SDR.",
+    "fr": "Affichage HDR indisponible. Affichage en SDR.",
+    "ja": "HDR 表示を利用できないため、SDR で表示しています。",
+    "zh-Hans": "HDR 显示不可用，当前显示 SDR。"
+  },
+  "HDR 照片需要 macOS 15 或 iOS 18 及以上版本。": {
+    "de": "HDR-Fotos erfordern macOS 15 oder iOS 18 oder neuer.",
+    "en": "HDR photos require macOS 15 or iOS 18 or later.",
+    "es": "Las fotos HDR requieren macOS 15 o iOS 18 o posterior.",
+    "fr": "Les photos HDR nécessitent macOS 15 ou iOS 18 ou ultérieur.",
+    "ja": "HDR 写真には macOS 15 または iOS 18 以降が必要です。",
+    "zh-Hans": "HDR 照片需要 macOS 15 或 iOS 18 及以上版本。"
+  },
+  "HDR 编辑": {
+    "de": "HDR-Bearbeitung",
+    "en": "HDR Editing",
+    "es": "Edición HDR",
+    "fr": "Édition HDR",
+    "ja": "HDR 編集",
+    "zh-Hans": "HDR 编辑"
+  },
+  "HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。": {
+    "de": "Die HDR-Bearbeitung nutzt derzeit die CPU. Stellen Sie den GPU-Modus auf Automatisch oder Aus.",
+    "en": "HDR editing currently uses the CPU. Set GPU mode to Auto or Off.",
+    "es": "La edición HDR usa actualmente la CPU. Configura la GPU en Automático o Desactivado.",
+    "fr": "L’édition HDR utilise actuellement le CPU. Réglez le GPU sur Auto ou Désactivé.",
+    "ja": "HDR 編集では現在 CPU を使用します。GPU モードを自動またはオフにしてください。",
+    "zh-Hans": "HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。"
+  },
+  "SDR 兼容预览": {
+    "de": "SDR-Kompatibilitätsvorschau",
+    "en": "SDR Compatibility Preview",
+    "es": "Vista previa compatible con SDR",
+    "fr": "Aperçu compatible SDR",
+    "ja": "SDR 互換プレビュー",
+    "zh-Hans": "SDR 兼容预览"
+  },
+  "不支持此 HDR 格式或颜色描述。": {
+    "de": "Dieses HDR-Format oder diese Farbbeschreibung wird nicht unterstützt.",
+    "en": "This HDR format or color description is not supported.",
+    "es": "Este formato HDR o descripción de color no es compatible.",
+    "fr": "Ce format HDR ou cette description colorimétrique n’est pas pris en charge.",
+    "ja": "この HDR 形式または色の記述には対応していません。",
+    "zh-Hans": "不支持此 HDR 格式或颜色描述。"
+  },
+  "内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。": {
+    "de": "Nicht genügend Speicher für dieses HDR-Foto in voller Auflösung. Schließen Sie andere Fotos und versuchen Sie es erneut.",
+    "en": "Not enough memory to process this HDR photo at full resolution. Close other photos and try again.",
+    "es": "No hay memoria suficiente para procesar esta foto HDR a resolución completa. Cierra otras fotos y vuelve a intentarlo.",
+    "fr": "Mémoire insuffisante pour traiter cette photo HDR en pleine résolution. Fermez les autres photos et réessayez.",
+    "ja": "この HDR 写真をフル解像度で処理するためのメモリが不足しています。他の写真を閉じて再試行してください。",
+    "zh-Hans": "内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。"
+  },
+  "内容容量 {0} EV": {
+    "de": "Inhaltsspielraum {0} EV",
+    "en": "Content Headroom {0} EV",
+    "es": "Margen de la imagen {0} EV",
+    "fr": "Marge du contenu {0} EV",
+    "ja": "画像のヘッドルーム {0} EV",
+    "zh-Hans": "内容容量 {0} EV"
+  },
+  "原始照片已变化，请重新导入。": {
+    "de": "Das Originalfoto wurde geändert. Importieren Sie es erneut.",
+    "en": "The original photo has changed. Import it again.",
+    "es": "La foto original ha cambiado. Impórtala de nuevo.",
+    "fr": "La photo d’origine a changé. Importez-la à nouveau.",
+    "ja": "元の写真が変更されています。再度読み込んでください。",
+    "zh-Hans": "原始照片已变化，请重新导入。"
+  },
+  "参考白以上 {0}": {
+    "de": "Über Referenzweiß {0}",
+    "en": "Above Reference White {0}",
+    "es": "Por encima del blanco de referencia {0}",
+    "fr": "Au-dessus du blanc de référence {0}",
+    "ja": "基準白を超える割合 {0}",
+    "zh-Hans": "参考白以上 {0}"
+  },
+  "导出不能覆盖原始照片。请选择其他文件。": {
+    "de": "Der Export darf das Originalfoto nicht überschreiben. Wählen Sie eine andere Datei.",
+    "en": "Export cannot overwrite the original photo. Choose another file.",
+    "es": "La exportación no puede sobrescribir la foto original. Elige otro archivo.",
+    "fr": "L’export ne peut pas écraser la photo d’origine. Choisissez un autre fichier.",
+    "ja": "書き出しで元の写真を上書きできません。別のファイルを選択してください。",
+    "zh-Hans": "导出不能覆盖原始照片。请选择其他文件。"
+  },
+  "屏幕容量 {0} EV": {
+    "de": "Display-Spielraum {0} EV",
+    "en": "Display Headroom {0} EV",
+    "es": "Margen de pantalla {0} EV",
+    "fr": "Marge de l’écran {0} EV",
+    "ja": "ディスプレイのヘッドルーム {0} EV",
+    "zh-Hans": "屏幕容量 {0} EV"
+  },
+  "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。": {
+    "de": "Die SDR-Bearbeitung nutzt noch nicht von HDR unterstützte Werkzeuge. Setzen Sie diese vor dem Aktivieren von HDR zurück.",
+    "en": "The SDR edits use tools that HDR does not support yet. Reset those tools before enabling HDR.",
+    "es": "Los ajustes SDR usan herramientas aún no compatibles con HDR. Restablécelas antes de activar HDR.",
+    "fr": "Les réglages SDR utilisent des outils encore incompatibles avec le HDR. Réinitialisez-les avant d’activer le HDR.",
+    "ja": "SDR の調整に HDR 未対応のツールが含まれています。該当するツールをリセットしてから HDR を有効にしてください。",
+    "zh-Hans": "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。"
+  },
+  "无法写入 HDR 导出文件，请检查可用空间和目标权限。": {
+    "de": "Der HDR-Export kann nicht geschrieben werden. Prüfen Sie freien Speicher und Zielberechtigungen.",
+    "en": "Cannot write the HDR export. Check free space and destination permissions.",
+    "es": "No se puede escribir la exportación HDR. Comprueba el espacio libre y los permisos del destino.",
+    "fr": "Impossible d’écrire l’export HDR. Vérifiez l’espace disponible et les autorisations.",
+    "ja": "HDR ファイルを書き込めません。空き容量と保存先のアクセス権を確認してください。",
+    "zh-Hans": "无法写入 HDR 导出文件，请检查可用空间和目标权限。"
+  },
+  "此照片没有可编辑的 HDR 增益图。": {
+    "de": "Dieses Foto hat keine bearbeitbare HDR-Gain-Map.",
+    "en": "This photo has no editable HDR gain map.",
+    "es": "Esta foto no contiene un mapa de ganancia HDR editable.",
+    "fr": "Cette photo ne contient pas de carte de gain HDR modifiable.",
+    "ja": "この写真に編集可能な HDR ゲインマップはありません。",
+    "zh-Hans": "此照片没有可编辑的 HDR 增益图。"
+  },
+  "相对白平衡": {
+    "de": "Relativer Weißabgleich",
+    "en": "Relative White Balance",
+    "es": "Balance de blancos relativo",
+    "fr": "Balance des blancs relative",
+    "ja": "相対ホワイトバランス",
+    "zh-Hans": "相对白平衡"
+  },
+  "自动 HDR": {
+    "de": "Automatisches HDR",
+    "en": "Automatic HDR",
+    "es": "HDR automático",
+    "fr": "HDR automatique",
+    "ja": "自動 HDR",
+    "zh-Hans": "自动 HDR"
+  },
+  "预览不能用于导出，请从原始照片重新生成。": {
+    "de": "Eine Vorschau kann nicht exportiert werden. Rendern Sie erneut aus dem Originalfoto.",
+    "en": "A preview cannot be exported. Render again from the original photo.",
+    "es": "Una vista previa no se puede exportar. Genera otra vez desde la foto original.",
+    "fr": "Un aperçu ne peut pas être exporté. Effectuez un nouveau rendu depuis l’original.",
+    "ja": "プレビューは書き出しに使用できません。元の写真から再生成してください。",
+    "zh-Hans": "预览不能用于导出，请从原始照片重新生成。"
+  },
+  "预览方式": {
+    "de": "Vorschaumodus",
+    "en": "Preview Mode",
+    "es": "Modo de vista previa",
+    "fr": "Mode aperçu",
+    "ja": "プレビューモード",
+    "zh-Hans": "预览方式"
+  },
+  "预览方式不会改变编辑或导出。": {
+    "de": "Der Vorschaumodus ändert weder Bearbeitung noch Export.",
+    "en": "Preview mode does not change edits or exports.",
+    "es": "El modo de vista previa no cambia los ajustes ni la exportación.",
+    "fr": "Le mode aperçu ne modifie ni les réglages ni l’export.",
+    "ja": "プレビューモードは編集や書き出しに影響しません。",
+    "zh-Hans": "预览方式不会改变编辑或导出。"
+  },
+  "当前显示 SDR 兼容预览。": {
+    "de": "Die SDR-kompatible Vorschau wird angezeigt.",
+    "en": "Showing the SDR-compatible preview.",
+    "es": "Se muestra la vista previa compatible con SDR.",
+    "fr": "L’aperçu compatible SDR est affiché.",
+    "ja": "SDR 互換プレビューを表示しています。",
+    "zh-Hans": "当前显示 SDR 兼容预览。"
+  },
+  "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。": {
+    "de": "Falschfarben: Blau für Schatten, Bernstein über Referenzweiß, Pink über der Displaykapazität.",
+    "en": "False color: blue for shadows, amber above reference white, pink beyond display capacity.",
+    "es": "Color falso: azul en sombras, ámbar sobre el blanco de referencia, rosa sobre la capacidad de la pantalla.",
+    "fr": "Fausses couleurs : bleu pour les ombres, ambre au-dessus du blanc de référence, rose au-delà de la capacité de l’écran.",
+    "ja": "疑似カラー：青は暗部、琥珀色は基準白以上、ピンクは画面の容量超過です。",
+    "zh-Hans": "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。"
   }
 }

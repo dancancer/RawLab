@@ -125,8 +125,7 @@ struct RawLabMacApp: App {
             if let model = runtime.model { BatchSelectionView(model: model).disabled(installationActive).environment(\.locale, selectedLocale) }
         }.defaultSize(width: 1040, height: 720)
         Window(L10n.text("批量导出"), id: "batch-export") {
-            if let batch = runtime.model?.batch { BatchExportView(model: batch).disabled(installationActive).environment(\.locale, selectedLocale) }
-            else { BatchExportEmptyView().environment(\.locale, selectedLocale) }
+            if let model = runtime.model { BatchExportWindow(model:model).disabled(installationActive).environment(\.locale, selectedLocale) }
         }.defaultSize(width: 1040, height: 720)
     }
 

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "scope": "Shared Apple HDR file codec and feasibility harness",
+  "libultrahdr": {
+    "version": "2.0.2",
+    "revision": "e5f5a022fe96fc4dc2ee35c19f733a50df807abe",
+    "url": "https://codeload.github.com/google/libultrahdr/tar.gz/refs/tags/v2.0.2",
+    "sha256": "aa8d193bb887c348c419780511dd03b374f4e07af8812b6d3f80c8537cf1ef2c",
+    "license": "Apache-2.0 OR MIT",
+    "license_files": [
+      "LICENSE",
+      "LICENSE-APACHE",
+      "LICENSE-MIT"
+    ],
+    "options": {
+      "UHDR_ENABLE_HEIF": false,
+      "UHDR_ENABLE_GLES": false,
+      "UHDR_ENABLE_INTRINSICS": false,
+      "UHDR_BUILD_DEPS": false,
+      "UHDR_WRITE_ISO": true,
+      "UHDR_WRITE_XMP": true,
+      "UHDR_MAX_DIMENSION": 65500
+    }
+  },
+  "libjpeg_turbo": {
+    "version": "3.1.3",
+    "url": "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.1.3/libjpeg-turbo-3.1.3.tar.gz",
+    "sha256": "3a13a5ba767dc8264bc40b185e41368a80d5d5f945944d1dbaa4b2fb0099f4e5",
+    "license_files": [
+      "LICENSE.md",
+      "README.ijg"
+    ],
+    "linkage": "static; same target architecture, SDK and deployment target as the consumer"
+  }
+}

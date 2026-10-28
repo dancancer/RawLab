@@ -205,7 +205,7 @@ extension EditorModel {
     }
 
     func selectMasterRecipe(_ recipe: MasterRecipe?) {
-        guard geometryDraft == nil else { return }
+        guard geometryDraft == nil,!settings.isHDREditing else { return }
         guard recipe != nil || settings.masterRecipeID != nil else { return }
         updatingMetadata = true
         if let recipe {
@@ -223,7 +223,7 @@ extension EditorModel {
     }
 
     func selectFilm(_ id: String) {
-        guard (id != selectedFilmID || settings.masterRecipeID != nil),
+        guard !settings.isHDREditing,(id != selectedFilmID || settings.masterRecipeID != nil),
               id.isEmpty || filmChoices.contains(where: { $0.id == id }) else { return }
         selectedFilmID = id
         guard selectedFilmID == id, settings.masterRecipeID == nil else { return }
@@ -310,9 +310,10 @@ extension EditorModel {
         }
         do {
             if let batch { try batchJournal.discard(batch.job) }
-            let lookURL = settings.masterRecipe?.lutURL() ?? selectedFilm?.url
+            let lookURL = settings.isHDREditing ? nil : (settings.masterRecipe?.lutURL() ?? selectedFilm?.url)
             let lookName = settings.masterRecipe?.title ?? selectedFilm?.name ?? "中性"
             var job = BatchExportJob(source: file, settings: settings, look: nil, lookName: lookName)
+            if settings.isHDREditing { job.format = .hdrJPEG }
             job.longEdge = exportLongEdge
             job.look = try batchJournal.snapshotLook(lookURL, for: job.id)
             try batchJournal.save(job)
@@ -322,7 +323,8 @@ extension EditorModel {
     }
 
     func attachBatch(_ job: BatchExportJob) {
-        let model = BatchExportModel(job: job, journal: batchJournal, onUsage: onUsage)
+        let preparer=job.settings.isHDREditing ? editStore.map { MacHDRBatchPreparation(source:job.source,settings:job.settings,store:$0,films:filmChoices) } : nil
+        let model = BatchExportModel(job: job, journal: batchJournal,hdrPreparation:preparer,onUsage: onUsage)
         model.sourceEditingGeometry = geometryDraft != nil
         model.onActivity = { [weak self] active in self?.exporting = active }
         model.onDiscard = { [weak self] in self?.batch = nil }
@@ -340,8 +342,9 @@ extension EditorModel {
     func open(_ url: URL) {
         let url = (try? BatchExportItem.resourceKey(url)).flatMap { batchSelectionPhotos[$0]?.url } ?? url
         guard !exporting else { return }
+        pendingOpenID=UUID(); importing=false
         cancelHSLTarget()
-        if file == url && result != nil, acceptedOriginalSource == MacReferenceSource(url, raster: RenderEngine.isRasterInput(url)) { return }
+        if file == url && result != nil, acceptedOriginalSource == referenceSource(url) { return }
         ParameterValueField.cancelPendingInputs()
         if geometryDraft != nil {
             requestLeavingGeometryDraft { [weak self] in self?.open(url) }
@@ -358,6 +361,48 @@ extension EditorModel {
             saveError = L10n.format("无法恢复调整：%@", String(describing: error.localizedDescription))
             return
         }
+        let info: HDRSourceInfo?
+        do { info=try HDRSourceInfo.probe(url) }
+        catch { self.error=error.localizedDescription; return }
+        var candidate=restoredRecord.state?.settings ?? Adjustments()
+        if restoredRecord.state==nil && RenderEngine.isRasterInput(url) { candidate.exposureMode = .sensor }
+        if info != nil && restoredRecord.state==nil { candidate.hdr=HDRSettings() }
+        guard !candidate.isHDREditing || info != nil else {
+            self.error=L10n.text("此照片没有可编辑的 HDR 增益图。")
+            return
+        }
+        let opening=UUID(); pendingOpenID=opening
+        if info != nil {
+            importing=true
+            let snapshot=candidate
+            let storedLook=restoredRecord.state?.filmID ?? ""
+            let look=snapshot.masterRecipe?.lutURL() ?? films.first(where:{ $0.id==storedLook || "builtin:\($0.url.lastPathComponent)"==storedLook })?.url
+            queue.async { [weak self] in
+                guard let self else { return }
+                do {
+                    let engine=try RenderEngine()
+                    let neutral=try engine.render(url,settings:snapshot.neutralGeometrySettings,lut:nil,edge:2000)
+                    let result=try engine.render(url,settings:snapshot,lut:look,edge:2000)
+                    DispatchQueue.main.async {
+                        guard self.pendingOpenID==opening else { return }
+                        self.importing=false
+                        self.activateOpen(url,record:restoredRecord,settings:snapshot,isHDR:true,neutral:neutral,result:result)
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        guard self.pendingOpenID==opening else { return }
+                        self.importing=false; self.error=error.localizedDescription
+                    }
+                }
+            }
+            return
+        }
+        importing=false
+        activateOpen(url,record:restoredRecord,settings:candidate,isHDR:false)
+    }
+
+    private func activateOpen(_ url: URL,record restoredRecord: VersionedPhotoEdit,settings candidate: Adjustments,
+                              isHDR: Bool,neutral stagedNeutral: RenderedImage? = nil,result stagedResult: RenderedImage? = nil) {
         resetAITask()
         cancelViewportResize()
         committedEdit = restoredRecord
@@ -365,11 +410,11 @@ extension EditorModel {
         editRevision = UUID()
         scheduler.setInteracting(false)
         sourceRevision = UUID()
-        file = url; neutral = nil; result = nil; error = nil; previewOutdated = false; statusState = .none
+        file = url; sourceIsHDR=isHDR; neutral=stagedNeutral; result=stagedResult
+        error=nil; previewOutdated=false; statusState = .none
         pendingImportEvent = true
         updatingMetadata = true
-        settings = restored?.settings ?? Adjustments()
-        if restored == nil && RenderEngine.isRasterInput(url) { settings.exposureMode = .sensor }
+        settings = candidate
         if let masterRecipeID = restored?.masterRecipeID {
             settings.masterRecipeID = masterRecipeID
         }
@@ -383,10 +428,16 @@ extension EditorModel {
         dirty = false
         saveStatusKey = restored == nil ? "" : "已恢复上次调整"
         clearSaveStatusLater()
-        schedule()
+        if let stagedResult {
+            scheduler.invalidatePending()
+            acceptedOriginalSource=referenceSource(url)
+            statusState = .preview(stagedResult.image.width,stagedResult.image.height,original:false)
+            pendingImportEvent=false; onUsage(.photoImported)
+            if settings.isHDREditing { adjustmentNavigation.selectTool(.exposure) }
+        } else { schedule() }
     }
     func autoExposure() {
-        guard let file, result != nil, !autoExposing, !exporting, geometryDraft == nil else { return }
+        guard let file, result != nil, !settings.isHDREditing, !autoExposing, !exporting, geometryDraft == nil else { return }
         let snapshot = settings, revision = editRevision
         autoExposing = true
         queue.async { [weak self] in
@@ -515,10 +566,10 @@ extension EditorModel {
         sizePicker.frame = NSRect(x: 0, y: 0, width: 360, height: 110)
         panel.accessoryView = sizePicker
         guard panel.runModal() == .OK, let output = panel.url else { return }
-        export(to: output)
+        export(to: output,format:format)
     }
 
-    func export(to output: URL) {
+    func export(to output: URL,format: ExportFormat? = nil) {
         guard canExport, let file else { return }
         exporting = true
         let settings = settings, lut = settings.masterRecipe?.lutURL() ?? selectedFilm?.url, longEdge = exportLongEdge
@@ -528,7 +579,7 @@ extension EditorModel {
             do {
                 if self.engine == nil { self.engine = try RenderEngine() }
                 _ = try self.engine!.render(file, settings: settings, lut: lut, edge: nil, output: output,
-                                             interactive: false, exportLongEdge: longEdge)
+                                             interactive: false, exportLongEdge: longEdge,exportFormat:format)
                 DispatchQueue.main.async {
                     self.exporting = false; self.statusState = .exported(output.lastPathComponent)
                     self.onUsage(.exportCompleted)

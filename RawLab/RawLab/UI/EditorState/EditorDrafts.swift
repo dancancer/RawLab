@@ -18,17 +18,17 @@ extension ContentView {
     var draftPreviewSettings: RawSettings {
         var result = effectivePreviewSettings
         if geometrySelected {
-            result.geometry.cropX = 0
-            result.geometry.cropY = 0
-            result.geometry.cropWidth = 1
-            result.geometry.cropHeight = 1
+            result.geometrySettings.cropX = 0
+            result.geometrySettings.cropY = 0
+            result.geometrySettings.cropWidth = 1
+            result.geometrySettings.cropHeight = 1
         }
         return result
     }
 
     var geometryDraftBinding: Binding<GeometrySettings> {
         let sourceRevision = viewModel.sourceRevision
-        return Binding(get: { geometryDraft ?? settings.geometry }, set: { value in
+        return Binding(get: { geometryDraft ?? settings.geometrySettings }, set: { value in
             guard !editorBusy, geometrySelected, viewModel.sourceRevision == sourceRevision else { return }
             geometryDraft = value
         })
@@ -94,7 +94,7 @@ extension ContentView {
         else { selectedAdjustment = nil }
         if geometrySelected {
             geometryAspectPreset = .free; geometryLockedRatio = nil; geometryAspectSwapped = false
-            geometryDraft = settings.geometry
+            geometryDraft = settings.geometrySettings
         }
         if lensSelected { lensDraft = settings }
         if leavingDraft && !geometrySelected && !lensSelected {
@@ -193,7 +193,7 @@ extension ContentView {
               let candidate = viewModel.commitReset(prepared, settings: settings, revision: settingsRevision,
                                                    draft: editorDraftSnapshot) else { return false }
         if prepared.updatesDraft {
-            geometryDraft = candidate.settings.geometry
+            geometryDraft = candidate.settings.geometrySettings
             lensDraft = candidate.settings
         } else {
             let parametersChanged = settings != candidate.settings
@@ -348,7 +348,7 @@ extension ContentView {
         resetDraftSuspended = false
         resetWaitingForReady = false
         guard sameSource else { return }
-        let freshGeometry = tool == .geometry ? settings.geometry : nil
+        let freshGeometry = tool == .geometry ? settings.geometrySettings : nil
         let freshLens = tool == .lens ? settings : nil
         if geometryDraft != freshGeometry || lensDraft != freshLens {
             // 确认后的 settings observer 已负责预览；取消时重进几何要恢复 uncropped 画面。

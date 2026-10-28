@@ -16,6 +16,23 @@ struct Sony2FujiProcessor {
     }
 
     private let previewSession = PreviewSession()
+    private let hdrSources=HDRSourceCache.shared
+
+    func processHDR(url: URL,settings: HDRSettings,previewLongEdge: Int?,exportLongEdge: Int? = nil) throws -> HDRImage {
+        guard settings.mode == .hdr,settings.isValid else { throw HDRRequestError.invalidSettings }
+        guard gpuMode != SONY2FUJI_GPU_FORCE else {
+            throw HDRNativeError(status:SONY2FUJI_STATUS_UNSUPPORTED,reason:UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU),field:UInt32(SONY2FUJI_HDR_FIELD_SESSION))
+        }
+        return try withRawSession(reuse:false,inputType:SONY2FUJI_INPUT_DISPLAY_BUFFER) { session in
+            guard let info=try HDRSourceInfo.probe(url) else { throw HDRSettings.ModeError.unsupportedSource }
+            let source=try previewLongEdge.map { try hdrSources.preview(url,info:info,longEdge:$0) } ??
+                HDRImage.decode(url,info:info,intent:SONY2FUJI_INTENT_FINAL)
+            if settings.isIdentity && exportLongEdge==nil { return source }
+            return try source.rendered(session:session,settings:settings,
+                intent:previewLongEdge==nil ? SONY2FUJI_INTENT_FINAL : SONY2FUJI_INTENT_PREVIEW,
+                longEdge:previewLongEdge ?? exportLongEdge)
+        }
+    }
 
     private final class PreviewSession {
         private let lock = NSLock()
@@ -426,6 +443,14 @@ struct Sony2FujiProcessor {
     }
 
     func loadRasterBuffer(url: URL, applyingOrientation: Bool = true) throws -> ProcessResult {
+        if let info=try HDRSourceInfo.probe(url) {
+            let pair=try HDRImage.decode(url,info:info,intent:SONY2FUJI_INTENT_FINAL)
+            let image=try HDRPresentation(pair).sdrImage
+            guard let bytes=image.dataProvider?.data else { throw HDRDisplayFailure.invalidBuffer }
+            return ProcessResult(buffer:Buffer(data:bytes as Data,width:image.width,height:image.height,
+                stride:image.bytesPerRow,pixelFormat:SONY2FUJI_PIXEL_RGBA8,semantic:.display,
+                nativeSize:CGSize(width:image.width,height:image.height)),orientation:.up,rawWhiteBalance:nil)
+        }
         var native = sony2fuji_buffer()
         defer { sony2fuji_release_buffer(&native) }
         let status = url.path.withCString { path in

@@ -19,6 +19,30 @@ except ImportError:  # pragma: no cover - exercised by environments without the 
 
 
 class EditRecipeSchema(unittest.TestCase):
+    def test_v6_hdr_schema_and_strict_groups(self):
+        schema=json.loads((ROOT / "docs/edit-json-v6.schema.json").read_text())
+        document=json.loads((ROOT / "examples/edit-recipes/hdr-v6.json").read_text())
+        capabilities=subprocess.run([str(CLI),"--capabilities","--json"],capture_output=True,text=True,check=True)
+        if 6 not in json.loads(capabilities.stdout)["result"]["recipe_versions"]:
+            self.skipTest("CLI runtime has no HDR v6 capability")
+        normalized=self.normalize(document)
+        if jsonschema:
+            jsonschema.Draft202012Validator.check_schema(schema)
+            jsonschema.Draft202012Validator(schema).validate(document)
+            jsonschema.Draft202012Validator(schema).validate(normalized)
+        for group in ("look","hsl","detail","effects","denoise","lens_correction","color_grading"):
+            invalid=copy.deepcopy(document)
+            invalid["edits"][group]={}
+            self.reject(invalid,"edits."+group)
+            if jsonschema:
+                self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(invalid))
+        for field,value in (("relative_temperature",1999),("relative_tint",151),("temperature_kelvin",6500)):
+            invalid=copy.deepcopy(document)
+            invalid["edits"]["white_balance"][field]=value
+            self.reject(invalid,field)
+            if jsonschema:
+                self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(invalid))
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="rawlab-edit-v4-schema-")
         self.addCleanup(temporary.cleanup)

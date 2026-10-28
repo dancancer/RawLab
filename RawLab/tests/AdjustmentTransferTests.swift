@@ -328,7 +328,8 @@ import Foundation
         let standard = try IOSAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
         check(!standard.fields.contains(.cropWidth), "Default copy excludes geometry")
         let all = try IOSAdjustmentTransfer.capture(scope: .all, snapshot: state(source), context: raw)
-        check(all.fields == Set(AdjustmentTransferField.allCases), "All copy includes every contract field")
+        check(all.payloadVersion == 1 && all.fields == AdjustmentTransferField.legacyFields,
+              "Version-1 all includes exactly the legacy contract fields")
         let modified = try IOSAdjustmentTransfer.capture(scope: .modified, snapshot: state(source), context: raw)
         check(modified.fields == [.exposure, .contrast, .hslHueRed], "Modified uses logical defaults rather than history")
         var target = RawSettings.default; target.processing = .legacy; target.sharpening = 0.47; target.lutID = "PROVIA"
