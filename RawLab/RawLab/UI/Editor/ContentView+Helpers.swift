@@ -320,9 +320,9 @@ extension ContentView {
             }
         case .success(let sources):
             viewModel.importLooks(from: sources, compatibilityPrompt: { source, draft, finish in
-                pendingLookCompatibility = (source, draft, finish)
+                lookCompatibilityCompletion = finish
                 confirmedLookCompatibility = nil
-                showingLookCompatibility = true
+                pendingLookCompatibility = .init(source: source, draft: draft)
             }) { report in
                 if case .select(let selectedID) = LookImportSelection.decision(previousID: settings.lutID,
                                                                                 imported: report.imported) {

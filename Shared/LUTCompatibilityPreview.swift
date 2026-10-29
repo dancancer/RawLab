@@ -102,7 +102,21 @@ final class LUTPreviewWorker {
             try LUTPreviewSource(url: lut).copyTo(lutURL)
             try source.copyTo(sourceURL)
             if displayInput {
-                guard sourceURL.path.withCString({ sony2fuji_load_display_image($0, &display) }) == SONY2FUJI_STATUS_OK else { throw LUTPreviewError.failed }
+                if let info = try HDRSourceInfo.probe(sourceURL) {
+                    // 向导只使用原片的 SDR 映射；先限制解码尺寸，转换后立即释放 HDR 双图。
+                    let pair = try HDRImage.decode(sourceURL, info: info, intent: SONY2FUJI_INTENT_PREVIEW, longEdge: 512)
+                    let image = try HDRPresentation.makeSDRImage(pair)
+                    guard let bytes = image.dataProvider?.data else { throw HDRDisplayFailure.invalidBuffer }
+                    let count = CFDataGetLength(bytes)
+                    guard count == image.width * image.height * 4, let data = malloc(count) else {
+                        throw HDRDisplayFailure.invalidBuffer
+                    }
+                    memcpy(data, CFDataGetBytePtr(bytes), count)
+                    display = sony2fuji_buffer(data: data, size_bytes: count, width: UInt32(image.width),
+                        height: UInt32(image.height), stride_bytes: UInt32(image.width * 4), pixel_format: SONY2FUJI_PIXEL_RGBA8)
+                } else {
+                    guard sourceURL.path.withCString({ sony2fuji_load_display_image($0, &display) }) == SONY2FUJI_STATUS_OK else { throw LUTPreviewError.failed }
+                }
             }
         } catch {
             sony2fuji_release_buffer(&display); sony2fuji_session_destroy(session); session = nil

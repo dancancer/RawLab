@@ -160,7 +160,7 @@ final class HDRPhotoUITests: XCTestCase {
         let originalValue=app.buttons["tool.exposure"].value as? String
         app.buttons["editor.privacy"].tap()
         let undoBefore=app.buttons["撤销"].isEnabled
-        app.buttons["照片处理设置"].tap()
+        app.buttons["照片处理设置"].coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
         let mode=app.switches["hdr.editMode"]
         XCTAssertTrue(mode.waitForExistence(timeout:10),"Photos import preserved the HDR original container")
         XCTAssertEqual(mode.value as? String,"1")
@@ -185,10 +185,10 @@ final class HDRPhotoUITests: XCTestCase {
         print("HDR exposure original=\(String(describing:originalValue)) edited=\(String(describing:edited))")
         app.buttons["editor.privacy"].tap()
         XCTAssertTrue(app.buttons["撤销"].isEnabled)
-        app.buttons["撤销"].tap()
+        app.buttons["撤销"].coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
         wait { app.buttons["tool.exposure"].value as? String == originalValue }
         XCTAssertFalse(app.buttons["editor.group.looks"].isEnabled,"Undo changed the HDR source default mode")
-        app.buttons["editor.privacy"].tap(); app.buttons["重做"].tap()
+        app.buttons["editor.privacy"].tap(); app.buttons["重做"].coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
         wait { app.buttons["tool.exposure"].value as? String == edited }
         app.buttons["editor.compare"].tap()
         capture("hdr-edited-comparison",app)
@@ -201,7 +201,10 @@ final class HDRPhotoUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         wait { app.frame.height>app.frame.width && app.buttons["editor.export"].isHittable }
         for action in ["保存当前照片","保存 SDR JPEG"] {
-            app.buttons["editor.export"].tap(); app.buttons[action].tap()
+            app.buttons["editor.export"].tap()
+            let item=app.buttons[action]
+            wait { item.isEnabled && item.isHittable }
+            item.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
             let confirm=app.buttons["editor.export.confirm"]
             XCTAssertTrue(confirm.waitForExistence(timeout:10))
             confirm.tap()
@@ -209,14 +212,91 @@ final class HDRPhotoUITests: XCTestCase {
             capture(action=="保存当前照片" ? "hdr-saved-to-photos" : "sdr-saved-to-photos",app)
             app.alerts.buttons["关闭"].tap()
         }
-        app.buttons["editor.privacy"].tap(); app.buttons["照片处理设置"].tap()
+        app.buttons["editor.privacy"].tap(); app.buttons["照片处理设置"].coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
         XCTAssertTrue(app.switches["hdr.editMode"].isEnabled)
         app.switches["hdr.editMode"].coordinate(withNormalizedOffset:CGVector(dx:0.95,dy:0.5)).tap()
         wait { app.switches["hdr.editMode"].value as? String=="0" }
         app.buttons["关闭"].tap()
         XCTAssertTrue(app.buttons["editor.group.looks"].isEnabled,"SDR mode did not restore existing tools")
-        app.buttons["editor.privacy"].tap(); app.buttons["撤销"].tap()
+        app.buttons["editor.privacy"].tap(); app.buttons["撤销"].coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
         wait { !app.buttons["editor.group.looks"].isEnabled }
+    }
+    func testSDRHDRSourceLUTCompatibility() throws {
+        guard ProcessInfo.processInfo.environment["RAWLAB_HDR_UI"]=="1" else { throw XCTSkip("Dedicated HDR simulator only") }
+        continueAfterFailure=false
+        XCUIDevice.shared.orientation = .portrait
+        let app=XCUIApplication(); app.launchArguments=["-RawLab.language","zh-Hans"]; app.launch()
+        var foundHDR=false
+        for index in 0..<3 {
+            let importer=app.buttons["editor.import.empty"].exists ? app.buttons["editor.import.empty"] : app.buttons["editor.import"]
+            XCTAssertTrue(importer.waitForExistence(timeout:15)); importer.tap()
+            let photos=app.images.matching(identifier:"PXGGridLayout-Info")
+            XCTAssertTrue(photos.firstMatch.waitForExistence(timeout:20)); XCTAssertGreaterThan(photos.count,index)
+            photos.element(boundBy:index).coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
+            wait {
+                let springboard=XCUIApplication(bundleIdentifier:"com.apple.springboard")
+                let allow=springboard.buttons.matching(NSPredicate(format:"label IN %@",["允许完全访问","允许访问所有照片","Allow Full Access"])).firstMatch
+                if allow.exists { allow.tap() }
+                return app.buttons["editor.compare"].isEnabled
+            }
+            let close=app.buttons["关闭"]
+            for _ in 0..<2 where !close.exists {
+                if !app.buttons["照片处理设置"].exists { app.buttons["editor.privacy"].tap() }
+                let processing=app.buttons["照片处理设置"]
+                XCTAssertTrue(processing.waitForExistence(timeout:5),app.debugDescription)
+                processing.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
+                _ = close.waitForExistence(timeout:5)
+            }
+            XCTAssertTrue(close.exists,app.debugDescription)
+            let mode=app.switches["hdr.editMode"]
+            if mode.waitForExistence(timeout:3) {
+                if mode.value as? String=="1" { mode.coordinate(withNormalizedOffset:CGVector(dx:0.95,dy:0.5)).tap() }
+                wait { mode.value as? String=="0" }
+                app.buttons["关闭"].tap(); foundHDR=true; break
+            }
+            app.buttons["关闭"].tap()
+        }
+        XCTAssertTrue(foundHDR,"No HDR original among the task-only library's recent photos")
+        wait { app.buttons["editor.group.looks"].isEnabled }
+        app.buttons["editor.privacy"].tap()
+        let importLook=app.buttons["editor.import.look"]
+        wait { importLook.isEnabled }; importLook.tap()
+        let file=app.cells.matching(NSPredicate(format:"identifier BEGINSWITH %@ OR label CONTAINS %@",
+            "HDRCompatibilityUnknown,","HDRCompatibilityUnknown")).firstMatch
+        let folder=app.cells.matching(NSPredicate(format:"identifier == %@ OR label BEGINSWITH %@","RawLab","RawLab")).firstMatch
+        // Files 会记住上次目录，先回到位置列表，再按固定路径进入测试文件。
+        let browse=app.tabBars.buttons.matching(NSPredicate(format:"label IN %@",["Browse","浏览"])).firstMatch
+        XCTAssertTrue(browse.waitForExistence(timeout:10),app.debugDescription); browse.tap()
+        let local=app.cells.matching(NSPredicate(format:"label CONTAINS[c] %@ OR label CONTAINS[c] %@","iPhone","iPad")).firstMatch
+        if !local.waitForExistence(timeout:3) { browse.tap() }
+        XCTAssertTrue(local.waitForExistence(timeout:10),app.debugDescription); local.tap()
+        XCTAssertTrue(folder.waitForExistence(timeout:10),app.debugDescription); folder.tap()
+        XCTAssertTrue(file.waitForExistence(timeout:15),app.debugDescription); file.tap()
+        let open=app.buttons.matching(NSPredicate(format:"label IN %@",["Open","打开"])).firstMatch
+        if open.waitForExistence(timeout:3) { open.tap() }
+        let confirm=app.buttons["look.compatibility.confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout:20),app.debugDescription)
+        XCTAssertFalse(confirm.isEnabled,"Untagged LUT must require an explicit candidate selection")
+        let first=app.buttons["look.compatibility.candidate-1"], second=app.buttons["look.compatibility.candidate-2"]
+        wait { first.isEnabled && second.isEnabled }
+        first.tap(); wait { first.isSelected && confirm.isEnabled }
+        capture("hdr-sdr-lut-first-candidate",app)
+        second.tap(); wait { second.isSelected && !first.isSelected && confirm.isEnabled }
+        XCTAssertTrue(app.staticTexts["未应用 LUT"].exists && app.staticTexts["所选方案"].exists,
+                      "Current HDR original did not populate both preview panes")
+        for _ in 0..<3 where !app.staticTexts["所选方案"].isHittable { app.swipeUp() }
+        capture("hdr-sdr-lut-second-candidate",app)
+        confirm.tap()
+        wait { !confirm.exists && app.buttons["editor.group.looks"].isEnabled }
+        let film=app.buttons["tool.film"]
+        if !film.exists { app.buttons["editor.group.looks"].tap() }
+        XCTAssertTrue(film.waitForExistence(timeout:10),app.debugDescription)
+        if !film.isSelected { film.tap() }
+        let imported=app.buttons.matching(NSPredicate(format:"label BEGINSWITH %@","HDRCompatibilityUnknown")).firstMatch
+        XCTAssertTrue(imported.waitForExistence(timeout:15),app.debugDescription)
+        wait { imported.isSelected }
+        XCTAssertTrue(imported.label.contains("兼容导入"))
+        capture("hdr-sdr-lut-imported",app)
     }
     private func wait(_ predicate: @escaping () -> Bool) {
         let expectation=XCTNSPredicateExpectation(predicate:NSPredicate { _,_ in predicate() },object:nil)

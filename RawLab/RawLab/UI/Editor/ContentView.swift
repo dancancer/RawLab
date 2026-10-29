@@ -4,6 +4,12 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
+struct LookCompatibilityPresentation: Identifiable {
+    let id = UUID()
+    let source: URL
+    let draft: LUTCompatibility
+}
+
 struct ContentView: View {
     @Environment(\.locale) var localizationLocale
     @AppStorage(L10n.preferenceKey) var languagePreference = AppLanguage.system.rawValue
@@ -83,8 +89,8 @@ struct ContentView: View {
     @State var showingPhotoImporter = false
     @State var showingFileImporter = false
     @State var showingLookImporter = false
-    @State var showingLookCompatibility = false
-    @State var pendingLookCompatibility: (source: URL, draft: LUTCompatibility, finish: (LUTCompatibility?) -> Void)?
+    @State var pendingLookCompatibility: LookCompatibilityPresentation?
+    @State var lookCompatibilityCompletion: ((LUTCompatibility?) -> Void)?
     @State var confirmedLookCompatibility: LUTCompatibility?
     @State var renamingLUT: LUTOption?
     @State var renamedLUTName = ""
@@ -165,23 +171,21 @@ struct ContentView: View {
                       allowsMultipleSelection: true) { result in
             importLooks(result)
         }
-        .sheet(isPresented: $showingLookCompatibility, onDismiss: {
-            let pending = pendingLookCompatibility
+        .sheet(item: $pendingLookCompatibility, onDismiss: {
+            let completion = lookCompatibilityCompletion
             let confirmed = confirmedLookCompatibility
-            pendingLookCompatibility = nil
+            lookCompatibilityCompletion = nil
             confirmedLookCompatibility = nil
-            pending?.finish(confirmed)
-        }) {
-            if let pending = pendingLookCompatibility {
-                IOSLUTCompatibilityView(source: pending.source, draft: pending.draft,
-                    initialPhoto: viewModel.sourceFile.map { file in
-                        LUTPreviewSource(name: file.displayName) { destination in
-                            try file.withReadAccess { try FileManager.default.copyItem(at: $0, to: destination) }
-                        }
-                    }) { result in
-                    confirmedLookCompatibility = result
-                    showingLookCompatibility = false
-                }
+            completion?(confirmed)
+        }) { pending in
+            IOSLUTCompatibilityView(source: pending.source, draft: pending.draft,
+                initialPhoto: viewModel.sourceFile.map { file in
+                    LUTPreviewSource(name: file.displayName) { destination in
+                        try file.withReadAccess { try FileManager.default.copyItem(at: $0, to: destination) }
+                    }
+                }) { result in
+                confirmedLookCompatibility = result
+                pendingLookCompatibility = nil
             }
         }
         .alert(L10n.text("重命名外观"), isPresented: $showingLookRename) {
