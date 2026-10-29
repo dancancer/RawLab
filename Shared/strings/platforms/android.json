@@ -4089,6 +4089,482 @@
       "formats": [],
       "file": "editor_strings.xml",
       "types": []
+    },
+    "lut_appearance_unverified": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "效果未验证",
+      "types": []
+    },
+    "lut_conflicting_color": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "LUT 颜色说明无效或互相冲突，未导入。请核对来源。",
+      "types": []
+    },
+    "lut_missing_color": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "LUT 缺少输入或输出颜色信息，未导入。请提供作者的颜色说明。",
+      "types": []
+    },
+    "lut_missing_reference": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "LUT 缺少颜色配置的参考依据，未导入。请提供来源和使用条件。",
+      "types": []
+    },
+    "lut_unsupported_color": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "LUT 的颜色空间或基础风格暂不支持，未导入。不会自动替换为中性显影。",
+      "types": []
+    },
+    "lut_compatibility_title": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "兼容导入",
+      "types": []
+    },
+    "lut_compatibility_confirm": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "确认兼容导入",
+      "types": []
+    },
+    "lut_compatibility_notice": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "兼容导入 · 未验证",
+      "types": []
+    },
+    "lut_approximate_badge": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "近似基础 · 未验证",
+      "types": []
+    },
+    "lut_compatibility_description": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。",
+      "types": []
+    },
+    "lut_compatibility_hints": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "已根据文件中的颜色线索预填部分配置，请核对。",
+      "types": []
+    },
+    "lut_compatibility_fixed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "文件已有完整颜色参数，仅缺少参考依据；这些参数将原样保留。",
+      "types": []
+    },
+    "lut_input_color": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "输入颜色",
+      "types": []
+    },
+    "lut_output_color": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "输出颜色",
+      "types": []
+    },
+    "lut_input_range": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "输入范围",
+      "types": []
+    },
+    "lut_output_range": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "输出范围",
+      "types": []
+    },
+    "lut_input_reference": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "输入参考",
+      "types": []
+    },
+    "lut_output_reference": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "输出参考",
+      "types": []
+    },
+    "lut_interpolation": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "插值方式",
+      "types": []
+    },
+    "lut_trilinear": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "三线性",
+      "types": []
+    },
+    "lut_tetrahedral": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "四面体",
+      "types": []
+    },
+    "lut_base_image": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "基础图像",
+      "types": []
+    },
+    "lut_base_neutral": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "RawLab 中性显影（近似）",
+      "types": []
+    },
+    "lut_base_display": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "已显影的照片（JPEG 等）",
+      "types": []
+    },
+    "lut_approximate_notice": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "使用 RawLab 中性显影作为基础，不代表还原了相机的标准风格。",
+      "types": []
+    },
+    "lut_display_notice": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "仅用于已显影且基础风格匹配的照片，不能直接用于 RAW。",
+      "types": []
+    },
+    "lut_extreme_values": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "文件含极端数值，我理解可能出现截断或异常颜色。",
+      "types": []
+    },
+    "lut_choose": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "请选择",
+      "types": []
+    },
+    "lut_range_full": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "完整范围",
+      "types": []
+    },
+    "lut_range_legal": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "视频范围（10 位 64–940）",
+      "types": []
+    },
+    "lut_reference_scene": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "场景线性",
+      "types": []
+    },
+    "lut_reference_display": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "显示图像",
+      "types": []
+    },
+    "lut_linear_srgb": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "线性 sRGB",
+      "types": []
+    },
+    "lut_compatibility_changed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "LUT 文件已变化或兼容配置无效，请重新导入并确认。",
+      "types": []
+    },
+    "lut_guided_description": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "先比较候选效果，再选择导入。候选包含推测，不能证明已还原作者效果。",
+      "types": []
+    },
+    "lut_preview_without": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "未应用 LUT",
+      "types": []
+    },
+    "lut_reference_image": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "参考图",
+      "types": []
+    },
+    "lut_preview_selected": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "所选方案",
+      "types": []
+    },
+    "lut_advanced_settings": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "高级颜色设置",
+      "types": []
+    },
+    "lut_preview_choose_photo": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "选择预览照片",
+      "types": []
+    },
+    "lut_preview_change_photo": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "更换预览照片",
+      "types": []
+    },
+    "lut_preview_choose_help": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "选择一张照片即可比较方案；也可以展开高级设置手动配置。",
+      "types": []
+    },
+    "lut_candidates": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "候选效果",
+      "types": []
+    },
+    "lut_preview_loading": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "正在生成预览…",
+      "types": []
+    },
+    "lut_candidate_order": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "排列顺序不代表准确度。未识别的颜色空间、范围和基础图像仍属于假设。",
+      "types": []
+    },
+    "lut_candidates_less": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "收起其他方案",
+      "types": []
+    },
+    "lut_candidates_more": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "查看其他方案（包括 Log 输入）",
+      "types": []
+    },
+    "lut_candidates_none": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "没有与此照片类型匹配的候选，请更换照片或检查高级设置。",
+      "types": []
+    },
+    "lut_candidate_option": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "方案 {0}",
+      "types": [
+        "s"
+      ]
+    },
+    "lut_preview_placeholder": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "选择照片和方案后显示预览",
+      "types": []
+    },
+    "lut_reference_section": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "对照参考图（可选）",
+      "types": []
+    },
+    "lut_reference_choose": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "选择参考图",
+      "types": []
+    },
+    "lut_reference_help": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "可先目视比较。计算差异前，请核对以下条件；结果只描述此预览与参考的接近程度，不认证作者效果。",
+      "types": []
+    },
+    "lut_reference_same_source": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "参考图来自同一张原图",
+      "types": []
+    },
+    "lut_reference_same_geometry": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "方向、裁切和构图一致",
+      "types": []
+    },
+    "lut_reference_same_processing": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "基础显影、白平衡、曝光和 LUT 强度与上述预览条件一致",
+      "types": []
+    },
+    "lut_reference_known_srgb": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "参考输出为 sRGB，或已按正确配置转换为 sRGB",
+      "types": []
+    },
+    "lut_reference_notes": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "参考来源、软件版本及处理条件",
+      "types": []
+    },
+    "lut_reference_compare": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "计算与参考的差异",
+      "types": []
+    },
+    "lut_reference_result": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s",
+        "%2$s"
+      ],
+      "source": "平均差异 {0}/255 · 最大差异 {1}/255",
+      "types": [
+        "s",
+        "s"
+      ]
+    },
+    "lut_reference_result_help": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "按已确认条件比较缩小后的 sRGB 像素；差异越小表示越接近此参考，效果仍未验证。",
+      "types": []
+    },
+    "lut_preview_failed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "无法生成预览，请检查照片、LUT 和颜色配置。",
+      "types": []
+    },
+    "lut_preview_unsupported_source": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "此配置与预览照片类型不匹配，请更换照片或配置。",
+      "types": []
+    },
+    "lut_reference_conditions_required": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "请先确认同源图片、处理条件和参考来源。",
+      "types": []
+    },
+    "lut_reference_dimensions": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "参考图与预览的比例或尺寸不一致，仅可目视比较。",
+      "types": []
+    },
+    "lut_basis_file": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "文件已有参数 · 效果未验证",
+      "types": []
+    },
+    "lut_basis_partial": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "依据部分文件线索 · 仍有假设",
+      "types": []
+    },
+    "lut_basis_assumed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "试用方案 · 无颜色依据",
+      "types": []
+    },
+    "lut_preview_conditions_display": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "预览条件：已显影照片，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。",
+      "types": []
+    },
+    "lut_preview_conditions_raw": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "预览条件：C5 显影，相机白平衡，场景曝光归一化，曝光 0，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。",
+      "types": []
+    },
+    "lut_candidate_assumptions": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "仍需假设：{0}",
+      "types": [
+        "s"
+      ]
+    },
+    "lut_ranges_interpolation": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "范围与插值",
+      "types": []
+    },
+    "lut_reference_boundary": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s",
+        "%2$s"
+      ],
+      "source": "通道边界像素：方案 {0}% · 参考 {1}%",
+      "types": [
+        "s",
+        "s"
+      ]
+    },
+    "lut_reference_boundary_help": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "边界比例仅供观察，不能据此判定配置或风格错误。",
+      "types": []
+    },
+    "lut_choose_library_photo": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "从照片库选择",
+      "types": []
+    },
+    "lut_use_library_photo": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "使用此照片",
+      "types": []
     }
   },
   "overrides": {
@@ -4366,14 +4842,6 @@
       "fr": "Échec du traitement. Réessayez ou choisissez une autre photo.",
       "ja": "処理に失敗しました。もう一度試すか、別の写真を選択してください。",
       "zh-Hans": "处理失败，请重试或选择其他照片。"
-    },
-    "外观名称": {
-      "de": "Look-Name",
-      "en": "Look name",
-      "es": "Nombre del look",
-      "fr": "Nom du look",
-      "ja": "ルック名",
-      "zh-Hans": "外观名称"
     },
     "外观已导入": {
       "de": "Look importiert",

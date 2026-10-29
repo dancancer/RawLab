@@ -76,7 +76,7 @@ struct BatchSelectionView: View {
             set: { model.adjustmentSheet = $0 })) { kind in
             AdjustmentTransferView(model: model, kind: kind)
         }
-        .onChange(of:model.settings.isHDREditing) { _, isHDR in
+        .onChange(of:model.settings.isHDREditing, initial:true) { _, isHDR in
             fields=isHDR ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common
         }
     }

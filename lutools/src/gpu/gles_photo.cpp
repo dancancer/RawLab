@@ -253,7 +253,7 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
     const RGB& relativeWB, uint32_t width, uint32_t height, uint64_t revision, ImageData& output,
     const PhotoEffectsOptions& effects, int chromaDenoise, bool preserveSourceResolution, const HslOptions& hsl, const ToneControlsOptions& toneControls,
     const ColorGradingOptions& colorGrading, const ToneCurve& customCurve) {
-    if (lut && lut->inputTransfer() == LUTTransfer::SRGB) return false;
+    if (lut && (lut->requiresCPU() || lut->inputTransfer() == LUTTransfer::SRGB)) return false;
     if (input.width <= 0 || input.height <= 0 || width == 0 || height == 0 ||
         width > INT32_MAX || height > INT32_MAX || uint64_t(width) * height > INT32_MAX ||
         input.pixels.size() != size_t(input.width) * input.height ||

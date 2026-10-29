@@ -70,7 +70,11 @@ public partial class MainWindow
         currentEditRecord=saved;settings=saved.Edit?.Settings.Restore() ?? RenderEngine.PrepareInputSettings(file,new Adjustments());
         if(calibration!=null)settings.ResolveWhiteBalance(calibration);
         lut=saved.Edit is {} edit ? ResolveLook(edit) : null;
-        if(lut!=null && !films.Any(f=>StringComparer.OrdinalIgnoreCase.Equals(f.Path,lut))) {films.Add(new(Path.GetFileNameWithoutExtension(lut),lut,null));BuildFilms();}
+        if(lut!=null && !films.Any(f=>StringComparer.OrdinalIgnoreCase.Equals(f.Path,lut))) {
+            var managed=lookLibrary?.Looks.FirstOrDefault(look=>StringComparer.OrdinalIgnoreCase.Equals(look.Path,lut));
+            films.Add(new(managed?.Name ?? lookLibrary?.DisplayName(lut,Path.GetFileNameWithoutExtension(lut)) ?? Path.GetFileNameWithoutExtension(lut),lut,null,
+                AppearanceUnverified:managed?.AppearanceUnverified ?? false,CompatibilityMode:managed?.CompatibilityMode ?? 0));BuildFilms();
+        }
         ++editRevision;ResetAITask();RefreshControls();Schedule();
     }
     private bool PrepareAdjustmentCommand()

@@ -153,7 +153,7 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
     const RGB& wb, uint32_t width, uint32_t height, uint64_t revision, ImageData& output,
     const PhotoEffectsOptions& effects, int chromaDenoise, bool preserveSourceResolution, const HslOptions& hsl, const ToneControlsOptions& toneControls,
     const ColorGradingOptions& colorGrading, const ToneCurve& customCurve) {
-    if (lut && lut->inputTransfer() == LUTTransfer::SRGB) return false;
+    if (lut && (lut->requiresCPU() || lut->inputTransfer() == LUTTransfer::SRGB)) return false;
     if (input.width<=0 || input.height<=0 || width==0 || height==0 || width>65535 || height>65535 ||
         input.pixels.size()!=static_cast<size_t>(input.width)*input.height || !effects.valid() || !hsl.valid() || !toneControls.valid() || !colorGrading.valid() || !customCurve.gpuSupported() || (customCurve.custom() && request.tone_curve != 0) ||
         chromaDenoise < 0 || chromaDenoise > 2) return false;

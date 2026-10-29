@@ -72,7 +72,7 @@ enum PhotoImportFile {
     static let supportedContentTypes: [UTType] = [
         .rawImage, sigmaRaw, .jpeg, .png, .tiff, .heif, .heic
     ]
-    static let supportedLookContentTypes: [UTType] = ["cube", "rlook", "dcp"].compactMap {
+    static let supportedLookContentTypes: [UTType] = ["cube", "vlt", "rlook", "dcp"].compactMap {
         UTType(filenameExtension: $0)
     }
 

@@ -458,7 +458,7 @@ extension EditorModel {
         guard !lookLibraryBusy, !exporting, geometryDraft == nil else { return }
         let panel = NSOpenPanel()
         panel.title = L10n.text("导入外观")
-        panel.allowedContentTypes = ["cube", "rlook", "dcp"].map { UTType(filenameExtension: $0) ?? .data }
+        panel.allowedContentTypes = ["cube", "vlt", "rlook", "dcp"].map { UTType(filenameExtension: $0) ?? .data }
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
         if panel.runModal() == .OK {
@@ -472,13 +472,32 @@ extension EditorModel {
 
     func importLooks(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
+        let previewPhoto = file.map { LUTPreviewSource(url: $0) }
         changeLookLibrary { library in
             var selectedID: String?
             var imported = 0
             var failures: [String] = []
             for url in urls {
                 do {
-                    selectedID = try library.importLook(from: url).id
+                    let access = url.startAccessingSecurityScopedResource()
+                    defer { if access { url.stopAccessingSecurityScopedResource() } }
+                    do {
+                        selectedID = try library.importLook(from: url).id
+                    } catch {
+                        guard (error as? LookLibraryError)?.needsCompatibility == true else { throw error }
+                        guard let draft = try LUTCompatibility.inspect(url) else { throw error }
+                        let completion = DispatchSemaphore(value: 0)
+                        var confirmed: LUTCompatibility?
+                        DispatchQueue.main.async {
+                            LUTCompatibilityDialog.present(source: url, draft: draft, photo: previewPhoto) { value in
+                                confirmed = value
+                                completion.signal()
+                            }
+                        }
+                        completion.wait()
+                        guard let confirmed else { continue }
+                        selectedID = try library.importLook(from: url, compatibility: confirmed).id
+                    }
                     imported += 1
                 } catch {
                     failures.append(L10n.format("%@：%@", url.lastPathComponent, error.localizedDescription))
@@ -530,7 +549,7 @@ extension EditorModel {
         queue.async { [weak self] in
             do {
                 let change = try operation(library)
-                let updated = library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id) }
+                let updated = library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id, colorNotice: $0.colorNotice, isCompatibility: $0.isCompatibility) }
                 DispatchQueue.main.async {
                     guard let self else { return }
                     self.films = self.films.filter { $0.managedID == nil } + updated

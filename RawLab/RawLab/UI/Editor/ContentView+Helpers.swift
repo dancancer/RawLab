@@ -319,7 +319,11 @@ extension ContentView {
                 viewModel.statusMessage = error.localizedDescription
             }
         case .success(let sources):
-            viewModel.importLooks(from: sources) { report in
+            viewModel.importLooks(from: sources, compatibilityPrompt: { source, draft, finish in
+                pendingLookCompatibility = (source, draft, finish)
+                confirmedLookCompatibility = nil
+                showingLookCompatibility = true
+            }) { report in
                 if case .select(let selectedID) = LookImportSelection.decision(previousID: settings.lutID,
                                                                                 imported: report.imported) {
                     var updated = settings

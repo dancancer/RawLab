@@ -3,6 +3,8 @@ import Foundation
 struct LUTOption: Identifiable, Hashable {
     let id: String
     let name: String
+    var colorNotice: String? = nil
+    var isCompatibility = false
 }
 
 struct LUTReference {
@@ -48,13 +50,14 @@ extension RawEditorViewModel {
         }
     }
 
-    func importLooks(from sources: [URL], completion: @escaping (LookImportBatchResult) -> Void) {
+    func importLooks(from sources: [URL], compatibilityPrompt: LookImportCoordinator.CompatibilityPrompt? = nil,
+                     completion: @escaping (LookImportBatchResult) -> Void) {
         guard !sources.isEmpty else {
             completion(LookImportBatchResult(imported: [], failures: []))
             return
         }
         isImportingLooks = true
-        lookImportCoordinator.importLooks(from: sources) { [weak self] result in
+        lookImportCoordinator.importLooks(from: sources, compatibilityPrompt: compatibilityPrompt) { [weak self] result in
             guard let self else { return }
             self.resultDelivery {
                 let custom = self.customLUTs(from: result.imported)
@@ -74,6 +77,26 @@ extension RawEditorViewModel {
         }
         if lutID.hasPrefix("recipe-lut:") { return MasterRecipe.recipe(for: String(lutID.dropFirst("recipe-lut:".count)))?.lutURL() }
         return lutMap[lutID]?.sourceURL
+    }
+
+    func renameLook(id: String, name: String) {
+        guard !isImportingLooks, lutMap[id]?.isCustom == true else { return }
+        isImportingLooks = true
+        lookImportCoordinator.rename(id: id, name: name) { [weak self] result in
+            guard let self else { return }
+            self.resultDelivery {
+                self.isImportingLooks = false
+                switch result {
+                case .success(let look):
+                    self.availableLUTs = self.availableLUTs.map { option in
+                        option.id == id ? LUTOption(id: id, name: look.record.name, colorNotice: look.record.colorNotice,
+                                                  isCompatibility: look.record.isCompatibility) : option
+                    }
+                    self.lutMap[id] = LUTReference(id: id, name: look.record.name, sourceURL: look.url, isCustom: true)
+                case .failure(let error): self.statusMessage = error.localizedDescription
+                }
+            }
+        }
     }
 
     func includeIndependentRecipeLook(_ settings: RawSettings) {
@@ -129,7 +152,7 @@ extension RawEditorViewModel {
         for managed in looks {
             let id = managed.record.id
             let name = managed.record.name
-            options.append(LUTOption(id: id, name: name))
+            options.append(LUTOption(id: id, name: name, colorNotice: managed.record.colorNotice, isCompatibility: managed.record.isCompatibility))
             map[id] = LUTReference(id: id, name: name, sourceURL: managed.url, isCustom: true)
         }
         return (options, map)

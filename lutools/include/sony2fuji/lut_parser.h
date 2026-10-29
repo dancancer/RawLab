@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sony2fuji/common.h"
+#include "sony2fuji/lut_contract.h"
 #include <string>
 #include <vector>
 #include <memory>
@@ -25,6 +26,7 @@ public:
      * @return 错误码
      */
     ErrorCode loadFromFile(const std::string& filepath);
+    ErrorCode loadFromData(const std::string& bytes, bool vlt = false);
 
     /**
      * @brief 获取 LUT 大小 (每个维度的采样点数)
@@ -38,7 +40,13 @@ public:
     const std::string& getTitle() const { return title_; }
     const RGB& domainMin() const { return domainMin_; }
     const RGB& domainMax() const { return domainMax_; }
-    bool isPhotoLUT() const { return inputTransfer_ != LUTTransfer::Unknown; }
+    bool isPhotoLUT() const { return contractState_ == LUTContractState::Declared || contractState_ == LUTContractState::Legacy ||
+        contractState_ == LUTContractState::Compatibility || contractState_ == LUTContractState::ApproximateBase; }
+    LUTContractState contractState() const { return contractState_; }
+    bool hasColorContract() const { return explicitContract_; }
+    const LUTColorContract& colorContract() const { return colorContract_; }
+    bool isVLT() const { return vlt_; }
+    bool requiresCPU() const { return explicitContract_ || vlt_; }
     LUTTransfer inputTransfer() const { return inputTransfer_; }
     LUTTransfer outputTransfer() const { return outputTransfer_; }
 
@@ -58,6 +66,7 @@ public:
 
 private:
     friend class LUTApplicator;
+    friend class LUTCompatibilityAccess;
     int size_;                  // LUT 大小
     std::vector<RGB> data_;     // LUT 数据 (size^3 个元素)
     std::string title_;         // LUT 标题
@@ -66,6 +75,10 @@ private:
     RGB domainMax_{1, 1, 1};
     LUTTransfer inputTransfer_ = LUTTransfer::Unknown;
     LUTTransfer outputTransfer_ = LUTTransfer::Unknown;
+    LUTColorContract colorContract_;
+    LUTContractState contractState_ = LUTContractState::MissingColor;
+    bool explicitContract_ = false;
+    bool vlt_ = false;
 
     // 解析 .cube 文件
     ErrorCode parseCubeFile(const std::string& filepath);

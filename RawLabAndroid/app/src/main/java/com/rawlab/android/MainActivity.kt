@@ -209,6 +209,9 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             onApplyDraft = model::applyDraft, onDiscardDraft = model::discardDraft,
             onGeometryRatio = model::chooseGeometryRatio, onGeometryLock = model::toggleGeometryLock,
             onGeometrySwap = model::swapGeometryRatio, onGeometryGrid = model::toggleGeometryGrid)
+        if (!state.lookCompatibilityPreparing) state.pendingLookCompatibility.firstOrNull()?.let { pending ->
+            com.rawlab.android.editor.ui.LUTCompatibilityDialog(pending, state.photo, model.storage, model::resolveLookCompatibility)
+        }
         }
         }
     }

@@ -9,7 +9,8 @@ namespace sony2fuji {
 /**
  * @brief LUT 应用器
  *
- * 使用三线性插值将 3D LUT 应用到图像数据
+ * 仅对已处于 LUT 输入编码的数值采样（域映射及三线性/四面体插值）。
+ * 不执行照片颜色转换，也不认证颜色依据；照片应用必须走 PHOTO API 的校验与渲染。
  */
 class LUTApplicator {
 public:

@@ -32,6 +32,7 @@ swiftc "${TRANSFER_SOURCES[@]}" "$ROOT/Shared/Localization.swift" -swift-version
     "$ROOT/RawLabMac/Sources/Editor/Storage/EditPersistence.swift" "$ROOT/RawLabMac/Sources/Export/BatchExport.swift" \
     "$ROOT/RawLabMac/Sources/Export/BatchExportModel.swift" "$ROOT/RawLabMac/Sources/Library/FileLibrary.swift" \
     "$ROOT/Shared/LookLibrary.swift" "$ROOT/Shared/BatchSelectionSession.swift" "$ROOT/RawLabMac/Sources/Export/BatchSelection.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+BatchSelection.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+HDR.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Geometry.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Workflow.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Rendering.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+HSLTarget.swift" \
+    "$ROOT/RawLabMac/Sources/Library/FileBrowser.swift" "$ROOT/RawLabMac/Sources/Looks/LUTCompatibilityDialog.swift" "$ROOT/Shared/LUTCompatibilityView.swift" "$ROOT/Shared/LUTCompatibilityPreview.swift" \
     "$ROOT/RawLabMac/Sources/Export/ExportSizePicker.swift" \
     "$ROOT/Shared/DCPCompiler.swift" "$ROOT/RawLabMac/tests/DCPTestFixtures.swift" \
     "$ROOT/RawLabMac/tests/LookImportModelTests.swift" "${CORE_LINK[@]}" \

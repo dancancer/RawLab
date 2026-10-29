@@ -242,7 +242,8 @@ data class Film(val id: String, val name: String, val file: String?, val artwork
     }
 }
 
-data class LookChoice(val id: String, val name: String, val managed: Boolean, val available: Boolean = true) {
+data class LookChoice(val id: String, val name: String, val managed: Boolean, val available: Boolean = true,
+                      val appearanceUnverified: Boolean = false, val compatibilityMode: Int = 0) {
     companion object {
         val builtIns = Film.all.map { Film(it.id, it.name, it.file).toChoice() }
 

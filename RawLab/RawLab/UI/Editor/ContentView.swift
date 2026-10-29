@@ -83,6 +83,12 @@ struct ContentView: View {
     @State var showingPhotoImporter = false
     @State var showingFileImporter = false
     @State var showingLookImporter = false
+    @State var showingLookCompatibility = false
+    @State var pendingLookCompatibility: (source: URL, draft: LUTCompatibility, finish: (LUTCompatibility?) -> Void)?
+    @State var confirmedLookCompatibility: LUTCompatibility?
+    @State var renamingLUT: LUTOption?
+    @State var renamedLUTName = ""
+    @State var showingLookRename = false
     @State private var checkedBatchRecovery = false
     @State var showingBatchSelection = false
     @State var queuedCollectionEdit: String?
@@ -158,6 +164,34 @@ struct ContentView: View {
                       allowedContentTypes: PhotoImportFile.supportedLookContentTypes,
                       allowsMultipleSelection: true) { result in
             importLooks(result)
+        }
+        .sheet(isPresented: $showingLookCompatibility, onDismiss: {
+            let pending = pendingLookCompatibility
+            let confirmed = confirmedLookCompatibility
+            pendingLookCompatibility = nil
+            confirmedLookCompatibility = nil
+            pending?.finish(confirmed)
+        }) {
+            if let pending = pendingLookCompatibility {
+                IOSLUTCompatibilityView(source: pending.source, draft: pending.draft,
+                    initialPhoto: viewModel.sourceFile.map { file in
+                        LUTPreviewSource(name: file.displayName) { destination in
+                            try file.withReadAccess { try FileManager.default.copyItem(at: $0, to: destination) }
+                        }
+                    }) { result in
+                    confirmedLookCompatibility = result
+                    showingLookCompatibility = false
+                }
+            }
+        }
+        .alert(L10n.text("重命名外观"), isPresented: $showingLookRename) {
+            TextField(L10n.text("外观名称"), text: $renamedLUTName)
+            Button(L10n.text("取消"), role: .cancel) { renamingLUT = nil }
+            Button(L10n.text("保存")) {
+                if let look = renamingLUT { viewModel.renameLook(id: look.id, name: renamedLUTName) }
+                renamingLUT = nil
+            }.disabled(renamedLUTName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                       renamedLUTName.trimmingCharacters(in: .whitespacesAndNewlines).rangeOfCharacter(from: .controlCharacters) != nil)
         }
         .alert("RawLab", isPresented: Binding(
             get: { viewModel.statusMessage != nil },

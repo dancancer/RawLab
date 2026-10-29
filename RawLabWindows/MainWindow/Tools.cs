@@ -247,15 +247,32 @@ public partial class MainWindow
                 FilmStrip.Children.Add(divider);
             }
             var stack=new StackPanel();
-            if(film.Artwork!=null && File.Exists(film.Artwork))stack.Children.Add(new Image{Source=new BitmapImage(new Uri(film.Artwork)),Width=64,Height=64});
-            else stack.Children.Add(new EditorIcon{Kind=film.Path==null ? "Neutral" : "Film",Width=32,Height=64});
+            var artwork=new Grid{Width=64,Height=64};
+            if(film.Artwork!=null && File.Exists(film.Artwork))artwork.Children.Add(new Image{Source=new BitmapImage(new Uri(film.Artwork)),Width=64,Height=64});
+            else artwork.Children.Add(new EditorIcon{Kind=film.Path==null ? "Neutral" : "Film",Width=32,Height=64});
+            if(film.CompatibilityMode!=0) {
+                var badge=new EditorIcon{Kind="Clipping",Width=18,Height=18};
+                badge.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty,"Accent");
+                var backing=new Border{Child=badge,Padding=new Thickness(3),CornerRadius=new CornerRadius(3),HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Top};
+                backing.SetResourceReference(Border.BackgroundProperty,"Surface");
+                AutomationProperties.SetName(backing,Loc.Text("兼容导入"));artwork.Children.Add(backing);
+            }
+            stack.Children.Add(artwork);
             var displayName=film.Path==null ? Loc.Text("中性") : film.Name;
+            if(film.CompatibilityMode!=0)displayName += " · " + Loc.Text(film.CompatibilityMode==8 ? "近似基础 · 未验证" : "兼容导入 · 未验证");
+            else if(film.AppearanceUnverified)displayName += " · " + Loc.Text("效果未验证");
             var additional=film.Path!=null && BundledLook.All.ContainsKey(Path.GetFileName(film.Path));
             var caption=new TextBlock{Text=displayName,Width=additional ? 132 : 80,MinHeight=30,TextWrapping=TextWrapping.Wrap,TextAlignment=TextAlignment.Center,Margin=new Thickness(0,5,0,0)};
             caption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");stack.Children.Add(caption);
             var button=new Button{Content=stack,Style=(Style)FindResource("FilmButton"),ToolTip=film.Path ?? Loc.Text("中性显影")};
             if(additional)button.Width=146;
             AutomationProperties.SetName(button,displayName);
+            if(film.Path!=null && !IsBuiltInLook(film.Path)) {
+                var menu=new ContextMenu();
+                var rename=new MenuItem{Header=Loc.Text("重命名外观")};
+                AutomationProperties.SetAutomationId(rename,"look.rename.open");
+                rename.Click+=(_,_)=>RenameImportedLook(film.Path);menu.Items.Add(rename);button.ContextMenu=menu;
+            }
             button.Click+=(_,_)=>{
                 if(exporting || !ResolveTransformDraft() || (settings.MasterRecipeID == null && lut == film.Path))return;
                 try { settings.ClearMasterRecipe(file == null || PhotoInput.IsRaw(file)); }

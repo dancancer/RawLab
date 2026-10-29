@@ -7,6 +7,10 @@ import com.rawlab.android.settings.LookChoice
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.looks.ManagedLook
 import com.rawlab.android.format.PhotoInputKind
+import com.rawlab.android.looks.LUTCompatibility
+import android.net.Uri
+
+data class PendingLookCompatibility(val uri: Uri, val name: String, val draft: LUTCompatibility)
 
 // ============================================================================
 //  编辑器的界面状态：当前照片、参数、预览与进行中的操作
@@ -42,6 +46,8 @@ data class EditorState(
     val saveError: String? = null,
     val message: String? = null,
     val lookImportReport: String? = null,
+    val pendingLookCompatibility: List<PendingLookCompatibility> = emptyList(),
+    val lookCompatibilityPreparing: Boolean = false,
     val gpuEnabled: Boolean = true,
     val draft: AdjustmentDraft? = null,
     val adjustmentRevision: Long = 0,
@@ -77,7 +83,7 @@ internal object EditorStateReducer {
         val edits = selected ?: current.edits
         val hasPhoto = current.photo != null
         val state = current.copy(
-            looks = current.looks.filterNot { it.id == look.id } + LookChoice(look.id, look.name, managed = true),
+            looks = current.looks.filterNot { it.id == look.id } + LookChoice(look.id, look.name, managed = true, appearanceUnverified = look.appearanceUnverified, compatibilityMode = look.compatibilityMode),
             edits = edits,
             operation = Operation.NONE,
             rendering = if (selected != null && hasPhoto) true else current.rendering,
@@ -89,7 +95,7 @@ internal object EditorStateReducer {
 
     fun lookRenamed(current: EditorState, look: ManagedLook): EditorMutation {
         val state = current.copy(
-            looks = current.looks.map { if (it.id == look.id) LookChoice(look.id, look.name, managed = true) else it },
+            looks = current.looks.map { if (it.id == look.id) LookChoice(look.id, look.name, managed = true, appearanceUnverified = look.appearanceUnverified, compatibilityMode = look.compatibilityMode) else it },
             operation = Operation.NONE,
             error = null,
         )
