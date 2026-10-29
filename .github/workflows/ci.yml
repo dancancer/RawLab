@@ -101,6 +101,7 @@ jobs:
           python tests/test_localization.py GeneratorFormatTests GeneratorSourceTests
           python lutools/tests/test_cli_test_encoding.py
           python lutools/tests/test_tiff_dependencies.py
+          python lutools/tests/test_hdr_sources.py
           python RawLabMac/tests/test_single_preview.py
           python RawLabMac/tests/test_tool_group_ui.py
           python -m unittest Shared/tests/test_bundled_looks.py Shared/tests/test_lut_source_audit.py Shared/tests/test_prepare_bundled_looks.py -v

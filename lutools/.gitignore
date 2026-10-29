@@ -12,6 +12,7 @@ CMakeFiles/
 cmake_install.cmake
 cmake-build-*/
 *.cmake
+!cmake/hdr-portable.cmake
 !cmake/hdr-codec.cmake
 !cmake/libraw-sony-arw6.cmake
 !cmake/libraw-cameras.cmake

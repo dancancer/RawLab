@@ -65,17 +65,17 @@ bool rasterPath(const std::string& path) {
 bool hdrAvailable() {
 #if defined(__APPLE__)
     if (__builtin_available(macOS 15.0,iOS 18.0,*)) return true;
+#else
+    return true;
 #endif
     return false;
 }
 
-#if defined(__APPLE__)
 bool hdrCandidatePath(const std::string& path) {
     auto extension=std::filesystem::u8path(path).extension().u8string();
     std::transform(extension.begin(),extension.end(),extension.begin(),[](unsigned char c) { return std::tolower(c); });
     return extension==".jpg" || extension==".jpeg" || extension==".heif" || extension==".heic";
 }
-#endif
 
 template<class T> T hdrInitial() { T value{}; value.version=1; value.struct_size=sizeof(value); return value; }
 struct HDRPair {
@@ -179,7 +179,7 @@ int runAgentCommands(int argc, char* argv[]) {
             if (hdrAvailable()) {
                 versions.push_back(6); formats.push_back("hdr_jpeg");
                 hdr={{"processing_version",1},{"recipe_min_version",6},{"probe",true},{"decode",true},
-                    {"minimum_system",{{"macos","15.0"},{"ios","18.0"}}},
+                    {"minimum_system",{{"macos","15.0"},{"ios","18.0"},{"android","26"},{"windows","10"}}},
                     {"protocols",{"apple_gain_map","iso_21496","ultra_hdr"}},
                     {"working_format","rgb32f_extended_linear_srgb"},{"backend","cpu"},{"gpu_force","unsupported"},
                     {"adjustments",{"exposure","relative_white_balance","contrast","highlights","shadows","saturation","geometry"}},
@@ -221,7 +221,6 @@ int runAgentCommands(int argc, char* argv[]) {
                 return fail("invalid_argument", "--info <image> requires one input and no recipe");
             const auto absolute = std::filesystem::absolute(std::filesystem::u8path(infoFile)).lexically_normal().u8string();
             if (rasterPath(absolute)) {
-#if defined(__APPLE__)
                 if (hdrCandidatePath(absolute)) {
                     auto hdr=hdrInitial<sony2fuji_hdr_source_info_v1>();
                     auto diagnostic=hdrInitial<sony2fuji_hdr_diagnostic_v1>();
@@ -241,7 +240,6 @@ int runAgentCommands(int argc, char* argv[]) {
                     if (diagnostic.reason!=SONY2FUJI_HDR_REASON_NOT_HDR)
                         return fail(statusCode(status),"HDR input rejected; diagnostic reason="+std::to_string(diagnostic.reason),status);
                 }
-#endif
                 sony2fuji_buffer image{};
                 const auto status = sony2fuji_load_display_image(absolute.c_str(), &image);
                 if (status != SONY2FUJI_STATUS_OK)

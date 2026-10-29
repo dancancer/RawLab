@@ -1,0 +1,61 @@
+function(rawlab_add_portable_hdr_codecs)
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/hdr_sources.py" --portable
+        RESULT_VARIABLE result OUTPUT_VARIABLE sources ERROR_VARIABLE error OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(NOT result EQUAL 0)
+        message(FATAL_ERROR "Portable HDR sources: ${error}")
+    endif()
+    list(GET sources 2 heif_source)
+    list(GET sources 3 de265_source)
+    list(GET sources 4 lcms_source)
+    set(BUILD_SHARED_LIBS OFF)
+    # libde265 与 OpenCV 共用这些历史选项名；限定在函数作用域，不能污染下一次配置。
+    set(ENABLE_AVX2 ON)
+    set(ENABLE_AVX512 ON)
+    set(ENABLE_SIMD ON)
+    foreach(option ENABLE_SDL ENABLE_DECODER ENABLE_ENCODER ENABLE_SHERLOCK265 ENABLE_INTERNAL_DEVELOPMENT_TOOLS WITH_FUZZERS)
+        set(${option} OFF)
+    endforeach()
+    add_subdirectory("${de265_source}" "${CMAKE_BINARY_DIR}/hdr-codec/de265" EXCLUDE_FROM_ALL)
+    target_include_directories(de265 PUBLIC "$<BUILD_INTERFACE:${de265_source}>"
+        "$<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/hdr-codec/de265>")
+    target_compile_definitions(de265 PUBLIC LIBDE265_STATIC_BUILD)
+    set(LIBDE265_INCLUDE_DIR "${de265_source}" CACHE PATH "Pinned HEVC source headers" FORCE)
+    set(LIBDE265_LIBRARY de265 CACHE STRING "Pinned HEVC build target" FORCE)
+    # 不改父项目的 BUILD_TESTING cache；只关闭依赖自己的测试。
+    set(BUILD_TESTING OFF)
+    foreach(option ENABLE_PLUGIN_LOADING WITH_EXAMPLES WITH_GDK_PIXBUF BUILD_DOCUMENTATION
+            WITH_LIBSHARPYUV WITH_LIBSHARPYUV_INTERNAL WITH_UNCOMPRESSED_CODEC WITH_HEADER_COMPRESSION
+            WITH_WEBCODECS WITH_X265 WITH_KVAZAAR WITH_UVG266 WITH_VVDEC WITH_VVENC WITH_X264
+            WITH_OpenH264_DECODER WITH_DAV1D WITH_AOM_DECODER WITH_AOM_ENCODER WITH_SvtEnc
+            WITH_RAV1E WITH_JPEG_DECODER WITH_JPEG_ENCODER WITH_OpenJPEG_ENCODER WITH_OpenJPEG_DECODER
+            WITH_FFMPEG_DECODER WITH_OPENJPH_ENCODER WITH_LIBDE265_PLUGIN)
+        set(${option} OFF CACHE BOOL "HDR dependency closure" FORCE)
+    endforeach()
+    set(WITH_LIBDE265 ON CACHE BOOL "Pinned HEVC decoder" FORCE)
+    add_subdirectory("${heif_source}" "${CMAKE_BINARY_DIR}/hdr-codec/heif" EXCLUDE_FROM_ALL)
+    target_include_directories(heif PUBLIC "$<BUILD_INTERFACE:${heif_source}/libheif/api>"
+        "$<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/hdr-codec/heif>")
+    target_link_libraries(heif PRIVATE de265)
+    foreach(option LCMS2_BUILD_SHARED LCMS2_BUILD_TOOLS LCMS2_BUILD_TESTS LCMS2_WITH_FASTFLOAT LCMS2_WITH_THREADED_PLUGIN)
+        set(${option} OFF CACHE BOOL "HDR ICC library only" FORCE)
+    endforeach()
+    set(LCMS2_BUILD_STATIC ON CACHE BOOL "HDR static ICC library" FORCE)
+    add_subdirectory("${lcms_source}" "${CMAKE_BINARY_DIR}/hdr-codec/lcms" EXCLUDE_FROM_ALL)
+    target_include_directories(lcms2 BEFORE PRIVATE "${lcms_source}/include")
+    add_library(rawlab_lcms ALIAS lcms2)
+    set(RAWLAB_HDR_LCMS_INCLUDE "${lcms_source}/include" PARENT_SCOPE)
+    foreach(dependency IN ITEMS libheif libde265)
+        if(dependency STREQUAL "libheif")
+            set(source "${heif_source}")
+        else()
+            set(source "${de265_source}")
+        endif()
+        file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/licenses/${dependency}")
+        configure_file("${source}/COPYING" "${CMAKE_BINARY_DIR}/licenses/${dependency}/COPYING" COPYONLY)
+    endforeach()
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/licenses/lcms2")
+    configure_file("${lcms_source}/LICENSE" "${CMAKE_BINARY_DIR}/licenses/lcms2/LICENSE" COPYONLY)
+endfunction()
+
+rawlab_add_portable_hdr_codecs()
