@@ -13,13 +13,11 @@ Root `DESIGN.md` records the scoped iOS system without changing desktop guidance
   absent. After import, keep the photograph available, the selected tool in view
   and the parameter surface independently scrollable.
 - Compose beside the photo when window width is at least 600 pt, wider than its
-  height and below accessibility text sizes. The side panel is bounded by 320 pt
+  height and below accessibility text sizes. The side panel is bounded by 336 pt
   and 48% of the window width. Otherwise stack photo, tool strip and controls.
   Accessibility tools use a 44 pt glyph circle and complete body-style title;
-  the stacked layout reserves up to 96 pt of photo space when available.
-- Keep 44×44 pt action and drag targets. Ordinary tool circles start at 48 pt
-  with Dynamic Type scaling. Scalar values fit by native font measurement;
-  fallback to the glyph without losing the complete main value and unit.
+  the stacked layout reserves up to 96 pt of photo space when available. Its parameter region contracts to measured content within the window budget; side panels stay full height. Tools use a full-width strip, with Fine and Reset grouped separately.
+- Keep 44×44 pt action and drag targets. Tools use inline icons and complete names. Fine is a compact selected button beside Reset, with a 32 pt visible body and a 44 pt touch target. Scalar parameter controls at every width place the name and complete value above a full-width ruler, with a stable numeric slot. Value changes never move or resize the ruler, and width changes never alter the value or legal grid.
 - Preserve the fixed yellow ruler indicator, moving tape/default dot, legal grid
   and quarter-sensitivity Fine action. Local strokes rise from 13/22 to at most
   28 pt within 24 pt, then decay in 180 ms even while a paused finger stays down.

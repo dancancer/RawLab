@@ -90,20 +90,22 @@ class EditorParameterViewportTest {
             val directory = File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null), "parameter-viewport").apply { mkdirs() }
             File(directory, name).outputStream().use { compose.onNodeWithTag("parameter-fixture").captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
-        val dock = bounds("adjustment-dock")
-        val canvas = bounds("editor-canvas")
-        assertTrue("$width/$height/$scale uses the expected measured layout", if (side) canvas.right <= dock.left else canvas.bottom <= dock.top)
-        assertTrue("Photo retains at least 96dp above the uniformly budgeted panel", canvas.height >= 96f - 1)
+        val initialDock = bounds("adjustment-dock")
+        val navigation = bounds("editor-groups")
         for ((group, tools) in listOf("looks" to listOf(0, 15, 1), "light" to listOf(2, 3, 4, 5, 6),
             "color" to listOf(8, 7, 14), "effects" to listOf(12, 13), "detail" to listOf(11, 10), "geometry" to listOf(17, 16))) {
             if (group != "looks") group(group)
             for (tool in tools) {
+                if (compose.onAllNodes(hasTestTag("editor-tools") and hasAnyAncestor(hasTestTag("editor-parameters")))
+                        .fetchSemanticsNodes().isNotEmpty()) compose.onNodeWithTag("editor-tools").performScrollTo()
                 compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag("editor-tool-$tool"))
                 compose.onNodeWithTag("editor-tool-$tool").performClick()
-                assertEquals("Tool $tool does not move the dock", dock, bounds("adjustment-dock"))
-                assertEquals("Tool $tool does not move the photo", canvas, bounds("editor-canvas"))
-                val ring = compose.onNodeWithTag("editor-tool-ring-$tool", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-                assertEquals("Ordinary tool rings stay 48dp", 48f, ring.height, 1f)
+                val dock = bounds("adjustment-dock")
+                val canvas = bounds("editor-canvas")
+                assertTrue("$width/$height/$scale uses the expected measured layout", if (side) canvas.right <= dock.left else canvas.bottom <= dock.top)
+                assertTrue("Photo retains at least 96dp above the content-sized panel", canvas.height >= 96f - 1)
+                assertEquals("Group navigation stays anchored while tools resize", navigation, bounds("editor-groups"))
+                if (side) assertEquals("Side panels keep their full height", initialDock, dock)
                 for (tag in listOf("editor-tool-label-$tool", "editor-group-label-$group")) {
                     val layouts = mutableListOf<TextLayoutResult>()
                     val label = compose.onNodeWithTag(tag, useUnmergedTree = true)
@@ -119,17 +121,12 @@ class EditorParameterViewportTest {
                                 visible.width >= widest - 1 && visible.height >= layout.size.height - 1)
                     }
                 }
-                val groupRing = compose.onNodeWithTag("editor-group-ring-$group", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-                val glyph = compose.onNodeWithTag("editor-group-icon-$group", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-                assertEquals(if (side) 24f else 48f, groupRing.width, 1f)
-                assertEquals(if (side) 24f else 48f, groupRing.height, 1f)
-                assertEquals(24f, glyph.width, 1f); assertEquals(24f, glyph.height, 1f)
                 for (tag in listOf("editor-tool-$tool", "editor-group-$group")) {
                     val node = compose.onNodeWithTag(tag)
                     val clipped = node.fetchSemanticsNode().boundsInRoot
                     val full = node.getUnclippedBoundsInRoot()
                     assertTrue("$width/$height/$scale/$language/$tag whole touch target: $clipped vs $full", clipped.width >= (full.right - full.left).value - 1 && clipped.height >= (full.bottom - full.top).value - 1 && clipped.height >= 48f)
-                    android.util.Log.i("RawLabNavigationEvidence", "$width/$height/$scale/$language/$tag item=$clipped full=$full groupViewport=${bounds("editor-groups")} toolsViewport=${bounds("editor-tools")} groupRing=$groupRing toolRing=$ring glyph=$glyph")
+                    android.util.Log.i("RawLabNavigationEvidence", "$width/$height/$scale/$language/$tag item=$clipped full=$full groupViewport=${bounds("editor-groups")} toolsViewport=${bounds("editor-tools")}")
                 }
                 val viewport = bounds("editor-parameters")
                 android.util.Log.i("RawLabViewportRed", "$language/$width/$height/$scale/tool=$tool photo=$canvas dock=$dock viewport=$viewport")
@@ -138,16 +135,17 @@ class EditorParameterViewportTest {
                 if (tool == 14) {
                     capture("hsl-top-$language-$width-$height-$scale.png")
                     val axes = listOf(R.string.hsl_hue, R.string.saturation, R.string.hsl_lightness)
-                    if (scale == 1f && width < height) {
-                        for (axis in axes) {
-                            val row = bounds("adjustment-row-$axis")
-                            val number = bounds("adjustment-value-$axis")
-                            assertTrue("All HSL axes simultaneously fit: $row in $viewport", row.height >= 48f && row.top >= viewport.top - 1 && row.bottom <= viewport.bottom + 1)
-                            assertTrue("HSL number retains a complete 48dp touch target", number.height >= 48f)
-                            assertTrue("The empty unit has its alignment slot", bounds("adjustment-unit-$axis").width >= 24f)
-                        }
-                        compose.onNodeWithTag("adjustment-fine").assertIsDisplayed()
-                    } else {
+                    for (axis in axes) {
+                        compose.onNodeWithTag("adjustment-value-$axis").performScrollTo().assertIsDisplayed()
+                        assertTrue("HSL number retains a complete 48dp touch target", bounds("adjustment-value-$axis").height >= 48f)
+                        assertTrue("The empty unit has its alignment slot", bounds("adjustment-unit-$axis").width >= 24f)
+                        val track = compose.onNode(hasTestTag("adjustment-slider") and
+                            hasAnyAncestor(hasTestTag("adjustment-row-$axis"))).performScrollTo().assertIsDisplayed()
+                        val trackBounds = track.fetchSemanticsNode().boundsInRoot
+                        assertTrue("Every HSL axis has a fully reachable ruler", trackBounds.height >= 48f &&
+                            trackBounds.top >= viewport.top - 1 && trackBounds.bottom <= viewport.bottom + 1)
+                    }
+                    run {
                         val number = compose.onNodeWithTag("adjustment-value-${R.string.hsl_lightness}").performScrollTo().assertIsDisplayed()
                         val numberVisible = number.fetchSemanticsNode().boundsInRoot
                         val numberFull = number.getUnclippedBoundsInRoot()
@@ -166,6 +164,7 @@ class EditorParameterViewportTest {
                     }
                 }
                 if (tool in listOf(17, 16)) {
+                    if (tool == 17) compose.onNodeWithTag("geometry.dimensions").performScrollTo().performClick()
                     val header = compose.onAllNodesWithTag("adjustment-draft-title", useUnmergedTree = true)
                     if (header.fetchSemanticsNodes().isNotEmpty()) {
                         val title = header.onFirst()
@@ -217,16 +216,17 @@ class EditorParameterViewportTest {
                     if (tool == 17 && height < width) {
                         val number = compose.onNodeWithTag("adjustment-value-${R.string.geometry_crop_height}").performScrollTo()
                         for (tag in listOf("adjustment-name-${R.string.geometry_crop_height}", "adjustment-value-${R.string.geometry_crop_height}", "adjustment-unit-${R.string.geometry_crop_height}")) {
-                            val node = compose.onNodeWithTag(tag)
+                            val node = compose.onNodeWithTag(tag).performScrollTo()
                             val visible = node.fetchSemanticsNode().boundsInRoot
                             val full = node.getUnclippedBoundsInRoot()
                             android.util.Log.i("RawLabWholeRowEvidence", "$language/$width/$height/$scale geometry label/value $tag visible=$visible full=$full viewport=$viewport")
-                            assertTrue("Short window label/value is wholly reachable before scrolling to the track", visible.height >= (full.bottom - full.top).value - 1 && visible.width >= (full.right - full.left).value - 1)
+                            assertTrue("Short window compact input parts are wholly reachable", visible.height >= (full.bottom - full.top).value - 1 && visible.width >= (full.right - full.left).value - 1)
                         }
+                        number.performScrollTo()
                         assertTrue("Short window numeric entry retains its full 48dp operation target", number.fetchSemanticsNode().boundsInRoot.height >= 48f - 1)
                         capture("geometry-value-$language-$width-$height-$scale.png")
                     }
-                    val last = if (tool == 17) compose.onAllNodesWithTag("adjustment-slider").onLast() else compose.onNodeWithTag("lens.profile")
+                    val last = if (tool == 17) compose.onNodeWithTag("adjustment-value-${R.string.geometry_crop_height}") else compose.onNodeWithTag("lens.profile")
                     last.performScrollTo().assertIsDisplayed()
                     val control = last.fetchSemanticsNode().boundsInRoot
                     val required = 48f
@@ -241,10 +241,11 @@ class EditorParameterViewportTest {
                 }
             }
         }
+        val expandedDock = bounds("adjustment-dock")
         group("geometry")
         compose.onNodeWithTag("editor-tools").assertDoesNotExist()
         compose.onNodeWithTag("editor-group-geometry").assertIsDisplayed()
         group("geometry")
-        assertEquals(dock, bounds("adjustment-dock"))
+        assertEquals(expandedDock, bounds("adjustment-dock"))
     }
 }

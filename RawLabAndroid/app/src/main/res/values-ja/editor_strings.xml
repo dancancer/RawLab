@@ -220,8 +220,8 @@
     <string name="lut_preview_change_photo">"プレビュー写真を変更"</string>
     <string name="lut_preview_choose_help">"写真を選ぶと案を比較できます。詳細な設定を開いて手動で設定することもできます。"</string>
     <string name="lut_preview_choose_photo">"プレビュー写真を選択"</string>
-    <string name="lut_preview_conditions_display">"プレビュー条件：現像済み写真、追加調整なし、LUT 強度 100%、sRGB 出力、長辺 512 ピクセル。"</string>
-    <string name="lut_preview_conditions_raw">"プレビュー条件：C5 現像、カメラのホワイトバランス、シーン露出を正規化、露出 0、追加調整なし、LUT 強度 100%、sRGB 出力、長辺 512 ピクセル。"</string>
+    <string name="lut_preview_conditions_display" formatted="false">"プレビュー条件：現像済み写真、追加調整なし、LUT 強度 100%、sRGB 出力、長辺 512 ピクセル。"</string>
+    <string name="lut_preview_conditions_raw" formatted="false">"プレビュー条件：C5 現像、カメラのホワイトバランス、シーン露出を正規化、露出 0、追加調整なし、LUT 強度 100%、sRGB 出力、長辺 512 ピクセル。"</string>
     <string name="lut_preview_failed">"プレビューを生成できません。写真、LUT、カラー設定を確認してください。"</string>
     <string name="lut_preview_loading">"プレビューを生成中…"</string>
     <string name="lut_preview_placeholder">"写真と案を選ぶとプレビューが表示されます"</string>

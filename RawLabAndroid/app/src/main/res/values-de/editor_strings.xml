@@ -220,8 +220,8 @@
     <string name="lut_preview_change_photo">"Vorschaubild ändern"</string>
     <string name="lut_preview_choose_help">"Wählen Sie ein Foto, um die Optionen zu vergleichen, oder öffnen Sie die erweiterten Einstellungen für eine manuelle Konfiguration."</string>
     <string name="lut_preview_choose_photo">"Vorschaubild auswählen"</string>
-    <string name="lut_preview_conditions_display">"Vorschau-Bedingungen: entwickeltes Foto, keine zusätzlichen Anpassungen, LUT-Stärke 100%, sRGB-Ausgabe, lange Kante 512 Pixel."</string>
-    <string name="lut_preview_conditions_raw">"Vorschau-Bedingungen: C5-Entwicklung, Kamera-Weißabgleich, normalisierte Szenenbelichtung, Belichtung 0, keine zusätzlichen Anpassungen, LUT-Stärke 100%, sRGB-Ausgabe, lange Kante 512 Pixel."</string>
+    <string name="lut_preview_conditions_display" formatted="false">"Vorschau-Bedingungen: entwickeltes Foto, keine zusätzlichen Anpassungen, LUT-Stärke 100%, sRGB-Ausgabe, lange Kante 512 Pixel."</string>
+    <string name="lut_preview_conditions_raw" formatted="false">"Vorschau-Bedingungen: C5-Entwicklung, Kamera-Weißabgleich, normalisierte Szenenbelichtung, Belichtung 0, keine zusätzlichen Anpassungen, LUT-Stärke 100%, sRGB-Ausgabe, lange Kante 512 Pixel."</string>
     <string name="lut_preview_failed">"Vorschau konnte nicht erstellt werden. Prüfen Sie Foto, LUT und Farbeinstellungen."</string>
     <string name="lut_preview_loading">"Vorschauen werden erstellt …"</string>
     <string name="lut_preview_placeholder">"Wählen Sie ein Foto und eine Option für die Vorschau"</string>

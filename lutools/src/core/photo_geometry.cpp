@@ -1,4 +1,5 @@
 #include "core/photo_geometry.h"
+#include "core/processing_cancellation.h"
 
 #include <algorithm>
 #include <array>
@@ -83,6 +84,7 @@ RGB sampleBilinear(const ImageData& image, Point point) {
 void copyRectangle(const RGB* source, RGB* target, int width, int height,
     ptrdiff_t step_x, ptrdiff_t step_y, int target_stride) {
     for (int y = 0; y < height; ++y) {
+        checkProcessingCancellation();
         const auto* source_row = source + y * step_y;
         auto* target_row = target + size_t(y) * target_stride;
         if (step_x == 1) {
@@ -108,6 +110,7 @@ void copyInteger(const ImageData& image, ImageData& result, const Canvas& canvas
     const int tile_width = options.quarter_turns % 2 ? 32 : result.width;
     const int tile_height = options.quarter_turns % 2 ? 32 : result.height;
     for (int top = 0; top < result.height;) {
+        checkProcessingCancellation();
         const int bottom = top + std::min(tile_height, result.height - top);
         for (int left = 0; left < result.width;) {
             const int right = left + std::min(tile_width, result.width - left);
@@ -124,6 +127,7 @@ void resample(const ImageData& image, ImageData& result, const Canvas& canvas,
     const GeometryOptions& options) {
     std::array<Point, 256> points;
     for (int y = 0; y < result.height; ++y) {
+        checkProcessingCancellation();
         const double dy = canvas.top + y - (canvas.height - 1) * .5;
         auto* target = result.pixels.data() + size_t(y) * result.width;
         for (int begin = 0; begin < result.width;) {
@@ -182,6 +186,7 @@ std::pair<int, int> geometryViewportSourceSize(int width, int height,
     const int edge = std::max(width, height), short_edge = std::min(width, height);
     /* 裁剪取整并非单调；按缩放顺序检查两个轴的整数边界，不能直接二分。 */
     for (int candidate = 1; candidate <= edge; ++candidate) {
+        if (candidate % 64 == 1) checkProcessingCancellation();
         const int first = static_cast<int>(int64_t(short_edge) * (candidate - 1) / edge) + 1;
         const int last = static_cast<int>((int64_t(short_edge) * candidate + edge - 1) / edge);
         for (int minor = first; minor <= last; ++minor) {

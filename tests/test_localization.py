@@ -183,6 +183,18 @@ class GeneratorFormatTests(unittest.TestCase):
             element = ET.fromstring("<string>" + escaped + "</string>")
             self.assertEqual(formats.android_unquote(element.text), value)
 
+    def test_android_literal_percent_is_not_a_format_argument(self):
+        import generate
+        outputs = generate.generated(ROOT)
+        path = "RawLabAndroid/app/src/main/res/values/editor_strings.xml"
+        entries = {entry.attrib["name"]: entry for entry in ET.fromstring(outputs[path])}
+        for key in ("lut_preview_conditions_display", "lut_preview_conditions_raw"):
+            self.assertEqual(entries[key].get("formatted"), "false")
+            self.assertIn("100%", formats.android_unquote(entries[key].text))
+        formatted = [entry for entry in entries.values() if "%1$" in (entry.text or "")]
+        self.assertTrue(formatted)
+        self.assertTrue(all(entry.get("formatted") != "false" for entry in formatted))
+
     def test_missing_or_extra_arguments_are_rejected(self):
         for text in ("{1}", "no placeholder", "{0} {2}"):
             with self.assertRaises(ValueError):

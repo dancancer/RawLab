@@ -692,6 +692,17 @@ sony2fuji_status sony2fuji_session_set_gpu_config(
     const sony2fuji_gpu_config* config
 );
 
+// Optional cooperative cancellation for sony2fuji_process PREVIEW+BUFFER calls
+// and sony2fuji_session_create_hsl_probe. Compatibility previews are independent.
+// Return nonzero to cancel. Set/clear only on the session's serialized worker;
+// the callback may read an atomic signal updated by another thread. It must not
+// throw, reenter the session, or outlive its context. Null disables cancellation.
+// File output ignores this callback. Cancelled previews return CANCELLED without
+// publishing a partial output buffer; the session can render another request.
+typedef int32_t (*sony2fuji_cancel_callback)(void* context);
+sony2fuji_status sony2fuji_session_set_cancellation_callback(
+    sony2fuji_session* session, sony2fuji_cancel_callback callback, void* context);
+
 sony2fuji_status sony2fuji_process(
     sony2fuji_session* session,
     const sony2fuji_request* request,

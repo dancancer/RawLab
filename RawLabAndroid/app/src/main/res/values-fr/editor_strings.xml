@@ -220,8 +220,8 @@
     <string name="lut_preview_change_photo">"Changer la photo d’aperçu"</string>
     <string name="lut_preview_choose_help">"Choisissez une photo pour comparer les options, ou ouvrez les réglages avancés pour les configurer manuellement."</string>
     <string name="lut_preview_choose_photo">"Choisir une photo d’aperçu"</string>
-    <string name="lut_preview_conditions_display">"Conditions d’aperçu : photo développée, aucun réglage supplémentaire, intensité de LUT 100%, sortie sRGB, grand côté de 512 pixels."</string>
-    <string name="lut_preview_conditions_raw">"Conditions d’aperçu : développement C5, balance des blancs de l’appareil, exposition de scène normalisée, exposition 0, aucun réglage supplémentaire, intensité de LUT 100%, sortie sRGB, grand côté de 512 pixels."</string>
+    <string name="lut_preview_conditions_display" formatted="false">"Conditions d’aperçu : photo développée, aucun réglage supplémentaire, intensité de LUT 100%, sortie sRGB, grand côté de 512 pixels."</string>
+    <string name="lut_preview_conditions_raw" formatted="false">"Conditions d’aperçu : développement C5, balance des blancs de l’appareil, exposition de scène normalisée, exposition 0, aucun réglage supplémentaire, intensité de LUT 100%, sortie sRGB, grand côté de 512 pixels."</string>
     <string name="lut_preview_failed">"Impossible de générer l’aperçu. Vérifiez la photo, la LUT et les réglages colorimétriques."</string>
     <string name="lut_preview_loading">"Génération des aperçus…"</string>
     <string name="lut_preview_placeholder">"Choisissez une photo et une option pour afficher un aperçu"</string>

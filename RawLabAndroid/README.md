@@ -41,8 +41,8 @@ v0.5.0 新增逐照片本机调整记忆和批量 RAW 导出。任务固定当�
   Multiple look files import sequentially in one task, preserving partial success and selecting the last successful look. A scrollable result dialog identifies failures and survives preview completion. All-failed batches preserve selection; cancelling the picker starts no task.
 - 胶片强度支持 0–200%，默认及重置均为 100%。
   Film strength supports 0-200%, with 100% as the default and reset value.
-- 1000px 交互预览、1600px 精确预览；串行渲染只保留最新待处理调整。旋转屏幕保留当前编辑。
-  Bounded interactive/exact previews with serialized latest-request scheduling and rotation-safe state.
+- 交互预览最高 1000px；连续快速输入使用最高 480px 的临时预览，松手恢复视口所需的精确预览（最高 1600px）。新请求同时取消正在执行的旧预览，并只保留最新待处理调整。旋转屏幕保留当前编辑。
+  Interactive previews use up to 1000px, or a 480px proxy during rapid input, and restore the requested exact viewport (up to 1600px) on release. New requests cooperatively cancel obsolete work and replace pending adjustments.
 - 双指缩放、放大后平移；双击在适应画面与 100% 精确预览像素显示之间切换。缩放不触发全分辨率 RAW 显影。参数调整和对比切换保留视口，导入新图复位；对比模式下单指拖分割线、双指缩放和平移。
   Pinch to zoom, pan, and double-tap between fit and exact-preview pixels, without full-resolution RAW rendering. Edits/comparison preserve the viewport; a new photo resets it. In comparison mode, one finger moves the wipe and two fingers zoom/pan.
 - 默认启用 GLES 像素加速，失败自动回退 CPU；更多菜单可关闭。画布只显示处理进度，不显示后端和耗时角标。

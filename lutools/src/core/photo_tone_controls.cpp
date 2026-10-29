@@ -83,7 +83,10 @@ RGB applyVibrance(const RGB& pixel, const ToneControlsOptions& options) {
 
 void applyBlackWhite(ImageData& image, const ToneControlsOptions& options) {
     if (options.blackPoint == 0 && options.whitePoint == 0) return;
-    for (auto& p : image.pixels) p = applyBlackWhite(p,options);
+    for (size_t i = 0; i < image.pixels.size(); ++i) {
+        if (i % 4096 == 0) checkProcessingCancellation();
+        image.pixels[i] = applyBlackWhite(image.pixels[i], options);
+    }
 }
 
 void applyVibrance(ImageData& image, const ToneControlsOptions& options) {

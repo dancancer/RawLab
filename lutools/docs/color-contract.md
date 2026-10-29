@@ -588,6 +588,19 @@ the reverse. FINAL requests and all file outputs ignore the flag. The Mac schedu
 uses viewport-sized proxies during dragging and always submits a settled pass on release.
 No post-demosaic RGB tint approximation replaces camera-space white balance.
 
+`sony2fuji_session_set_cancellation_callback` optionally enables cooperative
+cancellation for `sony2fuji_process` PREVIEW+BUFFER calls and HSL probes. Guided
+LUT compatibility previews retain their independent worker lifecycle. The serialized session
+worker installs and clears the callback; another thread may update its atomic
+signal. Cancellation returns `CANCELLED`, never a partial output buffer or probe,
+and cannot enter GPU Auto fallback. Checkpoints cover LibRaw progress, bounded CPU
+pixel ranges, resizing and GLES upload/dispatch/readback boundaries. A submitted GPU
+dispatch or an individual external-library kernel is not forcibly interrupted;
+the next checkpoint skips the remaining stages. File output ignores this callback.
+Existing clients with no callback retain their rendering behavior. Android uses a
+generation captured for the entire preview request, so replacing work before JNI
+entry also cancels it; cancellation does not change the latest editing parameters.
+
 `sony2fuji_session_set_viewport_preview` is a separate, default-off session opt-in
 for PREVIEW+BUFFER only, without changing request v2. It reduces linear input before
 wavelet, tone/LUT, chroma, sharpening and photo effects on CPU/GPU, including active

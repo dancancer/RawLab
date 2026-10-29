@@ -3,6 +3,7 @@
 #include "sony2fuji/color_converter.h"
 #include "sony2fuji/lut_parser.h"
 #include "photo_rendering.h"
+#include "processing_cancellation.h"
 #include <algorithm>
 #include <cmath>
 
@@ -41,28 +42,38 @@ inline ColorConverter::Matrix3x3 photoLUTInputMatrix(LUTTransfer transfer) {
 inline void encodePhotoLUTInput(ImageData& image, LUTTransfer transfer) {
     const auto matrix = photoLUTInputMatrix(transfer);
     const size_t count = image.pixels.size();
+    const auto cancellation = processingCancellation;
 #ifdef _OPENMP
 #pragma omp parallel for if (count >= (1u << 16))
 #endif
-    for (size_t i = 0; i < count; ++i) {
-        const auto p = ColorConverter::applyMatrix(image.pixels[i], matrix);
-        image.pixels[i] = RGB(encodePhotoLog(p.r, transfer), encodePhotoLog(p.g, transfer),
-            encodePhotoLog(p.b, transfer));
+    for (size_t first = 0; first < count; first += 4096) {
+        if (cancellation.cancelled()) continue;
+        for (size_t i = first; i < std::min(count, first + 4096); ++i) {
+            const auto p = ColorConverter::applyMatrix(image.pixels[i], matrix);
+            image.pixels[i] = RGB(encodePhotoLog(p.r, transfer), encodePhotoLog(p.g, transfer),
+                encodePhotoLog(p.b, transfer));
+        }
     }
+    cancellation.check();
 }
 
 inline void renderPhotoLUTOutput(ImageData& image, LUTTransfer transfer) {
     if (transfer == LUTTransfer::Display) return;
     // 合同已要求输出 BT.709/D65；Log 解码后可直接使用线性 sRGB 显示转换。
     const size_t count = image.pixels.size();
+    const auto cancellation = processingCancellation;
 #ifdef _OPENMP
 #pragma omp parallel for if (count >= (1u << 16))
 #endif
-    for (size_t i = 0; i < count; ++i) {
-        auto& p = image.pixels[i];
-        p = RGB(neutralDisplay(decodePhotoLog(p.r, transfer)),
-            neutralDisplay(decodePhotoLog(p.g, transfer)), neutralDisplay(decodePhotoLog(p.b, transfer)));
+    for (size_t first = 0; first < count; first += 4096) {
+        if (cancellation.cancelled()) continue;
+        for (size_t i = first; i < std::min(count, first + 4096); ++i) {
+            auto& p = image.pixels[i];
+            p = RGB(neutralDisplay(decodePhotoLog(p.r, transfer)),
+                neutralDisplay(decodePhotoLog(p.g, transfer)), neutralDisplay(decodePhotoLog(p.b, transfer)));
+        }
     }
+    cancellation.check();
 }
 
 } // namespace sony2fuji

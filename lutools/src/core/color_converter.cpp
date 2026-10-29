@@ -1,4 +1,5 @@
 #include "sony2fuji/color_converter.h"
+#include "processing_cancellation.h"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -39,12 +40,16 @@ ErrorCode ColorConverter::convertImage(ImageData& image, ColorSpace from, ColorS
     Matrix3x3 matrix = getConversionMatrix(from, to);
 
     const size_t pixel_count = image.pixels.size();
+    const auto cancellation = processingCancellation;
 #ifdef _OPENMP
 #pragma omp parallel for if (pixel_count >= kParallelThreshold)
 #endif
-    for (size_t i = 0; i < pixel_count; ++i) {
-        image.pixels[i] = applyMatrix(image.pixels[i], matrix);
+    for (size_t first = 0; first < pixel_count; first += 4096) {
+        if (cancellation.cancelled()) continue;
+        for (size_t i = first; i < std::min(pixel_count, first + 4096); ++i)
+            image.pixels[i] = applyMatrix(image.pixels[i], matrix);
     }
+    cancellation.check();
 
     return ErrorCode::Success;
 }
@@ -62,12 +67,16 @@ ErrorCode ColorConverter::convertImage(
     Matrix3x3 matrix = getConversionMatrix(fromToXYZ, fromWhitePoint, to);
 
     const size_t pixel_count = image.pixels.size();
+    const auto cancellation = processingCancellation;
 #ifdef _OPENMP
 #pragma omp parallel for if (pixel_count >= kParallelThreshold)
 #endif
-    for (size_t i = 0; i < pixel_count; ++i) {
-        image.pixels[i] = applyMatrix(image.pixels[i], matrix);
+    for (size_t first = 0; first < pixel_count; first += 4096) {
+        if (cancellation.cancelled()) continue;
+        for (size_t i = first; i < std::min(pixel_count, first + 4096); ++i)
+            image.pixels[i] = applyMatrix(image.pixels[i], matrix);
     }
+    cancellation.check();
 
     return ErrorCode::Success;
 }
@@ -411,14 +420,19 @@ GammaConverter::FLog2Diagnostics GammaConverter::applyFLog2ToImage(
 ) {
     FLog2Diagnostics result;
     if (!options.enableDiagnostics) {
-        for (auto& pixel : image.pixels) pixel = applyFLog2ToRGB(pixel);
+        for (size_t i = 0; i < image.pixels.size(); ++i) {
+            if (i % 4096 == 0) checkProcessingCancellation();
+            image.pixels[i] = applyFLog2ToRGB(image.pixels[i]);
+        }
         return result;
     }
     if (image.pixels.empty()) return result;
     result.min_linear = std::numeric_limits<float>::max();
     result.max_linear = std::numeric_limits<float>::lowest();
     // Encoding must not change exposure based on image content.
-    for (auto& pixel : image.pixels) {
+    for (size_t i = 0; i < image.pixels.size(); ++i) {
+        if (i % 4096 == 0) checkProcessingCancellation();
+        auto& pixel = image.pixels[i];
         float low = std::min({pixel.r, pixel.g, pixel.b});
         float high = std::max({pixel.r, pixel.g, pixel.b});
         result.min_linear = std::min(result.min_linear, low);

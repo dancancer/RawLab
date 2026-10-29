@@ -4,6 +4,7 @@
 #include "photo_rendering.h"
 #include "white_balance.h"
 #include "file_path.h"
+#include "processing_cancellation.h"
 #include <libraw/libraw.h>
 #include <algorithm>
 #include <cmath>
@@ -33,6 +34,20 @@ constexpr int kParallelThreshold = 1 << 16;
 namespace sony2fuji {
 
 namespace {
+class RawCancellationScope {
+    LibRaw& raw_;
+    ProcessingCancellation cancellation_ = processingCancellation;
+    static int progress(void* context, LibRaw_progress, int, int) {
+        return static_cast<ProcessingCancellation*>(context)->cancelled() ? 1 : 0;
+    }
+public:
+    explicit RawCancellationScope(LibRaw& raw) : raw_(raw) {
+        cancellation_.check();
+        raw_.set_progress_handler(progress, &cancellation_);
+    }
+    ~RawCancellationScope() { raw_.set_progress_handler(nullptr, nullptr); }
+};
+
 float sampleCameraCorrection(const std::vector<RGB>& pixels, int width, int height, int channel, float x, float y) {
     if (!std::isfinite(x) || !std::isfinite(y) || x < -1e-4f || y < -1e-4f ||
         x > width - 1 + 1e-4f || y > height - 1 + 1e-4f) return 0;
@@ -105,6 +120,7 @@ public:
     Impl() : rawProcessor_(std::make_unique<LibRaw>()) {}
 
     ErrorCode loadFile(const std::string& filepath) {
+        RawCancellationScope cancellation(*rawProcessor_);
         invalidateState();
         if (filepath.empty()) return ErrorCode::FileNotFound;
 
@@ -118,6 +134,7 @@ public:
         if (ret != LIBRAW_SUCCESS) {
             std::cerr << "无法打开 RAW 文件: " << libraw_strerror(ret) << std::endl;
             invalidateState();
+            if (ret == LIBRAW_CANCELLED_BY_CALLBACK) throw ProcessingCancelled();
             return decodeError(ret);
         }
 
@@ -129,6 +146,7 @@ public:
     }
 
     ErrorCode process(const RAWProcessOptions& options, ImageData& output) {
+        RawCancellationScope cancellationScope(*rawProcessor_);
         output = {};
         if (filepath_.empty() || !sourceReady_) return ErrorCode::FileNotFound;
         if (options.rawNoiseReduction < 0 || options.rawNoiseReduction > 2 ||
@@ -187,10 +205,12 @@ public:
                 return std::isfinite(p.r) && std::isfinite(p.g) && std::isfinite(p.b);
             }))) return ErrorCode::InvalidFormat;
         BayerOverrideScope overrideScope(*rawProcessor_, bayerMetadata_, replacement);
-        if (rawProcessor_->dcraw_process() != LIBRAW_SUCCESS) {
+        const int processed = rawProcessor_->dcraw_process();
+        if (processed != LIBRAW_SUCCESS) {
             // Fatal LibRaw processing errors may recycle unpacked data internally.
             // Require a fresh load rather than advertising a reusable source.
             invalidateState();
+            if (processed == LIBRAW_CANCELLED_BY_CALLBACK) throw ProcessingCancelled();
             return ErrorCode::ProcessingError;
         }
         auto& data = rawProcessor_->imgdata;
@@ -289,10 +309,12 @@ public:
             (options.outputAces ? ColorSpace::ACES2065_1 : ColorSpace::sRGB);
         const auto matrix = ColorConverter::getConversionMatrix(ColorSpace::sRGB, target);
         outputSpace_ = options.outputLinear ? target : ColorSpace::sRGB;
+        const auto cancellation = processingCancellation;
 #ifdef _OPENMP
 #pragma omp parallel for if (static_cast<int64_t>(output.width)*output.height >= kParallelThreshold)
 #endif
         for (int y=0;y<output.height;++y) {
+            if (cancellation.cancelled()) continue;
             std::vector<float> coordinates;
             if (correction.active()) {
                 coordinates.resize(static_cast<size_t>(output.width)*6);
@@ -320,6 +342,7 @@ public:
             }
         }
         rawProcessor_->free_image();
+        cancellation.check();
         return ErrorCode::Success;
     }
 
@@ -532,6 +555,7 @@ private:
         if (ret != LIBRAW_SUCCESS) {
             std::cerr << "无法重新加载 RAW 文件: " << libraw_strerror(ret) << std::endl;
             invalidateState();
+            if (ret == LIBRAW_CANCELLED_BY_CALLBACK) throw ProcessingCancelled();
             return decodeError(ret);
         }
         identificationCameraWB_ = cameraWB;
