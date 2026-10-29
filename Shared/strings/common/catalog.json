@@ -5815,6 +5815,14 @@
     "ja": "Macでは同じアーキテクチャと一致する署名IDのアプリが必要です。Windowsではx64のユーザー単位Setupインストールが必要です。旧ZIP版は、公式リリースページから更新対応版を先にインストールしてください。",
     "zh-Hans": "Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。"
   },
+  "保存 SDR JPEG": {
+    "de": "SDR-JPEG speichern",
+    "en": "Save SDR JPEG",
+    "es": "Guardar JPEG SDR",
+    "fr": "Enregistrer en JPEG SDR",
+    "ja": "SDR JPEG を保存",
+    "zh-Hans": "保存 SDR JPEG"
+  },
   "HDR JPEG": {
     "de": "HDR-JPEG",
     "en": "HDR JPEG",

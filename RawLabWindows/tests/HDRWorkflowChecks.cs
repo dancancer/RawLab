@@ -18,10 +18,17 @@ internal static class HDRWorkflowChecks
         var root=Path.Combine(Path.GetFullPath(repo),"build","hdr-workflow",Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);
         var source=Path.Combine(root,"phone"+Path.GetExtension(fixture));File.Copy(fixture,source);
         var hash=System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(source));
+        Loc.Initialize("en");
         var app=TestWindowState.CreateApplication();SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
-        Loc.Initialize("en");var window=new MainWindow(Path.Combine(root,"looks"));TestWindowState.Isolate(window,root);
+        var window=new MainWindow(Path.Combine(root,"looks"));TestWindowState.Isolate(window,root);
         try {
             window.Show();window.OpenFile(source);Ready(window);
+            var exportMenu=window.ExportButton.ContextMenu!;
+            exportMenu.PlacementTarget=window.ExportButton;exportMenu.IsOpen=true;
+            InteractionChecks.PumpUntil(()=>window.ExportSdrJpeg.IsVisible);
+            check(Equals(window.ExportSdrJpeg.Header,"Save SDR JPEG") && ExportFormat.SdrJpeg.Title()=="Save SDR JPEG",
+                "Visible SDR JPEG export action and file filter use the English catalog");
+            Capture(exportMenu,Path.Combine(root,"sdr-export-menu.png"));exportMenu.IsOpen=false;
             var settings=Get<Adjustments>(window,"settings");
             check(settings.IsHDREditing,"Fresh HDR phone photo opens with HDR editing enabled");
             check(!window.AutoExposureButton.IsEnabled && !window.MenuAutoExposure.IsEnabled,"HDR editing disables the SDR-only automatic exposure action");
@@ -143,11 +150,11 @@ internal static class HDRWorkflowChecks
         var rejected=false;try {exporter.Freeze(selection,review,_=>null);}catch(InvalidOperationException){rejected=true;}
         check(rejected && journal.Load()==null,"Rejected collection does not freeze or partially publish outputs");
     }
-    private static void Capture(Window window,string path)
+    private static void Capture(FrameworkElement element,string path)
     {
-        window.UpdateLayout();
-        var bitmap=new RenderTargetBitmap((int)Math.Ceiling(window.ActualWidth),(int)Math.Ceiling(window.ActualHeight),96,96,PixelFormats.Pbgra32);
-        bitmap.Render(window);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        element.UpdateLayout();
+        var bitmap=new RenderTargetBitmap((int)Math.Ceiling(element.ActualWidth),(int)Math.Ceiling(element.ActualHeight),96,96,PixelFormats.Pbgra32);
+        bitmap.Render(element);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));
         using var file=File.Create(path);encoder.Save(file);
     }
 }

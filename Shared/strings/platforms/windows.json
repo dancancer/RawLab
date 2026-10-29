@@ -3718,6 +3718,10 @@
       "source": "HDR JPEG",
       "formats": []
     },
+    "保存 SDR JPEG": {
+      "source": "保存 SDR JPEG",
+      "formats": []
+    },
     "参考白以上 {0}": {
       "source": "参考白以上 {0}",
       "formats": [
