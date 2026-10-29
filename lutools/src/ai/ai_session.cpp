@@ -21,7 +21,7 @@ void AISession::configure(std::string modelDirectory, std::string cacheDirectory
         throw std::invalid_argument("invalid AI backend");
     if (modelDirectory_ != modelDirectory || cacheDirectory_ != cacheDirectory || backend_ != backend) {
         modelDirectory_ = std::move(modelDirectory); cacheDirectory_ = std::move(cacheDirectory); backend_ = backend;
-        stamp_.clear(); runtimeDigest_.clear(); loadedKey_.clear(); package_.reset(); loaded_ = {};
+        stamp_.clear(); runtimeDigest_.clear(); runtimeIdentity_.clear(); loadedKey_.clear(); package_.reset(); loaded_ = {};
         selectedDevice_.reset(); diagnostics_.reset(deviceID_,static_cast<int>(backend_));
         lastBackend.clear();
     }
@@ -33,24 +33,28 @@ void AISession::setDevice(std::string deviceID) {
     if (deviceID.size() > 256) throw std::invalid_argument("AI device identifier is too long");
     if (deviceID_ == deviceID) return;
     deviceID_ = std::move(deviceID); selectedDevice_.reset();
-    runtimeDigest_.clear(); loadedKey_.clear(); loaded_ = {}; lastBackend.clear();
+    runtimeDigest_.clear(); runtimeIdentity_.clear(); loadedKey_.clear(); loaded_ = {}; lastBackend.clear();
     diagnostics_.reset(deviceID_,static_cast<int>(backend_));
 }
 
 std::string AISession::runtimeVersion(bool refreshDevice) {
-    if (runtimeVersion_) return runtimeVersion_(backend_);
+    std::string version;
+    if (runtimeVersion_) version = runtimeVersion_(backend_);
+    else {
 #ifdef _WIN32
-    if (backend_ == Backend::Auto || backend_ == Backend::DirectML) {
-        if (refreshDevice) selectedDevice_.reset();
-        if (!selectedDevice_) selectedDevice_ = findDirectMLAdapter(deviceID_);
-        diagnostics_.device(*selectedDevice_);
-    }
+        if (backend_ == Backend::Auto || backend_ == Backend::DirectML) {
+            if (refreshDevice) selectedDevice_.reset();
+            if (!selectedDevice_) selectedDevice_ = findDirectMLAdapter(deviceID_);
+            diagnostics_.device(*selectedDevice_);
+        }
 #else
-    (void)refreshDevice;
+        (void)refreshDevice;
 #endif
-    const auto version = NetworkGraph::runtimeVersion(backend_,selectedDevice_ ? &*selectedDevice_ : nullptr);
-    diagnostics_.field("runtime_identity",version);
-    return version;
+        version = NetworkGraph::runtimeVersion(backend_,selectedDevice_ ? &*selectedDevice_ : nullptr);
+    }
+    runtimeIdentity_ = std::move(version);
+    diagnostics_.field("runtime_identity",runtimeIdentity_);
+    return runtimeIdentity_;
 }
 
 void AISession::beginOperation(const char* operation) {
@@ -58,6 +62,7 @@ void AISession::beginOperation(const char* operation) {
     diagnostics_.field("operation",operation);lastError.clear();
     if (selectedDevice_) diagnostics_.device(*selectedDevice_);
     if (package_) diagnostics_.field("model_digest",package_->digest);
+    if (!runtimeIdentity_.empty()) diagnostics_.field("runtime_identity",runtimeIdentity_);
 }
 
 const char* AISession::diagnosticsJSON() const {

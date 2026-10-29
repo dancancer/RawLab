@@ -45,7 +45,7 @@ private:
     void ensurePackage();
     std::string runtimeVersion(bool refreshDevice = false);
     std::string packageStamp() const;
-    std::string modelDirectory_, cacheDirectory_, stamp_, runtimeDigest_, loadedKey_;
+    std::string modelDirectory_, cacheDirectory_, stamp_, runtimeDigest_, runtimeIdentity_, loadedKey_;
     std::function<std::string(Backend)> runtimeVersion_;
     std::string deviceID_;
     std::optional<DirectMLAdapter> selectedDevice_;
