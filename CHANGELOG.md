@@ -3,7 +3,34 @@
 Release history is kept here rather than in the project READMEs. Detailed
 release notes include assets, installation requirements and validation limits.
 
-## [0.9.0] - Unreleased
+## [0.9.1] - 2026-10-29
+
+### Added
+
+- Phone HDR gain-map photo import, basic editing, HDR/SDR preview, histogram,
+  false color and gain-map JPEG export on macOS 15+ and iOS/iPadOS 18+.
+- Explicit CUBE/VLT color contracts and a user-confirmed compatibility setup
+  with preview for supported LUTs missing color information or source evidence.
+
+### Changed
+
+- Master recipe version 4 incorporates tone endpoints, vibrance, curves and
+  color grading, with consistent strength, transfer, preset and export behavior.
+  Existing edits retain their saved recipe behavior until deliberately reapplied.
+- Compact editor navigation, adaptive mobile panels, stable slider/ruler sizing
+  and precise crop position/size controls with aspect-ratio locking.
+
+### Fixed
+
+- Windows AI model loading from Unicode paths.
+- Obsolete Android previews, literal percentage formatting, LUT percentage
+  lookup and Apple localization coverage.
+- HDR source previews in LUT compatibility setup and iOS status dismissal.
+
+Version `0.9.1`, build `16`. See the
+[release notes](docs/releases/v0.9/v0.9.1.md) for scope and compatibility limits.
+
+## [0.9.0] - 2026-10-28
 
 ### Added
 
@@ -89,7 +116,7 @@ release notes include assets, installation requirements and validation limits.
   61 MP and 100 MP RAW files. Output keeps full resolution while temporary
   processing memory stays bounded.
 
-Version `0.9.0`, build `15` (release preparation). See the
+Version `0.9.0`, build `15`. See the
 [release notes](docs/releases/v0.9/v0.9.0.md) and
 [Chinese update announcement](docs/releases/v0.9/v0.9.0-xiaohongshu.md).
 

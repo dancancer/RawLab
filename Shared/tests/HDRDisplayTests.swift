@@ -27,10 +27,22 @@ import Foundation
         }
         require(input==before,"monitoring altered working pixels")
         let packed=try HDRDisplayMath.half(SIMD3<Float>(-0.25,2,4))
-        require(Float(Float16(bitPattern:packed[0])) == -0.25 && Float(Float16(bitPattern:packed[1]))==2,
+        require(packed[0] == 0xb400 && packed[1] == 0x4000 && packed[2] == 0x4400 && packed[3] == 0x3c00,
             "FP16 pack clipped negative or super-white values")
-        do { _ = try HDRDisplayMath.half(SIMD3<Float>(70000,1,1)); fatalError("FP16 silently overflowed") }
-        catch HDRDisplayFailure.unrepresentable {}
+        let vectors: [(Float, UInt16)] = [
+            (0, 0x0000), (-Float.zero, 0x8000), (1, 0x3c00), (65504, 0x7bff), (65519, 0x7bff),
+            (pow(2, -14), 0x0400), (pow(2, -24), 0x0001), (pow(2, -25), 0x0000),
+            (3 * pow(2, -25), 0x0002), (1 + pow(2, -11), 0x3c00), (1 + 3 * pow(2, -11), 0x3c02)
+        ]
+        for (value, expected) in vectors {
+            let bits = try HDRDisplayMath.half(SIMD3(repeating: value))
+            require(bits[0] == expected && bits[1] == expected && bits[2] == expected && bits[3] == 0x3c00,
+                "FP16 rounding/sign changed for \(value): \(bits)")
+        }
+        for value: Float in [65520, 70000, -.infinity, .infinity, .nan] {
+            do { _ = try HDRDisplayMath.half(SIMD3<Float>(value,1,1)); fatalError("FP16 accepted nonfinite output") }
+            catch HDRDisplayFailure.unrepresentable {}
+        }
         print("PASS HDR float statistics, reference white, display-only mapping and finite FP16")
     }
 }

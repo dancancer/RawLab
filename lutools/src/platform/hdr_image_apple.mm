@@ -97,8 +97,11 @@ void open(File& file, const char* path) HDR_AVAILABLE {
     read(file,path);
     const bool xmp=file.info.container==SONY2FUJI_HDR_CONTAINER_JPEG && has(file.data,"http://ns.adobe.com/hdr-gain-map/1.0/");
     const bool isoDeclared=file.info.container==SONY2FUJI_HDR_CONTAINER_JPEG && has(file.data,"urn:iso:std:iso:ts:21496:-1");
+    // 旧式 Apple JPEG 也使用 Adobe namespace；以原容器的辅助类型区分，不能依赖 ImageIO 合成的 ISO 字典。
+    const bool appleDeclared=!isoDeclared && (has(file.data,"urn:com:apple:photo:2020:aux:hdrgainmap") ||
+        has(file.data,"http://ns.apple.com/HDRGainMap/1.0/"));
     const bool modernJPEG=file.info.container==SONY2FUJI_HDR_CONTAINER_JPEG &&
-        (xmp || isoDeclared);
+        (isoDeclared || (xmp && !appleDeclared));
     JPEGInfo jpeg;
     if (modernJPEG) {
         // 先检查压缩辅助图，避免原生接口为坏引用分配像素或只交付底图。
@@ -108,9 +111,13 @@ void open(File& file, const char* path) HDR_AVAILABLE {
     }
     NSDictionary* iso = CFBridgingRelease(CGImageSourceCopyAuxiliaryDataInfoAtIndex(file.source, 0, kCGImageAuxiliaryDataTypeISOGainMap));
     NSDictionary* apple = CFBridgingRelease(CGImageSourceCopyAuxiliaryDataInfoAtIndex(file.source, 0, kCGImageAuxiliaryDataTypeHDRGainMap));
-    if (iso) validateMap(iso);
+    if (iso && !appleDeclared) validateMap(iso);
     // ImageIO 也会为旧 Android XMP 照片合成 ISO 字典；文件协议由原容器决定。
     if (modernJPEG) file.info.protocol=isoDeclared ? (xmp ? SONY2FUJI_HDR_PROTOCOL_ISO_XMP : SONY2FUJI_HDR_PROTOCOL_ISO) : SONY2FUJI_HDR_PROTOCOL_XMP;
+    else if (appleDeclared) {
+        require(apple,SONY2FUJI_HDR_REASON_MALFORMED_AUX,"Declared Apple gain map cannot be read");
+        validateMap(apple); file.info.protocol=SONY2FUJI_HDR_PROTOCOL_APPLE;
+    }
     else if (iso) file.info.protocol=SONY2FUJI_HDR_PROTOCOL_ISO;
     else if (apple) { validateMap(apple); file.info.protocol = SONY2FUJI_HDR_PROTOCOL_APPLE; }
     else if (declaresGainMap(file.data))

@@ -1,7 +1,10 @@
 """Deployment targets must not reuse higher-minimum dependency binaries."""
 import os
 from pathlib import Path
+import plistlib
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -10,6 +13,96 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class BuildEnvironmentTests(unittest.TestCase):
+    @unittest.skipUnless(Path("/usr/libexec/PlistBuddy").exists(), "macOS plist tooling is required")
+    def test_sparkle_link_check_consumes_large_tool_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app = root / "RawLab.app"
+            framework = app / "Contents/Frameworks/Sparkle.framework"
+            (framework / "Versions/B").mkdir(parents=True)
+            (framework / "Versions/Current").symlink_to("B")
+            for name in ("Sparkle", "Autoupdate", "Updater.app/Contents/MacOS/Updater",
+                         "XPCServices/Downloader.xpc/Contents/MacOS/Downloader",
+                         "XPCServices/Installer.xpc/Contents/MacOS/Installer"):
+                binary = framework / name
+                binary.parent.mkdir(parents=True, exist_ok=True)
+                binary.touch()
+                binary.chmod(0o755)
+            notices = app / "Contents/Resources/Licenses"
+            notices.mkdir(parents=True)
+            (notices / "Sparkle-LICENSE.txt").touch()
+            (app / "Contents/Info.plist").write_bytes(plistlib.dumps(
+                {"SUEnableAutomaticChecks": False, "SUAutomaticallyUpdate": False}))
+            tools = root / "tools"
+            tools.mkdir()
+            (tools / "codesign").write_text("#!/bin/sh\nexit 0\n")
+            (tools / "otool").write_text(
+                f"#!{sys.executable}\nimport os, sys\n"
+                "print(os.environ['TEST_LINKED_FRAMEWORK'], flush=True)\n"
+                "for _ in range(256):\n"
+                "    sys.stdout.write('/System/Library/Frameworks/Other.framework/Other\\n' * 256)\n"
+                "    sys.stdout.flush()\n")
+            for tool in tools.iterdir():
+                tool.chmod(0o755)
+            for linked, expected in (("@rpath/Sparkle.framework/Versions/B/Sparkle", 0),
+                                     ("/System/Library/Frameworks/Foundation.framework/Foundation", 1)):
+                with self.subTest(linked=linked):
+                    result = subprocess.run(["bash", str(ROOT / "RawLabMac/tests/sparkle-bundle.sh"), str(app)],
+                        env={**os.environ, "PATH": f"{tools}:{os.environ['PATH']}", "RAWLAB_ARCH": "",
+                             "TEST_LINKED_FRAMEWORK": linked}, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                    self.assertNotIn("BrokenPipeError", result.stdout + result.stderr)
+
+    def test_lens_minimum_os_check_consumes_large_tool_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts = root / "RawLabMac"
+            tools = root / "tools"
+            scripts.mkdir()
+            tools.mkdir()
+            for name in ("build-env.sh", "build-lens-dependency.sh"):
+                shutil.copyfile(ROOT / "RawLabMac" / name, scripts / name)
+            prefix, lens = root / "dependencies", root / "lens"
+            for path in (prefix, lens):
+                (path / "lib").mkdir(parents=True)
+            (lens / "lib/liblensfun.dylib").touch()
+            (lens / "libraries.json").write_text("{}")
+            programs = {
+                "pkg-config": '#!/bin/bash\nif [[ "$1" == --variable=prefix ]]; then\n'
+                              '  if [[ "$2" == glib-2.0 ]]; then echo "$RAWLAB_DEPENDENCY_PREFIX"; '
+                              'else echo "$RAWLAB_LENS_PREFIX"; fi\nfi\n',
+                "lipo": "#!/bin/sh\nexit 0\n",
+                "otool": f"#!{sys.executable}\nimport os, sys\n"
+                         "if sys.argv[1] == '-l':\n"
+                         "    legacy = os.environ['TEST_LOAD_COMMAND'] == 'legacy'\n"
+                         "    print('cmd LC_VERSION_MIN_MACOSX' if legacy else 'cmd LC_BUILD_VERSION')\n"
+                         "    print(('version ' if legacy else 'minos ') + os.environ['TEST_BINARY_MINIMUM'], flush=True)\n"
+                         "    for _ in range(256):\n"
+                         "        sys.stdout.write('other load command data ' * 512 + '\\n')\n"
+                         "        sys.stdout.flush()\n",
+            }
+            for name, source in programs.items():
+                path = tools / name
+                path.write_text(source)
+                path.chmod(0o755)
+            env = {**os.environ, "PATH": f"{tools}:{os.environ['PATH']}",
+                   "RAWLAB_ARCH": "arm64", "MACOSX_DEPLOYMENT_TARGET": "14.0",
+                   "RAWLAB_DEPENDENCY_PREFIX": str(prefix), "RAWLAB_LENS_PREFIX": str(lens),
+                   "RAWLAB_CI_CACHE_HIT": "true", "RAWLAB_LENS_LOG": str(root / "lens.log"),
+                   "SDKROOT": "/unused/sdk", "CC": "cc", "CXX": "c++", "AR": "ar",
+                   "CMAKE": "cmake", "JOBS": "1"}
+            for command, minimum, expected in (("modern", "14.0", 0), ("modern", "15.0", 1),
+                                                ("legacy", "14.0", 0), ("legacy", "15.0", 1)):
+                with self.subTest(command=command, minimum=minimum):
+                    result = subprocess.run(["bash", str(scripts / "build-lens-dependency.sh")],
+                                            env={**env, "TEST_BINARY_MINIMUM": minimum,
+                                                 "TEST_LOAD_COMMAND": command},
+                                            capture_output=True, text=True)
+                    self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                    self.assertNotIn("BrokenPipeError", result.stdout + result.stderr)
+                    if minimum == "15.0":
+                        self.assertIn("Deployment target check failed", result.stdout)
+
     def test_libraw_stamp_tracks_patch_contents_not_timestamps(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
