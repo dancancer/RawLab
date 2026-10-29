@@ -45,7 +45,7 @@ class AdjustmentTransferTest {
 
     @Test fun allIncludesGeometryAndModifiedUsesDefaultsWithoutGeometry() {
         val source = EditSettings(exposure = .5f, geometry = GeometrySettings(cropWidth = .5f))
-        assertEquals(F.entries.toSet(), AdjustmentTransfer.capture(AdjustmentScope.All, source, context).fields)
+        assertEquals(F.entries.filterNot { it.isHDRRelative }.toSet(), AdjustmentTransfer.capture(AdjustmentScope.All, source, context).fields)
         assertEquals(setOf(F.EXPOSURE), AdjustmentTransfer.capture(AdjustmentScope.Modified, source, context).fields)
         assertThrows(AdjustmentTransferException::class.java) {
             AdjustmentTransfer.capture(AdjustmentScope.Modified, EditSettings(), context)

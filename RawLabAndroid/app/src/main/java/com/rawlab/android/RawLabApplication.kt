@@ -5,6 +5,12 @@ import com.rawlab.android.i18n.AppStrings
 
 /** 进程入口：在任何界面、ViewModel 或测试运行之前，把界面文字所需的 Application 交给 AppStrings */
 class RawLabApplication : Application() {
+    @Suppress("DEPRECATION")
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if(level>=android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW)
+            com.rawlab.android.engine.HDRSourceCache.clearAsync()
+    }
     override fun onCreate() {
         super.onCreate()
         com.rawlab.android.photo.WorkingCopyCleanup.atProcessStart(cacheDir, java.io.File(filesDir, "RawLab/BatchJobs"))

@@ -4565,6 +4565,110 @@
       "formats": [],
       "source": "使用此照片",
       "types": []
+    },
+    "hdr_above_white": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "参考白以上 {0}",
+      "types": [
+        "s"
+      ]
+    },
+    "hdr_conflicts": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。",
+      "types": []
+    },
+    "hdr_display_unavailable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "HDR 显示不可用，当前显示 SDR。",
+      "types": []
+    },
+    "hdr_editing": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "HDR 编辑",
+      "types": []
+    },
+    "hdr_false_color": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "HDR 假色",
+      "types": []
+    },
+    "hdr_histogram": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "HDR 亮度直方图",
+      "types": []
+    },
+    "hdr_jpeg": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "HDR JPEG",
+      "types": []
+    },
+    "hdr_preview_auto": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "自动 HDR",
+      "types": []
+    },
+    "hdr_preview_sdr": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "SDR 兼容预览",
+      "types": []
+    },
+    "hdr_processing_cpu": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。",
+      "types": []
+    },
+    "hdr_unsupported": {
+      "source": "不支持此 HDR 格式或颜色描述。",
+      "formats": [],
+      "types": [],
+      "file": "editor_strings.xml"
+    },
+    "hdr_memory": {
+      "source": "内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。",
+      "formats": [],
+      "types": [],
+      "file": "editor_strings.xml"
+    },
+    "hdr_output_failed": {
+      "source": "无法写入 HDR 导出文件，请检查可用空间和目标权限。",
+      "formats": [],
+      "types": [],
+      "file": "editor_strings.xml"
+    },
+    "hdr_not_hdr": {
+      "source": "此照片没有可编辑的 HDR 增益图。",
+      "formats": [],
+      "types": [],
+      "file": "editor_strings.xml"
+    },
+    "hdr_processing_failed": {
+      "source": "HDR 处理失败（{0}）。",
+      "formats": [
+        "%1$d"
+      ],
+      "types": [
+        "d"
+      ],
+      "file": "editor_strings.xml"
+    },
+    "hdr_jpeg_description": {
+      "source": "Display P3 SDR 底图 + HDR 增益图 · ISO / XMP",
+      "formats": [],
+      "types": [],
+      "file": "editor_strings.xml"
     }
   },
   "overrides": {
@@ -5466,6 +5570,14 @@
       "fr": "Choisir le dossier de sortie",
       "ja": "出力先を選択",
       "zh-Hans": "选择输出目录"
+    },
+    "Display P3 SDR 底图 + HDR 增益图 · ISO / XMP": {
+      "zh-Hans": "Display P3 SDR 底图 + HDR 增益图 · ISO / XMP",
+      "en": "Display P3 SDR base + HDR gain map · ISO / XMP",
+      "de": "Display-P3-SDR-Basis + HDR-Gain-Map · ISO / XMP",
+      "es": "Base SDR Display P3 + mapa de ganancia HDR · ISO / XMP",
+      "fr": "Base SDR Display P3 + carte de gain HDR · ISO / XMP",
+      "ja": "Display P3 SDR ベース + HDR ゲインマップ · ISO / XMP"
     }
   }
 }

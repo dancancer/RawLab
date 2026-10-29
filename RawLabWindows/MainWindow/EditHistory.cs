@@ -47,7 +47,7 @@ public partial class MainWindow
     {
         if(file==null || currentEditRecord==null)throw new EditPersistenceConflict();
         var candidate=new SavedEdit(OriginalIdentity.Read(file),snapshot,CurrentLookIdentity());
-        var defaults=RenderEngine.PrepareInputSettings(file,new Adjustments());defaults.ResolveWhiteBalance(settings.AsShot);
+        var defaults=PhotoInput.PrepareHDRInputSettings(file,new Adjustments());defaults.ResolveWhiteBalance(settings.AsShot);
         var result=TransferSession.CommitEdit(currentEditRecord,candidate,new(candidate.Identity,defaults.Capture(),null));
         if(result.Status is not (AdjustmentStatus.Applied or AdjustmentStatus.Unchanged))throw result.Error ?? new EditPersistenceConflict();
         currentEditRecord=result.Saved;return result;
@@ -67,7 +67,7 @@ public partial class MainWindow
         if(editDirty || transform.Active || editGesture!=null)throw new AdjustmentTransferException(AdjustmentFailure.Draft);
         if(!editStore!.VersionedState(file).SameAs(saved))throw new EditPersistenceConflict();
         var calibration=settings.AsShot;
-        currentEditRecord=saved;settings=saved.Edit?.Settings.Restore() ?? RenderEngine.PrepareInputSettings(file,new Adjustments());
+        currentEditRecord=saved;settings=saved.Edit?.Settings.Restore() ?? PhotoInput.PrepareHDRInputSettings(file,new Adjustments());
         if(calibration!=null)settings.ResolveWhiteBalance(calibration);
         lut=saved.Edit is {} edit ? ResolveLook(edit) : null;
         if(lut!=null && !films.Any(f=>StringComparer.OrdinalIgnoreCase.Equals(f.Path,lut))) {

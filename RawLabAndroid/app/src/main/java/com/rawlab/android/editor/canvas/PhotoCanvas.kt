@@ -43,6 +43,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -54,6 +55,10 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import com.rawlab.android.R
 import com.rawlab.android.editor.render.PreviewPair
+import com.rawlab.android.editor.render.HDRBitmapAdapter
+import com.rawlab.android.engine.HDRDisplayController
+import com.rawlab.android.engine.HDRDisplayParameters
+import com.rawlab.android.engine.HDRPreviewMode
 import com.rawlab.android.photo.PhotoInfo
 
 class PhotoCanvasState {
@@ -123,6 +128,7 @@ internal fun PhotoCanvas(
     val fitDescription = stringResource(R.string.zoom_fit)
     val beforeLabel = stringResource(R.string.editor_compare_before)
     val afterLabel = stringResource(R.string.result)
+    val falseColorLabel = stringResource(R.string.hdr_false_color)
     val pureAction = stringResource(if (showOverlays) R.string.editor_preview_enter else R.string.editor_preview_exit)
     val holdAction = stringResource(if (holdingBefore) R.string.editor_compare_show_after else R.string.editor_compare_hold_before)
     val resetSplit = stringResource(R.string.editor_compare_reset_split)
@@ -135,6 +141,22 @@ internal fun PhotoCanvas(
     var targetTouch by remember { mutableStateOf<Offset?>(null) }
     var targetAnchor by remember { mutableStateOf<Offset?>(null) }
     var targetImage by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    val activity = (LocalView.current.context as? android.app.Activity)
+    val hardwareCanvas = LocalView.current.isHardwareAccelerated
+    val hdrController = remember(activity) { activity?.let { HDRDisplayController(it.window) } }
+    var hdrState by remember { mutableStateOf(com.rawlab.android.engine.HDRDisplayState(false, 1f)) }
+    var hdrMode by remember { mutableStateOf(HDRPreviewMode.AUTOMATIC) }
+    var hdrFalseColor by remember { mutableStateOf(false) }
+    LaunchedEffect(pair.hdr, activity, hdrMode, hardwareCanvas) {
+        hdrState = hdrController?.refresh(surfaceReady = pair.hdr != null && hardwareCanvas && hdrMode == HDRPreviewMode.AUTOMATIC,
+            contentHeadroom = pair.hdr?.result?.contentHeadroom ?: 1f)
+            ?: com.rawlab.android.engine.HDRDisplayState(false, 1f, "No activity window")
+    }
+    DisposableEffect(hdrController) {
+        if (activity != null && android.os.Build.VERSION.SDK_INT >= 34)
+            hdrController?.registerRatioChanges(activity.mainExecutor) { hdrState = it }
+        onDispose { hdrController?.close() }
+    }
     DisposableEffect(Unit) { onDispose { hold(false); target?.cancel() } }
     BoxWithConstraints(Modifier.fillMaxSize().padding(if (margins) 8.dp else 0.dp).clipToBounds()) {
         if (constraints.maxWidth == 0 || constraints.maxHeight == 0) return@BoxWithConstraints
@@ -173,20 +195,30 @@ internal fun PhotoCanvas(
                     translationX = zoom.x; translationY = zoom.y
                 }
                 val wipe = compare && mode == ComparisonMode.WIPE
+                val hdrFrame = if (neutralOnly || before) pair.hdr?.neutral else pair.hdr?.result
+                val hdrBitmap = HDRBitmapAdapter.rememberBitmap(hdrFrame,
+                    HDRDisplayParameters(hdrState.headroom, hdrMode, hdrFalseColor), hdrState.available || hdrFalseColor)
+                val shownBitmap = hdrBitmap ?: if (neutralOnly || before) pair.neutral else pair.result
                 Box(Modifier.fillMaxSize()
                     .pointerInput(state, area, compare, mode, viewingEnabled, hslTarget != null) {
                         if (hslTarget == null) detectTapGestures(onDoubleTap = { hold(false); state.doubleTap(it, area) },
                             onLongPress = { if (!compare && viewingEnabled) hold(true) },
                             onPress = { try { tryAwaitRelease() } finally { hold(false) } }, onTap = { if (viewingEnabled || !showOverlays) tap() })
                     }) {
-                    Image((if (neutralOnly || before) pair.neutral else pair.result).asImageBitmap(), null,
-                        transform.testTag(if (neutralOnly || before) "comparison-before" else "comparison-after"), contentScale = ContentScale.Fit)
+                    Image(shownBitmap.asImageBitmap(), null,
+                        transform.testTag(if (neutralOnly || before) "comparison-before" else "comparison-after").semantics {
+                            if(hdrFalseColor && hdrBitmap!=null)stateDescription=falseColorLabel
+                        }, contentScale = ContentScale.Fit)
                     if (wipe) {
                         Box(Modifier.fillMaxSize().drawWithContent {
                             val x = image.splitX(state.split)
                             clipRect(image.left, image.top, x, image.bottom) { this@drawWithContent.drawContent() }
                             drawLine(Color.White, Offset(x, image.top), Offset(x, image.bottom), 1.dp.toPx())
-                        }) { Image(pair.neutral.asImageBitmap(), null, transform, contentScale = ContentScale.Fit) }
+                        }) {
+                            val neutralBitmap = HDRBitmapAdapter.rememberBitmap(pair.hdr?.neutral,
+                                HDRDisplayParameters(hdrState.headroom, hdrMode, hdrFalseColor), hdrState.available || hdrFalseColor)
+                            Image((neutralBitmap ?: pair.neutral).asImageBitmap(), null, transform, contentScale = ContentScale.Fit)
+                        }
                         Box(Modifier.offset { IntOffset(image.left.roundToInt(), image.top.roundToInt()) }
                             .size(with(androidx.compose.ui.platform.LocalDensity.current) { image.width.toDp() }, with(androidx.compose.ui.platform.LocalDensity.current) { image.height.toDp() })
                             .testTag("comparison-wipe").semantics {
@@ -276,6 +308,11 @@ internal fun PhotoCanvas(
             } else pane(Modifier.fillMaxSize())
             }
             if (showOverlays) {
+                pair.hdr?.let { hdr ->
+                    HDRMonitoring((if (before) hdr.neutral else hdr.result).statistics, hdrState, hdrMode, hdrFalseColor,
+                        { hdrMode = it }, { hdrFalseColor = it }, Modifier.align(Alignment.TopEnd)
+                            .padding(top = if (compare) 48.dp else 8.dp, end = 8.dp))
+                }
                 if (hslTarget == null) {
                     BoxWithConstraints(Modifier.fillMaxSize()) { PhotoInfoOverlay(info, infoMode, onInfoClick, maxHeight, if (compare) 112.dp else 64.dp) }
                 }
@@ -323,7 +360,7 @@ internal fun PhotoCanvas(
                     }
                 }
             }
-            RgbHistogramOverlay(if (before) pair.neutralHistogram else pair.resultHistogram, before, showOverlays && hslTarget == null,
+            RgbHistogramOverlay(if (before) pair.neutralHistogram else pair.resultHistogram, before, showOverlays && hslTarget == null && pair.hdr == null,
                 Modifier.align(Alignment.TopEnd).padding(8.dp))
         }
     }

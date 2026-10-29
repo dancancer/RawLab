@@ -29,19 +29,28 @@ sealed interface AdjustmentValue {
 
 data class AdjustmentRecipeContext(val id: String, val strength: Double, val settingsVersion: Int = 3)
 data class AdjustmentSource(val identifier: String, val isRaw: Boolean, val processingVersion: Int,
-    val recipe: AdjustmentRecipeContext? = null)
+    val recipe: AdjustmentRecipeContext? = null, val hdrProcessingVersion: Int? = null) {
+    val isHDR get() = hdrProcessingVersion != null
+}
 
 @ConsistentCopyVisibility
 data class AdjustmentPayload private constructor(val source: AdjustmentSource,
     val values: Map<AdjustmentField, AdjustmentValue>, val payloadVersion: Int, val scopeVersion: Int) {
     constructor(source: AdjustmentSource, values: Map<AdjustmentField, AdjustmentValue>) :
-        this(source, values.mapValues { it.value.frozen() }, 1, 1)
+        this(source, values.mapValues { it.value.frozen() }, if (source.isHDR) 2 else 1, if (source.isHDR) 2 else 1)
     val fields get() = values.keys
     operator fun get(field: AdjustmentField) = values[field]
     init { validate() }
 
     fun validate() {
-        if (payloadVersion != 1 || scopeVersion != 1) throw AdjustmentTransferException(AdjustmentFailure.UNSUPPORTED_VERSION)
+        if (!((payloadVersion == 1 && scopeVersion == 1 && !source.isHDR) ||
+                (payloadVersion == 2 && scopeVersion == 2 && source.isHDR)))
+            throw AdjustmentTransferException(AdjustmentFailure.UNSUPPORTED_VERSION)
+        if (source.isHDR) {
+            valid(!source.isRaw && source.recipe == null && source.hdrProcessingVersion == 1 && fields.all { it in AdjustmentField.HDR_SUPPORTED }, "hdr context")
+        } else {
+            valid(fields.none { it.isHDRRelative }, "hdr context")
+        }
         if (values.isEmpty()) throw AdjustmentTransferException(AdjustmentFailure.EMPTY_SCOPE)
         valid(source.identifier.isNotEmpty() && source.processingVersion in 1..2, "source")
         source.recipe?.let {
@@ -71,6 +80,7 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
         val sourceJSON = JSONObject().put("identifier", source.identifier).put("is_raw", source.isRaw)
             .put("processing_version", source.processingVersion)
         source.recipe?.let { sourceJSON.put("recipe", JSONObject().put("id", it.id).put("strength", it.strength).put("settings_version", it.settingsVersion)) }
+        if (source.isHDR) sourceJSON.put("hdr_processing_version", source.hdrProcessingVersion)
         return JSONObject().put("payload_version", payloadVersion).put("scope_version", scopeVersion)
             .put("source", sourceJSON).put("values", JSONObject().also { objectValue ->
                 values.forEach { (field, value) -> objectValue.put(field.id, jsonValue(value)) }
@@ -100,7 +110,7 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
             val root = JSONObject(json)
             rejectUnknown(root, setOf("payload_version", "scope_version", "source", "values"))
             val source = objectValue(root.get("source"))
-            rejectUnknown(source, setOf("identifier", "is_raw", "processing_version", "recipe"))
+            rejectUnknown(source, setOf("identifier", "is_raw", "processing_version", "recipe", "hdr_processing_version"))
             val recipe = source.opt("recipe").takeUnless { it == null || it == JSONObject.NULL }?.let { raw ->
                 val value = objectValue(raw)
                 rejectUnknown(value, setOf("id", "strength", "settings_version"))
@@ -108,7 +118,8 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
             }
             val values = objectValue(root.get("values"))
             AdjustmentPayload(AdjustmentSource(text(source.get("identifier")), bool(source.get("is_raw")),
-                integer(source.get("processing_version")), recipe), keys(values).associate { id ->
+                integer(source.get("processing_version")), recipe,
+                source.opt("hdr_processing_version")?.takeUnless { it == JSONObject.NULL }?.let(::integer)), keys(values).associate { id ->
                 val field = AdjustmentField.fromID(id) ?: throw AdjustmentTransferException(AdjustmentFailure.INVALID_PAYLOAD, id)
                 field to decodeValue(values.get(id))
             }, integer(root.get("payload_version")), integer(root.get("scope_version")))
@@ -151,8 +162,8 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
                 AdjustmentField.LENS_TCA, AdjustmentField.LENS_AUTO_CROP -> value.boolean != null
                 AdjustmentField.EXPOSURE_MODE -> value.text in setOf("scene", "preview", "sensor")
                 AdjustmentField.WHITE_BALANCE_MODE -> value.text in setOf("camera", "temperature", "none")
-                AdjustmentField.TEMPERATURE -> value == AdjustmentValue.Null || value.number?.let { it.isFinite() && it in 2000.0..50000.0 } == true
-                AdjustmentField.TINT -> value == AdjustmentValue.Null || value.number?.let { it.isFinite() && it in -150.0..150.0 } == true
+                AdjustmentField.TEMPERATURE, AdjustmentField.HDR_TEMPERATURE -> value == AdjustmentValue.Null || value.number?.let { it.isFinite() && it in 2000.0..50000.0 } == true
+                AdjustmentField.TINT, AdjustmentField.HDR_TINT -> value == AdjustmentValue.Null || value.number?.let { it.isFinite() && it in -150.0..150.0 } == true
                 AdjustmentField.LENS_PROFILE -> value == AdjustmentValue.Null || value.text?.isNotEmpty() == true
                 AdjustmentField.RAW_DENOISE -> value.number in setOf(0.0, 1.0, 2.0)
                 AdjustmentField.CHROMA_DENOISE -> value == AdjustmentValue.Null || value.number in setOf(0.0, 1.0, 2.0)

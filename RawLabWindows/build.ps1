@@ -126,7 +126,7 @@ if ($Test) {
     Copy-Item -LiteralPath $RawPath -Destination $fixture -Force
     Write-Host "Test fixture: $RawPath"
 }
-Invoke-Checked $CMake (@('-S',"$PSScriptRoot/native",'-B',$native,'-A','x64','-DBUILD_TESTING=ON',"-DPython3_EXECUTABLE=$Python","-DSONY2FUJI_TEST_RAW=$($fixture.Replace('\','/'))") + $aiOptions)
+Invoke-Checked $CMake (@('-S',"$PSScriptRoot/native",'-B',$native,'-A','x64','-DBUILD_TESTING=ON','-DSONY2FUJI_TEST_PORTABLE_HDR=ON',"-DPython3_EXECUTABLE=$Python","-DSONY2FUJI_TEST_RAW=$($fixture.Replace('\','/'))") + $aiOptions)
 Invoke-Checked $CMake @('--build',$native,'--config','Release','--parallel')
 $iconPath=Join-Path $native 'RawLab.ico'
 & "$PSScriptRoot/build-icon.ps1" -Source "$repo/RawLabMac/Resources/AppIcon.png" -Output $iconPath
@@ -138,6 +138,7 @@ Invoke-Checked $DotNet $publish
 if ((Test-Path -LiteralPath "$output/alibabacloud_rum.dll") -eq [bool]$NoRumSdk) { throw 'The package RUM SDK presence does not match -NoRumSdk.' }
 & "$PSScriptRoot/build-exiftool.ps1" -Output $output
 Copy-Item "$native/core/Release/sony2fuji.dll", "$native/cli/Release/sony2fuji.exe", "$native/Release/raw.dll" $output -Force
+Copy-Item "$native/hdr-display/Release/rawlab-hdr-display.dll" $output -Force
 $aiDestination = Join-Path $output 'AI/DualDn'
 if (Test-Path -LiteralPath $aiDestination) { Remove-Item -LiteralPath $aiDestination -Recurse -Force }
 if ($DualDnModel) {
@@ -209,6 +210,7 @@ if ($Test) {
     $testOut = (& $DotNet msbuild "$PSScriptRoot/tests/RawLabWindows.Tests.csproj" -getProperty:TargetDir -p:Configuration=Release).Trim()
     if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $testOut)) { throw 'Cannot resolve the WPF test output directory.' }
     Copy-Item "$native/core/Release/sony2fuji.dll", "$native/Release/raw.dll", "$($crt.FullName)/*.dll", "$($openmp.FullName)/*.dll" $testOut -Force
+    Copy-Item "$native/hdr-display/Release/rawlab-hdr-display.dll" $testOut -Force
     Copy-Item "$output/ExifTool" $testOut -Recurse -Force
     if ($DualDnModel) {
         foreach ($name in $runtimePins.Keys) { Copy-Item -LiteralPath "$output/$name" $testOut -Force }

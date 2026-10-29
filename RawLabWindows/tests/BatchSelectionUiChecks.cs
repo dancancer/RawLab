@@ -30,6 +30,11 @@ internal static class BatchSelectionUiChecks
                     var scope=app.Windows.OfType<AdjustmentScopeDialog>().FirstOrDefault(dialog=>dialog.IsVisible);
                     if(scope!=null && stage==0) {
                         scope.UpdateLayout();Find<ComboBox>(scope,"adjustment.copy.scope").SelectedIndex=3;
+                        if(Get<Adjustments>(window,"settings").IsHDREditing) {
+                            check(Find<CheckBox>(scope,"adjustment.field.hdr.relative_temperature").IsVisible &&
+                                Find<CheckBox>(scope,"adjustment.field.hdr.relative_tint").IsVisible,
+                                "Actual HDR collection scope shows relative WB controls");
+                        }
                         Find<Button>(scope,"adjustment.copy.clear").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                         Find<CheckBox>(scope,"adjustment.field.light.exposure").IsChecked=true;stage=1;
                         Find<Button>(scope,"adjustment.copy.confirm").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));return;

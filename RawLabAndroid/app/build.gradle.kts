@@ -59,16 +59,25 @@ fun AndroidSourceSet.usageTransport(withSdk: Boolean) {
 val testRaw = providers.gradleProperty("rawlabTestRaw").orElse(providers.environmentVariable("RAWLAB_TEST_RAW"))
 val testRaster = providers.gradleProperty("rawlabTestRaster").orElse(providers.environmentVariable("RAWLAB_TEST_RASTER"))
 val testSonyArw6 = providers.gradleProperty("rawlabTestSonyArw6").orElse(providers.environmentVariable("RAWLAB_TEST_SONY_ARW6"))
+val testHDRJPEG = providers.gradleProperty("rawlabTestHDRJPEG").orElse(providers.environmentVariable("RAWLAB_TEST_HDR_JPEG"))
+val testHDRHEIC = providers.gradleProperty("rawlabTestHDRHEIC").orElse(providers.environmentVariable("RAWLAB_TEST_HDR_HEIC"))
 val testAssets = layout.buildDirectory.dir("generated/rawlabTestAssets")
 val prepareTestAssets by tasks.registering(Sync::class) {
     into(testAssets)
+    filePermissions { unix("rw-r--r--") }
     from(repo.resolve("lutools/tests/fixtures/jpeg-lossy.dng"))
+    from(repo.resolve("lutools/tests/fixtures/hdr/apple-legacy-macos26.jpg"))
     from(repo.resolve("Shared/fixtures/adjustment-presets-v1.json"))
     if (testRaw.isPresent) from(testRaw.get()) { rename { "sample.RAW" } }
     if (testRaster.isPresent) from(testRaster.get()) { rename { "sample.jpg" } }
     if (testSonyArw6.isPresent) from(testSonyArw6.get()) { rename { "sony-arw6.ARW" } }
+    if (testHDRJPEG.isPresent) from(testHDRJPEG.get()) { rename { "hdr-sample.jpg" } }
+    if (testHDRHEIC.isPresent) from(testHDRHEIC.get()) { rename { "hdr-sample.heic" } }
 }
 val generatedAssets = layout.buildDirectory.dir("generated/rawlabAssets")
+val hdrCodecSources = providers.exec {
+    commandLine("python3", repo.resolve("lutools/cmake/hdr_sources.py").path, "--portable")
+}.standardOutput.asText.map { text -> text.trim().split(';').map(::File) }
 val prepareAssets by tasks.registering(Sync::class) {
     into(generatedAssets)
     from(repo.resolve("lutools/flog-2-new")) {
@@ -105,6 +114,10 @@ val prepareAssets by tasks.registering(Sync::class) {
             "libjpeg-turbo-LICENSE.md", "libjpeg-turbo-README.ijg", "stb-MIT-LICENSE.txt")
     }
     from("src/main/notices") { into("licenses") }
+    from(hdrCodecSources.map { it[0] }) { into("licenses/libultrahdr"); include("LICENSE", "LICENSE_*") }
+    from(hdrCodecSources.map { it[2].resolve("COPYING") }) { into("licenses/libheif") }
+    from(hdrCodecSources.map { it[3].resolve("COPYING") }) { into("licenses/libde265") }
+    from(hdrCodecSources.map { it[4].resolve("LICENSE") }) { into("licenses/lcms2") }
     from(repo.resolve("LICENSE")) { into("licenses"); rename { "RawLab-GPL-3.0.txt" } }
     from(repo.resolve("LICENSE-ALIYUN-RUM-EXCEPTION")) { into("licenses"); rename { "RawLab-Aliyun-RUM-Exception.txt" } }
     from(repo.resolve("docs/reference/licensing.md")) { into("licenses"); rename { "RawLab-Licensing.md" } }

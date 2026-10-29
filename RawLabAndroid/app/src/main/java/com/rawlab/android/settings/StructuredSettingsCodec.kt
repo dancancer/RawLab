@@ -38,6 +38,8 @@ internal object StructuredSettingsCodec {
                 .put("perspectiveVertical", perspectiveVertical) })
             .put("processing", JSONObject().put("family", s.processing.family).put("version", s.processing.version)
                 .put("quality", s.processing.quality))
+        s.hdr?.let { value.put("hdr", hdrJSON(it)) }
+        s.sdrSnapshot?.let { value.put("sdrSnapshot", it) }
         if (s.clarity != 0f || s.dehaze != 0f) value.put("atmosphere",
             JSONObject().put("clarity", s.clarity).put("dehaze", s.dehaze))
         return "v2:" + JSONObject().put("format", format).put("version", 2).put("settings", value).toString()
@@ -49,7 +51,7 @@ internal object StructuredSettingsCodec {
         validateStrictJSON(json, setOf("version", "masterRecipeSettingsVersion", "exposureMode", "displayChromaDenoise", "quarterTurns"))
         val root = JSONObject(json).keysExactly("format", "version", "settings")
         require(root.string("format") == format && root.integer("version") == 2) { "Unsupported settings format" }
-        val s = root.getJSONObject("settings").keysWithOptional(setOf("colorGrading", "curve", "atmosphere", "masterRecipeSettingsVersion"), "film", "strength", "exposure", "exposureMode", "highlights",
+        val s = root.getJSONObject("settings").keysWithOptional(setOf("colorGrading", "curve", "atmosphere", "masterRecipeSettingsVersion", "hdr", "sdrSnapshot"), "film", "strength", "exposure", "exposureMode", "highlights",
             "shadows", "contrast", "toneCurve", "saturation", "sharpening", "customWb", "temperature", "tint",
             "recipeID", "displayChromaDenoise", "hsl", "tone", "denoise", "effects", "lens", "geometry", "processing")
         val atmosphere = if (s.has("atmosphere")) s.getJSONObject("atmosphere").keysExactly("clarity", "dehaze") else null
@@ -61,6 +63,8 @@ internal object StructuredSettingsCodec {
         val geometry = s.getJSONObject("geometry").keysExactly("cropX", "cropY", "cropWidth", "cropHeight", "quarterTurns",
             "flipHorizontal", "flipVertical", "straightenDegrees", "perspectiveHorizontal", "perspectiveVertical")
         val processing = s.getJSONObject("processing").keysExactly("family", "version", "quality")
+        val hdr = if (s.has("hdr")) decodeHDR(s.getJSONObject("hdr")) else null
+        val sdrSnapshot = if (s.has("sdrSnapshot")) s.string("sdrSnapshot") else null
         val hsl = s.getJSONArray("hsl")
         require(hsl.length() == 24)
         return EditSettings(film = s.string("film"), strength = s.number("strength", 0.0..2.0), exposure = s.number("exposure", -4.0..4.0),
@@ -84,7 +88,41 @@ internal object StructuredSettingsCodec {
                 geometry.number("cropHeight", 0.0..1.0), geometry.integer("quarterTurns"), geometry.boolean("flipHorizontal"),
                 geometry.boolean("flipVertical"), geometry.number("straightenDegrees", -45.0..45.0), geometry.number("perspectiveHorizontal", -1.0..1.0),
                 geometry.number("perspectiveVertical", -1.0..1.0)),
-            processing = ProcessingIdentity(processing.string("family"), processing.integer("version"), processing.string("quality")))
+            processing = ProcessingIdentity(processing.string("family"), processing.integer("version"), processing.string("quality")),
+            hdr = hdr, sdrSnapshot = sdrSnapshot)
+    }
+
+    private fun hdrJSON(value: HDRSettings): JSONObject = JSONObject()
+        .put("mode", value.mode.name.lowercase())
+        .put("record_version", value.recordVersion)
+        .put("hdr_processing_version", value.processingVersion)
+        .put("exposure_ev", value.exposure).put("relative_temperature", value.temperature).put("relative_tint", value.tint)
+        .put("contrast", value.contrast).put("highlights", value.highlights).put("shadows", value.shadows)
+        .put("saturation", value.saturation)
+        .put("geometry", with(value.geometry) { JSONObject().put("cropX", cropX).put("cropY", cropY)
+            .put("cropWidth", cropWidth).put("cropHeight", cropHeight).put("quarterTurns", quarterTurns)
+            .put("flipHorizontal", flipHorizontal).put("flipVertical", flipVertical)
+            .put("straightenDegrees", straightenDegrees).put("perspectiveHorizontal", perspectiveHorizontal)
+            .put("perspectiveVertical", perspectiveVertical) })
+
+    private fun decodeHDR(value: JSONObject): HDRSettings {
+        value.keysExactly("record_version", "hdr_processing_version", "mode", "exposure_ev", "relative_temperature", "relative_tint", "contrast", "highlights", "shadows", "saturation", "geometry")
+        val geometry = value.getJSONObject("geometry").keysExactly("cropX", "cropY", "cropWidth", "cropHeight", "quarterTurns",
+            "flipHorizontal", "flipVertical", "straightenDegrees", "perspectiveHorizontal", "perspectiveVertical")
+        val mode = when (value.string("mode")) {
+            "hdr" -> HDRMode.HDR
+            "sdr" -> HDRMode.SDR
+            else -> throw IllegalArgumentException("Unsupported HDR mode")
+        }
+        return HDRSettings(mode = mode, recordVersion = value.integer("record_version"), processingVersion = value.integer("hdr_processing_version"),
+            exposure = value.number("exposure_ev", -4.0..4.0), temperature = value.number("relative_temperature", 2000.0..50000.0),
+            tint = value.number("relative_tint", -150.0..150.0), contrast = value.number("contrast", -100.0..100.0),
+            highlights = value.number("highlights", -100.0..100.0), shadows = value.number("shadows", -100.0..100.0),
+            saturation = value.number("saturation", -100.0..100.0), geometry = GeometrySettings(
+                geometry.number("cropX", 0.0..1.0), geometry.number("cropY", 0.0..1.0), geometry.number("cropWidth", 0.0..1.0),
+                geometry.number("cropHeight", 0.0..1.0), geometry.integer("quarterTurns"), geometry.boolean("flipHorizontal"),
+                geometry.boolean("flipVertical"), geometry.number("straightenDegrees", -45.0..45.0),
+                geometry.number("perspectiveHorizontal", -1.0..1.0), geometry.number("perspectiveVertical", -1.0..1.0)))
     }
 
     private fun grading(json: JSONObject): ColorGradingSettings {

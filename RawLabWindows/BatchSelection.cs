@@ -89,7 +89,9 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                 if(activeFailure(photo.ID) is {} draft)throw new InvalidOperationException(draft);
                 photo.Validate();var record=store.VersionedState(photo.Path);
                 if(!record.Identity.SameFile(photo.Identity))throw new EditPersistenceConflict();
-                var settings=(record.Edit?.Settings.Restore() ?? PhotoInput.PrepareInputSettings(photo.Path,new Adjustments())).Capture();
+                var settings=(record.Edit?.Settings.Restore() ?? PhotoInput.PrepareHDRInputSettings(photo.Path,new Adjustments())).Capture();
+                if(format==ExportFormat.HdrJpeg && (settings.HDR is not {Mode:HDRMode.Hdr} || PhotoInput.ProbeHDR(photo.Path,out _)!=HDRProbeState.Supported))
+                    throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
                 if(settings.AIDenoiseEnabled) {
                     if(!PhotoInput.IsRaw(photo.Path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
                     validateAI?.Invoke(photo.Path);
@@ -115,7 +117,9 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                 row.Photo.Validate();
                 var current=store.VersionedState(row.Photo.Path);
                 if(!current.SameAs(row.Record))throw new EditPersistenceConflict();
-                var expected=(current.Edit?.Settings.Restore() ?? PhotoInput.PrepareInputSettings(row.Photo.Path,new Adjustments())).Capture();
+                var expected=(current.Edit?.Settings.Restore() ?? PhotoInput.PrepareHDRInputSettings(row.Photo.Path,new Adjustments())).Capture();
+                if(review.Format==ExportFormat.HdrJpeg && (expected.HDR is not {Mode:HDRMode.Hdr} || PhotoInput.ProbeHDR(row.Photo.Path,out _)!=HDRProbeState.Supported))
+                    throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
                 if(!expected.SameAs(row.Settings!))throw new EditPersistenceConflict();
                 if(expected.AIDenoiseEnabled) {
                     if(!PhotoInput.IsRaw(row.Photo.Path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));

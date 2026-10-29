@@ -4,16 +4,18 @@ namespace RawLab.Windows;
 
 public enum ExportFormat
 {
-    Jpeg,
-    Png,
-    RenderedDng
+    Jpeg = 0,
+    Png = 1,
+    RenderedDng = 2,
+    HdrJpeg = 3,
+    SdrJpeg = 4
 }
 
 public static class ExportFormatExtensions
 {
     public static string Suffix(this ExportFormat format) => format switch
     {
-        ExportFormat.Jpeg => "jpg",
+        ExportFormat.Jpeg or ExportFormat.HdrJpeg or ExportFormat.SdrJpeg => "jpg",
         ExportFormat.Png => "png",
         ExportFormat.RenderedDng => "dng",
         _ => throw new ArgumentOutOfRangeException(nameof(format))
@@ -21,7 +23,7 @@ public static class ExportFormatExtensions
 
     public static int NativeValue(this ExportFormat format) => format switch
     {
-        ExportFormat.Jpeg => 0,
+        ExportFormat.Jpeg or ExportFormat.HdrJpeg or ExportFormat.SdrJpeg => 0,
         ExportFormat.Png => 1,
         ExportFormat.RenderedDng => 4,
         _ => throw new ArgumentOutOfRangeException(nameof(format))
@@ -36,7 +38,7 @@ public static class ExportFormatExtensions
 
     public static bool AcceptsPath(this ExportFormat format, string path) => format switch
     {
-        ExportFormat.Jpeg => Path.GetExtension(path).Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+        ExportFormat.Jpeg or ExportFormat.HdrJpeg or ExportFormat.SdrJpeg => Path.GetExtension(path).Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
             Path.GetExtension(path).Equals(".jpeg", StringComparison.OrdinalIgnoreCase),
         ExportFormat.Png => Path.GetExtension(path).Equals(".png", StringComparison.OrdinalIgnoreCase),
         ExportFormat.RenderedDng => Path.GetExtension(path).Equals(".dng", StringComparison.OrdinalIgnoreCase),
@@ -46,6 +48,8 @@ public static class ExportFormatExtensions
     public static string Title(this ExportFormat format) => format switch
     {
         ExportFormat.Jpeg => "JPEG",
+        ExportFormat.HdrJpeg => Loc.Text("HDR JPEG"),
+        ExportFormat.SdrJpeg => Loc.Text("保存 SDR JPEG"),
         ExportFormat.Png => Loc.Text("16-bit PNG"),
         ExportFormat.RenderedDng => Loc.Text("DNG · 渲染型"),
         _ => throw new ArgumentOutOfRangeException(nameof(format))

@@ -96,7 +96,7 @@ class AgentCommands(unittest.TestCase):
         return value
 
     def test_capabilities_and_flag_order(self):
-        hdr=sys.platform=="darwin" and tuple(map(int,platform.mac_ver()[0].split(".")[:2]))>=(15,0)
+        hdr=sys.platform!="darwin" or tuple(map(int,platform.mac_ver()[0].split(".")[:2]))>=(15,0)
         expected = {
             "recipe_versions": [1, 2, 3, 4, 5]+([6] if hdr else []),
             "commands": ["capabilities", "validate_recipe", "info", "preview", "export"],

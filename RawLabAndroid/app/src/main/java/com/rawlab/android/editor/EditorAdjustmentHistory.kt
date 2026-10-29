@@ -47,7 +47,7 @@ internal class EditorAdjustmentHistory(private val store: EditorEditStore) {
         return {
             if (store.versionedState(photo.identity) != expected) throw EditPersistenceConflict()
             validate?.invoke()
-            if (!AdjustmentTransfer.sameAdjustments(expected.settings ?: EditSettings(), settings, photo.inputKind == PhotoInputKind.RAW))
+            if (!AdjustmentTransfer.sameAdjustments(expected.settings ?: sourceDefaults(photo, expected), settings, photo.inputKind == PhotoInputKind.RAW))
                 throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
         }
     }
@@ -57,7 +57,7 @@ internal class EditorAdjustmentHistory(private val store: EditorEditStore) {
             if (interacting || expected.identity != photo.identity || sourcePath != photo.file.absolutePath ||
                 store.versionedState(photo.identity) != expected) throw EditPersistenceConflict()
             validator?.invoke()
-            if (!AdjustmentTransfer.sameAdjustments(expected.settings ?: EditSettings(), settings, photo.inputKind == PhotoInputKind.RAW))
+            if (!AdjustmentTransfer.sameAdjustments(expected.settings ?: sourceDefaults(photo, expected), settings, photo.inputKind == PhotoInputKind.RAW))
                 throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
         } catch (error: Exception) { reloadRequired = error is EditPersistenceConflict; throw error }
     }
@@ -65,7 +65,7 @@ internal class EditorAdjustmentHistory(private val store: EditorEditStore) {
         if (interacting) return EditSaveResult(EditSaveState.SAVED)
         val expected = loaded
         if (expected == null || expected.identity != photo.identity || sourcePath != photo.file.absolutePath ||
-            !AdjustmentTransfer.sameAdjustments(expected.settings ?: EditSettings(), settings, photo.inputKind == PhotoInputKind.RAW))
+            !AdjustmentTransfer.sameAdjustments(expected.settings ?: sourceDefaults(photo, expected), settings, photo.inputKind == PhotoInputKind.RAW))
             return EditSaveResult(EditSaveState.FAILED, IOException("Reload saved adjustments before editing"))
         interaction = Interaction(photo.identity, photo.file.absolutePath, revision, settings)
         return EditSaveResult(EditSaveState.SAVED)
@@ -92,7 +92,8 @@ internal class EditorAdjustmentHistory(private val store: EditorEditStore) {
         }
         val raw = photo.inputKind == PhotoInputKind.RAW
         val candidate = expected.settings?.takeIf { AdjustmentTransfer.sameAdjustments(it, settings, raw) } ?: settings
-        val defaults = if (AdjustmentTransfer.sameAdjustments(settings, EditSettings(), raw)) settings else EditSettings()
+        val sourceDefault = sourceDefaults(photo, expected)
+        val defaults = if (AdjustmentTransfer.sameAdjustments(settings, sourceDefault, raw)) settings else sourceDefault
         val result = currentSession.commitEdit(expected, candidate, photo.name, defaults, validateSource = validator, validateHistorySource = historySourceValidation(photo))
         if (result.saved != null) {
             loaded = result.saved
@@ -115,9 +116,11 @@ internal class EditorAdjustmentHistory(private val store: EditorEditStore) {
         reloadRequired = false
         if (validator == null) validator = sourceValidation(photo)
         session?.refreshSource(photo.identity, historySourceValidation(photo))
-        return record.settings ?: EditSettings()
+        return record.settings ?: sourceDefaults(photo, record)
     }
     companion object {
+        private fun sourceDefaults(photo: ImportedPhoto, record: VersionedPhotoEdit) =
+            com.rawlab.android.settings.sourceDefaultSettings(photo.isHDRSource)
         private data class SourceStamp(val inode: Long, val length: Long, val modified: Long)
         fun historySourceValidation(photo: ImportedPhoto): () -> Unit = photo.validateOriginal ?: sourceValidation(photo.file)
         fun sourceValidation(photo: ImportedPhoto): () -> Unit {

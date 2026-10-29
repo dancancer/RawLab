@@ -45,6 +45,8 @@ public partial class BatchExportWindow : Window
         Loc.Changed += RefreshLanguage;
         Closed += (_, _) => {closed=true;Loc.Changed -= RefreshLanguage;};
         Jpeg.IsChecked = job.Format == ExportFormat.Jpeg;
+        HdrJpeg.IsChecked = job.Format == ExportFormat.HdrJpeg;
+        SdrJpeg.IsChecked = job.Format == ExportFormat.SdrJpeg;
         Png.IsChecked = job.Format == ExportFormat.Png;
         Dng.IsChecked = job.Format == ExportFormat.RenderedDng;
         SourceName.Text = Path.GetFileName(job.Source); SourceName.ToolTip = job.Source;
@@ -162,6 +164,8 @@ public partial class BatchExportWindow : Window
                     try{
                         var item=BatchItem.Create(input);
                         try{var effective=RenderEngine.PrepareBatchSettings(job.Source,input,settings.Restore());
+                            if (job.Format == ExportFormat.HdrJpeg && effective.HDR is not { Mode: HDRMode.Hdr })
+                                throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
                             if(effective.AIDenoiseEnabled)RenderEngine.ValidateAIInput(input,job.AIDeviceID);
                             else validator.Render(input,effective,look,64,statistics:false,clipping:false,viewportPreview:true);
                             item=item with{Selected=true};}
@@ -220,7 +224,8 @@ public partial class BatchExportWindow : Window
         if (ready && !Frozen && !job.Started && !Running)
         {
             job.Format = Dng.IsChecked == true ? ExportFormat.RenderedDng :
-                Png.IsChecked == true ? ExportFormat.Png : ExportFormat.Jpeg;
+                Png.IsChecked == true ? ExportFormat.Png : HdrJpeg.IsChecked == true ? ExportFormat.HdrJpeg :
+                SdrJpeg.IsChecked == true ? ExportFormat.SdrJpeg : ExportFormat.Jpeg;
             SaveDraft();
         }
     }
@@ -307,7 +312,7 @@ public partial class BatchExportWindow : Window
         try
         {
             await Task.Run(() => {
-                if (work.Format != ExportFormat.RenderedDng) ExportMetadata.VerifyAvailable();
+                if (work.Format is not (ExportFormat.RenderedDng or ExportFormat.HdrJpeg)) ExportMetadata.VerifyAvailable();
                 using var engine = createEngine(work.AIBackend);engine.SetAIDevice(work.AIDeviceID);
                 BatchRunner.Run(work, journal, failuresOnly, cancellation.Token,
                     (updated, _) => {
@@ -329,7 +334,7 @@ public partial class BatchExportWindow : Window
                         }
                         cancellation.Token.ThrowIfCancellationRequested();
                         engine.Render(input, settings, look, 32, statistics: false, clipping: false);
-                        engine.Render(input, settings, look, 0, output: destination, longEdge: longEdge);
+                        engine.Render(input, settings, look, 0, output: destination, longEdge: longEdge, formatOverride: work.Format);
                     });
             });
         }

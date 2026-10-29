@@ -79,7 +79,9 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }))
                     val validName = AdjustmentPreset.normalizedName(name).isNotEmpty()
-                    if (creating) AdjustmentScopeEditor(stringResource(R.string.preset_save), "preset-save", validName && editor.controlsEnabled) { scope ->
+                    if (creating) AdjustmentScopeEditor(stringResource(R.string.preset_save), "preset-save", validName && editor.controlsEnabled,
+                        allowed = if (editor.edits.isHDREditing) com.rawlab.android.adjustments.AdjustmentField.HDR_SUPPORTED
+                            else com.rawlab.android.adjustments.AdjustmentField.entries.filterNot { it.isHDRRelative }.toSet()) { scope ->
                         val savedName = name
                         val generation = ++captureGeneration
                         model.capturePresetAdjustments(scope) capture@ { captured ->

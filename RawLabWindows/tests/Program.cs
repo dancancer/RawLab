@@ -50,6 +50,9 @@ static class Program
             if(args.Length==2 && args[0]=="--ai-gpu") { AIGpuWindowChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} AI GPU UI checks");return 0; }
             TestWindowState.PreserveExistingBatch(journalDirectory);
             Loc.Initialize("zh-Hans");
+            if(args.Length==3 && args[0]=="--hdr-review") {HDRReviewChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HDR review checks");return 0;}
+            if(args.Length==2 && args[0]=="--hdr-statistics") {HDRReviewChecks.StatisticsFlags(args[1],Check);Console.WriteLine($"PASS {checks} HDR statistics checks");return 0;}
+            if(args.Length==3 && args[0]=="--hdr-workflow") {HDRWorkflowChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HDR workflow checks");return 0;}
             if(args.Length==4 && args[0]=="--ai-batch") { AIBatchWindowChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} AI batch checks");return 0; }
             if(args.Length==5 && args[0]=="--ai-real-window") { AIDenoiseRealWindowChecks.Run(args[1],args[2],args[3],args[4],Check);Console.WriteLine($"PASS {checks} real AI window checks");return 0; }
             if(args.Length==4 && args[0]=="--ai-capability") { AICapabilityWindowChecks.Run(args[1],args[2],args[3]=="hardware",Check);Console.WriteLine($"PASS {checks} AI capability checks");return 0; }

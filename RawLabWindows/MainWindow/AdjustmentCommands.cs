@@ -24,7 +24,7 @@ public partial class MainWindow
             var dialog=new AdjustmentScopeDialog(this,file!,scope=>{
                 try {TransferSession.Copy(scope,source,context);return null;}
                 catch(Exception error){return AdjustmentTransferPresentation.Error(error);}
-            });
+            },hdr:settings.IsHDREditing);
             if(dialog.ShowDialog()==true)SetStatus(()=>Loc.Text("调整已复制。"),false);
         }catch(Exception error){ShowAdjustmentError(error);}
     }
@@ -59,7 +59,7 @@ public partial class MainWindow
                     try {
                         collectionTargets?.GetValueOrDefault(path)?.Validate();
                         var identity=OriginalIdentity.Read(path);var raw=PhotoInput.IsRaw(path);
-                        var defaults=RenderEngine.PrepareInputSettings(path,new Adjustments());
+                        var defaults=PhotoInput.PrepareHDRInputSettings(path,new Adjustments());
                         (double Temperature,double Tint)? calibration=null;
                         if(raw) {
                             using var native=new RenderEngine(1);

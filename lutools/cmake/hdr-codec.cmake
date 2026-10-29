@@ -43,19 +43,30 @@ function(rawlab_add_hdr_codec)
     set(UHDR_MAX_DIMENSION 65500 CACHE STRING "Match JPEG dimension ceiling" FORCE)
     # 2.0.2 arm64 NEON 互换 P3/BT.2100 YCbCr 系数；固定 scalar 路径以满足颜色回环合同。
     set(UHDR_ENABLE_INTRINSICS OFF CACHE BOOL "Pinned codec color correctness" FORCE)
+    # MSVC 静态 codec 仍使用应用的 DLL CRT；上游以此开关保留 /MD。
+    if(MSVC)
+        set(BUILD_FOR_WINUI ON)
+    endif()
     FetchContent_Declare(rawlab_ultrahdr
         URL https://codeload.github.com/google/libultrahdr/tar.gz/refs/tags/v2.0.2
         URL_HASH SHA256=aa8d193bb887c348c419780511dd03b374f4e07af8812b6d3f80c8537cf1ef2c
         SOURCE_SUBDIR rawlab-no-upstream-build)
     FetchContent_MakeAvailable(rawlab_ultrahdr)
+    set(RAWLAB_HDR_UHDR_INCLUDE "${rawlab_ultrahdr_SOURCE_DIR}/lib/include" PARENT_SCOPE)
+    set(RAWLAB_HDR_XML_INCLUDE "${rawlab_ultrahdr_SOURCE_DIR}/third_party/image_io/includes" PARENT_SCOPE)
     add_subdirectory("${rawlab_ultrahdr_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/hdr-codec/upstream" EXCLUDE_FROM_ALL)
-    set_target_properties(uhdr PROPERTIES
+    set(hdr_target uhdr)
+    if(TARGET uhdr-static AND NOT TARGET uhdr)
+        set(hdr_target uhdr-static)
+        add_library(uhdr ALIAS uhdr-static)
+    endif()
+    set_target_properties(${hdr_target} PROPERTIES
         ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/hdr-codec/lib"
         ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/hdr-codec/lib")
     if(CMAKE_GENERATOR STREQUAL "Xcode")
         # Upstream's TARGET_OBJECTS-only archive is otherwise skipped by Xcode.
         file(WRITE "${CMAKE_BINARY_DIR}/hdr-codec/archive-anchor.cpp" "// Xcode archive anchor.\n")
-        target_sources(uhdr PRIVATE "${CMAKE_BINARY_DIR}/hdr-codec/archive-anchor.cpp")
+        target_sources(${hdr_target} PRIVATE "${CMAKE_BINARY_DIR}/hdr-codec/archive-anchor.cpp")
     endif()
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/licenses/libultrahdr")
     foreach(name LICENSE LICENSE-APACHE LICENSE-MIT)

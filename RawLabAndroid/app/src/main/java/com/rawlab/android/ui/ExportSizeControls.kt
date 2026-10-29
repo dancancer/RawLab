@@ -19,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -40,13 +41,13 @@ internal fun ExportSizeControls(
         Column(Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.output_size), style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
             Box {
-                OutlinedButton(onClick = { menu = true }, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = { menu = true }, modifier = Modifier.fillMaxWidth().testTag("export-size")) {
                     Text(exportSizeLabel(selected), Modifier.weight(1f))
                     Icon(Icons.Outlined.ArrowDropDown, contentDescription = null)
                 }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     ExportSizeChoice.entries.forEach { choice ->
-                        DropdownMenuItem(text = { Text(exportSizeLabel(choice)) }, onClick = {
+                        DropdownMenuItem(modifier = Modifier.testTag("export-size-${choice.key}"), text = { Text(exportSizeLabel(choice)) }, onClick = {
                             menu = false
                             onSelected(choice)
                         })
@@ -58,7 +59,7 @@ internal fun ExportSizeControls(
             OutlinedTextField(
                 value = customText,
                 onValueChange = onCustomText,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag("export-size-custom-value"),
                 label = { Text(stringResource(R.string.output_long_edge)) },
                 supportingText = {
                     Text(if (customText.isBlank() || customValue == null) stringResource(R.string.output_size_error)

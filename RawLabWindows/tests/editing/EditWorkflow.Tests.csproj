@@ -38,5 +38,9 @@
     <Compile Include="../../EditPersistence.cs" Link="EditPersistence.cs" Condition="Exists('../../EditPersistence.cs')" />
     <Compile Include="../../BatchSelection.cs" />
     <Compile Include="../../BatchExport.cs" Link="BatchExport.cs" Condition="Exists('../../BatchExport.cs')" />
+    <Compile Include="../../HDRSettings.cs" Link="HDRSettings.cs" />
+    <Compile Include="../../HDRSourceInfo.cs" Link="HDRSourceInfo.cs" />
+    <Compile Include="../../HDRNative.cs" Link="HDRNative.cs" />
+    <Compile Include="../../HDRAdjustmentTransfer.cs" Link="HDRAdjustmentTransfer.cs" />
   </ItemGroup>
 </Project>

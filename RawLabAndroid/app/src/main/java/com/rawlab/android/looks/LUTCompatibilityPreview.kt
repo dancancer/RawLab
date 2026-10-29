@@ -11,9 +11,11 @@ import com.rawlab.android.R
 import com.rawlab.android.editor.PendingLookCompatibility
 import com.rawlab.android.engine.NativeFrame
 import com.rawlab.android.engine.NativeProcessor
+import com.rawlab.android.engine.NativeHDRBridge
 import com.rawlab.android.format.PhotoFiles
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.photo.ImportedPhoto
+import com.rawlab.android.photo.HDRSourceInfo
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -71,6 +73,20 @@ internal class LUTCompatibilityPreview(private val context: Context, private val
         if (it.moveToFirst()) it.getString(0) else null
     } ?: uri.lastPathSegment.orEmpty()
     private fun ensureLut(): File = lut ?: copyURI(pending.uri, pending.name, 256L * 1024 * 1024).also { lut = it }
+
+    private fun sdrPreviewSource(file: File, name: String): File {
+        if (!HDRSourceInfo.mayContainGainMap(name, null)) return file
+        val info = NativeHDRBridge.probe(file) ?: return file
+        val image = NativeHDRBridge.decode(file, info, 512)
+        val output = File(directory, "${UUID.randomUUID()}.jpg")
+        try {
+            output.outputStream().use { stream -> check(image.sdrBitmap().compress(Bitmap.CompressFormat.JPEG, 95, stream)) }
+            image.close(); file.delete()
+            return output
+        } catch (error: Throwable) {
+            image.close(); output.delete(); throw error
+        }
+    }
     fun loadInitial(photo: ImportedPhoto?) {
         if (photo == null) return
         loadSource {
@@ -97,7 +113,9 @@ internal class LUTCompatibilityPreview(private val context: Context, private val
                 withContext(dispatcher) { sourceWork.withLock {
                     ensureActive(); if (sourceGeneration.get() != generation) return@withLock
                     ensureLut()
-                    val (file, name, kind) = load()
+                    val (loadedFile, name, loadedKind) = load()
+                    val file = if (loadedKind == PhotoInputKind.RASTER) sdrPreviewSource(loadedFile, name) else loadedFile
+                    val kind = if (file != loadedFile) PhotoInputKind.RASTER else loadedKind
                     var committed = false
                     try {
                         ensureActive(); if (sourceGeneration.get() != generation) return@withLock

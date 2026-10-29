@@ -88,7 +88,9 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     val recipes = remember(context) { MasterRecipe.load(context) }
     val bundledFilms = remember(context) { Film.all + BundledLooks.load(context) }
     val filmItems = remember(state.looks, bundledFilms) { filmStripItems(state.looks, bundledFilms) }
-    val calibrated = state.preview?.temperature?.isFinite() == true
+    val calibrated = edits.isHDREditing || state.preview?.temperature?.isFinite() == true
+    val neutralTemperature = if (edits.isHDREditing) 6500f else state.preview?.temperature?.takeIf { it.isFinite() } ?: 6500f
+    val neutralTint = if (edits.isHDREditing) 0f else state.preview?.tint?.takeIf { it.isFinite() } ?: 0f
     var menuLookId by remember { mutableStateOf<String?>(null) }
     var renameLookId by remember { mutableStateOf<String?>(null) }
     var deleteLookId by remember { mutableStateOf<String?>(null) }
@@ -253,7 +255,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                         }
                     }
                 }
-                TextButton(onClick = onAutoExposure, enabled = state.controlsEnabled && !state.rendering,
+                TextButton(onClick = onAutoExposure, enabled = state.controlsEnabled && !state.rendering && !state.edits.isHDREditing,
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
                     modifier = Modifier.testTag("exposure.auto")) {
                     Icon(Icons.Outlined.AutoFixHigh, null, Modifier.size(18.dp))
@@ -277,14 +279,14 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 else Column {
                     NumericControl(R.string.temperature, edits.temperature, 2000f..50000f, "K", state.controlsEnabled,
                         { value, dragging -> onEdit(edits.copy(customWb = true, temperature = value), dragging) },
-                        { onEdit(edits.copy(temperature = state.preview?.temperature ?: 6500f,
-                            customWb = edits.recipeID == null && edits.tint != state.preview?.tint), false) }, reciprocal = true,
-                            defaultValue = state.preview?.temperature ?: edits.temperature)
+                        { onEdit(edits.copy(temperature = neutralTemperature,
+                            customWb = edits.recipeID == null && edits.tint != neutralTint), false) }, reciprocal = true,
+                            defaultValue = neutralTemperature)
                     NumericControl(R.string.tint, edits.tint, -150f..150f, "", state.controlsEnabled,
                         { value, dragging -> onEdit(edits.copy(customWb = if (edits.recipeID == null) true else edits.customWb, tint = value), dragging) },
-                        { onEdit(edits.copy(tint = if (edits.recipeID == null) state.preview?.tint ?: 0f else 0f,
-                            customWb = edits.customWb && edits.temperature != state.preview?.temperature), false) },
-                            defaultValue = if (edits.recipeID == null) state.preview?.tint ?: 0f else 0f)
+                        { onEdit(edits.copy(tint = if (edits.recipeID == null) neutralTint else 0f,
+                            customWb = edits.customWb && edits.temperature != neutralTemperature), false) },
+                            defaultValue = if (edits.recipeID == null) neutralTint else 0f)
                 }
             }
             11 -> DenoiseControls(edits.denoise, state.controlsEnabled, { onResetScope(EditorResetScope.Tool(11)) }) { value, dragging ->

@@ -66,6 +66,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     private var candidates: List<LensCandidate> = emptyList()
     private var rasterKey: Triple<String, Long, Long>? = null
     private var raster: DecodedRaster? = null
+    private var rasterEdge = -1
+    private var rasterHDRSource: com.rawlab.android.photo.HDRSourceInfo? = null
     init {
         try { if (lensDatabase != null) nativeSetLensDatabase(handle, lensDatabase.path) }
         catch (error: Throwable) { close(); throw error }
@@ -88,6 +90,10 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         require(dimensions.size == 2 && dimensions.all { it > 0 }) { "Invalid native geometry size" }
         frame.geometryWidth = dimensions[0]
         frame.geometryHeight = dimensions[1]
+        rasterHDRSource?.let { info ->
+            val nativeSize = NativeHDRBridge.geometrySize(info, settings.geometry)
+            frame.geometryWidth = nativeSize[0]; frame.geometryHeight = nativeSize[1]
+        }
         frame.lens = if (inputKind == PhotoInputKind.RAW) readLens(input) else null
         return frame
     }
@@ -96,7 +102,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     @Synchronized
     fun previewCompatibility(input: File, inputKind: PhotoInputKind, lut: File?, configuration: String?): NativeFrame {
         check(handle != 0L)
-        val pixels = rasterInput(input, inputKind)
+        val pixels = rasterInput(input, inputKind, 512)
         return nativeCompatibilityPreview(handle, input.path, pixels?.bitmap, pixels?.width ?: 0,
             pixels?.height ?: 0, lut?.path, configuration)
     }
@@ -106,7 +112,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         cancellationGeneration: Long = -1L): NativeFrame? {
         check(handle != 0L) { "Processor is closed" }
         val effective = settings.effectiveFor(inputKind)
-        val pixels = rasterInput(input, inputKind)
+        val pixels = rasterInput(input, inputKind, edge)
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
         nativeSetToneCurve(handle, effective.renderCurve.mode.nativeValue, effective.renderCurve.packed())
@@ -145,6 +151,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     fun export(input: File, lut: File?, settings: EditSettings, output: File, format: ExportFormat, longEdge: Int? = null,
         inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW): Int {
         check(handle != 0L) { "Processor is closed" }
+        require(format != ExportFormat.HDR_JPEG) { "HDR JPEG requires HDR editing" }
         require(input.canonicalPath != output.canonicalPath)
         require(ExportSize.isValid(longEdge)) { "Invalid output long edge" }
         val effective = settings.effectiveFor(inputKind)
@@ -177,7 +184,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW): Float {
         check(handle != 0L) { "Processor is closed" }
         val effective = settings.effectiveFor(inputKind)
-        val pixels = rasterInput(input, inputKind)
+        val pixels = rasterInput(input, inputKind, 1280)
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
         nativeSetToneCurve(handle, effective.renderCurve.mode.nativeValue, effective.renderCurve.packed())
@@ -196,6 +203,14 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         releaseRasterCache()
     }
 
+    @Synchronized
+    internal fun renderHDR(source: NativeHDRImage, settings: com.rawlab.android.settings.HDRSettings, edge: Int,
+        cancellationGeneration: Long = -1L): NativeHDRImage {
+        check(handle != 0L) { "Processor is closed" }
+        require(edge in 0..65535)
+        return NativeHDRBridge.render(handle, source, settings, edge, cancellationGeneration)
+    }
+
     // 取消不能等待 preview 的 Java monitor 或 native session 渲染锁。
     internal fun cancellationGeneration(): Long = nativeCancellationGeneration(handle)
     internal fun cancelPreview() { nativeCancelPreview(handle) }
@@ -205,22 +220,27 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
 
     @Synchronized
     internal fun releaseRasterCache() {
-        raster?.close(); raster = null; rasterKey = null
+        raster?.close(); raster = null; rasterKey = null; rasterHDRSource = null; rasterEdge = -1
     }
 
-    private fun rasterInput(input: File, kind: PhotoInputKind): DecodedRaster? {
+    private fun rasterInput(input: File, kind: PhotoInputKind, edge: Int = 0): DecodedRaster? {
         if (kind != PhotoInputKind.RASTER) {
-            raster?.close()
-            raster = null
-            rasterKey = null
+            releaseRasterCache()
             return null
         }
         val key = Triple(input.canonicalPath, input.length(), input.lastModified())
         if (key != rasterKey) {
-            val decoded = RasterImageDecoder.decode(input)
-            raster?.close()
-            raster = decoded
+            releaseRasterCache()
+            rasterHDRSource = if (com.rawlab.android.photo.HDRSourceInfo.mayContainGainMap(input))
+                NativeHDRBridge.probe(input) else null
             rasterKey = key
+        }
+        val hdr = rasterHDRSource
+        if (raster == null || (hdr != null && rasterEdge != edge)) {
+            val decoded = if (hdr == null) RasterImageDecoder.decode(input) else {
+                NativeHDRBridge.decode(input, hdr, edge).use { DecodedRaster(it.sdrBitmap()) }
+            }
+            raster?.close(); raster = decoded; rasterEdge = edge
         }
         return checkNotNull(raster)
     }

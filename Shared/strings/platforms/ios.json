@@ -3883,14 +3883,6 @@
       "fr": "Sélectionnez des photos pour synchroniser les réglages, ou affinez une photo avant de revenir à la collection.",
       "ja": "写真を選んで調整を同期できます。1枚ずつ微調整した後、同じ一覧に戻ることもできます。",
       "zh-Hans": "选择照片后同步所需调整，也可进入单张微调，再返回原集合。"
-    },
-    "保存 SDR JPEG": {
-      "de": "SDR-JPEG speichern",
-      "en": "Save SDR JPEG",
-      "es": "Guardar JPEG SDR",
-      "fr": "Enregistrer en JPEG SDR",
-      "ja": "SDR JPEG を保存",
-      "zh-Hans": "保存 SDR JPEG"
     }
   }
 }

@@ -1,9 +1,21 @@
 #include "core/hdr_jpeg.h"
+#include "core/hdr_half.h"
+#include "core/hdr_resample.h"
 #include "platform/hdr_image.h"
+#include "platform/hdr_metadata.h"
 #include <ultrahdr_api.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <memory>
+#include <csetjmp>
+#include <cstdlib>
+#include <jpeglib.h>
+#include <ultrahdr/jpegr.h>
+#include <ultrahdr/jpegdecoderhelper.h>
+#include <ultrahdr/icc.h>
+#include <cfloat>
+#include <cstring>
 
 namespace sony2fuji::hdr {
 namespace {
@@ -30,6 +42,15 @@ Decoder decoder(const void* bytes,size_t size,bool linear) {
         checked(uhdr_dec_set_out_img_format(result.get(),UHDR_IMG_FMT_64bppRGBAHalfFloat));
     }
     checked(uhdr_dec_probe(result.get())); return result;
+}
+struct JPEGView { const void* data;size_t data_sz; };
+struct JPEGParts { std::vector<uint8_t> base,gain;unsigned gainComponents; };
+JPEGParts jpegParts(const void* data,size_t size) {
+    auto input=compressed(data,size);ultrahdr::JpegR reader(nullptr);
+    ultrahdr::jpeg_info_struct base,gain;ultrahdr::jpegr_info_struct info{};
+    info.primaryImgInfo=&base;info.gainmapImgInfo=&gain;
+    checked(reader.getJPEGRInfo(&input,&info));
+    return {std::move(base.imgData),std::move(gain.imgData),gain.numComponents};
 }
 RGB toSRGB(RGB p,uhdr_color_gamut_t gamut) {
     if (gamut==UHDR_CG_BT_709) return p;
@@ -83,6 +104,113 @@ void validateDualMetadata(const void* bytes,size_t size,const uhdr_gainmap_metad
     if (!consistent) throw Error(SONY2FUJI_STATUS_PROCESSING_ERROR,SONY2FUJI_HDR_REASON_MALFORMED_AUX,
         SONY2FUJI_HDR_FIELD_SOURCE,"Conflicting ISO and XMP gain-map descriptions");
 }
+struct JPEGError { jpeg_error_mgr manager{}; std::jmp_buf jump; };
+struct ScaledJPEG {
+    uhdr_raw_image_t image{};
+    std::array<std::vector<uint8_t>,3> planes;
+};
+ScaledJPEG scaledJPEG(const void* bytes,size_t size,uint32_t longEdge,bool rawYUV) {
+    struct State {
+        jpeg_decompress_struct codec{}; JPEGError error;
+        ScaledJPEG output;
+        ~State() { jpeg_destroy_decompress(&codec); }
+    };
+    auto state=std::make_unique<State>(); auto& c=state->codec;
+    c.err=jpeg_std_error(&state->error.manager);
+    state->error.manager.error_exit=[](j_common_ptr p) { std::longjmp(reinterpret_cast<JPEGError*>(p->err)->jump,1); };
+    if (setjmp(state->error.jump)) throw std::runtime_error("Cannot decode scaled JPEG planes");
+    jpeg_create_decompress(&c); jpeg_mem_src(&c,static_cast<const unsigned char*>(bytes),size);
+    jpeg_read_header(&c,TRUE);
+    if (!c.image_width || !c.image_height || uint64_t(c.image_width)*c.image_height>128000000)
+        throw std::invalid_argument("JPEG dimensions exceed source budget");
+    if (longEdge && std::max(c.image_width,c.image_height)>longEdge) {
+        c.scale_num=std::min(8u,std::max(1u,uint32_t(std::ceil(double(longEdge)*8/std::max(c.image_width,c.image_height)))));
+        c.scale_denom=8;
+    }
+    const bool yuv=rawYUV && c.jpeg_color_space==JCS_YCbCr;
+    c.out_color_space=yuv ? JCS_YCbCr : c.num_components==1 ? JCS_GRAYSCALE : JCS_RGB;
+    c.raw_data_out=yuv; c.dct_method=JDCT_ISLOW;
+    jpeg_calc_output_dimensions(&c);
+    // Progressive/multi-scan JPEG 先保留原尺寸 DCT 系数，即使输出已缩小。
+    const uint64_t coefficients=jpeg_has_multiple_scans(&c) ? uint64_t(c.image_width)*c.image_height*c.num_components*2+262144 : 0;
+    admitMemory(uint64_t(c.output_width)*c.output_height*24+coefficients);
+    jpeg_start_decompress(&c);
+    auto& output=state->output; auto& image=output.image;
+    image.w=c.output_width; image.h=c.output_height; image.ct=UHDR_CT_SRGB; image.range=UHDR_CR_FULL_RANGE;
+    if (yuv) {
+        const unsigned cw=c.comp_info[1].downsampled_width,ch=c.comp_info[1].downsampled_height;
+        const std::array<std::array<unsigned,3>,6> formats={{{1,1,UHDR_IMG_FMT_24bppYCbCr444},{2,1,UHDR_IMG_FMT_16bppYCbCr422},
+            {2,2,UHDR_IMG_FMT_12bppYCbCr420},{1,2,UHDR_IMG_FMT_16bppYCbCr440},
+            {4,1,UHDR_IMG_FMT_12bppYCbCr411},{4,2,UHDR_IMG_FMT_10bppYCbCr410}}};
+        image.fmt=UHDR_IMG_FMT_UNSPECIFIED;
+        for (const auto& f:formats) if ((image.w+f[0]-1)/f[0]==cw && (image.h+f[1]-1)/f[1]==ch)
+            image.fmt=static_cast<uhdr_img_fmt_t>(f[2]);
+        if (image.fmt==UHDR_IMG_FMT_UNSPECIFIED || c.num_components!=3) throw std::runtime_error("Unsupported scaled JPEG subsampling");
+        std::array<unsigned,3> blockRows{};
+        for (int i=0;i<3;++i) {
+            const auto& component=c.comp_info[i];
+#if JPEG_LIB_VERSION >= 70
+            image.stride[i]=component.width_in_blocks*component.DCT_h_scaled_size;
+            blockRows[i]=component.v_samp_factor*component.DCT_v_scaled_size;
+#else
+            image.stride[i]=component.width_in_blocks*component.DCT_scaled_size;
+            blockRows[i]=component.v_samp_factor*component.DCT_scaled_size;
+#endif
+            if (blockRows[i]>32) throw std::runtime_error("Invalid JPEG MCU rows");
+            output.planes[i].resize(size_t(image.stride[i])*blockRows[i]*c.total_iMCU_rows);
+            image.planes[i]=output.planes[i].data();
+        }
+        unsigned block=0;
+        while (c.output_scanline<c.output_height) {
+            JSAMPROW rows[3][32]{}; JSAMPARRAY planes[]={rows[0],rows[1],rows[2]};
+            for (int i=0;i<3;++i) for (unsigned y=0;y<blockRows[i];++y)
+                rows[i][y]=output.planes[i].data()+size_t(block*blockRows[i]+y)*image.stride[i];
+#if JPEG_LIB_VERSION >= 70
+            const unsigned lines=c.max_v_samp_factor*c.min_DCT_v_scaled_size;
+#else
+            const unsigned lines=c.max_v_samp_factor*c.min_DCT_scaled_size;
+#endif
+            if (!jpeg_read_raw_data(&c,planes,lines)) throw std::runtime_error("Truncated JPEG planes");
+            ++block;
+        }
+    } else {
+        image.fmt=c.output_components==1 ? UHDR_IMG_FMT_8bppYCbCr400 : UHDR_IMG_FMT_24bppRGB888;
+        image.stride[0]=image.w;
+        const size_t row=size_t(image.w)*c.output_components;
+        output.planes[0].resize(row*image.h); image.planes[0]=output.planes[0].data();
+        while (c.output_scanline<c.output_height) {
+            JSAMPROW line=output.planes[0].data()+size_t(c.output_scanline)*row;
+            if (!jpeg_read_scanlines(&c,&line,1)) throw std::runtime_error("Truncated JPEG scanline");
+        }
+    }
+    jpeg_finish_decompress(&c); return std::move(output);
+}
+std::pair<uint32_t,uint32_t> targetSize(int width,int height,uint32_t edge) {
+    const double scale=edge && uint32_t(std::max(width,height))>edge ? double(edge)/std::max(width,height) : 1;
+    return {std::max(1u,uint32_t(std::lround(width*scale))),std::max(1u,uint32_t(std::lround(height*scale)))};
+}
+ImageData expandJPEGPlanes(JPEGView base,JPEGView map,
+    const void* icc,size_t iccSize,uhdr_gainmap_metadata_t description,uint32_t nativeWidth,uint32_t nativeHeight,uint32_t longEdge,uhdr_color_gamut_t declaredGamut=UHDR_CG_UNSPECIFIED) {
+    auto sdr=scaledJPEG(base.data,base.data_sz,longEdge,true);
+    auto gain=scaledJPEG(map.data,map.data_sz,longEdge,false);
+    sdr.image.cg=iccSize ? ultrahdr::IccHelper::readIccColorGamut(const_cast<void*>(icc),iccSize) : declaredGamut;
+    ultrahdr::JpegDecoderHelper parser; checked(parser.parseImage(map.data,map.data_sz));
+    gain.image.cg=!description.use_base_cg && parser.getICCSize() ? ultrahdr::IccHelper::readIccColorGamut(const_cast<void*>(static_cast<const void*>(parser.getICCPtr())),parser.getICCSize()) : sdr.image.cg;
+    if (sdr.image.cg==UHDR_CG_UNSPECIFIED || gain.image.cg==UHDR_CG_UNSPECIFIED || (!description.use_base_cg && !parser.getICCSize()))
+        throw Error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_COLOR,SONY2FUJI_HDR_FIELD_SOURCE,"Missing gain-map application gamut");
+    ultrahdr::uhdr_gainmap_metadata_ext_t metadata(description,"1.0");
+    ultrahdr::uhdr_raw_image_ext_t output(UHDR_IMG_FMT_64bppRGBAHalfFloat,UHDR_CG_UNSPECIFIED,
+        UHDR_CT_LINEAR,UHDR_CR_FULL_RANGE,sdr.image.w,sdr.image.h,64);
+    ultrahdr::JpegR processor(nullptr);
+    checked(processor.applyGainMap(&sdr.image,&gain.image,&metadata,UHDR_CT_LINEAR,UHDR_IMG_FMT_64bppRGBAHalfFloat,FLT_MAX,&output));
+    ImageData linear(output.w,output.h); const auto* pixels=static_cast<const uint16_t*>(output.planes[0]);
+    for (unsigned y=0;y<output.h;++y) for (unsigned x=0;x<output.w;++x) {
+        const auto* p=pixels+(size_t(y)*output.stride[0]+x)*4;
+        linear.at(x,y)=toSRGB({halfToFloat(p[0]),halfToFloat(p[1]),halfToFloat(p[2])},output.cg);
+    }
+    const auto [width,height]=targetSize(nativeWidth,nativeHeight,longEdge);
+    return width==uint32_t(linear.width) && height==uint32_t(linear.height) ? std::move(linear) : resample(linear,width,height);
+}
 } // namespace
 
 JPEGInfo probeJPEG(const void* data,size_t size) {
@@ -96,13 +224,70 @@ JPEGInfo probeJPEG(const void* data,size_t size) {
         throw Error(SONY2FUJI_STATUS_PROCESSING_ERROR,SONY2FUJI_HDR_REASON_MALFORMED_AUX,SONY2FUJI_HDR_FIELD_SOURCE,
             "Invalid Ultra HDR dimensions or headroom");
     validateDualMetadata(data,size,*metadata);
-    return {uint32_t(width),uint32_t(height),0,metadata->hdr_capacity_max};
+    return {uint32_t(width),uint32_t(height),0,std::max({1.0f,metadata->max_content_boost[0],metadata->max_content_boost[1],metadata->max_content_boost[2]})};
+}
+
+JPEGInfo probeAppleJPEG(const void* data,size_t size) {
+    const auto parts=jpegParts(data,size);
+    if(parts.gainComponents!=1)throw Error(SONY2FUJI_STATUS_PROCESSING_ERROR,SONY2FUJI_HDR_REASON_MALFORMED_AUX,
+        SONY2FUJI_HDR_FIELD_SOURCE,"Apple JPEG gain map must be monochrome");
+    ultrahdr::JpegDecoderHelper base,map;
+    checked(base.parseImage(parts.base.data(),parts.base.size()));checked(map.parseImage(parts.gain.data(),parts.gain.size()));
+    const auto width=base.getDecompressedImageWidth(),height=base.getDecompressedImageHeight();
+    const auto mapWidth=map.getDecompressedImageWidth(),mapHeight=map.getDecompressedImageHeight();
+    if (!width || !height || uint64_t(width)*height>128000000 || !mapWidth || !mapHeight || uint64_t(mapWidth)*mapHeight>128000000)
+        throw std::invalid_argument("Apple JPEG dimensions exceed source budget");
+    return {width,height,0,0};
+}
+std::vector<uint8_t> jpegGainMapXMP(const void* data,size_t size) {
+    const auto parts=jpegParts(data,size);
+    ultrahdr::JpegDecoderHelper parser;checked(parser.parseImage(parts.gain.data(),parts.gain.size()));
+    const auto* bytes=static_cast<const uint8_t*>(parser.getXMPPtr());size_t count=parser.getXMPSize();
+    const char prefix[]="http://ns.adobe.com/xap/1.0/";
+    if(bytes && count>=sizeof(prefix) && !std::memcmp(bytes,prefix,sizeof(prefix))) {bytes+=sizeof(prefix);count-=sizeof(prefix);}
+    if(!bytes || !count)throw std::runtime_error("Missing Apple JPEG XMP");return {bytes,bytes+count};
+}
+
+ImageData decodeAppleJPEG(const void* data,size_t size,float headroom,uint32_t longEdge,const AppleGainMapMetadata& description,uint32_t declaredColor) {
+    const auto parts=jpegParts(data,size);
+    if(parts.gainComponents!=1 || !std::isfinite(headroom) || headroom<1)throw std::invalid_argument("Invalid Apple JPEG gain map");
+    if(description.logarithmic) {
+        ultrahdr::JpegDecoderHelper base;checked(base.parseImage(parts.base.data(),parts.base.size()));
+        uhdr_gainmap_metadata_t metadata{};metadata.hdr_capacity_min=1;metadata.hdr_capacity_max=headroom;metadata.use_base_cg=1;
+        for(int c=0;c<3;++c) {
+            metadata.min_content_boost[c]=description.minBoost;metadata.max_content_boost[c]=description.maxBoost;
+            metadata.gamma[c]=description.gamma;metadata.offset_sdr[c]=description.offsetSDR;metadata.offset_hdr[c]=description.offsetHDR;
+        }
+        return expandJPEGPlanes({parts.base.data(),parts.base.size()},{parts.gain.data(),parts.gain.size()},base.getICCPtr(),base.getICCSize(),metadata,
+            base.getDecompressedImageWidth(),base.getDecompressedImageHeight(),longEdge,
+            declaredColor==SONY2FUJI_HDR_COLOR_SRGB ? UHDR_CG_BT_709 : UHDR_CG_UNSPECIFIED);
+    }
+    auto encoded=scaledJPEG(parts.gain.data(),parts.gain.size(),longEdge,false);
+    if(encoded.image.fmt!=UHDR_IMG_FMT_8bppYCbCr400)throw std::runtime_error("Apple JPEG gain map must be monochrome");
+    ImageData gains(encoded.image.w,encoded.image.h);const auto* bytes=static_cast<const uint8_t*>(encoded.image.planes[0]);
+    std::array<float,256> inverse709{};
+    for(size_t i=0;i<inverse709.size();++i){const float v=float(i)/255;inverse709[i]=v<.081f ? v/4.5f : std::pow((v+.099f)/1.099f,1/.45f);}
+    for(unsigned y=0;y<encoded.image.h;++y)for(unsigned x=0;x<encoded.image.w;++x) {
+        const float linear=inverse709[bytes[size_t(y)*encoded.image.stride[0]+x]];
+        gains.at(x,y)={linear,linear,linear};
+    }
+    auto output=decodeSDRJPEG(data,size,longEdge,declaredColor);
+    if(gains.width!=output.width || gains.height!=output.height)gains=resample(gains,output.width,output.height);
+    for(size_t i=0;i<output.pixels.size();++i) {
+        const float boost=1+(headroom-1)*gains.pixels[i].r;auto& p=output.pixels[i];p={p.r*boost,p.g*boost,p.b*boost};
+    }
+    return output;
 }
 
 ImageData decodeJPEG(const void* data,size_t size,uint32_t longEdge) {
     auto dec=decoder(data,size,true);
     const int w=uhdr_dec_get_image_width(dec.get()),h=uhdr_dec_get_image_height(dec.get());
     if (w<=0 || h<=0 || uint64_t(w)*h>128000000) throw std::invalid_argument("Ultra HDR dimensions exceed source budget");
+    const int gainWidth=uhdr_dec_get_gainmap_width(dec.get()),gainHeight=uhdr_dec_get_gainmap_height(dec.get());
+    if (gainWidth<=0 || gainHeight<=0 || uint64_t(gainWidth)*gainHeight>128000000)
+        throw std::invalid_argument("Ultra HDR gain map exceeds source budget");
+    // 上游 FINAL 路径完整解码底图与 gain map；辅助图可以大于底图。
+    admitMemory(uint64_t(w)*h*48+uint64_t(gainWidth)*gainHeight*24);
     if (longEdge && uint32_t(std::max(w,h))>longEdge) {
         const double scale=double(longEdge)/std::max(w,h);
         checked(uhdr_add_effect_resize(dec.get(),std::max(1,int(std::lround(w*scale))),std::max(1,int(std::lround(h*scale)))));
@@ -111,12 +296,75 @@ ImageData decodeJPEG(const void* data,size_t size,uint32_t longEdge) {
     if (!image || !image->planes[0] || image->fmt!=UHDR_IMG_FMT_64bppRGBAHalfFloat || image->stride[0]<image->w)
         throw std::runtime_error("Invalid Ultra HDR decoded storage");
     ImageData output(image->w,image->h);
-    const auto* pixels=static_cast<const _Float16*>(image->planes[0]);
+    const auto* pixels=static_cast<const uint16_t*>(image->planes[0]);
     for (unsigned y=0;y<image->h;++y) for (unsigned x=0;x<image->w;++x) {
         const auto* p=pixels+(y*image->stride[0]+x)*4;
-        output.at(x,y)=toSRGB({float(p[0]),float(p[1]),float(p[2])},image->cg);
+        output.at(x,y)=toSRGB({halfToFloat(p[0]),halfToFloat(p[1]),halfToFloat(p[2])},image->cg);
     }
     return output;
+}
+
+ImageData decodeSDRJPEG(const void* data,size_t size,uint32_t longEdge,uint32_t declaredColor) {
+    const auto parts=jpegParts(data,size);
+    ultrahdr::JpegDecoderHelper parser;checked(parser.parseImage(parts.base.data(),parts.base.size()));
+    const auto w=parser.getDecompressedImageWidth(),h=parser.getDecompressedImageHeight();
+    if (!w || !h || uint64_t(w)*h>128000000) throw std::invalid_argument("Ultra HDR dimensions exceed source budget");
+    if (!parser.getICCSize() && declaredColor!=SONY2FUJI_HDR_COLOR_SRGB) throw std::runtime_error("Missing HDR JPEG RGB profile");
+    auto scaled=scaledJPEG(parts.base.data(),parts.base.size(),longEdge,false);const auto* image=&scaled.image;
+    const auto gamut=parser.getICCSize() ? ultrahdr::IccHelper::readIccColorGamut(parser.getICCPtr(),parser.getICCSize()) : UHDR_CG_BT_709;
+    if (image->fmt!=UHDR_IMG_FMT_24bppRGB888) throw std::runtime_error("HDR JPEG base must be RGB");
+    std::array<float,256> linear{};
+    for(size_t i=0;i<linear.size();++i){const float v=float(i)/255;linear[i]=v<=.04045f ? v/12.92f : std::pow((v+.055f)/1.055f,2.4f);}
+    ImageData output(image->w,image->h);
+    const auto* pixels=static_cast<const uint8_t*>(image->planes[0]);
+#if defined(_OPENMP)
+    #pragma omp parallel for schedule(static)
+#endif
+    for (int y=0;y<int(image->h);++y) for (unsigned x=0;x<image->w;++x) {
+        const auto* p=pixels+(y*image->stride[0]+x)*3;
+        output.at(x,y)=toSRGB({linear[p[0]],linear[p[1]],linear[p[2]]},gamut);
+    }
+    const auto [width,height]=targetSize(w,h,longEdge);
+    return width==uint32_t(output.width) && height==uint32_t(output.height) ? std::move(output) : resample(output,width,height);
+}
+
+ImageData decodeJPEGPreview(const void* data,size_t size,uint32_t longEdge) {
+    auto dec=decoder(data,size,false);
+    const auto* base=uhdr_dec_get_base_image(dec.get()); const auto* map=uhdr_dec_get_gainmap_image(dec.get());
+    const auto* icc=uhdr_dec_get_icc(dec.get()); auto* description=uhdr_dec_get_gainmap_metadata(dec.get());
+    if (!base || !map || !icc || !description) throw std::runtime_error("Incomplete HDR JPEG planes");
+    return expandJPEGPlanes({base->data,base->data_sz},{map->data,map->data_sz},icc->data,icc->data_sz,*description,
+        uhdr_dec_get_image_width(dec.get()),uhdr_dec_get_image_height(dec.get()),longEdge);
+}
+
+std::vector<uint8_t> encodeSDRJPEG(const ImageData& image,uint32_t quality) {
+    if (image.width<=0 || image.height<=0 || image.width>65500 || image.height>65500 || quality<1 || quality>100)
+        throw std::invalid_argument("Invalid SDR JPEG dimensions or quality");
+    struct State {
+        jpeg_compress_struct codec{}; JPEGError error;
+        unsigned char* bytes=nullptr; unsigned long size=0;
+        std::vector<uint8_t> row;
+        ~State() { jpeg_destroy_compress(&codec); std::free(bytes); }
+    };
+    auto state=std::make_unique<State>(); state->row.resize(size_t(image.width)*3);
+    state->codec.err=jpeg_std_error(&state->error.manager);
+    state->error.manager.error_exit=[](j_common_ptr codec) { std::longjmp(reinterpret_cast<JPEGError*>(codec->err)->jump,1); };
+    if (setjmp(state->error.jump)) throw std::runtime_error("SDR JPEG encoding failed");
+    jpeg_create_compress(&state->codec); jpeg_mem_dest(&state->codec,&state->bytes,&state->size);
+    state->codec.image_width=image.width; state->codec.image_height=image.height;
+    state->codec.input_components=3; state->codec.in_color_space=JCS_RGB;
+    jpeg_set_defaults(&state->codec); jpeg_set_quality(&state->codec,int(quality),TRUE);
+    jpeg_start_compress(&state->codec,TRUE);
+    while (state->codec.next_scanline<state->codec.image_height) {
+        const int y=int(state->codec.next_scanline);
+        for (int x=0;x<image.width;++x) {
+            const auto& p=image.at(x,y); const float values[]={p.r,p.g,p.b};
+            for (int c=0;c<3;++c) state->row[size_t(x)*3+c]=uint8_t(std::lround(srgb(values[c])*255));
+        }
+        JSAMPROW row=state->row.data(); jpeg_write_scanlines(&state->codec,&row,1);
+    }
+    jpeg_finish_compress(&state->codec);
+    return {state->bytes,state->bytes+state->size};
 }
 
 std::vector<uint8_t> jpegBase(const void* data,size_t size) {
@@ -141,7 +389,7 @@ std::vector<uint8_t> encodeJPEG(const HDRImagePair& image,uint32_t quality,uint3
         throw std::invalid_argument("Invalid HDR JPEG quality or gamut");
     const unsigned width=image.hdr.width,height=image.hdr.height;
     if (width>65500 || height>65500) throw std::invalid_argument("HDR JPEG exceeds codec dimension ceiling");
-    std::vector<_Float16> hdr(size_t(width)*height*4);
+    std::vector<uint16_t> hdr(size_t(width)*height*4);
     std::vector<uint8_t> sdr(hdr.size());
     float headroom=1;
     for (size_t i=0;i<image.hdr.pixels.size();++i) {
@@ -151,11 +399,11 @@ std::vector<uint8_t> encodeJPEG(const HDRImagePair& image,uint32_t quality,uint3
             if (!std::isfinite(hc[c]) || std::abs(hc[c])>65504 || !std::isfinite(sc[c]))
                 throw std::overflow_error("HDR JPEG exceeds finite half-float codec range");
             // 输出色域映射只在 writer 中进行，不回写扩展线性工作图。
-            hdr[i*4+c]=static_cast<_Float16>(std::max(0.0f,hc[c]));
+            hdr[i*4+c]=floatToHalf(std::max(0.0f,hc[c]));
             sdr[i*4+c]=uint8_t(std::lround(srgb(sc[c])*255));
             headroom=std::max(headroom,hc[c]);
         }
-        hdr[i*4+3]=1; sdr[i*4+3]=255;
+        hdr[i*4+3]=floatToHalf(1); sdr[i*4+3]=255;
     }
     uhdr_raw_image_t h{},s{};
     h.fmt=UHDR_IMG_FMT_64bppRGBAHalfFloat; s.fmt=UHDR_IMG_FMT_32bppRGBA8888;

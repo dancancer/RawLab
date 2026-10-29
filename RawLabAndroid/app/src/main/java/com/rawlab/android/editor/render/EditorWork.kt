@@ -28,11 +28,18 @@ import com.rawlab.android.settings.LookChoice
 //  编辑器提交给渲染队列与外观队列的工作，以及它们的结果
 // ============================================================================
 
+data class HDRPreviewFrame(val width: Int, val height: Int, val hdr: FloatArray, val sdr: FloatArray,
+    val contentHeadroom: Float, val sourceHeadroom: Float,
+    val nativeWidth: Int = width, val nativeHeight: Int = height,
+    val statistics: com.rawlab.android.engine.HDRStatistics = com.rawlab.android.engine.HDRStatistics.analyze(hdr, width, height, width * 3))
+data class HDRPreview(val neutral: HDRPreviewFrame, val result: HDRPreviewFrame)
+
 data class PreviewPair(val neutral: Bitmap, val result: Bitmap, val temperature: Float, val tint: Float,
     val lens: LensInfo? = null, val comparisonWidth: Float = neutral.width.toFloat(),
     val comparisonHeight: Float = neutral.height.toFloat(),
     val originalAspect: Float = neutral.width.toFloat() / neutral.height,
-    val neutralHistogram: RgbHistogram? = null, val resultHistogram: RgbHistogram? = null)
+    val neutralHistogram: RgbHistogram? = null, val resultHistogram: RgbHistogram? = null,
+    val hdr: HDRPreview? = null)
 
 /** A transformed comparison must never reuse the uncropped original or another viewport. */
 internal data class ComparisonPreviewKey(val inputPath: String, val geometry: GeometrySettings,

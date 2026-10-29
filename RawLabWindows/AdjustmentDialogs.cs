@@ -28,10 +28,11 @@ internal static class AdjustmentDialogLayout
 
 internal sealed class AdjustmentScopeDialog : Window
 {
-    private readonly AdjustmentScopeEditor editor = new("adjustment.copy");
+    private readonly AdjustmentScopeEditor editor;
     internal AdjustmentScope SelectedScope => editor.SelectedScope;
-    internal AdjustmentScopeDialog(Window owner, string source, Func<AdjustmentScope, string?> copy, string title = "复制调整", string confirmTitle = "复制调整")
+    internal AdjustmentScopeDialog(Window owner, string source, Func<AdjustmentScope, string?> copy, string title = "复制调整", string confirmTitle = "复制调整",bool hdr=false)
     {
+        editor=new("adjustment.copy",hdr);
         var root = AdjustmentDialogLayout.Configure(this, owner, title, "adjustment.copy");
         root.Children.Add(AdjustmentDialogLayout.Text(Path.GetFileName(source)));
         Grid.SetRow(editor, 1); root.Children.Add(editor);

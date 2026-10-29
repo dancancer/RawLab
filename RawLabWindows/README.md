@@ -9,11 +9,23 @@
 
 Agent v08 接入了共享 v4 JSON/CLI、普通 JPEG/PNG/经典 TIFF 和默认单张预览。
 普通图像只接受单帧、不透明的 8-bit SDR RGB，最多 64M 像素；方向与 ICC 转 sRGB 各处理一次，
-不套用 RAW 曝光基线、相机白平衡、FBDD 或镜头校准。HEIF、BigTIFF、透明、高位深、浮点/HDR、CMYK、多帧以及不支持的色彩描述会明确拒绝，不能据此宣称支持所有 ICC。
+不套用 RAW 曝光基线、相机白平衡、FBDD 或镜头校准。普通图像路径不接受 BigTIFF、透明、高位深、浮点 HDR、CMYK、多帧及不支持的色彩描述；手机增益图 HDR 使用下述独立路径，不能据此宣称支持所有 ICC。
 新窗口、重新打开及历史恢复默认关闭对比；同图手动选择的并排/滑动会保留到切图。
 Windows 各轮实测源码快照、限制及物理项目见 [Agent v08 验证记录](VERIFICATION-agent-v08.md)；历史源码验证不替代最终候选包验收。
 
 v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG；当前版本还支持渲染型 DNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
+
+## 手机 HDR 图片
+
+支持手机 gain-map HDR JPEG/HEIF，新原片默认 HDR 编辑，旧 SDR 记录保持原模式。
+提供七项基本调整及几何，预设、选择性同步、历史和批量快照保存独立 HDR 状态。
+HDR JPEG 重新生成 ISO/XMP 增益图；显式 SDR JPEG、PNG16、渲染型 DNG 使用 SDR rendition。
+切到 SDR 编辑后支持有界预览、自动曝光和 LUT 兼容向导。HDR 编辑阶段不开放 SDR 自动曝光。
+
+HDR 处理使用 CPU 多核，GPU Force 明确拒绝。HDR 显示使用硬件 Direct3D 11 的 FP16
+scRGB swap chain，需要当前显示器启用 HDR；RDP、虚拟显示器及能力不足时显示 SDR。
+裁切和裁切警告叠层使用 SDR canvas 保留交互；真实 HDR 亮度需物理设备验收。
+来源指纹、双图、缓存和格式边界见[平台对齐设计](../docs/design/hdr-photos/android-windows.md)。
 
 ## 下载 v0.8.2 Windows 包
 

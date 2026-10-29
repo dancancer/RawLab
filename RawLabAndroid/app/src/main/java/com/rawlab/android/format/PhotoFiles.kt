@@ -22,8 +22,8 @@ internal object PhotoFiles {
 }
 
 internal object RasterFiles {
-    private val extensions = setOf("jpg", "jpeg", "png")
-    private val mimes = setOf("image/jpeg", "image/png")
+    private val extensions = setOf("jpg", "jpeg", "png", "heic", "heif")
+    private val mimes = setOf("image/jpeg", "image/png", "image/heic", "image/heif", "image/heif-sequence")
 
     fun accepts(name: String, mime: String?): Boolean =
         name.substringAfterLast('.', "").lowercase() in extensions || mime?.lowercase() in mimes

@@ -89,7 +89,7 @@ public partial class MainWindow
         AdjustmentPayload? payload=null;
         var scope=new AdjustmentScopeDialog(owner,Path.GetFileName(file)+" · "+Loc.Format("目标：{0} 张照片",targets.Count),selected=>{
             try{payload=CapturePresetAdjustments(selected);return null;}catch(Exception error){return error.Message;}
-        },"同步调整","检查同步目标");
+        },"同步调整","检查同步目标",settings.IsHDREditing);
         if(scope.ShowDialog()!=true || payload==null)return;
         try {
             var expected=targets.ToDictionary(photo=>photo.Path,StringComparer.OrdinalIgnoreCase);

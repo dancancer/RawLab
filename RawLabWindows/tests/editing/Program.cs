@@ -2,6 +2,10 @@ using RawLab.Windows;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+if (args.Contains("--hdr-only")) {
+    HDRChecks.Run();
+    return;
+}
 AIGpuDiagnosticsChecks.Run();
 if(args.Contains("--ai-support"))return;
 
@@ -25,6 +29,7 @@ if (JsonSerializer.SerializeToNode(gradingRestored.Capture())!["ColorGrading"] =
 AdjustmentTransferChecks.Run();
 AdjustmentHistoryChecks.Run();
 AdjustmentPresetChecks.Run();
+HDRChecks.Run();
 
 static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
 static JsonNode? Processing(Adjustments value) => JsonSerializer.SerializeToNode(value.Capture())!["Processing"];

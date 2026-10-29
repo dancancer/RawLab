@@ -21,9 +21,15 @@ film looks do not promise an exact match to in-camera JPEGs.
 - Ordinary opaque RGB8 SDR images: JPEG/PNG
   on all four clients, TIFF on macOS/iOS/Windows and HEIF on macOS/iOS. Raster
   input shares the editing/export core without the RAW scene curve or camera
-  controls. Unsupported HDR, high-bit-depth, transparent and multi-frame inputs
+  controls. Other HDR, high-bit-depth, transparent and multi-frame inputs
   are rejected rather than silently converted. See the
   [input contract](lutools/docs/color-contract.md#display-referred-raster-input).
+- Phone gain-map HDR JPEG/HEIF on all four clients: independent HDR/SDR edits,
+  seven basic HDR adjustments and geometry, luminance monitoring, presets,
+  selective synchronization, and HDR JPEG or explicit SDR exports. HDR source
+  photos can use ordinary LUT previews after switching to SDR editing.
+  HDR processing uses the CPU; HDR presentation requires a capable display and
+  platform support. See [platform scope](docs/design/hdr-photos/android-windows.md).
 - New RAW edits start with embedded-preview exposure matching. One-shot Auto
   exposure and an eight-channel HSL mixer are shared across all four clients;
   existing saved exposure baselines are preserved.
