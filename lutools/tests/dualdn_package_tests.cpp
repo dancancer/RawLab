@@ -11,17 +11,26 @@ void require(bool condition, const char* message) { if (!condition) throw std::r
 
 int main(int argc, char** argv) {
     std::filesystem::path root;
+    bool created = false;
     try {
-        if (argc != 2) throw std::runtime_error("requires an empty temporary directory");
+        if (argc < 2 || argc > 3) throw std::runtime_error("requires an empty temporary directory and optional path case");
         root = std::filesystem::u8path(argv[1]);
+        // 在程序内构造 Unicode 路径，避免 Windows 的窄字符 argv 先丢失测试字符。
+        if (argc == 3) {
+            const std::string pathCase = argv[2];
+            if (pathCase == "chinese") root += std::filesystem::u8path(u8"-\u4e2d\u6587 \u6a21\u578b");
+            else if (pathCase == "supplementary") root += std::filesystem::u8path(u8"-\U0001f4f7 \u6a21\u578b");
+            else throw std::runtime_error("unknown path case");
+        }
         if (!std::filesystem::create_directory(root)) throw std::runtime_error("temporary directory already exists");
+        created = true;
         const auto sample = root / "sample";
         { std::ofstream out(sample); }
-        require(sha256File(sample.string()) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "empty SHA-256");
+        require(sha256File(sample.u8string()) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "empty SHA-256");
         { std::ofstream out(sample); out << "abc"; }
-        require(sha256File(sample.string()) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "abc SHA-256");
+        require(sha256File(sample.u8string()) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "abc SHA-256");
         { std::ofstream out(sample); for (int i = 0; i < 1000000; ++i) out << 'a'; }
-        require(sha256File(sample.string()) == "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0", "streaming SHA-256");
+        require(sha256File(sample.u8string()) == "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0", "streaming SHA-256");
         // 独立 hashlib 生成的向量，覆盖压缩块和文件读取块两侧的非整倍数长度。
         const std::pair<int, const char*> boundaries[] = {
             {65, "fc518669b6eb4b4dd91827ecacef86689c725bd5bab888fd3b26dbb196eec954"},
@@ -34,7 +43,7 @@ int main(int argc, char** argv) {
             std::vector<uint8_t> bytes(size);
             for (int i = 0; i < size; ++i) bytes[i] = uint8_t((i * 37 + 11) % 256);
             { std::ofstream out(sample, std::ios::binary); out.write(reinterpret_cast<const char*>(bytes.data()), bytes.size()); }
-            require(sha256File(sample.string()) == digest, "SHA-256 block boundary");
+            require(sha256File(sample.u8string()) == digest, "SHA-256 block boundary");
             require(sha256Bytes(bytes.data(), bytes.size()) == digest, "SHA-256 memory block boundary");
         }
         Json manifest = {{"format_version", 1}, {"protocol", "rawlab-dualdn-v1"},
@@ -47,15 +56,17 @@ int main(int argc, char** argv) {
         for (const auto* name : {"raw", "isp", "rgb"}) {
             auto file = root / (std::string(name) + ".onnx");
             { std::ofstream out(file); out << "test package integrity"; }
-            manifest["graphs"][name] = {{"file", file.filename().string()}, {"sha256", sha256File(file.string())},
+            manifest["graphs"][name] = {{"file", file.filename().u8string()}, {"sha256", sha256File(file.u8string())},
                                           {"bytes", std::filesystem::file_size(file)}};
         }
         auto write = [&] { std::ofstream(root / "manifest.json") << manifest.dump(); };
         write();
-        const auto package = loadModelPackage(root.string());
+        const auto package = loadModelPackage(root.u8string());
         require(package.tileSize == 640 && package.digest.size() == 64, "valid model package rejected");
+        require(package.paths == std::array<std::string, 3>{(root/"raw.onnx").u8string(),
+                (root/"isp.onnx").u8string(), (root/"rgb.onnx").u8string()}, "ONNX paths must remain UTF-8");
         auto rejects = [&] {
-            bool failed = false; try { loadModelPackage(root.string()); } catch (const std::exception&) { failed = true; }
+            bool failed = false; try { loadModelPackage(root.u8string()); } catch (const std::exception&) { failed = true; }
             require(failed, "corrupt model package accepted");
         };
         manifest["blind_rgb"] = {{"model_id", "unrecognized-rgb-model"}};
@@ -66,12 +77,12 @@ int main(int argc, char** argv) {
         manifest["blind_rgb"] = {{"model_id","restormer-real-srgb-v1"}, {"protocol","rawlab-scene-rgb-v1"},
             {"source_revision",restormerSourceRevision}, {"weights_sha256",restormerWeightsSHA256},
             {"tile_size",640}, {"core",512}, {"halo",64}, {"input","encoded_rgb"}, {"output","denoised_rgb"},
-            {"file","blind_rgb.onnx"}, {"bytes",std::filesystem::file_size(blindFile)}, {"sha256",sha256File(blindFile.string())},
+            {"file","blind_rgb.onnx"}, {"bytes",std::filesystem::file_size(blindFile)}, {"sha256",sha256File(blindFile.u8string())},
             {"license_file","Restormer-LICENSE.txt"}, {"license_sha256",restormerLicenseSHA256}};
         write();
-        require(loadModelPackage(root.string()).blindRGBPath == blindFile.string(),"valid scene RGB package rejected");
+        require(loadModelPackage(root.u8string()).blindRGBPath == blindFile.u8string(),"valid scene RGB package rejected");
         manifest["blind_rgb"]["sha256"] = std::string(64,'a'); write(); rejects();
-        manifest["blind_rgb"]["sha256"] = sha256File(blindFile.string());
+        manifest["blind_rgb"]["sha256"] = sha256File(blindFile.u8string());
         manifest["blind_rgb"]["weights_sha256"] = std::string(64,'b'); write(); rejects();
         manifest["blind_rgb"]["weights_sha256"] = restormerWeightsSHA256;
         { std::ofstream out(licenseFile,std::ios::app); out << "changed"; }
@@ -81,9 +92,10 @@ int main(int argc, char** argv) {
         const auto nativeRGB = root/"blind_rgb.mlmodelc/model.mil";
         { std::ofstream out(nativeRGB); out << "native RGB fixture"; }
         manifest["blind_rgb"]["coreml"] = {{"directory","blind_rgb.mlmodelc"}, {"precision","float32"},
-            {"files",Json::array({{{"path","model.mil"}, {"bytes",std::filesystem::file_size(nativeRGB)}, {"sha256",sha256File(nativeRGB.string())}}})}};
+            {"files",Json::array({{{"path","model.mil"}, {"bytes",std::filesystem::file_size(nativeRGB)}, {"sha256",sha256File(nativeRGB.u8string())}}})}};
         write();
-        require(!loadModelPackage(root.string()).blindRGBCoreMLPath.empty(),"scene RGB native path missing");
+        require(loadModelPackage(root.u8string()).blindRGBCoreMLPath == (root/"blind_rgb.mlmodelc").u8string(),
+                "scene RGB native path must remain UTF-8");
         manifest["blind_rgb"]["coreml"]["files"][0]["path"] = "../sample"; write(); rejects();
         manifest["blind_rgb"]["coreml"]["files"][0]["path"] = "model.mil";
         const auto blindManifest = manifest["blind_rgb"];
@@ -101,17 +113,18 @@ int main(int argc, char** argv) {
             const auto file = root / directory / "weights/weight.bin";
             { std::ofstream out(file); out << "native model fixture"; }
             manifest["coreml"][name] = {{"directory", directory}, {"files", Json::array({
-                {{"path", "weights/weight.bin"}, {"sha256", sha256File(file.string())}, {"bytes", std::filesystem::file_size(file)}}
+                {{"path", "weights/weight.bin"}, {"sha256", sha256File(file.u8string())}, {"bytes", std::filesystem::file_size(file)}}
             })}};
         }
         write();
-        const auto native = loadModelPackage(root.string());
-        require(!native.coreMLPaths[0].empty() && !native.coreMLPaths[1].empty(), "native models not found");
+        const auto native = loadModelPackage(root.u8string());
+        require(native.coreMLPaths == std::array<std::string, 2>{(root/"raw.mlmodelc").u8string(),
+                (root/"rgb.mlmodelc").u8string()}, "native model paths must remain UTF-8");
         manifest["blind_rgb"] = blindManifest; write();
-        require(!loadModelPackage(root.string()).blindRGBCoreMLPath.empty(),"combined native model bundle rejected");
+        require(!loadModelPackage(root.u8string()).blindRGBCoreMLPath.empty(),"combined native model bundle rejected");
         const auto nativeManifest = manifest["coreml"];
         manifest.erase("coreml"); manifest["blind_rgb"].erase("coreml"); write();
-        const auto windows = loadModelPackage(root.string());
+        const auto windows = loadModelPackage(root.u8string());
         require(windows.coreMLPaths[0].empty() && windows.blindRGBCoreMLPath.empty() && !windows.blindRGBPath.empty(),
                 "removing Apple manifest fields broke portable RGB package");
         manifest["coreml"] = nativeManifest;
@@ -129,5 +142,8 @@ int main(int argc, char** argv) {
         std::filesystem::remove_all(root);
         std::cout << "PASS SHA-256 and DualDn package integrity/protocol\n";
         return 0;
-    } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
+    } catch (const std::exception& error) {
+        if (created) { std::error_code ignored; std::filesystem::remove_all(root, ignored); }
+        std::cerr << error.what() << '\n'; return 1;
+    }
 }

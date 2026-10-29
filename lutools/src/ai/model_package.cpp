@@ -31,7 +31,7 @@ std::string nativeModelPath(const std::filesystem::path& root, const nlohmann::j
         const auto bytes = entry.at("bytes").get<uint64_t>();
         total += bytes;
         if (bytes == 0 || bytes > 512 * 1024 * 1024 || total > 512 * 1024 * 1024 || fs::is_symlink(file) ||
-            !fs::is_regular_file(file) || fs::file_size(file) != bytes || sha256File(file.string()) != entry.at("sha256"))
+            !fs::is_regular_file(file) || fs::file_size(file) != bytes || sha256File(file.u8string()) != entry.at("sha256"))
             throw std::invalid_argument("Core ML resource SHA-256/size mismatch");
     }
     size_t count = 0;
@@ -42,7 +42,7 @@ std::string nativeModelPath(const std::filesystem::path& root, const nlohmann::j
             throw std::invalid_argument("Untracked Core ML resource");
     }
     if (count != expected.size()) throw std::invalid_argument("Missing Core ML resource");
-    return folder.string();
+    return folder.u8string();
 }
 }
 
@@ -67,7 +67,8 @@ ModelPackage loadModelPackage(const std::string& directory) {
         throw std::invalid_argument("Unsupported DualDn model protocol");
     ModelPackage result;
     result.modelID = manifest.at("model_id"); result.tileSize = 640;
-    result.digest = sha256File(path.string());
+    // 路径字符串供 UTF-8 接口读取，不能经过 Windows 本地代码页。
+    result.digest = sha256File(path.u8string());
     const char* names[] = {"raw", "isp", "rgb"};
     for (size_t i = 0; i < 3; ++i) {
         const auto& graph = manifest.at("graphs").at(names[i]);
@@ -77,9 +78,9 @@ ModelPackage loadModelPackage(const std::string& directory) {
         const auto file = root / name;
         const auto bytes = graph.at("bytes").get<uint64_t>();
         if (bytes == 0 || bytes > 512 * 1024 * 1024 || !std::filesystem::is_regular_file(file) ||
-            std::filesystem::file_size(file) != bytes || sha256File(file.string()) != graph.at("sha256"))
+            std::filesystem::file_size(file) != bytes || sha256File(file.u8string()) != graph.at("sha256"))
             throw std::invalid_argument("DualDn graph SHA-256/size mismatch: " + name);
-        result.paths[i] = file.string();
+        result.paths[i] = file.u8string();
     }
     if (manifest.contains("coreml")) {
         const auto& native = manifest.at("coreml");
@@ -101,10 +102,10 @@ ModelPackage loadModelPackage(const std::string& directory) {
         const auto bytes = graph.at("bytes").get<uint64_t>();
         if (bytes == 0 || bytes > 512 * 1024 * 1024 || std::filesystem::is_symlink(file) ||
             !std::filesystem::is_regular_file(file) || std::filesystem::file_size(file) != bytes ||
-            sha256File(file.string()) != graph.at("sha256") || std::filesystem::is_symlink(license) ||
-            !std::filesystem::is_regular_file(license) || sha256File(license.string()) != restormerLicenseSHA256)
+            sha256File(file.u8string()) != graph.at("sha256") || std::filesystem::is_symlink(license) ||
+            !std::filesystem::is_regular_file(license) || sha256File(license.u8string()) != restormerLicenseSHA256)
             throw std::invalid_argument("Scene RGB model or license SHA-256/size mismatch");
-        result.blindRGBPath = file.string();
+        result.blindRGBPath = file.u8string();
         if (graph.contains("coreml")) {
             const auto& native = graph.at("coreml");
             if (native.at("precision") != "float32") throw std::invalid_argument("Unsupported scene RGB Core ML precision");
