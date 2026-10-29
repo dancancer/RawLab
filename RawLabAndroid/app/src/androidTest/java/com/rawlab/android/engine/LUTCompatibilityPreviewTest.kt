@@ -17,9 +17,85 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class LUTCompatibilityPreviewTest {
+    @Test fun staleSourceCannotReplaceCurrentPhotoWhenLatestLoadFails() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val before = context.cacheDir.listFiles()!!.toSet()
+        val root = File(context.cacheDir, "lut-source-race-${UUID.randomUUID()}").apply { mkdirs() }
+        val copyingB = CountDownLatch(1)
+        val releaseB = CountDownLatch(1)
+        var preview: LUTCompatibilityPreview? = null
+        fun awaitState(check: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + 15_000
+            var done = false
+            while (!done && System.currentTimeMillis() < deadline) {
+                instrumentation.runOnMainSync { done = check() }
+                if (!done) Thread.sleep(20)
+            }
+            assertTrue("Preview operation timed out", done)
+        }
+        try {
+            fun photo(name: String, color: Int): ImportedPhoto {
+                val file = File(root, name)
+                Bitmap.createBitmap(32, 16, Bitmap.Config.ARGB_8888).let { bitmap ->
+                    bitmap.eraseColor(color)
+                    file.outputStream().use { assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+                    bitmap.recycle()
+                }
+                return ImportedPhoto(Uri.fromFile(file), name, file, inputKind = PhotoInputKind.RASTER)
+            }
+            val a = photo("A.png", Color.rgb(20, 80, 150))
+            val b = photo("B.png", Color.rgb(230, 60, 10)).copy(validateOriginal = {
+                copyingB.countDown()
+                check(releaseB.await(15, TimeUnit.SECONDS)) { "Test did not release B" }
+            })
+            val c = photo("C.png", Color.rgb(50, 180, 70)).copy(validateOriginal = {
+                throw java.io.IOException("Latest photo cannot be acquired")
+            })
+            val lut = File(root, "unknown.cube").apply {
+                writeText("LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n")
+            }
+            val draft = LUTCompatibility.parse(NativeProcessor.inspectLutCompatibility(lut))!!
+            val configured = draft.applying(draft.candidates.first(), true)!!.copy(interpolation = "tetrahedral")
+            val expected = NativeProcessor(NativeProcessor.CPU).use {
+                it.previewCompatibility(a.file, PhotoInputKind.RASTER, lut, configured.previewRequest()).pixels
+            }
+            instrumentation.runOnMainSync {
+                preview = LUTCompatibilityPreview(context, PendingLookCompatibility(Uri.fromFile(lut), lut.name, draft))
+                preview!!.loadInitial(a)
+            }
+            awaitState { !preview!!.state.loading && preview!!.state.frames.isNotEmpty() }
+            instrumentation.runOnMainSync { preview!!.loadInitial(b) }
+            assertTrue("B did not start acquisition", copyingB.await(15, TimeUnit.SECONDS))
+            instrumentation.runOnMainSync { preview!!.loadInitial(c) }
+            releaseB.countDown()
+            awaitState { !preview!!.state.loading && preview!!.state.error != null }
+            instrumentation.runOnMainSync {
+                assertEquals(a.name, preview!!.state.sourceName)
+                preview!!.preview(configured)
+            }
+            awaitState { preview!!.state.frames.containsKey(configured.previewKey()) }
+            instrumentation.runOnMainSync {
+                assertArrayEquals("Advanced settings must still preview A after B becomes stale and C fails",
+                    expected, preview!!.state.frames.getValue(configured.previewKey()).frame.pixels)
+            }
+            val owned = context.cacheDir.listFiles()!!.single { it !in before && it.name.startsWith("lut-preview-") }
+            assertArrayEquals(a.file.readBytes(), owned.listFiles()!!.single { it.extension == "png" }.readBytes())
+            assertEquals("Stale source copies must be removed", 2, owned.listFiles()!!.size)
+            instrumentation.runOnMainSync { preview!!.close() }
+            awaitState { !owned.exists() }
+        } finally {
+            releaseB.countDown()
+            instrumentation.runOnMainSync { preview?.close() }
+            root.deleteRecursively()
+        }
+    }
+
     @Test fun changingSourceInvalidatesReferenceAndReleasesPreviousCopy() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

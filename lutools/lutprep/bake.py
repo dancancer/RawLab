@@ -45,7 +45,7 @@ def _cube_info(path):
                     if _compact(key) in {"gamma", "gamut"}:
                         duplicate_color |= _compact(key) in color_keys
                         color_keys.add(_compact(key))
-                    if _compact(key) == "rawlabcolorcontract": explicit_contract = True
+                    if _compact(key) in {"rawlabcolorcontract", "rawlabcompatibility"}: explicit_contract = True
                     comments[_compact(key)] = _compact(value)
                     if _compact(key) == "rawlab":
                         metadata = json.loads(value)

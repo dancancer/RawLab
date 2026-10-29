@@ -59,6 +59,45 @@ class NativeLUTContractTests(unittest.TestCase):
             stream.write('#RawLabColorContract:' + json.dumps(c) + '\n')
         self.assertEqual(inspect_lut(self.source)["color_state"], "missing_reference")
 
+    def test_compatibility_routes_through_public_inspection_and_cli(self):
+        from lutools.lutprep.bake import inspect_source
+        from lutools.lutprep.__main__ import main
+
+        table = self.source.read_bytes()
+        effective = contract(); effective.pop('evidence')
+        for explicit in (False, True):
+            with self.subTest(explicit_contract=explicit):
+                original = table
+                if explicit:
+                    original += b'#RawLabColorContract:' + json.dumps(effective).encode() + b'\n'
+                record = {'version': 1, 'source_bytes': len(original),
+                          'source_sha256': hashlib.sha256(original).hexdigest(),
+                          'confirmed': True, 'contract': effective}
+                self.source.write_bytes(original + b'\n#RawLabCompatibility:' + json.dumps(record).encode() + b'\n')
+                info = inspect_source(self.source)
+                self.assertEqual(info['color_state'], 'compatibility')
+                self.assertTrue(info['native_photo_compatible'])
+                for command in (['inspect', str(self.source)], ['audit', str(self.source), '--verify-compile']):
+                    output = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        result = main(command)
+                    self.assertEqual(result, 0)
+                    report = json.loads(output.getvalue())
+                    if command[0] == 'audit':
+                        entry, = report['entries']
+                        self.assertEqual(entry['read']['status'], 'passed')
+                        self.assertEqual(entry['compile']['status'], 'not_run')
+                        report = entry['metadata']
+                    self.assertEqual(report['color_state'], 'compatibility')
+                    self.assertTrue(report['native_photo_compatible'])
+                    self.assertEqual(report['appearance'], 'unverified')
+
+                record['source_sha256'] = '0' * 64
+                self.source.write_bytes(original + b'\n#RawLabCompatibility:' + json.dumps(record).encode() + b'\n')
+                info = inspect_source(self.source)
+                self.assertEqual(info['color_state'], 'invalid_contract')
+                self.assertFalse(info['native_photo_compatible'])
+
     def test_repeated_color_comments_are_invalid(self):
         with self.source.open('a') as stream:
             stream.write('#LUMIXPHOTOSTYLE STD\n#LUMIXPHOTOSTYLE VLOG\n#RawLabColorContract:' + json.dumps(contract()) + '\n')

@@ -92,8 +92,11 @@ internal sealed class LUTCompatibility
 
 internal sealed record LUTCompatibilityCandidate(string Id, string Basis, JsonObject Contract, IReadOnlyList<string>? Assumptions = null)
 {
-    internal string BasisName => Loc.Text(Basis == "file-parameters" ? "文件已有参数 · 效果未验证" :
-        Basis == "partial-metadata" ? "依据部分文件线索 · 仍有假设" : "试用方案 · 无颜色依据");
+    internal string BasisName => Basis switch {
+        "file-parameters" => Loc.Text("文件已有参数 · 效果未验证"),
+        "partial-metadata" => Loc.Text("依据部分文件线索 · 仍有假设"),
+        _ => Loc.Text("试用方案 · 无颜色依据")
+    };
     internal string AssumptionsName(string baseRendering) {
         var values = (Assumptions ?? []).Select(value => value switch {
             "input-space" => Loc.Text("输入颜色"), "output-space" => Loc.Text("输出颜色"),

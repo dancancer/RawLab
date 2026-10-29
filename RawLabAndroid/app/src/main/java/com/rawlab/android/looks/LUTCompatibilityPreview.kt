@@ -15,6 +15,8 @@ import com.rawlab.android.format.PhotoFiles
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.photo.ImportedPhoto
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
@@ -36,6 +38,8 @@ internal class LUTCompatibilityPreview(private val context: Context, private val
         private set
     private val executor = Executors.newSingleThreadExecutor()
     private val dispatcher = executor.asCoroutineDispatcher()
+    // 发布到主线程时会挂起；仍需保证源切换和参数预览作为完整操作串行执行。
+    private val sourceWork = Mutex()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val sourceGeneration = AtomicInteger()
     private val selectionGeneration = AtomicInteger()
@@ -90,36 +94,44 @@ internal class LUTCompatibilityPreview(private val context: Context, private val
             reference = null, referenceName = null, comparison = null, comparisonError = null)
         scope.launch {
             try {
-                withContext(dispatcher) {
-                    ensureActive(); if (sourceGeneration.get() != generation) return@withContext
+                withContext(dispatcher) { sourceWork.withLock {
+                    ensureActive(); if (sourceGeneration.get() != generation) return@withLock
                     ensureLut()
                     val (file, name, kind) = load()
-                    val previous = source; source = file; sourceKind = kind
-                    withContext(Dispatchers.Main) {
-                        if (sourceGeneration.get() == generation) state = state.copy(sourceName = name, displayInput = kind == PhotoInputKind.RASTER)
-                    }
-                    val baseline = try { LUTPreviewImage(processor.previewCompatibility(file, kind, null, null)) }
-                    finally { if (previous != file) previous?.delete() }
-                    withContext(Dispatchers.Main) {
-                        if (sourceGeneration.get() == generation) state = state.copy(sourceName = name, displayInput = kind == PhotoInputKind.RASTER, baseline = baseline)
-                    }
-                    for (candidate in pending.draft.candidates) {
-                        ensureActive(); if (sourceGeneration.get() != generation) break
-                        val configured = pending.draft.applying(candidate, kind == PhotoInputKind.RASTER) ?: continue
-                        try {
-                            val frame = LUTPreviewImage(processor.previewCompatibility(file, kind, lut, configured.previewRequest()))
-                            withContext(Dispatchers.Main) {
-                                if (sourceGeneration.get() == generation) state = state.copy(frames = state.frames + (configured.previewKey() to frame))
-                            }
-                        } catch (error: CancellationException) { throw error
-                        } catch (_: Exception) {
-                            withContext(Dispatchers.Main) {
-                                if (sourceGeneration.get() == generation) state = state.copy(errors = state.errors +
-                                    (configured.previewKey() to context.getString(R.string.lut_preview_failed)))
+                    var committed = false
+                    try {
+                        ensureActive(); if (sourceGeneration.get() != generation) return@withLock
+                        val baseline = LUTPreviewImage(processor.previewCompatibility(file, kind, null, null))
+                        val previous = withContext(Dispatchers.Main) {
+                            if (sourceGeneration.get() != generation) return@withContext null
+                            val old = source
+                            source = file; sourceKind = kind
+                            state = state.copy(sourceName = name, displayInput = kind == PhotoInputKind.RASTER, baseline = baseline)
+                            committed = true
+                            old
+                        }
+                        if (!committed) return@withLock
+                        if (previous != file) previous?.delete()
+                        for (candidate in pending.draft.candidates) {
+                            ensureActive(); if (sourceGeneration.get() != generation) break
+                            val configured = pending.draft.applying(candidate, kind == PhotoInputKind.RASTER) ?: continue
+                            try {
+                                val frame = LUTPreviewImage(processor.previewCompatibility(file, kind, lut, configured.previewRequest()))
+                                withContext(Dispatchers.Main) {
+                                    if (sourceGeneration.get() == generation) state = state.copy(frames = state.frames + (configured.previewKey() to frame))
+                                }
+                            } catch (error: CancellationException) { throw error
+                            } catch (_: Exception) {
+                                withContext(Dispatchers.Main) {
+                                    if (sourceGeneration.get() == generation) state = state.copy(errors = state.errors +
+                                        (configured.previewKey() to context.getString(R.string.lut_preview_failed)))
+                                }
                             }
                         }
+                    } finally {
+                        if (!committed) file.delete()
                     }
-                }
+                } }
             } catch (error: CancellationException) { throw error
             } catch (_: Exception) { if (sourceGeneration.get() == generation) state = state.copy(error = context.getString(R.string.lut_preview_failed))
             } finally { if (sourceGeneration.get() == generation) state = state.copy(loading = false) }
@@ -132,11 +144,11 @@ internal class LUTCompatibilityPreview(private val context: Context, private val
         if (!draft.hasCompleteContract || state.frames.containsKey(draft.previewKey())) return
         scope.launch {
             try {
-                val frame = withContext(dispatcher) {
-                    val file = source ?: return@withContext null
+                val frame = withContext(dispatcher) { sourceWork.withLock {
+                    val file = source ?: return@withLock null
                     require(draft.supportsPreview(sourceKind == PhotoInputKind.RASTER))
                     LUTPreviewImage(processor.previewCompatibility(file, sourceKind, ensureLut(), draft.previewRequest()))
-                }
+                } }
                 if (frame != null && selectionGeneration.get() == selection && sourceGeneration.get() == generation)
                     state = state.copy(frames = state.frames + (draft.previewKey() to frame))
             } catch (error: CancellationException) { throw error
