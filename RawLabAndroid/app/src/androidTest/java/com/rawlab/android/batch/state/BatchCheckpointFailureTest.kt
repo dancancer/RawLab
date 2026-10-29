@@ -13,10 +13,10 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BatchCheckpointFailureTest {
-    @Test fun retryInitFailureKeepsPublishedOutputAndUnfinishedRowsRecoverable() {
+    @Test fun continueInitFailureKeepsPublishedOutputAndUnfinishedRowsRecoverable() {
         val fail = AtomicBoolean(false)
         BatchStateTestFixture(factory = { mode, _ ->
-            if (fail.get()) throw IOException("Controlled retry initialization failure")
+            if (fail.get()) throw IOException("Controlled continuation initialization failure")
             NativeProcessor(mode)
         }).use { fixture ->
             fixture.addTargets(2)
@@ -34,7 +34,13 @@ class BatchCheckpointFailureTest {
             fail.set(true)
             fixture.main { fixture.model.retryFailed() }
             fixture.joinWorker()
+            assertEquals(BatchPhase.CANCELLED, fixture.model.state.value.phase)
+            assertEquals(stopped, fixture.model.state.value.job)
+            assertNull(fixture.model.state.value.error)
+            fixture.main { fixture.model.continueUnfinished() }
+            fixture.joinWorker()
             assertEquals(BatchPhase.FAILED, fixture.model.state.value.phase)
+            assertEquals("Controlled continuation initialization failure", fixture.model.state.value.error)
             val persisted = fixture.journal.load(stopped.id)!!
             assertEquals(listOf(BatchRowStatus.SUCCESS, BatchRowStatus.CANCELLED), persisted.rows.map { it.status })
             assertEquals(stopped.rows.first(), persisted.rows.first())
