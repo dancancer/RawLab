@@ -1,6 +1,7 @@
 """Deployment targets must not reuse higher-minimum dependency binaries."""
 import os
 from pathlib import Path
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -12,6 +13,46 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class BuildEnvironmentTests(unittest.TestCase):
+    @unittest.skipUnless(Path("/usr/libexec/PlistBuddy").exists(), "macOS plist tooling is required")
+    def test_sparkle_link_check_consumes_large_tool_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app = root / "RawLab.app"
+            framework = app / "Contents/Frameworks/Sparkle.framework"
+            (framework / "Versions/B").mkdir(parents=True)
+            (framework / "Versions/Current").symlink_to("B")
+            for name in ("Sparkle", "Autoupdate", "Updater.app/Contents/MacOS/Updater",
+                         "XPCServices/Downloader.xpc/Contents/MacOS/Downloader",
+                         "XPCServices/Installer.xpc/Contents/MacOS/Installer"):
+                binary = framework / name
+                binary.parent.mkdir(parents=True, exist_ok=True)
+                binary.touch()
+                binary.chmod(0o755)
+            notices = app / "Contents/Resources/Licenses"
+            notices.mkdir(parents=True)
+            (notices / "Sparkle-LICENSE.txt").touch()
+            (app / "Contents/Info.plist").write_bytes(plistlib.dumps(
+                {"SUEnableAutomaticChecks": False, "SUAutomaticallyUpdate": False}))
+            tools = root / "tools"
+            tools.mkdir()
+            (tools / "codesign").write_text("#!/bin/sh\nexit 0\n")
+            (tools / "otool").write_text(
+                f"#!{sys.executable}\nimport os, sys\n"
+                "print(os.environ['TEST_LINKED_FRAMEWORK'], flush=True)\n"
+                "for _ in range(256):\n"
+                "    sys.stdout.write('/System/Library/Frameworks/Other.framework/Other\\n' * 256)\n"
+                "    sys.stdout.flush()\n")
+            for tool in tools.iterdir():
+                tool.chmod(0o755)
+            for linked, expected in (("@rpath/Sparkle.framework/Versions/B/Sparkle", 0),
+                                     ("/System/Library/Frameworks/Foundation.framework/Foundation", 1)):
+                with self.subTest(linked=linked):
+                    result = subprocess.run(["bash", str(ROOT / "RawLabMac/tests/sparkle-bundle.sh"), str(app)],
+                        env={**os.environ, "PATH": f"{tools}:{os.environ['PATH']}", "RAWLAB_ARCH": "",
+                             "TEST_LINKED_FRAMEWORK": linked}, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                    self.assertNotIn("BrokenPipeError", result.stdout + result.stderr)
+
     def test_lens_minimum_os_check_consumes_large_tool_output(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

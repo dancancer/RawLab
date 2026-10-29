@@ -92,7 +92,7 @@ bash "$ROOT/RawLabMac/tests/sparkle-bundle.sh" "$APP"
 # 使用统计 SDK：带与不带必须和构建方式一致，不能悄悄缺失或混入
 if [ -n "${RAWLAB_RUM_EXPECTED:-}" ]; then
     linked=0
-    otool -L "$APP/Contents/MacOS/RawLabMac" | grep -q '@rpath/libalibabacloud_rum.dylib' && linked=1
+    otool -L "$APP/Contents/MacOS/RawLabMac" | grep -F '@rpath/libalibabacloud_rum.dylib' >/dev/null && linked=1
     for lib in libalibabacloud_rum.dylib libcurl.dylib; do
         present=0; [ -f "$APP/Contents/Frameworks/$lib" ] && present=1
         test "$present" = "$RAWLAB_RUM_EXPECTED" || { echo "FAIL: $lib presence $present, expected $RAWLAB_RUM_EXPECTED"; exit 1; }
