@@ -521,6 +521,16 @@ sony2fuji_status sony2fuji_session_set_raw_noise_reduction(sony2fuji_session* se
 int32_t sony2fuji_ai_available(void);
 // Read-only native GPU probe. Does not load models or start inference; 0 means no supported hardware.
 int32_t sony2fuji_ai_hardware_available(void);
+// DirectML hardware inventory as UTF-8 JSON (version 1). Does not load models or run inference.
+// The calling thread owns the returned snapshot until its next inventory call; other platforms return an empty list.
+const char* sony2fuji_ai_get_devices(void);
+// Additive selector: null/empty means Auto (prefer a high-performance discrete GPU).
+// Copies a device ID returned by the inventory, not an adapter index. Missing explicit devices fail without rerouting.
+// This is a worker-session setting; it does not change the v1 AI config layout or ordinary rendering GPU selection.
+sony2fuji_status sony2fuji_session_set_ai_device(sony2fuji_session* session, const char* device_id);
+// Bounded native runtime context and warning/error log as UTF-8 JSON. No image data or source paths are added.
+// Runtime messages can contain paths: clients must redact them before exporting. Valid until the next getter call.
+const char* sony2fuji_session_get_ai_diagnostics(const sony2fuji_session* session);
 sony2fuji_status sony2fuji_session_set_ai_denoise(sony2fuji_session* session, const sony2fuji_ai_denoise_config* config);
 // Explicit full-resolution preparation. Use a separate worker-owned session so previews remain responsive.
 // Cache keys exclude exposure/LUT/geometry, include WB and processing version for RGB, and retain reusable RAW output.

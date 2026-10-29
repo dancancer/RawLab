@@ -153,7 +153,7 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
     const RGB& wb, uint32_t width, uint32_t height, uint64_t revision, ImageData& output,
     const PhotoEffectsOptions& effects, int chromaDenoise, bool preserveSourceResolution, const HslOptions& hsl, const ToneControlsOptions& toneControls,
     const ColorGradingOptions& colorGrading, const ToneCurve& customCurve) {
-    if (lut && (lut->requiresCPU() || lut->inputTransfer() == LUTTransfer::SRGB)) return false;
+    if (lut && lut->requiresCPU()) return false;
     if (input.width<=0 || input.height<=0 || width==0 || height==0 || width>65535 || height>65535 ||
         input.pixels.size()!=static_cast<size_t>(input.width)*input.height || !effects.valid() || !hsl.valid() || !toneControls.valid() || !colorGrading.valid() || !customCurve.gpuSupported() || (customCurve.custom() && request.tone_curve != 0) ||
         chromaDenoise < 0 || chromaDenoise > 2) return false;
@@ -195,6 +195,7 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
             p.logTransfer[0]=lut->inputTransfer()==LUTTransfer::FLog;
             p.logTransfer[1]=lut->outputTransfer()!=LUTTransfer::Display;
             p.logTransfer[2]=lut->outputTransfer()==LUTTransfer::FLog;
+            p.logTransfer[3]=lut->inputTransfer()==LUTTransfer::SRGB;
             auto low=lut->domainMin(),high=lut->domainMax();
             p.domainLow[0]=low.r;p.domainLow[1]=low.g;p.domainLow[2]=low.b;
             p.domainHigh[0]=high.r;p.domainHigh[1]=high.g;p.domainHigh[2]=high.b;

@@ -31,13 +31,15 @@ internal sealed partial class RenderEngine : IDisposable
     private static long FrameBytes(PreviewFrame frame)=>ImageBytes(frame.Result)+
         (ReferenceEquals(frame.Neutral,frame.Result) ? 0 : ImageBytes(frame.Neutral));
     public int LastBackend => Native.sony2fuji_session_get_last_backend(session);
-    public RenderEngine(int gpuMode=1, string? lensDatabase=null,StatisticsAnalyzer? statisticsAnalyzer=null,string? aiModelDirectory=null,string? aiCacheDirectory=null,int? aiBackend=null)
+    public RenderEngine(int gpuMode=1, string? lensDatabase=null,StatisticsAnalyzer? statisticsAnalyzer=null,string? aiModelDirectory=null,string? aiCacheDirectory=null,int? aiBackend=null,
+        string aiDeviceID="",AIDiagnosticStore? aiDiagnostics=null)
     {
         this.statisticsAnalyzer=statisticsAnalyzer ?? AnalyzeStatistics;
         this.lensDatabase = lensDatabase ?? Path.Combine(AppContext.BaseDirectory,"Lensfun");
         this.aiModelDirectory=aiModelDirectory ?? BundledAIModel;
         this.aiCacheDirectory=aiCacheDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RawLab","Cache","DualDn");
         aiBackendOverride=aiBackend;
+        this.aiDeviceID=aiDeviceID;aiDiagnosticStore=aiDiagnostics ?? AIDiagnosticStore.Default;
         try { InitializeSession(); SetGpuMode(gpuMode); }
         catch { session.Dispose(); throw; }
     }
@@ -45,6 +47,13 @@ internal sealed partial class RenderEngine : IDisposable
     public void SetGpuMode(int mode) { var config=new Native.GpuConfig{Version=1,StructSize=12,Mode=mode};Native.Check(Native.sony2fuji_session_set_gpu_config(session,ref config));gpuMode=mode; }
     public void Dispose() {previews.Clear();original=null;Native.sony2fuji_release_buffer(ref displayInput);inputStamp=null;session.Dispose();}
     public double AutoExposure(string path, Adjustments settings)
+    {
+        BeginAIOperation("auto_exposure",path);
+        try{return AutoExposureCore(path,settings);}
+        catch(Exception error) when(settings.AIDenoiseEnabled && error is not OperationCanceledException && error is not AINotReadyException)
+        {CaptureAIFailure(error);throw;}
+    }
+    private double AutoExposureCore(string path, Adjustments settings)
     {
         if (PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path, out var info) == HDRProbeState.Supported)
             return AutoExposureHDRSource(path, settings,info!);
@@ -57,6 +66,7 @@ internal sealed partial class RenderEngine : IDisposable
         Native.Check(Native.sony2fuji_session_set_raw_exposure_mode(session,settings.ExposureMode));
         var request=settings.Request(path,null,0,null);
         SetInput(ref request,path);
+        aiNativeOperationStarted=true;
         var status=Native.sony2fuji_session_estimate_auto_exposure(session,ref request,out var ev);
         if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status);
         return ev;
@@ -121,6 +131,13 @@ internal sealed partial class RenderEngine : IDisposable
     }
     public RenderedImage? Render(string path, Adjustments settings, string? lut, int edge, bool interactive = false, string? output = null, bool statistics = true, bool clipping = true, int? longEdge = null, bool viewportPreview = false, ExportFormat? formatOverride = null)
     {
+        BeginAIOperation(output==null ? "preview" : "export",path);
+        try{return RenderCore(path,settings,lut,edge,interactive,output,statistics,clipping,longEdge,viewportPreview,formatOverride);}
+        catch(Exception error) when(settings.AIDenoiseEnabled && error is not OperationCanceledException && error is not AINotReadyException)
+        {CaptureAIFailure(error);throw;}
+    }
+    private RenderedImage? RenderCore(string path,Adjustments settings,string? lut,int edge,bool interactive,string? output,bool statistics,bool clipping,int? longEdge,bool viewportPreview,ExportFormat? formatOverride)
+    {
         if (output != null && formatOverride == ExportFormat.HdrJpeg &&
             (settings.HDR is not { Mode: HDRMode.Hdr } || !PhotoInput.IsHDRContainer(path)))
             throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
@@ -137,6 +154,7 @@ internal sealed partial class RenderEngine : IDisposable
         Native.Buffer buffer = default, mask = default;
         try
         {
+            aiNativeOperationStarted=true;
             var status = Native.sony2fuji_process(session,ref request,out buffer);
             if (output != null && (status == 6 || (status == 3 && format != ExportFormat.RenderedDng)))
                 throw new OutputWriteException(Loc.Text("无法写入成片，请检查输出位置和剩余空间。"));
@@ -262,6 +280,13 @@ internal sealed partial class RenderEngine : IDisposable
     }
     internal HslTargetSample SampleHsl(string path,Adjustments settings,string? lut,int edge,bool interactive,HslTargetRevision revision,double x,double y)
     {
+        BeginAIOperation("hsl_probe",path);
+        try{return SampleHslCore(path,settings,lut,edge,interactive,revision,x,y);}
+        catch(Exception error) when(settings.AIDenoiseEnabled && error is not OperationCanceledException && error is not AINotReadyException)
+        {CaptureAIFailure(error);throw;}
+    }
+    private HslTargetSample SampleHslCore(string path,Adjustments settings,string? lut,int edge,bool interactive,HslTargetRevision revision,double x,double y)
+    {
         if(!double.IsFinite(x) || !double.IsFinite(y))return HslTargetSample.Unavailable(revision,HslTargetAvailability.Nonfinite);
         if(x<0 || x>1 || y<0 || y>1)return HslTargetSample.Unavailable(revision,HslTargetAvailability.Outside);
         using var source=PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path,out var info)==HDRProbeState.Supported
@@ -271,7 +296,9 @@ internal sealed partial class RenderEngine : IDisposable
         var request=prepared.Item2;
         IntPtr probe=IntPtr.Zero;
         try {
-            Native.Check(Native.sony2fuji_session_create_hsl_probe(session,ref request,revision.Source,revision.Request,out probe));
+            aiNativeOperationStarted=true;
+            var status=Native.sony2fuji_session_create_hsl_probe(session,ref request,revision.Source,revision.Request,out probe);
+            if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status);
             var query=new Native.HslProbeQuery {Version=1,StructSize=(uint)Marshal.SizeOf<Native.HslProbeQuery>(),SourceRevision=revision.Source,RequestRevision=revision.Request,X=(float)x,Y=(float)y};
             Native.Check(Native.sony2fuji_hsl_probe_sample(probe,ref query,out var sample));
             if(sample.SourceRevision!=revision.Source || sample.RequestRevision!=revision.Request)

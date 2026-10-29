@@ -15,6 +15,7 @@ namespace RawLab.Windows;
 public partial class BatchExportWindow : Window
 {
     private BatchJob job;
+    private readonly AIDiagnosticStore aiDiagnostics;
     private readonly BatchJournal journal;
     private readonly Func<int,RenderEngine> createEngine;
     private readonly ObservableCollection<BatchRow> rows = [];
@@ -35,10 +36,11 @@ public partial class BatchExportWindow : Window
     public event Action<bool>? BusyChanged;
     public event Action<BatchJob, BatchJob, int>? RunCompleted;
 
-    public BatchExportWindow(BatchJob job, BatchJournal journal) : this(job,journal,backend=>new RenderEngine(aiBackend:backend)) { }
-    internal BatchExportWindow(BatchJob job, BatchJournal journal, Func<int,RenderEngine> createEngine)
+    public BatchExportWindow(BatchJob job, BatchJournal journal) : this(job,journal,backend=>new RenderEngine(aiBackend:backend,aiDeviceID:job.AIDeviceID)) { }
+    internal BatchExportWindow(BatchJob job, BatchJournal journal, Func<int,RenderEngine> createEngine,AIDiagnosticStore? aiDiagnostics=null)
     {
         this.job = job; this.journal = journal; this.createEngine=createEngine;
+        this.aiDiagnostics=aiDiagnostics ?? AIDiagnosticStore.Default;
         InitializeComponent(); Targets.ItemsSource = rows;
         Loc.Changed += RefreshLanguage;
         Closed += (_, _) => {closed=true;Loc.Changed -= RefreshLanguage;};
@@ -155,7 +157,7 @@ public partial class BatchExportWindow : Window
         try
         {
             var checkedItems=await Task.Run(()=>{
-                var accepted=new List<BatchItem>();using var validator=new RenderEngine(0,aiBackend:job.AIBackend);
+                var accepted=new List<BatchItem>();using var validator=new RenderEngine(0,aiBackend:job.AIBackend,aiDeviceID:job.AIDeviceID,aiDiagnostics:aiDiagnostics);
                 foreach(var input in inputs.Distinct(StringComparer.OrdinalIgnoreCase))
                 {
                     if(closeRequested)break;
@@ -164,7 +166,7 @@ public partial class BatchExportWindow : Window
                         try{var effective=RenderEngine.PrepareBatchSettings(job.Source,input,settings.Restore());
                             if (job.Format == ExportFormat.HdrJpeg && effective.HDR is not { Mode: HDRMode.Hdr })
                                 throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
-                            if(effective.AIDenoiseEnabled)RenderEngine.ValidateAIInput(input);
+                            if(effective.AIDenoiseEnabled)RenderEngine.ValidateAIInput(input,job.AIDeviceID);
                             else validator.Render(input,effective,look,64,statistics:false,clipping:false,viewportPreview:true);
                             item=item with{Selected=true};}
                         catch(Exception error){item=item with{ValidationError=error.Message,Selected=false};}
@@ -311,7 +313,7 @@ public partial class BatchExportWindow : Window
         {
             await Task.Run(() => {
                 if (work.Format is not (ExportFormat.RenderedDng or ExportFormat.HdrJpeg)) ExportMetadata.VerifyAvailable();
-                using var engine = createEngine(work.AIBackend);
+                using var engine = createEngine(work.AIBackend);engine.SetAIDevice(work.AIDeviceID);
                 BatchRunner.Run(work, journal, failuresOnly, cancellation.Token,
                     (updated, _) => {
                         foreach (var item in updated.Items)
@@ -338,6 +340,8 @@ public partial class BatchExportWindow : Window
         }
         catch (Exception error)
         {
+            if(work.Settings.AIDenoiseEnabled || work.Items.Any(item=>item.Selected && item.Frozen?.Settings.AIDenoiseEnabled==true))
+                aiDiagnostics.Capture(error,new("batch",work.AIDeviceID,work.AIBackend,Devices:RenderEngine.GetAIDevices().JSON));
             work.Error = error.Message; work.Interrupted = true;
             try { journal.Save(work); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
@@ -366,7 +370,7 @@ public partial class BatchExportWindow : Window
                 var frozen=snapshot.SnapshotFor(row.Item);
                 if(snapshot.Mode==BatchJob.PerTargetFrozen)frozen.VerifyLook();
                 else if (frozen.Look != null && !File.Exists(frozen.Look)) throw new InvalidOperationException(Loc.Text("任务使用的外观文件不可用，请重新创建任务。"));
-                using var engine = new RenderEngine(aiBackend:snapshot.AIBackend);
+                using var engine = new RenderEngine(aiBackend:snapshot.AIBackend,aiDeviceID:snapshot.AIDeviceID,aiDiagnostics:aiDiagnostics);
                 var settings=frozen.Settings.Restore();
                 return engine.Render(row.Input, settings, frozen.Look, 1600, statistics: false, clipping: false);
             });

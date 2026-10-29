@@ -125,7 +125,19 @@ Mac 的 Auto 使用直接转换的 float32 Core ML MLProgram 执行 RAW/RGB 网�
 
 Windows 的 Auto 使用 ONNX Runtime DirectML 执行 RAW/RGB 网络，禁用会话内隐式
 CPU provider 回退；Auto 与 Force 都使用硬件 DirectML，失败时明确报错。
-DirectML，拒绝 DXGI 软件适配器和 WARP。固定 ONNX Runtime DirectML 1.23.0 与
+AI 显卡选择独立于普通显影设置。自动选择先排除软件与不可用适配器，优先独显，再比较
+Windows 高性能排序和专用显存。手动选择保存硬件 PnP key 的摘要；无法取得 PnP key 时
+使用硬件属性组合，组合不唯一则拒绝手动选择。DXGI index 与 LUID 只用于本次运行，
+不作为跨重启偏好；创建网络时重新核对同一设备。缺失的手动设备明确失败，不静默换卡。
+设备身份与驱动参与结果缓存身份，批量任务冻结设备选择。v1 AI 配置结构保持不变，
+设备列表、session 设备设置和诊断快照通过独立 C ABI 提供。
+
+每次 AI 操作维护独立诊断上下文，记录阶段、模型摘要、实际设备和最多 64 条运行库
+警告/错误（每条最多 4096 字符）。native 快照不包含像素，但运行库消息可能含路径；
+Windows 在写入本地报告前脱敏。报告最多保留 20 份，通过用户操作导出 ZIP，不自动上传。
+正常取消不产生失败报告；记录诊断失败不得改变原始操作的错误。
+
+DirectML 拒绝 DXGI 软件适配器和 WARP。固定 ONNX Runtime DirectML 1.23.0 与
 DirectML 1.15.4，不启用半精度，官方 ISP 仍为 ONNX CPU。运行库放在程序旁，避免
 Windows 搜索顺序加载系统旧版 ONNX DLL。缓存身份包含 DirectML 运行库、实际适配器
 及驱动版本；Windows 原片身份还含内容摘要，覆盖保留尺寸和修改时间的原地写入。

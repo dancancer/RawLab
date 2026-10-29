@@ -145,7 +145,7 @@ public partial class MainWindow
         try
         {
             (neutral,rendered)=await Task.Run(()=> {
-                engine ??= new(); var w=ticket.Value;engine.SetGpuMode(w.GpuMode);
+                engine ??= new(aiDiagnostics:aiDiagnostics); var w=ticket.Value;engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
                 if(w.Probe is {} probe) {
                     hslSample=engine.SampleHsl(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,probe.Revision,probe.Point.X,probe.Point.Y);
                     return ((RenderedImage?)null,(RenderedImage?)null);
@@ -160,6 +160,8 @@ public partial class MainWindow
         var work=ticket.Value;
         if(work.Probe is {} probeWork) {
             AcceptHslTarget(work,hslSample ?? HslTargetSample.Unavailable(probeWork.Revision,HslTargetAvailability.Failed),current);
+            if(current && failure!=null && work.OpenRevision==openRevision && work.File==file && work.AIIdentity==aiJob.Identity)
+                HandleAIFailure(failure);
             UpdateBusy();Pump();QueuePendingReset();return;
         }
         // A current-file proxy may publish while dragging; stale exact work never publishes.
@@ -222,10 +224,11 @@ public partial class MainWindow
         if(file==null || result==null || settings.IsHDREditing || AIBlocksOutput || autoExposing || exporting || transform.Active)return;
         var path=file;var snapshot=settings.Clone();var revision=editRevision;var photoRevision=openRevision;
         var aiBackend=RequestedAIBackend;
+        var aiDevice=aiPreference.DeviceID;
         autoExposing=true;RefreshControls();
         try
         {
-            var ev=await Task.Run(()=>{using var meter=new RenderEngine(aiBackend:aiBackend);return meter.AutoExposure(path,snapshot);});
+            var ev=await Task.Run(()=>{using var meter=new RenderEngine(aiBackend:aiBackend,aiDeviceID:aiDevice,aiDiagnostics:aiDiagnostics);return meter.AutoExposure(path,snapshot);});
             if(closing || file!=path || openRevision!=photoRevision || editRevision!=revision || !snapshot.Capture().SameAs(settings.Capture()))return;
             settings.Set(Parameter.Exposure,NumericRange.For(ParameterSpec.All[(int)Parameter.Exposure]).Clamp(ev));MarkEdited();Schedule();
         }

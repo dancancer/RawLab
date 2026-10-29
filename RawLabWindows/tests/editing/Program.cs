@@ -6,6 +6,8 @@ if (args.Contains("--hdr-only")) {
     HDRChecks.Run();
     return;
 }
+AIGpuDiagnosticsChecks.Run();
+if(args.Contains("--ai-support"))return;
 
 MasterRecipeRefinementChecks.Run();
 ToneControlsChecks.Run();

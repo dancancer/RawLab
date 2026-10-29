@@ -15,10 +15,10 @@ struct RuntimeReport {
 
 RAWBayerOverride denoiseRaw(const RAWBayerSource& source, const ModelPackage& package,
                             const NoiseParameters& noise, Backend backend, RuntimeReport& report,
-                            const Progress& progress = {});
+                            const Progress& progress = {}, AIExecution execution = {});
 Tensor denoiseRgb(const RAWBayerSource& source, const RAWBayerOverride& denoised,
                    const ModelPackage& package, const NoiseParameters& noise, Backend backend,
-                   RGBOutput output, RuntimeReport& report, const Progress& progress = {});
+                   RGBOutput output, RuntimeReport& report, const Progress& progress = {}, AIExecution execution = {});
 Tensor denoiseSceneRGB(const ImageData& source, float gain, const ModelPackage& package,
-                       Backend backend, RuntimeReport& report, const Progress& progress = {});
+                       Backend backend, RuntimeReport& report, const Progress& progress = {}, AIExecution execution = {});
 } // namespace sony2fuji::ai

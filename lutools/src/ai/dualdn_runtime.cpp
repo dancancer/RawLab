@@ -21,12 +21,12 @@ PackedBayer packedSource(const RAWBayerSource& source) {
 
 RAWBayerOverride denoiseRaw(const RAWBayerSource& source, const ModelPackage& package,
                             const NoiseParameters& noise, Backend backend, RuntimeReport& report,
-                            const Progress& progress) {
+                            const Progress& progress, AIExecution execution) {
     validateNoise(noise);
     report = {};
     const auto start = Clock::now();
     auto packed = packedSource(source);
-    NetworkGraph graph(package, GraphKind::Raw, backend);
+    NetworkGraph graph(package, GraphKind::Raw, backend, execution);
     report.backend = graph.backend(); report.fallbackReason = graph.fallbackReason();
     auto predict = [&](NetworkGraph& session, const Tensor& tile) {
         return Tensor{tile.width, tile.height, 4, session.run({tile.values, {noise.k}, {noise.b}})};
@@ -40,7 +40,7 @@ RAWBayerOverride denoiseRaw(const RAWBayerSource& source, const ModelPackage& pa
 
 Tensor denoiseRgb(const RAWBayerSource& source, const RAWBayerOverride& denoised,
                    const ModelPackage& package, const NoiseParameters& noise, Backend backend,
-                   RGBOutput mode, RuntimeReport& report, const Progress& progress) {
+                   RGBOutput mode, RuntimeReport& report, const Progress& progress, AIExecution execution) {
     validateNoise(noise);
     report = {};
     const auto start = Clock::now();
@@ -62,8 +62,8 @@ Tensor denoiseRgb(const RAWBayerSource& source, const RAWBayerOverride& denoised
     std::vector<float> matrixValues;
     for (const auto& row : matrix) matrixValues.insert(matrixValues.end(), row.begin(), row.end());
     const std::vector<float> wbValues(wb.begin(), wb.end());
-    NetworkGraph isp(package, GraphKind::ISP, backend);
-    NetworkGraph rgb(package, GraphKind::RGB, backend);
+    NetworkGraph isp(package, GraphKind::ISP, backend, execution);
+    NetworkGraph rgb(package, GraphKind::RGB, backend, execution);
     report.backend = isp.backend() == rgb.backend() ? rgb.backend() : "ISP:" + isp.backend() + "/RGB:" + rgb.backend();
     report.fallbackReason = isp.fallbackReason().empty() ? rgb.fallbackReason() : isp.fallbackReason();
     auto predict = [&](const Tensor& tile, NetworkGraph& ispGraph, NetworkGraph& rgbGraph) {
@@ -97,10 +97,10 @@ Tensor denoiseRgb(const RAWBayerSource& source, const RAWBayerOverride& denoised
     return output;
 }
 Tensor denoiseSceneRGB(const ImageData& source, float gain, const ModelPackage& package,
-                       Backend backend, RuntimeReport& report, const Progress& progress) {
+                       Backend backend, RuntimeReport& report, const Progress& progress, AIExecution execution) {
     report = {};
     const auto start = Clock::now();
-    auto graph = std::make_unique<NetworkGraph>(package,GraphKind::BlindRGB,backend);
+    auto graph = std::make_unique<NetworkGraph>(package,GraphKind::BlindRGB,backend,execution);
     report.backend = graph->backend(); report.fallbackReason = graph->fallbackReason();
     auto run = [&] {
         return sceneRGBCorrection(source,gain,[&](const Tensor& tile) {

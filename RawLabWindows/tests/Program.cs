@@ -47,6 +47,7 @@ static class Program
             if(args.Length==3 && args[0]=="--curve-ui") { ToneCurveUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} curve UI checks");return 0; }
             if(args.Length==3 && args[0]=="--hsl-target-render") { HslTargetRenderChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HSL target render checks");return 0; }
             if(args.Length==3 && args[0]=="--hsl-target") { HslTargetUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HSL target UI checks");return 0; }
+            if(args.Length==2 && args[0]=="--ai-gpu") { AIGpuWindowChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} AI GPU UI checks");return 0; }
             TestWindowState.PreserveExistingBatch(journalDirectory);
             Loc.Initialize("zh-Hans");
             if(args.Length==3 && args[0]=="--hdr-review") {HDRReviewChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HDR review checks");return 0;}

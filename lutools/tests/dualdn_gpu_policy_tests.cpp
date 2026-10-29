@@ -5,7 +5,7 @@
 // 外部推理引擎在此只提供确定的 GPU 不可用故障，测试真实 NetworkGraph 的准入和回退行为。
 namespace sony2fuji::ai {
 struct OnnxGraph::Impl { Backend backend; };
-OnnxGraph::OnnxGraph(const std::string&, GraphKind, int, Backend backend) : impl_(std::make_unique<Impl>()) {
+OnnxGraph::OnnxGraph(const std::string&, GraphKind, int, Backend backend, AIExecution) : impl_(std::make_unique<Impl>()) {
     if (backend == Backend::DirectML) throw std::runtime_error("GPU unavailable");
     impl_->backend = backend;
 }
@@ -19,7 +19,7 @@ CoreMLGraph::~CoreMLGraph() = default;
 bool CoreMLGraph::available() { return false; }
 std::string CoreMLGraph::runtimeVersion() { return "test-coreml"; }
 std::vector<float> CoreMLGraph::run(const std::vector<std::vector<float>>&) { return {}; }
-std::string directMLRuntimeVersion() { return "test-directml"; }
+std::string directMLRuntimeVersion(const DirectMLAdapter*) { return "test-directml"; }
 }
 int main() {
     using namespace sony2fuji::ai;
