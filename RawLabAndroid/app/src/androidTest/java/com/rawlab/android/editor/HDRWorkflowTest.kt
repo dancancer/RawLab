@@ -27,6 +27,7 @@ class HDRWorkflowTest {
     @Test fun freshImportPresetMonitoringModeSwitchAndExportChoices() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         assumeTrue("Supply -PrawlabTestHDRJPEG", instrumentation.context.assets.list("")!!.contains("hdr-sample.jpg"))
+        val fixture=InstrumentationRegistry.getArguments().getString("hdrFixture") ?: "hdr-sample.jpg"
         val source = File(compose.activity.cacheDir, "hdr-ui-${UUID.randomUUID()}.jpg")
         val screenshots=File(compose.activity.getExternalFilesDir(null),"hdr-tests").apply { mkdirs() }
         fun capture(name: String) {
@@ -38,7 +39,7 @@ class HDRWorkflowTest {
         val look = File(compose.activity.cacheDir,"hdr-ui-${UUID.randomUUID()}.cube").apply {
             writeText("LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n")
         }
-        instrumentation.context.assets.open("hdr-sample.jpg").use { input -> source.outputStream().use { input.copyTo(it) } }
+        instrumentation.context.assets.open(fixture).use { input -> source.outputStream().use { input.copyTo(it) } }
         try {
             compose.runOnUiThread { compose.activity.model.importPhoto(Uri.fromFile(source)) }
             fun ready() = compose.waitUntil(120_000) {
@@ -113,7 +114,8 @@ class HDRWorkflowTest {
                 try {
                     resolver.openInputStream(uri)!!.use { input -> copy.outputStream().use { input.copyTo(it) } }
                     val info=requireNotNull(NativeHDRBridge.probe(copy))
-                    assertEquals(128,maxOf(info.width,info.height))
+                    val sourceInfo=requireNotNull(NativeHDRBridge.probe(source))
+                    assertEquals(minOf(128,maxOf(sourceInfo.width,sourceInfo.height)),maxOf(info.width,info.height))
                 } finally { copy.delete() }
             } finally { created.forEach { resolver.delete(ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,it),null,null) } }
         } finally { source.delete();look.delete() }

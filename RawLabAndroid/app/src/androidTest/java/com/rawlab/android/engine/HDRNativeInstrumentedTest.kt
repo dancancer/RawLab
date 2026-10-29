@@ -67,6 +67,15 @@ class HDRNativeInstrumentedTest {
         } finally { first.close(); second.close(); HDRSourceCache.clear() }
     }
 
+    @Test fun appleLegacyElementMetadataUsesTheAppleProtocol() = withFixture("apple-legacy-macos26.jpg") { file, _ ->
+        val info = requireNotNull(NativeHDRBridge.probe(file))
+        assertEquals(1,info.protocol)
+        for(edge in listOf(32,0)) NativeHDRBridge.decode(file,info,edge).use { pair ->
+            assertTrue(pair.hdrPlane().max() > 2f)
+            assertEquals(if(edge==0)64 else edge,pair.width)
+        }
+    }
+
     @Test fun hdrToneUnitsProxyProtectionAndFinalExports() = withFixture("hdr-sample.jpg") { file, root ->
         val info = requireNotNull(NativeHDRBridge.probe(file))
         NativeProcessor(NativeProcessor.CPU).use { processor ->

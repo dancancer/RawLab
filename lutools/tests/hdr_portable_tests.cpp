@@ -110,6 +110,38 @@ int main(int argc, const char* argv[]) {
             check(read(std::filesystem::u8path(destination)).size()>100,"SDR export is empty");
         }
         sony2fuji_hdr_release_pair(&pair);
+        const auto legacy=(std::filesystem::path(TEST_FIXTURE_DIR)/"hdr/apple-legacy-macos26.jpg").u8string();
+        info=init<sony2fuji_hdr_source_info_v1>();
+        const auto legacyBytes=read(std::filesystem::u8path(legacy));
+        check(sony2fuji::hdr::jpegColorDescription(legacyBytes.data(),legacyBytes.size())==SONY2FUJI_HDR_COLOR_UNKNOWN &&
+            sony2fuji::hdr::jpegColorDescription(legacyBytes.data(),legacyBytes.size(),true)==SONY2FUJI_HDR_COLOR_SRGB,
+            "EXIF sRGB fallback must be explicit and restricted to Apple legacy");
+        try { sony2fuji::hdr::probeAppleJPEG(original.data(),original.size());check(false,"RGB gain map admitted as Apple monochrome"); }
+        catch(const sony2fuji::hdr::Error& error) {check(error.reason==SONY2FUJI_HDR_REASON_MALFORMED_AUX,"RGB gain-map rejection changed");}
+        const auto legacyXML=sony2fuji::hdr::jpegGainMapXMP(legacyBytes.data(),legacyBytes.size());
+        for(const auto& change : {std::pair<std::string,std::string>{"<HDRToneMap:OffsetHDR>0.000010","<HDRToneMap:OffsetHDR>-0.00001"},
+            {"<HDRToneMap:Version>1","<HDRToneMap:Version>2"},
+            {"urn:com:apple:photo:2020:aux:hdrgainmap","urn:invalid:apple:photo:auxiliary"}}) {
+            std::string invalidXML(legacyXML.begin(),legacyXML.end());const auto at=invalidXML.find(change.first);
+            check(at!=std::string::npos,"legacy metadata fixture changed");invalidXML.replace(at,change.first.size(),change.second);
+            try { sony2fuji::hdr::appleGainMapMetadata(invalidXML.data(),invalidXML.size());check(false,"invalid legacy Apple metadata admitted"); }
+            catch(const sony2fuji::hdr::Error& error) {check(error.reason==SONY2FUJI_HDR_REASON_MALFORMED_AUX ||
+                error.reason==SONY2FUJI_HDR_REASON_UNSUPPORTED_VERSION,"invalid legacy metadata has wrong diagnostic");}
+        }
+        check(sony2fuji_hdr_probe(legacy.c_str(),&info,&diagnostic)==SONY2FUJI_STATUS_OK &&
+            info.protocol==SONY2FUJI_HDR_PROTOCOL_APPLE,"legacy Apple element XMP must use the Apple protocol");
+        for(auto intent : {SONY2FUJI_INTENT_PREVIEW,SONY2FUJI_INTENT_FINAL}) {
+            options.intent=intent;options.long_edge=intent==SONY2FUJI_INTENT_PREVIEW ? 32 : 0;
+            pair=init<sony2fuji_hdr_image_pair_v1>();
+            check(sony2fuji_hdr_decode(legacy.c_str(),&options,&pair,&diagnostic)==SONY2FUJI_STATUS_OK,"legacy Apple JPEG decode failed");
+            const auto* pixels=static_cast<const float*>(pair.hdr.data);
+            check(*std::max_element(pixels,pixels+pair.hdr.width*pair.hdr.height*3)>2,"legacy Apple gain map was lost");
+            if(intent==SONY2FUJI_INTENT_FINAL) {
+                for(unsigned x : {8u,24u,40u,56u})
+                    check(std::abs(pixels[(16*pair.hdr.width+x)*3+1]-.5f*(1+x/16))<.06f,"legacy Apple logarithmic gain differs from authored HDR");
+            }
+            sony2fuji_hdr_release_pair(&pair);
+        }
         const auto broken=root/"missing-gain-map.jpg"; write(broken,sony2fuji::hdr::jpegBase(original.data(),original.size()));
         check(sony2fuji_hdr_probe(broken.u8string().c_str(),&info,&diagnostic)!=SONY2FUJI_STATUS_OK &&
             diagnostic.reason!=SONY2FUJI_HDR_REASON_NOT_HDR,"declared but missing gain map was downgraded to SDR");

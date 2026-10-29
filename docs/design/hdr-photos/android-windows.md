@@ -9,6 +9,8 @@
 - 导入手机 gain-map HDR JPEG / HEIF；普通栅格输入继续使用已有解码路径。
   必须先严格探测，只有 `NOT_HDR` 可回退普通 SDR 解码；损坏或不支持的 HDR
   不得静默丢弃 gain map。Apple gain map 与 ISO / XMP 元数据按各自协议解析。
+  Apple 旧式 JPEG 同时支持 65536 元数据及声明了 Apple 辅助类型的 HDRToneMap v1
+  元素；仅该旧式路径允许无 ICC、但 EXIF 明确声明 sRGB 的底图。
 - 共享核心输出方向已应用的扩展线性 sRGB RGB32F HDR / SDR 双图。预览、自动曝光、
   LUT 兼容向导使用有界 PREVIEW；导出重新获取 FINAL。不得用代理图导出。
 - 新 HDR 原片默认 HDR 编辑；旧的无 HDR 字段记录仍为 SDR。独立保存 HDR 参数与
@@ -32,6 +34,8 @@
 共享文件层引入校验并锁定版本的 libultrahdr、libheif / HEVC 解码器与 ICC 转换依赖；
 下载使用主工作区共享缓存，构建结果按平台隔离。Apple 默认文件适配器保持原样，
 另设可在 Mac 上运行的便携解码回归，以同一素材核对来源、方向、双图和导出。
+本阶段 HDR HEIF 使用 libde265 软件解码，解码线程上限为 6；平台 HEVC 硬件解码器
+尚未接入，后续优化需保持相同的颜色、方向与增益图契约。
 
 Android 在现有 JNI session、取消、预览队列和存储授权模型上增加 HDR pair 封装。
 HDR 预览使用 FP16 扩展线性 sRGB 位图，经 Android 硬件加速 Canvas / Window 呈现，
@@ -59,4 +63,4 @@ Windows 在现有 P/Invoke、冻结快照和 WPF 预览调度上增加 HDR pair 
 6. Android 模拟器和 Windows 可用桌面实际操作受影响界面；记录构建与模型测试结果。
    模拟器、虚拟显示器和 RDP 不作为物理 HDR 显示验收。
 7. 原生 pair 的取消、陈旧结果、缓存淘汰和销毁释放有回归；内存准入、线程数、
-   CPU 回退与 GPU 强制错误保持明确。真实 HDR 屏幕与 HEVC 硬件性能单独验收。
+   CPU 回退与 GPU 强制错误保持明确。真机性能与物理 HDR 亮度单独验收。

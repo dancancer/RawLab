@@ -38,6 +38,7 @@ struct File {
     std::vector<uint8_t> bytes;
     sony2fuji_hdr_source_info_v1 info{};
     bool jpeg=false;
+    AppleGainMapMetadata apple;
 };
 File readFile(const char* name) {
     const auto path=std::filesystem::u8path(name);
@@ -62,19 +63,20 @@ File readFile(const char* name) {
         if (!xmp && !iso && !apple) {
             fail(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_NOT_HDR,"No HDR gain map");
         }
-        const auto jpeg=probeJPEG(file.bytes.data(),file.bytes.size());
+        const auto jpeg=apple && !iso ? probeAppleJPEG(file.bytes.data(),file.bytes.size()) : probeJPEG(file.bytes.data(),file.bytes.size());
         const auto exif=jpegExif(file.bytes.data(),file.bytes.size());
         file.info.width=jpeg.width; file.info.height=jpeg.height;
         file.info.orientation=exifOrientation(exif.data(),exif.size());
         file.info.container=SONY2FUJI_HDR_CONTAINER_JPEG;
         file.info.protocol=iso ? (xmp ? SONY2FUJI_HDR_PROTOCOL_ISO_XMP : SONY2FUJI_HDR_PROTOCOL_ISO) : SONY2FUJI_HDR_PROTOCOL_XMP;
-        file.info.color_description=jpegColorDescription(file.bytes.data(),file.bytes.size());
+        file.info.color_description=jpegColorDescription(file.bytes.data(),file.bytes.size(),apple && !iso);
         if (!file.info.color_description)
             fail(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_COLOR,"HDR JPEG has no supported RGB profile");
         file.info.content_headroom=jpeg.headroom;
-        if(apple && !xmp && !iso) {
+        if(apple && !iso) {
             const auto metadata=jpegGainMapXMP(file.bytes.data(),file.bytes.size());
-            const float headroom=appleXMPHeadroom(metadata.data(),metadata.size());
+            file.apple=appleGainMapMetadata(metadata.data(),metadata.size());
+            const float headroom=file.apple.headroom;
             file.info.protocol=SONY2FUJI_HDR_PROTOCOL_APPLE;
             file.info.content_headroom=headroom ? headroom : appleHeadroom(exif.data(),exif.size());
         }
@@ -209,9 +211,9 @@ DecodedImage decodeFile(const char* path,const sony2fuji_hdr_decode_options_v1& 
     DecodedImage result;
     if (file.jpeg) {
         result.pixels.hdr=file.info.protocol==SONY2FUJI_HDR_PROTOCOL_APPLE ?
-            decodeAppleJPEG(file.bytes.data(),file.bytes.size(),file.info.content_headroom,edge) :
+            decodeAppleJPEG(file.bytes.data(),file.bytes.size(),file.info.content_headroom,edge,file.apple,file.info.color_description) :
             edge ? decodeJPEGPreview(file.bytes.data(),file.bytes.size(),edge) : decodeJPEG(file.bytes.data(),file.bytes.size());
-        result.pixels.sdr=decodeSDRJPEG(file.bytes.data(),file.bytes.size(),edge);
+        result.pixels.sdr=decodeSDRJPEG(file.bytes.data(),file.bytes.size(),edge,file.info.color_description);
         orient(result.pixels.hdr,file.info.orientation); orient(result.pixels.sdr,file.info.orientation);
     } else result=decodeHEIF(file.bytes.data(),file.bytes.size(),edge);
     result.info=file.info;

@@ -2,6 +2,7 @@
 #include "core/hdr_half.h"
 #include "core/hdr_resample.h"
 #include "platform/hdr_image.h"
+#include "platform/hdr_metadata.h"
 #include <ultrahdr_api.h>
 #include <algorithm>
 #include <array>
@@ -41,6 +42,15 @@ Decoder decoder(const void* bytes,size_t size,bool linear) {
         checked(uhdr_dec_set_out_img_format(result.get(),UHDR_IMG_FMT_64bppRGBAHalfFloat));
     }
     checked(uhdr_dec_probe(result.get())); return result;
+}
+struct JPEGView { const void* data;size_t data_sz; };
+struct JPEGParts { std::vector<uint8_t> base,gain;unsigned gainComponents; };
+JPEGParts jpegParts(const void* data,size_t size) {
+    auto input=compressed(data,size);ultrahdr::JpegR reader(nullptr);
+    ultrahdr::jpeg_info_struct base,gain;ultrahdr::jpegr_info_struct info{};
+    info.primaryImgInfo=&base;info.gainmapImgInfo=&gain;
+    checked(reader.getJPEGRInfo(&input,&info));
+    return {std::move(base.imgData),std::move(gain.imgData),gain.numComponents};
 }
 RGB toSRGB(RGB p,uhdr_color_gamut_t gamut) {
     if (gamut==UHDR_CG_BT_709) return p;
@@ -179,6 +189,28 @@ std::pair<uint32_t,uint32_t> targetSize(int width,int height,uint32_t edge) {
     const double scale=edge && uint32_t(std::max(width,height))>edge ? double(edge)/std::max(width,height) : 1;
     return {std::max(1u,uint32_t(std::lround(width*scale))),std::max(1u,uint32_t(std::lround(height*scale)))};
 }
+ImageData expandJPEGPlanes(JPEGView base,JPEGView map,
+    const void* icc,size_t iccSize,uhdr_gainmap_metadata_t description,uint32_t nativeWidth,uint32_t nativeHeight,uint32_t longEdge,uhdr_color_gamut_t declaredGamut=UHDR_CG_UNSPECIFIED) {
+    auto sdr=scaledJPEG(base.data,base.data_sz,longEdge,true);
+    auto gain=scaledJPEG(map.data,map.data_sz,longEdge,false);
+    sdr.image.cg=iccSize ? ultrahdr::IccHelper::readIccColorGamut(const_cast<void*>(icc),iccSize) : declaredGamut;
+    ultrahdr::JpegDecoderHelper parser; checked(parser.parseImage(map.data,map.data_sz));
+    gain.image.cg=!description.use_base_cg && parser.getICCSize() ? ultrahdr::IccHelper::readIccColorGamut(const_cast<void*>(static_cast<const void*>(parser.getICCPtr())),parser.getICCSize()) : sdr.image.cg;
+    if (sdr.image.cg==UHDR_CG_UNSPECIFIED || gain.image.cg==UHDR_CG_UNSPECIFIED || (!description.use_base_cg && !parser.getICCSize()))
+        throw Error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_COLOR,SONY2FUJI_HDR_FIELD_SOURCE,"Missing gain-map application gamut");
+    ultrahdr::uhdr_gainmap_metadata_ext_t metadata(description,"1.0");
+    ultrahdr::uhdr_raw_image_ext_t output(UHDR_IMG_FMT_64bppRGBAHalfFloat,UHDR_CG_UNSPECIFIED,
+        UHDR_CT_LINEAR,UHDR_CR_FULL_RANGE,sdr.image.w,sdr.image.h,64);
+    ultrahdr::JpegR processor(nullptr);
+    checked(processor.applyGainMap(&sdr.image,&gain.image,&metadata,UHDR_CT_LINEAR,UHDR_IMG_FMT_64bppRGBAHalfFloat,FLT_MAX,&output));
+    ImageData linear(output.w,output.h); const auto* pixels=static_cast<const uint16_t*>(output.planes[0]);
+    for (unsigned y=0;y<output.h;++y) for (unsigned x=0;x<output.w;++x) {
+        const auto* p=pixels+(size_t(y)*output.stride[0]+x)*4;
+        linear.at(x,y)=toSRGB({halfToFloat(p[0]),halfToFloat(p[1]),halfToFloat(p[2])},output.cg);
+    }
+    const auto [width,height]=targetSize(nativeWidth,nativeHeight,longEdge);
+    return width==uint32_t(linear.width) && height==uint32_t(linear.height) ? std::move(linear) : resample(linear,width,height);
+}
 } // namespace
 
 JPEGInfo probeJPEG(const void* data,size_t size) {
@@ -195,20 +227,42 @@ JPEGInfo probeJPEG(const void* data,size_t size) {
     return {uint32_t(width),uint32_t(height),0,std::max({1.0f,metadata->max_content_boost[0],metadata->max_content_boost[1],metadata->max_content_boost[2]})};
 }
 
+JPEGInfo probeAppleJPEG(const void* data,size_t size) {
+    const auto parts=jpegParts(data,size);
+    if(parts.gainComponents!=1)throw Error(SONY2FUJI_STATUS_PROCESSING_ERROR,SONY2FUJI_HDR_REASON_MALFORMED_AUX,
+        SONY2FUJI_HDR_FIELD_SOURCE,"Apple JPEG gain map must be monochrome");
+    ultrahdr::JpegDecoderHelper base,map;
+    checked(base.parseImage(parts.base.data(),parts.base.size()));checked(map.parseImage(parts.gain.data(),parts.gain.size()));
+    const auto width=base.getDecompressedImageWidth(),height=base.getDecompressedImageHeight();
+    const auto mapWidth=map.getDecompressedImageWidth(),mapHeight=map.getDecompressedImageHeight();
+    if (!width || !height || uint64_t(width)*height>128000000 || !mapWidth || !mapHeight || uint64_t(mapWidth)*mapHeight>128000000)
+        throw std::invalid_argument("Apple JPEG dimensions exceed source budget");
+    return {width,height,0,0};
+}
 std::vector<uint8_t> jpegGainMapXMP(const void* data,size_t size) {
-    auto dec=decoder(data,size,false);const auto* map=uhdr_dec_get_gainmap_image(dec.get());
-    if(!map)throw std::runtime_error("Missing Apple JPEG gain map");
-    ultrahdr::JpegDecoderHelper parser;checked(parser.parseImage(map->data,map->data_sz));
+    const auto parts=jpegParts(data,size);
+    ultrahdr::JpegDecoderHelper parser;checked(parser.parseImage(parts.gain.data(),parts.gain.size()));
     const auto* bytes=static_cast<const uint8_t*>(parser.getXMPPtr());size_t count=parser.getXMPSize();
     const char prefix[]="http://ns.adobe.com/xap/1.0/";
     if(bytes && count>=sizeof(prefix) && !std::memcmp(bytes,prefix,sizeof(prefix))) {bytes+=sizeof(prefix);count-=sizeof(prefix);}
     if(!bytes || !count)throw std::runtime_error("Missing Apple JPEG XMP");return {bytes,bytes+count};
 }
 
-ImageData decodeAppleJPEG(const void* data,size_t size,float headroom,uint32_t longEdge) {
-    auto dec=decoder(data,size,false);const auto* map=uhdr_dec_get_gainmap_image(dec.get());
-    if(!map || !std::isfinite(headroom) || headroom<=1)throw std::invalid_argument("Invalid Apple JPEG gain map");
-    auto encoded=scaledJPEG(map->data,map->data_sz,longEdge,false);
+ImageData decodeAppleJPEG(const void* data,size_t size,float headroom,uint32_t longEdge,const AppleGainMapMetadata& description,uint32_t declaredColor) {
+    const auto parts=jpegParts(data,size);
+    if(parts.gainComponents!=1 || !std::isfinite(headroom) || headroom<1)throw std::invalid_argument("Invalid Apple JPEG gain map");
+    if(description.logarithmic) {
+        ultrahdr::JpegDecoderHelper base;checked(base.parseImage(parts.base.data(),parts.base.size()));
+        uhdr_gainmap_metadata_t metadata{};metadata.hdr_capacity_min=1;metadata.hdr_capacity_max=headroom;metadata.use_base_cg=1;
+        for(int c=0;c<3;++c) {
+            metadata.min_content_boost[c]=description.minBoost;metadata.max_content_boost[c]=description.maxBoost;
+            metadata.gamma[c]=description.gamma;metadata.offset_sdr[c]=description.offsetSDR;metadata.offset_hdr[c]=description.offsetHDR;
+        }
+        return expandJPEGPlanes({parts.base.data(),parts.base.size()},{parts.gain.data(),parts.gain.size()},base.getICCPtr(),base.getICCSize(),metadata,
+            base.getDecompressedImageWidth(),base.getDecompressedImageHeight(),longEdge,
+            declaredColor==SONY2FUJI_HDR_COLOR_SRGB ? UHDR_CG_BT_709 : UHDR_CG_UNSPECIFIED);
+    }
+    auto encoded=scaledJPEG(parts.gain.data(),parts.gain.size(),longEdge,false);
     if(encoded.image.fmt!=UHDR_IMG_FMT_8bppYCbCr400)throw std::runtime_error("Apple JPEG gain map must be monochrome");
     ImageData gains(encoded.image.w,encoded.image.h);const auto* bytes=static_cast<const uint8_t*>(encoded.image.planes[0]);
     std::array<float,256> inverse709{};
@@ -217,7 +271,7 @@ ImageData decodeAppleJPEG(const void* data,size_t size,float headroom,uint32_t l
         const float linear=inverse709[bytes[size_t(y)*encoded.image.stride[0]+x]];
         gains.at(x,y)={linear,linear,linear};
     }
-    auto output=decodeSDRJPEG(data,size,longEdge);
+    auto output=decodeSDRJPEG(data,size,longEdge,declaredColor);
     if(gains.width!=output.width || gains.height!=output.height)gains=resample(gains,output.width,output.height);
     for(size_t i=0;i<output.pixels.size();++i) {
         const float boost=1+(headroom-1)*gains.pixels[i].r;auto& p=output.pixels[i];p={p.r*boost,p.g*boost,p.b*boost};
@@ -250,14 +304,14 @@ ImageData decodeJPEG(const void* data,size_t size,uint32_t longEdge) {
     return output;
 }
 
-ImageData decodeSDRJPEG(const void* data,size_t size,uint32_t longEdge) {
-    auto dec=decoder(data,size,false);
-    const int w=uhdr_dec_get_image_width(dec.get()),h=uhdr_dec_get_image_height(dec.get());
-    if (w<=0 || h<=0 || uint64_t(w)*h>128000000) throw std::invalid_argument("Ultra HDR dimensions exceed source budget");
-    const auto* base=uhdr_dec_get_base_image(dec.get()); const auto* icc=uhdr_dec_get_icc(dec.get());
-    if (!base || !icc) throw std::runtime_error("Missing HDR JPEG base or RGB profile");
-    auto scaled=scaledJPEG(base->data,base->data_sz,longEdge,false); const auto* image=&scaled.image;
-    const auto gamut=ultrahdr::IccHelper::readIccColorGamut(icc->data,icc->data_sz);
+ImageData decodeSDRJPEG(const void* data,size_t size,uint32_t longEdge,uint32_t declaredColor) {
+    const auto parts=jpegParts(data,size);
+    ultrahdr::JpegDecoderHelper parser;checked(parser.parseImage(parts.base.data(),parts.base.size()));
+    const auto w=parser.getDecompressedImageWidth(),h=parser.getDecompressedImageHeight();
+    if (!w || !h || uint64_t(w)*h>128000000) throw std::invalid_argument("Ultra HDR dimensions exceed source budget");
+    if (!parser.getICCSize() && declaredColor!=SONY2FUJI_HDR_COLOR_SRGB) throw std::runtime_error("Missing HDR JPEG RGB profile");
+    auto scaled=scaledJPEG(parts.base.data(),parts.base.size(),longEdge,false);const auto* image=&scaled.image;
+    const auto gamut=parser.getICCSize() ? ultrahdr::IccHelper::readIccColorGamut(parser.getICCPtr(),parser.getICCSize()) : UHDR_CG_BT_709;
     if (image->fmt!=UHDR_IMG_FMT_24bppRGB888) throw std::runtime_error("HDR JPEG base must be RGB");
     std::array<float,256> linear{};
     for(size_t i=0;i<linear.size();++i){const float v=float(i)/255;linear[i]=v<=.04045f ? v/12.92f : std::pow((v+.055f)/1.055f,2.4f);}
@@ -279,25 +333,8 @@ ImageData decodeJPEGPreview(const void* data,size_t size,uint32_t longEdge) {
     const auto* base=uhdr_dec_get_base_image(dec.get()); const auto* map=uhdr_dec_get_gainmap_image(dec.get());
     const auto* icc=uhdr_dec_get_icc(dec.get()); auto* description=uhdr_dec_get_gainmap_metadata(dec.get());
     if (!base || !map || !icc || !description) throw std::runtime_error("Incomplete HDR JPEG planes");
-    auto sdr=scaledJPEG(base->data,base->data_sz,longEdge,true);
-    auto gain=scaledJPEG(map->data,map->data_sz,longEdge,false);
-    sdr.image.cg=ultrahdr::IccHelper::readIccColorGamut(icc->data,icc->data_sz);
-    ultrahdr::JpegDecoderHelper parser; checked(parser.parseImage(map->data,map->data_sz));
-    gain.image.cg=parser.getICCSize() ? ultrahdr::IccHelper::readIccColorGamut(const_cast<void*>(static_cast<const void*>(parser.getICCPtr())),parser.getICCSize()) : sdr.image.cg;
-    if (sdr.image.cg==UHDR_CG_UNSPECIFIED || gain.image.cg==UHDR_CG_UNSPECIFIED || (!description->use_base_cg && !parser.getICCSize()))
-        throw Error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_COLOR,SONY2FUJI_HDR_FIELD_SOURCE,"Missing gain-map application gamut");
-    ultrahdr::uhdr_gainmap_metadata_ext_t metadata(*description,"1.0");
-    ultrahdr::uhdr_raw_image_ext_t output(UHDR_IMG_FMT_64bppRGBAHalfFloat,UHDR_CG_UNSPECIFIED,
-        UHDR_CT_LINEAR,UHDR_CR_FULL_RANGE,sdr.image.w,sdr.image.h,64);
-    ultrahdr::JpegR processor(nullptr);
-    checked(processor.applyGainMap(&sdr.image,&gain.image,&metadata,UHDR_CT_LINEAR,UHDR_IMG_FMT_64bppRGBAHalfFloat,FLT_MAX,&output));
-    ImageData linear(output.w,output.h); const auto* pixels=static_cast<const uint16_t*>(output.planes[0]);
-    for (unsigned y=0;y<output.h;++y) for (unsigned x=0;x<output.w;++x) {
-        const auto* p=pixels+(size_t(y)*output.stride[0]+x)*4;
-        linear.at(x,y)=toSRGB({halfToFloat(p[0]),halfToFloat(p[1]),halfToFloat(p[2])},output.cg);
-    }
-    const auto [width,height]=targetSize(uhdr_dec_get_image_width(dec.get()),uhdr_dec_get_image_height(dec.get()),longEdge);
-    return width==uint32_t(linear.width) && height==uint32_t(linear.height) ? std::move(linear) : resample(linear,width,height);
+    return expandJPEGPlanes({base->data,base->data_sz},{map->data,map->data_sz},icc->data,icc->data_sz,*description,
+        uhdr_dec_get_image_width(dec.get()),uhdr_dec_get_image_height(dec.get()),longEdge);
 }
 
 std::vector<uint8_t> encodeSDRJPEG(const ImageData& image,uint32_t quality) {

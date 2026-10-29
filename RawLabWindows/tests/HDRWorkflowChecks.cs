@@ -114,7 +114,7 @@ internal static class HDRWorkflowChecks
                 var output=Path.Combine(root,"export-"+format+"."+format.Suffix());
                 engine.Render(source,neutral,null,128,output:output,longEdge:128,formatOverride:format);
                 check(new FileInfo(output).Length>100,"Final output exists: "+format);
-                if(format==ExportFormat.HdrJpeg)check(HDRNative.Probe(output,out var info)==HDRProbeState.Supported && Math.Max(info!.Width,info.Height)==128,
+                if(format==ExportFormat.HdrJpeg)check(HDRNative.Probe(output,out var info)==HDRProbeState.Supported && Math.Max(info!.Width,info.Height)==Math.Min(128,Math.Max(geometry.NativeWidth,geometry.NativeHeight)),
                     "Final resized HDR JPEG retains its gain map and output dimensions");
                 if(format==ExportFormat.Png)check(File.ReadAllBytes(output)[24]==16,"Explicit SDR PNG retains 16-bit channel depth");
             }

@@ -171,12 +171,12 @@ float appleHeadroom(const void* bytes,size_t size) {
     if (!std::isfinite(headroom) || headroom>std::numeric_limits<float>::max()) invalid();
     return float(headroom);
 }
-float appleXMPHeadroom(const void* bytes,size_t size) {
+AppleGainMapMetadata appleGainMapMetadata(const void* bytes,size_t size) {
     using namespace photos_editing_formats::image_io;
     if (!bytes || !size || size>1024*1024) invalid();
     struct Handler : XmlHandler {
         struct Frame { std::string name,attribute,text; std::map<std::string,std::string> namespaces,attributes; bool children=false; };
-        std::vector<Frame> frames; std::string version,headroom; bool hasVersion=false,hasHeadroom=false;
+        std::vector<Frame> frames; std::string version,headroom,auxiliary; std::map<std::string,std::string> tone; bool hasVersion=false,hasHeadroom=false;
         static std::string token(const XmlTokenContext& context) { std::string value; context.BuildTokenValue(&value); return value; }
         DataMatchResult StartElement(const XmlTokenContext& c) override {
             if (frames.size()>=64) invalid();
@@ -202,9 +202,16 @@ float appleXMPHeadroom(const void* bytes,size_t size) {
             const auto prefix=colon==std::string::npos ? std::string{} : name.substr(0,colon);
             const auto local=colon==std::string::npos ? name : name.substr(colon+1);
             const auto ns=frame.namespaces.find(prefix);
-            if (ns==frame.namespaces.end() || ns->second!="http://ns.apple.com/HDRGainMap/1.0/") return;
-            if (local=="HDRGainMapVersion") { if (hasVersion || frame.children) invalid(); version=text; hasVersion=true; }
-            else if (local=="HDRGainMapHeadroom") { if (hasHeadroom || frame.children) invalid(); headroom=text; hasHeadroom=true; }
+            if (ns==frame.namespaces.end()) return;
+            const bool apple=ns->second=="http://ns.apple.com/HDRGainMap/1.0/";
+            const bool adobe=ns->second=="http://ns.adobe.com/hdr-gain-map/1.0/";
+            const bool auxiliaryType=ns->second=="http://ns.apple.com/pixeldatainfo/1.0/" && local=="AuxiliaryImageType";
+            if (!apple && !adobe && !auxiliaryType) return;
+            if (!attribute && frame.children) return;
+            if (apple && local=="HDRGainMapVersion") { if (hasVersion) invalid(); version=text; hasVersion=true; }
+            else if (apple && local=="HDRGainMapHeadroom") { if (hasHeadroom) invalid(); headroom=text; hasHeadroom=true; }
+            else if (adobe) { if (!tone.emplace(local,text).second) invalid(); }
+            else if (auxiliaryType) { if (!auxiliary.empty()) invalid(); auxiliary=text; }
         }
         DataMatchResult FinishElement(const XmlTokenContext& c) override {
             if (frames.empty()) invalid(); const auto& frame=frames.back(); const auto end=token(c);
@@ -226,18 +233,44 @@ float appleXMPHeadroom(const void* bytes,size_t size) {
     if (end>=2 && xml.compare(end-2,2,"?>")==0) { const auto open=xml.rfind("<?",end-2); if (open==std::string::npos) invalid(); end=open; }
     MessageHandler messages; XmlReader reader(&handler,&messages);
     reader.StartParse(std::make_unique<XmlElementRule>()); reader.Parse(xml.substr(start,end-start)); reader.FinishParse();
-    if (reader.HasErrors() || !handler.frames.empty() || !handler.hasVersion) invalid();
+    if (reader.HasErrors() || !handler.frames.empty()) invalid();
     auto numeric=[](const std::string& text) {
         std::istringstream input(text); input.imbue(std::locale::classic()); double number;
         if (!(input>>number) || !(input>>std::ws).eof() || !std::isfinite(number)) invalid(); return number;
     };
-    if (numeric(handler.version)!=65536)
-        throw Error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_VERSION,SONY2FUJI_HDR_FIELD_SOURCE,"Unsupported Apple gain-map version");
-    if (!handler.hasHeadroom) return 0;
-    const double ratio=std::exp2(numeric(handler.headroom));
-    if (!std::isfinite(ratio) || ratio<1 || ratio>std::numeric_limits<float>::max()) invalid();
-    return float(ratio);
+    AppleGainMapMetadata result;
+    auto ratio=[&](double stops) {
+        const double value=std::exp2(stops);
+        if (!std::isfinite(value) || value<=0 || value>std::numeric_limits<float>::max()) invalid();
+        return float(value);
+    };
+    if (handler.hasVersion) {
+        if (numeric(handler.version)!=65536)
+            throw Error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_VERSION,SONY2FUJI_HDR_FIELD_SOURCE,"Unsupported Apple gain-map version");
+        if (handler.hasHeadroom) result.headroom=ratio(numeric(handler.headroom));
+        if (result.headroom && result.headroom<1) invalid();
+        return result;
+    }
+    // 旧式 Apple JPEG 使用 Adobe 元素，但仍须有真实的 Apple 辅助类型声明。
+    if (handler.auxiliary!="urn:com:apple:photo:2020:aux:hdrgainmap") invalid();
+    auto value=[&](const char* name) {const auto at=handler.tone.find(name);if(at==handler.tone.end())invalid();return numeric(at->second);};
+    if (value("Version")!=1)
+        throw Error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_VERSION,SONY2FUJI_HDR_FIELD_SOURCE,"Unsupported Apple tone-map version");
+    if (value("BaseRenditionIsHDR")!=0 || value("BaseHeadroom")!=0) invalid();
+    result.logarithmic=true;
+    result.headroom=ratio(value("AlternateHeadroom"));result.minBoost=ratio(value("GainMapMin"));result.maxBoost=ratio(value("GainMapMax"));
+    result.gamma=float(value("Gamma"));result.offsetSDR=float(value("OffsetSDR"));result.offsetHDR=float(value("OffsetHDR"));
+    if (result.headroom<1 || result.minBoost>result.maxBoost || !std::isfinite(result.gamma) || result.gamma<=0 ||
+        !std::isfinite(result.offsetSDR) || !std::isfinite(result.offsetHDR) || result.offsetSDR<0 || result.offsetHDR<0) invalid();
+    return result;
 }
+float appleXMPHeadroom(const void* bytes,size_t size) {
+    const auto description=appleGainMapMetadata(bytes,size);
+    if (description.logarithmic)
+        throw Error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_PROTOCOL,SONY2FUJI_HDR_FIELD_SOURCE,"Apple HEIF tone-map variant is unsupported");
+    return description.headroom;
+}
+
 std::vector<uint8_t> sanitizedExif(const void* bytes,size_t size,uint32_t width,uint32_t height) {
     TIFF parsed(bytes,size); Directory primary,exif,gps;
     copyTags(parsed.primary,primary,{0x010e,0x010f,0x0110,0x0132,0x013b,0x8298});
@@ -269,14 +302,21 @@ std::vector<uint8_t> withJPEGExif(const void* jpeg,size_t size,const void* tiff,
     std::vector<uint8_t> result{255,0xd8,255,0xe1,uint8_t(length>>8),uint8_t(length),'E','x','i','f',0,0};
     result.insert(result.end(),t,t+tiffSize); result.insert(result.end(),p+2,p+size); return result;
 }
-uint32_t jpegColorDescription(const void* jpeg,size_t size) {
+uint32_t jpegColorDescription(const void* jpeg,size_t size,bool allowExifSRGB) {
     std::map<unsigned,std::vector<uint8_t>> parts; unsigned total=0;
     for (const auto& s:segments(jpeg,size)) if (s.marker==0xe2 && starts(s,"ICC_PROFILE\0",12)) {
         if (s.size<14 || !s.data[12] || !s.data[13] || s.data[12]>s.data[13] ||
             (total && total!=s.data[13]) || parts.count(s.data[12])) invalid();
         total=s.data[13]; parts.emplace(s.data[12],std::vector<uint8_t>(s.data+14,s.data+s.size));
     }
-    if (!total) return SONY2FUJI_HDR_COLOR_UNKNOWN;
+    if (!total) {
+        if (!allowExifSRGB) return SONY2FUJI_HDR_COLOR_UNKNOWN;
+        const auto bytes=jpegExif(jpeg,size);TIFF parsed(bytes.data(),bytes.size());
+        const auto color=parsed.exif.find(0xa001);
+        if (color!=parsed.exif.end() && color->second.type==3 && color->second.count==1 &&
+            color->second.bytes==std::vector<uint8_t>{1,0}) return SONY2FUJI_HDR_COLOR_SRGB;
+        return SONY2FUJI_HDR_COLOR_UNKNOWN;
+    }
     if (parts.size()!=total) invalid();
     std::vector<uint8_t> icc;
     for (const auto& part:parts) { icc.insert(icc.end(),part.second.begin(),part.second.end()); if (icc.size()>1024*1024) invalid(); }

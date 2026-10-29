@@ -640,6 +640,7 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         target_include_directories(hdr_portable_tests BEFORE PRIVATE src "${RAWLAB_HDR_LCMS_INCLUDE}"
             "${RAWLAB_HDR_UHDR_INCLUDE}" "${RAWLAB_HDR_XML_INCLUDE}")
         target_link_libraries(hdr_portable_tests sony2fuji_core heif rawlab_lcms)
+        target_compile_definitions(hdr_portable_tests PRIVATE TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
         if(APPLE)
             target_sources(hdr_portable_tests PRIVATE tests/hdr_heif_fixture.mm)
             set_source_files_properties(tests/hdr_heif_fixture.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
