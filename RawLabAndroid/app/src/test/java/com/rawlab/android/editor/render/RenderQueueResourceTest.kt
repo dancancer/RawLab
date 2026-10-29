@@ -6,6 +6,47 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class RenderQueueResourceTest {
+    @Test fun newerRequestCancelsRunningWorkBeforeItCompletes() {
+        val started = CountDownLatch(1); val cancelled = CountDownLatch(1)
+        val finished = CountDownLatch(1)
+        val published = java.util.Collections.synchronizedList(mutableListOf<Int>())
+        val queue = RenderQueue<Int, Int>({ value, token ->
+            if (value == 1) {
+                token.onCancel { cancelled.countDown() }
+                started.countDown()
+                assertTrue("A newer request must interrupt the running computation", cancelled.await(2, TimeUnit.SECONDS))
+                token.check()
+                fail("Cancelled work must not finish its computation")
+            }
+            value
+        }, { _, result -> published += result.getOrThrow(); finished.countDown() }, {})
+        try {
+            queue.submit(1); assertTrue(started.await(5, TimeUnit.SECONDS))
+            queue.submit(2)
+            assertTrue(finished.await(5, TimeUnit.SECONDS))
+            assertEquals(listOf(2), published)
+            assertEquals(0L, cancelled.count)
+        } finally { queue.close() }
+    }
+
+    @Test fun cancellationBeforeNativeListenerRegistrationIsNotLost() {
+        val token = RenderCancellation()
+        token.cancel()
+        var notified = false
+        token.onCancel { notified = true }
+        assertTrue(notified)
+        assertThrows(java.util.concurrent.CancellationException::class.java) { token.check() }
+    }
+
+    @Test fun closingCancelsRunningWorkBeforeReleasingResources() {
+        val started = CountDownLatch(1); val cancelled = CountDownLatch(1); val closed = CountDownLatch(1)
+        val queue = RenderQueue<Int, Int>({ value, token ->
+            token.onCancel { cancelled.countDown() }; started.countDown()
+            assertTrue(cancelled.await(2, TimeUnit.SECONDS)); token.check(); value
+        }, { _, _ -> fail("Closed queue must not publish") }, { closed.countDown() })
+        queue.submit(1); assertTrue(started.await(5, TimeUnit.SECONDS)); queue.close()
+        assertTrue(closed.await(5, TimeUnit.SECONDS)); assertEquals(0L, cancelled.count)
+    }
     @Test fun lifecycleWorkDrainsBeforeResourceCloseAndCannotBeCoalesced() {
         val started = CountDownLatch(1); val resume = CountDownLatch(1); val closed = CountDownLatch(1)
         val order = java.util.Collections.synchronizedList(mutableListOf<Int>())

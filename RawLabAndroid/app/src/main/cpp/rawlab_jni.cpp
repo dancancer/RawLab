@@ -11,6 +11,7 @@
 #include <string>
 #include <algorithm>
 #include <cmath>
+#include <atomic>
 
 static_assert(sizeof(sony2fuji_photo_effects_config) == 40,
     "Photo effects config ABI must remain a versioned 40-byte struct");
@@ -27,6 +28,7 @@ struct SessionDeleter {
 struct Session {
     std::unique_ptr<sony2fuji_session, SessionDeleter> value;
     rawlab::RecipeProbeStages stages;
+    std::shared_ptr<std::atomic<jlong>> generation = std::make_shared<std::atomic<jlong>>(0);
     explicit Session(sony2fuji_session* pointer) : value(pointer) {}
     sony2fuji_session* get() const { return value.get(); }
 };
@@ -34,6 +36,25 @@ struct Session {
 std::mutex sessionsMutex;
 std::unordered_map<jlong, Session> sessions;
 jlong nextId = 1;
+// 取消信号不能等待覆盖整次处理的 sessionsMutex。
+std::mutex cancellationMutex;
+std::unordered_map<jlong, std::shared_ptr<std::atomic<jlong>>> cancellationStates;
+
+struct CancellationScope {
+    sony2fuji_session* session;
+    std::shared_ptr<std::atomic<jlong>> generation;
+    jlong expected;
+    static int32_t cancelled(void* context) {
+        const auto& self = *static_cast<CancellationScope*>(context);
+        return self.generation->load(std::memory_order_acquire) != self.expected;
+    }
+    CancellationScope(Session& owner, jlong value)
+        : session(owner.get()), generation(owner.generation), expected(value) {
+        sony2fuji_session_set_cancellation_callback(session, value >= 0 ? cancelled : nullptr, this);
+    }
+    ~CancellationScope() { sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr); }
+    bool isCancelled() const { return expected >= 0 && generation->load(std::memory_order_acquire) != expected; }
+};
 
 void throwJava(JNIEnv* env, const char* type, const char* message) {
     if (!env->ExceptionCheck()) env->ThrowNew(env->FindClass(type), message);
@@ -66,7 +87,8 @@ void throwNativeStatus(JNIEnv* env, const NativeStatusError& error) {
 }
 
 void check(sony2fuji_status status) {
-    if (status == SONY2FUJI_STATUS_IO_ERROR || status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR)
+    if (status == SONY2FUJI_STATUS_IO_ERROR || status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR ||
+        status == SONY2FUJI_STATUS_CANCELLED)
         throw NativeStatusError(status);
     rawlab::checkStatus(status);
 }
@@ -491,6 +513,13 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(JNIEnv* env, jobject
         check(sony2fuji_session_set_gpu_config(pointer, &config));
         const jlong id = nextId++;
         sessions.emplace(id, std::move(session));
+        try {
+            std::lock_guard<std::mutex> signalLock(cancellationMutex);
+            cancellationStates.emplace(id, sessions.at(id).generation);
+        } catch (...) {
+            sessions.erase(id);
+            throw;
+        }
         return id;
     } catch (const std::bad_alloc&) {
         throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory to create a RAW session");
@@ -504,7 +533,25 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(JNIEnv* env, jobject
 extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeDestroy(JNIEnv*, jobject, jlong id) {
     std::lock_guard<std::mutex> lock(sessionsMutex);
+    {
+        std::lock_guard<std::mutex> signalLock(cancellationMutex);
+        cancellationStates.erase(id);
+    }
     sessions.erase(id);
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_rawlab_android_engine_NativeProcessor_nativeCancellationGeneration(JNIEnv*, jobject, jlong id) {
+    std::lock_guard<std::mutex> lock(cancellationMutex);
+    const auto found = cancellationStates.find(id);
+    return found == cancellationStates.end() ? -1 : found->second->load(std::memory_order_acquire);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_rawlab_android_engine_NativeProcessor_nativeCancelPreview(JNIEnv*, jobject, jlong id) {
+    std::lock_guard<std::mutex> lock(cancellationMutex);
+    const auto found = cancellationStates.find(id);
+    if (found != cancellationStates.end()) found->second->fetch_add(1, std::memory_order_acq_rel);
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -589,11 +636,13 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
     jfloat vignetteAmount, jfloat vignetteMidpoint, jfloat vignetteRoundness, jfloat vignetteFeather,
     jfloat vignetteHighlights, jfloat grainAmount, jfloat grainSize, jfloat grainRoughness,
     jint exposureMode, jfloatArray hslValues, jboolean recipeActive, jint processingVersion, jintArray backendOut,
-    jlong sourceRevision, jlong requestRevision, jfloatArray hslProbe) {
+    jlong sourceRevision, jlong requestRevision, jfloatArray hslProbe, jlong cancellationGeneration) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         const auto found = sessions.find(id);
         if (found == sessions.end()) throw std::invalid_argument("Processor is closed");
+        CancellationScope cancellation(found->second, output ? -1 : cancellationGeneration);
+        check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
         auto* session = found->second.get();
         check(sony2fuji_session_set_processing_version(session, static_cast<sony2fuji_processing_version>(processingVersion)));
         if (backendOut && env->GetArrayLength(backendOut) != 1) throw std::invalid_argument("Invalid backend output");
@@ -664,6 +713,7 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
         }
         Buffer buffer;
         check(sony2fuji_process(session, &request, &buffer.value));
+        check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
         if (backendOut) {
             const auto backend = static_cast<jint>(sony2fuji_session_get_last_backend(session));
             env->SetIntArrayRegion(backendOut, 0, 1, &backend);
@@ -678,11 +728,13 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
         auto pixels = env->NewByteArray(static_cast<jsize>(bytes));
         if (!pixels) return nullptr;
         for (uint32_t y = 0; y < b.height && !env->ExceptionCheck(); ++y) {
+            check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
             env->SetByteArrayRegion(pixels, static_cast<jsize>(y * row), static_cast<jsize>(row),
                 reinterpret_cast<const jbyte*>(b.data) + y * b.stride_bytes);
         }
         if (env->ExceptionCheck()) return nullptr;
         jintArray histogram = nullptr;
+        check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
         if (!interactive) {
             uint32_t counts[768]{};
             uint32_t shadows = 0, highlights = 0;
@@ -697,6 +749,7 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
                 if (env->ExceptionCheck()) return nullptr;
             }
         }
+        check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
         float kelvin = NAN, wbTint = NAN;
         if (!displayInput) {
             sony2fuji_session_get_raw_white_balance(session, &kelvin, &wbTint);

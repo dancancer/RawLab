@@ -103,14 +103,16 @@ class AdjustmentInteractionTest {
         assertNull(kelvin.parse("5503"))
     }
 
-    @Test fun rulerMovesOppositeToFingerAndFineUsesQuarterSensitivity() {
+    @Test fun fixedTrackIndicatorFollowsFingerAndFineUsesQuarterSensitivity() {
         val exposure = AdjustmentScale(-4f..4f, .05f, 0f)
-        assertEquals(.5f, exposure.drag(0f, -80f, false), .00001f)
-        assertEquals(.1f, exposure.drag(0f, -64f, true), .00001f)
-        assertEquals(-4f, exposure.drag(0f, 10000f, false), 0f)
-        assertEquals(4f, exposure.drag(0f, -10000f, false), 0f)
+        assertEquals(.5f, exposure.drag(0f, 80f, false), .00001f)
+        assertEquals(-.5f, exposure.drag(0f, -80f, false), .00001f)
+        assertEquals(.1f, exposure.drag(0f, 64f, true), .00001f)
+        assertEquals(4f, exposure.drag(0f, 10000f, false), 0f)
+        assertEquals(-4f, exposure.drag(0f, -10000f, false), 0f)
         val kelvin = AdjustmentScale(2000f..50000f, 10f, 5237f, reciprocal = true)
-        assertTrue(kelvin.drag(5237f, -80f, false) > 5237f)
+        assertTrue(kelvin.drag(5237f, 80f, false) > 5237f)
+        assertTrue(kelvin.drag(5237f, -80f, false) < 5237f)
     }
 
     @Test fun signedArcUsesSeparateDistanceFromCameraDefault() {

@@ -285,11 +285,20 @@ extension ContentView {
     }
 
     private var adjustmentHeader: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 8) {
+            Spacer(minLength: 0)
             if currentEditorTool != .film && currentEditorTool != .lens {
-                Toggle(L10n.text("精细"), isOn: $adjustmentFine)
-                    .toggleStyle(.switch).font(.caption).fixedSize()
-                    .frame(minHeight: 44)
+                Button { adjustmentFine.toggle() } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark").opacity(adjustmentFine ? 1 : 0).accessibilityHidden(true)
+                        Text(L10n.text("精细"))
+                    }
+                    .fixedSize()
+                }
+                    .buttonStyle(EditorCompactActionStyle(selected: adjustmentFine))
+                    .accessibilityLabel(L10n.text("精细"))
+                    .accessibilityValue(L10n.text(adjustmentFine ? "四分之一灵敏度" : "标准灵敏度"))
+                    .accessibilityAddTraits(adjustmentFine ? .isSelected : [])
                     .accessibilityHint(L10n.text(adjustmentFine ? "四分之一灵敏度" : "标准灵敏度") + " " + L10n.text("拖动灵敏度为普通模式的四分之一。"))
                     .accessibilityIdentifier("editor.fine")
             }
@@ -324,6 +333,8 @@ extension ContentView {
         }
         .accessibilityLabel(L10n.text("重置调整"))
         .accessibilityIdentifier("editor.reset")
+        .font(.caption.weight(.medium))
+        .foregroundStyle(.secondary)
         .disabled(!viewModel.hasImage || editorBusy || resetDraftSuspended)
         .layoutPriority(2)
         }
@@ -465,10 +476,8 @@ extension ContentView {
     }
 
     func toolStrip(width: CGFloat, accessibility: Bool) -> some View {
-        let stacked = stacksToolHeader(width: width, accessibility: accessibility)
         let rowHeight = editorToolRowHeight(width: width, accessibility: accessibility)
-        let layout = stacked ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 4))
-        return layout {
+        return VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 4) {
@@ -521,8 +530,26 @@ extension ContentView {
             .buttonStyle(.plain)
             .disabled(editorBusy || resetDraftSuspended)
             adjustmentHeader.padding(.horizontal, 8)
-                .frame(maxWidth: stacked ? .infinity : nil, minHeight: editorToolHeight, alignment: .trailing)
+                .frame(maxWidth: .infinity, minHeight: editorToolHeight, alignment: .trailing)
         }
+    }
+}
+
+struct EditorCompactActionStyle: ButtonStyle {
+    var selected = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.caption.weight(.medium))
+            .padding(.horizontal, 8)
+            .frame(minWidth: 44, minHeight: 32)
+            .foregroundStyle(selected ? Color.yellow : Color.secondary)
+            .background(selected ? Color.yellow.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(selected ? Color.yellow.opacity(0.5) : Color.secondary.opacity(0.35)) }
+            .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.4)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
     }
 }
 
