@@ -46,4 +46,13 @@ xcodebuild test-without-building -xctestrun "$OUT/hdr.xctestrun" \
     -resultBundlePath "$OUT/HDRUI.xcresult" -parallel-testing-enabled NO \
     -collect-test-diagnostics never \
     -only-testing:"${RAWLAB_HDR_UI_TEST:-RawLabUITests/HDRPhotoUITests}" > "$OUT/HDRUI.log" 2>&1
+xcrun xcresulttool get test-results summary --path "$OUT/HDRUI.xcresult" --compact > "$OUT/summary.json"
+python3 - "$OUT/summary.json" <<'PY'
+import json,os,sys
+v=json.load(open(sys.argv[1]))
+assert v['failedTests']==0 and v['expectedFailures']==0 and v['passedTests']>0,v
+if not os.environ.get('RAWLAB_HDR_UI_TEST'):
+    assert (v['passedTests'],v['skippedTests'],v['totalTestCount'])==(5,2,7),v
+assert not any('Publishing changes from within view updates' in w['message'] for w in v['runtimeWarnings']),v['runtimeWarnings']
+PY
 echo "PASS executed HDR UI test; results: $OUT/HDRUI.xcresult"

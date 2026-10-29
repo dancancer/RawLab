@@ -199,7 +199,7 @@ struct ContentView: View {
         }
         .alert("RawLab", isPresented: Binding(
             get: { viewModel.statusMessage != nil },
-            set: { if !$0 { viewModel.statusMessage = nil } }
+            set: { if !$0, viewModel.statusMessage != nil { viewModel.statusMessage = nil } }
         )) {
             Button(L10n.text("关闭"), role: .cancel) { viewModel.statusMessage = nil }
         } message: {

@@ -1,6 +1,21 @@
 import XCTest
+import Photos
+import ImageIO
 
 final class HDRPhotoUITests: XCTestCase {
+    override func record(_ issue: XCTIssue) {
+        if ProcessInfo.processInfo.environment["RAWLAB_HDR_DEVICE_UI"] == "1" {
+            capture("device-failure-screen", XCUIApplication())
+            let alert = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.firstMatch
+            if alert.exists {
+                let attachment = XCTAttachment(string: alert.debugDescription)
+                attachment.name = "device-system-alert"; attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+        super.record(issue)
+    }
+
     func testFreshHDRPresetAndCollectionScope() throws {
         guard ProcessInfo.processInfo.environment["RAWLAB_HDR_UI"]=="1" else { throw XCTSkip("Dedicated HDR simulator only") }
         continueAfterFailure=false
@@ -297,7 +312,210 @@ final class HDRPhotoUITests: XCTestCase {
         wait { imported.isSelected }
         XCTAssertTrue(imported.label.contains("兼容导入"))
         capture("hdr-sdr-lut-imported",app)
+        saveCurrentToPhotos(app, screenshot: "hdr-sdr-lut-photos-saved")
+        wait { imported.isSelected && app.buttons["editor.group.looks"].isEnabled }
     }
+    func testDeviceJPEGCompatibilityAndPhotos() throws {
+        try deviceCompatibilityAndPhotos(name: "Android", source: "RawLabHDRDevice-Android.jpg", width: 4080, height: 3072)
+    }
+
+    func testDeviceHEICCompatibilityAndPhotos() throws {
+        try deviceCompatibilityAndPhotos(name: "iPhone", source: "RawLabHDRDevice-iPhone.HEIC", width: 3024, height: 4032)
+    }
+
+    private func deviceCompatibilityAndPhotos(name: String, source: String, width: Int, height: Int) throws {
+        guard ProcessInfo.processInfo.environment["RAWLAB_HDR_DEVICE_UI"] == "1" else {
+            throw XCTSkip("Use the explicit physical-device runner and its private fixture app")
+        }
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Physical Photos verification requires a real device")
+        #else
+        continueAfterFailure = false
+        authorizeDevicePhotoAudit()
+        XCUIDevice.shared.orientation = .portrait
+        let networkPrompt = addUIInterruptionMonitor(withDescription: "Offline fixture app network prompt") { alert in
+            guard alert.label.contains("RawLab HDR UI"), alert.label.contains("无线数据"), alert.buttons["不允许"].exists else { return false }
+            alert.buttons["不允许"].tap()
+            return true
+        }
+        defer { removeUIInterruptionMonitor(networkPrompt) }
+        let app = XCUIApplication()
+        app.launchArguments = ["-RawLab.language", "zh-Hans"]
+        app.launch()
+        deviceDismissNetworkPrompt()
+        if app.buttons["editor.import.empty"].exists {
+            app.buttons["editor.import.file"].tap()
+        } else {
+            deviceMenu(app, item: "editor.import.file")
+        }
+        chooseDeviceFile(app, name: source)
+        wait { app.buttons["editor.compare"].isEnabled }
+        deviceEditingMode(app, hdr: false)
+        wait { app.buttons["editor.group.looks"].isEnabled }
+        deviceMenu(app, item: "editor.import.look")
+        let tag = try XCTUnwrap(ProcessInfo.processInfo.environment["RAWLAB_HDR_DEVICE_FIXTURE_TAG"])
+        let look = "DeviceHDRCompatibility-\(name)-\(tag)"
+        chooseDeviceFile(app, name: look + ".cube")
+        let confirm = app.buttons["look.compatibility.confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 30), app.debugDescription)
+        XCTAssertFalse(confirm.isEnabled)
+        let first = app.buttons["look.compatibility.candidate-1"]
+        let second = app.buttons["look.compatibility.candidate-2"]
+        wait { first.isEnabled && second.isEnabled }
+        first.tap(); wait { first.isSelected && confirm.isEnabled }
+        capture("device-\(name)-lut-first", app)
+        second.tap(); wait { second.isSelected && !first.isSelected && confirm.isEnabled }
+        XCTAssertTrue(app.staticTexts["未应用 LUT"].exists && app.staticTexts["所选方案"].exists)
+        for _ in 0..<3 where !app.staticTexts["所选方案"].isHittable { app.swipeUp() }
+        capture("device-\(name)-lut-comparison", app)
+        confirm.tap()
+        wait { !confirm.exists && app.buttons["editor.group.looks"].isEnabled }
+        let film = app.buttons["tool.film"]
+        if !film.exists { app.buttons["editor.group.looks"].tap() }
+        XCTAssertTrue(film.waitForExistence(timeout: 10), app.debugDescription)
+        if !film.isSelected { film.tap() }
+        let selected = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", look)).firstMatch
+        XCTAssertTrue(selected.waitForExistence(timeout: 10), app.debugDescription)
+        wait { selected.isSelected }
+        XCTAssertTrue(selected.label.contains("兼容导入"))
+        capture("device-\(name)-sdr-look-selected", app)
+        try deviceSaveAndAudit(app, name: name + "-sdr", width: width, height: height)
+        app.buttons["editor.reset"].tap()
+        let resetLook = app.buttons["重置胶片"]
+        XCTAssertTrue(resetLook.waitForExistence(timeout: 10), app.debugDescription)
+        resetLook.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        wait { app.buttons["tool.film"].value as? String == "中性" }
+        deviceEditingMode(app, hdr: true)
+        wait { !app.buttons["editor.group.looks"].isEnabled }
+        try deviceSaveAndAudit(app, name: name + "-hdr", width: width, height: height)
+        #endif
+    }
+
+    private func deviceMenu(_ app: XCUIApplication, item: String) {
+        deviceDismissNetworkPrompt()
+        app.buttons["editor.privacy"].tap()
+        let button = app.buttons[item]
+        XCTAssertTrue(button.waitForExistence(timeout: 10), app.debugDescription)
+        let menu = app.collectionViews.containing(.button, identifier: item).firstMatch
+        for _ in 0..<3 where !button.isHittable {
+            // 系统菜单有两页；手势留在已显示的菜单区域，不能从其屏幕外 frame 底部起滑。
+            menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).press(forDuration: 0.1,
+                thenDragTo: menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)))
+        }
+        wait { button.isEnabled && button.isHittable }
+        button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    }
+
+    private func chooseDeviceFile(_ app: XCUIApplication, name: String) {
+        deviceDismissNetworkPrompt()
+        let browse = app.tabBars.buttons.matching(NSPredicate(format: "label IN %@", ["Browse", "浏览"])).firstMatch
+        XCTAssertTrue(browse.waitForExistence(timeout: 15), app.debugDescription); browse.tap()
+        let local = app.cells.matching(NSPredicate(format: "label CONTAINS[c] %@", "iPhone")).firstMatch
+        if !local.waitForExistence(timeout: 3) { browse.tap() }
+        XCTAssertTrue(local.waitForExistence(timeout: 15), app.debugDescription); local.tap()
+        let stem = URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent
+        // 真机位置列表可能有大量用户文件，按唯一测试文件名搜索，不遍历既有内容。
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 10), app.debugDescription); search.tap()
+        if let text = search.value as? String, text != search.placeholderValue {
+            search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: text.count))
+        }
+        deviceDismissNetworkPrompt()
+        search.typeText(stem)
+        wait { (search.value as? String)?.contains(stem) == true }
+        let file = app.cells.matching(NSPredicate(format: "identifier BEGINSWITH %@ OR label BEGINSWITH %@", stem + ",", stem)).firstMatch
+        XCTAssertTrue(file.waitForExistence(timeout: 30), app.debugDescription); file.tap()
+        let open = app.buttons.matching(NSPredicate(format: "label IN %@", ["Open", "打开"])).firstMatch
+        if open.waitForExistence(timeout: 3) { open.tap() }
+    }
+
+    private func deviceDismissNetworkPrompt() {
+        let alert = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.firstMatch
+        if alert.exists && alert.label.contains("RawLab HDR UI") && alert.label.contains("无线数据") {
+            alert.buttons["不允许"].tap()
+            wait { !alert.exists }
+        }
+    }
+
+    private func deviceEditingMode(_ app: XCUIApplication, hdr: Bool) {
+        deviceMenu(app, item: "照片处理设置")
+        let mode = app.switches["hdr.editMode"]
+        XCTAssertTrue(mode.waitForExistence(timeout: 15), "Files import did not preserve the HDR original: \(app.debugDescription)")
+        let expected = hdr ? "1" : "0"
+        if mode.value as? String != expected {
+            mode.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        }
+        wait { mode.value as? String == expected }
+        app.buttons["关闭"].tap()
+    }
+
+    private func authorizeDevicePhotoAudit() {
+        let authorization = expectation(description: "Read only newly created Photos resources")
+        var status = PHAuthorizationStatus.notDetermined
+        PHPhotoLibrary.requestAuthorization(for: .readWrite) { value in
+            status = value; authorization.fulfill()
+        }
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.buttons.matching(NSPredicate(format: "label IN %@",
+            ["允许完全访问", "允许访问所有照片", "Allow Full Access"])).firstMatch
+        if allow.waitForExistence(timeout: 5) { allow.tap() }
+        wait(for: [authorization], timeout: 30)
+        XCTAssertEqual(status, .authorized, "Physical audit needs access to the exact assets created by the tested app")
+    }
+
+    private func devicePhotoIDs() -> Set<String> {
+        // 只比较标识符，不读取用户既有照片的内容，也不记录它们的标识符。
+        var result = Set<String>()
+        PHAsset.fetchAssets(with: .image, options: nil).enumerateObjects { asset, _, _ in result.insert(asset.localIdentifier) }
+        return result
+    }
+
+    private func deviceSaveAndAudit(_ app: XCUIApplication, name: String, width: Int, height: Int) throws {
+        let before = devicePhotoIDs()
+        saveCurrentToPhotos(app, screenshot: "device-\(name)-photos-saved")
+        let created = devicePhotoIDs().subtracting(before)
+        XCTAssertEqual(created.count, 1, "Cannot uniquely identify this UI export; no unrelated photo will be read")
+        guard created.count == 1, let asset = PHAsset.fetchAssets(withLocalIdentifiers: Array(created), options: nil).firstObject else { return }
+        XCTAssertEqual(asset.pixelWidth, width); XCTAssertEqual(asset.pixelHeight, height)
+        let resource = try XCTUnwrap(PHAssetResource.assetResources(for: asset).first { $0.type == .photo })
+        let downloaded = expectation(description: "Read back the exact UI-created Photos original")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".jpg")
+        defer { try? FileManager.default.removeItem(at: url) }
+        var failure: Error?
+        PHAssetResourceManager.default().writeData(for: resource, toFile: url, options: nil) { error in failure = error; downloaded.fulfill() }
+        wait(for: [downloaded], timeout: 30)
+        XCTAssertNil(failure)
+        let data = try Data(contentsOf: url)
+        XCTAssertEqual(Array(data.prefix(2)), [0xff, 0xd8]); XCTAssertEqual(Array(data.suffix(2)), [0xff, 0xd9])
+        let imageSource = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
+        let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(imageSource, 0, nil))
+        XCTAssertEqual(image.width, width); XCTAssertEqual(image.height, height)
+        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.data")
+        attachment.name = "device-\(name)-photos-original.jpg"; attachment.lifetime = .keepAlways
+        add(attachment)
+        print("PHOTOS_UI_EXPORT \(name) \(width)x\(height) \(data.count) bytes resource=\(resource.uniformTypeIdentifier)")
+    }
+
+    private func saveCurrentToPhotos(_ app: XCUIApplication, screenshot: String) {
+        app.buttons["editor.export"].tap()
+        let save = app.buttons["保存当前照片"]
+        wait { save.isEnabled && save.isHittable }
+        save.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let confirm = app.buttons["editor.export.confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 15), app.debugDescription); confirm.tap()
+        let saved = app.alerts.staticTexts["已保存到照片。"]
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.buttons.matching(NSPredicate(format: "label IN %@", ["允许添加照片", "允许添加", "允许", "Allow Add Photos", "Allow"])).firstMatch
+        let completed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            if allow.exists { allow.tap() }
+            return saved.exists
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [completed], timeout: 120), .completed, app.debugDescription)
+        capture(screenshot, app)
+        app.alerts.buttons["关闭"].tap()
+        wait { !saved.exists }
+    }
+
     private func wait(_ predicate: @escaping () -> Bool) {
         let expectation=XCTNSPredicateExpectation(predicate:NSPredicate { _,_ in predicate() },object:nil)
         let result=XCTWaiter.wait(for:[expectation],timeout:60)
