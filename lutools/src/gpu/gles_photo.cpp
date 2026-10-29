@@ -1,4 +1,5 @@
 #include "gpu/gles_photo.h"
+#include "core/processing_cancellation.h"
 #include "gpu/gles_photo_shader.h"
 #include "gpu/lut_gpu_internal.h"
 #include "core/photo_lut.h"
@@ -160,11 +161,13 @@ struct GlesPhotoRenderer::Impl {
         }
     }
     void upload(const RGB* data, size_t bytes) {
+        checkProcessingCancellation();
         allocate(0, bytes);
         glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, static_cast<GLsizeiptr>(bytes), data);
         checkGL();
     }
     void dispatch(int source, int destination, size_t count, uint32_t inputRow, uint32_t outputRow, uint32_t offset, int stage) {
+        checkProcessingCancellation();
         if (count > dispatchLimit) throw std::runtime_error("Dispatch exceeds device limit");
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, buffers[source]);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, buffers[destination]);
@@ -178,11 +181,13 @@ struct GlesPhotoRenderer::Impl {
         checkGL();
     }
     void read(RGB* destination, size_t bytes) {
+        checkProcessingCancellation();
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffers[2]);
         auto mapped = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, static_cast<GLsizeiptr>(bytes), GL_MAP_READ_BIT);
         if (!mapped) throw std::runtime_error("GPU readback failed");
         std::memcpy(destination, mapped, bytes);
         if (!glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)) throw std::runtime_error("GPU buffer contents lost");
+        checkProcessingCancellation();
         checkGL();
     }
     void setLut(const std::shared_ptr<LUT3D>& lut) {
@@ -253,7 +258,7 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
     const RGB& relativeWB, uint32_t width, uint32_t height, uint64_t revision, ImageData& output,
     const PhotoEffectsOptions& effects, int chromaDenoise, bool preserveSourceResolution, const HslOptions& hsl, const ToneControlsOptions& toneControls,
     const ColorGradingOptions& colorGrading, const ToneCurve& customCurve) {
-    if (lut && lut->inputTransfer() == LUTTransfer::SRGB) return false;
+    if (lut && (lut->requiresCPU() || lut->inputTransfer() == LUTTransfer::SRGB)) return false;
     if (input.width <= 0 || input.height <= 0 || width == 0 || height == 0 ||
         width > INT32_MAX || height > INT32_MAX || uint64_t(width) * height > INT32_MAX ||
         input.pixels.size() != size_t(input.width) * input.height ||
@@ -319,6 +324,8 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
         } else context.bands(input, width, height, preview ? 3 : 2, &result);
         output = std::move(result);
         return true;
+    } catch (const ProcessingCancelled&) {
+        throw;
     } catch (const std::exception& error) {
         __android_log_print(ANDROID_LOG_WARN, "RawLabGPU", "%s; falling back when Auto is selected", error.what());
         impl_.reset();

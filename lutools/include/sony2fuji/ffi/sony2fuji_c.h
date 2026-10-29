@@ -51,8 +51,21 @@ typedef enum sony2fuji_pixel_format {
 typedef enum sony2fuji_look_format {
     SONY2FUJI_LOOK_UNKNOWN = 0,
     SONY2FUJI_LOOK_CUBE = 1,
-    SONY2FUJI_LOOK_RLOOK = 2
+    SONY2FUJI_LOOK_RLOOK = 2,
+    SONY2FUJI_LOOK_VLT = 3
 } sony2fuji_look_format;
+
+typedef enum sony2fuji_lut_color_state {
+    SONY2FUJI_LUT_MISSING_COLOR = 0,
+    SONY2FUJI_LUT_MISSING_REFERENCE = 1,
+    SONY2FUJI_LUT_UNSUPPORTED_CONTRACT = 2,
+    SONY2FUJI_LUT_INVALID_CONTRACT = 3,
+    SONY2FUJI_LUT_DECLARED_UNVERIFIED = 4,
+    SONY2FUJI_LUT_LEGACY_DECLARATION = 5,
+    SONY2FUJI_LUT_UNREADABLE = 6,
+    SONY2FUJI_LUT_COMPATIBILITY = 7,
+    SONY2FUJI_LUT_APPROXIMATE_BASE = 8
+} sony2fuji_lut_color_state;
 
 typedef struct sony2fuji_blob {
     void* data;
@@ -438,10 +451,32 @@ sony2fuji_status sony2fuji_session_inspect_lens(sony2fuji_session* session, cons
 sony2fuji_status sony2fuji_session_get_lens_report(sony2fuji_session* session, sony2fuji_lens_report* report);
 
 // Validates a PHOTO look without a RAW, session or GPU. Optional outputs are
-// cleared on failure; CUBE is unversioned (0), RLOOK reports its header version.
+// cleared on failure; CUBE is unversioned (0), VLT is 1, RLOOK reports its header version.
 sony2fuji_status sony2fuji_validate_look(
     const char* path, sony2fuji_look_format* format, uint32_t* format_version
 );
+// Read-only CUBE/VLT diagnosis; declared evidence never certifies author appearance.
+sony2fuji_lut_color_state sony2fuji_inspect_lut_color(const char* path);
+
+// Returns UTF-8 JSON with eligibility, suggested parameters and source SHA-256.
+// Prepare requires the same hash, complete parameters and explicit confirmation;
+// it returns original source bytes followed by a compatibility record, never writes
+// the source. Blobs must be zero-initialized and released with sony2fuji_release_blob.
+sony2fuji_status sony2fuji_inspect_lut_compatibility(const char* path, sony2fuji_blob* out_blob);
+sony2fuji_status sony2fuji_prepare_lut_compatibility(const char* path, const char* request_json, sony2fuji_blob* out_blob);
+// Transient PHOTO preview. request->lut_path identifies the original CUBE/VLT;
+// JSON contains only source_sha256 and contract, with no import confirmation.
+// Requires PREVIEW + BUFFER, a 1..1024 long edge and a caller-owned serial session.
+// Does not create a prepared asset or install a look. Use an independent preview
+// session; normal session caches/metadata may change as with sony2fuji_process.
+sony2fuji_status sony2fuji_preview_lut_compatibility(sony2fuji_session* session,
+    const sony2fuji_request* request, const char* configuration_json, sony2fuji_buffer* out_buffer);
+// Compare oriented, opaque display-sRGB previews at equal dimensions <=1024.
+// JSON requires same_source/same_geometry/same_processing/known_srgb=true and a
+// nonempty reference_source note. These are user assertions, not authentication.
+// Returns descriptive pixel errors only; appearance always remains unverified.
+sony2fuji_status sony2fuji_compare_lut_previews(const sony2fuji_buffer* candidate,
+    const sony2fuji_buffer* reference, const char* conditions_json, sony2fuji_blob* out_blob);
 
 // Compile a bounded DCP byte buffer into the native RLOOK format. The output
 // blob is owned by the caller and must be released with sony2fuji_release_blob.
@@ -656,6 +691,17 @@ sony2fuji_status sony2fuji_session_set_gpu_config(
     sony2fuji_session* session,
     const sony2fuji_gpu_config* config
 );
+
+// Optional cooperative cancellation for sony2fuji_process PREVIEW+BUFFER calls
+// and sony2fuji_session_create_hsl_probe. Compatibility previews are independent.
+// Return nonzero to cancel. Set/clear only on the session's serialized worker;
+// the callback may read an atomic signal updated by another thread. It must not
+// throw, reenter the session, or outlive its context. Null disables cancellation.
+// File output ignores this callback. Cancelled previews return CANCELLED without
+// publishing a partial output buffer; the session can render another request.
+typedef int32_t (*sony2fuji_cancel_callback)(void* context);
+sony2fuji_status sony2fuji_session_set_cancellation_callback(
+    sony2fuji_session* session, sony2fuji_cancel_callback callback, void* context);
 
 sony2fuji_status sony2fuji_process(
     sony2fuji_session* session,

@@ -2,7 +2,7 @@ import SwiftUI
 
 extension ContentView {
     func autoExposure() {
-        guard viewModel.hasImage, !autoExposing, !viewModel.isBusy else { return }
+        guard viewModel.hasImage, !settings.isHDREditing, !autoExposing, !viewModel.isBusy else { return }
         let snapshot = settings, revision = settingsRevision, sourceRevision = viewModel.sourceRevision
         let sourceFile = viewModel.sourceKind == .raw ? viewModel.sourceFile : nil
         let buffer = viewModel.draftBuffer

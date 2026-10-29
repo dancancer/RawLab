@@ -19,7 +19,14 @@ extension ContentView {
                                 .accessibilityIdentifier("film.group-divider.\(index)")
                         }
                         ForEach(sections[index]) { lut in
-                            filmButton(name: lut.name, id: lut.id, imageSize: imageSize)
+                            filmButton(name: lut.name, id: lut.id, imageSize: imageSize, colorNotice: lut.colorNotice, isCompatibility: lut.isCompatibility)
+                                .contextMenu {
+                                    if viewModel.lutMap[lut.id]?.isCustom == true {
+                                        Button(L10n.text("重命名外观"), systemImage: "pencil") {
+                                            renamingLUT = lut; renamedLUTName = lut.name; showingLookRename = true
+                                        }.disabled(editingLocked || viewModel.isImportingLooks)
+                                    }
+                                }
                         }
                     }
                 }
@@ -82,7 +89,12 @@ extension ContentView {
         Button {
             var updated = settings
             if let recipe { updated.applyMasterRecipe(recipe) }
-            else { updated.clearMasterRecipe(cameraTint: viewModel.rawWhiteBalance?.tint); updated.lutID = nil }
+            else {
+                if let reason = updated.clearMasterRecipe(context: resetContext) {
+                    viewModel.statusMessage = resetBlockedMessage(reason); return
+                }
+                updated.lutID = nil
+            }
             applySettingsChange(updated)
         } label: {
             VStack(spacing: 6) {
@@ -115,7 +127,7 @@ extension ContentView {
             .accessibilityAddTraits(settings.masterRecipeID == recipe?.id ? .isSelected : [])
     }
 
-    func filmButton(name: String, id: String?, imageSize: CGFloat) -> some View {
+    func filmButton(name: String, id: String?, imageSize: CGFloat, colorNotice: String? = nil, isCompatibility: Bool = false) -> some View {
         Button {
             if settings.masterRecipeID != nil || settings.lutID != id {
                 let kind: UsageFilmKind = id == nil ? .none :
@@ -123,16 +135,18 @@ extension ContentView {
                 UsageAnalytics.shared.record(.filmSelected(kind))
             }
             var updated = settings
-            updated.clearMasterRecipe(cameraTint: viewModel.rawWhiteBalance?.tint)
+            if let reason = updated.clearMasterRecipe(context: resetContext) {
+                viewModel.statusMessage = resetBlockedMessage(reason); return
+            }
             updated.lutID = id
             applySettingsChange(updated)
         } label: {
             FilmLabel(name: name, artworkName: id.flatMap { FilmPresentation(fileName: $0).artworkName },
-                      neutral: id == nil, selected: settings.lutID == id, imageSize: imageSize)
+                      neutral: id == nil, selected: settings.lutID == id, imageSize: imageSize, colorNotice: colorNotice, isCompatibility: isCompatibility)
         }
         .buttonStyle(.plain)
         .id(id ?? "neutral")
-        .accessibilityLabel(name)
+        .accessibilityLabel(colorNotice.map { name + " · " + $0 } ?? name)
         .accessibilityAddTraits(settings.lutID == id ? .isSelected : [])
     }
 }

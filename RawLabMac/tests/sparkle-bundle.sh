@@ -12,7 +12,7 @@ for relative in Sparkle Autoupdate Updater.app/Contents/MacOS/Updater \
     codesign --verify --strict "$binary"
 done
 codesign --verify --deep --strict "$FRAMEWORK"
-otool -L "$APP/Contents/MacOS/RawLabMac" | grep -q '@rpath/Sparkle.framework/'
+otool -L "$APP/Contents/MacOS/RawLabMac" | grep -F '@rpath/Sparkle.framework/' >/dev/null
 test "$(/usr/libexec/PlistBuddy -c 'Print :SUEnableAutomaticChecks' "$APP/Contents/Info.plist")" = false
 test "$(/usr/libexec/PlistBuddy -c 'Print :SUAutomaticallyUpdate' "$APP/Contents/Info.plist")" = false
 echo 'PASS: pinned Sparkle framework, helpers, signatures and disabled framework scheduling'

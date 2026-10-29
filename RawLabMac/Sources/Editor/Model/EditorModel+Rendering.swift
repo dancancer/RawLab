@@ -52,7 +52,7 @@ extension EditorModel {
     func schedule(forceExact: Bool) {
         guard let file else { return }
         synchronizeAI()
-        if settings.aiDenoiseEnabled && (aiState.isRunning || aiRequiresExplicitRetry) {
+        if !settings.isHDREditing && settings.aiDenoiseEnabled && (aiState.isRunning || aiRequiresExplicitRetry) {
             scheduler.invalidatePending()
             previewOutdated = true
             refreshBusy()
@@ -67,7 +67,7 @@ extension EditorModel {
         let preview = geometryPreviewSettings
         let interactive = geometryDraft == nil && scheduler.interacting && !forceExact && preview.geometrySettings.isIdentity
         let effectiveLUT = settings.masterRecipe?.lutURL() ?? selectedFilm?.url
-        let work = RenderWork(file: file, settings: preview, source: MacReferenceSource(file, raster: RenderEngine.isRasterInput(file)), lut: effectiveLUT,
+        let work = RenderWork(file: file, settings: preview, source: referenceSource(file), lut: effectiveLUT,
                               edge: interactive || !fullResolution ? renderPreviewLongEdge : nil,
                               pass: interactive ? .interactive : .exact,
                               draftEpoch: geometryDraftEpoch, editingGeometry: geometryDraft != nil)
@@ -100,6 +100,15 @@ extension EditorModel {
                     self.engine = try RenderEngine()
                 }
                 if self.engine == nil { self.engine = try RenderEngine() }
+                if work.settings.isHDREditing {
+                    self.originalCache=nil; self.geometryReferenceCache=nil
+                    let neutral=try self.engine!.render(work.file,settings:work.settings.neutralGeometrySettings,
+                        lut:nil,edge:work.edge ?? 2000)
+                    let result=try self.engine!.render(work.file,settings:work.settings,lut:nil,edge:work.edge,
+                        interactive:work.pass == .interactive)
+                    DispatchQueue.main.async { self.finish(request,neutral:neutral,result:result,failure:nil) }
+                    return
+                }
                 // nil edge explicitly requests the existing immutable full-native baseline.
                 let originalKey = MacNeutralReferenceKey(source: work.source, settings: work.settings.neutralSettings, edge: nil)
                 if self.originalCache?.key != originalKey || self.originalCache?.frame.histogram.count != 3 {
@@ -145,7 +154,7 @@ extension EditorModel {
         let sameFile = request.value.file.standardizedFileURL == file?.standardizedFileURL
         switch completion {
         case .publishInteractive, .publishExact:
-            if sameFile, request.value.source != file.map({ MacReferenceSource($0, raster: RenderEngine.isRasterInput($0)) }) {
+            if sameFile, request.value.source != file.map({ referenceSource($0) }) {
                 if scheduler.latest?.id == request.id {
                     previewOutdated = true; error = L10n.text("预览未更新")
                 }

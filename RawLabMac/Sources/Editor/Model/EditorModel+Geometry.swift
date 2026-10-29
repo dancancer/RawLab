@@ -176,7 +176,7 @@ extension EditorModel {
     @discardableResult func applyGeometryDraft() -> Bool {
         guard geometryDraftCanApply, let draft = geometryDraft, file != nil else { return false }
         var committed = settings
-        committed.geometry = draft.geometry.isIdentity ? nil : draft.geometry
+        committed.setGeometrySettings(draft.geometry)
         committed.lensCorrection = draft.lens == LensCorrectionSettings() ? nil : draft.lens
         guard commitAdjustment(editState(settings: committed)) else {
             geometryDraftSaveFailed = true

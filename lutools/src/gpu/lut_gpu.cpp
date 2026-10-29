@@ -84,6 +84,10 @@ ErrorCode applyLUTWithConfig(
     if (image.pixels.empty()) {
         return ErrorCode::ProcessingError;
     }
+    if (lut->requiresCPU()) {
+        if (config.mode == GpuMode::Force) return ErrorCode::ProcessingError;
+        return applyLutCpu(lut,image);
+    }
 
     if (config.mode != GpuMode::Off) {
         ImageData staged = image;

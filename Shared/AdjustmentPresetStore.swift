@@ -149,7 +149,8 @@ final class AdjustmentPresetStore {
     private func independentPayload(_ payload: AdjustmentTransferPayload, id: String) throws -> AdjustmentTransferPayload {
         try payload.validate()
         return try .init(source: .init(identifier: "preset:\(id)", isRaw: payload.source.isRaw,
-            processingVersion: payload.source.processingVersion, recipe: payload.source.recipe), values: payload.values)
+            processingVersion: payload.source.processingVersion, recipe: payload.source.recipe,
+            hdrProcessingVersion: payload.source.hdrProcessingVersion), values: payload.values)
     }
     private func matchingIndex(_ expected: AdjustmentPreset, in registry: Registry) throws -> Int {
         guard let index = registry.presets.firstIndex(where: { $0.id == expected.id }),

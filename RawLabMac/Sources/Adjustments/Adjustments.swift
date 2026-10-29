@@ -48,6 +48,8 @@ struct Adjustments: Equatable, Codable {
     }
 
     var processing = ProcessingIdentity.current
+    var hdr: HDRSettings?
+    var isHDREditing: Bool { hdr?.mode == .hdr }
     var exposureMode = ExposureMode.preview
     var exposure = 0.0
     var temperature = 6500.0
@@ -77,6 +79,11 @@ struct Adjustments: Equatable, Codable {
 
     var masterRecipe: MasterRecipe? { MasterRecipe.recipe(for: masterRecipeID) }
     var recipeSettingsVersion: Int { masterRecipeSettingsVersion ?? 2 }
+    var refinementScale: Double { masterRecipe != nil && recipeSettingsVersion >= 4 ? strength : 1 }
+    var renderToneSettings: ToneControlsSettings { toneSettings.scaled(by: refinementScale) }
+    var renderAtmosphereSettings: AtmosphereSettings { atmosphereSettings.scaled(by: refinementScale) }
+    var renderGradingSettings: ColorGradingSettings { gradingSettings.scaled(by: refinementScale) }
+    var renderCurveSettings: ToneCurveSettings { curveSettings.scaled(by: refinementScale) }
     mutating func setTransferRecipe(_ id: String?, settingsVersion: Int = 3) {
         masterRecipeID = id
         masterRecipeSettingsVersion = settingsVersion
@@ -94,29 +101,35 @@ struct Adjustments: Equatable, Codable {
         hsl = state.isIdentity ? nil : state
     }
     var lensSettings: LensCorrectionSettings { lensCorrection ?? LensCorrectionSettings() }
-    var geometrySettings: GeometrySettings { geometry ?? GeometrySettings() }
+    var geometrySettings: GeometrySettings { isHDREditing ? hdr!.geometry : (geometry ?? GeometrySettings()) }
+
+    mutating func setGeometrySettings(_ state: GeometrySettings) {
+        if isHDREditing { hdr?.geometry = state }
+        else { geometry = state.isIdentity ? nil : state }
+    }
 
     mutating func setGeometry(_ parameter: GeometryParameter, to value: Double) {
         guard value.isFinite else { return }
         var state = geometrySettings
         let range = parameter.range(for: state)
         state[keyPath: parameter.keyPath] = min(range.upperBound, max(range.lowerBound, value))
-        geometry = state.isIdentity ? nil : state
+        setGeometrySettings(state)
     }
 
     mutating func rotateGeometry(clockwise: Bool) {
         var state = geometrySettings
         state.quarterTurns = (state.quarterTurns + (clockwise ? 1 : 3)) % 4
-        geometry = state.isIdentity ? nil : state
+        setGeometrySettings(state)
     }
 
     mutating func flipGeometry(horizontal: Bool) {
         var state = geometrySettings
         if horizontal { state.flipHorizontal.toggle() } else { state.flipVertical.toggle() }
-        geometry = state.isIdentity ? nil : state
+        setGeometrySettings(state)
     }
 
     var neutralSettings: Adjustments {
+        if isHDREditing { var neutral = self; neutral.hdr?.reset(); return neutral }
         var neutral = Adjustments()
         neutral.processing = processing
         return neutral
@@ -126,7 +139,7 @@ struct Adjustments: Equatable, Codable {
     // immutable original cached by EditorModel.
     var neutralGeometrySettings: Adjustments {
         var neutral = neutralSettings
-        neutral.geometry = geometry
+        neutral.setGeometrySettings(geometrySettings)
         neutral.lensCorrection = lensCorrection
         return neutral
     }
@@ -170,7 +183,7 @@ struct Adjustments: Equatable, Codable {
 
     var waveletSettings: WaveletDenoiseSettings { waveletNoiseReduction ?? WaveletDenoiseSettings() }
     var hasLegacyDenoise: Bool { waveletNoiseReduction == nil && denoiseMode > 0 }
-    var isDenoiseEnabled: Bool { aiDenoiseEnabled || (waveletNoiseReduction?.enabled ?? (denoiseMode > 0)) }
+    var isDenoiseEnabled: Bool { !isHDREditing && (aiDenoiseEnabled || (waveletNoiseReduction?.enabled ?? (denoiseMode > 0))) }
     var denoiseSummary: String {
         if aiDenoiseEnabled { return L10n.text("AI 降噪") }
         if let settings = waveletNoiseReduction {
@@ -233,7 +246,7 @@ struct Adjustments: Equatable, Codable {
 
     mutating func applyMasterRecipe(_ recipe: MasterRecipe) {
         masterRecipeID = recipe.id
-        masterRecipeSettingsVersion = 3
+        masterRecipeSettingsVersion = recipe.version
         strength = 1
         exposure = recipe.exposureDelta
         shadows = recipe.shadowsDelta
@@ -242,20 +255,23 @@ struct Adjustments: Equatable, Codable {
         saturation = recipe.saturationDelta
         tint = recipe.tintDelta
         hsl = recipe.hsl.isIdentity ? nil : recipe.hsl
+        if recipe.version >= 4 {
+            toneControls = recipe.tone?.isIdentity == true ? nil : recipe.tone
+            atmosphere = recipe.atmosphere?.isIdentity == true ? nil : recipe.atmosphere
+            gradingSettings = recipe.grading ?? ColorGradingSettings()
+            curveSettings = recipe.curve ?? ToneCurveSettings()
+            toneCurve = 0
+        }
     }
 
-    mutating func clearMasterRecipe() {
-        masterRecipeSettingsVersion = 3
-        guard masterRecipe != nil else { masterRecipeID = nil; return }
-        let cameraWB = usesAsShotWhiteBalance
-        let offset = tint
-        masterRecipeID = nil
-        if cameraWB && (offset == 0 || asShotWhiteBalance == nil) {
-            resetWhiteBalance()
-        } else {
-            tint = min(150, max(-150, (asShotWhiteBalance?.tint ?? 0) + offset))
-            whiteBalanceMode = .custom
-        }
+    @discardableResult mutating func clearMasterRecipe(isRaw: Bool = true) -> Bool {
+        guard masterRecipeID != nil else { return true }
+        let context = EditorAdjustmentContext(isRaw: isRaw, defaultExposureMode: exposureMode, neutralFilmID: "")
+        guard var independent = try? detachingRecipeForReset(context: context) else { return false }
+        // 选用下一个胶片时保留外观强度；独立的调整值已经展开一次。
+        independent.strength = strength
+        self = independent
+        return true
     }
 
     func apply(to request: inout sony2fuji_request) {
@@ -276,15 +292,24 @@ struct Adjustments: Equatable, Codable {
         // The core's positive highlight value compresses light; UI positive brightens.
         request.highlights = Float(-highlights * scale / 100)
         request.shadows = Float(shadows * scale / 100)
-        request.tone_curve = curveSettings.mode == .custom ? 0 : Float(toneCurve / 100)
+        request.tone_curve = curveSettings.mode == .custom ? 0 : Float(min(100, max(-100, toneCurve * refinementScale)) / 100)
         request.sharpening = Float(sharpening / 100)
     }
 
     mutating func reset(_ group: AdjustmentGroup) {
+        if isHDREditing {
+            for parameter in group.parameters where parameter.hdrKeyPath != nil {
+                set(parameter, to: parameter.spec.defaultValue)
+            }
+            if group == .geometry { hdr?.geometry = GeometrySettings() }
+            return
+        }
+        if group == .film {
+            guard clearMasterRecipe() else { return }
+        }
         for parameter in group.parameters {
             set(parameter, to: parameter.spec(for: self).defaultValue)
         }
-        if group == .film { clearMasterRecipe() }
         if group == .input { exposureMode = .preview; resetWhiteBalance() }
         if group == .color { hsl = nil; colorGrading = nil }
         if group == .tone { toneCurveConfig = nil }
@@ -295,7 +320,12 @@ struct Adjustments: Equatable, Codable {
     }
 
     func isDefault(_ group: AdjustmentGroup) -> Bool {
-        group.parameters.allSatisfy { self[keyPath: $0.spec.keyPath] == $0.spec(for: self).defaultValue }
+        if isHDREditing {
+            return group.parameters.filter { $0.hdrKeyPath != nil }.allSatisfy {
+                $0.value(from: self) == $0.spec.defaultValue
+            } && (group != .geometry || geometrySettings.isIdentity)
+        }
+        return group.parameters.allSatisfy { self[keyPath: $0.spec.keyPath] == $0.spec(for: self).defaultValue }
             && (group != .input || exposureMode == .preview)
             && (group != .tone || curveSettings.isDefault)
             && (group != .color || hslSettings.isIdentity && gradingSettings.isDefault)
@@ -308,6 +338,7 @@ struct Adjustments: Equatable, Codable {
 
     mutating func resolveWhiteBalance(_ camera: WhiteBalance?) {
         asShotWhiteBalance = camera
+        if isHDREditing { return }
         if whiteBalanceMode == .asShot {
             if masterRecipe != nil { temperature = camera?.temperature ?? 6500 }
             else { resetWhiteBalance() }
@@ -315,23 +346,32 @@ struct Adjustments: Equatable, Codable {
     }
 
     mutating func resetWhiteBalance() {
+        if isHDREditing { hdr?.temperature = 6500; hdr?.tint = 0; return }
         temperature = asShotWhiteBalance?.temperature ?? 6500
         tint = masterRecipe != nil ? 0 : (asShotWhiteBalance?.tint ?? 0)
         whiteBalanceMode = .asShot
     }
 
     var isWhiteBalanceDefault: Bool {
-        [AdjustmentParameter.temperature, .tint].allSatisfy {
+        if isHDREditing { return hdr?.temperature == 6500 && hdr?.tint == 0 }
+        return [AdjustmentParameter.temperature, .tint].allSatisfy {
             self[keyPath: $0.spec.keyPath] == $0.spec(for: self).defaultValue
         }
     }
 
     mutating func resolveRawNoiseReductionSupport(_ supported: Bool) {
         supportsRawNoiseReduction = supported
-        if !supported { rawNoiseReduction = 0 }
+        if !supported && !isHDREditing { rawNoiseReduction = 0 }
     }
 
     mutating func set(_ parameter: AdjustmentParameter, to value: Double) {
+        if isHDREditing {
+            guard let key = parameter.hdrKeyPath, var state = hdr, value.isFinite else { return }
+            state[keyPath: key] = value
+            guard state.isValid else { return }
+            hdr = state
+            return
+        }
         self[keyPath: parameter.spec.keyPath] = value
         if parameter.isWhiteBalance {
             if masterRecipe != nil {
@@ -345,10 +385,13 @@ struct Adjustments: Equatable, Codable {
     }
 
     mutating func resetAll() {
+        if isHDREditing { hdr?.reset(); return }
+        let inactiveHDR = hdr
         let identity = processing
         let camera = asShotWhiteBalance
         let noiseReductionSupport = supportsRawNoiseReduction
         self = Adjustments()
+        hdr = inactiveHDR
         processing = identity
         resolveWhiteBalance(camera)
         resolveRawNoiseReductionSupport(noiseReductionSupport)
@@ -358,6 +401,7 @@ struct Adjustments: Equatable, Codable {
 
     // 与实际渲染共用普通图片的有效设置，避免 reset 校验把 RAW 元数据当成 RGB 白平衡。
     var resolvedForRaster: Adjustments {
+        if isHDREditing { return self }
         var state = self
         state.exposureMode = .sensor
         state.whiteBalanceMode = .asShot
@@ -370,6 +414,10 @@ struct Adjustments: Equatable, Codable {
     }
 
     func validateResetValues() throws {
+        if isHDREditing {
+            guard hdr?.isValid == true else { throw EditorResetBlockedReason.invalidSnapshot("hdr") }
+            return
+        }
         for parameter in [AdjustmentParameter.strength, .exposure, .temperature, .tint, .contrast,
                           .highlights, .shadows, .toneCurve, .blackPoint, .whitePoint, .vibrance, .saturation, .sharpening, .rawNoiseReduction] {
             let value = self[keyPath: parameter.spec.keyPath]
@@ -397,7 +445,7 @@ struct Adjustments: Equatable, Codable {
             }
         }
         if masterRecipeID != nil {
-            guard masterRecipe != nil, [2, 3].contains(masterRecipeSettingsVersion ?? 2) else {
+            guard masterRecipe != nil, [2, 3, 4].contains(masterRecipeSettingsVersion ?? 2) else {
                 throw EditorResetBlockedReason.invalidSnapshot("masterRecipe")
             }
         }
@@ -407,10 +455,15 @@ struct Adjustments: Equatable, Codable {
         let effective = context.isRaw ? self : resolvedForRaster
         var request = sony2fuji_request()
         effective.apply(to: &request)
+        let tone = effective.renderToneSettings, atmosphere = effective.renderAtmosphereSettings
+        let grading = effective.renderGradingSettings, curve = effective.renderCurveSettings
         return [Float(request.wb_mode.rawValue), request.exposure_ev, request.brightness, request.temperature,
                 request.tint, request.contrast, request.saturation, request.highlights, request.shadows,
                 request.tone_curve, request.sharpening] +
-            (effective.renderHSLSettings.hue + effective.renderHSLSettings.saturation + effective.renderHSLSettings.lightness).map(Float.init)
+            (effective.renderHSLSettings.hue + effective.renderHSLSettings.saturation + effective.renderHSLSettings.lightness).map(Float.init) +
+            [tone.blackPoint, tone.whitePoint, tone.vibrance, atmosphere.clarity, atmosphere.dehaze].map(Float.init) +
+            ColorGradingZone.allCases.flatMap { [Float(grading[$0].hue), Float(grading[$0].saturation)] } +
+            [curve.mode == .custom ? 1 : 0] + curve.points.flatMap { [Float($0.x), Float($0.y)] }
     }
 
     fileprivate func detachingRecipeForReset(context: EditorAdjustmentContext) throws -> Adjustments {
@@ -418,6 +471,12 @@ struct Adjustments: Equatable, Codable {
         var result = self
         let renderedHSL = renderHSLSettings
         if masterRecipe != nil {
+            let tone = renderToneSettings, atmosphere = renderAtmosphereSettings
+            result.toneControls = tone.isIdentity ? nil : tone
+            result.atmosphere = atmosphere.isIdentity ? nil : atmosphere
+            result.gradingSettings = renderGradingSettings
+            result.curveSettings = renderCurveSettings
+            result.toneCurve = min(100, max(-100, toneCurve * refinementScale))
             let scale = strength
             result.exposure = exposure * scale
             result.contrast = contrast * scale
@@ -461,6 +520,7 @@ struct Adjustments: Equatable, Codable {
 enum EditorAdjustmentRules {
     static func isModified(scope: EditorResetScope, snapshot: PhotoEditState, context: EditorAdjustmentContext) -> Bool {
         let settings = snapshot.settings
+        if settings.isHDREditing { return resettingHDR(scope,settings:settings) != settings }
         switch scope {
         case .tool(let tool):
             switch tool {
@@ -511,6 +571,10 @@ enum EditorAdjustmentRules {
         var result = snapshot
         do {
             try snapshot.settings.validateResetValues()
+            if snapshot.settings.isHDREditing {
+                result.settings=resettingHDR(scope,settings:snapshot.settings)
+                return result==snapshot ? .unchanged : .candidate(result)
+            }
             if case .hslColor(let channel) = scope, !(0..<8).contains(channel) {
                 throw EditorResetBlockedReason.invalidHSLChannel
             }
@@ -583,6 +647,21 @@ enum EditorAdjustmentRules {
             return .blocked(.invalidSnapshot(String(describing: error)))
         }
     }
+
+    private static func resettingHDR(_ scope: EditorResetScope,settings: Adjustments) -> Adjustments {
+        var result=settings
+        switch scope {
+        case .all: result.hdr?.reset()
+        case .group(let group):
+            for tool in group.tools { result=resettingHDR(.tool(tool),settings:result) }
+        case .tool(.geometry): result.setGeometrySettings(GeometrySettings())
+        case .tool(.whiteBalance): result.hdr?.temperature=6500; result.hdr?.tint=0
+        case .tool(let tool):
+            if let parameter=tool.parameter,let key=parameter.hdrKeyPath { result.hdr?[keyPath:key]=HDRSettings()[keyPath:key] }
+        default: break
+        }
+        return result
+    }
 }
 
 extension Adjustments {
@@ -591,6 +670,7 @@ extension Adjustments {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         processing = values.contains(.processing) ?
             try values.decode(ProcessingIdentity.self, forKey: .processing) : .legacy
+        hdr = try values.decodeIfPresent(HDRSettings.self, forKey: .hdr)
         toneCurveConfig = try values.decodeIfPresent(ToneCurveSettings.self, forKey: .toneCurveConfig)
         colorGrading = try values.decodeIfPresent(ColorGradingSettings.self, forKey: .colorGrading)
         if colorGrading?.isDefault == true { colorGrading = nil }
@@ -634,16 +714,20 @@ extension Adjustments {
         masterRecipeID = try values.decodeIfPresent(String.self, forKey: .masterRecipeID)
         let version = try values.decodeIfPresent(Int.self, forKey: .masterRecipeSettingsVersion)
         masterRecipeSettingsVersion = masterRecipeID == nil ? 3 : (version ?? 2)
+        guard [2, 3, 4].contains(version ?? 3) else {
+            throw DecodingError.dataCorruptedError(forKey: .masterRecipeSettingsVersion, in: values, debugDescription: "Invalid master recipe version")
+        }
         if version == nil, let recipe = masterRecipe {
             // 旧记录只保存基础值；一次性合入预设，之后由新规则整体缩放这些当前值。
+            let defaults = recipe.migrationDefaults
             let cameraWB = whiteBalanceMode == .asShot ||
                 (temperature == asShotWhiteBalance?.temperature && tint == asShotWhiteBalance?.tint)
-            exposure += recipe.exposureDelta
-            shadows += recipe.shadowsDelta
-            highlights += recipe.highlightsDelta
-            contrast += recipe.contrastDelta
-            saturation += recipe.saturationDelta
-            tint = (cameraWB ? 0 : tint - (asShotWhiteBalance?.tint ?? 0)) + recipe.tintDelta
+            exposure += defaults.exposureDelta
+            shadows += defaults.shadowsDelta
+            highlights += defaults.highlightsDelta
+            contrast += defaults.contrastDelta
+            saturation += defaults.saturationDelta
+            tint = (cameraWB ? 0 : tint - (asShotWhiteBalance?.tint ?? 0)) + defaults.tintDelta
             if cameraWB { whiteBalanceMode = .asShot }
         }
     }
@@ -697,5 +781,31 @@ struct PhotoEditSession {
     }
     func state(for url: URL, defaultFilmID: String) -> PhotoEditState {
         edits[url.standardizedFileURL] ?? PhotoEditState(settings: Adjustments(), filmID: defaultFilmID, masterRecipeID: nil)
+    }
+}
+
+
+extension Adjustments {
+    func withHDRMode(_ enabled: Bool, sourceIsHDR: Bool, hasLook: Bool) throws -> Adjustments {
+        var result = self
+        guard enabled else { result.hdr?.mode = .sdr; return result }
+        var initial = HDRSettings()
+        initial.exposure = exposure; initial.contrast = contrast; initial.highlights = highlights
+        initial.shadows = shadows; initial.saturation = saturation; initial.geometry = geometry ?? GeometrySettings()
+        var conflicts: [String] = []
+        if temperature != 6500 || tint != 0 { conflicts.append("white_balance") }
+        if hasLook || masterRecipeID != nil { conflicts.append("look") }
+        if !toneSettings.isIdentity { conflicts.append("tone_controls") }
+        if toneCurve != 0 || !curveSettings.isIdentity { conflicts.append("tone_curve") }
+        if !hslSettings.isIdentity { conflicts.append("hsl") }
+        if !gradingSettings.isIdentity { conflicts.append("color_grading") }
+        if clarity != 0 { conflicts.append("clarity") }
+        if dehaze != 0 { conflicts.append("dehaze") }
+        if sharpening != 0 { conflicts.append("sharpening") }
+        if isDenoiseEnabled { conflicts.append("denoise") }
+        if effectSettings != PhotoEffectsSettings() { conflicts.append("effects") }
+        if lensSettings != LensCorrectionSettings() { conflicts.append("lens_correction") }
+        result.hdr = try HDRSettings.enabling(stored: hdr, initial: initial, sourceIsHDR: sourceIsHDR, conflicts: conflicts)
+        return result
     }
 }

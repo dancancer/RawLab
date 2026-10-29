@@ -23,23 +23,26 @@ import com.rawlab.android.settings.LensSettings
 
 // 原生层对外观文件的识别结果：格式与 RLOOK 版本
 enum class LookFormat(val extension: String) {
-    UNKNOWN(""), CUBE("cube"), RLOOK("rlook");
+    UNKNOWN(""), CUBE("cube"), RLOOK("rlook"), VLT("vlt");
 
     companion object {
         fun fromExtension(extension: String): LookFormat = when (extension.lowercase(Locale.ROOT)) {
             "cube" -> CUBE
             "rlook" -> RLOOK
+            "vlt" -> VLT
             else -> UNKNOWN
         }
     }
 }
 
-data class LookValidation(val format: LookFormat, val version: Int)
+data class LookValidation(val format: LookFormat, val version: Int, val colorState: Int = 5)
+class LUTColorContractException(val reason: Int) : IllegalArgumentException("LUT color contract requires attention")
 
 class NativeProcessingException(val status: Int, message: String) : IOException(message) {
     companion object {
         const val IO_ERROR = 3
         const val OUTPUT_IO_ERROR = 6
+        const val CANCELLED = 7
     }
 }
 
@@ -58,7 +61,7 @@ class NativeFrame(val width: Int, val height: Int, val pixels: ByteArray, val te
 }
 
 class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoCloseable {
-    private var handle = nativeCreate(mode).also { check(it != 0L) }
+    @Volatile private var handle = nativeCreate(mode).also { check(it != 0L) }
     private var catalogKey: Triple<String, Long, Long>? = null
     private var candidates: List<LensCandidate> = emptyList()
     private var rasterKey: Triple<String, Long, Long>? = null
@@ -77,8 +80,10 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
 
     @Synchronized
     fun preview(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
-        inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW): NativeFrame {
-        val frame = checkNotNull(previewRequest(input, lut, settings, edge, interactive, inputKind))
+        inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW,
+        cancellationGeneration: Long = -1L): NativeFrame {
+        val frame = checkNotNull(previewRequest(input, lut, settings, edge, interactive, inputKind,
+            cancellationGeneration = cancellationGeneration))
         val dimensions = nativeGeometrySize(handle)
         require(dimensions.size == 2 && dimensions.all { it > 0 }) { "Invalid native geometry size" }
         frame.geometryWidth = dimensions[0]
@@ -87,17 +92,27 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         return frame
     }
 
+    // 仅供独立兼容预览实例使用，固定基础处理，不接触编辑器的调整或外观库。
+    @Synchronized
+    fun previewCompatibility(input: File, inputKind: PhotoInputKind, lut: File?, configuration: String?): NativeFrame {
+        check(handle != 0L)
+        val pixels = rasterInput(input, inputKind)
+        return nativeCompatibilityPreview(handle, input.path, pixels?.bitmap, pixels?.width ?: 0,
+            pixels?.height ?: 0, lut?.path, configuration)
+    }
+
     private fun previewRequest(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
-        inputKind: PhotoInputKind, revision: HslTargetRevision? = null, probe: FloatArray? = null): NativeFrame? {
+        inputKind: PhotoInputKind, revision: HslTargetRevision? = null, probe: FloatArray? = null,
+        cancellationGeneration: Long = -1L): NativeFrame? {
         check(handle != 0L) { "Processor is closed" }
         val effective = settings.effectiveFor(inputKind)
         val pixels = rasterInput(input, inputKind)
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
-        nativeSetToneCurve(handle, effective.curve.mode.nativeValue, effective.curve.packed())
-        nativeSetToneControls(handle, effective.blackPoint / 100f, effective.whitePoint / 100f, effective.vibrance / 100f)
-        nativeSetAtmosphere(handle, effective.clarity / 100f, effective.dehaze / 100f)
-        with(effective.colorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
+        nativeSetToneCurve(handle, effective.renderCurve.mode.nativeValue, effective.renderCurve.packed())
+        nativeSetToneControls(handle, effective.renderBlackPoint / 100f, effective.renderWhitePoint / 100f, effective.renderVibrance / 100f)
+        nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
+        with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
             midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
         return nativeProcess(handle, input.path, pixels?.bitmap, pixels?.width ?: 0,
             pixels?.height ?: 0, if (pixels == null) 0 else 1, lut?.path, null, effective.strength,
@@ -108,18 +123,20 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             effective.displayChromaDenoise, effective.effects.vignetteAmount, effective.effects.vignetteMidpoint,
             effective.effects.vignetteRoundness, effective.effects.vignetteFeather, effective.effects.vignetteHighlights,
             effective.effects.grainAmount, effective.effects.grainSize, effective.effects.grainRoughness,
-            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, effective.processing.version, null, revision?.source ?: 0, revision?.request ?: 0, probe)
+            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, effective.processing.version, null,
+            revision?.source ?: 0, revision?.request ?: 0, probe, cancellationGeneration)
     }
 
     @Synchronized
     fun sampleHsl(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
-        inputKind: PhotoInputKind, revision: HslTargetRevision, x: Float, y: Float): HslTargetSample {
+        inputKind: PhotoInputKind, revision: HslTargetRevision, x: Float, y: Float,
+        cancellationGeneration: Long = -1L): HslTargetSample {
         if (!x.isFinite() || !y.isFinite())
             return HslTargetSample.unavailable(revision, HslTargetAvailability.NONFINITE)
         if (x !in 0f..1f || y !in 0f..1f)
             return HslTargetSample.unavailable(revision, HslTargetAvailability.OUTSIDE)
         val probe = FloatArray(13).also { it[0] = x; it[1] = y }
-        previewRequest(input, lut, settings, edge, interactive, inputKind, revision, probe)
+        previewRequest(input, lut, settings, edge, interactive, inputKind, revision, probe, cancellationGeneration)
         return HslTargetSample(revision, HslTargetAvailability.entries.getOrNull(probe[0].toInt()) ?: HslTargetAvailability.FAILED,
             probe.slice(2..4), probe.slice(5..12), probe[1] == 1f)
     }
@@ -134,10 +151,10 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         val pixels = rasterInput(input, inputKind)
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
-        nativeSetToneCurve(handle, effective.curve.mode.nativeValue, effective.curve.packed())
-        nativeSetToneControls(handle, effective.blackPoint / 100f, effective.whitePoint / 100f, effective.vibrance / 100f)
-        nativeSetAtmosphere(handle, effective.clarity / 100f, effective.dehaze / 100f)
-        with(effective.colorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
+        nativeSetToneCurve(handle, effective.renderCurve.mode.nativeValue, effective.renderCurve.packed())
+        nativeSetToneControls(handle, effective.renderBlackPoint / 100f, effective.renderWhitePoint / 100f, effective.renderVibrance / 100f)
+        nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
+        with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
             midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
         val backend = intArrayOf(-1)
         nativeProcess(handle, input.path, pixels?.bitmap, pixels?.width ?: 0, pixels?.height ?: 0,
@@ -163,10 +180,10 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         val pixels = rasterInput(input, inputKind)
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
-        nativeSetToneCurve(handle, effective.curve.mode.nativeValue, effective.curve.packed())
-        nativeSetToneControls(handle, effective.blackPoint / 100f, effective.whitePoint / 100f, effective.vibrance / 100f)
-        nativeSetAtmosphere(handle, effective.clarity / 100f, effective.dehaze / 100f)
-        with(effective.colorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
+        nativeSetToneCurve(handle, effective.renderCurve.mode.nativeValue, effective.renderCurve.packed())
+        nativeSetToneControls(handle, effective.renderBlackPoint / 100f, effective.renderWhitePoint / 100f, effective.renderVibrance / 100f)
+        nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
+        with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
             midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
         return nativeAutoExposure(handle, input.path, pixels?.bitmap, pixels?.width ?: 0, pixels?.height ?: 0,
             if (pixels == null) 0 else 1, effective.customWb, effective.temperature, effective.tint,
@@ -178,6 +195,13 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         if (handle != 0L) { nativeDestroy(handle); handle = 0L }
         releaseRasterCache()
     }
+
+    // 取消不能等待 preview 的 Java monitor 或 native session 渲染锁。
+    internal fun cancellationGeneration(): Long = nativeCancellationGeneration(handle)
+    internal fun cancelPreview() { nativeCancelPreview(handle) }
+
+    private external fun nativeCancellationGeneration(handle: Long): Long
+    private external fun nativeCancelPreview(handle: Long)
 
     @Synchronized
     internal fun releaseRasterCache() {
@@ -223,6 +247,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     }
 
     private external fun nativeCreate(mode: Int): Long
+    private external fun nativeCompatibilityPreview(handle: Long, input: String, pixels: Bitmap?, width: Int, height: Int,
+        lut: String?, configuration: String?): NativeFrame
     private external fun nativeSetGpuMode(handle: Long, mode: Int)
     private external fun nativeSetLensDatabase(handle: Long, path: String)
     private external fun nativeSetLensCorrection(handle: Long, distortion: Boolean, tca: Boolean, autoCrop: Boolean, profile: ByteArray)
@@ -250,7 +276,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         vignetteAmount: Float, vignetteMidpoint: Float, vignetteRoundness: Float, vignetteFeather: Float,
         vignetteHighlights: Float, grainAmount: Float, grainSize: Float, grainRoughness: Float,
         exposureMode: Int, hsl: FloatArray, recipeActive: Boolean, processingVersion: Int, backend: IntArray? = null,
-        sourceRevision: Long = 0, requestRevision: Long = 0, hslProbe: FloatArray? = null): NativeFrame?
+        sourceRevision: Long = 0, requestRevision: Long = 0, hslProbe: FloatArray? = null,
+        cancellationGeneration: Long = -1L): NativeFrame?
 
     companion object {
         const val CPU = 0
@@ -259,16 +286,30 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         init { System.loadLibrary("rawlab-jni") }
 
         fun validateLook(file: File): LookValidation {
-            val result = NativeLookBridge.validate(file.path)
+            val result = try { NativeLookBridge.validate(file.path) }
+            catch (error: UnsupportedOperationException) {
+                val reason = error.message?.takeIf { it.startsWith("rawlab-lut-color:") }?.substringAfter(':')?.toIntOrNull()
+                if (reason != null && reason in 0..3) throw LUTColorContractException(reason)
+                throw error
+            }
             require(result.size >= 2) { "Native look validation returned no result" }
             val format = when (result[0]) {
                 1 -> LookFormat.CUBE
                 2 -> LookFormat.RLOOK
+                3 -> LookFormat.VLT
                 else -> LookFormat.UNKNOWN
             }
             if (format == LookFormat.UNKNOWN) throw IOException("Unsupported look format")
-            return LookValidation(format, result[1])
+            return LookValidation(format, result[1], result.getOrElse(2) { 5 })
         }
+
+        fun inspectLutCompatibility(file: File): String = NativeLookBridge.compatibility(file.path, null).toString(Charsets.UTF_8)
+        fun prepareLutCompatibility(file: File, request: String): ByteArray =
+            try { NativeLookBridge.compatibility(file.path, request) }
+            catch (error: Exception) { throw LUTColorContractException(9) }
+        fun compareLutPreviews(candidate: NativeFrame, reference: NativeFrame, conditions: String): String =
+            NativeLookBridge.compare(candidate.pixels, candidate.width, candidate.height,
+                reference.pixels, reference.width, reference.height, conditions).toString(Charsets.UTF_8)
 
         fun compileDcp(source: ByteArray, sourceName: String): ByteArray {
             if (source.size.toLong() > MAX_DCP_SOURCE_BYTES)
@@ -287,6 +328,9 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
 
 private object NativeLookBridge {
     @JvmStatic external fun validate(path: String): IntArray
+    @JvmStatic external fun compatibility(path: String, request: String?): ByteArray
+    @JvmStatic external fun compare(candidate: ByteArray, width: Int, height: Int,
+        reference: ByteArray, referenceWidth: Int, referenceHeight: Int, conditions: String): ByteArray
 }
 
 private object NativeDcpBridge {

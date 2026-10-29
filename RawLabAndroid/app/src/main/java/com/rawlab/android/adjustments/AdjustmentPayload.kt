@@ -45,7 +45,7 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
         if (values.isEmpty()) throw AdjustmentTransferException(AdjustmentFailure.EMPTY_SCOPE)
         valid(source.identifier.isNotEmpty() && source.processingVersion in 1..2, "source")
         source.recipe?.let {
-            valid(it.id.isNotEmpty() && it.strength.isFinite() && it.strength in 0.0..2.0 && it.settingsVersion in 2..3, "recipe")
+            valid(it.id.isNotEmpty() && it.strength.isFinite() && it.strength in 0.0..2.0 && it.settingsVersion in 2..4, "recipe")
             valid(this[AdjustmentField.STRENGTH]?.number?.let { strength -> strength == it.strength } != false, "recipe.strength")
         }
         values.forEach { (field, value) -> valid(validValue(field, value), field.id) }

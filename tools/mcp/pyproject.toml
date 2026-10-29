@@ -1,7 +1,7 @@
 [project]
 name = "rawlab-mcp"
 version = "0.1.0"
-description = "Local stdio MCP adapter for the RawLab agent CLI (recipe v1-v5)"
+description = "Local stdio MCP adapter for the RawLab agent CLI (recipe v1-v6, capability negotiated)"
 requires-python = ">=3.11"
 dependencies = [
     "mcp==2.2.0",

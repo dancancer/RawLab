@@ -16,6 +16,7 @@ internal object StructuredSettingsCodec {
             .put("curve", s.curve.json())
             .put("customWb", s.customWb).put("temperature", s.temperature).put("tint", s.tint)
             .put("recipeID", s.recipeID ?: JSONObject.NULL).put("displayChromaDenoise", s.displayChromaDenoise)
+            .put("masterRecipeSettingsVersion", s.masterRecipeSettingsVersion)
             .put("hsl", JSONArray(s.hsl.packed().toList()))
             .put("colorGrading", JSONObject().also { grading ->
                 ColorGradingZone.entries.forEach { zone -> grading.put(zone.id,
@@ -45,10 +46,10 @@ internal object StructuredSettingsCodec {
     fun decode(encoded: String, format: String): EditSettings {
         require(encoded.startsWith("v2:")) { "Unsupported settings encoding" }
         val json = encoded.removePrefix("v2:")
-        validateStrictJSON(json, setOf("version", "exposureMode", "displayChromaDenoise", "quarterTurns"))
+        validateStrictJSON(json, setOf("version", "masterRecipeSettingsVersion", "exposureMode", "displayChromaDenoise", "quarterTurns"))
         val root = JSONObject(json).keysExactly("format", "version", "settings")
         require(root.string("format") == format && root.integer("version") == 2) { "Unsupported settings format" }
-        val s = root.getJSONObject("settings").keysWithOptional(setOf("colorGrading", "curve", "atmosphere"), "film", "strength", "exposure", "exposureMode", "highlights",
+        val s = root.getJSONObject("settings").keysWithOptional(setOf("colorGrading", "curve", "atmosphere", "masterRecipeSettingsVersion"), "film", "strength", "exposure", "exposureMode", "highlights",
             "shadows", "contrast", "toneCurve", "saturation", "sharpening", "customWb", "temperature", "tint",
             "recipeID", "displayChromaDenoise", "hsl", "tone", "denoise", "effects", "lens", "geometry", "processing")
         val atmosphere = if (s.has("atmosphere")) s.getJSONObject("atmosphere").keysExactly("clarity", "dehaze") else null
@@ -67,6 +68,7 @@ internal object StructuredSettingsCodec {
             contrast = s.number("contrast", -1.0..1.0), toneCurve = s.number("toneCurve", -1.0..1.0), saturation = s.number("saturation", -1.0..1.0),
             sharpening = s.number("sharpening", 0.0..2.0), customWb = s.boolean("customWb"), temperature = s.number("temperature", 2000.0..50000.0),
             tint = s.number("tint", -150.0..150.0), recipeID = s.nullableString("recipeID"), displayChromaDenoise = s.integer("displayChromaDenoise"),
+            masterRecipeSettingsVersion = if (s.has("masterRecipeSettingsVersion")) s.integer("masterRecipeSettingsVersion") else 3,
             blackPoint = tone.number("blackPoint", -100.0..100.0), whitePoint = tone.number("whitePoint", -100.0..100.0), vibrance = tone.number("vibrance", -100.0..100.0),
             clarity = atmosphere?.number("clarity", -100.0..100.0) ?: 0f, dehaze = atmosphere?.number("dehaze", -100.0..100.0) ?: 0f,
             colorGrading = if (s.has("colorGrading")) grading(s.getJSONObject("colorGrading")) else ColorGradingSettings(),

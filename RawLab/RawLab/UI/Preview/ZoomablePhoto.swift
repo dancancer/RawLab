@@ -15,11 +15,15 @@ struct ZoomablePhoto: UIViewRepresentable {
     var overlayAvoidanceRect = CGRect.zero
     var interactionEnabled = true
     var onPreviewSizeChange: ((Int) -> Void)? = nil
+    var hdr: HDRDisplayImage? = nil
+    var referenceHDR: HDRDisplayImage? = nil
+    var hdrDisplay: HDRDisplayState? = nil
 
     init(image: UIImage, referenceImage: UIImage?, label: String,
          viewing: Binding<PhotoViewingState>, viewport: Binding<PhotoViewport>,
          isDraft: Bool = false, interactionEnabled: Bool = true, overlayAvoidanceRect: CGRect = .zero,
-         onPreviewSizeChange: ((Int) -> Void)? = nil, hslTarget: HSLTargetCanvasInput? = nil, hslTargetPoint: CGPoint? = nil) {
+         onPreviewSizeChange: ((Int) -> Void)? = nil, hslTarget: HSLTargetCanvasInput? = nil, hslTargetPoint: CGPoint? = nil,
+         hdr: HDRDisplayImage? = nil, referenceHDR: HDRDisplayImage? = nil,hdrDisplay: HDRDisplayState? = nil) {
         self.image = image
         self.referenceImage = referenceImage
         self.label = label
@@ -30,13 +34,15 @@ struct ZoomablePhoto: UIViewRepresentable {
         self.overlayAvoidanceRect = overlayAvoidanceRect
         self.onPreviewSizeChange = onPreviewSizeChange
         self.hslTarget = hslTarget; self.hslTargetPoint = hslTargetPoint
+        self.hdr=hdr; self.referenceHDR=referenceHDR; self.hdrDisplay=hdrDisplay
     }
 
     // 批量结果查看沿用只读缩放接口，不启用编辑器的查看会话动作。
-    init(image: UIImage, referenceImage: UIImage, label: String, onPreviewSizeChange: ((Int) -> Void)? = nil) {
+    init(image:UIImage,referenceImage:UIImage,label:String,onPreviewSizeChange:((Int)->Void)?=nil,
+         hdr:HDRDisplayImage?=nil,referenceHDR:HDRDisplayImage?=nil,hdrDisplay:HDRDisplayState?=nil) {
         self.init(image: image, referenceImage: referenceImage, label: label,
                   viewing: .constant(PhotoViewingState()), viewport: .constant(PhotoViewport()),
-                  interactionEnabled: false, onPreviewSizeChange: onPreviewSizeChange)
+                  interactionEnabled:false,onPreviewSizeChange:onPreviewSizeChange,hdr:hdr,referenceHDR:referenceHDR,hdrDisplay:hdrDisplay)
     }
 
     func makeUIView(context: Context) -> PhotoCanvasView { PhotoCanvasView() }
@@ -48,7 +54,8 @@ struct ZoomablePhoto: UIViewRepresentable {
         view.onPreviewSizeChange = onPreviewSizeChange
         view.configure(image: image, reference: referenceImage, label: label, state: viewing,
                        viewport: viewport, displayScale: displayScale, overlayAvoidanceRect: overlayAvoidanceRect,
-                       isDraft: isDraft, interactionEnabled: interactionEnabled, hslTarget: hslTarget, hslTargetPoint: hslTargetPoint)
+                       isDraft: isDraft, interactionEnabled: interactionEnabled, hslTarget: hslTarget, hslTargetPoint: hslTargetPoint,
+                       hdr:hdr,referenceHDR:referenceHDR,hdrDisplay:hdrDisplay)
     }
 }
 
@@ -151,7 +158,8 @@ final class PhotoCanvasView: UIView {
     func configure(image: UIImage, reference imageBefore: UIImage?, label: String,
                    state: PhotoViewingState, viewport: PhotoViewport, displayScale: CGFloat, overlayAvoidanceRect: CGRect = .zero,
                    isDraft: Bool, interactionEnabled: Bool, hslTarget: HSLTargetCanvasInput? = nil,
-                   hslTargetPoint: CGPoint? = nil) {
+                   hslTargetPoint: CGPoint? = nil,hdr: HDRDisplayImage? = nil,
+                   referenceHDR: HDRDisplayImage? = nil,hdrDisplay: HDRDisplayState? = nil) {
         if self.hslTarget?.scope != hslTarget?.scope || !interactionEnabled || isDraft || self.viewport != viewport {
             cancelTargetInput()
         }
@@ -184,8 +192,11 @@ final class PhotoCanvasView: UIView {
         result.imageView.image = displayState.holdingBefore ? imageBefore : image
         result.comparisonImage = displayState.enabled && displayState.preferredMode == .wipe && !isDraft ? imageBefore : nil
         result.wipePosition = displayState.split
+        result.setHDR(displayState.holdingBefore ? referenceHDR : hdr,
+            before:displayState.enabled && displayState.preferredMode == .wipe && !isDraft ? referenceHDR : nil,state:hdrDisplay)
         result.accessibilityLabel = displayState.holdingBefore ? L10n.text("调整前") : label
         reference.imageView.image = imageBefore
+        reference.setHDR(referenceHDR,before:nil,state:hdrDisplay)
         reference.accessibilityLabel = L10n.text("调整前")
         reference.accessibilityIdentifier = "editor.photo.before"
         reference.isHidden = !sideBySide
@@ -413,6 +424,23 @@ final class PhotoSplitControl: UIControl {
 final class PhotoScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecognizerDelegate {
     let imageView = UIImageView()
     private let beforeImageView = UIImageView()
+    private var hdrHost: UIHostingController<HDRCanvas>?
+    private var beforeHDRHost: UIHostingController<HDRCanvas>?
+
+    func setHDR(_ presentation: HDRDisplayImage?,before: HDRDisplayImage?,state: HDRDisplayState?) {
+        func update(_ host: inout UIHostingController<HDRCanvas>?,image: HDRDisplayImage?,container: UIImageView) {
+            guard let image,let state else { host?.view.removeFromSuperview(); host=nil; return }
+            if let host { host.rootView=HDRCanvas(presentation:image,state:state) }
+            else {
+                let next=UIHostingController(rootView:HDRCanvas(presentation:image,state:state))
+                next.view.backgroundColor = .clear; next.view.isUserInteractionEnabled=false
+                next.view.frame=container.bounds; next.view.autoresizingMask=[.flexibleWidth,.flexibleHeight]
+                container.insertSubview(next.view,at:0); host=next
+            }
+        }
+        update(&hdrHost,image:presentation,container:imageView)
+        update(&beforeHDRHost,image:before,container:beforeImageView)
+    }
     var comparisonImage: UIImage? { didSet { beforeImageView.image = comparisonImage; updateWipe() } }
     var wipePosition: CGFloat = 0.5 { didSet { updateWipe() } }
     var pixels = CGSize.zero

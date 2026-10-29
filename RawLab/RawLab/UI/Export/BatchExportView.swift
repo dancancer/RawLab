@@ -84,7 +84,7 @@ struct BatchExportView: View {
                 Button(L10n.text("放弃任务"), role: .destructive) { if model.discard() { dismiss() } }
             }
             .confirmationDialog(confirmTarget?.displayName ?? L10n.text("核对保存结果"),
-                isPresented: Binding(get: { model.job.outputFormat == .jpeg && confirmTarget != nil },
+                isPresented: Binding(get: { model.job.outputFormat.publishesToPhotos && confirmTarget != nil },
                                      set: { if !$0 { confirmTarget = nil } }),
                 titleVisibility: .visible) {
                 if let target = confirmTarget {
@@ -205,6 +205,7 @@ struct BatchExportView: View {
             Text(L10n.text("输出")).font(.title3.weight(.semibold)).padding(.top, 18).padding(.bottom, 10)
             Picker(L10n.text("格式"), selection: Binding(get: { model.job.outputFormat }, set: model.setFormat)) {
                 Text(BatchOutputFormat.jpeg.title).tag(BatchOutputFormat.jpeg)
+                if model.job.source.settings.isHDREditing { Text(BatchOutputFormat.hdrJPEG.title).tag(BatchOutputFormat.hdrJPEG) }
                 Text(BatchOutputFormat.renderedDNG.title).tag(BatchOutputFormat.renderedDNG)
             }
             .pickerStyle(.segmented)
@@ -215,7 +216,7 @@ struct BatchExportView: View {
             ExportSizePicker(longEdge: Binding(get: { model.job.longEdge }, set: model.setLongEdge),
                              onValidityChanged: { exportSizeValid = $0 })
                 .disabled(!model.canChangeTargets)
-            settingRow(L10n.text("保存到"), value: model.job.outputFormat == .renderedDNG ? L10n.text("RawLab 文件") : L10n.text("照片图库"))
+            settingRow(L10n.text("保存到"), value: model.job.outputFormat.publishesToPhotos ? L10n.text("照片图库") : L10n.text("RawLab 文件"))
         }.padding(.horizontal, 20).padding(.bottom, 16)
     }
 
@@ -302,25 +303,33 @@ private struct TargetEffectInspectionView: View {
     @ObservedObject var model: BatchExportModel
     let target: BatchTarget
     @Environment(\.dismiss) private var dismiss
-    @State private var image: UIImage?
+    @State private var preview: BatchExportModel.Preview?
+    @StateObject private var hdrDisplay=HDRDisplayState()
     @State private var error: String?
 
     var body: some View {
         let _ = localizationLocale
         NavigationStack {
+            VStack(spacing:0) {
             ZStack {
                 Color(white: 0.12).ignoresSafeArea()
-                if let image { ZoomablePhoto(image: image, referenceImage: image, label: L10n.text("本次批量导出效果")) }
+                if let preview {
+                    ZoomablePhoto(image:preview.image,referenceImage:preview.image,label:L10n.text("本次批量导出效果"),
+                        hdr:preview.hdr,referenceHDR:preview.hdr,hdrDisplay:hdrDisplay)
+                }
                 else if let error { Text(error).foregroundStyle(.secondary).padding(24) }
                 else { ProgressView(L10n.text("正在生成效果预览…")) }
+            }
+            if preview?.hdr != nil { HDRMonitoringControls(state:hdrDisplay).padding(16) }
             }
             .navigationTitle(target.displayName).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(L10n.text("完成")) { dismiss() } } }
         }
         .task(id: target.id) {
-            do { image = try await model.preview(target: target) }
+            do { let result=try await model.preview(target:target); try Task.checkCancellation(); preview=result }
             catch { self.error = error.localizedDescription }
         }
+        .onDisappear { preview=nil }
     }
 }
 

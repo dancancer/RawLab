@@ -7,8 +7,13 @@ struct BatchSelectionView: View {
     @State private var showScope = false
     @State private var showExport = false
     @State private var scope = "custom"
-    @State private var fields = AdjustmentTransferField.common
+    @State private var fields: Set<AdjustmentTransferField>
     @State private var message: String?
+
+    init(model: EditorModel) {
+        self.model=model
+        _fields=State(initialValue:model.settings.isHDREditing ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -71,6 +76,9 @@ struct BatchSelectionView: View {
             set: { model.adjustmentSheet = $0 })) { kind in
             AdjustmentTransferView(model: model, kind: kind)
         }
+        .onChange(of:model.settings.isHDREditing, initial:true) { _, isHDR in
+            fields=isHDR ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common
+        }
     }
 
     private func photoRow(_ photo: MacCollectionPhoto) -> some View {
@@ -108,7 +116,8 @@ struct BatchSelectionView: View {
             Text(L10n.format("目标：%@ 张照片", String(count))).fontWeight(.medium)
             Text(L10n.text("来源已排除。未选中的调整保持每张照片的原值。")).foregroundStyle(.secondary)
             if count == 0 { Text(L10n.text("没有可同步的目标。请返回集合，选择来源以外的照片。")).foregroundStyle(.secondary) }
-            AdjustmentScopeEditor(scope: $scope, fields: $fields)
+            AdjustmentScopeEditor(scope: $scope, fields: $fields,
+                                  allowed:model.settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
             if let file = model.file, let source, model.batchSelectionPhotos[source]?.url == file, model.collectionHasDraft(source) {
                 Text(L10n.text("来源有未完成的调整，请先应用或放弃。"))
                 HStack {
@@ -224,7 +233,7 @@ private struct BatchCollectionExportView: View {
                 }
             }
             if let snapshot = row?.snapshot {
-                DisclosureGroup(L10n.format("%@ · 曝光 %@ · 查看最终调整", L10n.text(snapshot.lookName), AdjustmentParameter.exposure.spec.display(snapshot.settings.exposure))) {
+                DisclosureGroup(L10n.format("%@ · 曝光 %@ · 查看最终调整", L10n.text(snapshot.lookName), AdjustmentParameter.exposure.spec.display(AdjustmentParameter.exposure.value(from:snapshot.settings)))) {
                     BatchSettingsSummary(settings: snapshot.settings).padding(.top, 8)
                 }
             }
@@ -254,12 +263,17 @@ struct BatchSettingsSummary: View {
     let settings: Adjustments
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
+            if settings.isHDREditing {
+                Text("HDR · "+L10n.text("相对白平衡"))
+            } else {
             Text(L10n.text("曝光基准") + " · " + settings.exposureMode.title)
             Text(L10n.text("白平衡") + " · " + settings.whiteBalanceMode.title)
-            ForEach(AdjustmentParameter.allCases.filter { settings.curveSettings.isDefault || $0 != .toneCurve }) { parameter in
-                let spec = parameter.spec(for: settings)
-                HStack { Text(spec.title); Spacer(); Text(spec.display(settings[keyPath: spec.keyPath])).monospacedDigit() }
             }
+            ForEach(AdjustmentParameter.allCases.filter { settings.isHDREditing ? $0.hdrKeyPath != nil : (settings.curveSettings.isDefault || $0 != .toneCurve) }) { parameter in
+                let spec = parameter.spec(for: settings)
+                HStack { Text(spec.title); Spacer(); Text(spec.display(parameter.value(from:settings))).monospacedDigit() }
+            }
+            if !settings.isHDREditing {
             if !settings.curveSettings.isDefault {
                 DisclosureGroup(L10n.format("多点曲线（%d 个控制点）", settings.curveSettings.points.count)) {
                     ForEach(Array(settings.curveSettings.points.enumerated()), id: \.offset) { index, point in
@@ -285,6 +299,7 @@ struct BatchSettingsSummary: View {
                     }
                 }
             }
+            }
             DisclosureGroup(L10n.text("几何与镜头")) {
                 let geometry = settings.geometrySettings
                 summary("水平位置", number(geometry.cropX * 100) + "%")
@@ -297,11 +312,14 @@ struct BatchSettingsSummary: View {
                 summary("拉直", number(geometry.straightenDegrees) + "°")
                 summary("水平透视", number(geometry.perspectiveHorizontal))
                 summary("垂直透视", number(geometry.perspectiveVertical))
+                if !settings.isHDREditing {
                 summary("镜头匹配", L10n.text(settings.lensSettings.mode == .automatic ? "自动" : "手动"))
                 summary("畸变矫正", enabled(settings.lensSettings.distortion))
                 summary("横向色差", enabled(settings.lensSettings.tca))
                 summary("自动裁边", enabled(settings.lensSettings.autoCrop))
+                }
             }
+            if !settings.isHDREditing {
             DisclosureGroup(L10n.text("降噪")) {
                 summary("RAW 降噪", number(settings.rawNoiseReduction))
                 summary("色度降噪", number(settings.chromaNoiseReduction ?? 0))
@@ -309,6 +327,7 @@ struct BatchSettingsSummary: View {
                 summary("亮度降噪", number(settings.waveletSettings.luma))
                 summary("色彩降噪", number(settings.waveletSettings.chroma))
                 summary("粗色斑抑制", number(settings.waveletSettings.coarse))
+            }
             }
         }.font(.callout).foregroundStyle(.secondary)
     }

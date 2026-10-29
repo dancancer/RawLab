@@ -35,6 +35,7 @@ extension EditorModel {
 
     func adjustmentTransferContext(for url: URL) -> MacAdjustmentTransferContext {
         MacAdjustmentTransferContext(identifier: url.resolvingSymlinksInPath().standardizedFileURL.path, isRaw: !RenderEngine.isRasterInput(url),
+            sourceIsHDR: file == url ? sourceIsHDR : ((try? HDRSourceInfo.probe(url)) != nil),
             availableLookIDs: availableAdjustmentLooks,
             defaultExposureMode: RenderEngine.isRasterInput(url) ? .sensor : .preview,
             hasUncommittedDraft: file == url && (geometryDraft != nil || dirty))
@@ -69,6 +70,7 @@ extension EditorModel {
             var defaults = Adjustments()
             defaults.exposureMode = RenderEngine.isRasterInput(url) ? .sensor : .preview
             var context = adjustmentTransferContext(for: url)
+            if context.sourceIsHDR { defaults.hdr=HDRSettings() }
             // 校验实际 native 请求；自动匹配结果只用于目标预检，不进入 payload。
             context.validateLensRequest = { lens in
                 var request = Adjustments(); request.lensCorrection = lens

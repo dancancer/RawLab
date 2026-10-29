@@ -3,6 +3,7 @@ import Foundation
 struct MacAdjustmentTransferContext {
     var identifier: String
     var isRaw: Bool
+    var sourceIsHDR = false
     var availableLookIDs: Set<String> = []
     var defaultExposureMode = ExposureMode.preview
     var hasUncommittedDraft = false
@@ -16,6 +17,11 @@ enum MacAdjustmentTransfer {
     static func capture(scope: AdjustmentTransferScope, snapshot: PhotoEditState,
                         context: MacAdjustmentTransferContext) throws -> AdjustmentTransferPayload {
         guard !context.hasUncommittedDraft else { throw AdjustmentTransferError.draftRequiresPreflight }
+        if snapshot.settings.isHDREditing {
+            guard context.sourceIsHDR, !context.isRaw else { throw AdjustmentTransferError.incompatible("hdr.source") }
+            return try HDRAdjustmentTransfer.capture(settings: snapshot.settings.hdr!, identifier: context.identifier,
+                processingVersion: snapshot.settings.processing.version, scope: scope)
+        }
         if snapshot.settings.aiDenoiseEnabled {
             switch scope {
             case .all, .modified: throw AdjustmentTransferError.incompatible("ai.copy_scope")
@@ -32,7 +38,7 @@ enum MacAdjustmentTransfer {
         let neutral = values(PhotoEditState(settings: defaults, filmID: ""), isRaw: context.isRaw)
         let selected: Set<Field>
         switch scope {
-        case .all: selected = Set(Field.allCases)
+        case .all: selected = Field.legacyFields
         case .custom(let fields): selected = fields
         case .modified: selected = Set(Field.common.filter { original[$0.rawValue] != neutral[$0.rawValue] })
         }
@@ -49,6 +55,15 @@ enum MacAdjustmentTransfer {
                         context: MacAdjustmentTransferContext) throws -> PhotoEditState {
         guard !context.hasUncommittedDraft else { throw AdjustmentTransferError.draftRequiresPreflight }
         try payload.validate()
+        if target.settings.isHDREditing {
+            guard context.sourceIsHDR, !context.isRaw else { throw AdjustmentTransferError.incompatible("hdr.source") }
+            var result = target
+            result.settings.hdr = try HDRAdjustmentTransfer.prepare(payload: payload, target: target.settings.hdr!)
+            return result
+        }
+        if payload.source.isHDR {
+            return try prepare(payload: HDRAdjustmentTransfer.legacyPayload(payload), target: target, context: context)
+        }
         if target.settings.aiDenoiseEnabled && !payload.fields.isDisjoint(with: Field.denoiseFields) {
             throw AdjustmentTransferError.incompatible("ai.target_denoise")
         }
@@ -67,7 +82,7 @@ enum MacAdjustmentTransfer {
             if kind != "neutral", !context.availableLookIDs.contains(lookup) {
                 throw AdjustmentTransferError.missingLook(lookup)
             }
-            fullRecipe = kind == "recipe" && Field.recipeDependencies.isSubset(of: selected)
+            fullRecipe = kind == "recipe" && Field.recipeDependencies(version: payload.source.recipe?.settingsVersion ?? 3).isSubset(of: selected)
             if fullRecipe {
                 guard let recipe = payload.source.recipe, MasterRecipe.recipe(for: recipe.id) != nil else {
                     throw AdjustmentTransferError.missingLook(lookup)
@@ -93,7 +108,7 @@ enum MacAdjustmentTransfer {
 
         for field in scalarKeys.keys {
             guard let value = payload[field]?.number else {
-                if contextChanged && isRecipeScaled(field) && effectiveNumbers(result.settings)[field] != oldEffective[field] {
+                if contextChanged && effectiveNumbers(result.settings)[field] != oldEffective[field] {
                     try assignEffective(oldEffective[field]!, field: field, to: &result.settings)
                 }
                 continue
@@ -126,6 +141,15 @@ enum MacAdjustmentTransfer {
             }
         }
         try applyObjects(payload, to: &result.settings, context: context)
+        let refinements = try AdjustmentTransferRefinement.applying(payload,
+            original: AdjustmentTransferRefinement.values(curve: target.settings.curveSettings, grading: target.settings.gradingSettings),
+            previousScale: target.settings.refinementScale, targetScale: result.settings.refinementScale, fullRecipe: fullRecipe)
+        result.settings.curveSettings = refinements[.curve]!.curve!
+        for field in Field.refinementObjects {
+            if let zone = field.gradingZone, let wheel = refinements[field]?.object {
+                result.settings.gradingSettings[zone] = ColorGradingWheel(hue: wheel["hue"]!.number!, saturation: wheel["saturation"]!.number!)
+            }
+        }
         do { try result.settings.validateResetValues() }
         catch { throw AdjustmentTransferError.unrepresentable("native range") }
 
@@ -144,8 +168,8 @@ enum MacAdjustmentTransfer {
         return result
     }
 
-    static func isRecipeScaled(_ field: Field) -> Bool {
-        [.exposure, .contrast, .highlights, .shadows, .saturation].contains(field)
+    static func isRecipeScaled(_ field: Field, version: Int = 3) -> Bool {
+        [.exposure, .contrast, .highlights, .shadows, .saturation].contains(field) || version >= 4 && Field.refinementScalars.contains(field)
     }
 
     static func sourceEffective(_ value: Double, field: Field, recipe: AdjustmentRecipeContext?) -> Double {
@@ -154,6 +178,10 @@ enum MacAdjustmentTransfer {
             return min(100, max(-100, value * ((recipe?.settingsVersion ?? 2) >= 3 ? scale : 1)))
         }
         if field == .contrast || field == .saturation { return 1 + (value - 1) * scale }
+        if (recipe?.settingsVersion ?? 3) >= 4 && Field.refinementScalars.contains(field) {
+            let limit = field == .sCurve ? 1.0 : 100.0
+            return min(limit, max(-limit, value * scale))
+        }
         return isRecipeScaled(field) ? value * scale : value
     }
 
@@ -166,7 +194,7 @@ enum MacAdjustmentTransfer {
             return
         }
         let identity: Double = field == .contrast || field == .saturation ? 1 : 0
-        if isRecipeScaled(field) {
+        if isRecipeScaled(field, version: settings.recipeSettingsVersion) {
             guard scale != 0 || value == identity else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
             assignLogical(scale == 0 ? identity : identity + (value - identity) / scale, field: field, to: &settings)
         } else { assignLogical(value, field: field, to: &settings) }

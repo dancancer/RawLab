@@ -62,6 +62,61 @@ bool rasterPath(const std::string& path) {
         extension == ".tiff" || extension == ".heif" || extension == ".heic";
 }
 
+bool hdrAvailable() {
+#if defined(__APPLE__)
+    if (__builtin_available(macOS 15.0,iOS 18.0,*)) return true;
+#endif
+    return false;
+}
+
+#if defined(__APPLE__)
+bool hdrCandidatePath(const std::string& path) {
+    auto extension=std::filesystem::u8path(path).extension().u8string();
+    std::transform(extension.begin(),extension.end(),extension.begin(),[](unsigned char c) { return std::tolower(c); });
+    return extension==".jpg" || extension==".jpeg" || extension==".heif" || extension==".heic";
+}
+#endif
+
+template<class T> T hdrInitial() { T value{}; value.version=1; value.struct_size=sizeof(value); return value; }
+struct HDRPair {
+    sony2fuji_hdr_image_pair_v1 value=hdrInitial<sony2fuji_hdr_image_pair_v1>();
+    ~HDRPair() { sony2fuji_hdr_release_pair(&value); }
+};
+struct HDRCommandResult {
+    sony2fuji_status status=SONY2FUJI_STATUS_OK;
+    sony2fuji_hdr_diagnostic_v1 diagnostic=hdrInitial<sony2fuji_hdr_diagnostic_v1>();
+    float sourceHeadroom=0,editedHeadroom=0;
+};
+
+HDRCommandResult renderHDR(const EditRecipe& recipe,bool preview) {
+    HDRCommandResult result;
+    HDRPair source,edited;
+    auto options=hdrInitial<sony2fuji_hdr_decode_options_v1>(); options.intent=SONY2FUJI_INTENT_FINAL;
+    result.status=sony2fuji_hdr_decode(recipe.inputPath.c_str(),&options,&source.value,&result.diagnostic);
+    sony2fuji_session* pointer=nullptr;
+    if (result.status==SONY2FUJI_STATUS_OK) result.status=sony2fuji_session_create(&pointer);
+    const std::unique_ptr<sony2fuji_session,decltype(&sony2fuji_session_destroy)> session(pointer,sony2fuji_session_destroy);
+    const auto request=recipe.toHDRRequest();
+    if (result.status==SONY2FUJI_STATUS_OK)
+        result.status=sony2fuji_hdr_render(session.get(),&source.value,&request,&edited.value,&result.diagnostic);
+    if (result.status!=SONY2FUJI_STATUS_OK) return result;
+    result.sourceHeadroom=edited.value.source_headroom; result.editedHeadroom=edited.value.hdr.content_headroom;
+    if (preview) {
+        auto config=hdrInitial<sony2fuji_hdr_sdr_export_config_v1>();
+        config.output_format=SONY2FUJI_OUTPUT_PNG; config.quality=recipe.jpegQuality;
+        config.metadata_source_path=recipe.inputPath.c_str();
+        std::copy_n(source.value.source_sha256,32,config.source_sha256);
+        result.status=sony2fuji_hdr_export_sdr(&edited.value,&config,recipe.outputPath.c_str(),&result.diagnostic);
+    } else {
+        auto config=hdrInitial<sony2fuji_hdr_export_config_v1>();
+        config.jpeg_quality=recipe.jpegQuality; config.base_color=recipe.hdr->baseColor;
+        config.metadata_policy=SONY2FUJI_HDR_METADATA_ISO_XMP; config.metadata_source_path=recipe.inputPath.c_str();
+        std::copy_n(source.value.source_sha256,32,config.source_sha256);
+        result.status=sony2fuji_hdr_export_jpeg(&edited.value,&config,recipe.outputPath.c_str(),&result.diagnostic);
+    }
+    return result;
+}
+
 // Core diagnostics must not contaminate the machine-readable stdout document.
 class DiagnosticsToStderr {
 public:
@@ -120,6 +175,17 @@ int runAgentCommands(int argc, char* argv[]) {
             if (!recipeFile.empty() || printRecipe || info || preview || seenEdge || !lensDatabase.empty()) return fail("invalid_argument", "Capabilities cannot be combined with another command");
             Json inputs = {"raw"};
             Json raster = nullptr;
+            Json versions={1,2,3,4,5},formats={"jpeg","png","dng"},hdr=nullptr;
+            if (hdrAvailable()) {
+                versions.push_back(6); formats.push_back("hdr_jpeg");
+                hdr={{"processing_version",1},{"recipe_min_version",6},{"probe",true},{"decode",true},
+                    {"minimum_system",{{"macos","15.0"},{"ios","18.0"}}},
+                    {"protocols",{"apple_gain_map","iso_21496","ultra_hdr"}},
+                    {"working_format","rgb32f_extended_linear_srgb"},{"backend","cpu"},{"gpu_force","unsupported"},
+                    {"adjustments",{"exposure","relative_white_balance","contrast","highlights","shadows","saturation","geometry"}},
+                    {"jpeg_export",{{"metadata",{"iso","xmp"}},{"base_colors",{"srgb","display_p3"}}}},
+                    {"display",false},{"preview_rendition","sdr"}};
+            }
 #if defined(__APPLE__) || defined(_WIN32)
             inputs.push_back("raster");
 #if defined(_WIN32)
@@ -130,10 +196,12 @@ int runAgentCommands(int argc, char* argv[]) {
                 {"alpha", "opaque_only"}, {"dynamic_range", "sdr"}, {"color_space", "srgb"},
                 {"backend", "cpu"}, {"max_pixels", 128000000}};
 #endif
-            std::cout << machineJson(envelope(command, {{"recipe_versions", {1, 2, 3, 4, 5}},
+            if (hdrAvailable()) inputs.push_back("hdr_raster");
+            std::cout << machineJson(envelope(command, {{"recipe_versions", versions},
                 {"commands", {"capabilities", "validate_recipe", "info", "preview", "export"}}, {"input_types", inputs},
                 {"raster_input", raster},
-                {"output_formats", {"jpeg", "png", "dng"}}, {"exposure_modes", {"scene", "preview", "sensor"}},
+                {"hdr",hdr},
+                {"output_formats", formats}, {"exposure_modes", {"scene", "preview", "sensor"}},
                 {"geometry_operations", {"crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten", "perspective"}},
                 {"edit_groups", {"exposure", "white_balance", "look", "geometry", "tone", "color", "color_grading", "detail", "hsl", "effects", "denoise", "lens_correction"}},
                 {"tone_controls", {{"version", 1}, {"recipe_min_version", 5}, {"range", {-1,1}},
@@ -153,6 +221,27 @@ int runAgentCommands(int argc, char* argv[]) {
                 return fail("invalid_argument", "--info <image> requires one input and no recipe");
             const auto absolute = std::filesystem::absolute(std::filesystem::u8path(infoFile)).lexically_normal().u8string();
             if (rasterPath(absolute)) {
+#if defined(__APPLE__)
+                if (hdrCandidatePath(absolute)) {
+                    auto hdr=hdrInitial<sony2fuji_hdr_source_info_v1>();
+                    auto diagnostic=hdrInitial<sony2fuji_hdr_diagnostic_v1>();
+                    const auto status=sony2fuji_hdr_probe(absolute.c_str(),&hdr,&diagnostic);
+                    if (status==SONY2FUJI_STATUS_OK) {
+                        static const char hex[]="0123456789abcdef";
+                        std::string sha; sha.reserve(64);
+                        for (uint8_t byte:hdr.source_sha256) { sha.push_back(hex[byte>>4]); sha.push_back(hex[byte&15]); }
+                        Json result={{"input_path",absolute},{"input_type","hdr_raster"},
+                            {"identified_size",{{"width",hdr.width},{"height",hdr.height},{"orientation",hdr.orientation}}},
+                            {"rendered_size",nullptr},{"color_space","extended_linear_srgb"},{"bits_per_component",32},
+                            {"hdr_protocol",hdr.protocol},{"content_headroom",hdr.content_headroom},
+                            {"headroom_kind",hdr.headroom_kind},{"source_sha256",sha},
+                            {"camera",nullptr},{"lens",nullptr},{"capture",nullptr},{"as_shot_white_balance",nullptr}};
+                        std::cout<<machineJson(envelope(command,result))<<'\n'; return 0;
+                    }
+                    if (diagnostic.reason!=SONY2FUJI_HDR_REASON_NOT_HDR)
+                        return fail(statusCode(status),"HDR input rejected; diagnostic reason="+std::to_string(diagnostic.reason),status);
+                }
+#endif
                 sony2fuji_buffer image{};
                 const auto status = sony2fuji_load_display_image(absolute.c_str(), &image);
                 if (status != SONY2FUJI_STATUS_OK)
@@ -188,6 +277,8 @@ int runAgentCommands(int argc, char* argv[]) {
         EditRecipe recipe;
         std::string error;
         if (!parseEditRecipe(document, recipe, error)) return fail("invalid_recipe", error);
+        if (recipe.hdr && !hdrAvailable()) return fail("unsupported","HDR requires macOS15/iOS18",SONY2FUJI_STATUS_UNSUPPORTED);
+        if (recipe.hdr && !lensDatabase.empty()) return fail("invalid_argument","HDR recipes do not support --lens-database");
         if (printRecipe) {
             const auto normalized = serializeEditRecipe(recipe);
             std::cout << (jsonOutput ? machineJson(envelope(command, Json::parse(normalized))) + "\n" : normalized);
@@ -219,7 +310,11 @@ int runAgentCommands(int argc, char* argv[]) {
             return fail("invalid_argument", "Output must not overwrite the look", SONY2FUJI_STATUS_INVALID_ARGUMENT);
         sony2fuji_status status;
         Json lensResult = nullptr;
-        {
+        HDRCommandResult hdrResult;
+        if (recipe.hdr) {
+            DiagnosticsToStderr diagnostics;
+            hdrResult=renderHDR(recipe,preview); status=hdrResult.status;
+        } else {
             DiagnosticsToStderr diagnostics;
             sony2fuji_session* pointer = nullptr;
             status = sony2fuji_session_create(&pointer);
@@ -285,8 +380,13 @@ int runAgentCommands(int argc, char* argv[]) {
                 }
             }
         }
-        if (status != SONY2FUJI_STATUS_OK) return fail(statusCode(status), sony2fuji_status_message(status), status);
-        Json result = {{"output_path", recipe.outputPath}, {"format", formatName(recipe.outputFormat)}};
+        if (status != SONY2FUJI_STATUS_OK) return fail(statusCode(status), recipe.hdr ?
+            "HDR processing failed; diagnostic reason="+std::to_string(hdrResult.diagnostic.reason) : sony2fuji_status_message(status),status);
+        Json result = {{"output_path", recipe.outputPath}, {"format", recipe.hdr && !preview ? "hdr_jpeg" : formatName(recipe.outputFormat)}};
+        if (recipe.hdr) {
+            result["source_headroom"]=hdrResult.sourceHeadroom; result["edited_headroom"]=hdrResult.editedHeadroom;
+            if (preview) result["rendition"]="sdr";
+        }
         if (!lensResult.is_null()) result["lens_correction"] = std::move(lensResult);
         if (preview) {
             // Use exact FINAL + no-upscale sizing, so the preview is the final

@@ -87,15 +87,14 @@ struct AdjustmentControl: View {
                 }
                 .padding(.horizontal, 8)
                 .background(Color(.tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 6))
-            } else if dynamicTypeSize.isAccessibilitySize {
+            } else {
                 VStack(spacing: 4) {
                     HStack(spacing: 8) { titleLabel; Spacer(minLength: 8); valueAndUnit }
-                    ruler.frame(height: 76)
+                    ruler.frame(height: rulerHeight)
                 }
-            } else {
-                HStack(spacing: 8) { titleLabel; ruler.frame(minWidth: 56, maxWidth: .infinity).frame(height: 44); valueAndUnit }
             }
         }
+        .frame(maxWidth: .infinity)
         .onChange(of: inputContext.id) { _, _ in cancelInput() }
         .onChange(of: value) { _, next in if showingWheel && next != wheelOriginal { cancelInput() } }
         .onDisappear { cancelInput() }
@@ -109,6 +108,12 @@ struct AdjustmentControl: View {
             .accessibilityAction(named: L10n.text("恢复默认"), reset)
             .accessibilityHint(voiceOver ? help : help + " " + L10n.text("双击名称或轨道恢复默认值。"))
             .accessibilityIdentifier("\(identifier).title")
+    }
+
+    private var rulerHeight: CGFloat {
+        guard dynamicTypeSize.isAccessibilitySize else { return 44 }
+        // 原生标尺的刻度文字从 y=47 开始绘制，辅助字号需要容纳完整行高。
+        return max(76, 47 + ceil(UIFont.preferredFont(forTextStyle: .caption2).lineHeight))
     }
 
     private var ruler: some View {
@@ -136,6 +141,7 @@ struct AdjustmentControl: View {
         } label: {
             Text(number(value)).font(.body.weight(.semibold)).monospacedDigit()
                 .fixedSize(horizontal: true, vertical: false).frame(minWidth: 44, minHeight: 44)
+                .frame(width: compactNumber ? nil : stableValueWidth)
                 .foregroundStyle(modified ? Color.yellow : Color.primary)
                 .overlay(alignment: .bottom) { if modified { Circle().fill(.yellow).frame(width: 4, height: 4) } }
         }
@@ -154,6 +160,23 @@ struct AdjustmentControl: View {
         .accessibilityAction(named: L10n.text("恢复默认"), reset)
         .sheet(isPresented: wheelSheetPresented) { wheelEditor }
         .popover(isPresented: wheelPopoverPresented) { wheelEditor }
+    }
+
+    private var stableValueWidth: CGFloat {
+        let font = UIFont.monospacedDigitSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .body).pointSize, weight: .semibold)
+        let format = NumberFormatter()
+        format.locale = L10n.locale
+        format.numberStyle = .decimal
+        format.usesGroupingSeparator = false
+        format.minimumFractionDigits = 2
+        format.maximumFractionDigits = 2
+        if number(range.upperBound).hasPrefix("+") { format.positivePrefix = "+" }
+        // 保留范围内完整数字及历史小数的空间，避免符号或位数变化挤动名称和标尺。
+        let widths = [range.lowerBound, range.upperBound].map { bound in
+            let text = format.string(from: NSNumber(value: bound * displayScale)) ?? number(bound)
+            return (text as NSString).size(withAttributes: [.font: font]).width
+        }
+        return max(44, ceil(widths.max() ?? 0))
     }
 
     private var wheelSheetPresented: Binding<Bool> {

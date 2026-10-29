@@ -7,15 +7,6 @@ extension ContentView {
         return max(44, UIFont.preferredFont(forTextStyle: .body).lineHeight + 16)
     }
 
-    func stacksToolHeader(width: CGFloat, accessibility: Bool) -> Bool {
-        let font = UIFont.preferredFont(forTextStyle: .subheadline)
-        let longest = EditorAdjustmentRules.tools(selectedGroup).map {
-            ($0.title as NSString).size(withAttributes: [.font: font]).width
-        }.max() ?? 0
-        let fine = (L10n.text("精细") as NSString).size(withAttributes: [.font: UIFont.preferredFont(forTextStyle: .caption1)]).width
-        return accessibility || width < longest + 55 + 24 + fine + 51 + 44 + 24
-    }
-
     func editorToolRowHeight(width: CGFloat, accessibility: Bool) -> CGFloat {
         guard accessibility else { return editorToolHeight }
         let font = UIFont.preferredFont(forTextStyle: .body)
@@ -28,8 +19,7 @@ extension ContentView {
     }
 
     private func editorToolStripHeight(width: CGFloat, accessibility: Bool) -> CGFloat {
-        editorToolRowHeight(width: width, accessibility: accessibility) +
-            (stacksToolHeader(width: width, accessibility: accessibility) ? editorToolHeight : 0)
+        editorToolRowHeight(width: width, accessibility: accessibility) + editorToolHeight
     }
 
     var groupNavigationButtonWidth: CGFloat {
@@ -104,12 +94,18 @@ extension ContentView {
                                     if scrollTools { toolStrip(width: side ? sideWidth : size.width, accessibility: accessibility); Divider() }
                                     adjustmentPanel
                                 }
+                                .frame(maxWidth: .infinity)
+                                .onGeometryChange(for: CGFloat.self) { ceil($0.size.height) } action: { parameterContentHeight = $0 }
                             }
                                 .id("\(currentEditorTool.stableID).\(geometryPerspective)")
                                 .accessibilityIdentifier("editor.panel")
                             if geometrySelected || lensSelected {
-                                Divider()
-                                editorDraftActions.disabled(resetDraftSuspended).padding(.horizontal, 16).padding(.vertical, scrollTools ? 4 : 8)
+                                VStack(spacing: 0) {
+                                    Divider()
+                                    editorDraftActions.disabled(resetDraftSuspended).padding(.horizontal, 16).padding(.vertical, scrollTools ? 4 : 8)
+                                }
+                                .fixedSize(horizontal: false, vertical: true)
+                                .onGeometryChange(for: CGFloat.self) { ceil($0.size.height) } action: { parameterActionsHeight = $0 }
                             }
                         }
                         .frame(height: side ? nil : adjustmentRegionHeight(size: size, accessibility: accessibility))
@@ -139,6 +135,9 @@ extension ContentView {
         let available = max(0, size.height - (scrollTools ? 0 : editorToolStripHeight(width: size.width, accessibility: accessibility)) - navigationHeight - 3)
         // 即使工具与参数一起滚动，也保留 44pt 照片叠层触点及上下留白。
         let photoSpace = min(scrollTools ? 68 : 96, available)
-        return min(preferred, max(0, available - photoSpace))
+        let maximum = min(preferred, max(0, available - photoSpace))
+        // 只测量滚动内容的自然高度；底栏收紧不改变侧栏预算和草稿操作可达性。
+        let content = parameterContentHeight + ((geometrySelected || lensSelected) ? parameterActionsHeight : 0)
+        return parameterContentHeight > 0 ? min(maximum, content) : maximum
     }
 }

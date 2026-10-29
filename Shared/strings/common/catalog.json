@@ -5814,5 +5814,869 @@
     "fr": "Mac nécessite une app de même architecture avec une identité de signature correspondante. Windows nécessite une installation Setup x64 par utilisateur. Pour une ancienne version ZIP, installez d’abord une version compatible avec les mises à jour depuis la page officielle.",
     "ja": "Macでは同じアーキテクチャと一致する署名IDのアプリが必要です。Windowsではx64のユーザー単位Setupインストールが必要です。旧ZIP版は、公式リリースページから更新対応版を先にインストールしてください。",
     "zh-Hans": "Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。"
+  },
+  "HDR JPEG": {
+    "de": "HDR-JPEG",
+    "en": "HDR JPEG",
+    "es": "JPEG HDR",
+    "fr": "JPEG HDR",
+    "ja": "HDR JPEG",
+    "zh-Hans": "HDR JPEG"
+  },
+  "HDR JPEG 需要启用 HDR 编辑。": {
+    "de": "Für HDR-JPEG muss die HDR-Bearbeitung aktiviert sein.",
+    "en": "Enable HDR Editing to export HDR JPEG.",
+    "es": "Activa la edición HDR para exportar JPEG HDR.",
+    "fr": "Activez l’édition HDR pour exporter en JPEG HDR.",
+    "ja": "HDR JPEG の書き出しには HDR 編集を有効にしてください。",
+    "zh-Hans": "HDR JPEG 需要启用 HDR 编辑。"
+  },
+  "HDR 亮度直方图": {
+    "de": "HDR-Luminanzhistogramm",
+    "en": "HDR Luminance Histogram",
+    "es": "Histograma de luminancia HDR",
+    "fr": "Histogramme de luminance HDR",
+    "ja": "HDR 輝度ヒストグラム",
+    "zh-Hans": "HDR 亮度直方图"
+  },
+  "HDR 假色": {
+    "de": "HDR-Falschfarben",
+    "en": "HDR False Color",
+    "es": "Falso color HDR",
+    "fr": "Fausses couleurs HDR",
+    "ja": "HDR フォールスカラー",
+    "zh-Hans": "HDR 假色"
+  },
+  "HDR 增益图损坏，无法还原此照片。": {
+    "de": "Die HDR-Gain-Map ist beschädigt. Das Foto kann nicht rekonstruiert werden.",
+    "en": "The HDR gain map is damaged. This photo cannot be reconstructed.",
+    "es": "El mapa de ganancia HDR está dañado. No se puede reconstruir esta foto.",
+    "fr": "La carte de gain HDR est endommagée. Impossible de reconstruire cette photo.",
+    "ja": "HDR ゲインマップが破損しているため、この写真を復元できません。",
+    "zh-Hans": "HDR 增益图损坏，无法还原此照片。"
+  },
+  "HDR 处理失败（{0}）。": {
+    "de": "HDR-Verarbeitung fehlgeschlagen ({0}).",
+    "en": "HDR processing failed ({0}).",
+    "es": "Error de procesamiento HDR ({0}).",
+    "fr": "Échec du traitement HDR ({0}).",
+    "ja": "HDR 処理に失敗しました（{0}）。",
+    "zh-Hans": "HDR 处理失败（{0}）。"
+  },
+  "HDR 显示不可用，当前显示 SDR。": {
+    "de": "HDR-Anzeige nicht verfügbar. SDR wird angezeigt.",
+    "en": "HDR display is unavailable. Showing SDR.",
+    "es": "La visualización HDR no está disponible. Se muestra SDR.",
+    "fr": "Affichage HDR indisponible. Affichage en SDR.",
+    "ja": "HDR 表示を利用できないため、SDR で表示しています。",
+    "zh-Hans": "HDR 显示不可用，当前显示 SDR。"
+  },
+  "HDR 照片需要 macOS 15 或 iOS 18 及以上版本。": {
+    "de": "HDR-Fotos erfordern macOS 15 oder iOS 18 oder neuer.",
+    "en": "HDR photos require macOS 15 or iOS 18 or later.",
+    "es": "Las fotos HDR requieren macOS 15 o iOS 18 o posterior.",
+    "fr": "Les photos HDR nécessitent macOS 15 ou iOS 18 ou ultérieur.",
+    "ja": "HDR 写真には macOS 15 または iOS 18 以降が必要です。",
+    "zh-Hans": "HDR 照片需要 macOS 15 或 iOS 18 及以上版本。"
+  },
+  "HDR 编辑": {
+    "de": "HDR-Bearbeitung",
+    "en": "HDR Editing",
+    "es": "Edición HDR",
+    "fr": "Édition HDR",
+    "ja": "HDR 編集",
+    "zh-Hans": "HDR 编辑"
+  },
+  "HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。": {
+    "de": "Die HDR-Bearbeitung nutzt derzeit die CPU. Stellen Sie den GPU-Modus auf Automatisch oder Aus.",
+    "en": "HDR editing currently uses the CPU. Set GPU mode to Auto or Off.",
+    "es": "La edición HDR usa actualmente la CPU. Configura la GPU en Automático o Desactivado.",
+    "fr": "L’édition HDR utilise actuellement le CPU. Réglez le GPU sur Auto ou Désactivé.",
+    "ja": "HDR 編集では現在 CPU を使用します。GPU モードを自動またはオフにしてください。",
+    "zh-Hans": "HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。"
+  },
+  "SDR 兼容预览": {
+    "de": "SDR-Kompatibilitätsvorschau",
+    "en": "SDR Compatibility Preview",
+    "es": "Vista previa compatible con SDR",
+    "fr": "Aperçu compatible SDR",
+    "ja": "SDR 互換プレビュー",
+    "zh-Hans": "SDR 兼容预览"
+  },
+  "不支持此 HDR 格式或颜色描述。": {
+    "de": "Dieses HDR-Format oder diese Farbbeschreibung wird nicht unterstützt.",
+    "en": "This HDR format or color description is not supported.",
+    "es": "Este formato HDR o descripción de color no es compatible.",
+    "fr": "Ce format HDR ou cette description colorimétrique n’est pas pris en charge.",
+    "ja": "この HDR 形式または色の記述には対応していません。",
+    "zh-Hans": "不支持此 HDR 格式或颜色描述。"
+  },
+  "内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。": {
+    "de": "Nicht genügend Speicher für dieses HDR-Foto in voller Auflösung. Schließen Sie andere Fotos und versuchen Sie es erneut.",
+    "en": "Not enough memory to process this HDR photo at full resolution. Close other photos and try again.",
+    "es": "No hay memoria suficiente para procesar esta foto HDR a resolución completa. Cierra otras fotos y vuelve a intentarlo.",
+    "fr": "Mémoire insuffisante pour traiter cette photo HDR en pleine résolution. Fermez les autres photos et réessayez.",
+    "ja": "この HDR 写真をフル解像度で処理するためのメモリが不足しています。他の写真を閉じて再試行してください。",
+    "zh-Hans": "内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。"
+  },
+  "内容容量 {0} EV": {
+    "de": "Inhaltsspielraum {0} EV",
+    "en": "Content Headroom {0} EV",
+    "es": "Margen de la imagen {0} EV",
+    "fr": "Marge du contenu {0} EV",
+    "ja": "画像のヘッドルーム {0} EV",
+    "zh-Hans": "内容容量 {0} EV"
+  },
+  "原始照片已变化，请重新导入。": {
+    "de": "Das Originalfoto wurde geändert. Importieren Sie es erneut.",
+    "en": "The original photo has changed. Import it again.",
+    "es": "La foto original ha cambiado. Impórtala de nuevo.",
+    "fr": "La photo d’origine a changé. Importez-la à nouveau.",
+    "ja": "元の写真が変更されています。再度読み込んでください。",
+    "zh-Hans": "原始照片已变化，请重新导入。"
+  },
+  "参考白以上 {0}": {
+    "de": "Über Referenzweiß {0}",
+    "en": "Above Reference White {0}",
+    "es": "Por encima del blanco de referencia {0}",
+    "fr": "Au-dessus du blanc de référence {0}",
+    "ja": "基準白を超える割合 {0}",
+    "zh-Hans": "参考白以上 {0}"
+  },
+  "导出不能覆盖原始照片。请选择其他文件。": {
+    "de": "Der Export darf das Originalfoto nicht überschreiben. Wählen Sie eine andere Datei.",
+    "en": "Export cannot overwrite the original photo. Choose another file.",
+    "es": "La exportación no puede sobrescribir la foto original. Elige otro archivo.",
+    "fr": "L’export ne peut pas écraser la photo d’origine. Choisissez un autre fichier.",
+    "ja": "書き出しで元の写真を上書きできません。別のファイルを選択してください。",
+    "zh-Hans": "导出不能覆盖原始照片。请选择其他文件。"
+  },
+  "屏幕容量 {0} EV": {
+    "de": "Display-Spielraum {0} EV",
+    "en": "Display Headroom {0} EV",
+    "es": "Margen de pantalla {0} EV",
+    "fr": "Marge de l’écran {0} EV",
+    "ja": "ディスプレイのヘッドルーム {0} EV",
+    "zh-Hans": "屏幕容量 {0} EV"
+  },
+  "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。": {
+    "de": "Die SDR-Bearbeitung nutzt noch nicht von HDR unterstützte Werkzeuge. Setzen Sie diese vor dem Aktivieren von HDR zurück.",
+    "en": "The SDR edits use tools that HDR does not support yet. Reset those tools before enabling HDR.",
+    "es": "Los ajustes SDR usan herramientas aún no compatibles con HDR. Restablécelas antes de activar HDR.",
+    "fr": "Les réglages SDR utilisent des outils encore incompatibles avec le HDR. Réinitialisez-les avant d’activer le HDR.",
+    "ja": "SDR の調整に HDR 未対応のツールが含まれています。該当するツールをリセットしてから HDR を有効にしてください。",
+    "zh-Hans": "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。"
+  },
+  "无法写入 HDR 导出文件，请检查可用空间和目标权限。": {
+    "de": "Der HDR-Export kann nicht geschrieben werden. Prüfen Sie freien Speicher und Zielberechtigungen.",
+    "en": "Cannot write the HDR export. Check free space and destination permissions.",
+    "es": "No se puede escribir la exportación HDR. Comprueba el espacio libre y los permisos del destino.",
+    "fr": "Impossible d’écrire l’export HDR. Vérifiez l’espace disponible et les autorisations.",
+    "ja": "HDR ファイルを書き込めません。空き容量と保存先のアクセス権を確認してください。",
+    "zh-Hans": "无法写入 HDR 导出文件，请检查可用空间和目标权限。"
+  },
+  "此照片没有可编辑的 HDR 增益图。": {
+    "de": "Dieses Foto hat keine bearbeitbare HDR-Gain-Map.",
+    "en": "This photo has no editable HDR gain map.",
+    "es": "Esta foto no contiene un mapa de ganancia HDR editable.",
+    "fr": "Cette photo ne contient pas de carte de gain HDR modifiable.",
+    "ja": "この写真に編集可能な HDR ゲインマップはありません。",
+    "zh-Hans": "此照片没有可编辑的 HDR 增益图。"
+  },
+  "相对白平衡": {
+    "de": "Relativer Weißabgleich",
+    "en": "Relative White Balance",
+    "es": "Balance de blancos relativo",
+    "fr": "Balance des blancs relative",
+    "ja": "相対ホワイトバランス",
+    "zh-Hans": "相对白平衡"
+  },
+  "自动 HDR": {
+    "de": "Automatisches HDR",
+    "en": "Automatic HDR",
+    "es": "HDR automático",
+    "fr": "HDR automatique",
+    "ja": "自動 HDR",
+    "zh-Hans": "自动 HDR"
+  },
+  "预览不能用于导出，请从原始照片重新生成。": {
+    "de": "Eine Vorschau kann nicht exportiert werden. Rendern Sie erneut aus dem Originalfoto.",
+    "en": "A preview cannot be exported. Render again from the original photo.",
+    "es": "Una vista previa no se puede exportar. Genera otra vez desde la foto original.",
+    "fr": "Un aperçu ne peut pas être exporté. Effectuez un nouveau rendu depuis l’original.",
+    "ja": "プレビューは書き出しに使用できません。元の写真から再生成してください。",
+    "zh-Hans": "预览不能用于导出，请从原始照片重新生成。"
+  },
+  "预览方式": {
+    "de": "Vorschaumodus",
+    "en": "Preview Mode",
+    "es": "Modo de vista previa",
+    "fr": "Mode aperçu",
+    "ja": "プレビューモード",
+    "zh-Hans": "预览方式"
+  },
+  "预览方式不会改变编辑或导出。": {
+    "de": "Der Vorschaumodus ändert weder Bearbeitung noch Export.",
+    "en": "Preview mode does not change edits or exports.",
+    "es": "El modo de vista previa no cambia los ajustes ni la exportación.",
+    "fr": "Le mode aperçu ne modifie ni les réglages ni l’export.",
+    "ja": "プレビューモードは編集や書き出しに影響しません。",
+    "zh-Hans": "预览方式不会改变编辑或导出。"
+  },
+  "当前显示 SDR 兼容预览。": {
+    "de": "Die SDR-kompatible Vorschau wird angezeigt.",
+    "en": "Showing the SDR-compatible preview.",
+    "es": "Se muestra la vista previa compatible con SDR.",
+    "fr": "L’aperçu compatible SDR est affiché.",
+    "ja": "SDR 互換プレビューを表示しています。",
+    "zh-Hans": "当前显示 SDR 兼容预览。"
+  },
+  "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。": {
+    "de": "Falschfarben: Blau für Schatten, Bernstein über Referenzweiß, Pink über der Displaykapazität.",
+    "en": "False color: blue for shadows, amber above reference white, pink beyond display capacity.",
+    "es": "Color falso: azul en sombras, ámbar sobre el blanco de referencia, rosa sobre la capacidad de la pantalla.",
+    "fr": "Fausses couleurs : bleu pour les ombres, ambre au-dessus du blanc de référence, rose au-delà de la capacité de l’écran.",
+    "ja": "疑似カラー：青は暗部、琥珀色は基準白以上、ピンクは画面の容量超過です。",
+    "zh-Hans": "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。"
+  },
+  "LUT 文件已变化或兼容配置无效，请重新导入并确认。": {
+    "zh-Hans": "LUT 文件已变化或兼容配置无效，请重新导入并确认。",
+    "en": "The LUT changed or its compatibility settings are invalid. Import it again and confirm the settings.",
+    "de": "Die LUT-Datei wurde geändert oder die Kompatibilitätseinstellungen sind ungültig. Importieren Sie sie erneut und bestätigen Sie die Einstellungen.",
+    "es": "El LUT ha cambiado o sus ajustes de compatibilidad no son válidos. Vuelve a importarlo y confirma los ajustes.",
+    "fr": "La LUT a changé ou ses réglages de compatibilité sont invalides. Réimportez-la et confirmez les réglages.",
+    "ja": "LUT ファイルが変更されたか、互換設定が無効です。再度読み込み、設定を確認してください。"
+  },
+  "LUT 的颜色空间或基础风格暂不支持，未导入。不会自动替换为中性显影。": {
+    "de": "Der Farbraum oder Basisstil der LUT wird nicht unterstützt. Sie wurde nicht importiert und nicht durch eine neutrale Entwicklung ersetzt.",
+    "en": "The LUT’s color space or base style is not supported, so it was not imported. Neutral rendering will not be substituted.",
+    "es": "El espacio de color o estilo base de la LUT no es compatible. No se importó ni se sustituirá por un revelado neutro.",
+    "fr": "L’espace colorimétrique ou le style de base de la LUT n’est pas pris en charge. Elle n’a pas été importée. Aucun rendu neutre ne sera substitué.",
+    "ja": "LUT の色空間またはベーススタイルは未対応のため、読み込めませんでした。ニュートラル現像への自動置換は行いません。",
+    "zh-Hans": "LUT 的颜色空间或基础风格暂不支持，未导入。不会自动替换为中性显影。"
+  },
+  "LUT 缺少输入或输出颜色信息，未导入。请提供作者的颜色说明。": {
+    "de": "Der LUT fehlen Eingangs- oder Ausgangsfarbangaben. Sie wurde nicht importiert. Bitte die Farbspezifikation des Autors angeben.",
+    "en": "The LUT is missing input or output color information and was not imported. Provide the author’s color specification.",
+    "es": "Falta información de color de entrada o salida. La LUT no se importó. Proporciona las especificaciones del autor.",
+    "fr": "Les informations colorimétriques d’entrée ou de sortie manquent. La LUT n’a pas été importée. Fournissez les spécifications de l’auteur.",
+    "ja": "入力または出力の色情報がないため、LUT を読み込めませんでした。作者の色仕様を用意してください。",
+    "zh-Hans": "LUT 缺少输入或输出颜色信息，未导入。请提供作者的颜色说明。"
+  },
+  "LUT 缺少颜色配置的参考依据，未导入。请提供来源和使用条件。": {
+    "de": "Für die Farbkonfiguration der LUT fehlt ein Nachweis. Sie wurde nicht importiert. Bitte Quelle und Einsatzbedingungen angeben.",
+    "en": "The LUT has no reference for its color configuration and was not imported. Provide the source and usage conditions.",
+    "es": "La configuración de color de la LUT no tiene una referencia y no se importó. Proporciona la fuente y las condiciones de uso.",
+    "fr": "La configuration colorimétrique de la LUT n’a pas de référence. Elle n’a pas été importée. Précisez la source et les conditions d’utilisation.",
+    "ja": "色設定の根拠がないため、LUT を読み込めませんでした。出典と使用条件を用意してください。",
+    "zh-Hans": "LUT 缺少颜色配置的参考依据，未导入。请提供来源和使用条件。"
+  },
+  "LUT 颜色说明无效或互相冲突，未导入。请核对来源。": {
+    "de": "Die Farbangaben der LUT sind ungültig oder widersprüchlich. Sie wurde nicht importiert. Bitte die Quelle prüfen.",
+    "en": "The LUT’s color specifications are invalid or conflicting. It was not imported. Check the source.",
+    "es": "Las especificaciones de color de la LUT son inválidas o contradictorias. No se importó. Comprueba la fuente.",
+    "fr": "Les spécifications colorimétriques de la LUT sont invalides ou contradictoires. Elle n’a pas été importée. Vérifiez la source.",
+    "ja": "LUT の色仕様が無効または矛盾しているため、読み込めませんでした。出典を確認してください。",
+    "zh-Hans": "LUT 颜色说明无效或互相冲突，未导入。请核对来源。"
+  },
+  "RawLab 中性显影（近似）": {
+    "zh-Hans": "RawLab 中性显影（近似）",
+    "en": "RawLab neutral rendering (approximate)",
+    "de": "RawLab-Neutralentwicklung (angenähert)",
+    "es": "Revelado neutro de RawLab (aproximado)",
+    "fr": "Développement neutre RawLab (approché)",
+    "ja": "RawLab のニュートラル現像（近似）"
+  },
+  "三线性": {
+    "zh-Hans": "三线性",
+    "en": "Trilinear",
+    "de": "Trilinear",
+    "es": "Trilineal",
+    "fr": "Trilinéaire",
+    "ja": "三線形"
+  },
+  "仅用于已显影且基础风格匹配的照片，不能直接用于 RAW。": {
+    "zh-Hans": "仅用于已显影且基础风格匹配的照片，不能直接用于 RAW。",
+    "en": "Only for rendered photos with the matching base style. Cannot be applied directly to RAW.",
+    "de": "Nur für entwickelte Fotos mit passendem Basisstil. Nicht direkt auf RAW anwendbar.",
+    "es": "Solo para fotos reveladas con el estilo base adecuado. No se aplica directamente a RAW.",
+    "fr": "Réservé aux photos développées avec le style de base correspondant. Non applicable directement aux RAW.",
+    "ja": "ベーススタイルが一致する現像済み写真専用です。RAW には直接適用できません。"
+  },
+  "使用 RawLab 中性显影作为基础，不代表还原了相机的标准风格。": {
+    "zh-Hans": "使用 RawLab 中性显影作为基础，不代表还原了相机的标准风格。",
+    "en": "Uses RawLab neutral rendering as the base. This does not reproduce the camera’s Standard style.",
+    "de": "Verwendet RawLabs neutrale Entwicklung als Basis. Dies bildet den Standardstil der Kamera nicht nach.",
+    "es": "Usa el revelado neutro de RawLab como base. No reproduce el estilo estándar de la cámara.",
+    "fr": "Utilise le développement neutre de RawLab comme base, sans reproduire le style Standard de l’appareil.",
+    "ja": "RawLab のニュートラル現像をベースにします。カメラの標準スタイルの再現ではありません。"
+  },
+  "依据部分文件线索 · 仍有假设": {
+    "en": "Partial file clues · Assumptions remain",
+    "de": "Teilweise Dateihinweise · Annahmen bleiben bestehen",
+    "es": "Indicios parciales del archivo · Aún hay hipótesis",
+    "fr": "Indices partiels du fichier · Des hypothèses subsistent",
+    "ja": "ファイルの一部の手がかり · 推測を含む",
+    "zh-Hans": "依据部分文件线索 · 仍有假设"
+  },
+  "候选效果": {
+    "en": "Candidate results",
+    "de": "Kandidatenergebnisse",
+    "es": "Resultados candidatos",
+    "fr": "Résultats proposés",
+    "ja": "候補の結果",
+    "zh-Hans": "候选效果"
+  },
+  "先比较候选效果，再选择导入。候选包含推测，不能证明已还原作者效果。": {
+    "en": "Compare candidate results before importing. Candidates include assumptions and do not prove that the author's look has been reproduced.",
+    "de": "Vergleichen Sie die Kandidatenergebnisse vor dem Import. Sie enthalten Annahmen und belegen nicht, dass der Look des Autors reproduziert wurde.",
+    "es": "Compara los resultados candidatos antes de importarlos. Incluyen hipótesis y no demuestran que se haya reproducido el aspecto del autor.",
+    "fr": "Comparez les résultats proposés avant l’importation. Ils reposent sur des hypothèses et ne prouvent pas que le rendu de l’auteur a été reproduit.",
+    "ja": "読み込む前に候補の結果を比較してください。候補には推測が含まれ、作者のルックを再現できた証明にはなりません。",
+    "zh-Hans": "先比较候选效果，再选择导入。候选包含推测，不能证明已还原作者效果。"
+  },
+  "兼容导入": {
+    "zh-Hans": "兼容导入",
+    "en": "Compatibility import",
+    "de": "Kompatibilitätsimport",
+    "es": "Importación compatible",
+    "fr": "Importation compatible",
+    "ja": "互換モードで読み込み"
+  },
+  "兼容导入 · 未验证": {
+    "zh-Hans": "兼容导入 · 未验证",
+    "en": "Compatible · Unverified",
+    "de": "Kompatibel · Ungeprüft",
+    "es": "Compatible · Sin verificar",
+    "fr": "Compatible · Non vérifié",
+    "ja": "互換 · 未検証"
+  },
+  "参考图": {
+    "en": "Reference image",
+    "de": "Referenzbild",
+    "es": "Imagen de referencia",
+    "fr": "Image de référence",
+    "ja": "参照画像",
+    "zh-Hans": "参考图"
+  },
+  "参考图与预览的比例或尺寸不一致，仅可目视比较。": {
+    "en": "The reference and preview have different proportions or dimensions; visual comparison only.",
+    "de": "Referenz und Vorschau haben unterschiedliche Proportionen oder Abmessungen; nur ein visueller Vergleich ist möglich.",
+    "es": "La referencia y la vista previa tienen proporciones o dimensiones distintas; solo es posible una comparación visual.",
+    "fr": "La référence et l’aperçu ont des proportions ou dimensions différentes ; seule une comparaison visuelle est possible.",
+    "ja": "参照画像とプレビューの比率またはサイズが異なるため、目視比較のみ可能です。",
+    "zh-Hans": "参考图与预览的比例或尺寸不一致，仅可目视比较。"
+  },
+  "参考图来自同一张原图": {
+    "en": "Reference image comes from the same original",
+    "de": "Referenzbild stammt aus derselben Originalaufnahme",
+    "es": "La imagen de referencia procede del mismo original",
+    "fr": "L’image de référence provient du même original",
+    "ja": "参照画像は同じ元画像から作成",
+    "zh-Hans": "参考图来自同一张原图"
+  },
+  "参考来源、软件版本及处理条件": {
+    "en": "Reference source, software version, and processing conditions",
+    "de": "Referenzquelle, Softwareversion und Verarbeitungsbedingungen",
+    "es": "Fuente de referencia, versión del software y condiciones de procesamiento",
+    "fr": "Source de référence, version du logiciel et conditions de traitement",
+    "ja": "参照元、ソフトウェアのバージョン、処理条件",
+    "zh-Hans": "参考来源、软件版本及处理条件"
+  },
+  "参考输出为 sRGB，或已按正确配置转换为 sRGB": {
+    "en": "Reference output is sRGB or was converted to sRGB with the correct settings",
+    "de": "Die Referenzausgabe ist sRGB oder wurde mit den richtigen Einstellungen in sRGB konvertiert",
+    "es": "La salida de referencia es sRGB o se convirtió a sRGB con la configuración correcta",
+    "fr": "La sortie de référence est en sRGB ou a été convertie en sRGB avec la configuration correcte",
+    "ja": "参照出力が sRGB、または正しい設定で sRGB に変換済み",
+    "zh-Hans": "参考输出为 sRGB，或已按正确配置转换为 sRGB"
+  },
+  "可先目视比较。计算差异前，请核对以下条件；结果只描述此预览与参考的接近程度，不认证作者效果。": {
+    "en": "You can compare visually first. Before calculating differences, check the conditions below; the result describes only how close this preview is to the reference and does not certify the author's look.",
+    "de": "Vergleichen Sie zunächst visuell. Prüfen Sie vor der Differenzberechnung die folgenden Bedingungen. Das Ergebnis beschreibt nur die Nähe dieser Vorschau zur Referenz und bestätigt nicht den Look des Autors.",
+    "es": "Primero puedes comparar visualmente. Antes de calcular las diferencias, comprueba estas condiciones; el resultado solo describe cuánto se aproxima esta vista previa a la referencia y no certifica el aspecto del autor.",
+    "fr": "Vous pouvez d’abord comparer visuellement. Vérifiez les conditions ci-dessous avant de calculer les écarts ; le résultat décrit seulement la proximité de cet aperçu avec la référence et ne certifie pas le rendu de l’auteur.",
+    "ja": "まず目視で比較できます。差分を計算する前に以下の条件を確認してください。結果はこのプレビューと参照画像の近さだけを示し、作者のルックを保証するものではありません。",
+    "zh-Hans": "可先目视比较。计算差异前，请核对以下条件；结果只描述此预览与参考的接近程度，不认证作者效果。"
+  },
+  "四面体": {
+    "zh-Hans": "四面体",
+    "en": "Tetrahedral",
+    "de": "Tetraedrisch",
+    "es": "Tetraédrica",
+    "fr": "Tétraédrique",
+    "ja": "四面体"
+  },
+  "场景线性": {
+    "zh-Hans": "场景线性",
+    "en": "Scene linear",
+    "de": "Szenenlinear",
+    "es": "Lineal de escena",
+    "fr": "Linéaire de scène",
+    "ja": "シーンリニア"
+  },
+  "基础图像": {
+    "zh-Hans": "基础图像",
+    "en": "Base image",
+    "de": "Basisbild",
+    "es": "Imagen base",
+    "fr": "Image de base",
+    "ja": "ベース画像"
+  },
+  "基础显影、白平衡、曝光和 LUT 强度与上述预览条件一致": {
+    "en": "Base rendering, white balance, exposure, and LUT strength match the preview conditions above",
+    "de": "Basisentwicklung, Weißabgleich, Belichtung und LUT-Stärke entsprechen den obigen Vorschau-Bedingungen",
+    "es": "El revelado base, el balance de blancos, la exposición y la intensidad de la LUT coinciden con las condiciones de vista previa anteriores",
+    "fr": "Le rendu de base, la balance des blancs, l’exposition et l’intensité de la LUT correspondent aux conditions d’aperçu ci-dessus",
+    "ja": "ベース現像、ホワイトバランス、露出、LUT 強度が上記のプレビュー条件と一致",
+    "zh-Hans": "基础显影、白平衡、曝光和 LUT 强度与上述预览条件一致"
+  },
+  "外观名称": {
+    "de": "Look-Name",
+    "en": "Look name",
+    "es": "Nombre del look",
+    "fr": "Nom du look",
+    "ja": "ルック名",
+    "zh-Hans": "外观名称"
+  },
+  "完整范围": {
+    "zh-Hans": "完整范围",
+    "en": "Full range",
+    "de": "Vollbereich",
+    "es": "Rango completo",
+    "fr": "Plage complète",
+    "ja": "フルレンジ"
+  },
+  "对照参考图（可选）": {
+    "en": "Compare with a reference image (optional)",
+    "de": "Mit einem Referenzbild vergleichen (optional)",
+    "es": "Comparar con una imagen de referencia (opcional)",
+    "fr": "Comparer à une image de référence (facultatif)",
+    "ja": "参照画像と比較（任意）",
+    "zh-Hans": "对照参考图（可选）"
+  },
+  "已显影的照片（JPEG 等）": {
+    "zh-Hans": "已显影的照片（JPEG 等）",
+    "en": "Rendered photo (JPEG, etc.)",
+    "de": "Entwickeltes Foto (JPEG usw.)",
+    "es": "Foto revelada (JPEG, etc.)",
+    "fr": "Photo développée (JPEG, etc.)",
+    "ja": "現像済み写真（JPEG など）"
+  },
+  "已根据文件中的颜色线索预填部分配置，请核对。": {
+    "zh-Hans": "已根据文件中的颜色线索预填部分配置，请核对。",
+    "en": "Some settings were filled from color information in the file. Please check them.",
+    "de": "Einige Einstellungen wurden aus den Farbangaben der Datei übernommen. Bitte prüfen Sie diese.",
+    "es": "Se han rellenado algunos ajustes con la información de color del archivo. Revísalos.",
+    "fr": "Certains réglages proviennent des informations colorimétriques du fichier. Veuillez les vérifier.",
+    "ja": "ファイル内の色情報から一部の設定を入力しました。内容を確認してください。"
+  },
+  "平均差异 {0}/255 · 最大差异 {1}/255": {
+    "en": "Mean difference {0}/255 · Maximum difference {1}/255",
+    "de": "Mittlere Abweichung {0}/255 · Maximale Abweichung {1}/255",
+    "es": "Diferencia media {0}/255 · Diferencia máxima {1}/255",
+    "fr": "Écart moyen {0}/255 · Écart maximal {1}/255",
+    "ja": "平均差分 {0}/255 · 最大差分 {1}/255",
+    "zh-Hans": "平均差异 {0}/255 · 最大差异 {1}/255"
+  },
+  "所选方案": {
+    "en": "Selected option",
+    "de": "Ausgewählte Option",
+    "es": "Opción seleccionada",
+    "fr": "Option sélectionnée",
+    "ja": "選択した案",
+    "zh-Hans": "所选方案"
+  },
+  "按已确认条件比较缩小后的 sRGB 像素；差异越小表示越接近此参考，效果仍未验证。": {
+    "en": "Compares downscaled sRGB pixels under the confirmed conditions; a smaller difference means closer to this reference, but the appearance remains unverified.",
+    "de": "Vergleicht verkleinerte sRGB-Pixel unter den bestätigten Bedingungen. Eine kleinere Abweichung bedeutet größere Nähe zu dieser Referenz; der Look bleibt ungeprüft.",
+    "es": "Compara píxeles sRGB reducidos con las condiciones confirmadas; una diferencia menor indica mayor proximidad a esta referencia, pero el aspecto sigue sin verificarse.",
+    "fr": "Compare des pixels sRGB réduits selon les conditions confirmées ; un écart plus faible indique une plus grande proximité avec cette référence, mais le rendu reste non vérifié.",
+    "ja": "確認した条件で縮小後の sRGB ピクセルを比較します。差分が小さいほどこの参照に近いことを示しますが、効果は未検証です。",
+    "zh-Hans": "按已确认条件比较缩小后的 sRGB 像素；差异越小表示越接近此参考，效果仍未验证。"
+  },
+  "排列顺序不代表准确度。未识别的颜色空间、范围和基础图像仍属于假设。": {
+    "en": "Order does not indicate accuracy. Unidentified color spaces, ranges, and base images remain hypotheses.",
+    "de": "Die Reihenfolge sagt nichts über die Genauigkeit aus. Nicht erkannte Farbräume, Wertebereiche und Basisbilder bleiben Annahmen.",
+    "es": "El orden no indica precisión. Los espacios de color, rangos y bases de imagen no identificados siguen siendo hipótesis.",
+    "fr": "L’ordre n’indique pas la précision. Les espaces colorimétriques, plages et images de base non identifiés restent des hypothèses.",
+    "ja": "並び順は正確さを示しません。識別できない色空間、範囲、ベース画像は推測のままです。",
+    "zh-Hans": "排列顺序不代表准确度。未识别的颜色空间、范围和基础图像仍属于假设。"
+  },
+  "插值方式": {
+    "zh-Hans": "插值方式",
+    "en": "Interpolation",
+    "de": "Interpolation",
+    "es": "Interpolación",
+    "fr": "Interpolation",
+    "ja": "補間方式"
+  },
+  "收起其他方案": {
+    "en": "Hide other options",
+    "de": "Weitere Optionen ausblenden",
+    "es": "Ocultar otras opciones",
+    "fr": "Masquer les autres options",
+    "ja": "他の案を閉じる",
+    "zh-Hans": "收起其他方案"
+  },
+  "效果未验证": {
+    "de": "Bildwirkung ungeprüft",
+    "en": "Appearance unverified",
+    "es": "Aspecto sin verificar",
+    "fr": "Rendu non vérifié",
+    "ja": "仕上がり未検証",
+    "zh-Hans": "效果未验证"
+  },
+  "文件含极端数值，我理解可能出现截断或异常颜色。": {
+    "zh-Hans": "文件含极端数值，我理解可能出现截断或异常颜色。",
+    "en": "This file contains extreme values. I understand that clipping or unusual colors may occur.",
+    "de": "Diese Datei enthält extreme Werte. Mir ist bewusst, dass Clipping oder ungewöhnliche Farben auftreten können.",
+    "es": "El archivo contiene valores extremos. Entiendo que puede haber recorte o colores anómalos.",
+    "fr": "Ce fichier contient des valeurs extrêmes. Je comprends qu’un écrêtage ou des couleurs anormales sont possibles.",
+    "ja": "ファイルに極端な値が含まれています。クリッピングや異常な色が生じる可能性を理解しています。"
+  },
+  "文件已有参数 · 效果未验证": {
+    "en": "File parameters · Appearance unverified",
+    "de": "Dateiparameter · Wirkung ungeprüft",
+    "es": "Parámetros del archivo · Aspecto sin verificar",
+    "fr": "Paramètres du fichier · Rendu non vérifié",
+    "ja": "ファイルのパラメータ · 効果は未検証",
+    "zh-Hans": "文件已有参数 · 效果未验证"
+  },
+  "文件已有完整颜色参数，仅缺少参考依据；这些参数将原样保留。": {
+    "zh-Hans": "文件已有完整颜色参数，仅缺少参考依据；这些参数将原样保留。",
+    "en": "The file has complete color parameters but no reference evidence. Its parameters will be preserved.",
+    "de": "Die Farbparameter sind vollständig, aber es fehlen Referenznachweise. Die Parameter bleiben unverändert.",
+    "es": "El archivo tiene parámetros de color completos, pero carece de referencias. Se conservarán sus parámetros.",
+    "fr": "Les paramètres colorimétriques sont complets, mais sans référence. Ils seront conservés.",
+    "ja": "色パラメータは揃っていますが、参照情報がありません。パラメータはそのまま保持します。"
+  },
+  "方向、裁切和构图一致": {
+    "en": "Orientation, crop, and composition match",
+    "de": "Ausrichtung, Zuschnitt und Bildaufbau stimmen überein",
+    "es": "La orientación, el recorte y la composición coinciden",
+    "fr": "L’orientation, le recadrage et la composition correspondent",
+    "ja": "向き、トリミング、構図が一致",
+    "zh-Hans": "方向、裁切和构图一致"
+  },
+  "方案 {0}": {
+    "en": "Option {0}",
+    "de": "Option {0}",
+    "es": "Opción {0}",
+    "fr": "Option {0}",
+    "ja": "案 {0}",
+    "zh-Hans": "方案 {0}"
+  },
+  "无法生成预览，请检查照片、LUT 和颜色配置。": {
+    "en": "Unable to generate preview. Check the photo, LUT, and color settings.",
+    "de": "Vorschau konnte nicht erstellt werden. Prüfen Sie Foto, LUT und Farbeinstellungen.",
+    "es": "No se pudo generar la vista previa. Comprueba la foto, la LUT y los ajustes de color.",
+    "fr": "Impossible de générer l’aperçu. Vérifiez la photo, la LUT et les réglages colorimétriques.",
+    "ja": "プレビューを生成できません。写真、LUT、カラー設定を確認してください。",
+    "zh-Hans": "无法生成预览，请检查照片、LUT 和颜色配置。"
+  },
+  "显示图像": {
+    "de": "Anzeigebild",
+    "en": "Display image",
+    "es": "Imagen de pantalla",
+    "fr": "Image affichée",
+    "ja": "表示画像",
+    "zh-Hans": "显示图像"
+  },
+  "更换预览照片": {
+    "en": "Change preview photo",
+    "de": "Vorschaubild ändern",
+    "es": "Cambiar foto de vista previa",
+    "fr": "Changer la photo d’aperçu",
+    "ja": "プレビュー写真を変更",
+    "zh-Hans": "更换预览照片"
+  },
+  "未应用 LUT": {
+    "en": "LUT not applied",
+    "de": "LUT nicht angewendet",
+    "es": "LUT no aplicada",
+    "fr": "LUT non appliquée",
+    "ja": "LUT 未適用",
+    "zh-Hans": "未应用 LUT"
+  },
+  "查看其他方案（包括 Log 输入）": {
+    "en": "Show other options (including Log input)",
+    "de": "Weitere Optionen anzeigen (einschließlich Log-Eingang)",
+    "es": "Ver otras opciones (incluida la entrada Log)",
+    "fr": "Afficher les autres options (y compris l’entrée Log)",
+    "ja": "他の案を表示（Log 入力を含む）",
+    "zh-Hans": "查看其他方案（包括 Log 输入）"
+  },
+  "正在生成预览…": {
+    "en": "Generating previews…",
+    "de": "Vorschauen werden erstellt …",
+    "es": "Generando vistas previas…",
+    "fr": "Génération des aperçus…",
+    "ja": "プレビューを生成中…",
+    "zh-Hans": "正在生成预览…"
+  },
+  "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。": {
+    "zh-Hans": "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。",
+    "en": "This LUT lacks complete color information. Confirm how to apply it. It will be marked as compatible, with an unverified appearance.",
+    "de": "Dieser LUT fehlen vollständige Farbangaben. Bestätigen Sie die Verarbeitung. Er wird als kompatibel mit ungeprüftem Ergebnis markiert.",
+    "es": "Este LUT no tiene toda la información de color. Confirma cómo aplicarlo. Se marcará como compatible, con un resultado sin verificar.",
+    "fr": "Les informations colorimétriques de cette LUT sont incomplètes. Confirmez son traitement. Elle sera marquée comme compatible, avec un rendu non vérifié.",
+    "ja": "この LUT は色情報が不完全です。適用方法を確認してください。読み込み後は互換モードと表示され、色の再現性は未検証となります。"
+  },
+  "此配置与预览照片类型不匹配，请更换照片或配置。": {
+    "en": "These settings do not match the preview photo type. Choose another photo or configuration.",
+    "de": "Diese Einstellungen passen nicht zum Typ des Vorschaubilds. Wählen Sie ein anderes Foto oder eine andere Konfiguration.",
+    "es": "Esta configuración no coincide con el tipo de foto de vista previa. Elige otra foto o configuración.",
+    "fr": "Cette configuration ne correspond pas au type de photo d’aperçu. Choisissez une autre photo ou configuration.",
+    "ja": "この設定はプレビュー写真の種類に対応していません。別の写真または設定を選んでください。",
+    "zh-Hans": "此配置与预览照片类型不匹配，请更换照片或配置。"
+  },
+  "没有与此照片类型匹配的候选，请更换照片或检查高级设置。": {
+    "en": "No candidates match this photo type. Choose another photo or check Advanced settings.",
+    "de": "Keine Kandidaten passen zu diesem Fototyp. Wählen Sie ein anderes Foto oder prüfen Sie die erweiterten Einstellungen.",
+    "es": "Ningún candidato coincide con este tipo de foto. Elige otra foto o revisa los ajustes avanzados.",
+    "fr": "Aucun candidat ne correspond à ce type de photo. Choisissez une autre photo ou vérifiez les réglages avancés.",
+    "ja": "この写真の種類に合う候補がありません。別の写真を選ぶか、詳細な設定を確認してください。",
+    "zh-Hans": "没有与此照片类型匹配的候选，请更换照片或检查高级设置。"
+  },
+  "确认兼容导入": {
+    "zh-Hans": "确认兼容导入",
+    "en": "Import with these settings",
+    "de": "Mit diesen Einstellungen importieren",
+    "es": "Importar con estos ajustes",
+    "fr": "Importer avec ces réglages",
+    "ja": "この設定で読み込む"
+  },
+  "线性 sRGB": {
+    "zh-Hans": "线性 sRGB",
+    "en": "Linear sRGB",
+    "de": "Lineares sRGB",
+    "es": "sRGB lineal",
+    "fr": "sRGB linéaire",
+    "ja": "リニア sRGB"
+  },
+  "视频范围（10 位 64–940）": {
+    "zh-Hans": "视频范围（10 位 64–940）",
+    "en": "Video range (10-bit 64–940)",
+    "de": "Videobereich (10 Bit 64–940)",
+    "es": "Rango de vídeo (10 bits 64–940)",
+    "fr": "Plage vidéo (10 bits 64–940)",
+    "ja": "ビデオレンジ（10 ビット 64–940）"
+  },
+  "计算与参考的差异": {
+    "en": "Calculate difference from reference",
+    "de": "Abweichung von der Referenz berechnen",
+    "es": "Calcular la diferencia con la referencia",
+    "fr": "Calculer l’écart avec la référence",
+    "ja": "参照との差分を計算",
+    "zh-Hans": "计算与参考的差异"
+  },
+  "试用方案 · 无颜色依据": {
+    "en": "Trial option · No color basis",
+    "de": "Testoption · Keine Farbbasis",
+    "es": "Opción de prueba · Sin base de color",
+    "fr": "Option d’essai · Aucune base colorimétrique",
+    "ja": "試用案 · 色の根拠なし",
+    "zh-Hans": "试用方案 · 无颜色依据"
+  },
+  "请先确认同源图片、处理条件和参考来源。": {
+    "en": "First confirm the same source image, processing conditions, and reference source.",
+    "de": "Bestätigen Sie zunächst dieselbe Originalquelle, die Verarbeitungsbedingungen und die Referenzquelle.",
+    "es": "Confirma primero la misma imagen de origen, las condiciones de procesamiento y la fuente de referencia.",
+    "fr": "Confirmez d’abord la même image source, les conditions de traitement et la source de référence.",
+    "ja": "同じ元画像、処理条件、参照元を先に確認してください。",
+    "zh-Hans": "请先确认同源图片、处理条件和参考来源。"
+  },
+  "请选择": {
+    "zh-Hans": "请选择",
+    "en": "Choose…",
+    "de": "Auswählen…",
+    "es": "Seleccionar…",
+    "fr": "Choisir…",
+    "ja": "選択してください"
+  },
+  "输入参考": {
+    "zh-Hans": "输入参考",
+    "en": "Input reference",
+    "de": "Eingangsreferenz",
+    "es": "Referencia de entrada",
+    "fr": "Référence en entrée",
+    "ja": "入力基準"
+  },
+  "输入范围": {
+    "zh-Hans": "输入范围",
+    "en": "Input range",
+    "de": "Eingangsbereich",
+    "es": "Rango de entrada",
+    "fr": "Plage en entrée",
+    "ja": "入力範囲"
+  },
+  "输入颜色": {
+    "zh-Hans": "输入颜色",
+    "en": "Input color space",
+    "de": "Eingangsfarbraum",
+    "es": "Espacio de color de entrada",
+    "fr": "Espace couleur en entrée",
+    "ja": "入力色空間"
+  },
+  "输出参考": {
+    "zh-Hans": "输出参考",
+    "en": "Output reference",
+    "de": "Ausgangsreferenz",
+    "es": "Referencia de salida",
+    "fr": "Référence en sortie",
+    "ja": "出力基準"
+  },
+  "输出范围": {
+    "zh-Hans": "输出范围",
+    "en": "Output range",
+    "de": "Ausgangsbereich",
+    "es": "Rango de salida",
+    "fr": "Plage en sortie",
+    "ja": "出力範囲"
+  },
+  "输出颜色": {
+    "zh-Hans": "输出颜色",
+    "en": "Output color space",
+    "de": "Ausgangsfarbraum",
+    "es": "Espacio de color de salida",
+    "fr": "Espace couleur en sortie",
+    "ja": "出力色空間"
+  },
+  "近似基础 · 未验证": {
+    "zh-Hans": "近似基础 · 未验证",
+    "en": "Approximate base · Unverified",
+    "de": "Angenäherte Basis · Ungeprüft",
+    "es": "Base aproximada · Sin verificar",
+    "fr": "Base approchée · Non vérifié",
+    "ja": "近似ベース · 未検証"
+  },
+  "选择一张照片即可比较方案；也可以展开高级设置手动配置。": {
+    "en": "Choose a photo to compare the options, or expand Advanced settings to configure them manually.",
+    "de": "Wählen Sie ein Foto, um die Optionen zu vergleichen, oder öffnen Sie die erweiterten Einstellungen für eine manuelle Konfiguration.",
+    "es": "Elige una foto para comparar las opciones o abre los ajustes avanzados para configurarlas manualmente.",
+    "fr": "Choisissez une photo pour comparer les options, ou ouvrez les réglages avancés pour les configurer manuellement.",
+    "ja": "写真を選ぶと案を比較できます。詳細な設定を開いて手動で設定することもできます。",
+    "zh-Hans": "选择一张照片即可比较方案；也可以展开高级设置手动配置。"
+  },
+  "选择参考图": {
+    "en": "Choose reference image",
+    "de": "Referenzbild auswählen",
+    "es": "Elegir imagen de referencia",
+    "fr": "Choisir une image de référence",
+    "ja": "参照画像を選択",
+    "zh-Hans": "选择参考图"
+  },
+  "选择照片和方案后显示预览": {
+    "en": "Choose a photo and option to see a preview",
+    "de": "Wählen Sie ein Foto und eine Option für die Vorschau",
+    "es": "Elige una foto y una opción para ver una vista previa",
+    "fr": "Choisissez une photo et une option pour afficher un aperçu",
+    "ja": "写真と案を選ぶとプレビューが表示されます",
+    "zh-Hans": "选择照片和方案后显示预览"
+  },
+  "选择预览照片": {
+    "en": "Choose preview photo",
+    "de": "Vorschaubild auswählen",
+    "es": "Elegir foto de vista previa",
+    "fr": "Choisir une photo d’aperçu",
+    "ja": "プレビュー写真を選択",
+    "zh-Hans": "选择预览照片"
+  },
+  "预览条件：C5 显影，相机白平衡，场景曝光归一化，曝光 0，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。": {
+    "en": "Preview conditions: C5 development, camera white balance, normalized scene exposure, exposure 0, no extra adjustments, LUT strength 100%, sRGB output, 512-pixel long edge.",
+    "de": "Vorschau-Bedingungen: C5-Entwicklung, Kamera-Weißabgleich, normalisierte Szenenbelichtung, Belichtung 0, keine zusätzlichen Anpassungen, LUT-Stärke 100%, sRGB-Ausgabe, lange Kante 512 Pixel.",
+    "es": "Condiciones de vista previa: revelado C5, balance de blancos de la cámara, exposición de escena normalizada, exposición 0, sin ajustes adicionales, intensidad de LUT 100%, salida sRGB, lado largo de 512 píxeles.",
+    "fr": "Conditions d’aperçu : développement C5, balance des blancs de l’appareil, exposition de scène normalisée, exposition 0, aucun réglage supplémentaire, intensité de LUT 100%, sortie sRGB, grand côté de 512 pixels.",
+    "ja": "プレビュー条件：C5 現像、カメラのホワイトバランス、シーン露出を正規化、露出 0、追加調整なし、LUT 強度 100%、sRGB 出力、長辺 512 ピクセル。",
+    "zh-Hans": "预览条件：C5 显影，相机白平衡，场景曝光归一化，曝光 0，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。"
+  },
+  "预览条件：已显影照片，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。": {
+    "en": "Preview conditions: developed photo, no extra adjustments, LUT strength 100%, sRGB output, 512-pixel long edge.",
+    "de": "Vorschau-Bedingungen: entwickeltes Foto, keine zusätzlichen Anpassungen, LUT-Stärke 100%, sRGB-Ausgabe, lange Kante 512 Pixel.",
+    "es": "Condiciones de vista previa: foto revelada, sin ajustes adicionales, intensidad de LUT 100%, salida sRGB, lado largo de 512 píxeles.",
+    "fr": "Conditions d’aperçu : photo développée, aucun réglage supplémentaire, intensité de LUT 100%, sortie sRGB, grand côté de 512 pixels.",
+    "ja": "プレビュー条件：現像済み写真、追加調整なし、LUT 強度 100%、sRGB 出力、長辺 512 ピクセル。",
+    "zh-Hans": "预览条件：已显影照片，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。"
+  },
+  "高级颜色设置": {
+    "en": "Advanced color settings",
+    "de": "Erweiterte Farbeinstellungen",
+    "es": "Ajustes de color avanzados",
+    "fr": "Réglages colorimétriques avancés",
+    "ja": "詳細なカラー設定",
+    "zh-Hans": "高级颜色设置"
+  },
+  "仍需假设：{0}": {
+    "en": "Assumptions remain: {0}",
+    "de": "Weiterhin Annahmen: {0}",
+    "es": "Aún hay hipótesis: {0}",
+    "fr": "Hypothèses restantes : {0}",
+    "ja": "残る仮定: {0}",
+    "zh-Hans": "仍需假设：{0}"
+  },
+  "范围与插值": {
+    "en": "Range and interpolation",
+    "de": "Bereich und Interpolation",
+    "es": "Rango e interpolación",
+    "fr": "Plage et interpolation",
+    "ja": "範囲と補間",
+    "zh-Hans": "范围与插值"
+  },
+  "通道边界像素：方案 {0}% · 参考 {1}%": {
+    "en": "Channel-boundary pixels: candidate {0}% · reference {1}%",
+    "de": "Pixel an Kanalgrenzen: Option {0}% · Referenz {1}%",
+    "es": "Píxeles en los límites de canal: candidato {0}% · referencia {1}%",
+    "fr": "Pixels aux limites des canaux : proposition {0}% · référence {1}%",
+    "ja": "チャンネル境界ピクセル：候補 {0}% · 参照 {1}%",
+    "zh-Hans": "通道边界像素：方案 {0}% · 参考 {1}%"
+  },
+  "边界比例仅供观察，不能据此判定配置或风格错误。": {
+    "en": "Boundary ratios are for observation only; they cannot establish that a configuration or look is wrong.",
+    "de": "Grenzwerte dienen nur zur Beobachtung; daraus lässt sich kein Fehler in Konfiguration oder Look ableiten.",
+    "es": "Las proporciones de borde son solo informativas; no permiten concluir que la configuración o el aspecto sean incorrectos.",
+    "fr": "Les proportions aux limites sont indicatives ; elles ne permettent pas de conclure que la configuration ou le rendu est erroné.",
+    "ja": "境界比率は観察用であり、設定やルックの誤りを示すものではありません。",
+    "zh-Hans": "边界比例仅供观察，不能据此判定配置或风格错误。"
+  },
+  "从照片库选择": {
+    "en": "Choose from photo library",
+    "zh-Hans": "从照片库选择",
+    "de": "Aus der Fotobibliothek wählen",
+    "es": "Elegir de la biblioteca de fotos",
+    "fr": "Choisir dans la photothèque",
+    "ja": "写真ライブラリから選択"
+  },
+  "使用此照片": {
+    "en": "Use this photo",
+    "zh-Hans": "使用此照片",
+    "de": "Dieses Foto verwenden",
+    "es": "Usar esta foto",
+    "fr": "Utiliser cette photo",
+    "ja": "この写真を使用"
+  },
+  "照片库为空，请先在主窗口添加照片目录。": {
+    "en": "Your photo library is empty. Add a photo folder in the main window first.",
+    "zh-Hans": "照片库为空，请先在主窗口添加照片目录。",
+    "de": "Die Fotobibliothek ist leer. Fügen Sie zuerst im Hauptfenster einen Fotoordner hinzu.",
+    "es": "La biblioteca de fotos está vacía. Añade primero una carpeta de fotos en la ventana principal.",
+    "fr": "La photothèque est vide. Ajoutez d’abord un dossier de photos dans la fenêtre principale.",
+    "ja": "写真ライブラリが空です。先にメインウィンドウで写真フォルダを追加してください。"
+  },
+  "当前照片的设置尚不可用。": {
+    "de": "Die Einstellungen für das aktuelle Foto sind noch nicht verfügbar.",
+    "en": "The settings for the current photo are not available yet.",
+    "es": "La configuración de la foto actual aún no está disponible.",
+    "fr": "Les paramètres de la photo actuelle ne sont pas encore disponibles.",
+    "ja": "現在の写真の設定はまだ利用できません。",
+    "zh-Hans": "当前照片的设置尚不可用。"
+  },
+  "无照片": {
+    "de": "Keine Fotos",
+    "en": "No photos",
+    "es": "No hay fotos",
+    "fr": "Aucune photo",
+    "ja": "写真がありません",
+    "zh-Hans": "无照片"
   }
 }

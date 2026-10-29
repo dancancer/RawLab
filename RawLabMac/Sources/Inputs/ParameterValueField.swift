@@ -108,7 +108,9 @@ struct ParameterValueField: NSViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NumericTextField, context: Context) -> CGSize? {
-        CGSize(width: max(72, (precision.text(value, signed: signed) as NSString).size(withAttributes: [.font: nsView.font!]).width + 24), height: max(26, fontSize + 13))
+        let naturalWidth = max(72, (precision.text(value, signed: signed) as NSString).size(withAttributes: [.font: nsView.font!]).width + 24)
+        // 外层参数行已按整个范围预留宽度，原生输入框应使用该槽位而非重新按当前文本缩放。
+        return CGSize(width: proposal.width.map { max($0, naturalWidth) } ?? naturalWidth, height: max(26, fontSize + 13))
     }
 
     func updateNSView(_ field: NumericTextField, context: Context) {

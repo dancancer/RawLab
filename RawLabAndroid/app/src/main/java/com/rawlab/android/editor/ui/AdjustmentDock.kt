@@ -21,14 +21,12 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -82,7 +80,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     onResetScope: (EditorResetScope) -> Unit, sideDock: Boolean, navigationEnabled: Boolean, compactNavigation: Boolean,
     onGeometryLock: () -> Unit = {}, onGeometrySwap: () -> Unit = {}, onGeometryGrid: () -> Unit = {},
     onPresets: () -> Unit = {}, gradingZone: ColorGradingZone = ColorGradingZone.SHADOWS,
-    onGradingZoneChange: (ColorGradingZone) -> Unit = {}, hslTarget: HslTargetActions = HslTargetActions()) {
+    onGradingZoneChange: (ColorGradingZone) -> Unit = {}, hslTarget: HslTargetActions = HslTargetActions(),
+    onSelectFilm: (String) -> Boolean = { false }) {
     val edits = state.visibleEdits
     val context = LocalContext.current
     val rawInput = state.photo?.inputKind == PhotoInputKind.RAW
@@ -135,34 +134,21 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     @Composable fun fineControl() {
         if (showFine) {
             val fineHint = stringResource(R.string.editor_fine_hint)
-            Text(stringResource(R.string.adjustment_fine), style = MaterialTheme.typography.labelSmall)
-            Switch(checked = fine, onCheckedChange = { fine = it }, enabled = state.controlsEnabled,
+            FilterChip(selected = fine, onClick = { fine = !fine }, enabled = state.controlsEnabled,
+                label = { Text(stringResource(R.string.adjustment_fine), style = MaterialTheme.typography.labelMedium) },
+                leadingIcon = { Icon(Icons.Outlined.Check, null, Modifier.size(16.dp).alpha(if (fine) 1f else 0f)) },
                 modifier = Modifier.minimumInteractiveComponentSize().testTag("adjustment-fine").semantics { contentDescription = fineHint })
         }
     }
     @Composable fun toolRow() {
-        val measurer = rememberTextMeasurer()
-        val density = LocalDensity.current
-        val labelStyle = MaterialTheme.typography.labelMedium
-        val labels = EditorAdjustmentRules.tools(EditorAdjustmentRules.groupFor(tool) ?: EditorAdjustmentGroup.LOOKS)
-            .map { stringResource(editorToolTitles[it]) }
-        val longestLabel = labels.maxOf { measurer.measure(AnnotatedString(it), labelStyle).size.width }
-        val fineWidth = if (showFine) measurer.measure(AnnotatedString(stringResource(R.string.adjustment_fine)),
-            MaterialTheme.typography.labelSmall).size.width else 0
-        // 按整个分组的最长译文分行，切换工具时保持工具栏高度稳定。
-        val requiredWidth = with(density) { (longestLabel + fineWidth).toDp() } +
-            73.dp + 96.dp + if (showFine) 52.dp else 0.dp
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            if (maxWidth < requiredWidth) {
-                Column {
-                    toolStrip()
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically) { fineControl(); dockActions() }
-                }
-            } else {
-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                    toolStrip(Modifier.weight(1f)); fineControl(); dockActions()
-                }
+        Column(Modifier.fillMaxWidth()) {
+            toolStrip()
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Spacer(Modifier.weight(1f))
+                fineControl()
+                if (showFine) Spacer(Modifier.width(8.dp))
+                dockActions()
             }
         }
     }
@@ -171,7 +157,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
         if (sideDock) groupStrip()
         if (!expanded) { if (!sideDock) groupStrip(); return@Column }
         if (!scrollTools) toolRow()
-        Box(Modifier.weight(1f).fillMaxWidth().testTag("editor-parameters").verticalScroll(parameterScroll)) {
+        // 底栏按内容收紧；复杂工具仍受外层高度上限约束，侧栏保持填满。
+        Box(Modifier.weight(1f, fill = sideDock).fillMaxWidth().testTag("editor-parameters").verticalScroll(parameterScroll)) {
         CompositionLocalProvider(LocalAdjustmentSession provides parameterSession, LocalAdjustmentFine provides fine) {
         Column(Modifier.fillMaxWidth()) {
             if (scrollTools) toolRow()
@@ -203,8 +190,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                             Column(Modifier.fillMaxWidth().selectable(selected = edits.film == look.id,
                                 enabled = state.controlsEnabled && look.available,
                                 role = Role.RadioButton, onClick = {
-                                    onEdit(edits.selectFilm(look.id, state.preview?.tint), false)
-                                    if (filmSelectionChanged(edits, look.id)) onFilmSelected(when {
+                                    if (onSelectFilm(look.id) && filmSelectionChanged(edits, look.id)) onFilmSelected(when {
                                         look.managed -> UsageFilmKind.Custom
                                         look.id == "neutral" -> UsageFilmKind.None
                                         else -> UsageFilmKind.BuiltIn
@@ -215,8 +201,16 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                                     if (edits.film == look.id) MaterialTheme.colorScheme.primary else Color.Transparent).padding(3.dp), contentAlignment = Alignment.Center) {
                                     if (artwork != null) Image(artwork.asImageBitmap(), null, Modifier.fillMaxSize().testTag("film-artwork-${look.id}"))
                                     else Icon(Icons.Outlined.Image, null, Modifier.size(32.dp))
+                                    if (look.compatibilityMode != 0) Icon(Icons.Outlined.Warning,
+                                        stringResource(R.string.lut_compatibility_title), Modifier.align(Alignment.TopStart).size(20.dp)
+                                            .testTag("film-compatibility-${look.id}"), tint = MaterialTheme.colorScheme.primary)
                                 }
-                                Text(if (look.id == "neutral") stringResource(R.string.neutral_look) else look.name,
+                                Text(if (look.id == "neutral") stringResource(R.string.neutral_look) else
+                                    look.name + when (look.compatibilityMode) {
+                                        7 -> " · " + stringResource(R.string.lut_compatibility_notice)
+                                        8 -> " · " + stringResource(R.string.lut_approximate_badge)
+                                        else -> if (look.appearanceUnverified) " · " + stringResource(R.string.lut_appearance_unverified) else ""
+                                    },
                                     Modifier.heightIn(min = 42.dp).padding(top = 4.dp), style = MaterialTheme.typography.labelSmall)
                             }
                             if (look.managed) {
@@ -247,7 +241,10 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 val modes = listOf(R.string.exposure_scene, R.string.exposure_preview, R.string.exposure_sensor)
                 Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) {
-                    TextButton(onClick = { modeMenu = true }, enabled = state.controlsEnabled && rawInput) { Text(stringResource(modes[edits.exposureMode])) }
+                    TextButton(onClick = { modeMenu = true }, enabled = state.controlsEnabled && rawInput,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)) {
+                        Text(stringResource(modes[edits.exposureMode]), style = MaterialTheme.typography.labelMedium)
+                    }
                     DropdownMenu(expanded = modeMenu, onDismissRequest = { modeMenu = false }) {
                         modes.forEachIndexed { index, title ->
                             DropdownMenuItem(text = { Text(stringResource(title)) }, onClick = {
@@ -257,9 +254,10 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                     }
                 }
                 TextButton(onClick = onAutoExposure, enabled = state.controlsEnabled && !state.rendering,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
                     modifier = Modifier.testTag("exposure.auto")) {
                     Icon(Icons.Outlined.AutoFixHigh, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.auto_exposure))
+                    Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.auto_exposure), style = MaterialTheme.typography.labelMedium)
                 }
                 }
             }
@@ -319,7 +317,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 onDraftEdit(edits.copy(geometry = value), dragging)
             }
             15 -> MasterRecipePicker(recipes, edits.recipeID, state.controlsEnabled) { recipe ->
-                onEdit(if (recipe == null) edits.selectFilm("neutral", state.preview?.tint) else edits.applyRecipe(recipe), false)
+                if (recipe == null) onSelectFilm("neutral") else onEdit(edits.applyRecipe(recipe), false)
             }
             18 -> NumericControl(R.string.black_point, edits.blackPoint, -100f..100f, "%", state.controlsEnabled,
                 { value, dragging -> onEdit(edits.copy(blackPoint = value), dragging) }, { onEdit(edits.copy(blackPoint = 0f), false) })

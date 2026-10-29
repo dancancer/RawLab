@@ -4,6 +4,7 @@ import errno
 import itertools
 import json
 import pathlib
+import platform
 import subprocess
 import tempfile
 import unittest
@@ -95,11 +96,12 @@ class AgentCommands(unittest.TestCase):
         return value
 
     def test_capabilities_and_flag_order(self):
+        hdr=sys.platform=="darwin" and tuple(map(int,platform.mac_ver()[0].split(".")[:2]))>=(15,0)
         expected = {
-            "recipe_versions": [1, 2, 3, 4, 5],
+            "recipe_versions": [1, 2, 3, 4, 5]+([6] if hdr else []),
             "commands": ["capabilities", "validate_recipe", "info", "preview", "export"],
-            "input_types": ["raw", "raster"] if sys.platform in ("darwin", "win32") else ["raw"],
-            "output_formats": ["jpeg", "png", "dng"],
+            "input_types": (["raw", "raster"] if sys.platform in ("darwin", "win32") else ["raw"])+(["hdr_raster"] if hdr else []),
+            "output_formats": ["jpeg", "png", "dng"]+(["hdr_jpeg"] if hdr else []),
             "exposure_modes": ["scene", "preview", "sensor"],
             "geometry_operations": ["crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten", "perspective"],
         }

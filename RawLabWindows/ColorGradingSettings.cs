@@ -38,6 +38,11 @@ public sealed record ColorGradingSettings
     [JsonIgnore] public bool IsIdentity => IsValid && Shadows.IsIdentity && Midtones.IsIdentity && Highlights.IsIdentity;
     [JsonIgnore] public bool IsValid => Shadows?.IsValid == true && Midtones?.IsValid == true && Highlights?.IsValid == true;
     [JsonIgnore] public double Progress => Math.Max(Shadows.Saturation, Math.Max(Midtones.Saturation, Highlights.Saturation)) / 100;
+    public ColorGradingSettings Scaled(double strength) => this with {
+        Shadows = Shadows with { Saturation = Math.Clamp(Shadows.Saturation * strength, 0, 100) },
+        Midtones = Midtones with { Saturation = Math.Clamp(Midtones.Saturation * strength, 0, 100) },
+        Highlights = Highlights with { Saturation = Math.Clamp(Highlights.Saturation * strength, 0, 100) }
+    };
     public ColorGradingWheel this[ColorGradingZone zone] => zone switch {
         ColorGradingZone.Shadows => Shadows, ColorGradingZone.Midtones => Midtones, ColorGradingZone.Highlights => Highlights,
         _ => throw new ArgumentOutOfRangeException(nameof(zone))

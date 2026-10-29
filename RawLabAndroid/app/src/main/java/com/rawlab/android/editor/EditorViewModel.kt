@@ -24,6 +24,7 @@ import com.rawlab.android.batch.BatchSourceSnapshot
 import com.rawlab.android.editor.render.EditorRenderer
 import com.rawlab.android.editor.render.LookResult
 import com.rawlab.android.editor.render.LookWork
+import com.rawlab.android.looks.LUTCompatibility
 import com.rawlab.android.editor.render.SerialWorkQueue
 import com.rawlab.android.editor.render.RenderQueue
 import com.rawlab.android.editor.render.Work
@@ -105,6 +106,7 @@ class EditorViewModel @JvmOverloads constructor(
     private var previewLongEdge = 1600
     private var requestedPreviewLongEdge = 1600
     private var previewResizeJob: Job? = null
+    private val interactivePreviewSize = com.rawlab.android.editor.render.InteractivePreviewSize()
     private val pendingPhotoImport = PendingPhotoImport()
     private var lookRevision = 0L
     private var releases = 0
@@ -314,7 +316,8 @@ class EditorViewModel @JvmOverloads constructor(
             return
         }
         result.fold(::acceptLookValue, { error ->
-            mutable.value = mutable.value.copy(operation = Operation.NONE,
+            mutable.value = mutable.value.copy(operation = if (mutable.value.pendingLookCompatibility.isEmpty()) Operation.NONE else Operation.IMPORT_LOOK,
+                lookCompatibilityPreparing = false,
                 error = text(R.string.look_storage_error) + "\n" + (error.message ?: error.javaClass.simpleName))
         })
         updatePreviewSize(requestedPreviewLongEdge)
@@ -332,10 +335,24 @@ class EditorViewModel @JvmOverloads constructor(
                 val report = if (result.failures.isEmpty()) null else
                     AppStrings.format(R.string.look_import_summary, result.imported.size, result.failures.size) +
                         result.failures.joinToString("\n") { failure ->
-                            val message = failure.dcpReason?.let(::dcpFailureText) ?: failure.message
-                            if (failure.invalid) message + "\n" + text(R.string.look_invalid_file) else message
+                            val colorMessage = when (failure.colorReason) {
+                                0 -> text(R.string.lut_missing_color)
+                                1 -> text(R.string.lut_missing_reference)
+                                2 -> text(R.string.lut_unsupported_color)
+                                3 -> text(R.string.lut_conflicting_color)
+                                9 -> text(R.string.lut_compatibility_changed)
+                                else -> null
+                            }
+                            val message = colorMessage ?: failure.dcpReason?.let(::dcpFailureText) ?: failure.message
+                            if (failure.invalid && colorMessage == null) message + "\n" + text(R.string.look_invalid_file) else message
                         }
-                mutable.value = mutation.state.copy(looks = result.looks, lookImportReport = report,
+                val pending = mutable.value.pendingLookCompatibility + result.pending
+                mutable.value = mutation.state.copy(looks = result.looks,
+                    pendingLookCompatibility = pending,
+                    lookCompatibilityPreparing = false,
+                    operation = if (pending.isEmpty()) Operation.NONE else Operation.IMPORT_LOOK,
+                    lookImportReport = listOfNotNull(mutable.value.lookImportReport, report).takeIf { it.isNotEmpty() }?.joinToString("\n"),
+                    error = if (mutation.blockedRecipeSelection) text(R.string.editor_reset_unrepresentable) else mutation.state.error,
                     message = if (result.imported.isEmpty()) null else text(R.string.look_imported))
                 scheduleLookPreview(mutation.preview)
             }
@@ -351,7 +368,8 @@ class EditorViewModel @JvmOverloads constructor(
             is LookResult.Failed -> {
                 if (result.reload) lookRevision = lookQueue.submit(LookWork.Load)
                 val title = text(if (result.reload) R.string.look_error else R.string.look_storage_error)
-                mutable.value = mutable.value.copy(operation = Operation.NONE,
+                mutable.value = mutable.value.copy(operation = if (mutable.value.pendingLookCompatibility.isEmpty()) Operation.NONE else Operation.IMPORT_LOOK,
+                    lookCompatibilityPreparing = false,
                     error = title + "\n" + (result.error.message ?: result.error.javaClass.simpleName))
             }
         }
@@ -426,6 +444,17 @@ class EditorViewModel @JvmOverloads constructor(
 
     fun dismissLookImportReport() { mutable.value = mutable.value.copy(lookImportReport = null) }
 
+    fun resolveLookCompatibility(draft: LUTCompatibility?) {
+        if (mutable.value.lookCompatibilityPreparing) return
+        val pending = mutable.value.pendingLookCompatibility.firstOrNull() ?: return
+        val remaining = mutable.value.pendingLookCompatibility.drop(1)
+        if (draft != null && (!draft.canImport || draft.sourceHash != pending.draft.sourceHash)) return
+        mutable.value = mutable.value.copy(pendingLookCompatibility = remaining,
+            lookCompatibilityPreparing = draft != null,
+            operation = if (draft != null || remaining.isNotEmpty()) Operation.IMPORT_LOOK else Operation.NONE)
+        if (draft != null) lookRevision = lookQueue.submit(LookWork.Import(listOf(pending.uri), draft))
+    }
+
     fun renameLook(id: String, name: String) {
         if (mutable.value.committingAdjustments || mutable.value.operation != Operation.NONE || mutable.value.draft != null) return
         mutable.value = mutable.value.copy(operation = Operation.IMPORT_LOOK, error = null)
@@ -436,6 +465,20 @@ class EditorViewModel @JvmOverloads constructor(
         if (mutable.value.committingAdjustments || mutable.value.operation != Operation.NONE || mutable.value.draft != null) return
         mutable.value = mutable.value.copy(operation = Operation.IMPORT_LOOK, error = null)
         lookRevision = lookQueue.submit(LookWork.Delete(id))
+    }
+
+    fun selectFilm(id: String): Boolean {
+        val current = mutable.value
+        if (!current.controlsEnabled || current.draft != null) return false
+        val candidate = try {
+            current.edits.selectFilm(id, current.preview?.tint, current.preview?.temperature, current.photo!!.inputKind)
+        } catch (_: IllegalArgumentException) {
+            mutable.value = current.copy(error = AppStrings.text(if (current.preview == null)
+                R.string.editor_reset_missing_wb else R.string.editor_reset_unrepresentable))
+            return false
+        }
+        edit(candidate, false)
+        return mutable.value.edits == candidate
     }
 
     fun edit(requested: EditSettings, interactive: Boolean = false) {
@@ -464,7 +507,8 @@ class EditorViewModel @JvmOverloads constructor(
         if (edits != current.edits) editRevision += 1
         mutable.value = current.copy(edits = edits, rendering = true, exact = false, error = null,
             previewResizePending = previewResizeJob != null)
-        currentRevision = submitRender(Work.Preview(current.photo!!, edits, interactive, gpuMode(), edge = previewLongEdge))
+        currentRevision = submitRender(Work.Preview(current.photo!!, edits, interactive, gpuMode(),
+            edge = interactivePreviewSize.edge(previewLongEdge, interactive, android.os.SystemClock.uptimeMillis())))
         if (!interactive) persist(current.photo, edits) { saved ->
             mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
             fadeSaveNotice()
@@ -535,7 +579,8 @@ class EditorViewModel @JvmOverloads constructor(
             if (draft.group == AdjustmentGroup.GEOMETRY) it.copy(geometry = it.geometry.uncropped()) else it
         }
         mutable.value = current.copy(rendering = true, exact = false, error = null)
-        currentRevision = submitRender(Work.Preview(photo, edits, interactive, gpuMode(), edge = 1600, draft = true))
+        currentRevision = submitRender(Work.Preview(photo, edits, interactive, gpuMode(),
+            edge = interactivePreviewSize.edge(1600, interactive, android.os.SystemClock.uptimeMillis()), draft = true))
     }
 
     fun chooseGeometryRatio(ratio: GeometryRatio, portrait: Boolean) {

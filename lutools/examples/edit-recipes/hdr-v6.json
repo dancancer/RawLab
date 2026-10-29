@@ -1,0 +1,37 @@
+{
+  "schema_version": 6,
+  "processing": {
+    "family": "rawlab_hdr",
+    "version": 1,
+    "quality": "standard"
+  },
+  "input": {
+    "path": "phone.heic",
+    "type": "hdr_raster"
+  },
+  "edits": {
+    "exposure": {
+      "ev": 1
+    },
+    "white_balance": {
+      "mode": "relative",
+      "relative_temperature": 6500,
+      "relative_tint": 0
+    },
+    "tone": {
+      "contrast": 1,
+      "saturation": 1,
+      "highlights": 0,
+      "shadows": 0
+    }
+  },
+  "output": {
+    "path": "edited-hdr.jpg",
+    "format": "hdr_jpeg",
+    "base_color": "display_p3",
+    "jpeg_quality": 95,
+    "size": {
+      "mode": "native"
+    }
+  }
+}

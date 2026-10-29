@@ -65,6 +65,16 @@ class EditorStateReducerTest {
         assertEquals(imported.id, mutation.preview?.film)
     }
 
+    @Test fun importingALookDoesNotDiscardAnUnrepresentableRecipe() {
+        val current = EditorState(edits = EditSettings(recipeID = "hamada_daylight_v2",
+            masterRecipeSettingsVersion = 4, exposure = 4f, strength = 2f))
+        val mutation = EditorStateReducer.lookImported(current, imported)
+        assertTrue(mutation.blockedRecipeSelection)
+        assertEquals(current.edits, mutation.state.edits)
+        assertTrue(mutation.state.looks.any { it.id == imported.id })
+        assertEquals(null, mutation.preview)
+    }
+
     @Test
     fun renameDuringPreviewPreservesPendingRenderState() {
         val photo = ImportedPhoto(TestUri.value, "photo.raw", File("photo.raw"))

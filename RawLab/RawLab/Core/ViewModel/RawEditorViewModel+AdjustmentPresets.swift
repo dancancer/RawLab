@@ -11,7 +11,7 @@ extension RawEditorViewModel {
             throw EditPersistenceConflict.changed
         }
         let snapshot = currentEditState(settings: settings)
-        guard snapshot.hasSameAdjustments(as: expected.state ?? PhotoEditState(settings: .default)) else {
+        guard snapshot.hasSameAdjustments(as: expected.state ?? PhotoEditState(settings: sourceDefaultSettings)) else {
             throw AdjustmentTransferError.draftRequiresPreflight
         }
         let context = adjustmentContext(identifier: source.identity.key, isRaw: sourceKind == .raw, whiteBalance: rawWhiteBalance)

@@ -52,11 +52,13 @@ internal static class ToneControlsChecks
         var legacy = AdjustmentTransfer.Capture(AdjustmentScope.Custom([F.Exposure]),Edit(new()),context);
         Check(AdjustmentTransfer.Prepare(legacy,Edit(target),context).Settings.Restore().ToneControls == target.ToneControls,
             "Legacy payload omitting tone keeps the target extension");
-        state.ApplyMasterRecipe(MasterRecipe.All[0]); state.Set(Parameter.Strength,0);
-        target.ApplyMasterRecipe(MasterRecipe.All[0]); target.Set(Parameter.Strength,0);
+        var legacyRecipe = MasterRecipe.All[0] with { SettingsVersion = 3,
+            Tone = null, Atmosphere = null, Grading = null, Curve = null };
+        state.ApplyMasterRecipe(legacyRecipe); state.Set(Parameter.Strength,0);
+        target.ApplyMasterRecipe(legacyRecipe); target.Set(Parameter.Strength,0);
         var recipeCopy = AdjustmentTransfer.Capture(AdjustmentScope.Custom(fields),Edit(state),context);
         Check(AdjustmentTransfer.Prepare(recipeCopy,Edit(target),context).Settings.Restore().ToneControls == tone,
-            "Tone fields stay independent of source and target recipe strength, including zero");
+            "Tone fields stay independent of source and target v3 recipe strength, including zero");
         state = new() { ToneControls = tone };
         Check(EditorAdjustmentRules.IsModified(new(EditorResetKind.Tool,Tool:EditorAdjustmentTool.BlackPoint),Edit(state)), "Tone tools participate in modified state");
         var light = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.Group,EditorAdjustmentGroup.Light),Edit(state));

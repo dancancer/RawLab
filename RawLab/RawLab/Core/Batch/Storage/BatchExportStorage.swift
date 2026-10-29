@@ -41,7 +41,7 @@ final class BatchJournalStore {
             let recovered = relocateOwnedFiles(original).recovered()
             // Photos owns completed JPEGs. Keep the completed DNG journal until dismissal;
             // exported files in Documents/Exports persist independently of the journal.
-            if recovered.status == .completed && recovered.outputFormat == .jpeg {
+            if recovered.status == .completed && recovered.outputFormat != .renderedDNG {
                 try discard(id: recovered.id)
                 return nil
             }

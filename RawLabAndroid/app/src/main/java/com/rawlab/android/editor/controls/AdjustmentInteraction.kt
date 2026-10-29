@@ -52,7 +52,7 @@ internal data class AdjustmentScale(
 
     val rulerStep: Float get() = if (reciprocal) 1f / 240000f else step
     fun drag(start: Float, pixels: Float, fine: Boolean): Float = quantize(fromPosition(
-        position(start) - pixels / 8f * rulerStep * if (fine) .25f else 1f))
+        position(start) + pixels / 8f * rulerStep * if (fine) .25f else 1f))
 
     fun sweep(value: Float): Float {
         val distance = value - default

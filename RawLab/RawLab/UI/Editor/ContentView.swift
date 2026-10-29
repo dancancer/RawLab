@@ -4,6 +4,12 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
+struct LookCompatibilityPresentation: Identifiable {
+    let id = UUID()
+    let source: URL
+    let draft: LUTCompatibility
+}
+
 struct ContentView: View {
     @Environment(\.locale) var localizationLocale
     @AppStorage(L10n.preferenceKey) var languagePreference = AppLanguage.system.rawValue
@@ -13,6 +19,7 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @StateObject var viewModel = RawEditorViewModel()
+    @StateObject var hdrDisplay=HDRDisplayState()
     @State var settings = RawSettings.default
     @State private var didAutoLoadSample = false
     @State var photoViewing = PhotoViewingState()
@@ -82,6 +89,12 @@ struct ContentView: View {
     @State var showingPhotoImporter = false
     @State var showingFileImporter = false
     @State var showingLookImporter = false
+    @State var pendingLookCompatibility: LookCompatibilityPresentation?
+    @State var lookCompatibilityCompletion: ((LUTCompatibility?) -> Void)?
+    @State var confirmedLookCompatibility: LUTCompatibility?
+    @State var renamingLUT: LUTOption?
+    @State var renamedLUTName = ""
+    @State var showingLookRename = false
     @State private var checkedBatchRecovery = false
     @State var showingBatchSelection = false
     @State var queuedCollectionEdit: String?
@@ -102,6 +115,8 @@ struct ContentView: View {
     @ScaledMetric(relativeTo: .caption) var filmSize = 72.0
     @ScaledMetric(relativeTo: .body) var panelHeight = 220.0
     @ScaledMetric(relativeTo: .subheadline) var panelHeaderHeight = 44.0
+    @State var parameterContentHeight: CGFloat = 0
+    @State var parameterActionsHeight: CGFloat = 0
 
     var body: some View {
         let _ = localizationLocale
@@ -158,9 +173,35 @@ struct ContentView: View {
                       allowsMultipleSelection: true) { result in
             importLooks(result)
         }
+        .sheet(item: $pendingLookCompatibility, onDismiss: {
+            let completion = lookCompatibilityCompletion
+            let confirmed = confirmedLookCompatibility
+            lookCompatibilityCompletion = nil
+            confirmedLookCompatibility = nil
+            completion?(confirmed)
+        }) { pending in
+            IOSLUTCompatibilityView(source: pending.source, draft: pending.draft,
+                initialPhoto: viewModel.sourceFile.map { file in
+                    LUTPreviewSource(name: file.displayName) { destination in
+                        try file.withReadAccess { try FileManager.default.copyItem(at: $0, to: destination) }
+                    }
+                }) { result in
+                confirmedLookCompatibility = result
+                pendingLookCompatibility = nil
+            }
+        }
+        .alert(L10n.text("重命名外观"), isPresented: $showingLookRename) {
+            TextField(L10n.text("外观名称"), text: $renamedLUTName)
+            Button(L10n.text("取消"), role: .cancel) { renamingLUT = nil }
+            Button(L10n.text("保存")) {
+                if let look = renamingLUT { viewModel.renameLook(id: look.id, name: renamedLUTName) }
+                renamingLUT = nil
+            }.disabled(renamedLUTName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                       renamedLUTName.trimmingCharacters(in: .whitespacesAndNewlines).rangeOfCharacter(from: .controlCharacters) != nil)
+        }
         .alert("RawLab", isPresented: Binding(
             get: { viewModel.statusMessage != nil },
-            set: { if !$0 { viewModel.statusMessage = nil } }
+            set: { if !$0, viewModel.statusMessage != nil { viewModel.statusMessage = nil } }
         )) {
             Button(L10n.text("关闭"), role: .cancel) { viewModel.statusMessage = nil }
         } message: {
@@ -184,6 +225,7 @@ struct ContentView: View {
         .onChange(of: viewModel.adjustmentRestoredSettings) { _, restored in
             guard let restored else { return }
             settings = restored
+            if restored.isHDREditing { activateEditorTool(.adjustment(.exposure)) }
             viewModel.adjustmentRestoredSettings = nil
             viewModel.updatePreview(settings: restored, includeHistogram: true, quality: .final)
         }
@@ -324,7 +366,7 @@ struct ContentView: View {
                 editPhoto: { queuedCollectionEdit = $0; showingBatchSelection = false },
                 showExistingBatch: { queuedCollectionExistingBatch = true; showingBatchSelection = false },
                 created: { job, journal in
-                    queuedCollectionBatch = BatchExportModel(job: job, journalStore: journal)
+                    queuedCollectionBatch = BatchExportModel(job:job,journalStore:journal,editor:viewModel)
                     showingBatchSelection = false
                 })
         }
@@ -340,7 +382,7 @@ struct ContentView: View {
                 if singleExportFormat == .renderedDNG {
                     exportDNG(longEdge: exportLongEdge)
                 } else {
-                    exportJPEG(longEdge: exportLongEdge)
+                    exportJPEG(longEdge: exportLongEdge,keepHDR:singleExportFormat == .hdrJPEG)
                 }
             }
         }

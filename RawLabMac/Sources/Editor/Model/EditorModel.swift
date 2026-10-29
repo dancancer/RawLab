@@ -116,7 +116,7 @@ final class EditorModel: ObservableObject {
     var geometryPreviewSettings: Adjustments {
         guard let draft = geometryDraft else { return settings }
         var preview = settings
-        preview.geometry = draft.previewGeometry.isIdentity ? nil : draft.previewGeometry
+        preview.setGeometrySettings(draft.previewGeometry)
         preview.lensCorrection = draft.lens == LensCorrectionSettings() ? nil : draft.lens
         return preview
     }
@@ -127,7 +127,11 @@ final class EditorModel: ObservableObject {
             if selectedFilmID.hasPrefix("recipe-lut:") { independentRecipeLookIDs.insert(selectedFilmID) }
             if !updatingMetadata && (oldValue != selectedFilmID || settings.masterRecipeID != nil) {
                 if settings.masterRecipeID != nil {
-                    settings.clearMasterRecipe()
+                    guard settings.clearMasterRecipe(isRaw: adjustmentContext.isRaw) else {
+                        updatingMetadata = true; selectedFilmID = oldValue; updatingMetadata = false
+                        resetBlockedMessage = L10n.text("现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。")
+                        return
+                    }
                 }
                 edited()
             }
@@ -155,6 +159,9 @@ final class EditorModel: ObservableObject {
         hslSourceRevision &+= 1; hslAcceptedRequest = nil; hslAcceptedSettings = nil
     } }
     @Published var file: URL?
+    @Published var sourceIsHDR=false
+    @Published var importing=false
+    var pendingOpenID=UUID()
     @Published var neutral: RenderedImage?
     @Published var result: RenderedImage?
     @Published var busy = false { didSet { if oldValue && !busy { resumeResetToolIfReady() } } }
@@ -190,9 +197,11 @@ final class EditorModel: ObservableObject {
         switch statusState {
         case .none: return ""
         case .applied(let count): return L10n.format("已将当前设置应用到 %@ 张照片", String(count))
-        case .interactive(let width, let height): return L10n.format("交互预览… %@ × %@ · sRGB", String(width), String(height))
+        case .interactive(let width, let height):
+            return settings.isHDREditing ? L10n.format("交互预览… %@ × %@ · HDR",String(width),String(height)) :
+                L10n.format("交互预览… %@ × %@ · sRGB", String(width), String(height))
         case .preview(let width, let height, let original):
-            return "\(original ? L10n.text("原尺寸") : L10n.text("预览")) \(width) × \(height) · sRGB"
+            return "\(original ? L10n.text("原尺寸") : L10n.text("预览")) \(width) × \(height) · \(settings.isHDREditing ? "HDR" : "sRGB")"
         case .exported(let name): return L10n.format("已导出：%@", name)
         }
     }
@@ -253,12 +262,12 @@ final class EditorModel: ObservableObject {
     }
     var filmChoices: [Film] { films + independentRecipeLookIDs.sorted().compactMap(Film.independentRecipe) }
     var selectedMasterRecipe: MasterRecipe? { settings.masterRecipe }
-    var missingFilm: Bool { !selectedFilmID.isEmpty && (selectedFilm == nil || !FileManager.default.isReadableFile(atPath: selectedFilm!.url.path)) }
+    var missingFilm: Bool { !settings.isHDREditing && !selectedFilmID.isEmpty && (selectedFilm == nil || !FileManager.default.isReadableFile(atPath: selectedFilm!.url.path)) }
     var missingMasterRecipe: Bool {
-        guard let recipe = selectedMasterRecipe else { return false }
+        guard !settings.isHDREditing,let recipe = selectedMasterRecipe else { return false }
         return recipe.lutURL() == nil
     }
-    var canApplySettings: Bool { file != nil && result != nil && !busy && !previewOutdated && !exporting && !aiState.isRunning && !lookLibraryBusy && !missingFilm && !missingMasterRecipe && geometryDraft == nil }
+    var canApplySettings: Bool { file != nil && result != nil && !busy && !importing && !previewOutdated && !exporting && !aiState.isRunning && !lookLibraryBusy && !missingFilm && !missingMasterRecipe && geometryDraft == nil }
     var canExport: Bool { canApplySettings }
 
 
@@ -274,7 +283,7 @@ final class EditorModel: ObservableObject {
         do {
             let library = try LookLibrary(directory: lookDirectory)
             lookLibrary = library
-            films += library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id) }
+            films += library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id, colorNotice: $0.colorNotice, isCompatibility: $0.isCompatibility) }
         } catch {
             self.error = error.localizedDescription
         }
@@ -359,6 +368,7 @@ extension EditorModel {
     }
 
     func synchronizeAI(delay: Double = 0.6) {
+        if settings.isHDREditing { if aiIdentity != nil || aiPreparation != nil { resetAITask() }; return }
         guard settings.aiDenoiseEnabled || aiManuallyRequested else {
             if aiIdentity != nil || aiPreparation != nil || aiDebounce != nil { resetAITask() }
             return

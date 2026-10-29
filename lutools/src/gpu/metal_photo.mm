@@ -988,6 +988,7 @@ bool renderPhotoMetalImpl(
 
     const float lutStrength = std::max(0.0f, std::min(2.0f, request.lut_strength));
     const bool useLUT = lut && lutStrength > 0.0f;
+    if (useLUT && lut->requiresCPU()) return false;
     const bool useDcp = dcp && lutStrength > 0.0f;
     if (useDcp && (useLUT || !context.baseDcpPipeline)) return false;
     CachedDcp cachedDcp;

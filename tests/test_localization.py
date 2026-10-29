@@ -17,6 +17,11 @@ CJK = re.compile(r"[一-鿿]")
 TOKEN = re.compile(r'"(?:[^"\\\n]|\\.)*"|//.*')
 
 
+def starts_with_lowercase_word(text):
+    # sRGB 的首字母按标准小写；只豁免独立术语，普通小写词仍需检查。
+    return text[:1].islower() and not re.match(r"sRGB(?:\s|$)", text)
+
+
 def windows_sources():
     directory = ROOT / "RawLabWindows"
     return sorted(path for path in directory.rglob("*.cs")
@@ -182,6 +187,18 @@ class GeneratorFormatTests(unittest.TestCase):
             self.assertEqual(escaped, expected)
             element = ET.fromstring("<string>" + escaped + "</string>")
             self.assertEqual(formats.android_unquote(element.text), value)
+
+    def test_android_literal_percent_is_not_a_format_argument(self):
+        import generate
+        outputs = generate.generated(ROOT)
+        path = "RawLabAndroid/app/src/main/res/values/editor_strings.xml"
+        entries = {entry.attrib["name"]: entry for entry in ET.fromstring(outputs[path])}
+        for key in ("lut_preview_conditions_display", "lut_preview_conditions_raw"):
+            self.assertEqual(entries[key].get("formatted"), "false")
+            self.assertIn("100%", formats.android_unquote(entries[key].text))
+        formatted = [entry for entry in entries.values() if "%1$" in (entry.text or "")]
+        self.assertTrue(formatted)
+        self.assertTrue(all(entry.get("formatted") != "false" for entry in formatted))
 
     def test_missing_or_extra_arguments_are_rejected(self):
         for text in ("{1}", "no placeholder", "{0} {2}"):
@@ -355,13 +372,21 @@ class LocalizationTests(unittest.TestCase):
         self.assertEqual(untranslated(windows_sources(), windows_catalog("en"), "Loc.", windows_internal_group), [], "RawLabWindows")
         self.assertEqual([hit for path in windows.glob("*.xaml") for hit in xaml_literals(path)], [], "XAML")
 
+    def test_ui_capitalization_preserves_standard_color_space_names(self):
+        for text in ("sRGB", "sRGB linéaire", "sRGB lineal", "Linear sRGB", "Exporter"):
+            with self.subTest(text=text):
+                self.assertFalse(starts_with_lowercase_word(text))
+        for text in ("exporter", "linear sRGB", "srgb", "sRgb linéaire", "sRGBish"):
+            with self.subTest(text=text):
+                self.assertTrue(starts_with_lowercase_word(text))
+
     def test_ui_labels_start_with_capital(self):
         for language in ("en", "de", "fr", "es"):
             catalogs = {client: apple_catalog(ROOT / client / "Resources" / (language + ".lproj") / "Localizable.strings")
                         for client in APPLE_CLIENTS}
             catalogs["RawLabWindows"] = windows_catalog(language)
             for client, catalog in catalogs.items():
-                lower = {key: value for key, value in catalog.items() if value[:1].islower()}
+                lower = {key: value for key, value in catalog.items() if starts_with_lowercase_word(value)}
                 self.assertEqual(lower, {}, (client, language))
 
     def test_android_catalogs(self):

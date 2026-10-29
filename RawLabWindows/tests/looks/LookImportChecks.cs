@@ -16,6 +16,51 @@ internal static class LookImportChecks
         Directory.CreateDirectory(root);
         try
         {
+            var compatibleSource = Path.Combine(root, "Compatible.cube");
+            File.WriteAllText(compatibleSource, "prepared source and compatibility record");
+            var compatibleLibrary = new LookLibrary(Path.Combine(root,"compatible-library"),
+                validateLook: _ => new LookValidation(LookFormat.Cube, 0, true, 8), prepareCompatibility:(path,_)=>File.ReadAllBytes(path));
+            try { compatibleLibrary.ImportLook(compatibleSource);throw new Exception("Compatibility imported without confirmation"); }
+            catch(LookLibraryException error) { Check(error.Error==LookLibraryError.MissingReference,"External compatibility files require confirmation"); }
+            var draft=LUTCompatibility.Parse("""{"eligible":true,"source_sha256":"fixture","fixed_contract":false,"photo_style":"","extreme_values":false,"hints":[],"contract":{"version":1,"input":{"space":"srgb","reference":"display","range":"full"},"output":{"space":"srgb","reference":"display","range":"full"},"interpolation":"linear","base_rendering":"rawlab-neutral-v1"}}""")!;
+            var candidate = new LUTCompatibilityCandidate("candidate-1", "assumed", draft.Contract.DeepClone().AsObject());
+            var displayDraft = draft.Applying(candidate, true)!;
+            Check(displayDraft.Base == "source-display" && draft.Base == "rawlab-neutral-v1", "Candidate selection adapts a copy to display input without mutating the source draft");
+            Check(!System.Text.Json.Nodes.JsonNode.Parse(displayDraft.PreviewRequest())!.AsObject().ContainsKey("confirmed"),
+                "Preview configuration is separate from import confirmation");
+            var conditions = new LUTReferenceConditions();
+            Check(!conditions.CanCompare, "Reference comparison starts disabled");
+            conditions.SameSource = conditions.SameGeometry = conditions.SameProcessing = conditions.KnownSRGB = true;
+            Check(!conditions.CanCompare, "Reference comparison requires provenance");
+            conditions.ReferenceSource = "Synthetic matched fixture; not appearance evidence";
+            Check(conditions.CanCompare, "Explicit conditions enable descriptive pixel comparison");
+            var compatible = compatibleLibrary.ImportLook(compatibleSource,draft);
+            Check(compatible.CompatibilityMode == 8 && compatible.AppearanceUnverified, "Compatibility carries a distinct persistent badge state");
+            Check(new LookLibrary(Path.Combine(root,"compatible-library"), validateLook: _ => new LookValidation(LookFormat.Cube,0,true,8))
+                .Looks.Single().CompatibilityMode == 8, "Compatibility badge survives a library restart");
+            var originalCompatible = File.ReadAllBytes(compatible.Path);
+            compatibleLibrary.RenamePath(compatible.Path,"  My renamed LUT  ");
+            var renamedCompatible=new LookLibrary(Path.Combine(root,"compatible-library"), validateLook: _ => new LookValidation(LookFormat.Cube,0,true,8)).Looks.Single();
+            Check(renamedCompatible.Name=="My renamed LUT" && renamedCompatible.Id==compatible.Id && renamedCompatible.CompatibilityMode==8 &&
+                originalCompatible.SequenceEqual(File.ReadAllBytes(compatible.Path)),"Renaming preserves LUT identity, bytes and compatibility across restart");
+            compatibleLibrary.RenamePath(compatibleSource,"External display name");
+            Check(new LookLibrary(Path.Combine(root,"compatible-library"),validateLook:_=>new LookValidation(LookFormat.Cube,0,true,8))
+                .DisplayName(compatibleSource,"fallback")=="External display name","Historical external LUT names persist without changing photo paths");
+            var vltSource = Path.Combine(root, "Documented.vlt");
+            File.WriteAllText(vltSource, "original VLT table with documented contract");
+            var vltLibrary = new LookLibrary(Path.Combine(root,"vlt-library"),
+                validateLook: _ => new LookValidation(LookFormat.Vlt, 1, true));
+            var vlt = vltLibrary.ImportLook(vltSource);
+            Check(vlt.AppearanceUnverified && File.ReadAllText(vlt.Path) == File.ReadAllText(vltSource),
+                "Managed VLT keeps source bytes and explicitly unverified appearance");
+            var vltReloaded = new LookLibrary(Path.Combine(root,"vlt-library"),
+                validateLook: _ => new LookValidation(LookFormat.Vlt, 1, true)).Looks.Single();
+            Check(vltReloaded.Id == vlt.Id && vltReloaded.AppearanceUnverified,
+                "VLT identity and unverified status survive restart");
+            var removingVlt = Path.Combine(Path.GetDirectoryName(vlt.Path)!, ".remove-" + Path.GetFileName(vlt.Path));
+            File.Move(vlt.Path, removingVlt);
+            _ = new LookLibrary(Path.GetDirectoryName(vlt.Path), validateLook: _ => new LookValidation(LookFormat.Vlt,1,true));
+            Check(File.Exists(vlt.Path) && !File.Exists(removingVlt), "Interrupted VLT removal restores the still-referenced asset");
             var source = Path.Combine(root, "Camera look.dcp");
             File.WriteAllBytes(source, [1, 2, 3, 4]);
             var rlook = System.Text.Encoding.ASCII.GetBytes("RLOOKDCP synthetic");

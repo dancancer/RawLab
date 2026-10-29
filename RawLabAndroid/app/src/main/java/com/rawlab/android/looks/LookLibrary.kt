@@ -33,6 +33,8 @@ data class ManagedLook(
     val version: Int,
     val relativePath: String,
     val available: Boolean = true,
+    val appearanceUnverified: Boolean = false,
+    val compatibilityMode: Int = 0,
 ) {
     fun file(root: File): File = File(root, relativePath)
 }
@@ -41,6 +43,7 @@ class LookLibrary(
     private val root: File,
     private val validator: LookValidator = NativeLookValidator,
     private val dcpCompiler: DcpCompiler = NativeDcpCompiler,
+    private val compatibilityCompiler: (File, LUTCompatibility) -> ByteArray = { file, draft -> NativeProcessor.prepareLutCompatibility(file, draft.request()) },
 ) {
     private val registry = File(root, REGISTRY_NAME)
     private val monitor = monitors.computeIfAbsent(root.canonicalPath) { Any() }
@@ -54,7 +57,7 @@ class LookLibrary(
         readRegistry().map { look ->
             val file = look.file(root)
             val available = file.isFile && runCatching {
-                validator.validate(file) == LookValidation(look.format, look.version)
+                validator.validate(file).let { it.format == look.format && it.version == look.version }
             }.getOrDefault(false)
             look.copy(available = available)
         }
@@ -63,7 +66,7 @@ class LookLibrary(
     fun importLook(source: File, originalName: String = source.name): ManagedLook =
         source.inputStream().use { importLook(it, originalName) }
 
-    fun importLook(input: InputStream, originalName: String): ManagedLook = locked {
+    fun importLook(input: InputStream, originalName: String, compatibility: LUTCompatibility? = null): ManagedLook = locked {
         val id = UUID.randomUUID().toString()
         val transaction = File(root, ".import-$id.pending")
         check(transaction.createNewFile()) { "Cannot record look import" }
@@ -84,16 +87,25 @@ class LookLibrary(
             }
             val staged = File(root, ".${id}.stage.${format.extension}")
             move(rawStage, staged)
+            if (compatibility != null) {
+                require(format == LookFormat.CUBE || format == LookFormat.VLT)
+                val prepared = compatibilityCompiler(staged, compatibility)
+                staged.writeBytes(prepared)
+            }
             val relativePath = "${id}.${format.extension}"
             val destination = File(root, relativePath)
             val name = originalName.trim().ifEmpty { "Look.${format.extension}" }
             val validation = try { validator.validate(staged) }
             catch (error: IllegalArgumentException) { throw InvalidLookException(error.message ?: "Invalid look", error) }
             catch (error: UnsupportedOperationException) { throw InvalidLookException(error.message ?: "Invalid look", error) }
+            if (compatibility == null && validation.colorState in listOf(7, 8))
+                throw com.rawlab.android.engine.LUTColorContractException(1)
             if (validation.format != format) throw InvalidLookException("Look format does not match its extension")
             if (!validVersion(format, validation.version)) throw InvalidLookException("Invalid look version")
             move(staged, destination)
-            val imported = ManagedLook(id, name, originalName, format, validation.version, relativePath)
+            val imported = ManagedLook(id, name, originalName, format, validation.version, relativePath,
+                appearanceUnverified = validation.colorState in listOf(4, 7, 8),
+                compatibilityMode = validation.colorState.takeIf { it == 7 || it == 8 } ?: 0)
             writeRegistry(readRegistry() + imported)
             transaction.delete()
             imported
@@ -106,7 +118,7 @@ class LookLibrary(
     fun rename(id: String, name: String): ManagedLook = locked {
         val existing = requireLook(id)
         val trimmed = name.trim()
-        require(trimmed.isNotEmpty()) { "Look name cannot be empty" }
+        require(trimmed.isNotEmpty() && trimmed.none(Char::isISOControl)) { "Look name cannot be empty or contain control characters" }
         val renamed = existing.copy(name = trimmed)
         writeRegistry(readRegistry().map { if (it.id == id) renamed else it })
         renamed
@@ -149,7 +161,7 @@ class LookLibrary(
             val id = marker.name.removePrefix(".import-").removeSuffix(".pending")
             if (marker.name != ".import-$id.pending" || !isSafeId(id)) continue
             remove(File(root, ".$id.stage"))
-            for (extension in listOf("cube", "rlook")) {
+            for (extension in listOf("cube", "vlt", "rlook")) {
                 remove(File(root, ".$id.stage.$extension"))
                 if (id !in committed) remove(File(root, "$id.$extension"))
             }
@@ -158,7 +170,7 @@ class LookLibrary(
         for (file in root.listFiles().orEmpty()) {
             val stageId = file.name.removePrefix(".").substringBefore(".stage")
             val temporaryId = file.name.removePrefix(".$REGISTRY_NAME.").removeSuffix(".tmp")
-            if ((isSafeId(stageId) && file.name in listOf(".$stageId.stage", ".$stageId.stage.cube", ".$stageId.stage.rlook")) ||
+            if ((isSafeId(stageId) && file.name in listOf(".$stageId.stage", ".$stageId.stage.cube", ".$stageId.stage.vlt", ".$stageId.stage.rlook")) ||
                 (isSafeId(temporaryId) && file.name == ".$REGISTRY_NAME.$temporaryId.tmp")) remove(file)
         }
     }
@@ -186,7 +198,9 @@ class LookLibrary(
                 val path = properties.getProperty(prefix + "path") ?: throw IOException("Missing managed look path")
                 if (!isSafeId(id) || !ids.add(id) || !validVersion(format, version) || !isSafePath(path, id, format))
                     throw IOException("Invalid or duplicate managed look metadata")
-                ManagedLook(id, name, originalName, format, version, path)
+                ManagedLook(id, name, originalName, format, version, path,
+                    appearanceUnverified = properties.getProperty(prefix + "appearanceUnverified") == "true",
+                    compatibilityMode = properties.getProperty(prefix + "compatibilityMode")?.toIntOrNull()?.takeIf { it == 7 || it == 8 } ?: 0)
             }
         } catch (error: IOException) {
             throw error
@@ -242,6 +256,8 @@ class LookLibrary(
                     setProperty(prefix + "format", look.format.extension)
                     setProperty(prefix + "version", look.version.toString())
                     setProperty(prefix + "path", look.relativePath)
+                    setProperty(prefix + "appearanceUnverified", look.appearanceUnverified.toString())
+                    setProperty(prefix + "compatibilityMode", look.compatibilityMode.toString())
                 }
             }
             temporary.outputStream().use { properties.store(it, null) }
@@ -264,6 +280,7 @@ class LookLibrary(
 
     private fun validVersion(format: LookFormat, version: Int): Boolean = when (format) {
         LookFormat.CUBE -> version == 0
+        LookFormat.VLT -> version == 1
         LookFormat.RLOOK -> version == 1 || version == 2
         LookFormat.UNKNOWN -> false
     }

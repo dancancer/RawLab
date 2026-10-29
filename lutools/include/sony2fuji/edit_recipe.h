@@ -1,9 +1,18 @@
 #pragma once
 
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "sony2fuji/ffi/sony2fuji_hdr.h"
+#include <optional>
 #include <string>
 
 namespace sony2fuji {
+
+struct HDRRecipeSettings {
+    uint32_t processingVersion = SONY2FUJI_HDR_PROCESSING_VERSION;
+    float relativeTemperature = 6500;
+    float relativeTint = 0;
+    uint32_t baseColor = SONY2FUJI_HDR_COLOR_SRGB;
+};
 
 // JSON recipe versions are independent of the existing binary request v2.
 // Paths are UTF-8; callers resolve relative paths against the recipe directory.
@@ -12,6 +21,8 @@ struct EditRecipe {
     sony2fuji_processing_version processingVersion = SONY2FUJI_PROCESSING_LEGACY;
     std::string inputPath;
     bool rasterInput = false;
+    // v6 只接受 HDR 来源；相对 WB/处理版本不借用旧 RAW 字段。
+    std::optional<HDRRecipeSettings> hdr;
     std::string outputPath;
     std::string lookPath;
     // Required in JSON: never inherit a CLI, UI or session exposure default.
@@ -61,6 +72,7 @@ struct EditRecipe {
 
     // String pointers borrow this recipe; keep it alive and unchanged while used.
     sony2fuji_request toRequest() const;
+    sony2fuji_hdr_request_v1 toHDRRequest() const;
 };
 
 // Invalid documents leave the destination unchanged. Error includes the field.

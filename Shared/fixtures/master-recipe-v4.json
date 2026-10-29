@@ -1,0 +1,27 @@
+{
+  "id": "hamada_daylight_v2",
+  "name": "Refinement contract fixture",
+  "subtitle": "Synthetic controls",
+  "summary": "Exercises editable version 4 controls; not a calibrated look.",
+  "lutFileName": "hamada_daylight_pro_v2.cube",
+  "exposureDelta": 0.4,
+  "shadowsDelta": 20,
+  "highlightsDelta": -15,
+  "contrastDelta": -15,
+  "saturationDelta": -8,
+  "tintDelta": 5,
+  "hsl": {
+    "hue": [0, 0, 1, 0, 0, 0, 0, 0],
+    "saturation": [0, 1, 1, 0, 4, 1, 0, 0],
+    "lightness": [0, 0, 0, 0, -1, 0, 0, 0]
+  },
+  "settingsVersion": 4,
+  "tone": {"blackPoint": 50, "whitePoint": -60, "vibrance": 15},
+  "atmosphere": {"clarity": 12, "dehaze": -6},
+  "grading": {
+    "shadows": {"hue": 210, "saturation": 8},
+    "midtones": {"hue": 40, "saturation": 3},
+    "highlights": {"hue": 50, "saturation": 12}
+  },
+  "curve": {"mode": "custom", "points": [[0, 0], [0.25, 0.2], [0.5, 0.55], [0.75, 0.85], [1, 1]]}
+}

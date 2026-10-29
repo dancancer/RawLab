@@ -3,6 +3,7 @@ package com.rawlab.android.editor
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.settings.*
+import com.rawlab.android.looks.applyRecipe
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -15,6 +16,22 @@ class EditorAdjustmentRulesTest {
         EditorResetContext(input, EditSettings().effectiveFor(input), shot, setOf(recipeId))
     private fun candidate(scope: EditorResetScope, source: EditSettings, ctx: EditorResetContext = context()) =
         (rules.prepareReset(scope, source, ctx) as EditorResetResult.Ready).candidate
+
+    @Test fun lookResetMaterializesRefinedRecipeControlsOnce() {
+        val recipe = com.rawlab.android.looks.MasterRecipe.decode(org.json.JSONObject(
+            java.io.File("../../Shared/fixtures/master-recipe-v4.json").readText()))
+        val state = EditSettings().applyRecipe(recipe)
+        val source = state.copy(strength = .5f, tint = 0f)
+        val prepared = rules.prepareReset(EditorResetScope.Tool(15), source, context()) as EditorResetResult.Ready
+        assertTrue(prepared.requiresConfirmation)
+        assertTrue(prepared.convertedFields.containsAll(setOf("blackPoint", "whitePoint", "vibrance", "clarity", "dehaze", "curve", "colorGrading")))
+        val result = candidate(EditorResetScope.Group(EditorAdjustmentGroup.LOOKS), source)
+        assertNull(result.recipeID)
+        assertEquals(source.renderBlackPoint, result.blackPoint); assertEquals(source.renderWhitePoint, result.whitePoint)
+        assertEquals(source.renderVibrance, result.vibrance); assertEquals(source.renderClarity, result.clarity)
+        assertEquals(source.renderDehaze, result.dehaze); assertEquals(source.renderColorGrading, result.colorGrading)
+        assertEquals(source.renderCurve, result.curve)
+    }
 
     @Test fun allResetCanRemoveUnavailableRecipeWithoutMaterializingIt() {
         val source = EditSettings(recipeID = "unavailable", film = "unavailable", exposure = 3f,

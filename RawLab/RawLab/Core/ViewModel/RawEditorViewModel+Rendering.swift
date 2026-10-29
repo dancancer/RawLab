@@ -92,6 +92,33 @@ extension RawEditorViewModel {
                 return
             }
 
+            if settings.isHDREditing {
+                guard let sourceFile,let hdr=settings.hdr else { return }
+                sourceFile.withReadAccess { url in
+                    do {
+                        let edited=try self.processor.processHDR(url:url,settings:hdr,previewLongEdge:maxDimension)
+                        var neutral=HDRSettings(); neutral.geometry=hdr.geometry
+                        let original=try self.processor.processHDR(url:url,settings:neutral,previewLongEdge:maxDimension)
+                        let presentation=try HDRPresentation(edited),reference=try HDRPresentation(original)
+                        self.resultDelivery {
+                            guard self.sourceRevision==sourceRevision,self.isLatestRenderID(renderID) else { return }
+                            self.hdrPresentation=presentation; self.hdrReference=reference
+                            self.previewImage=UIImage(cgImage:presentation.sdrImage); self.basePreviewImage=UIImage(cgImage:reference.sdrImage)
+                            self.histogram=nil; self.baseHistogram=nil
+                            self.basePreviewGeometry=hdr.geometry; self.comparisonReferenceKey=referenceKey
+                            self.acceptedPreviewRequest=request; self.acceptedPreviewFrameID=renderID; self.previewFailed=false
+                            self.nativeImageSize=CGSize(width:edited.outputNativeWidth,height:edited.outputNativeHeight)
+                        }
+                    } catch {
+                        self.resultDelivery {
+                            guard self.sourceRevision==sourceRevision,self.isLatestRenderID(renderID) else { return }
+                            self.previewFailed=true; self.statusMessage=error.localizedDescription
+                        }
+                    }
+                }
+                return
+            }
+
             if usesRaw {
                 guard let sourceFile else {
                     self.resultDelivery {
@@ -104,7 +131,7 @@ extension RawEditorViewModel {
                 sourceFile.withReadAccess { sourceURL in
                     do {
                         let comparison = comparisonChanged ? try self.renderComparison(
-                            url: sourceURL, buffer: nil, geometry: referenceSettings.geometry, processing: referenceSettings.processing,
+                            url: sourceURL, buffer: nil, geometry: referenceSettings.geometrySettings, processing: referenceSettings.processing,
                             lens: referenceSettings.lensSettings, longEdge: maxDimension) : nil
                         let result = try self.processor.processRaw(
                             url: sourceURL,
@@ -129,7 +156,7 @@ extension RawEditorViewModel {
                             self.histogram = nil
                             self.nativeImageSize = result.buffer.nativeSize
                             if let comparison {
-                                self.applyComparison(comparison, geometry: referenceSettings.geometry, processing: referenceSettings.processing,
+                                self.applyComparison(comparison, geometry: referenceSettings.geometrySettings, processing: referenceSettings.processing,
                                                      lens: referenceSettings.lensSettings, key: referenceKey)
                             }
                             self.lensInfo = result.lensInfo
@@ -159,7 +186,23 @@ extension RawEditorViewModel {
                 return
             }
 
-            let inputBuffer = existingDraftBuffer ?? existingDraftPreview
+            var inputBuffer = existingDraftBuffer ?? existingDraftPreview
+            if let existing=inputBuffer,existing.isProxy,let native=existing.nativeSize,
+               max(existing.width,existing.height)<min(maxDimension,Int(max(native.width,native.height))) {
+                inputBuffer=nil
+            }
+            if inputBuffer==nil,let sourceFile {
+                do { inputBuffer=try sourceFile.withReadAccess {
+                    try self.processor.loadRasterBuffer(url:$0,previewLongEdge:maxDimension).buffer
+                } }
+                catch {
+                    self.resultDelivery {
+                        guard self.sourceRevision==sourceRevision,self.isLatestRenderID(renderID) else { return }
+                        self.previewFailed=true; self.statusMessage=error.localizedDescription
+                    }
+                    return
+                }
+            }
             guard let inputBuffer else {
                 self.resultDelivery {
                     guard self.sourceRevision == sourceRevision, self.isLatestRenderID(renderID) else { return }
@@ -172,7 +215,7 @@ extension RawEditorViewModel {
             let comparison: (UIImage?, Sony2FujiProcessor.RGBHistogram?)?
             do {
                 comparison = comparisonChanged ? try self.renderComparison(
-                    url: nil, buffer: inputBuffer, geometry: referenceSettings.geometry, processing: referenceSettings.processing,
+                    url: nil, buffer: inputBuffer, geometry: referenceSettings.geometrySettings, processing: referenceSettings.processing,
                             lens: referenceSettings.lensSettings, longEdge: maxDimension) : nil
                 outputBuffer = try self.processor.processBuffer(
                     buffer: inputBuffer,
@@ -200,12 +243,13 @@ extension RawEditorViewModel {
                     return
                 }
                 self.previewImage = previewImage
+                self.hdrPresentation=nil; self.hdrReference=nil; self.draftBuffer=inputBuffer
                 self.acceptedPreviewFrameID = renderID
                 self.acceptedPreviewRequest = request
                 self.histogram = nil
                 self.nativeImageSize = outputBuffer.nativeSize
                 if let comparison {
-                    self.applyComparison(comparison, geometry: referenceSettings.geometry, processing: referenceSettings.processing,
+                    self.applyComparison(comparison, geometry: referenceSettings.geometrySettings, processing: referenceSettings.processing,
                                          lens: referenceSettings.lensSettings, key: referenceKey)
                 }
                 self.lensInfo = nil
@@ -255,8 +299,8 @@ extension RawEditorViewModel {
 
     func comparisonKey(settings: RawSettings, longEdge: Int) -> ComparisonReferenceKey {
         ComparisonReferenceKey(sourceRevision: sourceRevision, file: sourceFile, identity: sourceIdentity,
-                               kind: sourceKind, processing: settings.processing, geometry: settings.geometry,
-                               lens: settings.lensSettings, longEdge: longEdge)
+                               kind: sourceKind, processing: settings.processing, geometry: settings.geometrySettings,
+                               lens: settings.lensSettings, longEdge: longEdge,hdrMode:settings.hdr?.mode)
     }
 
     func retryPreview(settings: RawSettings) {

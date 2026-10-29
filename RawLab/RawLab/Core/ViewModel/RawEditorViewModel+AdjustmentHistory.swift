@@ -26,6 +26,11 @@ private struct IOSAdjustmentSourceStamp: Equatable {
 }
 
 extension RawEditorViewModel {
+    var sourceDefaultSettings: RawSettings {
+        var settings=RawSettings.default
+        if sourceIsHDR { settings.hdr=HDRSettings() }
+        return settings
+    }
     static func adjustmentSourceValidation(_ file: PhotoSourceFile) throws -> () throws -> Void {
         let original = try file.withReadAccess { try IOSAdjustmentSourceStamp($0) }
         return {
@@ -65,7 +70,7 @@ extension RawEditorViewModel {
             cancelQueuedSettingsSave()
             pendingSettings = nil
             failedDraftSource = nil
-            let settings = record.state?.settings ?? .default
+            let settings = record.state?.settings ?? sourceDefaultSettings
             let validation = adjustmentSourceValidator
             acceptImportedEditRecord(record, settings: settings)
             // 重新读取编辑记录不代表认可来源文件被替换。
@@ -162,7 +167,7 @@ extension RawEditorViewModel {
                   (try? editPersistence?.versionedState(for: saved.identity)) == saved else { continue }
             // 旧操作的缓存回执不能覆盖后来已保存的编辑或尚未保存的界面。
             loadedEditRecord = saved
-            let state = saved.state ?? PhotoEditState(settings: .default, updatedAt: Date(timeIntervalSince1970: 0))
+            let state = saved.state ?? PhotoEditState(settings:sourceDefaultSettings,updatedAt:Date(timeIntervalSince1970:0))
             retainEditMetadata(state)
             includeIndependentRecipeLook(state.settings)
             committedPreviewSettings = state.settings

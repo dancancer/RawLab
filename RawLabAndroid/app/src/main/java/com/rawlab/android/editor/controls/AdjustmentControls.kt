@@ -26,6 +26,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -106,9 +107,10 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
     val resetModifier = Modifier.semantics {
         stateDescription = status
         customActions = if (canReset) listOf(CustomAccessibilityAction(resetLabel) { reset(); true }) else emptyList()
-    }.then(if (!touchExploration && canReset) Modifier.pointerInput(session) {
-        detectTapGestures(onDoubleTap = { reset() })
-    } else Modifier)
+    }.pointerInput(session, touchExploration, canReset) {
+        // 经过默认值时只停用重置识别，不能移除节点并取消同一标尺正在进行的拖动。
+        if (!touchExploration && canReset) detectTapGestures(onDoubleTap = { reset() })
+    }
     val color = if (modified) Color(0xffffc107) else MaterialTheme.colorScheme.onSurface
     val large = LocalDensity.current.fontScale > 1.3f
     @Composable fun name(modifier: Modifier) {
@@ -133,10 +135,13 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
                         }
                     }
                 }) {
-            Box(Modifier.widthIn(max = 104.dp).horizontalScroll(rememberScrollState())) {
+            val readoutWidth = if (compactNumber) Modifier.widthIn(max = 104.dp) else Modifier.width(104.dp)
+            Box(readoutWidth.horizontalScroll(rememberScrollState()), contentAlignment = Alignment.CenterEnd) {
                 Text(formatted, color = color, fontFamily = FontFamily.Monospace)
             }
-            if (modified) Text(" ·", color = color)
+            if (modified || !compactNumber) {
+                Text(" ·", color = color, modifier = Modifier.alpha(if (modified) 1f else 0f).clearAndSetSemantics { })
+            }
         }
         Text(unit, Modifier.widthIn(min = 24.dp).testTag("adjustment-unit-$label"), style = MaterialTheme.typography.labelSmall)
     }
@@ -147,17 +152,16 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
         }
     }
     Column(modifier.fillMaxWidth().padding(horizontal = if (compactNumber) 4.dp else 12.dp).testTag("adjustment-row-$label")) {
-        if (compactNumber) {
-            if (large) {
-                name(Modifier.fillMaxWidth())
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) { number() }
-            } else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { name(Modifier.weight(1f)); number() }
-        } else if (large) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { name(Modifier.weight(1f)); number() }
-            track(Modifier.fillMaxWidth())
-        } else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            name(Modifier.weight(.8f)); track(Modifier.weight(1f)); number()
-        }
+            if (compactNumber) {
+                if (large) {
+                    name(Modifier.fillMaxWidth())
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) { number() }
+                } else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { name(Modifier.weight(1f)); number() }
+            } else {
+                // 所有窗口都让标尺独占整行，数值位数和修改标记不能改变手势坐标。
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { name(Modifier.weight(1f)); number() }
+                track(Modifier.fillMaxWidth())
+            }
     }
     fun close() { editing = false; requester.requestFocus() }
     if (editing) AlertDialog(onDismissRequest = { close() }, title = { Text(title) },

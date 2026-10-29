@@ -161,15 +161,19 @@ extension EditorV4UITests {
             groupButton.tap()
         }
         let tool = app.buttons["tool." + name]
-        let strips = app.scrollViews.containing(.button, identifier: "tool." + name).allElementsBoundByIndex
-        let strip = try XCTUnwrap(strips.min { $0.frame.height < $1.frame.height }, "Editor tool strip missing")
+        let strip = app.scrollViews["editor.tools"]
         try revealHorizontally(tool, in: strip, app: app)
         tapVisible(tool, in: app)
     }
 
     func revealHorizontally(_ element: XCUIElement, in strip: XCUIElement, app: XCUIApplication) throws {
-        XCTAssertTrue(element.waitForExistence(timeout: 5), app.debugDescription)
-        for _ in 0..<18 {
+        XCTAssertTrue(strip.waitForExistence(timeout: 5), app.debugDescription)
+        for attempt in 0..<18 {
+            // SwiftUI 可能不向 AX 暴露屏外项，先滚动真实工具行再读取目标。
+            if !element.exists {
+                if attempt < 6 { strip.swipeLeft() } else { strip.swipeRight() }
+                continue
+            }
             let frame = element.frame
             if frame.width > 0 && strip.frame.insetBy(dx: 8, dy: 0).contains(CGPoint(x: frame.midX, y: frame.midY)) { return }
             let right = frame.midX < strip.frame.midX
@@ -201,9 +205,10 @@ extension EditorV4UITests {
             let amount = min(0.6, max(0.08, distance / max(1, panelFrame.height)))
             let startY: CGFloat = up ? 0.82 : 0.18
             let endY = startY + (up ? -amount : amount)
-            panel.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: startY))
+            // 从参数区右侧留白拖动，避免原生菜单把按住后拖动识别为菜单交互。
+            panel.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: startY))
                 .press(forDuration: 0.1,
-                       thenDragTo: panel.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: endY)),
+                       thenDragTo: panel.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: endY)),
                        withVelocity: .slow, thenHoldForDuration: 0.2)
         }
         capture("v4-unreachable-" + element.identifier, in: app)
@@ -292,7 +297,7 @@ extension EditorV4UITests {
 
     func resetIfEnabled(_ identifier: String, in app: XCUIApplication) {
         let reset = app.buttons[identifier]
-        if reset.isEnabled {
+        if reset.exists && reset.isEnabled {
             try? revealInPanel(reset, in: app)
             reset.tap()
         }

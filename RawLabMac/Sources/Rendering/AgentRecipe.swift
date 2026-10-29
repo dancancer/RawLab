@@ -4,6 +4,18 @@ extension RenderEngine {
     // 复用实际渲染映射，固化配方强度和当前照片白平衡，不在 Agent 中再次叠加。
     func agentRecipe(_ url: URL, settings: Adjustments, lut: URL?, output: URL,
                      exportLongEdge: Int? = nil) throws -> Data {
+        if let hdr=settings.hdr, hdr.mode == .hdr {
+            guard try HDRSourceInfo.probe(url) != nil else {
+                throw RenderError.failed(L10n.text("此照片不包含受支持的 HDR 增益图。"))
+            }
+            guard ExportFormat.forOutput(output) == .jpeg else {
+                throw RenderError.failed(L10n.text("HDR Agent 配方仅支持 HDR JPEG 输出。"))
+            }
+            return try HDRRecipe.document(settings:hdr,input:url,output:output,baseColor:.displayP3,longEdge:exportLongEdge)
+        }
+        guard try HDRSourceInfo.probe(url)==nil else {
+            throw RenderError.failed(L10n.text("HDR 原片的 Agent 配方需要启用 HDR 编辑。"))
+        }
         guard !settings.aiDenoiseEnabled else {
             throw RenderError.failed(L10n.text("Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。"))
         }
@@ -34,7 +46,7 @@ extension RenderEngine {
         }
         let format: String
         switch ExportFormat.forOutput(output) {
-        case .jpeg: format = "jpeg"
+        case .jpeg, .hdrJPEG: format = "jpeg"
         case .png: format = "png"
         case .renderedDNG: format = "dng"
         }
@@ -42,11 +54,11 @@ extension RenderEngine {
         guard state.toneSettings.isValid else { throw RenderError.failed(L10n.text("无效的黑白场或鲜艳度参数")) }
         guard state.curveSettings.isValid else { throw RenderError.failed(L10n.text("无效的曲线参数")) }
         guard state.atmosphereSettings.isValid else { throw RenderError.failed(L10n.text("无效的清晰度或去朦胧参数")) }
-        let atmosphereConfig = state.atmosphereSettings.nativeConfig
-        let toneConfig = state.toneSettings.nativeConfig
+        let atmosphereConfig = state.renderAtmosphereSettings.nativeConfig
+        let toneConfig = state.renderToneSettings.nativeConfig
         var tone: [String: Any] = ["contrast": min(2, max(0, request.contrast)), "saturation": min(2, max(0, request.saturation)),
             "highlights": min(1, max(-1, request.highlights)), "shadows": min(1, max(-1, request.shadows)), "s_curve": request.tone_curve]
-        tone["curve"] = ["mode": state.curveSettings.mode.rawValue, "points": state.curveSettings.points.map { [$0.x, $0.y] }]
+        tone["curve"] = ["mode": state.renderCurveSettings.mode.rawValue, "points": state.renderCurveSettings.points.map { [$0.x, $0.y] }]
         if toneConfig.black_point != 0 { tone["black_point"] = toneConfig.black_point }
         if toneConfig.white_point != 0 { tone["white_point"] = toneConfig.white_point }
         var document: [String: Any] = [
@@ -84,9 +96,9 @@ extension RenderEngine {
             document["edits"] = edits
         }
         guard state.gradingSettings.isValid else { throw RenderError.failed(L10n.text("无效的颜色分级参数")) }
-        if !state.gradingSettings.isDefault, var edits = document["edits"] as? [String: Any] {
+        if !state.renderGradingSettings.isDefault, var edits = document["edits"] as? [String: Any] {
             edits["color_grading"] = Dictionary(uniqueKeysWithValues: ColorGradingZone.allCases.map { zone in
-                let wheel = state.gradingSettings[zone]
+                let wheel = state.renderGradingSettings[zone]
                 return (zone.rawValue, ["hue": wheel.nativeHue, "saturation": Float(wheel.saturation)])
             })
             document["edits"] = edits

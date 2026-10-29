@@ -25,7 +25,7 @@ extension RawEditorViewModel {
     func captureCollectionSynchronization(scope: AdjustmentTransferScope, settings: RawSettings) throws -> IOSCollectionSynchronization {
         guard let identity = sourceIdentity, let record = loadedEditRecord else { throw EditPersistenceError.corruptStore }
         try validateCollectionActive(identity.key)
-        let state = record.state ?? PhotoEditState(settings: .default)
+        let state = record.state ?? PhotoEditState(settings: sourceDefaultSettings)
         guard currentEditState(settings: settings).hasSameAdjustments(as: state) else { throw EditPersistenceConflict.changed }
         let context = adjustmentContext(identifier: identity.key, isRaw: sourceKind == .raw, whiteBalance: rawWhiteBalance)
         let payload = try IOSAdjustmentTransfer.capture(scope: scope, snapshot: state, context: context)
@@ -46,6 +46,7 @@ extension RawEditorViewModel {
         let active = collectionActiveValidator()
         adjustmentQueue.async {
             let review = collection.prepareExport(store: store, skipping: skipping, format: format, longEdge: longEdge,
+                probeHDR: { try HDRSourceInfo.probe($0) != nil },
                 validateActive: active, resolveLook: { settings in
                     if let id = settings.masterRecipeID {
                         let recipe = MasterRecipe.recipe(for: id)

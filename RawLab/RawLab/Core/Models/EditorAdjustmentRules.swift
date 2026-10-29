@@ -1,5 +1,19 @@
 import Foundation
 
+extension RawSettings {
+    mutating func clearMasterRecipe(context: EditorAdjustmentContext) -> EditorAdjustmentResetBlock? {
+        guard masterRecipeID != nil else { return nil }
+        let strength = lutStrength
+        switch EditorAdjustmentRules.prepareReset(.tool(.recipe), snapshot: PhotoEditState(settings: self), context: context) {
+        case .candidate(let candidate, _):
+            self = candidate.settings; lutStrength = strength
+            return nil
+        case .blocked(let reason): return reason
+        case .unchanged: return .unrepresentable
+        }
+    }
+}
+
 enum EditorToolSelection: Hashable {
     case adjustment(AdjustmentKind)
     case film, recipe, lens, geometry
@@ -64,6 +78,7 @@ enum EditorAdjustmentRules {
 
     static func isModified(_ scope: EditorAdjustmentScope, snapshot: PhotoEditState,
                            context: EditorAdjustmentContext) -> Bool {
+        if snapshot.settings.isHDREditing { return resettingHDR(scope,settings:snapshot.settings) != snapshot.settings }
         if case .tool(let tool) = scope {
             switch tool {
             case .film: return snapshot.filmID != nil || snapshot.settings.hasLook
@@ -103,6 +118,12 @@ enum EditorAdjustmentRules {
 
     static func prepareReset(_ scope: EditorAdjustmentScope, snapshot: PhotoEditState,
                              context: EditorAdjustmentContext) -> EditorAdjustmentResetResult {
+        if snapshot.settings.isHDREditing {
+            guard snapshot.settings.hdr?.isValid==true else { return .blocked(.invalidInput) }
+            let candidate=resettingHDR(scope,settings:snapshot.settings)
+            return candidate==snapshot.settings ? .unchanged :
+                .candidate(snapshot.replacing(settings:candidate,preservingFilmID:snapshot.filmID),requiresConfirmation:false)
+        }
         guard valid(snapshot.settings), snapshot.updatedAt.timeIntervalSince1970.isFinite else {
             return .blocked(.invalidInput)
         }
@@ -191,6 +212,13 @@ enum EditorAdjustmentRules {
             fields.append("白平衡")
         }
         if before.hsl != after.hsl { fields.append("HSL") }
+        if before.blackPoint != after.blackPoint { fields.append("黑场") }
+        if before.whitePoint != after.whitePoint { fields.append("白场") }
+        if before.vibrance != after.vibrance { fields.append("鲜艳度") }
+        if before.clarity != after.clarity { fields.append("清晰度") }
+        if before.dehaze != after.dehaze { fields.append("去朦胧") }
+        if before.curveSettings != after.curveSettings { fields.append("曲线") }
+        if before.gradingSettings != after.gradingSettings { fields.append("颜色分级") }
         return fields
     }
 
@@ -263,6 +291,22 @@ enum EditorAdjustmentRules {
             case .geometry:
                 result.geometry = defaults.geometry; result.lensCorrection = defaults.lensCorrection
             }
+        }
+        return result
+    }
+
+    private static func resettingHDR(_ scope: EditorAdjustmentScope,settings: RawSettings) -> RawSettings {
+        var result=settings
+        guard result.isHDREditing else { return result }
+        switch scope {
+        case .all: result.hdr?.reset()
+        case .group(let group):
+            for tool in tools(group) { result=resettingHDR(.tool(tool),settings:result) }
+        case .tool(.geometry): result.setGeometrySettings(GeometrySettings())
+        case .tool(.adjustment(let kind)):
+            if kind == .temperature || kind == .tint { result.hdr?.temperature=6500; result.hdr?.tint=0 }
+            else if let key=kind.hdrKeyPath { result.hdr?[keyPath:key]=HDRSettings()[keyPath:key] }
+        default: break
         }
         return result
     }

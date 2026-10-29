@@ -1,4 +1,5 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "ffi/hdr_session.h"
 
 #include "sony2fuji/sony2fuji.h"
 #include "sony2fuji/dcp_look.h"
@@ -14,6 +15,8 @@
 #include "core/photo_tone_curve.h"
 #include "core/photo_geometry.h"
 #include "core/photo_lut.h"
+#include "core/photo_lut_contract.h"
+#include "core/lut_compatibility.h"
 #include "gpu/image_stats.h"
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
 #include "ai/ai_session.h"
@@ -46,6 +49,8 @@
 #include <sys/stat.h>
 
 struct sony2fuji_session {
+    sony2fuji_cancel_callback cancellation_callback = nullptr;
+    void* cancellation_context = nullptr;
     sony2fuji::GpuConfig gpu_config;
     sony2fuji::ImageData raw_cache;
     std::string raw_key;
@@ -95,6 +100,14 @@ struct sony2fuji_session {
     uint64_t raw_revision = 0;
 #endif
 };
+
+bool hdrSessionForcesGPU(const sony2fuji_session* session) {
+    return session && session->gpu_config.mode == sony2fuji::GpuMode::Force;
+}
+
+void hdrSessionDidRenderCPU(sony2fuji_session* session) {
+    session->last_backend = SONY2FUJI_BACKEND_CPU;
+}
 
 struct sony2fuji_hsl_probe {
     sony2fuji::ImageData image;
@@ -609,6 +622,7 @@ sony2fuji::ImageData resizeBilinear(
         : static_cast<float>(source.height - 1) / static_cast<float>(target_height - 1);
 
     for (uint32_t y = 0; y < target_height; ++y) {
+        sony2fuji::checkProcessingCancellation();
         float src_y = static_cast<float>(y) * scale_y;
         for (uint32_t x = 0; x < target_width; ++x) {
             float src_x = static_cast<float>(x) * scale_x;
@@ -634,24 +648,27 @@ void applyToneAdjustments(sony2fuji::ImageData& image, const sony2fuji_request& 
     ToneCurvePoints curve = buildToneCurve(request.tone_curve);
     sony2fuji::RGB wb(1, 1, 1);
 
-    for (auto& pixel : image.pixels) {
-        applyExposureAndWhiteBalance(pixel, exposure_scale, wb);
-        if (highlights != 0.0f || shadows != 0.0f) {
-            applyHighlightsShadowsToPixel(pixel, highlights, shadows);
+    sony2fuji::parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+        for (size_t index = first; index < last; ++index) {
+            auto& pixel = image.pixels[index];
+            applyExposureAndWhiteBalance(pixel, exposure_scale, wb);
+            if (highlights != 0.0f || shadows != 0.0f) {
+                applyHighlightsShadowsToPixel(pixel, highlights, shadows);
+            }
+            if (customCurve.active()) {
+                pixel.r = static_cast<float>(customCurve.evaluate(pixel.r));
+                pixel.g = static_cast<float>(customCurve.evaluate(pixel.g));
+                pixel.b = static_cast<float>(customCurve.evaluate(pixel.b));
+            } else if (use_curve) {
+                pixel.r = applyToneCurve(pixel.r, curve);
+                pixel.g = applyToneCurve(pixel.g, curve);
+                pixel.b = applyToneCurve(pixel.b, curve);
+            }
+            if (contrast != 1.0f || saturation != 1.0f) {
+                applyContrastSaturation(pixel, contrast, saturation);
+            }
         }
-        if (customCurve.active()) {
-            pixel.r = static_cast<float>(customCurve.evaluate(pixel.r));
-            pixel.g = static_cast<float>(customCurve.evaluate(pixel.g));
-            pixel.b = static_cast<float>(customCurve.evaluate(pixel.b));
-        } else if (use_curve) {
-            pixel.r = applyToneCurve(pixel.r, curve);
-            pixel.g = applyToneCurve(pixel.g, curve);
-            pixel.b = applyToneCurve(pixel.b, curve);
-        }
-        if (contrast != 1.0f || saturation != 1.0f) {
-            applyContrastSaturation(pixel, contrast, saturation);
-        }
-    }
+    });
 }
 
 // 保存两行原像素，避免已写回的行进入下一行的 3x3 邻域。
@@ -666,6 +683,7 @@ void applyBlurredDetail(sony2fuji::ImageData& image, Apply apply) {
             row[a].g + row[b].g + row[c].g, row[a].b + row[b].b + row[c].b);
     };
     for (int y = 0; y < height; ++y) {
+        sony2fuji::checkProcessingCancellation();
         auto* destination = image.pixels.data() + size_t(y) * width;
         std::copy_n(destination, width, current.data());
         const auto* next = y + 1 < height ? destination + width : current.data();
@@ -761,15 +779,38 @@ sony2fuji_status applyPhotoLook(sony2fuji::ImageData& image,
     diagnostics.max_linear = std::numeric_limits<float>::lowest();
     const bool diagnosticBlocks = config.mode == sony2fuji::GpuMode::Off && lut &&
         lut->inputTransfer() == sony2fuji::LUTTransfer::FLog2 && isLutDiagnosticsEnabled();
+    std::unique_ptr<sony2fuji::ContractLUTEvaluator> contract;
+    if (lut && lut->hasColorContract()) {
+        contract = std::make_unique<sony2fuji::ContractLUTEvaluator>(lut);
+        if (!contract->supportsInput(displayInput)) return SONY2FUJI_STATUS_UNSUPPORTED;
+    }
     auto render = [&](sony2fuji::ImageData& working) {
+        sony2fuji::checkProcessingCancellation();
         auto base = working;
-        for (auto& p : base.pixels) p = sony2fuji::RGB(encode(p.r), encode(p.g), encode(p.b));
+        for (size_t i = 0; i < base.pixels.size(); ++i) {
+            if (i % 4096 == 0) sony2fuji::checkProcessingCancellation();
+            auto& p = base.pixels[i]; p = sony2fuji::RGB(encode(p.r), encode(p.g), encode(p.b));
+        }
         if (dcp) {
             const size_t count = working.pixels.size();
+            const auto cancellation = sony2fuji::processingCancellation;
 #ifdef _OPENMP
 #pragma omp parallel for if (count >= (1u << 16))
 #endif
-            for (size_t i = 0; i < count; ++i) working.pixels[i] = dcp->apply(working.pixels[i]);
+            for (size_t first = 0; first < count; first += 4096) {
+                if (cancellation.cancelled()) continue;
+                for (size_t i = first; i < std::min(count, first + 4096); ++i)
+                    working.pixels[i] = dcp->apply(working.pixels[i]);
+            }
+            cancellation.check();
+        } else if (contract) {
+            for (size_t i = 0; i < working.pixels.size(); ++i) {
+                if (i % 4096 == 0) sony2fuji::checkProcessingCancellation();
+                auto& pixel = working.pixels[i];
+                pixel = contract->apply(pixel);
+                if (!std::isfinite(pixel.r) || !std::isfinite(pixel.g) || !std::isfinite(pixel.b))
+                    return SONY2FUJI_STATUS_PROCESSING_ERROR;
+            }
         } else {
             if (lut->inputTransfer() == sony2fuji::LUTTransfer::SRGB) working = base;
             else if (lut->inputTransfer() != sony2fuji::LUTTransfer::FLog2)
@@ -779,11 +820,14 @@ sony2fuji_status applyPhotoLook(sony2fuji::ImageData& image,
                 applyFLog2Encoding(working, false, diagnosticBlocks ? &diagnostics : nullptr);
             }
             const auto result = sony2fuji::applyLUTWithConfig(lut, working, config);
+            sony2fuji::checkProcessingCancellation();
             if (result != sony2fuji::ErrorCode::Success) return mapError(result);
             sony2fuji::renderPhotoLUTOutput(working, lut->outputTransfer());
         }
-        for (size_t i = 0; i < working.pixels.size(); ++i)
+        for (size_t i = 0; i < working.pixels.size(); ++i) {
+            if (i % 4096 == 0) sony2fuji::checkProcessingCancellation();
             working.pixels[i] = lerpRGB(base.pixels[i], working.pixels[i], strength);
+        }
         return SONY2FUJI_STATUS_OK;
     };
     // 独立 LUT GPU 仍以整次调用为事务；CPU 混合只保留两块各 3 MiB 的工作区。
@@ -792,6 +836,7 @@ sony2fuji_status applyPhotoLook(sony2fuji::ImageData& image,
     sony2fuji::ImageData block;
     block.height = 1;
     for (size_t first = 0; first < image.pixels.size(); first += blockPixels) {
+        sony2fuji::checkProcessingCancellation();
         const size_t count = std::min(blockPixels, image.pixels.size() - first);
         block.width = static_cast<int>(count);
         block.pixels.assign(image.pixels.begin() + first, image.pixels.begin() + first + count);
@@ -816,7 +861,9 @@ sony2fuji_status ensureLinear(
         return SONY2FUJI_STATUS_UNSUPPORTED;
     }
 
-    for (auto& pixel : image.pixels) {
+    for (size_t i = 0; i < image.pixels.size(); ++i) {
+        if (i % 4096 == 0) sony2fuji::checkProcessingCancellation();
+        auto& pixel = image.pixels[i];
         pixel.r = sony2fuji::GammaConverter::removeSRGBGamma(pixel.r);
         pixel.g = sony2fuji::GammaConverter::removeSRGBGamma(pixel.g);
         pixel.b = sony2fuji::GammaConverter::removeSRGBGamma(pixel.b);
@@ -955,7 +1002,12 @@ sony2fuji_status loadRawImage(
         }
 #endif
         sony2fuji::ImageData decoded;
-        auto result = processor.process(options, decoded);
+        sony2fuji::ErrorCode result;
+        try { result = processor.process(options, decoded); }
+        catch (const sony2fuji::ProcessingCancelled&) {
+            session->raw_processor.reset(); session->processor_key.clear();
+            throw;
+        }
         if (result != sony2fuji::ErrorCode::Success) {
             session->raw_processor.reset(); session->processor_key.clear();
             return mapError(result);
@@ -1016,6 +1068,7 @@ sony2fuji_status loadBufferImage(
     uint32_t channels = request.input_pixel_format == SONY2FUJI_PIXEL_RGBA8 ? 4 : 3;
 
     for (size_t i = 0; i < image.pixels.size(); ++i) {
+        if (i % 4096 == 0) sony2fuji::checkProcessingCancellation();
         size_t offset = i * channels;
         if (request.input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER && channels == 4 && data[offset + 3] != 255)
             return SONY2FUJI_STATUS_UNSUPPORTED;
@@ -1077,13 +1130,14 @@ sony2fuji_status writeOutputBuffer(
     size_t stride = static_cast<size_t>(image.width) * channels;
     size_t total = stride * static_cast<size_t>(image.height);
 
-    void* buffer = std::malloc(total);
+    std::unique_ptr<void, decltype(&std::free)> buffer(std::malloc(total), std::free);
     if (!buffer) {
         return SONY2FUJI_STATUS_OUT_OF_MEMORY;
     }
 
-    uint8_t* dst = static_cast<uint8_t*>(buffer);
+    uint8_t* dst = static_cast<uint8_t*>(buffer.get());
     for (int y = 0; y < image.height; ++y) {
+        sony2fuji::checkProcessingCancellation();
         for (int x = 0; x < image.width; ++x) {
             const sony2fuji::RGB& pixel = image.at(x, y);
             size_t offset = static_cast<size_t>(y) * stride + static_cast<size_t>(x) * channels;
@@ -1096,7 +1150,7 @@ sony2fuji_status writeOutputBuffer(
         }
     }
 
-    out_buffer->data = buffer;
+    out_buffer->data = buffer.release();
     out_buffer->size_bytes = total;
     out_buffer->width = static_cast<uint32_t>(image.width);
     out_buffer->height = static_cast<uint32_t>(image.height);
@@ -1108,6 +1162,7 @@ sony2fuji_status writeOutputBuffer(
 
 sony2fuji_status finishGeometry(sony2fuji_session* session, const sony2fuji_request& request,
     sony2fuji::ImageData& image, uint32_t native_width, uint32_t native_height) {
+    sony2fuji::checkProcessingCancellation();
     const auto transformed = sony2fuji::applyGeometry(image, session->geometry);
     if (transformed != sony2fuji::ErrorCode::Success) return mapError(transformed);
     uint32_t width, height;
@@ -1163,12 +1218,13 @@ sony2fuji_status sony2fuji_validate_look(
             if (!look) return SONY2FUJI_STATUS_UNSUPPORTED;
             if (format_version) *format_version = look->formatVersion();
             if (format) *format = SONY2FUJI_LOOK_RLOOK;
-        } else if (kind == "cube") {
+        } else if (kind == "cube" || kind == "vlt") {
             std::shared_ptr<sony2fuji::LUT3D> lut;
             const auto status = loadLUT(path, &lut);
             if (status != SONY2FUJI_STATUS_OK) return status;
             if (!lut->isPhotoLUT()) return SONY2FUJI_STATUS_UNSUPPORTED;
-            if (format) *format = SONY2FUJI_LOOK_CUBE;
+            if (format) *format = kind == "vlt" ? SONY2FUJI_LOOK_VLT : SONY2FUJI_LOOK_CUBE;
+            if (format_version && kind == "vlt") *format_version = 1;
         } else {
             return SONY2FUJI_STATUS_UNSUPPORTED;
         }
@@ -1180,6 +1236,15 @@ sony2fuji_status sony2fuji_validate_look(
     } catch (const std::exception&) {
         return SONY2FUJI_STATUS_UNSUPPORTED;
     }
+}
+
+sony2fuji_lut_color_state sony2fuji_inspect_lut_color(const char* path) {
+    if (isEmptyString(path)) return SONY2FUJI_LUT_UNREADABLE;
+    try {
+        const auto lut = sony2fuji::LUTParser::loadLUT(path);
+        if (!lut) return SONY2FUJI_LUT_UNREADABLE;
+        return static_cast<sony2fuji_lut_color_state>(lut->contractState());
+    } catch (...) { return SONY2FUJI_LUT_UNREADABLE; }
 }
 
 // ============================================================================
@@ -1670,11 +1735,13 @@ static sony2fuji_status processImpl(
     sony2fuji_session* session,
     const sony2fuji_request* request,
     sony2fuji_buffer* out_buffer,
-    sony2fuji::ImageData* pre_hsl = nullptr
+    sony2fuji::ImageData* pre_hsl = nullptr,
+    std::shared_ptr<sony2fuji::LUT3D> preview_lut = nullptr
 ) {
     if (!session) {
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     }
+    sony2fuji::checkProcessingCancellation();
     session->geometry_width = session->geometry_height = 0;
 
     sony2fuji_status status = validateRequest(request, out_buffer);
@@ -1725,7 +1792,9 @@ static sony2fuji_status processImpl(
     std::shared_ptr<sony2fuji::LUT3D> lut;
     std::shared_ptr<const sony2fuji::DcpLook> dcp;
     if (use_lut) {
-        if (sony2fuji::LUTParser::detectFormat(local.lut_path) == "rlook") {
+        if(preview_lut) {
+            lut=std::move(preview_lut);
+        } else if (sony2fuji::LUTParser::detectFormat(local.lut_path) == "rlook") {
             dcp = sony2fuji::DcpLook::loadCached(local.lut_path);
             if (!dcp) return SONY2FUJI_STATUS_UNSUPPORTED;
 #if !defined(SONY2FUJI_ENABLE_METAL)
@@ -1747,6 +1816,12 @@ static sony2fuji_status processImpl(
     // Reuse the reference stages; scene-view GPU shaders retain their existing
     // contract. Auto explicitly falls back for display-referred input.
     if (displayInput) gpuPipeline = false;
+    const bool contractCPU = lut && lut->requiresCPU();
+    if (contractCPU) {
+        if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_UNSUPPORTED;
+        gpuPipeline = false;
+    }
+    sony2fuji::checkProcessingCancellation();
 
     sony2fuji::ImageData image;
     sony2fuji_color_space color_space = SONY2FUJI_COLOR_SRGB;
@@ -1772,6 +1847,7 @@ static sony2fuji_status processImpl(
     if (status != SONY2FUJI_STATUS_OK) return status;
     status = ensureLinear(image, color_space, &is_linear);
     if (status != SONY2FUJI_STATUS_OK) return status;
+    sony2fuji::checkProcessingCancellation();
     if (color_space == SONY2FUJI_COLOR_SONY_NATIVE) return SONY2FUJI_STATUS_UNSUPPORTED;
     const int atmosphereSourceWidth = image.width, atmosphereSourceHeight = image.height;
     const auto native = sony2fuji::geometryOutputSize(image.width, image.height, session->geometry);
@@ -1825,6 +1901,7 @@ static sony2fuji_status processImpl(
         wb.b *= local.wb_mul[2]/local.wb_mul[1];
     }
     if (waveletActive) {
+        sony2fuji::checkProcessingCancellation();
         if (fastWavelet) {
             uint32_t width, height;
             status = computeTargetSize(local, image.width, image.height, &width, &height);
@@ -1866,6 +1943,7 @@ static sony2fuji_status processImpl(
                 return result;
             };
             auto result = filter(mode);
+            sony2fuji::checkProcessingCancellation();
             const bool fallback = result != sony2fuji::ErrorCode::Success && session->gpu_config.mode == sony2fuji::GpuMode::Auto;
             if (fallback) {
                 gpuPipeline = false;
@@ -1883,6 +1961,7 @@ static sony2fuji_status processImpl(
     }
 #if defined(SONY2FUJI_ENABLE_METAL)
     if (gpuPipeline) {
+        sony2fuji::checkProcessingCancellation();
         uint32_t width = image.width, height = image.height;
         if (!geometryActive) {
             status = computeTargetSize(local, image.width, image.height, &width, &height);
@@ -1905,6 +1984,7 @@ static sony2fuji_status processImpl(
 #endif
 #if defined(SONY2FUJI_ENABLE_GLES)
     if (gpuPipeline) {
+        sony2fuji::checkProcessingCancellation();
         uint32_t width = image.width, height = image.height;
         if (!geometryActive) {
             status = computeTargetSize(local, image.width, image.height, &width, &height);
@@ -1926,6 +2006,7 @@ static sony2fuji_status processImpl(
 #endif
 #if defined(SONY2FUJI_ENABLE_D3D11)
     if (gpuPipeline) {
+        sony2fuji::checkProcessingCancellation();
         uint32_t width = image.width, height = image.height;
         if (!geometryActive) {
             status = computeTargetSize(local, image.width, image.height, &width, &height);
@@ -1957,13 +2038,16 @@ static sony2fuji_status processImpl(
     sony2fuji::ColorConverter converter;
     converter.convertImage(image, toCoreColorSpace(color_space), sony2fuji::ColorSpace::sRGB);
     color_space = SONY2FUJI_COLOR_SRGB;
-    for (auto& pixel : image.pixels) applyExposureAndWhiteBalance(pixel, exposure, wb);
+    sony2fuji::parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) applyExposureAndWhiteBalance(image.pixels[i], exposure, wb);
+    });
 
     auto lookConfig = session->gpu_config;
-    if (gpuPipeline || atmosphereActive || hslActive || toneControlsActive || colorGradingActive || chromaMode != 0 || waveletActive || effectsActive)
+    if (contractCPU || gpuPipeline || atmosphereActive || hslActive || toneControlsActive || colorGradingActive || chromaMode != 0 || waveletActive || effectsActive)
         lookConfig.mode = sony2fuji::GpuMode::Off;
     status = applyPhotoLook(image, lut, dcp, local.lut_strength, displayInput, lookConfig);
     if (status != SONY2FUJI_STATUS_OK) return status;
+    sony2fuji::checkProcessingCancellation();
     sony2fuji::applyDehaze(image, session->atmosphere.dehaze, &session->dehaze_analysis,
         atmosphereSourceWidth, atmosphereSourceHeight);
     sony2fuji::applyBlackWhite(image, session->tone_controls);
@@ -1977,17 +2061,34 @@ static sony2fuji_status processImpl(
     sony2fuji::applyHsl(image, session->hsl);
     sony2fuji::applyColorGrading(image, session->color_grading);
     const auto chromaResult = sony2fuji::applyChromaDenoiseWorking(image, chromaMode);
+    sony2fuji::checkProcessingCancellation();
     if (chromaResult != sony2fuji::ErrorCode::Success) return mapError(chromaResult);
     applyDetailAdjustments(image, local, session->atmosphere.clarity, atmosphereSourceWidth, atmosphereSourceHeight);
+    sony2fuji::checkProcessingCancellation();
     sony2fuji::applyPhotoEffects(image, session->photo_effects);
 
     return finishOutput(session, local, image, out_buffer, native_width, native_height);
 }
 
+sony2fuji_status sony2fuji_session_set_cancellation_callback(sony2fuji_session* session,
+    sony2fuji_cancel_callback callback, void* context) {
+    if (!session) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    session->cancellation_callback = callback;
+    session->cancellation_context = callback ? context : nullptr;
+    return SONY2FUJI_STATUS_OK;
+}
+
 sony2fuji_status sony2fuji_process(sony2fuji_session* session,
     const sony2fuji_request* request, sony2fuji_buffer* buffer) {
     try {
+        const bool cancellable = session && request && request->intent == SONY2FUJI_INTENT_PREVIEW &&
+            request->output_target == SONY2FUJI_TARGET_BUFFER;
+        sony2fuji::ProcessingCancellationScope cancellation(cancellable ?
+            sony2fuji::ProcessingCancellation{session->cancellation_callback, session->cancellation_context} :
+            sony2fuji::ProcessingCancellation{});
         return processImpl(session, request, buffer);
+    } catch (const sony2fuji::ProcessingCancelled&) {
+        return SONY2FUJI_STATUS_CANCELLED;
     } catch (const std::bad_alloc&) {
         return SONY2FUJI_STATUS_OUT_OF_MEMORY;
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
@@ -1999,6 +2100,22 @@ sony2fuji_status sony2fuji_process(sony2fuji_session* session,
     } catch (const std::exception&) {
         return SONY2FUJI_STATUS_PROCESSING_ERROR;
     }
+}
+
+sony2fuji_status sony2fuji_preview_lut_compatibility(sony2fuji_session* session,
+    const sony2fuji_request* request,const char* configuration,sony2fuji_buffer* buffer) {
+    if(!buffer) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    sony2fuji_release_buffer(buffer);
+    if(!session || !request || !configuration || !*configuration || isEmptyString(request->lut_path) ||
+        request->intent!=SONY2FUJI_INTENT_PREVIEW || request->output_target!=SONY2FUJI_TARGET_BUFFER ||
+        request->preview_long_edge<1 || request->preview_long_edge>1024)
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    try {
+        auto lut=sony2fuji::loadLUTCompatibilityPreview(request->lut_path,configuration);
+        return processImpl(session,request,buffer,nullptr,std::move(lut));
+    } catch(const std::bad_alloc&) {return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch(const std::filesystem::filesystem_error&) {return SONY2FUJI_STATUS_IO_ERROR;
+    } catch(const std::exception&) {return SONY2FUJI_STATUS_UNSUPPORTED;}
 }
 
 sony2fuji_status sony2fuji_session_create_hsl_probe(sony2fuji_session* session,
@@ -2021,6 +2138,9 @@ sony2fuji_status sony2fuji_session_create_hsl_probe(sony2fuji_session* session,
         session->geometry_width, session->geometry_height};
     session->gpu_config.mode = sony2fuji::GpuMode::Off;
     try {
+        sony2fuji::ProcessingCancellationScope cancellation(request->intent == SONY2FUJI_INTENT_PREVIEW ?
+            sony2fuji::ProcessingCancellation{session->cancellation_callback, session->cancellation_context} :
+            sony2fuji::ProcessingCancellation{});
         auto probe = std::make_unique<sony2fuji_hsl_probe>();
         sony2fuji_buffer unused{};
         const auto status = processImpl(session, request, &unused, &probe->image);
@@ -2030,6 +2150,8 @@ sony2fuji_status sony2fuji_session_create_hsl_probe(sony2fuji_session* session,
             SONY2FUJI_HSL_PROBE_PREVIEW_CPU : SONY2FUJI_HSL_PROBE_EXACT_CPU;
         *out_probe = probe.release();
         return SONY2FUJI_STATUS_OK;
+    } catch (const sony2fuji::ProcessingCancelled&) {
+        return SONY2FUJI_STATUS_CANCELLED;
     } catch (const std::bad_alloc&) {
         return SONY2FUJI_STATUS_OUT_OF_MEMORY;
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE

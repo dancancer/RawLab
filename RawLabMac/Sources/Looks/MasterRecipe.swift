@@ -18,6 +18,35 @@ struct MasterRecipe: Identifiable, Hashable, Codable {
     let saturationDelta: Double     // Saturation offset, e.g. -8.0
     let tintDelta: Double           // Tint offset, e.g. +5.0
     let hsl: HSLSettings
+    let settingsVersion: Int?
+    let tone: ToneControlsSettings?
+    let atmosphere: AtmosphereSettings?
+    let grading: ColorGradingSettings?
+    let curve: ToneCurveSettings?
+    // 仅供无版本旧记录的一次性迁移；新配方校准不能改写历史基值。
+    let legacyDefaults: LegacyDefaults?
+
+    struct LegacyDefaults: Hashable, Codable {
+        let exposureDelta: Double
+        let shadowsDelta: Double
+        let highlightsDelta: Double
+        let contrastDelta: Double
+        let saturationDelta: Double
+        let tintDelta: Double
+    }
+
+    var migrationDefaults: LegacyDefaults {
+        legacyDefaults ?? LegacyDefaults(exposureDelta: exposureDelta, shadowsDelta: shadowsDelta,
+            highlightsDelta: highlightsDelta, contrastDelta: contrastDelta,
+            saturationDelta: saturationDelta, tintDelta: tintDelta)
+    }
+
+    var version: Int { settingsVersion ?? 3 }
+    var isValid: Bool {
+        guard hsl.isValid, [3, 4].contains(version) else { return false }
+        if version == 3 { return tone == nil && atmosphere == nil && grading == nil && curve == nil }
+        return tone?.isValid == true && atmosphere?.isValid == true && grading?.isValid == true && curve?.isValid == true
+    }
 
     static let allRecipes: [MasterRecipe] = {
         let candidates = [
@@ -30,7 +59,7 @@ struct MasterRecipe: Identifiable, Hashable, Codable {
               let data = try? Data(contentsOf: url),
               let recipes = try? JSONDecoder().decode([MasterRecipe].self, from: data),
               recipes.count == 14, Set(recipes.map(\.id)).count == recipes.count,
-              recipes.allSatisfy({ $0.hsl.isValid }) else {
+              recipes.allSatisfy({ $0.isValid }) else {
             preconditionFailure("Missing or invalid bundled master recipe catalog")
         }
         return recipes

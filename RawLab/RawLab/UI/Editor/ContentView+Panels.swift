@@ -80,11 +80,16 @@ extension ContentView {
 
             Menu {
                 Button(L10n.text("保存当前照片")) {
-                    singleExportFormat = .jpeg
+                    singleExportFormat = settings.isHDREditing ? .hdrJPEG : .jpeg
                     exportLongEdge = nil
                     showingExportSize = true
                 }
                 .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
+                if settings.isHDREditing {
+                    Button(L10n.text("保存 SDR JPEG")) {
+                        singleExportFormat = .jpeg; exportLongEdge=nil; showingExportSize=true
+                    }.disabled(editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewFailed)
+                }
                 Button(L10n.text("导出渲染型 DNG…")) {
                     singleExportFormat = .renderedDNG
                     exportLongEdge = nil
@@ -121,7 +126,8 @@ extension ContentView {
                                   interactionEnabled: !editorBusy && !draftExitPresented && !resetConfirmationPresented && !showingFileImporter && !showingLookImporter,
                                   overlayAvoidanceRect: photoComparisonControlBounds,
                                   onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) },
-                                  hslTarget: hslTargetActive ? hslTargetInput : nil, hslTargetPoint: hslTargetPoint)
+                                  hslTarget: hslTargetActive ? hslTargetInput : nil, hslTargetPoint: hslTargetPoint,
+                                  hdr:viewModel.hdrPresentation,referenceHDR:viewModel.hdrReference,hdrDisplay:hdrDisplay)
                         .id(viewModel.sourceRevision)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .allowsHitTesting(!geometrySelected)
@@ -178,7 +184,9 @@ extension ContentView {
             .overlay(alignment: .topTrailing) {
                 if viewModel.hasImage && !photoViewing.previewOnly {
                     FloatingHistogram(histogram: currentHistogram, showingBefore: showingBefore,
-                                      availableSize: geometry.size, expanded: $histogramExpanded)
+                                      availableSize: geometry.size, expanded: $histogramExpanded,
+                                      hdr:(showingBefore ? viewModel.hdrReference : viewModel.hdrPresentation)?.statistics,
+                                      headroom:hdrDisplay.headroom)
                         .frame(maxWidth: min(180, geometry.size.width * 0.48), alignment: .trailing)
                         .padding(12)
                         .opacity(rulerFocusOpacity)
@@ -278,18 +286,27 @@ extension ContentView {
     }
 
     var adjustmentPanel: some View {
-        valuePanel.disabled(resetDraftSuspended)
+        valuePanel.disabled(resetDraftSuspended || (settings.isHDREditing && !supportsHDR(currentEditorTool)))
             .environment(\.adjustmentFine, adjustmentFine)
             .environment(\.adjustmentInputContext, parameterInputContext)
             .padding(.vertical, 8)
     }
 
     private var adjustmentHeader: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 8) {
+            Spacer(minLength: 0)
             if currentEditorTool != .film && currentEditorTool != .lens {
-                Toggle(L10n.text("精细"), isOn: $adjustmentFine)
-                    .toggleStyle(.switch).font(.caption).fixedSize()
-                    .frame(minHeight: 44)
+                Button { adjustmentFine.toggle() } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark").opacity(adjustmentFine ? 1 : 0).accessibilityHidden(true)
+                        Text(L10n.text("精细"))
+                    }
+                    .fixedSize()
+                }
+                    .buttonStyle(EditorCompactActionStyle(selected: adjustmentFine))
+                    .accessibilityLabel(L10n.text("精细"))
+                    .accessibilityValue(L10n.text(adjustmentFine ? "四分之一灵敏度" : "标准灵敏度"))
+                    .accessibilityAddTraits(adjustmentFine ? .isSelected : [])
                     .accessibilityHint(L10n.text(adjustmentFine ? "四分之一灵敏度" : "标准灵敏度") + " " + L10n.text("拖动灵敏度为普通模式的四分之一。"))
                     .accessibilityIdentifier("editor.fine")
             }
@@ -324,6 +341,8 @@ extension ContentView {
         }
         .accessibilityLabel(L10n.text("重置调整"))
         .accessibilityIdentifier("editor.reset")
+        .font(.caption.weight(.medium))
+        .foregroundStyle(.secondary)
         .disabled(!viewModel.hasImage || editorBusy || resetDraftSuspended)
         .layoutPriority(2)
         }
@@ -337,6 +356,12 @@ extension ContentView {
                 Form {
                     Text(selectedFilmName)
                     editSaveStatus
+                    if viewModel.sourceIsHDR {
+                        Toggle(L10n.text("HDR 编辑"),isOn:Binding(get:{ settings.isHDREditing },set:setHDREditing))
+                            .disabled(isEditorDraftActive || editorBusy || viewModel.previewRendering)
+                            .accessibilityIdentifier("hdr.editMode")
+                    }
+                    if settings.isHDREditing { HDRMonitoringControls(state:hdrDisplay) }
                     if viewModel.sourceKind == .raw {
                         Picker(L10n.text("曝光基准"), selection: $settings.exposureMode) {
                             ForEach(RawExposureMode.allCases) { Text($0.title).tag($0) }
@@ -447,6 +472,7 @@ extension ContentView {
             .background(selectedGroup == group ? Color.yellow.opacity(0.12) : .clear)
         }
         .buttonStyle(.plain)
+        .disabled(settings.isHDREditing && !EditorAdjustmentRules.tools(group).contains(where:supportsHDR))
         .accessibilityLabel(L10n.format(adjustmentsExpanded && selectedGroup == group ? "收起%@组" : "展开%@组", group.title))
         .accessibilityValue(resetModified(.group(group)) ? L10n.text("已调整") : "")
         .accessibilityAddTraits(selectedGroup == group ? .isSelected : [])
@@ -465,10 +491,8 @@ extension ContentView {
     }
 
     func toolStrip(width: CGFloat, accessibility: Bool) -> some View {
-        let stacked = stacksToolHeader(width: width, accessibility: accessibility)
         let rowHeight = editorToolRowHeight(width: width, accessibility: accessibility)
-        let layout = stacked ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 4))
-        return layout {
+        return VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 4) {
@@ -480,7 +504,8 @@ extension ContentView {
                                     maximumWidth: accessibility ? max(44, width - 24) : nil)
                             }
                             .disabled((tool == .lens && viewModel.sourceKind != .raw) ||
-                                      (tool == .adjustment(.strength) && !settings.hasLook))
+                                      (tool == .adjustment(.strength) && !settings.hasLook) ||
+                                      (settings.isHDREditing && !supportsHDR(tool)))
                             .accessibilityLabel(tool.title)
                             .accessibilityValue(editorToolAccessibilityValue(tool))
                             .accessibilityHint(resetModified(.tool(tool)) ? L10n.text("已调整") : "")
@@ -521,8 +546,26 @@ extension ContentView {
             .buttonStyle(.plain)
             .disabled(editorBusy || resetDraftSuspended)
             adjustmentHeader.padding(.horizontal, 8)
-                .frame(maxWidth: stacked ? .infinity : nil, minHeight: editorToolHeight, alignment: .trailing)
+                .frame(maxWidth: .infinity, minHeight: editorToolHeight, alignment: .trailing)
         }
+    }
+}
+
+struct EditorCompactActionStyle: ButtonStyle {
+    var selected = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.caption.weight(.medium))
+            .padding(.horizontal, 8)
+            .frame(minWidth: 44, minHeight: 32)
+            .foregroundStyle(selected ? Color.yellow : Color.secondary)
+            .background(selected ? Color.yellow.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(selected ? Color.yellow.opacity(0.5) : Color.secondary.opacity(0.35)) }
+            .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.4)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
     }
 }
 

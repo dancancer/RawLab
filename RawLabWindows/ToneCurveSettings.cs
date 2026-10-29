@@ -21,6 +21,17 @@ public sealed class ToneCurveSettings : IEquatable<ToneCurveSettings>
     public bool IsDefault => Mode == ToneCurveMode.Legacy;
     public bool IsIdentity => IsDefault || Points.All(p => p.X == p.Y);
     public double Progress => Points.Count == 0 ? 0 : Points.Max(p => Math.Abs(p.Y - p.X));
+    public ToneCurveSettings Scaled(double strength)
+    {
+        if (Mode != ToneCurveMode.Custom || strength == 1) return this;
+        if (strength == 0) return Identity;
+        var previous = 0.0;
+        return new(Mode, Points.Select(point => {
+            var y = Math.Clamp(point.X + (point.Y - point.X) * strength, previous, 1);
+            previous = y;
+            return new ToneCurvePoint(point.X, y);
+        }));
+    }
     private bool IsValid => Mode == ToneCurveMode.Legacy ? Points.Count == 0 : Mode == ToneCurveMode.Custom &&
         Points.Count is >= 2 and <= 33 && Points[0] == new ToneCurvePoint(0, 0) && Points[^1] == new ToneCurvePoint(1, 1) &&
         Points.All(p => double.IsFinite(p.X) && double.IsFinite(p.Y) && p.X is >= 0 and <= 1 && p.Y is >= 0 and <= 1) &&

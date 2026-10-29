@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/Shared/tests/hdr-native-sources.sh"
 FRAMEWORK="${1:?Pass the built arm64-simulator sony2fuji.framework path}"
 DEVICE="${2:?Pass the task-owned simulator UDID}"
 RAW="${3:-${RAWLAB_TEST_RAW:-}}"
@@ -33,7 +34,7 @@ xcrun --sdk iphonesimulator swiftc "$ROOT/Shared/Localization.swift" -swift-vers
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" \
     -Xcc -I"$ROOT/lutools/include" \
-    "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/HSLTargetAdjustment.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/AtmosphereSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/HSLTargetNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" \
+    "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/HSLTargetAdjustment.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HDRSettings.swift" "${HDR_SWIFT_SOURCES[@]}" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/AtmosphereSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/HSLTargetNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
     "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" \
     "$ROOT/RawLab/RawLab/Core/Persistence/CachedPhotoFile.swift" \

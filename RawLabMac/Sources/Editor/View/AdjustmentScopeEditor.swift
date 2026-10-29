@@ -5,6 +5,7 @@ struct AdjustmentScopeEditor: View {
     @Binding var fields: Set<AdjustmentTransferField>
     var identifier = "adjustment.copy"
     var titleKey = "复制范围"
+    var allowed = AdjustmentTransferField.legacyFields
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -23,12 +24,12 @@ struct AdjustmentScopeEditor: View {
                 }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
-                        ForEach(["looks", "light", "color", "effects", "detail", "geometry"], id: \.self) { group in
+                        ForEach(["looks", "light", "color", "effects", "detail", "geometry"].filter { group in allowed.contains { $0.group==group } }, id: \.self) { group in
                             DisclosureGroup {
-                                let members = AdjustmentTransferField.allCases.filter { $0.group == group }
+                                let members = AdjustmentTransferField.allCases.filter { $0.group == group && allowed.contains($0) }
                                 Toggle(L10n.text("选择此组"), isOn: groupBinding(members)).fontWeight(.medium)
                                 ForEach(members.filter { $0.hslLocation == nil }, id: \.rawValue) { fieldToggle($0) }
-                                if group == "color" {
+                                if members.contains(where:{ $0.hslLocation != nil }) {
                                     ForEach(HSLAxis.allCases) { axis in
                                         DisclosureGroup("HSL · \(axis.title)") {
                                             let items = members.filter { $0.hslLocation?.axis == axis.rawValue }
@@ -38,7 +39,7 @@ struct AdjustmentScopeEditor: View {
                                     }
                                 }
                             } label: {
-                                let members = AdjustmentTransferField.allCases.filter { $0.group == group }
+                                let members = AdjustmentTransferField.allCases.filter { $0.group == group && allowed.contains($0) }
                                 Text(AdjustmentTransferField.groupTitle(group) + " · \(members.filter { fields.contains($0) }.count)/\(members.count)")
                                     .fontWeight(.medium)
                             }

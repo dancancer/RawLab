@@ -41,6 +41,7 @@ struct AdjustmentDock: View {
                     GeometryReader { editor in
                         ScrollView(.vertical) {
                             editorContent.frame(maxWidth: .infinity, minHeight: editor.size.height)
+                                .disabled(model.settings.isHDREditing && !supportsHDR(navigation.tool))
                         }
                     }
                 }
@@ -62,6 +63,7 @@ struct AdjustmentDock: View {
                 .background(active ? Color.yellow.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
                 .foregroundStyle(active ? Color.yellow : Color.primary)
         }.buttonStyle(.plain).id(group.rawValue)
+            .disabled(model.settings.isHDREditing && !group.tools.contains(where: supportsHDR))
             .accessibilityIdentifier("group.\(group.rawValue)")
             .accessibilityLabel(group.title)
             .accessibilityValue([active ? L10n.text("已展开") : L10n.text("已收起"), changed ? L10n.text("已调整") : ""].filter { !$0.isEmpty }.joined(separator: ", "))
@@ -85,7 +87,8 @@ struct AdjustmentDock: View {
             .accessibilityLabel(tool.title).accessibilityValue(changed ? L10n.text("已调整") : "")
             .accessibilityAddTraits(active ? .isSelected : [])
             .disabled((model.result == nil && !(tool == .denoise && model.file != nil && model.aiControlsVisible)) ||
-                      (tool == .lens && RenderEngine.isRasterInput(model.file)))
+                      (tool == .lens && RenderEngine.isRasterInput(model.file)) ||
+                      (model.settings.isHDREditing && !supportsHDR(tool)))
             .contextMenu {
                 Button(L10n.format("重置%@", tool.title)) { model.requestAdjustmentReset(.tool(tool)) }
                     .disabled(!changed)
@@ -128,17 +131,21 @@ struct AdjustmentDock: View {
         } else if let parameter = navigation.tool.parameter {
             VStack(spacing: 0) {
                 if parameter.isWhiteBalance {
+                    if model.settings.isHDREditing {
+                        Text(L10n.text("相对白平衡")).font(.caption).foregroundStyle(.secondary)
+                    } else {
                     Picker(L10n.text("白平衡"), selection: Binding(get: { model.settings.whiteBalanceMode }, set: { mode in
                         if mode == .asShot { model.settings.resetWhiteBalance() }
                         else { model.settings.whiteBalanceMode = mode }
                     })) {
                         ForEach(WhiteBalanceMode.allCases) { Text($0.title).tag($0) }
                     }.fixedSize().controlSize(.small).padding(.bottom, 4).id(localizationLocale.identifier)
+                    }
                     parameterRow(.temperature); parameterRow(.tint)
                 } else { parameterRow(parameter) }
             }.frame(maxWidth: 720).padding(.horizontal, 16)
                 .disabled(parameter == .strength && model.selectedFilm == nil && model.settings.masterRecipe == nil)
-                .disabled(parameter.isWhiteBalance && model.settings.asShotWhiteBalance == nil)
+                .disabled(parameter.isWhiteBalance && !model.settings.isHDREditing && model.settings.asShotWhiteBalance == nil)
         } else if navigation.tool == .recipe {
             MasterRecipeDock(model: model).frame(height: AdjustmentPanelLayout.RecipeCard.dockHeight)
         } else {
@@ -148,12 +155,16 @@ struct AdjustmentDock: View {
 
     private func parameterRow(_ parameter: AdjustmentParameter) -> some View {
         AdjustmentRow(parameter: parameter, value: Binding(
-            get: { model.settings[keyPath: parameter.spec.keyPath] },
+            get: { parameter.value(from:model.settings) },
             set: { model.settings.set(parameter, to: $0) }
         ), showsTicks: true, specOverride: parameter.spec(for: model.settings),
         onEditingChanged: model.setInteracting,
-        onAuto: parameter == .exposure ? model.autoExposure : nil, autoBusy: model.autoExposing)
+        onAuto: parameter == .exposure && !model.settings.isHDREditing ? model.autoExposure : nil, autoBusy: model.autoExposing)
         .id("\(parameter.rawValue).\(resetVersion)")
+    }
+
+    private func supportsHDR(_ tool: EditorAdjustmentTool) -> Bool {
+        tool == .geometry || tool == .whiteBalance || tool.parameter?.hdrKeyPath != nil
     }
 
 }

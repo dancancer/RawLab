@@ -72,7 +72,7 @@ enum PhotoImportFile {
     static let supportedContentTypes: [UTType] = [
         .rawImage, sigmaRaw, .jpeg, .png, .tiff, .heif, .heic
     ]
-    static let supportedLookContentTypes: [UTType] = ["cube", "rlook", "dcp"].compactMap {
+    static let supportedLookContentTypes: [UTType] = ["cube", "vlt", "rlook", "dcp"].compactMap {
         UTType(filenameExtension: $0)
     }
 
@@ -120,6 +120,10 @@ enum PhotoImportFile {
     }
 
     static func load(from item: PhotosPickerItem) async throws -> PhotoImportSource {
+        try await loadSource { try await loadOriginal(from:item) }
+    }
+
+    private static func loadOriginal(from item: PhotosPickerItem) async throws -> PhotoImportSource {
         let supportsRaw = item.supportedContentTypes.contains(where: { $0.conforms(to: .rawImage) })
         var rawError: Error?
         if supportsRaw {
@@ -131,10 +135,12 @@ enum PhotoImportFile {
             var access = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             if access == .notDetermined { access = await PHPhotoLibrary.requestAuthorization(for: .readWrite) }
             if access == .authorized || access == .limited,
-               let asset = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).firstObject,
-               let resource = PHAssetResource.assetResources(for: asset).first(where: {
-                   UTType($0.uniformTypeIdentifier)?.conforms(to: .rawImage) == true
-               }) {
+               let asset = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).firstObject {
+                let resources=PHAssetResource.assetResources(for:asset)
+                let raw=resources.first { UTType($0.uniformTypeIdentifier)?.conforms(to:.rawImage) == true }
+                // .photo 是相册保留的原容器；已调整的 fullSizePhoto 可能丢失增益图。
+                let resource=raw ?? (!supportsRaw ? resources.first { $0.type == .photo } : nil)
+                if let resource {
                 let folder = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                 let url = folder.appendingPathComponent(resource.originalFilename)
@@ -142,8 +148,10 @@ enum PhotoImportFile {
                 options.isNetworkAccessAllowed = true
                 do {
                     try await PHAssetResourceManager.default().writeData(for: resource, toFile: url, options: options)
-                    return .raw(url)
+                    try Task.checkCancellation()
+                    return raw != nil ? .raw(url) : .raster(url)
                 } catch { release(url); throw error }
+                }
             }
         }
         if supportsRaw { throw rawError ?? PhotoImportError.rawResourceUnavailable }

@@ -2,7 +2,7 @@
 
 The CLI accepts a versioned edit recipe through the existing C API:
 
-Schemas 1–4 retain legacy processing. New desktop recipes use schema 5 with an
+Schemas 1–4 retain legacy processing. New RAW/SDR desktop recipes use schema 5 with an
 explicit [processing identity](#v5-processing-identity); the v1 example below
 remains valid and does not silently opt into newer algorithms.
 
@@ -405,3 +405,39 @@ selected identity, including old records restored as version 1. Ordinary
 parameter changes, resets and batch snapshots do not implicitly upgrade it.
 See the [processing-version contract](processing-version.md) for the compatibility
 baseline, cache isolation, platform boundaries and explicit conversion policy.
+
+## V6 phone HDR
+
+[Schema 6](edit-json-v6.schema.json) adds a separate display-referred HDR recipe.
+The [example](../examples/edit-recipes/hdr-v6.json) uses `input.type="hdr_raster"`,
+`processing={"family":"rawlab_hdr","version":1,"quality":"standard"}` and
+`output.format="hdr_jpeg"`. The input container must independently pass the HDR
+probe and decoder. Schema 1–5 input, rejection and output rules are unchanged.
+Schema 6 never enters binary request v2; it builds `sony2fuji_hdr_request_v1`.
+
+`edits.exposure` accepts only `ev` in [-4,4], default 0. `white_balance` is
+required and uses `mode="relative"`, `relative_temperature` in [2000,50000]
+(default 6500), and `relative_tint` in [-150,150] (default 0). These coordinates
+are independent of camera WB and follow the [HDR color contract](hdr-color-contract.md).
+There is no RAW exposure mode or brightness multiplier.
+
+The common tone fields keep their canonical transfer units: contrast/saturation
+are factors [0,2], default 1; highlights/shadows are [-1,1], default 0. The HDR
+request mapping is `(contrast-1)*100`, `(saturation-1)*100`, `-highlights*100`
+and `shadows*100`. Geometry has the same shape and order as schema 3–5. Looks,
+HSL, detail, denoise, lens correction, curves, black/white points, vibrance,
+color grading and atmospheric effects are rejected by field, even when neutral.
+
+HDR JPEG output requires explicit `base_color="srgb"|"display_p3"`, writes ISO
+and XMP gain-map descriptions, and defaults to quality 95. Optional long edge is
+1–65535, with no upscale. Source files and existing destinations survive failure.
+Metadata is copied from the SHA-256-verified original and the gain map is generated
+from the edited HDR/SDR pair.
+
+CLI capabilities advertises v6, `hdr_raster` and `hdr_jpeg` only on the supported
+Apple runtime (macOS15+/iOS18+). Windows/Android and macOS14 keep the old capability
+set. CLI `--preview` renders the same FINAL HDR request at the requested size,
+then publishes the edited **SDR rendition** as PNG with `rendition="sdr"`.
+This is separate from HDR display; the headroom values in results describe
+source/edited content and never the current screen. MCP negotiates v6 with its
+configured CLI and preserves its HDR context without downgrading to schema 5.

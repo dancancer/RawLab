@@ -120,6 +120,8 @@ cp "$CHROMA_PREFIX/share/licenses/wavelib/COPYRIGHT" "$APP/Contents/Resources/Li
 cp "$CHROMA_PREFIX/share/licenses/libtiff/LICENSE.md" "$APP/Contents/Resources/Licenses/libtiff-LICENSE.md"
 mkdir -p "$APP/Contents/Resources/Licenses/dng-sdk"
 cp "$CHROMA_PREFIX/share/licenses/rawlab-dng-sdk/"*.txt "$APP/Contents/Resources/Licenses/dng-sdk/"
+cp -R "$BUILD/licenses/libultrahdr" "$APP/Contents/Resources/Licenses/"
+cp -R "$BUILD/licenses/libjpeg-turbo" "$APP/Contents/Resources/Licenses/"
 SDK="${SDKROOT:-$(xcrun --show-sdk-path)}"
 # The CLT 27 SDK exposes SwiftUI macros without shipping their compiler plugin.
 if [ -z "${SDKROOT:-}" ] && [ -d /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ]; then
@@ -132,9 +134,10 @@ swiftc -O -whole-module-optimization -num-threads "${JOBS:-$(sysctl -n hw.ncpu)}
     -sdk "$SDK" -target "$ARCH-apple-macosx$DEPLOYMENT_TARGET" \
     "${RUM_FLAGS[@]}" \
     -F "$(dirname "$SPARKLE_FRAMEWORK")" -framework Sparkle \
-    -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "${APP_SOURCES[@]}" "$ROOT"/Shared/*.swift "$BUILD/libsony2fuji_core.a" ${AI_LINK_FLAGS[@]+"${AI_LINK_FLAGS[@]}"} \
-    $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \
+    -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
+    "${APP_SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT"/Shared/Native/*.swift "$BUILD/libsony2fuji_core.a" ${AI_LINK_FLAGS[@]+"${AI_LINK_FLAGS[@]}"} \
+    "$BUILD/hdr-codec/lib/libuhdr.a" "$BUILD/raw-jpeg/install/lib/libjpeg.a" \
+    $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework CoreImage -framework Metal -framework MetalKit \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     -o "$APP/Contents/MacOS/RawLabMac"
 cp "$ROOT/RawLabMac/Info.plist" "$APP/Contents/Info.plist"

@@ -73,7 +73,7 @@ struct AdjustmentPresetView: View {
         VStack(alignment: .leading, spacing: 12) {
             Button(L10n.text("保存当前调整为预设…")) {
                 model.preparePresetAction {
-                    name = L10n.text("新预设"); scope = "custom"; fields = AdjustmentTransferField.common
+                    name = L10n.text("新预设"); scope = "custom"; fields = model.settings.isHDREditing ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common
                     renaming = nil; message = nil; editing = true; nameFocused = true
                 }
             }.buttonStyle(.borderedProminent).disabled(!model.canUsePresetPhoto || libraryError != nil)
@@ -121,7 +121,7 @@ struct AdjustmentPresetView: View {
         VStack(alignment: .leading, spacing: 12) {
             TextField(L10n.text("预设名称"), text: $name).textFieldStyle(.roundedBorder)
                 .focused($nameFocused).accessibilityIdentifier("preset.name")
-            if renaming == nil { AdjustmentScopeEditor(scope: $scope, fields: $fields, identifier: "preset.save", titleKey: "调整范围") }
+            if renaming == nil { AdjustmentScopeEditor(scope:$scope,fields:$fields,identifier:"preset.save",titleKey:"调整范围",allowed:model.settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields) }
             HStack {
                 Spacer()
                 Button(L10n.text("保存"), action: save).buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)

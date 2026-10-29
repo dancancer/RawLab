@@ -1,4 +1,5 @@
 #include "photo_effects.h"
+#include "processing_cancellation.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -68,11 +69,13 @@ void applyPhotoEffects(ImageData& image, const PhotoEffectsOptions& options) {
     const float grainScale = 0.7f + options.grainSize * 0.055f;
     const float rough = options.grainRoughness * 0.007f;
     const float grainNormalization = 1 / std::sqrt((1 - rough) * (1 - rough) + rough * rough);
+    const auto cancellation = processingCancellation;
 
 #ifdef _OPENMP
 #pragma omp parallel for if (image.pixels.size() >= (1u << 16))
 #endif
     for (int y = 0; y < image.height; ++y) {
+        if (cancellation.cancelled()) continue;
         for (int x = 0; x < image.width; ++x) {
             auto& pixel = image.pixels[size_t(y) * image.width + x];
             if (options.vignetteAmount != 0) {
@@ -101,6 +104,7 @@ void applyPhotoEffects(ImageData& image, const PhotoEffectsOptions& options) {
             }
         }
     }
+    cancellation.check();
 }
 
 } // namespace sony2fuji

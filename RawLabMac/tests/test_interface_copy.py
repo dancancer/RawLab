@@ -181,7 +181,11 @@ class InterfaceCopy(unittest.TestCase):
     def test_batch_window_has_an_empty_state(self):
         app = (ROOT / "Sources/System/RawLabMacApp.swift").read_text()
         scene = app[app.index('Window(L10n.text("批量导出"), id: "batch-export")'):]
-        self.assertRegex(scene[:400], r"if let batch = model\.batch \{.*\} else \{\s*BatchExportEmptyView\(\)")
+        self.assertRegex(scene[:400], r"BatchExportWindow\(model:\s*model\)")
+        view = (ROOT / "Sources/Export/BatchExportView.swift").read_text()
+        container = view[view.index("struct BatchExportWindow"):view.index("struct BatchExportView")]
+        self.assertIn("@ObservedObject var model: EditorModel", container)
+        self.assertRegex(container, r"if let batch\s*=\s*model\.batch\s*\{\s*BatchExportView\(model:\s*batch\)\s*\}\s*else\s*\{\s*BatchExportEmptyView\(\)")
 
     # ------------------------------------------------------------------------
     #  工具栏"导出"菜单与批量导出的格式选择用同一套格式名：
@@ -190,7 +194,7 @@ class InterfaceCopy(unittest.TestCase):
     def test_export_menu_uses_the_format_names(self):
         editor = (ROOT / "Sources/Editor/View/EditorView.swift").read_text()
         menu = editor[editor.index("Menu {", editor.index('.keyboardShortcut("a"')):editor.index('L10n.text("使用当前调整批量导出…")')]
-        self.assertIn("ForEach(ExportFormat.allCases)", menu)
+        self.assertIn("ForEach(ExportFormat.available(isHDR:model.settings.isHDREditing))", menu)
         self.assertIn('format.title + "…"', menu)
         for label in ('"JPEG…"', '"PNG · 16-bit…"', '"导出渲染型 DNG…"'):
             self.assertNotIn(label, menu)

@@ -35,6 +35,19 @@ import Foundation
         check(full.points.count == 33 && full.inserting(x: 0.01, y: 0.01) == full, "33 point limit")
         let tiny = ToneCurveSettings(mode: .custom, points: [.init(x: 0, y: 0), .init(x: 2e-320, y: 4e-320), .init(x: 1, y: 1)])
         check(tiny.isValid, "binary64 close points kept")
+        let flat = ToneCurveSettings(mode: .custom, points: [.init(x: 0, y: 0), .init(x: 0.2, y: 0.8),
+            .init(x: 0.4, y: 0.8), .init(x: 1, y: 1)])
+        for original in [curve, flat, tiny, full] {
+            for strength in [0.0, 0.1, 0.5, 1, 1.5, 2] {
+                let scaled = original.scaled(by: strength)
+                check(scaled.isValid, "recipe strength never reverses an extreme hand-edited curve")
+                check(strength != 0 || scaled.isIdentity, "zero strength is exact identity")
+                check(strength != 1 || scaled == original, "full strength preserves exact points")
+            }
+        }
+        let doubled = flat.scaled(by: 2)
+        check(doubled.points.map(\.x) == flat.points.map(\.x) && doubled.points.map(\.y) == [0, 1, 1, 1],
+              "doubling clamps point displacement and projects flat intervals monotonically")
         print("Tone curve model checks passed")
     }
 }

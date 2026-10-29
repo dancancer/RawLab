@@ -159,6 +159,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
     }
 
     func value(from settings: RawSettings) -> Double {
+        if settings.isHDREditing, let key = hdrKeyPath { return settings.hdr![keyPath: key] }
         switch self {
         case .strength:
             return settings.lutStrength
@@ -197,6 +198,13 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
     }
 
     func setValue(_ value: Double, in settings: inout RawSettings) {
+        if settings.isHDREditing {
+            guard let key = hdrKeyPath, var state = settings.hdr, value.isFinite else { return }
+            state[keyPath: key] = value
+            guard state.isValid else { return }
+            settings.hdr = state
+            return
+        }
         switch self {
         case .strength:
             settings.lutStrength = value
@@ -234,6 +242,19 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             settings.photoEffects.vignetteAmount = value
         case .grain:
             settings.photoEffects.grainAmount = value
+        }
+    }
+
+    var hdrKeyPath: WritableKeyPath<HDRSettings, Double>? {
+        switch self {
+        case .exposure: return \.exposure
+        case .temperature: return \.temperature
+        case .tint: return \.tint
+        case .contrast: return \.contrast
+        case .highlights: return \.highlights
+        case .shadows: return \.shadows
+        case .saturation: return \.saturation
+        default: return nil
         }
     }
 
@@ -295,10 +316,10 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
 
     func progress(in settings: RawSettings) -> Double {
         if self == .temperature {
-            let temperatureProgress = scalarProgress(value: settings.temperature,
+            let temperatureProgress = scalarProgress(value: AdjustmentKind.temperature.value(from:settings),
                                                      baseline: RawSettings.default.temperature,
                                                      range: RawSettings.temperatureRange)
-            let tintProgress = scalarProgress(value: settings.tint,
+            let tintProgress = scalarProgress(value: AdjustmentKind.tint.value(from:settings),
                                               baseline: RawSettings.default.tint,
                                               range: RawSettings.tintRange)
             return abs(temperatureProgress) >= abs(tintProgress) ? temperatureProgress : tintProgress

@@ -105,24 +105,24 @@ class EditorWorkspaceGroupsTest {
     @Test fun onePanelFineResetsOnlyAfterActualToolOrGroupNavigation() {
         show(); group("color"); tool(14)
         compose.onAllNodesWithTag("adjustment-fine").assertCountEquals(1)
-        compose.onNodeWithTag("adjustment-fine").assertIsDisplayed().performClick().assertIsOn()
+        compose.onNodeWithTag("adjustment-fine").assertIsDisplayed().performClick().assertIsSelected()
         compose.onNodeWithTag("hsl-channel-1").performClick()
-        compose.onNodeWithTag("adjustment-fine").assertIsOn()
+        compose.onNodeWithTag("adjustment-fine").assertIsSelected()
         tool(7)
-        compose.onNodeWithTag("adjustment-fine").assertIsOff().performClick().assertIsOn()
+        compose.onNodeWithTag("adjustment-fine").assertIsNotSelected().performClick().assertIsSelected()
         group("light")
-        compose.onNodeWithTag("adjustment-fine").assertIsOff()
+        compose.onNodeWithTag("adjustment-fine").assertIsNotSelected()
         compose.runOnIdle { assertEquals(0, edits); assertEquals(0, commits) }
     }
 
     @Test fun stayingInChangedGeometryRetainsFineWithoutCallbacks() {
         show(); group("geometry")
         compose.runOnIdle { state = state.copy(draft = state.draft!!.update(state.edits.copy(geometry = GeometrySettings(quarterTurns = 1)))) }
-        compose.onNodeWithTag("adjustment-fine").assertIsDisplayed().performClick().assertIsOn()
+        compose.onNodeWithTag("adjustment-fine").assertIsDisplayed().performClick().assertIsSelected()
         val draft = state.draft
         group("color"); dialog("继续编辑").performClick()
         compose.onNodeWithTag("editor-tool-17").assertIsSelected()
-        compose.onNodeWithTag("adjustment-fine").assertIsOn()
+        compose.onNodeWithTag("adjustment-fine").assertIsSelected()
         compose.runOnIdle { assertSame(draft, state.draft); assertEquals(0, edits); assertEquals(0, commits); assertEquals(0, draftApplies); assertEquals(0, draftDiscards) }
     }
 
@@ -186,13 +186,16 @@ class EditorWorkspaceGroupsTest {
         compose.runOnIdle { assertNotNull(state.draft); assertFalse(state.draft!!.changed); assertEquals(1, draftApplies); assertEquals(0, commits) }
     }
 
-    @Test fun sixGroupsChooseDefaultToolsKeepPanelBoundsAndNeverEdit() {
+    @Test fun sixGroupsChooseDefaultToolsKeepNavigationAnchoredAndNeverEdit() {
         show()
-        val bounds = compose.onNodeWithTag("adjustment-dock").fetchSemanticsNode().boundsInRoot
+        val navigation = compose.onNodeWithTag("editor-groups").fetchSemanticsNode().boundsInRoot
         for ((group, tool) in listOf("looks" to 0, "light" to 2, "color" to 8, "effects" to 22, "detail" to 11, "geometry" to 17)) {
             if (group != "looks") group(group)
             compose.onNodeWithTag("editor-tool-$tool").assertIsSelected()
-            assertEquals(bounds, compose.onNodeWithTag("adjustment-dock").fetchSemanticsNode().boundsInRoot)
+            assertEquals(navigation, compose.onNodeWithTag("editor-groups").fetchSemanticsNode().boundsInRoot)
+            val dock = compose.onNodeWithTag("adjustment-dock").fetchSemanticsNode().boundsInRoot
+            val photo = compose.onNodeWithTag("editor-canvas").fetchSemanticsNode().boundsInRoot
+            assertFalse("Content-sized adjustments do not overlap the photo", dock.overlaps(photo))
             capture(group)
         }
         group("geometry")

@@ -82,14 +82,6 @@ internal static class AdjustmentTransferValues
     }
     internal static AdjustmentSnapshot ApplyObjects(AdjustmentPayload p,AdjustmentSnapshot s,AdjustmentTransferContext context)
     {
-        if (p[F.Curve] is {} curve) {
-            var parsed = ToneCurveSettings.Parse(curve);
-            s = s with { Curve = parsed.IsDefault ? null : parsed };
-        }
-        foreach (var field in p.Fields) if (field.GradingZone() is {} zone && p[field] is {} wheel) {
-            s = s with { ColorGrading = (s.ColorGrading ?? new()).With(zone,
-                new ColorGradingWheel(wheel.GetProperty("hue").GetDouble(), wheel.GetProperty("saturation").GetDouble())) };
-        }
         double N(F f,double fallback)=>Number(p[f]) ?? fallback;
         bool B(F f,bool fallback)=>Boolean(p[f]) ?? fallback;
         foreach(var field in new[]{F.RawDenoise,F.PostRGBDenoise})
