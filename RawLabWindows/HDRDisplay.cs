@@ -79,25 +79,31 @@ internal static class HDRDisplay
         return pixels;
     }
 
-    internal static (uint[] Histogram, double Shadows, double Highlights) Statistics(HDRFloatImage image)
+    internal static (uint[] Histogram, double Shadows, double Highlights,BitmapSource? Clipping) Statistics(HDRFloatImage image,bool clipping=false)
     {
         var bins = new uint[768]; long shadows = 0, highlights = 0;
+        var mask=clipping ? new byte[checked(image.Width*image.Height*4)] : null;
         for (var pixel = 0; pixel < image.RGB.Length; pixel += 3)
         {
-            var shadow = false; var highlight = false;
+            var shadow = true; var highlight = false;
             for (var channel = 0; channel < 3; channel++)
             {
-                var value = image.RGB[pixel + channel];
-                if (value <= 0) shadow = true;
-                if (value >= 1) highlight = true;
-                var bin = ToByte(value);
+                var bin = ToByte(image.RGB[pixel + channel]);
+                shadow &= bin==0;highlight |= bin==255;
                 bins[channel * 256 + bin]++;
             }
-            if (shadow) shadows++;
-            if (highlight) highlights++;
+            var offset=pixel/3*4;
+            // 与普通八位显示统计一致：任一通道为白标红，三通道全黑标蓝。
+            if (highlight) {highlights++;if(mask!=null){mask[offset+2]=255;mask[offset+3]=160;}}
+            else if (shadow) {shadows++;if(mask!=null){mask[offset]=255;mask[offset+1]=130;mask[offset+3]=160;}}
+        }
+        BitmapSource? overlay=null;
+        if(mask!=null) {
+            overlay=BitmapSource.Create(image.Width,image.Height,96,96,PixelFormats.Bgra32,null,mask,image.Width*4);
+            overlay.Freeze();
         }
         var count = Math.Max(1, image.Width * image.Height);
-        return (bins, (double)shadows / count, (double)highlights / count);
+        return (bins, (double)shadows / count, (double)highlights / count,overlay);
     }
 
     private static HDRFloatImage Copy(Native.HDRBuffer buffer)

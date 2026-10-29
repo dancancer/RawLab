@@ -163,8 +163,9 @@ struct BitmapPixels {
     jobject value;
     void* locked = nullptr;
     const void* bytes = nullptr;
+    uint32_t stride = 0;
     std::vector<uint8_t> packed;
-    BitmapPixels(JNIEnv* e, jobject bitmap, jint width, jint height, jint format) : env(e), value(bitmap) {
+    BitmapPixels(JNIEnv* e, jobject bitmap, jint width, jint height, jint format, bool compactInput = true) : env(e), value(bitmap) {
         if (!bitmap) {
             if (width != 0 || height != 0 || format != 0) throw std::invalid_argument("Invalid RAW image buffer");
             return;
@@ -175,6 +176,7 @@ struct BitmapPixels {
             info.format != ANDROID_BITMAP_FORMAT_RGBA_8888 || info.width != static_cast<uint32_t>(width) ||
             info.height != static_cast<uint32_t>(height) || info.stride < uint64_t(width) * 4)
             throw std::invalid_argument("Invalid display bitmap");
+        stride = info.stride;
         const size_t rowBytes = static_cast<size_t>(width) * 4;
         if (static_cast<size_t>(height) > std::numeric_limits<size_t>::max() / rowBytes)
             throw std::invalid_argument("Display bitmap is too large");
@@ -185,7 +187,7 @@ struct BitmapPixels {
             if (!locked) throw std::runtime_error("Display bitmap has no pixels");
             bytes = locked;
             // C ABI 接收紧凑 RGBA；只有平台给出填充行时才在原生内存重新排布。
-            if (info.stride != rowBytes) {
+            if (compactInput && info.stride != rowBytes) {
                 packed.resize(rowBytes * height);
                 for (int y = 0; y < height; ++y)
                     std::memcpy(packed.data() + size_t(y) * rowBytes,
@@ -823,6 +825,35 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativePlane(JNIEnv* env, jclass, 
         throwHDRFailure(env,error);
     }
     return nullptr;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_rawlab_android_engine_NativeHDRBridge_nativeSdrBitmap(JNIEnv* env, jclass, jlong pairId, jobject bitmap) {
+    try {
+        std::lock_guard<std::mutex> lock(hdrPairsMutex);
+        const auto& buffer = hdrPairFor(pairId).sdr;
+        if (!buffer.data || buffer.width == 0 || buffer.height == 0 || buffer.pixel_format != SONY2FUJI_HDR_RGB32F_LINEAR ||
+            buffer.stride_bytes < static_cast<uint64_t>(buffer.width) * 3 * sizeof(float))
+            throw std::runtime_error("Invalid SDR float plane");
+        BitmapPixels output(env, bitmap, buffer.width, buffer.height, SONY2FUJI_PIXEL_RGBA8, false);
+        const auto encode = [](float value) -> uint8_t {
+            if (!std::isfinite(value)) throw std::runtime_error("Nonfinite SDR rendition");
+            const float v = std::clamp(value, 0.0f, 1.0f);
+            const float encoded = v <= .0031308f ? 12.92f * v :
+                1.055f * static_cast<float>(std::pow(static_cast<double>(v), 1.0 / 2.4)) - .055f;
+            return static_cast<uint8_t>(std::clamp(std::lround(encoded * 255.0f), 0L, 255L));
+        };
+        // 直接写位图，避免完整尺寸 SDR 导出在 Java 堆同时持有 RGB32F 和 ARGB 数组。
+        for (uint32_t y = 0; y < buffer.height; ++y) {
+            const auto* source = reinterpret_cast<const float*>(static_cast<const uint8_t*>(buffer.data) + y * buffer.stride_bytes);
+            auto* destination = static_cast<uint8_t*>(output.locked) + static_cast<size_t>(y) * output.stride;
+            for (uint32_t x = 0; x < buffer.width; ++x) {
+                for (uint32_t channel = 0; channel < 3; ++channel) destination[x * 4 + channel] = encode(source[x * 3 + channel]);
+                destination[x * 4 + 3] = 255;
+            }
+        }
+    } catch (const std::bad_alloc&) { throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory for SDR bitmap"); }
+      catch (const std::exception& error) { throwHDRFailure(env, error); }
 }
 
 extern "C" JNIEXPORT void JNICALL

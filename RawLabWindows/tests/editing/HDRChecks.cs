@@ -17,10 +17,26 @@ internal static class HDRChecks
         TransferUsesHDRPayloadV2AndFloatMappings();
         NativeLayoutsMatchHDRContract();
         LogicalFieldsCrossFamiliesWithoutCopyingGeometryOrInactiveState();
+        BatchPreparationPreservesTheFrozenModeWithoutReopeningItsSource();
         Check(JsonSerializer.Deserialize<ExportFormat>("1")==ExportFormat.Png &&
             JsonSerializer.Deserialize<ExportFormat>("2")==ExportFormat.RenderedDng,
             "Existing journal enum numbers keep PNG and DNG meanings");
         Console.WriteLine("PASS: Windows HDR settings, snapshot isolation, transfer v2 and ABI model");
+    }
+
+    private static void BatchPreparationPreservesTheFrozenModeWithoutReopeningItsSource()
+    {
+        foreach(var hdr in new HDRSettings?[]{null,new() {Mode=HDRMode.Sdr,Temperature=7400},new() {Mode=HDRMode.Hdr}}) {
+            var settings=new Adjustments {HDR=hdr};settings.Set(Parameter.Exposure,.5);
+            var snapshot=settings.Capture();
+            foreach(var target in new[]{"ordinary.jpg","target.dng"}) {
+                var prepared=PhotoInput.PrepareBatchSettings("frozen-source.jpg",target,settings);
+                Check(prepared.HDR==snapshot.HDR && prepared.IsHDREditing==(hdr?.Mode==HDRMode.Hdr),
+                    "Batch target preparation must preserve the frozen HDR/SDR mode without probing the source");
+                Check(prepared[Parameter.Exposure]==.5 && settings.Capture().SameAs(snapshot),
+                    "Batch input normalization retains exposure and does not mutate the frozen source");
+            }
+        }
     }
 
     private static void LogicalFieldsCrossFamiliesWithoutCopyingGeometryOrInactiveState()

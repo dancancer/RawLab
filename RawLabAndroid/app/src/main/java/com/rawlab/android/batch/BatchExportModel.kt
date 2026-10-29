@@ -32,6 +32,8 @@ import com.rawlab.android.photo.BatchGlobalFailure
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.PhotoIdentity
+import com.rawlab.android.settings.EditStore
+import com.rawlab.android.adjustments.AdjustmentTransferException
 
 // ============================================================================
 //  批量导出界面的状态与生命周期
@@ -196,7 +198,9 @@ class BatchExportModel(
         cancelRequested.reset()
         running = scope.launch(Dispatchers.IO) {
             try {
-                val materialized = configured
+                val materialized = if(configured.settingsMode==BatchSettingsMode.UNIFORM_FROZEN && configured.source.settings.isHDREditing)
+                    hdrPreparation(configured.source).freeze(configured,journalRoot,cancelRequested::get) else configured
+                mutable.update { it.copy(job = materialized) }
                 if (materialized.settingsMode == BatchSettingsMode.UNIFORM_FROZEN && !materialized.source.sourceFile.isFile) {
                     throw BatchGlobalFailure(AppStrings.text(R.string.message_task_source_unavailable))
                 }
@@ -225,8 +229,9 @@ class BatchExportModel(
                     }, outputFormat = format, destination = destination, error = result.globalError)
                 reportTerminal(result, cancelRequested.outcome(result))
             } catch (error: Throwable) {
-                mutable.update { it.copy(phase = BatchPhase.FAILED, stopping = false,
-                    error = error.message ?: error.javaClass.simpleName) }
+                mutable.update { it.copy(phase = if(it.job.settingsMode==BatchSettingsMode.UNIFORM_FROZEN && it.job.source.settings.isHDREditing)
+                    BatchPhase.SELECTING else BatchPhase.FAILED, stopping = false,
+                    error = if(error is AdjustmentTransferException) AppStrings.text(R.string.transfer_incompatible) else error.message ?: error.javaClass.simpleName) }
                 reportTerminal(mutable.value.job, UsageBatchOutcome.Interrupted)
             }
         }
@@ -287,6 +292,10 @@ class BatchExportModel(
         return job.copy(source = job.source.copy(sourceFile = sourceCopy, lookFile = look))
     }
 
+    private fun hdrPreparation(source: BatchSourceSnapshot): BatchHDRPreparation = BatchHDRPreparation(source,
+        EditStore(File(context.filesDir,"edits"))::versionedState,storage::lookPath,
+        { file -> com.rawlab.android.photo.HDRSourceInfo.mayContainGainMap(file) && com.rawlab.android.engine.NativeHDRBridge.probe(file)!=null })
+
     private fun inputFile(jobID: String, identity: PhotoIdentity, name: String): File {
         val root = File(context.filesDir, "RawLab/BatchJobs/${jobID}/inputs")
         if (!root.exists()) root.mkdirs()
@@ -303,7 +312,9 @@ class BatchExportModel(
             if (snapshot.settingsMode == BatchSettingsMode.PER_TARGET_FROZEN) target.frozen!!.verifyFiles(target.sourceFile)
             // 效果查看先限长再降噪，最终导出仍保留完整质量。
             processorFactory(gpuMode, storage.lensDatabase()).use {
-                val settings = snapshot.settingsFor(target)
+                val prepared=if(snapshot.settingsMode==BatchSettingsMode.UNIFORM_FROZEN && snapshot.source.settings.isHDREditing)
+                    hdrPreparation(snapshot.source).prepare(target,0,snapshot.outputFormat,snapshot.outputLongEdge) else target.frozen
+                val settings = prepared?.settings ?: snapshot.settingsFor(target)
                 if (settings.isHDREditing) {
                     if (gpuMode == NativeProcessor.FORCE) throw com.rawlab.android.engine.HDRProcessingException(2,13,6)
                     val info = requireNotNull(com.rawlab.android.engine.NativeHDRBridge.probe(target.sourceFile))
@@ -311,10 +322,12 @@ class BatchExportModel(
                         it.setGpuMode(NativeProcessor.CPU)
                         it.renderHDR(source, requireNotNull(settings.hdr).copy(geometry = settings.geometry), 1280).use { pair -> pair.sdrBitmap() }
                     }
-                } else it.preview(target.sourceFile, snapshot.lookFor(target), settings, 1280, true, target.inputKind).bitmap()
+                } else it.preview(target.sourceFile, if(prepared!=null)prepared.lookFile else snapshot.lookFor(target), settings, 1280, true, target.inputKind).bitmap()
             }
         }
-        try { work.await() } finally { work.cancel() }
+        try { work.await() }
+        catch(error: AdjustmentTransferException) {throw IOException(AppStrings.text(R.string.transfer_incompatible),error)}
+        finally { work.cancel() }
     }
 
     private fun reconcile(job: BatchJob): BatchJob {

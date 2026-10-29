@@ -44,7 +44,6 @@ internal static class PhotoInput
 
     internal static Adjustments PrepareBatchSettings(string source,string target,Adjustments value)
     {
-        if (IsHDRContainer(source)) value = PrepareHDRInputSettings(source, value);
         if(!IsRaster(source) || !IsRaw(target))return value;
         var recipeTint=value.MasterRecipeID == null ? (double?)null : value[Parameter.Tint];
         var prepared=PrepareInputSettings(source,value);

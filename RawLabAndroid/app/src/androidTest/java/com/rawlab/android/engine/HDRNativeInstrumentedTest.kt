@@ -42,6 +42,19 @@ class HDRNativeInstrumentedTest {
             assertEquals(dimensions[1], pair.outputNativeHeight)
             assertTrue(pair.hdrPlane().all(Float::isFinite))
             assertTrue(pair.hdrPlane().zip(pair.sdrPlane()).any { abs(it.first - it.second) > .01f })
+            val sdr=pair.sdrPlane();val sdrBitmap=pair.sdrBitmap()
+            try {
+                for((x,y) in listOf(0 to 0,pair.width/2 to pair.height/2,pair.width-1 to pair.height-1)) {
+                    val pixel=sdrBitmap.getPixel(x,y);val offset=(y*pair.width+x)*3
+                    for(channel in 0..2) {
+                        val linear=sdr[offset+channel].coerceIn(0f,1f).toDouble()
+                        val encoded=if(linear<=.0031308)12.92*linear else 1.055*Math.pow(linear,1.0/2.4)-.055
+                        val expected=Math.round(encoded*255).toInt()
+                        assertTrue(abs(expected-((pixel ushr (16-channel*8)) and 255))<=1)
+                    }
+                    assertEquals(255,pixel ushr 24)
+                }
+            } finally {sdrBitmap.recycle()}
             val frame = pair.snapshot()
             val bitmap = requireNotNull(HDRBitmapAdapter.bitmap(frame, HDRDisplayParameters(4f)))
             assertEquals(Bitmap.Config.RGBA_F16, bitmap.config)

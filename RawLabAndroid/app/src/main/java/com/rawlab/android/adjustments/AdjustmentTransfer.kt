@@ -8,6 +8,14 @@ data class AdjustmentTransferContext(val identifier: String, val isRaw: Boolean,
     val hasUncommittedDraft: Boolean = false, val validateLens: ((LensSettings) -> Unit)? = null)
 
 object AdjustmentTransfer {
+    fun captureHDRBatch(settings: EditSettings, context: AdjustmentTransferContext, targetIsHDR: Boolean): AdjustmentPayload {
+        require(settings.isHDREditing)
+        val active=settings.synchronizeHDR()
+        val fields=AdjustmentField.HDR_SUPPORTED.toMutableSet()
+        if(!targetIsHDR && active.hdr!!.temperature==6500f && active.hdr.tint==0f)
+            fields.removeAll(setOf(AdjustmentField.HDR_TEMPERATURE,AdjustmentField.HDR_TINT))
+        return capture(AdjustmentScope.Custom(fields),active,context)
+    }
     fun sameAdjustments(left: EditSettings, right: EditSettings, isRaw: Boolean): Boolean {
         if (left.isHDREditing || right.isHDREditing) {
             return left.synchronizeHDR() == right.synchronizeHDR()

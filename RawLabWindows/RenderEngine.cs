@@ -129,7 +129,7 @@ internal sealed partial class RenderEngine : IDisposable
         if (PhotoInput.IsHDRContainer(path))
         {
             var probe = PhotoInput.ProbeHDR(path, out var info);
-            if (probe == HDRProbeState.Supported) return RenderHDR(path, settings, lut, edge, output, longEdge, formatOverride,info!);
+            if (probe == HDRProbeState.Supported) return RenderHDR(path, settings, lut, edge, output, longEdge, formatOverride,info!,statistics,clipping);
             if (settings.IsHDREditing) throw new HDRModeException(HDRModeFailure.UnsupportedSource);
         }
         (settings,var request)=PrepareRequest(path,settings,lut,edge,interactive,output,longEdge,viewportPreview);
@@ -173,7 +173,7 @@ internal sealed partial class RenderEngine : IDisposable
     }
 
     private RenderedImage? RenderHDR(string path, Adjustments settings, string? lut, int edge, string? output,
-        int? longEdge, ExportFormat? formatOverride,HDRSourceInfo info)
+        int? longEdge, ExportFormat? formatOverride,HDRSourceInfo info,bool statistics,bool clipping)
     {
         var final = output != null;
         var edgeValue = checked((uint)Math.Clamp(edge <= 0 ? 2000 : edge, 1, 2000));
@@ -181,7 +181,7 @@ internal sealed partial class RenderEngine : IDisposable
         if (!settings.IsHDREditing && formatOverride == ExportFormat.HdrJpeg)
             throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
         if (!settings.IsHDREditing)
-            return RenderHDRAsSDR(path, settings, lut, edge, output, longEdge, formatOverride, source.Owner);
+            return RenderHDRAsSDR(path, settings, lut, edge, output, longEdge, formatOverride, source.Owner,statistics,clipping);
 
         using var rendered = HDRNative.Render(session, source.Owner, settings.HDR!, final ? HDRIntent.Final : HDRIntent.Preview,
             final ? checked((uint)Math.Clamp(longEdge ?? 0, 0, 65535)) : edgeValue);
@@ -194,14 +194,15 @@ internal sealed partial class RenderEngine : IDisposable
             return null;
         }
         var pair = HDRDisplay.CopyPair(rendered.Pair);
-        _ = pair.Statistics;
-        var statistics = HDRDisplay.Statistics(pair.SDR);
-        return new(pair.SDRBitmap, null, statistics.Histogram, statistics.Shadows, statistics.Highlights, 0, null, LastBackend,
+        if(statistics)_ = pair.Statistics;
+        var analysis = statistics || clipping ? HDRDisplay.Statistics(pair.SDR,clipping) :
+            (Histogram:Array.Empty<uint>(),Shadows:0d,Highlights:0d,Clipping:(BitmapSource?)null);
+        return new(pair.SDRBitmap, analysis.Clipping, analysis.Histogram, analysis.Shadows, analysis.Highlights, 0, null, LastBackend,
             NativeWidth: checked((int)pair.OutputNativeWidth), NativeHeight: checked((int)pair.OutputNativeHeight), HDR: pair);
     }
 
     private RenderedImage? RenderHDRAsSDR(string path, Adjustments settings, string? lut, int edge, string? output,
-        int? longEdge, ExportFormat? formatOverride, HDRPairOwner source)
+        int? longEdge, ExportFormat? formatOverride, HDRPairOwner source,bool statistics,bool clipping)
     {
         var pair = HDRDisplay.CopyPair(source.Pair);
         using var input = new HDRSdrInput(pair.SDR);
@@ -224,11 +225,14 @@ internal sealed partial class RenderEngine : IDisposable
                 return null;
             }
             var (nativeWidth,nativeHeight)=HDRNative.GeometrySize(pair.NativeWidth,pair.NativeHeight,settings.Geometry);
-            var bins = new uint[768]; uint shadows = 0, highlights = 0;
-            var available = statisticsAnalyzer(ref buffer, false, bins, out shadows, out highlights, out mask) == 0;
-            if (!available) bins = [];
+            var bins = statistics || clipping ? new uint[768] : Array.Empty<uint>(); uint shadows = 0, highlights = 0;
+            var available = false;
+            if(statistics || clipping) {
+                available = statisticsAnalyzer(ref buffer, clipping, bins, out shadows, out highlights, out mask) == 0;
+                if (!available) {bins = [];shadows=highlights=0;}
+            }
             var count = Math.Max(1d, (double)buffer.Width * buffer.Height);
-            return new(Bitmap(buffer), null, bins, shadows / count, highlights / count, 0, null, LastBackend,
+            return new(Bitmap(buffer), !available || mask.Data==IntPtr.Zero ? null : Bitmap(mask,false), bins, shadows / count, highlights / count, 0, null, LastBackend,
                 NativeWidth: checked((int)nativeWidth), NativeHeight: checked((int)nativeHeight));
         }
         finally { Native.sony2fuji_release_buffer(ref buffer); Native.sony2fuji_release_buffer(ref mask); }
@@ -260,7 +264,10 @@ internal sealed partial class RenderEngine : IDisposable
     {
         if(!double.IsFinite(x) || !double.IsFinite(y))return HslTargetSample.Unavailable(revision,HslTargetAvailability.Nonfinite);
         if(x<0 || x>1 || y<0 || y>1)return HslTargetSample.Unavailable(revision,HslTargetAvailability.Outside);
-        var prepared=PrepareRequest(path,settings,lut,edge,interactive,null,null,true);
+        using var source=PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path,out var info)==HDRProbeState.Supported
+            ? HDRSourceCache.Acquire(path,info!,false,checked((uint)Math.Clamp(edge<=0 ? 2000 : edge,1,2000))) : null;
+        using var input=source==null ? null : new HDRSdrInput(HDRDisplay.CopyPair(source.Owner.Pair).SDR);
+        var prepared=PrepareRequest(path,settings,lut,edge,interactive,null,null,true,input?.Buffer);
         var request=prepared.Item2;
         IntPtr probe=IntPtr.Zero;
         try {
