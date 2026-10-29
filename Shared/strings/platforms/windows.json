@@ -3689,6 +3689,62 @@
     "无照片": {
       "formats": [],
       "source": "无照片"
+    },
+    "AI 任务正在运行，完成后可更换显卡。": {
+      "formats": [],
+      "source": "AI 任务正在运行，完成后可更换显卡。"
+    },
+    "AI 显卡执行失败，请更换 AI 显卡或导出诊断包。": {
+      "formats": [],
+      "source": "AI 显卡执行失败，请更换 AI 显卡或导出诊断包。"
+    },
+    "AI 诊断包已导出，可手动发送给开发者。": {
+      "formats": [],
+      "source": "AI 诊断包已导出，可手动发送给开发者。"
+    },
+    "AI 降噪将使用：{0}": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "AI 降噪将使用：{0}"
+    },
+    "AI 降噪显卡": {
+      "formats": [],
+      "source": "AI 降噪显卡"
+    },
+    "{0}（不可用）": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "{0}（不可用）"
+    },
+    "失败时自动保存本地诊断；导出后可手动发送，不包含照片内容。": {
+      "formats": [],
+      "source": "失败时自动保存本地诊断；导出后可手动发送，不包含照片内容。"
+    },
+    "导出 AI 诊断包…": {
+      "formats": [],
+      "source": "导出 AI 诊断包…"
+    },
+    "所选 AI 显卡不可用，请在设置中重新选择。": {
+      "formats": [],
+      "source": "所选 AI 显卡不可用，请在设置中重新选择。"
+    },
+    "无法保存诊断包，请检查磁盘空间和写入权限。": {
+      "formats": [],
+      "source": "无法保存诊断包，请检查磁盘空间和写入权限。"
+    },
+    "无法导出 AI 诊断包。": {
+      "formats": [],
+      "source": "无法导出 AI 诊断包。"
+    },
+    "暂无可导出的 AI 诊断。": {
+      "formats": [],
+      "source": "暂无可导出的 AI 诊断。"
+    },
+    "自动（优先独显）": {
+      "formats": [],
+      "source": "自动（优先独显）"
     }
   },
   "overrides": {
@@ -5193,6 +5249,110 @@
       "fr": "Looks de film|*.cube;*.vlt;*.rlook;*.dcp|CUBE / VLT LUT|*.cube;*.vlt|Looks RLOOK RawLab|*.rlook|Looks DCP|*.dcp",
       "ja": "フィルムルック|*.cube;*.vlt;*.rlook;*.dcp|CUBE / VLT LUT|*.cube;*.vlt|RawLab RLOOK ルック|*.rlook|DCP ルック|*.dcp",
       "zh-Hans": "胶片外观|*.cube;*.vlt;*.rlook;*.dcp|CUBE / VLT LUT|*.cube;*.vlt|RawLab RLOOK 外观|*.rlook|DCP 外观|*.dcp"
+    },
+    "AI 任务正在运行，完成后可更换显卡。": {
+      "de": "Eine KI-Aufgabe läuft. Danach können Sie die GPU wechseln.",
+      "en": "An AI task is running. You can change the GPU when it finishes.",
+      "es": "Hay una tarea de IA en curso. Podrás cambiar la GPU cuando termine.",
+      "fr": "Une tâche IA est en cours. Vous pourrez changer de GPU une fois terminée.",
+      "ja": "AI処理中です。完了後にGPUを変更できます。",
+      "zh-Hans": "AI 任务正在运行，完成后可更换显卡。"
+    },
+    "AI 显卡执行失败，请更换 AI 显卡或导出诊断包。": {
+      "de": "Die KI-GPU ist fehlgeschlagen. Wählen Sie eine andere GPU oder exportieren Sie die Diagnose.",
+      "en": "The AI GPU failed. Select another AI GPU or export diagnostics.",
+      "es": "La GPU de IA falló. Selecciona otra GPU o exporta el diagnóstico.",
+      "fr": "Le GPU IA a échoué. Changez de GPU IA ou exportez le diagnostic.",
+      "ja": "AI用GPUの処理に失敗しました。別のGPUを選ぶか、診断をエクスポートしてください。",
+      "zh-Hans": "AI 显卡执行失败，请更换 AI 显卡或导出诊断包。"
+    },
+    "AI 诊断包已导出，可手动发送给开发者。": {
+      "de": "KI-Diagnose exportiert. Sie können die ZIP-Datei an die Entwickler senden.",
+      "en": "AI diagnostics exported. You can send the ZIP to the developers.",
+      "es": "Diagnóstico de IA exportado. Puedes enviar el ZIP a los desarrolladores.",
+      "fr": "Diagnostic IA exporté. Vous pouvez envoyer le ZIP aux développeurs.",
+      "ja": "AI診断をエクスポートしました。ZIPを開発者に送信できます。",
+      "zh-Hans": "AI 诊断包已导出，可手动发送给开发者。"
+    },
+    "AI 降噪将使用：{0}": {
+      "de": "KI-Entrauschung verwendet: {0}",
+      "en": "AI denoise will use: {0}",
+      "es": "La reducción de ruido IA usará: {0}",
+      "fr": "Le débruitage IA utilisera : {0}",
+      "ja": "AIノイズ低減で使用：{0}",
+      "zh-Hans": "AI 降噪将使用：{0}"
+    },
+    "AI 降噪显卡": {
+      "de": "GPU für KI-Entrauschung",
+      "en": "AI denoise GPU",
+      "es": "GPU para reducción de ruido IA",
+      "fr": "GPU pour le débruitage IA",
+      "ja": "AIノイズ低減のGPU",
+      "zh-Hans": "AI 降噪显卡"
+    },
+    "{0}（不可用）": {
+      "de": "{0} (nicht verfügbar)",
+      "en": "{0} (unavailable)",
+      "es": "{0} (no disponible)",
+      "fr": "{0} (indisponible)",
+      "ja": "{0}（利用不可）",
+      "zh-Hans": "{0}（不可用）"
+    },
+    "失败时自动保存本地诊断；导出后可手动发送，不包含照片内容。": {
+      "de": "Bei Fehlern werden Diagnosen lokal gespeichert. Sie können sie exportieren und selbst senden; Bilddaten sind nicht enthalten.",
+      "en": "Diagnostics are saved locally after a failure. Export and share them manually; photo data is excluded.",
+      "es": "Los diagnósticos se guardan localmente tras un fallo. Puedes exportarlos y enviarlos; no contienen fotos.",
+      "fr": "Les diagnostics sont enregistrés localement en cas d’échec. Vous pouvez les exporter et les envoyer ; ils ne contiennent pas vos photos.",
+      "ja": "失敗時に診断を端末に保存します。書き出して手動で送信できます。写真の内容は含まれません。",
+      "zh-Hans": "失败时自动保存本地诊断；导出后可手动发送，不包含照片内容。"
+    },
+    "导出 AI 诊断包…": {
+      "de": "KI-Diagnose exportieren…",
+      "en": "Export AI diagnostics…",
+      "es": "Exportar diagnóstico de IA…",
+      "fr": "Exporter le diagnostic IA…",
+      "ja": "AI診断をエクスポート…",
+      "zh-Hans": "导出 AI 诊断包…"
+    },
+    "所选 AI 显卡不可用，请在设置中重新选择。": {
+      "de": "Die ausgewählte KI-GPU ist nicht verfügbar. Wählen Sie in den Einstellungen eine andere GPU.",
+      "en": "The selected AI GPU is unavailable. Choose another GPU in Settings.",
+      "es": "La GPU de IA seleccionada no está disponible. Elige otra en Ajustes.",
+      "fr": "Le GPU IA sélectionné est indisponible. Choisissez-en un autre dans les réglages.",
+      "ja": "選択したAI用GPUは利用できません。設定で選び直してください。",
+      "zh-Hans": "所选 AI 显卡不可用，请在设置中重新选择。"
+    },
+    "无法保存诊断包，请检查磁盘空间和写入权限。": {
+      "de": "Diagnose konnte nicht gespeichert werden. Prüfen Sie Speicherplatz und Schreibrechte.",
+      "en": "Could not save diagnostics. Check disk space and write permissions.",
+      "es": "No se pudo guardar el diagnóstico. Comprueba el espacio y los permisos de escritura.",
+      "fr": "Impossible d’enregistrer le diagnostic. Vérifiez l’espace disque et les droits d’écriture.",
+      "ja": "診断を保存できません。空き容量と書き込み権限を確認してください。",
+      "zh-Hans": "无法保存诊断包，请检查磁盘空间和写入权限。"
+    },
+    "无法导出 AI 诊断包。": {
+      "de": "KI-Diagnose konnte nicht exportiert werden.",
+      "en": "Could not export AI diagnostics.",
+      "es": "No se pudo exportar el diagnóstico de IA.",
+      "fr": "Impossible d’exporter le diagnostic IA.",
+      "ja": "AI診断をエクスポートできません。",
+      "zh-Hans": "无法导出 AI 诊断包。"
+    },
+    "暂无可导出的 AI 诊断。": {
+      "de": "Keine KI-Diagnose zum Exportieren vorhanden.",
+      "en": "No AI diagnostics are available to export.",
+      "es": "No hay diagnósticos de IA para exportar.",
+      "fr": "Aucun diagnostic IA à exporter.",
+      "ja": "エクスポートできるAI診断はありません。",
+      "zh-Hans": "暂无可导出的 AI 诊断。"
+    },
+    "自动（优先独显）": {
+      "de": "Automatisch (dedizierte GPU bevorzugen)",
+      "en": "Auto (prefer discrete GPU)",
+      "es": "Automático (preferir GPU dedicada)",
+      "fr": "Auto (GPU dédiée de préférence)",
+      "ja": "自動（外部GPUを優先）",
+      "zh-Hans": "自动（优先独显）"
     }
   }
 }

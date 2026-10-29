@@ -21,11 +21,52 @@ void AISession::configure(std::string modelDirectory, std::string cacheDirectory
         throw std::invalid_argument("invalid AI backend");
     if (modelDirectory_ != modelDirectory || cacheDirectory_ != cacheDirectory || backend_ != backend) {
         modelDirectory_ = std::move(modelDirectory); cacheDirectory_ = std::move(cacheDirectory); backend_ = backend;
-        stamp_.clear(); runtimeDigest_.clear(); loadedKey_.clear(); package_.reset(); loaded_ = {};
+        stamp_.clear(); runtimeDigest_.clear(); runtimeIdentity_.clear(); loadedKey_.clear(); package_.reset(); loaded_ = {};
+        selectedDevice_.reset(); diagnostics_.reset(deviceID_,static_cast<int>(backend_));
         lastBackend.clear();
     }
     if (!enabled) { loaded_ = {}; loadedKey_.clear(); lastBackend.clear(); }
     lastError.clear();
+}
+
+void AISession::setDevice(std::string deviceID) {
+    if (deviceID.size() > 256) throw std::invalid_argument("AI device identifier is too long");
+    if (deviceID_ == deviceID) return;
+    deviceID_ = std::move(deviceID); selectedDevice_.reset();
+    runtimeDigest_.clear(); runtimeIdentity_.clear(); loadedKey_.clear(); loaded_ = {}; lastBackend.clear();
+    diagnostics_.reset(deviceID_,static_cast<int>(backend_));
+}
+
+std::string AISession::runtimeVersion(bool refreshDevice) {
+    std::string version;
+    if (runtimeVersion_) version = runtimeVersion_(backend_);
+    else {
+#ifdef _WIN32
+        if (backend_ == Backend::Auto || backend_ == Backend::DirectML) {
+            if (refreshDevice) selectedDevice_.reset();
+            if (!selectedDevice_) selectedDevice_ = findDirectMLAdapter(deviceID_);
+            diagnostics_.device(*selectedDevice_);
+        }
+#else
+        (void)refreshDevice;
+#endif
+        version = NetworkGraph::runtimeVersion(backend_,selectedDevice_ ? &*selectedDevice_ : nullptr);
+    }
+    runtimeIdentity_ = std::move(version);
+    diagnostics_.field("runtime_identity",runtimeIdentity_);
+    return runtimeIdentity_;
+}
+
+void AISession::beginOperation(const char* operation) {
+    diagnostics_.reset(deviceID_,static_cast<int>(backend_));
+    diagnostics_.field("operation",operation);lastError.clear();
+    if (selectedDevice_) diagnostics_.device(*selectedDevice_);
+    if (package_) diagnostics_.field("model_digest",package_->digest);
+    if (!runtimeIdentity_.empty()) diagnostics_.field("runtime_identity",runtimeIdentity_);
+}
+
+const char* AISession::diagnosticsJSON() const {
+    diagnosticsJSON_ = diagnostics_.json(); return diagnosticsJSON_.c_str();
 }
 
 std::string AISession::packageStamp() const {
@@ -58,18 +99,22 @@ std::string AISession::packageStamp() const {
 
 void AISession::ensurePackage() {
     try {
-    const auto stamp = packageStamp();
-    if (package_ && stamp == stamp_) return;
-    auto package = loadModelPackage(modelDirectory_);
-    if (packageStamp() != stamp) throw std::runtime_error("AI model changed during validation");
-    const auto identity = package.digest + ":" + runtimeVersion_(backend_);
-    runtimeDigest_ = sha256Bytes(identity.data(), identity.size());
-    package_ = std::move(package); stamp_ = stamp; loadedKey_.clear(); loaded_ = {};
+        const auto stamp = packageStamp();
+        if (!package_ || stamp != stamp_) {
+            auto package = loadModelPackage(modelDirectory_);
+            if (packageStamp() != stamp) throw std::runtime_error("AI model changed during validation");
+            package_ = std::move(package); stamp_ = stamp; runtimeDigest_.clear(); loadedKey_.clear(); loaded_ = {};
+        }
     } catch (const std::bad_alloc&) { throw; }
     catch (const std::exception& error) {
         lastError = std::string("Invalid AI model package: ") + error.what();
         throw std::runtime_error(lastError);
     }
+    diagnostics_.field("model_digest",package_->digest);
+    if (!runtimeDigest_.empty()) return;
+    // 显卡选择失败是设备错误，不包装成模型损坏；同一任务的全部网络固定到该设备。
+    const auto identity = package_->digest + ":" + runtimeVersion();
+    runtimeDigest_ = sha256Bytes(identity.data(),identity.size());
 }
 
 std::string AISession::renderKey(const std::string& path, const RAWProcessOptions& options, const std::string& sourceIdentity) {
@@ -103,7 +148,7 @@ const PreparedDenoise& AISession::result(const std::string& path, const RAWProce
             sha256Bytes(raw->values.data(), raw->values.size() * sizeof(float)), &rgbProducer) : std::optional<Tensor>{};
         if (!raw || !rgb) {
             // 准备任务使用新会话；驱动/适配器身份变化或首次查询失败后，只刷新并重查一次。
-            const auto runtime = package_->digest + ":" + runtimeVersion_(backend_);
+            const auto runtime = package_->digest + ":" + runtimeVersion(true);
             const auto current = sha256Bytes(runtime.data(), runtime.size());
             if (attempt == 0 && current != runtimeDigest_) { runtimeDigest_ = current; continue; }
             lastError = "AI result is missing or invalid; prepare this photo before rendering or exporting";
@@ -122,11 +167,18 @@ const PreparedDenoise& AISession::result(const std::string& path, const RAWProce
     throw NotReady("GPU AI result is unavailable");
 }
 
-PrepareReport AISession::prepare(const std::string& path, const RAWProcessOptions& options, const JobProgress& progress) {
+PrepareReport AISession::prepare(const std::string& path, const RAWProcessOptions& options, const JobProgress& callback) {
+    selectedDevice_.reset(); runtimeDigest_.clear();
+    beginOperation("prepare");
+    const JobProgress progress = [&](Phase phase, size_t done, size_t total) {
+        diagnostics_.progress(static_cast<int>(phase),done,total);
+        return !callback || callback(phase,done,total);
+    };
     lastBackend.clear();
     if (options.useAutoWhiteBalance) throw std::invalid_argument("AI denoising does not support automatic white balance");
     notify(progress, Phase::Loading, 0, 1);
     ensurePackage();
+    const AIExecution execution{selectedDevice_ ? &*selectedDevice_ : nullptr,&diagnostics_};
     const auto rawKey = rawCacheKey(path, runtimeDigest_, static_cast<int>(backend_));
     const auto rgbKey = rgbCacheKey(rawKey, options);
     const auto sceneKey = sceneRGBCacheKey(rawKey,options);
@@ -172,7 +224,7 @@ PrepareReport AISession::prepare(const std::string& path, const RAWProcessOption
             const auto decodeStatus = processor.process(decode,scene);
             if (decodeStatus != ErrorCode::Success) throw DecodeError(decodeStatus,"Cannot decode scene RGB for AI denoising");
             const auto correction = denoiseSceneRGB(scene,std::exp2(sceneExposureEV(processor.getMetadataExposureEV())),
-                *package_,backend_,report.rgb,[&](size_t done,size_t total) { return !progress || progress(Phase::RGB,done,total); });
+                *package_,backend_,report.rgb,[&](size_t done,size_t total) { return !progress || progress(Phase::RGB,done,total); },execution);
             scene = {};
             validateSource(); notify(progress,Phase::Saving,0,1);
             cache.store(sceneKey,CacheKind::SceneRGB,correction.width,correction.height,
@@ -192,7 +244,7 @@ PrepareReport AISession::prepare(const std::string& path, const RAWProcessOption
         notify(progress, Phase::Raw, 1, 1);
     } else {
         denoised = denoiseRaw(source, *package_, noise, backend_, report.raw,
-            [&](size_t done, size_t total) { return !progress || progress(Phase::Raw, done, total); });
+            [&](size_t done, size_t total) { return !progress || progress(Phase::Raw, done, total); },execution);
         validateSource();
         notify(progress, Phase::Saving, 0, 1);
         cache.store(rawKey, CacheKind::Raw, source.width, source.height, denoised.normalizedMosaic.data(),
@@ -204,7 +256,7 @@ PrepareReport AISession::prepare(const std::string& path, const RAWProcessOption
         notify(progress, Phase::RGB, 1, 1);
     } else {
         const auto correction = denoiseRgb(source, denoised, *package_, noise, backend_, RGBOutput::CameraCorrection, report.rgb,
-            [&](size_t done, size_t total) { return !progress || progress(Phase::RGB, done, total); });
+            [&](size_t done, size_t total) { return !progress || progress(Phase::RGB, done, total); },execution);
         validateSource();
         notify(progress, Phase::Saving, 0, 1);
         cache.store(rgbKey, CacheKind::RGB, source.width, source.height, correction.values.data(), correction.values.size(), rawPayload, report.rgb.backend);

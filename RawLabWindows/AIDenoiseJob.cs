@@ -1,18 +1,19 @@
 namespace RawLab.Windows;
 
-internal sealed record AIDenoiseIdentity(OriginalIdentity Source,ProcessingIdentity Processing,int WhiteBalance,float Temperature,float Tint,int Backend,LensSettings Lens)
+internal sealed record AIDenoiseIdentity(OriginalIdentity Source,ProcessingIdentity Processing,int WhiteBalance,float Temperature,float Tint,int Backend,LensSettings Lens,string DeviceID="")
 {
-    internal static AIDenoiseIdentity Read(string path,Adjustments settings,int backend)
+    internal static AIDenoiseIdentity Read(string path,Adjustments settings,int backend,string deviceID="")
     {
         var request=settings.Request(path,null,0,null);
         // 相机 WB 由原片确定；配方身份只记录用户偏移，不随首帧解析出的 AsShot 改变。
         var temperature=settings.CameraWhiteBalance ? 0 : request.Temperature;
         var tint=settings.MasterRecipeID==null ? request.Tint : (float)(settings[Parameter.Tint]*settings[Parameter.Strength]/100);
-        return new(OriginalIdentity.Read(path),settings.Processing,request.WbMode,temperature,tint,backend,settings.Lens);
+        return new(OriginalIdentity.Read(path),settings.Processing,request.WbMode,temperature,tint,backend,settings.Lens,deviceID);
     }
 }
 internal enum AIDenoiseStatus { Idle,Running,Ready,Failed,Cancelled }
-internal sealed record AIDenoiseState(AIDenoiseStatus Status,int Phase=0,ulong Done=0,ulong Total=0,string? Error=null)
+internal sealed record AIDenoiseState(AIDenoiseStatus Status,int Phase=0,ulong Done=0,ulong Total=0,string? Error=null,
+    string? DiagnosticPath=null,bool DiagnosticSaveFailed=false)
 {
     internal bool IsRunning=>Status==AIDenoiseStatus.Running;
 }
@@ -38,6 +39,7 @@ internal sealed class AIDenoiseJob
     private static readonly SemaphoreSlim queue=new(1,1);
     private readonly object gate=new();
     private readonly Action<AIDenoiseIdentity,Adjustments,AIPreparation> prepare;
+    private readonly Func<Exception,AIDenoiseIdentity,string?>? captureFailure;
     private AIPreparation? preparation;
     private long generation;
     private AIDenoiseState state=new(AIDenoiseStatus.Idle);
@@ -46,7 +48,9 @@ internal sealed class AIDenoiseJob
     internal AIDenoiseIdentity? Identity { get { lock(gate)return identity; } }
     internal Task Completion { get; private set; }=Task.CompletedTask;
     internal event Action? Changed;
-    internal AIDenoiseJob(Action<AIDenoiseIdentity,Adjustments,AIPreparation> prepare)=>this.prepare=prepare;
+    internal AIDenoiseJob(Action<AIDenoiseIdentity,Adjustments,AIPreparation> prepare,
+        Func<Exception,AIDenoiseIdentity,string?>? captureFailure=null)
+    {this.prepare=prepare;this.captureFailure=captureFailure;}
     internal Task<bool> StartAsync(AIDenoiseIdentity next,Adjustments settings)
     {
         long revision;AIPreparation progress;
@@ -73,13 +77,19 @@ internal sealed class AIDenoiseJob
             await Task.Run(()=>prepare(current,settings,progress),progress.Token);
         } catch(Exception error) { failure=error; }
         finally { if(entered)queue.Release(); }
+        string? diagnostic=null;
+        if(failure!=null && failure is not OperationCanceledException && !progress.IsCancelled) {
+            try {diagnostic=captureFailure?.Invoke(failure,current) ?? AIDiagnosticStore.ReportPath(failure);}
+            catch { /* 日志导出失败不改变原始任务结果。 */ }
+        }
         bool success;
         lock(gate) {
             if(revision!=generation) { progress.Dispose();return false; }
             success=failure==null && !progress.IsCancelled;
             state=success ? new(AIDenoiseStatus.Ready) :
                 progress.IsCancelled || failure is OperationCanceledException ? new(AIDenoiseStatus.Cancelled) :
-                new(AIDenoiseStatus.Failed,Error:failure!.Message);
+                new(AIDenoiseStatus.Failed,Error:failure!.Message,DiagnosticPath:diagnostic,
+                    DiagnosticSaveFailed:AIDiagnosticStore.SaveFailed(failure));
             preparation=null;progress.Dispose();
         }
         Changed?.Invoke();return success;
@@ -99,10 +109,11 @@ internal sealed class AIDenoiseJob
         }
         Changed?.Invoke();
     }
-    internal void Fail(string message)
+    internal void Fail(string message,string? diagnosticPath=null,bool diagnosticSaveFailed=false)
     {
         lock(gate) {
-            ++generation;preparation?.Cancel();preparation=null;state=new(AIDenoiseStatus.Failed,Error:message);
+            ++generation;preparation?.Cancel();preparation=null;
+            state=new(AIDenoiseStatus.Failed,Error:message,DiagnosticPath:diagnosticPath,DiagnosticSaveFailed:diagnosticSaveFailed);
         }
         Changed?.Invoke();
     }

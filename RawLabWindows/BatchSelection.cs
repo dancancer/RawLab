@@ -102,7 +102,7 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
         }
         return new(selection.SelectedPhotos.Select(photo=>photo.ID).ToArray(),rows,format,longEdge,System.IO.Path.GetFullPath(outputDirectory));
     }
-    public BatchJob Freeze(BatchSelectionSession selection,CollectionExportReview review,Func<string,string?> activeFailure)
+    public BatchJob Freeze(BatchSelectionSession selection,CollectionExportReview review,Func<string,string?> activeFailure,int aiBackend=2,string aiDeviceID="")
     {
         if(!review.Ready || !selection.SelectedPhotos.Select(photo=>photo.ID).SequenceEqual(review.SelectionIDs))
             throw new InvalidOperationException(Loc.Text("照片选择已变化，请重新检查。"));
@@ -140,7 +140,7 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                     OutputFormat=review.Format,LongEdge=review.LongEdge}};
             }).ToList();
             Validate();
-            var job=new BatchJob{Version=3,SettingsMode=BatchJob.PerTargetFrozen,Source=items[0].Input,
+            var job=new BatchJob{Version=3,AIBackend=aiBackend,AIDeviceID=aiDeviceID,SettingsMode=BatchJob.PerTargetFrozen,Source=items[0].Input,
                 Settings=items[0].Frozen!.Settings,Items=items,OutputFormat=review.Format,Png=review.Format==ExportFormat.Png,
                 LongEdge=review.LongEdge,OutputDirectory=review.OutputDirectory};
             journal.Save(job);owned.Clear();

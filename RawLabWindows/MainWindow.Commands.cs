@@ -26,8 +26,17 @@ public partial class MainWindow
     {
         PreserveUpdateNavigation();
         var focus=Keyboard.FocusedElement;
-        var dialog=new SettingsWindow(GpuMode.SelectedIndex,()=>ShowSoftwareUpdates(true)){Owner=this};
-        if(dialog.ShowDialog()==true && GpuMode.SelectedIndex!=dialog.Backend)GpuMode.SelectedIndex=dialog.Backend;
+        var dialog=new SettingsWindow(GpuMode.SelectedIndex,aiPreference,RenderEngine.GetAIDevices(true),aiJob.State.IsRunning || exporting || autoExposing,
+            owner=>ExportAIDiagnostics(owner,null),aiDiagnostics.Latest()!=null,()=>ShowSoftwareUpdates(true)){Owner=this};
+        if(dialog.ShowDialog()==true) {
+            try {
+                if(aiPreference!=dialog.AIPreference) {
+                    aiPreferenceStore.Save(dialog.AIPreference);aiPreference=dialog.AIPreference;
+                    ResetAITask();exactReady=false;RefreshControls();Schedule();
+                }
+                if(GpuMode.SelectedIndex!=dialog.Backend)GpuMode.SelectedIndex=dialog.Backend;
+            } catch(Exception error) {Report(error);}
+        }
         if(softwareUpdateWindow?.IsVisible!=true && focus is UIElement control && control.IsVisible)control.Focus();
     }
     private void ResetCurrentToolClicked(object sender,RoutedEventArgs e) => RequestReset(new(EditorResetKind.Tool,Tool:CurrentTool));

@@ -8,6 +8,7 @@
     <CheckBox x:Name="AIEnabledBox" Content="{DynamicResource 'AI 降噪（实验）'}" Checked="AIEnabledChanged" Unchecked="AIEnabledChanged" AutomationProperties.Name="{DynamicResource 'AI 降噪（实验）'}" VerticalAlignment="Center"/>
     <Button x:Name="AICancel" Content="{DynamicResource '取消'}" Click="AICancelClicked" Visibility="Collapsed" Margin="12,0,0,0"/>
     <Button x:Name="AIRetry" Content="{DynamicResource '重试'}" Click="AIRetryClicked" Visibility="Collapsed" Margin="12,0,0,0"/>
+    <Button x:Name="AIExportDiagnostics" Content="{DynamicResource '导出 AI 诊断包…'}" Click="AIExportDiagnosticsClicked" Visibility="Collapsed" Margin="12,0,0,0"/>
    </WrapPanel>
    <ProgressBar x:Name="AIProgress" Minimum="0" Maximum="1" Height="4" Margin="0,8,0,0" Visibility="Collapsed" AutomationProperties.Name="{DynamicResource 'AI 降噪进度'}"/>
    <TextBlock x:Name="AIStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Margin="0,6,0,0" AutomationProperties.LiveSetting="Polite"/>

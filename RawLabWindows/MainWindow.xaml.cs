@@ -83,11 +83,13 @@ public partial class MainWindow : Window
     internal MainWindow(UsageAnalytics usageAnalytics,string? lookLibraryDirectory,AIDenoiseJob? aiJob=null,DesktopUpdateController? desktopUpdates=null)
     {
         this.usageAnalytics = usageAnalytics;
+        aiPreference=aiPreferenceStore.Read();
         this.desktopUpdates=desktopUpdates ?? new(new UnavailableUpdateAdapter("configuration"),new(),new(UpdateStore.DefaultDirectory),updates.CurrentVersion,"",updates.Automatic);
         this.aiJob=aiJob ?? new((identity,snapshot,progress)=>{
-            using var worker=new RenderEngine(gpuMode:0,aiBackend:identity.Backend);
+            using var worker=new RenderEngine(gpuMode:0,aiBackend:identity.Backend,aiDeviceID:identity.DeviceID,aiDiagnostics:aiDiagnostics);
             worker.PrepareAI(identity.Source.Path,snapshot,progress);
-        });
+        },(error,identity)=>aiDiagnostics.Capture(error,new("prepare",identity.DeviceID,identity.Backend,
+            identity.Source.Path,Devices:RenderEngine.GetAIDevices().JSON,ModelDirectory:RenderEngine.BundledAIModel)));
         InitializeComponent();
         InitializeAI();
         if (!LookLibrary.TryLoad(lookLibraryDirectory, out lookLibrary, out lookLibraryLoadError))

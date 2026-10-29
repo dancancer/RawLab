@@ -4,6 +4,9 @@ namespace RawLab.Windows;
 public partial class MainWindow
 {
     private readonly AIDenoiseJob aiJob;
+    private AIGpuPreferenceStore aiPreferenceStore=new(AIGpuPreferenceStore.DefaultPath);
+    private AIDiagnosticStore aiDiagnostics=AIDiagnosticStore.Default;
+    private AIGpuPreference aiPreference=new();
     private bool aiManuallyRequested;
     private AIDenoiseIdentity? aiNotReadyIdentity;
     private int aiNotReadyAttempts;
@@ -11,13 +14,13 @@ public partial class MainWindow
     private int RequestedAIBackend=>GpuMode.SelectedIndex==2 ? 3 : 2;
     private Adjustments AIWorkSettings { get { var snapshot=settings.Clone();snapshot.Lens=PreviewLens;return snapshot; } }
     private bool CanStartAI=>file!=null && PhotoInput.IsRaw(file) && RenderEngine.AIAvailable && RenderEngine.AIHardwareAvailable &&
-        RenderEngine.HasBundledAIModel && !exporting && !transform.Active && !closing;
+        RenderEngine.HasBundledAIModel && RenderEngine.GetAIDevices().IsAvailable(aiPreference.DeviceID) && !exporting && !transform.Active && !closing;
     private bool AIResultReady
     {
         get {
             if(!settings.AIDenoiseEnabled)return true;
             try { return file!=null && aiJob.State.Status==AIDenoiseStatus.Ready &&
-                aiJob.Identity==AIDenoiseIdentity.Read(file,AIWorkSettings,RequestedAIBackend); }
+                aiJob.Identity==AIDenoiseIdentity.Read(file,AIWorkSettings,RequestedAIBackend,aiPreference.DeviceID); }
             catch(Exception error) when(error is IOException or UnauthorizedAccessException) { return false; }
         }
     }
@@ -31,10 +34,12 @@ public partial class MainWindow
         DenoiseEditor.AIChanged+=SetAIEnabled;
         DenoiseEditor.AICancelRequested+=()=>{aiManuallyRequested=false;aiJob.Cancel();RefreshControls();Schedule();};
         DenoiseEditor.AIRetryRequested+=()=>RequestAI(true);
+        DenoiseEditor.AIDiagnosticsRequested+=async()=>await ExportAIDiagnostics(this,aiJob.State.DiagnosticPath);
     }
     private void RefreshAIControls()=>DenoiseEditor.RefreshAI(RenderEngine.AIAvailable || settings.AIDenoiseEnabled,
         settings.AIDenoiseEnabled,CanStartAI,aiJob.State,
-        RenderEngine.AIHardwareAvailable ? null : Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。"),GpuMode.SelectedIndex==1);
+        !RenderEngine.AIHardwareAvailable ? Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。") :
+            !RenderEngine.GetAIDevices().IsAvailable(aiPreference.DeviceID) ? Loc.Text("所选 AI 显卡不可用，请在设置中重新选择。") : null,GpuMode.SelectedIndex==1);
     private void ResetAITask() { aiManuallyRequested=false;aiNotReadyIdentity=null;aiNotReadyAttempts=0;aiJob.Reset(); }
     private static bool ResetsAI(EditorResetScope scope)=>scope.Kind==EditorResetKind.All ||
         scope.Kind==EditorResetKind.Group && scope.Group==EditorAdjustmentGroup.Detail ||
@@ -53,7 +58,7 @@ public partial class MainWindow
         }
         if(file==null || closing)return;
         try {
-            var identity=AIDenoiseIdentity.Read(file,AIWorkSettings,RequestedAIBackend);
+            var identity=AIDenoiseIdentity.Read(file,AIWorkSettings,RequestedAIBackend,aiPreference.DeviceID);
             if(identity!=aiJob.Identity)RequestAI(false);
         } catch(Exception error) when(error is IOException or UnauthorizedAccessException) { Report(error); }
     }
@@ -63,7 +68,7 @@ public partial class MainWindow
         if(explicitRequest && !CanStartAI)return;
         try {
             var snapshot=AIWorkSettings;
-            var identity=AIDenoiseIdentity.Read(file,snapshot,RequestedAIBackend);
+            var identity=AIDenoiseIdentity.Read(file,snapshot,RequestedAIBackend,aiPreference.DeviceID);
             var revision=openRevision;
             if(!explicitRequest && identity==aiJob.Identity)return;
             if(explicitRequest)aiManuallyRequested=true;
@@ -80,7 +85,7 @@ public partial class MainWindow
             }
             if(!completed || revision!=openRevision || file!=identity.Source.Path ||
                 aiJob.Identity!=identity || aiJob.State.Status!=AIDenoiseStatus.Ready ||
-                AIDenoiseIdentity.Read(file,AIWorkSettings,RequestedAIBackend)!=identity)return;
+                AIDenoiseIdentity.Read(file,AIWorkSettings,RequestedAIBackend,aiPreference.DeviceID)!=identity)return;
             aiManuallyRequested=false;
             if(!settings.AIDenoiseEnabled) {
                 settings.AIDenoiseEnabled=true;MarkEdited();
@@ -105,7 +110,24 @@ public partial class MainWindow
     {
         if(!settings.AIDenoiseEnabled)return false;
         if(error is AINotReadyException) {AIResultUnavailable();return true;}
-        if(error is AIDenoiseException) {ClearPendingAllReset();aiJob.Fail(error.Message);RefreshControls();return true;}
+        if(error is AIDenoiseException) {
+            ClearPendingAllReset();aiJob.Fail(error.Message,AIDiagnosticStore.ReportPath(error),AIDiagnosticStore.SaveFailed(error));RefreshControls();return true;
+        }
         return false;
+    }
+    private async Task<bool> ExportAIDiagnostics(System.Windows.Window owner,string? report)
+    {
+        try {
+            report ??= aiDiagnostics.Latest();
+            if(report==null)throw new IOException(Loc.Text("暂无可导出的 AI 诊断。"));
+            var dialog=new Microsoft.Win32.SaveFileDialog{Title=Loc.Text("导出 AI 诊断包…"),Filter="ZIP (*.zip)|*.zip",DefaultExt=".zip",
+                AddExtension=true,FileName="RawLab-AI-diagnostic-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".zip"};
+            if(dialog.ShowDialog(owner)!=true)return false;
+            var destination=dialog.FileName;
+            await Task.Run(()=>aiDiagnostics.Export(report,destination));
+            SetStatus(()=>Loc.Text("AI 诊断包已导出，可手动发送给开发者。"));return true;
+        } catch(Exception error) {
+            System.Windows.MessageBox.Show(owner,Loc.Text("无法导出 AI 诊断包。")+"\n"+error.Message,Loc.Text("导出 AI 诊断包…"));return false;
+        }
     }
 }

@@ -1,5 +1,6 @@
 #pragma once
 #include "ai_errors.h"
+#include "ai_diagnostics.h"
 
 #include <memory>
 #include <cstdint>
@@ -21,7 +22,7 @@ GraphSignature graphSignature(GraphKind kind, int tileSize);
 // 会话由后台任务单线程持有；只接受固定协议中的图。
 class OnnxGraph {
 public:
-    OnnxGraph(const std::string& path, GraphKind kind, int tileSize, Backend backend = Backend::Cpu);
+    OnnxGraph(const std::string& path, GraphKind kind, int tileSize, Backend backend = Backend::Cpu, AIExecution execution = {});
     ~OnnxGraph();
     OnnxGraph(const OnnxGraph&) = delete;
     OnnxGraph& operator=(const OnnxGraph&) = delete;
