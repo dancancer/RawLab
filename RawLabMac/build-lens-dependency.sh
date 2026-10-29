@@ -52,10 +52,12 @@ check_binary() {
         echo "Host package-manager dependency leaked into $binary" >&2
         exit 1
     fi
+    # 消费完整输出，避免 awk 提前退出让 otool 因管道关闭失败。
     minimum="$(otool -l "$binary" | awk '
-        $1 == "minos" { print $2; exit }
-        $1 == "LC_VERSION_MIN_MACOSX" { version_min = 1; next }
-        version_min && $1 == "version" { print $2; exit }
+        $1 == "cmd" { command = $2 }
+        !minimum && command == "LC_BUILD_VERSION" && $1 == "minos" { minimum = $2 }
+        !minimum && command == "LC_VERSION_MIN_MACOSX" && $1 == "version" { minimum = $2 }
+        END { print minimum }
     ')"
     if [ -z "$minimum" ] || ! rawlab_macos_version_at_most "$minimum" "$MACOSX_DEPLOYMENT_TARGET"; then
         echo "Deployment target check failed for $binary: ${minimum:-missing}" >&2
