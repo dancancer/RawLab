@@ -220,8 +220,8 @@
     <string name="lut_preview_change_photo">"Cambiar foto de vista previa"</string>
     <string name="lut_preview_choose_help">"Elige una foto para comparar las opciones o abre los ajustes avanzados para configurarlas manualmente."</string>
     <string name="lut_preview_choose_photo">"Elegir foto de vista previa"</string>
-    <string name="lut_preview_conditions_display">"Condiciones de vista previa: foto revelada, sin ajustes adicionales, intensidad de LUT 100%, salida sRGB, lado largo de 512 píxeles."</string>
-    <string name="lut_preview_conditions_raw">"Condiciones de vista previa: revelado C5, balance de blancos de la cámara, exposición de escena normalizada, exposición 0, sin ajustes adicionales, intensidad de LUT 100%, salida sRGB, lado largo de 512 píxeles."</string>
+    <string name="lut_preview_conditions_display" formatted="false">"Condiciones de vista previa: foto revelada, sin ajustes adicionales, intensidad de LUT 100%, salida sRGB, lado largo de 512 píxeles."</string>
+    <string name="lut_preview_conditions_raw" formatted="false">"Condiciones de vista previa: revelado C5, balance de blancos de la cámara, exposición de escena normalizada, exposición 0, sin ajustes adicionales, intensidad de LUT 100%, salida sRGB, lado largo de 512 píxeles."</string>
     <string name="lut_preview_failed">"No se pudo generar la vista previa. Comprueba la foto, la LUT y los ajustes de color."</string>
     <string name="lut_preview_loading">"Generando vistas previas…"</string>
     <string name="lut_preview_placeholder">"Elige una foto y una opción para ver una vista previa"</string>

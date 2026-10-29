@@ -20,9 +20,12 @@ def apple_text(values):
     return "\n".join(lines) + "\n"
 
 
-def android_text(values):
+def android_text(values, entries):
     lines = ['<?xml version="1.0" encoding="utf-8"?>', f"<!-- {NOTICE} -->", "<resources>"]
-    lines.extend(f'    <string name="{key}">{android_quote(value)}</string>' for key, value in sorted(values.items()))
+    for key, value in sorted(values.items()):
+        # 是否接收参数由来源契约决定，不能把文案中的 100% 猜成格式占位符。
+        literal_percent = ' formatted="false"' if "%" in value and not entries[key]["formats"] else ""
+        lines.append(f'    <string name="{key}"{literal_percent}>{android_quote(value)}</string>')
     return "\n".join(lines + ["</resources>", ""])
 
 
@@ -41,7 +44,7 @@ def generate_language(shared, platform, client, language):
     if client == "android":
         return {output_path(client, language, file): android_text({
             key: value for key, value in values.items() if platform["entries"][key]["file"] == file
-        }) for file in ("strings.xml", "editor_strings.xml")}
+        }, platform["entries"]) for file in ("strings.xml", "editor_strings.xml")}
     text = apple_text(values)
     if client == "windows":
         # 严格 JSON 不能写注释，否则现有 System.Text.Json 读取器会拒绝。

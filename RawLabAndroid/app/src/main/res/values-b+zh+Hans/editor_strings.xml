@@ -220,8 +220,8 @@
     <string name="lut_preview_change_photo">"更换预览照片"</string>
     <string name="lut_preview_choose_help">"选择一张照片即可比较方案；也可以展开高级设置手动配置。"</string>
     <string name="lut_preview_choose_photo">"选择预览照片"</string>
-    <string name="lut_preview_conditions_display">"预览条件：已显影照片，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。"</string>
-    <string name="lut_preview_conditions_raw">"预览条件：C5 显影，相机白平衡，场景曝光归一化，曝光 0，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。"</string>
+    <string name="lut_preview_conditions_display" formatted="false">"预览条件：已显影照片，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。"</string>
+    <string name="lut_preview_conditions_raw" formatted="false">"预览条件：C5 显影，相机白平衡，场景曝光归一化，曝光 0，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。"</string>
     <string name="lut_preview_failed">"无法生成预览，请检查照片、LUT 和颜色配置。"</string>
     <string name="lut_preview_loading">"正在生成预览…"</string>
     <string name="lut_preview_placeholder">"选择照片和方案后显示预览"</string>
