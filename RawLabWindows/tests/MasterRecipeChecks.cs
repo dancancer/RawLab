@@ -29,6 +29,10 @@ internal static class MasterRecipeChecks
                     manual.Set(parameter, current[parameter] * strength);
                 if (strength != 0) manual.Set(Parameter.Tint, Math.Clamp(camera.Tint + current[Parameter.Tint] * strength, -150, 150));
                 manual.Hsl = current.RenderHsl;
+                manual.ToneControls = current.ToneControls.Scaled(strength);
+                manual.Atmosphere = current.Atmosphere.Scaled(strength);
+                manual.ColorGrading = current.ColorGrading.Scaled(strength);
+                manual.Curve = current.Curve.Scaled(strength);
                 var actual = Pixels(cpu.Render(raw, current, recipe.LutPath, 256, statistics: false, clipping: false)!.Image);
                 var expected = Pixels(cpu.Render(raw, manual, recipe.LutPath, 256, statistics: false, clipping: false)!.Image);
                 Check(actual.SequenceEqual(expected), recipe.Id + " " + strength + " explicit manual parity");

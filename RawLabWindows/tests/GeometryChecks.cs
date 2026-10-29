@@ -29,12 +29,20 @@ internal static class GeometryChecks
         var exact = engine.Render(raw, settings, null, 256, clipping: false)!;
         var interactive = engine.Render(raw, settings, null, 256, interactive: true, clipping: false, viewportPreview: true)!;
         check(exact.NativeWidth == interactive.NativeWidth && exact.NativeHeight == interactive.NativeHeight &&
-              Pixels(exact.Image).SequenceEqual(Pixels(interactive.Image)),
-            "Geometry bypasses approximate input reduction and preserves exact preview pixels");
+              exact.Image.PixelWidth == interactive.Image.PixelWidth && exact.Image.PixelHeight == interactive.Image.PixelHeight,
+            "Reduced geometry previews retain full-source canvas and output dimensions");
+        check(!Pixels(exact.Image).SequenceEqual(Pixels(interactive.Image)),
+            "Active geometry honors reduced viewport processing on the RAW fixture");
+        check(Pixels(exact.Image).SequenceEqual(Pixels(engine.Render(raw, settings, null, 256, clipping: false)!.Image)),
+            "Exact native geometry rendering is stable after a reduced viewport request");
         var full = engine.Render(raw, settings, null, 0, clipping: false)!;
         check(full.Image.PixelWidth == exact.NativeWidth && full.Image.PixelHeight == exact.NativeHeight &&
               Math.Max(exact.Image.PixelWidth, exact.Image.PixelHeight) <= 256,
             "Full and resized outputs share the native geometry canvas");
+        var nativePreview = engine.Render(raw, settings, null, Math.Max(full.NativeWidth, full.NativeHeight),
+            interactive: true, clipping: false, viewportPreview: true)!;
+        check(Pixels(full.Image).SequenceEqual(Pixels(nativePreview.Image)),
+            "Native-size geometry viewport requests preserve exact pixels");
         var frame = engine.RenderPreview(raw, settings, null, 256, false, true, false);
         check(frame.Neutral.NativeWidth == frame.Result.NativeWidth && frame.Neutral.NativeHeight == frame.Result.NativeHeight,
             "Reference comparison uses the edited geometry canvas");
@@ -52,7 +60,13 @@ internal static class GeometryChecks
         var perspective=engine.Render(raw,settings,null,256,clipping:false)!;
         check(!Pixels(perspective.Image).SequenceEqual(Pixels(reset.Result.Image)),"Perspective changes real RAW output pixels");
         var perspectiveInteractive=engine.Render(raw,settings,null,256,interactive:true,clipping:false,viewportPreview:true)!;
-        check(Pixels(perspective.Image).SequenceEqual(Pixels(perspectiveInteractive.Image)),"Perspective bypasses approximate viewport input");
+        check(perspective.NativeWidth==perspectiveInteractive.NativeWidth && perspective.NativeHeight==perspectiveInteractive.NativeHeight &&
+              perspective.Image.PixelWidth==perspectiveInteractive.Image.PixelWidth && perspective.Image.PixelHeight==perspectiveInteractive.Image.PixelHeight,
+            "Reduced perspective previews preserve canvas and output dimensions");
+        check(!Pixels(perspective.Image).SequenceEqual(Pixels(perspectiveInteractive.Image)),
+            "Perspective honors reduced viewport processing on the RAW fixture");
+        check(Pixels(perspective.Image).SequenceEqual(Pixels(engine.Render(raw,settings,null,256,clipping:false)!.Image)),
+            "Exact native perspective rendering is stable after a reduced viewport request");
         var perspectiveFrame=engine.RenderPreview(raw,settings,null,256,false,true,false);
         check(perspectiveFrame.Neutral.NativeWidth==perspectiveFrame.Result.NativeWidth && perspectiveFrame.Neutral.NativeHeight==perspectiveFrame.Result.NativeHeight,
             "Perspective comparison shares the transformed canvas");

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
@@ -66,7 +67,8 @@ int main(int argc, const char* argv[]) {
                         const auto* begin=static_cast<const char*>(data.bytes); const auto* end=begin+data.length;
                         return std::search(begin,end,name.begin(),name.end())!=end;
                     };
-                    if (hasNamespace("http://ns.adobe.com/hdr-gain-map/1.0/") && !hasNamespace("urn:iso:std:iso:ts:21496:-1"))
+                    if (hasNamespace("http://ns.adobe.com/hdr-gain-map/1.0/") && !hasNamespace("urn:iso:std:iso:ts:21496:-1") &&
+                        !hasNamespace("urn:com:apple:photo:2020:aux:hdrgainmap"))
                         check(info.protocol==SONY2FUJI_HDR_PROTOCOL_XMP,"ImageIO synthesized ISO metadata for an XMP-only original");
                 }
                 auto options=init<sony2fuji_hdr_decode_options_v1>(); options.intent=SONY2FUJI_INTENT_PREVIEW; options.long_edge=1024;
@@ -92,6 +94,20 @@ int main(int argc, const char* argv[]) {
                     } catch (const sony2fuji::hdr::Error& error) {
                         check(error.status==SONY2FUJI_STATUS_OUT_OF_MEMORY && error.reason==SONY2FUJI_HDR_REASON_OUT_OF_MEMORY,
                             "memory budget has no recoverable resource diagnostic");
+                    }
+                    const std::string legacyPath=std::string(TEST_FIXTURE_DIR)+"/hdr/apple-legacy-macos26.jpg";
+                    auto legacyInfo=init<sony2fuji_hdr_source_info_v1>();
+                    check(sony2fuji_hdr_probe(legacyPath.c_str(),&legacyInfo,&d)==SONY2FUJI_STATUS_OK &&
+                        legacyInfo.protocol==SONY2FUJI_HDR_PROTOCOL_APPLE,"Apple legacy JPEG was treated as modern XMP/ISO");
+                    for (auto intent:{SONY2FUJI_INTENT_PREVIEW,SONY2FUJI_INTENT_FINAL}) {
+                        auto legacyPair=init<sony2fuji_hdr_image_pair_v1>();
+                        options.intent=intent; options.long_edge=intent==SONY2FUJI_INTENT_PREVIEW ? 32 : 0;
+                        check(sony2fuji_hdr_decode(legacyPath.c_str(),&options,&legacyPair,&d)==SONY2FUJI_STATUS_OK,
+                            "Apple legacy JPEG decode failed");
+                        const auto* pixels=static_cast<const float*>(legacyPair.hdr.data);
+                        check(*std::max_element(pixels,pixels+legacyPair.hdr.width*legacyPair.hdr.height*3)>1.5f,
+                            "Apple legacy JPEG lost HDR expansion");
+                        sony2fuji_hdr_release_pair(&legacyPair);
                     }
                     numericAcceptance(directory);
                     pair=init<sony2fuji_hdr_image_pair_v1>();
@@ -132,6 +148,10 @@ int main(int argc, const char* argv[]) {
                     capacity+=capacityTag.size(); *capacity=*capacity=='1' ? '2' : '1';
                     NSURL* conflictingFile=[directory URLByAppendingPathComponent:@"conflicting-dual.jpg"];
                     check([conflicting writeToURL:conflictingFile atomically:YES],"cannot stage conflicting metadata");
+                    // Apple 标记不能绕过实际 ISO/XMP 描述的一致性检查。
+                    const char* appleMarker="urn:com:apple:photo:2020:aux:hdrgainmap";
+                    [conflicting appendBytes:appleMarker length:std::strlen(appleMarker)];
+                    check([conflicting writeToURL:conflictingFile atomically:YES],"cannot stage mixed protocol metadata");
                     auto conflictingInfo=init<sony2fuji_hdr_source_info_v1>();
                     check(sony2fuji_hdr_probe(conflictingFile.fileSystemRepresentation,&conflictingInfo,&d)==SONY2FUJI_STATUS_PROCESSING_ERROR &&
                         d.reason==SONY2FUJI_HDR_REASON_MALFORMED_AUX,"contradictory ISO/XMP descriptions were accepted");
@@ -146,6 +166,23 @@ int main(int argc, const char* argv[]) {
                     auto xmpInfo=init<sony2fuji_hdr_source_info_v1>();
                     check(sony2fuji_hdr_probe(xmpFile.fileSystemRepresentation,&xmpInfo,&d)==SONY2FUJI_STATUS_OK &&
                         xmpInfo.protocol==SONY2FUJI_HDR_PROTOCOL_XMP,"synthesized ImageIO ISO dictionary mislabelled an XMP file");
+                    NSMutableData* invalidXMP=[xmpOnly mutableCopy];
+                    const std::string versionTag="hdrgm:Version";
+                    auto* invalidBegin=static_cast<char*>(invalidXMP.mutableBytes); auto* invalidEnd=invalidBegin+invalidXMP.length;
+                    auto* version=std::search(invalidBegin,invalidEnd,versionTag.begin(),versionTag.end());
+                    check(version!=invalidEnd,"missing XMP version in test output");
+                    for (;version!=invalidEnd;version=std::search(version+versionTag.size(),invalidEnd,versionTag.begin(),versionTag.end()))
+                        std::fill_n(version,versionTag.size(),'x');
+                    NSURL* invalidFile=[directory URLByAppendingPathComponent:@"invalid-xmp.jpg"];
+                    check([invalidXMP writeToURL:invalidFile atomically:YES],"cannot stage malformed XMP");
+                    auto invalidInfo=init<sony2fuji_hdr_source_info_v1>();
+                    check(sony2fuji_hdr_probe(invalidFile.fileSystemRepresentation,&invalidInfo,&d)==SONY2FUJI_STATUS_PROCESSING_ERROR &&
+                        d.reason==SONY2FUJI_HDR_REASON_MALFORMED_AUX,"malformed modern XMP was admitted as legacy Apple");
+                    [invalidXMP appendBytes:appleMarker length:std::strlen(appleMarker)];
+                    check([invalidXMP writeToURL:invalidFile atomically:YES],"cannot stage malformed XMP with Apple marker");
+                    invalidInfo=init<sony2fuji_hdr_source_info_v1>();
+                    check(sony2fuji_hdr_probe(invalidFile.fileSystemRepresentation,&invalidInfo,&d)==SONY2FUJI_STATUS_PROCESSING_ERROR &&
+                        d.reason==SONY2FUJI_HDR_REASON_MALFORMED_AUX,"Apple marker bypassed malformed modern XMP validation");
                     auto roundtrip=init<sony2fuji_hdr_image_pair_v1>();
                     status=sony2fuji_hdr_decode(output.fileSystemRepresentation,&options,&roundtrip,&d);
                     if (status) std::cerr<<"roundtrip status="<<status<<" reason="<<d.reason<<'\n';
@@ -188,6 +225,13 @@ int main(int argc, const char* argv[]) {
                         "ordinary SDR export retained gain-map metadata");
                     check(d.reason==SONY2FUJI_HDR_REASON_NOT_HDR,
                         "ordinary SDR is indistinguishable from unsupported or damaged HDR");
+                    NSMutableData* falseApple=[[NSData dataWithContentsOfURL:sdrOutput] mutableCopy];
+                    [falseApple appendBytes:appleMarker length:std::strlen(appleMarker)];
+                    NSURL* falseAppleFile=[directory URLByAppendingPathComponent:@"false-apple.jpg"];
+                    check([falseApple writeToURL:falseAppleFile atomically:YES],"cannot stage missing Apple gain map");
+                    info=init<sony2fuji_hdr_source_info_v1>();
+                    check(sony2fuji_hdr_probe(falseAppleFile.fileSystemRepresentation,&info,&d)==SONY2FUJI_STATUS_PROCESSING_ERROR &&
+                        d.reason==SONY2FUJI_HDR_REASON_MALFORMED_AUX,"Apple marker without a gain map was accepted");
                     sdrConfig.output_format=SONY2FUJI_OUTPUT_PNG;
                     NSURL* pngOutput=[directory URLByAppendingPathComponent:@"sdr.png"];
                     check(sony2fuji_hdr_export_sdr(&pair,&sdrConfig,pngOutput.fileSystemRepresentation,&d)==SONY2FUJI_STATUS_OK,
