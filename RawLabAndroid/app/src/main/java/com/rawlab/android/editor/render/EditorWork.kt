@@ -8,6 +8,8 @@ import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.looks.ManagedLook
+import com.rawlab.android.looks.LUTCompatibility
+import com.rawlab.android.editor.PendingLookCompatibility
 import com.rawlab.android.looks.DcpCompilationException
 import com.rawlab.android.looks.DcpFailureReason
 import com.rawlab.android.looks.InvalidLookException
@@ -69,16 +71,17 @@ internal sealed interface WorkResult {
 }
 internal sealed interface LookWork {
     data object Load : LookWork
-    data class Import(val uris: List<Uri>) : LookWork
+    data class Import(val uris: List<Uri>, val compatibility: LUTCompatibility? = null) : LookWork
     data class Rename(val id: String, val name: String) : LookWork
     data class Delete(val id: String) : LookWork
 }
 internal data class LookImportFailure(val message: String, val invalid: Boolean,
-    val dcpReason: DcpFailureReason? = null)
+    val dcpReason: DcpFailureReason? = null, val colorReason: Int? = null)
 
 internal sealed interface LookResult {
     data class Loaded(val looks: List<LookChoice>) : LookResult
-    data class Imported(val imported: List<ManagedLook>, val failures: List<LookImportFailure>, val looks: List<LookChoice>) : LookResult
+    data class Imported(val imported: List<ManagedLook>, val failures: List<LookImportFailure>, val looks: List<LookChoice>,
+        val pending: List<PendingLookCompatibility> = emptyList()) : LookResult
     data class Renamed(val look: ManagedLook, val looks: List<LookChoice>) : LookResult
     data class Deleted(val id: String, val looks: List<LookChoice>) : LookResult
     data class Failed(val error: Throwable, val reload: Boolean) : LookResult
@@ -91,18 +94,25 @@ internal fun runLookWork(storage: PhotoStorage, work: LookWork): LookResult = sy
         is LookWork.Import -> {
             val imported = mutableListOf<ManagedLook>()
             val failures = mutableListOf<LookImportFailure>()
+            val pending = mutableListOf<PendingLookCompatibility>()
             for (uri in work.uris) {
-                try { imported += storage.importLook(uri) }
+                try { imported += storage.importLook(uri, work.compatibility) }
                 catch (error: Exception) {
                     val causes = generateSequence<Throwable>(error) { it.cause }.toList()
+                    val colorReason = causes.filterIsInstance<com.rawlab.android.engine.LUTColorContractException>().firstOrNull()?.reason
+                    if (work.compatibility == null && colorReason in listOf(0, 1)) {
+                        val candidate = runCatching { storage.inspectLookCompatibility(uri) }.getOrNull()
+                        if (candidate != null) { pending += candidate; continue }
+                    }
                     val dcpReason = causes.firstOrNull { it is DcpCompilationException }
                         ?.let { (it as DcpCompilationException).reason }
                     failures += LookImportFailure(
                         error.message?.takeIf(String::isNotBlank) ?: error.javaClass.simpleName,
-                        causes.any { it is InvalidLookException }, dcpReason)
+                        causes.any { it is InvalidLookException }, dcpReason,
+                        colorReason)
                 }
             }
-            LookResult.Imported(imported, failures, storage.looks())
+            LookResult.Imported(imported, failures, storage.looks(), pending)
         }
         is LookWork.Rename -> {
             val look = storage.renameLook(work.id, work.name)

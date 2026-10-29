@@ -28,6 +28,15 @@ RGB LUTApplicator::apply(const RGB& input) const {
     float g = std::clamp((input.g-low.g)/(high.g-low.g), 0.0f, 1.0f);
     float b = std::clamp((input.b-low.b)/(high.b-low.b), 0.0f, 1.0f);
 
+    if (lut_->isVLT()) {
+        // VLT 的最后一个间隔是 255 个码值；普通 CUBE 的等距坐标会造成偏差。
+        auto coordinate = [](float x) { const float code = x*4095.f;
+            return (code <= 3840.f ? code/256.f : 15.f+(code-3840.f)/255.f)/16.f; };
+        r = coordinate(r); g = coordinate(g); b = coordinate(b);
+    }
+
+    if (lut_->hasColorContract() && lut_->colorContract().interpolation == LUTInterpolation::Tetrahedral)
+        return detail::tetrahedralLUT(lut_->data_.data(), lut_->getSize(), r, g, b);
     // 应用三线性插值
     return trilinearInterpolate(r, g, b);
 }

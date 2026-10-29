@@ -22,6 +22,38 @@ import com.rawlab.android.engine.LookValidation
 import com.rawlab.android.settings.LookChoice
 
 class LookLibraryTest {
+    @Test
+    fun compatibilityBadgeSurvivesRestart() {
+        val root = Files.createTempDirectory("rawlab-compatible-library").toFile()
+        val validate = LookValidator { LookValidation(LookFormat.CUBE, 0, 8) }
+        try {
+            val library = LookLibrary(root, validate, compatibilityCompiler = { file, _ -> file.readBytes() })
+            assertThrows(com.rawlab.android.engine.LUTColorContractException::class.java) {
+                library.importLook("prepared asset".byteInputStream(), "custom.cube")
+            }
+            val draft = LUTCompatibility("fixture", "srgb", "display", "full", "srgb", "display", "full",
+                "linear", "rawlab-neutral-v1", false, "", false, false)
+            val imported = library.importLook("prepared asset".byteInputStream(), "custom.cube", draft)
+            assertEquals(8, imported.compatibilityMode)
+            assertTrue(imported.appearanceUnverified)
+            assertEquals(8, LookLibrary(root, validate).list().single().compatibilityMode)
+        } finally { root.deleteRecursively() }
+    }
+    @Test
+    fun documentedVltPreservesBytesAndUnverifiedStatusAcrossRestart() {
+        val root = Files.createTempDirectory("rawlab-vlt-library").toFile()
+        val validate = LookValidator { LookValidation(LookFormat.VLT, 1, 4) }
+        val bytes = "original VLT table and embedded color evidence".toByteArray()
+        try {
+            val imported = LookLibrary(root, validate).importLook(bytes.inputStream(), "documented.vlt")
+            assertTrue(imported.appearanceUnverified)
+            assertArrayEquals(bytes, imported.file(root).readBytes())
+            val restored = LookLibrary(root, validate).list().single()
+            assertEquals(imported.id, restored.id)
+            assertTrue(restored.available)
+            assertTrue(restored.appearanceUnverified)
+        } finally { root.deleteRecursively() }
+    }
     private val validator = LookValidator { file ->
         val bytes = file.readBytes()
         if (bytes.contentEquals("RLOOKDCP".toByteArray())) return@LookValidator LookValidation(LookFormat.RLOOK, 2)

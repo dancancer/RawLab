@@ -5,6 +5,8 @@ struct Film: Identifiable, Hashable {
     let name: String
     let url: URL
     var managedID: String? = nil
+    var colorNotice: String? = nil
+    var isCompatibility = false
     var isIndependentRecipe: Bool { id.hasPrefix("recipe-lut:") }
     static func independentRecipe(_ id: String) -> Film? {
         guard id.hasPrefix("recipe-lut:"), let recipe = MasterRecipe.recipe(for: String(id.dropFirst(11))),

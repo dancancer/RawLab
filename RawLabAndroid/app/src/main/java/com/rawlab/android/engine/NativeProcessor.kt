@@ -23,18 +23,20 @@ import com.rawlab.android.settings.LensSettings
 
 // 原生层对外观文件的识别结果：格式与 RLOOK 版本
 enum class LookFormat(val extension: String) {
-    UNKNOWN(""), CUBE("cube"), RLOOK("rlook");
+    UNKNOWN(""), CUBE("cube"), RLOOK("rlook"), VLT("vlt");
 
     companion object {
         fun fromExtension(extension: String): LookFormat = when (extension.lowercase(Locale.ROOT)) {
             "cube" -> CUBE
             "rlook" -> RLOOK
+            "vlt" -> VLT
             else -> UNKNOWN
         }
     }
 }
 
-data class LookValidation(val format: LookFormat, val version: Int)
+data class LookValidation(val format: LookFormat, val version: Int, val colorState: Int = 5)
+class LUTColorContractException(val reason: Int) : IllegalArgumentException("LUT color contract requires attention")
 
 class NativeProcessingException(val status: Int, message: String) : IOException(message) {
     companion object {
@@ -85,6 +87,15 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         frame.geometryHeight = dimensions[1]
         frame.lens = if (inputKind == PhotoInputKind.RAW) readLens(input) else null
         return frame
+    }
+
+    // 仅供独立兼容预览实例使用，固定基础处理，不接触编辑器的调整或外观库。
+    @Synchronized
+    fun previewCompatibility(input: File, inputKind: PhotoInputKind, lut: File?, configuration: String?): NativeFrame {
+        check(handle != 0L)
+        val pixels = rasterInput(input, inputKind)
+        return nativeCompatibilityPreview(handle, input.path, pixels?.bitmap, pixels?.width ?: 0,
+            pixels?.height ?: 0, lut?.path, configuration)
     }
 
     private fun previewRequest(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
@@ -223,6 +234,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     }
 
     private external fun nativeCreate(mode: Int): Long
+    private external fun nativeCompatibilityPreview(handle: Long, input: String, pixels: Bitmap?, width: Int, height: Int,
+        lut: String?, configuration: String?): NativeFrame
     private external fun nativeSetGpuMode(handle: Long, mode: Int)
     private external fun nativeSetLensDatabase(handle: Long, path: String)
     private external fun nativeSetLensCorrection(handle: Long, distortion: Boolean, tca: Boolean, autoCrop: Boolean, profile: ByteArray)
@@ -259,16 +272,30 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         init { System.loadLibrary("rawlab-jni") }
 
         fun validateLook(file: File): LookValidation {
-            val result = NativeLookBridge.validate(file.path)
+            val result = try { NativeLookBridge.validate(file.path) }
+            catch (error: UnsupportedOperationException) {
+                val reason = error.message?.takeIf { it.startsWith("rawlab-lut-color:") }?.substringAfter(':')?.toIntOrNull()
+                if (reason != null && reason in 0..3) throw LUTColorContractException(reason)
+                throw error
+            }
             require(result.size >= 2) { "Native look validation returned no result" }
             val format = when (result[0]) {
                 1 -> LookFormat.CUBE
                 2 -> LookFormat.RLOOK
+                3 -> LookFormat.VLT
                 else -> LookFormat.UNKNOWN
             }
             if (format == LookFormat.UNKNOWN) throw IOException("Unsupported look format")
-            return LookValidation(format, result[1])
+            return LookValidation(format, result[1], result.getOrElse(2) { 5 })
         }
+
+        fun inspectLutCompatibility(file: File): String = NativeLookBridge.compatibility(file.path, null).toString(Charsets.UTF_8)
+        fun prepareLutCompatibility(file: File, request: String): ByteArray =
+            try { NativeLookBridge.compatibility(file.path, request) }
+            catch (error: Exception) { throw LUTColorContractException(9) }
+        fun compareLutPreviews(candidate: NativeFrame, reference: NativeFrame, conditions: String): String =
+            NativeLookBridge.compare(candidate.pixels, candidate.width, candidate.height,
+                reference.pixels, reference.width, reference.height, conditions).toString(Charsets.UTF_8)
 
         fun compileDcp(source: ByteArray, sourceName: String): ByteArray {
             if (source.size.toLong() > MAX_DCP_SOURCE_BYTES)
@@ -287,6 +314,9 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
 
 private object NativeLookBridge {
     @JvmStatic external fun validate(path: String): IntArray
+    @JvmStatic external fun compatibility(path: String, request: String?): ByteArray
+    @JvmStatic external fun compare(candidate: ByteArray, width: Int, height: Int,
+        reference: ByteArray, referenceWidth: Int, referenceHeight: Int, conditions: String): ByteArray
 }
 
 private object NativeDcpBridge {

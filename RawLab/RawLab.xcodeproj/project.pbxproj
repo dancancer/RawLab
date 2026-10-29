@@ -41,6 +41,8 @@
         D01800000000000000000001 /* ProcessorError.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01800000000000000000011; };
         D12000000000000000000001 /* DCPCompiler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12000000000000000000011; };
         D12000000000000000000002 /* LookLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12000000000000000000012; };
+        D12000000000000000000003 /* LUTCompatibilityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12000000000000000000013; };
+        D12000000000000000000004 /* LUTCompatibilityPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12000000000000000000014; };
         D12100000000000000000001 /* LookImportCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12100000000000000000011; };
         D01100000000000000000001 /* BundledLooks in Resources */ = {isa = PBXBuildFile; fileRef = D01100000000000000000011; };
         D01100000000000000000002 /* Ektar Phuket artwork in Resources */ = {isa = PBXBuildFile; fileRef = D01100000000000000000012; };
@@ -211,6 +213,8 @@
         2DCD5783547984E860773E97 /* ToneCurveCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324C679CADE139F72163211; };
         B6C0A774BB3BFD64F1F06174 /* ToneCurveEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D20BB7F1FC842F0DA927634; };
         591EBC8F57FFA39BB60C77B4 /* ToneCurveControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BD8A49A9293229AE363C138; };
+		025457773222452EB536902E /* IOSLUTLibrarySelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82401F63082E43C6B11A2D97 /* IOSLUTLibrarySelection.swift */; };
+		4E29D1D654E1483A83C94DE9 /* IOSLUTCompatibilityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB5989AB770A48B8B6F7B0B0 /* IOSLUTCompatibilityView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -248,6 +252,8 @@
         D01800000000000000000011 /* ProcessorError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Errors/ProcessorError.swift"; sourceTree = "<group>"; };
         D12000000000000000000011 /* DCPCompiler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DCPCompiler.swift; path = "../Shared/DCPCompiler.swift"; sourceTree = SOURCE_ROOT; };
         D12000000000000000000012 /* LookLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LookLibrary.swift; path = "../Shared/LookLibrary.swift"; sourceTree = SOURCE_ROOT; };
+        D12000000000000000000013 /* LUTCompatibilityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LUTCompatibilityView.swift; path = "../Shared/LUTCompatibilityView.swift"; sourceTree = SOURCE_ROOT; };
+        D12000000000000000000014 /* LUTCompatibilityPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LUTCompatibilityPreview.swift; path = "../Shared/LUTCompatibilityPreview.swift"; sourceTree = SOURCE_ROOT; };
         D12100000000000000000011 /* LookImportCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Looks/LookImportCoordinator.swift"; sourceTree = SOURCE_ROOT; };
         D01100000000000000000011 /* BundledLooks */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "../Shared/BundledLooks"; sourceTree = SOURCE_ROOT; };
         D01100000000000000000012 /* Ektar Phuket artwork */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "../RawLabMac/Resources/FilmIcons/ektar-100-phuket.png"; sourceTree = SOURCE_ROOT; };
@@ -561,6 +567,8 @@
         0324C679CADE139F72163211 /* ToneCurveCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveCanvas.swift; path = "../Shared/ToneCurveCanvas.swift"; sourceTree = SOURCE_ROOT; };
         8D20BB7F1FC842F0DA927634 /* ToneCurveEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveEditor.swift; path = "../Shared/ToneCurveEditor.swift"; sourceTree = SOURCE_ROOT; };
         4BD8A49A9293229AE363C138 /* ToneCurveControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveControls.swift; path = "RawLab/UI/Panels/ToneCurveControls.swift"; sourceTree = SOURCE_ROOT; };
+		82401F63082E43C6B11A2D97 /* IOSLUTLibrarySelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Looks/IOSLUTLibrarySelection.swift"; sourceTree = SOURCE_ROOT; };
+		AB5989AB770A48B8B6F7B0B0 /* IOSLUTCompatibilityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Panels/IOSLUTCompatibilityView.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -828,6 +836,8 @@
 			isa = PBXGroup;
 			sourceTree = "<group>";
 			children = (
+				AB5989AB770A48B8B6F7B0B0 /* IOSLUTCompatibilityView.swift */,
+				82401F63082E43C6B11A2D97 /* IOSLUTLibrarySelection.swift */,
 				D00900000000000000000011,
 				A0D17B5E0000000000000004,
 				D01000000000000000000011,
@@ -1171,6 +1181,8 @@
 				D00300000000000000000002,
 				D12000000000000000000001,
 				D12000000000000000000002,
+				D12000000000000000000003,
+				D12000000000000000000004,
 				D12100000000000000000001,
 				AB1900000000000000000001,
 				AB1900000000000000000002,
@@ -1190,6 +1202,8 @@
 				AB1800000000000000000002,
 				AB1200000000000000000002,
 				474AC2ED2640F238B875DFBA,
+				025457773222452EB536902E /* IOSLUTLibrarySelection.swift in Sources */,
+				4E29D1D654E1483A83C94DE9 /* IOSLUTCompatibilityView.swift in Sources */,
 				54CCF4B9CD4492224FC36730,
 				0B1A0382CA7A4764A8AD3A12,
 				568E6B659A004F7792056543,

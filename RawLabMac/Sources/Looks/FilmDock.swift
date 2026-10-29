@@ -18,7 +18,7 @@ struct FilmDock: View {
                         }
                         ForEach(sections[index]) { film in
                             filmButton(name: film.name, id: film.id, imageSize: imageSize, height: itemHeight,
-                                       isCustom: film.managedID != nil)
+                                       isCustom: film.managedID != nil, colorNotice: film.colorNotice, isCompatibility: film.isCompatibility)
                                 .contextMenu {
                                     if film.managedID != nil && !film.isIndependentRecipe {
                                         Text(L10n.format("用户外观 · %@", String(describing: film.url.pathExtension.uppercased())))
@@ -46,7 +46,7 @@ struct FilmDock: View {
     }
 
     private func filmButton(name: String, id: String, imageSize: CGFloat, height: CGFloat,
-                            isCustom: Bool = false) -> some View {
+                            isCustom: Bool = false, colorNotice: String? = nil, isCompatibility: Bool = false) -> some View {
         let selected = model.settings.masterRecipeID == nil && model.selectedFilmID == id
         let labelWidth: CGFloat = !isCustom && BundledLook.all.contains(where: { $0.name == name }) ? 132 : 88
         return Button { model.selectFilm(id) } label: {
@@ -54,15 +54,26 @@ struct FilmDock: View {
                 FilmPackageImage(name: name, neutral: id.isEmpty, isCustom: isCustom)
                     .frame(width: imageSize, height: imageSize)
                     .clipShape(RoundedRectangle(cornerRadius: 3))
-                Text(name).font(.system(size: 11, weight: selected ? .semibold : .regular))
-                    .lineLimit(2).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-                    .frame(width: labelWidth, height: 28)
+                    .overlay(alignment: .topTrailing) {
+                        if isCompatibility {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 13, weight: .semibold)).foregroundStyle(.yellow)
+                                .padding(3).background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 3))
+                                .padding(2).accessibilityHidden(true)
+                        }
+                    }
+                VStack(spacing: 1) {
+                    Text(name).font(.system(size: 11, weight: selected ? .semibold : .regular))
+                        .lineLimit(colorNotice == nil ? 2 : 1).multilineTextAlignment(.center)
+                    if let colorNotice { Text(colorNotice).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1) }
+                }.frame(width: labelWidth, height: 28)
             }.frame(width: max(labelWidth, imageSize + 12), height: height)
                 .contentShape(Rectangle())
                 .foregroundStyle(selected ? Color.yellow : Color.primary)
                 .background(selected ? Color.yellow.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))
                 .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(selected ? Color.yellow : .clear, lineWidth: 1) }
-        }.buttonStyle(.plain).id(id).help(name).accessibilityLabel(name)
+        }.buttonStyle(.plain).id(id).help(colorNotice.map { name + " · " + $0 } ?? name)
+            .accessibilityLabel(colorNotice.map { name + " · " + $0 } ?? name)
             .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

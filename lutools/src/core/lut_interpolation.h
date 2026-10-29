@@ -3,8 +3,32 @@
 #include "sony2fuji/common.h"
 #include <algorithm>
 #include <cmath>
+#include <array>
 
 namespace sony2fuji::detail {
+static inline RGB tetrahedralLUT(const RGB* table, int size, float r, float g, float b) {
+    if (!std::isfinite(r) || !std::isfinite(g) || !std::isfinite(b)) return RGB(NAN, NAN, NAN);
+    std::array<float,3> fraction{r*(size-1), g*(size-1), b*(size-1)};
+    std::array<int,3> cell{}, next{};
+    for (int i=0;i<3;++i) {
+        cell[i] = static_cast<int>(std::floor(fraction[i]));
+        next[i] = std::min(cell[i]+1,size-1);
+        fraction[i] -= cell[i];
+    }
+    std::array<int,3> order{0,1,2};
+    std::sort(order.begin(),order.end(),[&](int a,int b){return fraction[a]>fraction[b];});
+    auto at = [&]() { return table[(cell[2]*size+cell[1])*size+cell[0]]; };
+    RGB previous = at(), result = previous;
+    for (int axis : order) {
+        cell[axis] = next[axis];
+        const auto value = at(); const float weight = fraction[axis];
+        result.r += (value.r-previous.r)*weight;
+        result.g += (value.g-previous.g)*weight;
+        result.b += (value.b-previous.b)*weight;
+        previous = value;
+    }
+    return result;
+}
 /* 输入为 domain 归一化后的 [0,1] 或 NaN；有效表含 size^3 个 R-fast 元素，size 为 2..256。 */
 static inline RGB interpolateLUT(const RGB* table, int lutSize, float r, float g, float b) {
 

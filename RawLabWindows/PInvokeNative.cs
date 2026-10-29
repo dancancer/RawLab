@@ -38,4 +38,14 @@ internal static class PInvokeNative
         [MarshalAs(UnmanagedType.LPUTF8Str)] string path,
         out LookFormat format,
         out uint formatVersion);
+
+    [DllImport(Dll, EntryPoint = "sony2fuji_inspect_lut_color", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int InspectLutColor([MarshalAs(UnmanagedType.LPUTF8Str)] string path);
+
+    [DllImport(Dll, EntryPoint = "sony2fuji_inspect_lut_compatibility", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int InspectLutCompatibility([MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref DcpBlob output);
+
+    [DllImport(Dll, EntryPoint = "sony2fuji_prepare_lut_compatibility", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int PrepareLutCompatibility([MarshalAs(UnmanagedType.LPUTF8Str)] string path,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string request, ref DcpBlob output);
 }

@@ -297,7 +297,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     LaunchedEffect(state.message) {
         state.message?.let { snackbar.showSnackbar(it); onMessageDismiss() }
     }
-    state.lookImportReport?.let { report ->
+    state.lookImportReport?.takeIf { state.pendingLookCompatibility.isEmpty() && !state.lookCompatibilityPreparing }?.let { report ->
         AlertDialog(onDismissRequest = onLookImportReportDismiss,
             title = { Text(stringResource(R.string.look_import_result)) },
             text = { Text(report, Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) },

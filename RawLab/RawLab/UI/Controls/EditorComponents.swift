@@ -38,6 +38,8 @@ struct FilmLabel: View {
     let neutral: Bool
     let selected: Bool
     let imageSize: CGFloat
+    var colorNotice: String? = nil
+    var isCompatibility = false
 
     var body: some View {
         let _ = localizationLocale
@@ -55,11 +57,19 @@ struct FilmLabel: View {
             }
             .frame(width: imageSize, height: imageSize)
             .clipShape(RoundedRectangle(cornerRadius: 4))
-            Text(name).font(.caption)
-                .lineLimit(2).multilineTextAlignment(.center)
-                .frame(width: itemWidth - 12)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(height: isBundledLook ? bundledLookLabelHeight : labelHeight)
+            .overlay(alignment: .topTrailing) {
+                if isCompatibility {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption).foregroundStyle(.yellow)
+                        .padding(3).background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 3))
+                        .padding(2)
+                }
+            }
+            VStack(spacing: 1) {
+                Text(name).font(.caption).lineLimit(colorNotice == nil ? 2 : 1)
+                    .multilineTextAlignment(.center)
+                if let colorNotice { Text(colorNotice).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+            }.frame(width: itemWidth - 12, height: isBundledLook ? bundledLookLabelHeight : labelHeight)
         }
         .padding(6)
         .frame(width: itemWidth)

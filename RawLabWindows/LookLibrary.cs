@@ -9,10 +9,11 @@ internal enum LookFormat
 {
     Unknown = 0,
     Cube = 1,
-    Rlook = 2
+    Rlook = 2,
+    Vlt = 3
 }
 
-internal readonly record struct LookValidation(LookFormat Format, uint FormatVersion);
+internal readonly record struct LookValidation(LookFormat Format, uint FormatVersion, bool AppearanceUnverified = false, int CompatibilityMode = 0);
 
 internal enum LookLibraryError
 {
@@ -20,7 +21,8 @@ internal enum LookLibraryError
     UnreadableSource,
     InvalidRegistry,
     TooLarge,
-    OutOfMemory
+    OutOfMemory,
+    MissingColor, MissingReference, UnsupportedColor, ConflictingColor, CompatibilityChanged, InvalidName
 }
 
 internal sealed class LookLibraryException : Exception
@@ -36,6 +38,12 @@ internal sealed class LookLibraryException : Exception
         LookLibraryError.InvalidRegistry => Loc.Text("本地记录损坏。"),
         LookLibraryError.TooLarge => Loc.Text("DCP 文件或外观数据超过安全大小限制。"),
         LookLibraryError.OutOfMemory => Loc.Text("内存不足，请关闭其他大型应用或使用适合窗口预览。"),
+        LookLibraryError.MissingColor => Loc.Text("LUT 缺少输入或输出颜色信息，未导入。请提供作者的颜色说明。"),
+        LookLibraryError.MissingReference => Loc.Text("LUT 缺少颜色配置的参考依据，未导入。请提供来源和使用条件。"),
+        LookLibraryError.UnsupportedColor => Loc.Text("LUT 的颜色空间或基础风格暂不支持，未导入。不会自动替换为中性显影。"),
+        LookLibraryError.ConflictingColor => Loc.Text("LUT 颜色说明无效或互相冲突，未导入。请核对来源。"),
+        LookLibraryError.CompatibilityChanged => Loc.Text("LUT 文件已变化或兼容配置无效，请重新导入并确认。"),
+        LookLibraryError.InvalidName => Loc.Text("外观名称不能为空或包含控制字符。"),
         _ => Loc.Text("外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。")
     };
 
@@ -57,11 +65,13 @@ internal sealed record ManagedLook(
 {
     [JsonIgnore]
     internal string Path { get; init; } = "";
+    public bool AppearanceUnverified { get; init; }
+    public int CompatibilityMode { get; init; }
 }
 
 internal sealed class LookLibrary
 {
-    private sealed record Registry(int Version, List<ManagedLook> Looks);
+    private sealed record Registry(int Version, List<ManagedLook> Looks, Dictionary<string,string>? ExternalNames = null);
 
     internal static string DefaultDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "Looks");
@@ -70,8 +80,10 @@ internal sealed class LookLibrary
     private readonly string registryPath;
     private readonly Func<string, byte[]> compileDcp;
     private readonly Func<string, LookValidation> validateLook;
+    private readonly Func<string, LUTCompatibility, byte[]> prepareCompatibility;
     private readonly object writeGate = new();
     private ImmutableArray<ManagedLook> looks = [];
+    private ImmutableDictionary<string,string> externalNames = ImmutableDictionary.Create<string,string>(StringComparer.OrdinalIgnoreCase);
 
     internal static bool TryLoad(string? directory, out LookLibrary? library, out Exception? error)
     {
@@ -92,12 +104,14 @@ internal sealed class LookLibrary
     internal LookLibrary(
         string? directory = null,
         Func<string, byte[]>? compileDcp = null,
-        Func<string, LookValidation>? validateLook = null)
+        Func<string, LookValidation>? validateLook = null,
+        Func<string, LUTCompatibility, byte[]>? prepareCompatibility = null)
     {
         this.directory = Path.GetFullPath(directory ?? DefaultDirectory);
         registryPath = Path.Combine(this.directory, "registry.json");
         this.compileDcp = compileDcp ?? DcpCompiler.Compile;
         this.validateLook = validateLook ?? ValidateNative;
+        this.prepareCompatibility = prepareCompatibility ?? ((path, draft) => draft.Prepare(path));
         Load();
     }
 
@@ -105,11 +119,28 @@ internal sealed class LookLibrary
 
     internal static LookValidation ValidateExternal(string path) => ValidateNative(path);
 
-    internal ManagedLook ImportLook(string source)
+    internal string DisplayName(string path, string fallback) =>
+        TryGetByPath(path,out var managed) ? managed.Name : externalNames.GetValueOrDefault(Path.GetFullPath(path),fallback);
+
+    internal void RenamePath(string path, string name)
+    {
+        var trimmed=name.Trim();
+        if(trimmed.Length==0 || trimmed.Any(char.IsControl)) throw new LookLibraryException(LookLibraryError.InvalidName);
+        var fullPath=Path.GetFullPath(path);
+        lock(writeGate)
+        {
+            var changed=looks.Select(look=>StringComparer.OrdinalIgnoreCase.Equals(look.Path,fullPath) ? look with { Name=trimmed } : look).ToImmutableArray();
+            var aliases=looks.Any(look=>StringComparer.OrdinalIgnoreCase.Equals(look.Path,fullPath)) ? externalNames : externalNames.SetItem(fullPath,trimmed);
+            Persist(changed.ToList(),aliases);
+            looks=changed;externalNames=aliases;
+        }
+    }
+
+    internal ManagedLook ImportLook(string source, LUTCompatibility? compatibility = null)
     {
         var fullSource = Path.GetFullPath(source);
         var suffix = Path.GetExtension(fullSource).TrimStart('.').ToLowerInvariant();
-        if (suffix is not ("cube" or "rlook" or "dcp"))
+        if (suffix is not ("cube" or "vlt" or "rlook" or "dcp"))
             throw new LookLibraryException(LookLibraryError.InvalidLook);
         if (!File.Exists(fullSource) || (File.GetAttributes(fullSource) & FileAttributes.Directory) != 0)
             throw new LookLibraryException(LookLibraryError.UnreadableSource);
@@ -122,7 +153,12 @@ internal sealed class LookLibrary
         var installed = Path.Combine(directory, fileName);
         try
         {
-            if (suffix == "dcp")
+            if (compatibility != null)
+            {
+                if (suffix is not ("cube" or "vlt")) throw new LookLibraryException(LookLibraryError.InvalidLook);
+                File.WriteAllBytes(staging, prepareCompatibility(fullSource, compatibility));
+            }
+            else if (suffix == "dcp")
             {
                 var bytes = compileDcp(fullSource);
                 if (bytes.LongLength > DcpCompiler.MaxOutputBytes)
@@ -132,6 +168,8 @@ internal sealed class LookLibrary
             else CopyBounded(fullSource, staging);
 
             var validation = validateLook(staging);
+            if (compatibility == null && validation.CompatibilityMode != 0)
+                throw new LookLibraryException(LookLibraryError.MissingReference);
             if (!IsExpected(validation, preparedSuffix))
                 throw new LookLibraryException(LookLibraryError.InvalidLook);
 
@@ -141,7 +179,8 @@ internal sealed class LookLibrary
                 fileName,
                 Path.GetFileName(fullSource),
                 validation.Format,
-                validation.FormatVersion) { Path = installed };
+                validation.FormatVersion) { Path = installed, AppearanceUnverified = validation.AppearanceUnverified,
+                    CompatibilityMode = validation.CompatibilityMode };
             File.Move(staging, installed);
             try
             {
@@ -242,6 +281,9 @@ internal sealed class LookLibrary
                 registry.Looks.Select(item => item!.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() != registry.Looks.Count)
                 throw new InvalidDataException();
             looks = registry.Looks.Select(item => item! with { Path = Path.Combine(directory, item!.FileName) }).ToImmutableArray();
+            if(registry.ExternalNames?.Any(item=>!Path.IsPathFullyQualified(item.Key) || string.IsNullOrWhiteSpace(item.Value) || item.Value.Any(char.IsControl))==true)
+                throw new InvalidDataException();
+            externalNames=(registry.ExternalNames ?? new()).ToImmutableDictionary(StringComparer.OrdinalIgnoreCase);
             RecoverRemovals();
         }
         catch (Exception error) when (error is JsonException or IOException or UnauthorizedAccessException)
@@ -252,9 +294,10 @@ internal sealed class LookLibrary
 
     private static bool Valid(ManagedLook item)
     {
-        var format = item.Format switch { LookFormat.Cube => "cube", LookFormat.Rlook => "rlook", _ => "" };
+        var format = item.Format switch { LookFormat.Cube => "cube", LookFormat.Vlt => "vlt", LookFormat.Rlook => "rlook", _ => "" };
         return Guid.TryParse(item.Id, out _) && item.FileName == $"{item.Id}.{format}" &&
             (item.Format == LookFormat.Cube && item.FormatVersion == 0 ||
+             item.Format == LookFormat.Vlt && item.FormatVersion == 1 ||
              item.Format == LookFormat.Rlook && item.FormatVersion is 1 or 2) &&
             !string.IsNullOrWhiteSpace(item.Name) && !string.IsNullOrWhiteSpace(item.SourceName);
     }
@@ -262,6 +305,7 @@ internal sealed class LookLibrary
     private static bool IsExpected(LookValidation validation, string suffix) => suffix switch
     {
         "cube" => validation.Format == LookFormat.Cube && validation.FormatVersion == 0,
+        "vlt" => validation.Format == LookFormat.Vlt && validation.FormatVersion == 1,
         "rlook" or "dcp" => validation.Format == LookFormat.Rlook && validation.FormatVersion is 1 or 2,
         _ => false
     };
@@ -269,8 +313,16 @@ internal sealed class LookLibrary
     private static LookValidation ValidateNative(string path)
     {
         var status = PInvokeNative.ValidateLook(path, out var format, out var version);
-        if (status != PInvokeNative.StatusOk) throw LookLibraryException.FromNativeStatus(status);
-        return new((LookFormat)format, version);
+        var color = PInvokeNative.InspectLutColor(path);
+        if (status != PInvokeNative.StatusOk)
+        {
+            if (status == PInvokeNative.StatusUnsupported && color is >= 0 and <= 3)
+                throw new LookLibraryException(color switch {
+                    0 => LookLibraryError.MissingColor, 1 => LookLibraryError.MissingReference,
+                    2 => LookLibraryError.UnsupportedColor, _ => LookLibraryError.ConflictingColor });
+            throw LookLibraryException.FromNativeStatus(status);
+        }
+        return new((LookFormat)format, version, color is 4 or 7 or 8, color is 7 or 8 ? color : 0);
     }
 
     private static void CopyBounded(string source, string destination)
@@ -300,7 +352,7 @@ internal sealed class LookLibrary
         {
             var fileName = Path.GetFileName(staged)[".remove-".Length..];
             var extension = Path.GetExtension(fileName).ToLowerInvariant();
-            if (extension is not (".cube" or ".rlook") || !Guid.TryParse(Path.GetFileNameWithoutExtension(fileName), out _))
+            if (extension is not (".cube" or ".vlt" or ".rlook") || !Guid.TryParse(Path.GetFileNameWithoutExtension(fileName), out _))
                 continue;
             var original = Path.Combine(directory, fileName);
             if (activeFiles.Contains(fileName))
@@ -312,7 +364,7 @@ internal sealed class LookLibrary
         }
     }
 
-    private void Persist(List<ManagedLook> values)
+    private void Persist(List<ManagedLook> values, ImmutableDictionary<string,string>? aliases = null)
     {
         var options = new JsonSerializerOptions { WriteIndented = true };
         var temporary = registryPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -321,7 +373,7 @@ internal sealed class LookLibrary
             Directory.CreateDirectory(directory);
             using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
-                JsonSerializer.Serialize(stream, new Registry(1, values), options);
+                JsonSerializer.Serialize(stream, new Registry(1, values, (aliases ?? externalNames).ToDictionary(p=>p.Key,p=>p.Value)), options);
                 stream.Flush(flushToDisk: true);
             }
             File.Move(temporary, registryPath, overwrite: true);

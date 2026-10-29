@@ -53,8 +53,9 @@ import com.rawlab.android.ui.ToolIcon
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: () -> Unit, onPhoto: (Uri) -> Unit,
-    selectedPhotos: Set<String>? = null, onDone: (() -> Unit)? = null) {
+fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: (() -> Unit)?, onPhoto: (Uri) -> Unit,
+    selectedPhotos: Set<String>? = null, onDone: (() -> Unit)? = null,
+    doneLabel: String? = null, doneEnabled: Boolean = true) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
@@ -101,7 +102,9 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: () -> Unit, o
         TopAppBar(title = { Text(stringResource(R.string.open_album)) }, navigationIcon = {
             ToolIcon(Icons.AutoMirrored.Outlined.ArrowBack, R.string.back, onClick = onBack)
         }, actions = {
-            if (onDone != null) TextButton(onClick = onDone) { Text(AppStrings.format(R.string.message_confirm_photos, (selectedPhotos?.size ?: 0).toString())) }
+            if (onDone != null) TextButton(onClick = onDone, enabled = doneEnabled) {
+                Text(doneLabel ?: AppStrings.format(R.string.message_confirm_photos, (selectedPhotos?.size ?: 0).toString()))
+            }
             Box {
                 ToolIcon(Icons.Outlined.GridView, R.string.album_view_options) { viewMenu = true }
                 DropdownMenu(expanded = viewMenu, onDismissRequest = { viewMenu = false }) {
@@ -135,7 +138,7 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: () -> Unit, o
                     }
                 }
             }
-            ToolIcon(Icons.Outlined.FolderOpen, R.string.open_file, onClick = onFile)
+            if (onFile != null) ToolIcon(Icons.Outlined.FolderOpen, R.string.open_file, onClick = onFile)
             ToolIcon(Icons.Outlined.Refresh, R.string.refresh, onClick = { refresh++ })
         })
     }) { padding ->
@@ -150,7 +153,7 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: () -> Unit, o
                     TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) }) {
                         Text(stringResource(R.string.settings))
                     }
-                    OutlinedButton(onClick = onFile) { Text(stringResource(R.string.open_file)) }
+                    if (onFile != null) OutlinedButton(onClick = onFile) { Text(stringResource(R.string.open_file)) }
                 }
             } else {
                 if (access == AlbumAccess.Level.PARTIAL) {
@@ -171,7 +174,7 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: () -> Unit, o
                 if (failed || (!loading && photos.isEmpty())) {
                     Column(Modifier.padding(24.dp)) {
                         Text(stringResource(if (failed) R.string.album_error else R.string.album_empty))
-                        TextButton(onClick = onFile) { Text(stringResource(R.string.open_file)) }
+                        if (onFile != null) TextButton(onClick = onFile) { Text(stringResource(R.string.open_file)) }
                     }
                 }
                 // 查询期间不让空网格重测，将保存的位置保留到照片列表恢复。

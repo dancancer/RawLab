@@ -88,6 +88,17 @@ class ColorTests(unittest.TestCase):
         encoded = spaces.convert(np.full((1, 3), .18), "linear-srgb", "slog3-sgamut3-cine")
         np.testing.assert_allclose(encoded, 420 / 1023, atol=4e-5)
 
+    def test_slog3_gamut_conversion_does_not_mix_chromatic_adaptations(self):
+        # Sony published D65 primaries, independently converted to the documented linear-sRGB basis.
+        encoded = np.full((3, 3), 95 / 1023)
+        np.fill_diagonal(encoded, (420 + np.log10(1.01 / .19) * 261.5) / 1023)
+        expected = {
+            "slog3-sgamut3": [[1.877616656, -.176811298, -.026207406], [-.794042554, 1.351030855, -.148457839], [-.083733093, -.174196640, 1.174905266]],
+            "slog3-sgamut3-cine": [[1.626688827, -.178519851, -.044446773], [-.540052706, 1.417973671, -.195966937], [-.086795111, -.239430903, 1.240653731]],
+        }
+        for name, values in expected.items():
+            np.testing.assert_allclose(ColorSpaces().convert(encoded, name, "linear-srgb"), values, atol=3e-4)
+
     def test_unknown_space_is_not_guessed(self):
         with self.assertRaisesRegex(ValueError, "Unknown color space"):
             ColorSpaces().convert(np.zeros((1, 3)), "unknown-camera", "srgb")

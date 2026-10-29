@@ -8,20 +8,26 @@ struct FileBrowser: View {
     let open: (URL) -> Void
     var canApplySettings = false
     var applySettings: (URL, Bool) -> Void = { _, _ in }
+    var selectionOnly = false
     var body: some View {
         let _ = localizationLocale
         VStack(spacing: 0) {
             HStack {
                 Text(L10n.text("文件夹")).font(.headline)
                 Spacer()
-                Button(action: library.addDirectories) { Image(systemName: "folder.badge.plus") }
-                    .buttonStyle(.borderless).help(L10n.text("添加目录")).accessibilityLabel(L10n.text("添加目录"))
+                if !selectionOnly {
+                    Button(action: library.addDirectories) { Image(systemName: "folder.badge.plus") }
+                        .buttonStyle(.borderless).help(L10n.text("添加目录")).accessibilityLabel(L10n.text("添加目录"))
+                }
             }.padding(14)
             Divider()
             if library.roots.isEmpty {
                 VStack(spacing: 14) {
                     Image(systemName: "folder").font(.system(size: 28)).foregroundStyle(.secondary)
-                    Button(L10n.text("添加目录…"), action: library.addDirectories)
+                    if selectionOnly {
+                        Text(L10n.text("照片库为空，请先在主窗口添加照片目录。"))
+                            .foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal)
+                    } else { Button(L10n.text("添加目录…"), action: library.addDirectories) }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // 目录和照片行共用原生列表，避免嵌套网格重新估算高度时改变滚动位置。
@@ -37,10 +43,11 @@ struct FileBrowser: View {
         }.background(Color(nsColor: .windowBackgroundColor))
             .contentShape(Rectangle())
             .dropDestination(for: URL.self) { urls, _ in
-                library.addDirectories(urls)
+                guard !selectionOnly else { return false }
+                return library.addDirectories(urls)
             } isTargeted: { directoryDropTarget = $0 }
             .overlay {
-                if directoryDropTarget {
+                if directoryDropTarget && !selectionOnly {
                     Rectangle().stroke(Color.accentColor, lineWidth: 3).allowsHitTesting(false)
                 }
             }
@@ -51,17 +58,19 @@ struct FileBrowser: View {
         case .folder(let folder):
             FolderHeading(folder: folder)
                 .contextMenu {
-                    fileActions(folder.url, directory: true)
-                    Divider()
-                    Button(L10n.text("从侧栏移除此目录")) { library.remove(row.root) }
+                    if !selectionOnly {
+                        fileActions(folder.url, directory: true)
+                        Divider()
+                        Button(L10n.text("从侧栏移除此目录")) { library.remove(row.root) }
+                    }
                 }
         case .photos(let first, let second):
             HStack(spacing: 8) {
                 PhotoThumbnail(url: first, selected: selected == first) { open(first) }
-                    .overlay { PhotoContextMenu(url: first, canApply: canApplySettings) { applySettings(first, false) } }
+                    .overlay { if !selectionOnly { PhotoContextMenu(url: first, canApply: canApplySettings) { applySettings(first, false) } } }
                 if let second {
                     PhotoThumbnail(url: second, selected: selected == second) { open(second) }
-                        .overlay { PhotoContextMenu(url: second, canApply: canApplySettings) { applySettings(second, false) } }
+                        .overlay { if !selectionOnly { PhotoContextMenu(url: second, canApply: canApplySettings) { applySettings(second, false) } } }
                 } else {
                     Color.clear.frame(maxWidth: .infinity)
                 }

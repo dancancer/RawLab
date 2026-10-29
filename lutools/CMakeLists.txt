@@ -149,6 +149,8 @@ include_directories(
 # 核心库源文件
 set(CORE_SOURCES
     src/core/lut_parser.cpp
+    src/core/lut_compatibility.cpp
+    src/core/lut_preview_comparison.cpp
     src/core/lut_applicator.cpp
     src/core/dcp_look.cpp
     src/core/dcp_compiler.cpp
@@ -170,6 +172,7 @@ set(CORE_SOURCES
     src/core/rendered_dng.cpp
     src/ffi/sony2fuji_c.cpp
     src/ffi/dcp_compiler_c.cpp
+    src/ffi/lut_compatibility_c.cpp
     src/gpu/lut_gpu.cpp
     src/gpu/image_stats.cpp
     src/gpu/denoise.cpp
@@ -309,6 +312,9 @@ if(BUILD_CLI OR (BUILD_TESTING AND NOT IOS AND NOT ANDROID))
     target_include_directories(rawlab_edit_protocol PUBLIC include PRIVATE third_party)
 endif()
 if(BUILD_CLI)
+    add_executable(rawlab_lut_probe tools/lut_contract_probe.cpp)
+    target_include_directories(rawlab_lut_probe PRIVATE third_party)
+    target_link_libraries(rawlab_lut_probe sony2fuji_core)
     add_executable(sony2fuji_cli src/cli/main.cpp src/cli/agent_commands.cpp src/cli/raw_info.cpp)
     target_include_directories(sony2fuji_cli PRIVATE third_party)
     target_link_libraries(sony2fuji_cli sony2fuji_core rawlab_edit_protocol)
@@ -334,6 +340,12 @@ if(ANDROID AND SONY2FUJI_ENABLE_GPU AND SONY2FUJI_ENABLE_CHROMA_DENOISE AND SONY
 endif()
 
 if(BUILD_TESTING AND NOT IOS)
+    foreach(contract_test lut_contract lut_contract_render lut_compatibility lut_guided_import)
+        add_executable(${contract_test}_tests tests/${contract_test}_tests.cpp)
+        target_include_directories(${contract_test}_tests PRIVATE third_party)
+        target_link_libraries(${contract_test}_tests sony2fuji_core)
+        add_test(NAME ${contract_test} COMMAND ${contract_test}_tests)
+    endforeach()
     add_executable(hsl_boundary_tests tests/hsl_boundary_tests.cpp src/core/photo_color.cpp src/core/color_converter.cpp)
     add_test(NAME hsl_boundary COMMAND hsl_boundary_tests)
     foreach(contract default off fast)

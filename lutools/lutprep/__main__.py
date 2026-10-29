@@ -10,6 +10,7 @@ from .color import ColorSpaces
 from .contract import Contract
 from .native import compile_dcp
 from .audit import audit_sources, invalid_report
+from .native_lut import attach_contract, verify_reference, read_json_document
 
 
 def main(argv=None):
@@ -22,6 +23,15 @@ def main(argv=None):
     audit.add_argument("paths", nargs="+", type=Path)
     audit.add_argument("--verify-compile", action="store_true",
                        help="Compile supported DCP sources in a temporary directory and read them back")
+    attach = commands.add_parser("attach-contract", help="Attach documented colors to an unchanged CUBE/VLT table; no appearance certification")
+    attach.add_argument("source", type=Path)
+    attach.add_argument("destination", type=Path)
+    attach.add_argument("--manifest", type=Path, required=True, help="JSON source_sha256 and contract with author evidence")
+    attach.add_argument("--probe", type=Path, required=True, help="Current rawlab_lut_probe executable")
+    reference = commands.add_parser("verify-reference", help="Compare native samples to an independent reference with identical conditions")
+    reference.add_argument("source", type=Path)
+    reference.add_argument("--reference", type=Path, required=True)
+    reference.add_argument("--probe", type=Path, required=True)
     bake = commands.add_parser("prepare", help="Compose a source LUT into the native photo CUBE contract")
     bake.add_argument("source", type=Path)
     bake.add_argument("destination", type=Path)
@@ -46,6 +56,11 @@ def main(argv=None):
             result = inspect_source(args.source)
         elif args.command == "audit":
             result = audit_sources(args.paths, verify_compile=args.verify_compile)
+        elif args.command == "attach-contract":
+            result = attach_contract(args.source, args.destination,
+                                     read_json_document(args.manifest), args.probe)
+        elif args.command == "verify-reference":
+            result = verify_reference(args.source, read_json_document(args.reference), args.probe)
         elif args.command == "compile-dcp":
             result = compile_dcp(args.source, args.destination, force=args.force,
                                  dcp_exposure=not args.ignore_dcp_exposure,
@@ -63,6 +78,7 @@ def main(argv=None):
                              max_error=args.max_error, allow_approximation=args.allow_approximation,
                              force=args.force, dcp_exposure=not args.ignore_dcp_exposure)
         print(json.dumps(result, indent=2, ensure_ascii=True))
+        if args.command == "verify-reference" and not result["sample_agreement"]: return 1
         if args.command == "audit" and result.get("summary", {}).get("scan", {}).get("status") == "failed":
             return 2
         return 0
