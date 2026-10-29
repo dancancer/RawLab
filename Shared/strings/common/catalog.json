@@ -6663,6 +6663,14 @@
     "fr": "La photothèque est vide. Ajoutez d’abord un dossier de photos dans la fenêtre principale.",
     "ja": "写真ライブラリが空です。先にメインウィンドウで写真フォルダを追加してください。"
   },
+  "当前照片的设置尚不可用。": {
+    "de": "Die Einstellungen für das aktuelle Foto sind noch nicht verfügbar.",
+    "en": "The settings for the current photo are not available yet.",
+    "es": "La configuración de la foto actual aún no está disponible.",
+    "fr": "Les paramètres de la photo actuelle ne sont pas encore disponibles.",
+    "ja": "現在の写真の設定はまだ利用できません。",
+    "zh-Hans": "当前照片的设置尚不可用。"
+  },
   "无照片": {
     "de": "Keine Fotos",
     "en": "No photos",

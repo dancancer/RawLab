@@ -4357,14 +4357,6 @@
       "ja": "強度は0です。他の設定値は保持されます。",
       "zh-Hans": "强度为 0，其他参数会保留。"
     },
-    "当前照片的设置尚不可用。": {
-      "de": "Die Einstellungen für das aktuelle Foto sind noch nicht verfügbar.",
-      "en": "The settings for the current photo are not available yet.",
-      "es": "La configuración de la foto actual aún no está disponible.",
-      "fr": "Les paramètres de la photo actuelle ne sont pas encore disponibles.",
-      "ja": "現在の写真の設定はまだ利用できません。",
-      "zh-Hans": "当前照片的设置尚不可用。"
-    },
     "当前通道 {0}，修改仅作用于该颜色。": {
       "de": "Aktueller Kanal: {0}. Änderungen gelten nur für diese Farbe.",
       "en": "Current channel: {0}. Changes apply only to this color.",

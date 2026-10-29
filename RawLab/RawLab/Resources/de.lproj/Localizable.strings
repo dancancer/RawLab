@@ -97,6 +97,7 @@
 "使用统计已关闭。" = "Die Nutzungsanalyse ist deaktiviert.";
 "依据部分文件线索 · 仍有假设" = "Teilweise Dateihinweise · Annahmen bleiben bestehen";
 "保井崇志" = "Takashi Yasui";
+"保存" = "Speichern";
 "保存 %@ 失败。" = "%@ konnte nicht gespeichert werden.";
 "保存 SDR JPEG" = "SDR-JPEG speichern";
 "保存到" = "Speichern unter";
@@ -278,6 +279,7 @@
 "当前显示 SDR 兼容预览。" = "Die SDR-kompatible Vorschau wird angezeigt.";
 "当前构建未配置使用统计，未采集或上报。" = "Die Nutzungsanalyse ist in dieser Version nicht konfiguriert. Es werden keine Daten erfasst oder übermittelt.";
 "当前照片或调整记录无效，无法安全重置。" = "Das aktuelle Foto oder der gespeicherte Bearbeitungsstand ist ungültig und kann nicht sicher zurückgesetzt werden.";
+"当前照片的设置尚不可用。" = "Die Einstellungen für das aktuelle Foto sind noch nicht verfügbar.";
 "当前配方不可用，无法安全重置外观。" = "Das aktuelle Rezept ist nicht verfügbar. Der Look kann daher nicht sicher zurückgesetzt werden.";
 "待处理" = "Aktion erforderlich";
 "恢复当前照片的全部调整，不改写原始照片。" = "Alle Anpassungen des aktuellen Fotos zurücksetzen. Das Originalfoto wird nicht verändert.";
@@ -498,6 +500,7 @@
 "目标调整：%@" = "Gezielte Anpassung: %@";
 "目标：%@ 张照片" = "Zielfotos: %@";
 "相对白平衡" = "Relativer Weißabgleich";
+"确定" = "OK";
 "确认兼容导入" = "Mit diesen Einstellungen importieren";
 "确认并冻结任务" = "Bestätigen und Aufgabe festschreiben";
 "移除" = "Entfernen";

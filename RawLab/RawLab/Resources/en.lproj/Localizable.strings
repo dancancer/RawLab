@@ -97,6 +97,7 @@
 "使用统计已关闭。" = "Usage analytics is off.";
 "依据部分文件线索 · 仍有假设" = "Partial file clues · Assumptions remain";
 "保井崇志" = "Takashi Yasui";
+"保存" = "Save";
 "保存 %@ 失败。" = "Failed to Save %@.";
 "保存 SDR JPEG" = "Save SDR JPEG";
 "保存到" = "Save to";
@@ -278,6 +279,7 @@
 "当前显示 SDR 兼容预览。" = "Showing the SDR-compatible preview.";
 "当前构建未配置使用统计，未采集或上报。" = "Usage analytics is not configured in this build; nothing is collected or reported.";
 "当前照片或调整记录无效，无法安全重置。" = "The current photo or edit record is invalid and cannot be reset safely.";
+"当前照片的设置尚不可用。" = "The settings for the current photo are not available yet.";
 "当前配方不可用，无法安全重置外观。" = "The current recipe is unavailable, so its look cannot be reset safely.";
 "待处理" = "Needs attention";
 "恢复当前照片的全部调整，不改写原始照片。" = "Reset all adjustments for the current photo. The original photo will not be modified.";
@@ -498,6 +500,7 @@
 "目标调整：%@" = "Target adjustment: %@";
 "目标：%@ 张照片" = "Target photos: %@";
 "相对白平衡" = "Relative White Balance";
+"确定" = "OK";
 "确认兼容导入" = "Import with these settings";
 "确认并冻结任务" = "Confirm and freeze task";
 "移除" = "Remove";
