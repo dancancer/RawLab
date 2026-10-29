@@ -2,6 +2,9 @@ using RawLab.Windows;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+AIGpuDiagnosticsChecks.Run();
+if(args.Contains("--ai-support"))return;
+
 MasterRecipeRefinementChecks.Run();
 ToneControlsChecks.Run();
 AtmosphereChecks.Run();

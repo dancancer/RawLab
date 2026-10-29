@@ -1413,6 +1413,44 @@ int32_t sony2fuji_ai_hardware_available(void) {
 #endif
 }
 
+const char* sony2fuji_ai_get_devices(void) {
+#if defined(SONY2FUJI_ENABLE_AI_DENOISE) && defined(_WIN32)
+    thread_local std::string result;
+    try { result = sony2fuji::ai::directMLDevicesJSON(); return result.c_str(); }
+    catch (...) { return "{\"version\":1,\"devices\":[],\"recommended_id\":\"\",\"error\":\"Device enumeration failed\"}"; }
+#else
+    return "{\"version\":1,\"devices\":[],\"recommended_id\":\"\",\"error\":\"DirectML is unavailable in this build\"}";
+#endif
+}
+
+sony2fuji_status sony2fuji_session_set_ai_device(sony2fuji_session* session, const char* device_id) {
+    if (!session) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    const auto* id = device_id ? device_id : "";
+    if (std::strlen(id) > 256) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+#ifndef _WIN32
+    if (*id) return SONY2FUJI_STATUS_UNSUPPORTED;
+#endif
+    try {
+        if (!session->ai) session->ai = std::make_unique<sony2fuji::ai::AISession>();
+        session->ai->setDevice(id); return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) { return SONY2FUJI_STATUS_OUT_OF_MEMORY; }
+    catch (...) { return SONY2FUJI_STATUS_INVALID_ARGUMENT; }
+#else
+    return *id ? SONY2FUJI_STATUS_UNSUPPORTED : SONY2FUJI_STATUS_OK;
+#endif
+}
+
+const char* sony2fuji_session_get_ai_diagnostics(const sony2fuji_session* session) {
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+    try { if (session && session->ai) return session->ai->diagnosticsJSON(); }
+    catch (...) { return "{\"version\":1,\"error\":\"Diagnostic snapshot unavailable\"}"; }
+#else
+    (void)session;
+#endif
+    return "{\"version\":1,\"logs\":[]}";
+}
+
 sony2fuji_status sony2fuji_session_set_ai_denoise(sony2fuji_session* session, const sony2fuji_ai_denoise_config* config) {
     if (!session || !config || config->version != SONY2FUJI_AI_DENOISE_CONFIG_VERSION || config->struct_size < sizeof(*config) ||
         (config->enabled != 0 && config->enabled != 1) || config->backend < SONY2FUJI_AI_CPU || config->backend > SONY2FUJI_AI_DIRECTML ||
@@ -1466,6 +1504,11 @@ sony2fuji_status sony2fuji_session_prepare_ai(sony2fuji_session* session, const 
     sony2fuji_buffer buffer{};
     const auto valid = validateRequest(&local, &buffer);
     if (valid != SONY2FUJI_STATUS_OK) return valid;
+    auto failure = [&](sony2fuji_status status, const std::string& message) {
+        session->ai->lastError = sony2fuji::ai::nativeErrorText(message);
+        session->ai->recordFailure(static_cast<int>(status),session->ai->lastError);
+        return status;
+    };
     try {
         if (session->lens_correction.active()) ensureLensDatabase(session);
         session->ai->prepare(local.input_path, rawWhiteBalanceOptions(session, local),
@@ -1476,15 +1519,15 @@ sony2fuji_status sony2fuji_session_prepare_ai(sony2fuji_session* session, const 
     } catch (const sony2fuji::ai::Cancelled& error) {
         session->ai->lastError = error.what(); return SONY2FUJI_STATUS_CANCELLED;
     } catch (const sony2fuji::ai::DecodeError& error) {
-        session->ai->lastError = error.what(); return mapError(error.code);
+        return failure(mapError(error.code),error.what());
     } catch (const std::bad_alloc&) {
-        session->ai->lastError = "AI denoising ran out of memory"; return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+        return failure(SONY2FUJI_STATUS_OUT_OF_MEMORY,"AI denoising ran out of memory");
     } catch (const std::invalid_argument& error) {
-        session->ai->lastError = error.what(); return SONY2FUJI_STATUS_UNSUPPORTED;
+        return failure(SONY2FUJI_STATUS_UNSUPPORTED,error.what());
     } catch (const std::filesystem::filesystem_error& error) {
-        session->ai->lastError = error.what(); return SONY2FUJI_STATUS_IO_ERROR;
+        return failure(SONY2FUJI_STATUS_IO_ERROR,error.what());
     } catch (const std::exception& error) {
-        session->ai->lastError = error.what(); return SONY2FUJI_STATUS_PROCESSING_ERROR;
+        return failure(SONY2FUJI_STATUS_PROCESSING_ERROR,error.what());
     }
 #else
     (void)progress; (void)context; return SONY2FUJI_STATUS_UNSUPPORTED;
@@ -1675,6 +1718,18 @@ sony2fuji_status sony2fuji_session_get_geometry_size(
     return SONY2FUJI_STATUS_OK;
 }
 
+static sony2fuji_status recordAIError(sony2fuji_session* session, sony2fuji_status status, const char* message) noexcept {
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+    if (session && aiEnabled(session)) try {
+        session->ai->lastError = sony2fuji::ai::nativeErrorText(message);
+        session->ai->recordFailure(static_cast<int>(status),session->ai->lastError);
+    } catch (...) { }
+#else
+    (void)session; (void)message;
+#endif
+    return status;
+}
+
 sony2fuji_status sony2fuji_session_estimate_auto_exposure(
     sony2fuji_session* session, const sony2fuji_request* request, float* exposure_ev
 ) {
@@ -1692,6 +1747,9 @@ sony2fuji_status sony2fuji_session_estimate_auto_exposure(
     const auto valid = validateRequest(&local, &buffer);
     if (valid != SONY2FUJI_STATUS_OK) return valid;
     try {
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+        if (session && aiEnabled(session)) session->ai->beginOperation("auto_exposure");
+#endif
         sony2fuji::ImageData image;
         sony2fuji_color_space space = SONY2FUJI_COLOR_SRGB;
         bool linear = false;
@@ -1718,16 +1776,18 @@ sony2fuji_status sony2fuji_session_estimate_auto_exposure(
             return SONY2FUJI_STATUS_UNSUPPORTED;
         *exposure_ev = ev;
         return SONY2FUJI_STATUS_OK;
-    } catch (const std::bad_alloc&) {
-        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (const std::bad_alloc& error) {
+        return recordAIError(session,SONY2FUJI_STATUS_OUT_OF_MEMORY,error.what());
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
-    } catch (const sony2fuji::ai::NotReady&) {
-        return SONY2FUJI_STATUS_AI_NOT_READY;
-    } catch (const sony2fuji::ai::Unsupported&) {
-        return SONY2FUJI_STATUS_UNSUPPORTED;
+    } catch (const sony2fuji::ai::NotReady& error) {
+        return recordAIError(session,SONY2FUJI_STATUS_AI_NOT_READY,error.what());
+    } catch (const sony2fuji::ai::Unsupported& error) {
+        return recordAIError(session,SONY2FUJI_STATUS_UNSUPPORTED,error.what());
 #endif
+    } catch (const std::exception& error) {
+        return recordAIError(session,SONY2FUJI_STATUS_PROCESSING_ERROR,error.what());
     } catch (...) {
-        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+        return recordAIError(session,SONY2FUJI_STATUS_PROCESSING_ERROR,"Unknown native AI failure");
     }
 }
 
@@ -2081,6 +2141,9 @@ sony2fuji_status sony2fuji_session_set_cancellation_callback(sony2fuji_session* 
 sony2fuji_status sony2fuji_process(sony2fuji_session* session,
     const sony2fuji_request* request, sony2fuji_buffer* buffer) {
     try {
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+        if (session && aiEnabled(session)) session->ai->beginOperation("render");
+#endif
         const bool cancellable = session && request && request->intent == SONY2FUJI_INTENT_PREVIEW &&
             request->output_target == SONY2FUJI_TARGET_BUFFER;
         sony2fuji::ProcessingCancellationScope cancellation(cancellable ?
@@ -2089,16 +2152,16 @@ sony2fuji_status sony2fuji_process(sony2fuji_session* session,
         return processImpl(session, request, buffer);
     } catch (const sony2fuji::ProcessingCancelled&) {
         return SONY2FUJI_STATUS_CANCELLED;
-    } catch (const std::bad_alloc&) {
-        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (const std::bad_alloc& error) {
+        return recordAIError(session,SONY2FUJI_STATUS_OUT_OF_MEMORY,error.what());
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
-    } catch (const sony2fuji::ai::NotReady&) {
-        return SONY2FUJI_STATUS_AI_NOT_READY;
-    } catch (const sony2fuji::ai::Unsupported&) {
-        return SONY2FUJI_STATUS_UNSUPPORTED;
+    } catch (const sony2fuji::ai::NotReady& error) {
+        return recordAIError(session,SONY2FUJI_STATUS_AI_NOT_READY,error.what());
+    } catch (const sony2fuji::ai::Unsupported& error) {
+        return recordAIError(session,SONY2FUJI_STATUS_UNSUPPORTED,error.what());
 #endif
-    } catch (const std::exception&) {
-        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    } catch (const std::exception& error) {
+        return recordAIError(session,SONY2FUJI_STATUS_PROCESSING_ERROR,error.what());
     }
 }
 
@@ -2138,6 +2201,9 @@ sony2fuji_status sony2fuji_session_create_hsl_probe(sony2fuji_session* session,
         session->geometry_width, session->geometry_height};
     session->gpu_config.mode = sony2fuji::GpuMode::Off;
     try {
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+        if (aiEnabled(session)) session->ai->beginOperation("hsl_probe");
+#endif
         sony2fuji::ProcessingCancellationScope cancellation(request->intent == SONY2FUJI_INTENT_PREVIEW ?
             sony2fuji::ProcessingCancellation{session->cancellation_callback, session->cancellation_context} :
             sony2fuji::ProcessingCancellation{});
@@ -2152,16 +2218,18 @@ sony2fuji_status sony2fuji_session_create_hsl_probe(sony2fuji_session* session,
         return SONY2FUJI_STATUS_OK;
     } catch (const sony2fuji::ProcessingCancelled&) {
         return SONY2FUJI_STATUS_CANCELLED;
-    } catch (const std::bad_alloc&) {
-        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (const std::bad_alloc& error) {
+        return recordAIError(session,SONY2FUJI_STATUS_OUT_OF_MEMORY,error.what());
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
-    } catch (const sony2fuji::ai::NotReady&) {
-        return SONY2FUJI_STATUS_AI_NOT_READY;
-    } catch (const sony2fuji::ai::Unsupported&) {
-        return SONY2FUJI_STATUS_UNSUPPORTED;
+    } catch (const sony2fuji::ai::NotReady& error) {
+        return recordAIError(session,SONY2FUJI_STATUS_AI_NOT_READY,error.what());
+    } catch (const sony2fuji::ai::Unsupported& error) {
+        return recordAIError(session,SONY2FUJI_STATUS_UNSUPPORTED,error.what());
 #endif
+    } catch (const std::exception& error) {
+        return recordAIError(session,SONY2FUJI_STATUS_PROCESSING_ERROR,error.what());
     } catch (...) {
-        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+        return recordAIError(session,SONY2FUJI_STATUS_PROCESSING_ERROR,"Unknown native AI failure");
     }
 }
 

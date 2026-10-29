@@ -40,6 +40,9 @@ internal static class TestWindowState
         Set("editStore",new EditStore(Path.Combine(root,"edits")));
         Set("presetStore",new AdjustmentPresetStore(Path.Combine(root,"presets")));
         Set("batchJournal",new BatchJournal(Path.Combine(root,"batch")));
+        Set("aiPreferenceStore",new AIGpuPreferenceStore(Path.Combine(root,"ai-gpu.json")));
+        Set("aiDiagnostics",new AIDiagnosticStore(Path.Combine(root,"ai-diagnostics")));
+        Set("aiPreference",new AIGpuPreference());
         var library=typeof(MainWindow).GetField("library",flags)!.GetValue(window)!;
         library.GetType().GetField("settingsPath",flags)!.SetValue(library,Path.Combine(root,"folders.json"));
         ((System.Collections.IList)library.GetType().GetProperty("Roots")!.GetValue(library)!).Clear();

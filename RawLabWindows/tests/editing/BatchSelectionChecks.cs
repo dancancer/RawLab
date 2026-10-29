@@ -82,7 +82,8 @@ static class BatchSelectionChecks
             capabilityAvailable=false;
             Rejected(()=>aiExporter.Freeze(selection,aiReview,_=>null),"AI becoming unavailable invalidates collection confirmation");
             capabilityAvailable=true;
-            var aiJob=aiExporter.Freeze(selection,aiReview,_=>null);
+            var aiJob=aiExporter.Freeze(selection,aiReview,_=>null,3,"selected-gpu");
+            Check(journal.Load() is {AIBackend:3,AIDeviceID:"selected-gpu"},"Collection GPU choice is persisted before the export window opens");
             Check(aiJob.Items.Single().Frozen!.Settings.AIDenoiseEnabled,"Collection freeze retains AI for export-stage preparation");
             journal.Discard(aiJob);
             var unavailable=new BatchSelectionExport(store,journal,edit=>edit.Look,_=>throw new InvalidOperationException("GPU unavailable"));

@@ -20,6 +20,20 @@ Ort::Env& environment() {
 size_t elements(const std::vector<int64_t>& shape) {
     return std::accumulate(shape.begin(), shape.end(), size_t(1), std::multiplies<size_t>());
 }
+void ORT_API_CALL logRuntime(void* context, OrtLoggingLevel severity, const char* category,
+                            const char*, const char*, const char* message) {
+    try { static_cast<AIDiagnostics*>(context)->log(static_cast<int>(severity),category ? category : "ORT",message ? message : ""); }
+    catch (...) {}
+}
+const char* graphName(GraphKind kind) {
+    switch (kind) {
+    case GraphKind::Raw: return "raw";
+    case GraphKind::ISP: return "isp";
+    case GraphKind::RGB: return "rgb";
+    case GraphKind::BlindRGB: return "blind_rgb";
+    default: return "unknown";
+    }
+}
 }
 
 GraphSignature graphSignature(GraphKind kind, int size) {
@@ -41,8 +55,12 @@ struct OnnxGraph::Impl {
     std::string backend;
     std::vector<std::vector<int64_t>> inputShapes;
     std::vector<int64_t> outputShape;
+    AIDiagnostics* diagnostics = nullptr;
+    GraphKind kind;
+    uint64_t runs = 0;
 
-    Impl(const std::string& path, GraphKind kind, int size, Backend requested) {
+    Impl(const std::string& path, GraphKind graphKind, int size, Backend requested, AIExecution execution)
+        : diagnostics(execution.diagnostics), kind(graphKind) {
         if (requested == Backend::Cpu && kind != GraphKind::ISP)
             throw std::invalid_argument("CPU neural inference is not supported");
         if (requested != Backend::Cpu && requested != Backend::DirectML)
@@ -51,12 +69,26 @@ struct OnnxGraph::Impl {
         inputNames = signature.inputNames; outputName = signature.outputName;
         inputShapes = signature.inputShapes; outputShape = signature.outputShape;
         Ort::SessionOptions options;
+        if (diagnostics) {
+            diagnostics->field("graph_kind",graphName(kind)); diagnostics->field("stage","create_session");
+            diagnostics->field("tile_size",static_cast<uint64_t>(size));
+            Ort::ThrowOnError(Ort::GetApi().SetUserLoggingFunction(options,logRuntime,diagnostics));
+        }
         options.SetIntraOpNumThreads(6).SetInterOpNumThreads(1);
         options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
         backend = requested == Backend::DirectML ? "DirectML" : "CPU";
         try {
             if (requested == Backend::DirectML) {
-                const auto adapter = findDirectMLAdapter();
+                auto adapter = execution.device ? *execution.device : findDirectMLAdapter();
+                if (execution.device) {
+                    const auto current = enumerateDirectMLAdapters();
+                    const auto found = std::find_if(current.begin(),current.end(),[&](const auto& value) {
+                        return value.id == adapter.id && value.luid == adapter.luid && value.available;
+                    });
+                    if (found == current.end()) throw std::runtime_error("The selected AI GPU changed or became unavailable");
+                    adapter = *found;
+                }
+                if (diagnostics) diagnostics->device(adapter);
 #ifdef SONY2FUJI_ENABLE_DIRECTML
                 options.DisableMemPattern().SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
                 const OrtDmlApi* dml = nullptr;
@@ -67,10 +99,12 @@ struct OnnxGraph::Impl {
             }
             session = Ort::Session(environment(), std::filesystem::u8path(path).c_str(), options);
         } catch (const Ort::Exception& error) {
+            const auto detail = nativeErrorText(error.what());
+            if (diagnostics) diagnostics->field("ort_error_code",static_cast<uint64_t>(error.GetOrtErrorCode()));
             if (error.GetOrtErrorCode() == ORT_INVALID_PROTOBUF || error.GetOrtErrorCode() == ORT_INVALID_GRAPH ||
                 error.GetOrtErrorCode() == ORT_NO_SUCHFILE)
-                throw ModelContractError(std::string("Invalid AI graph: ") + error.what());
-            throw std::runtime_error(std::string("Cannot initialize ") + backend + " graph: " + error.what());
+                throw ModelContractError(std::string("Invalid AI graph: ") + detail);
+            throw std::runtime_error(std::string("Cannot initialize ") + backend + " graph: " + detail);
         }
         if (session.GetInputCount() != inputNames.size() || session.GetOutputCount() != 1)
             throw ModelContractError("DualDn graph input/output count mismatch");
@@ -89,8 +123,8 @@ struct OnnxGraph::Impl {
     }
 };
 
-OnnxGraph::OnnxGraph(const std::string& path, GraphKind kind, int size, Backend backend)
-    : impl_(std::make_unique<Impl>(path, kind, size, backend)) {}
+OnnxGraph::OnnxGraph(const std::string& path, GraphKind kind, int size, Backend backend, AIExecution execution)
+    : impl_(std::make_unique<Impl>(path, kind, size, backend, execution)) {}
 OnnxGraph::~OnnxGraph() = default;
 std::string OnnxGraph::backend() const { return impl_->backend; }
 std::string OnnxGraph::runtimeVersion() { return OrtGetApiBase()->GetVersionString(); }
@@ -113,11 +147,16 @@ std::vector<float> OnnxGraph::run(const std::vector<std::vector<float>>& inputs)
     }
     const char* outputName = impl_->outputName.c_str();
     std::vector<Ort::Value> result;
+    if (impl_->diagnostics) {
+        impl_->diagnostics->field("graph_kind",graphName(impl_->kind));
+        impl_->diagnostics->field("stage","run"); impl_->diagnostics->field("graph_run",++impl_->runs);
+    }
     try {
         result = impl_->session.Run(Ort::RunOptions{nullptr}, names.data(), tensors.data(),
                                     tensors.size(), &outputName, 1);
     } catch (const Ort::Exception& error) {
-        throw std::runtime_error(std::string("DualDn inference failed: ") + error.what());
+        if (impl_->diagnostics) impl_->diagnostics->field("ort_error_code",static_cast<uint64_t>(error.GetOrtErrorCode()));
+        throw std::runtime_error(std::string("DualDn inference failed: ") + nativeErrorText(error.what()));
     }
     const auto info = result[0].GetTensorTypeAndShapeInfo();
     if (info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||

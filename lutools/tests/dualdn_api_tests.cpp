@@ -9,6 +9,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <vector>
+#include <nlohmann/json.hpp>
 
 void require(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
 
@@ -85,6 +86,22 @@ int main(int argc, char** argv) {
             require(sony2fuji_session_set_ai_denoise(session,&config) == SONY2FUJI_STATUS_OK, "missing package configuration");
             require(sony2fuji_process(session,&request,&buffer) == SONY2FUJI_STATUS_PROCESSING_ERROR && !buffer.data,
                     "missing model was treated as a retryable cache miss");
+            auto diagnostic=nlohmann::json::parse(sony2fuji_session_get_ai_diagnostics(session));
+            require(diagnostic.at("native_status") == SONY2FUJI_STATUS_PROCESSING_ERROR &&
+                    diagnostic.at("operation") == "render" && !diagnostic.at("native_error").get<std::string>().empty(),
+                    "Render failure lost its native diagnostic context");
+            float exposure=0;
+            require(sony2fuji_session_estimate_auto_exposure(session,&request,&exposure)==SONY2FUJI_STATUS_PROCESSING_ERROR,
+                    "Auto exposure silently accepted an invalid AI model");
+            diagnostic=nlohmann::json::parse(sony2fuji_session_get_ai_diagnostics(session));
+            require(diagnostic.at("native_status") == SONY2FUJI_STATUS_PROCESSING_ERROR && diagnostic.at("operation") == "auto_exposure",
+                    "Auto exposure failure retained another operation's diagnostics");
+            sony2fuji_hsl_probe* probe=nullptr;
+            require(sony2fuji_session_create_hsl_probe(session,&request,1,1,&probe)==SONY2FUJI_STATUS_PROCESSING_ERROR && !probe,
+                    "HSL probe silently accepted an invalid AI model");
+            diagnostic=nlohmann::json::parse(sony2fuji_session_get_ai_diagnostics(session));
+            require(diagnostic.at("operation")=="hsl_probe" && diagnostic.at("native_status")==SONY2FUJI_STATUS_PROCESSING_ERROR,
+                    "HSL probe lost its AI diagnostic context");
             config.model_directory = argv[2];
             require(sony2fuji_session_set_ai_denoise(session,&config) == SONY2FUJI_STATUS_OK, "restored model configuration");
             const auto invalidSource = std::string(argv[3])+"-invalid.raw";
