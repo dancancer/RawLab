@@ -4,6 +4,12 @@ import Foundation
 @main enum HDRSDRPreviewTests {
     static func main() throws {
         let source=URL(fileURLWithPath:CommandLine.arguments[1])
+        let meter=try RenderEngine(gpuMode:SONY2FUJI_GPU_OFF)
+        let exposure=try meter.autoExposure(source,settings:Adjustments())
+        guard exposure.isFinite && (-4...4).contains(exposure) else { fatalError("SDR metering returned invalid exposure") }
+        guard meter.cachedRasterBytes>0 && meter.cachedRasterBytes<=1280*1280*4 else {
+            throw RenderError.failed("SDR auto exposure retained full-resolution raster: \(meter.cachedRasterBytes) bytes")
+        }
         let engine=try RenderEngine(gpuMode:SONY2FUJI_GPU_OFF)
         let preview=try engine.render(source,settings:Adjustments(),lut:nil,edge:256)!
         guard max(preview.image.width,preview.image.height)==256 else { fatalError("SDR preview output is not bounded") }
@@ -26,6 +32,15 @@ import Foundation
         guard final.image.width==width && final.image.height==height && final.isFullResolution else {
             fatalError("FINAL rendering reused an SDR preview proxy")
         }
+        _ = try engine.autoExposure(source,settings:Adjustments())
+        guard engine.cachedRasterBytes<=1280*1280*4 else {
+            fatalError("SDR auto exposure reused the full-resolution raster cache")
+        }
+        let exported=try meter.render(source,settings:Adjustments(),lut:nil,edge:nil)!
+        guard exported.image.width==width && exported.image.height==height && exported.isFullResolution else {
+            fatalError("FINAL rendering reused a metering proxy")
+        }
+        print("PASS Mac SDR auto exposure uses a bounded preview before and after FINAL")
         print("PASS Mac bounded SDR preview, original geometry and fresh full-resolution FINAL")
     }
 }

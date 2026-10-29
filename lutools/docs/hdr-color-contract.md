@@ -112,6 +112,8 @@ SDR editing of an HDR container uses a bounded PREVIEW decode too. Its RGB8
 proxy retains the oriented native canvas and cannot become a FINAL input.
 `sony2fuji_hdr_geometry_size` computes proxy UI bounds without pixel allocation
 or an inferred scale ratio. JPEG/DNG export reloads the complete source.
+Mac SDR automatic-exposure analysis also requests PREVIEW with a 1280-pixel
+long-edge limit before decoding an HDR container.
 
 Native clients share one source-only 128 MiB LRU per process. A different source
 URL or fingerprint invalidates prior entries; edited results and current

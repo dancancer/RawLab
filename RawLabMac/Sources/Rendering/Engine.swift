@@ -359,6 +359,11 @@ final class RenderEngine {
         request.wb_mul = (1,1,1,1)
         settings.apply(to: &request)
         request.output_target = SONY2FUJI_TARGET_BUFFER
+        // 栅格测光仅采样有限像素，HDR 双图解码前也需限制尺寸。
+        if Self.isRasterInput(url) {
+            request.intent = SONY2FUJI_INTENT_PREVIEW
+            request.preview_long_edge = 1280
+        }
         var ev: Float = 0
         let status = try withInput(url, request: &request) { input in
             sony2fuji_session_estimate_auto_exposure(session, &input, &ev)
