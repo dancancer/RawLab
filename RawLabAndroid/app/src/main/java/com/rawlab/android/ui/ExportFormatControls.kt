@@ -19,12 +19,13 @@ import com.rawlab.android.format.ExportFormat
 
 @Composable
 internal fun ExportFormatControls(selected: ExportFormat, onSelect: (ExportFormat) -> Unit,
-    modifier: Modifier = Modifier, enabled: (ExportFormat) -> Boolean = { true }) {
+    modifier: Modifier = Modifier, hdrEditing: Boolean = false, enabled: (ExportFormat) -> Boolean = { true }) {
     Column(modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        ExportFormat.entries.forEach { format ->
-            val title = when (format) { ExportFormat.JPEG -> R.string.jpeg; ExportFormat.PNG -> R.string.png; ExportFormat.DNG -> R.string.dng }
+        ExportFormat.available(hdrEditing).forEach { format ->
+            val title = when (format) { ExportFormat.JPEG -> R.string.jpeg; ExportFormat.HDR_JPEG -> R.string.hdr_jpeg; ExportFormat.PNG -> R.string.png; ExportFormat.DNG -> R.string.dng }
             val description = when (format) {
                 ExportFormat.JPEG -> R.string.jpeg_description
+                ExportFormat.HDR_JPEG -> R.string.hdr_jpeg_description
                 ExportFormat.PNG -> R.string.png_description
                 ExportFormat.DNG -> R.string.dng_description
             }

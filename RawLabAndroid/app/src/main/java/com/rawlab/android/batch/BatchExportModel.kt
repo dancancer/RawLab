@@ -207,7 +207,7 @@ class BatchExportModel(
                 journal.save(materialized)
                 val processor = processorFactory(gpuMode, storage.lensDatabase())
                 val result = try {
-                    val output = BatchOutputPublisher(context, storage, processor, materialized, destination)
+                    val output = BatchOutputPublisher(context, storage, processor, materialized, destination, gpuMode)
                     mutable.update { it.copy(phase = BatchPhase.RUNNING) }
                     BatchRunner.run(materialized, output::render, { _, _, _ -> }, cancelRequested::get, journal,
                         didUpdate = {
@@ -264,7 +264,9 @@ class BatchExportModel(
                 }
             } catch (error: Exception) { destination.delete(); throw error }
         }
-        return BatchTarget(identity, destination, name, uri.toString(), inputKind)
+        val hdr = com.rawlab.android.photo.HDRSourceInfo.mayContainGainMap(name, resolver.getType(uri)) &&
+            com.rawlab.android.engine.NativeHDRBridge.probe(destination) != null
+        return BatchTarget(identity, destination, name, uri.toString(), inputKind, sourceIsHDR = hdr)
     }
 
     private fun displayName(uri: Uri): String = runCatching {
@@ -301,10 +303,18 @@ class BatchExportModel(
             if (snapshot.settingsMode == BatchSettingsMode.PER_TARGET_FROZEN) target.frozen!!.verifyFiles(target.sourceFile)
             // 效果查看先限长再降噪，最终导出仍保留完整质量。
             processorFactory(gpuMode, storage.lensDatabase()).use {
-                it.preview(target.sourceFile, snapshot.lookFor(target), snapshot.settingsFor(target), 1280, true, target.inputKind)
+                val settings = snapshot.settingsFor(target)
+                if (settings.isHDREditing) {
+                    if (gpuMode == NativeProcessor.FORCE) throw com.rawlab.android.engine.HDRProcessingException(2,13,6)
+                    val info = requireNotNull(com.rawlab.android.engine.NativeHDRBridge.probe(target.sourceFile))
+                    com.rawlab.android.engine.NativeHDRBridge.decode(target.sourceFile, info, 1280).use { source ->
+                        it.setGpuMode(NativeProcessor.CPU)
+                        it.renderHDR(source, requireNotNull(settings.hdr).copy(geometry = settings.geometry), 1280).use { pair -> pair.sdrBitmap() }
+                    }
+                } else it.preview(target.sourceFile, snapshot.lookFor(target), settings, 1280, true, target.inputKind).bitmap()
             }
         }
-        try { work.await().bitmap() } finally { work.cancel() }
+        try { work.await() } finally { work.cancel() }
     }
 
     private fun reconcile(job: BatchJob): BatchJob {

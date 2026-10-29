@@ -20,6 +20,8 @@ enum class AdjustmentField(val id: String) {
     WHITE_BALANCE_MODE("color.white_balance.mode"),
     TEMPERATURE("color.white_balance.temperature_kelvin"),
     TINT("color.white_balance.tint"),
+    HDR_TEMPERATURE("hdr.relative_temperature"),
+    HDR_TINT("hdr.relative_tint"),
     SATURATION("color.saturation"),
     HSL_HUE_RED("color.hsl.hue.red"),
     HSL_HUE_ORANGE("color.hsl.hue.orange"),
@@ -74,7 +76,8 @@ enum class AdjustmentField(val id: String) {
     LENS_AUTO_CROP("geometry.lens.auto_crop"),
     LENS_PROFILE("geometry.lens.profile_id");
 
-    val group get() = if (this == BLACK_POINT || this == WHITE_POINT) "light" else id.substringBefore('.')
+    val isHDRRelative get() = this == HDR_TEMPERATURE || this == HDR_TINT
+    val group get() = if (isHDRRelative) "color" else if (this == BLACK_POINT || this == WHITE_POINT) "light" else id.substringBefore('.')
     val gradingZone: ColorGradingZone? get() = when (this) {
         GRADING_SHADOWS -> ColorGradingZone.SHADOWS; GRADING_MIDTONES -> ColorGradingZone.MIDTONES
         GRADING_HIGHLIGHTS -> ColorGradingZone.HIGHLIGHTS; else -> null
@@ -89,6 +92,8 @@ enum class AdjustmentField(val id: String) {
         hslLocation != null -> -100.0..100.0
         else -> when (this) {
             STRENGTH, CONTRAST, SATURATION, SHARPENING -> 0.0..2.0
+            HDR_TEMPERATURE -> 2000.0..50000.0
+            HDR_TINT -> -150.0..150.0
             EXPOSURE -> -20.0..20.0
             HIGHLIGHTS, SHADOWS, S_CURVE, PERSPECTIVE_HORIZONTAL, PERSPECTIVE_VERTICAL -> -1.0..1.0
             VIGNETTE_AMOUNT, VIGNETTE_ROUNDNESS, BLACK_POINT, WHITE_POINT, VIBRANCE, CLARITY, DEHAZE -> -100.0..100.0
@@ -101,7 +106,11 @@ enum class AdjustmentField(val id: String) {
     }
 
     companion object {
-        val COMMON = entries.filterTo(linkedSetOf()) { it.group != "geometry" }
+        val COMMON = entries.filterTo(linkedSetOf()) { it.group != "geometry" && !it.isHDRRelative }
+        val HDR_COMMON = setOf(EXPOSURE, CONTRAST, HIGHLIGHTS, SHADOWS, SATURATION, HDR_TEMPERATURE, HDR_TINT)
+        val HDR_GEOMETRY = setOf(CROP_X, CROP_Y, CROP_WIDTH, CROP_HEIGHT, QUARTER_TURNS,
+            FLIP_HORIZONTAL, FLIP_VERTICAL, STRAIGHTEN, PERSPECTIVE_HORIZONTAL, PERSPECTIVE_VERTICAL)
+        val HDR_SUPPORTED = HDR_COMMON + HDR_GEOMETRY
         val WHITE_BALANCE = setOf(WHITE_BALANCE_MODE, TEMPERATURE, TINT)
         val LENS = setOf(LENS_DISTORTION, LENS_TCA, LENS_AUTO_CROP, LENS_PROFILE)
         val DENOISE = setOf(RAW_DENOISE, POST_RGB_DENOISE, CHROMA_DENOISE, WAVELET_DENOISE)

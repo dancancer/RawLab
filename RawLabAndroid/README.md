@@ -18,6 +18,9 @@ Auto 可接续 GLES 显示渲染，Force 不支持需要执行 C5 的滤波。�
 
 ## 功能 / Features
 
+- 手机 HDR JPEG/HEIF 默认打开 HDR 编辑，提供曝光、相对色温/色偏、对比度、高光、阴影、饱和度及几何；预设、选择性同步、历史和批量导出保留独立 HDR 状态。HDR JPEG 重新生成增益图，显式 SDR JPEG/PNG16/DNG 使用 SDR rendition。切到 SDR 编辑后可使用 LUT 兼容向导。HDR 处理使用 CPU，FP16 硬件显示需 API 34+、HDR/SDR 比率和硬件加速窗口，条件不足显示 SDR；不支持 GPU Force。普通 SDR HEIF 的平台解码需 API 28+。范围见[平台对齐设计](../docs/design/hdr-photos/android-windows.md)。
+  Phone HDR JPEG/HEIF defaults to HDR editing with seven basic adjustments and geometry. Presets, selective synchronization, history and batch snapshots preserve independent HDR state. HDR JPEG regenerates a gain map; explicit SDR exports use the SDR rendition. Switch to SDR editing for LUT compatibility previews. Processing uses the CPU; FP16 presentation requires API 34+, an available HDR/SDR ratio and a hardware-accelerated window, with SDR fallback. GPU Force is unsupported. Ordinary SDR HEIF decoding requires API 28+.
+
 - 几何面板支持百分比裁切、90° 旋转、水平/垂直翻转、±100% 水平/垂直透视及 ±45° 拉直；透视和拉直自动保留中心无黑边画面。所有操作在 RAW 方向校正之后、输出缩放之前执行，顺序为旋转/翻转→透视→拉直→裁切，裁切坐标基于变换后的画面。参数接入逐照片记忆与批量快照；旧基础几何记录保留原有设置并将透视设为零，无几何记录保持原图。原图对比使用同一几何，原始 RAW 不写回。当前几何在 CPU 执行，Auto 可回退，Force 不隐藏 CPU 混合处理。
   Geometry controls support normalized cropping, clockwise quarter-turns, horizontal/vertical flips, ±100% horizontal/vertical perspective and ±45° straightening within an inscribed centered canvas. Geometry follows RAW orientation and precedes output resizing, in the order turns/flips → perspective → straightening → crop. Crop percentages refer to the transformed canvas. Edit memory and batch snapshots retain the full settings; legacy basic geometry records keep their settings with zero perspective, and records without geometry default to identity. Neutral comparison uses the same geometry; source RAWs remain unchanged. Geometry currently executes on CPU; Auto retains fallback and Force rejects mixed CPU processing.
 
@@ -58,9 +61,9 @@ v0.5.0 新增逐照片本机调整记忆和批量 RAW 导出。任务固定当�
 - 渲染型 DNG 固化外观，不是传感器 RAW，也不提供可恢复的调整滑块。不复制来源拍摄 EXIF；未压缩 float32 RGB 约占每像素 12 字节。格式和存储边界见[渲染型 DNG 契约](../lutools/docs/color-contract.md#rendered-dng)。
   Rendered DNG bakes appearance, not sensor RAW or reversible controls. It omits source capture EXIF and uses about 12 bytes per pixel for uncompressed float32 RGB. See the linked verification for runtime limits.
 
-只处理 RAW，不是 JPEG/HEIC 修图器。原始文件不写回；编辑参数按原始资源身份在本机自动保存，重选同一资源可恢复。
+支持 RAW、普通 JPEG/PNG 和受支持的手机 gain-map HDR JPEG/HEIF。原始文件不写回；编辑参数按原始资源身份在本机自动保存，重选同一资源可恢复。
 
-RAW inputs only, not a JPEG/HEIC editor. Originals are never rewritten; edits persist locally by original resource identity.
+Supports RAW, ordinary JPEG/PNG and supported phone gain-map HDR JPEG/HEIF. Originals are never rewritten; edits persist locally by original resource identity.
 
 外观导入不执行 Python/OCIO，也不修改源文件；CUBE、RLOOK 和受支持的 DCP 均通过 shared native 校验，DCP 会在 Android 上直接编译成托管 RLOOK。RLOOK 在 Android 使用 CPU，Auto 不会伪装成 GLES 原生 DCP 加速。可导入和可运行不等于已验证原厂或 Adobe 外观忠实度。卸载应用会移除托管外观，保留原始预设备份。
 

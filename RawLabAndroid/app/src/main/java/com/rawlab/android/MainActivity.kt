@@ -135,7 +135,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
         model.importLooks(uris)
     }
     val saveJpeg = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/jpeg")) {
-        if (it == null) exportDialog = true else model.export(it, ExportFormat.JPEG, pendingExportLongEdgeText.toIntOrNull())
+        if (it == null) exportDialog = true else model.export(it, format, pendingExportLongEdgeText.toIntOrNull())
     }
     val savePng = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) {
         if (it == null) exportDialog = true else model.export(it, ExportFormat.PNG, pendingExportLongEdgeText.toIntOrNull())
@@ -190,7 +190,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             onExport = {
                 exportSizeKey = ExportSizeChoice.ORIGINAL.key
                 exportCustomSize = ""
-                format = ExportFormat.JPEG
+                format = if (state.edits.isHDREditing) ExportFormat.HDR_JPEG else ExportFormat.JPEG
                 model.beginExport { if (it) exportDialog = true }
             },
             onBatchExport = model::beginBatch,
@@ -201,6 +201,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
                 } else { model.retainCurrentInCollection(); collectionOpen = true }
             },
             onMessageDismiss = model::dismissMessage, onLicenses = { licenses = true }, onGpuChange = model::setGpuEnabled,
+            onHDRChange = model::setHDRMode,
             onImportLook = { openLook.launch(arrayOf("*/*")) }, onRenameLook = model::renameLook,
             onDeleteLook = model::deleteLook, onLookImportReportDismiss = model::dismissLookImportReport,
             onAbout = { about = true }, updateVersion = updateState.available?.version,
@@ -232,7 +233,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             val longEdge = ExportSize.parse(selectedSize, exportCustomSize)
             val sizeValid = selectedSize != ExportSizeChoice.CUSTOM || longEdge != null
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                ExportFormatControls(format, { format = it })
+                ExportFormatControls(format, { format = it }, hdrEditing = state.edits.isHDREditing)
                 ExportSizeControls(
                     selected = selectedSize,
                     customText = exportCustomSize,
@@ -259,7 +260,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
                     pendingExportLongEdgeText = longEdge?.toString().orEmpty()
                     val name = "RawLab-${System.currentTimeMillis()}"
                     when (format) {
-                        ExportFormat.JPEG -> saveJpeg.launch("$name.jpg")
+                        ExportFormat.JPEG, ExportFormat.HDR_JPEG -> saveJpeg.launch("$name.jpg")
                         ExportFormat.PNG -> savePng.launch("$name.png")
                         ExportFormat.DNG -> saveDng.launch("$name.dng")
                     }

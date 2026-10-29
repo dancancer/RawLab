@@ -47,6 +47,7 @@ internal object JournalCodec {
             setProperty(prefix + "name", row.target.displayName)
             setProperty(prefix + "uri", row.target.sourceUri.orEmpty())
             setProperty(prefix + "kind", row.target.inputKind.name)
+            setProperty(prefix + "hdrSource", row.target.sourceIsHDR.toString())
             row.target.frozen?.let { frozen ->
                 setProperty(prefix + "frozen.version", frozen.version.toString())
                 setProperty(prefix + "frozen.settingsVersion", frozen.settingsVersion.toString())
@@ -94,7 +95,8 @@ internal object JournalCodec {
             BatchTarget(PhotoIdentity(properties.getProperty(prefix + "id")), File(properties.getProperty(prefix + "path")),
                 properties.getProperty(prefix + "name"), properties.getProperty(prefix + "uri").ifBlank { null },
                 properties.getProperty(prefix + "kind").toInputKind(),
-                if (mode == BatchSettingsMode.PER_TARGET_FROZEN) readFrozen(properties, prefix + "frozen.") else null)
+                if (mode == BatchSettingsMode.PER_TARGET_FROZEN) readFrozen(properties, prefix + "frozen.") else null,
+                properties.getProperty(prefix + "hdrSource", "false").toBooleanStrict())
         }
         val format = if (version >= 2) ExportFormat.fromPersisted(properties.getProperty("output.format"))
             else if (properties.getProperty("output.png", "false").toBoolean()) ExportFormat.PNG else ExportFormat.JPEG

@@ -21,8 +21,8 @@ internal val AdjustmentField.title: String get() {
         AdjustmentField.S_CURVE -> R.string.transfer_field_s_curve
         AdjustmentField.CURVE -> R.string.transfer_field_curve
         AdjustmentField.WHITE_BALANCE_MODE -> R.string.transfer_field_white_balance_mode
-        AdjustmentField.TEMPERATURE -> R.string.transfer_field_temperature
-        AdjustmentField.TINT -> R.string.transfer_field_tint
+        AdjustmentField.TEMPERATURE, AdjustmentField.HDR_TEMPERATURE -> R.string.transfer_field_temperature
+        AdjustmentField.TINT, AdjustmentField.HDR_TINT -> R.string.transfer_field_tint
         AdjustmentField.BLACK_POINT -> R.string.black_point
         AdjustmentField.WHITE_POINT -> R.string.white_point
         AdjustmentField.VIBRANCE -> R.string.vibrance

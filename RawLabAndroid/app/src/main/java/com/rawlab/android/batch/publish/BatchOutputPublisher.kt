@@ -8,11 +8,13 @@ import com.rawlab.android.batch.BatchJob
 import com.rawlab.android.batch.BatchTarget
 import com.rawlab.android.batch.asBatchOutputFailure
 import com.rawlab.android.engine.NativeProcessor
+import com.rawlab.android.engine.NativeHDRBridge
 import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.photo.BatchGlobalFailure
 import com.rawlab.android.photo.BatchPublicationUncertain
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.photo.HDRSourceInfo
 import java.io.File
 import java.io.IOException
 
@@ -26,6 +28,7 @@ internal class BatchOutputPublisher(
     private val processor: NativeProcessor,
     private val job: BatchJob,
     private val destination: Uri?,
+    private val gpuMode: Int,
 ) {
     private val resolver = context.contentResolver
 
@@ -33,6 +36,24 @@ internal class BatchOutputPublisher(
         val format = job.formatFor(target)
         val temporary = File.createTempFile("render-", format.suffix, context.filesDir)
         try {
+            val hdrInfo = if (HDRSourceInfo.mayContainGainMap(target.sourceFile)) NativeHDRBridge.probe(target.sourceFile) else null
+            if (settings.isHDREditing) {
+                requireNotNull(hdrInfo) { "HDR editing requires an HDR source" }
+                val edge = job.longEdgeFor(target) ?: 0
+                if (edge !in 0..65535) throw IOException("Invalid output size")
+                if (settings.isHDREditing && gpuMode == NativeProcessor.FORCE) throw com.rawlab.android.engine.HDRProcessingException(2,13,6)
+                val source = NativeHDRBridge.decode(target.sourceFile, hdrInfo, 0)
+                val rendered = try {
+                    processor.setGpuMode(NativeProcessor.CPU)
+                    processor.renderHDR(source, requireNotNull(settings.hdr).copy(geometry = settings.geometry), edge)
+                } finally { source.close() }
+                try {
+                    if (format == com.rawlab.android.format.ExportFormat.HDR_JPEG)
+                        NativeHDRBridge.exportJpeg(rendered, target.sourceFile, temporary)
+                    else NativeHDRBridge.exportSdr(rendered, target.sourceFile, temporary, format.nativeValue)
+                } finally { rendered.close() }
+                return temporary
+            }
             val backend = processor.export(target.sourceFile, job.lookFor(target), settings,
                 temporary, format, job.longEdgeFor(target), target.inputKind)
             android.util.Log.i("RawLabBatch", "job=${job.id} exportBackend=$backend")
@@ -42,6 +63,7 @@ internal class BatchOutputPublisher(
             throw asBatchOutputFailure(error)
         }
     }
+
 
     fun publish(rendered: File, outputName: String, checkpoint: (String) -> Unit) {
         try {

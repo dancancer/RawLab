@@ -101,6 +101,7 @@ data class BatchTarget(
     val sourceUri: String? = null,
     val inputKind: PhotoInputKind = PhotoInputKind.RAW,
     val frozen: BatchFrozenSettings? = null,
+    val sourceIsHDR: Boolean = false,
 ) {
     val id: String get() = identity.value
 }

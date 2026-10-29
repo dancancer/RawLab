@@ -82,7 +82,8 @@ internal class EditorCollections(private val storage: PhotoStorage, parentScope:
                         }
                         validate.content()
                         imported[id] = photo; validators[id] = validate
-                        additions += BatchTarget(photo.identity, photo.file, photo.name, photo.uri.toString(), photo.inputKind)
+                        additions += BatchTarget(photo.identity, photo.file, photo.name, photo.uri.toString(), photo.inputKind,
+                            sourceIsHDR = photo.isHDRSource)
                     } catch (error: Exception) {
                         val id = uri.toString()
                         failures[id] = error.message ?: error.javaClass.simpleName

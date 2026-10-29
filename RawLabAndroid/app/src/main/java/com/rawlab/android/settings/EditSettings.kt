@@ -50,6 +50,9 @@ data class EditSettings(
     val colorGrading: ColorGradingSettings = ColorGradingSettings(),
     val curve: ToneCurveSettings = ToneCurveSettings(),
     val masterRecipeSettingsVersion: Int = 3,
+    /** Null preserves pre-HDR records as SDR; non-null also retains the inactive mode snapshot. */
+    val hdr: HDRSettings? = null,
+    val sdrSnapshot: String? = null,
 ) {
     init {
         require(masterRecipeSettingsVersion in 2..4)
@@ -66,11 +69,21 @@ data class EditSettings(
         require(tint.isFinite() && tint in -150f..150f)
         require(sharpening.isFinite() && sharpening in 0f..2f)
         require(displayChromaDenoise in 0..2)
+        if (hdr == null) require(sdrSnapshot == null)
+        else require(sdrSnapshot == null || sdrSnapshot.startsWith("v2:"))
     }
-    fun reset() = EditSettings(film = film, processing = processing)
+    val isHDREditing get() = hdr?.mode == HDRMode.HDR
+
+    fun reset(): EditSettings = if (isHDREditing) {
+        val value = HDRSettings()
+        copy(exposure = value.exposure, temperature = value.temperature, tint = value.tint,
+            contrast = value.contrast, highlights = value.highlights, shadows = value.shadows,
+            saturation = value.saturation, geometry = value.geometry, hdr = value,
+            sdrSnapshot = sdrSnapshot)
+    } else EditSettings(film = film, processing = processing, hdr = hdr)
 
     /** Camera-only controls are resolved per target; the persisted edit remains unchanged. */
-    fun effectiveFor(input: PhotoInputKind): EditSettings = if (input == PhotoInputKind.RASTER) copy(
+    fun effectiveFor(input: PhotoInputKind): EditSettings = if (isHDREditing) this else if (input == PhotoInputKind.RASTER) copy(
         exposureMode = 2,
         customWb = false,
         temperature = 6500f,
@@ -95,6 +108,7 @@ data class EditSettings(
     val renderToneCurve get() = if (curve.mode == ToneCurveMode.CUSTOM) 0f else (toneCurve * refinementScale).coerceIn(-1f, 1f).canonicalZero()
     fun selectFilm(id: String, cameraTint: Float? = null, cameraTemperature: Float? = null,
         input: PhotoInputKind = PhotoInputKind.RAW): EditSettings {
+        if (isHDREditing) return this
         if (recipeID == null) return copy(film = id)
         val independent = requireNotNull(independentForReset(input, cameraTemperature, cameraTint)) {
             "Recipe values cannot be represented without loss"

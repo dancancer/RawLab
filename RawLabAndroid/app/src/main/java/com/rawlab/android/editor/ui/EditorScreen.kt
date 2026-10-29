@@ -70,6 +70,7 @@ internal fun filmSelectionChanged(edits: EditSettings, selectedId: String): Bool
 fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onEdit: (EditSettings, Boolean) -> Unit, onRetry: () -> Unit,
     onExport: () -> Unit, onMessageDismiss: () -> Unit, onLicenses: () -> Unit, onGpuChange: (Boolean) -> Unit,
+    onHDRChange: (Boolean) -> Unit = {},
     onSaveRetry: () -> Unit = {},
     adjustmentReloadRequired: Boolean = false, onReloadAdjustments: ((Boolean) -> Unit) -> Unit = { it(false) },
     onCancelAdjustment: () -> Unit = {},
@@ -115,6 +116,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     var settings by rememberSaveable { mutableStateOf(false) }
     var adjusting by remember { mutableStateOf(false) }
     LaunchedEffect(tool) { if (tool == 9) tool = 8 }
+    LaunchedEffect(state.edits.isHDREditing) { if (state.edits.isHDREditing) tool = 2 }
     val surroundingAlpha by animateFloatAsState(if (adjusting) .32f else 1f, tween(160), label = "adjustment-context")
     val context = LocalContext.current
     val preferences = remember(context) { context.getSharedPreferences("editor", android.content.Context.MODE_PRIVATE) }
@@ -237,6 +239,11 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                 Text(stringResource(R.string.gpu_auto), Modifier.weight(1f))
                 Switch(state.gpuEnabled, onGpuChange, enabled = state.operation == Operation.NONE)
             }
+            if (state.photo?.isHDRSource == true) Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.hdr_editing), Modifier.weight(1f))
+                Switch(state.edits.isHDREditing, onHDRChange, enabled = state.controlsEnabled && state.draft == null,
+                    modifier = Modifier.testTag("hdr-editing"))
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.adjustment_haptics), Modifier.weight(1f))
                 Switch(haptics, { haptics = it; preferences.edit().putBoolean("haptics", it).apply() })
@@ -337,7 +344,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             IconToggleButton(checked = compare, onCheckedChange = { view = view.toggleComparison() }, enabled = state.preview != null && state.draft == null) {
                 Icon(Icons.Outlined.Compare, stringResource(if (compare) R.string.editor_compare_disable else R.string.editor_compare_enable))
             }
-            Box {
+            Box(Modifier.testTag("editor-menu")) {
                 ToolIcon(Icons.Outlined.MoreVert, R.string.more) { menu = true }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(text = { Text(stringResource(R.string.open_file)) }, enabled = state.operation == Operation.NONE,

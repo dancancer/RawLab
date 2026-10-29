@@ -70,7 +70,7 @@ internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentShe
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 when (kind) {
-                    AdjustmentSheet.COPY -> CopyAdjustmentContent(editor.photo?.name.orEmpty()) { scope ->
+                    AdjustmentSheet.COPY -> CopyAdjustmentContent(editor.photo?.name.orEmpty(), editor.edits.isHDREditing) { scope ->
                         if (model.copyAdjustments(scope) != null) onClose()
                     }
                     AdjustmentSheet.PASTE -> if (payload == null) Text(stringResource(R.string.transfer_no_clipboard)) else {
@@ -158,16 +158,19 @@ internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentShe
 }
 
 @Composable
-private fun CopyAdjustmentContent(source: String, onCopy: (AdjustmentScope) -> Unit) {
+private fun CopyAdjustmentContent(source: String, hdr: Boolean, onCopy: (AdjustmentScope) -> Unit) {
     Text(source, style = MaterialTheme.typography.titleMedium)
-    AdjustmentScopeEditor(stringResource(R.string.transfer_copy), "adjustment-copy-confirm", onConfirm = onCopy)
+    AdjustmentScopeEditor(stringResource(R.string.transfer_copy), "adjustment-copy-confirm",
+        allowed = if (hdr) AdjustmentField.HDR_SUPPORTED else AdjustmentField.entries.filterNot { it.isHDRRelative }.toSet(), onConfirm = onCopy)
 }
 
 @Composable
 internal fun AdjustmentScopeEditor(confirmTitle: String, confirmTag: String, enabled: Boolean = true,
+    allowed: Set<AdjustmentField> = AdjustmentField.entries.filterNot { it.isHDRRelative }.toSet(),
     onConfirm: (AdjustmentScope) -> Unit) {
-    var scope by remember { mutableIntStateOf(2) }
-    var fields by remember { mutableStateOf<Set<AdjustmentField>>(AdjustmentField.COMMON) }
+    var scope by remember(allowed) { mutableIntStateOf(2) }
+    var fields by remember(allowed) { mutableStateOf(
+        (if (allowed.any { it.isHDRRelative }) AdjustmentField.HDR_COMMON else AdjustmentField.COMMON).intersect(allowed)) }
     Text(stringResource(R.string.transfer_scope))
     listOf(R.string.transfer_all, R.string.transfer_modified, R.string.transfer_custom).forEachIndexed { index, title ->
         Row(Modifier.fillMaxWidth().clickable { scope = index }.testTag("adjustment-copy-scope-$index"),
@@ -183,12 +186,12 @@ internal fun AdjustmentScopeEditor(confirmTitle: String, confirmTag: String, ena
             "color" to R.string.transfer_group_color, "effects" to R.string.transfer_group_effects,
             "detail" to R.string.transfer_group_detail, "geometry" to R.string.transfer_group_geometry)
         fun select(members: Set<AdjustmentField>, checked: Boolean) { fields = if (checked) fields + members else fields - members }
-        for ((group, title) in groups) TransferDisclosure(stringResource(title), "adjustment-group-$group") {
-            val members = AdjustmentField.entries.filter { it.group == group }.toSet()
+        for ((group, title) in groups) if (allowed.any { it.group == group }) TransferDisclosure(stringResource(title), "adjustment-group-$group") {
+            val members = allowed.filter { it.group == group }.toSet()
             TransferCheck(stringResource(R.string.transfer_select_group), fields.containsAll(members), true, "adjustment-select-group-$group") { select(members, it) }
             for (field in members.filter { it.hslLocation == null })
                 TransferCheck(field.title, field in fields, true, "adjustment-field-${field.id}") { select(setOf(field), it) }
-            if (group == "color") for ((axis, axisTitle) in listOf(R.string.transfer_axis_0, R.string.transfer_axis_1, R.string.transfer_axis_2).withIndex()) {
+            if (group == "color" && members.any { it.hslLocation != null }) for ((axis, axisTitle) in listOf(R.string.transfer_axis_0, R.string.transfer_axis_1, R.string.transfer_axis_2).withIndex()) {
                 TransferDisclosure("HSL · ${stringResource(axisTitle)}", "adjustment-axis-$axis") {
                     val channels = members.filter { it.hslLocation?.first == axis }.toSet()
                     TransferCheck(stringResource(R.string.transfer_select_group), fields.containsAll(channels), true, "adjustment-select-axis-$axis") { select(channels, it) }

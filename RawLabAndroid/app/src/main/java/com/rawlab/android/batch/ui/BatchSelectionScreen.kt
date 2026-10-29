@@ -126,7 +126,9 @@ internal fun BatchSelectionScreen(model: EditorViewModel, onBack: () -> Unit, on
                 TextButton(onClick = { model.resolveCollectionDraft(true) }) { Text(stringResource(R.string.collection_apply_draft)) }
                 TextButton(onClick = { model.resolveCollectionDraft(false) }) { Text(stringResource(R.string.collection_discard_draft)) }
             }
-            AdjustmentScopeEditor(stringResource(R.string.collection_check_targets), "collection-sync-preflight", enabled = draft == null && !editor.committingAdjustments) { selected ->
+            AdjustmentScopeEditor(stringResource(R.string.collection_check_targets), "collection-sync-preflight", enabled = draft == null && !editor.committingAdjustments,
+                allowed = if (editor.edits.isHDREditing) com.rawlab.android.adjustments.AdjustmentField.HDR_SUPPORTED
+                    else com.rawlab.android.adjustments.AdjustmentField.entries.filterNot { it.isHDRRelative }.toSet()) { selected ->
                 val generation = ++captureGeneration
                 model.captureCollectionSynchronization(selected) { captured ->
                     if (scope && generation == captureGeneration) captured?.let { closeScope(); synchronization = it }
@@ -168,7 +170,8 @@ private fun CollectionExportSheet(model: EditorViewModel, onClose: () -> Unit) {
             Text(stringResource(R.string.collection_export), style = MaterialTheme.typography.titleLarge)
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (!collection.busy) {
-                    ExportFormatControls(format, { format = it; review = null })
+                    ExportFormatControls(format, { format = it; review = null },
+                        hdrEditing = collection.selectedPhotos.isNotEmpty() && collection.selectedPhotos.all { it.sourceIsHDR })
                     ExportSizeControls(size, custom, { size = it; review = null }, { custom = it; review = null })
                     TextButton(onClick = { directory.launch(destination) }) { Text(destination?.toString() ?: stringResource(R.string.collection_output_directory)) }
                     if (Build.VERSION.SDK_INT >= 29 && format.allowsGallery) TextButton(onClick = { destination = null; review = null }) { Text(stringResource(R.string.save_album)) }
