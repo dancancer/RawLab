@@ -488,8 +488,10 @@ display RGB. JPEG/PNG outputs are still display-sRGB, never Log intermediates.
 Missing/incompatible declarations remain rejected. Display-sRGB creative CUBEs
 declare `#Gamma:sRGB to sRGB` and `#Gamut:ITU-R BT.709 to ITU-R BT.709`.
 Their input is the neutral display-sRGB result from step 3, not F-Log or scene
-linear RGB. CPU and Metal support this path; GLES/D3D11 return to CPU in Auto
-and reject Force until their shaders support display input. HSL retains its
+linear RGB. CPU, Metal and D3D11 support this path; GLES returns to CPU in Auto
+and rejects Force until its photo shader supports display input. D3D11 samples
+the neutral display result before strength blending, with the same declared
+domain and unclamped LUT table values as CPU. HSL retains its
 normal post-blend stage and is not baked into these creative tables.
 This validates declarations, not the table's actual transfer behavior;
 `OutputTransfer` comments are not interpreted. Custom named display LUTs must
@@ -501,8 +503,7 @@ in the CPU, Metal, GLES and D3D11 photo paths. The GPU receives the same input
 gamut matrix and chooses input encoding and output decoding independently.
 Auto falls back on backend failure; Force returns an error instead of hiding CPU
 execution. GLES detail filters now run before final resize. Strength zero bypasses
-look loading. Current Fuji runtime verification covers Metal and Android GLES on
-an emulator; D3D11's matching shader/host changes await Windows verification.
+look loading.
 
 `FLog2 -> FLog2 BT.709` is a technical color-gamut conversion, not a film simulation. It remains excluded from built-in film pickers but may be imported as a custom look. The experimental `SONY2FUJI_ACES_MODE` switch is superseded by the single float camera-matrix path; it no longer changes rendering.
 

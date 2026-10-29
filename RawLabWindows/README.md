@@ -193,6 +193,10 @@ RAW 显影的 Direct3D 11 计算与 WPF 画布绘制是独立的加速路径，�
 需要支持 Direct3D feature level 11.0 的硬件显卡。优先选择独立显存较大的硬件
 适配器，不将 WARP 软件渲染器标记为 GPU。矩阵、线性曝光、F-Log2、3D LUT、
 强度、明暗/色彩、细节、暗角/颗粒、小波过滤、显示色度引导滤波和双线性缩放在 GPU 执行。
+声明为 sRGB→sRGB / BT.709 的 CUBE（包括 Kodak 2383 RGB 等内置外观）也支持
+Auto 和 Force GPU：先生成中性 sRGB 显示颜色，再采样 LUT 并按强度混合。
+原生 DCP/RLOOK、带显式颜色契约且要求 CPU 的 LUT，以及其他 CPU 专用处理阶段
+仍沿用各自的 Auto 回退和 Force 拒绝规则。
 锐化、暗角/颗粒和显示色度均在原像素尺度处理。RAW 解包、白平衡、去马赛克、
 高光重建、噪声估计、OpenCV Lab 转换、文件编码及直方图统计保留在 CPU。
 每个会话复用 GPU 设备、LUT、线性 RAW 上传及中间缓冲；切换白平衡后更新上传。
