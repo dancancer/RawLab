@@ -15,6 +15,8 @@ internal static class AdjustmentTransferPresentation
         [F.WhiteBalanceMode]="白平衡模式",
         [F.Temperature]="色温",
         [F.Tint]="色调",
+        [F.HdrTemperature]="色温",
+        [F.HdrTint]="色调",
         [F.Saturation]="饱和度",
         [F.BlackPoint]="黑场", [F.WhitePoint]="白场", [F.Vibrance]="鲜艳度", [F.Clarity]="清晰度", [F.Dehaze]="去朦胧",
         [F.VignetteAmount]="暗角",
@@ -53,7 +55,7 @@ internal static class AdjustmentTransferPresentation
     }
     internal static string Group(string group)
     {
-        var key=group switch {"looks"=>"外观","light"=>"光线","color"=>"颜色","effects"=>"效果","detail"=>"细节",_=>"几何与镜头"};
+        var key=group switch {"looks"=>"外观","light"=>"光线","color" or "hdr"=>"颜色","effects"=>"效果","detail"=>"细节",_=>"几何与镜头"};
         return Loc.Text(key);
     }
     internal static string Status(AdjustmentStatus status)=>Loc.Text(status switch {

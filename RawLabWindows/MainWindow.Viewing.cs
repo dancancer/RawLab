@@ -31,7 +31,7 @@ public partial class MainWindow
         get {if(file==null)return null;try{return OriginalIdentity.Read(file);}catch(IOException){return null;}catch(UnauthorizedAccessException){return null;}}
     }
     private bool ReferenceCurrent=>neutralResult!=null && neutralRevision==openRevision && acceptedAfter==acceptedReference &&
-        NeutralReference.Matches(acceptedReference,CurrentViewSource,settings.Processing,settings.Geometry,settings.Lens,RenderEdge(interacting));
+        NeutralReference.Matches(acceptedReference,CurrentViewSource,settings.Processing,settings.Geometry,settings.Lens,RenderEdge(interacting),settings.IsHDREditing);
     private bool ViewInputBlocked=>Keyboard.FocusedElement is TextBoxBase or ComboBox ||
         OwnedWindows.Cast<Window>().Any(window=>window.IsVisible) ||
         MainMenu.Items.OfType<MenuItem>().Any(item=>item.IsSubmenuOpen) || viewingMenus.Count>0;
@@ -69,15 +69,18 @@ public partial class MainWindow
     }
     private void RefreshViewingFrames()
     {
+        PrepareHDRFrames();
         var reference=ReferenceCurrent ? neutralResult : null;
-        NeutralCanvas.SetImage(reference?.Image,reference?.Clipping);
-        ResultCanvas.SetComparison(reference?.Image,reference?.Clipping);
+        NeutralCanvas.SetImage(HDRPresentationBitmap(reference),reference?.Clipping);
+        ResultCanvas.SetImage(HDRPresentationBitmap(result),result?.Clipping);
+        ResultCanvas.SetComparison(HDRPresentationBitmap(reference),reference?.Clipping);
         ResultCanvas.ShowingBefore=view.HoldingBefore && reference!=null;
         var shown=view.HoldingBefore ? reference : result;
         Histogram.Bins=shown?.Histogram is { Length:768 } bins ? bins : null;Histogram.InvalidateVisual();
         HistogramSource.Text=Loc.Text(view.HoldingBefore ? "调整前" : "调整后");
         ClipStats.Text=shown?.Histogram.Length==768 ? Loc.Format("暗部 {0:P1}   高光 {1:P1} · 显示图统计",shown.Shadows,shown.Highlights) : Loc.Text("统计不可用");
         RefreshPhotoLabels();
+        RefreshHDRPresentation();
     }
     private void RefreshPhotoLabels()
     {

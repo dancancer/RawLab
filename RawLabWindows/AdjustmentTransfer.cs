@@ -13,6 +13,7 @@ public static class AdjustmentTransfer
     public static AdjustmentPayload Capture(AdjustmentScope scope,SavedEdit edit,AdjustmentTransferContext context)
     {
         if(context.HasUncommittedDraft) throw new AdjustmentTransferException(AdjustmentFailure.Draft);
+        if (edit.Settings.HDR is { Mode: HDRMode.Hdr }) return HDRAdjustmentTransfer.Capture(scope, edit, context);
         if(edit.Settings.AIDenoiseEnabled && scope.Kind is "all" or "modified")
             throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"AI denoise has no transfer field");
         var values=AdjustmentTransferValues.Values(edit,context);
@@ -38,7 +39,16 @@ public static class AdjustmentTransfer
     private static SavedEdit PrepareChecked(AdjustmentPayload p,SavedEdit target,AdjustmentTransferContext context)
     {
         if(context.HasUncommittedDraft) throw new AdjustmentTransferException(AdjustmentFailure.Draft);
-        p.Validate();var storedTarget=target;
+        p.Validate();
+        if (target.Settings.HDR is { Mode: HDRMode.Hdr } && context.IsRaw)
+            throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.target");
+        if (target.Settings.HDR is { Mode: HDRMode.Hdr })
+            return HDRAdjustmentTransfer.Prepare(p,target);
+        if(p.Source.IsHDR) {
+            if(p.Fields.Any(field=>field.IsHDRRelative()))throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.relative_white_balance");
+            p=new(p.Source with {HdrProcessingVersion=null},p.Values.ToDictionary(pair=>pair.Key,pair=>pair.Value));
+        }
+        var storedTarget=target;
         if(context.IsRaw && context.CameraWhiteBalance is {} calibration) {
             var calibrated=target.Settings.Restore();calibrated.ResolveWhiteBalance(calibration);target=target with {Settings=calibrated.Capture()};
         }

@@ -33,7 +33,8 @@ public sealed record AdjustmentSnapshot(
     HslSettings? Hsl = null,
     string? MasterRecipeID = null,
     LensSettings? Lens = null,
-    GeometrySettings? Geometry = null)
+    GeometrySettings? Geometry = null,
+    HDRSettings? HDR = null)
 {
     public ProcessingIdentity Processing { get; init; } = ProcessingIdentity.Legacy;
     public bool AIDenoiseEnabled { get; init; }
@@ -55,7 +56,8 @@ public sealed record AdjustmentSnapshot(
         (Hsl ?? new()).Equals(other.Hsl ?? new()) && (Lens ?? new()) == (other.Lens ?? new()) &&
         (Geometry ?? new()) == (other.Geometry ?? new()) && (ToneControls ?? new()) == (other.ToneControls ?? new()) &&
         (Atmosphere ?? new()) == (other.Atmosphere ?? new()) &&
-        (ColorGrading ?? new()) == (other.ColorGrading ?? new()) && (Curve ?? new()) == (other.Curve ?? new());
+        (ColorGrading ?? new()) == (other.ColorGrading ?? new()) && (Curve ?? new()) == (other.Curve ?? new()) &&
+        HDR == other.HDR;
     public AdjustmentSnapshot Copy() => this with { Values = (double[])Values.Clone() };
 }
 

@@ -45,6 +45,7 @@ internal sealed class LUTPreviewWorker : IDisposable
     private readonly string directory = Path.Combine(Path.GetTempPath(), "RawLab-LUT-preview-" + Guid.NewGuid().ToString("N"));
     private readonly Native.Session session;
     private Native.Buffer display;
+    private HDRSdrInput? hdrDisplay;
     private readonly string source, lut;
     internal bool DisplayInput { get; }
     internal LUTPreviewWorker(string look, string photo)
@@ -53,7 +54,16 @@ internal sealed class LUTPreviewWorker : IDisposable
         lut = Path.Combine(directory, "look" + Path.GetExtension(look)); DisplayInput = PhotoInput.IsRaster(photo);
         try {
             Directory.CreateDirectory(directory); File.Copy(look, lut); File.Copy(photo, source);
-            if (DisplayInput) Native.Check(Native.sony2fuji_load_display_image(source, ref display));
+            if (DisplayInput)
+            {
+                if (PhotoInput.ProbeHDR(photo, out _) == HDRProbeState.Supported)
+                {
+                    using var decoded = HDRNative.Decode(photo, HDRIntent.Preview, 512);
+                    hdrDisplay = new HDRSdrInput(HDRDisplay.CopyPair(decoded.Pair).SDR);
+                    display = hdrDisplay.Buffer;
+                }
+                else Native.Check(Native.sony2fuji_load_display_image(source, ref display));
+            }
         } catch { Dispose(); throw; }
     }
     private static Native.Session NewSession()
@@ -92,14 +102,22 @@ internal sealed class LUTPreviewWorker : IDisposable
     internal static LUTPreviewFrame Reference(string file)
     {
         using var session = NewSession(); var input = new Native.Buffer(); var output = new Native.Buffer();
+        HDRSdrInput? hdrInput = null;
         try {
-            Native.Check(Native.sony2fuji_load_display_image(file, ref input)); var request = Request(); SetDisplay(ref request, input);
+            if (PhotoInput.ProbeHDR(file, out _) == HDRProbeState.Supported)
+            {
+                using var decoded = HDRNative.Decode(file, HDRIntent.Preview, 512);
+                hdrInput = new HDRSdrInput(HDRDisplay.CopyPair(decoded.Pair).SDR); input = hdrInput.Buffer;
+            }
+            else Native.Check(Native.sony2fuji_load_display_image(file, ref input));
+            var request = Request(); SetDisplay(ref request, input);
             Native.Check(Native.sony2fuji_process(session, ref request, out output)); return LUTPreviewFrame.From(output);
-        } finally { Native.sony2fuji_release_buffer(ref input); Native.sony2fuji_release_buffer(ref output); }
+        } finally { if (hdrInput == null) Native.sony2fuji_release_buffer(ref input); hdrInput?.Dispose(); Native.sony2fuji_release_buffer(ref output); }
     }
     public void Dispose()
     {
-        Native.sony2fuji_release_buffer(ref display); session.Dispose();
+        if (hdrDisplay == null) Native.sony2fuji_release_buffer(ref display);
+        hdrDisplay?.Dispose(); hdrDisplay = null; session.Dispose();
         try { if (Directory.Exists(directory)) Directory.Delete(directory, true); } catch (IOException) { }
     }
 }

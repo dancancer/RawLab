@@ -16,7 +16,7 @@ public partial class MainWindow
     private readonly BatchJournal batchJournal = new(BatchJournal.DefaultDirectory);
     private BatchJob? previousBatch;
     private BatchExportWindow? batchWindow;
-    private bool LookAvailable => lut == null || File.Exists(lut);
+    private bool LookAvailable => settings.IsHDREditing || lut == null || File.Exists(lut);
     private BatchJob? CurrentBatch => batchWindow?.Job ?? previousBatch;
 
     private void InitializeEditWorkflow()
@@ -133,7 +133,9 @@ public partial class MainWindow
         editStore ??= new EditStore(EditStore.DefaultDirectory);
         currentEditRecord=editStore.VersionedState(input);editGesture=null;adjustmentReloadRequired=false;
         var saved = currentEditRecord.Edit;
-        settings = saved?.Settings.Restore() ?? new Adjustments();
+        // New HDR sources start in HDR mode; an existing snapshot without HDR
+        // remains the legacy SDR record by construction.
+        settings = saved?.Settings.Restore() ?? PhotoInput.PrepareHDRInputSettings(input, new Adjustments());
         lut = saved == null ? null : ResolveLook(saved);
         if (settings.MasterRecipeID == null && lut != null && !films.Any(f => StringComparer.OrdinalIgnoreCase.Equals(f.Path, lut)))
         {

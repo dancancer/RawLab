@@ -28,6 +28,11 @@
         <!-- 打开编辑菜单时按当前工具重建，与调整栏的重置菜单同源。 -->
       </MenuItem>
       <MenuItem Header="{DynamicResource '查看(_V)'}">
+        <MenuItem x:Name="HDREditMenu" Header="{DynamicResource 'HDR 编辑'}" IsCheckable="True" Click="HDREditClicked" AutomationProperties.AutomationId="hdr.editing"/>
+        <MenuItem x:Name="HDRPreviewMenu" Header="{DynamicResource '自动 HDR'}" IsCheckable="True" IsChecked="True" Click="HDRPreviewClicked" AutomationProperties.AutomationId="hdr.preview.auto"/>
+        <MenuItem x:Name="HDRSdrPreviewMenu" Header="{DynamicResource 'SDR 兼容预览'}" IsCheckable="True" Click="HDRSdrPreviewClicked" AutomationProperties.AutomationId="hdr.preview.sdr"/>
+        <MenuItem x:Name="HDRFalseColorMenu" Header="{DynamicResource 'HDR 假色'}" IsCheckable="True" Click="HDRFalseColorClicked" AutomationProperties.AutomationId="hdr.false-color"/>
+        <Separator/>
         <MenuItem Header="{DynamicResource '文件树'}" Click="LibraryToggle"/>
         <MenuItem Header="{DynamicResource '调整栏'}" Click="DockToggle"/>
         <MenuItem Header="{DynamicResource '直方图'}" Click="HistogramClicked"/>
@@ -51,7 +56,7 @@
           <local:EditorIcon Kind="Export" Width="22" Height="22"/>
           <Button.ContextMenu><ContextMenu>
             <MenuItem Header="{DynamicResource '导出尺寸'}"><MenuItem x:Name="ExportOriginalSize" Header="{DynamicResource '原尺寸'}" IsCheckable="True" Click="ExportOriginalSizeClicked"/><MenuItem x:Name="ExportSize2048" Header="{DynamicResource '长边 2048 px'}" IsCheckable="True" Click="ExportSizeClicked" Tag="2048"/><MenuItem x:Name="ExportSize3000" Header="{DynamicResource '长边 3000 px'}" IsCheckable="True" Click="ExportSizeClicked" Tag="3000"/><MenuItem x:Name="ExportSize4096" Header="{DynamicResource '长边 4096 px'}" IsCheckable="True" Click="ExportSizeClicked" Tag="4096"/><MenuItem x:Name="ExportCustomSize" Header="{DynamicResource '自定义…'}" IsCheckable="True" Click="ExportCustomSizeClicked"/></MenuItem>
-            <Separator/><MenuItem x:Name="ExportJpeg" ToolTip="{DynamicResource 'JPEG：质量 95，保留可读取拍摄信息。'}" Header="{DynamicResource 'JPEG…'}" Click="ExportJpegClicked" IsEnabled="False"/><MenuItem x:Name="ExportPng" ToolTip="{DynamicResource 'PNG：16-bit，保留可读取拍摄信息。'}" Header="{DynamicResource 'PNG · 16-bit…'}" Click="ExportPngClicked" IsEnabled="False"/><MenuItem x:Name="ExportDng" ToolTip="{DynamicResource 'DNG：渲染型成片，不含原始传感器数据或拍摄 EXIF。'}" Header="{DynamicResource '导出渲染型 DNG'}" Click="ExportDngClicked" IsEnabled="False"/><Separator/><MenuItem x:Name="BatchExportMenu" Header="{DynamicResource '使用当前调整批量导出…'}" Click="BatchExportClicked" IsEnabled="False"/><MenuItem x:Name="ViewBatchMenu" Header="{DynamicResource '查看批量任务…'}" Click="ShowBatchClicked" IsEnabled="False"/>
+            <Separator/><MenuItem x:Name="ExportJpeg" ToolTip="{DynamicResource 'JPEG：质量 95，保留可读取拍摄信息。'}" Header="{DynamicResource 'JPEG…'}" Click="ExportJpegClicked" IsEnabled="False"/><MenuItem x:Name="ExportHdrJpeg" Header="{DynamicResource 'HDR JPEG'}" Click="ExportHdrJpegClicked" IsEnabled="False"/><MenuItem x:Name="ExportSdrJpeg" Header="{DynamicResource '保存 SDR JPEG'}" Click="ExportSdrJpegClicked" IsEnabled="False"/><MenuItem x:Name="ExportPng" ToolTip="{DynamicResource 'PNG：16-bit，保留可读取拍摄信息。'}" Header="{DynamicResource 'PNG · 16-bit…'}" Click="ExportPngClicked" IsEnabled="False"/><MenuItem x:Name="ExportDng" ToolTip="{DynamicResource 'DNG：渲染型成片，不含原始传感器数据或拍摄 EXIF。'}" Header="{DynamicResource '导出渲染型 DNG'}" Click="ExportDngClicked" IsEnabled="False"/><Separator/><MenuItem x:Name="BatchExportMenu" Header="{DynamicResource '使用当前调整批量导出…'}" Click="BatchExportClicked" IsEnabled="False"/><MenuItem x:Name="ViewBatchMenu" Header="{DynamicResource '查看批量任务…'}" Click="ShowBatchClicked" IsEnabled="False"/>
           </ContextMenu></Button.ContextMenu>
         </Button>
         <StackPanel Orientation="Horizontal">
@@ -126,6 +131,8 @@
           <Grid.ColumnDefinitions><ColumnDefinition x:Name="NeutralColumn" Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
           <local:PhotoCanvas x:Name="NeutralCanvas" Grid.Row="1" Margin="0"/>
           <local:PhotoCanvas x:Name="ResultCanvas" Grid.Row="1" Grid.Column="1"/>
+          <local:HDRSurface x:Name="NeutralHDRSurface" Grid.Row="1" Visibility="Hidden"/>
+          <local:HDRSurface x:Name="ResultHDRSurface" Grid.Row="1" Grid.Column="1" Visibility="Hidden"/>
           <Border x:Name="HslTargetBanner" Grid.RowSpan="2" Grid.ColumnSpan="2" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Bottom" MaxWidth="560" Margin="12" Padding="10" Background="{DynamicResource OverlaySurface}" CornerRadius="8" AutomationProperties.AutomationId="hsl.target.canvas">
             <StackPanel>
               <WrapPanel><TextBlock x:Name="HslTargetBannerTitle" TextWrapping="Wrap" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/><Button Content="{DynamicResource '退出目标调整'}" Click="ExitHslTargetClicked" AutomationProperties.AutomationId="hsl.target.exit"/></WrapPanel>

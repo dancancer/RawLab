@@ -2,10 +2,15 @@ namespace RawLab.Windows;
 
 internal static class NeutralReference
 {
-    internal static bool Matches(NeutralReferenceKey? reference,OriginalIdentity? source,ProcessingIdentity processing,GeometrySettings geometry,LensSettings lens,int edge=640)=>
-        reference!=null && source!=null && reference.Source.SameFile(source) && reference.Processing==processing && reference.Geometry==geometry && reference.Lens==lens && reference.Edge==edge;
-    internal static Adjustments Settings(string path,Adjustments committed) =>
-        PhotoInput.PrepareInputSettings(path,new Adjustments { Geometry=committed.Geometry,Lens=committed.Lens,Processing=committed.Processing });
+    internal static bool Matches(NeutralReferenceKey? reference,OriginalIdentity? source,ProcessingIdentity processing,GeometrySettings geometry,LensSettings lens,int edge=640,bool hdr=false)=>
+        reference!=null && source!=null && reference.Source.SameFile(source) && reference.Processing==processing && reference.Geometry==geometry && reference.Lens==lens && reference.Edge==edge && reference.HDR==hdr;
+    internal static Adjustments Settings(string path,Adjustments committed)
+    {
+        var result = PhotoInput.PrepareInputSettings(path, new Adjustments { Lens = committed.Lens, Processing = committed.Processing });
+        if (committed.HDR is { } hdr) result.HDR = hdr.Reset() with { Mode = hdr.Mode };
+        result.Geometry = committed.Geometry;
+        return result;
+    }
 }
 
 internal enum ComparisonMode { SideBySide,Wipe }
@@ -41,4 +46,4 @@ internal static class PhotoViewProjection
 }
 
 internal sealed record NeutralReferenceKey(OriginalIdentity Source,bool Raster,ProcessingIdentity Processing,
-    GeometrySettings Geometry,LensSettings Lens,int Edge);
+    GeometrySettings Geometry,LensSettings Lens,int Edge,bool HDR=false);

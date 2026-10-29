@@ -21,6 +21,7 @@ FetchContent_Declare(libraw
     URL_HASH SHA256=de86b035655accff8d4010f1a221fdf50d353cb7b1422ba26f14a0db92612cfa)
 FetchContent_MakeAvailable(libraw)
 get_filename_component(REPO "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+add_subdirectory("${REPO}/RawLabWindows/Rendering/HDR" "${CMAKE_BINARY_DIR}/hdr-display-build")
 set(LIBRAW_SOURCE_DIR "${libraw_SOURCE_DIR}")
 include("${REPO}/lutools/cmake/patch-libraw.cmake")
 file(GLOB_RECURSE LIBRAW_SOURCES CONFIGURE_DEPENDS "${libraw_SOURCE_DIR}/src/*.cpp")

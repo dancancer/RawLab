@@ -3689,6 +3689,78 @@
     "无照片": {
       "formats": [],
       "source": "无照片"
+    },
+    "HDR 编辑": {
+      "source": "HDR 编辑",
+      "formats": []
+    },
+    "自动 HDR": {
+      "source": "自动 HDR",
+      "formats": []
+    },
+    "SDR 兼容预览": {
+      "source": "SDR 兼容预览",
+      "formats": []
+    },
+    "HDR 假色": {
+      "source": "HDR 假色",
+      "formats": []
+    },
+    "HDR 亮度直方图": {
+      "source": "HDR 亮度直方图",
+      "formats": []
+    },
+    "HDR 显示不可用，当前显示 SDR。": {
+      "source": "HDR 显示不可用，当前显示 SDR。",
+      "formats": []
+    },
+    "HDR JPEG": {
+      "source": "HDR JPEG",
+      "formats": []
+    },
+    "参考白以上 {0}": {
+      "source": "参考白以上 {0}",
+      "formats": [
+        "{0}"
+      ]
+    },
+    "此照片没有可编辑的 HDR 增益图。": {
+      "source": "此照片没有可编辑的 HDR 增益图。",
+      "formats": []
+    },
+    "不支持此 HDR 格式或颜色描述。": {
+      "source": "不支持此 HDR 格式或颜色描述。",
+      "formats": []
+    },
+    "HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。": {
+      "source": "HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。",
+      "formats": []
+    },
+    "内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。": {
+      "source": "内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。",
+      "formats": []
+    },
+    "无法写入 HDR 导出文件，请检查可用空间和目标权限。": {
+      "source": "无法写入 HDR 导出文件，请检查可用空间和目标权限。",
+      "formats": []
+    },
+    "HDR 处理失败（{0}）。": {
+      "source": "HDR 处理失败（{0}）。",
+      "formats": [
+        "{0}"
+      ]
+    },
+    "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。": {
+      "source": "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。",
+      "formats": []
+    },
+    "HDR 调整记录无效，原有文件未被覆盖。": {
+      "source": "HDR 调整记录无效，原有文件未被覆盖。",
+      "formats": []
+    },
+    "HDR JPEG 需要启用 HDR 编辑。": {
+      "source": "HDR JPEG 需要启用 HDR 编辑。",
+      "formats": []
     }
   },
   "overrides": {
@@ -5193,6 +5265,14 @@
       "fr": "Looks de film|*.cube;*.vlt;*.rlook;*.dcp|CUBE / VLT LUT|*.cube;*.vlt|Looks RLOOK RawLab|*.rlook|Looks DCP|*.dcp",
       "ja": "フィルムルック|*.cube;*.vlt;*.rlook;*.dcp|CUBE / VLT LUT|*.cube;*.vlt|RawLab RLOOK ルック|*.rlook|DCP ルック|*.dcp",
       "zh-Hans": "胶片外观|*.cube;*.vlt;*.rlook;*.dcp|CUBE / VLT LUT|*.cube;*.vlt|RawLab RLOOK 外观|*.rlook|DCP 外观|*.dcp"
+    },
+    "HDR 调整记录无效，原有文件未被覆盖。": {
+      "zh-Hans": "HDR 调整记录无效，原有文件未被覆盖。",
+      "en": "The HDR adjustment record is invalid. The original file was preserved.",
+      "de": "Der HDR-Anpassungsdatensatz ist ungültig. Die Originaldatei wurde beibehalten.",
+      "es": "El registro de ajustes HDR no es válido. Se conservó el archivo original.",
+      "fr": "Les réglages HDR sont invalides. Le fichier original a été conservé.",
+      "ja": "HDR 調整記録が無効です。元のファイルは保持されています。"
     }
   }
 }

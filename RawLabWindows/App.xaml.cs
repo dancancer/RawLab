@@ -5,6 +5,7 @@ public partial class App : Application
 {
     protected override async void OnStartup(StartupEventArgs e)
     {
+        Exit+=(_,_)=>HDRSourceCache.Clear();
         Loc.Initialize();
         void ApplyLanguage() { foreach (var pair in Loc.Strings) Resources[pair.Key] = pair.Value; }
         ApplyLanguage();

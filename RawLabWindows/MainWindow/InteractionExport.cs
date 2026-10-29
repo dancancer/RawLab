@@ -147,6 +147,8 @@ public partial class MainWindow
         else if(viewingKey==Key.I)InfoClicked(sender,e);
     }
     private void ExportJpegClicked(object sender,RoutedEventArgs e)=>Export(ExportFormat.Jpeg);
+    private void ExportHdrJpegClicked(object sender,RoutedEventArgs e)=>Export(ExportFormat.HdrJpeg);
+    private void ExportSdrJpegClicked(object sender,RoutedEventArgs e)=>Export(ExportFormat.SdrJpeg);
     private void ExportPngClicked(object sender,RoutedEventArgs e)=>Export(ExportFormat.Png);
     private void ExportDngClicked(object sender,RoutedEventArgs e)=>Export(ExportFormat.RenderedDng);
     private void ExportOriginalSizeClicked(object sender,RoutedEventArgs e) { exportLongEdge=null; RefreshExportSizeMenu(); }
@@ -178,7 +180,7 @@ public partial class MainWindow
         if(AIBlocksOutput || !exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null || engine==null)return;
         var suffix=format.Suffix();
         var dialog=new SaveFileDialog{Title=Loc.Text("导出"),Filter=format switch {
-                ExportFormat.Jpeg => format.Title()+"|*.jpg;*.jpeg",
+                ExportFormat.Jpeg or ExportFormat.HdrJpeg or ExportFormat.SdrJpeg => format.Title()+"|*.jpg;*.jpeg",
                 ExportFormat.Png => format.Title()+"|*.png",
                 ExportFormat.RenderedDng => Loc.Text("DNG · 渲染型")+"|*.dng",
                 _ => throw new ArgumentOutOfRangeException(nameof(format))
@@ -212,7 +214,7 @@ public partial class MainWindow
                 SetStatus(() => Loc.Text("不能覆盖原始文件。"), true);
                 return;
             }
-            await Task.Run(()=>engine.Render(input,adjustment,film,0,false,temp,longEdge:size));
+            await Task.Run(()=>engine.Render(input,adjustment,film,0,false,temp,longEdge:size,formatOverride:format));
             if (WindowsFileIdentity.IsSameFile(sourceLock, destination))
             {
                 SetStatus(() => Loc.Text("不能覆盖原始文件。"), true);

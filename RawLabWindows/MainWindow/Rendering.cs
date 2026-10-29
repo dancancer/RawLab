@@ -23,9 +23,11 @@ public partial class MainWindow
         {
             path=Collection.CanonicalPath(Path.GetFullPath(path));
             if(!LibraryEntry.IsImage(path))throw new InvalidOperationException(Loc.Text("请选择支持的照片文件。"));
+            HDRSourceInfo? openedHDR = null;
+            if (PhotoInput.IsHDRContainer(path)) PhotoInput.ProbeHDR(path, out openedHDR);
             CancelViewingInput();
             if(!ResolveTransformDraft() || !SaveEdits())return;
-            ResetAITask();RestoreEdits(path);
+            ResetAITask();RestoreEdits(path); hdrSource = openedHDR;
             CancelViewingInput();view.SourceChanged();neutralResult=null;
             lastExportedPath=null;ExportRevealButton.Visibility=Visibility.Collapsed;
             if(file==null){AdjustmentPanel.Visibility=AdjustmentSplitter.Visibility=Visibility.Visible;DockRow.MinHeight=216;DockRow.Height=new(dockHeight);SplitterRow.Height=new(6);}
@@ -130,7 +132,7 @@ public partial class MainWindow
         var proxy=interacting || initialPreview;
         var previewSettings=settings.Clone();previewSettings.Geometry=PreviewGeometry;previewSettings.Lens=PreviewLens;
         if(CurrentViewSource is not {} source) {exactReady=false;renderFailed=true;SetStatus(()=>Loc.Text("预览未更新"),true);UpdateBusy();return;}
-        var referenceKey=new NeutralReferenceKey(source,PhotoInput.IsRaster(file),previewSettings.Processing,previewSettings.Geometry,previewSettings.Lens,RenderEdge(proxy));
+        var referenceKey=new NeutralReferenceKey(source,PhotoInput.IsRaster(file),previewSettings.Processing,previewSettings.Geometry,previewSettings.Lens,RenderEdge(proxy),previewSettings.IsHDREditing);
         if(acceptedReference!=referenceKey){neutralResult=null;acceptedReference=null;RefreshViewingFrames();}
         scheduler.Submit(new(file,previewSettings,lut,RenderEdge(proxy),proxy,GpuMode.SelectedIndex==0 ? 1 : GpuMode.SelectedIndex==1 ? 0 : 2,view.NeedsReference,clipping,initialPreview,transformGeneration,openRevision,source,settings.AIDenoiseEnabled ? aiJob.Identity : null));
         exactReady=false; SetStatus(() => interacting ? Loc.Text("正在生成交互预览…") : Loc.Text("正在显影…")); UpdateBusy();
@@ -168,7 +170,7 @@ public partial class MainWindow
             else if(rendered!=null && neutral!=null)
             {
                 if(work.Settings.AIDenoiseEnabled) { aiNotReadyIdentity=null;aiNotReadyAttempts=0; }
-                result=rendered;acceptedAfter=new(work.Source,PhotoInput.IsRaster(work.File),work.Settings.Processing,work.Settings.Geometry,work.Settings.Lens,work.Edge);
+                result=rendered;acceptedAfter=new(work.Source,PhotoInput.IsRaster(work.File),work.Settings.Processing,work.Settings.Geometry,work.Settings.Lens,work.Edge,work.Settings.IsHDREditing);
                 if(!transform.Active)settings.ResolveWhiteBalance(rendered.WhiteBalance);
                 hslAcceptedWork=work;
                 var acceptedSettings=work.Settings.Clone();acceptedSettings.ResolveWhiteBalance(rendered.WhiteBalance);hslAcceptedSettings=acceptedSettings.Capture();
@@ -180,7 +182,7 @@ public partial class MainWindow
                 renderedGpuMode=work.GpuMode;
                 ResultCanvas.SetImage(rendered.Image,rendered.Clipping);
                 if(work.Compare) {
-                    neutralResult=neutral;neutralRevision=openRevision;acceptedReference=new(work.Source,PhotoInput.IsRaster(work.File),work.Settings.Processing,work.Settings.Geometry,work.Settings.Lens,work.Edge);
+                    neutralResult=neutral;neutralRevision=openRevision;acceptedReference=new(work.Source,PhotoInput.IsRaster(work.File),work.Settings.Processing,work.Settings.Geometry,work.Settings.Lens,work.Edge,work.Settings.IsHDREditing);
                 }
                 RefreshViewingFrames();
                 RefreshRenderLabels();
@@ -217,7 +219,7 @@ public partial class MainWindow
     private void ResetAllClicked(object sender,RoutedEventArgs e) => RequestReset(new(EditorResetKind.All));
     private async void AutoExposureClicked(object sender,RoutedEventArgs e)
     {
-        if(file==null || result==null || AIBlocksOutput || autoExposing || exporting || transform.Active)return;
+        if(file==null || result==null || settings.IsHDREditing || AIBlocksOutput || autoExposing || exporting || transform.Active)return;
         var path=file;var snapshot=settings.Clone();var revision=editRevision;var photoRevision=openRevision;
         var aiBackend=RequestedAIBackend;
         autoExposing=true;RefreshControls();

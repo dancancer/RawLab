@@ -36,7 +36,7 @@ public partial class MainWindow
                         if (confirmation.Choice == PresetConfirmationChoice.Confirm) { presetStore.Overwrite(duplicate.Existing, payload); return null; }
                         return confirmation.Choice == PresetConfirmationChoice.SaveAs ? Loc.Text("请输入不同的预设名称。") : Loc.Text("同名预设已存在，请使用其他名称。");
                     }
-                });
+                },settings.IsHDREditing);
                 editor.ShowDialog();
             } else if (library.ApplyRequested is { } preset) {
                 if (!PrepareAdjustmentCommand()) return;

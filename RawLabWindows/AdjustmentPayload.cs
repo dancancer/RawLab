@@ -73,12 +73,15 @@ public enum AdjustmentField
     WhitePoint,
     Vibrance,
     GradingShadows, GradingMidtones, GradingHighlights,
-    Curve, Clarity, Dehaze
+    Curve, Clarity, Dehaze, HdrTemperature, HdrTint
 }
 
 public static class AdjustmentFields
 {
-    public static readonly IReadOnlyList<AdjustmentField> All = Array.AsReadOnly(Enum.GetValues<AdjustmentField>());
+    // Keep the legacy catalog/index contract stable; HDR-only fields are
+    // addressable through HDRSupported but are not legacy "common" fields.
+    public static readonly IReadOnlyList<AdjustmentField> All = Array.AsReadOnly(
+        Enum.GetValues<AdjustmentField>().Where(field => !field.IsHDRRelative()).ToArray());
     private static readonly string[] ids = [
         "looks.reference",
         "looks.strength",
@@ -147,7 +150,7 @@ public static class AdjustmentFields
         "tone.white_point",
         "color.vibrance",
         "color.grading.shadows", "color.grading.midtones", "color.grading.highlights",
-        "light.curve", "effects.clarity", "effects.dehaze"
+        "light.curve", "effects.clarity", "effects.dehaze", "hdr.relative_temperature", "hdr.relative_tint"
     ];
     public static string ID(this AdjustmentField field) => ids[(int)field];
     public static string Group(this AdjustmentField field) => field is AdjustmentField.BlackPoint or AdjustmentField.WhitePoint ? "light" : field.ID().Split('.')[0];
@@ -159,7 +162,18 @@ public static class AdjustmentFields
         ? (int)field - (int)AdjustmentField.HslHueRed : null;
     public static AdjustmentField Parse(string id) => Array.IndexOf(ids, id) is var index && index >= 0
         ? (AdjustmentField)index : throw new AdjustmentTransferException(AdjustmentFailure.InvalidPayload, id);
-    public static readonly IReadOnlySet<AdjustmentField> Common = All.Where(f => f.Group() != "geometry").ToHashSet();
+    public static bool IsHDRRelative(this AdjustmentField field) => field is AdjustmentField.HdrTemperature or AdjustmentField.HdrTint;
+    public static readonly IReadOnlySet<AdjustmentField> Common = All.Where(f => f.Group() != "geometry" && !f.IsHDRRelative()).ToHashSet();
+    public static readonly IReadOnlySet<AdjustmentField> HDRCommon = new HashSet<AdjustmentField> {
+        AdjustmentField.Exposure, AdjustmentField.Contrast, AdjustmentField.Highlights, AdjustmentField.Shadows,
+        AdjustmentField.Saturation, AdjustmentField.HdrTemperature, AdjustmentField.HdrTint
+    };
+    public static readonly IReadOnlySet<AdjustmentField> HDRGeometry = new HashSet<AdjustmentField> {
+        AdjustmentField.CropX, AdjustmentField.CropY, AdjustmentField.CropWidth, AdjustmentField.CropHeight,
+        AdjustmentField.QuarterTurns, AdjustmentField.FlipHorizontal, AdjustmentField.FlipVertical,
+        AdjustmentField.Straighten, AdjustmentField.PerspectiveHorizontal, AdjustmentField.PerspectiveVertical
+    };
+    public static IReadOnlySet<AdjustmentField> HDRSupported => HDRCommon.Concat(HDRGeometry).ToHashSet();
     public static readonly IReadOnlySet<AdjustmentField> WhiteBalance = new HashSet<AdjustmentField> { AdjustmentField.WhiteBalanceMode, AdjustmentField.Temperature, AdjustmentField.Tint };
     public static readonly IReadOnlySet<AdjustmentField> Lens = new HashSet<AdjustmentField> { AdjustmentField.LensDistortion, AdjustmentField.LensTCA, AdjustmentField.LensAutoCrop, AdjustmentField.LensProfile };
     public static readonly IReadOnlySet<AdjustmentField> Denoise = new HashSet<AdjustmentField> { AdjustmentField.RawDenoise, AdjustmentField.PostRGBDenoise, AdjustmentField.ChromaDenoise, AdjustmentField.WaveletDenoise };
@@ -176,6 +190,7 @@ public static class AdjustmentFields
         AdjustmentField.Strength or AdjustmentField.Contrast or AdjustmentField.Saturation or AdjustmentField.Sharpening => (0,2),
         AdjustmentField.Exposure => (-20,20),
         AdjustmentField.Highlights or AdjustmentField.Shadows or AdjustmentField.SCurve or AdjustmentField.PerspectiveHorizontal or AdjustmentField.PerspectiveVertical => (-1,1),
+        AdjustmentField.HdrTemperature => (2000,50000), AdjustmentField.HdrTint => (-150,150),
         AdjustmentField.VignetteAmount or AdjustmentField.VignetteRoundness or AdjustmentField.BlackPoint or AdjustmentField.WhitePoint or AdjustmentField.Vibrance or AdjustmentField.Clarity or AdjustmentField.Dehaze => (-100,100),
         AdjustmentField.VignetteMidpoint or AdjustmentField.VignetteFeather or AdjustmentField.VignetteHighlights or AdjustmentField.GrainAmount or AdjustmentField.GrainSize or AdjustmentField.GrainRoughness => (0,100),
         AdjustmentField.QuarterTurns => (0,3),
@@ -188,7 +203,11 @@ public enum AdjustmentFailure { InvalidPayload, UnsupportedVersion, EmptyScope, 
 public sealed class AdjustmentTransferException(AdjustmentFailure failure, string detail = "") : IOException($"{failure}: {detail}")
 { public AdjustmentFailure Failure { get; } = failure; }
 public sealed record AdjustmentRecipeContext(string ID, double Strength, int SettingsVersion = 3);
-public sealed record AdjustmentSource(string Identifier, bool IsRaw, int ProcessingVersion, AdjustmentRecipeContext? Recipe = null);
+public sealed record AdjustmentSource(string Identifier, bool IsRaw, int ProcessingVersion, AdjustmentRecipeContext? Recipe = null,
+    int? HdrProcessingVersion = null)
+{
+    public bool IsHDR => HdrProcessingVersion is not null;
+}
 public sealed record AdjustmentScope(string Kind, IReadOnlySet<AdjustmentField>? Fields = null)
 {
     public static AdjustmentScope All => new("all");
@@ -207,6 +226,7 @@ public sealed class AdjustmentPayload
     public JsonElement? this[AdjustmentField field] => Values.TryGetValue(field, out var value) ? value : null;
     public AdjustmentPayload(AdjustmentSource source, IDictionary<AdjustmentField, JsonElement> values, int payloadVersion = 1, int scopeVersion = 1)
     {
+        if (source.IsHDR && payloadVersion == 1 && scopeVersion == 1) { payloadVersion = 2; scopeVersion = 2; }
         Source = source; PayloadVersion = payloadVersion; ScopeVersion = scopeVersion;
         Values = new ReadOnlyDictionary<AdjustmentField, JsonElement>(values.ToDictionary(p => p.Key, p => p.Value.Clone()));
         Validate();
@@ -227,18 +247,25 @@ public sealed class AdjustmentPayload
             JsonValueKind.Null or JsonValueKind.True or JsonValueKind.False => true, _ => false
         };
     }
-    public string ToJson() => JsonSerializer.Serialize(new {
-        payload_version = PayloadVersion, scope_version = ScopeVersion,
-        source = new { identifier = Source.Identifier, is_raw = Source.IsRaw, processing_version = Source.ProcessingVersion,
-            recipe = Source.Recipe is {} recipe ? new { id = recipe.ID, strength = recipe.Strength, settings_version = recipe.SettingsVersion } : null },
-        values = Values.ToDictionary(p => p.Key.ID(), p => p.Value)
-    });
+    public string ToJson()
+    {
+        var source = new Dictionary<string, object?> {
+            ["identifier"] = Source.Identifier, ["is_raw"] = Source.IsRaw,
+            ["processing_version"] = Source.ProcessingVersion,
+            ["recipe"] = Source.Recipe is { } recipe ? new { id = recipe.ID, strength = recipe.Strength, settings_version = recipe.SettingsVersion } : null
+        };
+        if (Source.HdrProcessingVersion is { } hdrVersion) source["hdr_processing_version"] = hdrVersion;
+        return JsonSerializer.Serialize(new {
+            payload_version = PayloadVersion, scope_version = ScopeVersion, source,
+            values = Values.ToDictionary(p => p.Key.ID(), p => p.Value)
+        });
+    }
     public static AdjustmentPayload Parse(string json)
     {
         try {
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement; Keys(root, "payload_version", "scope_version", "source", "values");
-            var source = root.GetProperty("source"); Keys(source, "identifier", "is_raw", "processing_version", "recipe");
+            var source = root.GetProperty("source"); Keys(source, "identifier", "is_raw", "processing_version", "recipe", "hdr_processing_version");
             AdjustmentRecipeContext? recipe = null;
             if (source.TryGetProperty("recipe", out var r) && r.ValueKind != JsonValueKind.Null) {
                 Keys(r,"id","strength","settings_version"); recipe = new(r.GetProperty("id").GetString()!,r.GetProperty("strength").GetDouble(),r.GetProperty("settings_version").GetInt32());
@@ -246,7 +273,8 @@ public sealed class AdjustmentPayload
             var values = new Dictionary<AdjustmentField, JsonElement>();
             foreach (var property in root.GetProperty("values").EnumerateObject())
                 if (!values.TryAdd(AdjustmentFields.Parse(property.Name), property.Value)) throw Invalid("duplicate field");
-            return new(new(source.GetProperty("identifier").GetString()!,source.GetProperty("is_raw").GetBoolean(),source.GetProperty("processing_version").GetInt32(),recipe),
+            var hdrVersion = source.TryGetProperty("hdr_processing_version", out var hv) && hv.ValueKind != JsonValueKind.Null ? hv.GetInt32() : (int?)null;
+            return new(new(source.GetProperty("identifier").GetString()!,source.GetProperty("is_raw").GetBoolean(),source.GetProperty("processing_version").GetInt32(),recipe,hdrVersion),
                 values,root.GetProperty("payload_version").GetInt32(),root.GetProperty("scope_version").GetInt32());
         } catch (AdjustmentTransferException) { throw; }
           catch (Exception error) when (error is JsonException or InvalidOperationException or KeyNotFoundException or FormatException) { throw Invalid("JSON"); }
@@ -259,14 +287,18 @@ public sealed class AdjustmentPayload
     }
     public void Validate()
     {
-        if (PayloadVersion!=1 || ScopeVersion!=1) throw new AdjustmentTransferException(AdjustmentFailure.UnsupportedVersion);
+        if (Source.IsHDR ? PayloadVersion != 2 || ScopeVersion != 2 || Source.HdrProcessingVersion != 1 : PayloadVersion != 1 || ScopeVersion != 1)
+            throw new AdjustmentTransferException(AdjustmentFailure.UnsupportedVersion);
         if (Values.Count==0) throw new AdjustmentTransferException(AdjustmentFailure.EmptyScope);
-        if (string.IsNullOrEmpty(Source.Identifier) || Source.ProcessingVersion is not (1 or 2)) throw Invalid("source");
+        if (string.IsNullOrEmpty(Source.Identifier) || Source.ProcessingVersion is not (1 or 2) ||
+            Source.IsHDR && (Source.IsRaw || Source.Recipe != null || Source.HdrProcessingVersion != 1)) throw Invalid("source");
+        if (!Source.IsHDR && Values.Keys.Any(field => field.IsHDRRelative())) throw Invalid("hdr context");
+        if (Source.IsHDR && Values.Keys.Any(field => !AdjustmentFields.HDRSupported.Contains(field))) throw Invalid("hdr context");
         if (Source.Recipe is {} recipe) {
             if (string.IsNullOrEmpty(recipe.ID) || !double.IsFinite(recipe.Strength) || recipe.Strength is <0 or >2 || recipe.SettingsVersion is not (2 or 3 or 4)) throw Invalid("recipe");
             if (Number(this[AdjustmentField.Strength]) is {} strength && strength!=recipe.Strength) throw Invalid("recipe.strength");
         }
-        foreach (var (field,value) in Values) if (!AdjustmentFields.All.Contains(field) || !Valid(field,value)) throw Invalid(field.ToString());
+        foreach (var (field,value) in Values) if (!Enum.IsDefined(field) || !Valid(field,value)) throw Invalid(field.ToString());
         if (this[AdjustmentField.Look] is {} look && Text(look.GetProperty("kind"))=="recipe" && Text(look.GetProperty("id"))!=Source.Recipe?.ID) throw Invalid("recipe.look");
         var mode = Text(this[AdjustmentField.WhiteBalanceMode]);
         if (mode!=null && (Source.IsRaw ? mode=="none" : mode!="none")) throw Invalid("white_balance.mode");
@@ -298,7 +330,8 @@ public sealed class AdjustmentPayload
             case AdjustmentField.ExposureMode: return Text(value) is "scene" or "preview" or "sensor";
             case AdjustmentField.WhiteBalanceMode: return Text(value) is "camera" or "temperature" or "none";
             case AdjustmentField.Temperature: return Null(value) || number is >=2000 and <=50000;
-            case AdjustmentField.Tint: return Null(value) || number is >=-150 and <=150;
+            case AdjustmentField.Tint: case AdjustmentField.HdrTint: return Null(value) || number is >=-150 and <=150;
+            case AdjustmentField.HdrTemperature: return Null(value) || number is >=2000 and <=50000;
             case AdjustmentField.LensProfile: return Null(value) || Text(value) is {Length:>0};
             case AdjustmentField.RawDenoise: return number is 0 or 1 or 2;
             case AdjustmentField.ChromaDenoise: return Null(value) || number is 0 or 1 or 2;

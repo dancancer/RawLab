@@ -98,6 +98,7 @@ public partial class MainWindow : Window
             AutomationProperties.SetAutomationId(control,control.Name);
         AutomationProperties.SetAutomationId(ValueSlider,"ParameterValueSlider");
         AutomationProperties.SetAutomationId(ValueText,"ParameterValueText");
+        InitializeHDRPresentation();
         if(Application.Current!=null)EditorAppearance.Apply(Application.Current.Resources);
         void RefreshLanguage()
         {

@@ -213,6 +213,8 @@ public sealed partial class PhotoCanvas : FrameworkElement
 
 public sealed class HistogramView : FrameworkElement
 {
+    internal uint[]? HDRBins { get; set; }
+    internal float HDRHeadroom { get; set; } = 1;
     private static readonly DependencyProperty OutlineBrushProperty=DependencyProperty.Register("OutlineBrush",typeof(Brush),typeof(HistogramView),new FrameworkPropertyMetadata(Brushes.Transparent,FrameworkPropertyMetadataOptions.AffectsRender));
     public HistogramView()=>SetResourceReference(OutlineBrushProperty,"HistogramOutline");
     // 高度不足时由 Grid 收缩图形区域，给下方统计文字保留完整行。
@@ -220,6 +222,17 @@ public sealed class HistogramView : FrameworkElement
     public uint[]? Bins { get; set; }
     protected override void OnRender(DrawingContext dc)
     {
+        if(HDRBins is {Length:256} hdr) {
+            var maximum=Math.Max(1,hdr.Max());
+            for(var i=0;i<256;i++)dc.DrawRectangle(Brushes.LightGray,null,
+                new Rect(i*ActualWidth/256,ActualHeight*(1-hdr[i]/(double)maximum),ActualWidth/256+.2,ActualHeight*hdr[i]/maximum));
+            var reference=ActualWidth/2;var screen=Math.Clamp((Math.Log2(Math.Max(1,HDRHeadroom))+8)/16*ActualWidth,0,ActualWidth);
+            dc.DrawLine(new Pen(Brushes.Black,5),new Point(reference,0),new Point(reference,ActualHeight));
+            dc.DrawLine(new Pen(Brushes.White,2),new Point(reference,0),new Point(reference,ActualHeight));
+            dc.DrawLine(new Pen(Brushes.Black,5),new Point(screen,0),new Point(screen,ActualHeight));
+            dc.DrawLine(new Pen(Brushes.Yellow,2){DashStyle=DashStyles.Dash},new Point(screen,0),new Point(screen,ActualHeight));
+            return;
+        }
         if(Bins==null)return;
         var peak=Math.Max(1,Bins.Max());
         // Shared linear count axis, additive RGB/CMY/gray overlap colors.
