@@ -115,8 +115,11 @@ struct FloatingHistogram: View {
     let showingBefore: Bool
     let availableSize: CGSize
     @Binding var expanded: Bool
+    var hdr: HDRStatistics? = nil
+    var headroom: Double = 1
 
     private var source: String { L10n.text(showingBefore ? "调整前" : "调整后") }
+    private var title: String { L10n.text(hdr == nil ? "RGB 直方图" : "HDR 亮度直方图") }
     private var usesPopover: Bool { dynamicTypeSize.isAccessibilitySize || availableSize.height < 160 }
     private var inlineExpanded: Bool { expanded && !usesPopover }
 
@@ -136,9 +139,9 @@ struct FloatingHistogram: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(L10n.text("RGB 直方图"))
+            .accessibilityLabel(title)
             .accessibilityValue(([expanded ? L10n.text("已展开") : L10n.text("已收起"), source]
-                + (histogram == nil ? [L10n.text("统计不可用")] : [])).joined(separator: ", "))
+                + (histogram == nil && hdr == nil ? [L10n.text("统计不可用")] : [])).joined(separator: ", "))
             .accessibilityHint(L10n.text(expanded ? "收起直方图" : "展开直方图"))
             .accessibilityIdentifier("editor.histogram")
             if inlineExpanded {
@@ -161,7 +164,7 @@ struct FloatingHistogram: View {
                 .accessibilityIdentifier("editor.histogram.close")
                 ScrollView {
                     VStack(spacing: 12) {
-                        Text(L10n.text("RGB 直方图")).font(.headline)
+                        Text(title).font(.headline)
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityAddTraits(.isHeader)
                         contents(graphHeight: 80)
@@ -181,7 +184,11 @@ struct FloatingHistogram: View {
         VStack(spacing: 6) {
             Text(source).font(.caption).fixedSize(horizontal: false, vertical: true)
             Group {
-                if let histogram {
+                if let hdr {
+                    HDRLuminanceHistogram(statistics:hdr,headroom:headroom).frame(height:graphHeight)
+                    Text(L10n.format("参考白以上 %@",String(format:"%.2f%%",Double(hdr.aboveWhite)*100/Double(hdr.pixels))))
+                        .font(.caption).monospacedDigit()
+                } else if let histogram {
                     HistogramView(histogram: histogram).frame(height: graphHeight)
                 } else {
                     Text(L10n.text("统计不可用")).font(.caption)
@@ -192,7 +199,7 @@ struct FloatingHistogram: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(source)
-            .accessibilityValue(histogram == nil ? L10n.text("统计不可用") : "R, G, B")
+            .accessibilityValue(hdr != nil ? L10n.text("HDR 亮度直方图") : (histogram == nil ? L10n.text("统计不可用") : "R, G, B"))
             .accessibilityIdentifier("editor.histogram.plot")
         }
     }

@@ -31,21 +31,21 @@ func checkBatchSelection(_ root: URL) throws {
     var drafts: Set<String> = [identities[1].key]
     let active: (String) throws -> Void = { key in if drafts.contains(key) { throw CocoaError(.userCancelled) } }
     let look: (RawSettings) throws -> (URL?, String?) = { _ in (nil, nil) }
-    let blocked = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: 2048, validateActive: active, resolveLook: look)
+    let blocked = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: 2048, probeHDR: { _ in false }, validateActive: active, resolveLook: look)
     try check(!blocked.ready && blocked.rows[1].error != nil, "export preflight includes the active dirty target")
-    let skipped = collection.prepareExport(store: store, skipping: drafts, format: .jpeg, longEdge: 2048, validateActive: active, resolveLook: look)
+    let skipped = collection.prepareExport(store: store, skipping: drafts, format: .jpeg, longEdge: 2048, probeHDR: { _ in false }, validateActive: active, resolveLook: look)
     try check(skipped.ready && skipped.rows.map(\.id) == [identities[0].key, identities[2].key] && collection.selection.selected.count == 3,
               "operation skips leave collection selection and the draft untouched")
-    let allSkipped = collection.prepareExport(store: store, skipping: Set(identities.map(\.key)), format: .jpeg, longEdge: nil, validateActive: active, resolveLook: look)
+    let allSkipped = collection.prepareExport(store: store, skipping: Set(identities.map(\.key)), format: .jpeg, longEdge: nil, probeHDR: { _ in false }, validateActive: active, resolveLook: look)
     try check(!allSkipped.ready && rejected { _ = try collection.freeze(allSkipped, store: store, journal: journal, validateActive: active) }, "all skipped cannot create an empty task")
     drafts = []
-    let review = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: 2048, validateActive: active, resolveLook: look)
+    let review = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: 2048, probeHDR: { _ in false }, validateActive: active, resolveLook: look)
     try check(review.ready && review.rows.map { $0.settings?.exposure } == [0.5, 1, 1.5], "confirmation displays each photo's final committed settings")
     var changed = store.state(for: identities[1])!.settings
     changed.exposure = 1.2
     try store.save(identities[1], state: PhotoEditState(settings: changed))
     try check(rejected { _ = try collection.freeze(review, store: store, journal: journal, validateActive: active) }, "late saved edits invalidate a prior confirmation")
-    let fresh = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: 2048, validateActive: active, resolveLook: look)
+    let fresh = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: 2048, probeHDR: { _ in false }, validateActive: active, resolveLook: look)
     drafts.insert(identities[2].key)
     try check(rejected { _ = try collection.freeze(fresh, store: store, journal: journal, validateActive: active) }, "late unsaved drafts block freezing")
     drafts = []
@@ -68,17 +68,17 @@ func checkBatchSelection(_ root: URL) throws {
     changed.lutID = "custom-look"
     try store.save(identities[1], state: PhotoEditState(settings: changed))
     let withLook: (RawSettings) throws -> (URL?, String?) = { ($0.hasLook ? lookFile : nil, "Own look") }
-    let lookReview = collection.prepareExport(store: store, skipping: [], format: .renderedDNG, longEdge: nil, validateActive: active, resolveLook: withLook)
+    let lookReview = collection.prepareExport(store: store, skipping: [], format: .renderedDNG, longEdge: nil, probeHDR: { _ in false }, validateActive: active, resolveLook: withLook)
     try Data("look-two".utf8).write(to: lookFile)
     try check(rejected { _ = try collection.freeze(lookReview, store: store, journal: journal, validateActive: active) }, "changed look invalidates export confirmation")
-    let stableLook = collection.prepareExport(store: store, skipping: [], format: .renderedDNG, longEdge: nil, validateActive: active, resolveLook: withLook)
+    let stableLook = collection.prepareExport(store: store, skipping: [], format: .renderedDNG, longEdge: nil, probeHDR: { _ in false }, validateActive: active, resolveLook: withLook)
     let looked = try collection.freeze(stableLook, store: store, journal: journal, validateActive: active)
     try FileManager.default.removeItem(at: lookFile)
     try looked.targets[1].frozen!.verifyFiles(input: looked.targets[1].sourceURL)
     try check(looked.targets[1].frozen?.lookURL != lookFile && looked.outputFormat == .renderedDNG, "task-owned look survives library deletion and retains output settings")
     let lost = collection.photos[identities[0].key]!.photo.file!
     try lost.withReadAccess { try FileManager.default.removeItem(at: $0) }
-    let missing = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: nil, validateActive: active, resolveLook: withLook)
+    let missing = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: nil, probeHDR: { _ in false }, validateActive: active, resolveLook: withLook)
     try check(missing.rows[0].error != nil && collection.selection.ordered.count == 3, "missing source is marked per photo without substitution or collection loss")
     collection.refreshValidation()
     let deadline = Date().addingTimeInterval(5)

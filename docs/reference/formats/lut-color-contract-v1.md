@@ -161,7 +161,11 @@ The original formal contract is never rewritten to accommodate another source.
 The independent preview session uses C5 processing, as-shot white balance, scene
 exposure normalization, EV 0, LUT strength 100%, no additional adjustments or
 geometry, and a 512-pixel-long-edge sRGB buffer. Raster inputs use their existing
-rendering. These conditions are displayed so they are not confused with the
+rendering. On Mac/iOS, an HDR original used as a source photo is decoded with
+PREVIEW and a 512-pixel long-edge limit. The canonical SDR rendition is converted
+to opaque display-sRGB RGBA8; the temporary HDR float pair is then released.
+It remains a display input, with scene/Log candidates excluded. These conditions
+are displayed so they are not confused with the
 editor's current edits. Source/LUT copies belong to the preview worker; changing
 sources or closing the dialog discards stale results and releases them after
 native work finishes. Previewing does not modify the managed library.

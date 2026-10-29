@@ -42,6 +42,13 @@ struct BatchExportTests {
         // 目录里"关闭"是关闭按钮（Close / Schließen），关着的开关要用"停用"（Off / Aus），与 Mac 一致
         check(value("降噪") == L10n.text("停用") && value("畸变矫正") == L10n.text("停用"),
               "switched-off settings read Off rather than the Close button's label")
+        var hdr=RawSettings.default; hdr.exposure = -2; hdr.hdr=HDRSettings(); hdr.hdr?.exposure=1
+        hdr.hdr?.temperature=8000
+        let hdrRows=BatchSettingsSummary.headline(hdr)+BatchSettingsSummary.details(hdr)
+        check(hdrRows.first { $0.title==L10n.text("曝光") }?.value==AdjustmentKind.exposure.displayValue(1),
+            "HDR batch summary displays the active exposure instead of dormant SDR settings")
+        check(!hdrRows.contains { $0.title=="HSL" || $0.title==L10n.text("降噪") },
+            "HDR batch summary excludes inactive unsupported tools")
     }
 
     static func main() throws {
@@ -54,6 +61,9 @@ struct BatchExportTests {
         check(ExportSize.isValid(nil), "native export size is valid")
         check(ExportSize.presets == [2048, 3000, 4096], "standard export sizes are available")
         checkSettingsSummary()
+        check(BatchOutputFormat.hdrJPEG.publishesToPhotos && BatchOutputFormat.jpeg.publishesToPhotos
+              && !BatchOutputFormat.renderedDNG.publishesToPhotos,
+              "HDR and SDR JPEG publication offer Photos confirmation; rendered DNG uses file reconciliation")
         check(ExportSize.isValid(1) && ExportSize.isValid(65535) && !ExportSize.isValid(0) && !ExportSize.isValid(65536),
               "custom export size enforces the 1-65535 range")
         let root = FileManager.default.temporaryDirectory

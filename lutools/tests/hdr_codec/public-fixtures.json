@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "usage": "Read-only external fixture references; image files are not vendored. Preserve attribution and source bytes.",
+  "fixtures": [
+    {
+      "url": "https://raw.githubusercontent.com/MishaalRahmanGH/Ultra_HDR_Samples/de109721ca479b2b0f31cc709e70b614531b413f/Originals/Ultra_HDR_Samples_Originals_01.jpg",
+      "source_page": "https://github.com/MishaalRahmanGH/Ultra_HDR_Samples/tree/de109721ca479b2b0f31cc709e70b614531b413f/Originals",
+      "author": "Mishaal Rahman",
+      "license": "CC-BY-4.0",
+      "license_url": "https://github.com/MishaalRahmanGH/Ultra_HDR_Samples/blob/de109721ca479b2b0f31cc709e70b614531b413f/LICENSE",
+      "capture_claim": "Pixel 6 Pro / Android 14 QPR1 Beta 2 / Google Camera 9.1.098",
+      "sha256": "b52c5f4b9f7c8e831ebe78c3338d6ed1b9a4d3aa4b6c30be7a1851294e094403",
+      "bytes": 2746718,
+      "modified": false,
+      "protocol": "ultra_hdr_xmp",
+      "width": 4080,
+      "height": 3072,
+      "filename": "pixel6pro-Ultra_HDR_Samples_Originals_01.jpg",
+      "id": "pixel6pro-Ultra_HDR_Samples_Originals_01"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/MishaalRahmanGH/Ultra_HDR_Samples/de109721ca479b2b0f31cc709e70b614531b413f/Originals/Ultra_HDR_Samples_Originals_03.jpg",
+      "source_page": "https://github.com/MishaalRahmanGH/Ultra_HDR_Samples/tree/de109721ca479b2b0f31cc709e70b614531b413f/Originals",
+      "author": "Mishaal Rahman",
+      "license": "CC-BY-4.0",
+      "license_url": "https://github.com/MishaalRahmanGH/Ultra_HDR_Samples/blob/de109721ca479b2b0f31cc709e70b614531b413f/LICENSE",
+      "capture_claim": "Pixel 6 Pro / Android 14 QPR1 Beta 2 / Google Camera 9.1.098",
+      "sha256": "6fb57153c98cebd36a2571f309b102350e5d25c732e3fd4c24278fdc3ebf1fcd",
+      "bytes": 7110323,
+      "modified": false,
+      "protocol": "ultra_hdr_xmp",
+      "width": 4080,
+      "height": 3072,
+      "filename": "pixel6pro-Ultra_HDR_Samples_Originals_03.jpg",
+      "id": "pixel6pro-Ultra_HDR_Samples_Originals_03"
+    },
+    {
+      "url": "https://upload.wikimedia.org/wikipedia/commons/d/db/HeySong_Sarsaparilla_and_noodles_at_886_restaurant_1.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:HeySong_Sarsaparilla_and_noodles_at_886_restaurant_1.jpg",
+      "author": "Qzekrom",
+      "license": "CC-BY-SA-4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "capture_claim": "Google Pixel 9 / HDR+ 1.0.888945374zd",
+      "sha256": "7488c2623336395aba631feeb1fc59a7d3f3fc7b3bc116556f6805e7fff78a9b",
+      "bytes": 2064177,
+      "modified": false,
+      "protocol": "ultra_hdr_xmp",
+      "width": 4080,
+      "height": 3072,
+      "filename": "pixel9-HeySong_Sarsaparilla_and_noodles_at_886_restaurant_1.jpg",
+      "id": "pixel9-HeySong_Sarsaparilla_and_noodles_at_886_restaurant_1"
+    }
+  ]
+}

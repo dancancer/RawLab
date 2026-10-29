@@ -7,6 +7,7 @@ struct IOSAdjustmentScopeEditor: View {
     var fieldIdentifier = "adjustment"
     var titleKey = "复制范围"
     var sourceName: String?
+    var allowed = AdjustmentTransferField.legacyFields
 
     var body: some View {
         Section {
@@ -22,12 +23,12 @@ struct IOSAdjustmentScopeEditor: View {
             Section {
                 Text(L10n.format("已选 %@ 项", String(fields.count)))
                 Button(L10n.text("清空选择")) { fields.removeAll() }.accessibilityIdentifier("\(identifier).clear")
-                ForEach(["looks", "light", "color", "effects", "detail", "geometry"], id: \.self) { group in
+                ForEach(["looks", "light", "color", "effects", "detail", "geometry"].filter { group in allowed.contains { $0.group==group } }, id: \.self) { group in
                     DisclosureGroup {
-                        let members = AdjustmentTransferField.allCases.filter { $0.group == group }
+                        let members = AdjustmentTransferField.allCases.filter { $0.group == group && allowed.contains($0) }
                         Toggle(L10n.text("选择此组"), isOn: groupBinding(members))
                         ForEach(members.filter { $0.hslLocation == nil }, id: \.rawValue) { fieldToggle($0) }
-                        if group == "color" {
+                        if members.contains(where:{ $0.hslLocation != nil }) {
                             ForEach(HSLAxis.allCases) { axis in
                                 DisclosureGroup {
                                     let channelFields = members.filter { $0.hslLocation?.axis == axis.rawValue }

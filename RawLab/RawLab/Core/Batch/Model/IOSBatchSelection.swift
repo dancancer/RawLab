@@ -85,6 +85,7 @@ final class IOSBatchSelection: ObservableObject {
     }
 
     func prepareExport(store: EditPersistence, skipping: Set<String>, format: BatchOutputFormat, longEdge: Int?,
+                       probeHDR: (URL) throws -> Bool,
                        validateActive: (String) throws -> Void,
                        resolveLook: (RawSettings) throws -> (URL?, String?)) -> IOSCollectionExportReview {
         let selected = selection.targets()
@@ -95,8 +96,10 @@ final class IOSBatchSelection: ObservableObject {
                 try validateActive(id)
                 guard ExportSize.isValid(longEdge) else { throw BatchExportError.global(L10n.text("导出尺寸无效。")) }
                 let record = try store.versionedState(for: photo.photo.identity)
-                let settings = record.state?.settings ?? .default
-                let (look, name) = try resolveLook(settings)
+                var settings = record.state?.settings ?? .default
+                if record.state==nil,let file=photo.photo.file,try file.withReadAccess(probeHDR) { settings.hdr=HDRSettings() }
+                if format == .hdrJPEG && !settings.isHDREditing { throw BatchExportError.target(L10n.text("HDR JPEG 需要启用 HDR 编辑。")) }
+                let (look, name) = try settings.isHDREditing ? (nil,nil) : resolveLook(settings)
                 if settings.hasLook && look == nil {
                     throw BatchExportError.target(L10n.text("目标所需的外观不可用，请先导入外观。"))
                 }

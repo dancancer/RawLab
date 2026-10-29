@@ -3,6 +3,8 @@
 # DualDn 静态库、ONNX Runtime 与 Core ML；按构建配置一起链接，不另建无 AI 的核心。
 CORE_BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 CORE_LINK=("$CORE_BUILD/libsony2fuji_core.a")
+CORE_LINK+=("$CORE_BUILD/hdr-codec/lib/libuhdr.a" "$CORE_BUILD/raw-jpeg/install/lib/libjpeg.a"
+    -framework CoreImage -framework ImageIO -framework CoreGraphics)
 if grep -qs '^SONY2FUJI_ENABLE_AI_DENOISE:BOOL=ON$' "$CORE_BUILD/CMakeCache.txt"; then
     CORE_ORT_LIB="$(sed -n 's/^ONNXRUNTIME_ROOT:PATH=//p' "$CORE_BUILD/CMakeCache.txt")/lib"
     CORE_LINK+=("$CORE_BUILD/librawlab_dualdn_runtime.a" "$CORE_BUILD/librawlab_dualdn_core.a"

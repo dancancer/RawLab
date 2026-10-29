@@ -17,13 +17,13 @@ struct EditorDraftSnapshot: Equatable {
     func projecting(on settings: RawSettings) -> RawSettings {
         var result = settings
         if let lens { result.lensCorrection = lens.lensCorrection }
-        if let geometry { result.geometry = geometry }
+        if let geometry { result.setGeometrySettings(geometry) }
         return result
     }
 
     func isChanged(from settings: RawSettings) -> Bool {
         let projected = projecting(on: settings)
-        return projected.geometry != settings.geometry || projected.lensSettings != settings.lensSettings
+        return projected.geometrySettings != settings.geometrySettings || projected.lensSettings != settings.lensSettings
     }
 }
 

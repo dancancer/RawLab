@@ -22,6 +22,16 @@
 "DNG 已生成，但任务记录未更新，请先核对保存结果。" = "DNG Created, but the Task Record Was Not Updated. Verify the Saved File First.";
 "Failed to load the selected photo." = "Failed to Load the Selected Photo.";
 "Fit %@" = "Fit %@";
+"HDR JPEG" = "HDR JPEG";
+"HDR JPEG 需要启用 HDR 编辑。" = "Enable HDR Editing to export HDR JPEG.";
+"HDR 亮度直方图" = "HDR Luminance Histogram";
+"HDR 假色" = "HDR False Color";
+"HDR 增益图损坏，无法还原此照片。" = "The HDR gain map is damaged. This photo cannot be reconstructed.";
+"HDR 处理失败（%@）。" = "HDR processing failed (%@).";
+"HDR 显示不可用，当前显示 SDR。" = "HDR display is unavailable. Showing SDR.";
+"HDR 照片需要 macOS 15 或 iOS 18 及以上版本。" = "HDR photos require macOS 15 or iOS 18 or later.";
+"HDR 编辑" = "HDR Editing";
+"HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。" = "HDR editing currently uses the CPU. Set GPU mode to Auto or Off.";
 "HSL" = "HSL";
 "Image metadata has invalid dimensions." = "Image Metadata Has Invalid Dimensions.";
 "Image metadata unavailable." = "Image Metadata Unavailable.";
@@ -42,6 +52,7 @@
 "RawLab 中性显影（近似）" = "RawLab neutral rendering (approximate)";
 "RawLab 文件" = "RawLab Files";
 "S 曲线" = "S Curve";
+"SDR 兼容预览" = "SDR Compatibility Preview";
 "Sample RAW not found." = "Sample RAW Not Found.";
 "Selected item is not a supported image." = "Selected Item Is Not a Supported Image.";
 "Sony2Fuji output copy failed." = "Sony2Fuji Output Copy Failed.";
@@ -51,6 +62,7 @@
 "上下拖动调整，方向键微调，Esc 取消" = "Drag up or down to adjust, use arrow keys for fine changes, Esc to cancel";
 "上次使用的外观不可用，请重新选择或导入外观。" = "The last used look is unavailable. Choose or import a look again.";
 "上次同步结果与历史" = "Last sync results and history";
+"不支持此 HDR 格式或颜色描述。" = "This HDR format or color description is not supported.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "This photo, look, or processing mode is not supported. Check file compatibility and processing settings.";
 "不能覆盖原始文件。" = "The original file cannot be overwritten.";
 "不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "Photos, previews, filenames, paths, EXIF, and AI content are not collected. Turning it off stops new collection; requests already sent cannot be withdrawn.";
@@ -85,7 +97,9 @@
 "使用统计已关闭。" = "Usage analytics is off.";
 "依据部分文件线索 · 仍有假设" = "Partial file clues · Assumptions remain";
 "保井崇志" = "Takashi Yasui";
+"保存" = "Save";
 "保存 %@ 失败。" = "Failed to Save %@.";
+"保存 SDR JPEG" = "Save SDR JPEG";
 "保存到" = "Save to";
 "保存失败" = "Save failed";
 "保存失败，请重试。" = "Save Failed. Try Again.";
@@ -97,6 +111,7 @@
 "保存预设" = "Save Preset";
 "保留这次几何或镜头修改？" = "Keep these geometry or lens changes?";
 "候选效果" = "Candidate results";
+"假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。" = "False color: blue for shadows, amber above reference white, pink beyond display capacity.";
 "停用" = "Off";
 "允许使用统计" = "Allow usage analytics";
 "元数据匹配" = "Metadata Match";
@@ -111,7 +126,9 @@
 "关闭对比" = "Turn off comparison";
 "兼容导入" = "Compatibility import";
 "兼容导入 · 未验证" = "Compatible · Unverified";
+"内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。" = "Not enough memory to process this HDR photo at full resolution. Close other photos and try again.";
 "内存不足，无法解码普通图片。" = "Not enough memory to decode the image.";
+"内容容量 %@ EV" = "Content Headroom %@ EV";
 "几何" = "Geometry";
 "几何与镜头" = "Geometry & Lens";
 "几何与镜头仅在“全部”或显式选择时包含。" = "Geometry and lens settings are included only with All or an explicit selection.";
@@ -131,6 +148,7 @@
 "原始尺寸" = "Original size";
 "原始文件已被替换，请重新选择照片。" = "The original file has been replaced. Select the photo again.";
 "原始比例" = "Original Ratio";
+"原始照片已变化，请重新导入。" = "The original photo has changed. Import it again.";
 "去噪优先" = "Noise Reduction Priority";
 "去朦胧" = "Dehaze";
 "参数或输出路径无效。" = "Invalid parameters or output path.";
@@ -138,6 +156,7 @@
 "参考图与预览的比例或尺寸不一致，仅可目视比较。" = "The reference and preview have different proportions or dimensions; visual comparison only.";
 "参考图来自同一张原图" = "Reference image comes from the same original";
 "参考来源、软件版本及处理条件" = "Reference source, software version, and processing conditions";
+"参考白以上 %@" = "Above Reference White %@";
 "参考输出为 sRGB，或已按正确配置转换为 sRGB" = "Reference output is sRGB or was converted to sRGB with the correct settings";
 "双击名称或轨道恢复默认值。" = "Double-tap the name or track to restore the default.";
 "取消" = "Cancel";
@@ -188,6 +207,7 @@
 "导入结果" = "Import results";
 "导出" = "Export";
 "导出 %@ 张" = "Export Photos (%@)";
+"导出不能覆盖原始照片。请选择其他文件。" = "Export cannot overwrite the original photo. Choose another file.";
 "导出到文件…" = "Export to Files…";
 "导出失败" = "Export Failed";
 "导出完成" = "Export Complete";
@@ -209,6 +229,7 @@
 "尚未复制调整。请先从一张照片复制所需范围。" = "No adjustments copied yet. Copy the desired settings from a photo first.";
 "尚未选择 RAW" = "No RAW Photos Selected";
 "尚未选择照片" = "No Photos Selected";
+"屏幕容量 %@ EV" = "Display Headroom %@ EV";
 "展开%@组" = "Expand %@ group";
 "展开直方图" = "Expand histogram";
 "展开调整栏" = "Expand Adjustments";
@@ -254,8 +275,11 @@
 "开启对比" = "Turn on comparison";
 "强度" = "Intensity";
 "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光" = "Strong light-dark contrast, deep cool-cyan shadows, restrained blacks and warm accent light";
+"当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。" = "The SDR edits use tools that HDR does not support yet. Reset those tools before enabling HDR.";
+"当前显示 SDR 兼容预览。" = "Showing the SDR-compatible preview.";
 "当前构建未配置使用统计，未采集或上报。" = "Usage analytics is not configured in this build; nothing is collected or reported.";
 "当前照片或调整记录无效，无法安全重置。" = "The current photo or edit record is invalid and cannot be reset safely.";
+"当前照片的设置尚不可用。" = "The settings for the current photo are not available yet.";
 "当前配方不可用，无法安全重置外观。" = "The current recipe is unavailable, so its look cannot be reset safely.";
 "待处理" = "Needs attention";
 "恢复当前照片的全部调整，不改写原始照片。" = "Reset all adjustments for the current photo. The original photo will not be modified.";
@@ -324,6 +348,7 @@
 "无效的黑白场或鲜艳度参数" = "Invalid black point, white point, or vibrance values";
 "无法保存照片，请在系统设置中允许 RawLab 添加照片。" = "Unable to Save Photos. Allow RawLab to Add Photos in System Settings.";
 "无法保存照片，请在系统设置中允许添加照片。" = "Unable to save the photo. Allow adding photos in system settings.";
+"无法写入 HDR 导出文件，请检查可用空间和目标权限。" = "Cannot write the HDR export. Check free space and destination permissions.";
 "无法写入成片，请检查输出位置和剩余空间。" = "Unable to write the exported photo. Check the output location and free space.";
 "无法创建新的预设标识，请重试。" = "Could not create a new preset identifier. Try again.";
 "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。" = "Unable to Retrieve the Original RAW. Authorize Access to This Photo in System Settings, Then Try Again.";
@@ -424,6 +449,7 @@
 "此像素不可取样。" = "This pixel cannot be sampled.";
 "此外观已不在外观库中。" = "This look is no longer in the look library.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Only adjustments in the %@ group will be reset. Other groups will stay unchanged.";
+"此照片没有可编辑的 HDR 增益图。" = "This photo has no editable HDR gain map.";
 "此输入不支持镜头校正" = "Lens Correction Unsupported for This Input";
 "此配置与预览照片类型不匹配，请更换照片或配置。" = "These settings do not match the preview photo type. Choose another photo or configuration.";
 "此镜头没有所选校正的标定数据" = "No Calibration Data for the Selected Corrections";
@@ -473,6 +499,8 @@
 "目标调整" = "Targeted adjustment";
 "目标调整：%@" = "Target adjustment: %@";
 "目标：%@ 张照片" = "Target photos: %@";
+"相对白平衡" = "Relative White Balance";
+"确定" = "OK";
 "确认兼容导入" = "Import with these settings";
 "确认并冻结任务" = "Confirm and freeze task";
 "移除" = "Remove";
@@ -508,6 +536,7 @@
 "羽化" = "Feather";
 "胶片" = "Film";
 "自动" = "Auto";
+"自动 HDR" = "Automatic HDR";
 "自动匹配" = "Automatic Matching";
 "自动裁切" = "Automatic crop";
 "自动裁边" = "Auto Crop";
@@ -665,9 +694,12 @@
 "隐藏照片信息" = "Hide Photo Information";
 "霓虹都市 · 冷青粉紫" = "Neon city · cool cyan and pink-purple";
 "青" = "Cyan";
+"预览不能用于导出，请从原始照片重新生成。" = "A preview cannot be exported. Render again from the original photo.";
 "预览尚未就绪，请稍后重试。" = "The preview is not ready yet. Try again shortly.";
 "预览已变化，请重新取色。" = "The preview changed. Sample again.";
 "预览已更新" = "Preview updated";
+"预览方式" = "Preview Mode";
+"预览方式不会改变编辑或导出。" = "Preview mode does not change edits or exports.";
 "预览未更新" = "Preview not updated";
 "预览条件：C5 显影，相机白平衡，场景曝光归一化，曝光 0，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。" = "Preview conditions: C5 development, camera white balance, normalized scene exposure, exposure 0, no extra adjustments, LUT strength 100%, sRGB output, 512-pixel long edge.";
 "预览条件：已显影照片，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。" = "Preview conditions: developed photo, no extra adjustments, LUT strength 100%, sRGB output, 512-pixel long edge.";

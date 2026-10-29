@@ -3517,6 +3517,145 @@
       "formats": [],
       "source": "Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。"
     },
+    "HDR Agent 配方仅支持 HDR JPEG 输出。": {
+      "formats": [],
+      "source": "HDR Agent 配方仅支持 HDR JPEG 输出。"
+    },
+    "HDR JPEG": {
+      "formats": [],
+      "source": "HDR JPEG"
+    },
+    "HDR JPEG 需要启用 HDR 编辑。": {
+      "formats": [],
+      "source": "HDR JPEG 需要启用 HDR 编辑。"
+    },
+    "HDR 亮度直方图": {
+      "formats": [],
+      "source": "HDR 亮度直方图"
+    },
+    "HDR 假色": {
+      "formats": [],
+      "source": "HDR 假色"
+    },
+    "HDR 原片的 Agent 配方需要启用 HDR 编辑。": {
+      "formats": [],
+      "source": "HDR 原片的 Agent 配方需要启用 HDR 编辑。"
+    },
+    "HDR 增益图损坏，无法还原此照片。": {
+      "formats": [],
+      "source": "HDR 增益图损坏，无法还原此照片。"
+    },
+    "HDR 处理失败（%@）。": {
+      "formats": [
+        "%@"
+      ],
+      "source": "HDR 处理失败（{0}）。"
+    },
+    "HDR 显示不可用，当前显示 SDR。": {
+      "formats": [],
+      "source": "HDR 显示不可用，当前显示 SDR。"
+    },
+    "HDR 照片需要 macOS 15 或 iOS 18 及以上版本。": {
+      "formats": [],
+      "source": "HDR 照片需要 macOS 15 或 iOS 18 及以上版本。"
+    },
+    "HDR 编辑": {
+      "formats": [],
+      "source": "HDR 编辑"
+    },
+    "HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。": {
+      "formats": [],
+      "source": "HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。"
+    },
+    "SDR 兼容预览": {
+      "formats": [],
+      "source": "SDR 兼容预览"
+    },
+    "不支持此 HDR 格式或颜色描述。": {
+      "formats": [],
+      "source": "不支持此 HDR 格式或颜色描述。"
+    },
+    "内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。": {
+      "formats": [],
+      "source": "内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。"
+    },
+    "内容容量 %@ EV": {
+      "formats": [
+        "%@"
+      ],
+      "source": "内容容量 {0} EV"
+    },
+    "原始照片已变化，请重新导入。": {
+      "formats": [],
+      "source": "原始照片已变化，请重新导入。"
+    },
+    "参考白以上 %@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "参考白以上 {0}"
+    },
+    "导出不能覆盖原始照片。请选择其他文件。": {
+      "formats": [],
+      "source": "导出不能覆盖原始照片。请选择其他文件。"
+    },
+    "屏幕容量 %@ EV": {
+      "formats": [
+        "%@"
+      ],
+      "source": "屏幕容量 {0} EV"
+    },
+    "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。": {
+      "formats": [],
+      "source": "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。"
+    },
+    "无法写入 HDR 导出文件，请检查可用空间和目标权限。": {
+      "formats": [],
+      "source": "无法写入 HDR 导出文件，请检查可用空间和目标权限。"
+    },
+    "此照片不包含受支持的 HDR 增益图。": {
+      "formats": [],
+      "source": "此照片不包含受支持的 HDR 增益图。"
+    },
+    "此照片没有可编辑的 HDR 增益图。": {
+      "formats": [],
+      "source": "此照片没有可编辑的 HDR 增益图。"
+    },
+    "相对白平衡": {
+      "formats": [],
+      "source": "相对白平衡"
+    },
+    "自动 HDR": {
+      "formats": [],
+      "source": "自动 HDR"
+    },
+    "预览不能用于导出，请从原始照片重新生成。": {
+      "formats": [],
+      "source": "预览不能用于导出，请从原始照片重新生成。"
+    },
+    "预览方式": {
+      "formats": [],
+      "source": "预览方式"
+    },
+    "预览方式不会改变编辑或导出。": {
+      "formats": [],
+      "source": "预览方式不会改变编辑或导出。"
+    },
+    "当前显示 SDR 兼容预览。": {
+      "source": "当前显示 SDR 兼容预览。",
+      "formats": []
+    },
+    "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。": {
+      "source": "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。",
+      "formats": []
+    },
+    "交互预览… %@ × %@ · HDR": {
+      "source": "交互预览… {0} × {1} · HDR",
+      "formats": [
+        "%@",
+        "%@"
+      ]
+    },
     "LUT 的颜色空间或基础风格暂不支持，未导入。不会自动替换为中性显影。": {
       "formats": [],
       "source": "LUT 的颜色空间或基础风格暂不支持，未导入。不会自动替换为中性显影。"
@@ -4217,14 +4356,6 @@
       "fr": "L’intensité est à 0. Les autres réglages sont conservés.",
       "ja": "強度は0です。他の設定値は保持されます。",
       "zh-Hans": "强度为 0，其他参数会保留。"
-    },
-    "当前照片的设置尚不可用。": {
-      "de": "Die Einstellungen für das aktuelle Foto sind noch nicht verfügbar.",
-      "en": "The settings for the current photo are not available yet.",
-      "es": "La configuración de la foto actual aún no está disponible.",
-      "fr": "Les paramètres de la photo actuelle ne sont pas encore disponibles.",
-      "ja": "現在の写真の設定はまだ利用できません。",
-      "zh-Hans": "当前照片的设置尚不可用。"
     },
     "当前通道 {0}，修改仅作用于该颜色。": {
       "de": "Aktueller Kanal: {0}. Änderungen gelten nur für diese Farbe.",
@@ -5121,6 +5252,38 @@
       "fr": "Choisir les photos à retoucher",
       "ja": "編集する写真を選択",
       "zh-Hans": "选择要编辑的照片"
+    },
+    "HDR Agent 配方仅支持 HDR JPEG 输出。": {
+      "de": "HDR-Agent-Rezepte unterstützen nur HDR-JPEG als Ausgabe.",
+      "en": "HDR Agent recipes support HDR JPEG output only.",
+      "es": "Las recetas HDR Agent solo admiten salida JPEG HDR.",
+      "fr": "Les recettes HDR Agent prennent uniquement en charge la sortie JPEG HDR.",
+      "ja": "HDR Agent レシピの出力は HDR JPEG のみです。",
+      "zh-Hans": "HDR Agent 配方仅支持 HDR JPEG 输出。"
+    },
+    "HDR 原片的 Agent 配方需要启用 HDR 编辑。": {
+      "de": "Aktivieren Sie die HDR-Bearbeitung, um ein Agent-Rezept aus einem HDR-Original zu erstellen.",
+      "en": "Enable HDR Editing to create an Agent recipe from an HDR original.",
+      "es": "Activa la edición HDR para crear una receta Agent a partir de un original HDR.",
+      "fr": "Activez l’édition HDR pour créer une recette Agent à partir d’un original HDR.",
+      "ja": "HDR 原本から Agent レシピを作成するには HDR 編集を有効にしてください。",
+      "zh-Hans": "HDR 原片的 Agent 配方需要启用 HDR 编辑。"
+    },
+    "此照片不包含受支持的 HDR 增益图。": {
+      "de": "Dieses Foto hat keine unterstützte HDR-Gain-Map.",
+      "en": "This photo has no supported HDR gain map.",
+      "es": "Esta foto no contiene un mapa de ganancia HDR compatible.",
+      "fr": "Cette photo ne contient pas de carte de gain HDR prise en charge.",
+      "ja": "この写真の HDR ゲインマップには対応していません。",
+      "zh-Hans": "此照片不包含受支持的 HDR 增益图。"
+    },
+    "交互预览… {0} × {1} · HDR": {
+      "de": "Interaktive Vorschau… {0} × {1} · HDR",
+      "en": "Interactive preview… {0} × {1} · HDR",
+      "es": "Vista previa interactiva… {0} × {1} · HDR",
+      "fr": "Aperçu interactif… {0} × {1} · HDR",
+      "ja": "インタラクティブプレビュー… {0} × {1} · HDR",
+      "zh-Hans": "交互预览… {0} × {1} · HDR"
     }
   }
 }

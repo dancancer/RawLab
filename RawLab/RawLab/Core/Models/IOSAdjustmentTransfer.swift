@@ -3,6 +3,7 @@ import Foundation
 struct IOSAdjustmentTransferContext {
     var identifier: String
     var isRaw: Bool
+    var sourceIsHDR = false
     var availableLookIDs: Set<String> = []
     var builtinLookIDs: [String: String] = [:]
     var cameraTemperature: Double? = nil
@@ -19,13 +20,18 @@ enum IOSAdjustmentTransfer {
     static func capture(scope: AdjustmentTransferScope, snapshot: PhotoEditState,
                         context: IOSAdjustmentTransferContext) throws -> AdjustmentTransferPayload {
         guard !context.hasUncommittedDraft else { throw AdjustmentTransferError.draftRequiresPreflight }
+        if snapshot.settings.isHDREditing {
+            guard context.sourceIsHDR, !context.isRaw else { throw AdjustmentTransferError.incompatible("hdr.source") }
+            return try HDRAdjustmentTransfer.capture(settings: snapshot.settings.hdr!, identifier: context.identifier,
+                processingVersion: snapshot.settings.processing.version, scope: scope)
+        }
         try validate(snapshot.settings)
         var defaults = RawSettings.default
         defaults.exposureMode = context.isRaw ? context.defaultExposureMode : .sensor
         let original = values(snapshot.settings, context: context), neutral = values(defaults, context: context)
         let selected: Set<Field>
         switch scope {
-        case .all: selected = Set(Field.allCases)
+        case .all: selected = Field.legacyFields
         case .custom(let fields): selected = fields
         case .modified: selected = Set(Field.common.filter { original[$0.rawValue] != neutral[$0.rawValue] })
         }
@@ -41,7 +47,17 @@ enum IOSAdjustmentTransfer {
     static func prepare(payload: AdjustmentTransferPayload, target: PhotoEditState,
                         context: IOSAdjustmentTransferContext) throws -> PhotoEditState {
         guard !context.hasUncommittedDraft else { throw AdjustmentTransferError.draftRequiresPreflight }
-        try payload.validate(); try validate(target.settings)
+        try payload.validate()
+        if target.settings.isHDREditing {
+            guard context.sourceIsHDR, !context.isRaw else { throw AdjustmentTransferError.incompatible("hdr.source") }
+            var settings = target.settings
+            settings.hdr = try HDRAdjustmentTransfer.prepare(payload: payload, target: target.settings.hdr!)
+            return target.replacing(settings: settings, preservingFilmID: target.filmID)
+        }
+        if payload.source.isHDR {
+            return try prepare(payload: HDRAdjustmentTransfer.legacyPayload(payload), target: target, context: context)
+        }
+        try validate(target.settings)
         var result = target.settings, filmID = target.filmID
         let selected = payload.fields, before = effectiveNumbers(target.settings)
         var fullRecipe = false

@@ -182,7 +182,7 @@ struct LUTCompatibilityView: View {
                     .accessibilityIdentifier("look.compatibility.compare")
                 if let report = preview.comparison {
                     Text(L10n.format("平均差异 %@/255 · 最大差异 %@/255", String(format: "%.2f", report.meanAbsoluteRGB * 255), String(format: "%.2f", report.maxAbsoluteRGB * 255)))
-                    Text(L10n.format("通道边界像素：方案 %@%% · 参考 %@%%", String(format: "%.1f", report.candidateBoundaryFraction * 100), String(format: "%.1f", report.referenceBoundaryFraction * 100)))
+                    Text(L10n.format("通道边界像素：方案 %@% · 参考 %@%", String(format: "%.1f", report.candidateBoundaryFraction * 100), String(format: "%.1f", report.referenceBoundaryFraction * 100)))
                     Text(L10n.text("边界比例仅供观察，不能据此判定配置或风格错误。")).font(.caption).foregroundStyle(.secondary)
                     Text(L10n.text("按已确认条件比较缩小后的 sRGB 像素；差异越小表示越接近此参考，效果仍未验证。")) .font(.caption).foregroundStyle(.secondary)
                 }

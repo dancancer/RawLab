@@ -4,6 +4,18 @@ extension RenderEngine {
     // 复用实际渲染映射，固化配方强度和当前照片白平衡，不在 Agent 中再次叠加。
     func agentRecipe(_ url: URL, settings: Adjustments, lut: URL?, output: URL,
                      exportLongEdge: Int? = nil) throws -> Data {
+        if let hdr=settings.hdr, hdr.mode == .hdr {
+            guard try HDRSourceInfo.probe(url) != nil else {
+                throw RenderError.failed(L10n.text("此照片不包含受支持的 HDR 增益图。"))
+            }
+            guard ExportFormat.forOutput(output) == .jpeg else {
+                throw RenderError.failed(L10n.text("HDR Agent 配方仅支持 HDR JPEG 输出。"))
+            }
+            return try HDRRecipe.document(settings:hdr,input:url,output:output,baseColor:.displayP3,longEdge:exportLongEdge)
+        }
+        guard try HDRSourceInfo.probe(url)==nil else {
+            throw RenderError.failed(L10n.text("HDR 原片的 Agent 配方需要启用 HDR 编辑。"))
+        }
         guard !settings.aiDenoiseEnabled else {
             throw RenderError.failed(L10n.text("Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。"))
         }
@@ -34,7 +46,7 @@ extension RenderEngine {
         }
         let format: String
         switch ExportFormat.forOutput(output) {
-        case .jpeg: format = "jpeg"
+        case .jpeg, .hdrJPEG: format = "jpeg"
         case .png: format = "png"
         case .renderedDNG: format = "dng"
         }

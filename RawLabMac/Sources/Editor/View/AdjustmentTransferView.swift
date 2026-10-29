@@ -50,6 +50,7 @@ struct AdjustmentTransferView: View {
         }
         .padding(24).frame(width: 600).frame(minHeight: 380, maxHeight: 680).tint(.yellow)
         .onAppear {
+            if kind == .copy { fields=model.settings.isHDREditing ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common }
             if kind == .paste || kind == .synchronize {
                 payload = preset?.payload ?? model.adjustmentSheetPayload ?? model.adjustmentClipboard
                 targets = preset != nil ? model.file.map { [$0] } ?? [] : model.adjustmentSheetTargets ?? model.file.map { [$0] } ?? []
@@ -71,7 +72,7 @@ struct AdjustmentTransferView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(model.file?.lastPathComponent ?? "").font(.headline)
             Text(model.file?.deletingLastPathComponent().path ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(2)
-            AdjustmentScopeEditor(scope: $scope, fields: $fields)
+            AdjustmentScopeEditor(scope:$scope,fields:$fields,allowed:model.settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
             HStack {
                 Spacer()
                 Button(L10n.text("复制调整")) {

@@ -96,6 +96,7 @@ extension EditorModel {
             committedEdit = saved
             var defaults = Adjustments()
             defaults.exposureMode = RenderEngine.isRasterInput(file) ? .sensor : .preview
+            if sourceIsHDR { defaults.hdr=HDRSettings() }
             restoreAdjustmentState(saved.state ?? PhotoEditState(settings: defaults, filmID: ""))
             dirty = false; saveError = nil
             saveWork?.cancel()

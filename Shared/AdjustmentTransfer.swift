@@ -19,6 +19,7 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     case gradingShadows = "color.grading.shadows", gradingMidtones = "color.grading.midtones", gradingHighlights = "color.grading.highlights"
     case whiteBalanceMode = "color.white_balance.mode", temperature = "color.white_balance.temperature_kelvin"
     case tint = "color.white_balance.tint", saturation = "color.saturation"
+    case hdrTemperature = "hdr.relative_temperature", hdrTint = "hdr.relative_tint"
     case hslHueRed = "color.hsl.hue.red", hslHueOrange = "color.hsl.hue.orange", hslHueYellow = "color.hsl.hue.yellow"
     case hslHueGreen = "color.hsl.hue.green", hslHueAqua = "color.hsl.hue.aqua", hslHueBlue = "color.hsl.hue.blue"
     case hslHuePurple = "color.hsl.hue.purple", hslHueMagenta = "color.hsl.hue.magenta"
@@ -46,7 +47,11 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     case lensDistortion = "geometry.lens.distortion", lensTCA = "geometry.lens.tca"
     case lensAutoCrop = "geometry.lens.auto_crop", lensProfile = "geometry.lens.profile_id"
 
-    var group: String { self == .blackPoint || self == .whitePoint ? "light" : String(rawValue.split(separator: ".")[0]) }
+    var isHDRRelative: Bool { self == .hdrTemperature || self == .hdrTint }
+    var group: String {
+        if isHDRRelative { return "color" }
+        return self == .blackPoint || self == .whitePoint ? "light" : String(rawValue.split(separator: ".")[0])
+    }
     var gradingZone: ColorGradingZone? {
         switch self {
         case .gradingShadows: return .shadows
@@ -55,7 +60,12 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
         default: return nil
         }
     }
-    static var common: Set<Self> { Set(allCases.filter { $0.group != "geometry" }) }
+    static var legacyFields: Set<Self> { Set(allCases.filter { !$0.isHDRRelative }) }
+    static var common: Set<Self> { Set(legacyFields.filter { $0.group != "geometry" }) }
+    static let hdrCommon: Set<Self> = [.exposure, .contrast, .highlights, .shadows, .saturation, .hdrTemperature, .hdrTint]
+    static let hdrGeometry: Set<Self> = [.cropX, .cropY, .cropWidth, .cropHeight, .quarterTurns,
+        .flipHorizontal, .flipVertical, .straighten, .perspectiveHorizontal, .perspectiveVertical]
+    static var hdrSupported: Set<Self> { hdrCommon.union(hdrGeometry) }
     static let whiteBalanceFields: Set<Self> = [.whiteBalanceMode, .temperature, .tint]
     static let lensFields: Set<Self> = [.lensDistortion, .lensTCA, .lensAutoCrop, .lensProfile]
     static let denoiseFields: Set<Self> = [.rawDenoise, .postRGBDenoise, .chromaDenoise, .waveletDenoise]
@@ -77,6 +87,8 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     var scalarRange: ClosedRange<Double>? {
         if hslLocation != nil { return -100...100 }
         switch self {
+        case .hdrTemperature: return 2000...50000
+        case .hdrTint: return -150...150
         case .strength, .contrast, .saturation, .sharpening: return 0...2
         case .exposure: return -20...20
         case .highlights, .shadows, .sCurve, .perspectiveHorizontal, .perspectiveVertical: return -1...1
@@ -94,6 +106,7 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
 enum AdjustmentTransferScope {
     case all, modified, custom(Set<AdjustmentTransferField>)
     static var standard: Self { .custom(AdjustmentTransferField.common) }
+    static func standard(isHDR: Bool) -> Self { .custom(isHDR ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common) }
 }
 
 // 这是逻辑 payload 的 JSON 值，不是 native snapshot 或渲染 recipe。
@@ -252,21 +265,26 @@ struct AdjustmentTransferSource: Codable, Equatable {
     let isRaw: Bool
     let processingVersion: Int
     let recipe: AdjustmentRecipeContext?
+    let hdrProcessingVersion: Int?
+    var isHDR: Bool { hdrProcessingVersion != nil }
     enum CodingKeys: String, CodingKey {
         case identifier, recipe
         case isRaw = "is_raw", processingVersion = "processing_version"
+        case hdrProcessingVersion = "hdr_processing_version"
     }
-    init(identifier: String, isRaw: Bool, processingVersion: Int, recipe: AdjustmentRecipeContext?) {
+    init(identifier: String, isRaw: Bool, processingVersion: Int, recipe: AdjustmentRecipeContext?, hdrProcessingVersion: Int? = nil) {
         self.identifier = identifier; self.isRaw = isRaw
         self.processingVersion = processingVersion; self.recipe = recipe
+        self.hdrProcessingVersion = hdrProcessingVersion
     }
     init(from decoder: Decoder) throws {
-        try TransferCodingKey.rejectUnknown(decoder, allowed: ["identifier", "is_raw", "processing_version", "recipe"])
+        try TransferCodingKey.rejectUnknown(decoder, allowed: ["identifier", "is_raw", "processing_version", "recipe", "hdr_processing_version"])
         let values = try decoder.container(keyedBy: CodingKeys.self)
         identifier = try values.decode(String.self, forKey: .identifier)
         isRaw = try values.decode(Bool.self, forKey: .isRaw)
         processingVersion = try values.decode(Int.self, forKey: .processingVersion)
         recipe = try values.decodeIfPresent(AdjustmentRecipeContext.self, forKey: .recipe)
+        hdrProcessingVersion = values.contains(.hdrProcessingVersion) ? try values.decode(Int.self, forKey: .hdrProcessingVersion) : nil
     }
 }
 
@@ -282,7 +300,7 @@ struct AdjustmentTransferPayload: Codable, Equatable {
     }
 
     init(source: AdjustmentTransferSource, values: [String: AdjustmentTransferValue]) throws {
-        payloadVersion = 1; scopeVersion = 1; self.source = source; self.values = values
+        payloadVersion = source.isHDR ? 2 : 1; scopeVersion = payloadVersion; self.source = source; self.values = values
         try validate()
     }
 
@@ -297,7 +315,16 @@ struct AdjustmentTransferPayload: Codable, Equatable {
     }
 
     func validate() throws {
-        guard payloadVersion == 1, scopeVersion == 1 else { throw AdjustmentTransferError.unsupportedVersion }
+        guard (payloadVersion == 1 && scopeVersion == 1 && !source.isHDR) ||
+            (payloadVersion == 2 && scopeVersion == 2 && source.isHDR) else { throw AdjustmentTransferError.unsupportedVersion }
+        if source.isHDR {
+            guard source.hdrProcessingVersion == 1 else { throw AdjustmentTransferError.unsupportedVersion }
+            guard !source.isRaw, source.recipe == nil, fields.isSubset(of: AdjustmentTransferField.hdrSupported) else {
+                throw AdjustmentTransferError.invalidPayload("hdr context")
+            }
+        } else if fields.contains(where: \.isHDRRelative) {
+            throw AdjustmentTransferError.invalidPayload("hdr context")
+        }
         guard !values.isEmpty else { throw AdjustmentTransferError.emptyScope }
         guard !source.identifier.isEmpty, [1, 2].contains(source.processingVersion) else {
             throw AdjustmentTransferError.invalidPayload("source")

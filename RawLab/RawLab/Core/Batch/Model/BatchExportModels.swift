@@ -76,10 +76,14 @@ enum BatchJobStatus: String, Codable, Equatable {
 
 enum BatchOutputFormat: String, Codable, Equatable, Hashable {
     case jpeg
+    case hdrJPEG = "hdr_jpeg"
     case renderedDNG = "dng"
+
+    var publishesToPhotos: Bool { self != .renderedDNG }
 
     var title: String {
         switch self {
+        case .hdrJPEG: return L10n.text("HDR JPEG")
         case .jpeg: return "JPEG"
         case .renderedDNG: return L10n.text("DNG · 渲染型")
         }
@@ -87,7 +91,7 @@ enum BatchOutputFormat: String, Codable, Equatable, Hashable {
 
     var suffix: String {
         switch self {
-        case .jpeg: return "jpg"
+        case .jpeg,.hdrJPEG: return "jpg"
         case .renderedDNG: return "dng"
         }
     }

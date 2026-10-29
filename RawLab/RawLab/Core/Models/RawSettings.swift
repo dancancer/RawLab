@@ -246,6 +246,8 @@ enum RawExposureMode: Int, Codable, CaseIterable, Identifiable {
 }
 
 struct RawSettings: Codable, Equatable {
+    var hdr: HDRSettings?
+    var isHDREditing: Bool { hdr?.mode == .hdr }
     static let lutStrengthRange: ClosedRange<Double> = 0...2
     static let temperatureRange: ClosedRange<Double> = 2000...50000
     static let tintRange: ClosedRange<Double> = -150...150
@@ -322,7 +324,7 @@ struct RawSettings: Codable, Equatable {
     var whiteBalanceMode: RawWhiteBalanceMode
     var masterRecipeID: String?
     var masterRecipeSettingsVersion = 3
-    var hasLook: Bool { lutID != nil || masterRecipeID != nil }
+    var hasLook: Bool { !isHDREditing && (lutID != nil || masterRecipeID != nil) }
     var masterRecipe: MasterRecipe? { MasterRecipe.recipe(for: masterRecipeID) }
     var recipeScale: Double { masterRecipeID == nil ? 1 : Double(clampedLUTStrength) }
     var refinementScale: Double { masterRecipeSettingsVersion >= 4 ? recipeScale : 1 }
@@ -365,6 +367,7 @@ struct RawSettings: Codable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
+        case hdr
         case exposure, contrast, saturation, temperature, tint, highlights, shadows
         case toneCurve, noiseReduction, sharpening, lutID, lutStrength, whiteBalanceMode
         case denoise, photoEffects, displayChromaDenoise, exposureMode, hsl
@@ -429,6 +432,7 @@ struct RawSettings: Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        hdr = try values.decodeIfPresent(HDRSettings.self, forKey: .hdr)
         processing = values.contains(.processing)
             ? try values.decode(ProcessingIdentity.self, forKey: .processing) : .legacy
         geometry = try values.decodeIfPresent(GeometrySettings.self, forKey: .geometry) ?? GeometrySettings()
@@ -488,7 +492,9 @@ struct RawSettings: Codable, Equatable {
     var usesCustomWhiteBalance: Bool { whiteBalanceMode == .custom }
 
     func resettingAdjustments() -> RawSettings {
+        if isHDREditing { var neutral = self; neutral.hdr?.reset(); return neutral }
         var neutral = Self.default
+        neutral.hdr = hdr
         neutral.processing = processing
         return neutral
     }
@@ -586,5 +592,41 @@ extension RawSettings {
                 noise, effective.sharpening].map(Float.init) +
             [Float(isRaw && effective.whiteBalanceMode == .custom ? 1 : 0)] +
             (effective.hsl.hue + effective.hsl.saturation + effective.hsl.lightness).map(Float.init)
+    }
+}
+
+
+extension RawSettings {
+    var geometrySettings: GeometrySettings {
+        get { isHDREditing ? hdr!.geometry : geometry }
+        set { setGeometrySettings(newValue) }
+    }
+    mutating func setGeometrySettings(_ state: GeometrySettings) {
+        if isHDREditing { hdr?.geometry = state }
+        else { geometry = state }
+    }
+
+    func withHDRMode(_ enabled: Bool, sourceIsHDR: Bool, hasLook: Bool) throws -> RawSettings {
+        var result = self
+        guard enabled else { result.hdr?.mode = .sdr; return result }
+        var initial = HDRSettings()
+        initial.exposure = exposure; initial.contrast = (contrast - 1) * 100
+        initial.highlights = -highlights * 100; initial.shadows = shadows * 100
+        initial.saturation = (saturation - 1) * 100; initial.geometry = geometry
+        var conflicts: [String] = []
+        if temperature != 6500 || tint != 0 { conflicts.append("white_balance") }
+        if hasLook || self.hasLook { conflicts.append("look") }
+        if !toneSettings.isIdentity { conflicts.append("tone_controls") }
+        if toneCurve != 0 || !curveSettings.isIdentity { conflicts.append("tone_curve") }
+        if !hsl.isIdentity { conflicts.append("hsl") }
+        if !gradingSettings.isIdentity { conflicts.append("color_grading") }
+        if clarity != 0 { conflicts.append("clarity") }
+        if dehaze != 0 { conflicts.append("dehaze") }
+        if sharpening != 0 { conflicts.append("sharpening") }
+        if noiseReduction != 0 || denoise.enabled || displayChromaDenoise != 0 { conflicts.append("denoise") }
+        if photoEffects != PhotoEffectsSettings() { conflicts.append("effects") }
+        if lensSettings != LensCorrectionSettings() { conflicts.append("lens_correction") }
+        result.hdr = try HDRSettings.enabling(stored: hdr, initial: initial, sourceIsHDR: sourceIsHDR, conflicts: conflicts)
+        return result
     }
 }

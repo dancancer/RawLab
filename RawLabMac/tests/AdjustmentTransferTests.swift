@@ -329,7 +329,8 @@ struct AdjustmentTransferTests {
         let standard = try MacAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
         check(!standard.fields.contains(.cropX) && standard.fields.isDisjoint(with: AdjustmentTransferField.lensFields), "Default excludes geometry and lens")
         let all = try MacAdjustmentTransfer.capture(scope: .all, snapshot: state(source), context: raw)
-        check(all.fields == Set(AdjustmentTransferField.allCases), "Explicit all contains every supported field")
+        check(all.payloadVersion == 1 && all.fields == AdjustmentTransferField.legacyFields,
+              "Version-1 all contains exactly the legacy contract fields")
         let modified = try MacAdjustmentTransfer.capture(scope: .modified, snapshot: state(source), context: raw)
         check(modified.fields == [.exposure, .contrast, .hslHueRed], "Modified uses logical defaults and excludes geometry")
         var target = Adjustments()

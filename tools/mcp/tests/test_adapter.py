@@ -153,14 +153,38 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         merged.update(env)
         return CliAdapter(self.config, environment=merged)
 
-    async def test_capabilities_negotiate_v5_and_hide_future_cli_versions(self):
-        adapter = self.adapter(FAKE_VERSIONS="1,2,3,4,5,6")
+    async def test_capabilities_negotiate_v6_and_hide_future_cli_versions(self):
+        adapter = self.adapter(FAKE_VERSIONS="1,2,3,4,5,6,7")
         capabilities = await adapter.start()
-        self.assertEqual(capabilities.recipe_versions, (1, 2, 3, 4, 5))
-        self.assertNotIn(6, capabilities.result["recipe_versions"])
+        self.assertEqual(capabilities.recipe_versions, (1, 2, 3, 4, 5, 6))
+        self.assertNotIn(7, capabilities.result["recipe_versions"])
         self.assertEqual(capabilities.result["commands"], [
             "capabilities", "validate_recipe", "info", "preview", "export",
         ])
+
+    async def test_v6_hdr_identity_survives_staging_and_requires_capability(self):
+        document={"schema_version":6,
+            "processing":{"family":"rawlab_hdr","version":1,"quality":"standard"},
+            "input":{"path":self.input_path.name,"type":"hdr_raster"},
+            "edits":{"exposure":{"ev":1},"white_balance":{"mode":"relative",
+                "relative_temperature":7200,"relative_tint":-12},"tone":{"highlights":-.25}},
+            "output":{"path":str(self.write_root / "hdr.jpg"),"format":"hdr_jpeg","base_color":"display_p3"}}
+        self.recipe_path.write_text(json.dumps(document),encoding="utf-8")
+        old=self.adapter(FAKE_VERSIONS="1,2,3,4,5")
+        await old.start()
+        refused=await old.export_photo(self.recipe_path)
+        self.assertFalse(refused.ok)
+        self.assertFalse((self.write_root / "hdr.jpg").exists())
+        adapter=self.adapter(FAKE_VERSIONS="1,2,3,4,5,6")
+        await adapter.start()
+        self.assertTrue((await adapter.validate_recipe(self.recipe_path)).ok)
+        self.assertTrue((await adapter.export_photo(self.recipe_path)).ok)
+        staged=json.loads(self.recipe_log.read_text(encoding="utf-8"))
+        for key in ("schema_version","processing","edits"):
+            self.assertEqual(staged[key],document[key])
+        self.assertEqual(staged["input"]["type"],"hdr_raster")
+        self.assertEqual(staged["output"]["format"],"hdr_jpeg")
+        self.assertEqual(staged["output"]["base_color"],"display_p3")
 
     async def test_capabilities_reject_cli_without_v4(self):
         adapter = self.adapter(FAKE_VERSIONS="1,2,3")

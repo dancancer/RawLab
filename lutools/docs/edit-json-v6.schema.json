@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RawLab HDR edit recipe v6",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "processing",
+    "input",
+    "edits",
+    "output"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 6
+    },
+    "processing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "family",
+        "version",
+        "quality"
+      ],
+      "properties": {
+        "family": {
+          "const": "rawlab_hdr"
+        },
+        "version": {
+          "type": "integer",
+          "const": 1
+        },
+        "quality": {
+          "const": "standard"
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "type"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "type": {
+          "const": "hdr_raster"
+        }
+      }
+    },
+    "edits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exposure",
+        "white_balance"
+      ],
+      "properties": {
+        "exposure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "ev": {
+              "type": "number",
+              "minimum": -4,
+              "maximum": 4,
+              "default": 0
+            }
+          }
+        },
+        "white_balance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "const": "relative"
+            },
+            "relative_temperature": {
+              "type": "number",
+              "minimum": 2000,
+              "maximum": 50000,
+              "default": 6500
+            },
+            "relative_tint": {
+              "type": "number",
+              "minimum": -150,
+              "maximum": 150,
+              "default": 0
+            }
+          }
+        },
+        "tone": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "contrast": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2,
+              "default": 1
+            },
+            "saturation": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2,
+              "default": 1
+            },
+            "highlights": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1,
+              "default": 0
+            },
+            "shadows": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1,
+              "default": 0
+            }
+          }
+        },
+        "geometry": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "crop": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Normalized rectangle after turns, flips, perspective and straightening; runtime also checks x+width and y+height <=1 with float boundary tolerance.",
+              "properties": {
+                "x": {
+                  "type": "number",
+                  "minimum": 0,
+                  "exclusiveMaximum": 1,
+                  "default": 0
+                },
+                "y": {
+                  "type": "number",
+                  "minimum": 0,
+                  "exclusiveMaximum": 1,
+                  "default": 0
+                },
+                "width": {
+                  "type": "number",
+                  "minimum": 1.1754943508222875e-38,
+                  "maximum": 1,
+                  "default": 1
+                },
+                "height": {
+                  "type": "number",
+                  "minimum": 1.1754943508222875e-38,
+                  "maximum": 1,
+                  "default": 1
+                }
+              }
+            },
+            "quarter_turns": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3,
+              "default": 0
+            },
+            "flip_horizontal": {
+              "type": "boolean",
+              "default": false
+            },
+            "flip_vertical": {
+              "type": "boolean",
+              "default": false
+            },
+            "straighten_degrees": {
+              "type": "number",
+              "minimum": -45,
+              "maximum": 45,
+              "default": 0
+            },
+            "perspective": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "horizontal": {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1,
+                  "default": 0
+                },
+                "vertical": {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1,
+                  "default": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "format",
+        "base_color"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "format": {
+          "const": "hdr_jpeg"
+        },
+        "base_color": {
+          "enum": [
+            "srgb",
+            "display_p3"
+          ]
+        },
+        "jpeg_quality": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 95
+        },
+        "size": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "native"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "long_edge"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "limit_long_edge"
+                },
+                "long_edge": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

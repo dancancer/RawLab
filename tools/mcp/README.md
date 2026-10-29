@@ -4,7 +4,7 @@
 
 ## 安装和启动
 
-需要 Python 3.11+、`uv` 和支持 Agent recipe v4（可额外提供 v5）/ result protocol v1 的 RawLab CLI。官方 Python MCP SDK 固定为 `2.2.0`，间接依赖由 `uv.lock` 锁定。CLI 可以使用项目构建或已校验的发布包；普通桌面应用路径不能代替 CLI 可执行文件。
+需要 Python 3.11+、`uv` 和支持 Agent recipe v4（可额外提供 v5/v6）/ result protocol v1 的 RawLab CLI。官方 Python MCP SDK 固定为 `2.2.0`，间接依赖由 `uv.lock` 锁定。CLI 可以使用项目构建或已校验的发布包；普通桌面应用路径不能代替 CLI 可执行文件。
 
 从仓库根目录安装：
 
@@ -45,7 +45,7 @@ preview/export 要求源图和外观文件存在，输出父目录存在。每�
 
 工具返回 JSON text 和同内容的 `structuredContent`，保持 CLI 的 `protocol_version/command/ok/result/error` envelope，失败标记 `isError=true`。MCP 的 `image_info/render_preview/export_photo` 对应 envelope command `info/preview/export`。CLI 错误保留 code/status；MCP 路径/参数限制使用 `invalid_argument`，超时或协议错误使用 `processing_error`。recipe、source 和 image 在适配层预检缺失时映射为 `io_error`、`status=3`（C ABI `IO_ERROR`）；recipe 中的 look 只做 allowed-root canonical 校验，缺失 look 由已调用的 native export 原样返回其 backend error（例如 `unsupported,status=2`）。output parent 缺失属于 MCP 安全发布策略，返回 `invalid_argument`、`status=null`，不会创建 stage；这不模拟 native 各输出格式可能返回的错误（例如 PNG 的 `processing_error,status=4`）。source/look 的 recipe 结构仍会先由 native `validate_recipe` 读取，适配层不会把适配层预检伪称为 native render/export 已运行或返回的 backend status。允许根、leaf symlink、NUL/不可编码路径等限制仍为 `invalid_argument`、`status=null`。日志和诊断只使用 stderr。
 
-服务按 CLI 能力协商 recipe v1～v5；v5 保留 `processing`（`rawlab` / version `1|2` / `standard`），新处理版本 2 使用 C5。v1～v4 继续采用旧处理语义；CLI 未来增加 v6 不会让此适配层提前宣告支持。路径限制用于本地工具的授权范围，不是对恶意本地程序或并发文件系统攻击的操作系统隔离。
+服务按 CLI 能力协商 recipe v1～v6；v5 保留 `processing`（`rawlab` / version `1|2` / `standard`），新处理版本 2 使用 C5。v1～v4 继续采用旧处理语义。v6 使用独立 `rawlab_hdr` 处理版本、`hdr_raster` 来源及 `hdr_jpeg` 输出；只有 CLI 宣告 v6 时才可使用，不会降级为 SDR/v5。HDR `preview` 明确返回编辑后 SDR PNG，能力中的 HDR 显示为 false。未来 v7 仍不自动支持。路径限制用于本地工具的授权范围，不是对恶意本地程序或并发文件系统攻击的操作系统隔离。
 
 ## 验证
 

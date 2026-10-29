@@ -49,6 +49,7 @@
         D01100000000000000000003 /* BundledLook.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01100000000000000000013; };
         D01000000000000000000001 /* PickerAcquisitionCancelUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01000000000000000000011; };
         D00300000000000000000001 /* GeometrySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00300000000000000000011; };
+        D14000000000000000000001 /* HDRSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14000000000000000000011; };
         D00500000000000000000001 /* ToneControlsSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00500000000000000000011; };
         B1536143952C400DB68B26A0 /* AtmosphereSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D8E964BDD254CC5B38B55CD; };
         D00600000000000000000001 /* ColorGradingSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00600000000000000000011; };
@@ -213,6 +214,16 @@
         2DCD5783547984E860773E97 /* ToneCurveCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324C679CADE139F72163211; };
         B6C0A774BB3BFD64F1F06174 /* ToneCurveEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D20BB7F1FC842F0DA927634; };
         591EBC8F57FFA39BB60C77B4 /* ToneCurveControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BD8A49A9293229AE363C138; };
+        D14100000000000000000001 /* HDRAdjustmentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14100000000000000000011; };
+        D14200000000000000000001 /* HDRRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14200000000000000000011; };
+        D14300000000000000000001 /* HDRSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14300000000000000000011; };
+        D14400000000000000000001 /* HDRRecipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14400000000000000000011; };
+        D14500000000000000000001 /* HDRDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14500000000000000000011; };
+        D14600000000000000000001 /* HDRImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14600000000000000000011; };
+        D14700000000000000000001 /* HDRPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14700000000000000000011; };
+        D14800000000000000000001 /* HDRCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14800000000000000000011; };
+        D14900000000000000000001 /* HDRMonitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14900000000000000000011; };
+        D15000000000000000000001 /* HDRPhotoUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15000000000000000000011; };
 		025457773222452EB536902E /* IOSLUTLibrarySelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82401F63082E43C6B11A2D97 /* IOSLUTLibrarySelection.swift */; };
 		4E29D1D654E1483A83C94DE9 /* IOSLUTCompatibilityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB5989AB770A48B8B6F7B0B0 /* IOSLUTCompatibilityView.swift */; };
 /* End PBXBuildFile section */
@@ -260,6 +271,7 @@
         D01100000000000000000013 /* BundledLook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/BundledLook.swift"; sourceTree = SOURCE_ROOT; };
         D01000000000000000000011 /* PickerAcquisitionCancelUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/PickerAcquisitionCancelUITests.swift; sourceTree = SOURCE_ROOT; };
         D00300000000000000000011 /* GeometrySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GeometrySettings.swift; path = "../Shared/GeometrySettings.swift"; sourceTree = SOURCE_ROOT; };
+        D14000000000000000000011 /* HDRSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRSettings.swift; path = "../Shared/HDRSettings.swift"; sourceTree = SOURCE_ROOT; };
         D00500000000000000000011 /* ToneControlsSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneControlsSettings.swift; path = "../Shared/ToneControlsSettings.swift"; sourceTree = SOURCE_ROOT; };
         1D8E964BDD254CC5B38B55CD /* AtmosphereSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AtmosphereSettings.swift; path = "../Shared/AtmosphereSettings.swift"; sourceTree = SOURCE_ROOT; };
         D00600000000000000000011 /* ColorGradingSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorGradingSettings.swift; path = "../Shared/ColorGradingSettings.swift"; sourceTree = SOURCE_ROOT; };
@@ -567,6 +579,16 @@
         0324C679CADE139F72163211 /* ToneCurveCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveCanvas.swift; path = "../Shared/ToneCurveCanvas.swift"; sourceTree = SOURCE_ROOT; };
         8D20BB7F1FC842F0DA927634 /* ToneCurveEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveEditor.swift; path = "../Shared/ToneCurveEditor.swift"; sourceTree = SOURCE_ROOT; };
         4BD8A49A9293229AE363C138 /* ToneCurveControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveControls.swift; path = "RawLab/UI/Panels/ToneCurveControls.swift"; sourceTree = SOURCE_ROOT; };
+        D14100000000000000000011 /* HDRAdjustmentTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRAdjustmentTransfer.swift; path = "../Shared/HDRAdjustmentTransfer.swift"; sourceTree = SOURCE_ROOT; };
+        D14200000000000000000011 /* HDRRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRRequest.swift; path = "../Shared/Native/HDRRequest.swift"; sourceTree = SOURCE_ROOT; };
+        D14300000000000000000011 /* HDRSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRSource.swift; path = "../Shared/Native/HDRSource.swift"; sourceTree = SOURCE_ROOT; };
+        D14400000000000000000011 /* HDRRecipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRRecipe.swift; path = "../Shared/HDRRecipe.swift"; sourceTree = SOURCE_ROOT; };
+        D14500000000000000000011 /* HDRDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRDisplay.swift; path = "../Shared/HDRDisplay.swift"; sourceTree = SOURCE_ROOT; };
+        D14600000000000000000011 /* HDRImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRImage.swift; path = "../Shared/Native/HDRImage.swift"; sourceTree = SOURCE_ROOT; };
+        D14700000000000000000011 /* HDRPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRPresentation.swift; path = "../Shared/Native/HDRPresentation.swift"; sourceTree = SOURCE_ROOT; };
+        D14800000000000000000011 /* HDRCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRCanvas.swift; path = "../Shared/Native/HDRCanvas.swift"; sourceTree = SOURCE_ROOT; };
+        D14900000000000000000011 /* HDRMonitoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRMonitoring.swift; path = "../Shared/Native/HDRMonitoring.swift"; sourceTree = SOURCE_ROOT; };
+        D15000000000000000000011 /* HDRPhotoUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/HDRPhotoUITests.swift; sourceTree = SOURCE_ROOT; };
 		82401F63082E43C6B11A2D97 /* IOSLUTLibrarySelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Looks/IOSLUTLibrarySelection.swift"; sourceTree = SOURCE_ROOT; };
 		AB5989AB770A48B8B6F7B0B0 /* IOSLUTCompatibilityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Panels/IOSLUTCompatibilityView.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
@@ -648,6 +670,16 @@
 				D01800000000000000000011,
 				AB1700000000000000000002,
 				D00300000000000000000011,
+				D14000000000000000000011,
+				D14100000000000000000011,
+				D14200000000000000000011,
+				D14300000000000000000011,
+				D14400000000000000000011,
+				D14500000000000000000011,
+				D14600000000000000000011,
+				D14700000000000000000011,
+				D14800000000000000000011,
+				D14900000000000000000011,
 				D00500000000000000000011,
 				1D8E964BDD254CC5B38B55CD,
 				D00600000000000000000011, 00A3E4C709437DACC0D1D46F, DD125F07D1C4D65DADBADB20, 121C57F16BC998BA385F1EA6, 8DAAAD88BE5F6F4ABA164EB9, 0324C679CADE139F72163211, 8D20BB7F1FC842F0DA927634, 4BD8A49A9293229AE363C138,
@@ -841,6 +873,7 @@
 				D00900000000000000000011,
 				A0D17B5E0000000000000004,
 				D01000000000000000000011,
+				D15000000000000000000011,
 				2F6D48C6086EC660301E288B,
 				0DAA7689F37A5648D3C8F238,
 				2F109479FD08681A1F30E85C,
@@ -1117,6 +1150,7 @@
 				D00900000000000000000001,
 				A0D17B5E0000000000000003,
 				D01000000000000000000001,
+				D15000000000000000000001,
 				8FC75E90CDC70C4708EB37A2,
 				5E0132EABC243650B81956BA,
 				CE05C93906EE52BFDBEDD0AD,
@@ -1162,6 +1196,16 @@
 				C3A803626CF750D1B9AFFCDA,
 				AB1700000000000000000001,
 				D00300000000000000000001,
+				D14000000000000000000001,
+				D14100000000000000000001,
+				D14200000000000000000001,
+				D14300000000000000000001,
+				D14400000000000000000001,
+				D14500000000000000000001,
+				D14600000000000000000001,
+				D14700000000000000000001,
+				D14800000000000000000001,
+				D14900000000000000000001,
 				D00500000000000000000001,
 				B1536143952C400DB68B26A0,
 				D00600000000000000000001, 2DA4DF4798D881C25F72C798, 2413F38498878607A82822FF, B113946A33D6E7CA01F7A684, BA13EBD0673C922006A7B4B1, 2DCD5783547984E860773E97, B6C0A774BB3BFD64F1F06174, 591EBC8F57FFA39BB60C77B4,

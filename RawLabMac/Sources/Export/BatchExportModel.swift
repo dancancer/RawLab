@@ -14,6 +14,40 @@ private final class BatchCancellation {
     func cancel() { lock.lock(); value = true; let progress = progress; lock.unlock(); progress?.cancel() }
 }
 
+final class MacHDRBatchPreparation {
+    private let source: URL
+    private let settings: Adjustments
+    private let store: EditPersistence
+    private let films: [Film]
+    init(source: URL,settings: Adjustments,store: EditPersistence,films: [Film]) {
+        self.source=source; self.settings=settings; self.store=store; self.films=films
+    }
+    func prepare(_ item: BatchExportItem,ordinal: Int,format: ExportFormat,longEdge: Int?) throws -> BatchFrozenSettings {
+        guard try OriginalFileIdentity(item.input)==item.identity else { throw BatchExportFailure.changedInput }
+        let record=try store.versionedState(for:item.input)
+        let raster=RenderEngine.isRasterInput(item.input),info=try HDRSourceInfo.probe(item.input)
+        var defaults=Adjustments(); defaults.exposureMode=raster ? .sensor : .preview
+        if info != nil { defaults.hdr=HDRSettings() }
+        let target=record.state ?? PhotoEditState(settings:defaults,filmID:"")
+        let payload=try HDRAdjustmentTransfer.batchPayload(settings:settings.hdr!,identifier:source.path,
+            processingVersion:settings.processing.version,targetIsHDR:target.settings.isHDREditing)
+        let context=MacAdjustmentTransferContext(identifier:item.identity.path,isRaw:!raster,sourceIsHDR:info != nil)
+        let prepared=try MacAdjustmentTransfer.prepare(payload:payload,target:target,context:context)
+        let look: URL?,name: String
+        if prepared.settings.isHDREditing { look=nil; name="HDR" }
+        else if let recipe=prepared.settings.masterRecipe { look=recipe.lutURL(); name=recipe.title }
+        else if !prepared.filmID.isEmpty {
+            guard let film=Film.independentRecipe(prepared.filmID) ?? films.first(where:{ $0.id==prepared.filmID || "builtin:\($0.url.lastPathComponent)"==prepared.filmID }) else {
+                throw BatchExportFailure.missingLook
+            }
+            look=film.url; name=film.name
+        } else { look=nil; name="neutral" }
+        if prepared.settings.masterRecipeID != nil && look==nil { throw BatchExportFailure.missingLook }
+        return BatchFrozenSettings(ordinal:ordinal,settings:prepared.settings,look:look,
+            lookSHA256:try look.map(BatchFrozenSettings.checksum),lookName:name,outputFormat:format,longEdge:longEdge)
+    }
+}
+
 final class BatchExportModel: ObservableObject {
     @Published private(set) var job: BatchExportJob
     @Published private(set) var running = false
@@ -42,11 +76,13 @@ final class BatchExportModel: ObservableObject {
     private var cancellation = BatchCancellation()
     private var previewRevision = UUID()
     private let onUsage: (UsageEvent) -> Void
+    private let hdrPreparation: MacHDRBatchPreparation?
 
-    init(job: BatchExportJob, journal: BatchJournal, onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
+    init(job: BatchExportJob, journal: BatchJournal,hdrPreparation: MacHDRBatchPreparation? = nil,onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
         self.job = job
         self.journal = journal
         self.onUsage = onUsage
+        self.hdrPreparation=hdrPreparation
         error = job.failure
     }
 
@@ -100,8 +136,8 @@ final class BatchExportModel: ObservableObject {
             for item in candidates {
                 var failure: String?
                 do {
-                    let snapshot = try validationJob.snapshot(for: item)
-                    if snapshot.settings.aiDenoiseEnabled {
+                    let snapshot = try hdrPreparation?.prepare(item,ordinal:0,format:validationJob.format,longEdge:validationJob.longEdge) ?? validationJob.snapshot(for:item)
+                    if !snapshot.settings.isHDREditing && snapshot.settings.aiDenoiseEnabled {
                         try RenderEngine.validateAIInput(item.input)
                     } else {
                         if engine == nil { engine = try RenderEngine() }
@@ -182,13 +218,15 @@ final class BatchExportModel: ObservableObject {
             var failure: String?
             var attempted = Set<UUID>()
             do {
+                let runSnapshot=try freezeHDRJob(snapshot,shouldCancel:{ cancellation.cancelled })
+                work=runSnapshot
                 try BatchExportRunner.run(job: &work, journal: journal, scope: scope,
                                          shouldCancel: { cancellation.cancelled }, didUpdate: { updated in
                     attempted.formUnion(updated.items.filter { $0.status == .running }.map(\.id))
                     DispatchQueue.main.async { self.job = updated }
                 }) { input, settings, look, output in
                     if self.engine == nil { self.engine = try RenderEngine() }
-                    if settings.aiDenoiseEnabled {
+                    if !settings.isHDREditing && settings.aiDenoiseEnabled {
                         let progress = AIPreparation { phase, done, total in
                             DispatchQueue.main.async { self.aiProgress = (phase, done, total) }
                         }
@@ -201,9 +239,10 @@ final class BatchExportModel: ObservableObject {
                     }
                     if cancellation.cancelled { throw RenderError.aiCancelled }
                     _ = try self.engine!.render(input, settings: settings, lut: look, edge: 32)
-                    let item = snapshot.items.first { $0.input == input }!
-                    let longEdge = try snapshot.snapshot(for: item).longEdge
-                    _ = try self.engine!.render(input, settings: settings, lut: look, edge: nil, output: output, exportLongEdge: longEdge)
+                    let item = runSnapshot.items.first { $0.input == input }!
+                    let frozen = try runSnapshot.snapshot(for:item)
+                    _ = try self.engine!.render(input, settings: settings, lut: look, edge: nil, output: output,
+                        exportLongEdge:frozen.longEdge,exportFormat:frozen.outputFormat)
                 }
             } catch { failure = error.localizedDescription; work.interrupted = true }
             let final = work, message = failure
@@ -217,6 +256,28 @@ final class BatchExportModel: ObservableObject {
                 self.onUsage(.batchExportCompleted(succeeded: succeeded, failed: failed, outcome: outcome))
             }
         }
+    }
+
+    private func freezeHDRJob(_ draft: BatchExportJob,shouldCancel: () -> Bool) throws -> BatchExportJob {
+        guard draft.mode == .uniformFrozen,draft.settings.isHDREditing else { return draft }
+        guard let hdrPreparation else { throw RenderError.failed(L10n.text("当前照片的设置尚不可用。")) }
+        var result=draft; result.items=draft.items.filter(\.selected)
+        var owned=[URL](),published=false
+        defer { if !published { for url in owned { try? FileManager.default.removeItem(at:url) } } }
+        for index in result.items.indices {
+            if shouldCancel() { throw RenderError.aiCancelled }
+            let prepared=try hdrPreparation.prepare(result.items[index],ordinal:index,format:draft.format,longEdge:draft.longEdge)
+            guard draft.format != .hdrJPEG || prepared.settings.isHDREditing else {
+                throw RenderError.failed(L10n.text("HDR JPEG 需要启用 HDR 编辑。")+" "+result.items[index].input.lastPathComponent)
+            }
+            let look=try journal.snapshotLook(prepared.look,for:result.items[index].id)
+            if let look { owned.append(look) }
+            result.items[index].frozen=BatchFrozenSettings(ordinal:index,settings:prepared.settings,look:look,
+                lookSHA256:prepared.lookSHA256,lookName:prepared.lookName,outputFormat:prepared.outputFormat,longEdge:prepared.longEdge)
+        }
+        result.settingsMode = .perTargetFrozen; result.version=3
+        try result.validate(); try journal.save(result); published=true
+        return result
     }
 
     func cancel() {
@@ -243,14 +304,17 @@ final class BatchExportModel: ObservableObject {
         queue.async { [self] in
             let result = Result { () -> RenderedImage? in
                 try frozenJob.validate()
-                let snapshot = try frozenJob.snapshot(for: item)
+                let snapshot: BatchFrozenSettings
+                if frozenJob.mode == .uniformFrozen,let hdrPreparation {
+                    snapshot=try hdrPreparation.prepare(item,ordinal:0,format:frozenJob.format,longEdge:frozenJob.longEdge)
+                } else { snapshot=try frozenJob.snapshot(for:item) }
                 guard try OriginalFileIdentity(item.input) == item.identity else { throw BatchExportFailure.changedInput }
                 if frozenJob.mode == .perTargetFrozen {
                     guard try BatchExportItem.resourceKey(item.input) == item.resourceIdentifier else { throw BatchExportFailure.changedInput }
                     try snapshot.verifyLook()
                 }
                 if engine == nil { engine = try RenderEngine() }
-                if snapshot.settings.aiDenoiseEnabled {
+                if !snapshot.settings.isHDREditing && snapshot.settings.aiDenoiseEnabled {
                     try engine!.prepareAI(item.input, settings: snapshot.settings, progress: AIPreparation { _, _, _ in })
                 }
                 return try engine!.render(item.input, settings: snapshot.settings, lut: snapshot.look, edge: 1600)
@@ -264,6 +328,10 @@ final class BatchExportModel: ObservableObject {
                 }
             }
         }
+    }
+
+    func closePreview() {
+        previewRevision=UUID(); previewing=false; preview=nil; previewFile=nil
     }
 
     func reveal(_ output: URL? = nil) {

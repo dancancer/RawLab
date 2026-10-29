@@ -39,6 +39,7 @@ published packages, checksums and package provenance.
 - [Active architecture and performance review, 2026-10-18](architecture/architecture-and-performance-review-2026-10-18.md), with separate historical measurements and current-code static recheck
 - [Active cross-camera preset roadmap](architecture/cross-camera-presets-roadmap.md), including outstanding quality gates
 - [Edit memory and batch export design](design/2026-10-09-edit-memory-batch-export/README.md)
+- [Phone HDR photo design](design/hdr-photos/technical-design.md) and [phased implementation plan](integration/hdr-photos/implementation-plan.md): planned Mac/iOS gain-map import, basic editing, HDR/SDR previews and compatible JPEG output; not implemented
 
 ## Releases
 

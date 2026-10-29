@@ -1,4 +1,5 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "ffi/hdr_session.h"
 
 #include "sony2fuji/sony2fuji.h"
 #include "sony2fuji/dcp_look.h"
@@ -99,6 +100,14 @@ struct sony2fuji_session {
     uint64_t raw_revision = 0;
 #endif
 };
+
+bool hdrSessionForcesGPU(const sony2fuji_session* session) {
+    return session && session->gpu_config.mode == sony2fuji::GpuMode::Force;
+}
+
+void hdrSessionDidRenderCPU(sony2fuji_session* session) {
+    session->last_backend = SONY2FUJI_BACKEND_CPU;
+}
 
 struct sony2fuji_hsl_probe {
     sony2fuji::ImageData image;
