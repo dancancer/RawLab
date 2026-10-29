@@ -42,6 +42,7 @@ class NativeProcessingException(val status: Int, message: String) : IOException(
     companion object {
         const val IO_ERROR = 3
         const val OUTPUT_IO_ERROR = 6
+        const val CANCELLED = 7
     }
 }
 
@@ -60,7 +61,7 @@ class NativeFrame(val width: Int, val height: Int, val pixels: ByteArray, val te
 }
 
 class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoCloseable {
-    private var handle = nativeCreate(mode).also { check(it != 0L) }
+    @Volatile private var handle = nativeCreate(mode).also { check(it != 0L) }
     private var catalogKey: Triple<String, Long, Long>? = null
     private var candidates: List<LensCandidate> = emptyList()
     private var rasterKey: Triple<String, Long, Long>? = null
@@ -79,8 +80,10 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
 
     @Synchronized
     fun preview(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
-        inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW): NativeFrame {
-        val frame = checkNotNull(previewRequest(input, lut, settings, edge, interactive, inputKind))
+        inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW,
+        cancellationGeneration: Long = -1L): NativeFrame {
+        val frame = checkNotNull(previewRequest(input, lut, settings, edge, interactive, inputKind,
+            cancellationGeneration = cancellationGeneration))
         val dimensions = nativeGeometrySize(handle)
         require(dimensions.size == 2 && dimensions.all { it > 0 }) { "Invalid native geometry size" }
         frame.geometryWidth = dimensions[0]
@@ -99,7 +102,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     }
 
     private fun previewRequest(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
-        inputKind: PhotoInputKind, revision: HslTargetRevision? = null, probe: FloatArray? = null): NativeFrame? {
+        inputKind: PhotoInputKind, revision: HslTargetRevision? = null, probe: FloatArray? = null,
+        cancellationGeneration: Long = -1L): NativeFrame? {
         check(handle != 0L) { "Processor is closed" }
         val effective = settings.effectiveFor(inputKind)
         val pixels = rasterInput(input, inputKind)
@@ -119,18 +123,20 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             effective.displayChromaDenoise, effective.effects.vignetteAmount, effective.effects.vignetteMidpoint,
             effective.effects.vignetteRoundness, effective.effects.vignetteFeather, effective.effects.vignetteHighlights,
             effective.effects.grainAmount, effective.effects.grainSize, effective.effects.grainRoughness,
-            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, effective.processing.version, null, revision?.source ?: 0, revision?.request ?: 0, probe)
+            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, effective.processing.version, null,
+            revision?.source ?: 0, revision?.request ?: 0, probe, cancellationGeneration)
     }
 
     @Synchronized
     fun sampleHsl(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
-        inputKind: PhotoInputKind, revision: HslTargetRevision, x: Float, y: Float): HslTargetSample {
+        inputKind: PhotoInputKind, revision: HslTargetRevision, x: Float, y: Float,
+        cancellationGeneration: Long = -1L): HslTargetSample {
         if (!x.isFinite() || !y.isFinite())
             return HslTargetSample.unavailable(revision, HslTargetAvailability.NONFINITE)
         if (x !in 0f..1f || y !in 0f..1f)
             return HslTargetSample.unavailable(revision, HslTargetAvailability.OUTSIDE)
         val probe = FloatArray(13).also { it[0] = x; it[1] = y }
-        previewRequest(input, lut, settings, edge, interactive, inputKind, revision, probe)
+        previewRequest(input, lut, settings, edge, interactive, inputKind, revision, probe, cancellationGeneration)
         return HslTargetSample(revision, HslTargetAvailability.entries.getOrNull(probe[0].toInt()) ?: HslTargetAvailability.FAILED,
             probe.slice(2..4), probe.slice(5..12), probe[1] == 1f)
     }
@@ -189,6 +195,13 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         if (handle != 0L) { nativeDestroy(handle); handle = 0L }
         releaseRasterCache()
     }
+
+    // 取消不能等待 preview 的 Java monitor 或 native session 渲染锁。
+    internal fun cancellationGeneration(): Long = nativeCancellationGeneration(handle)
+    internal fun cancelPreview() { nativeCancelPreview(handle) }
+
+    private external fun nativeCancellationGeneration(handle: Long): Long
+    private external fun nativeCancelPreview(handle: Long)
 
     @Synchronized
     internal fun releaseRasterCache() {
@@ -263,7 +276,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         vignetteAmount: Float, vignetteMidpoint: Float, vignetteRoundness: Float, vignetteFeather: Float,
         vignetteHighlights: Float, grainAmount: Float, grainSize: Float, grainRoughness: Float,
         exposureMode: Int, hsl: FloatArray, recipeActive: Boolean, processingVersion: Int, backend: IntArray? = null,
-        sourceRevision: Long = 0, requestRevision: Long = 0, hslProbe: FloatArray? = null): NativeFrame?
+        sourceRevision: Long = 0, requestRevision: Long = 0, hslProbe: FloatArray? = null,
+        cancellationGeneration: Long = -1L): NativeFrame?
 
     companion object {
         const val CPU = 0

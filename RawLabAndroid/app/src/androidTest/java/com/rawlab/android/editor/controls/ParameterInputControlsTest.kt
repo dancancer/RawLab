@@ -10,13 +10,14 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import com.rawlab.android.testing.LanguageTestRule
+import com.rawlab.android.testing.ForegroundTestRule
 import org.junit.rules.RuleChain
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 
 class ParameterInputControlsTest {
     private val compose = createComposeRule()
-    @get:Rule val rule = RuleChain.outerRule(LanguageTestRule()).around(compose)
+    @get:Rule val rule = RuleChain.outerRule(LanguageTestRule()).around(ForegroundTestRule()).around(compose)
 
     @Test fun oldHalfValueAndEquivalentTextApplyWithoutCallingSetter() {
         var writes = 0
@@ -102,7 +103,7 @@ class ParameterInputControlsTest {
             }
         } }
         fun drag() = compose.onNodeWithTag("adjustment-slider").performTouchInput {
-            down(center); moveBy(Offset(-32.dp.toPx(), 0f)); up()
+            down(center); moveBy(Offset(32.dp.toPx(), 0f)); up()
         }
         drag()
         compose.runOnIdle { assertEquals(.2f, value, .00001f); value = 0f; fine = true; calls = 0 }
@@ -146,6 +147,24 @@ class ParameterInputControlsTest {
 
     @Test fun modifiedValueDragContinuesAcrossRecomposition() = continuousDrag(.5f)
     @Test fun firstModificationDoesNotCancelTheActiveDrag() = continuousDrag(0f)
+    @Test fun exposureCrossesDefaultWithoutCancellingDrag() = dragThroughDefault(R.string.exposure, .2f, -4f..4f, -.2f)
+    @Test fun hslCrossesDefaultWithoutCancellingDrag() = dragThroughDefault(R.string.hsl_hue, 4f, -100f..100f, -4f)
+    private fun dragThroughDefault(label: Int, original: Float, range: ClosedFloatingPointRange<Float>, expected: Float) {
+        var value by mutableFloatStateOf(original)
+        val calls = mutableListOf<Pair<Float, Boolean>>()
+        compose.setContent { RawLabTheme {
+            NumericControl(label, value, range, "", true,
+                { next, interactive -> value = next; calls += next to interactive }, { value = 0f })
+        } }
+        val track = compose.onNodeWithTag("adjustment-slider")
+        track.performTouchInput { down(center); moveBy(Offset(-32.dp.toPx(), 0f)) }
+        compose.runOnIdle { assertEquals("Reaching the default must preserve the active gesture: $calls", 0f, value, .00001f) }
+        track.performTouchInput { moveBy(Offset(-32.dp.toPx(), 3.dp.toPx())); up() }
+        compose.runOnIdle {
+            assertEquals("Dragging past the default must commit the final value: $calls", expected, value, .00001f)
+            assertEquals(expected to false, calls.last())
+        }
+    }
     private fun continuousDrag(original: Float) {
         var value by mutableFloatStateOf(original)
         val calls = mutableListOf<Pair<Float, Boolean>>()
@@ -154,9 +173,9 @@ class ParameterInputControlsTest {
                 { next, interactive -> value = next; calls += next to interactive }, {})
         } }
         val track = compose.onNodeWithTag("adjustment-slider")
-        track.performTouchInput { down(center); moveBy(Offset(-32.dp.toPx(), 0f)) }
+        track.performTouchInput { down(center); moveBy(Offset(32.dp.toPx(), 0f)) }
         compose.runOnIdle { assertEquals(original + .2f, value, .00001f) }
-        track.performTouchInput { moveBy(Offset(-32.dp.toPx(), 0f)); up() }
+        track.performTouchInput { moveBy(Offset(32.dp.toPx(), 0f)); up() }
         compose.runOnIdle {
             assertEquals("The second move must update after the first move recomposed the row", original + .4f, value, .00001f)
             assertEquals(false, calls.last().second)

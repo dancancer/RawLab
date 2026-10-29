@@ -106,6 +106,7 @@ class EditorViewModel @JvmOverloads constructor(
     private var previewLongEdge = 1600
     private var requestedPreviewLongEdge = 1600
     private var previewResizeJob: Job? = null
+    private val interactivePreviewSize = com.rawlab.android.editor.render.InteractivePreviewSize()
     private val pendingPhotoImport = PendingPhotoImport()
     private var lookRevision = 0L
     private var releases = 0
@@ -506,7 +507,8 @@ class EditorViewModel @JvmOverloads constructor(
         if (edits != current.edits) editRevision += 1
         mutable.value = current.copy(edits = edits, rendering = true, exact = false, error = null,
             previewResizePending = previewResizeJob != null)
-        currentRevision = submitRender(Work.Preview(current.photo!!, edits, interactive, gpuMode(), edge = previewLongEdge))
+        currentRevision = submitRender(Work.Preview(current.photo!!, edits, interactive, gpuMode(),
+            edge = interactivePreviewSize.edge(previewLongEdge, interactive, android.os.SystemClock.uptimeMillis())))
         if (!interactive) persist(current.photo, edits) { saved ->
             mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
             fadeSaveNotice()
@@ -577,7 +579,8 @@ class EditorViewModel @JvmOverloads constructor(
             if (draft.group == AdjustmentGroup.GEOMETRY) it.copy(geometry = it.geometry.uncropped()) else it
         }
         mutable.value = current.copy(rendering = true, exact = false, error = null)
-        currentRevision = submitRender(Work.Preview(photo, edits, interactive, gpuMode(), edge = 1600, draft = true))
+        currentRevision = submitRender(Work.Preview(photo, edits, interactive, gpuMode(),
+            edge = interactivePreviewSize.edge(1600, interactive, android.os.SystemClock.uptimeMillis()), draft = true))
     }
 
     fun chooseGeometryRatio(ratio: GeometryRatio, portrait: Boolean) {

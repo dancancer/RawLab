@@ -31,8 +31,20 @@ internal class EditorRenderer(
 
     private fun engine() = processor ?: NativeProcessor(lensDatabase = storage.lensDatabase()).also { processor = it }
 
+    fun perform(work: Work, cancellation: RenderCancellation): WorkResult = synchronized(storage) {
+        if (work !is Work.Preview && work !is Work.HslProbe && work !is Work.Import) return@synchronized perform(work)
+        cancellation.check()
+        val native = engine()
+        val generation = native.cancellationGeneration()
+        cancellation.onCancel(native::cancelPreview)
+        try {
+            cancellation.check()
+            perform(work, generation)
+        } finally { cancellation.onCancel(null) }
+    }
+
     // 托管文件从解析路径到 native 读取完成期间不能被另一队列删除。
-    fun perform(work: Work): WorkResult = synchronized(storage) { when (work) {
+    private fun perform(work: Work, generation: Long = -1L): WorkResult = synchronized(storage) { when (work) {
         is Work.Import -> {
             val photo = work.retained ?: storage.import(work.uri)
             try {
@@ -42,12 +54,12 @@ internal class EditorRenderer(
                 if (restored != null && runCatching { storage.lookPath(restored) }.isFailure) {
                     val native = engine()
                     native.setGpuMode(work.gpuMode)
-                    val validation = native.preview(photo.file, null, restored.copy(film = "neutral", recipeID = null), 256, false, photo.inputKind)
+                    val validation = native.preview(photo.file, null, restored.copy(film = "neutral", recipeID = null), 256, false, photo.inputKind, generation)
                     if (debuggable)
                         android.util.Log.i("RawLabImport", "missingLookValidationBackend=${validation.backend}")
                     WorkResult.MissingLook(photo, restored, record)
                 } else perform(Work.Preview(photo, restored ?: EditSettings(), false, work.gpuMode,
-                    importing = true, restored = restored != null, importedRecord = record))
+                    importing = true, restored = restored != null, importedRecord = record), generation)
             }
             catch (error: Throwable) { if (work.retained == null) photo.file.delete(); throw error }
         }
@@ -59,7 +71,7 @@ internal class EditorRenderer(
             if (original?.first != sourceKey) {
                 original = null
                 transformedNeutral = null
-                val source = native.preview(work.photo.file, null, EditSettings(processing = work.edits.processing), 1600, false, work.photo.inputKind)
+                val source = native.preview(work.photo.file, null, EditSettings(processing = work.edits.processing), 1600, false, work.photo.inputKind, generation)
                 originalAspect = source.geometryWidth.toFloat() / source.geometryHeight
                 original = sourceKey to ReferenceFrame(source.bitmap(), source.histogram)
             }
@@ -69,13 +81,13 @@ internal class EditorRenderer(
                 if (transformedNeutral?.first != key) {
                     transformedNeutral = null
                     val comparison = EditSettings(geometry = work.edits.geometry, lens = work.edits.lens, processing = work.edits.processing)
-                    val frame = native.preview(work.photo.file, null, comparison, edge, work.interactive, work.photo.inputKind)
+                    val frame = native.preview(work.photo.file, null, comparison, edge, work.interactive, work.photo.inputKind, generation)
                     transformedNeutral = key to ReferenceFrame(frame.bitmap(), frame.histogram)
                 }
                 transformedNeutral!!.second
             }
             val lut = storage.lookPath(work.edits)
-            val film = native.preview(work.photo.file, lut, work.edits, edge, work.interactive, work.photo.inputKind)
+            val film = native.preview(work.photo.file, lut, work.edits, edge, work.interactive, work.photo.inputKind, generation)
             val dimensions = comparisonDimensions(film.geometryWidth, film.geometryHeight)
             WorkResult.Preview(work, PreviewPair(neutral.bitmap, film.bitmap(), film.temperature, film.tint, film.lens,
                 dimensions.first, dimensions.second, originalAspect, neutral.histogram, film.histogram))
@@ -84,7 +96,7 @@ internal class EditorRenderer(
             val preview = work.preview
             val sample = runCatching {
                 engine().sampleHsl(preview.photo.file, storage.lookPath(preview.edits), preview.edits,
-                    preview.edge, preview.interactive, preview.photo.inputKind, work.revision, work.x, work.y)
+                    preview.edge, preview.interactive, preview.photo.inputKind, work.revision, work.x, work.y, generation)
             }.getOrElse { HslTargetSample.unavailable(work.revision, HslTargetAvailability.FAILED) }
             WorkResult.HslProbe(work, sample)
         }

@@ -1,5 +1,7 @@
 # 第五批 S2b：参数行、精确输入与刻度窗口
 
+本批的固定面板高度与普通字号单行参数约定，iOS / Android 后续由[紧凑控件规则](../../design/editor-workspace/compact-controls.md)覆盖：底栏按内容有界收紧，所有窗口宽度下标尺独占一行，复杂工具允许内部滚动。本批记录不作为该后续布局的验收标准。
+
 > **For agentic workers:** 按既有四端 owner 分工实施；使用 `superpowers:subagent-driven-development` 的任务/独立评审流程。四端独立 worktree 和不重叠的 owned 路径允许并行，重型构建由协调者错峰。
 
 **Goal:** 完成四端 S2b 参数输入与展示，保留 S2a 导航、重置、保存与 processing identity。

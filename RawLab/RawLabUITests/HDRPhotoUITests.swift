@@ -172,6 +172,7 @@ final class HDRPhotoUITests: XCTestCase {
         XCTAssertTrue(foundHDR,"No HDR source among the task-only library's recent photos")
         XCTAssertTrue(app.buttons["tool.exposure"].isSelected,"New HDR import opens an available basic control")
         XCTAssertFalse(app.buttons["editor.group.looks"].isEnabled,"HDR-incompatible looks are disabled")
+        XCTAssertFalse(app.buttons["exposure.auto"].isEnabled,"HDR mode must keep SDR automatic exposure disabled")
         let originalValue=app.buttons["tool.exposure"].value as? String
         app.buttons["editor.privacy"].tap()
         let undoBefore=app.buttons["撤销"].isEnabled

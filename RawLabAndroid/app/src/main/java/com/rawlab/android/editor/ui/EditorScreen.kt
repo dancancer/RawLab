@@ -417,7 +417,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                                 { view = view.selectComparison(it) }, { view = view.copy(comparisonEnabled = false, holdingBefore = false) }, onRetry, hslTarget = canvasTarget, showTargetStatus = !expanded)
                     if (state.photo != null) {
                         if (!view.purePreview) HorizontalDivider()
-                        retainedDock(Modifier.hideForPurePreview(view.purePreview).fillMaxWidth().height(dockHeight), false, dockLayout.compactNavigation)
+                        retainedDock(Modifier.hideForPurePreview(view.purePreview).fillMaxWidth().heightIn(max = dockHeight), false, dockLayout.compactNavigation)
                     }
                 }
             }

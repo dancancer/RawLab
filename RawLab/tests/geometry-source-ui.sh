@@ -30,7 +30,7 @@ root, out, original = map(pathlib.Path, sys.argv[1:])
 transforms = {
     "RawLab/RawLab/UI/EditorState/EditorLayout.swift": (
         '.frame(height: side ? nil : adjustmentRegionHeight(size: size, accessibility: accessibility))',
-        '.frame(height: side ? nil : adjustmentRegionHeight(size: size, accessibility: accessibility))\n                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.layoutFrames["panel"] = [frame.minX, frame.minY, frame.width, frame.height]; GeometrySourceProbe.shared.layoutPolicy = ["width": size.width, "height": size.height, "accessibility": accessibility, "buttonWidth": groupNavigationButtonWidth, "buttonHeight": groupNavigationButtonHeight, "scrollTools": scrollTools, "requiredWidth": requiredWidth, "sideWidth": sideWidth, "side": side, "contentSizeCategory": UIApplication.shared.preferredContentSizeCategory.rawValue] }'),
+        '.frame(height: side ? nil : adjustmentRegionHeight(size: size, accessibility: accessibility))\n                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.layoutFrames["panel"] = [frame.minX, frame.minY, frame.width, frame.height]; GeometrySourceProbe.shared.layoutPolicy = ["width": size.width, "height": size.height, "accessibility": accessibility, "buttonWidth": groupNavigationButtonWidth, "buttonHeight": groupNavigationButtonHeight, "scrollTools": scrollTools, "sideWidth": sideWidth, "side": side, "contentSizeCategory": UIApplication.shared.preferredContentSizeCategory.rawValue] }'),
     "RawLab/RawLab/UI/Editor/ContentView.swift": ("        .onAppear {\n            viewModel.loadLUTsIfNeeded()",
                           "        .onAppear {\n            Task { await self.runGeometrySourceReview() }\n            viewModel.loadLUTsIfNeeded()"),
     "RawLab/RawLab/UI/Editor/ContentView+Panels.swift": ("onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) }",
@@ -54,7 +54,7 @@ for name, (before, after) in transforms.items():
         assert changed.count(fine_marker) == 1
         changed = changed.replace(fine_marker, fine_marker + '\n                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.layoutFrames["fine"] = [frame.minX, frame.minY, frame.width, frame.height] }')
         text_marker = "Text(group.title).font(.caption).lineLimit(singleLine ? 1 : 2)"
-        rect_marker = "            .contentShape(Rectangle())"
+        rect_marker = "            .frame(width: width, height: height)\n            .contentShape(Rectangle())"
         assert changed.count(text_marker) == 1 and changed.count(rect_marker) == 1
         changed = changed.replace(text_marker, text_marker + '\n                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.groupTextRects[group.rawValue] = [frame.minX, frame.minY, frame.width, frame.height] }')
         changed = changed.replace(rect_marker, rect_marker + '\n            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.groupRects[group.rawValue] = [frame.minX, frame.minY, frame.width, frame.height] }')

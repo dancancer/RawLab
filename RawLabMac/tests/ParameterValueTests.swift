@@ -522,6 +522,38 @@ struct ParameterValueTests {
             fontSizes.append(font.pointSize)
         }
         check(fontSizes.count == 2 && fontSizes[1] > fontSizes[0], "The accessibility row increases its native numeric font without shrinking text")
+
+        let temperature = ValueBox(6500)
+        func temperatureRow() -> some View {
+            ParameterRow(title: "Temperature", value: Binding(get: { temperature.value }, set: { temperature.value = $0 }),
+                         range: 2000...50000, defaultValue: 6500, unit: "K", precision: .temperature,
+                         identifier: "value.layout.temperature", sliderMapping: .reciprocalKelvin).dynamicTypeSize(.xxxLarge)
+        }
+        let host = NSHostingView(rootView: temperatureRow())
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 650, height: 220),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.contentView = host
+        defer { window.contentView = nil; window.close() }
+        host.layoutSubtreeIfNeeded(); drainDeferredValidity(); host.layoutSubtreeIfNeeded()
+        let initial = fields(host).first!.convert(fields(host).first!.bounds, to: host)
+        temperature.value = 50000
+        host.rootView = temperatureRow()
+        host.layoutSubtreeIfNeeded(); drainDeferredValidity(); host.layoutSubtreeIfNeeded()
+        let updated = fields(host).first!
+        check(updated.stringValue == "50000", "The layout regression reaches the legal five-digit temperature")
+        print("Temperature field frames: \(initial) -> \(updated.convert(updated.bounds, to: host))")
+        check(updated.convert(updated.bounds, to: host) == initial,
+              "Changing 6500K to 50000K at xxxLarge keeps the numeric slot and adjacent track geometry stable")
+        if let directory = ProcessInfo.processInfo.environment["RAWLAB_PARAMETER_LAYOUT_SNAPSHOTS"],
+           let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            if let png = bitmap.representation(using: .png, properties: [:]) {
+                try! FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+                try! png.write(to: URL(fileURLWithPath: directory).appendingPathComponent("mac-temperature-stable.png"))
+            }
+        }
     }
 
     static func cancellationAndFillChecks() {

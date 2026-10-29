@@ -220,8 +220,8 @@
     <string name="lut_preview_change_photo">"Change preview photo"</string>
     <string name="lut_preview_choose_help">"Choose a photo to compare the options, or expand Advanced settings to configure them manually."</string>
     <string name="lut_preview_choose_photo">"Choose preview photo"</string>
-    <string name="lut_preview_conditions_display">"Preview conditions: developed photo, no extra adjustments, LUT strength 100%, sRGB output, 512-pixel long edge."</string>
-    <string name="lut_preview_conditions_raw">"Preview conditions: C5 development, camera white balance, normalized scene exposure, exposure 0, no extra adjustments, LUT strength 100%, sRGB output, 512-pixel long edge."</string>
+    <string name="lut_preview_conditions_display" formatted="false">"Preview conditions: developed photo, no extra adjustments, LUT strength 100%, sRGB output, 512-pixel long edge."</string>
+    <string name="lut_preview_conditions_raw" formatted="false">"Preview conditions: C5 development, camera white balance, normalized scene exposure, exposure 0, no extra adjustments, LUT strength 100%, sRGB output, 512-pixel long edge."</string>
     <string name="lut_preview_failed">"Unable to generate preview. Check the photo, LUT, and color settings."</string>
     <string name="lut_preview_loading">"Generating previews…"</string>
     <string name="lut_preview_placeholder">"Choose a photo and option to see a preview"</string>

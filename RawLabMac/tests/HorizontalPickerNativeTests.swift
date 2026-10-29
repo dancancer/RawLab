@@ -32,6 +32,30 @@ private struct SelectionHarness: View {
     }
 }
 
+private final class LocalizedTitleProbe {
+    var frame = CGRect.zero
+}
+
+private struct LocalizedSelectionHarness: View {
+    let titles: [String]
+    let probe: LocalizedTitleProbe
+    var body: some View {
+        HorizontalPicker(selectedID: "tool-11", name: "Localized tools", showsScrollIndicators: false) {
+            HStack(spacing: 4) {
+                ForEach(Array(titles.enumerated()), id: \.offset) { index, title in
+                    Text(title).font(.system(size: 12)).fixedSize()
+                        .padding(.horizontal, 10).frame(height: 28)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("localized-picker")) } action: { frame in
+                            if index == 11 { probe.frame = frame }
+                        }
+                        .id("tool-\(index)")
+                }
+            }
+        }
+        .frame(width: 300, height: 80).coordinateSpace(name: "localized-picker")
+    }
+}
+
 private func scrollView(in view: NSView) -> NSScrollView? {
     if let scrollView = view as? NSScrollView { return scrollView }
     return view.subviews.lazy.compactMap { scrollView(in: $0) }.first
@@ -122,6 +146,29 @@ struct HorizontalPickerNativeTests {
         check(pickerDocument.bounds.width == 1200 && abs(viewportCenter - selectedCenter) < 1,
               "ScrollViewReader centers the selected ID after arrow lanes appear")
         window.orderOut(nil)
+
+        let keys = ["胶片", "大师配方", "强度", "曝光", "高光", "阴影", "对比度", "S 曲线", "饱和度", "HSL",
+                    "白平衡", "降噪", "锐化", "暗角", "颗粒", "几何", "镜头"]
+        let repository = URL(fileURLWithPath: CommandLine.arguments[1])
+        for language in ["zh-Hans", "en", "de", "fr", "ja", "es"] {
+            let catalog = NSDictionary(contentsOf: repository.appendingPathComponent("RawLabMac/Resources/\(language).lproj/Localizable.strings")) as! [String: String]
+            let titles = keys.map { catalog[$0] ?? $0 }
+            let probe = LocalizedTitleProbe()
+            let localized = NSHostingView(rootView: LocalizedSelectionHarness(titles: titles, probe: probe))
+            let localizedWindow = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 300, height: 80),
+                                           styleMask: [.borderless], backing: .buffered, defer: false)
+            localizedWindow.contentView = localized
+            localizedWindow.makeKeyAndOrderFront(nil)
+            let deadline = ProcessInfo.processInfo.systemUptime + 5
+            while ProcessInfo.processInfo.systemUptime < deadline {
+                if probe.frame.width > 0 && probe.frame.minX >= 31 && probe.frame.maxX <= 269 { break }
+                drainMainRunLoop(for: 0.01)
+            }
+            let naturalWidth = NSHostingView(rootView: Text(titles[11]).font(.system(size: 12)).fixedSize()).fittingSize.width + 20
+            check(abs(probe.frame.width - naturalWidth) < 1 && probe.frame.minX >= 31 && probe.frame.maxX <= 269,
+                  "\(language): complete localized tool title scrolls inside the arrow lanes without the obsolete 72pt cap")
+            localizedWindow.orderOut(nil)
+        }
 
         let callbackCount = states.count
         let originalScrollFrameNotifications = nativeScrollView.postsFrameChangedNotifications

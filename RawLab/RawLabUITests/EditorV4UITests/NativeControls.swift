@@ -1,6 +1,121 @@
 import XCTest
 
 extension EditorV4UITests {
+    func testScalarReadoutKeepsRulerGeometryStableAcrossValueChanges() throws {
+        let app = try launchImportedEditor()
+        let ruler = app.descendants(matching: .any)["adjustment.ruler"]
+        let value = app.buttons["adjustment.value"]
+        let initialRuler = ruler.frame
+        let initialValue = value.frame
+        let original = try number(value)
+        dragRuler(ruler, from: 0.7, to: 0.4)
+        XCTAssertNotEqual(try number(value), original)
+        XCTAssertEqual(ruler.frame, initialRuler, "A value change must not move or resize the ruler")
+        XCTAssertEqual(value.frame, initialValue, "Signs and digit counts keep a stable readout slot")
+        capture("stable-scalar-ruler", in: app)
+    }
+
+    func testCompactEditorUsesFullWidthRulersAndContentHeight() throws {
+        let app = try launchImportedEditor()
+        try selectTool("highlights", in: app)
+        let panel = app.scrollViews["editor.panel"]
+        let tools = app.scrollViews["editor.tools"]
+        let ruler = app.descendants(matching: .any)["adjustment.ruler"]
+        let title = app.staticTexts["adjustment.title"]
+        let value = app.buttons["adjustment.value"]
+        XCTAssertGreaterThanOrEqual(tools.frame.width, panel.frame.width - 1, "Tools use their own complete row")
+        XCTAssertGreaterThanOrEqual(ruler.frame.width, panel.frame.width - 33, "Phone and tablet rulers use all space inside their 16pt insets")
+        XCTAssertGreaterThanOrEqual(ruler.frame.minY, value.frame.maxY, "The full value is above the ruler")
+        XCTAssertLessThanOrEqual(panel.frame.height, ruler.frame.maxY - min(title.frame.minY, value.frame.minY) + 32, "A scalar panel does not fill unused height")
+        let scalarHeight = panel.frame.height
+        capture("compact-editor-scalar", in: app)
+        try selectTool("hsl", in: app)
+        XCTAssertGreaterThan(panel.frame.height, scalarHeight, "Complex tools may use a larger bounded panel")
+        for axis in ["hue", "saturation", "lightness"] {
+            let axisValue = app.buttons["hsl.\(axis).value"]
+            let axisRuler = app.descendants(matching: .any)["hsl.\(axis).ruler"]
+            try revealInPanel(axisValue, in: app, fully: true)
+            XCTAssertGreaterThanOrEqual(axisValue.frame.height, 44)
+            try revealInPanel(axisRuler, in: app, fully: true)
+            XCTAssertGreaterThanOrEqual(axisRuler.frame.width, panel.frame.width - 33)
+        }
+        capture("compact-editor-hsl", in: app)
+        try selectTool("highlights", in: app)
+        XCTAssertEqual(panel.frame.height, scalarHeight, accuracy: 1)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        waitUntil { app.frame.width > app.frame.height }
+        waitForLandscapeSidePanel(in: app)
+        XCTAssertTrue(value.isHittable)
+        // iPhone 的 ScrollView AX 边界可能包含右侧安全区；实际侧栏内容宽度为 336pt。
+        XCTAssertGreaterThanOrEqual(ruler.frame.width, 303, "The 336pt side panel retains a full ruler inside its 16pt insets")
+        capture("compact-editor-landscape", in: app)
+    }
+
+    func testCompactFineButtonKeepsValuesAndResetsOnToolChange() throws {
+        let app = try launchImportedEditor()
+        let fine = app.buttons["editor.fine"]
+        let reset = app.buttons["editor.reset"]
+        XCTAssertTrue(fine.waitForExistence(timeout: 5), "Fine mode is a compact toggle button")
+        XCTAssertFalse(app.switches["editor.fine"].exists)
+        XCTAssertGreaterThanOrEqual(fine.frame.height, 43.5)
+        XCTAssertGreaterThanOrEqual(fine.frame.width, 43.5)
+        XCTAssertEqual(fine.frame.midY, reset.frame.midY, accuracy: 2)
+        let auto = app.buttons["exposure.auto"]
+        XCTAssertEqual(auto.frame.height, fine.frame.height, accuracy: 1, "Secondary actions share the same touch height")
+        let mode = app.buttons["exposure.mode"]
+        if mode.exists { XCTAssertEqual(mode.frame.midY, auto.frame.midY, accuracy: 2) }
+        let original = try number(app.buttons["adjustment.value"])
+        capture("compact-editor-fine-off-portrait", in: app)
+        // 可见按钮高 32pt，仍应能从 44pt 点击区的边缘切换。
+        fine.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)).tap()
+        XCTAssertTrue(fine.isSelected)
+        XCTAssertEqual(try number(app.buttons["adjustment.value"]), original)
+        capture("compact-editor-fine-on-portrait", in: app)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        waitUntil { app.frame.width > app.frame.height }
+        XCTAssertTrue(fine.isSelected)
+        capture("compact-editor-fine", in: app)
+        try selectTool("highlights", in: app)
+        XCTAssertFalse(fine.isSelected)
+        XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0)
+        try selectTool("exposure", in: app)
+        auto.tap()
+        waitUntil { auto.isEnabled }
+        XCTAssertTrue((-4...4).contains(try number(app.buttons["adjustment.value"])))
+    }
+
+    func testCompactEditorLargeTextKeepsParametersAndDraftActionsReachable() throws {
+        let app = XCUIApplication()
+        launchEnglish(app, additionalArguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        try importFirstVisiblePhoto(in: app)
+        let fine = app.buttons["editor.fine"]
+        XCTAssertTrue(fine.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(fine.frame.height, 43.5)
+        let ruler = app.descendants(matching: .any)["adjustment.ruler"]
+        try revealInPanel(ruler, in: app, fully: true)
+        XCTAssertGreaterThanOrEqual(ruler.frame.width, app.scrollViews["editor.panel"].frame.width - 33)
+        capture("compact-editor-large-text", in: app)
+        for identifier in ["exposure.mode", "exposure.auto"] {
+            let action = app.buttons[identifier]
+            if action.exists {
+                try revealInPanel(action, in: app, fully: true)
+                XCTAssertGreaterThanOrEqual(action.frame.height, 43.5)
+            }
+        }
+        capture("compact-editor-large-actions", in: app)
+        try selectTool("geometry", in: app)
+        let straighten = app.descendants(matching: .any)["geometry.straighten.ruler"]
+        try revealInPanel(straighten, in: app, fully: true)
+        for identifier in ["editor.draft.cancel", "editor.draft.apply"] {
+            let button = app.buttons[identifier]
+            XCTAssertTrue(button.isHittable)
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44)
+            XCTAssertFalse(app.scrollViews["editor.panel"].frame.intersects(button.frame))
+        }
+        capture("compact-editor-large-draft", in: app)
+        app.buttons["editor.draft.cancel"].tap()
+    }
+
     func testAtmosphereEditingHistoryPersistenceAndLanguages() throws {
         let app = try launchImportedEditor()
         try selectTool("clarity", in: app)
@@ -115,51 +230,43 @@ extension EditorV4UITests {
         var verifiedFineHit = false
         func fine(_ on: Bool) throws {
             let before = try snapshot()
-            let toggle = app.switches["editor.fine"]
-            try revealInPanel(toggle, in: app, fully: true)
-            try revealHorizontally(toggle, in: app.scrollViews["editor.parameterHeader"], app: app)
+            let toggle = app.buttons["editor.fine"]
+            if !toggle.isHittable { try revealInPanel(toggle, in: app, fully: true) }
             XCTAssertTrue(toggle.isHittable)
             let measured = try XCTUnwrap((try snapshot()["layoutFrames"] as? [String: [Double]])?["fine"])
             let frame = CGRect(x: measured[0], y: measured[1], width: measured[2], height: measured[3])
             XCTAssertGreaterThanOrEqual(frame.height, 44)
             if !verifiedFineHit {
                 let before = try state()["fine"] as? Bool
-                let native = try XCTUnwrap(try snapshot()["nativeSwitches"] as? [[Double]])
-                    .map { CGRect(x: $0[0], y: $0[1], width: $0[2], height: $0[3]) }
-                    .filter { frame.insetBy(dx: -1, dy: -1).contains(CGPoint(x: $0.midX, y: $0.midY)) }
-                XCTAssertEqual(native.count, 1)
-                let control = try XCTUnwrap(native.first)
-                let target = CGRect(x: control.midX - 22, y: control.midY - 22, width: 44, height: 44)
-                let point = CGPoint(x: control.midX, y: control.midY - 21.5)
-                print("PARAMETER_FINE_HIT layout=\(frame) ax=\(toggle.frame) native=\(control) target=\(target) point=\(point)")
-                // 44pt 目标围绕真实UISwitch中心，不把放大label的整块边缘当作开关触点。
-                XCTAssertTrue(frame.insetBy(dx: -1, dy: -1).contains(target))
-                XCTAssertTrue(target.contains(point)); XCTAssertFalse(control.contains(point))
+                let point = CGPoint(x: frame.midX, y: frame.minY + 1)
+                XCTAssertGreaterThanOrEqual(frame.width, 43.5)
+                print("PARAMETER_FINE_HIT layout=\(frame) ax=\(toggle.frame) point=\(point)")
                 capture("parameter-fine-before-outside-glyph-tap", in: app)
                 app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: point.x, dy: point.y)).tap()
                 waitUntil { (try? state()["fine"] as? Bool) != before }
-                XCTAssertNotEqual(try state()["fine"] as? Bool, before, "The native Toggle accepts touches within its complete44pt layout")
+                XCTAssertNotEqual(try state()["fine"] as? Bool, before, "The compact Fine button accepts touches across its complete 44pt target")
                 capture("parameter-fine-after-outside-glyph-tap", in: app)
                 verifiedFineHit = true
             }
-            if (toggle.value as? String == "1") != on { toggle.tap() }
+            if toggle.isSelected != on { toggle.tap() }
             waitUntil { (try? state()["fine"] as? Bool) == on }
-            XCTAssertEqual(toggle.value as? String, on ? "1" : "0")
+            XCTAssertEqual(toggle.isSelected, on)
             try noEdit(since: before, "fine mode only")
         }
         waitUntil(timeout: 30) { (try? snapshot()["done"] as? Bool) == true }
         try selectTool("hsl", in: app)
-        let originalPanel = (try snapshot()["layoutFrames"] as? [String: [Double]])?["panel"]
+        let originalNavigation = app.scrollViews["editor.groups"].frame
         for axis in ["hue", "saturation", "lightness"] {
             let value = app.buttons["hsl.\(axis).value"]
-            if large { try revealInPanel(value, in: app, fully: true) }
+            try revealInPanel(value, in: app, fully: true)
             XCTAssertTrue(value.isHittable)
             XCTAssertTrue(app.scrollViews["editor.panel"].frame.contains(value.frame))
             XCTAssertFalse((value.value as? String ?? "").contains("%")); XCTAssertFalse((value.value as? String ?? "").contains("°"))
             XCTAssertFalse(app.buttons["hsl.\(axis).fine"].exists); XCTAssertFalse(app.buttons["hsl.\(axis).reset"].exists)
-            if !large {
+            if !large && app.scrollViews["editor.panel"].frame.width >= 512 {
                 XCTAssertEqual(value.frame.midY, app.descendants(matching: .any)["hsl.\(axis).ruler"].frame.midY, accuracy: 2)
             }
+            try revealInPanel(app.descendants(matching: .any)["hsl.\(axis).ruler"], in: app, fully: true)
         }
         capture("parameter-workspace-three-axes", in: app)
         try revealInPanel(app.buttons["hsl.hue.value"], in: app, fully: true)
@@ -215,7 +322,7 @@ extension EditorV4UITests {
         try selectTool("highlights", in: app)
         XCTAssertEqual(try state()["fine"] as? Bool, false, "A tool change within one group clears fine")
         try noEdit(since: beforeTool, "actual tool change")
-        XCTAssertEqual((try snapshot()["layoutFrames"] as? [String: [Double]])?["panel"], originalPanel)
+        XCTAssertEqual(app.scrollViews["editor.groups"].frame, originalNavigation)
         try selectTool("geometry", in: app); try fine(true)
         let rotate = app.buttons["geometry.rotateRight"]; try revealInPanel(rotate, in: app); rotate.tap()
         waitUntil(timeout: 20) { app.buttons["editor.draft.apply"].isEnabled }
@@ -334,7 +441,6 @@ extension EditorV4UITests {
             let width = try XCTUnwrap(policy["width"] as? Double)
             let height = try XCTUnwrap(policy["height"] as? Double)
             let accessibility = try XCTUnwrap(policy["accessibility"] as? Bool)
-            let required = try XCTUnwrap(policy["requiredWidth"] as? Double)
             let sideWidth = try XCTUnwrap(policy["sideWidth"] as? Double)
             if ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LANGUAGE"] == "zh-Hans" && !accessibility {
                 XCTAssertEqual(policy["buttonWidth"] as? Double, 44, "CJK fallback glyphs fit two actual lines at the 44pt target")
@@ -348,7 +454,7 @@ extension EditorV4UITests {
                 XCTAssertGreaterThanOrEqual(t[1], g[1] - 1, "Complete group text stays inside its target")
                 XCTAssertLessThanOrEqual(t[1] + t[3], g[1] + g[3] + 1)
             }
-            let expectedSide = width >= 600 && width > height && !accessibility && required <= sideWidth
+            let expectedSide = width >= 600 && width > height && !accessibility
             XCTAssertEqual(policy["side"] as? Bool, expectedSide)
             let frame = try panelFrame()
             if expectedSide {
@@ -362,7 +468,7 @@ extension EditorV4UITests {
             print("WORKSPACE_LAYOUT \(name): \(policy)")
             return policy
         }
-        var regionFrame: CGRect?
+        let navigationFrame = navigation.frame
         _ = try layoutReceipt("workspace-portrait-layout")
         for (group, tool) in zip(groups, expectedTools) {
             if group != "looks" { try selectGroup(group) }
@@ -374,9 +480,7 @@ extension EditorV4UITests {
             }
             XCTAssertGreaterThanOrEqual(target.frame.height, 44)
             XCTAssertTrue(app.scrollViews["editor.panel"].exists)
-            if let frame = regionFrame {
-                XCTAssertEqual(try panelFrame(), frame, "Tool content must keep the same measured outer panel frame")
-            } else { regionFrame = try panelFrame() }
+            XCTAssertEqual(navigation.frame, navigationFrame, "Group navigation stays anchored while tool content changes")
             capture("workspace-group-" + group, in: app)
         }
         try selectGroup("geometry")
@@ -673,12 +777,11 @@ extension EditorV4UITests {
         XCTAssertEqual(try number(ruler), standard, accuracy: 0.0001)
 
         try resetParameterDefault("adjustment", in: app)
-        let fine = app.switches["editor.fine"]
-        try revealInPanel(fine, in: app, fully: true)
-        try revealHorizontally(fine, in: app.scrollViews["editor.parameterHeader"], app: app)
+        let fine = app.buttons["editor.fine"]
+        if !fine.isHittable { try revealInPanel(fine, in: app, fully: true) }
         let standardSensitivity = fine.value as? String
         fine.tap()
-        XCTAssertEqual(fine.value as? String, "1", fine.debugDescription)
+        XCTAssertTrue(fine.isSelected, fine.debugDescription)
         XCTAssertNotEqual(fine.value as? String, standardSensitivity)
         try revealInPanel(ruler, in: app)
         dragRuler(ruler, from: 0.75, to: 0.25)
@@ -689,7 +792,7 @@ extension EditorV4UITests {
         XCTAssertLessThan(precise, standard, "The same gesture in fine mode must move fewer legal steps")
         XCTAssertEqual(try number(ruler), precise, accuracy: 0.0001)
         fine.tap()
-        XCTAssertEqual(fine.value as? String, "0")
+        XCTAssertFalse(fine.isSelected)
         XCTAssertEqual(fine.value as? String, standardSensitivity)
 
         try setValue("+4.00", title: "Exposure", unit: "EV", control: "adjustment", in: app)

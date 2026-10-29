@@ -115,6 +115,8 @@ struct ContentView: View {
     @ScaledMetric(relativeTo: .caption) var filmSize = 72.0
     @ScaledMetric(relativeTo: .body) var panelHeight = 220.0
     @ScaledMetric(relativeTo: .subheadline) var panelHeaderHeight = 44.0
+    @State var parameterContentHeight: CGFloat = 0
+    @State var parameterActionsHeight: CGFloat = 0
 
     var body: some View {
         let _ = localizationLocale

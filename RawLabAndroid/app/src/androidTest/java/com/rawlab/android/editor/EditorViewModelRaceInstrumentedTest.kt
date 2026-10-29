@@ -103,8 +103,10 @@ class EditorViewModelRaceInstrumentedTest {
             awaitState(model) { it.canExport }
             val old = requireNotNull(model.state.value.preview!!.resultHistogram)
             instrumentation.runOnMainSync {
-                model.edit(model.state.value.edits.copy(exposure = 1f))
+                // 保持交互预览进行中；非交互 edit 会先进入保存门控并拒绝同一帧换图。
+                model.edit(model.state.value.edits.copy(exposure = 1f), true)
                 assertTrue(model.state.value.rendering)
+                assertFalse(model.state.value.committingAdjustments)
                 model.importPhoto(Uri.fromFile(b))
             }
             awaitState(model) { it.photo?.name == b.name && it.canExport }

@@ -1,28 +1,30 @@
 package com.rawlab.android.editor.render
 
 import java.util.concurrent.Executors
-import com.rawlab.android.R
 
-class RenderQueue<T, R>(
-    private val render: (T) -> R,
+internal class RenderQueue<T, R>(
+    private val render: (T, RenderCancellation) -> R,
     private val publish: (Long, Result<R>) -> Unit,
     private val release: () -> Unit,
-    private val discard: (R) -> Unit,
+    private val discard: (R) -> Unit = {},
 ) : AutoCloseable {
-    constructor(render: (T) -> R, publish: (Long, Result<R>) -> Unit, release: () -> Unit) :
-        this(render, publish, release, {})
+    constructor(render: (T) -> R, publish: (Long, Result<R>) -> Unit, release: () -> Unit,
+        discard: (R) -> Unit = {}) : this({ value, _ -> render(value) }, publish, release, discard)
 
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "rawlab-render") }
     private val lock = Any()
-    private var pending: Pair<Long, T>? = null
+    private data class Task<T>(val revision: Long, val value: T, val cancellation: RenderCancellation = RenderCancellation())
+    private var pending: Task<T>? = null
     private var revision = 0L
     private var running = false
     private var closed = false
+    private var active: RenderCancellation? = null
 
     fun submit(value: T): Long = synchronized(lock) {
         check(!closed)
         revision += 1
-        pending = revision to value
+        active?.cancel()
+        pending = Task(revision, value)
         if (!running) {
             running = true
             worker.execute(::drain)
@@ -36,11 +38,13 @@ class RenderQueue<T, R>(
                 val next = pending
                 pending = null
                 if (next == null || closed) { running = false; return }
+                active = next.cancellation
                 next
             }
-            val result = runCatching { render(task.second) }
+            val result = runCatching { render(task.value, task.cancellation) }
             val accepted = synchronized(lock) {
-                if (!closed && task.first == revision) { publish(task.first, result); true } else false
+                active = null
+                if (!closed && task.revision == revision) { publish(task.revision, result); true } else false
             }
             if (!accepted) result.getOrNull()?.let(discard)
         }
@@ -56,6 +60,7 @@ class RenderQueue<T, R>(
         if (!closed) {
             closed = true
             pending = null
+            active?.cancel()
             worker.execute { try { release() } finally { worker.shutdown() } }
         }
     }

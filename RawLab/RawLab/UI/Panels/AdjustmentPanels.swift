@@ -106,27 +106,51 @@ extension ContentView {
                               identifier: "adjustment", onEditingChanged: setSliderEditing)
                 .id(adjustment.rawValue)
             if adjustment == .exposure {
-                Button(action: autoExposure) {
-                    Label(L10n.text("自动"), systemImage: "wand.and.stars")
-                        .frame(minHeight: 44)
-                }
-                .buttonStyle(.bordered)
-                .disabled(autoExposing || viewModel.isBusy || settings.isHDREditing)
-                .accessibilityIdentifier("exposure.auto")
-                if viewModel.sourceKind == .raw {
-                    Picker(L10n.text("曝光基准"), selection: $settings.exposureMode) {
-                        ForEach(RawExposureMode.allCases) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.menu)
-                    .id(localizationLocale.identifier)
-                    .frame(minHeight: 44)
-                    .accessibilityIdentifier("exposure.mode")
-                }
+                exposureActions
             }
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
         .disabled(!viewModel.hasImage || editingLocked || (adjustment == .strength && !settings.hasLook))
+    }
+
+    private var exposureActions: some View {
+        let layout = UIApplication.shared.preferredContentSizeCategory.isAccessibilityCategory
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(spacing: 8))
+        return layout {
+            if viewModel.sourceKind == .raw {
+                Menu {
+                    Picker(L10n.text("曝光基准"), selection: $settings.exposureMode) {
+                        ForEach(RawExposureMode.allCases) { Text($0.title).tag($0) }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(settings.exposureMode.title)
+                            .font(.caption)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Image(systemName: "chevron.up.chevron.down").font(.caption2)
+                    }
+                    .foregroundStyle(.secondary)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .id(localizationLocale.identifier)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .accessibilityLabel(L10n.text("曝光基准"))
+                .accessibilityValue(settings.exposureMode.title)
+                .accessibilityIdentifier("exposure.mode")
+            }
+            Button(action: autoExposure) {
+                Label(L10n.text("自动"), systemImage: "wand.and.stars")
+                    .fixedSize()
+            }
+            .buttonStyle(EditorCompactActionStyle())
+            .disabled(autoExposing || viewModel.isBusy || settings.isHDREditing)
+            .accessibilityIdentifier("exposure.auto")
+        }
     }
 
     var whiteBalancePanel: some View {

@@ -145,8 +145,14 @@ struct ParameterRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var valueWidth: CGFloat {
-        max(72, (precision.text(value, signed: range.lowerBound < 0) as NSString)
-            .size(withAttributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: textSize, weight: .regular)]).width + 24)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: textSize, weight: .regular)
+        // 按范围和最多两位小数预留槽位，包含历史非网格值；拖动时不随当前文字重排轨道。
+        let widths = [range.lowerBound, range.upperBound].map { bound in
+            let sign = range.lowerBound < 0 && bound > 0 ? "+" : ""
+            let text = sign + String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), bound)
+            return (text as NSString).size(withAttributes: [.font: font]).width
+        }
+        return max(72, ceil(widths.max() ?? 0) + 24)
     }
     private var pointerHelp: String { NSWorkspace.shared.isVoiceOverEnabled ? "" : L10n.text("双击名称或轨道恢复默认值。") }
     private var metadata: String {
