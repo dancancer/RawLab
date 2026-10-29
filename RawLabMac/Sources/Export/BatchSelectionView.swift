@@ -7,8 +7,13 @@ struct BatchSelectionView: View {
     @State private var showScope = false
     @State private var showExport = false
     @State private var scope = "custom"
-    @State private var fields = AdjustmentTransferField.common
+    @State private var fields: Set<AdjustmentTransferField>
     @State private var message: String?
+
+    init(model: EditorModel) {
+        self.model=model
+        _fields=State(initialValue:model.settings.isHDREditing ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -71,6 +76,9 @@ struct BatchSelectionView: View {
             set: { model.adjustmentSheet = $0 })) { kind in
             AdjustmentTransferView(model: model, kind: kind)
         }
+        .onChange(of:model.settings.isHDREditing) { _, isHDR in
+            fields=isHDR ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common
+        }
     }
 
     private func photoRow(_ photo: MacCollectionPhoto) -> some View {
@@ -108,7 +116,8 @@ struct BatchSelectionView: View {
             Text(L10n.format("目标：%@ 张照片", String(count))).fontWeight(.medium)
             Text(L10n.text("来源已排除。未选中的调整保持每张照片的原值。")).foregroundStyle(.secondary)
             if count == 0 { Text(L10n.text("没有可同步的目标。请返回集合，选择来源以外的照片。")).foregroundStyle(.secondary) }
-            AdjustmentScopeEditor(scope: $scope, fields: $fields)
+            AdjustmentScopeEditor(scope: $scope, fields: $fields,
+                                  allowed:model.settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
             if let file = model.file, let source, model.batchSelectionPhotos[source]?.url == file, model.collectionHasDraft(source) {
                 Text(L10n.text("来源有未完成的调整，请先应用或放弃。"))
                 HStack {
