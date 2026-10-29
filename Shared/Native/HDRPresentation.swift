@@ -59,11 +59,10 @@ final class HDRPresentation: HDRDisplayImage {
                     let b=y*Int(pair.pointee.sdr.stride_bytes)/4+x*3
                     let p=try HDRDisplayMath.pixel(hdr:SIMD3(hdr[a],hdr[a+1],hdr[a+2]),
                         sdr:SIMD3(sdr[b],sdr[b+1],sdr[b+2]),contentHeadroom:statistics.headroom,parameters:parameters)
-                    let half=SIMD4<Float16>(Float16(p.x),Float16(p.y),Float16(p.z),1)
-                    guard half.x.isFinite,half.y.isFinite,half.z.isFinite else { throw HDRDisplayFailure.unrepresentable }
+                    let half=try HDRDisplayMath.half(p)
                     let index=(y*image.width+x)*4
-                    out[index]=half.x.bitPattern; out[index+1]=half.y.bitPattern
-                    out[index+2]=half.z.bitPattern; out[index+3]=half.w.bitPattern
+                    out[index]=half.x; out[index+1]=half.y
+                    out[index+2]=half.z; out[index+3]=half.w
                 } }
             }
             return bytes

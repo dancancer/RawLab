@@ -338,8 +338,9 @@ PRs may still queue at the account's macOS concurrency limit.
 
 Both Mac architectures (the Intel `core` shard) run the existing CPU-safe CTest selection with at most
 two test processes. This limit is separate from build parallelism because RAW
-rendering tests may also use internal worker threads. The default Swift app uses
-whole-module optimization with compiler threads bounded by `JOBS`; it retains
+rendering tests may also use internal worker threads. Each architecture's `core`/`all`
+native group also runs HDR display packing and native bridge regressions, including
+Intel's portable FP16 conversion. The default Swift app uses whole-module optimization with compiler threads bounded by `JOBS`; it retains
 `-O` and all sources. The full-source straighten UI harness runs locally. No app or test executable is cached. Each Mac regression
 stage records elapsed seconds and its exit code in `build/ci/macos-timings.log`; command failures
 still fail the job rather than being hidden by the timing wrapper.

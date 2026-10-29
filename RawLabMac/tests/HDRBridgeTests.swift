@@ -51,7 +51,7 @@ import Foundation
                 require(packed.count==64*32*8,"RGBA16F packing dimensions")
                 packed.withUnsafeBytes { bytes in
                     let values=bytes.bindMemory(to:UInt16.self)
-                    require(values.allSatisfy { Float16(bitPattern:$0).isFinite },"nonfinite display pack")
+                    require(values.allSatisfy { $0 & 0x7c00 != 0x7c00 },"nonfinite display pack")
                 }
             }
             source.withPair { a in result.withPair { b in

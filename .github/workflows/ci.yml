@@ -208,6 +208,8 @@ jobs:
           ci_timed app-build bash RawLabMac/build.sh
           lutprep_python="$(command -v python)"
           if in_suite core; then
+            ci_timed hdr-display bash Shared/tests/hdr-display.sh
+            ci_timed hdr-bridge bash RawLabMac/tests/hdr-bridge.sh
             ci_timed dcp-compiler env RAWLAB_LUTPREP_PYTHON="$lutprep_python" bash RawLabMac/tests/dcp-compiler.sh
             ci_timed look-library bash RawLabMac/tests/look-library.sh
             ci_timed look-import-model bash RawLabMac/tests/look-import-model.sh

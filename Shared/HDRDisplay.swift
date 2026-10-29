@@ -1,5 +1,8 @@
 import Foundation
 import CoreGraphics
+#if arch(x86_64)
+import Accelerate
+#endif
 
 protocol HDRDisplayImage: AnyObject {
     var width: Int { get }
@@ -86,9 +89,26 @@ enum HDRDisplayMath {
         return SIMD3(min(1,max(0,p.x)),min(1,max(0,p.y)),min(1,max(0,p.z)))
     }
 
-    static func half(_ p: SIMD3<Float>) throws -> [UInt16] {
-        let values=[Float16(p.x),Float16(p.y),Float16(p.z),Float16(1)]
-        guard values.allSatisfy(\.isFinite) else { throw HDRDisplayFailure.unrepresentable }
-        return values.map(\.bitPattern)
+    static func half(_ p: SIMD3<Float>) throws -> SIMD4<UInt16> {
+        #if arch(x86_64)
+        // Intel Swift 没有可用的 Float16 运算；vImage 输出相同的 IEEE binary16 位模式。
+        var input = SIMD4<Float>(p.x, p.y, p.z, 1)
+        var bits = SIMD4<UInt16>(repeating: 0)
+        let status = withUnsafeMutableBytes(of: &input) { source in
+            withUnsafeMutableBytes(of: &bits) { destination in
+                var sourceBuffer = vImage_Buffer(data: source.baseAddress!, height: 1, width: 4, rowBytes: source.count)
+                var destinationBuffer = vImage_Buffer(data: destination.baseAddress!, height: 1, width: 4, rowBytes: destination.count)
+                return vImageConvert_PlanarFtoPlanar16F(&sourceBuffer, &destinationBuffer, vImage_Flags(kvImageDoNotTile))
+            }
+        }
+        guard status == kvImageNoError else { throw HDRDisplayFailure.invalidBuffer }
+        #else
+        let values = SIMD4<Float16>(Float16(p.x), Float16(p.y), Float16(p.z), 1)
+        let bits = SIMD4(values.x.bitPattern, values.y.bitPattern, values.z.bitPattern, values.w.bitPattern)
+        #endif
+        guard bits.x & 0x7c00 != 0x7c00, bits.y & 0x7c00 != 0x7c00, bits.z & 0x7c00 != 0x7c00 else {
+            throw HDRDisplayFailure.unrepresentable
+        }
+        return bits
     }
 }
