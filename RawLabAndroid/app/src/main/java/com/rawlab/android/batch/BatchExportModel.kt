@@ -3,6 +3,7 @@ package com.rawlab.android.batch
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -83,6 +84,9 @@ internal class BatchCancellation {
     fun request(interrupted: Boolean = false) {
         reason.compareAndSet(null, if (interrupted) UsageBatchOutcome.Interrupted else UsageBatchOutcome.Cancelled)
     }
+
+    // 预检尚未产生 CANCELLED 行，需要直接读取首次停止请求的原因。
+    fun cancellationOutcome(): UsageBatchOutcome = reason.get() ?: UsageBatchOutcome.Interrupted
 
     fun outcome(job: BatchJob): UsageBatchOutcome = when {
         job.globalError != null || job.rows.any { it.status == BatchRowStatus.NEEDS_CONFIRMATION } -> UsageBatchOutcome.Interrupted
@@ -228,6 +232,10 @@ class BatchExportModel(
                         else -> BatchPhase.COMPLETE
                     }, outputFormat = format, destination = destination, error = result.globalError)
                 reportTerminal(result, cancelRequested.outcome(result))
+            } catch (error: CancellationException) {
+                mutable.update { it.copy(phase = if(it.job.settingsMode==BatchSettingsMode.UNIFORM_FROZEN && it.job.source.settings.isHDREditing)
+                    BatchPhase.SELECTING else BatchPhase.CANCELLED, stopping = false, error = null) }
+                reportTerminal(mutable.value.job, cancelRequested.cancellationOutcome())
             } catch (error: Throwable) {
                 mutable.update { it.copy(phase = if(it.job.settingsMode==BatchSettingsMode.UNIFORM_FROZEN && it.job.source.settings.isHDREditing)
                     BatchPhase.SELECTING else BatchPhase.FAILED, stopping = false,
