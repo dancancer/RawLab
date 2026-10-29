@@ -76,7 +76,8 @@ int main(int argc, char** argv) {
     for (float temperature : {0.f, 4000.f, 8500.f}) {
         request.wb_mode = temperature ? SONY2FUJI_WB_TEMPERATURE : SONY2FUJI_WB_CAMERA;
         request.temperature = temperature ? temperature : 6500;
-        compare(render(cpu, request), render(gpu, request), nativeCpuOnly ? 0 : 2,
+        const auto reference = render(cpu, request);
+        compare(reference, render(gpu, request), nativeCpuOnly ? 0 : 2,
                 (nativeCpuOnly ? "RAW CPU/Auto WB " : "RAW CPU/GPU WB ") + std::to_string(temperature));
         if (nativeCpuOnly) {
             check(sony2fuji_session_get_last_backend(gpu.value) == SONY2FUJI_BACKEND_CPU,
@@ -84,6 +85,12 @@ int main(int argc, char** argv) {
         } else {
 #ifdef SONY2FUJI_ENABLE_D3D11
         check(sony2fuji_session_get_last_backend(gpu.value) == SONY2FUJI_BACKEND_D3D11, "actual Direct3D 11 hardware backend");
+        sony2fuji_gpu_config automatic{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(automatic), SONY2FUJI_GPU_AUTO};
+        check(sony2fuji_session_set_gpu_config(gpu.value, &automatic) == SONY2FUJI_STATUS_OK, "switch RAW rendering to Auto");
+        compare(reference, render(gpu, request), 2, "RAW CPU/Auto WB " + std::to_string(temperature));
+        check(sony2fuji_session_get_last_backend(gpu.value) == SONY2FUJI_BACKEND_D3D11, "Auto retains actual Direct3D 11 hardware backend");
+        automatic.mode = SONY2FUJI_GPU_FORCE;
+        check(sony2fuji_session_set_gpu_config(gpu.value, &automatic) == SONY2FUJI_STATUS_OK, "restore forced RAW rendering");
 #else
         check(sony2fuji_session_get_last_backend(gpu.value) == SONY2FUJI_BACKEND_METAL, "actual Metal backend");
 #endif
