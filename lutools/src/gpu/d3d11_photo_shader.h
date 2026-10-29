@@ -14,7 +14,7 @@ cbuffer Params : register(b0) {
     float4 detail; // legacy curve, noise, sharpening, custom interval count
     float4 domainLow;
     float4 domainHigh;
-    uint4 logTransfer; // input is F-Log, output is Log, output is F-Log, unused
+    uint4 logTransfer; // input is F-Log, output is Log, output is F-Log, input is sRGB
     float4 hslHue[2], hslSaturation[2], hslLightness[2];
     float4 toneControls;
     float4 colorGrading[3];
@@ -112,8 +112,12 @@ float3 evaluate(float3 inputColor) {
     float3 scene=float3(dot(toSrgb[0].xyz,inputColor),dot(toSrgb[1].xyz,inputColor),dot(toSrgb[2].xyz,inputColor))*exposureStrength.xyz;
     float3 pixel=float3(neutral(scene.r),neutral(scene.g),neutral(scene.b));
     if(control.z!=0) {
-        float3 fg=float3(dot(toFilm[0].xyz,scene),dot(toFilm[1].xyz,scene),dot(toFilm[2].xyz,scene));
-        float3 look=lookup(float3(encodeLog(fg.r),encodeLog(fg.g),encodeLog(fg.b)));
+        float3 lutInput=pixel;
+        if(logTransfer.w==0) {
+            float3 fg=float3(dot(toFilm[0].xyz,scene),dot(toFilm[1].xyz,scene),dot(toFilm[2].xyz,scene));
+            lutInput=float3(encodeLog(fg.r),encodeLog(fg.g),encodeLog(fg.b));
+        }
+        float3 look=lookup(lutInput);
         if(logTransfer.y!=0)look=float3(neutral(decodeLog(look.r)),neutral(decodeLog(look.g)),neutral(decodeLog(look.b)));
         pixel=lerp(pixel,look,exposureStrength.w);
     }

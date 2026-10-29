@@ -772,6 +772,9 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
             add_test(NAME acceleration_sony_windows COMMAND acceleration_tests
                 "${SONY2FUJI_TEST_RAW}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/flog-2-new/FLog2_to_PROVIA_65grid_V.1.00.cube")
+            add_test(NAME acceleration_sony_bundled_2383 COMMAND acceleration_tests
+                "${SONY2FUJI_TEST_RAW}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/../Shared/BundledLooks/RawLab_look_2383_sRGB_v1.cube")
         endif()
         foreach(fixture "${CMAKE_CURRENT_SOURCE_DIR}/examples/DSC06251.ARW" "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG")
             if(EXISTS "${fixture}")
@@ -871,6 +874,8 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     add_test(NAME photo_effects COMMAND photo_effects_tests)
     add_executable(srgb_look_tests tests/srgb_look_tests.cpp)
     target_link_libraries(srgb_look_tests sony2fuji_core)
+    target_compile_definitions(srgb_look_tests PRIVATE
+        BUNDLED_LOOKS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../Shared/BundledLooks")
     if(MSVC)
         target_compile_options(srgb_look_tests PRIVATE /UNDEBUG)
     else()
