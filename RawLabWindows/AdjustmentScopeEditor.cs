@@ -74,7 +74,8 @@ internal sealed class AdjustmentScopeEditor : Grid
                 summary.Children.Add(AdjustmentSummaryView.Build(preview, lookName, prefix + ".summary", !IsCustom));
             } catch (Exception error) {
                 var empty = error is AdjustmentTransferException { Failure: AdjustmentFailure.EmptyScope };
-                var message = AdjustmentDialogLayout.Text(empty ? Loc.Text(SelectedScope.Kind == "modified" ? "尚无已修改的调整。" : "未选择任何调整。")
+                var isModified = SelectedScope.Kind == "modified";
+                var message = AdjustmentDialogLayout.Text(empty ? Loc.Text(isModified ? "尚无已修改的调整。" : "未选择任何调整。")
                     : AdjustmentTransferPresentation.Error(error));
                 AutomationProperties.SetAutomationId(message, prefix + ".summary." + (empty ? "empty" : "error"));
                 summary.Children.Add(message);
