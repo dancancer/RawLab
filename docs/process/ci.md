@@ -326,6 +326,13 @@ regressions; do not skip required checks or remove the runner environment setup.
 
 ## Local Apple Runners
 
+The macOS, iOS and Android build jobs use `scripts/ci/prepare-rust.sh` to select
+Rust 1.99.1, its standard-library notices and the required target slices. If
+`rustup` is absent from the job PATH, the helper verifies the official installer
+checksum and installs it under `RUNNER_TEMP/rawlab-x3f-tools`, exporting the job's
+Cargo/Rustup paths. It does not require an administrator or change the runner's
+login profile. Windows prepares the same pinned toolchain in its own job directory.
+
 macOS arm64 and iOS both select `[self-hosted, macOS, ARM64, rawlab-apple]`.
 Each Mac runs one runner, so Apple jobs can execute concurrently without
 sharing memory or build directories. When the developer laptop is offline, the
