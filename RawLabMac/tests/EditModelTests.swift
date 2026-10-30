@@ -383,6 +383,21 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
                         editDirectory: root.appendingPathComponent("edits"),
                         batchDirectory: root.appendingPathComponent("batch"))
         }
+        let x3f = model()
+        x3f.updatingMetadata = true
+        x3f.file = root.appendingPathComponent("switch.X3F")
+        x3f.settings.x3fMode = .legacy
+        x3f.settings.exposure = 0.25
+        x3f.settings.aiDenoiseEnabled = true
+        x3f.selectedFilmID = "PROVIA"
+        x3f.selectX3fMode(.normal)
+        try check(x3f.settings.x3fMode == .normal && !x3f.settings.aiDenoiseEnabled &&
+                  x3f.settings.exposure == 0.25 && x3f.selectedFilmID == "PROVIA",
+                  "X3F mode switch keeps edits and look while disabling incompatible AI")
+        x3f.selectX3fMode(.legacy)
+        try check(x3f.settings.x3fMode == .legacy && !x3f.settings.aiDenoiseEnabled,
+                  "Returning to legacy does not unexpectedly enable AI")
+        x3f.file = nil
         try resetTransactionChecks(root: root, source: a, otherSource: b)
         let selection = model()
         selection.settings.exposure = 2

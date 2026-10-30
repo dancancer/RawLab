@@ -441,3 +441,25 @@ then publishes the edited **SDR rendition** as PNG with `rendition="sdr"`.
 This is separate from HDR display; the headroom values in results describe
 source/edited content and never the current screen. MCP negotiates v6 with its
 configured CLI and preserves its HDR context without downgrading to schema 5.
+
+
+## V7 X3F rendering identity
+
+[Schema 7](edit-json-v7.schema.json) extends the v5 RAW recipe with required
+`x3f_mode: "legacy" | "normal-v1"`. The [example](../examples/edit-recipes/x3f-v7.json)
+selects the normal renderer. `input.type` must be `raw`, and execution independently
+checks the `FOVb` file signature. Schema validation does not decode the source.
+V1–5 preserve legacy X3F pixels; v6 remains the separate HDR format. A normal
+X3F record cannot be serialized into an older schema that would drop its identity.
+
+In normal mode, the source's saved rendering provides the exposure and WB
+baseline. Exposure mode is retained in the record for switching back to legacy,
+but adds no scene offset or embedded-preview matching. User EV and WB are relative
+to this rendered baseline; neutral WB coordinates are 6500/0, not measured camera
+Kelvin. Automatic RAW WB, raw denoise, AI replacement and extra lens correction
+are unsupported. Ordinary display adjustments and compatible looks remain available.
+
+`--capabilities --json` exposes `result.x3f.normal_available`, the minimum recipe version
+and mode names. Recipe syntax can be normalized without the renderer, while
+normal rendering returns an explicit error in builds without X3F support. Camera
+and saved-parameter admission are described in the [X3F contract](x3f-rendering.md).

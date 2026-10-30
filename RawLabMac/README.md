@@ -67,9 +67,9 @@ open "build/RawLab Mac.app"
 `development` 集成，但不构成原作者许可或正式发布授权；编译不受此记录阻断。
 清单、改造约定和未解决风险见 [LUT 接入记录](../docs/luts/README.md)。
 
-依赖 CMake 3.24+、pkg-config、Python 3.11+ 和 Apple Command Line Tools 或 Xcode。LibRaw、GLib、Lensfun 等依赖从固定版本源码构建，不能直接混用最低系统高于 14 的 Homebrew 动态库。Panasonic S5 II 的 RW2 使用 encoding 8，旧 LibRaw 0.21.x 会错误解码；LibRaw 0.22 还改变了 ABI，因此不要仅替换应用内动态库。脚本默认以 14.0 为 deployment target，归档在主工作区 `.cache/shared/macos-sources` 共用，依赖产物在 `build/macos-deps/<target>/<arch>` 和 `build/lensfun/<target>/<arch>` 隔离。`SDKROOT` 可以指定构建 SDK；较新的 SDK 不等于较高的最低运行系统。
+依赖 CMake 3.24+、pkg-config、Python 3.11+、Rust 1.88+（Cargo 和 `rust-docs` 组件）和 Apple Command Line Tools 或 Xcode。LibRaw、GLib、Lensfun 等依赖从固定版本源码构建，不能直接混用最低系统高于 14 的 Homebrew 动态库。Panasonic S5 II 的 RW2 使用 encoding 8，旧 LibRaw 0.21.x 会错误解码；LibRaw 0.22 还改变了 ABI，因此不要仅替换应用内动态库。脚本默认以 14.0 为 deployment target，归档在主工作区 `.cache/shared/macos-sources` 共用，依赖产物在 `build/macos-deps/<target>/<arch>` 和 `build/lensfun/<target>/<arch>` 隔离。`SDKROOT` 可以指定构建 SDK；较新的 SDK 不等于较高的最低运行系统。
 
-Requires CMake 3.24+, pkg-config, Python 3.11+ and Apple Command Line Tools or Xcode. Pinned source builds provide LibRaw, GLib and Lensfun without borrowing higher-minimum Homebrew binaries. LibRaw 0.21.x incorrectly decodes Panasonic S5 II encoding-8 RW2 files; 0.22 also changes the ABI, so do not replace only the bundled dylib. The default target is 14.0. Archives are shared in the primary workspace's `.cache/shared/macos-sources`; dependency outputs are isolated in `build/macos-deps/<target>/<arch>` and `build/lensfun/<target>/<arch>`. `SDKROOT` can select a newer build SDK without raising the minimum runtime version.
+Requires CMake 3.24+, pkg-config, Python 3.11+, Rust 1.88+ (Cargo and the `rust-docs` component), and Apple Command Line Tools or Xcode. Pinned source builds provide LibRaw, GLib and Lensfun without borrowing higher-minimum Homebrew binaries. LibRaw 0.21.x incorrectly decodes Panasonic S5 II encoding-8 RW2 files; 0.22 also changes the ABI, so do not replace only the bundled dylib. The default target is 14.0. Archives are shared in the primary workspace's `.cache/shared/macos-sources`; dependency outputs are isolated in `build/macos-deps/<target>/<arch>` and `build/lensfun/<target>/<arch>`. `SDKROOT` can select a newer build SDK without raising the minimum runtime version.
 
 构建脚本打包源码构建的动态库并进行本地 ad-hoc 签名，不做分发公证，不修改系统 Xcode license 状态。
 
@@ -282,3 +282,17 @@ lutools/build-macos/render_benchmark RawLab/RawLab/Resources/Samples/DSC09067.AR
 具体工作空间、曝光约定、LUT 要求见 `../lutools/docs/color-contract.md`。相机颜色准确度仍需要受控光源/灰卡/色卡标定；能够处理 RAW 不等同于复刻 Fuji 机内 JPEG。
 
 See the [color contract](../lutools/docs/color-contract.md) for working spaces, exposure and LUT requirements. Camera color accuracy still requires controlled lighting and gray/color-chart calibration; processing a RAW is not equivalent to reproducing Fuji in-camera JPEGs.
+
+
+## X3F 显影 / X3F rendering
+
+新打开且没有旧编辑记录的 X3F 默认使用“正常显影”。“处理设置”可以切换到原有的伪红外模式，
+切换保留曝光、外观和其他调整。旧编辑记录缺少模式字段时仍使用旧模式，重置调整不会更换模式。
+正常模式支持 DP1S 的标定近似，以及 Merrill、Quattro 的已验证参数组合；尚未验证的机型或保存参数
+会报错，可以改用旧模式。具体范围见 [X3F 显影契约](../lutools/docs/x3f-rendering.md)。
+
+Normal rendering is the default for fresh X3F edits. Processing Settings also offers
+the previous false-color mode, and old records retain that mode. The current renderer
+has camera and saved-parameter limits; it does not claim complete SPP equivalence.
+ImageIO cannot read capture metadata from some X3F files. JPEG/PNG export still writes
+correct rendered dimensions, orientation and color tags; unavailable capture EXIF is omitted.

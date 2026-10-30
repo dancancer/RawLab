@@ -14,6 +14,8 @@ enum class BayerDemosaicMethod {
     DHT
 };
 
+enum class X3fMode { Legacy = 0, Normal = 1 };
+
 // 有效 sensor 区域，尚未白平衡或旋转。相机标定与原始 RAW 一起保存。
 struct RAWBayerSource {
     int width = 0, height = 0, flip = 0;
@@ -38,6 +40,7 @@ struct RAWBayerOverride {
  * @brief RAW 处理选项
  */
 struct RAWProcessOptions {
+    X3fMode x3fMode = X3fMode::Legacy;
     bool useAutoWhiteBalance;   // 使用自动白平衡
     bool useCameraWhiteBalance; // 使用相机白平衡
     bool useCustomWhiteBalance;
@@ -125,6 +128,8 @@ public:
     float getMetadataExposureEV() const;
     bool getAsShotWhiteBalance(float& temperature, float& tint) const;
     bool supportsNoiseReduction() const;
+    bool isDisplayReferred() const;
+    const std::string& getLastError() const;
     static ErrorCode readLensMetadata(const std::string& filepath, LensMetadata& metadata);
     LensCorrectionReport getLensCorrectionReport() const;
 

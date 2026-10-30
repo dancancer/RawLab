@@ -1,5 +1,13 @@
 import Foundation
 
+enum X3fMode: String, CaseIterable, Identifiable, Codable {
+    case legacy = "legacy"
+    case normal = "normal-v1"
+    var id: String { rawValue }
+    var title: String { L10n.text(self == .normal ? "正常显影" : "伪红外（旧版）") }
+    var core: sony2fuji_x3f_mode { self == .normal ? SONY2FUJI_X3F_NORMAL : SONY2FUJI_X3F_LEGACY }
+}
+
 struct ProcessingIdentity: Equatable, Hashable, Codable {
     let family: String
     let version: Int

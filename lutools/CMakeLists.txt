@@ -11,6 +11,7 @@ option(BUILD_CLI "Build command line tool" ON)
 option(BUILD_SHARED_LIB "Build shared library for mobile integration" ON)
 option(BUILD_EXAMPLES "Build examples" OFF)
 include(CTest)
+include(cmake/x3f.cmake)
 
 # 依赖库查找
 find_package(PkgConfig)
@@ -156,6 +157,7 @@ set(CORE_SOURCES
     src/core/dcp_compiler.cpp
     src/core/color_converter.cpp
     src/core/raw_processor.cpp
+    src/core/x3f_processor.cpp
     src/core/lens_correction.cpp
     src/core/chroma_denoise.cpp
     src/core/noise_aware_sharpen.cpp
@@ -227,6 +229,9 @@ endif()
 
 # 创建核心库
 add_library(sony2fuji_core STATIC ${CORE_SOURCES})
+if(SONY2FUJI_ENABLE_X3F)
+    target_link_libraries(sony2fuji_core rawlab_x3f)
+endif()
 target_link_libraries(sony2fuji_core uhdr rawlab_jpeg)
 if(NOT APPLE)
     target_link_libraries(sony2fuji_core heif rawlab_lcms)
@@ -280,6 +285,9 @@ endif()
 # 创建共享库 (用于移动端集成)
 if(BUILD_SHARED_LIB)
     add_library(sony2fuji SHARED ${CORE_SOURCES})
+    if(SONY2FUJI_ENABLE_X3F)
+        target_link_libraries(sony2fuji rawlab_x3f)
+    endif()
     target_link_libraries(sony2fuji uhdr rawlab_jpeg)
     if(NOT APPLE)
         target_link_libraries(sony2fuji heif rawlab_lcms)
@@ -404,6 +412,14 @@ if(BUILD_TESTING AND NOT IOS)
 endif()
 
 if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
+    add_executable(x3f_render_tests tests/x3f_render_tests.cpp)
+    target_link_libraries(x3f_render_tests PRIVATE sony2fuji_core)
+    add_test(NAME x3f_render COMMAND x3f_render_tests)
+    if(SONY2FUJI_ENABLE_X3F)
+        add_test(NAME x3f_bridge_contracts COMMAND "${CMAKE_COMMAND}" -E env ${x3f_environment}
+            "${RAWLAB_CARGO}" test --release --locked --offline
+            --manifest-path "${x3f_source}/Cargo.toml" --target "${RAWLAB_X3F_RUST_TARGET}")
+    endif()
     add_executable(cpu_workspace_tests tests/cpu_workspace_tests.cpp)
     target_link_libraries(cpu_workspace_tests PRIVATE sony2fuji_core)
     add_test(NAME cpu_workspace COMMAND cpu_workspace_tests

@@ -22,6 +22,7 @@ struct MacReferenceSource: Equatable {
 struct MacNeutralReferenceKey: Equatable {
     let source: MacReferenceSource
     let processing: ProcessingIdentity
+    let x3fMode: X3fMode
     let geometry: GeometrySettings
     let lens: LensCorrectionSettings
     let edge: Int?
@@ -30,11 +31,13 @@ struct MacNeutralReferenceKey: Equatable {
 
     init(source: MacReferenceSource, settings: Adjustments, edge: Int?) {
         self.source = source; processing = settings.processing
+        x3fMode = settings.x3fMode
         geometry = settings.geometrySettings; lens = settings.lensSettings; self.edge = edge
         hdrMode=settings.hdr?.mode; hdrVersion=settings.hdr?.processingVersion
     }
     func canServe(_ requested: MacNeutralReferenceKey, fullResolution: Bool) -> Bool {
-        source == requested.source && processing == requested.processing && geometry == requested.geometry && lens == requested.lens &&
+        source == requested.source && processing == requested.processing && x3fMode == requested.x3fMode &&
+            geometry == requested.geometry && lens == requested.lens &&
             hdrMode == requested.hdrMode && hdrVersion == requested.hdrVersion &&
             (edge == requested.edge || fullResolution)
     }

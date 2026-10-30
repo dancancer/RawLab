@@ -19,11 +19,13 @@ final class EditorModel: ObservableObject {
     struct AIWorkIdentity: Equatable {
         let source: RawWhiteBalanceCacheKey
         let processing: ProcessingIdentity
+        let x3fMode: X3fMode
         let whiteBalance: [Float]
         let lens: LensCorrectionSettings
         init(_ file: URL, settings: Adjustments) throws {
             source = try RawWhiteBalanceCacheKey(file)
             processing = settings.processing
+            x3fMode = settings.x3fMode
             whiteBalance = settings.aiWhiteBalanceSignature
             lens = settings.lensSettings
         }
@@ -73,6 +75,14 @@ final class EditorModel: ObservableObject {
     var resetSource: URL?
 
     @Published var settings = Adjustments() { didSet { if !updatingMetadata && oldValue != settings { edited() } } }
+    func selectX3fMode(_ mode: X3fMode) {
+        guard RenderEngine.isX3fInput(file), settings.x3fMode != mode else { return }
+        var next = settings
+        next.x3fMode = mode
+        // 切换显影输入时一次提交兼容状态，避免保存无法执行的 AI RAW 替换。
+        if mode == .normal { next.aiDenoiseEnabled = false }
+        settings = next
+    }
     @Published var geometryDraft: MacGeometryDraft?
     @Published var geometryDraftPreviewReady = false
     @Published var geometryDraftTab = MacGeometryTab.crop
@@ -183,6 +193,7 @@ final class EditorModel: ObservableObject {
     var aiControlsVisible: Bool { RenderEngine.aiAvailable || settings.aiDenoiseEnabled }
     var canStartAI: Bool {
         file != nil && !RenderEngine.isRasterInput(file) && RenderEngine.aiAvailable &&
+            !(RenderEngine.isX3fInput(file) && settings.x3fMode == .normal) &&
             RenderEngine.bundledAIModel != nil && !exporting && geometryDraft == nil
     }
     @Published var lookLibraryBusy = false
@@ -374,6 +385,11 @@ extension EditorModel {
             return
         }
         guard !aiRequiresExplicitRetry, let file else { return }
+        if RenderEngine.isX3fInput(file) && settings.x3fMode == .normal {
+            resetAITask()
+            aiState = .failed(L10n.text("此 X3F 显影模式不支持 AI 降噪。"))
+            return
+        }
         do {
             let snapshot = geometryPreviewSettings
             let identity = try AIWorkIdentity(file, settings: snapshot)

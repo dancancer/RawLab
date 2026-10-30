@@ -106,6 +106,26 @@ struct ExportMetadataTests {
             try ExportMetadata.preserve(from: original, in: original)
             check(false, "Overwriting the metadata source must fail")
         } catch ExportMetadata.Failure.sameFile { print("PASS: Metadata source cannot be overwritten") }
+        let unsupported = output.appendingPathComponent("unsupported.X3F")
+        try Data("FOVb synthetic metadata-only source".utf8).write(to: unsupported)
+        do {
+            _ = try ExportMetadata.properties(from: unsupported, width: 3, height: 2, orientation: .up)
+            check(false, "Unreadable source metadata requires an explicit fallback")
+        } catch ExportMetadata.Failure.unreadableSource { print("PASS: Unreadable source metadata remains strict by default") }
+        for (suffix, type, bits) in [("jpg", "public.jpeg", 8), ("png", "public.png", 16)] {
+            let destination = output.appendingPathComponent("fallback.\(suffix)")
+            encode(image(bits: bits), to: destination, type: type as CFString)
+            let before = pixels(destination)
+            try ExportMetadata.preserve(from: unsupported, in: destination, fallbackSourceProperties: [:])
+            let values = properties(destination)
+            let exif = values[kCGImagePropertyExifDictionary] as? [CFString: Any]
+            check(pixels(destination) == before && decoded(destination).bitsPerComponent == bits,
+                  "\(suffix) explicit metadata fallback preserves pixels and depth")
+            check(exif?[kCGImagePropertyExifPixelXDimension] as? Int == 3 &&
+                  exif?[kCGImagePropertyExifPixelYDimension] as? Int == 2 &&
+                  exif?[kCGImagePropertyExifDateTimeOriginal] == nil,
+                  "\(suffix) fallback records output dimensions without invented capture EXIF")
+        }
         let plain = output.appendingPathComponent("no-exif.png")
         encode(image(), to: plain, type: "public.png" as CFString)
         let plainJPEG = try ExportMetadata.jpegData(image: image(), sourceURL: plain, orientation: .up, quality: 0.92)

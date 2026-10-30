@@ -150,6 +150,12 @@ jobs:
           python -c 'import sys; assert sys.version_info[:2] == (3, 12)'
           python -m pip install -r scripts/ci/requirements.txt
           python scripts/ci/native_cache.py key --platform macos --arch "$RAWLAB_ARCH"
+      - name: Prepare X3F Rust renderer toolchain
+        if: needs.changes.outputs.build == 'true'
+        shell: bash
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal --component rust-docs
+          echo "RUSTUP_TOOLCHAIN=1.99.1" >> "$GITHUB_ENV"
       - name: Restore native dependencies, or only look them up for a cold build
         id: native-cache
         if: needs.changes.outputs.build == 'true'

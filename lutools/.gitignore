@@ -14,6 +14,7 @@ cmake-build-*/
 *.cmake
 !cmake/hdr-portable.cmake
 !cmake/hdr-codec.cmake
+!cmake/x3f.cmake
 !cmake/libraw-sony-arw6.cmake
 !cmake/libraw-cameras.cmake
 !cmake/raw-jpeg.cmake
@@ -112,3 +113,6 @@ third_party/*
 !third_party/dng-sdk/
 !third_party/dng-sdk/*.txt
 !cmake/dng-sdk.cmake
+
+# Rust renderer build output
+x3f-bridge/target/

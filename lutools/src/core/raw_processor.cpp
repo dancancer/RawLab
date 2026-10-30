@@ -6,6 +6,7 @@
 #include "file_path.h"
 #include "processing_cancellation.h"
 #include <libraw/libraw.h>
+#include "x3f_processor.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -159,6 +160,27 @@ public:
             return ErrorCode::InvalidFormat;
         if (!std::isfinite(options.exposure) || !std::isfinite(options.brightness) ||
             options.brightness <= 0 || std::abs(options.exposure) > 20) return ErrorCode::InvalidFormat;
+        if (options.x3fMode != X3fMode::Legacy && options.x3fMode != X3fMode::Normal) return ErrorCode::InvalidFormat;
+        displayReferred_ = false;
+        lastError_.clear();
+        const bool x3fSignature = options.x3fMode == X3fMode::Normal && hasX3fSignature(filepath_);
+        if (options.x3fMode == X3fMode::Normal && !x3fSignature &&
+            (rawProcessor_->imgdata.idata.is_foveon || hasX3fExtension(filepath_))) {
+            lastError_ = "The X3F source does not contain a valid FOVb header";
+            return ErrorCode::InvalidFormat;
+        }
+        if (x3fSignature) {
+            if (!x3fProcessor_) x3fProcessor_ = std::make_unique<X3fProcessor>();
+            const auto result = x3fProcessor_->process(filepath_, cameraModel_, rawProcessor_->imgdata.sizes.flip, options, output);
+            lastError_ = x3fProcessor_->error();
+            if (result != ErrorCode::Success) return result;
+            displayReferred_ = true;
+            baselineExposureEV_ = previewExposureEV_ = 0;
+            outputSpace_ = options.outputLinear && options.outputAdobe ? ColorSpace::AdobeRGB :
+                (options.outputLinear && options.outputAces ? ColorSpace::ACES2065_1 : ColorSpace::sRGB);
+            lensReport_ = {};
+            return ErrorCode::Success;
+        }
         const bool customWB = options.useCustomWhiteBalance || options.useTemperatureWhiteBalance;
         float multipliers[4];
         std::copy_n(options.customWhiteBalance,4,multipliers);
@@ -402,6 +424,7 @@ public:
     float getBaselineExposureEV() const { return baselineExposureEV_; }
     float getMetadataExposureEV() const { return metadataExposureEV_; }
     bool getAsShotWhiteBalance(float& temperature, float& tint) const {
+        if (displayReferred_) return false;
         if (!whiteBalance_ || !whiteBalance_->available()) return false;
         temperature=whiteBalance_->asShot().temperature;
         tint=whiteBalance_->asShot().tint;
@@ -409,6 +432,8 @@ public:
     }
 
     bool supportsNoiseReduction() const { return sourceReady_ && bayerSource_; }
+    bool isDisplayReferred() const { return displayReferred_; }
+    const std::string& getLastError() const { return lastError_; }
     LensCorrectionReport getLensCorrectionReport() const { return lensReport_; }
 
     bool getCameraColorMatrix(float matrix[3][3]) const {
@@ -420,6 +445,9 @@ public:
 
 private:
     void invalidateState() {
+        x3fProcessor_.reset();
+        displayReferred_ = false;
+        lastError_.clear();
         rawProcessor_->recycle();
         filepath_.clear();
         sourceReady_ = false;
@@ -576,6 +604,9 @@ private:
     std::unique_ptr<dng_host> dngHost_;
 #endif
     std::unique_ptr<LibRaw> rawProcessor_;
+    std::unique_ptr<X3fProcessor> x3fProcessor_;
+    bool displayReferred_ = false;
+    std::string lastError_;
     std::string filepath_;
     std::string cameraMake_;
     std::string cameraModel_;
@@ -617,6 +648,9 @@ ErrorCode RAWProcessor::loadFile(const std::string& filepath) {
 ErrorCode RAWProcessor::process(const RAWProcessOptions& options, ImageData& output) {
     return pImpl_->process(options, output);
 }
+
+bool RAWProcessor::isDisplayReferred() const { return pImpl_->isDisplayReferred(); }
+const std::string& RAWProcessor::getLastError() const { return pImpl_->getLastError(); }
 
 ErrorCode RAWProcessor::readBayerSource(const RAWProcessOptions& options, RAWBayerSource& output) {
     return pImpl_->readBayerSource(options, output);

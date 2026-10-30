@@ -220,10 +220,21 @@ struct EditorView: View {
                 Text(L10n.text("处理 v2")).tag(ProcessingIdentity.current)
             }.id(localizationLocale.identifier).accessibilityIdentifier("processing.version")
                 .disabled(model.geometryDraft != nil)
+            if RenderEngine.isX3fInput(model.file) {
+                Picker(L10n.text("X3F 显影"), selection: Binding(get: { model.settings.x3fMode }, set: model.selectX3fMode)) {
+                    ForEach(X3fMode.allCases) { mode in
+                        Text(mode.title).tag(mode).disabled(mode == .normal && !RenderEngine.x3fAvailable)
+                    }
+                }.accessibilityIdentifier("x3f.mode").disabled(model.geometryDraft != nil)
+                Text(L10n.text(model.settings.x3fMode == .normal ?
+                    "以文件保存的显影为基准，白平衡作相对调整。" : "保留旧版的特殊色彩。"))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             Picker(L10n.text("曝光基准"), selection: $model.settings.exposureMode) {
                 ForEach(ExposureMode.allCases) { Text($0.title).tag($0) }
             }.id(localizationLocale.identifier)
-                .disabled(RenderEngine.isRasterInput(model.file) || model.geometryDraft != nil)
+                .disabled(RenderEngine.isRasterInput(model.file) || model.geometryDraft != nil ||
+                    (RenderEngine.isX3fInput(model.file) && model.settings.x3fMode == .normal))
             Text(RenderEngine.isRasterInput(model.file) ? "-- EV" : model.result.map { String(format: "%+.2f EV", $0.baselineEV) } ?? "-- EV")
                 .font(.caption).monospacedDigit().foregroundStyle(.secondary).help(L10n.text("基础曝光偏移"))
             }

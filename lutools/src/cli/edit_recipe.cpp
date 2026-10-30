@@ -335,12 +335,18 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
         const auto version = integer(required(root, "schema_version", "recipe"), 1,
                                      std::numeric_limits<uint32_t>::max(), "schema_version");
         if (version==6) { recipe=parseHDR(root); error.clear(); return true; }
-        if (version < 1 || version > 5) throw std::invalid_argument("Unsupported schema_version: " + std::to_string(version));
-        if (version >= 5) fields(root, "recipe", {"schema_version", "processing", "input", "edits", "output"});
+        if (version < 1 || version > 7) throw std::invalid_argument("Unsupported schema_version: " + std::to_string(version));
+        if (version == 7) fields(root, "recipe", {"schema_version", "processing", "x3f_mode", "input", "edits", "output"});
+        else if (version >= 5) fields(root, "recipe", {"schema_version", "processing", "input", "edits", "output"});
         else fields(root, "recipe", {"schema_version", "input", "edits", "output"});
 
         EditRecipe parsed;
         parsed.schemaVersion = version;
+        if (version == 7) {
+            const auto mode = text(required(root, "x3f_mode", "recipe"), "x3f_mode");
+            if (mode == "normal-v1") parsed.x3fMode = SONY2FUJI_X3F_NORMAL;
+            else if (mode != "legacy") throw std::invalid_argument("Unsupported x3f_mode");
+        }
         if (version >= 5) {
             const auto& processing = required(root, "processing", "recipe");
             fields(processing, "processing", {"family", "version", "quality"});
@@ -360,6 +366,8 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
             if (type == "raster") parsed.rasterInput = true;
             else if (type != "raw") throw std::invalid_argument("input.type must be raw or raster");
         }
+        if (version == 7 && parsed.rasterInput)
+            throw std::invalid_argument("schema_version 7 requires an X3F raw input");
 
         const auto& edits = required(root, "edits", "recipe");
         if (version == 1) fields(edits, "edits", {"exposure", "white_balance", "look"});
@@ -482,8 +490,14 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
     if (!validToneCurve(recipe.toneCurve)) throw std::invalid_argument("Invalid tone curve configuration");
     if (recipe.toneCurve.mode == SONY2FUJI_CURVE_CUSTOM && (recipe.schemaVersion < 5 || recipe.sCurve != 0))
         throw std::invalid_argument("Custom tone curve requires schema_version 5 and zero s_curve");
-    if (recipe.schemaVersion < 1 || recipe.schemaVersion > 5)
+    if (recipe.schemaVersion < 1 || recipe.schemaVersion > 7)
         throw std::invalid_argument("Unsupported schema_version");
+    if (recipe.x3fMode != SONY2FUJI_X3F_LEGACY && recipe.x3fMode != SONY2FUJI_X3F_NORMAL)
+        throw std::invalid_argument("Unsupported x3f_mode");
+    if (recipe.schemaVersion < 7 && recipe.x3fMode != SONY2FUJI_X3F_LEGACY)
+        throw std::invalid_argument("Normal X3F rendering requires schema_version 7");
+    if (recipe.schemaVersion == 7 && recipe.rasterInput)
+        throw std::invalid_argument("schema_version 7 requires an X3F raw input");
     if (recipe.processingVersion != SONY2FUJI_PROCESSING_LEGACY && recipe.processingVersion != SONY2FUJI_PROCESSING_C5_V2)
         throw std::invalid_argument("Unsupported processing.version");
     if (recipe.schemaVersion < 5 && recipe.processingVersion != SONY2FUJI_PROCESSING_LEGACY)
@@ -543,6 +557,8 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
     if (recipe.schemaVersion >= 5)
         document["processing"] = {{"family", "rawlab"}, {"version", static_cast<int>(recipe.processingVersion)},
             {"quality", "standard"}};
+    if (recipe.schemaVersion == 7)
+        document["x3f_mode"] = recipe.x3fMode == SONY2FUJI_X3F_NORMAL ? "normal-v1" : "legacy";
     if (recipe.schemaVersion >= 2) {
         const auto& geo = recipe.geometry;
         document["edits"]["geometry"] = {{"crop", {{"x", geo.crop_x}, {"y", geo.crop_y},
@@ -591,7 +607,7 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
 }
 
 sony2fuji_request EditRecipe::toRequest() const {
-    if (hdr || schemaVersion>=6) throw std::invalid_argument("HDR recipes require the typed HDR request");
+    if (hdr || schemaVersion == 6) throw std::invalid_argument("HDR recipes require the typed HDR request");
     sony2fuji_request request{};
     request.version = SONY2FUJI_REQUEST_VERSION;
     request.struct_size = sizeof(request);

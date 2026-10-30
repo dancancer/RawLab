@@ -164,7 +164,9 @@ extension EditorModel {
         defaults.exposureMode = RenderEngine.isRasterInput(photo.url) ? .sensor : .preview
         if record.state==nil,try HDRSourceInfo.probe(photo.url) != nil { defaults.hdr=HDRSettings() }
         let state = record.state ?? PhotoEditState(settings: defaults, filmID: "")
-        if !state.settings.isHDREditing && state.settings.aiDenoiseEnabled { try RenderEngine.validateAIInput(photo.url) }
+        if !state.settings.isHDREditing && state.settings.aiDenoiseEnabled {
+            try RenderEngine.validateAIInput(photo.url, settings: state.settings)
+        }
         let look: URL?, lookName: String
         if state.settings.isHDREditing { look=nil; lookName="HDR" }
         else if let recipeID = state.settings.masterRecipeID {

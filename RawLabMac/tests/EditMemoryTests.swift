@@ -74,6 +74,22 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
     }
 
     static func main() throws {
+        var x3f = Adjustments()
+        try check(x3f.x3fMode == .normal, "new edits select normal X3F rendering")
+        x3f.x3fMode = .legacy
+        x3f.resetAll()
+        try check(x3f.x3fMode == .legacy && x3f.neutralSettings.x3fMode == .legacy, "reset/reference preserve X3F identity")
+        let oldX3f = try JSONDecoder().decode(Adjustments.self, from: Data("{}".utf8))
+        try check(oldX3f.x3fMode == .legacy, "old edits never silently adopt normal X3F rendering")
+        for invalid in ["null", "\"future\"", "1"] {
+            do {
+                _ = try JSONDecoder().decode(Adjustments.self, from: Data("{\"x3fMode\":\(invalid)}".utf8))
+                throw Failure(message: "unknown X3F identity must be rejected")
+            } catch is DecodingError { }
+        }
+        x3f.x3fMode = .normal
+        try check(try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(x3f)).x3fMode == .normal,
+                  "X3F mode survives save/reopen and batch serialization")
         try processingIdentityChecks()
         try protectedStoreChecks()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

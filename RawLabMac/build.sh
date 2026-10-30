@@ -70,9 +70,18 @@ pkg-config --exists 'libraw >= 0.22.2' 'rawlab-dng-sdk >= 1.7.1' 'opencv4 = 4.12
     'wavelib >= 1.0.0' 'lensfun >= 0.3.4' 'libtiff-4 >= 4.7.1'
 cmake -S "$ROOT/lutools" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" -DSONY2FUJI_ENABLE_GPU=ON -DSONY2FUJI_ENABLE_CHROMA_DENOISE=ON -DSONY2FUJI_ENABLE_OPENMP=OFF -DSONY2FUJI_ENABLE_LENSFUN=ON -DSONY2FUJI_ENABLE_DNGSDK=ON -DBUILD_SHARED_LIB=OFF -DBUILD_TESTING=ON "${AI_CMAKE_FLAGS[@]}"
 cmake --build "$BUILD" -j "${JOBS:-$(sysctl -n hw.ncpu)}"
+X3F_LINK_FLAGS=()
+if grep -qs '^SONY2FUJI_ENABLE_X3F:BOOL=ON$' "$BUILD/CMakeCache.txt"; then
+    case "$ARCH" in arm64) X3F_TARGET=aarch64-apple-darwin ;; x86_64) X3F_TARGET=x86_64-apple-darwin ;; esac
+    X3F_LINK_FLAGS=("$BUILD/x3f-rust/$X3F_TARGET/release/librawlab_x3f.a" -liconv)
+fi
 "$BUILD/dng_jxl_tests"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/LUTs" "$APP/Contents/Resources/MasterRecipes" "$APP/Contents/Resources/MasterRecipeIcons" "$APP/Contents/Resources/FilmIcons" "$APP/Contents/Frameworks"
 mkdir -p "$APP/Contents/Resources/Licenses"
+if [ "${#X3F_LINK_FLAGS[@]}" -gt 0 ]; then
+    cp "$BUILD/x3f-licenses.txt" "$APP/Contents/Resources/Licenses/X3F-Dependencies.txt"
+    cp -R "$BUILD/x3f-rust-licenses" "$APP/Contents/Resources/Licenses/"
+fi
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/Licenses/RawLab-GPL-3.0.txt"
 cp "$ROOT/LICENSE-ALIYUN-RUM-EXCEPTION" "$APP/Contents/Resources/Licenses/RawLab-Aliyun-RUM-Exception.txt"
 cp "$ROOT/docs/reference/licensing.md" "$APP/Contents/Resources/Licenses/RawLab-Licensing.md"
@@ -135,7 +144,7 @@ swiftc -O -whole-module-optimization -num-threads "${JOBS:-$(sysctl -n hw.ncpu)}
     "${RUM_FLAGS[@]}" \
     -F "$(dirname "$SPARKLE_FRAMEWORK")" -framework Sparkle \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
-    "${APP_SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT"/Shared/Native/*.swift "$BUILD/libsony2fuji_core.a" ${AI_LINK_FLAGS[@]+"${AI_LINK_FLAGS[@]}"} \
+    "${APP_SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT"/Shared/Native/*.swift "$BUILD/libsony2fuji_core.a" ${AI_LINK_FLAGS[@]+"${AI_LINK_FLAGS[@]}"} ${X3F_LINK_FLAGS[@]+"${X3F_LINK_FLAGS[@]}"} \
     "$BUILD/hdr-codec/lib/libuhdr.a" "$BUILD/raw-jpeg/install/lib/libjpeg.a" \
     $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework CoreImage -framework Metal -framework MetalKit \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \

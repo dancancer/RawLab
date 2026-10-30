@@ -71,6 +71,7 @@
 "RawLab 更新" = "Mise à jour de RawLab";
 "S 曲线" = "Courbe en S";
 "SDR 兼容预览" = "Aperçu compatible SDR";
+"X3F 显影" = "Développement X3F";
 "三分网格" = "Grille des tiers";
 "三线性" = "Trilinéaire";
 "上下拖动调整，方向键微调，Esc 取消" = "Faites glisser vers le haut ou le bas pour régler, utilisez les flèches pour affiner et Échap pour annuler";
@@ -78,6 +79,7 @@
 "上次批量任务尚未完成" = "La dernière exportation par lots n’est pas terminée";
 "下次退出时安装" = "Installer à la prochaine fermeture";
 "不支持此 HDR 格式或颜色描述。" = "Ce format HDR ou cette description colorimétrique n’est pas pris en charge.";
+"不支持此 X3F 显影模式。" = "Ce mode de développement X3F n’est pas pris en charge.";
 "不支持此处理版本，原有记录未被覆盖。" = "Cette version de traitement n'est pas prise en charge. Les réglages enregistrés n'ont pas été écrasés.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "Cette photo, ce look ou ce mode de traitement n’est pas pris en charge. Vérifiez la compatibilité des fichiers et les réglages de traitement.";
 "不是支持的 RAW 文件" = "Il ne s'agit pas d'un fichier RAW pris en charge";
@@ -109,11 +111,13 @@
 "从照片库选择" = "Choisir dans la photothèque";
 "以下为配方逻辑值；强度为 %@。部分范围会按此强度换算。" = "Voici les valeurs logiques de la recette ; l’intensité est de %@. Certains champs sont mis à l’échelle selon cette intensité.";
 "以下目标尚未完成本次历史操作，请检查原因后重试。" = "L’opération d’historique est incomplète pour ces photos. Vérifiez la cause et réessayez.";
+"以文件保存的显影为基准，白平衡作相对调整。" = "Utilise le développement enregistré comme référence, avec des ajustements relatifs de la balance des blancs.";
 "任务使用的外观文件不可用，请重新创建任务。" = "Le fichier de look utilisé par la tâche n’est pas disponible. Recréez la tâche.";
 "任务已冻结。之后的照片编辑不会改变本次导出。" = "La tâche est figée. Les retouches ultérieures ne modifieront pas cet export.";
 "任务未保存：%@" = "Tâche non enregistrée : %@";
 "任务结束后安装" = "Installer après la fin des tâches";
 "传感器基准" = "Référence du capteur";
+"伪红外（旧版）" = "Faux infrarouge (ancien)";
 "位置与尺寸" = "Position et dimensions";
 "作者的小红书主页" = "L’auteur sur Xiaohongshu (RED)";
 "使用 RawLab 中性显影作为基础，不代表还原了相机的标准风格。" = "Utilise le développement neutre de RawLab comme base, sans reproduire le style Standard de l’appareil.";
@@ -133,6 +137,7 @@
 "保存预设" = "Enregistrer le préréglage";
 "保留任务" = "Conserver la tâche";
 "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。" = "Le fichier endommagé sera conservé et les réglages de mise à jour reconstruits. Les données seront vérifiées au redémarrage ; les mises à jour automatiques resteront désactivées.";
+"保留旧版的特殊色彩。" = "Conserve les couleurs particulières de l’ancien développement.";
 "保留旧编辑记录的降噪算法" = "Conserve la réduction du bruit des modifications précédentes";
 "保留这次几何或镜头修改？" = "Conserver ces modifications de géométrie ou d’objectif ?";
 "修正直线弯曲" = "Redresser les lignes courbes";
@@ -463,6 +468,7 @@
 "无法创建新的预设标识，请重试。" = "Impossible de créer un nouvel identifiant de préréglage. Réessayez.";
 "无法恢复调整：%@" = "Impossible de restaurer les ajustements : %@";
 "无法显示处理结果" = "Impossible d'afficher les résultats du traitement";
+"无法正常显影 X3F：%@" = "Impossible de développer normalement le fichier X3F : %@";
 "无法生成预览" = "Impossible de générer un aperçu";
 "无法生成预览，请检查照片、LUT 和颜色配置。" = "Impossible de générer l’aperçu. Vérifiez la photo, la LUT et les réglages colorimétriques.";
 "无法确认更新或恢复状态，请保留全部文件并联系支持。" = "L’état de la mise à jour ou de la récupération est incertain. Conservez tous les fichiers et contactez l’assistance.";
@@ -596,8 +602,10 @@
 "正在等待预览、导出或批量任务结束" = "En attente de la fin de l’aperçu, de l’exportation ou de la tâche par lots";
 "正在读取镜头信息…" = "Lecture des informations de l’objectif…";
 "正在预览镜头校正…" = "Aperçu de la correction optique…";
+"正常显影" = "Développement normal";
 "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。" = "Les informations colorimétriques de cette LUT sont incomplètes. Confirmez son traitement. Elle sera marquée comme compatible, avec un rendu non vérifié.";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "La balance des blancs prise de vue de ce RAW n’a pas pu être analysée ; la teinte de la recette ne peut pas être appliquée.";
+"此 X3F 显影模式不支持 AI 降噪。" = "La réduction du bruit par IA n’est pas prise en charge dans ce mode de développement X3F.";
 "此像素不可取样。" = "Ce pixel ne peut pas être échantillonné.";
 "此外观已不在外观库中。" = "Ce look n'est plus dans la bibliothèque de looks.";
 "此安装暂不支持自动安装更新" = "Cette installation ne prend pas encore en charge les mises à jour automatiques";

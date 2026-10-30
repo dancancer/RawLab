@@ -138,7 +138,7 @@ final class BatchExportModel: ObservableObject {
                 do {
                     let snapshot = try hdrPreparation?.prepare(item,ordinal:0,format:validationJob.format,longEdge:validationJob.longEdge) ?? validationJob.snapshot(for:item)
                     if !snapshot.settings.isHDREditing && snapshot.settings.aiDenoiseEnabled {
-                        try RenderEngine.validateAIInput(item.input)
+                        try RenderEngine.validateAIInput(item.input, settings: snapshot.settings)
                     } else {
                         if engine == nil { engine = try RenderEngine() }
                         _ = try engine!.render(item.input, settings: snapshot.settings, lut: snapshot.look, edge: 180, interactive: true)

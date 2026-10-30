@@ -1,0 +1,21 @@
+{
+  "schema": "rawlab-classic-retinex-fixtures-v1",
+  "source": "SIGMA Photo Pro 6.9.0.0 / lib98_ClassicDLLForMac.dylib / arm64",
+  "library_sha256": "99d6d9360f605f0eb83188e8d2acb81cb97d6866df5811ffd8cad9cefb0cb8e1",
+  "input_kind": "Synthetic ramps, fixed-seed arrays, flat fields and bright rectangles; no photographs",
+  "source_functions": {
+    "Downscale2x2": "0x73930",
+    "SmoothDoubleBlend": "0x72988",
+    "PyramidFilter": "0x74160",
+    "GenerateRetinexLogGain": "0x74d14",
+    "GenerateRetinexGainLUT": "0x76308"
+  },
+  "scope": "Native kernel output only. Does not validate complete X3F rendering, calibration, camera support, UI or export.",
+  "notes": [
+    "PyramidFilter supplies temporary rows immediately after each half-size level. The recovered implementation models these rows explicitly inside its own allocated arrays.",
+    "Standalone SmoothDoubleBlend comparisons use odd output heights; external bytes following a standalone input can affect the native even-height last row. The recovered implementation always uses its own defined working-row state.",
+    "The log luminance recenter mean is measured before filtering. The final global scale is measured after converting filtered variance through the local standard-deviation table.",
+    "Nonzero native gain LUT leaves signed index -32768 untouched. The public recovered entry point rejects that index."
+  ],
+  "fixture_sha256": "fe6a13a20da3ca2be649f5e4166939c2b787bf5959d2d8ee8f6b2786005c1771"
+}
