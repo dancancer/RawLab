@@ -9,7 +9,7 @@ struct IOSBatchSelectionView: View {
     let resolveDraft: (String, Bool) -> Bool
     let editPhoto: (String) -> Void
     let showExistingBatch: () -> Void
-    let created: (BatchExportJob, BatchJournalStore) -> Void
+    let created: (BatchExportJob, BatchJournalStore, Bool) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var showFiles = false
@@ -226,20 +226,22 @@ private struct IOSCollectionExportView: View {
     @ObservedObject var model: RawEditorViewModel
     @ObservedObject var collection: IOSBatchSelection
     let resolveDraft: (String, Bool) -> Bool
-    let created: (BatchExportJob, BatchJournalStore) -> Void
+    let created: (BatchExportJob, BatchJournalStore, Bool) -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @State private var format = BatchOutputFormat.jpeg
     @State private var longEdge: Int?
     @State private var sizeValid = true
     @State private var skipped = Set<String>()
-    @State private var review: IOSCollectionExportReview?
-    @State private var busy = false
+    private var review: IOSCollectionExportReview? { model.collectionExportReview }
+    private var busy: Bool { model.collectionExportPreparing || model.collectionExportFreezing }
+    private var targetCount: Int { collection.selection.targets().filter { !skipped.contains($0) }.count }
     @State private var message: String?
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    Text(L10n.text("先检查每张照片的草稿和已保存调整，再确认冻结任务。"))
+                    Text(L10n.text("将按每张照片已保存的调整导出。跳过只影响本次导出。"))
                     Picker(L10n.text("格式"), selection: $format) {
                         ForEach([BatchOutputFormat.jpeg, .renderedDNG], id: \.self) { Text($0.title).tag($0) }
                     }
@@ -251,26 +253,33 @@ private struct IOSCollectionExportView: View {
                     }
                 }
                 Section {
-                    if let review, review.ready {
-                        Text(L10n.format("将按各自调整导出 %@ 张照片。", String(review.rows.count)))
-                        Button(L10n.text("确认并冻结任务"), action: freeze).accessibilityIdentifier("collection.export.freeze")
-                    } else {
-                        Button(L10n.text("检查并查看最终调整"), action: prepare).disabled(!sizeValid || collection.selection.targets().allSatisfy { skipped.contains($0) })
-                            .accessibilityIdentifier("collection.export.preflight")
-                    }
-                    if collection.selection.targets().allSatisfy({ skipped.contains($0) }) {
+                    Button(L10n.format("开始导出 %@ 张", String(targetCount)), action: start)
+                        .disabled(!sizeValid || targetCount == 0 || busy)
+                        .accessibilityIdentifier("collection.export.start")
+                    if targetCount == 0 {
                         Text(L10n.text("没有可处理目标，请重新选择照片。"))
                     }
-                    if busy { ProgressView(L10n.text("正在检查目标…")) }
-                    if let message { Text(message).foregroundStyle(.orange) }
+                    if busy { ProgressView(L10n.text("正在准备导出…")).accessibilityIdentifier("collection.export.checking") }
+                    if let message = model.collectionExportError ?? message { Text(message).foregroundStyle(.orange) }
                 }
             }.disabled(busy)
                 .navigationTitle(L10n.text("按每张调整导出…")).navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("取消")) { dismiss() }.disabled(busy) } }
-                .onChange(of: format) { _, _ in review = nil }
-                .onChange(of: longEdge) { _, _ in review = nil }
-                .onChange(of: skipped) { _, _ in review = nil }
-                .onChange(of: model.adjustmentHistoryRevision) { _, _ in review = nil }
+                .toolbar { ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.text(busy ? "取消检查" : "取消")) {
+                        let close = !busy || model.collectionExportFreezing
+                        invalidate()
+                        if close { dismiss() }
+                    }.accessibilityIdentifier("collection.export.cancel")
+                } }
+                .onAppear { invalidate() }
+                .onDisappear { model.cancelCollectionExportPreparation() }
+                .onChange(of: format) { _, _ in invalidate() }
+                .onChange(of: longEdge) { _, _ in invalidate() }
+                .onChange(of: skipped) { _, _ in invalidate() }
+                .onChange(of: collection.selection.selected) { _, _ in invalidate() }
+                .onChange(of: model.sourceRevision) { _, _ in invalidate() }
+                .onChange(of: model.adjustmentHistoryRevision) { _, _ in model.cancelCollectionExportPreparation() }
+                .onChange(of: scenePhase) { _, phase in if phase != .active { invalidate() } }
         }.interactiveDismissDisabled(busy)
     }
     private func target(_ photo: IOSCollectionPhoto) -> some View {
@@ -295,30 +304,16 @@ private struct IOSCollectionExportView: View {
         }.buttonStyle(.borderless)
     }
     private func resolve(_ id: String, _ apply: Bool) {
-        review = nil
+        invalidate()
         if !resolveDraft(id, apply) { message = model.collectionDraftFailure }
         else { message = nil }
     }
-    private func prepare() {
-        busy = true; message = nil
-        model.prepareCollectionExport(skipping: skipped, format: format, longEdge: longEdge) { result in
-            busy = false
-            switch result {
-            case .success(let value): review = value
-            case .failure(let error): message = model.adjustmentErrorMessage(error)
-            }
-        }
+    private func invalidate() {
+        model.cancelCollectionExportPreparation(); message = nil
     }
-    private func freeze() {
-        guard let review else { return }
-        busy = true; message = nil
-        model.freezeCollectionExport(review) { result in
-            busy = false
-            switch result {
-            case .success(let value): created(value.0, value.1)
-            case .failure(let error): self.review = nil; message = model.adjustmentErrorMessage(error)
-            }
-        }
+    private func start() {
+        message = nil
+        model.startCollectionExport(skipping: skipped, format: format, longEdge: longEdge, completed: created)
     }
 }
 

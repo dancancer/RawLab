@@ -103,6 +103,8 @@ struct AdjustmentHistoryModelTests {
         try presetCapture(directory: directory)
         try collection(directory: directory)
         try IOSQuickPresetModelChecks.run(directory: directory)
+        try IOSBatchFlowModelChecks.preparedSourceChange(directory: directory)
+        try IOSBatchFlowModelChecks.launchRequests(directory: directory)
         print("PASS: native adjustment history model (\(checks) assertions)")
     }
 

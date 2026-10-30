@@ -22,19 +22,15 @@ extension EditorUITests {
         let export = app.buttons["collection.export"]
         for _ in 0..<3 where !export.isHittable { app.swipeUp() }
         export.tap()
-        let preflight = app.buttons["collection.export.preflight"]
-        XCTAssertTrue(preflight.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertFalse(app.buttons["collection.export.freeze"].exists, "Freezing requires a separate final confirmation")
-        preflight.tap()
-        let freeze = app.buttons["collection.export.freeze"]
-        XCTAssertTrue(freeze.waitForExistence(timeout: 60), app.debugDescription)
-        XCTAssertTrue(app.staticTexts["将按各自调整导出 1 张照片。"].exists)
-        capture("collection-final-confirmation")
-        freeze.tap()
-        XCTAssertTrue(app.buttons["batch.export"].waitForExistence(timeout: 60), app.debugDescription)
+        let start = app.buttons["collection.export.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["collection.export.freeze"].exists)
+        capture("collection-export-configuration")
+        start.tap()
+        XCTAssertTrue(app.staticTexts["已保存 1 张到照片图库"].waitForExistence(timeout: 180), app.debugDescription)
         XCTAssertTrue(app.staticTexts["每张照片使用确认时冻结的独立调整。"].exists)
-        XCTAssertFalse(app.buttons["batch.pick"].isEnabled)
-        capture("collection-frozen-job")
+        XCTAssertFalse(app.buttons["batch.pick"].exists)
+        capture("collection-one-action-export")
         app.buttons["任务操作"].tap()
         app.buttons["放弃任务"].tap()
         let discard = app.buttons["放弃任务"].firstMatch

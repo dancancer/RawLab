@@ -66,6 +66,7 @@ extension EditorModel {
     func adjustmentTransferTargets(_ urls: [URL], payload: AdjustmentTransferPayload, excludingSource: String? = nil,
                                    excludingIdentity: String? = nil, collection: Bool = false) -> [AdjustmentTransferTarget] {
         let activePath = file?.resolvingSymlinksInPath().standardizedFileURL.path
+        let source = sourceRevision
         let revision = editRevision
         return urls.filter { $0.resolvingSymlinksInPath().standardizedFileURL.path != excludingSource &&
             (excludingIdentity == nil || (try? BatchExportItem.resourceKey($0)) != excludingIdentity) }.map { url in
@@ -86,7 +87,7 @@ extension EditorModel {
             return AdjustmentTransferTarget(url: url, defaultState: PhotoEditState(settings: defaults, filmID: ""), context: context, expectedIdentity: collectionPhoto?.original,
                 isCurrent: { [weak self] in
                     let check = {
-                        guard let self else { return false }
+                        guard let self, self.sourceRevision == source else { return false }
                         guard path != excludingSource else { return false }
                         if let excludingIdentity, (try? BatchExportItem.resourceKey(url)) == excludingIdentity { return false }
                         if collection {

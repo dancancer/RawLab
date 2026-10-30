@@ -113,6 +113,7 @@
 "以下目标尚未完成本次历史操作，请检查原因后重试。" = "The history operation is incomplete for these photos. Check the reason and retry.";
 "以文件保存的显影为基准，白平衡作相对调整。" = "Uses the saved rendering as the baseline, with relative white-balance adjustments.";
 "任务使用的外观文件不可用，请重新创建任务。" = "The look file used by this task is unavailable. Create the task again.";
+"任务已保存，请继续导出。" = "The task is saved. Continue the export.";
 "任务已冻结。之后的照片编辑不会改变本次导出。" = "The task is frozen. Later edits will not change this export.";
 "任务未保存：%@" = "Task not saved: %@";
 "任务结束后安装" = "Install after tasks finish";
@@ -212,6 +213,7 @@
 "取消几何和镜头编辑" = "Cancel Geometry and Lens Editing";
 "取消导出" = "Cancel Export";
 "取消更新" = "Cancel update";
+"取消检查" = "Cancel Check";
 "取色失败，请重试。" = "Could not sample. Try again.";
 "受影响色域：%@" = "Affected ranges: %@";
 "另存" = "Save As";
@@ -288,6 +290,7 @@
 "导出长边必须为 1-65535 像素。" = "The long edge must be 1-65535 pixels.";
 "将以下项目转为独立调整，以保留其他分组的当前效果：%@" = "The following will become independent adjustments to preserve the current appearance of other groups: %@";
 "将在下次正常退出时重新检查并安装" = "The update will be checked again and installed the next time you quit normally";
+"将按每张照片已保存的调整导出。跳过只影响本次导出。" = "Each photo uses its saved adjustments. Skipping only affects this export.";
 "将替换目标照片的本机调整记录，不改写原始 RAW。" = "This replaces the target photos’ local adjustments without modifying the original RAW.";
 "将替换目标照片的本机调整记录，不改写原始文件。" = "The target photos’ local adjustment records will be replaced. Original files will not be modified.";
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "The copy of the look saved by RawLab will be removed; the original file will not be deleted.";
@@ -366,6 +369,7 @@
 "开启" = "On";
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "When enabled, Aliyun processes feature usage counts and stores data in mainland China. The SDK may collect device identifiers, device and system information, network/IP, region, and session data.";
 "开启对比" = "Turn on comparison";
+"开始导出 %@ 张" = "Start Export (%@)";
 "强度" = "Intensity";
 "强度为 0，其他参数会保留。" = "Intensity is 0. Other settings are retained.";
 "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光" = "Strong light-dark contrast, deep cool-cyan shadows, restrained blacks and warm accent light";
@@ -560,6 +564,7 @@
 "查看更新" = "View updates";
 "查看更新前的数据备份" = "View the data backup from before the update";
 "查看此说明不会启用自动安装。失败后请保留现有应用和数据，使用官方可信安装包恢复；不要用旧版覆盖新版编辑记录。" = "Viewing these instructions does not enable automatic installation. After a failure, keep the existing app and data, use a trusted official installer to recover, and do not overwrite edits from a newer version with an older one.";
+"查看目标" = "Review Targets";
 "查看调整前" = "Show before";
 "查看调整范围" = "View Adjustment Scope";
 "标准显影" = "Standard development";
@@ -583,6 +588,7 @@
 "正在保存 AI 结果" = "Saving AI result";
 "正在停止…" = "Stopping…";
 "正在准备 AI 降噪" = "Preparing AI denoise";
+"正在准备导出…" = "Preparing export…";
 "正在准备编辑画布…" = "Preparing Editing Canvas…";
 "正在取色…" = "Sampling…";
 "正在处理 RAW 噪声" = "Processing RAW noise";
@@ -762,6 +768,7 @@
 "英国乡村秋日油画风，厚重大地色，枯草金黄与深林墨绿交织" = "British countryside autumn oil-painting look, rich earth tones, golden dry grass and deep forest green";
 "范围与插值" = "Range and interpolation";
 "草稿尚未应用" = "Draft Not Applied";
+"草稿已处理，请开始导出。" = "Draft resolved. Start the export when ready.";
 "草稿已处理，请重新检查最终调整。" = "The draft has been resolved. Review the final adjustments again.";
 "草稿未应用，无法导出或复制设置。" = "Apply the draft before exporting or copying settings.";
 "蓝" = "Blue";
@@ -883,6 +890,7 @@
 "重命名外观" = "Rename Look";
 "重命名预设" = "Rename Preset";
 "重建更新设置" = "Rebuild update settings";
+"重新检查" = "Check Again";
 "重新读取目录" = "Reload Folder";
 "重新载入" = "Reload";
 "重置" = "Reset";

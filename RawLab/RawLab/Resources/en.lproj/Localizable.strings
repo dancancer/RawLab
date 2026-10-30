@@ -92,6 +92,7 @@
 "以下目标尚未完成本次历史操作，请检查原因后重试。" = "The history operation is incomplete for these photos. Check the reason and retry.";
 "以文件保存的显影为基准，白平衡作相对调整。" = "Uses the saved rendering as the baseline, with relative white-balance adjustments.";
 "任务使用的外观文件不可用，请重新创建任务。" = "The look file used by this task is unavailable. Create the task again.";
+"任务已保存，请继续导出。" = "The task is saved. Continue the export.";
 "任务操作" = "Task Actions";
 "任务未保存：%@" = "Task not saved: %@";
 "传感器基准" = "Sensor reference";
@@ -170,6 +171,7 @@
 "双击名称或轨道恢复默认值。" = "Double-tap the name or track to restore the default.";
 "取消" = "Cancel";
 "取消导出" = "Cancel Export";
+"取消检查" = "Cancel Check";
 "取色失败，请重试。" = "Could not sample. Try again.";
 "受影响色域：%@" = "Affected ranges: %@";
 "另存" = "Save As";
@@ -234,6 +236,7 @@
 "导出长边必须为 1-65535 像素。" = "The long edge must be 1-65535 pixels.";
 "将以下项目转为独立调整，以保留其他分组的当前效果：%@" = "The following will become independent adjustments to preserve the current appearance of other groups: %@";
 "将按各自调整导出 %@ 张照片。" = "Export with individual adjustments · Photos: %@";
+"将按每张照片已保存的调整导出。跳过只影响本次导出。" = "Each photo uses its saved adjustments. Skipping only affects this export.";
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "The copy of the look saved by RawLab will be removed; the original file will not be deleted.";
 "将覆盖以下 %@ 项调整；其他调整保留目标原值。" = "Adjustments to overwrite: %@. Other adjustments keep their target values.";
 "尚无已修改的调整。" = "No modified adjustments yet.";
@@ -288,6 +291,7 @@
 "开启" = "On";
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "When enabled, Aliyun processes feature usage counts and stores data in mainland China. The SDK may collect device identifiers, device and system information, network/IP, region, and session data.";
 "开启对比" = "Turn on comparison";
+"开始导出 %@ 张" = "Start Export (%@)";
 "强度" = "Intensity";
 "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光" = "Strong light-dark contrast, deep cool-cyan shadows, restrained blacks and warm accent light";
 "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。" = "The SDR edits use tools that HDR does not support yet. Reset those tools before enabling HDR.";
@@ -435,6 +439,7 @@
 "查看其他方案（包括 Log 输入）" = "Show other options (including Log input)";
 "查看批量任务 · %@ 张" = "View Batch Task · %@";
 "查看批量任务…" = "View Batch Task…";
+"查看目标" = "Review Targets";
 "查看调整前" = "Show before";
 "查看调整范围" = "View Adjustment Scope";
 "标准显影" = "Standard development";
@@ -451,6 +456,7 @@
 "橙" = "Orange";
 "正在保存" = "Saving";
 "正在停止…" = "Stopping…";
+"正在准备导出…" = "Preparing export…";
 "正在准备照片…" = "Preparing Photos…";
 "正在加载胶片" = "Loading Films";
 "正在取色…" = "Sampling…";
@@ -581,6 +587,7 @@
 "英国乡村秋日油画风，厚重大地色，枯草金黄与深林墨绿交织" = "British countryside autumn oil-painting look, rich earth tones, golden dry grass and deep forest green";
 "范围" = "Range";
 "范围与插值" = "Range and interpolation";
+"草稿已处理，请开始导出。" = "Draft resolved. Start the export when ready.";
 "蓝" = "Blue";
 "裁切" = "Crop";
 "裁切上边" = "Crop top";
@@ -673,6 +680,7 @@
 "重命名" = "Rename";
 "重命名外观" = "Rename Look";
 "重命名预设" = "Rename Preset";
+"重新检查" = "Check Again";
 "重新载入" = "Reload";
 "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。" = "Reloading discards unsaved adjustments and reads the current saved record for this photo.";
 "重新载入已保存调整" = "Reload Saved Adjustments";

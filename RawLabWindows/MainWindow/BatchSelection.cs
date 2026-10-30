@@ -124,7 +124,23 @@ public partial class MainWindow
         editStore ??=new(EditStore.DefaultDirectory);
         return new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,aiPreference.DeviceID)).Prepare(Collection,skipping,format,longEdge,directory,CollectionDraftFailure);
     }
-    internal BatchJob FreezeCollectionExport(CollectionExportReview review)
+    internal async Task<CollectionExportReview?> PrepareCollectionExportAsync(IReadOnlyCollection<string> skipping,ExportFormat format,int? longEdge,string directory)
+    {
+        if(CollectionBusy)return null;
+        editStore ??=new(EditStore.DefaultDirectory);
+        var photos=Collection.SelectedPhotos.ToArray();var skipped=skipping.ToHashSet(StringComparer.Ordinal);
+        var failures=photos.ToDictionary(photo=>photo.ID,photo=>CollectionDraftFailure(photo.ID));
+        var generation=++transferGeneration;var opened=openRevision;var revision=editRevision;var current=file;
+        var device=aiPreference.DeviceID;
+        var exporter=new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,device));
+        transferPreparing=true;
+        try {
+            var result=await Task.Run(()=>exporter.Prepare(photos,skipped,format,longEdge,directory,id=>failures.GetValueOrDefault(id)));
+            return !closing && generation==transferGeneration && opened==openRevision && revision==editRevision && file==current &&
+                photos.Select(photo=>photo.ID).SequenceEqual(Collection.SelectedPhotos.Select(photo=>photo.ID)) ? result : null;
+        }finally{if(generation==transferGeneration)transferPreparing=false;}
+    }
+    internal BatchJob FreezeCollectionExport(CollectionExportReview review,bool autoStart=false)
     {
         if(CollectionBusy)throw new InvalidOperationException(Loc.Text("请等待当前操作完成。"));
         if(CurrentBatch is {} previous && previous.SelectedCount>previous.SucceededCount)
@@ -132,7 +148,7 @@ public partial class MainWindow
         if(batchWindow!=null){batchWindow.Close();if(batchWindow!=null)throw new InvalidOperationException(Loc.Text("请先关闭当前任务窗口。"));}
         editStore ??=new(EditStore.DefaultDirectory);
         var job=new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,aiPreference.DeviceID)).Freeze(Collection,review,CollectionDraftFailure,RequestedAIBackend,aiPreference.DeviceID);
-        previousBatch=job;ShowBatch(job);return job;
+        previousBatch=job;ShowBatch(job,autoStart);return job;
     }
     internal void ViewCollectionExport()=>ShowBatchClicked(this,new());
 }

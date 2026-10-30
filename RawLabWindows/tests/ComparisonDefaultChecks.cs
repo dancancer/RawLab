@@ -187,6 +187,7 @@ internal static class ComparisonDefaultChecks
 
             var first = RunHostedWindow(repo, profile, raw, fixtures, "first",gpuSelection);
             if (first == 2 || first != 0) return first;
+            if(Environment.GetEnvironmentVariable("RAWLAB_BATCH_FLOW_UI")=="1")return first;
             return RunRestartHost(repo, profile);
         }
         finally { Environment.SetEnvironmentVariable("RAWLAB_COMPARISON_RAW", previousRaw); }
@@ -224,7 +225,8 @@ internal static class ComparisonDefaultChecks
     private static int RunHostedWindow(string repo, string profile, string raw, Fixtures fixtures, string phase,int gpuSelection)
     {
         var quickPresets = Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_UI") == "1";
-        if (quickPresets) Loc.Initialize(Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_LANGUAGE") ?? "en");
+        var batchFlow=Environment.GetEnvironmentVariable("RAWLAB_BATCH_FLOW_UI")=="1";
+        if (quickPresets || batchFlow) Loc.Initialize(Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_LANGUAGE") ?? "en");
         var app = TestWindowState.CreateApplication();
         if (quickPresets && Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_LARGE") == "1") {
             app.Resources["EditorBodySize"] = 18d; app.Resources["EditorCaptionSize"] = 16d;
@@ -233,6 +235,7 @@ internal static class ComparisonDefaultChecks
         var window = new MainWindow { Width = 1200, Height = 800 };
         TestWindowState.Isolate(window, Path.Combine(profile, "window-state"));
         UseProfile(window, profile);
+        if(batchFlow){window.Width=1024;window.Height=720;}
         if (quickPresets) {
             window.Width = 1024; window.Height = 720;
             window.QuickPresetPrepared = async () => {

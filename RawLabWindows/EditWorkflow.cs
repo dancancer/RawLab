@@ -196,7 +196,7 @@ public partial class MainWindow
         if (batchWindow != null) { batchWindow.Activate(); return; }
         if (previousBatch != null) ShowBatch(previousBatch);
     }
-    private void ShowBatch(BatchJob job)
+    private void ShowBatch(BatchJob job,bool autoStart=false)
     {
         var window = new BatchExportWindow(job, batchJournal,backend=>new RenderEngine(aiBackend:backend,
             aiDeviceID:job.AIDeviceID,aiDiagnostics:aiDiagnostics),aiDiagnostics) { Owner = this, IsEnabled = !UpdateInstallationActive };
@@ -222,6 +222,7 @@ public partial class MainWindow
             RefreshBatchNotice(); UpdateBusy();
         };
         window.Show(); RefreshBatchNotice(); UpdateBusy();
+        if(autoStart)_=window.StartExecution();
     }
     private void RecoverFailedClose(BatchExportWindow window)
     {

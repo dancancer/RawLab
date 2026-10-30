@@ -6878,5 +6878,69 @@
     "fr": "Aucun réglage modifié pour le moment.",
     "ja": "変更された調整はまだありません。",
     "zh-Hans": "尚无已修改的调整。"
+  },
+  "任务已保存，请继续导出。": {
+    "de": "Der Auftrag ist gespeichert. Setzen Sie den Export fort.",
+    "en": "The task is saved. Continue the export.",
+    "es": "La tarea está guardada. Continúa la exportación.",
+    "fr": "La tâche est enregistrée. Reprenez l’exportation.",
+    "ja": "タスクを保存しました。書き出しを続行してください。",
+    "zh-Hans": "任务已保存，请继续导出。"
+  },
+  "取消检查": {
+    "de": "Prüfung abbrechen",
+    "en": "Cancel Check",
+    "es": "Cancelar comprobación",
+    "fr": "Annuler la vérification",
+    "ja": "確認をキャンセル",
+    "zh-Hans": "取消检查"
+  },
+  "将按每张照片已保存的调整导出。跳过只影响本次导出。": {
+    "de": "Jedes Foto verwendet seine gespeicherten Anpassungen. Überspringen gilt nur für diesen Export.",
+    "en": "Each photo uses its saved adjustments. Skipping only affects this export.",
+    "es": "Cada foto usa sus ajustes guardados. Omitir solo afecta a esta exportación.",
+    "fr": "Chaque photo utilise ses réglages enregistrés. L’exclusion ne concerne que cette exportation.",
+    "ja": "各写真の保存済み調整で書き出します。スキップは今回の書き出しにのみ適用されます。",
+    "zh-Hans": "将按每张照片已保存的调整导出。跳过只影响本次导出。"
+  },
+  "开始导出 {0} 张": {
+    "de": "Export starten ({0})",
+    "en": "Start Export ({0})",
+    "es": "Iniciar exportación ({0})",
+    "fr": "Lancer l’exportation ({0})",
+    "ja": "{0}枚の書き出しを開始",
+    "zh-Hans": "开始导出 {0} 张"
+  },
+  "查看目标": {
+    "de": "Zielfotos ansehen",
+    "en": "Review Targets",
+    "es": "Revisar destinos",
+    "fr": "Examiner les destinations",
+    "ja": "対象を確認",
+    "zh-Hans": "查看目标"
+  },
+  "正在准备导出…": {
+    "de": "Export wird vorbereitet…",
+    "en": "Preparing export…",
+    "es": "Preparando la exportación…",
+    "fr": "Préparation de l’exportation…",
+    "ja": "書き出しを準備中…",
+    "zh-Hans": "正在准备导出…"
+  },
+  "草稿已处理，请开始导出。": {
+    "de": "Entwurf geklärt. Sie können den Export starten.",
+    "en": "Draft resolved. Start the export when ready.",
+    "es": "Borrador resuelto. Ya puedes iniciar la exportación.",
+    "fr": "Brouillon traité. Vous pouvez lancer l’exportation.",
+    "ja": "下書きを処理しました。書き出しを開始してください。",
+    "zh-Hans": "草稿已处理，请开始导出。"
+  },
+  "重新检查": {
+    "de": "Erneut prüfen",
+    "en": "Check Again",
+    "es": "Volver a comprobar",
+    "fr": "Vérifier à nouveau",
+    "ja": "再確認",
+    "zh-Hans": "重新检查"
   }
 }

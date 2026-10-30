@@ -173,6 +173,7 @@ final class EditorModel: ObservableObject {
     @Published var sourceRevision = UUID() { didSet {
         hslSourceRevision &+= 1; hslAcceptedRequest = nil; hslAcceptedSettings = nil
         closeQuickPresets()
+        cancelCollectionExportPreparation()
     } }
     @Published var file: URL?
     @Published var sourceIsHDR=false
@@ -182,7 +183,10 @@ final class EditorModel: ObservableObject {
     @Published var result: RenderedImage?
     @Published var busy = false { didSet { if oldValue && !busy { resumeResetToolIfReady() } } }
     @Published var autoExposing = false
-    var editRevision = UUID() { didSet { if quickPresetState.isPreparing { cancelQuickPreset() } } }
+    var editRevision = UUID() { didSet {
+        if quickPresetState.isPreparing { cancelQuickPreset() }
+        if collectionExportPreparing { cancelCollectionExportPreparation() }
+    } }
     @Published var exporting = false
     @Published var aiState = AIDenoiseState.idle
     var aiIdentity: AIWorkIdentity?
@@ -228,6 +232,12 @@ final class EditorModel: ObservableObject {
     @Published var batch: BatchExportModel?
     @Published var batchSelection = BatchSelectionSession<String>()
     @Published var batchSelectionPhotos: [String: MacCollectionPhoto] = [:]
+    @Published var collectionExportPreparing = false
+    @Published var collectionExportReview: MacCollectionExportReview?
+    @Published var collectionExportError: String?
+    var collectionExportGeneration = UUID()
+    let collectionExportQueue = DispatchQueue(label: "rawlab.collection.prepare", qos: .userInitiated)
+    var prepareCollectionExportOperation: (MacCollectionExportPreparation) throws -> MacCollectionExportReview = { try $0.prepare() }
     @Published var collectionError: String?
     @Published var exportLongEdge: Int?
     let queue = DispatchQueue(label: "rawlab.render", qos: .userInitiated)

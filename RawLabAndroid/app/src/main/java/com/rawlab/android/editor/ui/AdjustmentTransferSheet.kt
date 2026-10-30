@@ -50,9 +50,20 @@ internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentShe
     }
     val prepared = transfer.prepared
     val busy = transfer.preparing
+    val openedSource = remember { editor.photo?.identity }
     val ready = !busy && prepared?.targets?.any { it.id !in skipped } == true &&
         prepared.targets.all { it.error == null || it.id in skipped }
     DisposableEffect(model) { onDispose { model.closeAdjustmentOperation() } }
+    LaunchedEffect(editor.photo?.identity) {
+        if (kind == AdjustmentSheet.PASTE && editor.photo?.identity != openedSource) onClose()
+    }
+    LaunchedEffect(payload, targets) {
+        if (kind == AdjustmentSheet.PASTE && payload != null && targets.isNotEmpty()) {
+            skipped = emptySet()
+            model.prepareAdjustmentPaste(payload, targets, if (synchronization != null) AdjustmentHistoryTransaction.Action.SYNCHRONIZE
+                else if (preset == null) AdjustmentHistoryTransaction.Action.PASTE else AdjustmentHistoryTransaction.Action.PRESET)
+        }
+    }
     ModalBottomSheet(onDismissRequest = onClose,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         EditorSheetSystemBars()
@@ -82,9 +93,9 @@ internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentShe
                         Text(stringResource(R.string.transfer_targets, targets.size.toString()))
                         if (synchronization == null) TextButton(onClick = { files.launch(arrayOf("*/*")) }, enabled = !busy,
                             modifier = Modifier.testTag("adjustment-paste-files")) { Text(stringResource(R.string.transfer_choose_files)) }
-                        Button(onClick = { skipped = emptySet(); model.prepareAdjustmentPaste(payload, targets, if (synchronization != null) AdjustmentHistoryTransaction.Action.SYNCHRONIZE else if (preset == null) AdjustmentHistoryTransaction.Action.PASTE else AdjustmentHistoryTransaction.Action.PRESET) },
+                        if (transfer.results.isEmpty() && (transfer.error != null || prepared?.targets?.any { it.error != null } == true)) Button(onClick = { skipped = emptySet(); model.prepareAdjustmentPaste(payload, targets, if (synchronization != null) AdjustmentHistoryTransaction.Action.SYNCHRONIZE else if (preset == null) AdjustmentHistoryTransaction.Action.PASTE else AdjustmentHistoryTransaction.Action.PRESET) },
                             enabled = !busy && targets.isNotEmpty(), modifier = Modifier.testTag("adjustment-paste-preflight")) {
-                            Text(stringResource(R.string.transfer_preflight))
+                            Text(stringResource(R.string.transfer_recheck))
                         }
                         if (busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(stringResource(R.string.transfer_preparing)) }
                         for (uri in targets) {

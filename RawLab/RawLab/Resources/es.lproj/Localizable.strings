@@ -92,6 +92,7 @@
 "以下目标尚未完成本次历史操作，请检查原因后重试。" = "La operación de historial no se ha completado para estas fotos. Comprueba el motivo y vuelve a intentarlo.";
 "以文件保存的显影为基准，白平衡作相对调整。" = "Usa el revelado guardado como base, con ajustes relativos del balance de blancos.";
 "任务使用的外观文件不可用，请重新创建任务。" = "El archivo de look que usa la tarea no está disponible. Vuelve a crear la tarea.";
+"任务已保存，请继续导出。" = "La tarea está guardada. Continúa la exportación.";
 "任务操作" = "Acciones de la tarea";
 "任务未保存：%@" = "Tarea no guardada: %@";
 "传感器基准" = "Referencia del sensor";
@@ -170,6 +171,7 @@
 "双击名称或轨道恢复默认值。" = "Toca dos veces el nombre o la pista para restablecer el valor predeterminado.";
 "取消" = "Cancelar";
 "取消导出" = "Cancelar exportación";
+"取消检查" = "Cancelar comprobación";
 "取色失败，请重试。" = "No se pudo tomar la muestra. Inténtalo de nuevo.";
 "受影响色域：%@" = "Gamas afectadas: %@";
 "另存" = "Guardar como";
@@ -234,6 +236,7 @@
 "导出长边必须为 1-65535 像素。" = "El borde largo debe tener entre 1 y 65535 píxeles.";
 "将以下项目转为独立调整，以保留其他分组的当前效果：%@" = "Los siguientes valores se convertirán en ajustes independientes para conservar el aspecto actual de los demás grupos: %@";
 "将按各自调整导出 %@ 张照片。" = "Exportar con ajustes individuales · Fotos: %@";
+"将按每张照片已保存的调整导出。跳过只影响本次导出。" = "Cada foto usa sus ajustes guardados. Omitir solo afecta a esta exportación.";
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "Se eliminará la copia del look guardada por RawLab; el archivo original no se borrará.";
 "将覆盖以下 %@ 项调整；其他调整保留目标原值。" = "Ajustes que se sobrescribirán: %@. Los demás conservarán los valores del destino.";
 "尚无已修改的调整。" = "Aún no hay ajustes modificados.";
@@ -288,6 +291,7 @@
 "开启" = "Activado";
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "Al activarse, Aliyun procesa los recuentos de uso de funciones y almacena los datos en China continental. El SDK puede recopilar identificadores del dispositivo, información del dispositivo y del sistema, red/IP, región y datos de sesión.";
 "开启对比" = "Activar comparación";
+"开始导出 %@ 张" = "Iniciar exportación (%@)";
 "强度" = "Intensidad";
 "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光" = "Contraste fuerte, sombras profundas cian frío, negros contenidos y toques de luz cálida";
 "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。" = "Los ajustes SDR usan herramientas aún no compatibles con HDR. Restablécelas antes de activar HDR.";
@@ -435,6 +439,7 @@
 "查看其他方案（包括 Log 输入）" = "Ver otras opciones (incluida la entrada Log)";
 "查看批量任务 · %@ 张" = "Ver tarea por lotes · %@";
 "查看批量任务…" = "Ver tarea por lotes…";
+"查看目标" = "Revisar destinos";
 "查看调整前" = "Ver antes";
 "查看调整范围" = "Ver alcance de los ajustes";
 "标准显影" = "Revelado estándar";
@@ -451,6 +456,7 @@
 "橙" = "Naranja";
 "正在保存" = "Guardando";
 "正在停止…" = "Deteniendo…";
+"正在准备导出…" = "Preparando la exportación…";
 "正在准备照片…" = "Preparando fotos…";
 "正在加载胶片" = "Cargando películas";
 "正在取色…" = "Muestreando…";
@@ -581,6 +587,7 @@
 "英国乡村秋日油画风，厚重大地色，枯草金黄与深林墨绿交织" = "Estilo de óleo otoñal de la campiña británica, tonos tierra densos, hierba dorada y verde bosque profundo";
 "范围" = "Intervalo";
 "范围与插值" = "Rango e interpolación";
+"草稿已处理，请开始导出。" = "Borrador resuelto. Ya puedes iniciar la exportación.";
 "蓝" = "Azul";
 "裁切" = "Recorte";
 "裁切上边" = "Borde superior";
@@ -673,6 +680,7 @@
 "重命名" = "Renombrar";
 "重命名外观" = "Cambiar nombre del look";
 "重命名预设" = "Renombrar ajuste preestablecido";
+"重新检查" = "Volver a comprobar";
 "重新载入" = "Recargar";
 "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。" = "Al recargar se descartan los ajustes sin guardar y se lee el registro guardado actual de esta foto.";
 "重新载入已保存调整" = "Recargar ajustes guardados";

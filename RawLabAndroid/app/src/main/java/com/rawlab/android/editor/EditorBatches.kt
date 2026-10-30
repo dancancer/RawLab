@@ -16,6 +16,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -37,10 +38,30 @@ internal class EditorBatches(
     val active = mutableActive.asStateFlow()
     private val mutablePending = MutableStateFlow<List<BatchJob>>(emptyList())
     val pending = mutablePending.asStateFlow()
+    private var automaticStart: BatchExportModel? = null
+    private var pendingRevision = 0
 
     fun begin(source: BatchSourceSnapshot, gpuMode: Int) { mutableActive.value = model(source, null, gpuMode) }
 
-    fun resume(job: BatchJob, gpuMode: Int) { mutableActive.value = model(job.source, job, gpuMode) }
+    fun retain(job: BatchJob) {
+        pendingRevision++
+        mutablePending.value = listOf(job) + mutablePending.value.filterNot { it.id == job.id }
+    }
+
+    fun resume(job: BatchJob, gpuMode: Int, startAutomatically: Boolean = false) {
+        val resumed = model(job.source, job, gpuMode)
+        pendingRevision++
+        mutablePending.value = mutablePending.value.filterNot { it.id == job.id }
+        mutableActive.value = resumed
+        automaticStart = if (startAutomatically) resumed else null
+        if (startAutomatically) scope.launch {
+            resumed.state.first { it.phase != BatchPhase.PREPARING }
+            if (mutableActive.value === resumed && automaticStart === resumed) {
+                automaticStart = null
+                resumed.continueUnfinished()
+            }
+        }
+    }
 
     fun close() {
         val model = mutableActive.value ?: return
@@ -55,19 +76,21 @@ internal class EditorBatches(
     }
 
     fun refreshPending() {
+        val revision = ++pendingRevision
         scope.launch {
             try {
-                mutablePending.value = withContext(Dispatchers.IO) {
+                val pending = withContext(Dispatchers.IO) {
                     val journal = BatchJournal(File(application.filesDir, "RawLab/BatchJobs"))
                     journal.pending().mapNotNull(journal::load)
                 }
+                if (revision == pendingRevision) mutablePending.value = pending
             } catch (error: Exception) { onError(AppStrings.format(R.string.message_unable_to_read_batch_task, error.message.toString())) }
         }
     }
 
-    fun cancelForBackground() { mutableActive.value?.cancel(forBackground = true) }
+    fun cancelForBackground() { automaticStart = null; mutableActive.value?.cancel(forBackground = true) }
 
-    fun dispose() { mutableActive.value?.close() }
+    fun dispose() { automaticStart = null; mutableActive.value?.close() }
 
     private fun model(source: BatchSourceSnapshot, job: BatchJob?, gpuMode: Int) = BatchExportModel(application, storage,
         source, job, gpuMode = gpuMode, processorFactory = processorFactory,

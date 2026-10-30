@@ -84,6 +84,12 @@ final class RawEditorViewModel: ObservableObject {
     var failedDraftSource: EditorEditSource?
     var loadedEditRecord: VersionedPhotoEdit?
     let batchSelection = IOSBatchSelection()
+    @Published var collectionExportPreparing = false
+    @Published var collectionExportFreezing = false
+    @Published var collectionExportReview: IOSCollectionExportReview?
+    @Published var collectionExportError: String?
+    var collectionExportGeneration = UUID()
+    var makeCollectionJournal: () throws -> BatchJournalStore = BatchJournalStore.appStore
     var adjustmentSession: IOSAdjustmentTransferSession?
     var adjustmentInteraction: IOSAdjustmentInteraction?
     var adjustmentSourceValidator: (() throws -> Void)?

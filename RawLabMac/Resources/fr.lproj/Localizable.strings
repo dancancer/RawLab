@@ -113,6 +113,7 @@
 "以下目标尚未完成本次历史操作，请检查原因后重试。" = "L’opération d’historique est incomplète pour ces photos. Vérifiez la cause et réessayez.";
 "以文件保存的显影为基准，白平衡作相对调整。" = "Utilise le développement enregistré comme référence, avec des ajustements relatifs de la balance des blancs.";
 "任务使用的外观文件不可用，请重新创建任务。" = "Le fichier de look utilisé par la tâche n’est pas disponible. Recréez la tâche.";
+"任务已保存，请继续导出。" = "La tâche est enregistrée. Reprenez l’exportation.";
 "任务已冻结。之后的照片编辑不会改变本次导出。" = "La tâche est figée. Les retouches ultérieures ne modifieront pas cet export.";
 "任务未保存：%@" = "Tâche non enregistrée : %@";
 "任务结束后安装" = "Installer après la fin des tâches";
@@ -212,6 +213,7 @@
 "取消几何和镜头编辑" = "Annuler les réglages de géométrie et d’objectif";
 "取消导出" = "Annuler l’exportation";
 "取消更新" = "Annuler la mise à jour";
+"取消检查" = "Annuler la vérification";
 "取色失败，请重试。" = "Impossible de prélever la couleur. Réessayez.";
 "受影响色域：%@" = "Plages affectées : %@";
 "另存" = "Enregistrer sous";
@@ -288,6 +290,7 @@
 "导出长边必须为 1-65535 像素。" = "Le bord long doit être compris entre 1 et 65535 pixels.";
 "将以下项目转为独立调整，以保留其他分组的当前效果：%@" = "Les éléments suivants seront convertis en réglages indépendants pour préserver le rendu actuel des autres groupes : %@";
 "将在下次正常退出时重新检查并安装" = "La mise à jour sera vérifiée à nouveau et installée lors de la prochaine fermeture normale";
+"将按每张照片已保存的调整导出。跳过只影响本次导出。" = "Chaque photo utilise ses réglages enregistrés. L’exclusion ne concerne que cette exportation.";
 "将替换目标照片的本机调整记录，不改写原始 RAW。" = "Remplace les réglages locaux des photos cibles sans modifier le RAW d’origine.";
 "将替换目标照片的本机调整记录，不改写原始文件。" = "Les réglages locaux des photos cibles seront remplacés. Les fichiers d’origine ne seront pas modifiés.";
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "La copie du look enregistrée par RawLab sera supprimée ; le fichier d’origine ne sera pas effacé.";
@@ -366,6 +369,7 @@
 "开启" = "Activé";
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "Lorsque cette option est activée, Aliyun traite le nombre d’utilisations des fonctionnalités et stocke les données en Chine continentale. Le SDK peut collecter des identifiants d’appareil, des informations sur l’appareil et le système, le réseau/IP, la région et les sessions.";
 "开启对比" = "Activer la comparaison";
+"开始导出 %@ 张" = "Lancer l’exportation (%@)";
 "强度" = "Intensité";
 "强度为 0，其他参数会保留。" = "L’intensité est à 0. Les autres réglages sont conservés.";
 "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光" = "Contraste marqué, ombres cyan froid profond, noirs maîtrisés et touches de lumière chaude";
@@ -560,6 +564,7 @@
 "查看更新" = "Afficher les mises à jour";
 "查看更新前的数据备份" = "Afficher la sauvegarde des données avant la mise à jour";
 "查看此说明不会启用自动安装。失败后请保留现有应用和数据，使用官方可信安装包恢复；不要用旧版覆盖新版编辑记录。" = "La consultation de ces instructions n’active pas l’installation automatique. Après un échec, conservez l’application et les données existantes, utilisez un programme d’installation officiel de confiance pour récupérer l’installation et n’écrasez pas les réglages d’une version plus récente avec une ancienne.";
+"查看目标" = "Examiner les destinations";
 "查看调整前" = "Afficher avant";
 "查看调整范围" = "Voir les réglages sélectionnés";
 "标准显影" = "Développement standard";
@@ -583,6 +588,7 @@
 "正在保存 AI 结果" = "Enregistrement du résultat IA";
 "正在停止…" = "Arrêt…";
 "正在准备 AI 降噪" = "Préparation du débruitage IA";
+"正在准备导出…" = "Préparation de l’exportation…";
 "正在准备编辑画布…" = "Préparation du canevas de retouche…";
 "正在取色…" = "Échantillonnage…";
 "正在处理 RAW 噪声" = "Traitement du bruit RAW";
@@ -762,6 +768,7 @@
 "英国乡村秋日油画风，厚重大地色，枯草金黄与深林墨绿交织" = "Look de peinture à l'huile d'un automne rural britannique, tons terreux riches, herbes dorées et vert profond";
 "范围与插值" = "Plage et interpolation";
 "草稿尚未应用" = "Brouillon non appliqué";
+"草稿已处理，请开始导出。" = "Brouillon traité. Vous pouvez lancer l’exportation.";
 "草稿已处理，请重新检查最终调整。" = "Le brouillon a été traité. Vérifiez à nouveau les réglages finaux.";
 "草稿未应用，无法导出或复制设置。" = "Appliquez le brouillon avant d’exporter ou de copier les réglages.";
 "蓝" = "Bleu";
@@ -883,6 +890,7 @@
 "重命名外观" = "Renommer le look";
 "重命名预设" = "Renommer le préréglage";
 "重建更新设置" = "Reconstruire les réglages de mise à jour";
+"重新检查" = "Vérifier à nouveau";
 "重新读取目录" = "Recharger le dossier";
 "重新载入" = "Recharger";
 "重置" = "Réinitialiser";

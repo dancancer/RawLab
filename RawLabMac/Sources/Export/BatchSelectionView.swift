@@ -50,25 +50,10 @@ struct BatchSelectionView: View {
                 Text(message).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(16)
             }
             Divider()
-            HStack(spacing: 12) {
-                if let id = model.batchSelection.lastSynchronization {
-                    Button(L10n.text("同步历史…")) {
-                        model.adjustmentOutcomes = []
-                        model.pendingAdjustmentHistory = .init(transactionID: id, photo: nil, undo: true)
-                        model.adjustmentSheetInCollection = true; model.adjustmentSheet = .history
-                    }.accessibilityIdentifier("collection.history")
-                }
-                Spacer()
-                Button(L10n.text("应用调整并保存到所选照片…")) {
-                    model.prepareCollectionSource { message = nil; showScope = true }
-                }
-                    .disabled(model.file == nil || model.batchSelection.selected.isEmpty || model.exporting || model.adjustmentSheet != nil)
-                    .accessibilityIdentifier("collection.synchronize")
-                Button(L10n.text("按各自调整导出…")) { showExport = true }
-                    .buttonStyle(.borderedProminent).tint(.yellow)
-                    .disabled(model.batchSelection.selected.isEmpty || model.exporting)
-                    .accessibilityIdentifier("collection.export")
-            }.padding(16)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) { collectionActions }.fixedSize(horizontal: true, vertical: false)
+                VStack(alignment: .trailing, spacing: 10) { collectionActions }
+            }.frame(maxWidth: .infinity, alignment: .trailing).padding(16)
         }.frame(minWidth: 840, minHeight: 580).preferredColorScheme(.dark)
         .sheet(isPresented: $showScope) { synchronizationScope }
         .sheet(isPresented: $showExport) { BatchCollectionExportView(model: model) }
@@ -81,6 +66,25 @@ struct BatchSelectionView: View {
         }
     }
 
+    @ViewBuilder private var collectionActions: some View {
+        if let id = model.batchSelection.lastSynchronization {
+            Button(L10n.text("同步历史…")) {
+                model.adjustmentOutcomes = []
+                model.pendingAdjustmentHistory = .init(transactionID: id, photo: nil, undo: true)
+                model.adjustmentSheetInCollection = true; model.adjustmentSheet = .history
+            }.accessibilityIdentifier("collection.history")
+        }
+        Button(L10n.text("应用调整并保存到所选照片…")) {
+            model.prepareCollectionSource { message = nil; showScope = true }
+        }
+            .disabled(model.file == nil || model.batchSelection.selected.isEmpty || model.exporting || model.adjustmentSheet != nil)
+            .accessibilityIdentifier("collection.synchronize")
+        Button(L10n.text("按各自调整导出…")) { showExport = true }
+            .buttonStyle(.borderedProminent).tint(.yellow)
+            .disabled(model.batchSelection.selected.isEmpty || model.exporting)
+            .accessibilityIdentifier("collection.export")
+    }
+
     private func photoRow(_ photo: MacCollectionPhoto) -> some View {
         HStack(spacing: 14) {
             Toggle(L10n.format("选择 %@", photo.url.lastPathComponent), isOn: Binding(
@@ -88,13 +92,16 @@ struct BatchSelectionView: View {
                 .labelsHidden().toggleStyle(.checkbox)
             BatchThumbnail(url: photo.url).frame(width: 82, height: 68)
             VStack(alignment: .leading, spacing: 5) {
-                Text(photo.url.lastPathComponent).fontWeight(.medium)
-                Text(photo.url.deletingLastPathComponent().path).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                HStack {
+                    Text(photo.url.lastPathComponent).fontWeight(.medium)
+                    PhotoLocationButton(url: photo.url)
+                }
+                if model.file == photo.url { Text(L10n.text("当前照片")).font(.caption).foregroundStyle(.secondary) }
                 if let error = model.collectionFailure(photo.id) {
                     Text(error.localizedDescription).font(.callout).foregroundStyle(.red)
                 } else if model.collectionHasDraft(photo.id) {
                     Text(L10n.text("尚有未保存的调整")).font(.callout).foregroundStyle(.yellow)
-                } else if model.file == photo.url { Text(L10n.text("当前照片")).font(.caption).foregroundStyle(.secondary) }
+                }
             }
             Spacer()
             Button(L10n.text("单张微调")) { model.editCollectionPhoto(photo.id) { openWindow(id: "editor") } }
@@ -109,8 +116,10 @@ struct BatchSelectionView: View {
     private var synchronizationScope: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(L10n.text("同步调整范围")).font(.title2.weight(.semibold))
-            Text(L10n.format("来源：%@", model.file?.lastPathComponent ?? ""))
-            Text(model.file?.deletingLastPathComponent().path ?? "").font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Text(L10n.format("来源：%@", model.file?.lastPathComponent ?? ""))
+                if let url = model.file { PhotoLocationButton(url: url) }
+            }
             let source = model.file.flatMap { try? BatchExportItem.resourceKey($0) }
             let count = model.batchSelection.targets(excluding: source).count
             Text(L10n.format("目标：%@ 张照片", String(count))).fontWeight(.medium)
@@ -131,7 +140,7 @@ struct BatchSelectionView: View {
             HStack {
                 Button(L10n.text("取消")) { showScope = false }.keyboardShortcut(.cancelAction)
                 Spacer()
-                Button(L10n.text("检查目标…")) {
+                Button(L10n.text("查看目标")) {
                     do {
                         let selected: AdjustmentTransferScope = scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields)
                         let sync = try model.captureCollectionSynchronization(scope: selected)
@@ -157,17 +166,20 @@ private struct BatchCollectionExportView: View {
     @State private var longEdge: Int?
     @State private var directory: URL?
     @State private var skipped = Set<String>()
-    @State private var review: MacCollectionExportReview?
     @State private var message: String?
+    private var review: MacCollectionExportReview? { model.collectionExportReview }
+    private var targetCount: Int { model.batchSelection.targets().filter { !skipped.contains($0) }.count }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text(L10n.text("按各自调整导出")).font(.title2.weight(.semibold))
                 Spacer()
-                Button(L10n.text("取消")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(L10n.text(model.collectionExportPreparing ? "取消检查" : "取消")) {
+                    if model.collectionExportPreparing { invalidate() } else { dismiss() }
+                }.keyboardShortcut(.cancelAction).accessibilityIdentifier("collection.export.cancel")
             }
-            Text(L10n.text("先处理每张照片的未保存调整，再检查最终设置。跳过只影响本次导出。")).foregroundStyle(.secondary)
+            Text(L10n.text("将按每张照片已保存的调整导出。跳过只影响本次导出。")).foregroundStyle(.secondary)
             HStack(spacing: 20) {
                 Picker(L10n.text("格式"), selection: $format) {
                     ForEach(ExportFormat.allCases) { Text($0.title).tag($0) }
@@ -175,7 +187,7 @@ private struct BatchCollectionExportView: View {
                 ExportSizePicker(longEdge: $longEdge).frame(width: 240)
                 Button(directory?.lastPathComponent ?? L10n.text("选择输出文件夹")) { chooseDirectory() }
             }
-            if model.batch != nil {
+            if model.collectionExportBlockedByTask {
                 HStack {
                     Text(L10n.text("已有批量任务，请先完成或结束该任务。")).foregroundStyle(.secondary)
                     Button(L10n.text("查看批量任务…")) { dismiss(); openWindow(id: "batch-export") }
@@ -191,8 +203,11 @@ private struct BatchCollectionExportView: View {
                     }
                 }
             }.frame(minHeight: 230, maxHeight: 440)
-            if let message { Text(message).foregroundStyle(.secondary) }
-            if let review, review.snapshots.isEmpty, review.rows.allSatisfy({ $0.skipped }) {
+            if model.collectionExportPreparing {
+                ProgressView(L10n.text("正在准备导出…")).accessibilityIdentifier("collection.export.checking")
+            }
+            if let message = model.collectionExportError ?? message { Text(message).foregroundStyle(.secondary) }
+            if targetCount == 0 {
                 Text(L10n.text("没有可导出的照片。请取消部分跳过，或返回集合重新选择。")).foregroundStyle(.secondary)
             }
             HStack {
@@ -200,20 +215,23 @@ private struct BatchCollectionExportView: View {
                     Text(L10n.format("最终导出：%@ 张", String(review.snapshots.count))).fontWeight(.medium)
                 }
                 Spacer()
-                Button(L10n.text("检查最终调整"), action: prepare).disabled(directory == nil)
-                    .accessibilityIdentifier("collection.export.preflight")
-                Button(L10n.text("确认并冻结任务")) {
-                    guard let review else { return }
-                    do { _ = try model.freezeCollectionExport(review); dismiss(); openWindow(id: "batch-export") }
-                    catch { self.review = nil; message = model.adjustmentErrorMessage(error) }
-                }.buttonStyle(.borderedProminent).disabled(review?.ready != true)
-                    .accessibilityIdentifier("collection.export.freeze")
+                Button(L10n.format("开始导出 %@ 张", String(targetCount)), action: start)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(directory == nil || targetCount == 0 || model.collectionExportPreparing || model.collectionExportBlockedByTask)
+                    .accessibilityIdentifier("collection.export.start")
             }
         }.padding(24).frame(width: 780).tint(.yellow)
-        .onChange(of: format) { _, _ in review = nil }
-        .onChange(of: longEdge) { _, _ in review = nil }
-        .onChange(of: model.batchSelection.selected) { _, _ in review = nil }
-        .onChange(of: model.adjustmentHistoryRevision) { _, _ in review = nil }
+        .onAppear { invalidate() }
+        .onDisappear { model.cancelCollectionExportPreparation() }
+        .onChange(of: format) { _, _ in invalidate() }
+        .onChange(of: longEdge) { _, _ in invalidate() }
+        .onChange(of: model.batchSelection.selected) { _, _ in invalidate() }
+        .onChange(of: model.sourceRevision) { _, _ in invalidate() }
+        .onChange(of: model.adjustmentHistoryRevision) { _, _ in model.cancelCollectionExportPreparation() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)
+            .merge(with: NotificationCenter.default.publisher(for: NSApplication.didHideNotification))) { _ in
+            if model.collectionExportPreparing { invalidate() }
+        }
     }
 
     private func exportRow(_ photo: MacCollectionPhoto) -> some View {
@@ -221,12 +239,12 @@ private struct BatchCollectionExportView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(photo.url.lastPathComponent).fontWeight(.medium)
+                PhotoLocationButton(url: photo.url)
                 Spacer()
                 Toggle(L10n.text("跳过本次导出"), isOn: Binding(get: { skipped.contains(photo.id) }, set: {
-                    if $0 { skipped.insert(photo.id) } else { skipped.remove(photo.id) }; review = nil
+                    if $0 { skipped.insert(photo.id) } else { skipped.remove(photo.id) }; invalidate()
                 })).toggleStyle(.checkbox).fixedSize()
             }
-            Text(photo.url.deletingLastPathComponent().path).font(.caption).foregroundStyle(.secondary)
             if model.collectionHasDraft(photo.id), !skipped.contains(photo.id) {
                 HStack {
                     Text(L10n.text("尚有未保存的调整"))
@@ -246,18 +264,23 @@ private struct BatchCollectionExportView: View {
     }
 
     private func resolve(_ id: String, apply: Bool) {
-        review = nil
+        invalidate()
         if !model.resolveCollectionDraft(id, apply: apply) { message = model.saveError ?? L10n.text("请返回编辑器完成有效输入后重试。") }
-        else { message = L10n.text("草稿已处理，请重新检查最终调整。") }
+        else { message = L10n.text("草稿已处理，请开始导出。") }
     }
-    private func prepare() {
+    private func invalidate() {
+        model.cancelCollectionExportPreparation(); message = nil
+    }
+    private func start() {
         guard let directory else { return }
-        do { review = try model.prepareCollectionExport(skipping: skipped, format: format, longEdge: longEdge, directory: directory); message = nil }
-        catch { message = model.adjustmentErrorMessage(error) }
+        message = nil
+        model.startCollectionExport(skipping: skipped, format: format, longEdge: longEdge, directory: directory) { _ in
+            dismiss(); openWindow(id: "batch-export")
+        }
     }
     private func chooseDirectory() {
         let panel = NSOpenPanel(); panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true
-        if panel.runModal() == .OK { directory = panel.url; review = nil }
+        if panel.runModal() == .OK { directory = panel.url; invalidate() }
     }
 }
 

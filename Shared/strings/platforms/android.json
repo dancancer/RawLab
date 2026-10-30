@@ -1,5 +1,13 @@
 {
   "entries": {
+    "collection_cancel_check": {"file": "editor_strings.xml", "formats": [], "source": "取消检查", "types": []},
+    "collection_draft_ready": {"file": "editor_strings.xml", "formats": [], "source": "草稿已处理，请开始导出。", "types": []},
+    "collection_export_saved_settings": {"file": "editor_strings.xml", "formats": [], "source": "将按每张照片已保存的调整导出。跳过只影响本次导出。", "types": []},
+    "collection_preparing_export": {"file": "editor_strings.xml", "formats": [], "source": "正在准备导出…", "types": []},
+    "collection_review_targets": {"file": "editor_strings.xml", "formats": [], "source": "查看目标", "types": []},
+    "collection_saved_continue": {"file": "editor_strings.xml", "formats": [], "source": "任务已保存，请继续导出。", "types": []},
+    "collection_start_export": {"file": "editor_strings.xml", "formats": ["%1$d"], "source": "开始导出 {0} 张", "types": ["d"]},
+    "transfer_recheck": {"file": "editor_strings.xml", "formats": [], "source": "重新检查", "types": []},
     "preset_quick_error_mode": {
       "file": "editor_strings.xml",
       "formats": [],
