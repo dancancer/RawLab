@@ -103,6 +103,7 @@ struct AdjustmentDock: View {
 
     private func toolUnavailableReason(_ tool: EditorAdjustmentTool) -> String? {
         if model.settings.isHDREditing && !supportsHDR(tool) { return L10n.text("HDR 模式暂不支持此工具。") }
+        if tool == .lens && RenderEngine.isX3fInput(model.file) && model.settings.x3fMode == .normal { return L10n.text("此输入不支持镜头校正") }
         if tool == .lens && RenderEngine.isRasterInput(model.file) { return L10n.text("仅 RAW 照片支持镜头校正。") }
         if tool == .whiteBalance && !model.settings.isHDREditing && model.settings.asShotWhiteBalance == nil {
             return L10n.text("此照片没有可用的相机白平衡校准。")

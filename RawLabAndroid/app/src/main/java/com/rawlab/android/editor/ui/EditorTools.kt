@@ -120,6 +120,7 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, navig
     ).joinToString(" · ") else number
     val unavailableReason = when {
         state.edits.isHDREditing && !hdrToolSupported(index) -> stringResource(R.string.tool_unavailable_hdr)
+        index == 16 && state.photo?.isX3f == true && edits.x3fMode == com.rawlab.android.settings.X3fMode.NORMAL -> stringResource(R.string.lens_input_unsupported)
         index == 16 && !rawOnly -> stringResource(R.string.tool_raw_lens_only)
         index == 8 && !state.edits.isHDREditing && (!rawOnly || state.preview?.temperature?.isFinite() != true) -> stringResource(R.string.tool_white_balance_unavailable)
         else -> null
