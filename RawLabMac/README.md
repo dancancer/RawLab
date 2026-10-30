@@ -39,15 +39,15 @@ The left pane is the neutral render and the right pane is Velvia. Film selection
 镜头工具提供独立的畸变矫正、横向色差校正、自动/手动匹配和自动裁边，默认关闭校正。配置随逐照片编辑保存，批量自动模式逐张匹配；中性对照不校正。离线数据库、依赖和功能边界见[跨平台说明](../docs/reference/platforms/lens-correction.md)。紫绿去边暂未实现。
 
 
-v0.8.2 构建14 新增 DCP 直接导入，扩展 RAW 格式兼容性，并优化胶片外观、裁剪、旋转和透视预览。既有使用统计设置和渲染工作流保留，详见 [v0.8.2 发布说明](../docs/releases/v0.8/v0.8.2.md)。
+v0.9.2 构建 17 新增普通 X3F 显影，简化当前照片预设与集合导出，并提供外观分类、搜索和最近使用。功能与已知问题修复见 [v0.9.2 发布说明](../docs/releases/v0.9/v0.9.2.md)。
 
-预编译版本：[GitHub Release v0.8.2](https://github.com/dancancer/RawLab/releases/tag/v0.8.2)。下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-Mac-0.8.2-macOS14-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-Mac-0.8.2-macOS14-x86_64.zip)，解压后将 `RawLab Mac.app` 放入 Applications。最低部署目标为 macOS14.0；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证。新版系统上的构建、架构与依赖检查不等于物理 macOS14 验收。
+预编译版本：[GitHub Release v0.9.2](https://github.com/dancancer/RawLab/releases/tag/v0.9.2)。下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.9.2/RawLab-Mac-0.9.2-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.9.2/RawLab-Mac-0.9.2-x86_64.zip)，解压后将 `RawLab Mac.app` 放入当前用户可写的位置。最低部署目标为 macOS 14，HDR 编辑需要 macOS 15+。发行包使用固定自签名证书与 Sparkle EdDSA 更新签名，没有 Apple 公证；首次运行可能需要在“隐私与安全性”选择“仍要打开”。新版系统上的构建不等于物理 macOS 14 验收。
 
-Prebuilt apps: [v0.8.2](https://github.com/dancancer/RawLab/releases/tag/v0.8.2), build 14, for Apple Silicon and Intel. Both target macOS14 and are ad-hoc signed without notarization. See the [release notes](../docs/releases/v0.8/v0.8.2.md) and published build provenance for actual coverage and minimum-OS limits.
+Prebuilt apps: [v0.9.2](https://github.com/dancancer/RawLab/releases/tag/v0.9.2), build 17, for Apple Silicon and Intel. Both target macOS 14; HDR editing requires macOS 15+. Packages use the fixed self-signed certificate and Sparkle EdDSA without notarization. See the [release notes](../docs/releases/v0.9/v0.9.2.md) and package provenance for actual runtime coverage.
 
-构建 6 新增应用菜单“关于 RawLab”和“检查更新”。“关于”包含 GitHub 仓库、作者小红书主页及自动检测开关；启动后每 24 小时最多后台检查一次，手动检查不受间隔限制。发现新版本后打开官方发布页，不自动替换应用。
+“关于 RawLab”和“检查更新”提供仓库、作者主页及更新设置。默认自动检查更新；自动下载和退出时安装需要用户开启，随后由 Sparkle 校验并替换应用。应用目录必须对当前用户可写；从 0.8.2 升级需要手动安装一次受信任的 0.9.0 或更新版本。
 
-Build 6 adds About RawLab and Check for Updates to the app menu. About includes repository/author links and an automatic-check toggle. Startup checks run at most once per 24 hours; manual checks bypass the interval. Updates open the official release page without replacing the app automatically.
+About RawLab and Check for Updates include repository/author links and update settings. Automatic checks default on; automatic download and installation on quit require opt-in. Sparkle verifies updates before replacing the app in a user-writable location. Upgrading from 0.8.2 needs one manual installation of a trusted 0.9.0 or later package.
 
 在仓库根目录执行：
 

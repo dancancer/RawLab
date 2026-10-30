@@ -27,11 +27,13 @@ scRGB swap chain，需要当前显示器启用 HDR；RDP、虚拟显示器及能
 裁切和裁切警告叠层使用 SDR canvas 保留交互；真实 HDR 亮度需物理设备验收。
 来源指纹、双图、缓存和格式边界见[平台对齐设计](../docs/design/hdr-photos/android-windows.md)。
 
-## 下载 v0.8.2 Windows 包
+## 下载 v0.9.2 Windows 包
 
-[Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-Windows-0.8.2-win-x64.zip) · [发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.8.2) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.8.2/SHA256SUMS.txt)
+[Windows x64 安装程序](https://github.com/dancancer/RawLab/releases/download/v0.9.2/RawLab.Desktop-stable-Setup.exe) · [手动安装 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.9.2/RawLab-Windows-0.9.2-x64.zip) · [发布说明](../docs/releases/v0.9/v0.9.2.md) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.9.2/SHA256SUMS.txt)
 
-解压后运行 `RawLab.exe`，保留完整目录。版本0.8.2/build14，self-contained .NET8，包含重新构建的原生核心、Visual C++ 运行库、LUT、Lens DB、ExifTool 和许可文件，程序未签名。正式包带阿里云 RUM SDK，默认开启使用统计，可在关于页关闭。本次新增 DCP 直接导入、扩展 RAW 兼容性，并修复部分 JPEG 导入和首帧颜色；详见[发布说明](../docs/releases/v0.8/v0.8.2.md)。原生、WPF 和实际 Direct3D 11 检查结果及设备覆盖边界见发布附件 `BUILD-PROVENANCE.json`。
+版本 `0.9.2` / build `17`，self-contained .NET 8，包含原生核心、运行库、LUT、Lens DB、ExifTool、GPU AI 模型和许可文件。安装程序按当前用户安装，支持签名描述文件校验的自动更新；ZIP 解压后运行 `RawLab.exe`，必须保留完整目录并手动更新。程序没有 Authenticode 签名，首次安装可能需要在 SmartScreen 选择“更多信息 → 仍要运行”。
+
+本次提供手机 HDR、普通 X3F 显影、快捷预设和外观搜索，修复显示 sRGB CUBE 的 GPU 回退并增加 AI GPU 选择与诊断导出。正式包带阿里云 RUM SDK，默认开启使用统计，可在关于页关闭。构建、原生/WPF 检查、实际设备与更新覆盖见发布附件 `BUILD-PROVENANCE.json`。
 
 ## 构建
 

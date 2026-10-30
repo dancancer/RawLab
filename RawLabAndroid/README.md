@@ -135,11 +135,11 @@ Assets are generated from existing repository resources rather than duplicated i
 
 ## Release
 
-[下载 Android v0.8.2 APK / Download Android v0.8.2 APK](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-Android-0.8.2.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.8.2) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.8.2/SHA256SUMS.txt)
+[下载 Android v0.9.2 APK / Download Android v0.9.2 APK](https://github.com/dancancer/RawLab/releases/download/v0.9.2/RawLab-Android-0.9.2.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.9.2) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.9.2/SHA256SUMS.txt)
 
-发布 APK 为 `versionName=0.8.2`、`versionCode=14`，沿用正式发布签名，支持同签名旧正式版覆盖升级。新增 DCP 直接导入、扩展 RAW 兼容性，并提升批量导出、任务恢复和进度保存的稳定性，见[发布说明](../docs/releases/v0.8/v0.8.2.md)。既有默认开启的使用统计和关于页关闭开关保留。本版本完成构建和 JVM 测试，未完成真机验收；历史开发测试不代表所有设备或最低系统通过，实际范围见发布附件 `BUILD-PROVENANCE.json`。
+发布 APK 为 `versionName=0.9.2`、`versionCode=17`，沿用正式发布签名，支持同签名旧正式版覆盖升级。新增手机 HDR、普通 X3F 显影、快捷预设、集合导出与外观搜索，并修复 HDR 批量取消和混合批量导出的中间数组内存问题，见[发布说明](../docs/releases/v0.9/v0.9.2.md)。既有默认开启的使用统计和关于页关闭开关保留。实际构建、JVM、模拟器与设备覆盖见发布附件 `BUILD-PROVENANCE.json`。
 
-The release APK uses version 0.8.2/code 14 and the existing release identity. It adds direct DCP import, extends RAW compatibility and improves batch export recovery and progress reliability. Usage-statistics defaults are unchanged. See the [release notes](../docs/releases/v0.8/v0.8.2.md) and package provenance for actual build/test coverage; physical-device acceptance remains outstanding.
+The release APK uses version 0.9.2/code 17 and the existing release identity. It adds phone HDR, normal X3F rendering, quick presets, collection export and look search, and fixes HDR batch cancellation and export intermediate-array memory use. Usage-statistics defaults are unchanged. See the [release notes](../docs/releases/v0.9/v0.9.2.md) and package provenance for actual build, emulator and physical-device coverage.
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。

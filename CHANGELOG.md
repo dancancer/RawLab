@@ -3,6 +3,40 @@
 Release history is kept here rather than in the project READMEs. Detailed
 release notes include assets, installation requirements and validation limits.
 
+## [0.9.2] - 2026-10-31
+
+### Added
+
+- Android and Windows phone gain-map HDR photo import, independent HDR/SDR edits,
+  basic adjustments, monitoring, presets, synchronization and HDR JPEG export.
+- Normal X3F rendering for supported Sigma DP1S, Merrill and Quattro files on
+  all four clients, with legacy rendering retained for existing edits.
+- Windows AI GPU selection and local diagnostic export.
+
+### Changed
+
+- Apply presets directly to the current photo; inspect the actual fields and
+  values affected by adjustment transfers.
+- Automatic target checks and per-photo frozen settings simplify collection
+  export to one final start action after output selection.
+- More space for photos and tools, plus look categories, name search, Recent
+  and a separate import action across clients.
+- Windows display-sRGB CUBE looks can use Direct3D 11; Merrill rendering
+  parallelizes expensive processing stages.
+
+### Fixed
+
+- Windows display-sRGB CUBE CPU fallback/Force rejection and automatic AI adapter
+  selection; reused AI sessions retain runtime identity in diagnostics.
+- Android HDR batch cancellation, interrupted-draft recovery, mixed target
+  modes and large intermediate-array memory use during HDR export.
+- Stale preset success status after undo and outdated batch/import results.
+- Mac delayed look imports applying to another photo and stale Recent entries.
+- Incompatible lens correction when Mac/iOS X3F edits switch to normal mode.
+
+Version `0.9.2`, build `17`. See the
+[release notes](docs/releases/v0.9/v0.9.2.md) for scope and compatibility limits.
+
 ## [0.9.1] - 2026-10-29
 
 ### Added

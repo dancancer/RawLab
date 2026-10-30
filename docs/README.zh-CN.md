@@ -13,16 +13,21 @@ RawLab 用于显影相机 RAW 文件、应用兼容的富士胶片模拟 LUT 和
 ## 主要功能
 
 - RAW 显影，支持曝光、相机空间白平衡、明暗、色彩和锐化调整。
+- 四端支持 Sigma DP1S、Merrill 和 Quattro 范围内的 X3F 普通显影，旧编辑可保留传统模式。该显影使用 CPU，不承诺与 Sigma Photo Pro 完全一致；机型、参数与限制见 [X3F 显影说明](../lutools/docs/x3f-rendering.md)。
 - 支持普通不透明 RGB8 SDR 图像：四端均可输入 JPEG/PNG，macOS、iOS 和 Windows 另支持 TIFF，macOS/iOS 另支持 HEIF。普通图像复用编辑与导出核心，不额外应用 RAW 显影曲线或相机专属设置；HDR、高位深、透明及多帧等不支持的输入会明确拒绝。格式与处理边界见[普通图像输入契约](../lutools/docs/color-contract.md#display-referred-raster-input)。
+- 四端支持手机增益图 HDR JPEG/HEIF，保留独立的 HDR/SDR 编辑，提供七项基础调整、几何、亮度监测、预设和选择性同步，导出 HDR JPEG 或明确的 SDR 成片。切到 SDR 编辑后可使用普通 LUT 预览。HDR 处理使用 CPU，显示取决于系统和屏幕能力，条件不足时使用 SDR 呈现；见[平台范围](design/hdr-photos/android-windows.md)。
 - 四端新照片默认使用“匹配内嵌预览”曝光基准，提供一次性自动曝光和八色 HSL 调整；保留旧照片已保存的曝光基准。
 - 内置胶片外观，强度范围为 0-200%，支持兼容 CUBE/RLOOK 导入及原图与调整效果对比。
-- 四端统一提供 14 个大师配方与风格图标。应用配方覆盖六项调色及全部 24 项 HSL，0-200% 强度整体缩放当前配方参数、HSL 和 LUT；编辑记录与冻结批量任务保留手动修改，并按目标 RAW 解析拍摄白平衡。
-- 移动端胶片与配方列表直接拖动，桌面端提供溢出滚动按钮；iPad 自适应横竖屏布局。iOS 参数范围、步进与高光方向和 macOS 对齐，保留旧 RAW 记录的原生成片效果；普通图像改用上述显示图像约定。
+- 四端统一提供 14 个大师配方与风格图标，涵盖黑白场、自然饱和度、曲线、色彩分级和 HSL。0-200% 强度整体缩放当前配方参数、HSL 和 LUT；编辑记录与冻结批量任务保留手动修改，并按目标 RAW 解析拍摄白平衡。
+- 外观支持分类、名称搜索和最近使用，导入有独立入口。已保存预设可直接应用当前照片，支持取消和撤销；复制、粘贴和同步前显示实际覆盖的字段与值。
+- 自适应照片工作区兼顾窄窗和移动端横屏。iOS 参数范围、步进与高光方向和 macOS 对齐，保留旧 RAW 记录的原生成片效果；普通图像改用上述显示图像约定。
 - 四端提供一致的暗角、固定种子颗粒及线性光域小波降噪，可分别调整亮度、色度和粗层色斑；共享降噪与效果内核使用 Metal、GLES 3.1 和 D3D11 加速。
-- 逐照片本机编辑记忆和可恢复的批量导出，任务固定参数，支持取消和失败重试，不改写 RAW。
+- 逐照片本机编辑记忆和可恢复的批量导出，任务固定参数，支持取消和失败重试，不改写 RAW。集合自动检查目标并冻结逐照片设置，选好输出设置后一次启动。
 - 照片信息叠层、缩放和平移，支持原始尺寸或指定长边导出；桌面文件树可定位照片，并经确认应用当前设置。
 - Windows、macOS 和 Android 导出 JPEG 与 16-bit PNG，iOS 导出 JPEG；保留可读取的拍摄元数据，更新成片尺寸和方向。
+- 四端单张及批量支持渲染型 DNG，固化当前调整，不是可恢复传感器控制的原始 RAW；见[格式与限制](../lutools/docs/color-contract.md#rendered-dng)。
 - 在支持的平台使用 Metal、Direct3D 11 或 OpenGL ES，HSL 接入平台 GPU 显影链路，并保留 GPU 失败时的自动 CPU 回退。RAW 解码和文件编码仍在 CPU 执行。
+- Apple Silicon macOS 和 Windows 提供仅使用硬件 GPU 的 AI 降噪；Windows 支持自动或指定 GPU 及本机诊断导出。Intel Mac、iOS 和 Android 不含 AI 降噪。模型保留独立的非商用许可，见[许可说明](reference/licensing.md)。
 - 共享 C++17 核心、命令行工具及桌面 LUT 准备工具。
 - 桌面 Agent 提供完整编辑参数、能力查询、预览和最终导出，与界面和冻结批量任务复用参数及处理核心。
 - 支持裁切、旋转、拉直、翻转和透视校正；打开照片默认仅显示预览图，按需开启前后对比。
@@ -36,11 +41,13 @@ RawLab 用于显影相机 RAW 文件、应用兼容的富士胶片模拟 LUT 和
 | Android | Android 8.0+，ARM64 或 x86_64 |
 | iOS | iOS 18+，iPhone 和 iPad；下载的 IPA 需要自行重新签名 |
 
+Mac 的 HDR 编辑需要 macOS 15+。Android HDR 显示需要 API 34+ 及适当的屏幕和窗口能力，Windows 在支持时使用 FP16/scRGB；其他显示条件下仍可用 SDR 呈现编辑受支持的 HDR 照片。X3F、AI、更新及设备覆盖边界见 [0.9.2 兼容说明](releases/v0.9/v0.9.2.md#compatibility-and-known-limits)。
+
 ## 下载与文档
 
 - [文档索引](README.md)
 - [下载最新版本](https://github.com/dancancer/RawLab/releases/latest)
-- [v0.9.1 发布说明（构建 16）](releases/v0.9/v0.9.1.md)
+- [v0.9.2 发布说明（构建 17）](releases/v0.9/v0.9.2.md)
 - [安装与分发说明](guides/installation.md)
 - [将 RawLab 安装到自己的 iPhone](guides/ios-installation.zh-CN.md)
 - [更新日志](../CHANGELOG.md)
@@ -60,7 +67,7 @@ RawLab 用于显影相机 RAW 文件、应用兼容的富士胶片模拟 LUT 和
 - [活动架构评审](architecture/architecture-and-performance-review-2026-10-18.md)和[跨相机路线图](architecture/cross-camera-presets-roadmap.md)
 - [本次迭代总需求](design/editing-iteration/requirements.md)与[总技术方案](design/editing-iteration/technical-design.md)：第一阶段收尾、第二阶段全量和桌面更新
 - [四端设计资产](design/README.md)、ITER-02 工作区的[详细子需求](design/editor-workspace/requirements.md)与[技术子方案](design/editor-workspace/technical-design.md)
-- [手机 HDR 照片技术方案](design/hdr-photos/technical-design.md)与[分阶段实施计划](integration/hdr-photos/implementation-plan.md)：首批 Mac/iOS 的手机增益图导入、基础编辑、双呈现与兼容 JPEG；支持系统与设备验证边界见 [0.9.1 发布说明](releases/v0.9/v0.9.1.md)
+- [手机 HDR 照片技术方案](design/hdr-photos/technical-design.md)与[Android/Windows 平台范围](design/hdr-photos/android-windows.md)：四端增益图导入、基础编辑、双呈现与兼容 JPEG；支持系统与设备验证边界见 [0.9.2 发布说明](releases/v0.9/v0.9.2.md)
 - [跨 PR 的发布、集成与评审历史](archive/README.md)；单个 PR 的过程证据放在 PR 描述，见[文档规则](../AGENTS.md#文档)。
 
 ## 许可
