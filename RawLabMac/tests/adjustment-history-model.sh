@@ -29,7 +29,7 @@ swiftc "${TRANSFER_SOURCES[@]}" "$ROOT/Shared/Localization.swift" -swift-version
     "$ROOT/Shared/BundledLook.swift" \
   -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
   "$ROOT/Shared/UsageAnalytics.swift" \
-  "${SOURCES[@]}" "${RAWLAB_HISTORY_TEST_SOURCE:-$ROOT/RawLabMac/tests/EditorAdjustmentHistoryTests.swift}" \
+  "${SOURCES[@]}" "$ROOT/RawLabMac/tests/QuickPresetModelChecks.swift" "${RAWLAB_HISTORY_TEST_SOURCE:-$ROOT/RawLabMac/tests/EditorAdjustmentHistoryTests.swift}" \
   "${CORE_LINK[@]}" -L "$(pkg-config --variable=libdir libraw)" \
   -lraw $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/test"
 "$OUT/test" "$@"

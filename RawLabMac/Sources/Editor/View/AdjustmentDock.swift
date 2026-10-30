@@ -22,28 +22,32 @@ struct AdjustmentDock: View {
                 headerAccessory.padding(.trailing, 12)
             }.frame(height: 36)
             if let group = navigation.expandedGroup {
-                if model.geometryDraft != nil {
+                if model.geometryDraft != nil && !model.quickPresetsVisible {
                     MacGeometryWorkspace(model: model)
                 } else {
                     HorizontalPicker(selectedID: navigation.tool.rawValue, name: L10n.text("调整工具"), showsScrollIndicators: false) {
                         HStack(spacing: 6) {
                             ForEach(group.tools) { toolButton($0) }
                             if group == .looks {
-                                Button { model.requestAdjustmentSheet(.presets) } label: {
+                                Button { if model.quickPresetsVisible { model.closeQuickPresets() } else { model.showQuickPresets() } } label: {
                                     Label(L10n.text("我的预设"), systemImage: "bookmark")
                                         .font(.system(size: 12)).padding(.horizontal, 10).frame(height: 28)
+                                        .foregroundStyle(model.quickPresetsVisible ? Color.yellow : Color.primary)
                                 }.buttonStyle(.plain).disabled(model.exporting || model.lookLibraryBusy)
                                     .accessibilityIdentifier("preset.library")
+                                    .accessibilityAddTraits(model.quickPresetsVisible ? .isSelected : [])
                             }
                         }
                             .scrollTargetLayout().padding(.horizontal, 12)
                     }.frame(height: 32).fixedSize(horizontal: false, vertical: true)
-                    GeometryReader { editor in
+                    if model.quickPresetsVisible {
+                        QuickPresetView(model: model)
+                    } else { GeometryReader { editor in
                         ScrollView(.vertical) {
                             editorContent.frame(maxWidth: .infinity, minHeight: editor.size.height)
                                 .disabled(model.settings.isHDREditing && !supportsHDR(navigation.tool))
                         }
-                    }
+                    } }
                 }
             }
         }.frame(maxWidth: .infinity)
@@ -63,7 +67,7 @@ struct AdjustmentDock: View {
                 .background(active ? Color.yellow.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
                 .foregroundStyle(active ? Color.yellow : Color.primary)
         }.buttonStyle(.plain).id(group.rawValue)
-            .disabled(model.settings.isHDREditing && !group.tools.contains(where: supportsHDR))
+            .disabled(model.settings.isHDREditing && group != .looks && !group.tools.contains(where: supportsHDR))
             .accessibilityIdentifier("group.\(group.rawValue)")
             .accessibilityLabel(group.title)
             .accessibilityValue([active ? L10n.text("已展开") : L10n.text("已收起"), changed ? L10n.text("已调整") : ""].filter { !$0.isEmpty }.joined(separator: ", "))
@@ -72,7 +76,7 @@ struct AdjustmentDock: View {
     }
 
     private func toolButton(_ tool: EditorAdjustmentTool) -> some View {
-        let active = navigation.tool == tool
+        let active = navigation.tool == tool && !model.quickPresetsVisible
         let changed = model.isAdjustmentModified(.tool(tool))
         return Button { model.selectAdjustmentTool(tool) } label: {
             HStack(spacing: 6) {

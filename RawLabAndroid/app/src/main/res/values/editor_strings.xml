@@ -310,6 +310,13 @@
     <string name="preset_new_name">"New Preset"</string>
     <string name="preset_overwrite">"Overwrite"</string>
     <string name="preset_overwrite_confirm">"Overwrite Preset?"</string>
+    <string name="preset_quick_apply_current">"Apply to current photo"</string>
+    <string name="preset_quick_apply_multiple">"Apply to multiple photos"</string>
+    <string name="preset_quick_checking">"Checking preset…"</string>
+    <string name="preset_quick_error_incompatible">"This preset is not compatible with the current photo. Choose another preset."</string>
+    <string name="preset_quick_error_mode">"This preset includes relative HDR white balance, which the current editing mode does not support."</string>
+    <string name="preset_quick_error_preserve">"This preset cannot preserve the photo’s other adjustments. Choose another preset."</string>
+    <string name="preset_quick_manage">"Manage presets"</string>
     <string name="preset_reload">"Reload"</string>
     <string name="preset_rename">"Rename Preset"</string>
     <string name="preset_rename_action">"Rename"</string>

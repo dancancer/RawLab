@@ -201,7 +201,7 @@ extension EditorModel {
     }
 
     private func endGeometryDraft() {
-        if resetReturnTool == nil && !geometryDraftDeparturePending { adjustmentNavigation.selectTool(.exposure) }
+        if resetReturnTool == nil && !geometryDraftDeparturePending && !quickPresetsVisible { adjustmentNavigation.selectTool(.exposure) }
         geometryDraft = nil; geometryDraftPreviewReady = false
         geometryCropInteracting = false; invalidGeometryDraftInputs.removeAll()
         geometryDraftEntrySaveError = nil; geometryDraftSaveFailed = false

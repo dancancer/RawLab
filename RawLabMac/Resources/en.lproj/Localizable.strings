@@ -346,6 +346,8 @@
 "并排" = "Side by side";
 "应用" = "Apply";
 "应用几何和镜头编辑" = "Apply Geometry and Lens Changes";
+"应用到多张照片" = "Apply to multiple photos";
+"应用到当前照片" = "Apply to current photo";
 "应用并保存" = "Apply and Save";
 "应用并离开" = "Apply and Leave";
 "应用当前设置" = "Apply current settings";
@@ -591,6 +593,7 @@
 "正在检查更新…" = "Checking for updates…";
 "正在检查照片…" = "Checking photos…";
 "正在检查目标…" = "Checking photos…";
+"正在检查预设…" = "Checking preset…";
 "正在生成预览…" = "Generating previews…";
 "正在等待编辑和任务处理完成" = "Waiting for editing and task processing to finish";
 "正在等待预览、导出或批量任务结束" = "Waiting for the preview, export, or batch task to finish";
@@ -613,7 +616,10 @@
 "此输入不支持镜头校正" = "Lens Correction Unsupported for This Input";
 "此配置与预览照片类型不匹配，请更换照片或配置。" = "These settings do not match the preview photo type. Choose another photo or configuration.";
 "此镜头没有所选校正的标定数据" = "No Calibration Data for the Selected Corrections";
+"此预设与当前照片不兼容，请选择其他预设。" = "This preset is not compatible with the current photo. Choose another preset.";
+"此预设包含 HDR 相对白平衡，当前编辑模式不支持。" = "This preset includes relative HDR white balance, which the current editing mode does not support.";
 "此预设库来自更新版本，请更新应用后重试。" = "This preset library was created by a newer version. Update the app and try again.";
+"此预设无法保留照片的其他调整，请选择其他预设。" = "This preset cannot preserve the photo’s other adjustments. Choose another preset.";
 "每张照片自己的最终调整" = "Each photo’s final adjustments";
 "水平位置" = "Horizontal position";
 "水平翻转" = "Flip horizontal";
@@ -689,6 +695,7 @@
 "端点固定" = "Endpoints are fixed";
 "等待导出" = "Waiting to Export";
 "等待重新启动" = "Waiting for restart";
+"管理预设" = "Manage presets";
 "管理预设：%@" = "Manage preset: %@";
 "粗糙度" = "Roughness";
 "粗色斑抑制" = "Coarse Artifact Suppression";

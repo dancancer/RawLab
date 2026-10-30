@@ -68,7 +68,7 @@ final class RawEditorViewModel: ObservableObject {
     let renderQueue = DispatchQueue(label: "com.rawlab.preview", qos: .userInitiated)
     let renderStateLock = NSLock()
     @Published var sourceFile: PhotoSourceFile?
-    @Published var sourceRevision = UUID() { didSet { hslSourceRevision &+= 1; acceptedPreviewRequest = nil } }
+    @Published var sourceRevision = UUID() { didSet { hslSourceRevision &+= 1; acceptedPreviewRequest = nil; closeQuickPresets() } }
     var sourceKind: ImageSourceKind?
     var sourceIdentity: PhotoIdentity?
     @Published var sourceDisplayName: String?
@@ -84,7 +84,7 @@ final class RawEditorViewModel: ObservableObject {
     var adjustmentSession: IOSAdjustmentTransferSession?
     var adjustmentInteraction: IOSAdjustmentInteraction?
     var adjustmentSourceValidator: (() throws -> Void)?
-    var hasAdjustmentDraft = false
+    var hasAdjustmentDraft = false { didSet { if hasAdjustmentDraft && quickPresetState.isPreparing { cancelQuickPreset() } } }
     @Published var adjustmentInteractionRejected = false
     @Published var adjustmentReloadRequired = false
     @Published var adjustmentHistoryRevision = UUID()
@@ -95,6 +95,9 @@ final class RawEditorViewModel: ObservableObject {
     @Published var adjustmentPreparing = false
     var adjustmentPreparationID = UUID()
     var adjustmentClipboardSourceName: String?
+    @Published var quickPresetsVisible = false { didSet { if !quickPresetsVisible { cancelQuickPreset() } } }
+    @Published var quickPresetState = IOSQuickPresetState.idle
+    var quickPresetGeneration = UUID()
     var editNoticeID = UUID()
     var basePreviewGeometry = GeometrySettings()
     var basePreviewProcessing = ProcessingIdentity.current

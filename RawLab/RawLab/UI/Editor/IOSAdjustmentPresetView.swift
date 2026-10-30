@@ -102,6 +102,8 @@ struct IOSAdjustmentPresetView: View {
                                 .disabled(!model.hasImage || model.isBusy).accessibilityIdentifier("preset.apply.\(preset.id)")
                             Spacer()
                             Menu {
+                                Button(L10n.text("应用到多张照片")) { requestPhotoAction(.presetApplyMultiple(preset)) }
+                                    .disabled(!model.hasImage || model.isBusy).accessibilityIdentifier("preset.multiple.\(preset.id)")
                                 Button(L10n.text("重命名")) {
                                     renaming = preset; name = preset.name; message = nil; editing = true; nameFocused = true
                                 }.accessibilityIdentifier("preset.rename.\(preset.id)")

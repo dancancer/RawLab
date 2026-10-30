@@ -77,6 +77,7 @@ internal sealed class AdjustmentPresetLibraryDialog : Window
 {
     internal bool SaveRequested { get; private set; }
     internal AdjustmentPreset? ApplyRequested { get; private set; }
+    internal AdjustmentPreset? ApplyMultipleRequested { get; private set; }
     private readonly AdjustmentPresetStore store;
     private readonly StackPanel rows = new();
     private readonly TextBlock error = AdjustmentDialogLayout.Text("");
@@ -117,6 +118,8 @@ internal sealed class AdjustmentPresetLibraryDialog : Window
                 var actions = new WrapPanel(); row.Children.Add(actions);
                 var apply = AdjustmentPresetPresentation.Button("应用预设", "preset.apply." + preset.ID, () => { ApplyRequested = preset; DialogResult = true; });
                 apply.IsEnabled = canUsePhoto; actions.Children.Add(apply);
+                var multiple = AdjustmentPresetPresentation.Button("应用到多张照片", "preset.multiple." + preset.ID, () => { ApplyMultipleRequested = preset; DialogResult = true; });
+                multiple.IsEnabled = canUsePhoto; actions.Children.Add(multiple);
                 actions.Children.Add(AdjustmentPresetPresentation.Button("重命名", "preset.rename." + preset.ID, () => {
                     new AdjustmentPresetNameDialog(this, "重命名预设", preset.Name, false, (name, _) => { store.Rename(preset, name); return null; }).ShowDialog();
                     Reload();

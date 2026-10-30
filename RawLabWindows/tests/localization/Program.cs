@@ -44,6 +44,7 @@ foreach (var pair in expected)
           Loc.Strings.ContainsKey("重置几何编辑"), pair.Key + " geometry labels");
     Check(Loc.Format("导出 {0} 张", 2).Contains('2'), pair.Key + " formatted arguments");
     Check(Loc.Text("unknown.key") == "unknown.key", pair.Key + " unknown key fallback");
+    Check(Loc.Strings.ContainsKey("更多"), pair.Key + " quick preset menu label is translated");
     var missing = keyArguments.SelectMany(argument => StaticKeyChecks.Literals(argument.Text)
         .Where(key => !Loc.Strings.ContainsKey(key)).Select(key => "\n  " + argument.Location + ": " + key)).ToList();
     Check(missing.Count == 0, pair.Key + " literal keys inside Loc calls are catalogued" + string.Concat(missing));

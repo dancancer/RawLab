@@ -165,6 +165,7 @@ extension RawEditorViewModel {
             guard let saved = result.saved, saved.identity == sourceIdentity,
                   adjustmentTargetIsCurrent(result.targetID),
                   (try? editPersistence?.versionedState(for: saved.identity)) == saved else { continue }
+            if !quickPresetState.isPreparing { cancelQuickPreset() }
             // 旧操作的缓存回执不能覆盖后来已保存的编辑或尚未保存的界面。
             loadedEditRecord = saved
             let state = saved.state ?? PhotoEditState(settings:sourceDefaultSettings,updatedAt:Date(timeIntervalSince1970:0))

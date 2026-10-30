@@ -76,7 +76,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onCancelAdjustment: () -> Unit = {},
     canUndoAdjustment: Boolean = false, canRedoAdjustment: Boolean = false, canPasteAdjustment: Boolean = false,
     onCopyAdjustments: () -> Unit = {}, onPasteAdjustments: () -> Unit = {}, onAdjustmentHistory: () -> Unit = {},
-    onPresets: () -> Unit = {}, presetAction: AdjustmentPresetAction? = null,
+    onPresets: () -> Unit = {}, onClosePresets: () -> Unit = {}, quickPresetsVisible: Boolean = false,
+    quickPresetContent: @Composable () -> Unit = {}, presetAction: AdjustmentPresetAction? = null,
     onPresetActionConsumed: () -> Unit = {}, onPresetActionReady: (AdjustmentPresetAction) -> Unit = {},
     onUndoAdjustment: () -> Unit = {}, onRedoAdjustment: () -> Unit = {},
     hslTarget: HslTargetActions = HslTargetActions(),
@@ -116,7 +117,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     var settings by rememberSaveable { mutableStateOf(false) }
     var adjusting by remember { mutableStateOf(false) }
     LaunchedEffect(tool) { if (tool == 9) tool = 8 }
-    LaunchedEffect(state.edits.isHDREditing) { if (state.edits.isHDREditing) tool = 2 }
+    LaunchedEffect(state.edits.isHDREditing) { if (quickPresetsVisible) onClosePresets(); if (state.edits.isHDREditing) tool = 2 }
     val surroundingAlpha by animateFloatAsState(if (adjusting) .32f else 1f, tween(160), label = "adjustment-context")
     val context = LocalContext.current
     val preferences = remember(context) { context.getSharedPreferences("editor", android.content.Context.MODE_PRIVATE) }
@@ -151,11 +152,19 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             onReloadAdjustments { if (it) { pendingLeave = null; pendingAll = false; prepareAllWhenReady = false; tool = 2 } }
         }, modifier = Modifier.testTag("adjustment-reload-confirm")) { Text(stringResource(R.string.transfer_reload)) } },
         dismissButton = { TextButton(onClick = { confirmReload = false }) { Text(stringResource(R.string.cancel)) } })
-    val selectTool: (Int) -> Unit = { next -> if (next != tool) leave { tool = next; expanded = true } }
+    val selectTool: (Int) -> Unit = { next ->
+        if (quickPresetsVisible) onClosePresets()
+        if (next != tool) leave { tool = next; expanded = true }
+    }
+    fun openQuickPresets() { onCancelAdjustment(); expanded = true; onPresets() }
     val selectGroup: (EditorAdjustmentGroup) -> Unit = { group ->
+        if (group == EditorAdjustmentGroup.LOOKS && state.edits.isHDREditing) openQuickPresets()
+        else {
+        if (quickPresetsVisible) onClosePresets()
         leave {
-            if (expanded && EditorAdjustmentRules.groupFor(tool) == group) expanded = false
+            if (expanded && EditorAdjustmentRules.groupFor(tool) == group && !quickPresetsVisible) expanded = false
             else { tool = EditorAdjustmentRules.defaultTool(group); expanded = true }
+        }
         }
     }
     fun finishAll() { pendingAll = false; prepareAllWhenReady = false }
@@ -284,7 +293,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) { view = view.cancelHold(); liveTarget.cancel() } }
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) { onClosePresets(); view = view.cancelHold(); liveTarget.cancel() } }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer); view = view.cancelHold(); liveTarget.cancel() }
     }
@@ -292,6 +301,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     LaunchedEffect(windowFocused, menu, settings, zoomMenu, pendingLeave, preparedReset, state.operation) {
         if (!windowFocused || menu || settings || zoomMenu || pendingLeave != null || preparedReset != null || state.operation != Operation.NONE) { view = view.cancelHold(); liveTarget.cancel() }
     }
+    BackHandler(quickPresetsVisible) { onClosePresets() }
     BackHandler(view.purePreview) { togglePure() }
     val photoInfo by produceState<PhotoInfo?>(null, state.photo?.file?.absolutePath) {
         value = null
@@ -315,12 +325,14 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         LocalAdjustmentHapticGate provides hapticGate, LocalAdjustmentCancellation provides cancelRuler) {
     val currentDock by rememberUpdatedState<@Composable (Modifier, Boolean, Boolean) -> Unit>({ modifier, side, compact ->
         AdjustmentDock(state, modifier, tool, selectTool, expanded, {
+            if (quickPresetsVisible) onClosePresets()
             if (targetMode) expanded = !expanded else leave { expanded = !expanded }
         },
             compare, { view = view.toggleComparison() }, onEdit, onImportLook, onRenameLook, onDeleteLook,
             onAutoExposure, onDraftEdit, { applyAndLeave(); Unit }, { onDiscardDraft(); tool = 2 },
             onFilmSelected, onGeometryRatio, selectGroup, channel, { onCancelAdjustment(); channel = it }, requestReset, side, !pendingAll, compact,
-            onGeometryLock, onGeometrySwap, onGeometryGrid, onPresets = { onCancelAdjustment(); onPresets() }, gradingZone = gradingZone,
+            onGeometryLock, onGeometrySwap, onGeometryGrid, onPresets = { if (quickPresetsVisible) onClosePresets() else openQuickPresets() },
+            quickPresetsVisible = quickPresetsVisible, quickPresetContent = quickPresetContent, gradingZone = gradingZone,
             onGradingZoneChange = { onCancelAdjustment(); gradingZone = it }, hslTarget = hslTarget, onSelectFilm = onSelectFilm)
     })
     // 纯预览与横竖布局只移动/暂不测量同一面板，保留 fine、滚动和本地输入状态。
@@ -351,7 +363,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         leadingIcon = { Icon(Icons.Outlined.FolderOpen, null) }, onClick = { menu = false; leave(onFile) })
                     HorizontalDivider()
                     DropdownMenuItem(text = { Text(stringResource(R.string.preset_library)) },
-                        modifier = Modifier.testTag("preset-menu"), onClick = { menu = false; onCancelAdjustment(); onPresets() })
+                        modifier = Modifier.testTag("preset-menu"), onClick = { menu = false; openQuickPresets() })
                     DropdownMenuItem(text = { Text(stringResource(R.string.transfer_copy)) }, enabled = state.controlsEnabled,
                         modifier = Modifier.testTag("adjustment-menu-copy"), leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },
                         onClick = { menu = false; leave(onCopyAdjustments) })

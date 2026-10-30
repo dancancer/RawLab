@@ -12,6 +12,8 @@ final class ViewingEditorProbe {
     var externalEdit: (() -> Void)?
     var changePresetFault: ((String) -> Void)?
     var presetFault = ""
+    var quickPreparationHeld = false
+    var setQuickPreparationHeld: ((Bool) -> Void)?
     var resizing = false
     var saves: [[String: Any]] = []
     var previews: [[String: Any]] = []
@@ -154,6 +156,17 @@ extension ContentView {
         CFNotificationCenterAddObserver(center, nil, { _, _, _, _, _ in
             Task { @MainActor in ViewingEditorProbe.shared.externalEdit?() }
         }, "com.rawlab.iter03.external-edit" as CFString, nil, .deliverImmediately)
+        probe.setQuickPreparationHeld = { held in
+            guard held != probe.quickPreparationHeld else { return }
+            probe.quickPreparationHeld = held
+            if held { viewModel.adjustmentQueue.suspend() } else { viewModel.adjustmentQueue.resume() }
+        }
+        for action in ["hold", "release"] {
+            CFNotificationCenterAddObserver(center, nil, { _, _, name, _, _ in
+                let held = (name?.rawValue as String?)?.hasSuffix(".hold") == true
+                Task { @MainActor in ViewingEditorProbe.shared.setQuickPreparationHeld?(held) }
+            }, "com.rawlab.quick-preset.\(action)" as CFString, nil, .deliverImmediately)
+        }
         probe.clearReference = { viewModel.basePreviewImage = nil; viewModel.baseHistogram = nil }
         probe.clearStatistics = { viewModel.histogram = nil; viewModel.baseHistogram = nil }
         if ProcessInfo.processInfo.arguments.contains("-RawLab.presetUI") {
@@ -239,6 +252,9 @@ extension ContentView {
                  (try? JSONSerialization.jsonObject(with: JSONEncoder().encode($0))) ?? []
              } ?? [],
              "presetFault": probe.presetFault,
+             "quickPreparationHeld": probe.quickPreparationHeld,
+             "quickPreparing": viewModel.quickPresetState.isPreparing,
+             "quickVisible": viewModel.quickPresetsVisible,
              "adjustmentSheet": adjustmentSheet?.rawValue ?? "",
              "pendingAdjustmentAction": String(describing: pendingAdjustmentAction),
              "queuedPresetAction": String(describing: queuedPresetAction),

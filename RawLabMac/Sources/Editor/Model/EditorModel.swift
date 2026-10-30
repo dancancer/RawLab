@@ -64,7 +64,9 @@ final class EditorModel: ObservableObject {
         let editingGeometry: Bool
     }
 
-    @Published var adjustmentNavigation = EditorAdjustmentNavigation()
+    @Published var adjustmentNavigation = EditorAdjustmentNavigation() { didSet {
+        if quickPresetsVisible && (adjustmentNavigation.expandedGroup != .looks || oldValue.tool != adjustmentNavigation.tool) { closeQuickPresets() }
+    } }
     @Published var resetConfirmation: PreparedReset?
     @Published var resetConfirmationScope: EditorResetScope?
     @Published var resetBlockedMessage: String?
@@ -157,6 +159,7 @@ final class EditorModel: ObservableObject {
     var hslSourceRevision: UInt64 = 1
     @Published var sourceRevision = UUID() { didSet {
         hslSourceRevision &+= 1; hslAcceptedRequest = nil; hslAcceptedSettings = nil
+        closeQuickPresets()
     } }
     @Published var file: URL?
     @Published var sourceIsHDR=false
@@ -166,7 +169,7 @@ final class EditorModel: ObservableObject {
     @Published var result: RenderedImage?
     @Published var busy = false { didSet { if oldValue && !busy { resumeResetToolIfReady() } } }
     @Published var autoExposing = false
-    var editRevision = UUID()
+    var editRevision = UUID() { didSet { if quickPresetState.isPreparing { cancelQuickPreset() } } }
     @Published var exporting = false
     @Published var aiState = AIDenoiseState.idle
     var aiIdentity: AIWorkIdentity?
@@ -241,6 +244,8 @@ final class EditorModel: ObservableObject {
     @Published var adjustmentSheet: AdjustmentSheetKind?
     @Published var adjustmentSheetInCollection = false
     var adjustmentSheetPayload: AdjustmentTransferPayload?
+    var adjustmentSheetPreset: AdjustmentPreset?
+    var adjustmentSheetStartsPresetSave = false
     var adjustmentSheetTargets: [URL]?
     var adjustmentSheetExcludedSource: String?
     var adjustmentSheetExcludedIdentity: String?
@@ -249,6 +254,13 @@ final class EditorModel: ObservableObject {
     @Published var adjustmentOutcomes: [AdjustmentTransferOutcome] = []
     var lastAdjustmentTransaction: UUID?
     var presetStore: AdjustmentPresetStore
+    @Published var quickPresetsVisible = false
+    @Published var quickPresetState = QuickPresetState.idle
+    var quickPresetGeneration = UUID()
+    let quickPresetQueue = DispatchQueue(label: "rawlab.preset.prepare", qos: .userInitiated)
+    var prepareQuickPresetOperation: (AdjustmentTransferSession, AdjustmentTransferPayload, [AdjustmentTransferTarget]) throws -> PreparedAdjustmentTransfer = {
+        try $0.prepare(payload: $1, targets: $2, action: .preset)
+    }
     let editDirectory: URL
     let batchJournal: BatchJournal
     var updateJournalLoadFailed = false

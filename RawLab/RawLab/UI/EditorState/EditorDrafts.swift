@@ -55,6 +55,7 @@ extension ContentView {
 
     func selectEditorTool(_ selection: EditorToolSelection) {
         guard !editorBusy else { return }
+        closeQuickPresets()
         if selection == currentEditorTool {
             if !adjustmentsExpanded { requestAdjustmentExpansion(true) }
             return
@@ -76,6 +77,7 @@ extension ContentView {
     }
 
     func activateEditorTool(_ selection: EditorToolSelection, resettingFine: Bool = true) {
+        viewModel.closeQuickPresets()
         cancelSliderInteraction()
         if resettingFine && selection != currentEditorTool { adjustmentFine = false }
         collapsedEditorTool = nil
@@ -225,7 +227,13 @@ extension ContentView {
 
     func selectEditorGroup(_ group: EditorAdjustmentGroup) {
         guard !editorBusy, !resetDraftSuspended else { return }
-        if group == selectedGroup {
+        let wasQuickPresets = viewModel.quickPresetsVisible
+        if group == .looks && settings.isHDREditing {
+            if viewModel.quickPresetsVisible { requestAdjustmentExpansion(!adjustmentsExpanded) } else { showQuickPresets() }
+            return
+        }
+        if group != .looks { closeQuickPresets() }
+        if group == selectedGroup && !wasQuickPresets {
             requestAdjustmentExpansion(!adjustmentsExpanded)
         } else {
             let target = EditorAdjustmentRules.defaultTool(group)

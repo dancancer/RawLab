@@ -84,13 +84,18 @@ extension EditorModel {
     }
 
     func selectAdjustmentGroup(_ group: EditorAdjustmentGroup) {
+        if group == .looks && !quickPresetsVisible && (settings.isHDREditing || geometryDraft != nil) {
+            showQuickPresets(); return
+        }
+        if quickPresetsVisible { closeQuickPresets() }
         var target = adjustmentNavigation
         target.selectGroup(group)
         navigateAdjustment(to: target)
     }
 
     func selectAdjustmentTool(_ tool: EditorAdjustmentTool) {
-        guard tool != adjustmentNavigation.tool || adjustmentNavigation.expandedGroup == nil else { return }
+        guard quickPresetsVisible || tool != adjustmentNavigation.tool || adjustmentNavigation.expandedGroup == nil else { return }
+        if quickPresetsVisible { closeQuickPresets() }
         var target = adjustmentNavigation; target.selectTool(tool)
         navigateAdjustment(to: target)
     }
@@ -342,6 +347,7 @@ extension EditorModel {
     func open(_ url: URL) {
         let url = (try? BatchExportItem.resourceKey(url)).flatMap { batchSelectionPhotos[$0]?.url } ?? url
         guard !exporting else { return }
+        cancelQuickPreset()
         pendingOpenID=UUID(); importing=false
         cancelHSLTarget()
         if file == url && result != nil, acceptedOriginalSource == referenceSource(url) { return }

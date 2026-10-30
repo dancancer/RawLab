@@ -30,6 +30,7 @@ import com.rawlab.android.ui.EditorSheetSystemBars
 sealed interface AdjustmentPresetAction {
     data object Save : AdjustmentPresetAction
     data class Apply(val preset: AdjustmentPreset) : AdjustmentPresetAction
+    data class ApplyMultiple(val preset: AdjustmentPreset) : AdjustmentPresetAction
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -120,6 +121,9 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
                                             Icon(Icons.Outlined.MoreVert, stringResource(R.string.preset_manage, preset.name))
                                         }
                                         DropdownMenu(menu, { menu = false }) {
+                                            DropdownMenuItem(text = { Text(stringResource(R.string.preset_quick_apply_multiple)) },
+                                                onClick = { menu = false; onRequest(AdjustmentPresetAction.ApplyMultiple(preset)) },
+                                                enabled = editor.controlsEnabled, modifier = Modifier.testTag("preset-multiple-${preset.id}"))
                                             DropdownMenuItem(text = { Text(stringResource(R.string.preset_rename_action)) },
                                                 onClick = { menu = false; rename = preset; name = preset.name; error = null }, modifier = Modifier.testTag("preset-rename"))
                                             DropdownMenuItem(text = { Text(stringResource(R.string.preset_delete)) },
@@ -159,7 +163,7 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
     }
 }
 
-private fun presetErrorMessage(error: Throwable): String {
+internal fun presetErrorMessage(error: Throwable): String {
     if (error is AdjustmentTransferException || error is EditPersistenceConflict) return adjustmentErrorMessage(error)
     return if (error is AdjustmentPresetException) AppStrings.text(when (error.reason) {
         PresetFailure.EMPTY_NAME -> R.string.preset_enter_name

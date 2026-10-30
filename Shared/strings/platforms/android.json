@@ -1,5 +1,47 @@
 {
   "entries": {
+    "preset_quick_error_mode": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "此预设包含 HDR 相对白平衡，当前编辑模式不支持。",
+      "types": []
+    },
+    "preset_quick_error_incompatible": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "此预设与当前照片不兼容，请选择其他预设。",
+      "types": []
+    },
+    "preset_quick_error_preserve": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "此预设无法保留照片的其他调整，请选择其他预设。",
+      "types": []
+    },
+    "preset_quick_manage": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "管理预设",
+      "types": []
+    },
+    "preset_quick_apply_current": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "应用到当前照片",
+      "types": []
+    },
+    "preset_quick_apply_multiple": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "应用到多张照片",
+      "types": []
+    },
+    "preset_quick_checking": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "正在检查预设…",
+      "types": []
+    },
     "adjustment_summary_overwrite": {
       "file": "editor_strings.xml", "formats": ["%1$d"],
       "source": "将覆盖以下 {0} 项调整；其他调整保留目标原值。", "types": ["d"]

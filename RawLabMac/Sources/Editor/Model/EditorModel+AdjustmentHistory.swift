@@ -93,6 +93,7 @@ extension EditorModel {
         if !dirty, geometryDraft == nil,
            let saved = outcomes.first(where: { $0.targetID == path && $0.saved != nil })?.saved,
            let file, (try? editStore?.versionedState(for: file)) == saved {
+            if !quickPresetState.isPreparing { cancelQuickPreset() }
             committedEdit = saved
             var defaults = Adjustments()
             defaults.exposureMode = RenderEngine.isRasterInput(file) ? .sensor : .preview

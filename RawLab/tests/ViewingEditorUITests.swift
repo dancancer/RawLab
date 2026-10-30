@@ -161,7 +161,11 @@ final class ViewingEditorUITests: XCTestCase {
     func revealFormControl(_ element: XCUIElement, app: XCUIApplication) {
         for _ in 0..<8 {
             if element.exists && element.isHittable { return }
-            app.swipeUp(velocity: .slow)
+            if element.exists && element.identifier.hasPrefix("preset.quick."), app.scrollViews["editor.panel"].exists {
+                let panel = app.scrollViews["editor.panel"]
+                if element.exists && element.frame.midY < panel.frame.midY { panel.swipeDown(velocity: .slow) }
+                else { panel.swipeUp(velocity: .slow) }
+            } else { app.swipeUp(velocity: .slow) }
         }
         XCTFail("Unreachable form control: \(element.identifier)\n\(app.debugDescription)")
     }

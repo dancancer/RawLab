@@ -142,11 +142,23 @@ public partial class MainWindow
             Tools.Children.Add(workspaceTools[tool].Button);
             if(tool==EditorAdjustmentTool.Geometry)Tools.Children.Add(PerspectiveCategory);
         }
+        presetLibraryButton = new Button { Content = new TextBlock { Text = Loc.Text("我的预设"), TextWrapping = TextWrapping.Wrap },
+            Style = (Style)FindResource("ToolButton"), MinHeight = 32 };
+        AutomationProperties.SetName(presetLibraryButton, Loc.Text("我的预设"));
+        AutomationProperties.SetAutomationId(presetLibraryButton, "preset.quick.open");
+        presetLibraryButton.PreviewMouseDown += (_, _) => PreserveQuickPresetInputs();
+        presetLibraryButton.PreviewGotKeyboardFocus += (_, _) => PreserveQuickPresetInputs();
+        presetLibraryButton.Click += (_, _) => { if (quickPresetsVisible) CloseQuickPresets(); else ShowQuickPresets(); };
+        Tools.Children.Add(presetLibraryButton);
+        if (quickPresetsVisible) RefreshQuickPresets(true);
     }
     private void SelectGroup(EditorAdjustmentGroup group)
     {
         if(file==null || exporting || pendingAllReset!=null)return;
-        if(expandedGroup==group) {
+        var wasQuick = quickPresetsVisible;
+        if (group == EditorAdjustmentGroup.Looks && settings.IsHDREditing && !wasQuick) { ShowQuickPresets(); return; }
+        if (wasQuick) CloseQuickPresets();
+        if(expandedGroup==group && !wasQuick || wasQuick && group==EditorAdjustmentGroup.Looks) {
             SetHslTargetMode(false,hslTargetAxis);CancelParameterInputs();if(!ResolveTransformDraft())return;
             dockHeight=DockRow.ActualHeight;expandedGroup=null;RefreshWorkspaceNavigation();
             DockRow.MinHeight=0;DockRow.Height=GridLength.Auto;AdjustmentSplitter.Visibility=Visibility.Collapsed;SplitterRow.Height=new(0);
@@ -157,6 +169,7 @@ public partial class MainWindow
     private void SelectTool(EditorAdjustmentTool tool)
     {
         if(file==null || exporting || pendingAllReset!=null)return;
+        if (quickPresetsVisible) CloseQuickPresets();
         if(tool!=EditorAdjustmentTool.Hsl)SetHslTargetMode(false,hslTargetAxis);
         CancelParameterInputs();
         if(tool is EditorAdjustmentTool.Geometry or EditorAdjustmentTool.Lens) {
@@ -228,7 +241,18 @@ public partial class MainWindow
             controls.Ring.Progress=modified ? (controls.Ring.Progress==0 ? 1 : controls.Ring.Progress) : 0;controls.Ring.InvalidateVisual();
             AutomationProperties.SetItemStatus(controls.Button,string.Join(" · ",new[]{CurrentTool==tool ? Loc.Text("当前工具") : "",modified ? Loc.Text("已调整") : ""}.Where(value=>value.Length>0)));
         }
+        if (presetLibraryButton != null) {
+            presetLibraryButton.Visibility = expandedGroup == EditorAdjustmentGroup.Looks ? Visibility.Visible : Visibility.Collapsed;
+            presetLibraryButton.IsEnabled = file != null && !exporting;
+            presetLibraryButton.Tag = quickPresetsVisible ? "selected" : null;
+        }
         var expanded=expandedGroup!=null;
+        QuickPresetSurface.Visibility = expanded && quickPresetsVisible ? Visibility.Visible : Visibility.Collapsed;
+        QuickPresetSurface.IsEnabled = file != null && !exporting && !closing && !aiJob.State.IsRunning;
+        if (expanded && quickPresetsVisible) {
+            foreach (var panel in new FrameworkElement[]{ParameterPanel,FilmPanel,MasterRecipePanel,DenoiseSurface,LensSurface,GeometrySurface,HslSurface,GradingSurface,CurveSurface,WhiteBalanceSurface,PhotoEffectsSurface,DraftActions}) panel.Visibility=Visibility.Collapsed;
+            foreach (var controls in workspaceTools.Values) { controls.Button.Tag=null; controls.Ring.Selected=false; controls.Ring.InvalidateVisual(); }
+        }
         ToolsScroller.Visibility=expanded ? Visibility.Visible : Visibility.Collapsed;
         PerspectiveCategory.Visibility=expandedGroup==EditorAdjustmentGroup.Geometry ? Visibility.Visible : Visibility.Collapsed;
         if(!expanded)foreach(var panel in new FrameworkElement[]{ParameterPanel,FilmPanel,MasterRecipePanel,DenoiseSurface,LensSurface,GeometrySurface,HslSurface,GradingSurface,CurveSurface,WhiteBalanceSurface,PhotoEffectsSurface,DraftActions})panel.Visibility=Visibility.Collapsed;
@@ -236,15 +260,6 @@ public partial class MainWindow
     private void BuildFilms()
     {
         FilmStrip.Children.Clear(); filmButtons.Clear(); importLookButton=null;
-        var presets = new StackPanel();
-        presets.Children.Add(new EditorIcon { Kind="Photo", Width=32, Height=64 });
-        var presetCaption = new TextBlock { Text=Loc.Text("我的预设"), MinHeight=30, TextWrapping=TextWrapping.Wrap,
-            TextAlignment=TextAlignment.Center, Margin=new Thickness(0,5,0,0) };
-        presetCaption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize"); presets.Children.Add(presetCaption);
-        presetLibraryButton = new Button { Content=presets, Style=(Style)FindResource("FilmButton") };
-        AutomationProperties.SetName(presetLibraryButton,Loc.Text("我的预设"));
-        AutomationProperties.SetAutomationId(presetLibraryButton,"preset.library.open");
-        presetLibraryButton.Click+=ShowPresetsClicked; FilmStrip.Children.Add(presetLibraryButton);
         foreach(var item in FilmGrouping.Arrange(films,film=>film.Path==null,film=>film.Group))
         {
             var film=item.Value;

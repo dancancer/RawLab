@@ -1,6 +1,82 @@
 import Foundation
 
+enum IOSQuickPresetState {
+    case idle, preparing(AdjustmentPreset), saved(AdjustmentPreset, UUID), unchanged(AdjustmentPreset), undone(AdjustmentPreset)
+    case failed(AdjustmentPreset, String), undoFailed(AdjustmentPreset, UUID, String)
+    var isPreparing: Bool { if case .preparing = self { return true }; return false }
+}
+
 extension RawEditorViewModel {
+    func closeQuickPresets() { quickPresetsVisible = false }
+
+    func cancelQuickPreset() {
+        if quickPresetState.isPreparing { cancelAdjustmentPreparation() }
+        quickPresetGeneration = UUID()
+        quickPresetState = .idle
+    }
+
+    func applyPresetToCurrentPhoto(_ preset: AdjustmentPreset, settings: RawSettings) {
+        guard quickPresetsVisible, hasImage, !isBusy, !adjustmentPreparing, !quickPresetState.isPreparing,
+              let source = editorEditSource, let photo = currentAdjustmentPhoto else { return }
+        do {
+            guard saveCurrentSettings(settings), !hasAdjustmentDraft, !adjustmentReloadRequired,
+                  adjustmentTargetIsCurrent(photo.id), let session = adjustmentSession,
+                  let expected = loadedEditRecord, expected.identity == source.identity,
+                  currentEditState(settings: settings).hasSameAdjustments(as: expected.state ?? PhotoEditState(settings: sourceDefaultSettings)) else {
+                throw AdjustmentTransferError.draftRequiresPreflight
+            }
+            guard try editPersistence?.versionedState(for: source.identity) == expected else { throw EditPersistenceConflict.changed }
+            let generation = UUID(), revision = settingsSaveRevision
+            quickPresetGeneration = generation
+            quickPresetState = .preparing(preset)
+            prepareAdjustmentPaste(preset.payload, photos: [photo], action: .preset) { [weak self] result in
+                guard let self, self.quickPresetGeneration == generation, self.quickPresetsVisible else { return }
+                guard self.editorEditSource == source, self.settingsSaveRevision == revision,
+                      self.adjustmentSession === session, self.adjustmentTargetIsCurrent(photo.id) else {
+                    self.cancelQuickPreset(); return
+                }
+                do {
+                    let operation = try result.get()
+                    if let error = operation.targets.first?.error { throw error }
+                    guard operation.targets.count == 1, operation.targets.first?.original == expected,
+                          self.loadedEditRecord == expected else { throw EditPersistenceConflict.changed }
+                    let outcomes = self.applyAdjustmentPaste(operation, skipping: [])
+                    guard let outcome = outcomes.first, let saved = outcome.saved, self.loadedEditRecord == saved else {
+                        throw outcomes.first?.error ?? EditPersistenceConflict.changed
+                    }
+                    switch outcome.status {
+                    case .applied: self.quickPresetState = .saved(preset, operation.id)
+                    case .unchanged: self.quickPresetState = .unchanged(preset)
+                    default: throw outcome.error ?? EditPersistenceConflict.changed
+                    }
+                } catch { self.quickPresetState = .failed(preset, self.quickPresetErrorMessage(error)) }
+            }
+        } catch { quickPresetState = .failed(preset, quickPresetErrorMessage(error)) }
+    }
+
+    func undoQuickPreset(settings: RawSettings) {
+        let preset: AdjustmentPreset, transaction: UUID
+        switch quickPresetState {
+        case .saved(let value, let id), .undoFailed(let value, let id, _): preset = value; transaction = id
+        default: return
+        }
+        guard quickPresetsVisible, !isBusy, !hasAdjustmentDraft, saveCurrentSettings(settings) else { return }
+        let results = performAdjustmentHistory(undo: true, transactionID: transaction)
+        if let outcome = results.first, outcome.status == .applied, outcome.saved == loadedEditRecord {
+            quickPresetState = .undone(preset)
+        } else { quickPresetState = .undoFailed(preset, transaction, adjustmentErrorMessage(results.first?.error)) }
+    }
+
+    private func quickPresetErrorMessage(_ error: Error) -> String {
+        switch error as? AdjustmentTransferError {
+        case .incompatible(let field) where field == "hdr.relative_white_balance":
+            return L10n.text("此预设包含 HDR 相对白平衡，当前编辑模式不支持。")
+        case .incompatible: return L10n.text("此预设与当前照片不兼容，请选择其他预设。")
+        case .unrepresentable: return L10n.text("此预设无法保留照片的其他调整，请选择其他预设。")
+        default: return adjustmentErrorMessage(error)
+        }
+    }
+
     func previewAdjustmentPayload(scope: AdjustmentTransferScope, settings: RawSettings) throws -> AdjustmentTransferPayload {
         guard let source = editorEditSource, let record = loadedEditRecord,
               record.identity == source.identity, !adjustmentReloadRequired,

@@ -201,7 +201,7 @@ public static class AdjustmentFields
 
 public enum AdjustmentFailure { InvalidPayload, UnsupportedVersion, EmptyScope, Draft, Incompatible, MissingLook, Unrepresentable }
 public sealed class AdjustmentTransferException(AdjustmentFailure failure, string detail = "") : IOException($"{failure}: {detail}")
-{ public AdjustmentFailure Failure { get; } = failure; }
+{ public AdjustmentFailure Failure { get; } = failure; public string Detail { get; } = detail; }
 public sealed record AdjustmentRecipeContext(string ID, double Strength, int SettingsVersion = 3);
 public sealed record AdjustmentSource(string Identifier, bool IsRaw, int ProcessingVersion, AdjustmentRecipeContext? Recipe = null,
     int? HdrProcessingVersion = null)
