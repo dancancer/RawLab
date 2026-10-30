@@ -226,7 +226,9 @@ internal static class ComparisonDefaultChecks
     {
         var quickPresets = Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_UI") == "1";
         var batchFlow=Environment.GetEnvironmentVariable("RAWLAB_BATCH_FLOW_UI")=="1";
-        if (quickPresets || batchFlow) Loc.Initialize(Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_LANGUAGE") ?? "en");
+        var lookBrowser=Environment.GetEnvironmentVariable("RAWLAB_LOOK_BROWSER_UI")=="1";
+        if(lookBrowser)Loc.Initialize("en");
+        else if(quickPresets || batchFlow)Loc.Initialize(Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_LANGUAGE") ?? "en");
         var app = TestWindowState.CreateApplication();
         if (quickPresets && Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_LARGE") == "1") {
             app.Resources["EditorBodySize"] = 18d; app.Resources["EditorCaptionSize"] = 16d;
@@ -235,7 +237,13 @@ internal static class ComparisonDefaultChecks
         var window = new MainWindow { Width = 1200, Height = 800 };
         TestWindowState.Isolate(window, Path.Combine(profile, "window-state"));
         UseProfile(window, profile);
-        if(batchFlow){window.Width=1024;window.Height=720;}
+        if(batchFlow || lookBrowser){window.Width=1024;window.Height=720;}
+        if(lookBrowser) {
+            string Describe(object? element)=>element is FrameworkElement value ? value.GetType().Name+":"+value.Name+":"+AutomationProperties.GetName(value) : element?.ToString() ?? "null";
+            window.AddHandler(System.Windows.Input.Keyboard.GotKeyboardFocusEvent,new System.Windows.Input.KeyboardFocusChangedEventHandler((_,e)=>Console.WriteLine("FOCUS "+Describe(e.OldFocus)+" -> "+Describe(e.NewFocus))),true);
+            window.AddHandler(System.Windows.Input.Keyboard.PreviewKeyDownEvent,new System.Windows.Input.KeyEventHandler((_,e)=>Console.WriteLine("KEY "+e.Key+" source="+Describe(e.OriginalSource)+" focus="+Describe(System.Windows.Input.Keyboard.FocusedElement))),true);
+            window.AddHandler(Button.ClickEvent,new RoutedEventHandler((_,e)=>Console.WriteLine("CLICK "+Describe(e.OriginalSource))),true);
+        }
         if (quickPresets) {
             window.Width = 1024; window.Height = 720;
             window.QuickPresetPrepared = async () => {
@@ -392,6 +400,8 @@ internal static class ComparisonDefaultChecks
             new AdjustmentPresetStore(Path.Combine(profile, "presets")));
         typeof(MainWindow).GetField("editStore", Private)!.SetValue(window,
             new EditStore(Path.Combine(profile, "edits")));
+        typeof(MainWindow).GetField("recentLooksPath",Private)!.SetValue(window,Path.Combine(profile,"recent-looks.json"));
+        typeof(MainWindow).GetMethod("LoadRecentLooks",Private)!.Invoke(window,null);
         typeof(MainWindow).GetField("batchJournal", Private)!.SetValue(window,
             new BatchJournal(Path.Combine(profile, "batch")));
     }

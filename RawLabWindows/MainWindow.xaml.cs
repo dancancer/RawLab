@@ -59,7 +59,7 @@ public partial class MainWindow : Window
     private PhotoInfoMode photoInfoMode;
     private long photoInfoRevision;
     private LibraryEntry? contextEntry;
-    private double dockHeight=344;
+    private double dockHeight=220;
     private double libraryWidth=244;
     private RenderedImage? result;
     private int renderedGpuMode;
@@ -105,7 +105,7 @@ public partial class MainWindow : Window
         void RefreshLanguage()
         {
             RecipeStrip.Children.Clear(); recipeButtons.Clear();
-            BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu(); HslEditor.RefreshLanguage();GradingEditor.RefreshLanguage();CurveEditor.RefreshLanguage();GeometryEditor.RefreshLanguage();
+            RefreshLookCategories();BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu(); HslEditor.RefreshLanguage();GradingEditor.RefreshLanguage();CurveEditor.RefreshLanguage();GeometryEditor.RefreshLanguage();
             RefreshControls(); RefreshPhotoInfo(); RefreshExportSizeMenu(); RefreshCopyLabels();
             RefreshRenderLabels();
             RefreshSaveNotice();
@@ -123,6 +123,7 @@ public partial class MainWindow : Window
             navigation.AddHandler(PreviewMouseDownEvent,new MouseButtonEventHandler(ParameterNavigationPressed),true);
         PreviewKeyDown+=(_,e)=>{if(e.Key==Key.System && e.SystemKey is Key.F or Key.F4)CancelParameterInputs();};
         Files.ItemsSource=library.Roots;
+        InitializeWorkspace();
         Files.PreviewKeyDown+=FilesContextKeyDown;
         AdjustmentPanel.Visibility=AdjustmentSplitter.Visibility=Visibility.Collapsed;DockRow.MinHeight=0;DockRow.Height=new(0);SplitterRow.Height=new(0);
         thumbnailRefresh.Tick+=(_,_)=>{thumbnailRefresh.Stop();RefreshVisibleThumbnails();};
@@ -163,7 +164,7 @@ public partial class MainWindow : Window
         }
         foreach(var look in lookLibrary?.Looks ?? [])
             films.Add(new(look.Name,look.Path,null,AppearanceUnverified:look.AppearanceUnverified,CompatibilityMode:look.CompatibilityMode));
-        BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu();
+        LoadRecentLooks();RefreshLookCategories();BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu();
         DenoiseEditor.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
             settings.Denoise=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();

@@ -12,6 +12,16 @@ extension ContentView {
         return false
     }
 
+    func toolUnavailableReason(_ tool: EditorToolSelection) -> String? {
+        if settings.isHDREditing && !supportsHDR(tool) { return L10n.text("HDR 模式暂不支持此工具。") }
+        if tool == .lens && viewModel.sourceKind != .raw { return L10n.text("仅 RAW 照片支持镜头校正。") }
+        if tool == .adjustment(.temperature) && !settings.isHDREditing && viewModel.rawWhiteBalance == nil {
+            return L10n.text("此照片没有可用的相机白平衡校准。")
+        }
+        if tool == .adjustment(.strength) && !settings.hasLook { return L10n.text("请先选择外观或配方。") }
+        return nil
+    }
+
     func setHDREditing(_ enabled: Bool) {
         guard viewModel.sourceIsHDR,enabled != settings.isHDREditing,!editorBusy,!isEditorDraftActive,
               let source=viewModel.editorEditSource else { return }

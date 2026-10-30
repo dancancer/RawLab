@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Automation;
 
 namespace RawLab.Windows;
 
@@ -36,6 +37,15 @@ public partial class LensPanel : UserControl
         SelectedTitle.Text = string.IsNullOrEmpty(title) ? value.Manual ? Loc.Text("选择镜头") : Loc.Text("未匹配镜头") : title;
         ProfileButton.ToolTip = SelectedTitle.Text;
         ProfileButton.IsEnabled = value.Manual && info?.Candidates.Count > 0;
+        var matches=info?.Candidates.Where(p=>p.IsMatch).ToArray() ?? [];
+        var candidate=value.Manual ? info?.Candidates.FirstOrDefault(p=>p.Id==value.ProfileId) : matches.Length==1 ? matches[0] : null;
+        var inputAllowed=info?.State is not (2 or 3 or 7 or 8 or 9);
+        Distortion.IsEnabled=value.Distortion || inputAllowed && candidate?.HasDistortion==true;
+        Tca.IsEnabled=value.Tca || inputAllowed && candidate?.HasTca==true;
+        var unavailable=info==null ? Loc.Text("镜头信息尚未就绪") : !inputAllowed ? info.Message
+            : candidate==null ? Loc.Text("未匹配镜头，请手动选择") : null;
+        Explain(Distortion,unavailable ?? (candidate?.HasDistortion==true ? null : Loc.Text("畸变标定不可用")));
+        Explain(Tca,unavailable ?? (candidate?.HasTca==true ? null : Loc.Text("横向色差标定不可用")));
         StatusText.Text = info?.Message ?? Loc.Text("镜头信息尚未就绪");
         StatusText.ToolTip = info?.DetectedLens;
         // 按显示精度判断：四舍五入后是 0.0% 的裁边不值得报告
@@ -43,6 +53,12 @@ public partial class LensPanel : UserControl
         CropText.Text = crop >= .05 ? Loc.Format("裁边 {0}%", crop.ToString("F1", CultureInfo.GetCultureInfo(Loc.Language))) : "";
         FilterProfiles();
         syncing = false;
+    }
+    private static void Explain(CheckBox control,string? reason)
+    {
+        control.ToolTip=reason;
+        ToolTipService.SetShowOnDisabled(control,true);
+        AutomationProperties.SetHelpText(control,reason ?? "");
     }
     private void Publish(LensSettings next) {
         if (syncing || !IsEnabled) return;

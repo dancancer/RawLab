@@ -227,6 +227,22 @@ extension EditorModel {
         edited()
     }
 
+    var readableLookBrowserIDs: Set<String> {
+        Set(filmChoices.filter { FileManager.default.isReadableFile(atPath: $0.url.path) }.map(\.browserID))
+    }
+
+    func recordSavedLookChange(from previous: PhotoEditState?, to saved: PhotoEditState) {
+        guard saved.settings.masterRecipeID == nil, saved.filmID != previous?.filmID else { return }
+        recentLooks.record(saved.filmID, available: readableLookBrowserIDs)
+        // 最近使用是界面偏好；偏好写入失败不能把已保存的照片报告为失败。
+        try? recentLooks.save(to: recentLooksURL)
+    }
+
+    func pruneRecentLooks() {
+        recentLooks.prune(available: readableLookBrowserIDs)
+        try? recentLooks.save(to: recentLooksURL)
+    }
+
     func selectFilm(_ id: String) {
         guard !settings.isHDREditing,(id != selectedFilmID || settings.masterRecipeID != nil),
               id.isEmpty || filmChoices.contains(where: { $0.id == id }) else { return }
@@ -551,6 +567,7 @@ extension EditorModel {
         guard let library = lookLibrary else { error = LookLibraryError.invalidRegistry.localizedDescription; return }
         lookLibraryBusy = true
         lookImportReport = nil
+        let source = sourceRevision, revision = editRevision
         // 与渲染共用串行队列，移除外观时不会删除正在读取的文件。
         queue.async { [weak self] in
             do {
@@ -559,9 +576,12 @@ extension EditorModel {
                 DispatchQueue.main.async {
                     guard let self else { return }
                     self.films = self.films.filter { $0.managedID == nil } + updated
+                    self.pruneRecentLooks()
                     self.lookLibraryBusy = false
                     self.error = nil
-                    if let selectedID = change.selectedID { self.selectedFilmID = selectedID }
+                    if let selectedID = change.selectedID, self.sourceRevision == source, self.editRevision == revision {
+                        self.selectedFilmID = selectedID
+                    }
                     else if !self.selectedFilmID.isEmpty && !self.films.contains(where: { $0.id == self.selectedFilmID }) {
                         self.schedule()
                     }

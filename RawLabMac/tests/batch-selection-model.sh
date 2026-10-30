@@ -26,7 +26,7 @@ TRANSFER_SOURCES=(
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentPresets.swift"
 )
 swiftc "${TRANSFER_SOURCES[@]}" "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
-    "$ROOT/Shared/BundledLook.swift" \
+    "$ROOT/Shared/BundledLook.swift" "$ROOT/Shared/LookBrowser.swift" \
   -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
   "$ROOT/Shared/UsageAnalytics.swift" \
   "${SOURCES[@]}" "$ROOT/RawLabMac/tests/BatchSelectionModelTests.swift" "$ROOT/RawLabMac/tests/BatchFlowModelTests.swift" \

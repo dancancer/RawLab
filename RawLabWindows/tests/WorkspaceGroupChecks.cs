@@ -58,6 +58,8 @@ internal static class WorkspaceGroupChecks
         InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
         var previous=Loc.Preference;var originalFont=window.FontSize;
         var preferencePath=Path.Combine(output,"workspace-language.txt");
+        // 固定边界属于用户手动高度；自动模式按当前工具分配空间。
+        Get<WorkspaceLayout>(window,"workspaceLayout").Resize(344,window.EditorArea.ActualHeight);
         try {
             foreach(var language in new[]{"de","zh-Hans","en","fr","ja","es"})foreach(var size in new[]{new Size(1024,720),new Size(1440,920)})foreach(var font in new[]{13.0,26.0}) {
                 // 与设置入口一样触发 Changed，刷新已创建控件；语言偏好只写测试目录。
@@ -70,7 +72,7 @@ internal static class WorkspaceGroupChecks
                     Invoke(window,"SelectTool",tool);window.UpdateLayout();
                     check(Math.Abs(window.AdjustmentPanel.ActualHeight-height)<1 &&
                         Math.Abs(window.AdjustmentPanel.TransformToAncestor(window).Transform(new Point()).Y-boundary)<1,
-                        $"Tool content never resizes the photo/dock boundary: {language}/{size}/{tool}");
+                        $"Tool content preserves the manual photo/dock boundary: {language}/{size}/{tool}");
                 }
                 Invoke(window,"SelectTool",EditorAdjustmentTool.Hsl);window.UpdateLayout();
                 check(window.Groups.Children.OfType<Button>().Select(AutomationProperties.GetName)
@@ -122,6 +124,8 @@ internal static class WorkspaceGroupChecks
     }
     private static void CheckHistogramStatistics(MainWindow window,string language,Size size,Action<bool,string> check)
     {
+        var popup=window.HistogramPanel.Parent==window.HistogramPopupContent;
+        if(popup){window.HistogramPopup.IsOpen=true;window.UpdateLayout();}
         var text=window.ClipStats;var clipped=new List<string>();var reachedContent=false;
         for(var parent=VisualTreeHelper.GetParent(text) as FrameworkElement;parent!=null && parent!=window;
             parent=VisualTreeHelper.GetParent(parent) as FrameworkElement) {
@@ -129,10 +133,11 @@ internal static class WorkspaceGroupChecks
             if(bounds.Left<-.5 || bounds.Top<-.5 || bounds.Right>parent.ActualWidth+.5 || bounds.Bottom>parent.ActualHeight+.5)
                 clipped.Add($"{parent.Name}/{parent.GetType().Name}: text={bounds}, parent={parent.RenderSize}");
             // ArrangeLayout 验证的内容可大于 CI 桌面的 HWND；边界止于同一绘制目标。
-            if(ReferenceEquals(parent,window.Content)){reachedContent=true;break;}
+            if(ReferenceEquals(parent,window.Content) || ReferenceEquals(parent,window.HistogramPopupContent)){reachedContent=true;break;}
         }
         check(reachedContent && text.IsVisible && text.ActualHeight>0 && text.ActualHeight+.5>=text.DesiredSize.Height &&
             System.Windows.Controls.Primitives.LayoutInformation.GetLayoutClip(text)==null && clipped.Count==0,
             $"Histogram statistics fit every editor-content ancestor: {language}/{size}; "+string.Join("; ",clipped));
+        if(popup)window.HistogramPopup.IsOpen=false;
     }
 }

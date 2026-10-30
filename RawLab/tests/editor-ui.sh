@@ -6,6 +6,23 @@ OUT="${IOS_UI_OUTPUT:-$ROOT/build/verification/ios-ui-$(date +%Y%m%d-%H%M%S)}"
 MEDIA="$HOME/Library/Developer/CoreSimulator/Devices/$IOS_SIMULATOR_UDID/data/Media"
 DB="$MEDIA/PhotoData/Photos.sqlite"
 mkdir -p "$OUT"
+# Files 提供确定的 RAW 原片，避免 Photos picker 返回 JPEG 表示。
+python3 - "$ROOT" "$IOS_SIMULATOR_UDID" <<'PYSEED'
+from pathlib import Path
+import os, plistlib, shutil, sys
+root, device = sys.argv[1:]
+source = Path(os.environ.get('RAWLAB_TEST_RAW', root + '/lutools/examples/DJI_20250602164503_0444_D.DNG'))
+if not source.is_file(): raise SystemExit('RAWLAB_TEST_RAW must point to the seeded DNG fixture')
+groups = Path.home() / 'Library/Developer/CoreSimulator/Devices' / device / 'data/Containers/Shared/AppGroup'
+for group in groups.iterdir():
+    metadata = group / '.com.apple.mobile_container_manager.metadata.plist'
+    if metadata.is_file() and plistlib.loads(metadata.read_bytes()).get('MCMMetadataIdentifier') == 'group.com.apple.FileProvider.LocalStorage':
+        downloads = group / 'File Provider Storage/Downloads'
+        downloads.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, downloads / 'DJI_20250602164503_0444_D.DNG')
+        break
+else: raise SystemExit('Open Files once on the dedicated simulator to create local storage')
+PYSEED
 BEFORE="$(sqlite3 -readonly "$DB" 'SELECT COALESCE(MAX(Z_PK), 0) FROM ZASSET;')"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 xcodebuild test -project "$ROOT/RawLab/RawLab.xcodeproj" -scheme RawLab \

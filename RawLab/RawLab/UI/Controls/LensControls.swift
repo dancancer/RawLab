@@ -6,6 +6,35 @@ struct IOSLensControls: View {
     let info: LensInfo?
     @State private var choosingProfile = false
     private var lens: LensCorrectionSettings { settings.lensSettings }
+    private var candidate: LensCandidate? {
+        if lens.mode == .manual { return info?.candidates.first { $0.id == lens.profileID } }
+        let matches = info?.candidates.filter(\.isMatch) ?? []
+        return matches.count == 1 ? matches[0] : nil
+    }
+    private func correctionEnabled(tca: Bool) -> Bool {
+        if tca ? lens.tca : lens.distortion { return true }
+        if let info {
+            switch info.state {
+            case SONY2FUJI_LENS_NO_DATABASE, SONY2FUJI_LENS_NO_CAMERA, SONY2FUJI_LENS_MISSING_FOCAL_LENGTH,
+                 SONY2FUJI_LENS_EMBEDDED_GEOMETRY, SONY2FUJI_LENS_UNSUPPORTED_INPUT: return false
+            default: break
+            }
+        }
+        return (tca ? candidate?.hasTCA : candidate?.hasDistortion) == true
+    }
+    private func correctionReason(tca: Bool) -> String {
+        guard let info else { return L10n.text("镜头信息尚未就绪") }
+        switch info.state {
+        case SONY2FUJI_LENS_NO_DATABASE, SONY2FUJI_LENS_NO_CAMERA, SONY2FUJI_LENS_MISSING_FOCAL_LENGTH,
+             SONY2FUJI_LENS_EMBEDDED_GEOMETRY, SONY2FUJI_LENS_UNSUPPORTED_INPUT: return info.message
+        default: break
+        }
+        guard candidate != nil else { return L10n.text("未匹配镜头，请手动选择") }
+        guard (tca ? candidate?.hasTCA : candidate?.hasDistortion) == true else {
+            return L10n.text(tca ? "横向色差标定不可用" : "畸变标定不可用")
+        }
+        return correctionEnabled(tca: tca) ? "" : info.message
+    }
     private var selectedTitle: String {
         if lens.mode == .manual { return info?.candidates.first { $0.id == lens.profileID }?.title ?? L10n.text("选择镜头") }
         return info?.selectedLens.isEmpty == false ? info!.selectedLens : L10n.text("未匹配镜头")
@@ -25,7 +54,11 @@ struct IOSLensControls: View {
                     .disabled(lens == LensCorrectionSettings())
             }
             Toggle(L10n.text("畸变矫正"), isOn: value(\.distortion)).frame(minHeight: 44).accessibilityIdentifier("lens.distortion")
+                .disabled(!correctionEnabled(tca: false))
+                .accessibilityHint(correctionReason(tca: false))
             Toggle(L10n.text("横向色差"), isOn: value(\.tca)).frame(minHeight: 44).accessibilityIdentifier("lens.tca")
+                .disabled(!correctionEnabled(tca: true))
+                .accessibilityHint(correctionReason(tca: true))
             Toggle(L10n.text("自动裁边"), isOn: value(\.autoCrop)).frame(minHeight: 44).accessibilityIdentifier("lens.crop")
             Button { choosingProfile = true } label: {
                 HStack {
@@ -39,6 +72,10 @@ struct IOSLensControls: View {
             Text(info?.message ?? L10n.text("镜头信息尚未就绪")).font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("lens.status")
+            if let candidate {
+                if !candidate.hasDistortion { Text(L10n.text("畸变标定不可用")).font(.caption).foregroundStyle(.secondary) }
+                if !candidate.hasTCA { Text(L10n.text("横向色差标定不可用")).font(.caption).foregroundStyle(.secondary) }
+            }
             if let info, !info.detectedLens.isEmpty {
                 Text(info.detectedLens).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

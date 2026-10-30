@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        70225C4235E6456CAD81B158 /* LookBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25DC94959DC146C68231286E; };
         B020A0000000000000000001 /* IOSQuickPresetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B020A0000000000000000002 /* IOSQuickPresetView.swift */; };
         B010A0000000000000000011 /* IOSAdjustmentSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B010A0000000000000000012 /* IOSAdjustmentSummaryView.swift */; };
         D00800000000000000000005 /* IOSBatchSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00800000000000000000015; };
@@ -233,6 +234,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        25DC94959DC146C68231286E /* LookBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/LookBrowser.swift"; sourceTree = SOURCE_ROOT; };
         B020A0000000000000000002 /* IOSQuickPresetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Editor/IOSQuickPresetView.swift"; sourceTree = "<group>"; };
         B010A0000000000000000012 /* IOSAdjustmentSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Editor/IOSAdjustmentSummaryView.swift"; sourceTree = "<group>"; };
         D00800000000000000000015 /* IOSBatchSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSBatchSelectionView.swift"; path = "RawLab/UI/Export/IOSBatchSelectionView.swift"; sourceTree = SOURCE_ROOT; };
@@ -818,6 +820,7 @@
                 D01100000000000000000011,
                 D01100000000000000000012,
                 D01100000000000000000013,
+                25DC94959DC146C68231286E,
                 AB2000000000000000000011,
                 AB2000000000000000000012,
                 AB2000000000000000000013,
@@ -1200,6 +1203,7 @@
 				A8CACE000000000000000001 /* CachedPhotoFile.swift in Sources */,
 				A8CACE000000000000000003 /* ContentView+AutoExposure.swift in Sources */,
 				D01100000000000000000003,
+                70225C4235E6456CAD81B158,
 				B1A96AA5B2105EE294EE532E,
 				0993BD6D24DC56B2A37EE51B,
 				905511E55B785785A2181EC4,

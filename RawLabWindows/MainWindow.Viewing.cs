@@ -36,7 +36,7 @@ public partial class MainWindow
         OwnedWindows.Cast<Window>().Any(window=>window.IsVisible) ||
         MainMenu.Items.OfType<MenuItem>().Any(item=>item.IsSubmenuOpen) || viewingMenus.Count>0;
     private void PhotoAreaSizeChanged(object sender,SizeChangedEventArgs e)
-    {CancelViewingInput();RefreshComparisonLayout();}
+    {CancelViewingInput();RefreshComparisonLayout();RefreshHistogramWorkspace();}
     private void CompareModeClicked(object sender,RoutedEventArgs e)=>ZoomClicked(CompareButton,e);
     private void BeforeViewClicked(object sender,RoutedEventArgs e)
     {if(view.HoldingBefore)EndHoldingBefore();else BeginHoldingBeforeCore(true);}

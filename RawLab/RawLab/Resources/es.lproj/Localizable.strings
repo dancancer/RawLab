@@ -22,6 +22,7 @@
 "DNG 已生成，但任务记录未更新，请先核对保存结果。" = "Se creó el DNG, pero no se actualizó el registro de la tarea. Verifique primero el archivo guardado.";
 "Failed to load the selected photo." = "No se pudo cargar la foto seleccionada.";
 "Fit %@" = "Ajustar %@";
+"Fuji" = "Fuji";
 "HDR JPEG" = "JPEG HDR";
 "HDR JPEG 需要启用 HDR 编辑。" = "Activa la edición HDR para exportar JPEG HDR.";
 "HDR 亮度直方图" = "Histograma de luminancia HDR";
@@ -29,6 +30,7 @@
 "HDR 增益图损坏，无法还原此照片。" = "El mapa de ganancia HDR está dañado. No se puede reconstruir esta foto.";
 "HDR 处理失败（%@）。" = "Error de procesamiento HDR (%@).";
 "HDR 显示不可用，当前显示 SDR。" = "La visualización HDR no está disponible. Se muestra SDR.";
+"HDR 模式暂不支持此工具。" = "Esta herramienta aún no está disponible en modo HDR.";
 "HDR 照片需要 macOS 15 或 iOS 18 及以上版本。" = "Las fotos HDR requieren macOS 15 o iOS 18 o posterior.";
 "HDR 编辑" = "Edición HDR";
 "HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。" = "La edición HDR usa actualmente la CPU. Configura la GPU en Automático o Desactivado.";
@@ -39,6 +41,7 @@
 "Invalid GPU configuration: %@" = "Configuración de GPU no válida: %@";
 "Invalid display chroma denoise mode: %@" = "Modo de reducción de ruido cromático de pantalla no válido: %@";
 "Invalid photo effects: %@" = "Efectos fotográficos no válidos: %@";
+"Kodak" = "Kodak";
 "LUT 文件已变化或兼容配置无效，请重新导入并确认。" = "El LUT ha cambiado o sus ajustes de compatibilidad no son válidos. Vuelve a importarlo y confirma los ajustes.";
 "LUT 的颜色空间或基础风格暂不支持，未导入。不会自动替换为中性显影。" = "El espacio de color o estilo base de la LUT no es compatible. No se importó ni se sustituirá por un revelado neutro.";
 "LUT 缺少输入或输出颜色信息，未导入。请提供作者的颜色说明。" = "Falta información de color de entrada o salida. La LUT no se importó. Proporciona las especificaciones del autor.";
@@ -80,6 +83,7 @@
 "乡村秋日 · 古典油画" = "Otoño rural · óleo clásico";
 "交换横纵比例" = "Intercambiar la orientación del formato";
 "亮度降噪" = "Reducción de ruido de luminancia";
+"仅 RAW 照片支持镜头校正。" = "La corrección de lente solo está disponible para fotos RAW.";
 "仅在暗角强度为负值时可用。" = "Disponible solo cuando la intensidad de la viñeta es negativa.";
 "仅已修改" = "Solo modificados";
 "仅用于已显影且基础风格匹配的照片，不能直接用于 RAW。" = "Solo para fotos reveladas con el estilo base adecuado. No se aplica directamente a RAW.";
@@ -128,10 +132,12 @@
 "光线" = "Luz";
 "全选" = "Seleccionar todo";
 "全部" = "Todo";
+"全部外观" = "Todos los aspectos";
 "全部调整" = "Todos los ajustes";
 "八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。" = "El tono, la saturación y la luminosidad de los ocho colores volverán a 0. Los demás ajustes no cambiarán.";
 "关闭" = "Cerrar";
 "关闭对比" = "Desactivar comparación";
+"其他" = "Otros";
 "兼容导入" = "Importación compatible";
 "兼容导入 · 未验证" = "Compatible · Sin verificar";
 "内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。" = "No hay memoria suficiente para procesar esta foto HDR a resolución completa. Cierra otras fotos y vuelve a intentarlo.";
@@ -199,6 +205,7 @@
 "外观" = "Aspectos";
 "外观不可用" = "Aspecto no disponible";
 "外观不可用。" = "El aspecto no está disponible.";
+"外观分类" = "Categoría de aspectos";
 "外观名称" = "Nombre del look";
 "外观名称不能为空或包含控制字符。" = "El nombre del look no puede estar vacío ni contener caracteres de control.";
 "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。" = "El archivo de look está dañado o es incompatible; se requiere un archivo CUBE o RLOOK compatible.";
@@ -331,6 +338,7 @@
 "排列顺序不代表准确度。未识别的颜色空间、范围和基础图像仍属于假设。" = "El orden no indica precisión. Los espacios de color, rangos y bases de imagen no identificados siguen siendo hipótesis.";
 "控制点 %d" = "Punto %d";
 "插值方式" = "Interpolación";
+"搜索外观" = "Buscar aspectos";
 "搜索镜头" = "Buscar lentes";
 "撤销" = "Deshacer";
 "撤销 %@ 张" = "Deshacer fotos: %@";
@@ -414,6 +422,7 @@
 "曲线模式与控制点" = "Modo de curva y puntos";
 "更多" = "Más";
 "更换预览照片" = "Cambiar foto de vista previa";
+"最近使用" = "Recientes";
 "有多个匹配镜头，请手动选择" = "Varias lentes coinciden; elige una manualmente";
 "有未提交调整。" = "Hay ajustes sin confirmar.";
 "未包含几何与镜头。" = "La geometría y el objetivo no están incluidos.";
@@ -453,6 +462,7 @@
 "检查目标" = "Comprobar fotos";
 "横向色差" = "Aberración cromática lateral";
 "横向色差未应用" = "Aberración cromática lateral no corregida";
+"横向色差标定不可用" = "Calibración de aberración cromática lateral no disponible";
 "橙" = "Naranja";
 "正在保存" = "Guardando";
 "正在停止…" = "Deteniendo…";
@@ -476,6 +486,7 @@
 "此像素不可取样。" = "No se puede tomar una muestra de este píxel.";
 "此外观已不在外观库中。" = "Este look ya no está en la biblioteca de looks.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Solo se restablecerán los ajustes del grupo %@. Los demás grupos no cambiarán.";
+"此照片没有可用的相机白平衡校准。" = "Esta foto no tiene una calibración de balance de blancos de cámara utilizable.";
 "此照片没有可编辑的 HDR 增益图。" = "Esta foto no contiene un mapa de ganancia HDR editable.";
 "此输入不支持镜头校正" = "Esta entrada no admite corrección de lente";
 "此配置与预览照片类型不匹配，请更换照片或配置。" = "Esta configuración no coincide con el tipo de foto de vista previa. Elige otra foto o configuración.";
@@ -490,6 +501,7 @@
 "水平翻转" = "Voltear horizontalmente";
 "水平透视" = "Perspectiva horizontal";
 "没有与此照片类型匹配的候选，请更换照片或检查高级设置。" = "Ningún candidato coincide con este tipo de foto. Elige otra foto o revisa los ajustes avanzados.";
+"没有匹配的外观" = "No hay aspectos coincidentes";
 "没有可处理目标，请重新选择照片。" = "No quedan fotos que procesar. Vuelve a seleccionar fotos.";
 "没有可复制的调整，请选择其他范围。" = "No hay ajustes que copiar. Elige otro alcance.";
 "油润复古 · 城市胶片" = "Vintage cálido · película urbana";
@@ -499,6 +511,7 @@
 "添加照片" = "Añadir fotos";
 "清晰度" = "Claridad";
 "清空选择" = "Borrar selección";
+"清除搜索" = "Borrar búsqueda";
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Película urbana vintage cálida y rica, sombras estables y limpias, altas luces doradas y sensación de historia errante";
 "渲染型 DNG 未生成。" = "No se creó el DNG revelado.";
 "滨田英明" = "Hideaki Hamada";
@@ -513,11 +526,13 @@
 "照片或调整已变化，请重新确认重置。" = "La foto o sus ajustes han cambiado. Confirma de nuevo el restablecimiento.";
 "照片缺少有效焦距，未应用校正" = "No hay distancia focal válida; corrección no aplicada";
 "现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。" = "Los rangos disponibles de los parámetros no permiten conservar todo el aspecto de la receta. Cancela o confirma por separado el restablecimiento de todos los ajustes.";
+"用户外观" = "Mis aspectos";
 "用户外观 · %@" = "Look personal · %@";
 "电影叙事宽画幅质感，强反差光影切割，深邃暗部与聚光灯金光" = "Estética cinematográfica panorámica, luz y sombra de alto contraste, negros profundos y dorado de foco";
 "电影夜景胶片色调，红色灯光与深邃冷青绿暗部" = "Tonos de película nocturna cinematográfica, luces rojas y sombras profundas cian-verdes frías";
 "画面比例" = "Relación de aspecto";
 "畸变" = "Distorsión";
+"畸变标定不可用" = "Calibración de distorsión no disponible";
 "畸变校正" = "Corrección de distorsión";
 "畸变矫正" = "Corrección de distorsión";
 "白场" = "Punto blanco";
@@ -614,7 +629,9 @@
 "请先导入一张照片。" = "Importa primero una foto.";
 "请先应用或放弃未完成的输入和几何草稿。" = "Aplica o descarta primero las entradas y los borradores de geometría pendientes.";
 "请先确认同源图片、处理条件和参考来源。" = "Confirma primero la misma imagen de origen, las condiciones de procesamiento y la fuente de referencia.";
+"请先选择外观或配方。" = "Selecciona primero un look o una receta.";
 "请在调整后的照片区域取色。" = "Toma una muestra dentro de la foto editada.";
+"请将白平衡模式、色温和色调一起保存，再应用此预设。" = "Guarda juntos el modo de balance de blancos, la temperatura y el matiz antes de aplicar este preset.";
 "请等待当前任务完成。" = "Espera a que termine la tarea actual.";
 "请等待预览完成后导出。" = "Espera a que termine la vista previa antes de exportar.";
 "请输入 1–65535 之间的像素数" = "Introduce un número de píxeles entre 1 y 65.535";

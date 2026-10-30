@@ -5,42 +5,57 @@ struct FilmDock: View {
     @ObservedObject var model: EditorModel
     var body: some View {
         let _ = localizationLocale
-        let sections = FilmGroup.sections(model.filmChoices, group: { $0.group })
-        GeometryReader { geometry in
-            let itemHeight = max(66, geometry.size.height - 16)
-            let imageSize = max(32, min(96, itemHeight - 34))
-            HorizontalPicker(selectedID: model.selectedFilmID, name: L10n.text("胶片")) {
-                HStack(spacing: 8) {
-                    filmButton(name: L10n.text("中性"), id: "", imageSize: imageSize, height: itemHeight)
-                    ForEach(sections.indices, id: \.self) { index in
-                        if index > 0 {
-                            Divider().frame(height: itemHeight - 16).padding(.horizontal, 12)
-                        }
-                        ForEach(sections[index]) { film in
-                            filmButton(name: film.name, id: film.id, imageSize: imageSize, height: itemHeight,
-                                       isCustom: film.managedID != nil, colorNotice: film.colorNotice, isCompatibility: film.isCompatibility)
-                                .contextMenu {
-                                    if film.managedID != nil && !film.isIndependentRecipe {
-                                        Text(L10n.format("用户外观 · %@", String(describing: film.url.pathExtension.uppercased())))
-                                        Button(L10n.text("重命名…"), systemImage: "pencil") { model.renameLookPanel(film) }
-                                            .disabled(model.lookLibraryBusy || model.exporting)
-                                        Button(L10n.text("移除外观…"), systemImage: "trash", role: .destructive) { model.removeLookPanel(film) }
-                                            .disabled(model.lookLibraryBusy || model.exporting)
-                                    }
-                                }
-                        }
+        let choices = FilmGroup.sections(model.filmChoices, group: { $0.group }).flatMap { $0 }
+        let items = choices.map { LookBrowserItem(id: $0.browserID, name: $0.name, group: $0.group,
+            isCustom: $0.managedID != nil && !$0.isIndependentRecipe) }
+        let visible = model.lookBrowser.visibleIDs(in: items, recent: model.recentLooks.ids.filter(model.readableLookBrowserIDs.contains))
+        let films = visible.compactMap { id in choices.first { $0.browserID == id } }
+        let showsNeutral = model.lookBrowser.category == .all && model.lookBrowser.query.isEmpty
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                Picker(L10n.text("外观分类"), selection: $model.lookBrowser.category) {
+                    ForEach(LookBrowserCategory.allCases, id: \.self) { Text(L10n.text($0.titleKey)).tag($0) }
+                }.labelsHidden().frame(width: 160).accessibilityIdentifier("looks.category")
+                TextField(L10n.text("搜索外观"), text: $model.lookBrowser.query)
+                    .textFieldStyle(.roundedBorder).accessibilityIdentifier("looks.search")
+                if !model.lookBrowser.query.isEmpty {
+                    Button { model.lookBrowser.query = "" } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.plain).help(L10n.text("清除搜索")).accessibilityLabel(L10n.text("清除搜索"))
+                }
+                Button(action: model.importLUT) { Label(L10n.text("导入外观"), systemImage: "plus") }
+                    .disabled(model.lookLibraryBusy || model.exporting).accessibilityIdentifier("looks.import")
+            }.padding(.horizontal, 16)
+            if films.isEmpty && !showsNeutral {
+                VStack(spacing: 8) {
+                    Text(L10n.text("没有匹配的外观")).foregroundStyle(.secondary)
+                    Button(L10n.text(model.lookBrowser.query.isEmpty ? "全部外观" : "清除搜索")) {
+                        if model.lookBrowser.query.isEmpty { model.lookBrowser.category = .all }
+                        else { model.lookBrowser.query = "" }
                     }
-                    Button(action: model.importLUT) {
-                        VStack(spacing: 5) {
-                            Group {
-                                if model.lookLibraryBusy { ProgressView().controlSize(.small) }
-                                else { Image(systemName: "plus.circle").font(.system(size: 26)) }
-                            }.frame(height: imageSize)
-                            Text(L10n.text("导入外观")).font(.system(size: 11))
-                        }.frame(width: max(88, imageSize + 12), height: itemHeight)
-                            .contentShape(Rectangle())
-                    }.buttonStyle(.plain).help(L10n.text("导入外观…")).disabled(model.lookLibraryBusy || model.exporting)
-                }.scrollTargetLayout().padding(.horizontal, 16)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity).accessibilityIdentifier("looks.empty")
+            } else {
+                GeometryReader { geometry in
+                    let itemHeight = max(66, geometry.size.height - 8)
+                    let imageSize = max(32, min(96, itemHeight - 34))
+                    HorizontalPicker(selectedID: model.selectedFilmID, name: L10n.text("胶片")) {
+                        HStack(spacing: 8) {
+                            if showsNeutral { filmButton(name: L10n.text("中性"), id: "", imageSize: imageSize, height: itemHeight) }
+                            ForEach(films) { film in
+                                filmButton(name: film.name, id: film.id, imageSize: imageSize, height: itemHeight,
+                                    isCustom: film.managedID != nil, colorNotice: film.colorNotice, isCompatibility: film.isCompatibility)
+                                    .contextMenu {
+                                        if film.managedID != nil && !film.isIndependentRecipe {
+                                            Text(L10n.format("用户外观 · %@", film.url.pathExtension.uppercased()))
+                                            Button(L10n.text("重命名…"), systemImage: "pencil") { model.renameLookPanel(film) }
+                                                .disabled(model.lookLibraryBusy || model.exporting)
+                                            Button(L10n.text("移除外观…"), systemImage: "trash", role: .destructive) { model.removeLookPanel(film) }
+                                                .disabled(model.lookLibraryBusy || model.exporting)
+                                        }
+                                    }
+                            }
+                        }.scrollTargetLayout().padding(.horizontal, 16)
+                    }
+                }
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity).tint(.yellow)
     }

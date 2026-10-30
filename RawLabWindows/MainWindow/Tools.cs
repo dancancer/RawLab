@@ -190,6 +190,7 @@ public partial class MainWindow
         var wasCollapsed=expandedGroup==null;expandedGroup=EditorAdjustmentRules.GroupFor(tool);
         if(wasCollapsed){DockRow.Height=new(dockHeight);DockRow.MinHeight=216;AdjustmentSplitter.Visibility=Visibility.Visible;SplitterRow.Height=new(6);UpdateDockMinimum();}
         RefreshControls();
+        UpdateDockMinimum();
     }
     private static IEnumerable<ParameterRow> ParameterRows(DependencyObject root)
     {
@@ -259,8 +260,12 @@ public partial class MainWindow
     }
     private void BuildFilms()
     {
-        FilmStrip.Children.Clear(); filmButtons.Clear(); importLookButton=null;
-        foreach(var item in FilmGrouping.Arrange(films,film=>film.Path==null,film=>film.Group))
+        FilmStrip.Children.Clear(); filmButtons.Clear(); importLookButton=LookImport;
+        var visible=VisibleBrowserFilms();
+        LookEmpty.Visibility=visible.Count==0 ? Visibility.Visible : Visibility.Collapsed;
+        LookEmptyAction.Content=Loc.Text(string.IsNullOrWhiteSpace(lookQuery) ? "全部外观" : "清除搜索");
+        LookSearchClear.Visibility=string.IsNullOrWhiteSpace(lookQuery) ? Visibility.Collapsed : Visibility.Visible;
+        foreach(var item in lookCategory==LookBrowserCategory.Recent ? visible.Select(film=>new FilmStripItem<Film>(film,false)) : FilmGrouping.Arrange(visible,film=>film.Path==null,film=>film.Group))
         {
             var film=item.Value;
             if(item.StartsGroup)
@@ -307,13 +312,7 @@ public partial class MainWindow
             };
             FilmStrip.Children.Add(button); filmButtons[film.Path ?? ""]=button;
         }
-        var importContent=new StackPanel();
-        importContent.Children.Add(new EditorIcon{Kind="Add",Width=26,Height=64});
-        var importCaption=new TextBlock{Text=Loc.Text("导入外观"),MinHeight=30,TextWrapping=TextWrapping.Wrap,TextAlignment=TextAlignment.Center,Margin=new Thickness(0,5,0,0)};
-        importCaption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");importContent.Children.Add(importCaption);
-        var importButton=new Button{Content=importContent,Style=(Style)FindResource("FilmButton"),ToolTip=Loc.Text("导入兼容 CUBE、RLOOK 或 DCP，可选择多个文件")};
-        AutomationProperties.SetName(importButton,Loc.Text("导入外观"));importButton.IsEnabled=!exporting;importButton.Click+=ImportClicked;FilmStrip.Children.Add(importButton);
-        importLookButton=importButton;
+
     }
     private void RefreshControls()
     {
@@ -353,7 +352,11 @@ public partial class MainWindow
             FilmPanel.Visibility=choosingFilm ? Visibility.Visible : Visibility.Collapsed;
             MasterRecipePanel.Visibility=choosingRecipes ? Visibility.Visible : Visibility.Collapsed;
             MasterRecipeCategory.Tag=choosingRecipes ? "selected" : null;MasterRecipeCategoryRing.Selected=choosingRecipes;MasterRecipeCategoryRing.Progress=settings.MasterRecipeID==null ? 0 : 1;MasterRecipeCategoryRing.InvalidateVisual();
-            foreach(var pair in recipeButtons)pair.Value.Tag=pair.Key==(settings.MasterRecipeID ?? "") ? "selected" : null;
+            foreach(var pair in recipeButtons) {
+                var selected=pair.Key==(settings.MasterRecipeID ?? "");pair.Value.Tag=selected ? "selected" : null;
+                recipeSelectionMarkers[pair.Key].Visibility=selected ? Visibility.Visible : Visibility.Hidden;
+                AutomationProperties.SetItemStatus(pair.Value,selected ? Loc.Text("已应用") : "");
+            }
             ParameterPanel.Visibility=CurrentTool==EditorAdjustmentTool.ToneCurve || choosingRecipes || choosingFilm || choosingDenoise || choosingPhotoEffects || choosingHsl || choosingGrading || choosingWhiteBalance || choosingLens || choosingGeometry ? Visibility.Collapsed : Visibility.Visible;
             LensEditor.Visibility=choosingLens ? Visibility.Visible : Visibility.Collapsed;
             LensSurface.Visibility=LensEditor.Visibility;
@@ -371,6 +374,7 @@ public partial class MainWindow
             CurveSurface.Visibility=CurrentTool==EditorAdjustmentTool.ToneCurve ? Visibility.Visible : Visibility.Collapsed;
             CurveEditor.IsEnabled=file!=null && !hdrEditing && !exporting;CurveEditor.Refresh(settings.Curve,settings[Parameter.ToneCurve],(file,openRevision));
             GradingEditor.IsEnabled=file!=null && !hdrEditing && !exporting;GradingEditor.Refresh(settings.ColorGrading,(file,openRevision));
+            GradingCategory.IsEnabled=HslCategory.IsEnabled=DenoiseCategory.IsEnabled=file!=null && !hdrEditing && !exporting;
             GradingCategory.Tag=choosingGrading ? "selected" : null;
             GradingCategoryRing.Selected=choosingGrading;GradingCategoryRing.Progress=settings.ColorGrading.IsDefault ? 0 : 1;GradingCategoryRing.InvalidateVisual();
             HslSurface.Visibility=choosingHsl ? Visibility.Visible : Visibility.Collapsed;
@@ -452,7 +456,10 @@ public partial class MainWindow
                 controls.Button.Tag=selected ? "selected" : null;controls.Ring.Selected=selected;
                 controls.Ring.Progress=settings.Atmosphere[id]/100;controls.Ring.InvalidateVisual();
             }
-            foreach(var pair in filmButtons)pair.Value.Tag=pair.Key==(lut ?? "") ? "selected" : null;
+            foreach(var pair in filmButtons) {
+                var selected=pair.Key==(lut ?? "");pair.Value.Tag=selected ? "selected" : null;
+                AutomationProperties.SetItemStatus(pair.Value,selected ? Loc.Text("已应用") : "");
+            }
             var lookTitle=LookTitle;
             ActiveFilm.Text=lookTitle;FilmLabelText.Text=Loc.Text("调整后");ActiveFilm.ToolTip=lookTitle;
             NeutralLabel.Visibility=FilmLabel.Visibility=compare && result!=null ? Visibility.Visible : Visibility.Collapsed;
@@ -466,6 +473,7 @@ public partial class MainWindow
             UpdateBusy();
             RefreshExportSizeMenu();
             RefreshWorkspaceNavigation();
+            RefreshUnavailableToolReasons();
         }
         finally { syncing=false; }
     }

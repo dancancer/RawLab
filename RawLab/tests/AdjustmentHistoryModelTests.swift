@@ -105,7 +105,40 @@ struct AdjustmentHistoryModelTests {
         try IOSQuickPresetModelChecks.run(directory: directory)
         try IOSBatchFlowModelChecks.preparedSourceChange(directory: directory)
         try IOSBatchFlowModelChecks.launchRequests(directory: directory)
+        try recentLookHistory(directory: directory)
         print("PASS: native adjustment history model (\(checks) assertions)")
+    }
+
+    private static func recentLookHistory(directory: URL) throws {
+        var failWrite = false
+        let store = try EditPersistence(directory: directory.appendingPathComponent("look-browser")) { data, url in
+            if failWrite { throw CocoaError(.fileWriteNoPermission) }
+            try data.write(to: url, options: .atomic)
+        }
+        let model = RawEditorViewModel(editPersistence: store)
+        let identity = PhotoIdentity(resourceIdentifier: "look-browser")
+        model.sourceFile = .externallyManaged(directory.appendingPathComponent("source.png"))
+        model.sourceIdentity = identity; model.sourceKind = .raster; model.hasImage = true
+        model.acceptImportedEditRecord(try store.versionedState(for: identity), settings: .default)
+        model.availableLUTs = [LUTOption(id: "first", name: "Été"), LUTOption(id: "second", name: "Winter")]
+        let firstURL = directory.appendingPathComponent("first.cube"), secondURL = directory.appendingPathComponent("second.cube")
+        try Data("fixture".utf8).write(to: firstURL); try Data("fixture".utf8).write(to: secondURL)
+        model.lutMap = ["first": LUTReference(id: "first", name: "Été", sourceURL: firstURL, isCustom: true),
+                        "second": LUTReference(id: "second", name: "Winter", sourceURL: secondURL, isCustom: true)]
+        var settings = RawSettings.default; settings.lutID = "first"
+        model.queueSettingsSave(settings)
+        try check(model.saveCurrentSettings(settings) && model.recentLooks.ids == ["first"], "Saved look application updates recent")
+        failWrite = true; settings.lutID = "second"; model.queueSettingsSave(settings)
+        try check(!model.saveCurrentSettings(settings) && model.recentLooks.ids == ["first"], "Failed look save preserves recent history")
+        failWrite = false
+        try check(model.saveCurrentSettings(settings) && model.recentLooks.ids == ["second", "first"], "Successful retry records the same applied look")
+        let restored = RawEditorViewModel(editPersistence: store)
+        try check(restored.recentLooks == model.recentLooks, "Recent look preferences survive model recreation")
+        restored.availableLUTs = [LUTOption(id: "first", name: "Renamed"), LUTOption(id: "second", name: "Winter")]
+        restored.lutMap = model.lutMap
+        try FileManager.default.removeItem(at: secondURL)
+        restored.pruneRecentLooks()
+        try check(restored.recentLooks.ids == ["first"], "Missing managed bytes are pruned while renamed identity survives")
     }
 
     private static func collection(directory: URL) throws {

@@ -254,6 +254,8 @@ extension ContentView {
         var initial = RawSettings.default
         initial.exposure = 0.5
         initial.geometry.cropWidth = 0.8
+        let looksFixture = ProcessInfo.processInfo.arguments.contains("-RawLab.looksUI")
+        if looksFixture { initial.lutID = "FLog2_to_ETERNA_65grid_V.1.00" }
         try! store.save(identity, state: PhotoEditState(settings: initial))
         if ProcessInfo.processInfo.arguments.contains("-RawLab.adjustmentTransferUI") {
             let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -274,6 +276,8 @@ extension ContentView {
         }
         viewModel.editPersistence = store
         viewModel.adjustmentSession = IOSAdjustmentTransferSession(store: store)
+        viewModel.recentLooksURL = store.directory.appendingPathComponent("recent-looks.json")
+        viewModel.recentLooks = RecentLooks()
         viewModel.importImage(from: .raster(url), identity: identity, onSettingsRestored: { settings = $0 })
         probe.readEditor = {
             var receipt: [String: Any] = ["ready": viewModel.hasImage && !editorBusy && !viewModel.previewRendering && !viewModel.previewResizePending,
@@ -286,6 +290,7 @@ extension ContentView {
              "pendingPhoto": pendingPhotoImport, "pendingFile": pendingFileImport,
              "photoPicker": showingPhotoImporter, "filePicker": showingFileImporter,
              "saveState": String(describing: viewModel.editSaveState),
+             "recentLookIDs": viewModel.recentLooks.ids, "selectedLookID": settings.lutID ?? "",
              "historyCount": viewModel.adjustmentSession?.transactions.count ?? 0,
              "presets": (try? viewModel.presetStore.list()).map {
                  (try? JSONSerialization.jsonObject(with: JSONEncoder().encode($0))) ?? []

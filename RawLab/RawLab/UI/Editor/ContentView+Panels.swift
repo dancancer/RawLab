@@ -530,7 +530,7 @@ extension ContentView {
                                       (settings.isHDREditing && !supportsHDR(tool)))
                             .accessibilityLabel(tool.title)
                             .accessibilityValue(editorToolAccessibilityValue(tool))
-                            .accessibilityHint(resetModified(.tool(tool)) ? L10n.text("已调整") : "")
+                            .accessibilityHint(toolUnavailableReason(tool) ?? (resetModified(.tool(tool)) ? L10n.text("已调整") : ""))
                             .accessibilityAddTraits(!viewModel.quickPresetsVisible && currentEditorTool == tool && !(tool == .geometry && geometryPerspective) ? .isSelected : [])
                             .accessibilityIdentifier("tool.\(tool.stableID)")
                             .contextMenu {

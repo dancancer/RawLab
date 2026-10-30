@@ -90,6 +90,8 @@ struct AdjustmentDock: View {
             .accessibilityIdentifier("tool.\(tool.rawValue)")
             .accessibilityLabel(tool.title).accessibilityValue(changed ? L10n.text("已调整") : "")
             .accessibilityAddTraits(active ? .isSelected : [])
+            .help(toolUnavailableReason(tool) ?? tool.title)
+            .accessibilityHint(toolUnavailableReason(tool) ?? "")
             .disabled((model.result == nil && !(tool == .denoise && model.file != nil && model.aiControlsVisible)) ||
                       (tool == .lens && !model.canUseLensCorrection) ||
                       (model.settings.isHDREditing && !supportsHDR(tool)))
@@ -97,6 +99,16 @@ struct AdjustmentDock: View {
                 Button(L10n.format("重置%@", tool.title)) { model.requestAdjustmentReset(.tool(tool)) }
                     .disabled(!changed)
             }
+    }
+
+    private func toolUnavailableReason(_ tool: EditorAdjustmentTool) -> String? {
+        if model.settings.isHDREditing && !supportsHDR(tool) { return L10n.text("HDR 模式暂不支持此工具。") }
+        if tool == .lens && RenderEngine.isRasterInput(model.file) { return L10n.text("仅 RAW 照片支持镜头校正。") }
+        if tool == .whiteBalance && !model.settings.isHDREditing && model.settings.asShotWhiteBalance == nil {
+            return L10n.text("此照片没有可用的相机白平衡校准。")
+        }
+        if tool.parameter == .strength && model.selectedFilm == nil && model.settings.masterRecipe == nil { return L10n.text("请先选择外观或配方。") }
+        return nil
     }
 
     @ViewBuilder private var editorContent: some View {
@@ -146,6 +158,9 @@ struct AdjustmentDock: View {
                     }.fixedSize().controlSize(.small).padding(.bottom, 4).id(localizationLocale.identifier)
                     }
                     parameterRow(.temperature); parameterRow(.tint)
+                    if !model.settings.isHDREditing && model.settings.asShotWhiteBalance == nil {
+                        Text(L10n.text("此照片没有可用的相机白平衡校准。")).font(.caption).foregroundStyle(.secondary)
+                    }
                 } else { parameterRow(parameter) }
             }.frame(maxWidth: 720).padding(.horizontal, 16)
                 .disabled(parameter == .strength && model.selectedFilm == nil && model.settings.masterRecipe == nil)
@@ -153,7 +168,7 @@ struct AdjustmentDock: View {
         } else if navigation.tool == .recipe {
             MasterRecipeDock(model: model).frame(height: AdjustmentPanelLayout.RecipeCard.dockHeight)
         } else {
-            FilmDock(model: model).frame(height: 124)
+            FilmDock(model: model).frame(height: 188)
         }
     }
 

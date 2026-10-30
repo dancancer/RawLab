@@ -156,6 +156,30 @@ extension EditorUITests {
         return parts.dropLast().joined(separator: " ").rangeOfCharacter(from: .letters) != nil
     }
 
+    func importRAWFile(in app: XCUIApplication) {
+        app.buttons["editor.privacy"].tap()
+        let files = app.buttons.matching(identifier: "editor.import.file")
+        XCTAssertTrue(files.firstMatch.waitForExistence(timeout: 5))
+        guard let file = files.allElementsBoundByIndex.first(where: { $0.isHittable }) else {
+            XCTFail("Files import menu item is not reachable"); return
+        }
+        file.tap()
+        let local = app.cells.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND (label CONTAINS %@ OR label CONTAINS %@)", "DOC.sidebar.item.", "iPad", "iPhone")).firstMatch
+        if !local.waitForExistence(timeout: 10) {
+            let browse = app.buttons.matching(NSPredicate(format: "label IN %@", ["Browse", "浏览"])).firstMatch
+            if browse.exists && browse.isHittable { browse.tap() }
+        }
+        XCTAssertTrue(local.waitForExistence(timeout: 10), app.debugDescription); local.tap()
+        let downloads = app.cells.matching(NSPredicate(format: "identifier BEGINSWITH %@ OR label BEGINSWITH %@", "Downloads", "下载项")).firstMatch
+        XCTAssertTrue(downloads.waitForExistence(timeout: 10), app.debugDescription); downloads.tap()
+        let raw = app.cells.matching(NSPredicate(format: "identifier BEGINSWITH %@ OR label BEGINSWITH %@", seedPhotoBase, seedPhotoBase)).firstMatch
+        XCTAssertTrue(raw.waitForExistence(timeout: 10), app.debugDescription); raw.tap()
+        let open = app.buttons.matching(NSPredicate(format: "label IN %@", ["Open", "打开"])).firstMatch
+        if open.waitForExistence(timeout: 2) { open.tap() }
+        waitForImportedPhoto(in: app)
+        XCTAssertTrue(importedPhotoFileName(in: app).localizedCaseInsensitiveContains(seedPhotoBase + ".DNG"))
+    }
+
     func importPhoto(in app: XCUIApplication) {
         var attemptedIndices: Set<Int> = []
         for attempt in 0..<12 {

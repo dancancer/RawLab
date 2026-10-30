@@ -36,6 +36,7 @@ data class EditorState(
     val photo: ImportedPhoto? = null,
     val edits: EditSettings = EditSettings(),
     val looks: List<LookChoice> = LookChoice.builtIns,
+    val recentLookIds: List<String> = emptyList(),
     val preview: PreviewPair? = null,
     val operation: Operation = Operation.NONE,
     val rendering: Boolean = false,

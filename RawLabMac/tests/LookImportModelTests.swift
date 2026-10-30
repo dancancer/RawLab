@@ -108,6 +108,56 @@ struct LookImportModelTests {
         check(reloadedBatch.selectedFilmID == dcpSelection && reloadedBatch.films.filter { $0.managedID != nil }.count == 7,
               "unsupported DCP preserves the active look and existing library")
 
+        check(reloadedBatch.recentLooks.ids.isEmpty, "Import without a photo does not count as a saved application")
+        let image = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 8, pixelsHigh: 6, bitsPerSample: 8,
+            samplesPerPixel: 3, hasAlpha: false, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        let photo = root.appendingPathComponent("browse.png")
+        try image.representation(using: .png, properties: [:])!.write(to: photo)
+        reloadedBatch.open(photo)
+        let deadline = Date().addingTimeInterval(15)
+        while !reloadedBatch.canExport && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+        check(reloadedBatch.canExport, "Photo is ready for saved-look history")
+        let recentFilm = reloadedBatch.films.first { $0.managedID != nil && $0.url.pathExtension == "cube" }!
+        reloadedBatch.selectFilm(recentFilm.id)
+        check(reloadedBatch.saveEdits() && reloadedBatch.recentLooks.ids.first == recentFilm.browserID,
+            "Only a successful saved application adds its stable look ID to recent")
+        let recentSnapshot = reloadedBatch.recentLooks
+        reloadedBatch.lookBrowser.query = "no matching look"
+        check(reloadedBatch.selectedFilmID == recentFilm.id && reloadedBatch.recentLooks == recentSnapshot,
+            "Filtering does not change the selected look or saved-use history")
+        let realStore = reloadedBatch.editStore, realSession = reloadedBatch.adjustmentSession
+        let failingStore = try EditPersistence(directory: edits) { _, _ in throw CocoaError(.fileWriteNoPermission) }
+        reloadedBatch.editStore = failingStore; reloadedBatch.adjustmentSession = AdjustmentTransferSession(store: failingStore)
+        let secondFilm = reloadedBatch.films.first { $0.id != recentFilm.id && $0.managedID != nil && $0.url.pathExtension == "cube" }!
+        reloadedBatch.selectFilm(secondFilm.id)
+        check(!reloadedBatch.saveEdits() && reloadedBatch.recentLooks == recentSnapshot, "Failed photo save does not update recent looks")
+        reloadedBatch.editStore = realStore; reloadedBatch.adjustmentSession = realSession
+        reloadedBatch.selectFilm(recentFilm.id); check(reloadedBatch.saveEdits(), "Restoring the saved look recovers the editor")
+        reloadedBatch.renameLook(id: recentFilm.id, name: "Renamed recent"); settle(reloadedBatch)
+        check(reloadedBatch.recentLooks.ids.first == recentFilm.browserID, "Rename preserves the recent identity")
+        let recentRestart = EditorModel(lookDirectory: directory, editDirectory: edits, batchDirectory: jobs)
+        check(recentRestart.recentLooks == recentSnapshot, "Recent saved looks survive restart")
+        reloadedBatch.queue.sync {}
+        let savedBytes = try Data(contentsOf: recentFilm.url)
+        try manager.removeItem(at: recentFilm.url)
+        let missingRestart = EditorModel(lookDirectory: directory, editDirectory: edits, batchDirectory: jobs)
+        check(!missingRestart.recentLooks.ids.contains(recentFilm.browserID), "Missing managed bytes are excluded from recent after restart")
+        try savedBytes.write(to: recentFilm.url)
+        reloadedBatch.removeLook(id: recentFilm.id); settle(reloadedBatch)
+        check(!reloadedBatch.recentLooks.ids.contains(recentFilm.browserID), "Deleted look is removed from recent")
+
+        let nextPhoto = root.appendingPathComponent("browse-next.png")
+        try manager.copyItem(at: photo, to: nextPhoto)
+        let importGate = DispatchSemaphore(value: 0)
+        reloadedBatch.queue.async { importGate.wait() }
+        reloadedBatch.importLook(first)
+        reloadedBatch.open(nextPhoto)
+        check(reloadedBatch.file == nextPhoto, "Photo switch enters the new source while look import is pending")
+        importGate.signal(); settle(reloadedBatch)
+        let nextSaved = try reloadedBatch.editStore?.state(for: nextPhoto)
+        check(reloadedBatch.selectedFilmID.isEmpty && nextSaved == nil,
+            "Late look import cannot apply or save onto the next photo")
+
         if let rawPath = ProcessInfo.processInfo.environment["RAWLAB_TEST_RAW"] {
             let raw = URL(fileURLWithPath: rawPath)
             var film = reloadedBatch.films.first { $0.name == "Camera look" }!

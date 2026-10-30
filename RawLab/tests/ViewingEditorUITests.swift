@@ -5,6 +5,54 @@ final class ViewingEditorUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
     override func tearDownWithError() throws { XCUIDevice.shared.orientation = .portrait }
 
+    func testLookSearchRecentAndFixedImportAcrossOrientations() {
+        let app = launch(language: "en", looksFixtures: true)
+        let film = app.buttons["tool.film"]
+        if !film.waitForExistence(timeout: 5) { app.buttons["editor.group.looks"].tap() }
+        XCTAssertTrue(film.waitForExistence(timeout: 10))
+        if !film.isSelected { film.tap() }
+        let search = app.textFields["looks.search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 10))
+        let savedLook = film.value as? String
+        let before = receipt(app)["historyCount"] as? Int
+        search.tap(); search.typeText("no matching look")
+        XCTAssertTrue(app.staticTexts["No matching looks"].waitForExistence(timeout: 5))
+        XCTAssertEqual(film.value as? String, savedLook)
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, before)
+        app.buttons["looks.search.clear"].tap()
+        search.tap(); search.typeText("ACROS")
+        let acros = app.buttons["ACROS"]
+        XCTAssertTrue(acros.waitForExistence(timeout: 10))
+        // 收起键盘后再操作卡片，避免把键盘遮挡当成布局缺陷。
+        search.typeText("\n")
+        let panel = app.scrollViews["editor.panel"]
+        for _ in 0..<4 { if acros.isHittable { break }; panel.swipeUp() }
+        acros.tap()
+        wait(app) { $0["saveState"] as? String == "saved" && $0["ready"] as? Bool == true }
+        let clear = app.buttons["looks.search.clear"]
+        for _ in 0..<4 { if clear.isHittable { break }; panel.swipeDown() }
+        clear.tap(); app.buttons["looks.category"].tap()
+        app.buttons["Recent"].tap()
+        XCTAssertTrue(acros.waitForExistence(timeout: 10)); XCTAssertTrue(acros.isSelected)
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
+            XCUIDevice.shared.orientation = orientation
+            wait(app) { $0["ready"] as? Bool == true && (orientation == .portrait ? app.frame.height > app.frame.width : app.frame.width > app.frame.height) }
+            for _ in 0..<4 { if app.buttons["looks.import"].isHittable { break }; panel.swipeDown() }
+            XCTAssertTrue(app.textFields["looks.search"].isHittable)
+            XCTAssertTrue(app.buttons["looks.import"].isHittable)
+            XCTAssertTrue(app.buttons["looks.category"].exists)
+            capture(app, "looks-recent-\(orientation.rawValue)")
+            let viewport = panel.frame.intersection(app.frame).insetBy(dx: 1, dy: 1)
+            for _ in 0..<5 {
+                if viewport.contains(acros.frame) { break }
+                panel.swipeUp(velocity: .slow)
+            }
+            XCTAssertTrue(viewport.contains(acros.frame), "The complete recent-look card must scroll above the fixed group bar")
+            XCTAssertTrue(acros.isHittable && acros.isSelected)
+            capture(app, "looks-recent-card-\(orientation.rawValue)")
+        }
+    }
+
     func testCurveModePointDragAndUndo() {
         let app = launch(language: "en")
         app.buttons["editor.group.light"].tap(); app.buttons["tool.toneCurve"].tap()
@@ -222,12 +270,12 @@ final class ViewingEditorUITests: XCTestCase {
                 let panel = app.scrollViews["editor.panel"]
                 if element.exists && element.frame.midY < panel.frame.midY { panel.swipeDown(velocity: .slow) }
                 else { panel.swipeUp(velocity: .slow) }
-            } else if element.identifier.hasPrefix("collection.export."),
+            } else if element.exists && element.identifier.hasPrefix("collection.export."),
                       app.collectionViews.containing(.button, identifier: element.identifier).firstMatch.exists {
                 app.collectionViews.containing(.button, identifier: element.identifier).firstMatch.swipeUp(velocity: .slow)
             } else { app.swipeUp(velocity: .slow) }
         }
-        XCTFail("Unreachable form control: \(element.identifier)\n\(app.debugDescription)")
+        XCTFail("Unreachable form control: \(element)\n\(app.debugDescription)")
     }
 
     func toggleField(_ element: XCUIElement) {
@@ -429,12 +477,13 @@ final class ViewingEditorUITests: XCTestCase {
         XCTAssertEqual(receipt(app)["historyCount"] as? Int, 0)
     }
     func launch(language requestedLanguage: String? = nil, textCategory: String? = nil, adjustmentFixtures: Bool = false,
-                presetFixtures: Bool = false) -> XCUIApplication {
+                presetFixtures: Bool = false, looksFixtures: Bool = false) -> XCUIApplication {
         let app = XCUIApplication(bundleIdentifier: "com.rawlab.tests.viewing-editor")
         let language = requestedLanguage ?? ProcessInfo.processInfo.environment["S3_VIEWING_LANGUAGE"] ?? "en"
         app.launchArguments = ["-AppleLanguages", "(\(language))", "-AppleLocale", language, "-RawLab.language", language]
         if adjustmentFixtures { app.launchArguments.append("-RawLab.adjustmentTransferUI") }
         if presetFixtures { app.launchArguments.append("-RawLab.presetUI") }
+        if looksFixtures { app.launchArguments.append("-RawLab.looksUI") }
         if let category = textCategory ?? ProcessInfo.processInfo.environment["S3_VIEWING_TEXT"], !category.isEmpty {
             app.launchArguments += ["-UIPreferredContentSizeCategoryName", category]
         }

@@ -46,6 +46,9 @@ final class RawEditorViewModel: ObservableObject {
     @Published var histogram: Sony2FujiProcessor.RGBHistogram? = nil
     @Published var baseHistogram: Sony2FujiProcessor.RGBHistogram? = nil
     @Published var availableLUTs: [LUTOption] = []
+    @Published var lookBrowser = LookBrowserState()
+    @Published var recentLooks = RecentLooks()
+    var recentLooksURL: URL?
     @Published var isLoadingLUTs = false
     @Published var isImportingLooks = false
     @Published var rawWhiteBalance: Sony2FujiProcessor.RawWhiteBalance?
@@ -154,6 +157,8 @@ final class RawEditorViewModel: ObservableObject {
             let store = try editPersistence ?? EditPersistence.appStore()
             self.editPersistence = store
             adjustmentSession = IOSAdjustmentTransferSession(store: store)
+            recentLooksURL = store.directory.appendingPathComponent("recent-looks.json")
+            recentLooks = RecentLooks.load(from: recentLooksURL!)
         }
         catch { self.editPersistence = nil; editSaveState = .failed(error.localizedDescription) }
     }

@@ -20,3 +20,27 @@ Check(ordered.Select(item => item.Value).ToHashSet().SetEquals(input), "Grouping
 Check(FilmGrouping.Arrange(input.Take(1), item => item.Neutral, item => item.Group).All(item => !item.StartsGroup), "A single group has no leading separator");
 Check(FilmGrouping.Arrange(input.Take(0), item => item.Neutral, item => item.Group).Count == 0, "Empty lists have no phantom separators");
 LookImportChecks.Run();
+var browserItems = new[] {
+    new LookBrowserItem("builtin:a", "Été", FilmGroup.Fuji, false),
+    new LookBrowserItem("managed:b", "Été custom", FilmGroup.Other, true),
+    new LookBrowserItem("builtin:c", "Chrome", FilmGroup.Kodak, false)
+};
+Check(LookBrowser.Filter(browserItems, LookBrowserCategory.All, " ETE ", []).SequenceEqual(new[]{"builtin:a","managed:b"}), "Search ignores case and accents without changing item identity");
+Check(LookBrowser.Filter(browserItems, LookBrowserCategory.Custom, "", []).SequenceEqual(new[]{"managed:b"}), "Custom category keeps managed identities");
+var recent = new RecentLooks(Enumerable.Range(0,15).Select(i=>"id"+i));
+Check(recent.IDs.Count==12, "Recent looks are bounded to twelve");
+recent.Record("builtin:a", browserItems.Select(item=>item.ID).ToHashSet());
+recent.Record("managed:b", browserItems.Select(item=>item.ID).ToHashSet());
+recent.Record("builtin:a", browserItems.Select(item=>item.ID).ToHashSet());
+Check(recent.IDs.SequenceEqual(new[]{"builtin:a","managed:b"}), "Recent looks deduplicate and prune removed entries");
+Check(LookBrowser.Filter(browserItems, LookBrowserCategory.Recent, "", recent.IDs).SequenceEqual(recent.IDs), "Recent category preserves application order");
+Check(LookBrowser.Filter(browserItems, LookBrowserCategory.All, "absent", []).Count==0, "Unmatched search has no fallback selection");
+var layout = new WorkspaceLayout();
+Check(layout.PanelHeight(false,600)==220 && layout.PanelHeight(true,600)==344, "Automatic panel separates single and complex controls");
+layout.Resize(290,600);
+Check(layout.PanelHeight(false,600)==290 && layout.PanelHeight(true,600)==290, "Manual panel height survives tool changes");
+layout.RestoreAutomatic();
+Check(layout.PanelHeight(false,600)==220 && layout.IsAutomatic, "Automatic height can be restored");
+Check(!layout.ShowsFiles(1024,false) && layout.ShowsFiles(1024,true), "Only empty narrow file trees collapse automatically");
+layout.ToggleFiles(1024,false);
+Check(layout.ShowsFiles(1024,false), "Manual file tree choice survives automatic sizing");

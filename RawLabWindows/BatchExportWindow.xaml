@@ -84,7 +84,10 @@
               <TextBlock Text="{DynamicResource '保存到'}" VerticalAlignment="Center" Margin="0,0,12,0"/>
               <TextBlock x:Name="Destination" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
             </DockPanel>
-            <DockPanel><TextBlock Text="{DynamicResource '自动添加序号'}" Foreground="{DynamicResource Muted}" DockPanel.Dock="Right"/><TextBlock Text="{DynamicResource '重名文件'}"/></DockPanel>
+            <StackPanel>
+              <TextBlock Text="{DynamicResource '重名文件'}" TextWrapping="Wrap"/>
+              <TextBlock Text="{DynamicResource '自动添加序号'}" Foreground="{DynamicResource Muted}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+            </StackPanel>
           </StackPanel>
         </ScrollViewer>
       </Border>

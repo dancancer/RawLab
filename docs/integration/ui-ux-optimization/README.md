@@ -10,7 +10,7 @@
 
 **Spec:** [产品背景](../../../PRODUCT.md)、[现有设计体系](../../../DESIGN.md)、[紧凑调整栏与裁切精度](../../design/editor-workspace/compact-controls.md)、[编辑迭代需求](../../design/editing-iteration/requirements.md)、[HDR 四端对齐](../../design/hdr-photos/android-windows.md)。本文件第 2 节保存本轮审计到执行项的映射；详细的新交互由 UX-00 阶段形成。
 
-**状态：M0 完成；M1 已通过 [PR #155](https://github.com/dancancer/RawLab/pull/155) 集成；M2 的 UX-01 已通过 [PR #156](https://github.com/dancancer/RawLab/pull/156) 集成；UX-02 批量流程正在实施，M3/M4 尚未完成。** 编写日期：2026-10-29。主控为提出本规划的协调会话。
+**状态：M0 完成；M1 已通过 [PR #155](https://github.com/dancancer/RawLab/pull/155) 集成；M2 的 UX-01 已通过 [PR #156](https://github.com/dancancer/RawLab/pull/156) 集成；UX-02 已通过 [PR #158](https://github.com/dancancer/RawLab/pull/158) 集成；M3 工作区、外观检索和状态修复已实现，正在完成阶段交付，M4 联合验收尚未关闭。** 编写日期：2026-10-29。主控为提出本规划的协调会话。
 用户已确认按此规划推进至全部完成，主控负责细化、分派、验证和协调交付。
 目标集成分支为 `development`，不预设发布版本号或日期。
 
@@ -208,7 +208,10 @@ macOS/iOS 的原生 UI 操作需要独占其测试窗口/模拟器；同一环�
 - [x] M2 的 UX-01 当前照片快捷预设完成四端实现、独立复核与受影响原生验证；普通应用自动预检，支持取消、重试、精准事务撤销和 HDR。
 - [x] M2 的 UX-01 [PR #156](https://github.com/dancancer/RawLab/pull/156) 已按授权合入 `development@a3d6bded14f963cd8f5f44c11109c747bb978adc`。
 - [x] 按 [UX-02 批量流程计划](batch-flow-plan.md) 完成自动预检、一次启动及四端目标级原生验证。
-- [ ] UX-02 按阶段授权提交、push、创建 PR 并集成。
+- [x] UX-02 [PR #158](https://github.com/dancancer/RawLab/pull/158) 已按授权合入 `development@ef21231f5b47da92ee756d318be5122dc51c2e35`。
+- [x] 按 [M3 工作区与外观检索计划](workspace-looks-plan.md) 完成四端实现、独立复核及针对性修复；接入 UX-02 的已合并基线。
+- [ ] M3 完成阶段原生验证与授权交付。
+- [ ] M4 关闭同源组合、100+ 目标观察及剩余默认字号设备矩阵。
 - [ ] 按阶段实施、独立复核、原生验证和已授权集成推进。
 
-UX-02 实现、独立复核及四端目标级验证完成，等待阶段交付；M3 工作区/外观检索正在独立工作区实施，M4 联合验收未关闭。具体命令、截图、失败诊断和源码 hash 保留在本轮临时验证目录，阶段交付时写入 PR，不入库为单 PR 验证流水。
+UX-02 已集成；M3 的独立工作区已更新到同一基线，阶段验证与交付正在收尾。M4 联合验收仍未关闭，不将阶段测试扩大表述为整轮通过。具体命令、截图、失败诊断和源码 hash 保留在本轮临时验证目录，阶段交付时写入 PR，不入库为单 PR 验证流水。
