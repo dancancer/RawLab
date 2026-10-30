@@ -29,6 +29,9 @@ struct AdjustmentTransferView: View {
     private var selectedScope: AdjustmentTransferScope {
         scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields)
     }
+    private var scopePreview: Result<AdjustmentTransferPayload, Error> {
+        Result { try model.previewAdjustmentPayload(scope: selectedScope) }
+    }
     private var remainingTargets: Int { prepared?.targets.filter { !skipped.contains($0.id) }.count ?? 0 }
     private var ready: Bool {
         !preparing && remainingTargets > 0 && prepared?.targets.allSatisfy { $0.error == nil || skipped.contains($0.id) } == true
@@ -72,13 +75,13 @@ struct AdjustmentTransferView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(model.file?.lastPathComponent ?? "").font(.headline)
             Text(model.file?.deletingLastPathComponent().path ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(2)
-            AdjustmentScopeEditor(scope:$scope,fields:$fields,allowed:model.settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
+            AdjustmentScopeEditor(scope:$scope,fields:$fields,preview:scopePreview,lookName:model.adjustmentSummaryLookName,errorMessage: { model.adjustmentErrorMessage($0) },allowed:model.settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
             HStack {
                 Spacer()
                 Button(L10n.text("复制调整")) {
                     do { _ = try model.copyAdjustments(scope: selectedScope); close() }
                     catch { message = model.adjustmentErrorMessage(error) }
-                }.buttonStyle(.borderedProminent).disabled(scope == "custom" && fields.isEmpty)
+                }.buttonStyle(.borderedProminent).disabled((try? scopePreview.get()) == nil)
                     .accessibilityIdentifier("adjustment.copy.confirm")
             }
         }
@@ -96,8 +99,10 @@ struct AdjustmentTransferView: View {
                     Text(L10n.text("按实际生效值应用，已包含配方强度。")).font(.callout).foregroundStyle(.secondary)
                 }
                 DisclosureGroup(L10n.text("查看调整范围")) {
-                    Text(payload.fields.sorted { $0.rawValue < $1.rawValue }.map(\.displayTitle).joined(separator: "、"))
-                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    ScrollView {
+                        AdjustmentSummaryView(payload: payload, lookName: model.adjustmentSummaryLookName)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }.frame(maxHeight: 220)
                 }
                 HStack {
                     Text(L10n.format("目标：%@ 张照片", String(targets.count))).fontWeight(.medium)

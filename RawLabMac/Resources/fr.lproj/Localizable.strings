@@ -83,6 +83,7 @@
 "不是支持的 RAW 文件" = "Il ne s'agit pas d'un fichier RAW pris en charge";
 "不是支持的图像文件" = "Fichier image non pris en charge";
 "不能覆盖原始文件。" = "Le fichier d’origine ne peut pas être écrasé.";
+"不适用" = "Sans objet";
 "不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "Les photos, aperçus, noms de fichiers, chemins, données EXIF et contenus IA ne sont pas collectés. La désactivation arrête toute nouvelle collecte ; les requêtes déjà envoyées ne peuvent pas être retirées.";
 "中性" = "Neutre";
 "中性显影" = "Développement neutre";
@@ -106,6 +107,7 @@
 "从侧栏移除此目录" = "Retirer ce dossier de la barre latérale";
 "从列表移除" = "Supprimer de la liste";
 "从照片库选择" = "Choisir dans la photothèque";
+"以下为配方逻辑值；强度为 %@。部分范围会按此强度换算。" = "Voici les valeurs logiques de la recette ; l’intensité est de %@. Certains champs sont mis à l’échelle selon cette intensité.";
 "以下目标尚未完成本次历史操作，请检查原因后重试。" = "L’opération d’historique est incomplète pour ces photos. Vérifiez la cause et réessayez.";
 "任务使用的外观文件不可用，请重新创建任务。" = "Le fichier de look utilisé par la tâche n’est pas disponible. Recréez la tâche.";
 "任务已冻结。之后的照片编辑不会改变本次导出。" = "La tâche est figée. Les retouches ultérieures ne modifieront pas cet export.";
@@ -161,6 +163,7 @@
 "内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。" = "Mémoire insuffisante pour traiter cette photo HDR en pleine résolution. Fermez les autres photos et réessayez.";
 "内存不足，无法解码普通图片。" = "Mémoire insuffisante pour décoder l’image.";
 "内容容量 %@ EV" = "Marge du contenu %@ EV";
+"内置" = "Intégré";
 "减少边缘彩色条纹" = "Réduire les franges colorées";
 "几何" = "Géométrie";
 "几何与镜头" = "Géométrie et objectif";
@@ -177,6 +180,7 @@
 "删除预设？" = "Supprimer le préréglage ?";
 "前往下载 %@" = "Télécharger %@";
 "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感" = "Soleil californien mêlé à un film japonais, or urbain diffus et lueur chaude transparente";
+"包含几何或镜头调整。" = "Les réglages de géométrie ou d’objectif sont inclus.";
 "匹配内嵌预览" = "Adapter à l'aperçu intégré";
 "匹配照片" = "Correspond à la photo";
 "单张微调" = "Affiner la photo";
@@ -221,6 +225,7 @@
 "在 Finder 中打开" = "Ouvrir dans le Finder";
 "在照片上取色并上下拖动" = "Prélevez une couleur dans la photo, puis faites glisser vers le haut ou le bas";
 "在编辑器中打开照片，然后选择“%@”。" = "Ouvrir une photo dans l’éditeur, puis choisir « %@ ».";
+"场景" = "Scène";
 "场景线性" = "Linéaire de scène";
 "垂直位置" = "Position verticale";
 "垂直翻转" = "Retourner verticalement";
@@ -237,6 +242,7 @@
 "复制调整" = "Copier les réglages";
 "复制调整…" = "Copier les réglages…";
 "外观" = "Rendus";
+"外观不可用。" = "Le rendu est indisponible.";
 "外观名称" = "Nom du look";
 "外观名称不能为空或包含控制字符。" = "Le nom du look ne peut pas être vide ni contenir de caractères de contrôle.";
 "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。" = "Le fichier de look est endommagé ou incompatible ; un fichier CUBE ou RLOOK compatible est requis.";
@@ -280,6 +286,8 @@
 "将替换目标照片的本机调整记录，不改写原始 RAW。" = "Remplace les réglages locaux des photos cibles sans modifier le RAW d’origine.";
 "将替换目标照片的本机调整记录，不改写原始文件。" = "Les réglages locaux des photos cibles seront remplacés. Les fichiers d’origine ne seront pas modifiés.";
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "La copie du look enregistrée par RawLab sera supprimée ; le fichier d’origine ne sera pas effacé.";
+"将覆盖以下 %@ 项调整；其他调整保留目标原值。" = "Réglages à remplacer : %@. Les autres conserveront les valeurs de la cible.";
+"尚无已修改的调整。" = "Aucun réglage modifié pour le moment.";
 "尚无用户预设" = "Aucun préréglage personnel";
 "尚有未保存的调整" = "Réglages non enregistrés";
 "尚未发现可安装的更新" = "Aucune mise à jour installable trouvée";
@@ -363,6 +371,7 @@
 "当前通道 %@，修改仅作用于该颜色。" = "Canal actuel : %@. Les modifications s’appliquent uniquement à cette couleur.";
 "当前配方不可用，无法安全重置外观。" = "La recette actuelle est indisponible ; son rendu ne peut donc pas être réinitialisé en toute sécurité.";
 "待处理" = "À traiter";
+"待选择的镜头配置" = "Sélection du profil d’objectif requise";
 "恢复当前照片的全部调整，不改写原始照片。" = "Réinitialiser tous les réglages de la photo actuelle. La photo d’origine ne sera pas modifiée.";
 "恢复更新前的数据" = "Restaurer les données d’avant la mise à jour";
 "恢复阴影、中间调和高光的颜色分级默认值？" = "Rétablir l’étalonnage par défaut des ombres, tons moyens et hautes lumières ?";
@@ -443,6 +452,7 @@
 "无效的清晰度或去朦胧参数" = "Valeurs de clarté ou de correction du voile non valides";
 "无效的视口预览模式" = "Mode d’aperçu de la zone visible non valide";
 "无效的透视参数" = "Paramètres de perspective non valides";
+"无效的降噪参数" = "Réglages de réduction du bruit invalides";
 "无效的预览模式" = "Mode d'aperçu invalide";
 "无效的颜色分级参数" = "Valeurs d’étalonnage des couleurs non valides";
 "无效的黑白场或鲜艳度参数" = "Valeurs de point noir, de point blanc ou de vibrance non valides";
@@ -512,6 +522,7 @@
 "最终导出：%@ 张" = "Export final · Photos : %@";
 "有可用更新" = "Mise à jour disponible";
 "有多个匹配镜头，请手动选择" = "Plusieurs objectifs correspondent ; choisissez manuellement";
+"未包含几何与镜头。" = "La géométrie et l’objectif ne sont pas inclus.";
 "未匹配镜头" = "Aucun objectif correspondant";
 "未匹配镜头，请手动选择" = "Aucun objectif correspondant ; choisissez manuellement";
 "未发现适用于此 Mac 的新版本" = "Aucune nouvelle version trouvée pour ce Mac";
@@ -524,6 +535,7 @@
 "未调整" = "Non ajusté";
 "未选中" = "Non sélectionné";
 "未选择" = "Non sélectionné";
+"未选择任何调整。" = "Aucun réglage sélectionné.";
 "本次会话历史" = "Historique de la session";
 "本次会话历史…" = "Historique de la session…";
 "来源已排除。未选中的调整保持每张照片的原值。" = "La source est exclue. Les réglages non sélectionnés conservent les valeurs de chaque photo.";
@@ -662,6 +674,7 @@
 "目标：%@ 张照片" = "Photos cibles : %@";
 "直方图" = "Histogramme";
 "相对白平衡" = "Balance des blancs relative";
+"相机白平衡（按目标照片）" = "Balance des blancs de l’appareil (pour chaque photo cible)";
 "确认兼容导入" = "Importer avec ces réglages";
 "确认并冻结任务" = "Confirmer et figer la tâche";
 "移除" = "Supprimer";
@@ -718,6 +731,7 @@
 "自动裁切" = "Recadrage automatique";
 "自动裁边" = "Recadrage automatique";
 "自动调整曝光" = "Ajuster automatiquement l’exposition";
+"自动（按目标照片）" = "Automatique (pour chaque photo cible)";
 "自定义" = "Personnalisé";
 "自由" = "Libre";
 "致密城市肌理，硬朗大S曲线，浓郁橙青与紫金冷暖对撞" = "Texture urbaine dense, courbe en S marquée, affrontement orange-cyan et violet-or saturés";
@@ -843,6 +857,8 @@
 "选择预览照片" = "Choisir une photo d’aperçu";
 "透视" = "Perspective";
 "通道边界像素：方案 %@% · 参考 %@%" = "Pixels aux limites des canaux : proposition %@%% · référence %@%%";
+"配方" = "Recette";
+"配方 LUT" = "LUT de recette";
 "酒井贵弘" = "Takahiro Sakai";
 "重做" = "Rétablir";
 "重做 %@ 张" = "Rétablir les photos : %@";
@@ -942,3 +958,4 @@
 "黑位 %@" = "Niveau de noir %@";
 "黑场" = "Point noir";
 "默认值：%@；范围：%@ 至 %@；步进：%@。" = "Valeur par défaut : %@ ; plage : de %@ à %@ ; pas : %@.";
+"默认降噪设置" = "Réglages de réduction du bruit par défaut";

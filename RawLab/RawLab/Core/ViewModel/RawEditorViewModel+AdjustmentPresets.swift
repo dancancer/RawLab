@@ -1,6 +1,28 @@
 import Foundation
 
 extension RawEditorViewModel {
+    func previewAdjustmentPayload(scope: AdjustmentTransferScope, settings: RawSettings) throws -> AdjustmentTransferPayload {
+        guard let source = editorEditSource, let record = loadedEditRecord,
+              record.identity == source.identity, !adjustmentReloadRequired,
+              adjustmentTargetIsCurrent(source.identity.key) else { throw AdjustmentTransferError.draftRequiresPreflight }
+        let committed = record.state ?? PhotoEditState(settings: sourceDefaultSettings)
+        return try IOSAdjustmentTransfer.previewCapture(scope: scope, snapshot: currentEditState(settings: settings),
+            committed: committed, context: adjustmentContext(identifier: source.identity.key,
+                isRaw: sourceKind == .raw, whiteBalance: rawWhiteBalance))
+    }
+
+    func adjustmentSummaryLookName(kind: String, id: String) -> String? {
+        if kind == "recipe" || kind == "recipe_lut" {
+            guard let recipe = MasterRecipe.recipe(for: id), let url = recipe.lutURL(),
+                  FileManager.default.isReadableFile(atPath: url.path) else { return nil }
+            return L10n.text(recipe.name)
+        }
+        let reference = kind == "builtin"
+            ? lutMap.values.first { !$0.isCustom && $0.sourceURL.lastPathComponent == id } : lutMap[id]
+        guard let reference, FileManager.default.isReadableFile(atPath: reference.sourceURL.path) else { return nil }
+        return reference.name
+    }
+
     func capturePresetAdjustments(scope: AdjustmentTransferScope, settings: RawSettings) throws -> AdjustmentTransferPayload {
         guard let source = editorEditSource, adjustmentSession != nil,
               adjustmentTargetIsCurrent(source.identity.key) else { throw AdjustmentTransferError.draftRequiresPreflight }

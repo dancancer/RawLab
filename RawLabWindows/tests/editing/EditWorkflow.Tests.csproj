@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../AdjustmentPayload.cs" Link="AdjustmentPayload.cs" />
+    <Compile Include="../../AdjustmentSummary.cs" Link="AdjustmentSummary.cs" />
     <Compile Include="../../AdjustmentPresetStore.cs" Link="AdjustmentPresetStore.cs" />
     <Compile Include="../../AdjustmentTransfer*.cs" Link="%(Filename)%(Extension)" />
     <Compile Include="../../Localization.cs" Link="Localization.cs" />

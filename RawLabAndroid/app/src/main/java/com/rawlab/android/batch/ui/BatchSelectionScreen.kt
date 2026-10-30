@@ -128,7 +128,8 @@ internal fun BatchSelectionScreen(model: EditorViewModel, onBack: () -> Unit, on
             }
             AdjustmentScopeEditor(stringResource(R.string.collection_check_targets), "collection-sync-preflight", enabled = draft == null && !editor.committingAdjustments,
                 allowed = if (editor.edits.isHDREditing) com.rawlab.android.adjustments.AdjustmentField.HDR_SUPPORTED
-                    else com.rawlab.android.adjustments.AdjustmentField.entries.filterNot { it.isHDRRelative }.toSet()) { selected ->
+                    else com.rawlab.android.adjustments.AdjustmentField.entries.filterNot { it.isHDRRelative }.toSet(),
+                previewCapture = model::previewAdjustmentPayload, lookName = model::adjustmentSummaryLookName) { selected ->
                 val generation = ++captureGeneration
                 model.captureCollectionSynchronization(selected) { captured ->
                     if (scope && generation == captureGeneration) captured?.let { closeScope(); synchronization = it }

@@ -35,6 +35,10 @@ struct IOSAdjustmentTransferView: View {
     }
     private var hasPending: Bool { pasteResults.isEmpty || pasteResults.contains { [.blocked, .failed, .conflict].contains($0.status) } }
 
+    private var scopePreview: Result<AdjustmentTransferPayload, Error> {
+        Result { try model.previewAdjustmentPayload(scope: scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields), settings: settings) }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -80,7 +84,7 @@ struct IOSAdjustmentTransferView: View {
     }
 
     @ViewBuilder private var copyContent: some View {
-        IOSAdjustmentScopeEditor(scope:$scope,fields:$fields,sourceName:model.sourceDisplayName ?? "",allowed:settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
+        IOSAdjustmentScopeEditor(scope:$scope,fields:$fields,preview:scopePreview,lookName:model.adjustmentSummaryLookName,errorMessage: { model.adjustmentErrorMessage($0) },sourceName:model.sourceDisplayName ?? "",allowed:settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
         Section {
             Button(L10n.text("复制调整")) {
                 do {
@@ -88,7 +92,7 @@ struct IOSAdjustmentTransferView: View {
                     try model.copyAdjustments(scope: selection, settings: settings)
                     dismiss()
                 } catch { message = model.adjustmentErrorMessage(error) }
-            }.disabled(scope == "custom" && fields.isEmpty).accessibilityIdentifier("adjustment.copy.confirm")
+            }.disabled((try? scopePreview.get()) == nil).accessibilityIdentifier("adjustment.copy.confirm")
         }
     }
 
@@ -97,8 +101,7 @@ struct IOSAdjustmentTransferView: View {
             Section {
                 Text(L10n.format("来源：%@ · %@ 项调整", sourceName, String(payload.fields.count))).font(.headline)
                 DisclosureGroup(L10n.text("查看调整范围")) {
-                    Text(payload.fields.sorted { $0.rawValue < $1.rawValue }.map(\.displayTitle).joined(separator: "、"))
-                        .font(.callout).foregroundStyle(.secondary)
+                    IOSAdjustmentSummaryView(payload: payload, lookName: model.adjustmentSummaryLookName)
                 }
                 Text(L10n.format("目标：%@ 张照片", String(photos.count)))
                 if synchronization == nil {

@@ -83,6 +83,7 @@
 "不是支持的 RAW 文件" = "Keine unterstützte RAW-Datei";
 "不是支持的图像文件" = "Nicht unterstützte Bilddatei";
 "不能覆盖原始文件。" = "Die Originaldatei kann nicht überschrieben werden.";
+"不适用" = "Nicht anwendbar";
 "不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "Fotos, Vorschaubilder, Dateinamen, Pfade, EXIF und KI-Inhalte werden nicht erfasst. Das Deaktivieren beendet die neue Erfassung; bereits gesendete Anfragen können nicht zurückgezogen werden.";
 "中性" = "Neutral";
 "中性显影" = "Neutrale Entwicklung";
@@ -106,6 +107,7 @@
 "从侧栏移除此目录" = "Ordner aus der Seitenleiste entfernen";
 "从列表移除" = "Aus Liste entfernen";
 "从照片库选择" = "Aus der Fotobibliothek wählen";
+"以下为配方逻辑值；强度为 %@。部分范围会按此强度换算。" = "Dies sind logische Rezeptwerte; die Stärke beträgt %@. Einige Bereiche werden mit dieser Stärke skaliert.";
 "以下目标尚未完成本次历史操作，请检查原因后重试。" = "Der Verlaufsschritt ist für diese Fotos unvollständig. Prüfe den Grund und versuche es erneut.";
 "任务使用的外观文件不可用，请重新创建任务。" = "Die vom Auftrag verwendete Look-Datei ist nicht verfügbar. Bitte erstellen Sie den Auftrag neu.";
 "任务已冻结。之后的照片编辑不会改变本次导出。" = "Die Aufgabe ist festgeschrieben. Spätere Bearbeitungen ändern diesen Export nicht.";
@@ -161,6 +163,7 @@
 "内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。" = "Nicht genügend Speicher für dieses HDR-Foto in voller Auflösung. Schließen Sie andere Fotos und versuchen Sie es erneut.";
 "内存不足，无法解码普通图片。" = "Nicht genügend Speicher zum Dekodieren des Bildes.";
 "内容容量 %@ EV" = "Inhaltsspielraum %@ EV";
+"内置" = "Integriert";
 "减少边缘彩色条纹" = "Farbsäume verringern";
 "几何" = "Geometrie";
 "几何与镜头" = "Geometrie und Objektiv";
@@ -177,6 +180,7 @@
 "删除预设？" = "Vorgabe löschen?";
 "前往下载 %@" = "%@ herunterladen";
 "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感" = "Kalifornisches Sonnenlicht mit japanischem Filmlook, diffuses urbanes Gold und klarer warmer Schimmer";
+"包含几何或镜头调整。" = "Geometrie- oder Objektivanpassungen sind enthalten.";
 "匹配内嵌预览" = "An eingebettete Vorschau anpassen";
 "匹配照片" = "Passt zum Foto";
 "单张微调" = "Foto feinjustieren";
@@ -221,6 +225,7 @@
 "在 Finder 中打开" = "Im Finder öffnen";
 "在照片上取色并上下拖动" = "Wählen Sie eine Farbe im Foto und ziehen Sie nach oben oder unten";
 "在编辑器中打开照片，然后选择“%@”。" = "Im Editor ein Foto öffnen und dann „%@“ wählen.";
+"场景" = "Szene";
 "场景线性" = "Szenenlinear";
 "垂直位置" = "Vertikale Position";
 "垂直翻转" = "Vertikal spiegeln";
@@ -237,6 +242,7 @@
 "复制调整" = "Anpassungen kopieren";
 "复制调整…" = "Anpassungen kopieren…";
 "外观" = "Looks";
+"外观不可用。" = "Der Look ist nicht verfügbar.";
 "外观名称" = "Look-Name";
 "外观名称不能为空或包含控制字符。" = "Der Name des Looks darf nicht leer sein und keine Steuerzeichen enthalten.";
 "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。" = "Die Look-Datei ist beschädigt oder inkompatibel; eine kompatible CUBE- oder RLOOK-Datei ist erforderlich.";
@@ -280,6 +286,8 @@
 "将替换目标照片的本机调整记录，不改写原始 RAW。" = "Ersetzt die lokalen Anpassungen der Zielfotos, ohne die ursprüngliche RAW-Datei zu ändern.";
 "将替换目标照片的本机调整记录，不改写原始文件。" = "Die lokalen Anpassungsdatensätze der Zielfotos werden ersetzt. Originaldateien werden nicht geändert.";
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "Die von RawLab gespeicherte Kopie des Looks wird entfernt; die Originaldatei wird nicht gelöscht.";
+"将覆盖以下 %@ 项调整；其他调整保留目标原值。" = "Zu überschreibende Anpassungen: %@. Andere Anpassungen behalten die Zielwerte.";
+"尚无已修改的调整。" = "Noch keine geänderten Anpassungen.";
 "尚无用户预设" = "Noch keine eigenen Vorgaben";
 "尚有未保存的调整" = "Ungespeicherte Anpassungen";
 "尚未发现可安装的更新" = "Kein installierbares Update gefunden";
@@ -363,6 +371,7 @@
 "当前通道 %@，修改仅作用于该颜色。" = "Aktueller Kanal: %@. Änderungen gelten nur für diese Farbe.";
 "当前配方不可用，无法安全重置外观。" = "Das aktuelle Rezept ist nicht verfügbar. Der Look kann daher nicht sicher zurückgesetzt werden.";
 "待处理" = "Aktion erforderlich";
+"待选择的镜头配置" = "Objektivprofil muss ausgewählt werden";
 "恢复当前照片的全部调整，不改写原始照片。" = "Alle Anpassungen des aktuellen Fotos zurücksetzen. Das Originalfoto wird nicht verändert.";
 "恢复更新前的数据" = "Daten vom Stand vor dem Update wiederherstellen";
 "恢复阴影、中间调和高光的颜色分级默认值？" = "Color-Grading für Schatten, Mitteltöne und Lichter zurücksetzen?";
@@ -443,6 +452,7 @@
 "无效的清晰度或去朦胧参数" = "Ungültige Werte für Klarheit oder Dunstentfernung";
 "无效的视口预览模式" = "Ungültiger Modus für die Ausschnittvorschau";
 "无效的透视参数" = "Ungültige Perspektivwerte";
+"无效的降噪参数" = "Ungültige Rauschreduzierungsparameter";
 "无效的预览模式" = "Ungültiger Vorschaumodus";
 "无效的颜色分级参数" = "Ungültige Color-Grading-Werte";
 "无效的黑白场或鲜艳度参数" = "Ungültige Werte für Schwarzpunkt, Weißpunkt oder Dynamik";
@@ -512,6 +522,7 @@
 "最终导出：%@ 张" = "Endgültiger Export · Fotos: %@";
 "有可用更新" = "Update verfügbar";
 "有多个匹配镜头，请手动选择" = "Mehrere passende Objektive; bitte manuell auswählen";
+"未包含几何与镜头。" = "Geometrie und Objektiv sind nicht enthalten.";
 "未匹配镜头" = "Kein passendes Objektiv";
 "未匹配镜头，请手动选择" = "Kein passendes Objektiv; bitte manuell auswählen";
 "未发现适用于此 Mac 的新版本" = "Für diesen Mac wurde keine neue Version gefunden";
@@ -524,6 +535,7 @@
 "未调整" = "Unbearbeitet";
 "未选中" = "Nicht ausgewählt";
 "未选择" = "Nicht ausgewählt";
+"未选择任何调整。" = "Keine Anpassungen ausgewählt.";
 "本次会话历史" = "Sitzungsverlauf";
 "本次会话历史…" = "Sitzungsverlauf…";
 "来源已排除。未选中的调整保持每张照片的原值。" = "Die Quelle ist ausgeschlossen. Nicht ausgewählte Anpassungen behalten die ursprünglichen Werte jedes Fotos.";
@@ -662,6 +674,7 @@
 "目标：%@ 张照片" = "Zielfotos: %@";
 "直方图" = "Histogramm";
 "相对白平衡" = "Relativer Weißabgleich";
+"相机白平衡（按目标照片）" = "Kamera-Weißabgleich (pro Zielfoto)";
 "确认兼容导入" = "Mit diesen Einstellungen importieren";
 "确认并冻结任务" = "Bestätigen und Aufgabe festschreiben";
 "移除" = "Entfernen";
@@ -718,6 +731,7 @@
 "自动裁切" = "Automatischer Zuschnitt";
 "自动裁边" = "Automatisch beschneiden";
 "自动调整曝光" = "Belichtung automatisch anpassen";
+"自动（按目标照片）" = "Automatisch (pro Zielfoto)";
 "自定义" = "Benutzerdefiniert";
 "自由" = "Frei";
 "致密城市肌理，硬朗大S曲线，浓郁橙青与紫金冷暖对撞" = "Dichte urbane Textur, markante S-Kurve, kräftiger Orange-Cyan- und Violett-Gold-Kontrast";
@@ -843,6 +857,8 @@
 "选择预览照片" = "Vorschaubild auswählen";
 "透视" = "Perspektive";
 "通道边界像素：方案 %@% · 参考 %@%" = "Pixel an Kanalgrenzen: Option %@%% · Referenz %@%%";
+"配方" = "Rezept";
+"配方 LUT" = "Rezept-LUT";
 "酒井贵弘" = "Takahiro Sakai";
 "重做" = "Wiederholen";
 "重做 %@ 张" = "Fotos wiederherstellen: %@";
@@ -942,3 +958,4 @@
 "黑位 %@" = "Schwarzwert %@";
 "黑场" = "Schwarzpunkt";
 "默认值：%@；范围：%@ 至 %@；步进：%@。" = "Standard: %@; Bereich: %@ bis %@; Schrittweite: %@.";
+"默认降噪设置" = "Standard-Rauschreduzierung";

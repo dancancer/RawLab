@@ -2,6 +2,7 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Automation;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -43,6 +44,25 @@ internal static class HDRWorkflowChecks
             check(fields.ContainsKey(AdjustmentField.HdrTemperature) && fields.ContainsKey(AdjustmentField.HdrTint) &&
                 !fields.ContainsKey(AdjustmentField.Temperature) && scopeEditor.SelectedScope.Fields!.SetEquals(AdjustmentFields.HDRCommon),
                 "HDR scope offers relative WB and initializes only supported fields");
+            var summaryDialog = new AdjustmentScopeDialog(window, source, _ => null, hdr:true,
+                preview:window.PreviewAdjustmentPayload,lookName:window.AdjustmentSummaryLookName);
+            summaryDialog.Show(); summaryDialog.UpdateLayout();
+            T Summary<T>(string id) where T:DependencyObject => UiDetailChecks.Descendants(summaryDialog).OfType<T>()
+                .Single(value=>AutomationProperties.GetAutomationId(value)==id);
+            check(Summary<TextBlock>("adjustment.copy.summary.count").Text.Contains("7"),
+                "Native HDR default summary contains seven shared adjustments");
+            Summary<Expander>("adjustment.copy.summary.group.color").IsExpanded=true; summaryDialog.UpdateLayout();
+            check(Summary<TextBlock>("adjustment.copy.summary.value.hdr.relative_temperature").Text.Contains(Loc.Text("相对白平衡")),
+                "Native HDR temperature summary states relative white balance");
+            Capture(summaryDialog,Path.Combine(root,"hdr-summary.png"));
+            Summary<ComboBox>("adjustment.copy.scope").SelectedIndex=1; summaryDialog.UpdateLayout();
+            check(Summary<TextBlock>("adjustment.copy.summary.count").Text.Contains("17"),
+                "Native HDR all summary includes geometry and no unsupported fields");
+            Summary<ComboBox>("adjustment.copy.scope").SelectedIndex=2; summaryDialog.UpdateLayout();
+            check(!Summary<Button>("adjustment.copy.confirm").IsEnabled &&
+                Summary<TextBlock>("adjustment.copy.summary.empty").Text==Loc.Text("尚无已修改的调整。"),
+                "Native neutral HDR modified scope is empty and cannot be copied");
+            summaryDialog.Close();
             var tools=Get<Dictionary<EditorAdjustmentTool,(Button Button,AdjustmentRing Ring)>>(window,"workspaceTools");
             foreach(var (tool,parameter,value) in new[] {
                 (EditorAdjustmentTool.Exposure,Parameter.Exposure,.5),

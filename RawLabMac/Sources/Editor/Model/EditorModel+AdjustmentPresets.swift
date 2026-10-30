@@ -25,6 +25,27 @@ extension EditorModel {
             context: adjustmentTransferContext(for: file))
     }
 
+    func previewAdjustmentPayload(scope: AdjustmentTransferScope) throws -> AdjustmentTransferPayload {
+        guard canUsePresetPhoto, let file, let committedEdit,
+              committedEdit.identity.path == file.resolvingSymlinksInPath().standardizedFileURL.path,
+              !dirty, geometryDraft == nil, !scheduler.interacting,
+              !ParameterValueField.hasPendingInputs, saveError == nil else {
+            throw AdjustmentTransferError.draftRequiresPreflight
+        }
+        return try MacAdjustmentTransfer.previewCapture(scope: scope, snapshot: editState(settings: settings),
+            committed: committedEdit.state, context: adjustmentTransferContext(for: file))
+    }
+
+    func adjustmentSummaryLookName(kind: String, id: String) -> String? {
+        if kind == "recipe" || kind == "recipe_lut" {
+            guard let recipe = MasterRecipe.recipe(for: id), let url = recipe.lutURL(),
+                  FileManager.default.isReadableFile(atPath: url.path) else { return nil }
+            return recipe.title
+        }
+        return films.first { (kind == "builtin" ? $0.url.lastPathComponent == id : $0.managedID == id) &&
+            FileManager.default.isReadableFile(atPath: $0.url.path) }?.name
+    }
+
     func presetErrorMessage(_ error: Error) -> String {
         switch error as? AdjustmentPresetError {
         case .emptyName: return L10n.text("请输入预设名称。")

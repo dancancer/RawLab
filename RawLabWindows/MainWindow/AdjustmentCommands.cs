@@ -20,14 +20,15 @@ public partial class MainWindow
     {
         if(!PrepareAdjustmentCommand())return;
         try {
-            var source=CaptureCurrentEdit();var context=CurrentTransferContext();
             var dialog=new AdjustmentScopeDialog(this,file!,scope=>{
-                try {TransferSession.Copy(scope,source,context);return null;}
+                try {CopyCurrentAdjustments(scope);return null;}
                 catch(Exception error){return AdjustmentTransferPresentation.Error(error);}
-            },hdr:settings.IsHDREditing);
+            },hdr:settings.IsHDREditing,preview:PreviewAdjustmentPayload,lookName:AdjustmentSummaryLookName);
             if(dialog.ShowDialog()==true)SetStatus(()=>Loc.Text("调整已复制。"),false);
         }catch(Exception error){ShowAdjustmentError(error);}
     }
+    internal AdjustmentPayload CopyCurrentAdjustments(AdjustmentScope scope)
+        => TransferSession.Copy(scope,CaptureVerifiedAdjustmentSource(),CurrentTransferContext());
     private async void PasteAdjustmentsClicked(object sender,RoutedEventArgs e)
     {
         if(!PrepareAdjustmentCommand())return;
@@ -99,7 +100,7 @@ public partial class MainWindow
             var session=TransferSession;AdjustmentResultDialog? dialog=null;
             dialog=new AdjustmentResultDialog(this,action==AdjustmentHistoryAction.Preset ? "应用预设" : "粘贴调整",initial,true,skipping=>AdoptAdjustmentOutcomes(session.Apply(operation,skipping),adopted),
                 ()=>ReloadEditsClicked(this,new()),Loc.Format("来源：{0} · {1} 项调整",sourceName ?? Path.GetFileName(payload.Source.Identifier),payload.Fields.Count),
-                ()=>session.Transactions.FirstOrDefault(t=>t.ID==operation.ID)?.Parts ?? [],undo=>RunAdjustmentHistory(operation.ID,null,undo,dialog!));
+                ()=>session.Transactions.FirstOrDefault(t=>t.ID==operation.ID)?.Parts ?? [],undo=>RunAdjustmentHistory(operation.ID,null,undo,dialog!),payload,AdjustmentSummaryLookName);
             dialog.ShowDialog();
         }catch(Exception error){ShowAdjustmentError(error);}
     }

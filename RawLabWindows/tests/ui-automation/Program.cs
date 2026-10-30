@@ -61,7 +61,17 @@ internal static partial class Program
                 WaitMode("off");
                 var value = GetRangeValue("ParameterValueSlider");
                 Check(Math.Abs(value - 1.25) < .02, "Restarted profile restores RAW exposure history");
-                if (Environment.GetEnvironmentVariable("RAWLAB_PRESET_UI") == "1") PresetRestartFlow();
+                if (Environment.GetEnvironmentVariable("RAWLAB_PRESET_UI") == "1" &&
+                    Environment.GetEnvironmentVariable("RAWLAB_PRESET_SUMMARY_UI") != "1") PresetRestartFlow();
+                CloseMainWindow();
+                return 0;
+            }
+
+            if (Environment.GetEnvironmentVariable("RAWLAB_PRESET_SUMMARY_UI") == "1")
+            {
+                OpenPhoto(raw);
+                SetPresetExposure(1.25);
+                PresetSummaryFlow();
                 CloseMainWindow();
                 return 0;
             }

@@ -54,7 +54,9 @@ final class HDRPhotoUITests: XCTestCase {
         app.buttons["Add"].tap()
         let synchronize=app.buttons["collection.synchronize"]
         wait { synchronize.isEnabled }; synchronize.tap()
-        XCTAssertTrue(app.staticTexts["已选 7 项"].waitForExistence(timeout:10),app.debugDescription)
+        let count = app.staticTexts["adjustment.copy.summary.count"]
+        XCTAssertTrue(count.waitForExistence(timeout:10),app.debugDescription)
+        XCTAssertTrue(count.label.contains("7 项调整"),count.label)
         XCTAssertFalse(app.buttons["adjustment.group.looks"].exists)
         app.buttons["adjustment.group.color"].tap()
         XCTAssertTrue(app.switches["adjustment.field.hdr.relative_temperature"].exists)
@@ -85,7 +87,9 @@ final class HDRPhotoUITests: XCTestCase {
         }
         let index=try XCTUnwrap(hdrIndex,"No HDR source in the task-only library")
         app.buttons["editor.privacy"].tap(); app.buttons["复制调整"].tap()
-        XCTAssertTrue(app.staticTexts["已选 7 项"].waitForExistence(timeout:10),app.debugDescription)
+        let count = app.staticTexts["adjustment.copy.summary.count"]
+        XCTAssertTrue(count.waitForExistence(timeout:10),app.debugDescription)
+        XCTAssertTrue(count.label.contains("7 项调整"),count.label)
         let color=app.buttons["adjustment.group.color"]
         XCTAssertTrue(color.exists,app.debugDescription); color.tap()
         XCTAssertTrue(app.switches["adjustment.field.hdr.relative_temperature"].exists,app.debugDescription)

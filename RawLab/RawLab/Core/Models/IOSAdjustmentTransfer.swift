@@ -17,6 +17,12 @@ enum IOSAdjustmentTransfer {
     typealias Field = AdjustmentTransferField
     typealias Value = AdjustmentTransferValue
 
+    static func previewCapture(scope: AdjustmentTransferScope, snapshot: PhotoEditState,
+                               committed: PhotoEditState, context: IOSAdjustmentTransferContext) throws -> AdjustmentTransferPayload {
+        guard snapshot.hasSameAdjustments(as: committed) else { throw AdjustmentTransferError.draftRequiresPreflight }
+        return try capture(scope: scope, snapshot: committed, context: context)
+    }
+
     static func capture(scope: AdjustmentTransferScope, snapshot: PhotoEditState,
                         context: IOSAdjustmentTransferContext) throws -> AdjustmentTransferPayload {
         guard !context.hasUncommittedDraft else { throw AdjustmentTransferError.draftRequiresPreflight }

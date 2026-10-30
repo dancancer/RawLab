@@ -22,7 +22,8 @@ import java.io.File
 
 class AdjustmentPresetUITest {
     private val compose = createAndroidComposeRule<MainActivity>()
-    @get:Rule val rule = RuleChain.outerRule(LanguageTestRule()).around(ForegroundTestRule()).around(compose)
+    @get:Rule val rule = RuleChain.outerRule(LanguageTestRule(InstrumentationRegistry.getArguments()
+        .getString("summaryLanguage") ?: "zh-Hans")).around(ForegroundTestRule()).around(compose)
     private val model get() = compose.activity.model
     private fun ready() {
         compose.waitUntil(60_000) { model.state.value.let { (it.canExport && !it.previewResizePending) || it.error != null } }
@@ -61,6 +62,61 @@ class AdjustmentPresetUITest {
     }
     private fun cleanup(original: Set<String>) {
         model.presetStore.list().filter { it.id !in original }.forEach { model.presetStore.delete(it) }
+    }
+
+    @Test fun scopeSummaryMatchesCaptureWithoutSaving() {
+        val before = model.presetStore.list().map { it.id }.toSet()
+        val source = fixture("scope-summary")
+        try {
+            compose.runOnUiThread { model.importPhoto(Uri.fromFile(source)) }; ready()
+            compose.runOnUiThread { model.edit(model.state.value.edits.copy(exposure = 0.7f)) }; ready()
+            val identity = model.state.value.photo!!.identity
+            val stored = EditStore(File(compose.activity.filesDir, "edits")).versionedState(identity)
+            val clipboard = model.adjustmentClipboard
+            val history = model.adjustmentTransactions.toList()
+            library(); click("preset-create"); enterName("Scope summary")
+            click("adjustment-copy-scope-1")
+            compose.onNodeWithTag("preset-save-summary-count").assertTextContains("1", substring = true)
+            click("preset-save-summary-group-light")
+            val decimal = if (compose.activity.resources.configuration.locales[0].language == "de") "," else "."
+            compose.onNodeWithTag("preset-save-summary-value-light.exposure").performScrollTo().assertIsDisplayed()
+                .assertTextEquals("+0${decimal}70 EV")
+            assertEquals(stored, EditStore(File(compose.activity.filesDir, "edits")).versionedState(identity))
+            assertEquals(clipboard, model.adjustmentClipboard); assertEquals(history, model.adjustmentTransactions)
+            screenshot("scope-summary-modified")
+            click("adjustment-copy-scope-2"); click("adjustment-copy-clear")
+            compose.onNodeWithTag("preset-save-summary-empty").assertExists()
+            compose.onNodeWithTag("preset-save").assertIsNotEnabled()
+            screenshot("scope-summary-empty-custom")
+            click("adjustment-copy-scope-1"); click("preset-save")
+            val saved = model.presetStore.list().single { it.id !in before }
+            assertEquals(setOf(AdjustmentField.EXPOSURE), saved.payload.fields)
+            assertEquals(history, model.adjustmentTransactions)
+        } finally { cleanup(before); source.delete() }
+    }
+
+    @Test fun hdrScopeSummaryShowsRelativeWhiteBalanceAndGeometry() {
+        val source = File(compose.activity.cacheDir, "hdr-summary-${System.nanoTime()}.jpg")
+        InstrumentationRegistry.getInstrumentation().context.assets.open("hdr-sample.jpg").use { input ->
+            source.outputStream().use { input.copyTo(it) }
+        }
+        try {
+            compose.runOnUiThread { model.importPhoto(Uri.fromFile(source)) }; ready()
+            assertTrue(model.state.value.edits.isHDREditing)
+            val identity = model.state.value.photo!!.identity
+            val stored = EditStore(File(compose.activity.filesDir, "edits")).versionedState(identity)
+            library(); click("preset-create"); enterName("HDR summary")
+            click("adjustment-copy-scope-0")
+            compose.onNodeWithTag("preset-save-summary-count").assertTextContains("17", substring = true)
+            compose.onNodeWithText("HDR · " + compose.activity.getString(R.string.adjustment_summary_relative_white_balance)).assertExists()
+            click("preset-save-summary-group-color")
+            compose.onNodeWithTag("preset-save-summary-value-hdr.relative_temperature").assertTextContains(
+                compose.activity.getString(R.string.adjustment_summary_relative_white_balance), substring = true)
+            screenshot("scope-summary-hdr")
+            assertEquals(stored, EditStore(File(compose.activity.filesDir, "edits")).versionedState(identity))
+            assertNull(model.adjustmentClipboard)
+            click("preset-cancel")
+        } finally { source.delete() }
     }
 
     @Test fun closingPresetSheetCancelsPendingCaptureWithoutCreatingPreset() {

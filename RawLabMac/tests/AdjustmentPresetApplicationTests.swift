@@ -23,6 +23,36 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         let state = PhotoEditState(settings: settings, filmID: "")
         let context = MacAdjustmentTransferContext(identifier: source.path, isRaw: true)
         let clipboard = try session.copy(scope: .custom([.contrast]), snapshot: state, context: context)
+        let preview = try MacAdjustmentTransfer.previewCapture(scope: .modified, snapshot: state, committed: state, context: context)
+        try check(preview.fields.contains(.exposure) && !preview.fields.contains(.cropWidth),
+                  "Scope preview captures actual modified fields and excludes geometry")
+        let geometry = try MacAdjustmentTransfer.previewCapture(scope: .custom([.cropWidth]), snapshot: state, committed: state, context: context)
+        try check(geometry.fields == [.cropWidth] && geometry[.cropWidth] == .number(1),
+                  "Custom scope preview preserves the captured value")
+        let empty = Result { try MacAdjustmentTransfer.previewCapture(scope: .modified,
+            snapshot: PhotoEditState(settings: Adjustments(), filmID: ""), committed: nil, context: context) }
+        if case .failure(let error) = empty {
+            try check(error as? AdjustmentTransferError == .emptyScope, "Neutral modified preview reports an empty scope")
+        } else { try check(false, "Neutral modified preview must be empty") }
+        var changed = state; changed.settings.exposure += 0.1
+        let stale = Result { try MacAdjustmentTransfer.previewCapture(scope: .all, snapshot: changed, committed: state, context: context) }
+        if case .failure(let error) = stale {
+            try check(error as? AdjustmentTransferError == .draftRequiresPreflight, "Uncommitted live changes cannot display a stale summary")
+        } else { try check(false, "Stale preview must fail") }
+        var hydrated = state
+        hydrated.settings.resolveWhiteBalance(WhiteBalance(temperature: 5200, tint: 14))
+        let metadataPreview = try MacAdjustmentTransfer.previewCapture(scope: .custom([.temperature, .tint]),
+            snapshot: hydrated, committed: state, context: context)
+        try check(metadataPreview[.temperature] == .null && metadataPreview[.tint] == .null,
+                  "Camera metadata hydration preserves target-resolved white-balance preview")
+        var hdr = Adjustments(); hdr.hdr = HDRSettings(); hdr.exposureMode = .sensor
+        let hdrState = PhotoEditState(settings: hdr, filmID: "")
+        let hdrPreview = try MacAdjustmentTransfer.previewCapture(scope: .standard(isHDR: true), snapshot: hdrState,
+            committed: nil, context: .init(identifier: "hdr.jpg", isRaw: false, sourceIsHDR: true))
+        try check(hdrPreview.fields == AdjustmentTransferField.hdrCommon && hdrPreview.source.isHDR,
+                  "Default HDR scope preview captures the seven supported fields")
+        try check(session.clipboard == clipboard && session.transactions.isEmpty && edits.state(for: source) == nil,
+                  "Scope preview does not change clipboard, history or saved photo records")
         let captured = try MacAdjustmentTransfer.capture(scope: .custom([.exposure, .hslHueRed, .blackPoint, .whitePoint, .vibrance, .gradingShadows, .gradingMidtones]), snapshot: state, context: context)
         let preset = try presets.create(name: "Source-independent", payload: captured)
         try check(session.clipboard == clipboard && session.transactions.isEmpty, "Saving a preset does not change clipboard or photo history")

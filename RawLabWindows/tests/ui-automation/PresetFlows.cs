@@ -40,6 +40,42 @@ internal static partial class Program
             EditCommand("adjustment.undo"); WaitReady(); Wait(() => Math.Abs(GetRangeValue("ParameterValueSlider") - 1.25) < .0001);
             Check(!File.Exists(source), "External UIA applies the source-independent preset and traverses Undo/Redo");
         }
+        private void PresetSummaryFlow()
+        {
+            EditCommand("preset.library.open");
+            Invoke(FindById(PresetDialog("preset.library"), "preset.create")!);
+            var form = PresetDialog("preset.name-dialog");
+            SetValue(FindById(form, "preset.name")!, "UIA Summary");
+            var before = File.ReadAllBytes(Path.Combine(profile, "edits", "edits.json"));
+            var scope = FindById(form, "preset.save.scope")!;
+            ((ExpandCollapsePattern)scope.GetCurrentPattern(ExpandCollapsePattern.Pattern)).Expand();
+            var modified = Wait(() => FindByNames(scope, "仅已修改", "Modified only"))!;
+            ((SelectionItemPattern)modified.GetCurrentPattern(SelectionItemPattern.Pattern)).Select();
+            var light = Wait(() => FindById(form, "preset.save.summary.group.light"))!;
+            ((ExpandCollapsePattern)light.GetCurrentPattern(ExpandCollapsePattern.Pattern)).Expand();
+            Check(Wait(() => FindById(form, "preset.save.summary.value.light.exposure"))!.Current.Name == "+1.25 EV",
+                "External UIA exposes the actual modified exposure value");
+            ((ExpandCollapsePattern)scope.GetCurrentPattern(ExpandCollapsePattern.Pattern)).Expand();
+            var custom = Wait(() => FindByNames(scope, "自定义", "Custom"))!;
+            ((SelectionItemPattern)custom.GetCurrentPattern(SelectionItemPattern.Pattern)).Select();
+            Invoke(Wait(() => FindById(form, "preset.save.clear"))!);
+            Check(!FindById(form, "preset.save.confirm")!.Current.IsEnabled &&
+                FindById(form, "preset.save.summary.empty") != null,
+                "External UIA exposes empty custom scope and disables Save");
+            Invoke(FindById(form, "preset.cancel")!);
+            Wait(() => FindById(root, "preset.name-dialog") == null);
+            ClosePresetLibrary();
+            Check(before.SequenceEqual(File.ReadAllBytes(Path.Combine(profile, "edits", "edits.json"))),
+                "External UIA scope changes and cancellation preserve the photo record");
+        }
+        private void SetPresetExposure(double value)
+        {
+            var number = FindById(main, "ParameterValueText")!;
+            number.SetFocus(); SetValue(number, value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            Keys(0x0d);
+            WaitReady();
+            Wait(() => Math.Abs(GetRangeValue("ParameterValueSlider") - value) < .0001);
+        }
         private void PresetRestartFlow()
         {
             var id = PresetID("UIA Restart"); ApplyPreset(id);

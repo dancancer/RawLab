@@ -83,6 +83,7 @@
 "不是支持的 RAW 文件" = "Not a supported RAW file";
 "不是支持的图像文件" = "Unsupported image file";
 "不能覆盖原始文件。" = "The original file cannot be overwritten.";
+"不适用" = "Not applicable";
 "不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "Photos, previews, filenames, paths, EXIF, and AI content are not collected. Turning it off stops new collection; requests already sent cannot be withdrawn.";
 "中性" = "Neutral";
 "中性显影" = "Neutral Development";
@@ -106,6 +107,7 @@
 "从侧栏移除此目录" = "Remove Folder from Sidebar";
 "从列表移除" = "Remove from list";
 "从照片库选择" = "Choose from photo library";
+"以下为配方逻辑值；强度为 %@。部分范围会按此强度换算。" = "These are recipe logical values; strength is %@. Some fields are scaled by this strength.";
 "以下目标尚未完成本次历史操作，请检查原因后重试。" = "The history operation is incomplete for these photos. Check the reason and retry.";
 "任务使用的外观文件不可用，请重新创建任务。" = "The look file used by this task is unavailable. Create the task again.";
 "任务已冻结。之后的照片编辑不会改变本次导出。" = "The task is frozen. Later edits will not change this export.";
@@ -161,6 +163,7 @@
 "内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。" = "Not enough memory to process this HDR photo at full resolution. Close other photos and try again.";
 "内存不足，无法解码普通图片。" = "Not enough memory to decode the image.";
 "内容容量 %@ EV" = "Content Headroom %@ EV";
+"内置" = "Built-in";
 "减少边缘彩色条纹" = "Reduce Color Fringing";
 "几何" = "Geometry";
 "几何与镜头" = "Geometry & Lens";
@@ -177,6 +180,7 @@
 "删除预设？" = "Delete Preset?";
 "前往下载 %@" = "Download %@";
 "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感" = "California sunlight blended with Japanese film, diffused urban gold and clear warm glow";
+"包含几何或镜头调整。" = "Geometry or lens adjustments are included.";
 "匹配内嵌预览" = "Match embedded preview";
 "匹配照片" = "Matches Photo";
 "单张微调" = "Fine-tune photo";
@@ -221,6 +225,7 @@
 "在 Finder 中打开" = "Open in Finder";
 "在照片上取色并上下拖动" = "Sample the photo and drag up or down";
 "在编辑器中打开照片，然后选择“%@”。" = "Open a photo in the editor, then choose “%@”.";
+"场景" = "Scene";
 "场景线性" = "Scene linear";
 "垂直位置" = "Vertical position";
 "垂直翻转" = "Flip vertical";
@@ -237,6 +242,7 @@
 "复制调整" = "Copy Adjustments";
 "复制调整…" = "Copy Adjustments…";
 "外观" = "Looks";
+"外观不可用。" = "The look is unavailable.";
 "外观名称" = "Look name";
 "外观名称不能为空或包含控制字符。" = "The look name cannot be empty or contain control characters.";
 "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。" = "The look file is damaged or incompatible; a compatible CUBE or RLOOK file is required.";
@@ -280,6 +286,8 @@
 "将替换目标照片的本机调整记录，不改写原始 RAW。" = "This replaces the target photos’ local adjustments without modifying the original RAW.";
 "将替换目标照片的本机调整记录，不改写原始文件。" = "The target photos’ local adjustment records will be replaced. Original files will not be modified.";
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "The copy of the look saved by RawLab will be removed; the original file will not be deleted.";
+"将覆盖以下 %@ 项调整；其他调整保留目标原值。" = "Adjustments to overwrite: %@. Other adjustments keep their target values.";
+"尚无已修改的调整。" = "No modified adjustments yet.";
 "尚无用户预设" = "No User Presets Yet";
 "尚有未保存的调整" = "Unsaved adjustments";
 "尚未发现可安装的更新" = "No installable update found";
@@ -363,6 +371,7 @@
 "当前通道 %@，修改仅作用于该颜色。" = "Current channel: %@. Changes apply only to this color.";
 "当前配方不可用，无法安全重置外观。" = "The current recipe is unavailable, so its look cannot be reset safely.";
 "待处理" = "Needs attention";
+"待选择的镜头配置" = "Lens profile selection required";
 "恢复当前照片的全部调整，不改写原始照片。" = "Reset all adjustments for the current photo. The original photo will not be modified.";
 "恢复更新前的数据" = "Restore data from before the update";
 "恢复阴影、中间调和高光的颜色分级默认值？" = "Restore default color grading for shadows, midtones, and highlights?";
@@ -443,6 +452,7 @@
 "无效的清晰度或去朦胧参数" = "Invalid clarity or dehaze values";
 "无效的视口预览模式" = "Invalid Viewport Preview Mode";
 "无效的透视参数" = "Invalid perspective settings";
+"无效的降噪参数" = "Invalid denoise settings";
 "无效的预览模式" = "Invalid preview mode";
 "无效的颜色分级参数" = "Invalid color grading values";
 "无效的黑白场或鲜艳度参数" = "Invalid black point, white point, or vibrance values";
@@ -512,6 +522,7 @@
 "最终导出：%@ 张" = "Final export · Photos: %@";
 "有可用更新" = "Update available";
 "有多个匹配镜头，请手动选择" = "Multiple Lens Matches; Choose Manually";
+"未包含几何与镜头。" = "Geometry and lens are not included.";
 "未匹配镜头" = "No Lens Match";
 "未匹配镜头，请手动选择" = "No Lens Match; Choose Manually";
 "未发现适用于此 Mac 的新版本" = "No new version found for this Mac";
@@ -524,6 +535,7 @@
 "未调整" = "Unadjusted";
 "未选中" = "Not selected";
 "未选择" = "Not selected";
+"未选择任何调整。" = "No adjustments selected.";
 "本次会话历史" = "Session History";
 "本次会话历史…" = "Session History…";
 "来源已排除。未选中的调整保持每张照片的原值。" = "The source is excluded. Unselected adjustments keep each photo’s original values.";
@@ -662,6 +674,7 @@
 "目标：%@ 张照片" = "Target photos: %@";
 "直方图" = "Histogram";
 "相对白平衡" = "Relative White Balance";
+"相机白平衡（按目标照片）" = "Camera white balance (per target photo)";
 "确认兼容导入" = "Import with these settings";
 "确认并冻结任务" = "Confirm and freeze task";
 "移除" = "Remove";
@@ -718,6 +731,7 @@
 "自动裁切" = "Automatic crop";
 "自动裁边" = "Auto Crop";
 "自动调整曝光" = "Auto-adjust exposure";
+"自动（按目标照片）" = "Automatic (per target photo)";
 "自定义" = "Custom";
 "自由" = "Free";
 "致密城市肌理，硬朗大S曲线，浓郁橙青与紫金冷暖对撞" = "Dense urban texture, bold S-curve, saturated orange-cyan and purple-gold clash";
@@ -843,6 +857,8 @@
 "选择预览照片" = "Choose preview photo";
 "透视" = "Perspective";
 "通道边界像素：方案 %@% · 参考 %@%" = "Channel-boundary pixels: candidate %@%% · reference %@%%";
+"配方" = "Recipe";
+"配方 LUT" = "Recipe LUT";
 "酒井贵弘" = "Takahiro Sakai";
 "重做" = "Redo";
 "重做 %@ 张" = "Redo photos: %@";
@@ -942,3 +958,4 @@
 "黑位 %@" = "Black level %@";
 "黑场" = "Black point";
 "默认值：%@；范围：%@ 至 %@；步进：%@。" = "Default: %@; range: %@ to %@; increment: %@.";
+"默认降噪设置" = "Default denoise settings";

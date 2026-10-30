@@ -89,7 +89,7 @@ public partial class MainWindow
         AdjustmentPayload? payload=null;
         var scope=new AdjustmentScopeDialog(owner,Path.GetFileName(file)+" · "+Loc.Format("目标：{0} 张照片",targets.Count),selected=>{
             try{payload=CapturePresetAdjustments(selected);return null;}catch(Exception error){return error.Message;}
-        },"同步调整","检查同步目标",settings.IsHDREditing);
+        },"同步调整","检查同步目标",settings.IsHDREditing,PreviewAdjustmentPayload,AdjustmentSummaryLookName);
         if(scope.ShowDialog()!=true || payload==null)return;
         try {
             var expected=targets.ToDictionary(photo=>photo.Path,StringComparer.OrdinalIgnoreCase);
@@ -107,7 +107,7 @@ public partial class MainWindow
                 return results;
             },sourceSummary:Loc.Format("来源：{0} · {1} 项调整",Path.GetFileName(source.Path),payload.Fields.Count),
                 historyParts:()=>session.Transactions.FirstOrDefault(transaction=>transaction.ID==operation.ID)?.Parts ?? [],
-                changeHistory:undo=>RunAdjustmentHistory(operation.ID,null,undo,dialog!));
+                changeHistory:undo=>RunAdjustmentHistory(operation.ID,null,undo,dialog!),payload:payload,lookName:AdjustmentSummaryLookName);
             dialog.ShowDialog();
         }catch(Exception error){if(owner.IsVisible)MessageBox.Show(owner,error.Message,Loc.Text("调整未应用"),MessageBoxButton.OK,MessageBoxImage.Information);}
         finally{collectionWindow?.Refresh();}

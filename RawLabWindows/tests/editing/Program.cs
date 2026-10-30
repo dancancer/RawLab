@@ -2,6 +2,11 @@ using RawLab.Windows;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+if (args.Contains("--summary-only")) {
+    AdjustmentSummaryChecks.Run();
+    return;
+}
+
 if (args.Contains("--hdr-only")) {
     HDRChecks.Run();
     return;
@@ -30,6 +35,7 @@ AdjustmentTransferChecks.Run();
 AdjustmentHistoryChecks.Run();
 AdjustmentPresetChecks.Run();
 HDRChecks.Run();
+AdjustmentSummaryChecks.Run();
 
 static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
 static JsonNode? Processing(Adjustments value) => JsonSerializer.SerializeToNode(value.Capture())!["Processing"];

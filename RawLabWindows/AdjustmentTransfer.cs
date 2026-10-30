@@ -9,6 +9,18 @@ public sealed record AdjustmentTransferContext(string Identifier,bool IsRaw,
 
 public static class AdjustmentTransfer
 {
+    public static AdjustmentPayload PreviewCapture(AdjustmentScope scope, SavedEdit snapshot, SavedEdit committed, AdjustmentTransferContext context)
+    {
+        var live = AdjustmentTransferValues.Values(snapshot, context);
+        var saved = AdjustmentTransferValues.Values(committed, context);
+        if (!snapshot.Identity.SameFile(committed.Identity) || snapshot.Settings.Processing != committed.Settings.Processing ||
+            snapshot.Settings.HDR != committed.Settings.HDR || snapshot.Settings.AIDenoiseEnabled != committed.Settings.AIDenoiseEnabled ||
+            snapshot.Settings.MasterRecipeSettingsVersion != committed.Settings.MasterRecipeSettingsVersion ||
+            live.Count != saved.Count || live.Any(pair => !saved.TryGetValue(pair.Key, out var value) || !Same(pair.Value, value)))
+            throw new AdjustmentTransferException(AdjustmentFailure.Draft);
+        return Capture(scope, committed, context);
+    }
+
     internal static AdjustmentRecipeContext? Recipe(AdjustmentSnapshot s) => s.MasterRecipeID is {} id ? new(id,s.Values[(int)Parameter.Strength]/100,s.MasterRecipeSettingsVersion) : null;
     public static AdjustmentPayload Capture(AdjustmentScope scope,SavedEdit edit,AdjustmentTransferContext context)
     {

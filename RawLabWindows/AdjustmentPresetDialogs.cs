@@ -27,14 +27,14 @@ internal sealed class AdjustmentPresetNameDialog : Window
 {
     private readonly TextBox name = new() { Margin = new Thickness(0, 4, 0, 12) };
     internal AdjustmentPresetNameDialog(Window owner, string title, string initialName, bool includeScope,
-        Func<string, AdjustmentScope, string?> save,bool hdr=false)
+        Func<string, AdjustmentScope, string?> save,bool hdr=false, Func<AdjustmentScope, AdjustmentPayload>? preview=null, Func<string, string, string?>? lookName=null)
     {
         var root = AdjustmentDialogLayout.Configure(this, owner, title, "preset.name-dialog");
         var heading = new StackPanel(); root.Children.Add(heading);
         heading.Children.Add(AdjustmentDialogLayout.Text(Loc.Text("预设名称")));
         name.Text = initialName; AutomationProperties.SetAutomationId(name, "preset.name");
         AutomationProperties.SetName(name, Loc.Text("预设名称")); heading.Children.Add(name);
-        var scope = new AdjustmentScopeEditor("preset.save",hdr); Grid.SetRow(scope, 1); root.Children.Add(scope);
+        var scope = new AdjustmentScopeEditor("preset.save",hdr,preview,lookName); Grid.SetRow(scope, 1); root.Children.Add(scope);
         scope.Visibility = includeScope ? Visibility.Visible : Visibility.Collapsed;
         var footer = new StackPanel { Margin = new Thickness(0, 12, 0, 0) }; Grid.SetRow(footer, 2); root.Children.Add(footer);
         var error = AdjustmentDialogLayout.Text(""); error.SetResourceReference(TextBlock.ForegroundProperty, "ErrorForeground");
@@ -49,7 +49,7 @@ internal sealed class AdjustmentPresetNameDialog : Window
         confirm.IsDefault = true; actions.Children.Add(confirm);
         void Update() {
             confirm.IsEnabled = AdjustmentPreset.NormalizeName(name.Text).Length > 0 && (!includeScope || scope.HasSelection);
-            Height = includeScope ? scope.IsCustom ? 720 : 420 : 300;
+            Height = includeScope ? scope.IsCustom ? 720 : preview != null ? 600 : 420 : 300;
         }
         name.TextChanged += (_, _) => Update(); scope.SelectionChanged += Update; Update();
         Loaded += (_, _) => { name.Focus(); name.SelectAll(); };
@@ -82,10 +82,11 @@ internal sealed class AdjustmentPresetLibraryDialog : Window
     private readonly TextBlock error = AdjustmentDialogLayout.Text("");
     private readonly Button create;
     private readonly bool canUsePhoto;
+    private readonly Func<string, string, string?>? lookName;
 
-    internal AdjustmentPresetLibraryDialog(Window owner, AdjustmentPresetStore store, bool canUsePhoto)
+    internal AdjustmentPresetLibraryDialog(Window owner, AdjustmentPresetStore store, bool canUsePhoto, Func<string, string, string?>? lookName=null)
     {
-        this.store = store; this.canUsePhoto = canUsePhoto;
+        this.store = store; this.canUsePhoto = canUsePhoto; this.lookName = lookName;
         var root = AdjustmentDialogLayout.Configure(this, owner, "我的预设", "preset.library");
         var heading = new StackPanel(); root.Children.Add(heading);
         create = AdjustmentPresetPresentation.Button("保存当前调整为预设…", "preset.create", () => { SaveRequested = true; DialogResult = true; });
@@ -110,7 +111,9 @@ internal sealed class AdjustmentPresetLibraryDialog : Window
                 var row = new StackPanel { Margin = new Thickness(0, 8, 0, 14) }; rows.Children.Add(row);
                 var title = AdjustmentDialogLayout.Text(preset.Name); title.FontWeight = FontWeights.SemiBold; row.Children.Add(title);
                 AutomationProperties.SetAutomationId(row, "preset.row." + preset.ID);
-                row.Children.Add(AdjustmentDialogLayout.Text(Loc.Format("已选 {0} 项", preset.Payload.Fields.Count)));
+                var detail = new Expander { Header = AdjustmentDialogLayout.Text(Loc.Format("已选 {0} 项", preset.Payload.Fields.Count)),
+                    Content = AdjustmentSummaryView.Build(preset.Payload, lookName, "preset.summary." + preset.ID) };
+                AutomationProperties.SetAutomationId(detail, "preset.summary." + preset.ID); row.Children.Add(detail);
                 var actions = new WrapPanel(); row.Children.Add(actions);
                 var apply = AdjustmentPresetPresentation.Button("应用预设", "preset.apply." + preset.ID, () => { ApplyRequested = preset; DialogResult = true; });
                 apply.IsEnabled = canUsePhoto; actions.Children.Add(apply);

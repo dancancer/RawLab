@@ -4,6 +4,48 @@ import XCTest
 extension ViewingEditorUITests {
     private func presets(_ app: XCUIApplication) -> [[String: Any]] { receipt(app)["presets"] as? [[String: Any]] ?? [] }
 
+    func testScopeSummaryMatchesCaptureWithoutSaving() {
+        let app = launch(language: "en", presetFixtures: true)
+        let initial = receipt(app)
+        openPresets(app)
+        app.buttons["preset.create"].tap()
+        presetName("Scope summary", app: app)
+        func chooseScope(_ title: String) {
+            let picker = app.descendants(matching: .any).matching(identifier: "preset.save.scope").firstMatch
+            revealFormControl(picker, app: app); picker.tap()
+            app.buttons[title].firstMatch.tap()
+        }
+        chooseScope("Modified only")
+        let count = app.staticTexts["preset.save.summary.count"]
+        revealFormControl(count, app: app)
+        XCTAssertTrue(count.label.contains("Adjustments to overwrite: 1."), count.label)
+        let light = app.descendants(matching: .any).matching(identifier: "preset.save.summary.group.light").firstMatch
+        revealFormControl(light, app: app); light.tap()
+        let exposure = app.descendants(matching: .any).matching(identifier: "preset.save.summary.value.light.exposure").firstMatch
+        revealFormControl(exposure, app: app)
+        XCTAssertTrue(exposure.label.contains("+0.50 EV"), app.debugDescription)
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, initial["historyCount"] as? Int)
+        XCTAssertEqual(receipt(app)["sourceStoredRevision"] as? String, initial["sourceStoredRevision"] as? String)
+        XCTAssertTrue(receipt(app)["clipboard"] is NSNull)
+        capture(app, "scope-summary-modified")
+        chooseScope("Custom")
+        let clear = app.buttons["preset.save.clear"]
+        revealFormControl(clear, app: app); clear.tap()
+        let empty = app.staticTexts["preset.save.summary.empty"]
+        revealFormControl(empty, app: app); XCTAssertTrue(empty.exists)
+        let save = app.buttons["preset.save.confirm"]
+        revealFormControl(save, app: app); XCTAssertFalse(save.isEnabled)
+        capture(app, "scope-summary-empty-custom")
+        chooseScope("Modified only")
+        revealFormControl(save, app: app); XCTAssertTrue(save.isEnabled); save.tap()
+        wait(app) { ($0["presets"] as? [[String: Any]])?.count == 1 }
+        let payload = presets(app)[0]["payload"] as! [String: Any]
+        let values = payload["values"] as! [String: Any]
+        XCTAssertEqual(Set(values.keys), ["light.exposure"])
+        XCTAssertEqual(values["light.exposure"] as? Double, 0.5)
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, initial["historyCount"] as? Int)
+    }
+
     private func presetName(_ name: String, app: XCUIApplication) {
         let field = app.textFields["preset.name"]
         XCTAssertTrue(field.waitForExistence(timeout: 10), app.debugDescription)
@@ -215,7 +257,11 @@ extension ViewingEditorUITests {
                 app.buttons["editor.group.looks"].tap()
             }
             let library = app.buttons["preset.library"]
-            for _ in 0..<3 where !library.isHittable { app.scrollViews["editor.tools"].swipeLeft() }
+            // 屏幕外的 SwiftUI 按钮在部分 Simulator 上查询 isHittable 会报错；先把其完整 frame 滚入视口。
+            for _ in 0..<8 {
+                if library.exists && !library.frame.isEmpty && app.frame.contains(library.frame) { break }
+                app.scrollViews["editor.tools"].swipeLeft()
+            }
             XCTAssertTrue(library.waitForExistence(timeout: 5)); library.tap()
             let create = app.buttons["preset.create"]; revealFormControl(create, app: app); create.tap()
             presetName("晨光 · Portrait / Sehr langer benutzerdefinierter Vorgabenname", app: app)
@@ -223,7 +269,11 @@ extension ViewingEditorUITests {
             let light = app.descendants(matching: .any).matching(identifier: "preset.group.light").firstMatch
             revealFormControl(light, app: app); light.tap()
             let exposure = app.switches["preset.field.light.exposure"]
-            revealFormControl(exposure, app: app); XCTAssertGreaterThanOrEqual(exposure.frame.height, 44); toggleField(exposure)
+            revealFormControl(exposure, app: app); XCTAssertGreaterThanOrEqual(exposure.frame.height, 44)
+            let nativeSwitch = exposure.switches.firstMatch
+            if nativeSwitch.exists { nativeSwitch.tap() } else { exposure.tap() }
+            // 空摘要变为覆盖说明后，超大字号可能将当前行推到视口外；重新滚到字段再验证状态。
+            revealFormControl(exposure, app: app); XCTAssertEqual(exposure.value as? String, "1")
             capture(app, "preset-scope-large-\(language)")
             let save = app.buttons["preset.save.confirm"]; revealFormControl(save, app: app)
             let titles = ["en": "Save Preset", "zh-Hans": "保存预设", "de": "Vorgabe speichern",

@@ -32,6 +32,7 @@ published packages, checksums and package provenance.
 
 ## Architecture And Design
 
+- [UI/UX optimization execution plan](integration/ui-ux-optimization/README.md): workflow, workspace, discoverability, accessibility and four-platform acceptance after the 0.9 redesign
 - [Product scope](../PRODUCT.md), [desktop design](../DESIGN.md) and [product roadmap](architecture/roadmap.md)
 - [Maintained design assets](design/README.md), including the [four-platform app prototype and coverage](design/editor-workspace/README.md)
 - [Iteration requirements](design/editing-iteration/requirements.md) and [technical design](design/editing-iteration/technical-design.md): phase-one remaining work, all of phase two and desktop updates

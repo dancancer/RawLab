@@ -20,6 +20,14 @@ struct AdjustmentHistoryModelTests {
             try data.write(to: url, options: .atomic)
         })
         let model = RawEditorViewModel(editPersistence: store)
+        let summaryLook = directory.appendingPathComponent("summary.cube")
+        try Data("fixture".utf8).write(to: summaryLook)
+        model.lutMap["summary-look"] = LUTReference(id: "summary-look", name: "Summary look", sourceURL: summaryLook, isCustom: true)
+        try check(model.adjustmentSummaryLookName(kind: "managed", id: "summary-look") == "Summary look",
+                  "Summary resolves a readable managed look")
+        try FileManager.default.removeItem(at: summaryLook)
+        try check(model.adjustmentSummaryLookName(kind: "managed", id: "summary-look") == nil,
+                  "Summary rejects a deleted look retained in the metadata cache")
         let identity = PhotoIdentity(resourceIdentifier: "native-history-a")
         model.sourceFile = .externallyManaged(source)
         model.sourceIdentity = identity

@@ -186,7 +186,9 @@ private struct IOSCollectionSyncView: View {
             } else {
                 NavigationStack {
                     Form {
-                        IOSAdjustmentScopeEditor(scope: $scope, fields: $fields, titleKey: "同步范围", sourceName: model.sourceDisplayName,
+                        IOSAdjustmentScopeEditor(scope: $scope, fields: $fields,
+                            preview: Result { try model.previewAdjustmentPayload(scope: scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields), settings: sourceSettings) },
+                            lookName: model.adjustmentSummaryLookName, errorMessage: { model.adjustmentErrorMessage($0) }, titleKey: "同步范围", sourceName: model.sourceDisplayName,
                                                  allowed: sourceSettings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
                         Section {
                             Text(L10n.format("目标：%@ 张照片", String(collection.selection.targets(excluding: model.sourceIdentity?.key).count)))
@@ -201,7 +203,7 @@ private struct IOSCollectionSyncView: View {
                                     synchronization = try model.captureCollectionSynchronization(
                                         scope: scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields), settings: sourceSettings)
                                 } catch { message = model.adjustmentErrorMessage(error) }
-                            }.disabled((scope == "custom" && fields.isEmpty) || collection.selection.targets(excluding: model.sourceIdentity?.key).isEmpty
+                            }.disabled((try? model.previewAdjustmentPayload(scope: scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields), settings: sourceSettings)) == nil || collection.selection.targets(excluding: model.sourceIdentity?.key).isEmpty
                                 || model.sourceIdentity.map { !model.adjustmentTargetIsCurrent($0.key) } != false)
                                 .accessibilityIdentifier("collection.sync.prepare")
                         }

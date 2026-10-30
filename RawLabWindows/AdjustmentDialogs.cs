@@ -30,9 +30,9 @@ internal sealed class AdjustmentScopeDialog : Window
 {
     private readonly AdjustmentScopeEditor editor;
     internal AdjustmentScope SelectedScope => editor.SelectedScope;
-    internal AdjustmentScopeDialog(Window owner, string source, Func<AdjustmentScope, string?> copy, string title = "复制调整", string confirmTitle = "复制调整",bool hdr=false)
+    internal AdjustmentScopeDialog(Window owner, string source, Func<AdjustmentScope, string?> copy, string title = "复制调整", string confirmTitle = "复制调整",bool hdr=false, Func<AdjustmentScope, AdjustmentPayload>? preview=null, Func<string, string, string?>? lookName=null)
     {
-        editor=new("adjustment.copy",hdr);
+        editor=new("adjustment.copy",hdr,preview,lookName);
         var root = AdjustmentDialogLayout.Configure(this, owner, title, "adjustment.copy");
         root.Children.Add(AdjustmentDialogLayout.Text(Path.GetFileName(source)));
         Grid.SetRow(editor, 1); root.Children.Add(editor);
@@ -44,7 +44,7 @@ internal sealed class AdjustmentScopeDialog : Window
             error.Text = copy(SelectedScope) ?? ""; if (error.Text.Length == 0) DialogResult = true;
         });
         confirm.IsDefault = true; actions.Children.Add(confirm); Grid.SetRow(footer, 2); root.Children.Add(footer);
-        void Update() { Height = editor.IsCustom ? 660 : 340; confirm.IsEnabled = editor.HasSelection; }
+        void Update() { Height = editor.IsCustom ? 660 : preview != null ? 560 : 340; confirm.IsEnabled = editor.HasSelection; }
         editor.SelectionChanged += Update; Update();
     }
 }
@@ -62,11 +62,14 @@ internal sealed class AdjustmentResultDialog : Window
     private IReadOnlyList<AdjustmentOutcome> outcomes;
     private bool preview;
     private readonly string? sourceSummary;
+    private readonly AdjustmentPayload? payload;
+    private readonly Func<string, string, string?>? lookName;
     internal AdjustmentResultDialog(Window owner,string title,IReadOnlyList<AdjustmentOutcome> initial,bool preview,
         Func<IReadOnlySet<string>,IReadOnlyList<AdjustmentOutcome>> run,Action? reloadSaved=null,string? sourceSummary=null,
-        Func<IReadOnlyList<AdjustmentHistoryPart>>? historyParts=null,Action<bool>? changeHistory=null)
+        Func<IReadOnlyList<AdjustmentHistoryPart>>? historyParts=null,Action<bool>? changeHistory=null,
+        AdjustmentPayload? payload=null,Func<string,string,string?>? lookName=null)
     {
-        this.preview=preview;outcomes=initial;this.sourceSummary=sourceSummary;
+        this.preview=preview;outcomes=initial;this.sourceSummary=sourceSummary;this.payload=payload;this.lookName=lookName;
         this.historyParts=historyParts ?? (()=>[]);
         var root=AdjustmentDialogLayout.Configure(this,owner,title,"adjustment.results");root.Children.Add(summary);
         AutomationProperties.SetAutomationId(summary,"adjustment.results.summary");
@@ -83,6 +86,11 @@ internal sealed class AdjustmentResultDialog : Window
     private void Refresh()
     {
         rows.Children.Clear();
+        if (payload != null) {
+            var details = new Expander { Header = AdjustmentDialogLayout.Text(Loc.Text("查看调整范围")),
+                Content = AdjustmentSummaryView.Build(payload, lookName) };
+            AutomationProperties.SetAutomationId(details, "adjustment.results.scope"); rows.Children.Add(details);
+        }
         var parts=historyParts();
         var states=parts.ToDictionary(p=>p.Identity.Path,p=>p.State,StringComparer.OrdinalIgnoreCase);
         bool WasUndone(AdjustmentOutcome outcome)=>outcome.Status==AdjustmentStatus.Applied &&
