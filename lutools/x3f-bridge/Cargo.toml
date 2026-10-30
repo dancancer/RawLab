@@ -16,6 +16,9 @@ libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+[patch."https://github.com/sagwaco/x3fuse-core"]
+x3f-sys = { path = "vendor/x3f-sys" }
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

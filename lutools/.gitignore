@@ -78,6 +78,8 @@ docs/.doctrees/
 # Package managers
 node_modules/
 vendor/
+!x3f-bridge/vendor/
+!x3f-bridge/vendor/**
 
 # Compiled addons
 *.node
@@ -116,3 +118,4 @@ third_party/*
 
 # Rust renderer build output
 x3f-bridge/target/
+x3f-bridge/vendor/*/target/

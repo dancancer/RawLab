@@ -419,6 +419,17 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         add_test(NAME x3f_bridge_contracts COMMAND "${CMAKE_COMMAND}" -E env ${x3f_environment}
             "${RAWLAB_CARGO}" test --release --locked --offline
             --manifest-path "${x3f_source}/Cargo.toml" --target "${RAWLAB_X3F_RUST_TARGET}")
+        add_test(NAME x3f_parallel_contracts COMMAND "${CMAKE_COMMAND}" -E env ${x3f_environment}
+            "${RAWLAB_CARGO}" test --release --locked --offline
+            --manifest-path "${x3f_source}/Cargo.toml" --target "${RAWLAB_X3F_RUST_TARGET}"
+            -p x3f-sys --lib parallel)
+        # 上游的逐位原生参考来自 ARM64 macOS；MSVC 软件 FMA/libm 的末位不同。
+        if(RAWLAB_X3F_RUST_TARGET STREQUAL "aarch64-apple-darwin")
+            add_test(NAME x3f_decoder_contracts COMMAND "${CMAKE_COMMAND}" -E env ${x3f_environment}
+                "${RAWLAB_CARGO}" test --release --locked --offline
+                --manifest-path "${x3f_source}/Cargo.toml" --target "${RAWLAB_X3F_RUST_TARGET}"
+                -p x3f-sys --lib)
+        endif()
     endif()
     add_executable(cpu_workspace_tests tests/cpu_workspace_tests.cpp)
     target_link_libraries(cpu_workspace_tests PRIVATE sony2fuji_core)

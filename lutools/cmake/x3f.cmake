@@ -36,7 +36,11 @@ if(SONY2FUJI_ENABLE_X3F)
         set(x3f_archive "${x3f_target}/${RAWLAB_X3F_RUST_TARGET}/release/rawlab_x3f.lib")
     endif()
     file(GLOB_RECURSE x3f_sources CONFIGURE_DEPENDS "${x3f_source}/src/*.rs" "${x3f_source}/profiles/*.json"
-        "${x3f_source}/licenses/*")
+        "${x3f_source}/licenses/*" "${x3f_source}/vendor/x3f-sys/src/*.rs"
+        "${x3f_source}/vendor/x3f-sys/csrc/*")
+    list(APPEND x3f_sources "${x3f_source}/vendor/x3f-sys/Cargo.toml"
+        "${x3f_source}/vendor/x3f-sys/build.rs" "${x3f_source}/vendor/x3f-sys/wrapper.h"
+        "${x3f_source}/vendor/x3f-sys/LICENSE")
     set(x3f_notices "${CMAKE_CURRENT_BINARY_DIR}/x3f-licenses.txt")
     set(x3f_environment "CARGO_TARGET_DIR=${x3f_target}")
     if(IOS)

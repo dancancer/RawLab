@@ -9,7 +9,10 @@ Python interpreter or external converter process is needed at runtime.
 The decoder source is x3fuse-core commit
 `00f9ef206a2d629bca35ceead4b3951833b85d3d` from
 <https://github.com/sagwaco/x3fuse-core>. Both Rust and bundled native decoding
-sources are pinned by `Cargo.lock`. Build with CMake's `SONY2FUJI_ENABLE_X3F`
+sources are pinned by `Cargo.lock`. The local
+[`x3f-sys` patch](vendor/x3f-sys/RAWLAB.md) retains that source revision and
+parallelizes Merrill work while preserving its ordered floating-point reductions.
+Build with CMake's `SONY2FUJI_ENABLE_X3F`
 option; the [rendering contract](../docs/x3f-rendering.md) defines admission,
 color domains and platform limits. Cargo requires Rust 1.88 or newer. The actual
 build toolchain's `rust-docs` component supplies standard-library notices.
@@ -34,6 +37,27 @@ scene samples, controls and expected output from that implementation.
 section needed to exercise table offsets, types, unknown tags and truncation.
 A profile change requires a new rendering identity and held-out validation;
 matching these fixtures alone does not demonstrate SPP parity.
+
+## Merrill performance verification
+
+Use the same admitted, neutral Merrill source and release toolchain for both
+versions. The ignored benchmark measures the complete bridge decode, before
+the output hash or optional reference comparison. Keep CPU load comparable and
+alternate versions when comparing timings. A small exported image still develops
+the complete RAW first.
+
+```sh
+RAWLAB_X3F_BENCH_RAW=/path/to/Merrill.X3F \
+RAWLAB_X3F_BENCH_OUTPUT=/temporary/baseline.f32 \
+cargo test --release --locked --manifest-path lutools/x3f-bridge/Cargo.toml \
+  --lib benchmark::merrill_render -- --exact --ignored --nocapture
+```
+
+Run the candidate with `RAWLAB_X3F_BENCH_REFERENCE=/temporary/baseline.f32`
+instead of `RAWLAB_X3F_BENCH_OUTPUT` to compare every output byte. Use
+`RAWLAB_X3F_BENCH_REPEATS` for 1–20 measurements (default 3). The separate ignored
+`benchmark::merrill_cancel_does_not_publish_pixels` checks cancellation during a
+real decode. Benchmark files are temporary outputs and never belong in the repo.
 
 ## Notices
 

@@ -3,6 +3,9 @@ mod native;
 mod native_settings;
 mod settings;
 
+#[cfg(test)]
+mod benchmark;
+
 use std::{
     ffi::{c_char, CStr, CString},
     fs::File,

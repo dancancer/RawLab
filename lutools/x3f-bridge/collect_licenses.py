@@ -17,6 +17,7 @@ metadata = json.loads(subprocess.check_output([
 ], text=True, encoding="utf-8"))
 sections = ["RawLab X3F renderer dependency notices\n\n"
             "x3fuse-core is pinned to 00f9ef206a2d629bca35ceead4b3951833b85d3d.\n"
+            "x3f-sys includes RawLab's deterministic Merrill parallelism patch.\n"
             "The list includes build dependencies for completeness.\n"]
 for package in sorted(metadata["packages"], key=lambda value: value["name"]):
     if package["name"] == "rawlab-x3f":

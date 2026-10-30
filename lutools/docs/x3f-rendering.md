@@ -39,8 +39,14 @@ Normal X3F loads use LibRaw for identification only; the pinned renderer owns pi
 decoding. Switching that processor to legacy performs LibRaw unpack lazily. The
 orientation/transfer-function conversion and working-space conversion use the
 existing bounded CPU pixel executor without changing per-pixel arithmetic.
-The upstream decoder already parallelizes TRUE planes and SPP tiles with Rayon,
-but the Merrill SPP path still includes serial stages and rejects GPU execution.
+The decoder parallelizes TRUE planes and SPP tiles with Rayon. RawLab's pinned
+source patch also parallelizes Merrill chroma-offset worker calculations, final
+highlight-repair rows and despeckle detection. Chroma-offset contributions merge
+one at a time in their original order, including overlapping worker windows;
+donor accumulation, bad-pixel repair and tile blending keep their required order.
+These changes preserve output pixels across thread counts. The Merrill SPP path
+still includes serial stages and rejects GPU execution. Platforms without hardware
+fused multiply-add use the existing software implementation to preserve rounding.
 Output resizing happens after full-resolution development, so a small export does
 not avoid that initial cost. Ordinary scene-view GPU shaders cannot be enabled
 for this display-referred path without implementing its separate tone contract.

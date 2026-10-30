@@ -513,7 +513,6 @@ dependencies = [
 [[package]]
 name = "x3f-sys"
 version = "0.4.1"
-source = "git+https://github.com/sagwaco/x3fuse-core?rev=00f9ef206a2d629bca35ceead4b3951833b85d3d#00f9ef206a2d629bca35ceead4b3951833b85d3d"
 dependencies = [
  "bindgen",
  "cc",
