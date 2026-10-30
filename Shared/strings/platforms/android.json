@@ -1,13 +1,57 @@
 {
   "entries": {
-    "collection_cancel_check": {"file": "editor_strings.xml", "formats": [], "source": "取消检查", "types": []},
-    "collection_draft_ready": {"file": "editor_strings.xml", "formats": [], "source": "草稿已处理，请开始导出。", "types": []},
-    "collection_export_saved_settings": {"file": "editor_strings.xml", "formats": [], "source": "将按每张照片已保存的调整导出。跳过只影响本次导出。", "types": []},
-    "collection_preparing_export": {"file": "editor_strings.xml", "formats": [], "source": "正在准备导出…", "types": []},
-    "collection_review_targets": {"file": "editor_strings.xml", "formats": [], "source": "查看目标", "types": []},
-    "collection_saved_continue": {"file": "editor_strings.xml", "formats": [], "source": "任务已保存，请继续导出。", "types": []},
-    "collection_start_export": {"file": "editor_strings.xml", "formats": ["%1$d"], "source": "开始导出 {0} 张", "types": ["d"]},
-    "transfer_recheck": {"file": "editor_strings.xml", "formats": [], "source": "重新检查", "types": []},
+    "collection_cancel_check": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "取消检查",
+      "types": []
+    },
+    "collection_draft_ready": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "草稿已处理，请开始导出。",
+      "types": []
+    },
+    "collection_export_saved_settings": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "将按每张照片已保存的调整导出。跳过只影响本次导出。",
+      "types": []
+    },
+    "collection_preparing_export": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "正在准备导出…",
+      "types": []
+    },
+    "collection_review_targets": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "查看目标",
+      "types": []
+    },
+    "collection_saved_continue": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "任务已保存，请继续导出。",
+      "types": []
+    },
+    "collection_start_export": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$d"
+      ],
+      "source": "开始导出 {0} 张",
+      "types": [
+        "d"
+      ]
+    },
+    "transfer_recheck": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重新检查",
+      "types": []
+    },
     "preset_quick_error_mode": {
       "file": "editor_strings.xml",
       "formats": [],
@@ -57,60 +101,120 @@
     "x3f_relative_wb": {"file":"editor_strings.xml","formats":[],"source":"以文件保存的显影为基准，白平衡作相对调整。","types":[]},
     "x3f_legacy_description": {"file":"editor_strings.xml","formats":[],"source":"保留旧版的特殊色彩。","types":[]},
     "adjustment_summary_overwrite": {
-      "file": "editor_strings.xml", "formats": ["%1$d"],
-      "source": "将覆盖以下 {0} 项调整；其他调整保留目标原值。", "types": ["d"]
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$d"
+      ],
+      "source": "将覆盖以下 {0} 项调整；其他调整保留目标原值。",
+      "types": [
+        "d"
+      ]
     },
     "adjustment_summary_geometry_excluded": {
-      "file": "editor_strings.xml", "formats": [], "source": "未包含几何与镜头。", "types": []
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "未包含几何与镜头。",
+      "types": []
     },
     "adjustment_summary_geometry_included": {
-      "file": "editor_strings.xml", "formats": [], "source": "包含几何或镜头调整。", "types": []
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "包含几何或镜头调整。",
+      "types": []
     },
     "adjustment_summary_empty_custom": {
-      "file": "editor_strings.xml", "formats": [], "source": "未选择任何调整。", "types": []
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "未选择任何调整。",
+      "types": []
     },
     "adjustment_summary_empty_modified": {
-      "file": "editor_strings.xml", "formats": [], "source": "尚无已修改的调整。", "types": []
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "尚无已修改的调整。",
+      "types": []
     },
     "adjustment_summary_not_applicable": {
-      "file": "editor_strings.xml", "formats": [], "source": "不适用", "types": []
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "不适用",
+      "types": []
     },
     "adjustment_summary_recipe_note": {
-      "file": "editor_strings.xml", "formats": ["%1$s"],
-      "source": "以下为配方逻辑值；强度为 {0}。部分范围会按此强度换算。", "types": ["s"]
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "以下为配方逻辑值；强度为 {0}。部分范围会按此强度换算。",
+      "types": [
+        "s"
+      ]
     },
     "adjustment_summary_camera_wb": {
-      "file": "editor_strings.xml", "formats": [], "source": "相机白平衡（按目标照片）", "types": []
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "相机白平衡（按目标照片）",
+      "types": []
     },
     "adjustment_summary_default_denoise": {
-      "file": "editor_strings.xml", "formats": [], "source": "默认降噪设置", "types": []
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "默认降噪设置",
+      "types": []
     },
     "adjustment_summary_auto_target_photo": {
-      "file": "editor_strings.xml", "formats": [], "source": "自动（按目标照片）", "types": []
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "自动（按目标照片）",
+      "types": []
     },
     "adjustment_summary_lens_profile_pending": {
-      "file": "editor_strings.xml", "formats": [], "source": "待选择的镜头配置", "types": []
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "待选择的镜头配置",
+      "types": []
     },
     "adjustment_summary_look_builtin": {
-      "file": "editor_strings.xml", "formats": [], "source": "内置", "types": []
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "内置",
+      "types": []
     },
     "adjustment_summary_look_recipe": {
-      "file": "editor_strings.xml", "formats": [], "source": "配方", "types": []
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "配方",
+      "types": []
     },
     "adjustment_summary_look_recipe_lut": {
-      "file": "editor_strings.xml", "formats": [], "source": "配方 LUT", "types": []
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "配方 LUT",
+      "types": []
     },
     "adjustment_summary_exposure_scene": {
-      "file": "editor_strings.xml", "formats": [], "source": "场景", "types": []
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "场景",
+      "types": []
     },
     "adjustment_summary_exposure_preview": {
-      "file": "editor_strings.xml", "formats": [], "source": "预览", "types": []
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "预览",
+      "types": []
     },
     "adjustment_summary_relative_white_balance": {
-      "file": "editor_strings.xml", "formats": [], "source": "相对白平衡", "types": []
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "相对白平衡",
+      "types": []
     },
     "adjustment_summary_invalid_denoise": {
-      "file": "editor_strings.xml", "formats": [], "source": "无效的降噪参数", "types": []
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "无效的降噪参数",
+      "types": []
     },
     "about_rawlab": {
       "file": "strings.xml",
@@ -4781,6 +4885,108 @@
       "formats": [],
       "types": [],
       "file": "editor_strings.xml"
+    },
+    "look_category_all": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "全部外观",
+      "types": []
+    },
+    "look_category_fuji": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "Fuji",
+      "types": []
+    },
+    "look_category_kodak": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "Kodak",
+      "types": []
+    },
+    "look_category_other": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "其他",
+      "types": []
+    },
+    "look_category_custom": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "用户外观",
+      "types": []
+    },
+    "look_category_recent": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "最近使用",
+      "types": []
+    },
+    "look_search": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "搜索外观",
+      "types": []
+    },
+    "look_search_empty": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "没有匹配的外观",
+      "types": []
+    },
+    "look_search_clear": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "清除搜索",
+      "types": []
+    },
+    "look_category": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "外观分类",
+      "types": []
+    },
+    "tool_unavailable_hdr": {
+      "formats": [],
+      "source": "HDR 模式暂不支持此工具。",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "tool_raw_lens_only": {
+      "formats": [],
+      "source": "仅 RAW 照片支持镜头校正。",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "tool_white_balance_unavailable": {
+      "formats": [],
+      "source": "此照片没有可用的相机白平衡校准。",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "tool_select_look_first": {
+      "formats": [],
+      "source": "请先选择外观或配方。",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "lens_distortion_unavailable": {
+      "formats": [],
+      "source": "畸变标定不可用",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "lens_tca_unavailable": {
+      "formats": [],
+      "source": "横向色差标定不可用",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "preset_quick_error_white_balance_scope": {
+      "formats": [],
+      "source": "请将白平衡模式、色温和色调一起保存，再应用此预设。",
+      "file": "editor_strings.xml",
+      "types": []
     }
   },
   "overrides": {

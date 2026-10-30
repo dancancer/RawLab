@@ -74,7 +74,7 @@ public partial class MainWindow
     private void RefreshStateToolTips()
     {
         HistogramButton.ToolTip=HistogramSurface.Visibility==Visibility.Visible ?
-            Loc.Text(HistogramPanel.Visibility==Visibility.Visible ? "收起直方图" : "展开直方图") : null;
+            Loc.Text((histogramCompact ? HistogramPopup.IsOpen : histogramExpanded) ? "收起直方图" : "展开直方图") : null;
         AdjustToggleButton.ToolTip=Loc.Text(AdjustmentPanel.Visibility==Visibility.Visible ? "收起调整栏" : "展开调整栏");
     }
     private EditorAdjustmentTool? hiddenTransformTool;
@@ -106,17 +106,23 @@ public partial class MainWindow
     }
     private void UpdateDockMinimum()
     {
+        if(resizingDock)return;
         if(AdjustmentPanel.Visibility==Visibility.Visible && expandedGroup!=null && EditorArea.ActualHeight>0)
         {
             DockRow.MinHeight=216;
             DockRow.MaxHeight=Math.Max(216,EditorArea.ActualHeight-166);
-            if(DockRow.Height.Value>DockRow.MaxHeight)DockRow.Height=new(DockRow.MaxHeight);
+            var complex=quickPresetsVisible || choosingFilm || choosingRecipes || choosingDenoise || choosingLens || choosingGeometry ||
+                choosingHsl || choosingGrading || choosingWhiteBalance || choosingPhotoEffects || selectedParameter==Parameter.ToneCurve;
+            dockHeight=workspaceLayout.PanelHeight(complex,EditorArea.ActualHeight);
+            DockRow.Height=new(dockHeight);
         }
+        PanelAutomatic.Visibility=workspaceLayout.IsAutomatic ? Visibility.Collapsed : Visibility.Visible;
     }
     private void HistogramClicked(object sender,RoutedEventArgs e)
     {
-        HistogramPanel.Visibility=HistogramPanel.Visibility==Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
-        RefreshStateToolTips();
+        if(histogramCompact)HistogramPopup.IsOpen=!HistogramPopup.IsOpen;
+        else histogramExpanded=!histogramExpanded;
+        RefreshHistogramWorkspace();
     }
     private void ClippingClicked(object sender,RoutedEventArgs e) { clipping=!clipping;NeutralCanvas.ShowClipping=ResultCanvas.ShowClipping=clipping;NeutralCanvas.InvalidateVisual();ResultCanvas.InvalidateVisual();RefreshControls();Schedule(); }
     // 工具栏下拉菜单贴着按钮下沿弹出；默认的 MousePoint 在键盘打开时会跑到鼠标所在的任意位置

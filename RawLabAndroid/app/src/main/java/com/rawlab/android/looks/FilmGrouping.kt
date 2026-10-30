@@ -7,7 +7,7 @@ internal enum class FilmGroup { FUJI, KODAK, OTHER }
 
 internal data class FilmStripItem(val look: LookChoice, val startsGroup: Boolean)
 
-private fun LookChoice.group(builtIns: List<Film>): FilmGroup = when {
+internal fun LookChoice.group(builtIns: List<Film>): FilmGroup = when {
     managed -> FilmGroup.OTHER
     builtIns.none { it.id == id } -> FilmGroup.OTHER
     Film.all.any { it.id == id && it.file != null } -> FilmGroup.FUJI

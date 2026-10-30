@@ -15,15 +15,14 @@ struct AdjustmentPanelLayout {
     }
 
     var collapsed = false
-    private var preferredHeight: CGFloat = 320
+    private var preferredHeight: CGFloat?
+    var isAutomatic: Bool { preferredHeight == nil }
 
-    func height(available: CGFloat) -> CGFloat {
-        collapsed ? 0 : min(preferredHeight, Self.maximum(available))
+    func height(available: CGFloat, automatic: CGFloat = 220) -> CGFloat {
+        collapsed ? 0 : min(preferredHeight ?? max(220, automatic), Self.maximum(available))
     }
 
-    mutating func selectHeight(_ height: CGFloat) {
-        preferredHeight = min(380, max(220, height))
-    }
+    mutating func restoreAutomaticHeight() { preferredHeight = nil }
 
     mutating func resize(to height: CGFloat, available: CGFloat) {
         preferredHeight = min(max(height, 220), Self.maximum(available))
@@ -31,6 +30,22 @@ struct AdjustmentPanelLayout {
 
     private static func maximum(_ available: CGFloat) -> CGFloat {
         max(220, min(380, available * 0.5))
+    }
+}
+
+struct MacWorkspaceLayout {
+    private(set) var fileTreeChoice: Bool?
+
+    func showsFiles(width: CGFloat, hasFolders: Bool) -> Bool {
+        fileTreeChoice ?? (hasFolders || width >= 1100)
+    }
+
+    mutating func toggleFiles(width: CGFloat, hasFolders: Bool) {
+        fileTreeChoice = !showsFiles(width: width, hasFolders: hasFolders)
+    }
+
+    static func compactHistogram(canvas: CGSize) -> Bool {
+        canvas.width < 760 || canvas.height < 400
     }
 }
 

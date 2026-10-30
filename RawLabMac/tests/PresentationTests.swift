@@ -67,8 +67,8 @@ struct PresentationTests {
         check(sameWhiteBalance.wb_mode == SONY2FUJI_WB_CAMERA,
               "Choosing Custom at the displayed as-shot values does not shift the image")
         var panel = AdjustmentPanelLayout()
-        check(panel.height(available: 800) == 320 && panel.height(available: 620) == 310,
-              "One panel budget follows available window space")
+        check(panel.height(available: 800) == 220 && panel.height(available: 620) == 220,
+              "Automatic single-value panel preserves photo space")
         let stable = panel.height(available: 800)
         for group in EditorAdjustmentGroup.allCases {
             for _ in group.tools { check(panel.height(available: 800) == stable, "Tool contents never change the panel boundary") }

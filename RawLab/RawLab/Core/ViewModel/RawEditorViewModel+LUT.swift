@@ -22,6 +22,25 @@ struct LUTReference {
 }
 
 extension RawEditorViewModel {
+    var readableLookBrowserIDs: Set<String> {
+        Set(availableLUTs.compactMap { option in
+            var settings = RawSettings.default; settings.lutID = option.id
+            return isLookAvailable(for: settings) ? option.id : nil
+        })
+    }
+
+    func recordSavedLookChange(from previous: PhotoEditState?, to saved: PhotoEditState) {
+        guard saved.settings.masterRecipeID == nil, let id = saved.settings.lutID,
+              id != previous?.settings.lutID else { return }
+        recentLooks.record(id, available: readableLookBrowserIDs)
+        if let recentLooksURL { try? recentLooks.save(to: recentLooksURL) }
+    }
+
+    func pruneRecentLooks() {
+        recentLooks.prune(available: readableLookBrowserIDs)
+        if let recentLooksURL { try? recentLooks.save(to: recentLooksURL) }
+    }
+
     func loadLUTsIfNeeded() {
         guard !didStartLUTLoad, !isLoadingLUTs else { return }
         didStartLUTLoad = true
@@ -38,6 +57,11 @@ extension RawEditorViewModel {
                         let custom = self.customLUTs(from: managedLooks)
                         self.availableLUTs = bundled.options + custom.options
                         self.lutMap = bundled.map.merging(custom.map) { _, custom in custom }
+                        for id in self.recentLooks.ids where id.hasPrefix("recipe-lut:") {
+                            var settings = RawSettings.default; settings.lutID = id
+                            self.includeIndependentRecipeLook(settings)
+                        }
+                        self.pruneRecentLooks()
                     case .failure(let reason):
                         self.availableLUTs = bundled.options
                         self.lutMap = bundled.map

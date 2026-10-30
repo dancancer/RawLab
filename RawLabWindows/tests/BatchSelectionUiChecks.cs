@@ -69,7 +69,20 @@ internal static class BatchSelectionUiChecks
             var failureJournal=new BatchJournal(Path.Combine(root,"init-failure"));
             var failureJob=new BatchSelectionExport(store,failureJournal,_=>null).Freeze(window.Collection,review,_=>null);
             var failedWindow=new BatchExportWindow(failureJob,failureJournal,_=>throw new IOException("Injected engine initialization failure")){Owner=window};
-            failedWindow.Show();var failedStart=failedWindow.StartExecution();
+            Loc.SetPreference("en",Path.Combine(root,"language.txt"));foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
+            failedWindow.Show();
+            var batchSurface=EditorShellChecks.ArrangeLayout(failedWindow,new Size(1024,720));
+            var duplicate=PhotoFeatureChecks.Descendants<TextBlock>(failedWindow).Single(text=>text.Text==Loc.Text("重名文件"));
+            var sequence=PhotoFeatureChecks.Descendants<TextBlock>(failedWindow).Single(text=>text.Text==Loc.Text("自动添加序号"));
+            var duplicateBounds=duplicate.TransformToAncestor(failedWindow).TransformBounds(new Rect(duplicate.RenderSize));
+            var sequenceBounds=sequence.TransformToAncestor(failedWindow).TransformBounds(new Rect(sequence.RenderSize));
+            Console.WriteLine($"Batch filename layout: label={duplicateBounds}, detail={sequenceBounds}, actual={sequence.ActualHeight}, desired={sequence.DesiredSize.Height}");
+            // 独立截图移出 Window 后，透明内容仍使用原窗口背景。
+            if(batchSurface is Panel background && background.Background==null)background.Background=failedWindow.Background;
+            EditorShellChecks.CaptureLayout(failedWindow,batchSurface,Path.Combine(root,"batch-english-config.png"));
+            check(!duplicateBounds.IntersectsWith(sequenceBounds) && sequenceBounds.Top+.5>=duplicateBounds.Bottom && sequence.ActualHeight+sequence.Margin.Top+sequence.Margin.Bottom+.5>=sequence.DesiredSize.Height,
+                "Default English duplicate-file explanation wraps without overlapping the label");
+            var failedStart=failedWindow.StartExecution();
             check(!failedWindow.StartExecution().GetAwaiter().GetResult(),"Duplicate start is declined without cancelling the admitted run");
             InteractionChecks.PumpUntil(()=>failedStart.IsCompleted);check(failedStart.Result,"First start is admitted");
             check(!failedWindow.Job.Started && failedWindow.Job.Error!=null,"Initialization failure remains visible before runner start");

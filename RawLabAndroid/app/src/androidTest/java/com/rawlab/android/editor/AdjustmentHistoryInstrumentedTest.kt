@@ -470,6 +470,26 @@ class AdjustmentHistoryInstrumentedTest {
         } finally { model.presetStore.delete(preset) }
     }
 
+    @Test fun recentLookUpdatesOnlyAfterSuccessfulSaveOrRetry() {
+        var failWrite = false
+        withModel(storeFactory = { directory -> EditStore(directory) { from, to ->
+            if (failWrite) throw IOException("recent look save failure")
+            Files.move(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        } }) { model, _, _ ->
+            val before = model.state.value.recentLookIds
+            val look = model.state.value.looks.first { it.available && !it.managed && it.id != "neutral" && it.id != before.firstOrNull() }
+            failWrite = true
+            main { assertTrue(model.selectFilm(look.id)) }
+            await(model) { it.saveState == EditSaveState.FAILED && !it.rendering && !it.committingAdjustments }
+            assertEquals(before, model.state.value.recentLookIds)
+            failWrite = false
+            assertTrue(result<Boolean> { model.retrySave(it) })
+            assertEquals(look.id, model.state.value.recentLookIds.first())
+            val preferences = context.getSharedPreferences("look-browser", android.content.Context.MODE_PRIVATE)
+            assertEquals(look.id, org.json.JSONArray(preferences.getString("recent", "[]")).getString(0))
+        }
+    }
+
     @Test fun presetCaptureRejectsDraftAndFailedPhotoSave() {
         var failWrite = false
         withModel(storeFactory = { directory -> EditStore(directory) { from, to ->

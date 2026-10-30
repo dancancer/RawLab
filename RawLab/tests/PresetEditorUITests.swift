@@ -4,6 +4,37 @@ import XCTest
 extension ViewingEditorUITests {
     private func presets(_ app: XCUIApplication) -> [[String: Any]] { receipt(app)["presets"] as? [[String: Any]] ?? [] }
 
+    func testLookPresetAndCollectionExportTogether() {
+        let app = launch(language: "en", presetFixtures: true, looksFixtures: true)
+        openPresets(app); createPreset("Combined exposure", exposureOnly: true, app: app)
+        let id = presets(app)[0]["id"] as! String
+        app.buttons["preset.close"].tap()
+        let film = app.buttons["tool.film"]
+        if !film.exists { app.buttons["editor.group.looks"].tap() }
+        film.tap()
+        let search = app.textFields["looks.search"]
+        search.tap(); search.typeText("ACROS\n")
+        let acros = app.buttons["ACROS"]
+        for _ in 0..<4 { if acros.isHittable { break }; app.scrollViews["editor.panel"].swipeUp() }
+        acros.tap()
+        wait(app) { $0["ready"] as? Bool == true && ($0["recentLookIDs"] as? [String])?.first?.contains("ACROS") == true }
+        let look = receipt(app)["selectedLookID"] as! String
+        app.buttons["editor.group.light"].tap(); setExposure("+1.00", app: app)
+        openAdjustmentAction("preset.library.open", app: app)
+        let apply = app.buttons["preset.quick.apply.\(id)"]; revealFormControl(apply, app: app); apply.tap()
+        wait(app) { $0["ready"] as? Bool == true && $0["sourceStoredExposure"] as? Double == 0.5 }
+        XCTAssertEqual(receipt(app)["selectedLookID"] as? String, look)
+        XCTAssertEqual((receipt(app)["recentLookIDs"] as? [String])?.first, look)
+        openAdjustmentAction("collection.open", app: app)
+        XCTAssertTrue(app.buttons["collection.export"].waitForExistence(timeout: 10));app.buttons["collection.export"].tap()
+        let start = app.buttons["collection.export.start"];revealFormControl(start, app: app);start.tap()
+        wait(app, timeout: 120) { $0["batchStatus"] as? String == "completed" && $0["batchCompleted"] as? Int == 1 }
+        XCTAssertEqual(receipt(app)["batchFrozenExposure"] as? [Double], [0.5])
+        capture(app, "look-preset-collection-completed")
+        app.buttons["Task Actions"].tap();app.buttons["Discard Task"].tap();app.buttons["Discard Task"].tap()
+        wait(app) { $0["batchMode"] as? String == "" }
+    }
+
 
     func testQuickPresetEntryStaysVisible() {
         defer { XCUIDevice.shared.orientation = .portrait }

@@ -118,13 +118,20 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, navig
     val valueDescription = if (index == 8) listOf(
         "${formatAdjustment(edits.temperature, 1f)} K", formatAdjustment(edits.tint, 1f)
     ).joinToString(" · ") else number
+    val unavailableReason = when {
+        state.edits.isHDREditing && !hdrToolSupported(index) -> stringResource(R.string.tool_unavailable_hdr)
+        index == 16 && state.photo?.isX3f == true && edits.x3fMode == com.rawlab.android.settings.X3fMode.NORMAL -> stringResource(R.string.lens_input_unsupported)
+        index == 16 && !rawOnly -> stringResource(R.string.tool_raw_lens_only)
+        index == 8 && !state.edits.isHDREditing && (!rawOnly || state.preview?.temperature?.isFinite() != true) -> stringResource(R.string.tool_white_balance_unavailable)
+        else -> null
+    }
     val selectable = Modifier.selectable(selected,
         enabled = navigationEnabled && state.controlsEnabled && (!state.edits.isHDREditing || hdrToolSupported(index)) &&
             (index != 8 || rawOnly || state.edits.isHDREditing) &&
             (index != 16 || rawOnly && !(state.photo?.isX3f == true && edits.x3fMode == com.rawlab.android.settings.X3fMode.NORMAL)),
         role = Role.Tab, onClick = onClick).testTag("editor-tool-$index").semantics(mergeDescendants = true) {
         contentDescription = title
-        stateDescription = listOfNotNull(valueDescription, status).joinToString(" · ")
+        stateDescription = listOfNotNull(unavailableReason, valueDescription, status).joinToString(" · ")
     }
     Row(selectable.heightIn(min = 48.dp).background(if (selected) primary.copy(alpha = .12f) else Color.Transparent, RoundedCornerShape(5.dp))
         .padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

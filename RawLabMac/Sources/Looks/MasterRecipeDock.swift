@@ -60,10 +60,15 @@ struct MasterRecipeDock: View {
             }
             .frame(width: max(112, imageSize + 12), height: height)
             .foregroundStyle(selected ? Color.yellow : Color.primary)
+            .overlay(alignment: .topTrailing) {
+                if selected { Image(systemName: "checkmark.circle.fill").font(.system(size: 14))
+                    .foregroundStyle(.yellow).padding(3).accessibilityHidden(true) }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .id(recipe?.id ?? "")
+        .accessibilityIdentifier("recipe.\(recipe?.id ?? "neutral")")
         .help(recipe.map { "\($0.title) · \(L10n.text($0.summary))" } ?? L10n.text("中性直出"))
         .accessibilityLabel(recipe.map { "\($0.title), \(L10n.text($0.subtitle))" } ?? L10n.text("无配方"))
         .accessibilityValue(selected ? L10n.text("已选中") : L10n.text("未选中"))

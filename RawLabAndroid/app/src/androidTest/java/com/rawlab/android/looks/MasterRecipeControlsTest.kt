@@ -56,6 +56,7 @@ class MasterRecipeControlsTest {
             assertEquals(recipes[0].id, current.recipeID)
             assertEquals(4f, current.hsl.value(1, 4))
         }
+        compose.onNodeWithTag("recipe-selected-${recipes[0].id}", useUnmergedTree = true).assertIsDisplayed()
         val directory = requireNotNull(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir("recipe-screenshots"))
         val bitmap = list.captureToImage().asAndroidBitmap()
         File(directory, "master-recipes.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }

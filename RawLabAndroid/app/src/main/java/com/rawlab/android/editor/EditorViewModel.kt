@@ -64,6 +64,11 @@ class EditorViewModel @JvmOverloads constructor(
 ) : AndroidViewModel(application) {
     val storage = PhotoStorage(application)
     val presetStore = AdjustmentPresetStore(File(application.filesDir, "presets"))
+    private val lookPreferences = application.getSharedPreferences("look-browser", android.content.Context.MODE_PRIVATE)
+    private val recentLooks = com.rawlab.android.looks.RecentLooks(runCatching {
+        val entries = org.json.JSONArray(lookPreferences.getString("recent", "[]"))
+        List(entries.length()) { entries.getString(it) }
+    }.getOrDefault(emptyList()))
     private val usage = UsageAnalyticsRegistry.get(application)
     private val editStore = EditorEditStore(File(application.filesDir, "edits"), editStoreFactory)
     private val adjustmentHistory = EditorAdjustmentHistory(editStore)
@@ -121,7 +126,7 @@ class EditorViewModel @JvmOverloads constructor(
     private var failedX3fImport: Work.Import? = null
     private var lookRevision = 0L
     private var releases = 0
-    private val mutable = MutableStateFlow(EditorState())
+    private val mutable = MutableStateFlow(EditorState(recentLookIds = recentLooks.ids))
     val state = mutable.asStateFlow()
     @Volatile private var disposed = false
     private val renderer = EditorRenderer(storage, { if (editStore.available) editStore.versionedState(it) else null },
@@ -355,7 +360,9 @@ class EditorViewModel @JvmOverloads constructor(
         when (result) {
             is LookResult.Loaded -> {
                 mutable.value = EditorStateReducer.looksLoaded(mutable.value, result.looks)
+                recentLooks.ids.filter { it.startsWith("recipe-lut:") }.forEach { includeIndependentRecipeLook(EditSettings(film = it)) }
                 includeIndependentRecipeLook(mutable.value.edits)
+                updateRecentLooks()
             }
             is LookResult.Imported -> {
                 val mutation = result.imported.lastOrNull()?.let { EditorStateReducer.lookImported(mutable.value, it) }
@@ -391,6 +398,7 @@ class EditorViewModel @JvmOverloads constructor(
             is LookResult.Deleted -> {
                 val mutation = EditorStateReducer.lookDeleted(mutable.value, result.id)
                 mutable.value = mutation.state.copy(looks = result.looks)
+                updateRecentLooks()
                 scheduleLookPreview(mutation.preview)
             }
             is LookResult.Failed -> {
@@ -776,9 +784,22 @@ class EditorViewModel @JvmOverloads constructor(
     private fun gpuMode() = if (mutable.value.gpuEnabled) NativeProcessor.AUTO else NativeProcessor.CPU
 
     private fun persist(photo: ImportedPhoto, edits: EditSettings, completed: (EditSaveResult) -> Unit) {
+        val previousFilm = adjustmentHistory.loaded?.settings?.film
+        val source = sourceRevision
         commitAdjustments({ adjustmentHistory.commit(photo, edits.synchronizeHDR()) }) { result ->
-            completed(result.getOrElse { EditSaveResult(EditSaveState.FAILED, it) })
+            val saved = result.getOrElse { EditSaveResult(EditSaveState.FAILED, it) }
+            if (saved.state == EditSaveState.SAVED && source == sourceRevision && mutable.value.photo?.identity == photo.identity &&
+                mutable.value.edits.film == edits.film && edits.recipeID == null && previousFilm != edits.film) updateRecentLooks(edits.film)
+            completed(saved)
         }
+    }
+
+    private fun updateRecentLooks(applied: String? = null) {
+        val available = mutable.value.looks.filter { it.available }.mapTo(mutableSetOf()) { it.id }
+        if (applied == null) recentLooks.prune(available) else recentLooks.record(applied, available)
+        if (mutable.value.recentLookIds == recentLooks.ids) return
+        mutable.value = mutable.value.copy(recentLookIds = recentLooks.ids)
+        lookPreferences.edit().putString("recent", org.json.JSONArray(recentLooks.ids).toString()).apply()
     }
 
     private fun releasePreviousPhoto(next: ImportedPhoto) {
@@ -886,6 +907,7 @@ class EditorViewModel @JvmOverloads constructor(
             editRevision += 1
             mutable.value = mutable.value.copy(edits = restored, saveState = EditSaveState.SAVED, saveError = null, error = null)
             includeIndependentRecipeLook(restored)
+            if (restored.recipeID == null && current.edits.film != restored.film) updateRecentLooks(restored.film)
             renderCommittedForNavigation()
         }
         return results

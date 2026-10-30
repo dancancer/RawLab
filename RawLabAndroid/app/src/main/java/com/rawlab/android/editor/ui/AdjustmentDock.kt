@@ -3,6 +3,7 @@ package com.rawlab.android.editor.ui
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -64,6 +65,8 @@ import com.rawlab.android.ui.EditorSheetSystemBars
 import com.rawlab.android.ui.ToolIcon
 import com.rawlab.android.ui.assetBitmap
 import com.rawlab.android.looks.applyRecipe
+import com.rawlab.android.looks.LookBrowserCategory
+import com.rawlab.android.looks.browseLooks
 
 // ============================================================================
 //  调整面板：工具栏、当前工具的控件、胶片与大师配方选择
@@ -91,7 +94,11 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     val normalX3f = x3fInput && edits.x3fMode == X3fMode.NORMAL
     val recipes = remember(context) { MasterRecipe.load(context) }
     val bundledFilms = remember(context) { Film.all + BundledLooks.load(context) }
-    val filmItems = remember(state.looks, bundledFilms) { filmStripItems(state.looks, bundledFilms) }
+    var lookCategory by rememberSaveable { mutableStateOf(LookBrowserCategory.ALL) }
+    var lookQuery by rememberSaveable { mutableStateOf("") }
+    val filmItems = remember(state.looks, bundledFilms, lookCategory, lookQuery, state.recentLookIds) {
+        browseLooks(state.looks, bundledFilms, lookCategory, lookQuery, state.recentLookIds)
+    }
     val calibrated = edits.isHDREditing || state.preview?.temperature?.isFinite() == true
     val neutralTemperature = if (edits.isHDREditing) 6500f else state.preview?.temperature?.takeIf { it.isFinite() } ?: 6500f
     val neutralTint = if (edits.isHDREditing) 0f else state.preview?.tint?.takeIf { it.isFinite() } ?: 0f
@@ -177,21 +184,24 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
         Column(Modifier.fillMaxWidth()) {
             if (scrollTools) toolRow()
         if (quickPresetsVisible) quickPresetContent() else when (tool) {
-            0 -> LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                item(key = "import-look") {
-                    Column(Modifier.width(76.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        ToolIcon(Icons.Outlined.Add, R.string.import_look, state.operation == Operation.NONE, onImportLook)
-                        Text(stringResource(R.string.import_look), Modifier.heightIn(min = 42.dp).padding(top = 4.dp),
-                            maxLines = 3, style = MaterialTheme.typography.labelSmall)
+            0 -> Column {
+                LookBrowserControls(lookCategory, { lookCategory = it }, lookQuery, { lookQuery = it }, state.operation == Operation.NONE, onImportLook)
+                if (filmItems.isEmpty()) {
+                    Column(Modifier.fillMaxWidth().testTag("looks.empty"), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(stringResource(R.string.look_search_empty))
+                        TextButton({ if (lookQuery.isEmpty()) lookCategory = LookBrowserCategory.ALL else lookQuery = "" }) {
+                            Text(stringResource(if (lookQuery.isEmpty()) R.string.look_category_all else R.string.look_search_clear))
+                        }
                     }
                 }
+                LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(filmItems, key = { it.look.id }) { item ->
                     val look = item.look
                     val builtIn = bundledFilms.firstOrNull { it.id == look.id }
                     val artwork = if (builtIn?.file != null) assetBitmap("artwork/${builtIn.artworkName}.png", 80.dp) else null
                     val additional = builtIn != null && Film.all.none { it.id == builtIn.id }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (item.startsGroup) VerticalDivider(Modifier.height(122.dp).padding(horizontal = 12.dp)
+                        if (item.startsGroup) VerticalDivider(Modifier.height(106.dp).padding(horizontal = 12.dp)
                             .testTag("film-group-divider-${look.id}"))
                         Box(Modifier.width(if (additional) 132.dp else 96.dp)) {
                             Column(Modifier.fillMaxWidth().selectable(selected = edits.film == look.id,
@@ -204,7 +214,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                                     })
                                 }),
                                 horizontalAlignment = Alignment.CenterHorizontally) {
-                                Box(Modifier.size(80.dp).border(if (edits.film == look.id) 2.dp else 0.dp,
+                                Box(Modifier.size(64.dp).border(if (edits.film == look.id) 2.dp else 0.dp,
                                     if (edits.film == look.id) MaterialTheme.colorScheme.primary else Color.Transparent).padding(3.dp), contentAlignment = Alignment.Center) {
                                     if (artwork != null) Image(artwork.asImageBitmap(), null, Modifier.fillMaxSize().testTag("film-artwork-${look.id}"))
                                     else Icon(Icons.Outlined.Image, null, Modifier.size(32.dp))
@@ -237,6 +247,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                             }
                         }
                     }
+                }
                 }
             }
             1 -> NumericControl(R.string.strength, edits.strength * 100, 0f..200f, "%", state.controlsEnabled && (edits.film != "neutral" || edits.recipeID != null),
@@ -417,6 +428,9 @@ internal fun MasterRecipePicker(recipes: List<MasterRecipe>, selected: String?, 
                     if (artwork != null) Image(artwork.asImageBitmap(), null, Modifier.fillMaxSize().testTag("recipe-artwork-${recipe?.id}"),
                         contentScale = ContentScale.Crop)
                     else Icon(Icons.Outlined.Layers, null, Modifier.size(32.dp), tint = if (selected == recipe?.id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (selected == recipe?.id) Icon(Icons.Outlined.CheckCircle, null,
+                        Modifier.align(Alignment.TopEnd).size(20.dp).background(MaterialTheme.colorScheme.surface, CircleShape)
+                            .testTag("recipe-selected-${recipe?.id ?: "neutral"}"), tint = MaterialTheme.colorScheme.primary)
                 }
                 Text(recipe?.localizedName ?: stringResource(R.string.no_recipe), Modifier.heightIn(min = 22.dp),
                     style = MaterialTheme.typography.labelMedium,

@@ -2,6 +2,7 @@ import Foundation
 
 struct Film: Identifiable, Hashable {
     var id: String { managedID ?? url.path }
+    var browserID: String { managedID ?? "builtin:\(url.lastPathComponent)" }
     let name: String
     let url: URL
     var managedID: String? = nil

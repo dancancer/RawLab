@@ -71,6 +71,10 @@ extension RawEditorViewModel {
         switch error as? AdjustmentTransferError {
         case .incompatible(let field) where field == "hdr.relative_white_balance":
             return L10n.text("此预设包含 HDR 相对白平衡，当前编辑模式不支持。")
+        case .incompatible(let field) where field.hasPrefix("select white balance mode"):
+            return L10n.text("请将白平衡模式、色温和色调一起保存，再应用此预设。")
+        case .incompatible(let field) where field == "target camera white balance unavailable":
+            return L10n.text("此照片没有可用的相机白平衡校准。")
         case .incompatible: return L10n.text("此预设与当前照片不兼容，请选择其他预设。")
         case .unrepresentable: return L10n.text("此预设无法保留照片的其他调整，请选择其他预设。")
         default: return adjustmentErrorMessage(error)

@@ -346,12 +346,8 @@ public partial class MainWindow
     }
     private void LibraryToggle(object sender,RoutedEventArgs e)
     {
-        var visible=LibraryPanel.Visibility==Visibility.Visible;
-        if(visible)libraryWidth=LibraryColumn.ActualWidth;
-        LibraryPanel.Visibility=LibrarySplitter.Visibility=visible ? Visibility.Collapsed : Visibility.Visible;
-        LibraryColumn.MinWidth=visible ? 0 : 180;
-        LibraryColumn.Width=new(visible ? 0 : libraryWidth);
-        LibrarySplitterColumn.Width=new(visible ? 0 : 5);
+        workspaceLayout.ToggleFiles(ActualWidth,library.Roots.Count>0);
+        SetFileTreeVisible(workspaceLayout.ShowsFiles(ActualWidth,library.Roots.Count>0));
         RefreshControls();
         QueueThumbnailRefresh();
     }

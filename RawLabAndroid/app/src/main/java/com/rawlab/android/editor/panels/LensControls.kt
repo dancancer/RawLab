@@ -46,10 +46,14 @@ fun LensControls(value: LensSettings, info: LensInfo?, enabled: Boolean, loading
                 modifier = Modifier.testTag("lens.reset")) { Icon(Icons.Outlined.RestartAlt, stringResource(R.string.lens_reset)) }
         }
         val candidate = if (value.manual) info?.candidates?.firstOrNull { it.id == value.profileId }
-            else info?.candidates?.firstOrNull { it.title == info.selectedLens }
-                ?: info?.candidates?.singleOrNull { it.isMatch }
-        LensToggle(R.string.lens_distortion, value.distortion, enabled && candidate?.hasDistortion == true, "lens.distortion") { change(value.copy(distortion = it)) }
-        LensToggle(R.string.lens_tca, value.tca, enabled && candidate?.hasTca == true, "lens.tca") { change(value.copy(tca = it)) }
+            else info?.candidates?.singleOrNull { it.isMatch }
+        val inputAllowed = info?.state !in listOf(2, 3, 7, 8, 9)
+        val unavailable = if (info == null) stringResource(R.string.lens_info_not_ready) else if (!inputAllowed) info.message
+            else if (candidate == null) stringResource(R.string.lens_manual_required) else null
+        LensToggle(R.string.lens_distortion, value.distortion, enabled && (value.distortion || inputAllowed && candidate?.hasDistortion == true), "lens.distortion",
+            unavailable ?: if (candidate?.hasDistortion == true) null else stringResource(R.string.lens_distortion_unavailable)) { change(value.copy(distortion = it)) }
+        LensToggle(R.string.lens_tca, value.tca, enabled && (value.tca || inputAllowed && candidate?.hasTca == true), "lens.tca",
+            unavailable ?: if (candidate?.hasTca == true) null else stringResource(R.string.lens_tca_unavailable)) { change(value.copy(tca = it)) }
         LensToggle(R.string.lens_auto_crop, value.autoCrop, enabled, "lens.crop") { change(value.copy(autoCrop = it)) }
         val selected = if (value.manual) info?.candidates?.firstOrNull { it.id == value.profileId }?.title
             else info?.selectedLens?.takeIf { it.isNotEmpty() }
@@ -72,11 +76,11 @@ fun LensControls(value: LensSettings, info: LensInfo?, enabled: Boolean, loading
 }
 
 @Composable
-private fun LensToggle(title: Int, checked: Boolean, enabled: Boolean, tag: String, change: (Boolean) -> Unit) {
+private fun LensToggle(title: Int, checked: Boolean, enabled: Boolean, tag: String, reason: String? = null, change: (Boolean) -> Unit) {
     val label = stringResource(title)
     val stateLabel = stringResource(if (checked) R.string.message_on else R.string.disabled)
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = change)
-        .testTag(tag).semantics { contentDescription = label; stateDescription = stateLabel }, verticalAlignment = Alignment.CenterVertically) {
+        .testTag(tag).semantics { contentDescription = label; stateDescription = listOfNotNull(stateLabel, reason).joinToString(" · ") }, verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
         Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }

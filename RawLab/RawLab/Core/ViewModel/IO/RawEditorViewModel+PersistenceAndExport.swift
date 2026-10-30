@@ -51,6 +51,7 @@ extension RawEditorViewModel {
             validateSource: adjustmentSourceValidator)
         if let saved = outcome.saved {
             adjustmentReloadRequired = false
+            if let state = saved.state { recordSavedLookChange(from: expected.state, to: state) }
             loadedEditRecord = saved
             retainEditMetadata(saved.state ?? candidate)
             pendingSettings = nil

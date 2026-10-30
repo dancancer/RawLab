@@ -137,6 +137,9 @@ final class EditorModel: ObservableObject {
     }
     var updatingMetadata = false
     @Published var films = Film.bundled()
+    @Published var lookBrowser = LookBrowserState()
+    @Published var recentLooks = RecentLooks()
+    let recentLooksURL: URL
     @Published var selectedFilmID = "" {
         didSet {
             if selectedFilmID.hasPrefix("recipe-lut:") { independentRecipeLookIDs.insert(selectedFilmID) }
@@ -312,14 +315,18 @@ final class EditorModel: ObservableObject {
          batchDirectory: URL = BatchJournal.defaultDirectory,
          presetDirectory: URL = AdjustmentPresetStore.defaultDirectory,
          onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
+        recentLooksURL = editDirectory.appendingPathComponent("recent-looks.json")
         self.onUsage = onUsage
         self.editDirectory = editDirectory
         presetStore = AdjustmentPresetStore(directory: presetDirectory)
         batchJournal = BatchJournal(directory: batchDirectory)
+        recentLooks = RecentLooks.load(from: recentLooksURL)
+        independentRecipeLookIDs.formUnion(recentLooks.ids.filter { $0.hasPrefix("recipe-lut:") })
         do {
             let library = try LookLibrary(directory: lookDirectory)
             lookLibrary = library
             films += library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id, colorNotice: $0.colorNotice, isCompatibility: $0.isCompatibility) }
+            pruneRecentLooks()
         } catch {
             self.error = error.localizedDescription
         }

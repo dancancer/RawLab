@@ -58,6 +58,9 @@ internal static partial class Program
             if(Environment.GetEnvironmentVariable("RAWLAB_BATCH_FLOW_UI")=="1") {
                 BatchFlow();CloseMainWindow();return 0;
             }
+            if(Environment.GetEnvironmentVariable("RAWLAB_LOOK_BROWSER_UI")=="1") {
+                LookBrowserFlow();CloseMainWindow();return 0;
+            }
             if (Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_UI") == "1") {
                 QuickPresetFlow(); CloseMainWindow(); return 0;
             }

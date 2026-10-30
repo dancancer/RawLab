@@ -50,7 +50,10 @@ public partial class MainWindow
         var defaults=PhotoInput.PrepareHDRInputSettings(file,new Adjustments());defaults.ResolveWhiteBalance(settings.AsShot);
         var result=TransferSession.CommitEdit(currentEditRecord,candidate,new(candidate.Identity,defaults.Capture(),null));
         if(result.Status is not (AdjustmentStatus.Applied or AdjustmentStatus.Unchanged))throw result.Error ?? new EditPersistenceConflict();
-        currentEditRecord=result.Saved;return result;
+        var previousLook=currentEditRecord.Edit?.Look;
+        currentEditRecord=result.Saved;
+        RecordRecentLook(previousLook,result.Saved?.Edit?.Look);
+        return result;
     }
     private string? ResolveLook(SavedEdit saved)
     {
@@ -67,6 +70,7 @@ public partial class MainWindow
         if(editDirty || transform.Active || editGesture!=null)throw new AdjustmentTransferException(AdjustmentFailure.Draft);
         if(!editStore!.VersionedState(file).SameAs(saved))throw new EditPersistenceConflict();
         var calibration=settings.AsShot;
+        var previousLook=currentEditRecord?.Edit?.Look;
         currentEditRecord=saved;settings=saved.Edit?.Settings.Restore() ?? PhotoInput.PrepareHDRInputSettings(file,new Adjustments());
         if(calibration!=null)settings.ResolveWhiteBalance(calibration);
         lut=saved.Edit is {} edit ? ResolveLook(edit) : null;
@@ -75,6 +79,7 @@ public partial class MainWindow
             films.Add(new(managed?.Name ?? lookLibrary?.DisplayName(lut,Path.GetFileNameWithoutExtension(lut)) ?? Path.GetFileNameWithoutExtension(lut),lut,null,
                 AppearanceUnverified:managed?.AppearanceUnverified ?? false,CompatibilityMode:managed?.CompatibilityMode ?? 0));BuildFilms();
         }
+        RecordRecentLook(previousLook,saved.Edit?.Look);
         ++editRevision;ResetAITask();RefreshControls();Schedule();
     }
     private bool PrepareAdjustmentCommand()
