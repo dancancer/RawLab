@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        B020A0000000000000000001 /* IOSQuickPresetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B020A0000000000000000002 /* IOSQuickPresetView.swift */; };
         B010A0000000000000000011 /* IOSAdjustmentSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B010A0000000000000000012 /* IOSAdjustmentSummaryView.swift */; };
         D00800000000000000000005 /* IOSBatchSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00800000000000000000015; };
         D00800000000000000000004 /* ContentView+BatchSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00800000000000000000014; };
@@ -231,6 +232,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        B020A0000000000000000002 /* IOSQuickPresetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Editor/IOSQuickPresetView.swift"; sourceTree = "<group>"; };
         B010A0000000000000000012 /* IOSAdjustmentSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Editor/IOSAdjustmentSummaryView.swift"; sourceTree = "<group>"; };
         D00800000000000000000015 /* IOSBatchSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSBatchSelectionView.swift"; path = "RawLab/UI/Export/IOSBatchSelectionView.swift"; sourceTree = SOURCE_ROOT; };
         D00800000000000000000014 /* ContentView+BatchSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ContentView+BatchSelection.swift"; path = "RawLab/UI/Editor/ContentView+BatchSelection.swift"; sourceTree = SOURCE_ROOT; };
@@ -893,6 +895,7 @@
 				4DCB040D1B1FA68911E790E9 /* IOSAdjustmentTransferView.swift */,
 				1E7D6A79DDC0DBE91962D492 /* IOSAdjustmentTransferPresentation.swift */,
                 B010A0000000000000000012 /* IOSAdjustmentSummaryView.swift */,
+                B020A0000000000000000002 /* IOSQuickPresetView.swift */,
 				7ADA8D603BB120B2616B82E8,
 				6CE93B9AEFEC48F9B6535407,
 				D00100000000000000000016,
@@ -1177,6 +1180,7 @@
 				288ACB8ACE1B29115F97D51E /* IOSAdjustmentTransferView.swift in Sources */,
 				B84D06C6D98807B1702187D9 /* IOSAdjustmentTransferPresentation.swift in Sources */,
                 B010A0000000000000000011 /* IOSAdjustmentSummaryView.swift in Sources */,
+                B020A0000000000000000001 /* IOSQuickPresetView.swift in Sources */,
 				EC14BD5D2B2BC66F70E833AC /* RawEditorViewModel+AdjustmentTransfer.swift in Sources */,
 				D6F055FF2048FFEF4ED1FBFA /* RawEditorViewModel+AdjustmentHistory.swift in Sources */,
 				17BF47482993E867097D4453 /* IOSAdjustmentTransferSession.swift in Sources */,

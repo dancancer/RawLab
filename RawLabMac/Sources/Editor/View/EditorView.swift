@@ -22,6 +22,7 @@ struct EditorView: View {
     @State private var infoMode = PhotoInfoMode.hidden
     @State private var photoInformation: PhotoInformation?
     @State private var geometryViewState: GeometryViewState?
+    @State private var queuedQuickPreset: (preset: AdjustmentPreset, source: UUID)?
     @StateObject private var hdrDisplay=HDRDisplayState()
     private struct GeometryViewState {
         let file: URL?
@@ -116,10 +117,13 @@ struct EditorView: View {
         .frame(minWidth: 950, minHeight: 620)
         .preferredColorScheme(.dark)
         .onChange(of: model.sourceRevision) { _, _ in
+            queuedQuickPreset = nil
             viewing.sourceChanged()
             fit()
         }
         .onChange(of: model.hslTargetEnabled) { _, _ in viewing.hold(false, allowed: false) }
+        .onChange(of: model.quickPresetsVisible) { _, visible in if visible { adjustmentPanel.collapsed = false } }
+        .onChange(of: adjustmentPanel.collapsed) { _, collapsed in if collapsed { model.closeQuickPresets() } }
         .onChange(of: model.geometryDraft != nil, initial: true) { _, editing in geometryEditingChanged(editing) }
         .onChange(of: model.busy) { _, _ in model.resumeResetToolIfReady() }
         .onChange(of: model.pendingGeometryPresentation) { _, _ in model.resumeResetToolIfReady() }
@@ -131,19 +135,28 @@ struct EditorView: View {
             if !Task.isCancelled && model.file == file { photoInformation = info }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            if model.quickPresetState.isPreparing { model.cancelQuickPreset() }
             model.cancelHSLTarget()
             if [.colorGrading, .toneCurve].contains(model.adjustmentNavigation.tool) { model.cancelAdjustmentInteraction() }
             model.saveEdits()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
+            if model.quickPresetState.isPreparing { model.cancelQuickPreset() }
             model.cancelHSLTarget()
             if [.colorGrading, .toneCurve].contains(model.adjustmentNavigation.tool) { model.cancelAdjustmentInteraction() }
             model.saveEdits()
         }
         .toolbar { editorToolbar }
-        .sheet(item: Binding(get: { model.adjustmentSheetInCollection ? nil : model.adjustmentSheet }, set: { model.adjustmentSheet = $0 })) { kind in
-            if kind == .presets { AdjustmentPresetView(model: model) }
-            else { AdjustmentTransferView(model: model, kind: kind) }
+        .sheet(item: Binding(get: { model.adjustmentSheetInCollection ? nil : model.adjustmentSheet }, set: { model.adjustmentSheet = $0 }), onDismiss: {
+            guard let queued = queuedQuickPreset else { return }
+            queuedQuickPreset = nil
+            guard queued.source == model.sourceRevision else { return }
+            model.showQuickPresets(); model.applyPresetToCurrentPhoto(queued.preset)
+        }) { kind in
+            if kind == .presets { AdjustmentPresetView(model: model, startSaving: model.adjustmentSheetStartsPresetSave) { preset in
+                queuedQuickPreset = (preset, model.sourceRevision); model.adjustmentSheet = nil
+            } }
+            else { AdjustmentTransferView(model: model, kind: kind, preset: model.adjustmentSheetPreset) }
         }
         .onExitCommand { exitHSLTarget(); model.cancelAdjustmentInteraction() }
         .background(MacViewingKeyboard(canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) },

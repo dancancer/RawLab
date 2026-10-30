@@ -55,6 +55,9 @@ internal static partial class Program
             Trace("main-window");
             WaitMode("off",false);
             Check(true,"A fresh native window exposes single mode before a photo is opened");
+            if (Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_UI") == "1") {
+                QuickPresetFlow(); CloseMainWindow(); return 0;
+            }
             if (phase.Equals("restart", StringComparison.OrdinalIgnoreCase))
             {
                 OpenPhoto(raw);

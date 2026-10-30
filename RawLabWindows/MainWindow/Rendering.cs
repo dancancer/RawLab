@@ -18,6 +18,7 @@ public partial class MainWindow
     internal void OpenFile(string path,BitmapSource? placeholder=null)
     {
         if(exporting || closing)return;
+        CloseQuickPresets();
         CancelParameterInputs();
         try
         {

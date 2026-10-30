@@ -81,6 +81,7 @@ public partial class MainWindow
     private void DockToggle(object sender,RoutedEventArgs e)
     {
         if(file==null || pendingAllReset!=null)return;
+        CloseQuickPresets();
         CancelParameterInputs();
         var visible=AdjustmentPanel.Visibility==Visibility.Visible;
         if(visible) {
@@ -132,6 +133,7 @@ public partial class MainWindow
         var startsBeforeKey=viewingKey==Key.Oem5 && !beforeKeyDown;
         if(viewingKey==Key.Oem5)beforeKeyDown=true;
         if(e.OriginalSource is TextBoxBase or ComboBox || Keyboard.FocusedElement is TextBoxBase or ComboBox)return;
+        if(e.Key==Key.Escape && quickPresetsVisible){CloseQuickPresets();e.Handled=true;return;}
         if(e.Key==Key.Escape && hslTargetEnabled){SetHslTargetMode(false,hslTargetAxis);e.Handled=true;return;}
         if(e.Key==Key.Escape && editGesture!=null){CancelParameterInputs();CancelEditGesture();e.Handled=true;return;}
         if(e.Key==Key.Z && Keyboard.Modifiers==ModifierKeys.Control){RunPhotoHistory(true);e.Handled=true;return;}

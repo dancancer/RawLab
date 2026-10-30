@@ -71,7 +71,7 @@ internal static partial class Program
         private void SetPresetExposure(double value)
         {
             var number = FindById(main, "ParameterValueText")!;
-            number.SetFocus(); SetValue(number, value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            number.SetFocus(); SetValue(number, value.ToString(System.Globalization.CultureInfo.GetCultureInfo(Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_LANGUAGE") ?? "en")));
             Keys(0x0d);
             WaitReady();
             Wait(() => Math.Abs(GetRangeValue("ParameterValueSlider") - value) < .0001);
@@ -98,10 +98,9 @@ internal static partial class Program
         private void ApplyPreset(string id)
         {
             EditCommand("preset.library.open"); Invoke(FindById(PresetDialog("preset.library"), "preset.apply." + id)!);
-            var results = Wait(() => FindById(root, "adjustment.results"))!;
-            var apply = FindById(results, "adjustment.results.apply")!; Wait(() => apply.Current.IsEnabled); Invoke(apply);
-            Wait(() => !apply.Current.IsEnabled); Invoke(FindById(results, "adjustment.results.close")!);
-            Wait(() => FindById(root, "adjustment.results") == null); ClosePresetLibrary(); WaitReady();
+            Wait(() => FindById(root, "preset.library") == null);
+            Wait(() => FindById(main, "preset.quick.undo") != null || FindById(main, "preset.quick.status")?.Current.Name.Contains("未变化") == true);
+            Invoke(FindById(main, "preset.quick.open")!); WaitReady();
         }
         private AutomationElement PresetDialog(string id) => Wait(() => {
             var dialog = FindById(root, id); return dialog != null && dialog.Current.IsEnabled ? dialog : null;

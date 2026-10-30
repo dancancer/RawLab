@@ -274,6 +274,8 @@
 "平均差异 %@/255 · 最大差异 %@/255" = "Mittlere Abweichung %@/255 · Maximale Abweichung %@/255";
 "并排" = "Nebeneinander";
 "应用" = "Anwenden";
+"应用到多张照片" = "Auf mehrere Fotos anwenden";
+"应用到当前照片" = "Auf aktuelles Foto anwenden";
 "应用并保存" = "Anwenden und speichern";
 "应用草稿" = "Entwurf anwenden";
 "应用草稿并继续" = "Entwurf übernehmen und fortfahren";
@@ -453,6 +455,7 @@
 "正在显影" = "Wird entwickelt";
 "正在显影…" = "Wird entwickelt…";
 "正在检查目标…" = "Fotos werden geprüft…";
+"正在检查预设…" = "Vorgabe wird geprüft…";
 "正在生成效果预览…" = "Vorschau wird erstellt…";
 "正在生成预览…" = "Vorschauen werden erstellt …";
 "正在读取镜头信息…" = "Objektivinformationen werden gelesen…";
@@ -465,7 +468,10 @@
 "此输入不支持镜头校正" = "Objektivkorrektur für diese Eingabe nicht unterstützt";
 "此配置与预览照片类型不匹配，请更换照片或配置。" = "Diese Einstellungen passen nicht zum Typ des Vorschaubilds. Wählen Sie ein anderes Foto oder eine andere Konfiguration.";
 "此镜头没有所选校正的标定数据" = "Keine Kalibrierungsdaten für die gewählten Korrekturen";
+"此预设与当前照片不兼容，请选择其他预设。" = "Diese Vorgabe ist mit dem aktuellen Foto nicht kompatibel. Wählen Sie eine andere Vorgabe.";
+"此预设包含 HDR 相对白平衡，当前编辑模式不支持。" = "Diese Vorgabe enthält relativen HDR-Weißabgleich, den der aktuelle Bearbeitungsmodus nicht unterstützt.";
 "此预设库来自更新版本，请更新应用后重试。" = "Diese Vorgabenbibliothek stammt aus einer neueren Version. Aktualisieren Sie die App und versuchen Sie es erneut.";
+"此预设无法保留照片的其他调整，请选择其他预设。" = "Diese Vorgabe kann die übrigen Anpassungen des Fotos nicht beibehalten. Wählen Sie eine andere Vorgabe.";
 "此默认值不可达，请重置裁切组。" = "Dieser Standardwert lässt sich nicht einstellen. Setze die Zuschnitteinstellungen zurück.";
 "每张照片使用确认时冻结的独立调整。" = "Jedes Foto verwendet seine bei der Bestätigung festgeschriebenen Anpassungen.";
 "水平位置" = "Horizontale Position";
@@ -525,6 +531,7 @@
 "童话绘本油画感，深邃沉静暗部，暖金柔光包裹与漫反射微光" = "Ölgemälde wie ein Märchenbilderbuch, tiefe ruhige Schatten, umhüllendes Warmgold und diffuses Leuchten";
 "端点固定" = "Endpunkte sind fest";
 "等待导出" = "Warten auf Export";
+"管理预设" = "Vorgaben verwalten";
 "管理预设：%@" = "Vorgabe verwalten: %@";
 "粗糙度" = "Rauheit";
 "粗色斑抑制" = "Grobe Artefaktunterdrückung";

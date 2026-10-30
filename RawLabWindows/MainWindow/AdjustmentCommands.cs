@@ -111,7 +111,11 @@ public partial class MainWindow
                 !StringComparer.OrdinalIgnoreCase.Equals(saved.Identity.Path,file))return outcome;
             var key=saved.Identity.Path+"\n"+saved.Revision;
             if(adopted.TryGetValue(key,out var previousError))return previousError==null ? outcome : outcome with {Error=previousError,RequiresHistoryDecision=false};
-            try{AdoptSavedEdit(saved);adopted[key]=null;return outcome;}
+            try{
+                AdoptSavedEdit(saved);
+                if(quickPresetsVisible && quickPreset.Phase!=QuickPresetPhase.Preparing)CancelQuickPreset();
+                adopted[key]=null;return outcome;
+            }
             catch(Exception error){adopted[key]=error;adjustmentReloadRequired=true;RefreshControls();return outcome with {Error=error,RequiresHistoryDecision=false};}
         }).ToArray();
     }

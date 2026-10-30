@@ -231,6 +231,7 @@
               <Button x:Name="ResetGroupButton" Content="{DynamicResource '重置分组'}" Click="ResetGroupClicked" Padding="8,3" Style="{StaticResource QuietButton}"/>
               </WrapPanel>
             </StackPanel></ScrollViewer>
+            <ScrollViewer x:Name="QuickPresetSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" AutomationProperties.AutomationId="preset.quick.panel"/>
             <ScrollViewer x:Name="FilmPanel" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><Grid Margin="0,3,0,0">
               <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
               <Button x:Name="FilmScrollLeft" Click="FilmScrollLeftClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" ToolTip="" AutomationProperties.Name=""><local:EditorIcon Kind="ChevronDown" Width="18" Height="18"><local:EditorIcon.RenderTransform><RotateTransform Angle="90" CenterX="9" CenterY="9"/></local:EditorIcon.RenderTransform></local:EditorIcon></Button>

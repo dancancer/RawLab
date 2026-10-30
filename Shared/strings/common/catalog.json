@@ -1,4 +1,60 @@
 {
+  "此预设包含 HDR 相对白平衡，当前编辑模式不支持。": {
+    "de": "Diese Vorgabe enthält relativen HDR-Weißabgleich, den der aktuelle Bearbeitungsmodus nicht unterstützt.",
+    "en": "This preset includes relative HDR white balance, which the current editing mode does not support.",
+    "es": "Este ajuste incluye balance de blancos HDR relativo, que el modo de edición actual no admite.",
+    "fr": "Ce préréglage contient une balance des blancs HDR relative non prise en charge par le mode de retouche actuel.",
+    "ja": "このプリセットには、現在の編集モードで使えない HDR の相対ホワイトバランスが含まれています。",
+    "zh-Hans": "此预设包含 HDR 相对白平衡，当前编辑模式不支持。"
+  },
+  "此预设与当前照片不兼容，请选择其他预设。": {
+    "de": "Diese Vorgabe ist mit dem aktuellen Foto nicht kompatibel. Wählen Sie eine andere Vorgabe.",
+    "en": "This preset is not compatible with the current photo. Choose another preset.",
+    "es": "Este ajuste no es compatible con la foto actual. Elige otro ajuste.",
+    "fr": "Ce préréglage est incompatible avec la photo actuelle. Choisissez un autre préréglage.",
+    "ja": "このプリセットは現在の写真に適用できません。別のプリセットを選んでください。",
+    "zh-Hans": "此预设与当前照片不兼容，请选择其他预设。"
+  },
+  "此预设无法保留照片的其他调整，请选择其他预设。": {
+    "de": "Diese Vorgabe kann die übrigen Anpassungen des Fotos nicht beibehalten. Wählen Sie eine andere Vorgabe.",
+    "en": "This preset cannot preserve the photo’s other adjustments. Choose another preset.",
+    "es": "Este ajuste no puede conservar los demás ajustes de la foto. Elige otro ajuste.",
+    "fr": "Ce préréglage ne peut pas préserver les autres retouches de la photo. Choisissez un autre préréglage.",
+    "ja": "このプリセットでは写真の他の調整を維持できません。別のプリセットを選んでください。",
+    "zh-Hans": "此预设无法保留照片的其他调整，请选择其他预设。"
+  },
+  "管理预设": {
+    "de": "Vorgaben verwalten",
+    "en": "Manage presets",
+    "es": "Gestionar ajustes preestablecidos",
+    "fr": "Gérer les préréglages",
+    "ja": "プリセットを管理",
+    "zh-Hans": "管理预设"
+  },
+  "应用到当前照片": {
+    "de": "Auf aktuelles Foto anwenden",
+    "en": "Apply to current photo",
+    "es": "Aplicar a la foto actual",
+    "fr": "Appliquer à la photo actuelle",
+    "ja": "現在の写真に適用",
+    "zh-Hans": "应用到当前照片"
+  },
+  "应用到多张照片": {
+    "de": "Auf mehrere Fotos anwenden",
+    "en": "Apply to multiple photos",
+    "es": "Aplicar a varias fotos",
+    "fr": "Appliquer à plusieurs photos",
+    "ja": "複数の写真に適用",
+    "zh-Hans": "应用到多张照片"
+  },
+  "正在检查预设…": {
+    "de": "Vorgabe wird geprüft…",
+    "en": "Checking preset…",
+    "es": "Comprobando ajuste preestablecido…",
+    "fr": "Vérification du préréglage…",
+    "ja": "プリセットを確認中…",
+    "zh-Hans": "正在检查预设…"
+  },
   "16-bit PNG": {
     "de": "16-Bit-PNG",
     "en": "16-bit PNG",

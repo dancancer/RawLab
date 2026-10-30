@@ -2,7 +2,7 @@ import PhotosUI
 import SwiftUI
 
 enum IOSAdjustmentSheet: String, Identifiable { case copy, paste, history, presets, presetSave, presetApply; var id: String { rawValue } }
-enum IOSAdjustmentAction: Equatable { case copy, paste, history, undo, redo, presetSave, presetApply(AdjustmentPreset) }
+enum IOSAdjustmentAction: Equatable { case copy, paste, history, undo, redo, presetSave, presetApply(AdjustmentPreset), presetApplyMultiple(AdjustmentPreset) }
 
 struct IOSAdjustmentTransferView: View {
     @ObservedObject var model: RawEditorViewModel

@@ -57,6 +57,7 @@ struct ContentView: View {
     @State var queuedPresetAction: IOSAdjustmentAction?
     @State var applyingPreset: AdjustmentPreset?
     @State var returnToPresetLibrary = false
+    @State var presetLibraryRevision = UUID()
     @State var adjustmentReloadPresented = false
     @State var lensDraft: RawSettings?
     @State var draftExitPresented = false
@@ -225,7 +226,7 @@ struct ContentView: View {
         .onChange(of: viewModel.adjustmentRestoredSettings) { _, restored in
             guard let restored else { return }
             settings = restored
-            if restored.isHDREditing { activateEditorTool(.adjustment(.exposure)) }
+            if restored.isHDREditing && !viewModel.quickPresetsVisible { activateEditorTool(.adjustment(.exposure)) }
             viewModel.adjustmentRestoredSettings = nil
             viewModel.updatePreview(settings: restored, includeHistogram: true, quality: .final)
         }
@@ -245,7 +246,7 @@ struct ContentView: View {
                 viewModel.saveCurrentSettings(settings)
             }
             if phase == .background { batchModel?.cancel(forBackground: true) }
-            if phase != .active { cancelRulerFocus(); photoViewing.endTemporaryViewing() }
+            if phase != .active { viewModel.cancelQuickPreset(); cancelRulerFocus(); photoViewing.endTemporaryViewing() }
         }
     }
 
@@ -315,6 +316,7 @@ struct ContentView: View {
     private func applyEditorInteractionObservers<Content: View>(to content: Content) -> some View {
         content
         .onChange(of: adjustmentsExpanded) { _, expanded in
+            if !expanded { closeQuickPresets() }
             if !expanded && isAdjustingSlider && !hslTargetEnabled { setSliderEditing(false) }
             if expanded, let tool = collapsedEditorTool { activateEditorTool(tool) }
         }

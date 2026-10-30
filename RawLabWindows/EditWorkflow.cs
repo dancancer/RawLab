@@ -24,6 +24,7 @@ public partial class MainWindow
         editSaveTimer.Tick += (_, _) => { editSaveTimer.Stop(); SaveEdits(); };
         editNoticeTimer.Tick += (_, _) => { editNoticeTimer.Stop(); if (RetrySave.Visibility != Visibility.Visible && !adjustmentReloadRequired) {SaveState.Text = "";saveNoticeKey=null;} };
         Deactivated += (_, _) => {
+            if (quickPreset.Phase == QuickPresetPhase.Preparing) CancelQuickPreset();
             if(preservingUpdateNavigation)return;
             // 浏览预设不结束参数输入；其他窗口失活仍按原规则取消半输入。
             if(!OwnedWindows.OfType<AdjustmentPresetLibraryDialog>().Any(window=>window.IsVisible))CancelParameterInputs();
@@ -39,6 +40,7 @@ public partial class MainWindow
 
     private void MarkEdited()
     {
+        if (quickPreset.Phase == QuickPresetPhase.Preparing) CancelQuickPreset();
         ++editRevision;
         if (!ready || syncing || file == null) return;
         editDirty = true;

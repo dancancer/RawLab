@@ -223,11 +223,27 @@ internal static class ComparisonDefaultChecks
 
     private static int RunHostedWindow(string repo, string profile, string raw, Fixtures fixtures, string phase,int gpuSelection)
     {
+        var quickPresets = Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_UI") == "1";
+        if (quickPresets) Loc.Initialize(Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_LANGUAGE") ?? "en");
         var app = TestWindowState.CreateApplication();
+        if (quickPresets && Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_LARGE") == "1") {
+            app.Resources["EditorBodySize"] = 18d; app.Resources["EditorCaptionSize"] = 16d;
+        }
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         var window = new MainWindow { Width = 1200, Height = 800 };
         TestWindowState.Isolate(window, Path.Combine(profile, "window-state"));
         UseProfile(window, profile);
+        if (quickPresets) {
+            window.Width = 1024; window.Height = 720;
+            window.QuickPresetPrepared = async () => {
+                var hold = Path.Combine(profile, "hold-preset.flag");
+                if (!File.Exists(hold)) return;
+                File.WriteAllText(Path.Combine(profile, "prepared-preset.flag"), "ready");
+                var timeout = Stopwatch.StartNew();
+                while (File.Exists(hold) && timeout.Elapsed < TimeSpan.FromMinutes(2)) await Task.Delay(30);
+                File.WriteAllText(Path.Combine(profile, "released-preset.flag"), "released");
+            };
+        }
         window.GpuMode.SelectedIndex = gpuSelection;
         Process? driver = null;
         Task<string>? driverOutput = null, driverError = null;

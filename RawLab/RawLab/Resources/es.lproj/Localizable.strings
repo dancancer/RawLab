@@ -274,6 +274,8 @@
 "平均差异 %@/255 · 最大差异 %@/255" = "Diferencia media %@/255 · Diferencia máxima %@/255";
 "并排" = "En paralelo";
 "应用" = "Aplicar";
+"应用到多张照片" = "Aplicar a varias fotos";
+"应用到当前照片" = "Aplicar a la foto actual";
 "应用并保存" = "Aplicar y guardar";
 "应用草稿" = "Aplicar borrador";
 "应用草稿并继续" = "Aplicar borrador y continuar";
@@ -453,6 +455,7 @@
 "正在显影" = "Revelando";
 "正在显影…" = "Revelando…";
 "正在检查目标…" = "Comprobando fotos…";
+"正在检查预设…" = "Comprobando ajuste preestablecido…";
 "正在生成效果预览…" = "Generando vista previa del resultado…";
 "正在生成预览…" = "Generando vistas previas…";
 "正在读取镜头信息…" = "Leyendo información de lente…";
@@ -465,7 +468,10 @@
 "此输入不支持镜头校正" = "Esta entrada no admite corrección de lente";
 "此配置与预览照片类型不匹配，请更换照片或配置。" = "Esta configuración no coincide con el tipo de foto de vista previa. Elige otra foto o configuración.";
 "此镜头没有所选校正的标定数据" = "No hay datos de calibración para las correcciones elegidas";
+"此预设与当前照片不兼容，请选择其他预设。" = "Este ajuste no es compatible con la foto actual. Elige otro ajuste.";
+"此预设包含 HDR 相对白平衡，当前编辑模式不支持。" = "Este ajuste incluye balance de blancos HDR relativo, que el modo de edición actual no admite.";
 "此预设库来自更新版本，请更新应用后重试。" = "Esta biblioteca de ajustes procede de una versión más reciente. Actualiza la aplicación e inténtalo de nuevo.";
+"此预设无法保留照片的其他调整，请选择其他预设。" = "Este ajuste no puede conservar los demás ajustes de la foto. Elige otro ajuste.";
 "此默认值不可达，请重置裁切组。" = "No se puede alcanzar este valor predeterminado. Restablece los ajustes de recorte.";
 "每张照片使用确认时冻结的独立调整。" = "Cada foto usa sus ajustes individuales fijados al confirmar.";
 "水平位置" = "Posición horizontal";
@@ -525,6 +531,7 @@
 "童话绘本油画感，深邃沉静暗部，暖金柔光包裹与漫反射微光" = "Óleo de cuento ilustrado, sombras profundas y serenas, luz dorada envolvente y brillo difuso";
 "端点固定" = "Los extremos son fijos";
 "等待导出" = "En espera de exportación";
+"管理预设" = "Gestionar ajustes preestablecidos";
 "管理预设：%@" = "Administrar ajuste: %@";
 "粗糙度" = "Rugosidad";
 "粗色斑抑制" = "Supresión de artefactos gruesos";

@@ -75,6 +75,9 @@ class EditorViewModel @JvmOverloads constructor(
         private set
     private val mutableAdjustmentTransfer = MutableStateFlow(EditorAdjustmentTransferState())
     val adjustmentTransfer = mutableAdjustmentTransfer.asStateFlow()
+    private val mutableQuickPreset = MutableStateFlow(EditorQuickPresetState())
+    val quickPreset = mutableQuickPreset.asStateFlow()
+    private var quickPresetGeneration = UUID.randomUUID()
     private var adjustmentOwnedFiles = emptyMap<String, File>()
     @Volatile private var adjustmentPreparationGeneration = UUID.randomUUID()
     private var adjustmentPreparations = 0
@@ -128,6 +131,7 @@ class EditorViewModel @JvmOverloads constructor(
         }
     }, ::releaseStorage)
     private val adjustmentPreparation = EditorAdjustmentPreparation(application, storage, editStore)
+    internal var prepareAdjustmentOperation: (AdjustmentPreparationWork, () -> Boolean) -> AdjustmentPreparationResult = adjustmentPreparation::prepare
     private val adjustmentQueue = SerialWorkQueue(::releaseStorage)
     private val adjustmentPreparationQueue = SerialWorkQueue(::releaseStorage)
 
@@ -420,6 +424,7 @@ class EditorViewModel @JvmOverloads constructor(
         } else { startPhotoImport(uri); completed(true) }
     }
     private fun startPhotoImport(uri: Uri) {
+        closeQuickPresets()
         sourceRevision += 1
         closeAdjustmentOperation()
         durablePreview = null
@@ -488,6 +493,7 @@ class EditorViewModel @JvmOverloads constructor(
         if (!applyingHslTarget) cancelHslTarget()
         val current = mutable.value
         if (!current.controlsEnabled || current.draft != null) return
+        if (mutableQuickPreset.value.phase == QuickPresetPhase.PREPARING) cancelQuickPreset()
         if (interactive && !adjustmentHistory.interacting) {
             val saved = adjustmentHistory.begin(current.photo!!, current.edits, sourceRevision)
             if (saved.state == EditSaveState.FAILED) {
@@ -546,6 +552,7 @@ class EditorViewModel @JvmOverloads constructor(
     }
 
     fun beginDraft(group: AdjustmentGroup) {
+        if (mutableQuickPreset.value.phase == QuickPresetPhase.PREPARING) cancelQuickPreset()
         val current = mutable.value
         if (!current.canExport) return
         previewResizeJob?.cancel()
@@ -840,6 +847,10 @@ class EditorViewModel @JvmOverloads constructor(
                 saved = null, error = error) else it }
         }
         if (restored != null) {
+            if (!mutableQuickPreset.value.busy) {
+                quickPresetGeneration = UUID.randomUUID()
+                mutableQuickPreset.value = EditorQuickPresetState(visible = mutableQuickPreset.value.visible)
+            }
             editRevision += 1
             mutable.value = mutable.value.copy(edits = restored, saveState = EditSaveState.SAVED, saveError = null, error = null)
             includeIndependentRecipeLook(restored)
@@ -926,6 +937,10 @@ class EditorViewModel @JvmOverloads constructor(
             return
         }
         closeAdjustmentOperation()
+        startAdjustmentPreparation(payload, uris, action)
+    }
+    private fun startAdjustmentPreparation(payload: AdjustmentPayload, uris: List<Uri>,
+        action: AdjustmentHistoryTransaction.Action, completed: (Result<PreparedAdjustmentTransfer>) -> Unit = {}) {
         adjustmentCloseRequested = false
         val generation = UUID.randomUUID()
         adjustmentPreparationGeneration = generation
@@ -938,7 +953,8 @@ class EditorViewModel @JvmOverloads constructor(
                     ?: error("Photo left the collection")
             } else null)
         adjustmentPreparations += 1
-        adjustmentPreparationQueue.submit({ adjustmentPreparation.prepare(work) { generation != adjustmentPreparationGeneration } }) { result ->
+        val prepare = prepareAdjustmentOperation
+        adjustmentPreparationQueue.submit({ prepare(work) { generation != adjustmentPreparationGeneration } }) { result ->
             // viewModelScope 已取消时也必须释放工作结果，不能依赖一个不再执行的 UI 回调。
             if (disposed) result.getOrNull()?.ownedFiles?.values?.forEach(File::delete)
             else viewModelScope.launch {
@@ -948,10 +964,13 @@ class EditorViewModel @JvmOverloads constructor(
                         adjustmentOwnedFiles = value.ownedFiles
                         mutableAdjustmentTransfer.value = mutableAdjustmentTransfer.value.copy(preparing = false, prepared = value.operation,
                             results = emptyList(), error = null)
+                        completed(Result.success(value.operation))
                     } else value.ownedFiles.values.forEach(File::delete)
                 }, { error ->
-                    if (!disposed && generation == adjustmentPreparationGeneration)
+                    if (!disposed && generation == adjustmentPreparationGeneration) {
                         mutableAdjustmentTransfer.value = mutableAdjustmentTransfer.value.copy(preparing = false, error = adjustmentErrorMessage(error))
+                        completed(Result.failure(error))
+                    }
                 })
                 collections.releaseDeferred()
         } }
@@ -972,6 +991,8 @@ class EditorViewModel @JvmOverloads constructor(
         }
     }
     fun closeAdjustmentOperation() {
+        quickPresetGeneration = UUID.randomUUID()
+        mutableQuickPreset.value = EditorQuickPresetState(visible = mutableQuickPreset.value.visible)
         adjustmentPreparationGeneration = UUID.randomUUID()
         mutableAdjustmentTransfer.value = EditorAdjustmentTransferState()
         adjustmentCloseRequested = true
@@ -984,6 +1005,82 @@ class EditorViewModel @JvmOverloads constructor(
         adjustmentOwnedFiles = emptyMap()
         adjustmentCloseRequested = false
     }
+    fun showQuickPresets() {
+        if (mutable.value.photo != null && mutable.value.operation == Operation.NONE)
+            mutableQuickPreset.value = mutableQuickPreset.value.copy(visible = true)
+    }
+    fun closeQuickPresets() {
+        if (!mutableQuickPreset.value.visible && !mutableQuickPreset.value.busy) return
+        closeAdjustmentOperation()
+        mutableQuickPreset.value = EditorQuickPresetState()
+    }
+    fun cancelQuickPreset() { closeAdjustmentOperation() }
+
+    fun applyPresetToCurrentPhoto(preset: com.rawlab.android.presets.AdjustmentPreset) {
+        val current = mutable.value
+        val photo = current.photo ?: return
+        if (!mutableQuickPreset.value.visible || mutableQuickPreset.value.busy || !current.controlsEnabled || current.draft != null) return
+        closeAdjustmentOperation()
+        val generation = UUID.randomUUID()
+        val source = sourceRevision
+        val revision = editRevision
+        quickPresetGeneration = generation
+        mutableQuickPreset.value = EditorQuickPresetState(true, QuickPresetPhase.PREPARING, preset)
+        fun active() = !disposed && quickPresetGeneration == generation && mutableQuickPreset.value.visible &&
+            mutable.value.photo == photo && sourceRevision == source && editRevision == revision
+        fun failed(error: Throwable?) {
+            mutableQuickPreset.value = EditorQuickPresetState(true, QuickPresetPhase.FAILED, preset, message = quickPresetErrorMessage(error))
+        }
+        persist(photo, current.edits) { saved ->
+            if (!active()) return@persist
+            if (saved.state == EditSaveState.FAILED) {
+                mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
+                failed(saved.error); return@persist
+            }
+            mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
+            val expected = adjustmentHistory.loaded
+            if (expected == null || expected.identity != photo.identity || !adjustmentTargetIsCurrent(photo.identity.value)) {
+                failed(AdjustmentTransferException(AdjustmentFailure.DRAFT)); return@persist
+            }
+            startAdjustmentPreparation(preset.payload, listOf(photo.uri), AdjustmentHistoryTransaction.Action.PRESET) { result ->
+                if (!active()) { if (quickPresetGeneration == generation) cancelQuickPreset(); return@startAdjustmentPreparation }
+                val operation = result.getOrElse { failed(it); return@startAdjustmentPreparation }
+                val target = operation.targets.singleOrNull()
+                if (target?.error != null) { failed(target.error); return@startAdjustmentPreparation }
+                if (target?.original != expected || adjustmentHistory.loaded != expected) {
+                    failed(EditPersistenceConflict()); return@startAdjustmentPreparation
+                }
+                mutableQuickPreset.value = mutableQuickPreset.value.copy(phase = QuickPresetPhase.COMMITTING)
+                applyAdjustmentPaste(operation) { outcomes ->
+                    if (quickPresetGeneration != generation || !mutableQuickPreset.value.visible) return@applyAdjustmentPaste
+                    val outcome = outcomes.singleOrNull()
+                    if (outcome?.saved == null || adjustmentHistory.loaded != outcome.saved) { failed(outcome?.error); return@applyAdjustmentPaste }
+                    val phase = when (outcome.status) {
+                        AdjustmentStatus.APPLIED -> QuickPresetPhase.SAVED
+                        AdjustmentStatus.UNCHANGED -> QuickPresetPhase.UNCHANGED
+                        else -> { failed(outcome.error); return@applyAdjustmentPaste }
+                    }
+                    mutableQuickPreset.value = EditorQuickPresetState(true, phase, preset, operation.id)
+                }
+            }
+        }
+    }
+
+    fun undoQuickPreset() {
+        val quick = mutableQuickPreset.value
+        val transaction = quick.transactionID ?: return
+        if (quick.phase !in setOf(QuickPresetPhase.SAVED, QuickPresetPhase.UNDO_FAILED) || !mutable.value.controlsEnabled || mutable.value.draft != null) return
+        val generation = quickPresetGeneration
+        mutableQuickPreset.value = quick.copy(phase = QuickPresetPhase.COMMITTING, message = null)
+        performAdjustmentHistory(true, transactionID = transaction) { outcomes ->
+            if (quickPresetGeneration != generation || !mutableQuickPreset.value.visible) return@performAdjustmentHistory
+            val outcome = outcomes.singleOrNull()
+            mutableQuickPreset.value = if (outcome?.status == AdjustmentStatus.APPLIED && outcome.saved == adjustmentHistory.loaded)
+                quick.copy(phase = QuickPresetPhase.UNDONE, message = null)
+            else quick.copy(phase = QuickPresetPhase.UNDO_FAILED, message = adjustmentErrorMessage(outcome?.error))
+        }
+    }
+
     fun setGpuEnabled(enabled: Boolean) {
         if (mutable.value.committingAdjustments || mutable.value.operation != Operation.NONE) return
         mutable.value = mutable.value.copy(gpuEnabled = enabled)

@@ -102,6 +102,7 @@ struct AdjustmentHistoryModelTests {
         try cancelledImportMetadata(directory: directory)
         try presetCapture(directory: directory)
         try collection(directory: directory)
+        try IOSQuickPresetModelChecks.run(directory: directory)
         print("PASS: native adjustment history model (\(checks) assertions)")
     }
 
