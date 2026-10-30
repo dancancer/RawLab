@@ -102,6 +102,13 @@ struct Adjustments: Equatable, Codable {
         hsl = state.isIdentity ? nil : state
     }
     var lensSettings: LensCorrectionSettings { lensCorrection ?? LensCorrectionSettings() }
+    mutating func selectX3fMode(_ mode: X3fMode) {
+        x3fMode = mode
+        guard mode == .normal else { return }
+        aiDenoiseEnabled = false
+        lensCorrection?.distortion = false
+        lensCorrection?.tca = false
+    }
     var geometrySettings: GeometrySettings { isHDREditing ? hdr!.geometry : (geometry ?? GeometrySettings()) }
 
     mutating func setGeometrySettings(_ state: GeometrySettings) {

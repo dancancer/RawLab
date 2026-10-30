@@ -389,14 +389,34 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         x3f.settings.x3fMode = .legacy
         x3f.settings.exposure = 0.25
         x3f.settings.aiDenoiseEnabled = true
+        x3f.settings.lensCorrection = LensCorrectionSettings(distortion: true, tca: true,
+            autoCrop: false, mode: .manual, profileID: "saved-lens-profile")
         x3f.selectedFilmID = "PROVIA"
         x3f.selectX3fMode(.normal)
         try check(x3f.settings.x3fMode == .normal && !x3f.settings.aiDenoiseEnabled &&
                   x3f.settings.exposure == 0.25 && x3f.selectedFilmID == "PROVIA",
                   "X3F mode switch keeps edits and look while disabling incompatible AI")
+        try check(!x3f.settings.lensSettings.isEnabled &&
+                  x3f.settings.lensSettings.profileID == "saved-lens-profile" &&
+                  x3f.settings.lensSettings.mode == .manual && !x3f.settings.lensSettings.autoCrop,
+                  "X3F normal switch disables lens corrections while preserving profile preferences")
+        try check(!x3f.canUseLensCorrection && !x3f.beginGeometryDraft(tab: .lens),
+                  "Normal X3F disables the lens tool and rejects opening its draft")
+        x3f.geometryDraft = MacGeometryDraft(geometry: GeometrySettings(), lens: x3f.settings.lensSettings)
+        let normalDraft = x3f.geometryDraft
+        try check(!x3f.selectGeometryDraftTab(.lens), "Normal X3F cannot switch a crop draft to the lens tab")
+        x3f.updateLensDraft { $0.distortion = true; $0.tca = true }
+        try check(x3f.geometryDraft == normalDraft, "Normal X3F rejects stale lens draft mutations")
+        x3f.geometryDraft = nil
         x3f.selectX3fMode(.legacy)
         try check(x3f.settings.x3fMode == .legacy && !x3f.settings.aiDenoiseEnabled,
                   "Returning to legacy does not unexpectedly enable AI")
+        try check(!x3f.settings.lensSettings.isEnabled,
+                  "Returning to legacy does not unexpectedly enable lens correction")
+        try check(x3f.canUseLensCorrection, "Legacy X3F keeps the lens tool available")
+        x3f.file = a
+        x3f.settings.x3fMode = .normal
+        try check(x3f.canUseLensCorrection, "X3F mode does not disable lens correction for other RAW formats")
         x3f.file = nil
         try resetTransactionChecks(root: root, source: a, otherSource: b)
         let selection = model()

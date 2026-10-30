@@ -80,10 +80,13 @@ final class EditorModel: ObservableObject {
     func selectX3fMode(_ mode: X3fMode) {
         guard RenderEngine.isX3fInput(file), settings.x3fMode != mode else { return }
         var next = settings
-        next.x3fMode = mode
-        // 切换显影输入时一次提交兼容状态，避免保存无法执行的 AI RAW 替换。
-        if mode == .normal { next.aiDenoiseEnabled = false }
+        // 一次提交显影身份和兼容设置，保存与预览始终使用同一候选状态。
+        next.selectX3fMode(mode)
         settings = next
+    }
+    var canUseLensCorrection: Bool {
+        file != nil && !RenderEngine.isRasterInput(file) &&
+            !(RenderEngine.isX3fInput(file) && settings.x3fMode == .normal)
     }
     @Published var geometryDraft: MacGeometryDraft?
     @Published var geometryDraftPreviewReady = false

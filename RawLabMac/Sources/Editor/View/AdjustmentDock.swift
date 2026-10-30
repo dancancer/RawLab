@@ -91,7 +91,7 @@ struct AdjustmentDock: View {
             .accessibilityLabel(tool.title).accessibilityValue(changed ? L10n.text("已调整") : "")
             .accessibilityAddTraits(active ? .isSelected : [])
             .disabled((model.result == nil && !(tool == .denoise && model.file != nil && model.aiControlsVisible)) ||
-                      (tool == .lens && RenderEngine.isRasterInput(model.file)) ||
+                      (tool == .lens && !model.canUseLensCorrection) ||
                       (model.settings.isHDREditing && !supportsHDR(tool)))
             .contextMenu {
                 Button(L10n.format("重置%@", tool.title)) { model.requestAdjustmentReset(.tool(tool)) }

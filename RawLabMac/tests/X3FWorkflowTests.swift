@@ -30,6 +30,19 @@ private func image(_ url: URL) throws -> CGImage {
         let roundTrip = try engine.render(source, settings: settings, lut: nil, edge: nil)!
         try require(pixels(normal.image) == pixels(roundTrip.image), "normal/legacy/normal reuses the correct source")
 
+        var lensSwitch = settings
+        lensSwitch.x3fMode = .legacy
+        lensSwitch.lensCorrection = LensCorrectionSettings(distortion: true, tca: true)
+        _ = try engine.render(source, settings: lensSwitch, lut: nil, edge: 384)
+        lensSwitch.selectX3fMode(.normal)
+        let switched = try engine.render(source, settings: lensSwitch, lut: nil, edge: nil)!
+        try require(!lensSwitch.lensSettings.isEnabled && pixels(switched.image) == pixels(normal.image),
+                    "legacy lens correction switches to an exact normal preview")
+        let lensOutput = work.appendingPathComponent("lens-switch.png")
+        _ = try engine.render(source, settings: lensSwitch, lut: nil, edge: nil, output: lensOutput)
+        let lensImage = try image(lensOutput)
+        try require(lensImage.bitsPerComponent == 16, "normal export succeeds after disabling legacy lens correction")
+
         var unsupportedAI = settings
         unsupportedAI.aiDenoiseEnabled = true
         do {

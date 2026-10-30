@@ -370,7 +370,11 @@ extension ContentView {
                     }
                     if settings.isHDREditing { HDRMonitoringControls(state:hdrDisplay) }
                     if viewModel.sourceIsX3f {
-                        Picker(L10n.text("X3F 显影"), selection: $settings.x3fMode) {
+                        Picker(L10n.text("X3F 显影"), selection: Binding(get: { settings.x3fMode }, set: { mode in
+                            var next = settings
+                            next.selectX3fMode(mode)
+                            settings = next
+                        })) {
                             ForEach(X3fMode.allCases) { mode in
                                 Text(mode.title).tag(mode).disabled(mode == .normal && sony2fuji_x3f_available() == 0)
                             }

@@ -29,6 +29,18 @@ struct X3fWorkflowTests {
         check(a.buffer.data != b.buffer.data && a.buffer.data == c.buffer.data, "normal/legacy/normal cache round trip")
         check(a.buffer.semantic == .display && b.buffer.semantic == .legacy, "normal base buffers retain display semantics")
         check(a.rawWhiteBalance?.temperature == 6500 && a.rawWhiteBalance?.tint == 0, "normal WB uses a relative neutral baseline")
+        var lensSwitch = legacy
+        lensSwitch.lensCorrection = LensCorrectionSettings(distortion: true, tca: true)
+        _ = try processor.processRaw(url: url, settings: lensSwitch, previewLongEdge: 384, lutURL: nil)
+        lensSwitch.selectX3fMode(.normal)
+        let switched = try processor.processRaw(url: url, settings: lensSwitch, previewLongEdge: 384, lutURL: nil)
+        check(!lensSwitch.lensSettings.isEnabled && switched.buffer.data == a.buffer.data,
+              "legacy with enabled lens correction switches to the normal preview")
+        let lensFinal = try processor.processRaw(url: url, settings: lensSwitch, previewLongEdge: nil,
+            lutURL: nil, exportLongEdge: 512)
+        let lensJPEG = try processor.makeJPEGData(from: lensFinal.buffer, sourceURL: url, orientation: .up, quality: 0.95)
+        check(CGImageSourceCreateWithData(lensJPEG as CFData, nil) != nil,
+              "normal export succeeds after disabling legacy lens correction")
         let display = try processor.processBuffer(buffer: a.buffer, settings: normal, previewLongEdge: 384, lutURL: nil)
         let delta = zip(display.data, a.buffer.data).map { abs(Int($0) - Int($1)) }.max() ?? 0
         check(display.width == a.buffer.width && display.height == a.buffer.height && delta <= 1, "neutral display reprocessing does not apply a second scene tone curve")

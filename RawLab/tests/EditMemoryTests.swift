@@ -19,6 +19,25 @@ struct EditMemoryTests {
         check(oldEncoded["x3fMode"] as? String == "legacy", "old X3F records and reset preserve legacy pixels")
         let freshEncoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(RawSettings.default.resettingAdjustments())) as! [String: Any]
         check(freshEncoded["x3fMode"] as? String == "normal-v1", "fresh normal mode survives reset")
+        for (distortion, tca) in [(true, false), (false, true), (true, true)] {
+            var switched = RawSettings.default
+            switched.x3fMode = .legacy
+            switched.exposure = 0.25
+            switched.lutID = "preserved-look"
+            switched.lensCorrection = LensCorrectionSettings(distortion: distortion, tca: tca,
+                autoCrop: false, mode: .manual, profileID: "saved-lens-profile")
+            switched.selectX3fMode(.normal)
+            check(switched.x3fMode == .normal && !switched.lensSettings.isEnabled,
+                  "normal X3F switch disables distortion and TCA in the same candidate")
+            check(switched.lensSettings.profileID == "saved-lens-profile" &&
+                  switched.lensSettings.mode == .manual && !switched.lensSettings.autoCrop &&
+                  switched.exposure == 0.25 && switched.lutID == "preserved-look",
+                  "X3F switch preserves lens preferences and unrelated edits")
+            let reopened = try JSONDecoder().decode(RawSettings.self, from: JSONEncoder().encode(switched))
+            check(reopened == switched, "normal X3F with disabled lens settings survives persistence")
+            switched.selectX3fMode(.legacy)
+            check(!switched.lensSettings.isEnabled, "returning to legacy leaves lens correction disabled")
+        }
         for mode: Any in [NSNull(), "future", 1] {
             var invalid = defaultObject
             invalid["x3fMode"] = mode

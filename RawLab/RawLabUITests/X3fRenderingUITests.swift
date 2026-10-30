@@ -22,6 +22,48 @@ final class X3fRenderingUITests: XCTestCase {
         closeContext(app); ready(app); capture(app, "x3f-legacy-preview")
         showContext(app); selectMode(app, "正常显影"); closeContext(app); ready(app)
         capture(app, "x3f-normal-preview")
+        exportPhoto(app, captureName: "x3f-exported")
+        app.terminate(); app.launch()
+        importFile(app, stem: "X3F-Normal"); ready(app); showContext(app)
+        XCTAssertTrue(mode(app).label.contains("正常显影") || (mode(app).value as? String)?.contains("正常显影") == true, app.debugDescription)
+        capture(app, "x3f-normal-reopened")
+    }
+
+    func testLegacyLensCorrectionSwitchesToNormal() throws {
+        let app = try launch()
+        importFile(app, stem: "X3F-Lens"); ready(app)
+        showLensTool(app)
+        XCTAssertTrue(app.buttons["tool.lens"].isEnabled)
+        XCTAssertEqual(app.buttons["tool.lens"].value as? String, "已调整")
+        closeDraft(app)
+        showContext(app)
+        XCTAssertTrue(mode(app).label.contains("伪红外") || (mode(app).value as? String)?.contains("伪红外") == true)
+        capture(app, "x3f-legacy-with-lens")
+        selectMode(app, "正常显影"); closeContext(app); ready(app)
+        showLensTool(app)
+        XCTAssertFalse(app.buttons["tool.lens"].isEnabled)
+        capture(app, "x3f-normal-lens-disabled")
+        closeDraft(app)
+        exportPhoto(app, captureName: "x3f-lens-switch-exported")
+        app.terminate(); app.launch()
+        importFile(app, stem: "X3F-Lens"); ready(app); showContext(app)
+        XCTAssertTrue(mode(app).label.contains("正常显影") || (mode(app).value as? String)?.contains("正常显影") == true)
+        closeContext(app); showLensTool(app)
+        XCTAssertFalse(app.buttons["tool.lens"].isEnabled)
+        capture(app, "x3f-lens-switch-reopened")
+    }
+
+    private func showLensTool(_ app: XCUIApplication) {
+        if !app.buttons["tool.lens"].exists { app.buttons["editor.group.geometry"].tap() }
+        XCTAssertTrue(app.buttons["tool.lens"].waitForExistence(timeout: 10), app.debugDescription)
+    }
+
+    private func closeDraft(_ app: XCUIApplication) {
+        let cancel = app.buttons["editor.draft.cancel"]
+        if cancel.exists { cancel.tap(); ready(app) }
+    }
+
+    private func exportPhoto(_ app: XCUIApplication, captureName: String) {
         app.buttons["editor.export"].tap()
         let save = app.buttons["保存当前照片"]
         XCTAssertTrue(save.waitForExistence(timeout: 15)); save.tap()
@@ -34,12 +76,8 @@ final class X3fRenderingUITests: XCTestCase {
             if allow.exists { allow.tap() }
             return saved.exists
         }
-        capture(app, "x3f-exported")
+        capture(app, captureName)
         app.alerts.buttons["关闭"].tap()
-        app.terminate(); app.launch()
-        importFile(app, stem: "X3F-Normal"); ready(app); showContext(app)
-        XCTAssertTrue(mode(app).label.contains("正常显影") || (mode(app).value as? String)?.contains("正常显影") == true, app.debugDescription)
-        capture(app, "x3f-normal-reopened")
     }
 
     func testFailedNormalImportOffersLegacyAfterRestart() throws {

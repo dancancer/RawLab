@@ -11,6 +11,11 @@ Changing mode keeps ordinary edits and look selection. Explicitly switching to
 normal mode disables incompatible AI RAW replacement in the same edit transaction. Decoder revision and mode
 participate in source, exposure, WB and neutral-reference cache identities.
 
+On Mac and iOS, selecting normal also disables distortion and transverse chromatic
+aberration correction in that same settings update. Lens profile selection and
+auto-crop preferences remain saved; returning to legacy does not re-enable the
+correction flags. The normal-mode lens tools cannot activate additional correction.
+
 CLI schema 7 carries the identity independently of the existing processing version
 and binary request v2. Other RAW formats ignore this format-specific mode and keep
 their existing processing. An X3F extension with an invalid signature is rejected.

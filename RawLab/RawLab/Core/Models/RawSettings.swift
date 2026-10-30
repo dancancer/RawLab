@@ -312,6 +312,12 @@ struct RawSettings: Codable, Equatable {
     var denoise = RawDenoiseSettings()
     var lensCorrection: LensCorrectionSettings?
     var lensSettings: LensCorrectionSettings { lensCorrection ?? LensCorrectionSettings() }
+    mutating func selectX3fMode(_ mode: X3fMode) {
+        x3fMode = mode
+        guard mode == .normal else { return }
+        lensCorrection?.distortion = false
+        lensCorrection?.tca = false
+    }
     var photoEffects = PhotoEffectsSettings()
     var hsl = HSLSettings()
     var exposureMode = RawExposureMode.preview
