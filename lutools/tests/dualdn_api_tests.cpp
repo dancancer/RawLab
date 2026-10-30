@@ -21,11 +21,18 @@ int main(int argc, char** argv) {
         require(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK, "session create");
         require(!sony2fuji_session_get_ai_backend(session)[0] && !sony2fuji_session_get_ai_backend(nullptr)[0],
                 "unused AI session reported an inference backend");
+        bool gpuAvailable = true;
+        bool runtimeIdentityAvailable = true;
 #if defined(_WIN32) && defined(RAWLAB_TEST_AI)
         bool hardware = true;
         try { sony2fuji::ai::findDirectMLAdapter(); } catch (const std::runtime_error&) { hardware = false; }
         require((sony2fuji_ai_hardware_available() != 0) == hardware, "public GPU probe does not match hardware adapter availability");
         std::cout << "PASS public AI hardware probe=" << hardware << '\n';
+        gpuAvailable = hardware;
+        // Windows 先绑定实际适配器身份，缺少硬件时不会进入缓存或 RAW 解码。
+        runtimeIdentityAvailable = hardware;
+#elif defined(__APPLE__) && defined(RAWLAB_TEST_AI)
+        gpuAvailable = sony2fuji::ai::CoreMLGraph::available();
 #endif
         sony2fuji_ai_denoise_config config{};
         config.version = SONY2FUJI_AI_DENOISE_CONFIG_VERSION; config.struct_size = sizeof(config);
@@ -60,8 +67,9 @@ int main(int argc, char** argv) {
             require(sony2fuji_process(session, &request, &buffer) == SONY2FUJI_STATUS_UNSUPPORTED,
                     "unsupported AI auto WB misreported as cache miss");
             request.wb_mode = SONY2FUJI_WB_CAMERA;
-            require(sony2fuji_process(session, &request, &buffer) == SONY2FUJI_STATUS_AI_NOT_READY && !buffer.data,
-                    "missing result was rejected by camera brand or silently rendered");
+            const auto missingResultStatus = runtimeIdentityAvailable ? SONY2FUJI_STATUS_AI_NOT_READY : SONY2FUJI_STATUS_PROCESSING_ERROR;
+            require(sony2fuji_process(session, &request, &buffer) == missingResultStatus && !buffer.data,
+                    "missing AI result did not report cache readiness or unavailable GPU hardware");
             require(sony2fuji_session_get_ai_error(session)[0], "missing AI result has no error detail");
             auto cancel = [](void*, int32_t, uint64_t, uint64_t) -> int32_t { return 0; };
             require(sony2fuji_session_prepare_ai(session, &request, cancel, nullptr) == SONY2FUJI_STATUS_CANCELLED,
@@ -69,13 +77,6 @@ int main(int argc, char** argv) {
             require(!std::filesystem::exists(argv[3]), "cancelled AI preparation wrote cache");
             auto cancelInference = [](void*,int32_t phase,uint64_t,uint64_t) -> int32_t { return phase < 2; };
             const auto preparation = sony2fuji_session_prepare_ai(session,&request,cancelInference,nullptr);
-            bool gpuAvailable = true;
-#if defined(_WIN32) && defined(RAWLAB_TEST_AI)
-            try { sony2fuji::ai::findDirectMLAdapter(); }
-            catch (const std::runtime_error&) { gpuAvailable = false; }
-#elif defined(__APPLE__) && defined(RAWLAB_TEST_AI)
-            gpuAvailable = sony2fuji::ai::CoreMLGraph::available();
-#endif
             require(gpuAvailable ? preparation == SONY2FUJI_STATUS_CANCELLED :
                     preparation == SONY2FUJI_STATUS_PROCESSING_ERROR && sony2fuji_session_get_ai_error(session)[0],
                     "model preparation neither cancelled nor rejected missing GPU hardware");
@@ -113,7 +114,8 @@ int main(int argc, char** argv) {
             request.input_path = invalidSource.c_str();
             const auto invalidStatus = sony2fuji_session_prepare_ai(session,&request,nullptr,nullptr);
             request.input_path = argv[1]; std::filesystem::remove(std::filesystem::u8path(invalidSource));
-            require(invalidStatus == SONY2FUJI_STATUS_UNSUPPORTED,"RAW decode error lost unsupported classification");
+            require(invalidStatus == (runtimeIdentityAvailable ? SONY2FUJI_STATUS_UNSUPPORTED : SONY2FUJI_STATUS_PROCESSING_ERROR),
+                    "invalid RAW preparation lost decode or unavailable-GPU failure classification");
 #ifdef RAWLAB_TEST_AI
             // 恒等 RGB 缓存验证 ABI 的实际颜色/曝光路径，模型本身另做 GPU 数值回归。
             using namespace sony2fuji;
@@ -129,15 +131,20 @@ int main(int argc, char** argv) {
             const auto sceneKey = sceneRGBCacheKey(rawKey,options);
             std::vector<float> zero(source.pixels.size()*3,0);
             cache.store(sceneKey,CacheKind::SceneRGB,source.width,source.height,zero.data(),zero.size(),{},"test-identity");
-            require(sony2fuji_process(session,&request,&buffer) == SONY2FUJI_STATUS_OK && buffer.data,
-                    "complete generic RGB cache did not render");
-            require(buffer.size_bytes == original.size() &&
-                    std::equal(original.begin(),original.end(),static_cast<const uint8_t*>(buffer.data)),
-                    "generic RGB identity changed the original render");
-            require(std::string(sony2fuji_session_get_ai_backend(session)) == "SceneRGB=test-identity", "generic cache lost producer");
+            const auto cachedStatus = sony2fuji_process(session,&request,&buffer);
+            if (runtimeIdentityAvailable) {
+                require(cachedStatus == SONY2FUJI_STATUS_OK && buffer.data,"complete generic RGB cache did not render");
+                require(buffer.size_bytes == original.size() &&
+                        std::equal(original.begin(),original.end(),static_cast<const uint8_t*>(buffer.data)),
+                        "generic RGB identity changed the original render");
+                require(std::string(sony2fuji_session_get_ai_backend(session)) == "SceneRGB=test-identity", "generic cache lost producer");
+            } else {
+                require(cachedStatus == SONY2FUJI_STATUS_PROCESSING_ERROR && !buffer.data,
+                        "generic RGB cache bypassed unavailable GPU hardware");
+            }
             sony2fuji_release_buffer(&buffer);
             request.wb_mode = SONY2FUJI_WB_TEMPERATURE; request.temperature = 4500;
-            require(sony2fuji_process(session,&request,&buffer) == SONY2FUJI_STATUS_AI_NOT_READY && !buffer.data,
+            require(sony2fuji_process(session,&request,&buffer) == missingResultStatus && !buffer.data,
                     "white balance reused an incompatible generic cache");
             sony2fuji_release_buffer(&buffer);
             std::filesystem::remove_all(argv[3]);
