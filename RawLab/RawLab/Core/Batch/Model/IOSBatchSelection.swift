@@ -84,11 +84,39 @@ final class IOSBatchSelection: ObservableObject {
         }
     }
 
+    var exportInput: IOSCollectionExportInput {
+        .init(selection: selection.targets(), photos: photos)
+    }
+
+    func prepareExport(store: EditPersistence, skipping: Set<String>, format: BatchOutputFormat, longEdge: Int?,
+                       probeHDR: (URL) throws -> Bool, validateActive: (String) throws -> Void,
+                       resolveLook: (RawSettings) throws -> (URL?, String?)) -> IOSCollectionExportReview {
+        exportInput.prepareExport(store: store, skipping: skipping, format: format, longEdge: longEdge,
+            probeHDR: probeHDR, validateActive: validateActive, resolveLook: resolveLook)
+    }
+
+    func freeze(_ review: IOSCollectionExportReview, store: EditPersistence, journal: BatchJournalStore,
+                validateActive: (String) throws -> Void) throws -> BatchExportJob {
+        try exportInput.freeze(review, store: store, journal: journal, validateActive: { key in
+            guard selection.targets() == review.selection,
+                  photos[key]?.photo.file == review.rows.first(where: { $0.id == key })?.photo.photo.file else {
+                throw EditPersistenceConflict.changed
+            }
+            try validateActive(key)
+        })
+    }
+}
+
+// 预检与复制使用主线程固化的集合值，后台不直接读取 ObservableObject 的可变字典。
+struct IOSCollectionExportInput {
+    let selection: [String]
+    let photos: [String: IOSCollectionPhoto]
+
     func prepareExport(store: EditPersistence, skipping: Set<String>, format: BatchOutputFormat, longEdge: Int?,
                        probeHDR: (URL) throws -> Bool,
                        validateActive: (String) throws -> Void,
                        resolveLook: (RawSettings) throws -> (URL?, String?)) -> IOSCollectionExportReview {
-        let selected = selection.targets()
+        let selected = selection
         let rows = selected.filter { !skipping.contains($0) }.compactMap { id -> IOSCollectionExportReview.Row? in
             guard let photo = photos[id] else { return nil }
             do {
@@ -115,7 +143,7 @@ final class IOSBatchSelection: ObservableObject {
     func freeze(_ review: IOSCollectionExportReview, store: EditPersistence, journal: BatchJournalStore,
                 validateActive: (String) throws -> Void) throws -> BatchExportJob {
         func validateReview() throws {
-            guard review.ready, selection.targets() == review.selection else { throw EditPersistenceConflict.changed }
+            guard review.ready, selection == review.selection else { throw EditPersistenceConflict.changed }
             for row in review.rows {
                 guard photos[row.id]?.photo.file == row.photo.photo.file,
                       try store.versionedState(for: row.photo.photo.identity) == row.record else { throw EditPersistenceConflict.changed }

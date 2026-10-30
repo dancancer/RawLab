@@ -17,7 +17,11 @@ for name in [old,old+'.debug.dylib']:
  (app/name).unlink(missing_ok=True)
 info.update(CFBundleIdentifier='com.rawlab.tests.viewing-editor',CFBundleExecutable='viewing-editor',UIFileSharingEnabled=True,LSSupportsOpeningDocumentsInPlace=True,UIApplicationSceneManifest={'UIApplicationSupportsMultipleScenes':False});plistlib.dump(info,(app/'Info.plist').open('wb'))
 transforms={
- 'RawLab/RawLab/UI/Editor/ContentView.swift':('        .onAppear {\n            viewModel.loadLUTsIfNeeded()', '        .onChange(of: photoViewing.holdingBefore) { _, _ in ViewingEditorProbe.shared.recordHistogram(currentHistogram, showingBefore: showingBefore) }\n        .onAppear {\n            Task { await prepareViewingReview() }\n            viewModel.loadLUTsIfNeeded()'),
+ 'RawLab/RawLab/UI/Editor/ContentView.swift':[
+  ('        .onAppear {\n            viewModel.loadLUTsIfNeeded()', '        .onChange(of: photoViewing.holdingBefore) { _, _ in ViewingEditorProbe.shared.recordHistogram(currentHistogram, showingBefore: showingBefore) }\n        .onAppear {\n            Task { await prepareViewingReview() }\n            viewModel.loadLUTsIfNeeded()'),
+  ('@StateObject var viewModel = RawEditorViewModel()', '@StateObject var viewModel = RawEditorViewModel(resultDelivery: { callback in DispatchQueue.main.async { ViewingEditorProbe.shared.deliver(callback) } })'),
+  ('                    collectionBatchHandoff.enqueue(', '                    ViewingEditorProbe.shared.recordBatchHandoff(automaticallyStart, phase: scenePhase)\n                    collectionBatchHandoff.enqueue(')],
+ 'RawLab/RawLab/Core/Batch/Execution/BatchExport.swift':('@discardableResult func start() -> Bool { run(failuresOnly: false) }', '@discardableResult func start() -> Bool { MainActor.assumeIsolated { ViewingEditorProbe.shared.batchStarts.append(job.id.uuidString) }; return run(failuresOnly: false) }'),
  'RawLab/RawLab/Core/ViewModel/RawEditorViewModel+Rendering.swift':('        lastPreviewRequest = request','        MainActor.assumeIsolated { ViewingEditorProbe.shared.recordPreview(request, source: sourceRevision) }\n        lastPreviewRequest = request'),
  'RawLab/RawLab/Core/Persistence/EditPersistence.swift':('        store.records[identity.key] = state','        try MainActor.assumeIsolated { try ViewingEditorProbe.shared.recordSave(state, identity: identity) }\n        store.records[identity.key] = state'),
  'RawLab/RawLab/UI/Editor/ContentView+Panels.swift':('onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) }','onPreviewSizeChange: { ViewingEditorProbe.shared.resizing = true; defer { ViewingEditorProbe.shared.resizing = false }; viewModel.updatePreviewSize($0, settings: draftPreviewSettings) }')}
@@ -27,12 +31,14 @@ for folder in ['RawLab/RawLab/Core','RawLab/RawLab/UI','Shared']:
   if 'tests' in p.relative_to(root).parts:continue
   name=str(p.relative_to(root));text=p.read_text();changed=text
   if name in transforms:
-   before,after=transforms[name];assert text.count(before)==1,name;changed=text.replace(before,after)
+   replacements=transforms[name] if isinstance(transforms[name],list) else [transforms[name]]
+   for before,after in replacements:
+    assert changed.count(before)==1,name;changed=changed.replace(before,after)
    diff.extend(difflib.unified_diff(text.splitlines(True),changed.splitlines(True),fromfile=name,tofile='instrumented/'+name))
   dest=out/'source'/name;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_text(changed);sources.append((name,hashlib.sha256(p.read_bytes()).hexdigest(),hashlib.sha256(dest.read_bytes()).hexdigest()))
 for name in ['RawLab/tests/ViewingEditorHarness.swift','RawLab/tests/ViewingEditorUITests.swift','RawLab/tests/PresetEditorUITests.swift']:
  dest=out/'source'/pathlib.Path(name).name;shutil.copy2(root/name,dest);sources.append((name,hashlib.sha256((root/name).read_bytes()).hexdigest(),hashlib.sha256(dest.read_bytes()).hexdigest()))
-(out/'instrumentation.diff').write_text(''.join(diff));(out/'working-tree.diff').write_bytes(subprocess.check_output(['git','diff','--','RawLab'],cwd=root));(out/'source-receipt.json').write_text(json.dumps({'head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip(),'files':{n:{'original':a,'compiled':b} for n,a,b in sources},'scope':'real ContentView/Core/native; instrumentation only fixture import, receipts and controlled persistence failure; all view/reset/navigation/confirmation uses actual UI'},indent=2)+'\n')
+(out/'instrumentation.diff').write_text(''.join(diff));(out/'working-tree.diff').write_bytes(subprocess.check_output(['git','diff','--','RawLab'],cwd=root));(out/'source-receipt.json').write_text(json.dumps({'head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip(),'files':{n:{'original':a,'compiled':b} for n,a,b in sources},'scope':'real ContentView/Core/native; instrumentation only fixture import, receipts, controlled persistence failure and delivery delays; all view/reset/navigation/confirmation uses actual UI'},indent=2)+'\n')
 def resolve(v):
  if isinstance(v,str):return v.replace('__TESTROOT__',str(original.resolve().parent))
  if isinstance(v,dict):return {k:resolve(x) for k,x in v.items()}

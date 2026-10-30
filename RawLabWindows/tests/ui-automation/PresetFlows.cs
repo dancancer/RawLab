@@ -70,9 +70,11 @@ internal static partial class Program
         }
         private void SetPresetExposure(double value)
         {
+            SetForegroundWindow(new IntPtr(main.Current.NativeWindowHandle));
             var number = FindById(main, "ParameterValueText")!;
             number.SetFocus(); SetValue(number, value.ToString(System.Globalization.CultureInfo.GetCultureInfo(Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_LANGUAGE") ?? "en")));
             Keys(0x0d);
+            Trace($"exposure input={((ValuePattern)number.GetCurrentPattern(ValuePattern.Pattern)).Current.Value} value={GetRangeValue("ParameterValueSlider")} focus={AutomationElement.FocusedElement.Current.AutomationId}");
             WaitReady();
             Wait(() => Math.Abs(GetRangeValue("ParameterValueSlider") - value) < .0001);
         }

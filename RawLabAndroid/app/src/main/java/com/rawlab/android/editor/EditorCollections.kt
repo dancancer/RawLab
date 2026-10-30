@@ -115,32 +115,39 @@ internal class EditorCollections(private val storage: PhotoStorage, parentScope:
         val validateActive = captureActiveValidation()
         mutable.update { it.copy(busy = true, error = null) }
         scope.launch {
-            try {
-                val review = withContext(Dispatchers.IO) { synchronized(storage) {
+            val review = try {
+                withContext(Dispatchers.IO) { synchronized(storage) {
                     exporter.prepare(selection, skipping, format, longEdge, destination?.toString(), validateActive)
                 } }
-                completed(review)
-            } catch (error: Exception) { failure(error.message); completed(null) }
+            } catch (error: Exception) { failure(error.message); null }
             finally { mutable.update { it.copy(busy = false) } }
+            completed(review)
         }
     }
-    fun freeze(review: CollectionExportReview, completed: (BatchJob?) -> Unit) {
+    fun freeze(review: CollectionExportReview, isCurrent: () -> Boolean = { true }, completed: (BatchJob?) -> Unit) {
         if (mutable.value.busy) { completed(null); return }
         val selection = mutable.value
-        val validateActive = captureActiveValidation()
+        val active = captureActiveValidation()
+        val validateActive: (String) -> Unit = { id ->
+            check(isCurrent()) { "Review the selected photos again" }
+            active(id)
+        }
         mutable.update { it.copy(busy = true, error = null) }
         scope.launch {
-            try {
-                val job = withContext(Dispatchers.IO) { synchronized(storage) { exporter.freeze(selection, review, validateActive) } }
-                completed(job)
-            } catch (error: Exception) { failure(error.message); completed(null) }
+            val job = try {
+                withContext(Dispatchers.IO) { synchronized(storage) { exporter.freeze(selection, review, validateActive) } }
+            } catch (error: Exception) { failure(error.message); null }
             finally { mutable.update { it.copy(busy = false) } }
+            completed(job)
         }
     }
 }
 
 data class CollectionSynchronization(val sourceIdentity: String, val sourceName: String,
     val payload: com.rawlab.android.adjustments.AdjustmentPayload, val targets: List<Uri>)
+
+data class CollectionExportFlow(val preparing: Boolean = false, val freezing: Boolean = false,
+    val review: CollectionExportReview? = null)
 
 // 纯模型保留可测试的错误信息；界面统一转换为应用当前语言。
 internal fun collectionMessage(message: String): String {

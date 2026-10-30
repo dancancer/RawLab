@@ -57,7 +57,7 @@ public partial class BatchExportWindow : Window
         };
         Closing += (_, args) => {
             if(Running || preflighting){args.Cancel=true;closeRequested=true;if(Running)CancelExecution();return;}
-            if(!PreserveOnUpdateExit && !job.Started && !Discarded)try{journal.Discard(job);Discarded=true;CloseFailed=false;}catch(Exception error){args.Cancel=true;CloseFailed=true;closeRequested=false;job.Error=error.Message;Refresh();_=LoadThumbnails();}
+            if(!PreserveOnUpdateExit && !Frozen && !job.Started && !Discarded)try{journal.Discard(job);Discarded=true;CloseFailed=false;}catch(Exception error){args.Cancel=true;CloseFailed=true;closeRequested=false;job.Error=error.Message;Refresh();_=LoadThumbnails();}
         };
         ready = true;
         RefreshLanguage();
@@ -113,7 +113,7 @@ public partial class BatchExportWindow : Window
             if (row == null) { row = new BatchRow(item, Select); rows.Add(row); }
             row.Refresh(item, !Frozen && !job.Started && !preflighting, !Running && !preflighting && item.CanSelect);
         }
-        CloseAction.Content = job.Started ? Loc.Text("关闭") : Loc.Text("取消"); CloseAction.IsEnabled = !Running;
+        CloseAction.Content = job.Started || Frozen ? Loc.Text("关闭") : Loc.Text("取消"); CloseAction.IsEnabled = !Running;
         RevealFolder.Visibility = job.SucceededCount > 0 ? Visibility.Visible : Visibility.Collapsed;
         PrimaryAction.Content = Running ? cancellation.IsCancellationRequested ? Loc.Text("正在停止…") : Loc.Text("取消导出") :
             !job.Started ? Loc.Format("导出 {0} 张", job.SelectedCount) : job.RemainingCount > 0 ? Loc.Format("继续未完成的 {0} 张", job.SelectedCount - job.SucceededCount) : Loc.Format("重试失败的 {0} 张", job.FailedCount);
@@ -300,10 +300,14 @@ public partial class BatchExportWindow : Window
     public void CancelExecution() { cancellation.Cancel(); Refresh(); }
     private async void PrimaryClicked(object sender, RoutedEventArgs e)
     {
-        if(preflighting)return;
         if (Running) { CancelExecution(); return; }
-        if (job.SelectedCount == 0 || job.OutputDirectory == null) return;
-        if (!job.Started && editingCustomSize && !CommitCustomSize()) return;
+        await StartExecution();
+    }
+    internal async Task<bool> StartExecution()
+    {
+        if(closed || closeRequested || preflighting || Running || Discarded)return false;
+        if (job.SelectedCount == 0 || job.OutputDirectory == null) return false;
+        if (!job.Started && editingCustomSize && !CommitCustomSize()) return false;
         CloseFailed=closeRequested=false;Running = true; cancellation = new(); BusyChanged?.Invoke(true); Refresh();
         var before = job.Copy();
         var work = job.Copy(); var failuresOnly = job.Started && job.RemainingCount == 0;
@@ -352,6 +356,7 @@ public partial class BatchExportWindow : Window
             Running = false; aiProgress=null; Refresh(); BusyChanged?.Invoke(false);
             if (closeRequested && IsLoaded) Close();
         }
+        return true;
     }
 
     private async void InspectClicked(object sender, RoutedEventArgs e)

@@ -3,6 +3,26 @@ import PhotosUI
 import SwiftUI
 import UIKit
 
+struct IOSCollectionBatchHandoff {
+    private var pending: (model: BatchExportModel, automaticallyStart: Bool)?
+    var hasPending: Bool { pending != nil }
+
+    mutating func enqueue(_ model: BatchExportModel, automaticallyStart: Bool) {
+        pending = (model, automaticallyStart)
+    }
+
+    mutating func cancelAutomaticStart() { pending?.automaticallyStart = false }
+
+    mutating func promote(sceneIsActive: Bool, configure: (BatchExportModel) -> Void,
+                          start: (BatchExportModel) -> Bool = { $0.start() }) -> BatchExportModel? {
+        guard let entry = pending else { return nil }
+        pending = nil
+        configure(entry.model)
+        if entry.automaticallyStart && sceneIsActive { _ = start(entry.model) }
+        return entry.model
+    }
+}
+
 final class BatchExportModel: ObservableObject {
     typealias JPEGWriter = (Data, String, BatchTarget, (String) throws -> Void) throws -> Void
 
@@ -181,8 +201,8 @@ final class BatchExportModel: ObservableObject {
         }
     }
 
-    func start() { run(failuresOnly: false) }
-    func retryFailed() { run(failuresOnly: true) }
+    @discardableResult func start() -> Bool { run(failuresOnly: false) }
+    @discardableResult func retryFailed() -> Bool { run(failuresOnly: true) }
 
     private func freezeHDRJob(_ draft: BatchExportJob,journal: BatchJournalStore) throws -> BatchExportJob {
         guard draft.settingsMode == .uniformFrozen,draft.source.settings.isHDREditing else { return draft }
@@ -209,15 +229,20 @@ final class BatchExportModel: ObservableObject {
         return result
     }
 
-    private func run(failuresOnly: Bool) {
-        guard canStart, let journalStore else { return }
+    private func run(failuresOnly: Bool) -> Bool {
+        guard canStart, let journalStore else {
+            if !isRunning && validationMessage == nil {
+                validationMessage = L10n.text(selectedCount == 0 ? "尚未选择照片" : "正在准备照片…")
+            }
+            return false
+        }
         var snapshot = job.outputFormat == .renderedDNG
             ? job.recovered()
             : job.recovered(assetExists: PhotoLibraryBatchWriter.assetExists)
         guard snapshot.settingsMode == .perTargetFrozen || !snapshot.source.settings.hasLook ||
                 snapshot.source.lookURL.map({ FileManager.default.isReadableFile(atPath: $0.path) }) == true else {
             validationMessage = L10n.text("任务使用的外观文件不可用，请重新创建任务。")
-            return
+            return false
         }
         isRunning = true; isStopping = false; validationMessage = nil
         cancellation.lock(); didCancel = false; cancellation.unlock()
@@ -320,6 +345,7 @@ final class BatchExportModel: ObservableObject {
                 }
             }
         }
+        return true
     }
 
     private func reportUsage(succeededBefore: Int, failed: Int) {
