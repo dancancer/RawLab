@@ -42,8 +42,7 @@ struct EditorView: View {
         adjustmentPanel.height(available: available, automatic: automaticPanelHeight)
     }
 
-    var body: some View {
-        let _ = localizationLocale
+    private var editorContent: some View {
         GeometryReader { geometry in
             HSplitView {
                 if showFiles {
@@ -131,6 +130,11 @@ struct EditorView: View {
         }
         .frame(minWidth: 950, minHeight: 620)
         .preferredColorScheme(.dark)
+    }
+
+    var body: some View {
+        let _ = localizationLocale
+        editorContent
         .onChange(of: model.sourceRevision) { _, _ in
             queuedQuickPreset = nil
             viewing.sourceChanged()
@@ -187,12 +191,7 @@ struct EditorView: View {
         .alert(L10n.text("无法重置调整"), isPresented: Binding(get: { model.resetBlockedMessage != nil }, set: { if !$0 { model.resetBlockedMessage = nil } })) {
             Button(L10n.text("关闭"), role: .cancel) { model.resetBlockedMessage = nil }
         } message: { Text(model.resetBlockedMessage ?? "") }
-        .onAppear {
-            let args = CommandLine.arguments
-            if let index = args.firstIndex(of: "--sample"), args.indices.contains(index + 1) {
-                model.open(URL(fileURLWithPath: args[index + 1]))
-            }
-        }
+        .onAppear(perform: openCommandLineSample)
         .alert(L10n.text("操作失败"), isPresented: Binding(
             get: { model.result != nil && model.error != nil && model.lookImportReport == nil },
             set: { if !$0 { model.error = nil } }
@@ -213,6 +212,13 @@ struct EditorView: View {
                     Button(L10n.text("关闭")) { model.lookImportReport = nil }.keyboardShortcut(.defaultAction)
                 }
             }.padding(24).frame(width: 520, height: 380)
+        }
+    }
+
+    private func openCommandLineSample() {
+        let args = CommandLine.arguments
+        if let index = args.firstIndex(of: "--sample"), args.indices.contains(index + 1) {
+            model.open(URL(fileURLWithPath: args[index + 1]))
         }
     }
 
