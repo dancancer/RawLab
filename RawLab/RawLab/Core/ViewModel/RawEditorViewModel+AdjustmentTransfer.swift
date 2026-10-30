@@ -39,12 +39,12 @@ extension RawEditorViewModel {
         let generation = UUID()
         adjustmentPreparationID = generation
         adjustmentPreparing = true
-        let activeSource = editorEditSource
+        let activeSource = editorEditSource, source = sourceRevision
         let contexts = photos.map { adjustmentContext(identifier: $0.id, isRaw: $0.isRaw) }
         let validateCurrent: (String) -> Bool = { [weak self] key in
             let check = {
                 guard let self else { return false }
-                return self.adjustmentPreparationID == generation && self.adjustmentTargetIsCurrent(key) &&
+                return self.adjustmentPreparationID == generation && self.sourceRevision == source && self.adjustmentTargetIsCurrent(key) &&
                     (self.sourceIdentity?.key != key || self.editorEditSource == activeSource)
             }
             return Thread.isMainThread ? check() : DispatchQueue.main.sync(execute: check)

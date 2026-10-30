@@ -103,6 +103,9 @@ internal sealed class CollectionExportDialog : Window
     private readonly StackPanel rows=new();
     private readonly TextBlock message=AdjustmentDialogLayout.Text("");
     private readonly Button confirm;
+    private readonly StackPanel configuration=new();
+    private bool checking,closed;
+    private int generation;
     private CollectionExportReview? review;
     private ExportFormat format=ExportFormat.Jpeg;
     private readonly ComboBox formats=new(){MinWidth=150};
@@ -111,8 +114,8 @@ internal sealed class CollectionExportDialog : Window
     internal CollectionExportDialog(Window owner,MainWindow editor)
     {
         this.editor=editor;var root=AdjustmentDialogLayout.Configure(this,owner,"逐张导出","collection.export-review");
-        var header=new StackPanel();root.Children.Add(header);
-        header.Children.Add(AdjustmentDialogLayout.Text(Loc.Text("草稿可逐张应用、放弃或跳过。检查完成后，请再次确认最终参数。")));
+        var header=configuration;root.Children.Add(header);
+        header.Children.Add(AdjustmentDialogLayout.Text(Loc.Text("将按每张照片已保存的调整导出。跳过只影响本次导出。")));
         var output=new WrapPanel();header.Children.Add(output);
         formats.ItemsSource=Enum.GetValues<ExportFormat>();formats.SelectedItem=format;output.Children.Add(formats);
         formats.SelectionChanged+=(_,_)=>{format=(ExportFormat)formats.SelectedItem;Invalidate();};
@@ -127,15 +130,17 @@ internal sealed class CollectionExportDialog : Window
         AutomationProperties.SetAutomationId(message,"collection.export-count");
         var actions=new WrapPanel{HorizontalAlignment=HorizontalAlignment.Right};footer.Children.Add(actions);
         actions.Children.Add(AdjustmentDialogLayout.Button("取消","collection.export-cancel",Close));
-        confirm=AdjustmentDialogLayout.Button("检查并查看最终参数","collection.export-confirm",Confirm);actions.Children.Add(confirm);
-        RefreshRows();
+        confirm=AdjustmentDialogLayout.Button("开始导出 {0} 张","collection.export-confirm",async()=>await Confirm());actions.Children.Add(confirm);
+        Closed+=(_,_)=>{closed=true;CancelCheck();};
+        Deactivated+=(_,_)=>CancelCheck();
+        RefreshRows();Invalidate();
     }
     private void Invalidate()
     {
         review=null;
         if(confirm==null)return;
         var count=editor.Collection.SelectedPhotos.Count(photo=>!skipping.Contains(photo.ID));
-        confirm.Content=Loc.Text("检查并查看最终参数");confirm.IsEnabled=count>0;
+        confirm.Content=Loc.Format("开始导出 {0} 张",count);confirm.IsEnabled=count>0 && !checking;
         message.Text=count==0 ? Loc.Text("没有可导出的照片，请取消跳过或重新选择。") : "";
     }
     private void RefreshRows()
@@ -166,14 +171,28 @@ internal sealed class CollectionExportDialog : Window
         var success=editor.ResolveCollectionDraft(id,apply);Invalidate();RefreshRows();
         if(!success)message.Text=editor.CollectionDraftFailure(id) ?? Loc.Text("草稿未保存，请重试。");
     }
-    private void Confirm()
+    private void CancelCheck()
     {
+        if(!checking)return;
+        ++generation;checking=false;editor.CancelCollectionOperation();
+        configuration.IsEnabled=rows.IsEnabled=true;Invalidate();
+    }
+    private async Task Confirm()
+    {
+        if(checking || closed)return;
+        var request=++generation;
         try {
-            if(review is {Ready:true}){editor.FreezeCollectionExport(review);DialogResult=true;return;}
             var longEdge=string.IsNullOrWhiteSpace(edge.Text) ? (int?)null : ExportSize.Parse(edge.Text) ?? throw new ArgumentException(Loc.Text("请输入 1 到 65535 之间的整数。"));
-            review=editor.PrepareCollectionExport(skipping,format,longEdge,directory ?? "");RefreshRows();
+            checking=true;confirm.IsEnabled=configuration.IsEnabled=rows.IsEnabled=false;
+            message.Text=Loc.Text("正在检查照片…");
+            var prepared=await editor.PrepareCollectionExportAsync(skipping,format,longEdge,directory ?? "");
+            if(closed || request!=generation)return;
+            checking=false;
+            if(prepared==null){Invalidate();return;}
+            review=prepared;RefreshRows();
+            if(review.Ready){editor.FreezeCollectionExport(review,autoStart:true);DialogResult=true;return;}
             message.Text=review.Rows.Count==0 ? Loc.Text("没有可导出的照片，请取消跳过或重新选择。") : Loc.Format("实际导出 {0} 张",review.Rows.Count);
-            confirm.Content=Loc.Text(review.Ready ? "确认并冻结导出任务" : "检查并查看最终参数");
-        }catch(Exception error){Invalidate();message.Text=error.Message;}
+        }catch(Exception error){if(!closed && request==generation){Invalidate();message.Text=error.Message;}}
+        finally{if(request==generation){checking=false;configuration.IsEnabled=rows.IsEnabled=true;confirm.IsEnabled=editor.Collection.SelectedPhotos.Any(photo=>!skipping.Contains(photo.ID));}}
     }
 }

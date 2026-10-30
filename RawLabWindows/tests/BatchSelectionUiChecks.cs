@@ -66,8 +66,39 @@ internal static class BatchSelectionUiChecks
             check(skipped.Ready && skipped.Rows.Count==1 && window.Collection.Selected.Count==2,"Skipping draft preserves collection selection");
             check(window.ResolveCollectionDraft(targetID,false),"Explicit discard resolves the active draft");Ready(window);
             var review=window.PrepareCollectionExport([],ExportFormat.Png,256,root);check(review.Ready,"Both committed target snapshots are shown after draft resolution");
-            var job=window.FreezeCollectionExport(review);
+            var failureJournal=new BatchJournal(Path.Combine(root,"init-failure"));
+            var failureJob=new BatchSelectionExport(store,failureJournal,_=>null).Freeze(window.Collection,review,_=>null);
+            var failedWindow=new BatchExportWindow(failureJob,failureJournal,_=>throw new IOException("Injected engine initialization failure")){Owner=window};
+            failedWindow.Show();var failedStart=failedWindow.StartExecution();
+            check(!failedWindow.StartExecution().GetAwaiter().GetResult(),"Duplicate start is declined without cancelling the admitted run");
+            InteractionChecks.PumpUntil(()=>failedStart.IsCompleted);check(failedStart.Result,"First start is admitted");
+            check(!failedWindow.Job.Started && failedWindow.Job.Error!=null,"Initialization failure remains visible before runner start");
+            failedWindow.Close();
+            check(failureJournal.Load()?.Id==failureJob.Id && !failedWindow.Discarded,
+                "Closing after initialization failure preserves the same frozen collection job");
+            var recovered=new BatchExportWindow(failureJournal.Load()!,failureJournal){Owner=window};recovered.Show();
+            var recovery=recovered.StartExecution();InteractionChecks.PumpUntil(()=>recovery.IsCompleted);
+            check(recovery.Result && recovered.Job.Id==failureJob.Id && recovered.Job.SucceededCount==2,
+                "Recovery exports both photos using the original frozen job");
+            recovered.Close();failureJournal.Discard(recovered.Job);
+            var uniform=BatchJob.Create(source,new Adjustments().Capture(),null,"Neutral");
+            var uniformWindow=new BatchExportWindow(uniform,failureJournal){Owner=window};uniformWindow.Show();uniformWindow.Close();
+            check(uniformWindow.Discarded && failureJournal.Load()==null,"Closing an unstarted uniform draft still discards it");
+            var cancelled=window.PrepareCollectionExportAsync([],ExportFormat.Png,256,root);window.CancelCollectionOperation();
+            InteractionChecks.PumpUntil(()=>cancelled.IsCompleted);
+            check(cancelled.Result==null && !window.CollectionHasExport,"Cancelled preflight cannot hand off a task");
+            var dialog=new CollectionExportDialog(collection,window);Set(dialog,"directory",root);
+            Get<TextBox>(dialog,"edge").Text="256";
+            Get<ComboBox>(dialog,"formats").SelectedItem=ExportFormat.Png;
+            var start=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(50)};
+            start.Tick+=(_,_)=>{start.Stop();dialog.UpdateLayout();Find<Button>(dialog,"collection.export-confirm").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));};
+            start.Start();check(dialog.ShowDialog()==true,"One final action closes the export configuration and hands off the frozen task");
             var batch=app.Windows.OfType<BatchExportWindow>().Single();batch.UpdateLayout();
+            InteractionChecks.PumpUntil(()=>!batch.Running);
+            var job=batch.Job;
+            check(job.Started && job.SucceededCount==2,"One final action starts the runner and writes both outputs");
+            check(job.Items.All(item=>item.Output!=null && File.Exists(item.Output)),"Both per-photo outputs exist");
+            check(!File.ReadAllBytes(job.Items[0].Output!).SequenceEqual(File.ReadAllBytes(job.Items[1].Output!)),"Different saved adjustments produce different outputs");
             check(!batch.FormatOptions.IsEnabled && !batch.ChooseFolder.IsEnabled && !batch.SizeSelection.IsEnabled,"Frozen task output controls are locked");
             window.OrdinaryParameter.Number.Text="2";check(window.OrdinaryParameter.Commit(),"Later editor value changes independently");Ready(window);
             var frozen=job.Items.Single(item=>item.Input==target).Frozen!;
@@ -79,7 +110,7 @@ internal static class BatchSelectionUiChecks
                 check(!Pixels(before).SequenceEqual(Pixels(after)),"Native frozen preview differs from the later editor state");
             }
             batch.Close();collection.Close();
-            check(store.Find(target)!.Settings.Restore()[Parameter.Exposure]==2 && File.Exists(target),"Cancelling the frozen export preserves saved micro-edits and source files");
+            check(store.Find(target)!.Settings.Restore()[Parameter.Exposure]==2 && File.Exists(target),"Closing the frozen export preserves saved micro-edits and source files");
         }finally{window.Close();app.Shutdown();}
     }
     private static byte[] Pixels(BitmapSource image)

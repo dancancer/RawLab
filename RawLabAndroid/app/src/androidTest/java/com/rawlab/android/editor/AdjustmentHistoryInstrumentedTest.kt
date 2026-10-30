@@ -541,8 +541,12 @@ class AdjustmentHistoryInstrumentedTest {
             main { model.beginDraft(AdjustmentGroup.GEOMETRY) }
             await(model) { it.draftReady }
             var review: com.rawlab.android.batch.CollectionExportReview? = null
-            main { model.prepareCollectionExport(emptySet(), com.rawlab.android.format.ExportFormat.JPEG, 256, null) { review = it } }
+            var busyAtDelivery = true
+            main { model.prepareCollectionExport(emptySet(), com.rawlab.android.format.ExportFormat.JPEG, 256, null) {
+                busyAtDelivery = model.collection.value.busy; review = it
+            } }
             waitFor { !model.collection.value.busy }
+            assertFalse("Prepare callback must release collection busy before delivery", busyAtDelivery)
             assertFalse(review!!.ready)
             main { model.prepareCollectionExport(setOf(targetID.value), com.rawlab.android.format.ExportFormat.JPEG, 256, null) { review = it } }
             waitFor { !model.collection.value.busy }
@@ -576,6 +580,147 @@ class AdjustmentHistoryInstrumentedTest {
         } finally {
             edits.reset(targetID); folder.deleteRecursively()
             jobID?.let { com.rawlab.android.batch.journal.BatchJournal(File(context.filesDir, "RawLab/BatchJobs")).discard(it) }
+        }
+    }
+
+    @Test fun frozenCollectionSurvivesRasterReleaseFailure() = withModel { model, _, _ ->
+        val journal = com.rawlab.android.batch.journal.BatchJournal(File(context.filesDir, "RawLab/BatchJobs"))
+        val before = journal.pending().toSet()
+        val release = model.releaseEditorRasterOperation
+        var frozenID: String? = null
+        fun waitFor(condition: () -> Boolean) {
+            val deadline = SystemClock.uptimeMillis() + 60_000
+            while (!condition() && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(30)
+            assertTrue("Collection handoff timed out", condition())
+        }
+        try {
+            main { model.addCollectionPhotos(listOf(model.state.value.photo!!.uri)) }
+            waitFor { !model.collection.value.busy }
+            val review = result<com.rawlab.android.batch.CollectionExportReview?> {
+                model.prepareCollectionExport(emptySet(), com.rawlab.android.format.ExportFormat.JPEG, 128, null, it)
+            }!!
+            main { model.releaseEditorRasterOperation = { throw IOException("release fixture") } }
+            assertFalse(result<Boolean> { model.freezeCollectionExport(review, it) })
+            val added = journal.pending().filterNot(before::contains)
+            assertEquals(1, added.size); frozenID = added.single()
+            assertTrue("A published task is immediately recoverable when raster release fails",
+                model.pendingBatch.value.any { it.id == frozenID })
+            main { model.releaseEditorRasterOperation = release; model.resumeBatch(journal.load(frozenID!!)!!) }
+            waitFor { model.batch.value?.state?.value?.phase == com.rawlab.android.batch.BatchPhase.SELECTING }
+            val batch = model.batch.value!!
+            assertEquals(frozenID, batch.state.value.job.id)
+            main { batch.continueUnfinished() }
+            waitFor { batch.state.value.phase == com.rawlab.android.batch.BatchPhase.COMPLETE }
+            assertEquals(frozenID, batch.state.value.job.id)
+            assertEquals(1, batch.state.value.job.rows.count { it.status == com.rawlab.android.batch.BatchRowStatus.SUCCESS })
+            batch.state.value.job.rows.mapNotNull { it.outputUri }.forEach { context.contentResolver.delete(Uri.parse(it), null, null) }
+            assertEquals(listOf(frozenID), File(context.filesDir, "RawLab/BatchJobs").listFiles().orEmpty()
+                .filter { it.extension == "properties" }.map { it.nameWithoutExtension }.filterNot(before::contains))
+            main { assertTrue(batch.discard()); model.closeBatch() }
+        } finally {
+            main { model.releaseEditorRasterOperation = release }
+            frozenID?.let(journal::discard)
+        }
+    }
+
+    @Test fun collectionAutomaticStartCancelAndBackgroundOwnership() = withModel(raw = true) { model, _, sourceID ->
+        val folder = File(context.cacheDir, "automatic-collection-${UUID.randomUUID()}").apply { mkdirs() }
+        val target = File(folder, "different-exposure.dng")
+        model.state.value.photo!!.file.copyTo(target)
+        val targetURI = Uri.fromFile(target)
+        val journal = com.rawlab.android.batch.journal.BatchJournal(File(context.filesDir, "RawLab/BatchJobs"))
+        val before = journal.pending().toSet()
+        val release = model.releaseEditorRasterOperation
+        val releaseStarted = java.util.concurrent.CountDownLatch(1)
+        val releaseGate = java.util.concurrent.CountDownLatch(1)
+        val owned = mutableSetOf<String>()
+        fun waitFor(condition: () -> Boolean) {
+            val deadline = SystemClock.uptimeMillis() + 90_000
+            while (!condition() && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(30)
+            assertTrue("Automatic collection operation timed out", condition())
+        }
+        try {
+            main { model.edit(model.state.value.edits.copy(exposure = .7f)) }; await(model) { it.canExport }
+            main { model.addCollectionPhotos(listOf(model.state.value.photo!!.uri, targetURI)) }
+            waitFor { !model.collection.value.busy }
+            assertTrue(result<Boolean> { model.editCollectionPhoto(targetURI.toString(), it) })
+            await(model) { it.canExport && it.photo?.identity?.value == targetURI.toString() }
+            main { model.edit(model.state.value.edits.copy(exposure = -.4f)) }; await(model) { it.canExport }
+            assertTrue(result<Boolean> { model.returnToCollection(it) })
+            for (background in listOf(false, true)) {
+                main {
+                    model.startCollectionExport(emptySet(), com.rawlab.android.format.ExportFormat.JPEG, 128, null)
+                    if (background) model.onBackground() else model.cancelCollectionExport()
+                }
+                waitFor { !model.collection.value.busy && !model.collectionExport.value.freezing }
+                assertNull(model.batch.value)
+                assertEquals(before, journal.pending().toSet())
+                assertTrue(result<Boolean> { model.returnToCollection(it) })
+            }
+            var handoffs = 0
+            main {
+                repeat(2) { model.startCollectionExport(emptySet(), com.rawlab.android.format.ExportFormat.JPEG, 128, null) { if (it) handoffs++ } }
+            }
+            waitFor { model.batch.value?.state?.value?.phase == com.rawlab.android.batch.BatchPhase.COMPLETE }
+            val batch = model.batch.value!!; val job = batch.state.value.job; owned += job.id
+            assertEquals(1, handoffs)
+            assertEquals(setOf(.7f, -.4f), job.rows.map { it.target.frozen!!.settings.exposure }.toSet())
+            assertEquals(2, job.rows.count { it.status == com.rawlab.android.batch.BatchRowStatus.SUCCESS })
+            val pixels = job.rows.map { row -> context.contentResolver.openInputStream(Uri.parse(row.outputUri!!)).use(android.graphics.BitmapFactory::decodeStream)!! }
+            assertFalse("Per-photo exposure changes actual RAW output pixels", pixels[0].sameAs(pixels[1]))
+            pixels.forEach(Bitmap::recycle)
+            job.rows.forEach { context.contentResolver.delete(Uri.parse(it.outputUri!!), null, null) }
+            main { assertTrue(batch.discard()); model.closeBatch() }
+            waitFor { model.batch.value == null && !journal.contains(job.id) }
+            main {
+                model.releaseEditorRasterOperation = { releaseStarted.countDown(); releaseGate.await(15, java.util.concurrent.TimeUnit.SECONDS) }
+                model.startCollectionExport(emptySet(), com.rawlab.android.format.ExportFormat.JPEG, 128, null)
+            }
+            assertTrue(releaseStarted.await(15, java.util.concurrent.TimeUnit.SECONDS))
+            val saved = model.pendingBatch.value.single(); owned += saved.id
+            main { model.onBackground() }
+            releaseGate.countDown()
+            waitFor { model.batch.value?.state?.value?.phase == com.rawlab.android.batch.BatchPhase.SELECTING }
+            assertEquals(saved.id, model.batch.value!!.state.value.job.id)
+            assertTrue(model.batch.value!!.state.value.job.rows.all { it.status == com.rawlab.android.batch.BatchRowStatus.PENDING })
+            assertTrue(journal.contains(saved.id))
+            main { assertTrue(model.batch.value!!.discard()); model.closeBatch() }
+        } finally {
+            releaseGate.countDown()
+            main { model.releaseEditorRasterOperation = release }
+            owned.forEach(journal::discard)
+            com.rawlab.android.settings.EditStore(File(context.filesDir, "edits")).reset(PhotoIdentity(targetURI.toString()))
+            folder.deleteRecursively()
+        }
+    }
+
+    @Test fun collectionSourceImportInvalidatesPendingExportBeforePhotoReplacement() = withModel { model, _, source ->
+        val target = File(context.cacheDir, "collection-source-guard-${UUID.randomUUID()}.png"); png(target)
+        val journal = com.rawlab.android.batch.journal.BatchJournal(File(context.filesDir, "RawLab/BatchJobs"))
+        val before = journal.pending().toSet()
+        try {
+            main { model.addCollectionPhotos(listOf(model.state.value.photo!!.uri, Uri.fromFile(target))) }
+            await(model) { !model.collection.value.busy }
+            main { model.selectCollectionPhoto(source.value, false) }
+            synchronized(model.storage) {
+                main {
+                    model.startCollectionExport(emptySet(), com.rawlab.android.format.ExportFormat.JPEG, 64, null)
+                    model.importPhoto(Uri.fromFile(File(target.parentFile, "missing-${UUID.randomUUID()}.png")))
+                }
+                await(model) { it.operation == Operation.IMPORT }
+                assertEquals("Import has started but the old photo is still displayed", source, model.state.value.photo!!.identity)
+            }
+            await(model) { !model.collection.value.busy && !model.collectionExport.value.preparing && !model.collectionExport.value.freezing }
+            assertEquals("A source change must reject the pending export even when import fails", before, journal.pending().toSet())
+            assertNull(model.batch.value)
+        } finally {
+            model.batch.value?.let { batch ->
+                await(model) { batch.state.value.phase !in setOf(com.rawlab.android.batch.BatchPhase.PREPARING, com.rawlab.android.batch.BatchPhase.RUNNING) }
+                batch.state.value.job.rows.mapNotNull { it.outputUri }.forEach { context.contentResolver.delete(Uri.parse(it), null, null) }
+                main { batch.discard(); model.closeBatch() }
+            }
+            (journal.pending().toSet() - before).forEach(journal::discard)
+            target.delete()
         }
     }
 

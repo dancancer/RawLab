@@ -115,6 +115,7 @@ final class ViewingEditorUITests: XCTestCase {
 
     func testBatchCollectionMicroEditAndFrozenExport() {
         let app = launch(language: "en")
+        XCTAssertEqual(receipt(app)["scenePhase"] as? String, "active", "The native test host must forward its active scene phase: \(receipt(app))")
         openAdjustmentAction("collection.open", app: app)
         wait(app) { $0["collectionShowing"] as? Bool == true && ($0["collectionOrdered"] as? [String])?.count == 1 }
         let ordered = receipt(app)["collectionOrdered"] as! [String]
@@ -129,13 +130,17 @@ final class ViewingEditorUITests: XCTestCase {
         XCTAssertEqual(receipt(app)["collectionOrdered"] as? [String], ordered)
         XCTAssertEqual(receipt(app)["collectionSelected"] as? [String], ordered)
         app.buttons["collection.export"].tap()
-        let prepare = app.buttons["collection.export.preflight"]
-        revealFormControl(prepare, app: app); prepare.tap()
-        let freeze = app.buttons["collection.export.freeze"]
-        revealFormControl(freeze, app: app); freeze.tap()
+        let start = app.buttons["collection.export.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 10), "Export configuration has one final start action")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        revealFormControl(start, app: app); XCTAssertTrue(start.isHittable)
+        capture(app, "collection-start-landscape")
+        XCUIDevice.shared.orientation = .portrait
+        revealFormControl(start, app: app); start.tap()
         wait(app) { $0["batchShowing"] as? Bool == true && $0["batchMode"] as? String == "per_target_frozen" }
         XCTAssertEqual(receipt(app)["batchFrozenExposure"] as? [Double], [0.75])
-        capture(app, "collection-frozen-export")
+        wait(app, timeout: 120) { $0["batchStatus"] as? String == "completed" && $0["batchCompleted"] as? Int == 1 }
+        capture(app, "collection-one-action-export")
         app.buttons["Task Actions"].tap()
         app.buttons["Discard Task"].tap()
         app.buttons["Discard Task"].tap()
@@ -145,6 +150,58 @@ final class ViewingEditorUITests: XCTestCase {
         XCTAssertEqual(receipt(app)["collectionOrdered"] as? [String], ordered)
         XCTAssertEqual(receipt(app)["collectionSelected"] as? [String], ordered)
         XCTAssertEqual(receipt(app)["sourceStoredExposure"] as? Double, 0.75)
+    }
+
+    func testCollectionCancelAndRecoverAfterBackground() {
+        let app = launch(language: "en")
+        func notify(_ name: String) {
+            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName(name as CFString), nil, nil, true)
+        }
+        openAdjustmentAction("collection.open", app: app)
+        app.buttons["collection.export"].tap()
+        let start = app.buttons["collection.export.start"]
+        revealFormControl(start, app: app)
+        let before = receipt(app)["batchJournalIDs"] as! [String]
+        let drains = receipt(app)["adjustmentQueueDrains"] as! Int
+        notify("com.rawlab.quick-preset.hold")
+        wait(app) { $0["quickPreparationHeld"] as? Bool == true }
+        start.tap(); wait(app) { $0["collectionChecking"] as? Bool == true }
+        app.buttons["collection.export.cancel"].tap()
+        notify("com.rawlab.quick-preset.release")
+        wait(app) { ($0["adjustmentQueueDrains"] as? Int ?? 0) > drains }
+        XCTAssertEqual(receipt(app)["batchJournalIDs"] as? [String], before)
+        XCTAssertEqual(receipt(app)["batchMode"] as? String, "")
+        capture(app, "collection-cancel-before-freeze")
+
+        notify("com.rawlab.batch-flow.hold")
+        wait(app) { $0["batchDeliveryHeld"] as? Bool == true }
+        revealFormControl(start, app: app); start.tap()
+        wait(app) { $0["pendingBatchDeliveries"] as? Int == 1 }
+        let added = (receipt(app)["batchJournalIDs"] as! [String]).filter { !before.contains($0) }
+        XCTAssertEqual(added.count, 1)
+        let id = added[0]
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        wait(app) { $0["scenePhase"] as? String == "active" && $0["collectionChecking"] as? Bool == false }
+        notify("com.rawlab.batch-flow.release")
+        wait(app) { $0["batchShowing"] as? Bool == true && $0["batchID"] as? String == id }
+        XCTAssertEqual(receipt(app)["batchStarts"] as? [String], [])
+        XCTAssertEqual(receipt(app)["batchStatus"] as? String, "draft")
+        app.buttons["Back"].tap()
+        wait(app) { $0["batchShowing"] as? Bool == false }
+        openAdjustmentAction("collection.open", app: app)
+        let existing = app.buttons["View Batch Task…"]
+        revealFormControl(existing, app: app); existing.tap()
+        wait(app) { $0["batchShowing"] as? Bool == true }
+        XCTAssertEqual(receipt(app)["batchID"] as? String, id)
+        XCTAssertEqual(receipt(app)["batchStarts"] as? [String], [])
+        app.buttons["batch.export"].tap()
+        wait(app, timeout: 120) { $0["batchStatus"] as? String == "completed" }
+        XCTAssertEqual(receipt(app)["batchStarts"] as? [String], [id])
+        XCTAssertEqual((receipt(app)["batchJournalIDs"] as! [String]).filter { !before.contains($0) }, [id])
+        capture(app, "collection-background-same-job-recovery")
+        app.buttons["Done"].tap()
+        wait(app) { $0["batchMode"] as? String == "" }
     }
 
     func openAdjustmentAction(_ id: String, app: XCUIApplication) {
@@ -165,6 +222,9 @@ final class ViewingEditorUITests: XCTestCase {
                 let panel = app.scrollViews["editor.panel"]
                 if element.exists && element.frame.midY < panel.frame.midY { panel.swipeDown(velocity: .slow) }
                 else { panel.swipeUp(velocity: .slow) }
+            } else if element.identifier.hasPrefix("collection.export."),
+                      app.collectionViews.containing(.button, identifier: element.identifier).firstMatch.exists {
+                app.collectionViews.containing(.button, identifier: element.identifier).firstMatch.swipeUp(velocity: .slow)
             } else { app.swipeUp(velocity: .slow) }
         }
         XCTFail("Unreachable form control: \(element.identifier)\n\(app.debugDescription)")
@@ -239,7 +299,7 @@ final class ViewingEditorUITests: XCTestCase {
         XCTAssertEqual(historyAfterCopy, 2, "copy and range selection never create edit history")
         setExposure("+0.90", app: app)
         openAdjustmentAction("adjustment.paste.open", app: app)
-        app.buttons["adjustment.paste.preflight"].tap()
+        XCTAssertFalse(app.buttons["adjustment.paste.preflight"].exists, "Valid targets are checked automatically")
         let apply = app.buttons["adjustment.paste.apply"]
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in apply.isEnabled }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 30), .completed)
@@ -285,8 +345,7 @@ final class ViewingEditorUITests: XCTestCase {
         XCTAssertTrue(fixture.waitForExistence(timeout: 10), app.debugDescription)
         fixture.tap()
         if app.buttons["Open"].waitForExistence(timeout: 3) { app.buttons["Open"].tap() }
-        XCTAssertTrue(app.buttons["adjustment.paste.preflight"].waitForExistence(timeout: 10))
-        app.buttons["adjustment.paste.preflight"].tap()
+        XCTAssertTrue(app.buttons["adjustment.paste.apply"].waitForExistence(timeout: 10))
         let apply = app.buttons["adjustment.paste.apply"]
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in apply.isEnabled }, object: nil)], timeout: 30), .completed)
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName("com.rawlab.iter03.fail-target" as CFString), nil, nil, true)

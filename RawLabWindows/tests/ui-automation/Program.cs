@@ -55,6 +55,9 @@ internal static partial class Program
             Trace("main-window");
             WaitMode("off",false);
             Check(true,"A fresh native window exposes single mode before a photo is opened");
+            if(Environment.GetEnvironmentVariable("RAWLAB_BATCH_FLOW_UI")=="1") {
+                BatchFlow();CloseMainWindow();return 0;
+            }
             if (Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_UI") == "1") {
                 QuickPresetFlow(); CloseMainWindow(); return 0;
             }
@@ -158,10 +161,9 @@ internal static partial class Program
                 Trace("open-filename-found " + edit.Current.ControlType.ProgrammaticName);
                 SetValue(edit, path);
                 Trace("open-filename-set " + System.IO.Path.GetFileName(path));
-                var accept = FindByNames(dialog, "打开", "Open", "选择", "Select") ??
-                    dialog.FindFirst(TreeScope.Descendants, new AndCondition(
-                        new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button),
-                        new PropertyCondition(AutomationElement.AutomationIdProperty, "1")));
+                var accept = Wait(()=>FindByNames(dialog, "打开", "Open", "选择", "Select") ??
+                    dialog.FindFirst(TreeScope.Descendants,
+                        new PropertyCondition(AutomationElement.AutomationIdProperty, "1")),TimeSpan.FromSeconds(10));
                 if (accept == null) throw new InvalidOperationException("OpenFileDialog accept button is missing.");
                 Invoke(accept);
                 Trace("open-accepted " + System.IO.Path.GetFileName(path));

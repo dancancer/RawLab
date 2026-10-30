@@ -24,6 +24,7 @@ struct AdjustmentTransferView: View {
     @State private var historyPhoto: URL?
     @State private var focusedHistory: UUID?
     @State private var excludedSource: String?
+    @State private var initialized = false
 
     private var title: String { L10n.text(preset != nil ? "应用预设" : kind == .copy ? "复制调整" : kind == .paste ? "粘贴调整" : kind == .synchronize ? "应用调整并保存到所选照片" : "本次会话历史") }
     private var selectedScope: AdjustmentTransferScope {
@@ -35,6 +36,10 @@ struct AdjustmentTransferView: View {
     private var remainingTargets: Int { prepared?.targets.filter { !skipped.contains($0.id) }.count ?? 0 }
     private var ready: Bool {
         !preparing && remainingTargets > 0 && prepared?.targets.allSatisfy { $0.error == nil || skipped.contains($0.id) } == true
+    }
+    private var needsRecheck: Bool {
+        (prepared == nil && message != nil) || prepared?.targets.contains { $0.error != nil } == true ||
+            pasteResults.contains { $0.status == .conflict || $0.status == .blocked }
     }
 
     var body: some View {
@@ -53,11 +58,14 @@ struct AdjustmentTransferView: View {
         }
         .padding(24).frame(width: 600).frame(minHeight: 380, maxHeight: 680).tint(.yellow)
         .onAppear {
+            guard !initialized else { return }
+            initialized = true
             if kind == .copy { fields=model.settings.isHDREditing ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common }
             if kind == .paste || kind == .synchronize {
                 payload = preset?.payload ?? model.adjustmentSheetPayload ?? model.adjustmentClipboard
                 targets = preset != nil ? model.file.map { [$0] } ?? [] : model.adjustmentSheetTargets ?? model.file.map { [$0] } ?? []
                 excludedSource = preset == nil ? model.adjustmentSheetExcludedSource : nil
+                prepare()
             } else if kind == .history, let request = model.pendingAdjustmentHistory {
                 historyID = request.transactionID; historyUndo = request.undo; historyPhoto = request.photo
                 historyResults = model.adjustmentOutcomes
@@ -65,8 +73,11 @@ struct AdjustmentTransferView: View {
                 if !historyResults.isEmpty { updateResultMessage() }
             }
         }
+        .onChange(of: model.sourceRevision) { _, _ in
+            if kind == .paste || kind == .synchronize { close() }
+        }
         .onDisappear {
-            operationGeneration = UUID(); model.adjustmentSheetPayload = nil; model.adjustmentSheetTargets = nil
+            invalidatePreparation(); model.adjustmentSheetPayload = nil; model.adjustmentSheetTargets = nil
             model.adjustmentSheetExcludedSource = nil; model.adjustmentSheetExcludedIdentity = nil; model.pendingAdjustmentHistory = nil
         }
     }
@@ -90,10 +101,11 @@ struct AdjustmentTransferView: View {
     private var pasteContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let payload {
-                Text(L10n.format("来源：%@ · %@ 项调整", sourceName(payload), String(payload.fields.count)))
-                if payload.source.identifier.hasPrefix("/") {
-                    Text(URL(fileURLWithPath: payload.source.identifier).deletingLastPathComponent().path)
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                HStack {
+                    Text(L10n.format("来源：%@ · %@ 项调整", sourceName(payload), String(payload.fields.count)))
+                    if payload.source.identifier.hasPrefix("/") {
+                        PhotoLocationButton(url: URL(fileURLWithPath: payload.source.identifier))
+                    }
                 }
                 if payload.source.recipe != nil {
                     Text(L10n.text("按实际生效值应用，已包含配方强度。")).font(.callout).foregroundStyle(.secondary)
@@ -108,11 +120,13 @@ struct AdjustmentTransferView: View {
                     Text(L10n.format("目标：%@ 张照片", String(targets.count))).fontWeight(.medium)
                     Spacer()
                     if kind != .synchronize {
-                        Button(L10n.text("选择照片…"), action: chooseTargets).disabled(preparing)
+                        Button(L10n.text("选择照片…"), action: chooseTargets)
                             .accessibilityIdentifier("adjustment.paste.chooseTargets")
                     }
-                    Button(L10n.text("检查目标"), action: prepare).disabled(preparing || targets.isEmpty)
-                        .accessibilityIdentifier("adjustment.paste.preflight")
+                    if needsRecheck {
+                        Button(L10n.text("重新检查"), action: prepare).disabled(preparing || targets.isEmpty)
+                            .accessibilityIdentifier("adjustment.paste.preflight")
+                    }
                 }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
@@ -174,6 +188,7 @@ struct AdjustmentTransferView: View {
         return VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(url.lastPathComponent).fontWeight(.medium)
+                PhotoLocationButton(url: url)
                 Spacer()
                 if let outcome { Text(part?.state == .undone ? L10n.text("已撤销") : outcome.status.title).foregroundStyle(.secondary) }
                 Toggle(L10n.text("跳过"), isOn: Binding(get: { skipped.contains(id) }, set: {
@@ -181,7 +196,6 @@ struct AdjustmentTransferView: View {
                 })).toggleStyle(.checkbox).fixedSize()
                     .disabled(outcome.map { [.applied, .unchanged, .skipped].contains($0.status) } == true)
             }
-            Text(url.deletingLastPathComponent().path).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             if kind == .synchronize, let photo = model.batchSelectionPhotos.values.first(where: { $0.url.path == id }), model.collectionHasDraft(photo.id) {
                 Text(L10n.text("此照片有尚未保存的调整。应用或放弃后，请重新检查目标。"))
                 HStack {
@@ -290,22 +304,28 @@ struct AdjustmentTransferView: View {
         panel.allowedContentTypes = DirectoryContents.supportedExtensions.compactMap { UTType(filenameExtension: $0) }
         if panel.runModal() == .OK {
             targets = panel.urls.filter { $0.resolvingSymlinksInPath().standardizedFileURL.path != excludedSource }
-            skipped = []; invalidatePreparation()
+            skipped = []; prepare()
         }
     }
-    private func invalidatePreparation() { prepared = nil; pasteResults = []; historyResults = []; message = nil; historyID = nil; historyPhoto = nil }
+    private func invalidatePreparation() {
+        operationGeneration = UUID(); preparing = false
+        prepared = nil; pasteResults = []; historyResults = []; message = nil; historyID = nil; historyPhoto = nil
+    }
     private func prepare() {
-        guard let payload else { return }
         invalidatePreparation()
-        guard let session = try? model.requireAdjustmentSession() else { return }
+        guard let payload, !targets.isEmpty else { return }
+        let session: AdjustmentTransferSession
+        do { session = try model.requireAdjustmentSession() }
+        catch { message = model.adjustmentErrorMessage(error); return }
         let descriptors = model.adjustmentTransferTargets(targets, payload: payload, excludingSource: excludedSource,
             excludingIdentity: kind == .synchronize ? model.adjustmentSheetExcludedIdentity : nil, collection: kind == .synchronize)
         preparing = true
-        let generation = UUID(); operationGeneration = generation
+        let generation = UUID(), source = model.sourceRevision
+        operationGeneration = generation
         DispatchQueue.global(qos: .userInitiated).async {
             let result = Result { try session.prepare(payload: payload, targets: descriptors, action: kind == .synchronize ? .synchronize : preset == nil ? .paste : .preset) }
             DispatchQueue.main.async {
-                guard generation == operationGeneration else { return }
+                guard generation == operationGeneration, source == model.sourceRevision else { return }
                 preparing = false
                 switch result {
                 case .success(let value): prepared = value
@@ -318,6 +338,9 @@ struct AdjustmentTransferView: View {
         if let preset { return preset.name }
         return payload.source.identifier.hasPrefix("/") ? URL(fileURLWithPath: payload.source.identifier).lastPathComponent : payload.source.identifier
     }
-    private func close() { if let onClose { onClose() } else { dismiss() } }
+    private func close() {
+        invalidatePreparation()
+        if let onClose { onClose() } else { dismiss() }
+    }
 
 }

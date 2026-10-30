@@ -92,6 +92,9 @@ class EditorViewModel @JvmOverloads constructor(
     val collection = collections.state
     val batch = batches.active
     val pendingBatch = batches.pending
+    private val mutableCollectionExport = MutableStateFlow(CollectionExportFlow())
+    val collectionExport = mutableCollectionExport.asStateFlow()
+    @Volatile private var collectionExportGeneration = UUID.randomUUID()
     private val mutableHslTarget = MutableStateFlow(HslTargetState())
     val hslTarget = mutableHslTarget.asStateFlow()
     private val hslInteraction = HslTargetInteraction()
@@ -101,7 +104,7 @@ class EditorViewModel @JvmOverloads constructor(
     private var acceptedHslSettings: EditSettings? = null
     private var acceptedHslRevision: HslTargetRevision? = null
     private var currentRevision = 0L
-    private var sourceRevision = 0L
+    @Volatile private var sourceRevision = 0L
     private var editRevision = 0L
     private var draftRevision = 0L
     private var durablePreview: EditorDurablePreview? = null
@@ -1214,12 +1217,57 @@ class EditorViewModel @JvmOverloads constructor(
         completed: (com.rawlab.android.batch.CollectionExportReview?) -> Unit) =
         collections.prepare(skipping, format, longEdge, destination, completed)
     fun freezeCollectionExport(review: com.rawlab.android.batch.CollectionExportReview, completed: (Boolean) -> Unit) {
-        if (batch.value != null) { collections.failure("Close the current export task first"); completed(false); return }
-        collections.freeze(review) { job ->
-            if (job == null) completed(false)
-            else releaseEditorRasterForBatch { released ->
-                if (released) batches.resume(job, gpuMode())
-                completed(released)
+        freezeAndAttachCollectionExport(review, false, { true }) { _, attached -> completed(attached) }
+    }
+
+    fun cancelCollectionExport() {
+        collectionExportGeneration = UUID.randomUUID()
+        mutableCollectionExport.value = mutableCollectionExport.value.copy(preparing = false, review = null)
+    }
+
+    fun startCollectionExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?, destination: Uri?,
+        completed: (Boolean) -> Unit = {}) {
+        if (mutableCollectionExport.value.preparing || mutableCollectionExport.value.freezing || collection.value.busy) return
+        cancelCollectionExport()
+        val generation = collectionExportGeneration
+        val source = mutable.value.photo
+        val sourceVersion = sourceRevision
+        val revision = mutable.value.adjustmentRevision
+        val selected = collection.value.selected
+        val current = { !disposed && generation == collectionExportGeneration && sourceRevision == sourceVersion && mutable.value.photo === source &&
+            mutable.value.adjustmentRevision == revision && collection.value.selected == selected }
+        mutableCollectionExport.value = CollectionExportFlow(preparing = true)
+        collections.prepare(skipping, format, longEdge, destination) { review ->
+            if (generation != collectionExportGeneration) return@prepare
+            if (!current()) {
+                mutableCollectionExport.value = CollectionExportFlow()
+                collections.failure("Review the selected photos again")
+            } else if (review?.ready != true) {
+                mutableCollectionExport.value = CollectionExportFlow(review = review)
+            } else {
+                mutableCollectionExport.value = CollectionExportFlow(preparing = true, freezing = true, review = review)
+                freezeAndAttachCollectionExport(review, true, current) { job, _ ->
+                    mutableCollectionExport.value = CollectionExportFlow()
+                    if (job != null) completed(true)
+                }
+            }
+        }
+    }
+
+    private fun freezeAndAttachCollectionExport(review: com.rawlab.android.batch.CollectionExportReview,
+        automaticallyStart: Boolean, isCurrent: () -> Boolean, completed: (BatchJob?, Boolean) -> Unit) {
+        if (batch.value != null || pendingBatch.value.isNotEmpty()) {
+            collections.failure("Close the current export task first"); completed(null, false); return
+        }
+        collections.freeze(review, isCurrent) { job ->
+            if (job == null) completed(null, false)
+            else {
+                batches.retain(job)
+                releaseEditorRasterForBatch { released ->
+                    if (released) batches.resume(job, gpuMode(), startAutomatically = automaticallyStart && isCurrent())
+                    else collections.failure(mutable.value.error)
+                    completed(job, released)
+                }
             }
         }
     }
@@ -1249,7 +1297,7 @@ class EditorViewModel @JvmOverloads constructor(
         // 页面切换沿用存储动作的输入门禁；只在渲染队列上释放完整解码图，保留仍在显示的预览。
         mutable.value = mutable.value.copy(committingAdjustments = true)
         queue.performAfterPending {
-            val result = runCatching { renderer.releaseDecodedRaster() }
+            val result = runCatching { releaseEditorRasterOperation() }
             viewModelScope.launch {
                 if (!disposed) {
                     mutable.value = mutable.value.copy(committingAdjustments = false)
@@ -1261,9 +1309,11 @@ class EditorViewModel @JvmOverloads constructor(
             }
         }
     }
+    internal var releaseEditorRasterOperation: () -> Unit = { renderer.releaseDecodedRaster() }
     fun closeBatch() = batches.close()
 
     fun onBackground() {
+        cancelCollectionExport()
         if (mutable.value.committingAdjustments) { batches.cancelForBackground(); return }
         cancelAdjustmentInteraction()
         batches.cancelForBackground()

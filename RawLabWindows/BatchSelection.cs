@@ -80,11 +80,14 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
 {
     public CollectionExportReview Prepare(BatchSelectionSession selection,IReadOnlyCollection<string> skipping,
         ExportFormat format,int? longEdge,string outputDirectory,Func<string,string?> activeFailure)
+        =>Prepare(selection.SelectedPhotos.ToArray(),skipping,format,longEdge,outputDirectory,activeFailure);
+    public CollectionExportReview Prepare(IReadOnlyList<CollectionPhoto> photos,IReadOnlyCollection<string> skipping,
+        ExportFormat format,int? longEdge,string outputDirectory,Func<string,string?> activeFailure)
     {
         if(!Enum.IsDefined(format) || longEdge is {} edge && !ExportSize.IsValid(edge))throw new ArgumentException("Invalid output settings");
         if(!Directory.Exists(outputDirectory))throw new DirectoryNotFoundException(Loc.Text("请选择输出文件夹。"));
         var rows=new List<CollectionExportRow>();
-        foreach(var photo in selection.SelectedPhotos.Where(photo=>!skipping.Contains(photo.ID))) {
+        foreach(var photo in photos.Where(photo=>!skipping.Contains(photo.ID))) {
             try {
                 if(activeFailure(photo.ID) is {} draft)throw new InvalidOperationException(draft);
                 photo.Validate();var record=store.VersionedState(photo.Path);
@@ -102,7 +105,7 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                 rows.Add(new(photo,record.Copy(),settings.Copy(),look,hash,look==null ? Loc.Text("中性") : System.IO.Path.GetFileNameWithoutExtension(look)));
             }catch(Exception error){rows.Add(new(photo,Error:error.Message));}
         }
-        return new(selection.SelectedPhotos.Select(photo=>photo.ID).ToArray(),rows,format,longEdge,System.IO.Path.GetFullPath(outputDirectory));
+        return new(photos.Select(photo=>photo.ID).ToArray(),rows,format,longEdge,System.IO.Path.GetFullPath(outputDirectory));
     }
     public BatchJob Freeze(BatchSelectionSession selection,CollectionExportReview review,Func<string,string?> activeFailure,int aiBackend=2,string aiDeviceID="")
     {

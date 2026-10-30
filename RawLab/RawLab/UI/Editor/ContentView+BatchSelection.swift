@@ -10,11 +10,11 @@ extension ContentView {
     }
 
     func finishBatchSelection() {
-        if let model = queuedCollectionBatch {
-            queuedCollectionBatch = nil
+        if collectionBatchHandoff.promote(sceneIsActive: scenePhase == .active, configure: { model in
             batchModel = model
-            batchModel?.onUsage = { UsageAnalytics.shared.record($0) }
-            batchModel?.onDiscard = { batchModel = nil; showingBatchExport = false; recoverBatchExport() }
+            model.onUsage = { UsageAnalytics.shared.record($0) }
+            model.onDiscard = { batchModel = nil; showingBatchExport = false; recoverBatchExport() }
+        }) != nil {
             showingBatchExport = true
         } else if let id = queuedCollectionEdit {
             queuedCollectionEdit = nil
