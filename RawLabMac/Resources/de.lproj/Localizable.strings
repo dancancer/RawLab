@@ -71,6 +71,7 @@
 "RawLab 更新" = "RawLab-Update";
 "S 曲线" = "S-Kurve";
 "SDR 兼容预览" = "SDR-Kompatibilitätsvorschau";
+"X3F 显影" = "X3F-Entwicklung";
 "三分网格" = "Drittelraster";
 "三线性" = "Trilinear";
 "上下拖动调整，方向键微调，Esc 取消" = "Zum Anpassen nach oben oder unten ziehen, mit Pfeiltasten feinjustieren, mit Esc abbrechen";
@@ -78,6 +79,7 @@
 "上次批量任务尚未完成" = "Der letzte Stapel-Export ist noch nicht abgeschlossen";
 "下次退出时安装" = "Beim nächsten Beenden installieren";
 "不支持此 HDR 格式或颜色描述。" = "Dieses HDR-Format oder diese Farbbeschreibung wird nicht unterstützt.";
+"不支持此 X3F 显影模式。" = "Dieser X3F-Entwicklungsmodus wird nicht unterstützt.";
 "不支持此处理版本，原有记录未被覆盖。" = "Diese Verarbeitungsversion wird nicht unterstützt. Die gespeicherten Bearbeitungen wurden nicht überschrieben.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "Dieses Foto, dieser Look oder diese Verarbeitungsart wird nicht unterstützt. Prüfen Sie die Dateikompatibilität und Verarbeitungseinstellungen.";
 "不是支持的 RAW 文件" = "Keine unterstützte RAW-Datei";
@@ -109,12 +111,14 @@
 "从照片库选择" = "Aus der Fotobibliothek wählen";
 "以下为配方逻辑值；强度为 %@。部分范围会按此强度换算。" = "Dies sind logische Rezeptwerte; die Stärke beträgt %@. Einige Bereiche werden mit dieser Stärke skaliert.";
 "以下目标尚未完成本次历史操作，请检查原因后重试。" = "Der Verlaufsschritt ist für diese Fotos unvollständig. Prüfe den Grund und versuche es erneut.";
+"以文件保存的显影为基准，白平衡作相对调整。" = "Die gespeicherte Entwicklung ist die Basis; der Weißabgleich wird relativ angepasst.";
 "任务使用的外观文件不可用，请重新创建任务。" = "Die vom Auftrag verwendete Look-Datei ist nicht verfügbar. Bitte erstellen Sie den Auftrag neu.";
 "任务已保存，请继续导出。" = "Der Auftrag ist gespeichert. Setzen Sie den Export fort.";
 "任务已冻结。之后的照片编辑不会改变本次导出。" = "Die Aufgabe ist festgeschrieben. Spätere Bearbeitungen ändern diesen Export nicht.";
 "任务未保存：%@" = "Aufgabe nicht gespeichert: %@";
 "任务结束后安装" = "Nach Abschluss der Aufgaben installieren";
 "传感器基准" = "Sensorreferenz";
+"伪红外（旧版）" = "Falsch-Infrarot (alt)";
 "位置与尺寸" = "Position und Größe";
 "作者的小红书主页" = "Autor auf Xiaohongshu (RED)";
 "使用 RawLab 中性显影作为基础，不代表还原了相机的标准风格。" = "Verwendet RawLabs neutrale Entwicklung als Basis. Dies bildet den Standardstil der Kamera nicht nach.";
@@ -134,6 +138,7 @@
 "保存预设" = "Vorgabe speichern";
 "保留任务" = "Aufgabe behalten";
 "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。" = "Die beschädigte Datei wird aufbewahrt und die Update-Einstellungen werden neu erstellt. Nach dem Neustart werden die Daten geprüft; automatische Updates bleiben deaktiviert.";
+"保留旧版的特殊色彩。" = "Behält die besonderen Farben der früheren Entwicklung bei.";
 "保留旧编辑记录的降噪算法" = "Behält die Rauschreduzierung früherer Bearbeitungen bei";
 "保留这次几何或镜头修改？" = "Diese Geometrie- oder Objektivänderungen behalten?";
 "修正直线弯曲" = "Gekrümmte Linien begradigen";
@@ -469,6 +474,7 @@
 "无法创建新的预设标识，请重试。" = "Es konnte keine neue Vorgabenkennung erstellt werden. Versuchen Sie es erneut.";
 "无法恢复调整：%@" = "Anpassungen können nicht wiederhergestellt werden: %@";
 "无法显示处理结果" = "Verarbeitungsergebnisse können nicht angezeigt werden";
+"无法正常显影 X3F：%@" = "X3F konnte nicht normal entwickelt werden: %@";
 "无法生成预览" = "Vorschau kann nicht generiert werden";
 "无法生成预览，请检查照片、LUT 和颜色配置。" = "Vorschau konnte nicht erstellt werden. Prüfen Sie Foto, LUT und Farbeinstellungen.";
 "无法确认更新或恢复状态，请保留全部文件并联系支持。" = "Der Update- oder Wiederherstellungsstatus ist unklar. Bewahren Sie alle Dateien auf und kontaktieren Sie den Support.";
@@ -605,8 +611,10 @@
 "正在等待预览、导出或批量任务结束" = "Warte auf den Abschluss der Vorschau, des Exports oder der Batch-Aufgabe";
 "正在读取镜头信息…" = "Objektivinformationen werden gelesen…";
 "正在预览镜头校正…" = "Vorschau der Objektivkorrektur…";
+"正常显影" = "Normale Entwicklung";
 "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。" = "Dieser LUT fehlen vollständige Farbangaben. Bestätigen Sie die Verarbeitung. Er wird als kompatibel mit ungeprüftem Ergebnis markiert.";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "Der Weißabgleich bei Aufnahme dieses RAW konnte nicht gelesen werden; die Tönung des Rezepts kann nicht angewendet werden.";
+"此 X3F 显影模式不支持 AI 降噪。" = "Dieser X3F-Entwicklungsmodus unterstützt keine KI-Entrauschung.";
 "此像素不可取样。" = "Dieses Pixel kann nicht erfasst werden.";
 "此外观已不在外观库中。" = "Dieser Look ist nicht mehr in der Look-Bibliothek enthalten.";
 "此安装暂不支持自动安装更新" = "Diese Installation unterstützt automatische Updates noch nicht";

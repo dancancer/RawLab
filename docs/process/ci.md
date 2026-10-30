@@ -18,6 +18,12 @@ GLES source validation with glslang. CPU neural-inference validation is excluded
 ordinary CPU photo processing and deterministic ISP tests remain applicable.
 Hardware-unavailable skips do not satisfy the separate release GPU acceptance gate.
 
+Product builds enable the pinned X3F renderer on every platform. Build jobs prepare
+Rust 1.99.1, the platform targets and `rust-docs`; Android/Windows also prepare host
+libclang. Apple uses Xcode's libclang. Python 3.11+ collects dependency and runtime
+notices into each package. Model-only jobs do not build Rust or native dependencies.
+The supported camera/settings boundary remains the [X3F contract](../../lutools/docs/x3f-rendering.md).
+
 ## Verification Levels
 
 | Event or request | Automatic coverage |

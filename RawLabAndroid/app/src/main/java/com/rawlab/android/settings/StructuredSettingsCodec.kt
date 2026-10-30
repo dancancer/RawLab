@@ -10,6 +10,7 @@ internal object StructuredSettingsCodec {
     fun encode(s: EditSettings, format: String): String {
         require(format in setOf("photo_edit", "batch_settings"))
         val value = JSONObject().put("film", s.film).put("strength", s.strength)
+            .put("x3fMode", s.x3fMode.id)
             .put("exposure", s.exposure).put("exposureMode", s.exposureMode)
             .put("highlights", s.highlights).put("shadows", s.shadows).put("contrast", s.contrast)
             .put("toneCurve", s.toneCurve).put("saturation", s.saturation).put("sharpening", s.sharpening)
@@ -51,7 +52,7 @@ internal object StructuredSettingsCodec {
         validateStrictJSON(json, setOf("version", "masterRecipeSettingsVersion", "exposureMode", "displayChromaDenoise", "quarterTurns"))
         val root = JSONObject(json).keysExactly("format", "version", "settings")
         require(root.string("format") == format && root.integer("version") == 2) { "Unsupported settings format" }
-        val s = root.getJSONObject("settings").keysWithOptional(setOf("colorGrading", "curve", "atmosphere", "masterRecipeSettingsVersion", "hdr", "sdrSnapshot"), "film", "strength", "exposure", "exposureMode", "highlights",
+        val s = root.getJSONObject("settings").keysWithOptional(setOf("colorGrading", "curve", "atmosphere", "masterRecipeSettingsVersion", "hdr", "sdrSnapshot", "x3fMode"), "film", "strength", "exposure", "exposureMode", "highlights",
             "shadows", "contrast", "toneCurve", "saturation", "sharpening", "customWb", "temperature", "tint",
             "recipeID", "displayChromaDenoise", "hsl", "tone", "denoise", "effects", "lens", "geometry", "processing")
         val atmosphere = if (s.has("atmosphere")) s.getJSONObject("atmosphere").keysExactly("clarity", "dehaze") else null
@@ -68,6 +69,7 @@ internal object StructuredSettingsCodec {
         val hsl = s.getJSONArray("hsl")
         require(hsl.length() == 24)
         return EditSettings(film = s.string("film"), strength = s.number("strength", 0.0..2.0), exposure = s.number("exposure", -4.0..4.0),
+            x3fMode = if (s.has("x3fMode")) X3fMode.decode(s.string("x3fMode")) else X3fMode.LEGACY,
             exposureMode = s.integer("exposureMode"), highlights = s.number("highlights", -1.0..1.0), shadows = s.number("shadows", -1.0..1.0),
             contrast = s.number("contrast", -1.0..1.0), toneCurve = s.number("toneCurve", -1.0..1.0), saturation = s.number("saturation", -1.0..1.0),
             sharpening = s.number("sharpening", 0.0..2.0), customWb = s.boolean("customWb"), temperature = s.number("temperature", 2000.0..50000.0),

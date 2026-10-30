@@ -45,9 +45,11 @@ extension RawEditorViewModel {
     }
 
     func buildRawPreviewBase(url: URL, geometry: GeometrySettings = GeometrySettings(),
-                             processing: ProcessingIdentity = .current, lens: LensCorrectionSettings = LensCorrectionSettings()) throws -> RawPreviewBase {
+                             processing: ProcessingIdentity = .current, x3fMode: X3fMode = .normal,
+                             lens: LensCorrectionSettings = LensCorrectionSettings()) throws -> RawPreviewBase {
         var neutral = RawSettings.default
         neutral.processing = processing
+        neutral.x3fMode = x3fMode
         let rawBase = try processor.processRaw(
             url: url,
             settings: neutral,
@@ -120,10 +122,13 @@ extension RawEditorViewModel {
         from source: PhotoImportSource,
         identity: PhotoIdentity? = nil,
         settings: RawSettings = .default,
+        x3fModeOverride: X3fMode? = nil,
+        retainedInput: PhotoSourceFile? = nil,
         onImported: (() -> Void)? = nil,
         onSettingsRestored: ((RawSettings) -> Void)? = nil
     ) -> UUID {
         cancelQueuedSettingsSave()
+        retryLegacyX3fImport = nil
         adjustmentInteraction = nil
         adjustmentInteractionRejected = false
         statusMessage = nil
@@ -137,7 +142,7 @@ extension RawEditorViewModel {
         requestedPreviewLongEdge = previewLongEdge
 
         let sourceKind: ImageSourceKind = source.isRaw ? .raw : .raster
-        let input = sourceFile.flatMap { $0.matches(source.url) ? $0 : nil }
+        let input = retainedInput ?? sourceFile.flatMap { $0.matches(source.url) ? $0 : nil }
             ?? .externallyManaged(source.url)
 
         importQueue.async {
@@ -150,12 +155,19 @@ extension RawEditorViewModel {
                     }
                 }
 
+                var failedSource: PhotoSourceFile?
+                var importIdentity = identity
+                var attemptedX3fMode = X3fMode.legacy
                 do {
                     let resolvedIdentity = identity ?? (try? PhotoIdentity.fallback(for: inputURL))
+                    importIdentity = resolvedIdentity
                     let versioned = try resolvedIdentity.flatMap { try self.editPersistence?.versionedState(for: $0) }
                     let record = versioned?.state
                     var restoredSettings = record?.settings ?? .default
+                    if let x3fModeOverride { restoredSettings.x3fMode = x3fModeOverride }
+                    attemptedX3fMode = restoredSettings.x3fMode
                     let sourceFile = try PhotoSourceFile.copy(inputURL)
+                    failedSource = sourceFile
                     try sourceFile.withReadAccess { localURL in
                         let hdrInfo=sourceKind == .raster ? try HDRSourceInfo.probe(localURL) : nil
                         if hdrInfo != nil && record==nil { restoredSettings.hdr=HDRSettings() }
@@ -187,7 +199,7 @@ extension RawEditorViewModel {
                                 onSettingsRestored?(restoredSettings); onImported?()
                             }
                         } else if sourceKind == .raw {
-                            let rawBase = try self.buildRawPreviewBase(url: localURL, geometry: restoredSettings.geometrySettings, processing: restoredSettings.processing, lens: restoredSettings.lensSettings)
+                            let rawBase = try self.buildRawPreviewBase(url: localURL, geometry: restoredSettings.geometrySettings, processing: restoredSettings.processing, x3fMode: restoredSettings.x3fMode, lens: restoredSettings.lensSettings)
                             let lutURL = self.lutURL(for: restoredSettings)
                             let previewResult = try self.processor.processRaw(
                                 url: localURL,
@@ -238,6 +250,7 @@ extension RawEditorViewModel {
                                 self.failedDraftSource = nil
                                 if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
                                 onSettingsRestored?(restoredSettings)
+                                if x3fModeOverride != nil { self.queueSettingsSave(restoredSettings) }
                                 if self.hasImage && adjustedImage != nil { onImported?() }
                                 if missingLook { self.statusMessage = L10n.text("上次使用的外观不可用，请重新选择或导入外观。") }
                                 if adjustedImage == nil {
@@ -311,6 +324,14 @@ extension RawEditorViewModel {
                         self.isBusy = false
                         if let previous=self.importPreviousRevision { self.sourceRevision=previous }
                         self.importPreviousRevision=nil
+                        if source.isRaw, source.url.pathExtension.lowercased() == "x3f",
+                           attemptedX3fMode == .normal, let failedSource {
+                            self.retryLegacyX3fImport = { [weak self] restored in
+                                self?.importImage(from: source, identity: importIdentity, settings: settings,
+                                    x3fModeOverride: .legacy, retainedInput: failedSource,
+                                    onImported: onImported, onSettingsRestored: restored)
+                            }
+                        }
                     }
                 }
             }
@@ -319,6 +340,7 @@ extension RawEditorViewModel {
     }
 
     func cancelImageImport(_ requestID: UUID? = nil) {
+        if requestID == nil { retryLegacyX3fImport = nil }
         guard let activeImportRevision,
               requestID == nil || requestID == activeImportRevision else { return }
         self.activeImportRevision = nil

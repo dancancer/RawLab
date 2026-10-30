@@ -57,6 +57,7 @@
 "Selected item is not a supported image." = "Das ausgewählte Element ist kein unterstütztes Bild.";
 "Sony2Fuji output copy failed." = "Kopieren der Sony2Fuji-Ausgabe fehlgeschlagen.";
 "Sony2Fuji session create failed: %@" = "Sony2Fuji-Sitzung konnte nicht erstellt werden: %@";
+"X3F 显影" = "X3F-Entwicklung";
 "三分网格" = "Drittelraster";
 "三线性" = "Trilinear";
 "上下拖动调整，方向键微调，Esc 取消" = "Zum Anpassen nach oben oder unten ziehen, mit Pfeiltasten feinjustieren, mit Esc abbrechen";
@@ -89,14 +90,17 @@
 "从照片库选择" = "Aus der Fotobibliothek wählen";
 "以下为配方逻辑值；强度为 %@。部分范围会按此强度换算。" = "Dies sind logische Rezeptwerte; die Stärke beträgt %@. Einige Bereiche werden mit dieser Stärke skaliert.";
 "以下目标尚未完成本次历史操作，请检查原因后重试。" = "Der Verlaufsschritt ist für diese Fotos unvollständig. Prüfe den Grund und versuche es erneut.";
+"以文件保存的显影为基准，白平衡作相对调整。" = "Die gespeicherte Entwicklung ist die Basis; der Weißabgleich wird relativ angepasst.";
 "任务使用的外观文件不可用，请重新创建任务。" = "Die vom Auftrag verwendete Look-Datei ist nicht verfügbar. Bitte erstellen Sie den Auftrag neu.";
 "任务已保存，请继续导出。" = "Der Auftrag ist gespeichert. Setzen Sie den Export fort.";
 "任务操作" = "Aufgabenaktionen";
 "任务未保存：%@" = "Aufgabe nicht gespeichert: %@";
 "传感器基准" = "Sensorreferenz";
+"伪红外（旧版）" = "Falsch-Infrarot (alt)";
 "位置与尺寸" = "Position und Größe";
 "使用 RawLab 中性显影作为基础，不代表还原了相机的标准风格。" = "Verwendet RawLabs neutrale Entwicklung als Basis. Dies bildet den Standardstil der Kamera nicht nach.";
 "使用当前调整批量导出…" = "Mit aktuellen Anpassungen stapelweise exportieren…";
+"使用旧版显影重试" = "Mit bisheriger Entwicklung erneut versuchen";
 "使用统计已关闭。" = "Die Nutzungsanalyse ist deaktiviert.";
 "依据部分文件线索 · 仍有假设" = "Teilweise Dateihinweise · Annahmen bleiben bestehen";
 "保井崇志" = "Takashi Yasui";
@@ -112,6 +116,7 @@
 "保存时发生中断，请先核对照片图库，避免重复生成。" = "Beim Speichern ist eine Unterbrechung aufgetreten. Prüfen Sie Fotos, bevor Sie erneut erzeugen.";
 "保存结果待确认" = "Speicherergebnis muss bestätigt werden";
 "保存预设" = "Vorgabe speichern";
+"保留旧版的特殊色彩。" = "Behält die besonderen Farben der früheren Entwicklung bei.";
 "保留这次几何或镜头修改？" = "Diese Geometrie- oder Objektivänderungen behalten?";
 "候选效果" = "Kandidatenergebnisse";
 "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。" = "Falschfarben: Blau für Schatten, Bernstein über Referenzweiß, Pink über der Displaykapazität.";
@@ -465,6 +470,7 @@
 "正在生成效果预览…" = "Vorschau wird erstellt…";
 "正在生成预览…" = "Vorschauen werden erstellt …";
 "正在读取镜头信息…" = "Objektivinformationen werden gelesen…";
+"正常显影" = "Normale Entwicklung";
 "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。" = "Dieser LUT fehlen vollständige Farbangaben. Bestätigen Sie die Verarbeitung. Er wird als kompatibel mit ungeprüftem Ergebnis markiert.";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "Der Weißabgleich bei Aufnahme dieses RAW konnte nicht gelesen werden; die Tönung des Rezepts kann nicht angewendet werden.";
 "此像素不可取样。" = "Dieses Pixel kann nicht erfasst werden.";

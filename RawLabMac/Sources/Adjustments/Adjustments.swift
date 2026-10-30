@@ -48,6 +48,7 @@ struct Adjustments: Equatable, Codable {
     }
 
     var processing = ProcessingIdentity.current
+    var x3fMode = X3fMode.normal
     var hdr: HDRSettings?
     var isHDREditing: Bool { hdr?.mode == .hdr }
     var exposureMode = ExposureMode.preview
@@ -101,6 +102,13 @@ struct Adjustments: Equatable, Codable {
         hsl = state.isIdentity ? nil : state
     }
     var lensSettings: LensCorrectionSettings { lensCorrection ?? LensCorrectionSettings() }
+    mutating func selectX3fMode(_ mode: X3fMode) {
+        x3fMode = mode
+        guard mode == .normal else { return }
+        aiDenoiseEnabled = false
+        lensCorrection?.distortion = false
+        lensCorrection?.tca = false
+    }
     var geometrySettings: GeometrySettings { isHDREditing ? hdr!.geometry : (geometry ?? GeometrySettings()) }
 
     mutating func setGeometrySettings(_ state: GeometrySettings) {
@@ -132,6 +140,7 @@ struct Adjustments: Equatable, Codable {
         if isHDREditing { var neutral = self; neutral.hdr?.reset(); return neutral }
         var neutral = Adjustments()
         neutral.processing = processing
+        neutral.x3fMode = x3fMode
         return neutral
     }
 
@@ -388,11 +397,13 @@ struct Adjustments: Equatable, Codable {
         if isHDREditing { hdr?.reset(); return }
         let inactiveHDR = hdr
         let identity = processing
+        let x3f = x3fMode
         let camera = asShotWhiteBalance
         let noiseReductionSupport = supportsRawNoiseReduction
         self = Adjustments()
         hdr = inactiveHDR
         processing = identity
+        x3fMode = x3f
         resolveWhiteBalance(camera)
         resolveRawNoiseReductionSupport(noiseReductionSupport)
     }
@@ -670,6 +681,7 @@ extension Adjustments {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         processing = values.contains(.processing) ?
             try values.decode(ProcessingIdentity.self, forKey: .processing) : .legacy
+        x3fMode = values.contains(.x3fMode) ? try values.decode(X3fMode.self, forKey: .x3fMode) : .legacy
         hdr = try values.decodeIfPresent(HDRSettings.self, forKey: .hdr)
         toneCurveConfig = try values.decodeIfPresent(ToneCurveSettings.self, forKey: .toneCurveConfig)
         colorGrading = try values.decodeIfPresent(ColorGradingSettings.self, forKey: .colorGrading)

@@ -445,4 +445,10 @@
     <string name="vibrance">"Vibrance"</string>
     <string name="vignette_highlights_unavailable">"Disponible uniquement lorsque l’intensité du vignettage est négative."</string>
     <string name="white_point">"Point blanc"</string>
+    <string name="x3f_legacy">"Faux infrarouge (ancien)"</string>
+    <string name="x3f_legacy_description">"Conserve les couleurs particulières de l’ancien développement."</string>
+    <string name="x3f_normal">"Développement normal"</string>
+    <string name="x3f_relative_wb">"Utilise le développement enregistré comme référence, avec des ajustements relatifs de la balance des blancs."</string>
+    <string name="x3f_rendering">"Développement X3F"</string>
+    <string name="x3f_retry_legacy">"Réessayer avec l’ancien développement"</string>
 </resources>

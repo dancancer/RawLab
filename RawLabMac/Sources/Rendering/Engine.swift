@@ -188,7 +188,9 @@ final class RenderEngine {
     static var bundledAIModel: URL? { Bundle.main.url(forResource: "DualDn", withExtension: nil, subdirectory: "AI") }
     private let gpuMode: sony2fuji_gpu_mode
     private let statisticsProvider: (inout sony2fuji_buffer) -> PreviewStatistics?
-    private var whiteBalanceCache: (key: RawWhiteBalanceCacheKey, processing: ProcessingIdentity, value: WhiteBalance?)?
+    private var whiteBalanceCache: (key: RawWhiteBalanceCacheKey, processing: ProcessingIdentity, x3fMode: X3fMode, value: WhiteBalance?)?
+    static var x3fAvailable: Bool { sony2fuji_x3f_available() != 0 }
+    static func isX3fInput(_ url: URL?) -> Bool { url?.pathExtension.lowercased() == "x3f" }
     private let lensDatabaseURL: URL?
     private struct LensCatalogKey: Equatable {
         let url: URL
@@ -275,8 +277,17 @@ final class RenderEngine {
         }
     }
 
-    static func validateAIInput(_ url: URL) throws {
+    private func configureX3f(_ mode: X3fMode) throws {
+        guard sony2fuji_session_set_x3f_mode(session, mode.core) == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed(L10n.text("不支持此 X3F 显影模式。"))
+        }
+    }
+
+    static func validateAIInput(_ url: URL, settings: Adjustments) throws {
         guard !isRasterInput(url) else { throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。")) }
+        guard !isX3fInput(url) || settings.x3fMode != .normal else {
+            throw RenderError.failed(L10n.text("此 X3F 显影模式不支持 AI 降噪。"))
+        }
         guard aiAvailable, bundledAIModel != nil else { throw RenderError.aiFailed(L10n.text("此构建未安装 AI 降噪模型。")) }
     }
 
@@ -311,8 +322,12 @@ final class RenderEngine {
     func prepareAI(_ url: URL, settings: Adjustments, progress: AIPreparation) throws {
         guard !progress.isCancelled else { throw RenderError.aiCancelled }
         guard !Self.isRasterInput(url) else { throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。")) }
+        guard !Self.isX3fInput(url) || settings.x3fMode != .normal else {
+            throw RenderError.failed(L10n.text("此 X3F 显影模式不支持 AI 降噪。"))
+        }
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
+        try configureX3f(settings.x3fMode)
         try configureTone(settings.renderToneSettings)
         try configureAtmosphere(settings.renderAtmosphereSettings)
         try configureCurve(settings.renderCurveSettings)
@@ -341,6 +356,7 @@ final class RenderEngine {
     func autoExposure(_ url: URL, settings: Adjustments) throws -> Double {
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
+        try configureX3f(settings.x3fMode)
         try configureTone(settings.renderToneSettings)
         try configureAtmosphere(settings.renderAtmosphereSettings)
         try configureCurve(settings.renderCurveSettings)
@@ -388,7 +404,8 @@ final class RenderEngine {
         if settings.masterRecipe != nil,
            settings.tint * settings.strength != 0 || !settings.usesAsShotWhiteBalance {
             let camera: WhiteBalance?
-            if let key, let cache = whiteBalanceCache, cache.key == key, cache.processing == settings.processing {
+            if let key, let cache = whiteBalanceCache, cache.key == key, cache.processing == settings.processing,
+               cache.x3fMode == settings.x3fMode {
                 camera = cache.value
             } else {
                 // 拍摄白平衡属于当前 RAW，不能沿用批量任务或恢复记录里的源照片元数据。
@@ -409,12 +426,16 @@ final class RenderEngine {
         }
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
+        try configureX3f(settings.x3fMode)
         try configureTone(settings.renderToneSettings)
         try configureAtmosphere(settings.renderAtmosphereSettings)
         try configureCurve(settings.renderCurveSettings)
         try configureGrading(settings.renderGradingSettings)
         if settings.aiDenoiseEnabled && Self.isRasterInput(url) {
             throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。"))
+        }
+        if settings.aiDenoiseEnabled && Self.isX3fInput(url) && settings.x3fMode == .normal {
+            throw RenderError.failed(L10n.text("此 X3F 显影模式不支持 AI 降噪。"))
         }
         try configureAI(enabled: settings.aiDenoiseEnabled)
         let allowsProxy = settings.geometrySettings.isIdentity
@@ -523,6 +544,10 @@ final class RenderEngine {
             }
         }
         guard status == SONY2FUJI_STATUS_OK else {
+            let x3fError = String(cString: sony2fuji_session_x3f_error(session))
+            if !x3fError.isEmpty {
+                throw RenderError.failed(L10n.format("无法正常显影 X3F：%@", x3fError))
+            }
             if status == SONY2FUJI_STATUS_AI_NOT_READY ||
                 (settings.aiDenoiseEnabled && sony2fuji_session_get_ai_error(session).pointee != 0) {
                 throw aiError(status)
@@ -531,7 +556,9 @@ final class RenderEngine {
         }
         if let output {
             if ExportFormat.forOutput(output) != .renderedDNG {
-                try ExportMetadata.preserve(from: url, in: output)
+                // 核心已成功解码；ImageIO 不识别的 X3F 仍写入输出尺寸和方向，不捏造拍摄 EXIF。
+                let fallback: [CFString: Any]? = url.pathExtension.lowercased() == "x3f" ? [:] : nil
+                try ExportMetadata.preserve(from: url, in: output, fallbackSourceProperties: fallback)
             }
             return nil
         }
@@ -545,8 +572,11 @@ final class RenderEngine {
         let calibrated = !raster && sony2fuji_session_get_raw_white_balance(session, &temperature, &tint) == SONY2FUJI_STATUS_OK
         var noiseReductionSupported: Int32 = 0
         if !raster { _ = sony2fuji_session_get_raw_noise_reduction_support(session, &noiseReductionSupported) }
-        let cameraWhiteBalance = calibrated ? WhiteBalance(temperature: Double(temperature).rounded(), tint: Double(tint).rounded()) : nil
-        if !raster { whiteBalanceCache = key.map { ($0, settings.processing, cameraWhiteBalance) } }
+        let normalX3f = Self.isX3fInput(url) && settings.x3fMode == .normal
+        // 正常 X3F 使用保存显影作为基准；6500/0 是相对调整的中性点，不是 EXIF 色温。
+        let cameraWhiteBalance = normalX3f ? WhiteBalance(temperature: 6500, tint: 0) :
+            (calibrated ? WhiteBalance(temperature: Double(temperature).rounded(), tint: Double(tint).rounded()) : nil)
+        if !raster { whiteBalanceCache = key.map { ($0, settings.processing, settings.x3fMode, cameraWhiteBalance) } }
         let width = Int(buffer.width), height = Int(buffer.height)
         var nativeWidth: UInt32 = 0, nativeHeight: UInt32 = 0
         guard sony2fuji_session_get_geometry_size(session, &nativeWidth, &nativeHeight) == SONY2FUJI_STATUS_OK else {

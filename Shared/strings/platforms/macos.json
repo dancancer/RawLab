@@ -1,5 +1,13 @@
 {
   "entries": {
+    "此 X3F 显影模式不支持 AI 降噪。": {"formats": [],"source": "此 X3F 显影模式不支持 AI 降噪。"},
+    "正常显影": {"formats": [],"source": "正常显影"},
+    "伪红外（旧版）": {"formats": [],"source": "伪红外（旧版）"},
+    "X3F 显影": {"formats": [],"source": "X3F 显影"},
+    "以文件保存的显影为基准，白平衡作相对调整。": {"formats": [],"source": "以文件保存的显影为基准，白平衡作相对调整。"},
+    "保留旧版的特殊色彩。": {"formats": [],"source": "保留旧版的特殊色彩。"},
+    "不支持此 X3F 显影模式。": {"formats": [],"source": "不支持此 X3F 显影模式。"},
+    "无法正常显影 X3F：%@": {"formats": ["%@"],"source": "无法正常显影 X3F：{0}"},
     "任务已保存，请继续导出。": {"formats": [], "source": "任务已保存，请继续导出。"},
     "取消检查": {"formats": [], "source": "取消检查"},
     "将按每张照片已保存的调整导出。跳过只影响本次导出。": {"formats": [], "source": "将按每张照片已保存的调整导出。跳过只影响本次导出。"},
@@ -4040,6 +4048,7 @@
   },
   "overrides": {},
   "unique": {
+    "不支持此 X3F 显影模式。": {"de": "Dieser X3F-Entwicklungsmodus wird nicht unterstützt.","en": "This X3F rendering mode is not supported.","es": "Este modo de revelado X3F no es compatible.","fr": "Ce mode de développement X3F n’est pas pris en charge.","ja": "この X3F 現像モードはサポートされていません。","zh-Hans": "不支持此 X3F 显影模式。"},
     "0 至 100": {
       "de": "0 bis 100",
       "en": "0 to 100",

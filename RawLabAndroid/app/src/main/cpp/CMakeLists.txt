@@ -43,6 +43,14 @@ set(BUILD_CLI OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIB OFF CACHE BOOL "" FORCE)
 set(SONY2FUJI_ENABLE_GPU ON CACHE BOOL "" FORCE)
+set(SONY2FUJI_ENABLE_X3F ON CACHE BOOL "" FORCE)
+if(ANDROID_ABI STREQUAL "arm64-v8a")
+    set(RAWLAB_X3F_RUST_TARGET aarch64-linux-android CACHE STRING "" FORCE)
+elseif(ANDROID_ABI STREQUAL "x86_64")
+    set(RAWLAB_X3F_RUST_TARGET x86_64-linux-android CACHE STRING "" FORCE)
+else()
+    message(FATAL_ERROR "Unsupported X3F Android ABI: ${ANDROID_ABI}")
+endif()
 set(SONY2FUJI_ENABLE_LENSFUN ON CACHE BOOL "" FORCE)
 set(SONY2FUJI_BUILD_LENS_DEPS ON CACHE BOOL "" FORCE)
 set(SONY2FUJI_ENABLE_OPENMP OFF CACHE BOOL "" FORCE)
@@ -58,6 +66,14 @@ add_library(rawlab-jni SHARED rawlab_jni.cpp)
 target_include_directories(rawlab-jni PRIVATE "${REPO}/lutools/include")
 target_link_libraries(rawlab-jni PRIVATE sony2fuji_core jnigraphics)
 target_link_options(rawlab-jni PRIVATE "-Wl,-z,max-page-size=16384")
+set(x3f_packaged_notices "${CMAKE_CURRENT_LIST_DIR}/../../../build/generated/x3fNotices/${CMAKE_BUILD_TYPE}/licenses/x3f/${ANDROID_ABI}")
+add_custom_target(rawlab_android_x3f_notices
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${x3f_packaged_notices}"
+    COMMAND "${CMAKE_COMMAND}" -E copy "${CMAKE_CURRENT_BINARY_DIR}/core/x3f-licenses.txt" "${x3f_packaged_notices}/Dependencies.txt"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_CURRENT_BINARY_DIR}/core/x3f-rust-licenses" "${x3f_packaged_notices}/rust"
+    DEPENDS rawlab_x3f_build
+    VERBATIM)
+add_dependencies(rawlab-jni rawlab_android_x3f_notices)
 
 add_executable(rawlab_gpu_tests EXCLUDE_FROM_ALL "${REPO}/RawLabAndroid/tests/gpu_smoke.cpp")
 target_include_directories(rawlab_gpu_tests PRIVATE "${REPO}/lutools/include" "${REPO}/lutools/src" "${REPO}/lutools/tests")

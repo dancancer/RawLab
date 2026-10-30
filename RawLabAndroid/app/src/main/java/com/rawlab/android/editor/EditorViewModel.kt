@@ -30,6 +30,7 @@ import com.rawlab.android.editor.render.RenderQueue
 import com.rawlab.android.editor.render.Work
 import com.rawlab.android.editor.render.WorkResult
 import com.rawlab.android.editor.render.runLookWork
+import com.rawlab.android.editor.render.discardOwnedInput
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
@@ -87,7 +88,8 @@ class EditorViewModel @JvmOverloads constructor(
     }
     private val collections = EditorCollections(storage, viewModelScope, File(application.filesDir, "RawLab/BatchJobs"),
         editStore::versionedState, ::captureCollectionActiveValidation, canRelease = { photo ->
-            mutable.value.photo?.file != photo.file && adjustmentPreparations == 0 && !mutable.value.committingAdjustments
+            mutable.value.photo?.file != photo.file && failedX3fImport?.retained?.file != photo.file &&
+                mutable.value.operation != Operation.IMPORT && adjustmentPreparations == 0 && !mutable.value.committingAdjustments
         })
     val collection = collections.state
     val batch = batches.active
@@ -116,6 +118,7 @@ class EditorViewModel @JvmOverloads constructor(
     private var previewResizeJob: Job? = null
     private val interactivePreviewSize = com.rawlab.android.editor.render.InteractivePreviewSize()
     private val pendingPhotoImport = PendingPhotoImport()
+    private var failedX3fImport: Work.Import? = null
     private var lookRevision = 0L
     private var releases = 0
     private val mutable = MutableStateFlow(EditorState())
@@ -123,11 +126,14 @@ class EditorViewModel @JvmOverloads constructor(
     @Volatile private var disposed = false
     private val renderer = EditorRenderer(storage, { if (editStore.available) editStore.versionedState(it) else null },
         (application.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0)
+    private val renderDelivery = android.os.Handler(android.os.Looper.getMainLooper())
     private val queue = RenderQueue<Work, WorkResult>(renderer::perform, { revision, result ->
-        viewModelScope.launch {
+        // 结果持有临时输入；即使 ViewModel scope 已取消，也要在主线程完成移交或释放。
+        renderDelivery.post {
             if (!disposed && revision == currentRevision) accept(result)
+            else result.getOrNull()?.discardOwnedInput()
         }
-    }, { renderer.close(); releaseStorage() })
+    }, { renderer.close(); releaseStorage() }, { it.discardOwnedInput() }, { it.discardOwnedInput() })
     private val lookQueue = RenderQueue<LookWork, LookResult>({ runLookWork(storage, it) }, { revision, result ->
         viewModelScope.launch {
             if (!disposed && revision == lookRevision) acceptLook(result)
@@ -237,6 +243,13 @@ class EditorViewModel @JvmOverloads constructor(
     private fun accept(result: Result<WorkResult>) {
         result.fold({ value ->
             when (value) {
+                is WorkResult.X3fImportFailure -> {
+                    clearX3fRecovery()
+                    failedX3fImport = value.retry
+                    pendingPhotoImport.clear()
+                    mutable.value = EditorStateReducer.renderFinished(mutable.value).copy(
+                        error = failure(value.error), retryLegacyX3f = true)
+                }
                 is WorkResult.MissingLook -> {
                     releasePreviousPhoto(value.photo)
                     adjustmentHistory.acceptSource(value.photo, value.importedRecord)
@@ -245,6 +258,9 @@ class EditorViewModel @JvmOverloads constructor(
                         edits = value.edits, preview = null, exact = false,
                         saveState = EditSaveState.RESTORED, error = text(R.string.look_unavailable))
                     includeIndependentRecipeLook(value.edits)
+                    if (value.persistOnImport) persist(value.photo, value.edits) { saved ->
+                        mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
+                    }
                 }
                 is WorkResult.HslProbe -> acceptHslTarget(value)
                 is WorkResult.Preview -> {
@@ -294,6 +310,9 @@ class EditorViewModel @JvmOverloads constructor(
                     acceptedHslSettings = settings
                     acceptedHslRevision = HslTargetRevision(sourceRevision, currentRevision)
                     includeIndependentRecipeLook(settings)
+                    if (request.persistOnImport) persist(request.photo, settings) { saved ->
+                        mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
+                    }
                 }
                 WorkResult.Export -> {
                     mutable.value = mutable.value.copy(operation = Operation.NONE, message = text(R.string.export_done))
@@ -426,20 +445,29 @@ class EditorViewModel @JvmOverloads constructor(
             }
         } else { startPhotoImport(uri); completed(true) }
     }
-    private fun startPhotoImport(uri: Uri) {
+    private fun clearX3fRecovery() {
+        failedX3fImport?.let { if (it.ownsRetained) it.retained?.file?.delete() }
+        failedX3fImport = null
+        collections.releaseDeferred()
+    }
+
+    private fun startPhotoImport(uri: Uri, retry: Work.Import? = null) {
         closeQuickPresets()
+        if (retry !== failedX3fImport) clearX3fRecovery()
         sourceRevision += 1
         closeAdjustmentOperation()
         durablePreview = null
         pendingPhotoImport.begin(PhotoIdentity(uri.toString()))
-        mutable.value = mutable.value.copy(operation = Operation.IMPORT, rendering = true, error = null)
+        mutable.value = mutable.value.copy(operation = Operation.IMPORT, rendering = true, error = null, retryLegacyX3f = false)
+        // closeAdjustmentOperation 会释放延迟文件，先建立导入保护再移交恢复引用。
+        failedX3fImport = null
         previewResizeJob?.cancel()
         previewResizeJob = null
         previewLongEdge = 1600
         requestedPreviewLongEdge = 1600
         mutable.value = mutable.value.copy(previewResizePending = false)
         val retained = collections.photo(uri.toString())
-        currentRevision = submitRender(Work.Import(uri, gpuMode(), retained))
+        currentRevision = submitRender(retry?.copy(gpuMode = gpuMode()) ?: Work.Import(uri, gpuMode(), retained))
     }
 
     fun importLook(uri: Uri?) {
@@ -673,6 +701,7 @@ class EditorViewModel @JvmOverloads constructor(
     }
 
     fun retry() {
+        failedX3fImport?.let { startPhotoImport(it.uri, it); return }
         if (mutable.value.draft != null) renderDraft(false)
         else if (mutable.value.controlsEnabled) renderCommittedForNavigation()
     }
@@ -1328,6 +1357,7 @@ class EditorViewModel @JvmOverloads constructor(
         else text(R.string.process_error) + "\n" + (error.message ?: error.javaClass.simpleName)
 
     override fun onCleared() {
+        clearX3fRecovery()
         disposed = true
         adjustmentPreparationGeneration = UUID.randomUUID()
         previewResizeJob?.cancel()

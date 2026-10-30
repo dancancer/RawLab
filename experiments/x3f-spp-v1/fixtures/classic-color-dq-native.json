@@ -1,0 +1,819 @@
+{
+  "schema": "rawlab-classic-color-dq-fixtures-v1",
+  "library_sha256": "99d6d9360f605f0eb83188e8d2acb81cb97d6866df5811ffd8cad9cefb0cb8e1",
+  "fixture_sha256": "f82c31812f239fd063ccdff6225d724424cc233472111776f6daced7c26b4f07",
+  "cases": [
+    {
+      "index": 0,
+      "size": 512,
+      "strengths": [
+        0,
+        0,
+        0
+      ],
+      "pixels": 134,
+      "bounds": [
+        -500,
+        24000
+      ]
+    },
+    {
+      "index": 1,
+      "size": 512,
+      "strengths": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "pixels": 134,
+      "bounds": [
+        -500,
+        24000
+      ]
+    },
+    {
+      "index": 2,
+      "size": 512,
+      "strengths": [
+        0,
+        0.5,
+        1
+      ],
+      "pixels": 134,
+      "bounds": [
+        -500,
+        24000
+      ]
+    },
+    {
+      "index": 3,
+      "size": 2048,
+      "strengths": [
+        10,
+        20,
+        40
+      ],
+      "pixels": 134,
+      "bounds": [
+        -500,
+        24000
+      ]
+    },
+    {
+      "index": 4,
+      "size": 1024,
+      "strengths": [
+        20,
+        15,
+        5
+      ],
+      "pixels": 134,
+      "bounds": [
+        -500,
+        24000
+      ]
+    },
+    {
+      "index": 5,
+      "size": 4096,
+      "strengths": [
+        65,
+        90,
+        125
+      ],
+      "pixels": 134,
+      "bounds": [
+        -500,
+        24000
+      ]
+    },
+    {
+      "index": 6,
+      "size": 8192,
+      "strengths": [
+        130,
+        170,
+        180
+      ],
+      "pixels": 134,
+      "bounds": [
+        -500,
+        24000
+      ]
+    },
+    {
+      "index": 7,
+      "size": 8192,
+      "strengths": [
+        800,
+        1500,
+        2000
+      ],
+      "pixels": 134,
+      "bounds": [
+        -500,
+        24000
+      ]
+    },
+    {
+      "index": 8,
+      "size": 512,
+      "strengths": [
+        0.9999999,
+        2.5,
+        7.25
+      ],
+      "pixels": 134,
+      "bounds": [
+        -123,
+        16000
+      ]
+    }
+  ],
+  "arrays": {
+    "lut0_strengths": {
+      "shape": [
+        3
+      ],
+      "dtype": "float64",
+      "sha256": "9d908ecfb6b256def8b49a7c504e6c889c4b0e41fe6ce3e01863dd7b61a20aa0"
+    },
+    "lut0_tables": {
+      "shape": [
+        3,
+        512
+      ],
+      "dtype": "int16",
+      "sha256": "e80232b4d18d0bb7e794be263ba937626f383f9917d4b8a737ba893a8f752293"
+    },
+    "case0_input": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "3f792778369b3b42e947f7e640e547eb524407552333a50f216013be7d8f279f"
+    },
+    "case0_matrix": {
+      "shape": [
+        3,
+        3
+      ],
+      "dtype": "int32",
+      "sha256": "9164c06279a60d732737d1d649e2158b1eb26d30ef3944e3d04b2388c317c781"
+    },
+    "case0_shift": {
+      "shape": [],
+      "dtype": "int64",
+      "sha256": "220dde27afee4d537cac96d85d6546f825153b90e828931b74e103807541bc42"
+    },
+    "case0_bias": {
+      "shape": [
+        3
+      ],
+      "dtype": "int32",
+      "sha256": "15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b"
+    },
+    "case0_bounds": {
+      "shape": [
+        2
+      ],
+      "dtype": "int64",
+      "sha256": "4443298b87f8a89cbb1a63b72bbba278fb060df258f5472f13c52bd9cd5839f4"
+    },
+    "case0_output": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "d3a7eeae41a1449cd7c343642c2f8e63bd0b8482f7e014b83cb187cfeebbc8a7"
+    },
+    "case0_copy": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "3f792778369b3b42e947f7e640e547eb524407552333a50f216013be7d8f279f"
+    },
+    "case0_ordinary": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "d3a7eeae41a1449cd7c343642c2f8e63bd0b8482f7e014b83cb187cfeebbc8a7"
+    },
+    "lut1_strengths": {
+      "shape": [
+        3
+      ],
+      "dtype": "float64",
+      "sha256": "75c7e2477c75b7dc28dfde0c6e9cb69069bdbd3539f33fcfc2903aa94c9d1f59"
+    },
+    "lut1_tables": {
+      "shape": [
+        3,
+        512
+      ],
+      "dtype": "int16",
+      "sha256": "e80232b4d18d0bb7e794be263ba937626f383f9917d4b8a737ba893a8f752293"
+    },
+    "case1_input": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "cee00a99260d71d18bb063289405ba558e2787d6dd4c56f0e4023887405c347a"
+    },
+    "case1_matrix": {
+      "shape": [
+        3,
+        3
+      ],
+      "dtype": "int32",
+      "sha256": "9164c06279a60d732737d1d649e2158b1eb26d30ef3944e3d04b2388c317c781"
+    },
+    "case1_shift": {
+      "shape": [],
+      "dtype": "int64",
+      "sha256": "220dde27afee4d537cac96d85d6546f825153b90e828931b74e103807541bc42"
+    },
+    "case1_bias": {
+      "shape": [
+        3
+      ],
+      "dtype": "int32",
+      "sha256": "15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b"
+    },
+    "case1_bounds": {
+      "shape": [
+        2
+      ],
+      "dtype": "int64",
+      "sha256": "4443298b87f8a89cbb1a63b72bbba278fb060df258f5472f13c52bd9cd5839f4"
+    },
+    "case1_output": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "ccdcac2055fc4392bf620b353307fb46f0c3d0051ab2bc80de7395c5ce382411"
+    },
+    "case1_copy": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "cee00a99260d71d18bb063289405ba558e2787d6dd4c56f0e4023887405c347a"
+    },
+    "case1_ordinary": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "ccdcac2055fc4392bf620b353307fb46f0c3d0051ab2bc80de7395c5ce382411"
+    },
+    "lut2_strengths": {
+      "shape": [
+        3
+      ],
+      "dtype": "float64",
+      "sha256": "9536689a4941c84ded438e9002674c39b2d5d1024a7b34232ee82e4cd4664931"
+    },
+    "lut2_tables": {
+      "shape": [
+        3,
+        512
+      ],
+      "dtype": "int16",
+      "sha256": "d6bbcfdea9521bb31c4358a59de25c36063357d196785c61ced04c48a36afd90"
+    },
+    "case2_input": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "cd843485be39276e2d66548c3ff9cdce2729f8af7d679f612072284f5ac9cccc"
+    },
+    "case2_matrix": {
+      "shape": [
+        3,
+        3
+      ],
+      "dtype": "int32",
+      "sha256": "9164c06279a60d732737d1d649e2158b1eb26d30ef3944e3d04b2388c317c781"
+    },
+    "case2_shift": {
+      "shape": [],
+      "dtype": "int64",
+      "sha256": "220dde27afee4d537cac96d85d6546f825153b90e828931b74e103807541bc42"
+    },
+    "case2_bias": {
+      "shape": [
+        3
+      ],
+      "dtype": "int32",
+      "sha256": "15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b"
+    },
+    "case2_bounds": {
+      "shape": [
+        2
+      ],
+      "dtype": "int64",
+      "sha256": "4443298b87f8a89cbb1a63b72bbba278fb060df258f5472f13c52bd9cd5839f4"
+    },
+    "case2_output": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "6629b4a9c81a7f0ea4c899d91d2f04579130d4a7f881a03a4e4dfcd42f1e9d86"
+    },
+    "case2_copy": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "e9e521315e2ffa43e68ed4630a7be0affed6fd541be4afbac528056406174986"
+    },
+    "case2_ordinary": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "6629b4a9c81a7f0ea4c899d91d2f04579130d4a7f881a03a4e4dfcd42f1e9d86"
+    },
+    "lut3_strengths": {
+      "shape": [
+        3
+      ],
+      "dtype": "float64",
+      "sha256": "fa8c37f0972de41cb05981f2d3277f19bd41367a6012d462ba451b9371d60517"
+    },
+    "lut3_tables": {
+      "shape": [
+        3,
+        2048
+      ],
+      "dtype": "int16",
+      "sha256": "1fb33092ef8f0bb0bc33601a838f5e94066acfc5886257f499cb00aaa69f37bd"
+    },
+    "case3_input": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "1d9e311e3cc0aa39a3a47705153c3581f596b18544dc59d432b6a3d76870ed57"
+    },
+    "case3_matrix": {
+      "shape": [
+        3,
+        3
+      ],
+      "dtype": "int32",
+      "sha256": "53f220682aa145c1303298cffdede6911179a4fa244dc75cbc565193d8e63515"
+    },
+    "case3_shift": {
+      "shape": [],
+      "dtype": "int64",
+      "sha256": "220dde27afee4d537cac96d85d6546f825153b90e828931b74e103807541bc42"
+    },
+    "case3_bias": {
+      "shape": [
+        3
+      ],
+      "dtype": "int32",
+      "sha256": "c551a7750c396ae2d3b0cab508e65adb3e37d61c8cb9a21045ad302c8a3a77c1"
+    },
+    "case3_bounds": {
+      "shape": [
+        2
+      ],
+      "dtype": "int64",
+      "sha256": "4443298b87f8a89cbb1a63b72bbba278fb060df258f5472f13c52bd9cd5839f4"
+    },
+    "case3_output": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "c6553dec95f6fd8866c6ebae889700d4de943c69299780075eaa3a41ac96ae32"
+    },
+    "case3_copy": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "d27000d319b133ecedc68d902da29b56dba16501048b25535c1dfea9c5f8e10e"
+    },
+    "case3_ordinary": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "c6553dec95f6fd8866c6ebae889700d4de943c69299780075eaa3a41ac96ae32"
+    },
+    "lut4_strengths": {
+      "shape": [
+        3
+      ],
+      "dtype": "float64",
+      "sha256": "fc4af8197dd907d21ffcaebd76c7e83b8060266bef0fa580f4a027bf5ca53f2a"
+    },
+    "lut4_tables": {
+      "shape": [
+        3,
+        1024
+      ],
+      "dtype": "int16",
+      "sha256": "efb4ab9abc3ebd8e70a0e273cdf76ad570165af27dae629b62004be3dee06ea1"
+    },
+    "case4_input": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "04c6af78fa4638f2578815f4b7f7c994e02011ca2c039d759e284e8705da5420"
+    },
+    "case4_matrix": {
+      "shape": [
+        3,
+        3
+      ],
+      "dtype": "int32",
+      "sha256": "53f220682aa145c1303298cffdede6911179a4fa244dc75cbc565193d8e63515"
+    },
+    "case4_shift": {
+      "shape": [],
+      "dtype": "int64",
+      "sha256": "220dde27afee4d537cac96d85d6546f825153b90e828931b74e103807541bc42"
+    },
+    "case4_bias": {
+      "shape": [
+        3
+      ],
+      "dtype": "int32",
+      "sha256": "c551a7750c396ae2d3b0cab508e65adb3e37d61c8cb9a21045ad302c8a3a77c1"
+    },
+    "case4_bounds": {
+      "shape": [
+        2
+      ],
+      "dtype": "int64",
+      "sha256": "4443298b87f8a89cbb1a63b72bbba278fb060df258f5472f13c52bd9cd5839f4"
+    },
+    "case4_output": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "3a9fe20d2748d2e7bde876cf2166d4c1c42fd41d04061cdf97532d65c59e48c1"
+    },
+    "case4_copy": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "6637e68cc574ebddcec7ce88c99e8291b752e36461afad07a5000e039e7443f5"
+    },
+    "case4_ordinary": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "3a9fe20d2748d2e7bde876cf2166d4c1c42fd41d04061cdf97532d65c59e48c1"
+    },
+    "lut5_strengths": {
+      "shape": [
+        3
+      ],
+      "dtype": "float64",
+      "sha256": "91f3304709804b2b5468df3d0a17da0f4b9cad6e050cfbe98e0fd70138eee3e6"
+    },
+    "lut5_tables": {
+      "shape": [
+        3,
+        4096
+      ],
+      "dtype": "int16",
+      "sha256": "d7af7381ac5552d3ff03678ae0218fb264e88ffb858e812d760e54ed2ff69c33"
+    },
+    "case5_input": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "1098d39fc26be63b24d16807a44a0f83e63ab6ebb592128346450f06ff494dc9"
+    },
+    "case5_matrix": {
+      "shape": [
+        3,
+        3
+      ],
+      "dtype": "int32",
+      "sha256": "53f220682aa145c1303298cffdede6911179a4fa244dc75cbc565193d8e63515"
+    },
+    "case5_shift": {
+      "shape": [],
+      "dtype": "int64",
+      "sha256": "220dde27afee4d537cac96d85d6546f825153b90e828931b74e103807541bc42"
+    },
+    "case5_bias": {
+      "shape": [
+        3
+      ],
+      "dtype": "int32",
+      "sha256": "c551a7750c396ae2d3b0cab508e65adb3e37d61c8cb9a21045ad302c8a3a77c1"
+    },
+    "case5_bounds": {
+      "shape": [
+        2
+      ],
+      "dtype": "int64",
+      "sha256": "4443298b87f8a89cbb1a63b72bbba278fb060df258f5472f13c52bd9cd5839f4"
+    },
+    "case5_output": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "b27c565198c36f877db5ff987ee97176b72ce01930eda7a3479cfe57d6ab396b"
+    },
+    "case5_copy": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "c2ef6a0e05d0a26971002c8d496ff8176812f578d2d7f5adafb630ffe96c9dda"
+    },
+    "case5_ordinary": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "b27c565198c36f877db5ff987ee97176b72ce01930eda7a3479cfe57d6ab396b"
+    },
+    "lut6_strengths": {
+      "shape": [
+        3
+      ],
+      "dtype": "float64",
+      "sha256": "327075a12e747f13047ca9c1c1a46b023ad08b65b9b1fc1b58820f7a6e442062"
+    },
+    "lut6_tables": {
+      "shape": [
+        3,
+        8192
+      ],
+      "dtype": "int16",
+      "sha256": "de6b6125e8bf48b2791ff0db5f04a6561bcc73296468ebe1ad3948c524b87c02"
+    },
+    "case6_input": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "1cb38b6f537f36475934d76a964c29e21184623f3862d312ed4b1f67a3fe03d2"
+    },
+    "case6_matrix": {
+      "shape": [
+        3,
+        3
+      ],
+      "dtype": "int32",
+      "sha256": "53f220682aa145c1303298cffdede6911179a4fa244dc75cbc565193d8e63515"
+    },
+    "case6_shift": {
+      "shape": [],
+      "dtype": "int64",
+      "sha256": "220dde27afee4d537cac96d85d6546f825153b90e828931b74e103807541bc42"
+    },
+    "case6_bias": {
+      "shape": [
+        3
+      ],
+      "dtype": "int32",
+      "sha256": "c551a7750c396ae2d3b0cab508e65adb3e37d61c8cb9a21045ad302c8a3a77c1"
+    },
+    "case6_bounds": {
+      "shape": [
+        2
+      ],
+      "dtype": "int64",
+      "sha256": "4443298b87f8a89cbb1a63b72bbba278fb060df258f5472f13c52bd9cd5839f4"
+    },
+    "case6_output": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "7fbe9bbd8bc4c3c25839fe636afee1ebe6918547ec81078476178f4fa57ae294"
+    },
+    "case6_copy": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "cf2d546c16c250e57b13c4e0cb4f911a7e6eeda13540a1f36e6fd153fb17e778"
+    },
+    "case6_ordinary": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "7fbe9bbd8bc4c3c25839fe636afee1ebe6918547ec81078476178f4fa57ae294"
+    },
+    "lut7_strengths": {
+      "shape": [
+        3
+      ],
+      "dtype": "float64",
+      "sha256": "f362ef0bab1bb3d1e3600d3a35cd00c6e964da60c00fcfb3404b5160ea8f909c"
+    },
+    "lut7_tables": {
+      "shape": [
+        3,
+        8192
+      ],
+      "dtype": "int16",
+      "sha256": "d4f7ecdce53bc382fd88da15ff6f17a3ed9382cc6bbd7307c0cd1344bf4d9055"
+    },
+    "case7_input": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "1e7d68a772c19ca2dacb1209ad1197cb28c0c85777700b494d3e47dc6ac1070c"
+    },
+    "case7_matrix": {
+      "shape": [
+        3,
+        3
+      ],
+      "dtype": "int32",
+      "sha256": "d55876ea540148c6725e46d5ed879e57a3ef1c553e6fb85dc794664e828a6b81"
+    },
+    "case7_shift": {
+      "shape": [],
+      "dtype": "int64",
+      "sha256": "e48d939f60d90eb530fe27e3605e548e51c7232e13baddfdfeaa4e04fb478319"
+    },
+    "case7_bias": {
+      "shape": [
+        3
+      ],
+      "dtype": "int32",
+      "sha256": "c551a7750c396ae2d3b0cab508e65adb3e37d61c8cb9a21045ad302c8a3a77c1"
+    },
+    "case7_bounds": {
+      "shape": [
+        2
+      ],
+      "dtype": "int64",
+      "sha256": "4443298b87f8a89cbb1a63b72bbba278fb060df258f5472f13c52bd9cd5839f4"
+    },
+    "case7_output": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "3b644361e286a1afd00d5c75396d09bc511b4d515966e35db42703525f39df9a"
+    },
+    "case7_copy": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "67559f9e2944aadba5a89612ccff95bc011c737a667772163c8a7de1d9b8295e"
+    },
+    "case7_ordinary": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "3b644361e286a1afd00d5c75396d09bc511b4d515966e35db42703525f39df9a"
+    },
+    "lut8_strengths": {
+      "shape": [
+        3
+      ],
+      "dtype": "float64",
+      "sha256": "1d056c675b85c4e94b079197f503237695e3576a6c46a2f155febc380a1b6b9c"
+    },
+    "lut8_tables": {
+      "shape": [
+        3,
+        512
+      ],
+      "dtype": "int16",
+      "sha256": "e7c1726743116b90b4fb03702114b1b8a1d7106ec13ebb90822f8a2c57532b3e"
+    },
+    "case8_input": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "fd3df37182846521c6066c2d66ddef173ec868f854622573e79c5e08069506c7"
+    },
+    "case8_matrix": {
+      "shape": [
+        3,
+        3
+      ],
+      "dtype": "int32",
+      "sha256": "53f220682aa145c1303298cffdede6911179a4fa244dc75cbc565193d8e63515"
+    },
+    "case8_shift": {
+      "shape": [],
+      "dtype": "int64",
+      "sha256": "220dde27afee4d537cac96d85d6546f825153b90e828931b74e103807541bc42"
+    },
+    "case8_bias": {
+      "shape": [
+        3
+      ],
+      "dtype": "int32",
+      "sha256": "c551a7750c396ae2d3b0cab508e65adb3e37d61c8cb9a21045ad302c8a3a77c1"
+    },
+    "case8_bounds": {
+      "shape": [
+        2
+      ],
+      "dtype": "int64",
+      "sha256": "b3dfea5a7c55107d4dd618b57d63aa70bee033d357c26d605bcc4140e293ded0"
+    },
+    "case8_output": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "7153b6a1b821ffbb124884637d00340572869d5eadcff770f6398fab585c42ec"
+    },
+    "case8_copy": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "b57573c1226dc587d24de0bbbb14e80bab7e91ea5c18f35ba2f78585d004db3a"
+    },
+    "case8_ordinary": {
+      "shape": [
+        134,
+        3
+      ],
+      "dtype": "int16",
+      "sha256": "fea48abfb1d414441bd43d5e2cbf57ac8d04618fdf09d4a0f7dad481b7ef3a37"
+    },
+    "retinex_boundary_input": {
+      "shape": [
+        129,
+        197,
+        3
+      ],
+      "dtype": "float32",
+      "sha256": "b10e39a46c9cd7ee5a199f3f20c63248a18cd68dbb598c3f11bceb26029c1507"
+    },
+    "retinex_boundary_output": {
+      "shape": [
+        129,
+        197
+      ],
+      "dtype": "int16",
+      "sha256": "009d96107063a84dc8e2b2d45bf1a963a5b8100fb919122302aca7de191afa4b"
+    }
+  },
+  "boundary_source": "Original native ColorMatrixTransformRowWithX3Copy output fed to original GenerateRetinexLogGain; signed seed 3010, shape129x197, strengths800/1500/2000, explicit fixture matrix and offsets"
+}

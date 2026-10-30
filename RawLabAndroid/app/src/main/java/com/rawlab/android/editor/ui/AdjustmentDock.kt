@@ -52,6 +52,8 @@ import com.rawlab.android.looks.filmStripItems
 import com.rawlab.android.looks.localizedName
 import com.rawlab.android.looks.localizedSubtitle
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.X3fMode
+import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.settings.ColorGradingZone
 import com.rawlab.android.editor.controls.ColorGradingControls
 import com.rawlab.android.editor.controls.ToneCurveControls
@@ -85,6 +87,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     val edits = state.visibleEdits
     val context = LocalContext.current
     val rawInput = state.photo?.inputKind == PhotoInputKind.RAW
+    val x3fInput = state.photo?.isX3f == true
+    val normalX3f = x3fInput && edits.x3fMode == X3fMode.NORMAL
     val recipes = remember(context) { MasterRecipe.load(context) }
     val bundledFilms = remember(context) { Film.all + BundledLooks.load(context) }
     val filmItems = remember(state.looks, bundledFilms) { filmStripItems(state.looks, bundledFilms) }
@@ -244,7 +248,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 val modes = listOf(R.string.exposure_scene, R.string.exposure_preview, R.string.exposure_sensor)
                 Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) {
-                    TextButton(onClick = { modeMenu = true }, enabled = state.controlsEnabled && rawInput,
+                    TextButton(onClick = { modeMenu = true }, enabled = state.controlsEnabled && rawInput && !normalX3f,
                         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)) {
                         Text(stringResource(modes[edits.exposureMode]), style = MaterialTheme.typography.labelMedium)
                     }
@@ -307,7 +311,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 HslControls(edits.hsl, state.controlsEnabled, channel, onChannelChange,
                     { all -> onResetScope(if (all) EditorResetScope.AllHsl else EditorResetScope.HslChannel(channel)) }) { value, dragging -> onEdit(edits.copy(hsl = value), dragging) }
             }
-            16 -> LensControls(edits.lens, state.preview?.lens, rawInput && state.controlsEnabled && state.draft != null, state.rendering, onReset = { onResetScope(EditorResetScope.Tool(16)) }) { value ->
+            16 -> LensControls(edits.lens, state.preview?.lens, rawInput && !normalX3f && state.controlsEnabled && state.draft != null, state.rendering, onReset = { onResetScope(EditorResetScope.Tool(16)) }) { value ->
                 onDraftEdit(edits.copy(lens = value), false)
             }
             17 -> GeometryControls(edits.geometry, state.controlsEnabled && state.draft != null,
@@ -352,7 +356,28 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     }
     if (processingContext) AlertDialog(onDismissRequest = { processingContext = false },
         title = { Text(stringResource(R.string.photo_processing_settings)) },
-        text = { Text(displayLook) }, confirmButton = { TextButton(onClick = { processingContext = false }) { Text(stringResource(R.string.confirm)) } })
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(displayLook)
+                if (x3fInput) {
+                    val available = remember { NativeProcessor.nativeX3fAvailable() }
+                    Text(stringResource(R.string.x3f_rendering), Modifier.padding(top = 16.dp), style = MaterialTheme.typography.titleSmall)
+                    X3fMode.entries.forEach { mode ->
+                        val enabled = state.controlsEnabled && state.draft == null && (mode != X3fMode.NORMAL || available)
+                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .testTag("x3f.mode.${mode.id}")
+                            .selectable(selected = edits.x3fMode == mode, enabled = enabled, role = Role.RadioButton,
+                                onClick = { onEdit(edits.copy(x3fMode = mode), false) }),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = edits.x3fMode == mode, onClick = null, enabled = enabled)
+                            Text(stringResource(if (mode == X3fMode.NORMAL) R.string.x3f_normal else R.string.x3f_legacy), Modifier.padding(start = 8.dp))
+                        }
+                    }
+                    Text(stringResource(if (normalX3f) R.string.x3f_relative_wb else R.string.x3f_legacy_description),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }, confirmButton = { TextButton(onClick = { processingContext = false }) { Text(stringResource(R.string.confirm)) } })
     if (allTools) ModalBottomSheet(onDismissRequest = { allTools = false },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         EditorSheetSystemBars()

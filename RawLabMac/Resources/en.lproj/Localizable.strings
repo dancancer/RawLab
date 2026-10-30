@@ -71,6 +71,7 @@
 "RawLab 更新" = "RawLab Update";
 "S 曲线" = "S Curve";
 "SDR 兼容预览" = "SDR Compatibility Preview";
+"X3F 显影" = "X3F rendering";
 "三分网格" = "Rule of Thirds Grid";
 "三线性" = "Trilinear";
 "上下拖动调整，方向键微调，Esc 取消" = "Drag up or down to adjust, use arrow keys for fine changes, Esc to cancel";
@@ -78,6 +79,7 @@
 "上次批量任务尚未完成" = "The last batch task has not been completed yet";
 "下次退出时安装" = "Install on next quit";
 "不支持此 HDR 格式或颜色描述。" = "This HDR format or color description is not supported.";
+"不支持此 X3F 显影模式。" = "This X3F rendering mode is not supported.";
 "不支持此处理版本，原有记录未被覆盖。" = "This processing version is not supported. Saved edits have not been overwritten.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "This photo, look, or processing mode is not supported. Check file compatibility and processing settings.";
 "不是支持的 RAW 文件" = "Not a supported RAW file";
@@ -109,12 +111,14 @@
 "从照片库选择" = "Choose from photo library";
 "以下为配方逻辑值；强度为 %@。部分范围会按此强度换算。" = "These are recipe logical values; strength is %@. Some fields are scaled by this strength.";
 "以下目标尚未完成本次历史操作，请检查原因后重试。" = "The history operation is incomplete for these photos. Check the reason and retry.";
+"以文件保存的显影为基准，白平衡作相对调整。" = "Uses the saved rendering as the baseline, with relative white-balance adjustments.";
 "任务使用的外观文件不可用，请重新创建任务。" = "The look file used by this task is unavailable. Create the task again.";
 "任务已保存，请继续导出。" = "The task is saved. Continue the export.";
 "任务已冻结。之后的照片编辑不会改变本次导出。" = "The task is frozen. Later edits will not change this export.";
 "任务未保存：%@" = "Task not saved: %@";
 "任务结束后安装" = "Install after tasks finish";
 "传感器基准" = "Sensor reference";
+"伪红外（旧版）" = "False infrared (legacy)";
 "位置与尺寸" = "Position and size";
 "作者的小红书主页" = "Author on Xiaohongshu (RED)";
 "使用 RawLab 中性显影作为基础，不代表还原了相机的标准风格。" = "Uses RawLab neutral rendering as the base. This does not reproduce the camera’s Standard style.";
@@ -134,6 +138,7 @@
 "保存预设" = "Save Preset";
 "保留任务" = "Keep task";
 "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。" = "Keep the damaged file and rebuild update settings. Data will be checked after restarting; automatic updates stay off.";
+"保留旧版的特殊色彩。" = "Preserves the distinctive colors of the legacy renderer.";
 "保留旧编辑记录的降噪算法" = "Keeps the noise reduction method from earlier edits";
 "保留这次几何或镜头修改？" = "Keep these geometry or lens changes?";
 "修正直线弯曲" = "Straighten Curved Lines";
@@ -469,6 +474,7 @@
 "无法创建新的预设标识，请重试。" = "Could not create a new preset identifier. Try again.";
 "无法恢复调整：%@" = "Unable to restore adjustments: %@";
 "无法显示处理结果" = "Unable to display processing results";
+"无法正常显影 X3F：%@" = "Unable to render X3F normally: %@";
 "无法生成预览" = "Unable to generate preview";
 "无法生成预览，请检查照片、LUT 和颜色配置。" = "Unable to generate preview. Check the photo, LUT, and color settings.";
 "无法确认更新或恢复状态，请保留全部文件并联系支持。" = "The update or recovery status is uncertain. Keep all files and contact support.";
@@ -605,8 +611,10 @@
 "正在等待预览、导出或批量任务结束" = "Waiting for the preview, export, or batch task to finish";
 "正在读取镜头信息…" = "Reading Lens Information…";
 "正在预览镜头校正…" = "Previewing Lens Correction…";
+"正常显影" = "Normal rendering";
 "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。" = "This LUT lacks complete color information. Confirm how to apply it. It will be marked as compatible, with an unverified appearance.";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "This RAW’s as-shot white balance could not be parsed; the recipe tint cannot be applied.";
+"此 X3F 显影模式不支持 AI 降噪。" = "AI denoising is not supported in this X3F rendering mode.";
 "此像素不可取样。" = "This pixel cannot be sampled.";
 "此外观已不在外观库中。" = "This look is no longer in the look library.";
 "此安装暂不支持自动安装更新" = "This installation does not support automatic updates yet";

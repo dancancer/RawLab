@@ -20,6 +20,14 @@ data class ProcessingIdentity(val family: String = "rawlab", val version: Int = 
     }
 }
 
+enum class X3fMode(val id: String, val nativeValue: Int) {
+    LEGACY("legacy", 0), NORMAL("normal-v1", 1);
+    companion object {
+        fun decode(value: String): X3fMode = entries.firstOrNull { it.id == value }
+            ?: throw IllegalArgumentException("Unsupported X3F rendering mode")
+    }
+}
+
 data class EditSettings(
     val film: String = "neutral",
     val strength: Float = 1f,
@@ -42,6 +50,7 @@ data class EditSettings(
     val lens: LensSettings = LensSettings(),
     val geometry: GeometrySettings = GeometrySettings(),
     val processing: ProcessingIdentity = ProcessingIdentity.CURRENT,
+    val x3fMode: X3fMode = X3fMode.NORMAL,
     val blackPoint: Float = 0f,
     val whitePoint: Float = 0f,
     val vibrance: Float = 0f,
@@ -80,7 +89,7 @@ data class EditSettings(
             contrast = value.contrast, highlights = value.highlights, shadows = value.shadows,
             saturation = value.saturation, geometry = value.geometry, hdr = value,
             sdrSnapshot = sdrSnapshot)
-    } else EditSettings(film = film, processing = processing, hdr = hdr)
+    } else EditSettings(film = film, processing = processing, x3fMode = x3fMode, hdr = hdr)
 
     /** Camera-only controls are resolved per target; the persisted edit remains unchanged. */
     fun effectiveFor(input: PhotoInputKind): EditSettings = if (isHDREditing) this else if (input == PhotoInputKind.RASTER) copy(

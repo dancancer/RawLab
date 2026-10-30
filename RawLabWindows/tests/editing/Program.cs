@@ -11,6 +11,7 @@ if (args.Contains("--hdr-only")) {
     HDRChecks.Run();
     return;
 }
+X3fPersistenceChecks();
 AIGpuDiagnosticsChecks.Run();
 if(args.Contains("--ai-support"))return;
 
@@ -39,6 +40,28 @@ AdjustmentSummaryChecks.Run();
 
 static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
 static JsonNode? Processing(Adjustments value) => JsonSerializer.SerializeToNode(value.Capture())!["Processing"];
+static void X3fPersistenceChecks()
+{
+    var fresh = JsonSerializer.SerializeToNode(new Adjustments().Capture())!.AsObject();
+    Check(fresh["X3fMode"]?.GetValue<string>() == "normal-v1", "Fresh X3F uses normal rendering");
+    fresh.Remove("X3fMode");
+    var legacy = fresh.Deserialize<AdjustmentSnapshot>()!.Restore();
+    Check(JsonSerializer.SerializeToNode(legacy.Capture())!["X3fMode"]?.GetValue<string>() == "legacy", "Old X3F records retain legacy");
+    legacy.Set(Parameter.Exposure, .5);
+    var reset = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), new(new("photo.x3f", 1, 2, 3), legacy.Capture(), null));
+    Check(JsonSerializer.SerializeToNode(reset.Candidate!.Settings)!["X3fMode"]?.GetValue<string>() == "legacy", "Reset retains X3F mode");
+    foreach (var value in new JsonNode?[] { null, JsonValue.Create("future"), JsonValue.Create(1) }) {
+        var invalid = JsonSerializer.SerializeToNode(new Adjustments().Capture())!.AsObject();
+        invalid["X3fMode"] = value;
+        var rejected = false;
+        try { _ = invalid.Deserialize<AdjustmentSnapshot>()!.Restore(); }
+        catch (JsonException) { rejected = true; }
+        catch (System.IO.InvalidDataException) { rejected = true; }
+        Check(rejected, "Unknown or null X3F modes must not overwrite saved edits");
+    }
+    Console.WriteLine("PASS: X3F snapshot migration and reset");
+}
+
 static void AIDenoisePersistenceChecks()
 {
     var original = new Adjustments { Denoise = DenoiseSettings.Clean, DisplayChromaDenoise = 2 };

@@ -1,6 +1,36 @@
 import AppKit
 
 enum BatchFlowModelTests {
+    static func x3fSnapshots(root: URL) throws {
+        let directory = root.appendingPathComponent("x3f-snapshots")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let normal = directory.appendingPathComponent("normal.X3F")
+        let legacy = directory.appendingPathComponent("legacy.X3F")
+        // 预检只验证文件身份和已保存设置；这里不触发 RAW 解码。
+        for file in [normal, legacy] { try Data("FOVb snapshot fixture".utf8).write(to: file) }
+        let model = EditorModel(lookDirectory: directory.appendingPathComponent("looks"),
+            editDirectory: directory.appendingPathComponent("edits"), batchDirectory: directory.appendingPathComponent("batch"),
+            presetDirectory: directory.appendingPathComponent("presets"))
+        model.addCollectionPhotos([normal, legacy])
+        var settings = Adjustments()
+        settings.x3fMode = .normal; settings.aiDenoiseEnabled = true
+        try model.editStore!.save(normal, state: PhotoEditState(settings: settings, filmID: ""))
+        settings.x3fMode = .legacy; settings.aiDenoiseEnabled = false
+        try model.editStore!.save(legacy, state: PhotoEditState(settings: settings, filmID: ""))
+        let rejected = try model.prepareCollectionExport(skipping: [], format: .png, longEdge: nil, directory: directory)
+        try require(!rejected.ready && rejected.rows.first?.error?.localizedDescription ==
+                    L10n.text("此 X3F 显影模式不支持 AI 降噪。"),
+                    "moved collection preflight preserves the normal X3F AI restriction")
+        settings.selectX3fMode(.normal)
+        try model.editStore!.save(normal, state: PhotoEditState(settings: settings, filmID: ""))
+        let review = try model.prepareCollectionExport(skipping: [], format: .png, longEdge: nil, directory: directory)
+        try require(review.ready && review.snapshots.map { $0.settings.x3fMode } == [.normal, .legacy],
+                    "collection preparation retains each photo's saved X3F mode")
+        let job = try model.freezeCollectionExport(review)
+        try require(job.items.map { $0.frozen!.settings.x3fMode } == [.normal, .legacy],
+                    "collection freeze retains mixed normal and legacy X3F identities")
+    }
+
     static func automaticLaunch(root: URL, fixture: URL) throws {
         let directory = root.appendingPathComponent("automatic-launch")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

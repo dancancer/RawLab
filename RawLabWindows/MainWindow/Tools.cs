@@ -357,8 +357,8 @@ public partial class MainWindow
             ParameterPanel.Visibility=CurrentTool==EditorAdjustmentTool.ToneCurve || choosingRecipes || choosingFilm || choosingDenoise || choosingPhotoEffects || choosingHsl || choosingGrading || choosingWhiteBalance || choosingLens || choosingGeometry ? Visibility.Collapsed : Visibility.Visible;
             LensEditor.Visibility=choosingLens ? Visibility.Visible : Visibility.Collapsed;
             LensSurface.Visibility=LensEditor.Visibility;
-            LensEditor.IsEnabled=file!=null && !raster && !hdrEditing && !exporting;LensEditor.Refresh(PreviewLens,result?.Lens);
-            LensCategory.IsEnabled=file!=null && !raster && !hdrEditing && !exporting;
+            LensEditor.IsEnabled=file!=null && !raster && !hdrEditing && !exporting && !PhotoInput.IsNormalX3f(file,settings);LensEditor.Refresh(PreviewLens,result?.Lens);
+            LensCategory.IsEnabled=LensEditor.IsEnabled;
             LensCategory.Tag=choosingLens ? "selected" : null;
             LensCategoryRing.Selected=choosingLens;LensCategoryRing.Progress=settings.Lens.Enabled ? 1 : 0;LensCategoryRing.InvalidateVisual();
             GeometrySurface.Visibility=choosingGeometry ? Visibility.Visible : Visibility.Collapsed;
@@ -420,7 +420,12 @@ public partial class MainWindow
             ProcessingVersion.SelectedIndex=settings.Processing.Version-1;
             ProcessingVersion.IsEnabled=file!=null && !exporting && !transform.Active && pendingAllReset==null;
             ExposureMode.IsEnabled=ResetAllButton.IsEnabled=file!=null && !exporting;
-            ExposureMode.IsEnabled=ExposureMode.IsEnabled && !raster && !hdrEditing && !transform.Active;
+            ExposureMode.IsEnabled=ExposureMode.IsEnabled && !raster && !hdrEditing && !transform.Active && !PhotoInput.IsNormalX3f(file,settings);
+            X3fSettingsPanel.Visibility=PhotoInput.IsX3f(file) ? Visibility.Visible : Visibility.Collapsed;
+            X3fRendering.SelectedIndex=(int)settings.X3fMode;
+            X3fRendering.IsEnabled=file!=null && !exporting && !transform.Active;
+            X3fNormalOption.IsEnabled=RenderEngine.X3fAvailable;
+            X3fDescription.Text=Loc.Text(settings.X3fMode==X3fMode.Normal ? "以文件保存的显影为基准，白平衡作相对调整。" : "保留旧版的特殊色彩。");
             ResetParameterButton.IsEnabled=ResetGroupButton.IsEnabled=canAdjust;
             AsShotButton.IsEnabled=file!=null && !exporting && settings.AsShot!=null && !transform.Active;
             DraftActions.Visibility=transform.Active ? Visibility.Visible : Visibility.Collapsed;

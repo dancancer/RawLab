@@ -112,7 +112,7 @@ object EditorAdjustmentRules {
 
     private fun defaults(scope: EditorResetScope, snapshot: EditSettings, context: EditorResetContext): EditSettings {
         if (snapshot.isHDREditing) return snapshot.hdrDefaults()
-        val defaults = context.defaults.effectiveFor(context.input).copy(processing = snapshot.processing)
+        val defaults = context.defaults.effectiveFor(context.input).copy(processing = snapshot.processing, x3fMode = snapshot.x3fMode)
         if (context.input == PhotoInputKind.RAW && includesWhiteBalance(scope) && context.asShot != null) {
             val source = if (scope == EditorResetScope.All) snapshot.copy(recipeID = null) else snapshot
             val wb = source.resetWhiteBalance(context.asShot.temperature, context.asShot.tint)

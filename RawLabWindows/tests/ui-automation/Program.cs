@@ -61,6 +61,7 @@ internal static partial class Program
             if (Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_UI") == "1") {
                 QuickPresetFlow(); CloseMainWindow(); return 0;
             }
+            if (Environment.GetEnvironmentVariable("RAWLAB_X3F_UI") == "1") { X3fFlow(); return 0; }
             if (phase.Equals("restart", StringComparison.OrdinalIgnoreCase))
             {
                 OpenPhoto(raw);
@@ -165,6 +166,8 @@ internal static partial class Program
                     dialog.FindFirst(TreeScope.Descendants,
                         new PropertyCondition(AutomationElement.AutomationIdProperty, "1")),TimeSpan.FromSeconds(10));
                 if (accept == null) throw new InvalidOperationException("OpenFileDialog accept button is missing.");
+                Trace("open-accept-control " + accept.Current.ControlType.ProgrammaticName + " id=" + accept.Current.AutomationId +
+                    " enabled=" + accept.Current.IsEnabled + " patterns=" + string.Join(",", accept.GetSupportedPatterns().Select(pattern => pattern.ProgrammaticName)));
                 Invoke(accept);
                 Trace("open-accepted " + System.IO.Path.GetFileName(path));
                 if (!invocation.Wait(TimeSpan.FromSeconds(10)))

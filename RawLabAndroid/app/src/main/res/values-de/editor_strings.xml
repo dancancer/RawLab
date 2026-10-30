@@ -445,4 +445,10 @@
     <string name="vibrance">"Dynamik"</string>
     <string name="vignette_highlights_unavailable">"Nur bei negativer Vignettenstärke verfügbar."</string>
     <string name="white_point">"Weißpunkt"</string>
+    <string name="x3f_legacy">"Falsch-Infrarot (alt)"</string>
+    <string name="x3f_legacy_description">"Behält die besonderen Farben der früheren Entwicklung bei."</string>
+    <string name="x3f_normal">"Normale Entwicklung"</string>
+    <string name="x3f_relative_wb">"Die gespeicherte Entwicklung ist die Basis; der Weißabgleich wird relativ angepasst."</string>
+    <string name="x3f_rendering">"X3F-Entwicklung"</string>
+    <string name="x3f_retry_legacy">"Mit bisheriger Entwicklung erneut versuchen"</string>
 </resources>

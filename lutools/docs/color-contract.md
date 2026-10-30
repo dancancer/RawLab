@@ -2,6 +2,11 @@
 
 ## RAW Input
 
+Normal X3F rendering is a separate display-referred input path. Its saved
+rendering baseline, supported camera/settings combinations and legacy compatibility
+are defined by the [X3F rendering contract](x3f-rendering.md). The scene-linear RAW
+rules below continue to apply to ordinary RAW and legacy X3F.
+
 The C API session and CLI keep their scene-mode default for compatibility. New
 photo settings in all four native clients instead select `preview` (embedded
 preview matching); a full/input-group reset also selects `preview`. Restoring a

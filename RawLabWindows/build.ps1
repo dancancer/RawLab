@@ -192,6 +192,9 @@ if ($DualDnModel) {
 $libtiffLicense = Join-Path $native 'licenses/libtiff/LICENSE.md'
 if (!(Test-Path $libtiffLicense)) { throw 'The native build did not export the libtiff license.' }
 Copy-Item "$native/licenses/*" $licenses -Recurse -Force
+Copy-Item "$native/core/x3f-licenses.txt" "$licenses/X3F-Dependencies.txt" -Force
+New-Item -ItemType Directory -Force "$licenses/x3f-rust" | Out-Null
+Copy-Item "$native/core/x3f-rust-licenses/*" "$licenses/x3f-rust" -Recurse -Force
 Copy-Item "$repo/lutools/third_party/Adobe-DNG-SDK-LICENSE.txt", "$repo/lutools/third_party/rawspeed-camera-calibration.inc", "$repo/RawLabMac/Resources/Licenses/stb-MIT-LICENSE.txt" $licenses -Force
 Copy-Item "$PSScriptRoot/Licenses/*" $licenses -Force
 Copy-Item "$PSScriptRoot/ThirdPartyNotices.md", "$PSScriptRoot/README.md", "$PSScriptRoot/verification.md", "$PSScriptRoot/performance.md" $output -Force

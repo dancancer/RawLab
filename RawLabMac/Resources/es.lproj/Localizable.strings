@@ -71,6 +71,7 @@
 "RawLab 更新" = "Actualización de RawLab";
 "S 曲线" = "Curva S";
 "SDR 兼容预览" = "Vista previa compatible con SDR";
+"X3F 显影" = "Revelado X3F";
 "三分网格" = "Cuadrícula de tercios";
 "三线性" = "Trilineal";
 "上下拖动调整，方向键微调，Esc 取消" = "Arrastra hacia arriba o abajo para ajustar, usa las flechas para cambios precisos y Esc para cancelar";
@@ -78,6 +79,7 @@
 "上次批量任务尚未完成" = "La última exportación por lotes aún no ha terminado";
 "下次退出时安装" = "Instalar al salir la próxima vez";
 "不支持此 HDR 格式或颜色描述。" = "Este formato HDR o descripción de color no es compatible.";
+"不支持此 X3F 显影模式。" = "Este modo de revelado X3F no es compatible.";
 "不支持此处理版本，原有记录未被覆盖。" = "Esta versión de procesamiento no es compatible. Las ediciones guardadas no se han sobrescrito.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "Esta foto, look o modo de procesamiento no es compatible. Comprueba la compatibilidad de los archivos y los ajustes de procesamiento.";
 "不是支持的 RAW 文件" = "No es un archivo RAW compatible";
@@ -109,12 +111,14 @@
 "从照片库选择" = "Elegir de la biblioteca de fotos";
 "以下为配方逻辑值；强度为 %@。部分范围会按此强度换算。" = "Estos son valores lógicos de la receta; la intensidad es %@. Algunos campos se escalan con esta intensidad.";
 "以下目标尚未完成本次历史操作，请检查原因后重试。" = "La operación de historial no se ha completado para estas fotos. Comprueba el motivo y vuelve a intentarlo.";
+"以文件保存的显影为基准，白平衡作相对调整。" = "Usa el revelado guardado como base, con ajustes relativos del balance de blancos.";
 "任务使用的外观文件不可用，请重新创建任务。" = "El archivo de look que usa la tarea no está disponible. Vuelve a crear la tarea.";
 "任务已保存，请继续导出。" = "La tarea está guardada. Continúa la exportación.";
 "任务已冻结。之后的照片编辑不会改变本次导出。" = "La tarea está fijada. Los cambios posteriores no modificarán esta exportación.";
 "任务未保存：%@" = "Tarea no guardada: %@";
 "任务结束后安装" = "Instalar cuando terminen las tareas";
 "传感器基准" = "Referencia del sensor";
+"伪红外（旧版）" = "Falso infrarrojo (anterior)";
 "位置与尺寸" = "Posición y tamaño";
 "作者的小红书主页" = "El autor en Xiaohongshu (RED)";
 "使用 RawLab 中性显影作为基础，不代表还原了相机的标准风格。" = "Usa el revelado neutro de RawLab como base. No reproduce el estilo estándar de la cámara.";
@@ -134,6 +138,7 @@
 "保存预设" = "Guardar ajuste preestablecido";
 "保留任务" = "Conservar tarea";
 "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。" = "Se conservará el archivo dañado y se restablecerán los ajustes. Los datos se comprobarán al reiniciar; las actualizaciones automáticas seguirán desactivadas.";
+"保留旧版的特殊色彩。" = "Conserva los colores particulares del revelado anterior.";
 "保留旧编辑记录的降噪算法" = "Conserva la reducción de ruido de ediciones anteriores";
 "保留这次几何或镜头修改？" = "¿Conservar estos cambios de geometría u objetivo?";
 "修正直线弯曲" = "Corregir la curvatura de las líneas";
@@ -469,6 +474,7 @@
 "无法创建新的预设标识，请重试。" = "No se pudo crear un identificador para el ajuste. Inténtalo de nuevo.";
 "无法恢复调整：%@" = "No se pueden restaurar los ajustes: %@";
 "无法显示处理结果" = "No se pueden mostrar los resultados del procesamiento";
+"无法正常显影 X3F：%@" = "No se pudo revelar X3F con normalidad: %@";
 "无法生成预览" = "No se puede generar una vista previa";
 "无法生成预览，请检查照片、LUT 和颜色配置。" = "No se pudo generar la vista previa. Comprueba la foto, la LUT y los ajustes de color.";
 "无法确认更新或恢复状态，请保留全部文件并联系支持。" = "No se puede confirmar el estado de actualización o recuperación. Conserva todos los archivos y contacta con soporte.";
@@ -605,8 +611,10 @@
 "正在等待预览、导出或批量任务结束" = "Esperando a que terminen la vista previa, la exportación o la tarea por lotes";
 "正在读取镜头信息…" = "Leyendo información de lente…";
 "正在预览镜头校正…" = "Vista previa de la corrección de objetivo…";
+"正常显影" = "Revelado normal";
 "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。" = "Este LUT no tiene toda la información de color. Confirma cómo aplicarlo. Se marcará como compatible, con un resultado sin verificar.";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "No se pudo analizar el balance de blancos de toma de este RAW; no se puede aplicar el matiz de la receta.";
+"此 X3F 显影模式不支持 AI 降噪。" = "Este modo de revelado X3F no admite reducción de ruido por IA.";
 "此像素不可取样。" = "No se puede tomar una muestra de este píxel.";
 "此外观已不在外观库中。" = "Este look ya no está en la biblioteca de looks.";
 "此安装暂不支持自动安装更新" = "Esta instalación todavía no admite actualizaciones automáticas";

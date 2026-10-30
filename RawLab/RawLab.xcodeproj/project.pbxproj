@@ -227,6 +227,7 @@
         D14800000000000000000001 /* HDRCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14800000000000000000011; };
         D14900000000000000000001 /* HDRMonitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14900000000000000000011; };
         D15000000000000000000001 /* HDRPhotoUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15000000000000000000011; };
+        A8F300000000000000000001 /* X3fRenderingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8F300000000000000000011; };
 		025457773222452EB536902E /* IOSLUTLibrarySelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82401F63082E43C6B11A2D97 /* IOSLUTLibrarySelection.swift */; };
 		4E29D1D654E1483A83C94DE9 /* IOSLUTCompatibilityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB5989AB770A48B8B6F7B0B0 /* IOSLUTCompatibilityView.swift */; };
 /* End PBXBuildFile section */
@@ -595,6 +596,7 @@
         D14800000000000000000011 /* HDRCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRCanvas.swift; path = "../Shared/Native/HDRCanvas.swift"; sourceTree = SOURCE_ROOT; };
         D14900000000000000000011 /* HDRMonitoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRMonitoring.swift; path = "../Shared/Native/HDRMonitoring.swift"; sourceTree = SOURCE_ROOT; };
         D15000000000000000000011 /* HDRPhotoUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/HDRPhotoUITests.swift; sourceTree = SOURCE_ROOT; };
+        A8F300000000000000000011 /* X3fRenderingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/X3fRenderingUITests.swift; sourceTree = SOURCE_ROOT; };
 		82401F63082E43C6B11A2D97 /* IOSLUTLibrarySelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Looks/IOSLUTLibrarySelection.swift"; sourceTree = SOURCE_ROOT; };
 		AB5989AB770A48B8B6F7B0B0 /* IOSLUTCompatibilityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Panels/IOSLUTCompatibilityView.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
@@ -881,6 +883,7 @@
 				A0D17B5E0000000000000004,
 				D01000000000000000000011,
 				D15000000000000000000011,
+                A8F300000000000000000011,
 				2F6D48C6086EC660301E288B,
 				0DAA7689F37A5648D3C8F238,
 				2F109479FD08681A1F30E85C,
@@ -1160,6 +1163,7 @@
 				A0D17B5E0000000000000003,
 				D01000000000000000000001,
 				D15000000000000000000001,
+                A8F300000000000000000001,
 				8FC75E90CDC70C4708EB37A2,
 				5E0132EABC243650B81956BA,
 				CE05C93906EE52BFDBEDD0AD,

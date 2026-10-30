@@ -445,4 +445,10 @@
     <string name="vibrance">"Vibrance"</string>
     <string name="vignette_highlights_unavailable">"Available only when vignette intensity is negative."</string>
     <string name="white_point">"White point"</string>
+    <string name="x3f_legacy">"False infrared (legacy)"</string>
+    <string name="x3f_legacy_description">"Preserves the distinctive colors of the legacy renderer."</string>
+    <string name="x3f_normal">"Normal rendering"</string>
+    <string name="x3f_relative_wb">"Uses the saved rendering as the baseline, with relative white-balance adjustments."</string>
+    <string name="x3f_rendering">"X3F rendering"</string>
+    <string name="x3f_retry_legacy">"Retry with legacy rendering"</string>
 </resources>

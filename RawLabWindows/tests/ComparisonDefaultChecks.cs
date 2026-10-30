@@ -279,6 +279,16 @@ internal static class ComparisonDefaultChecks
         try
         {
             window.Show();
+            if(Environment.GetEnvironmentVariable("RAWLAB_X3F_UI")=="1") {
+                var captured=new HashSet<X3fMode>();
+                var captureTimer=new DispatcherTimer(DispatcherPriority.Background){Interval=TimeSpan.FromMilliseconds(100)};
+                captureTimer.Tick+=(_,_)=>{
+                    var settings=(Adjustments)typeof(MainWindow).GetField("settings",Private)!.GetValue(window)!;
+                    if(window.ExportPng.IsEnabled && captured.Add(settings.X3fMode))
+                        PhotoFeatureChecks.Screenshot(window,Path.Combine(profile,$"x3f-{phase}-{settings.X3fMode}.png"));
+                };
+                window.Closed+=(_,_)=>captureTimer.Stop();captureTimer.Start();
+            }
             timeoutTimer = new DispatcherTimer(DispatcherPriority.Background)
             {
                 Interval = TimeSpan.FromMinutes(9)
@@ -347,7 +357,9 @@ internal static class ComparisonDefaultChecks
 
     private static DriverPath ResolveDriver(string repo)
     {
-        var directory = Path.Combine(repo, "RawLabWindows", "tests", "ui-automation", "bin", "Release", "net8.0-windows");
+        var outputRoot = Path.Combine(repo, "RawLabWindows", "tests", "ui-automation", "bin");
+        var directory = Path.Combine(outputRoot, "x64", "Release", "net8.0-windows");
+        if (!Directory.Exists(directory)) directory = Path.Combine(outputRoot, "Release", "net8.0-windows");
         var exe = Path.Combine(directory, "RawLabWindows.UiAutomation.exe");
         if (File.Exists(exe)) return new(exe, null);
         var assembly = Path.Combine(directory, "RawLabWindows.UiAutomation.dll");

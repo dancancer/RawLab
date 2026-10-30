@@ -148,6 +148,12 @@ typedef enum sony2fuji_processing_version {
     SONY2FUJI_PROCESSING_C5_V2 = 2
 } sony2fuji_processing_version;
 
+typedef enum sony2fuji_x3f_mode {
+    SONY2FUJI_X3F_LEGACY = 0,
+    SONY2FUJI_X3F_NORMAL = 1
+} sony2fuji_x3f_mode;
+
+
 // ============================================================================
 // Request/Buffer
 // ============================================================================
@@ -362,6 +368,12 @@ typedef struct sony2fuji_lens_report {
 // ============================================================================
 
 typedef struct sony2fuji_session sony2fuji_session;
+
+// Independent from processing version. New sessions preserve legacy pixels.
+int32_t sony2fuji_x3f_available(void);
+sony2fuji_status sony2fuji_session_set_x3f_mode(sony2fuji_session* session, sony2fuji_x3f_mode mode);
+// Last normal-X3F error on this session; owned by the session until its next render.
+const char* sony2fuji_session_x3f_error(const sony2fuji_session* session);
 
 typedef struct sony2fuji_hsl_probe sony2fuji_hsl_probe;
 #define SONY2FUJI_HSL_PROBE_VERSION 1

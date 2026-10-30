@@ -120,7 +120,8 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, navig
     ).joinToString(" · ") else number
     val selectable = Modifier.selectable(selected,
         enabled = navigationEnabled && state.controlsEnabled && (!state.edits.isHDREditing || hdrToolSupported(index)) &&
-            (index != 8 || rawOnly || state.edits.isHDREditing) && (index != 16 || rawOnly),
+            (index != 8 || rawOnly || state.edits.isHDREditing) &&
+            (index != 16 || rawOnly && !(state.photo?.isX3f == true && edits.x3fMode == com.rawlab.android.settings.X3fMode.NORMAL)),
         role = Role.Tab, onClick = onClick).testTag("editor-tool-$index").semantics(mergeDescendants = true) {
         contentDescription = title
         stateDescription = listOfNotNull(valueDescription, status).joinToString(" · ")

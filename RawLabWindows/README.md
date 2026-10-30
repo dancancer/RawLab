@@ -39,6 +39,11 @@ scRGB swap chain，需要当前显示器启用 HDR；RDP、虚拟显示器及能
 （含 Windows SDK 与 CMake），首次构建需要联网下载校验过的 LibRaw 0.22.2 / zlib 1.3.1 /
 libtiff 4.7.1 源码。
 
+正常 X3F 显影还需要 Rust 1.88+（CI 使用 1.99.1）、`x86_64-pc-windows-msvc`
+目标、`rust-docs`、Python 3.11+ 和宿主 libclang。若 libclang 不在默认搜索路径，
+通过 `LIBCLANG_PATH` 指向 DLL 所在目录。构建会打包 X3F 依赖与 Rust 运行库许可；
+支持的机型、保存参数和旧版兼容边界见 [X3F 契约](../lutools/docs/x3f-rendering.md)。
+
 ```powershell
 ./RawLabWindows/build.ps1 -Test
 # 或显式指定外部样片：

@@ -25,6 +25,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try BatchFlowModelTests.preparedSourceChange(root: root, fixture: first)
         try BatchFlowModelTests.automaticLaunch(root: root, fixture: first)
         try BatchFlowModelTests.pendingLaunches(root: root, fixture: first)
+        try BatchFlowModelTests.x3fSnapshots(root: root)
         let alias = root.appendingPathComponent("alias.png")
         try FileManager.default.linkItem(at: first, to: alias)
         let model = EditorModel(lookDirectory: root.appendingPathComponent("looks"),

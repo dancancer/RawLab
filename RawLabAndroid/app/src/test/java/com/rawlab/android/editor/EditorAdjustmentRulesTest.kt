@@ -251,7 +251,7 @@ class EditorAdjustmentRulesTest {
             file.outputStream().use { properties.store(it, null) }
             val originalBytes = file.readBytes()
             val legacy = EditStore(directory).load(identity)!!
-            assertEquals(EditSettings(exposure = .5f, exposureMode = 0, processing = ProcessingIdentity.LEGACY), legacy)
+            assertEquals(EditSettings(exposure = .5f, exposureMode = 0, processing = ProcessingIdentity.LEGACY, x3fMode = X3fMode.LEGACY), legacy)
             assertArrayEquals(originalBytes, file.readBytes())
             val source = legacy.copy(recipeID = recipeId, strength = .5f, hsl = HslSettings(List(24) { .5f }))
             val independent = candidate(EditorResetScope.Tool(15), source)

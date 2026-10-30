@@ -55,6 +55,14 @@
     "ja": "プリセットを確認中…",
     "zh-Hans": "正在检查预设…"
   },
+  "此 X3F 显影模式不支持 AI 降噪。": {"de":"Dieser X3F-Entwicklungsmodus unterstützt keine KI-Entrauschung.","en":"AI denoising is not supported in this X3F rendering mode.","es":"Este modo de revelado X3F no admite reducción de ruido por IA.","fr":"La réduction du bruit par IA n’est pas prise en charge dans ce mode de développement X3F.","ja":"この X3F 現像モードでは AI ノイズ除去を使用できません。","zh-Hans":"此 X3F 显影模式不支持 AI 降噪。"},
+  "无法正常显影 X3F：{0}": {"de":"X3F konnte nicht normal entwickelt werden: {0}","en":"Unable to render X3F normally: {0}","es":"No se pudo revelar X3F con normalidad: {0}","fr":"Impossible de développer normalement le fichier X3F : {0}","ja":"X3F を通常現像できません：{0}","zh-Hans":"无法正常显影 X3F：{0}"},
+  "使用旧版显影重试": {"de":"Mit bisheriger Entwicklung erneut versuchen","en":"Retry with legacy rendering","es":"Reintentar con el revelado anterior","fr":"Réessayer avec l’ancien développement","ja":"旧版の現像で再試行","zh-Hans":"使用旧版显影重试"},
+  "X3F 显影": {"de":"X3F-Entwicklung","en":"X3F rendering","es":"Revelado X3F","fr":"Développement X3F","ja":"X3F 現像","zh-Hans":"X3F 显影"},
+  "正常显影": {"de":"Normale Entwicklung","en":"Normal rendering","es":"Revelado normal","fr":"Développement normal","ja":"通常現像","zh-Hans":"正常显影"},
+  "伪红外（旧版）": {"de":"Falsch-Infrarot (alt)","en":"False infrared (legacy)","es":"Falso infrarrojo (anterior)","fr":"Faux infrarouge (ancien)","ja":"擬似赤外線（従来）","zh-Hans":"伪红外（旧版）"},
+  "以文件保存的显影为基准，白平衡作相对调整。": {"de":"Die gespeicherte Entwicklung ist die Basis; der Weißabgleich wird relativ angepasst.","en":"Uses the saved rendering as the baseline, with relative white-balance adjustments.","es":"Usa el revelado guardado como base, con ajustes relativos del balance de blancos.","fr":"Utilise le développement enregistré comme référence, avec des ajustements relatifs de la balance des blancs.","ja":"保存済みの現像を基準に、ホワイトバランスを相対調整します。","zh-Hans":"以文件保存的显影为基准，白平衡作相对调整。"},
+  "保留旧版的特殊色彩。": {"de":"Behält die besonderen Farben der früheren Entwicklung bei.","en":"Preserves the distinctive colors of the legacy renderer.","es":"Conserva los colores particulares del revelado anterior.","fr":"Conserve les couleurs particulières de l’ancien développement.","ja":"従来の現像による独特な色を保持します。","zh-Hans":"保留旧版的特殊色彩。"},
   "16-bit PNG": {
     "de": "16-Bit-PNG",
     "en": "16-bit PNG",

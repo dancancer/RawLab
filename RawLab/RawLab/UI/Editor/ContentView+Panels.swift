@@ -356,6 +356,8 @@ extension ContentView {
         .opacity(rulerFocusOpacity)
     }
 
+    var usesNormalX3f: Bool { viewModel.sourceIsX3f && settings.x3fMode == .normal }
+
     var processingContextSheet: some View {
             NavigationStack {
                 Form {
@@ -367,10 +369,25 @@ extension ContentView {
                             .accessibilityIdentifier("hdr.editMode")
                     }
                     if settings.isHDREditing { HDRMonitoringControls(state:hdrDisplay) }
+                    if viewModel.sourceIsX3f {
+                        Picker(L10n.text("X3F 显影"), selection: Binding(get: { settings.x3fMode }, set: { mode in
+                            var next = settings
+                            next.selectX3fMode(mode)
+                            settings = next
+                        })) {
+                            ForEach(X3fMode.allCases) { mode in
+                                Text(mode.title).tag(mode).disabled(mode == .normal && sony2fuji_x3f_available() == 0)
+                            }
+                        }
+                        .disabled(isEditorDraftActive || editorBusy)
+                        .accessibilityIdentifier("x3f.mode")
+                        Text(L10n.text(usesNormalX3f ? "以文件保存的显影为基准，白平衡作相对调整。" : "保留旧版的特殊色彩。"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     if viewModel.sourceKind == .raw {
                         Picker(L10n.text("曝光基准"), selection: $settings.exposureMode) {
                             ForEach(RawExposureMode.allCases) { Text($0.title).tag($0) }
-                        }.disabled(isEditorDraftActive || editorBusy)
+                        }.disabled(isEditorDraftActive || editorBusy || usesNormalX3f)
                     }
                 }
                 .navigationTitle(L10n.text("照片处理设置"))
@@ -508,7 +525,7 @@ extension ContentView {
                                         tool.scalar.map(adjustmentProgress) ?? (resetModified(.tool(tool)) ? 1 : 0), width: toolWidth, height: rowHeight,
                                     maximumWidth: accessibility ? max(44, width - 24) : nil)
                             }
-                            .disabled((tool == .lens && viewModel.sourceKind != .raw) ||
+                            .disabled((tool == .lens && (viewModel.sourceKind != .raw || usesNormalX3f)) ||
                                       (tool == .adjustment(.strength) && !settings.hasLook) ||
                                       (settings.isHDREditing && !supportsHDR(tool)))
                             .accessibilityLabel(tool.title)

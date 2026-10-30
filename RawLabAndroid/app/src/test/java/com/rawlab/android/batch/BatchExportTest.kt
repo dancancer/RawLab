@@ -92,7 +92,7 @@ class BatchExportTest {
             geometry = GeometrySettings(.2f, .1f, .8f, .75f, 3, true, true, -8.5f, -.7f, .25f))
         val fields = legacyPipeSettings(settings).split('|')
         assertEquals(54, fields.size)
-        assertEquals(settings, SettingsCodec.decode(fields.joinToString("|")))
+        assertEquals(settings.copy(x3fMode = com.rawlab.android.settings.X3fMode.LEGACY), SettingsCodec.decode(fields.joinToString("|")))
         for (count in listOf(12, 16, 25, 50, 51, 52)) {
             val legacy = SettingsCodec.decode(fields.take(count).joinToString("|"))
             assertEquals(if (count == 52) lens else LensSettings(), legacy.lens)

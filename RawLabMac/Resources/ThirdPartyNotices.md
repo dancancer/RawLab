@@ -8,6 +8,8 @@ and code signatures. LibRaw also includes the source patches described below.
 
 | Component | Version | Source | Notices |
 | --- | --- | --- | --- |
+| x3fuse-core / x3f-tools | 00f9ef206a2d629bca35ceead4b3951833b85d3d | https://github.com/sagwaco/x3fuse-core | X3F-Dependencies.txt (Apache-2.0 and upstream BSD notices) |
+| Rust standard library and locked crates | Actual build toolchain / Cargo.lock | https://github.com/rust-lang/rust | x3f-rust-licenses/ and X3F-Dependencies.txt |
 | Sparkle | 2.10.0 | https://github.com/sparkle-project/Sparkle/tree/2.10.0 | Sparkle-LICENSE.txt (MIT) |
 | Restormer real denoising | Upstream pretrained checkpoint | https://github.com/swz30/Restormer | DualDn/Restormer-LICENSE.txt (Academic Public License, noncommercial) |
 | JSON for Modern C++ | Vendored header | https://github.com/nlohmann/json | nlohmann-JSON-MIT.txt |
@@ -129,3 +131,6 @@ A1 II, EOS R50 V and PowerShot V1 metadata come from upstream PRs 775/846,
 784 and 856. The original LGPL/CDDL terms apply. Sigma X3F tools are enabled;
 Roland Karlsson's BSD-style notice is retained in LibRaw-X3F-BSD.txt.
 Pinned sources and scope: docs/reference/raw-format-support.md.
+
+The X3F bridge links the pinned decoder sources and its locked Rust dependencies.
+No SIGMA Photo Pro executable or proprietary library is bundled or needed at runtime.

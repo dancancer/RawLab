@@ -445,4 +445,10 @@
     <string name="vibrance">"鲜艳度"</string>
     <string name="vignette_highlights_unavailable">"仅在暗角强度为负值时可用。"</string>
     <string name="white_point">"白场"</string>
+    <string name="x3f_legacy">"伪红外（旧版）"</string>
+    <string name="x3f_legacy_description">"保留旧版的特殊色彩。"</string>
+    <string name="x3f_normal">"正常显影"</string>
+    <string name="x3f_relative_wb">"以文件保存的显影为基准，白平衡作相对调整。"</string>
+    <string name="x3f_rendering">"X3F 显影"</string>
+    <string name="x3f_retry_legacy">"使用旧版显影重试"</string>
 </resources>

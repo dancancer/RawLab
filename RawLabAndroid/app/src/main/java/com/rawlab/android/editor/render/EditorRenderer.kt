@@ -58,22 +58,32 @@ internal class EditorRenderer(
     private fun perform(work: Work, generation: Long = -1L): WorkResult = synchronized(storage) { when (work) {
         is Work.Import -> {
             val photo = work.retained ?: storage.import(work.uri)
+            val owned = work.retained == null || work.ownsRetained
+            var canRetryLegacy = false
             try {
                 photo.validateOriginal?.invoke()
                 val record = restore(photo.identity)
-                val restored = record?.settings ?: if (photo.hdrSource != null)
+                var restored = record?.settings ?: if (photo.hdrSource != null)
                     com.rawlab.android.settings.sourceDefaultSettings(true) else null
+                if (work.x3fModeOverride != null) restored = (restored ?: EditSettings()).copy(x3fMode = work.x3fModeOverride)
+                canRetryLegacy = photo.isX3f && (restored ?: EditSettings()).x3fMode == com.rawlab.android.settings.X3fMode.NORMAL
                 if (restored != null && runCatching { storage.lookPath(restored) }.isFailure) {
                     val native = engine()
                     native.setGpuMode(work.gpuMode)
                     val validation = native.preview(photo.file, null, restored.copy(film = "neutral", recipeID = null), 256, false, photo.inputKind, generation)
                     if (debuggable)
                         android.util.Log.i("RawLabImport", "missingLookValidationBackend=${validation.backend}")
-                    WorkResult.MissingLook(photo, restored, record)
+                    WorkResult.MissingLook(photo, restored, record, work.x3fModeOverride != null, owned)
                 } else perform(Work.Preview(photo, restored ?: EditSettings(), false, work.gpuMode,
-                    importing = true, restored = record?.settings != null, importedRecord = record), generation)
+                    importing = true, restored = record?.settings != null, importedRecord = record,
+                    persistOnImport = work.x3fModeOverride != null, ownsImportedInput = owned), generation)
             }
-            catch (error: Throwable) { if (work.retained == null) photo.file.delete(); throw error }
+            catch (error: Throwable) {
+                if (canRetryLegacy && error !is java.util.concurrent.CancellationException && error !is OutOfMemoryError)
+                    WorkResult.X3fImportFailure(work.copy(retained = photo, ownsRetained = owned,
+                        x3fModeOverride = com.rawlab.android.settings.X3fMode.LEGACY), error)
+                else { if (owned) photo.file.delete(); throw error }
+            }
         }
         is Work.Preview -> {
             if (work.photo.hdrSource != null && work.edits.isHDREditing) return performHDR(work, generation)
@@ -81,20 +91,20 @@ internal class EditorRenderer(
             val edge = work.edge
             val native = engine()
             native.setGpuMode(work.gpuMode)
-            val sourceKey = NeutralSourceKey(work.photo.identity, work.photo.file.absolutePath, work.photo.inputKind, work.edits.processing)
+            val sourceKey = NeutralSourceKey(work.photo.identity, work.photo.file.absolutePath, work.photo.inputKind, work.edits.processing, work.edits.x3fMode)
             if (original?.first != sourceKey) {
                 original = null
                 transformedNeutral = null
-                val source = native.preview(work.photo.file, null, EditSettings(processing = work.edits.processing), 1600, false, work.photo.inputKind, generation)
+                val source = native.preview(work.photo.file, null, EditSettings(processing = work.edits.processing, x3fMode = work.edits.x3fMode), 1600, false, work.photo.inputKind, generation)
                 originalAspect = source.geometryWidth.toFloat() / source.geometryHeight
                 original = sourceKey to ReferenceFrame(source.bitmap(), source.histogram)
             }
             val neutral = if (work.edits.geometry.isIdentity && !work.edits.lens.enabled) original!!.second else {
                 val key = ComparisonPreviewKey(work.photo.file.absolutePath, work.edits.geometry, work.edits.lens, edge, work.interactive,
-                    work.edits.processing, work.photo.identity, work.photo.inputKind)
+                    work.edits.processing, work.photo.identity, work.photo.inputKind, work.edits.x3fMode)
                 if (transformedNeutral?.first != key) {
                     transformedNeutral = null
-                    val comparison = EditSettings(geometry = work.edits.geometry, lens = work.edits.lens, processing = work.edits.processing)
+                    val comparison = EditSettings(geometry = work.edits.geometry, lens = work.edits.lens, processing = work.edits.processing, x3fMode = work.edits.x3fMode)
                     val frame = native.preview(work.photo.file, null, comparison, edge, work.interactive, work.photo.inputKind, generation)
                     transformedNeutral = key to ReferenceFrame(frame.bitmap(), frame.histogram)
                 }

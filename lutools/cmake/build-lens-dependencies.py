@@ -194,7 +194,8 @@ def main():
     prefix = (args.prefix or base / "install").resolve()
     glib_build = (args.glib_build or base / "glib").resolve()
     glib_prefix = (args.glib_prefix or prefix).resolve()
-    tools = base / "tools"
+    # 主工作区可共享同一宿主平台的固定版本 Meson/Ninja，目标编译产物仍留在 base。
+    tools = Path(os.environ.get("RAWLAB_LENS_TOOLS_CACHE", str(base / "tools"))).resolve()
     sources.mkdir(parents=True, exist_ok=True)
     glib_build.parent.mkdir(parents=True, exist_ok=True)
     glib_prefix.mkdir(parents=True, exist_ok=True)

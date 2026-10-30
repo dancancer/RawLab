@@ -13,7 +13,7 @@ public partial class MainWindow
     private const int MaxAIReprepareAttempts=3;
     private int RequestedAIBackend=>GpuMode.SelectedIndex==2 ? 3 : 2;
     private Adjustments AIWorkSettings { get { var snapshot=settings.Clone();snapshot.Lens=PreviewLens;return snapshot; } }
-    private bool CanStartAI=>file!=null && PhotoInput.IsRaw(file) && RenderEngine.AIAvailable && RenderEngine.AIHardwareAvailable &&
+    private bool CanStartAI=>file!=null && !PhotoInput.IsNormalX3f(file,settings) && PhotoInput.IsRaw(file) && RenderEngine.AIAvailable && RenderEngine.AIHardwareAvailable &&
         RenderEngine.HasBundledAIModel && RenderEngine.GetAIDevices().IsAvailable(aiPreference.DeviceID) && !exporting && !transform.Active && !closing;
     private bool AIResultReady
     {

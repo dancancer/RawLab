@@ -42,6 +42,7 @@ data class EditorState(
     val previewResizePending: Boolean = false,
     val exact: Boolean = false,
     val error: String? = null,
+    val retryLegacyX3f: Boolean = false,
     val saveState: EditSaveState = EditSaveState.NONE,
     val saveError: String? = null,
     val message: String? = null,

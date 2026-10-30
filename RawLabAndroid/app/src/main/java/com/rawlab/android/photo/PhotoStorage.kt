@@ -45,6 +45,7 @@ data class ImportedPhoto(val uri: Uri, val name: String, val file: File,
     val validateOriginal: (() -> Unit)? = null,
     val hdrSource: HDRSourceInfo? = null) {
     val isHDRSource get() = hdrSource != null
+    val isX3f get() = inputKind == PhotoInputKind.RAW && name.substringAfterLast('.', "").equals("x3f", ignoreCase = true)
 }
 
 internal fun albumAspectRatio(width: Int, height: Int, orientation: Int): Float? {
@@ -127,7 +128,7 @@ class PhotoStorage(
             ?: throw IOException("Selected item is not a supported photo")
         val validate = OriginalPhotoSource.capture(resolver, uri)
         val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot open input")
-        val file = WorkingCopy.import(directory, stream)
+        val file = WorkingCopy.import(directory, stream, name)
         try {
             validate()
             val hdrSource = if (inputKind == PhotoInputKind.RASTER &&

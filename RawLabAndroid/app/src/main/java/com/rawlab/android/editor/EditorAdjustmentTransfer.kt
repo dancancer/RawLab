@@ -54,7 +54,8 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
                     checkActive()
                     val validate = sourceValidator
                     val saved = store.versionedState(identity)
-                    val neutral = EditSettings(processing = saved.settings?.processing ?: EditSettings().processing)
+                    val neutral = EditSettings(processing = saved.settings?.processing ?: EditSettings().processing,
+                        x3fMode = saved.settings?.x3fMode ?: EditSettings().x3fMode)
                     val database = storage.lensDatabase()
                     val frame = NativeProcessor(NativeProcessor.CPU, database).use {
                         it.preview(photo.file, null, neutral, 128, false, photo.inputKind)

@@ -11,6 +11,41 @@ struct EditMemoryTests {
         let defaultObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(RawSettings.default)) as! [String: Any]
         check((defaultObject["processing"] as? [String: Any])?["version"] as? Int == 2,
               "new settings persist current processing identity")
+        check(defaultObject["x3fMode"] as? String == "normal-v1", "fresh settings select normal X3F rendering")
+        var oldObject = defaultObject
+        oldObject.removeValue(forKey: "x3fMode")
+        let oldSettings = try JSONDecoder().decode(RawSettings.self, from: JSONSerialization.data(withJSONObject: oldObject))
+        let oldEncoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(oldSettings.resettingAdjustments())) as! [String: Any]
+        check(oldEncoded["x3fMode"] as? String == "legacy", "old X3F records and reset preserve legacy pixels")
+        let freshEncoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(RawSettings.default.resettingAdjustments())) as! [String: Any]
+        check(freshEncoded["x3fMode"] as? String == "normal-v1", "fresh normal mode survives reset")
+        for (distortion, tca) in [(true, false), (false, true), (true, true)] {
+            var switched = RawSettings.default
+            switched.x3fMode = .legacy
+            switched.exposure = 0.25
+            switched.lutID = "preserved-look"
+            switched.lensCorrection = LensCorrectionSettings(distortion: distortion, tca: tca,
+                autoCrop: false, mode: .manual, profileID: "saved-lens-profile")
+            switched.selectX3fMode(.normal)
+            check(switched.x3fMode == .normal && !switched.lensSettings.isEnabled,
+                  "normal X3F switch disables distortion and TCA in the same candidate")
+            check(switched.lensSettings.profileID == "saved-lens-profile" &&
+                  switched.lensSettings.mode == .manual && !switched.lensSettings.autoCrop &&
+                  switched.exposure == 0.25 && switched.lutID == "preserved-look",
+                  "X3F switch preserves lens preferences and unrelated edits")
+            let reopened = try JSONDecoder().decode(RawSettings.self, from: JSONEncoder().encode(switched))
+            check(reopened == switched, "normal X3F with disabled lens settings survives persistence")
+            switched.selectX3fMode(.legacy)
+            check(!switched.lensSettings.isEnabled, "returning to legacy leaves lens correction disabled")
+        }
+        for mode: Any in [NSNull(), "future", 1] {
+            var invalid = defaultObject
+            invalid["x3fMode"] = mode
+            do {
+                _ = try JSONDecoder().decode(RawSettings.self, from: JSONSerialization.data(withJSONObject: invalid))
+                fatalError("invalid X3F mode was accepted")
+            } catch is DecodingError { }
+        }
         check(PhotoImportFile.sourceKind(for: URL(fileURLWithPath: "/tmp/sigma.X3F"))?.isRaw == true,
               "Sigma X3F imports as RAW even without a system UTI registration")
         let root = FileManager.default.temporaryDirectory
@@ -88,6 +123,7 @@ struct EditMemoryTests {
               "legacy reset remains legacy after saving and reopening")
         var scopedSource = RawSettings.default
         scopedSource.processing = .legacy
+        scopedSource.x3fMode = .legacy
         scopedSource.exposure = 1
         let scopedContext = EditorAdjustmentContext(isRaw: true, defaultExposureMode: .scene,
                                                      cameraTemperature: 5200, cameraTint: 8)
@@ -96,6 +132,7 @@ struct EditMemoryTests {
             fatalError("expected legacy reset candidate")
         }
         check(scopedReset.settings.processing == .legacy, "scoped reset all preserves legacy identity")
+        check(scopedReset.settings.x3fMode == .legacy, "scoped reset preserves legacy X3F identity")
         try store.save(resetIdentity, state: scopedReset)
         let scopedStore = try EditPersistence(directory: root)
         check(scopedStore.state(for: resetIdentity)?.settings.processing == .legacy,

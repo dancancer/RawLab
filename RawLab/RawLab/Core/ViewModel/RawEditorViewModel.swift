@@ -18,6 +18,7 @@ final class RawEditorViewModel: ObservableObject {
     @Published var basePreviewImage: UIImage?
     @Published var hasImage = false
     @Published var statusMessage: String?
+    @Published var retryLegacyX3fImport: ((@escaping (RawSettings) -> Void) -> Void)?
     @Published var isBusy = false
     @Published var previewRendering = false
     @Published var previewResizePending = false
@@ -34,6 +35,7 @@ final class RawEditorViewModel: ObservableObject {
         let identity: PhotoIdentity?
         let kind: ImageSourceKind?
         let processing: ProcessingIdentity
+        let x3fMode: X3fMode
         let geometry: GeometrySettings
         let lens: LensCorrectionSettings
         let longEdge: Int
@@ -70,6 +72,7 @@ final class RawEditorViewModel: ObservableObject {
     @Published var sourceFile: PhotoSourceFile?
     @Published var sourceRevision = UUID() { didSet { hslSourceRevision &+= 1; acceptedPreviewRequest = nil; closeQuickPresets() } }
     var sourceKind: ImageSourceKind?
+    var sourceIsX3f: Bool { sourceKind == .raw && (sourceDisplayName as NSString?)?.pathExtension.lowercased() == "x3f" }
     var sourceIdentity: PhotoIdentity?
     @Published var sourceDisplayName: String?
     var restoredSettings: RawSettings?

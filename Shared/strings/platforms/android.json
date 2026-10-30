@@ -50,6 +50,12 @@
       "source": "正在检查预设…",
       "types": []
     },
+    "x3f_retry_legacy": {"formats":[],"source":"使用旧版显影重试","file":"editor_strings.xml","types":[]},
+    "x3f_rendering": {"file":"editor_strings.xml","formats":[],"source":"X3F 显影","types":[]},
+    "x3f_normal": {"file":"editor_strings.xml","formats":[],"source":"正常显影","types":[]},
+    "x3f_legacy": {"file":"editor_strings.xml","formats":[],"source":"伪红外（旧版）","types":[]},
+    "x3f_relative_wb": {"file":"editor_strings.xml","formats":[],"source":"以文件保存的显影为基准，白平衡作相对调整。","types":[]},
+    "x3f_legacy_description": {"file":"editor_strings.xml","formats":[],"source":"保留旧版的特殊色彩。","types":[]},
     "adjustment_summary_overwrite": {
       "file": "editor_strings.xml", "formats": ["%1$d"],
       "source": "将覆盖以下 {0} 项调整；其他调整保留目标原值。", "types": ["d"]

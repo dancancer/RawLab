@@ -59,6 +59,7 @@ public sealed class Adjustments
     private double[] values = [100,0,6500,0,0,0,0,0,0,0];
     private GeometrySettings geometry = new();
     public ProcessingIdentity Processing { get; set; } = ProcessingIdentity.Current;
+    public X3fMode X3fMode { get; set; } = X3fMode.Normal;
     public HDRSettings? HDR { get; set; }
     public bool IsHDREditing => HDR?.Mode == HDRMode.Hdr;
     public int ExposureMode { get; set; } = 1;
@@ -156,7 +157,7 @@ public sealed class Adjustments
         if (HDR is { } hdr && !hdr.IsValid) throw new System.IO.InvalidDataException(Loc.Text("HDR 调整记录无效，原有文件未被覆盖。"));
         return new((double[])values.Clone(), ExposureMode, CameraWhiteBalance, AsShot?.Temperature, AsShot?.Tint,
         Denoise, Effects, DisplayChromaDenoise, Hsl, MasterRecipeID, Lens, geometry) {
-        Processing = ProcessingIdentity.Require(Processing), AIDenoiseEnabled = AIDenoiseEnabled,
+        Processing = ProcessingIdentity.Require(Processing), X3fMode = X3fMode, AIDenoiseEnabled = AIDenoiseEnabled,
         MasterRecipeSettingsVersion = MasterRecipeSettingsVersion,
         HDR = HDR,
         Atmosphere = Atmosphere.IsIdentity ? null : Atmosphere,
@@ -167,6 +168,7 @@ public sealed class Adjustments
     }
     public static Adjustments FromSnapshot(AdjustmentSnapshot snapshot)
     {
+        if (!Enum.IsDefined(snapshot.X3fMode)) throw new System.IO.InvalidDataException("Invalid X3F rendering mode");
         if (snapshot.MasterRecipeSettingsVersion is not (2 or 3 or 4))
             throw new System.IO.InvalidDataException("Invalid master recipe version");
         if (snapshot.Values.Length != ParameterSpec.All.Length || snapshot.ExposureMode is < 0 or > 2 ||
@@ -190,6 +192,7 @@ public sealed class Adjustments
             throw new System.IO.InvalidDataException("调整记录中的显示色彩降噪模式无效，原有文件未被覆盖。");
         var result = new Adjustments {
             Processing = ProcessingIdentity.Require(snapshot.Processing),
+            X3fMode = snapshot.X3fMode,
             Denoise = denoise,
             AIDenoiseEnabled = snapshot.AIDenoiseEnabled,
             Effects = effects,

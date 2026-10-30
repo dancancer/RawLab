@@ -7,9 +7,10 @@ internal class RenderQueue<T, R>(
     private val publish: (Long, Result<R>) -> Unit,
     private val release: () -> Unit,
     private val discard: (R) -> Unit = {},
+    private val discardPending: (T) -> Unit = {},
 ) : AutoCloseable {
     constructor(render: (T) -> R, publish: (Long, Result<R>) -> Unit, release: () -> Unit,
-        discard: (R) -> Unit = {}) : this({ value, _ -> render(value) }, publish, release, discard)
+        discard: (R) -> Unit = {}, discardPending: (T) -> Unit = {}) : this({ value, _ -> render(value) }, publish, release, discard, discardPending)
 
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "rawlab-render") }
     private val lock = Any()
@@ -24,6 +25,7 @@ internal class RenderQueue<T, R>(
         check(!closed)
         revision += 1
         active?.cancel()
+        pending?.value?.let(discardPending)
         pending = Task(revision, value)
         if (!running) {
             running = true
@@ -59,6 +61,7 @@ internal class RenderQueue<T, R>(
     override fun close() = synchronized(lock) {
         if (!closed) {
             closed = true
+            pending?.value?.let(discardPending)
             pending = null
             active?.cancel()
             worker.execute { try { release() } finally { worker.shutdown() } }

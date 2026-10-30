@@ -204,7 +204,14 @@ struct ContentView: View {
             get: { viewModel.statusMessage != nil },
             set: { if !$0, viewModel.statusMessage != nil { viewModel.statusMessage = nil } }
         )) {
-            Button(L10n.text("关闭"), role: .cancel) { viewModel.statusMessage = nil }
+            if let retry = viewModel.retryLegacyX3fImport {
+                Button(L10n.text("使用旧版显影重试")) { retry { settings = $0 } }
+                    .accessibilityIdentifier("x3f.retryLegacy")
+            }
+            Button(L10n.text("关闭"), role: .cancel) {
+                viewModel.statusMessage = nil
+                viewModel.retryLegacyX3fImport = nil
+            }
         } message: {
             ScrollView {
                 Text(viewModel.statusMessage ?? "")

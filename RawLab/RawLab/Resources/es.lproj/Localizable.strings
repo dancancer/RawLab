@@ -57,6 +57,7 @@
 "Selected item is not a supported image." = "El elemento seleccionado no es una imagen compatible.";
 "Sony2Fuji output copy failed." = "Error al copiar la salida de Sony2Fuji.";
 "Sony2Fuji session create failed: %@" = "Error al crear la sesión de Sony2Fuji: %@";
+"X3F 显影" = "Revelado X3F";
 "三分网格" = "Cuadrícula de tercios";
 "三线性" = "Trilineal";
 "上下拖动调整，方向键微调，Esc 取消" = "Arrastra hacia arriba o abajo para ajustar, usa las flechas para cambios precisos y Esc para cancelar";
@@ -89,14 +90,17 @@
 "从照片库选择" = "Elegir de la biblioteca de fotos";
 "以下为配方逻辑值；强度为 %@。部分范围会按此强度换算。" = "Estos son valores lógicos de la receta; la intensidad es %@. Algunos campos se escalan con esta intensidad.";
 "以下目标尚未完成本次历史操作，请检查原因后重试。" = "La operación de historial no se ha completado para estas fotos. Comprueba el motivo y vuelve a intentarlo.";
+"以文件保存的显影为基准，白平衡作相对调整。" = "Usa el revelado guardado como base, con ajustes relativos del balance de blancos.";
 "任务使用的外观文件不可用，请重新创建任务。" = "El archivo de look que usa la tarea no está disponible. Vuelve a crear la tarea.";
 "任务已保存，请继续导出。" = "La tarea está guardada. Continúa la exportación.";
 "任务操作" = "Acciones de la tarea";
 "任务未保存：%@" = "Tarea no guardada: %@";
 "传感器基准" = "Referencia del sensor";
+"伪红外（旧版）" = "Falso infrarrojo (anterior)";
 "位置与尺寸" = "Posición y tamaño";
 "使用 RawLab 中性显影作为基础，不代表还原了相机的标准风格。" = "Usa el revelado neutro de RawLab como base. No reproduce el estilo estándar de la cámara.";
 "使用当前调整批量导出…" = "Exportar por lotes con los ajustes actuales…";
+"使用旧版显影重试" = "Reintentar con el revelado anterior";
 "使用统计已关闭。" = "El análisis de uso está desactivado.";
 "依据部分文件线索 · 仍有假设" = "Indicios parciales del archivo · Aún hay hipótesis";
 "保井崇志" = "Takashi Yasui";
@@ -112,6 +116,7 @@
 "保存时发生中断，请先核对照片图库，避免重复生成。" = "La escritura se interrumpió. Comprueba Fotos antes de volver a generar.";
 "保存结果待确认" = "Se debe confirmar el resultado guardado";
 "保存预设" = "Guardar ajuste preestablecido";
+"保留旧版的特殊色彩。" = "Conserva los colores particulares del revelado anterior.";
 "保留这次几何或镜头修改？" = "¿Conservar estos cambios de geometría u objetivo?";
 "候选效果" = "Resultados candidatos";
 "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。" = "Color falso: azul en sombras, ámbar sobre el blanco de referencia, rosa sobre la capacidad de la pantalla.";
@@ -465,6 +470,7 @@
 "正在生成效果预览…" = "Generando vista previa del resultado…";
 "正在生成预览…" = "Generando vistas previas…";
 "正在读取镜头信息…" = "Leyendo información de lente…";
+"正常显影" = "Revelado normal";
 "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。" = "Este LUT no tiene toda la información de color. Confirma cómo aplicarlo. Se marcará como compatible, con un resultado sin verificar.";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "No se pudo analizar el balance de blancos de toma de este RAW; no se puede aplicar el matiz de la receta.";
 "此像素不可取样。" = "No se puede tomar una muestra de este píxel.";

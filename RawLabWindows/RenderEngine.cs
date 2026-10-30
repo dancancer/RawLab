@@ -16,7 +16,7 @@ internal sealed partial class RenderEngine : IDisposable
     private readonly StatisticsAnalyzer statisticsAnalyzer;
     private sealed record Stamp(string Path,long Length,long Time,long Created=0);
     private sealed record PreviewKey(Native.Request Request,DenoiseSettings Denoise,PhotoEffectsSettings Effects,ToneControlsSettings ToneControls,AtmosphereSettings Atmosphere,ColorGradingSettings ColorGrading,ToneCurveSettings Curve,int DisplayChromaDenoise,
-        int ExposureMode,HslSettings Hsl,LensSettings Lens,GeometrySettings Geometry,ProcessingIdentity Processing,int RecipeSettingsVersion,double Strength,bool AIEnabled,int Mode,bool Compare,bool Clipping,Stamp Raw,Stamp? Lut,HDRSettings? HDR,string? SourceFingerprint);
+        int ExposureMode,HslSettings Hsl,LensSettings Lens,GeometrySettings Geometry,ProcessingIdentity Processing,X3fMode X3fMode,int RecipeSettingsVersion,double Strength,bool AIEnabled,int Mode,bool Compare,bool Clipping,Stamp Raw,Stamp? Lut,HDRSettings? HDR,string? SourceFingerprint);
     private readonly string lensDatabase;
     private Stamp? lensStamp;
     private LensCandidate[] lensCandidates = [];
@@ -59,7 +59,7 @@ internal sealed partial class RenderEngine : IDisposable
             return AutoExposureHDRSource(path, settings,info!);
         settings = PrepareRecipe(path, settings);
         EnsureInput(path);
-        SetProcessing(settings.Processing);SetTone(settings.RenderToneControls);SetAtmosphere(settings.RenderAtmosphere);SetGrading(settings.RenderGrading);SetCurve(settings.RenderCurve);
+        SetProcessing(settings.Processing);SetX3f(path,settings);SetTone(settings.RenderToneControls);SetAtmosphere(settings.RenderAtmosphere);SetGrading(settings.RenderGrading);SetCurve(settings.RenderCurve);
         ConfigureAI(settings.AIDenoiseEnabled);
         SetLens(settings.Lens);
         SetGeometry(settings.Geometry);
@@ -68,7 +68,7 @@ internal sealed partial class RenderEngine : IDisposable
         SetInput(ref request,path);
         aiNativeOperationStarted=true;
         var status=Native.sony2fuji_session_estimate_auto_exposure(session,ref request,out var ev);
-        if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status);
+        if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status,session);
         return ev;
     }
 
@@ -80,7 +80,7 @@ internal sealed partial class RenderEngine : IDisposable
         var prepared = PrepareRequest(path, settings, null, 256, false, null, null, true, input.Buffer);
         var request = prepared.Item2;
         var status = Native.sony2fuji_session_estimate_auto_exposure(session, ref request, out var ev);
-        if (settings.AIDenoiseEnabled) CheckAI(status); else Native.Check(status);
+        if (settings.AIDenoiseEnabled) CheckAI(status); else Native.Check(status,session);
         return ev;
     }
     public PreviewFrame RenderPreview(string path,Adjustments settings,string? lut,int edge,bool interactive,bool compare,bool clipping)
@@ -100,11 +100,11 @@ internal sealed partial class RenderEngine : IDisposable
         var sourceFingerprint=PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path,out var info)==HDRProbeState.Supported
             ? Convert.ToHexString(info!.SourceSha256) : null;
         var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.Effects,settings.ToneControls,settings.Atmosphere,settings.ColorGrading,settings.Curve,settings.DisplayChromaDenoise,
-            settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,settings.MasterRecipeSettingsVersion,settings[Parameter.Strength],settings.AIDenoiseEnabled,gpuMode,compare,clipping,rawStamp,lutStamp,settings.HDR,sourceFingerprint);
+            settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,settings.X3fMode,settings.MasterRecipeSettingsVersion,settings[Parameter.Strength],settings.AIDenoiseEnabled,gpuMode,compare,clipping,rawStamp,lutStamp,settings.HDR,sourceFingerprint);
         var fingerprintChanged=previewKey?.SourceFingerprint!=sourceFingerprint;
         if(previewKey!=key){previews.Clear();previewKey=key;}
         var referenceKey=new NeutralReferenceKey(new(rawStamp.Path,rawStamp.Length,rawStamp.Time,rawStamp.Created),
-            PhotoInput.IsRaster(path),settings.Processing,settings.Geometry,settings.Lens,edge,settings.IsHDREditing);
+            PhotoInput.IsRaster(path),settings.Processing,settings.Geometry,settings.Lens,edge,settings.IsHDREditing,settings.X3fMode);
         if(original?.Key!=referenceKey || fingerprintChanged)original=null;
         var cacheEdge=edge;
         // AI 模型或磁盘结果可在 WPF 帧之外变化，必须经过 native 的完整性与身份检查。
@@ -158,7 +158,7 @@ internal sealed partial class RenderEngine : IDisposable
             var status = Native.sony2fuji_process(session,ref request,out buffer);
             if (output != null && (status == 6 || (status == 3 && format != ExportFormat.RenderedDng)))
                 throw new OutputWriteException(Loc.Text("无法写入成片，请检查输出位置和剩余空间。"));
-            if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status);
+            if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status,session);
             if (output != null) {
                 if (format != ExportFormat.RenderedDng)
                 {
@@ -181,11 +181,12 @@ internal sealed partial class RenderEngine : IDisposable
             float baseline=0,temperature=6500,tint=0;
             var raster=LibraryEntry.IsRaster(path);
             if(!raster)Native.Check(Native.sony2fuji_session_get_raw_exposure(session,out baseline,out _));
-            var calibrated = !raster && Native.sony2fuji_session_get_raw_white_balance(session,out temperature,out tint) == 0;
+            var normalX3f=PhotoInput.IsNormalX3f(path,settings);
+            var calibrated = normalX3f || !raster && Native.sony2fuji_session_get_raw_white_balance(session,out temperature,out tint) == 0;
             var count = (double)buffer.Width * buffer.Height;
             // Statistics consume RGBA before the private output buffers are swizzled for WPF.
             return new(Bitmap(buffer),!statisticsAvailable || mask.Data==IntPtr.Zero ? null : Bitmap(mask,false),bins,shadows/count,highlights/count,baseline,
-                calibrated ? RoundCameraWhiteBalance(temperature,tint) : null,LastBackend,raster ? null : ReadLens(path),checked((int)nativeWidth),checked((int)nativeHeight));
+                calibrated ? RoundCameraWhiteBalance(temperature,tint) : null,LastBackend,raster || normalX3f ? null : ReadLens(path),checked((int)nativeWidth),checked((int)nativeHeight));
         }
         finally { Native.sony2fuji_release_buffer(ref buffer); Native.sony2fuji_release_buffer(ref mask); }
     }
@@ -260,7 +261,7 @@ internal sealed partial class RenderEngine : IDisposable
     {
         settings = PrepareRecipe(path, settings);
         if (inputOverride == null) EnsureInput(path);
-        SetProcessing(settings.Processing);SetTone(settings.RenderToneControls);SetAtmosphere(settings.RenderAtmosphere);SetGrading(settings.RenderGrading);SetCurve(settings.RenderCurve);
+        SetProcessing(settings.Processing);SetX3f(path,settings);SetTone(settings.RenderToneControls);SetAtmosphere(settings.RenderAtmosphere);SetGrading(settings.RenderGrading);SetCurve(settings.RenderCurve);
         ConfigureAI(settings.AIDenoiseEnabled);
         SetLens(settings.Lens);
         SetGeometry(settings.Geometry);
@@ -298,7 +299,7 @@ internal sealed partial class RenderEngine : IDisposable
         try {
             aiNativeOperationStarted=true;
             var status=Native.sony2fuji_session_create_hsl_probe(session,ref request,revision.Source,revision.Request,out probe);
-            if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status);
+            if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status,session);
             var query=new Native.HslProbeQuery {Version=1,StructSize=(uint)Marshal.SizeOf<Native.HslProbeQuery>(),SourceRevision=revision.Source,RequestRevision=revision.Request,X=(float)x,Y=(float)y};
             Native.Check(Native.sony2fuji_hsl_probe_sample(probe,ref query,out var sample));
             if(sample.SourceRevision!=revision.Source || sample.RequestRevision!=revision.Request)
@@ -334,6 +335,13 @@ internal sealed partial class RenderEngine : IDisposable
         var config = value.NativeConfig();
         Native.Check(Native.sony2fuji_session_set_tone_controls(session, ref config));
     }
+    internal static bool X3fAvailable => Native.sony2fuji_x3f_available() != 0;
+    private void SetX3f(string path, Adjustments settings)
+    {
+        if (PhotoInput.IsNormalX3f(path,settings) && settings.AIDenoiseEnabled)
+            throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
+        Native.Check(Native.sony2fuji_session_set_x3f_mode(session,settings.X3fMode));
+    }
     private void SetProcessing(ProcessingIdentity value) =>
         Native.Check(Native.sony2fuji_session_set_processing_version(session,ProcessingIdentity.Require(value).Version));
     private void SetLens(LensSettings value)
@@ -367,8 +375,11 @@ internal sealed partial class RenderEngine : IDisposable
     {
         if(LibraryEntry.IsRaster(path))return PrepareInputSettings(path,settings);
         if (settings.MasterRecipeID == null || (settings.CameraWhiteBalance && settings[Parameter.Tint] * settings[Parameter.Strength] == 0)) return settings;
+        if (PhotoInput.IsNormalX3f(path,settings)) {
+            var relative = settings.Clone(); relative.ResolveWhiteBalance((6500,0)); return relative;
+        }
         // 配方色调属于目标 RAW 的拍摄白平衡，不沿用冻结来源的相机值。
-        var neutral = new Adjustments { ExposureMode = settings.ExposureMode, Processing = settings.Processing };
+        var neutral = new Adjustments { ExposureMode = settings.ExposureMode, Processing = settings.Processing, X3fMode = settings.X3fMode };
         var camera = Render(path, neutral, null, 32, statistics: false, clipping: false)?.WhiteBalance
             ?? throw new InvalidOperationException(Loc.Text("此 RAW 无法解析拍摄白平衡，不能应用配方色调。"));
         var prepared = settings.Clone();

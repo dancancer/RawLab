@@ -255,7 +255,7 @@ extension RawEditorViewModel {
         DispatchQueue.global(qos: .userInitiated).async {
             sourceFile.withReadAccess { url in
                 do {
-                    let rawPreview = try self.buildRawPreviewBase(url: url, geometry: settings.geometry, processing: settings.processing, lens: settings.lensSettings)
+                    let rawPreview = try self.buildRawPreviewBase(url: url, geometry: settings.geometry, processing: settings.processing, x3fMode: settings.x3fMode, lens: settings.lensSettings)
                     let previewResult = try self.processor.processRaw(
                         url: url,
                         settings: settings,

@@ -246,7 +246,7 @@ void invalidFields() {
              {replaceOnce(minimal, R"("edits":{"exposure":{"mode":"scene"}},)", ""), "recipe.edits"},
              {replaceOnce(minimal, R"("output":{"path":"out.jpg","format":"jpeg"})", R"("output":{})"), "output.path"},
              {replaceOnce(minimal, R"("format":"jpeg")", R"("format":null)"), "output.format"},
-             {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":7)"), "schema_version"},
+             {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":8)"), "schema_version"},
              {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":0)"), "schema_version"},
              {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":1.0)"), "schema_version"},
              {replaceOnce(minimal, R"("schema_version":1)", R"("schema_version":"1")"), "schema_version"},
@@ -372,6 +372,22 @@ void atmosphereCompatibility() {
 
 int main() {
     try {
+        {
+            sony2fuji::EditRecipe x3f;
+            x3f.inputPath = "photo.X3F"; x3f.outputPath = "photo.png";
+            x3f.schemaVersion = 7; x3f.x3fMode = SONY2FUJI_X3F_NORMAL;
+            const auto serialized = sony2fuji::serializeEditRecipe(x3f);
+            sony2fuji::EditRecipe restored; std::string error;
+            check(sony2fuji::parseEditRecipe(serialized, restored, error) && restored.x3fMode == SONY2FUJI_X3F_NORMAL,
+                "v7 preserves normal X3F identity");
+            check(!sony2fuji::parseEditRecipe(replaceOnce(serialized,"normal-v1","future"), restored, error),
+                "unknown X3F mode rejected");
+            check(x3f.toRequest().input_type == SONY2FUJI_INPUT_RAW, "v7 maps to the RAW request rather than HDR");
+            x3f.schemaVersion = 5;
+            bool rejected = false;
+            try { sony2fuji::serializeEditRecipe(x3f); } catch (const std::invalid_argument&) { rejected = true; }
+            check(rejected,"old schemas cannot silently discard normal X3F identity");
+        }
         defaultsAndExposure();
         whiteBalanceAndLook();
         outputAndRoundTrip();

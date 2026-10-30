@@ -47,7 +47,7 @@ int main() {
         invalid=document; invalid["output"]["format"]="jpeg"; reject(invalid,"output.format");
         invalid=document; invalid["output"].erase("base_color"); reject(invalid,"base_color");
         invalid=document; invalid["output"]["base_color"]="bt2020"; reject(invalid,"base_color");
-        invalid=document; invalid["schema_version"]=7; reject(invalid,"schema_version");
+        invalid=document; invalid["schema_version"]=8; reject(invalid,"schema_version");
         invalid=document; invalid["schema_version"]=5; reject(invalid,"processing.family");
         bool refused=false;
         try { recipe.toRequest(); } catch (const std::invalid_argument&) { refused=true; }

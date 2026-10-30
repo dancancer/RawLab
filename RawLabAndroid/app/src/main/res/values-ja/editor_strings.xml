@@ -445,4 +445,10 @@
     <string name="vibrance">"自然な彩度"</string>
     <string name="vignette_highlights_unavailable">"周辺減光の強度が負の値の場合のみ使用できます。"</string>
     <string name="white_point">"白レベル"</string>
+    <string name="x3f_legacy">"擬似赤外線（従来）"</string>
+    <string name="x3f_legacy_description">"従来の現像による独特な色を保持します。"</string>
+    <string name="x3f_normal">"通常現像"</string>
+    <string name="x3f_relative_wb">"保存済みの現像を基準に、ホワイトバランスを相対調整します。"</string>
+    <string name="x3f_rendering">"X3F 現像"</string>
+    <string name="x3f_retry_legacy">"旧版の現像で再試行"</string>
 </resources>
