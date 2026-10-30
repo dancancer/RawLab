@@ -310,6 +310,13 @@
     <string name="preset_new_name">"Nuevo ajuste preestablecido"</string>
     <string name="preset_overwrite">"Sobrescribir"</string>
     <string name="preset_overwrite_confirm">"¿Sobrescribir el ajuste?"</string>
+    <string name="preset_quick_apply_current">"Aplicar a la foto actual"</string>
+    <string name="preset_quick_apply_multiple">"Aplicar a varias fotos"</string>
+    <string name="preset_quick_checking">"Comprobando ajuste preestablecido…"</string>
+    <string name="preset_quick_error_incompatible">"Este ajuste no es compatible con la foto actual. Elige otro ajuste."</string>
+    <string name="preset_quick_error_mode">"Este ajuste incluye balance de blancos HDR relativo, que el modo de edición actual no admite."</string>
+    <string name="preset_quick_error_preserve">"Este ajuste no puede conservar los demás ajustes de la foto. Elige otro ajuste."</string>
+    <string name="preset_quick_manage">"Gestionar ajustes preestablecidos"</string>
     <string name="preset_reload">"Recargar"</string>
     <string name="preset_rename">"Renombrar ajuste preestablecido"</string>
     <string name="preset_rename_action">"Renombrar"</string>
@@ -430,4 +437,10 @@
     <string name="vibrance">"Intensidad"</string>
     <string name="vignette_highlights_unavailable">"Disponible solo cuando la intensidad de la viñeta es negativa."</string>
     <string name="white_point">"Punto blanco"</string>
+    <string name="x3f_legacy">"Falso infrarrojo (anterior)"</string>
+    <string name="x3f_legacy_description">"Conserva los colores particulares del revelado anterior."</string>
+    <string name="x3f_normal">"Revelado normal"</string>
+    <string name="x3f_relative_wb">"Usa el revelado guardado como base, con ajustes relativos del balance de blancos."</string>
+    <string name="x3f_rendering">"Revelado X3F"</string>
+    <string name="x3f_retry_legacy">"Reintentar con el revelado anterior"</string>
 </resources>

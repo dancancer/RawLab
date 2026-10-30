@@ -129,7 +129,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             effective.displayChromaDenoise, effective.effects.vignetteAmount, effective.effects.vignetteMidpoint,
             effective.effects.vignetteRoundness, effective.effects.vignetteFeather, effective.effects.vignetteHighlights,
             effective.effects.grainAmount, effective.effects.grainSize, effective.effects.grainRoughness,
-            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, effective.processing.version, null,
+            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, effective.processing.version, effective.x3fMode.nativeValue, null,
             revision?.source ?: 0, revision?.request ?: 0, probe, cancellationGeneration)
     }
 
@@ -173,9 +173,9 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             effective.displayChromaDenoise, effective.effects.vignetteAmount, effective.effects.vignetteMidpoint,
             effective.effects.vignetteRoundness, effective.effects.vignetteFeather, effective.effects.vignetteHighlights,
             effective.effects.grainAmount, effective.effects.grainSize, effective.effects.grainRoughness,
-            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, effective.processing.version, backend)
+            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, effective.processing.version, effective.x3fMode.nativeValue, backend)
         check(backend[0] >= 0) { "Native export did not report a backend" }
-        if (format != ExportFormat.DNG) ExportMetadata.preserve(input, output)
+        if (format != ExportFormat.DNG) ExportMetadata.preserve(input, output, allowUnreadableSource = PhotoFiles.isX3f(input))
         return backend[0]
     }
 
@@ -194,7 +194,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
         return nativeAutoExposure(handle, input.path, pixels?.bitmap, pixels?.width ?: 0, pixels?.height ?: 0,
             if (pixels == null) 0 else 1, effective.customWb, effective.temperature, effective.tint,
-            effective.exposureMode, effective.recipeID != null, effective.strength, effective.processing.version)
+            effective.exposureMode, effective.recipeID != null, effective.strength, effective.processing.version, effective.x3fMode.nativeValue)
     }
 
     @Synchronized
@@ -286,7 +286,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     private external fun nativeDestroy(handle: Long)
     private external fun nativeAutoExposure(handle: Long, input: String, pixels: Bitmap?, width: Int, height: Int,
         pixelFormat: Int, customWb: Boolean,
-        temperature: Float, tint: Float, exposureMode: Int, recipeActive: Boolean, strength: Float, processingVersion: Int): Float
+        temperature: Float, tint: Float, exposureMode: Int, recipeActive: Boolean, strength: Float, processingVersion: Int, x3fMode: Int): Float
     private external fun nativeProcess(handle: Long, input: String, pixels: Bitmap?, width: Int, height: Int,
         pixelFormat: Int, lut: String?, output: String?,
         strength: Float, exposure: Float, customWb: Boolean, temperature: Float, tint: Float,
@@ -295,11 +295,12 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         denoiseEnabled: Boolean, luma: Float, chroma: Float, coarse: Float, displayChromaDenoise: Int,
         vignetteAmount: Float, vignetteMidpoint: Float, vignetteRoundness: Float, vignetteFeather: Float,
         vignetteHighlights: Float, grainAmount: Float, grainSize: Float, grainRoughness: Float,
-        exposureMode: Int, hsl: FloatArray, recipeActive: Boolean, processingVersion: Int, backend: IntArray? = null,
+        exposureMode: Int, hsl: FloatArray, recipeActive: Boolean, processingVersion: Int, x3fMode: Int, backend: IntArray? = null,
         sourceRevision: Long = 0, requestRevision: Long = 0, hslProbe: FloatArray? = null,
         cancellationGeneration: Long = -1L): NativeFrame?
 
     companion object {
+        @JvmStatic external fun nativeX3fAvailable(): Boolean
         const val CPU = 0
         const val AUTO = 1
         const val FORCE = 2

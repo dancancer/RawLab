@@ -2,6 +2,8 @@ import SwiftUI
 
 struct AdjustmentPresetView: View {
     @ObservedObject var model: EditorModel
+    var startSaving = false
+    let onApplyCurrent: (AdjustmentPreset) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var presets: [AdjustmentPreset] = []
     @State private var libraryError: String?
@@ -56,7 +58,7 @@ struct AdjustmentPresetView: View {
                 }.padding(24).frame(width: 600).frame(minHeight: 380, maxHeight: 680).tint(.yellow)
             }
         }
-        .onAppear(perform: reload)
+        .onAppear { reload(); if startSaving && libraryError == nil { startEditor() } }
         .sheet(isPresented: Binding(get: { model.geometryDraftDeparturePending }, set: { _ in })) {
             MacGeometryDeparturePrompt(model: model)
         }
@@ -76,10 +78,7 @@ struct AdjustmentPresetView: View {
     private var libraryContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             Button(L10n.text("保存当前调整为预设…")) {
-                model.preparePresetAction {
-                    name = L10n.text("新预设"); scope = "custom"; fields = model.settings.isHDREditing ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common
-                    renaming = nil; message = nil; editing = true; nameFocused = true
-                }
+                model.preparePresetAction(startEditor)
             }.buttonStyle(.borderedProminent).disabled(!model.canUsePresetPhoto || libraryError != nil)
                 .accessibilityIdentifier("preset.create")
             if let libraryError {
@@ -103,10 +102,12 @@ struct AdjustmentPresetView: View {
                                     Text(preset.name).font(.headline).lineLimit(2).help(preset.name)
                                     Text(L10n.format("已选 %@ 项", String(preset.payload.fields.count))).font(.caption).foregroundStyle(.secondary)
                                 }.frame(maxWidth: .infinity, alignment: .leading)
-                                Button(L10n.text("应用")) {
-                                    model.preparePresetAction { applying = preset; message = nil }
-                                }.disabled(!model.canUsePresetPhoto).accessibilityIdentifier("preset.apply.\(preset.id)")
+                                Button(L10n.text("应用到当前照片")) { onApplyCurrent(preset) }
+                                    .disabled(!model.canUsePresetPhoto).accessibilityIdentifier("preset.apply.\(preset.id)")
                                 Menu {
+                                    Button(L10n.text("应用到多张照片")) {
+                                        model.preparePresetAction { applying = preset; message = nil }
+                                    }.disabled(!model.canUsePresetPhoto)
                                     Button(L10n.text("重命名")) { renaming = preset; name = preset.name; message = nil; editing = true; nameFocused = true }
                                     Button(L10n.text("删除"), role: .destructive) { confirmation = .delete(preset) }
                                 } label: { Image(systemName: "ellipsis") }
@@ -147,6 +148,11 @@ struct AdjustmentPresetView: View {
             do { _ = try model.presetStore.create(name: name, payload: payload); saved() }
             catch AdjustmentPresetError.duplicateName(let existing) { confirmation = .overwrite(existing, payload) }
         } catch { message = model.presetErrorMessage(error) }
+    }
+    private func startEditor() {
+        name = L10n.text("新预设"); scope = "custom"
+        fields = model.settings.isHDREditing ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common
+        renaming = nil; message = nil; editing = true; nameFocused = true
     }
     private func perform(_ action: () throws -> Void) {
         do { try action(); saved() }

@@ -36,20 +36,23 @@ internal object ExportMetadata {
         TAG_GPS_DIFFERENTIAL, TAG_GPS_H_POSITIONING_ERROR,
     )
 
-    fun preserve(input: File, output: File) {
+    fun preserve(input: File, output: File, allowUnreadableSource: Boolean = false) {
         require(input.canonicalPath != output.canonicalPath)
-        val source = ExifInterface(input)
+        val source = try { ExifInterface(input) } catch (error: java.io.IOException) {
+            if (!allowUnreadableSource) throw error
+            null
+        }
         val destination = ExifInterface(output)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(output.path, bounds)
         check(bounds.outWidth > 0 && bounds.outHeight > 0) { "Cannot read exported image dimensions" }
         for (tag in captureTags) {
-            source.getAttribute(tag)?.let { destination.setAttribute(tag, it) }
+            source?.getAttribute(tag)?.let { destination.setAttribute(tag, it) }
         }
-        aperture(source.getAttributeDouble(TAG_F_NUMBER, Double.NaN))?.let {
+        aperture(source?.getAttributeDouble(TAG_F_NUMBER, Double.NaN) ?: Double.NaN)?.let {
             destination.setAttribute(TAG_F_NUMBER, it)
         }
-        shutter(source.getAttributeDouble(TAG_EXPOSURE_TIME, Double.NaN))?.let {
+        shutter(source?.getAttributeDouble(TAG_EXPOSURE_TIME, Double.NaN) ?: Double.NaN)?.let {
             destination.setAttribute(TAG_EXPOSURE_TIME, it)
         }
         destination.setAttribute(TAG_ORIENTATION, ORIENTATION_NORMAL.toString())

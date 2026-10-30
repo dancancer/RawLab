@@ -50,12 +50,13 @@ enum ExportMetadata {
     }
 
     static func jpegData(image: CGImage, sourceURL: URL, orientation: CGImagePropertyOrientation,
-                         quality: CGFloat) throws -> Data {
+                         quality: CGFloat, fallbackSourceProperties: [CFString: Any]? = nil) throws -> Data {
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else {
             throw Failure.invalidDestination
         }
-        var values = try properties(from: sourceURL, width: image.width, height: image.height, orientation: orientation)
+        var values = try properties(from: sourceURL, width: image.width, height: image.height, orientation: orientation,
+                                    fallbackSourceProperties: fallbackSourceProperties)
         values[kCGImageDestinationLossyCompressionQuality] = quality
         CGImageDestinationAddImage(destination, image, values as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { throw Failure.cannotWriteMetadata }

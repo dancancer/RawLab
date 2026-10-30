@@ -168,7 +168,7 @@ class StructuredSettingsCodecTest {
     @Test fun oldFilmNamesWithVersionPrefixRemainReadable() {
         for (name in listOf("v2:custom-look", "v2:{custom-look}", "v3:future-named-look")) {
             val settings = EditSettings(film = name)
-            assertEquals(settings, SettingsCodec.decode(legacyPipeSettings(settings)))
+            assertEquals(settings.copy(x3fMode = X3fMode.LEGACY), SettingsCodec.decode(legacyPipeSettings(settings)))
         }
     }
 

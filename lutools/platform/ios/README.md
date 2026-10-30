@@ -21,6 +21,12 @@ C5 在 CPU 上分块滤波；Auto 可以继续 Metal 显示渲染，Force 不支
 
 ## 1. 构建准备 / Build Prerequisites
 
+正常 X3F 显影需要 Rust 1.88+（CI 使用 1.99.1）、Python 3.11+ 和宿主 libclang。
+安装 `aarch64-apple-ios`、`aarch64-apple-ios-sim`、`x86_64-apple-ios` 目标及
+`rust-docs`；构建脚本为每个切片设置匹配的 Xcode SDK，许可随框架打包。
+`RAWLAB_IOS_SOURCE_CACHE` 可指向共享源码下载目录，编译结果仍按架构隔离。
+支持的机型和保存参数见 [X3F 契约](../../docs/x3f-rendering.md)。
+
 需要 macOS、完整 Xcode/iOS SDK、CMake 和 curl。从仓库根目录运行以下入口，自动下载并校验 LibRaw 0.22.2、Adobe DNG SDK 1.7、应用共享相机补丁，编译三个架构并生成应用使用的 XCFramework。iOS 构建不再通过宿主机 `pkg-config` 查找 LibRaw。
 
 Requires macOS, full Xcode/iOS SDK, CMake and curl. From the repository root, this entry point downloads and verifies LibRaw 0.22.2 and Adobe DNG SDK 1.7, applies the shared camera patches, builds three architectures and packages the application's XCFramework. iOS no longer discovers LibRaw through the host `pkg-config`:

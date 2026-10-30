@@ -14,7 +14,7 @@ args = parser.parse_args()
 metadata = json.loads(subprocess.check_output([
     args.cargo, "metadata", "--format-version", "1", "--locked", "--offline",
     "--manifest-path", args.manifest, "--filter-platform", args.target,
-], text=True))
+], text=True, encoding="utf-8"))
 sections = ["RawLab X3F renderer dependency notices\n\n"
             "x3fuse-core is pinned to 00f9ef206a2d629bca35ceead4b3951833b85d3d.\n"
             "The list includes build dependencies for completeness.\n"]
@@ -39,10 +39,10 @@ for package in sorted(metadata["packages"], key=lambda value: value["name"]):
         raise SystemExit(f"Missing license text for {package['name']} {package['version']}")
     sections.append(f"\n{package['name']} {package['version']} ({package.get('license', '')})\n")
     for path in sorted(paths):
-        sections.append(f"\n{path.name}\n{path.read_text(errors='replace')}\n")
-Path(args.output).write_text("".join(sections))
+        sections.append(f"\n{path.name}\n{path.read_text(encoding='utf-8', errors='replace')}\n")
+Path(args.output).write_text("".join(sections), encoding="utf-8")
 # 静态链接还包含 Rust 标准库；使用实际编译工具链的原始说明。
-sysroot = Path(subprocess.check_output(["rustc", "--print", "sysroot"], text=True).strip())
+sysroot = Path(subprocess.check_output(["rustc", "--print", "sysroot"], text=True, encoding="utf-8").strip())
 rust_docs = sysroot / "share/doc/rust"
 copyright_file = rust_docs / "COPYRIGHT-library.html"
 if not copyright_file.is_file():

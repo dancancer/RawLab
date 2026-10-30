@@ -107,6 +107,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try recipeLUTChecks(root: root, first: first, second: second)
         try historyErrorChecks(root: root, first: first)
         try presetChecks(root: root, first: first, second: second)
+        try QuickPresetModelChecks.run(root: root, first: first, second: second)
         try hslTargetChecks(root: root, second: second)
         try curveNavigationChecks(root: root, photo: first)
         var aiSettings = Adjustments(); aiSettings.aiDenoiseEnabled = true

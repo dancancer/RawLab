@@ -12,8 +12,26 @@ extension ContentView {
             .disabled(!viewModel.canRedoAdjustment).accessibilityIdentifier("adjustment.history.redo")
         Button(L10n.text("本次会话历史")) { requestAdjustmentAction(.history) }
             .accessibilityIdentifier("adjustment.history.open")
-        Button(L10n.text("我的预设")) { adjustmentSheet = .presets }
+        Button(L10n.text("我的预设"), action: showQuickPresets)
             .accessibilityIdentifier("preset.library.open")
+    }
+
+    func showQuickPresets() {
+        guard !editorBusy, viewModel.hasImage else { return }
+        cancelSliderInteraction(); cancelHSLTarget()
+        viewModel.quickPresetsVisible = true
+        selectedGroup = .looks
+        adjustmentsExpanded = true
+    }
+
+    func closeQuickPresets() {
+        viewModel.closeQuickPresets()
+        selectedGroup = EditorAdjustmentRules.groupFor(currentEditorTool)
+    }
+
+    func undoQuickPreset() {
+        cancelSliderInteraction()
+        viewModel.undoQuickPreset(settings: settings)
     }
 
     func queuePresetAction(_ action: IOSAdjustmentAction) {
@@ -23,6 +41,7 @@ extension ContentView {
     }
 
     func finishAdjustmentSheet() {
+        presetLibraryRevision = UUID()
         if let action = queuedPresetAction {
             queuedPresetAction = nil
             requestAdjustmentAction(action)
@@ -35,6 +54,7 @@ extension ContentView {
 
     func requestAdjustmentAction(_ action: IOSAdjustmentAction) {
         guard !editorBusy, viewModel.hasImage else { return }
+        if viewModel.quickPresetState.isPreparing { return }
         cancelSliderInteraction()
         pendingAdjustmentAction = action
         if isEditorDraftChanged { draftExitPresented = true; return }
@@ -51,6 +71,9 @@ extension ContentView {
         case .paste: adjustmentSheet = .paste
         case .presetSave: adjustmentSheet = .presetSave
         case .presetApply(let preset):
+            showQuickPresets()
+            viewModel.applyPresetToCurrentPhoto(preset, settings: settings)
+        case .presetApplyMultiple(let preset):
             applyingPreset = preset
             returnToPresetLibrary = true
             adjustmentSheet = .presetApply

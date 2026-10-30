@@ -74,6 +74,79 @@ class AdjustmentHistoryInstrumentedTest {
         } finally { main { owner.clear() }; edits.reset(identity); root.deleteRecursively() }
     }
 
+    @Test fun quickPresetUsesOneTransactionAndRejectsLateWork() = withModel { model, edits, identity ->
+        fun phase(expected: QuickPresetPhase) {
+            await(model) { model.quickPreset.value.phase == expected && !it.committingAdjustments }
+        }
+        main { model.edit(model.state.value.edits.copy(exposure = .7f)) }; await(model) { it.canExport }
+        val payload = result<Result<AdjustmentPayload>> { model.capturePresetAdjustments(AdjustmentScope.Custom(setOf(AdjustmentField.EXPOSURE)), it) }.getOrThrow()
+        val preset = model.presetStore.create("Quick model ${UUID.randomUUID()}", payload)
+        try {
+            main { model.edit(model.state.value.edits.copy(exposure = .2f)) }; await(model) { it.canExport }
+            val count = model.adjustmentTransactions.size
+            main { model.showQuickPresets(); model.applyPresetToCurrentPhoto(preset); model.applyPresetToCurrentPhoto(preset) }
+            phase(QuickPresetPhase.SAVED)
+            assertEquals(.7f, edits.versionedState(identity).settings!!.exposure)
+            assertEquals(count + 1, model.adjustmentTransactions.size)
+            assertEquals(com.rawlab.android.adjustments.AdjustmentHistoryTransaction.Action.PRESET, model.adjustmentTransactions.last().action)
+            main { model.undoAdjustment() }; await(model) { it.canExport && it.edits.exposure == .2f }
+            assertEquals("Global Undo dismisses the previous quick preset result", QuickPresetPhase.IDLE, model.quickPreset.value.phase)
+            assertTrue(model.quickPreset.value.visible)
+            main { model.redoAdjustment() }; await(model) { it.canExport && it.edits.exposure == .7f }
+            val saved = edits.versionedState(identity)
+            main { model.applyPresetToCurrentPhoto(preset) }; phase(QuickPresetPhase.UNCHANGED)
+            assertEquals(saved, edits.versionedState(identity)); assertEquals(count + 1, model.adjustmentTransactions.size)
+            main { model.performAdjustmentHistory(true, model.adjustmentTransactions.last().id) }
+            await(model) { it.canExport && it.edits.exposure == .2f }
+            main { model.applyPresetToCurrentPhoto(preset) }; phase(QuickPresetPhase.SAVED)
+            main { model.undoQuickPreset() }; phase(QuickPresetPhase.UNDONE)
+            assertEquals(.2f, edits.versionedState(identity).settings!!.exposure)
+
+            val originalPrepare = model.prepareAdjustmentOperation
+            fun late(invalidate: () -> Unit) {
+                val prepared = java.util.concurrent.CountDownLatch(1)
+                val release = java.util.concurrent.CountDownLatch(1)
+                val before = edits.versionedState(identity)
+                val history = model.adjustmentTransactions.toList()
+                var expected = before
+                var expectedHistory = history
+                main {
+                    model.prepareAdjustmentOperation = { work, cancelled ->
+                        originalPrepare(work, cancelled).also { prepared.countDown(); check(release.await(30, java.util.concurrent.TimeUnit.SECONDS)) }
+                    }
+                    model.showQuickPresets(); model.applyPresetToCurrentPhoto(preset)
+                }
+                try {
+                    assertTrue(prepared.await(30, java.util.concurrent.TimeUnit.SECONDS))
+                    main(invalidate)
+                    await(model) { it.canExport && !it.committingAdjustments }
+                    expected = edits.versionedState(identity)
+                    expectedHistory = model.adjustmentTransactions.toList()
+                } finally { release.countDown(); main { model.prepareAdjustmentOperation = originalPrepare } }
+                await(model) { !model.adjustmentTransfer.value.preparing && !it.committingAdjustments }
+                SystemClock.sleep(150)
+                assertEquals(expected, edits.versionedState(identity)); assertEquals(expectedHistory, model.adjustmentTransactions)
+            }
+            late { model.cancelQuickPreset() }
+            late { model.closeQuickPresets() }
+            late { model.edit(model.state.value.edits.copy(exposure = .4f)) }
+            assertEquals(.4f, edits.versionedState(identity).settings!!.exposure)
+            val original = model.state.value.photo!!.uri
+            val other = File(context.cacheDir, "quick-other-${UUID.randomUUID()}.png").also(::png)
+            try {
+                late { model.importPhoto(Uri.fromFile(other)) }
+                assertEquals(Uri.fromFile(other), model.state.value.photo!!.uri)
+                assertEquals(0f, model.state.value.edits.exposure)
+                main { model.importPhoto(original) }; await(model) { it.canExport && it.photo?.uri == original }
+            } finally { other.delete() }
+            main { model.showQuickPresets(); model.applyPresetToCurrentPhoto(preset) }; phase(QuickPresetPhase.SAVED)
+            main { model.edit(model.state.value.edits.copy(contrast = .4f)) }; await(model) { it.canExport }
+            val ordinary = edits.versionedState(identity)
+            main { model.undoQuickPreset() }; phase(QuickPresetPhase.UNDO_FAILED)
+            assertEquals(ordinary, edits.versionedState(identity))
+        } finally { model.presetStore.delete(preset) }
+    }
+
     @Test fun defaultScopeReceiptUndoAndRedoStayOffMainThreadAndCanonical() = withModel { model, edits, identity ->
         main { model.edit(model.state.value.edits.copy(exposure = .75f)) }; await(model) { it.canExport }
         main { model.copyAdjustments(AdjustmentScope.Custom(AdjustmentField.entries.filter { it.group != "geometry" }.toSet())) }
@@ -262,7 +335,7 @@ class AdjustmentHistoryInstrumentedTest {
         png(replacement)
         Files.move(replacement.toPath(), original.toPath(), StandardCopyOption.REPLACE_EXISTING)
         main { model.edit(model.state.value.edits.copy(exposure = .5f)) }
-        await(model) { !it.rendering }
+        await(model) { !it.rendering && !it.committingAdjustments }
         assertArrayEquals(working, photo.file.readBytes())
         assertEquals(EditSaveState.FAILED, model.state.value.saveState)
         assertNull(edits.load(identity)); assertTrue(model.adjustmentTransactions.isEmpty())

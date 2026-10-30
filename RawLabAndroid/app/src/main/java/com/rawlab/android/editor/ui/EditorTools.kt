@@ -64,11 +64,11 @@ internal fun whiteBalanceChanged(edits: EditSettings, shotTemperature: Float?, s
 @Composable
 internal fun EditorToolStrip(state: EditorState, selected: Int, tools: List<Int> = editorToolOrder, list: LazyListState = rememberLazyListState(),
     navigationEnabled: Boolean = true, inlineLabels: Boolean = true, modifier: Modifier = Modifier,
-    perspective: Boolean = false, onPerspective: (() -> Unit)? = null, select: (Int) -> Unit) {
+    perspective: Boolean = false, onPerspective: (() -> Unit)? = null, trailing: (@Composable () -> Unit)? = null, select: (Int) -> Unit) {
     val entries = tools.flatMap { if (it == 17 && onPerspective != null) listOf(it, -1) else listOf(it) }
     val active = if (selected == 17 && perspective) -1 else selected
     LaunchedEffect(active) {
-        val index = entries.indexOf(active).coerceAtLeast(0)
+        val index = if (active == -2 && trailing != null) entries.size else entries.indexOf(active).coerceAtLeast(0)
         if (list.layoutInfo.visibleItemsInfo.none { it.index == index && it.offset >= 0 &&
             it.offset + it.size <= list.layoutInfo.viewportEndOffset }) list.scrollToItem(index)
     }
@@ -81,6 +81,7 @@ internal fun EditorToolStrip(state: EditorState, selected: Int, tools: List<Int>
                 Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.geometry_perspective_tool))
             } else EditorTool(state, index, active == index, navigationEnabled, true) { select(index) }
         }
+        if (trailing != null) item(key = "trailing") { trailing() }
     }
 
 }
@@ -119,7 +120,8 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, navig
     ).joinToString(" · ") else number
     val selectable = Modifier.selectable(selected,
         enabled = navigationEnabled && state.controlsEnabled && (!state.edits.isHDREditing || hdrToolSupported(index)) &&
-            (index != 8 || rawOnly || state.edits.isHDREditing) && (index != 16 || rawOnly),
+            (index != 8 || rawOnly || state.edits.isHDREditing) &&
+            (index != 16 || rawOnly && !(state.photo?.isX3f == true && edits.x3fMode == com.rawlab.android.settings.X3fMode.NORMAL)),
         role = Role.Tab, onClick = onClick).testTag("editor-tool-$index").semantics(mergeDescendants = true) {
         contentDescription = title
         stateDescription = listOfNotNull(valueDescription, status).joinToString(" · ")

@@ -27,7 +27,7 @@ object AdjustmentTransfer {
             return left.synchronizeHDR() == right.synchronizeHDR()
         }
         val context = AdjustmentTransferContext("comparison", isRaw)
-        return left.processing == right.processing && left.masterRecipeSettingsVersion == right.masterRecipeSettingsVersion &&
+        return left.processing == right.processing && left.x3fMode == right.x3fMode && left.masterRecipeSettingsVersion == right.masterRecipeSettingsVersion &&
             AdjustmentTransferValues.values(left, context) == AdjustmentTransferValues.values(right, context)
     }
     fun capture(scope: AdjustmentScope, settings: EditSettings, context: AdjustmentTransferContext): AdjustmentPayload {

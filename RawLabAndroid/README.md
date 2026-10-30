@@ -97,6 +97,13 @@ Requirements: JDK 17 or 21, Android SDK 35, build-tools 35.0.0,
 NDK 27.2.12479018, CMake 3.22.1. Minimum Android 8.0 / API 26.
 The APK includes `arm64-v8a` and `x86_64`; target SDK is 35.
 
+Normal X3F rendering also requires Rust 1.88+ (CI uses 1.99.1), Python 3.11+
+and host libclang. Install the `aarch64-linux-android` and `x86_64-linux-android`
+targets plus `rust-docs`; set `LIBCLANG_PATH` when libclang is outside the standard
+search path. CMake selects the matching NDK compiler and API sysroot. The APK
+includes X3F dependency and Rust runtime notices. See the shared
+[X3F contract](../lutools/docs/x3f-rendering.md) for supported cameras/settings.
+
 在 Android Studio 中打开此目录，或安装官方 SDK command-line tools 后执行：
 
 Open this directory in Android Studio, or install the official SDK command-line tools:

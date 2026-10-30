@@ -18,6 +18,17 @@ class WorkingCopyTest {
         } finally { directory.deleteRecursively() }
     }
 
+    @Test fun x3fExtensionSurvivesWithoutTrustingTheOriginalPath() {
+        val directory = Files.createTempDirectory("rawlab-x3f-copy").toFile()
+        try {
+            val bytes = "FOVbtest".toByteArray()
+            val file = WorkingCopy.import(directory, ByteArrayInputStream(bytes), "../../unsafe.X3F")
+            assertEquals("x3f", file.extension)
+            assertEquals(directory.canonicalFile, file.parentFile!!.canonicalFile)
+            assertArrayEquals(bytes, file.readBytes())
+        } finally { directory.deleteRecursively() }
+    }
+
     @Test fun emptyOrFailedImportLeavesNoPartialFile() {
         val directory = Files.createTempDirectory("rawlab-copy").toFile()
         try {

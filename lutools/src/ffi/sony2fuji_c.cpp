@@ -1015,7 +1015,7 @@ sony2fuji_status loadRawImage(
             session->raw_processor.reset();
             session->processor_key.clear();
             auto processor = std::make_unique<sony2fuji::RAWProcessor>();
-            const auto loaded = processor->loadFile(request.input_path);
+            const auto loaded = processor->loadFile(request.input_path, static_cast<sony2fuji::X3fMode>(session->x3f_mode));
             if (loaded != sony2fuji::ErrorCode::Success) return mapError(loaded);
             session->raw_processor = std::move(processor);
             session->processor_key = fileKey;
@@ -1426,6 +1426,7 @@ sony2fuji_status sony2fuji_session_set_x3f_mode(sony2fuji_session* session, sony
     if (!session || (mode != SONY2FUJI_X3F_LEGACY && mode != SONY2FUJI_X3F_NORMAL))
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     session->x3f_mode = mode;
+    session->x3f_error.clear();
     return SONY2FUJI_STATUS_OK;
 }
 
@@ -1787,6 +1788,7 @@ static sony2fuji_status recordAIError(sony2fuji_session* session, sony2fuji_stat
 sony2fuji_status sony2fuji_session_estimate_auto_exposure(
     sony2fuji_session* session, const sony2fuji_request* request, float* exposure_ev
 ) {
+    if (session) session->x3f_error.clear();
     if (!session || !request || !exposure_ev) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     if (request->version != SONY2FUJI_REQUEST_VERSION || request->struct_size < sizeof(*request))
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
@@ -1855,6 +1857,7 @@ static sony2fuji_status processImpl(
     if (!session) {
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     }
+    session->x3f_error.clear();
     sony2fuji::checkProcessingCancellation();
     session->geometry_width = session->geometry_height = 0;
 
@@ -1869,15 +1872,20 @@ static sony2fuji_status processImpl(
     }
 
     sony2fuji_request local = *request;
-    session->x3f_error.clear();
     if (session->tone_curve.custom() && local.tone_curve != 0) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    const bool displayInput = local.input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER ||
-        (local.input_type == SONY2FUJI_INPUT_RAW && session->x3f_mode == SONY2FUJI_X3F_NORMAL &&
-         sony2fuji::hasX3fSignature(local.input_path));
+    const bool normalX3f = local.input_type == SONY2FUJI_INPUT_RAW && session->x3f_mode == SONY2FUJI_X3F_NORMAL &&
+        sony2fuji::hasX3fSignature(local.input_path);
+    const bool displayInput = local.input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER || normalX3f;
     const bool useAI = aiEnabled(session);
     if (useAI && local.input_type != SONY2FUJI_INPUT_RAW) return SONY2FUJI_STATUS_UNSUPPORTED;
     if (displayInput && (session->raw_noise_reduction != 0 || session->lens_correction.active() ||
-        session->gpu_config.mode == sony2fuji::GpuMode::Force)) return SONY2FUJI_STATUS_UNSUPPORTED;
+        session->gpu_config.mode == sony2fuji::GpuMode::Force)) {
+        if (normalX3f) session->x3f_error = session->raw_noise_reduction != 0
+            ? "Normal X3F rendering does not support FBDD RAW denoise"
+            : session->lens_correction.active() ? "Normal X3F rendering does not support additional lens correction"
+            : "Normal X3F rendering uses CPU filtering; GPU Force is not supported";
+        return SONY2FUJI_STATUS_UNSUPPORTED;
+    }
     local.lut_strength = clampFloat(local.lut_strength, 0.0f, 2.0f);
     session->last_backend = SONY2FUJI_BACKEND_CPU;
     if (local.input_type != SONY2FUJI_INPUT_RAW) {

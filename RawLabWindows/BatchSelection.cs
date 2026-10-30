@@ -93,6 +93,7 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                 if(format==ExportFormat.HdrJpeg && (settings.HDR is not {Mode:HDRMode.Hdr} || PhotoInput.ProbeHDR(photo.Path,out _)!=HDRProbeState.Supported))
                     throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
                 if(settings.AIDenoiseEnabled) {
+                    if(PhotoInput.IsX3f(photo.Path) && settings.X3fMode==X3fMode.Normal)throw new InvalidOperationException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
                     if(!PhotoInput.IsRaw(photo.Path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
                     validateAI?.Invoke(photo.Path);
                 }
@@ -122,6 +123,7 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                     throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
                 if(!expected.SameAs(row.Settings!))throw new EditPersistenceConflict();
                 if(expected.AIDenoiseEnabled) {
+                    if(PhotoInput.IsX3f(row.Photo.Path) && expected.X3fMode==X3fMode.Normal)throw new InvalidOperationException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
                     if(!PhotoInput.IsRaw(row.Photo.Path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
                     validateAI?.Invoke(row.Photo.Path);
                 }

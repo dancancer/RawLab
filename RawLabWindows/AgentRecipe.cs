@@ -56,8 +56,13 @@ internal sealed partial class RenderEngine
         var options=new JsonSerializerOptions{WriteIndented=true};
         var json=JsonSerializer.Serialize(document,options);
         _ = state.RenderGrading.NativeConfig();
-        if(toneControls.Vibrance==0 && state.RenderGrading.IsDefault)return json;
+        var x3f=PhotoInput.IsX3f(path);
+        if(!x3f && toneControls.Vibrance==0 && state.RenderGrading.IsDefault)return json;
         var result=System.Text.Json.Nodes.JsonNode.Parse(json)!;
+        if(x3f) {
+            result["schema_version"]=7;
+            result["x3f_mode"]=state.X3fMode switch { X3fMode.Normal => "normal-v1", X3fMode.Legacy => "legacy", _ => throw new InvalidDataException("Invalid X3F rendering mode") };
+        }
         if(toneControls.Vibrance!=0) result["edits"]!["color"]=new System.Text.Json.Nodes.JsonObject { ["vibrance"]=toneControls.Vibrance };
         if (!state.RenderGrading.IsDefault) {
             var grading = new System.Text.Json.Nodes.JsonObject();

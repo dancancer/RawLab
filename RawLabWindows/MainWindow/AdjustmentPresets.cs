@@ -52,23 +52,30 @@ public partial class MainWindow
             var library = new AdjustmentPresetLibraryDialog(this, presetStore, file != null && !aiJob.State.IsRunning && !adjustmentReloadRequired, AdjustmentSummaryLookName);
             library.ShowDialog();
             if (library.SaveRequested) {
-                if (!PrepareAdjustmentCommand()) return;
-                AdjustmentPresetNameDialog? editor = null;
-                editor = new(this, "保存预设", Loc.Text("新预设"), true, (name, scope) => {
-                    var payload = CapturePresetAdjustments(scope);
-                    try { presetStore.Create(name, payload); return null; }
-                    catch (AdjustmentPresetException duplicate) when (duplicate.Reason == PresetFailure.DuplicateName && duplicate.Existing != null) {
-                        var confirmation = new AdjustmentPresetConfirmationDialog(editor!, duplicate.Existing, true);
-                        confirmation.ShowDialog();
-                        if (confirmation.Choice == PresetConfirmationChoice.Confirm) { presetStore.Overwrite(duplicate.Existing, payload); return null; }
-                        return confirmation.Choice == PresetConfirmationChoice.SaveAs ? Loc.Text("请输入不同的预设名称。") : Loc.Text("同名预设已存在，请使用其他名称。");
-                    }
-                },settings.IsHDREditing, PreviewAdjustmentPayload, AdjustmentSummaryLookName);
-                editor.ShowDialog();
+                if (!PrepareQuickPresetCommand()) return;
+                ShowPresetSaveEditor();
+                RefreshQuickPresets(true);
             } else if (library.ApplyRequested is { } preset) {
-                if (!PrepareAdjustmentCommand()) return;
-                await ShowAdjustmentPreflight(preset.Payload, [file!], AdjustmentHistoryAction.Preset, preset.Name);
-            } else return;
+                if (!PrepareQuickPresetCommand()) return;
+                ShowQuickPresets(); await ApplyPresetToCurrentPhoto(preset); return;
+            } else if (library.ApplyMultipleRequested is { } multiple) { await ApplyPresetToPhotos(multiple); return; }
+            else { RefreshQuickPresets(true); return; }
         }
+    }
+
+    private void ShowPresetSaveEditor()
+    {
+        AdjustmentPresetNameDialog? editor = null;
+        editor = new(this, "保存预设", Loc.Text("新预设"), true, (name, scope) => {
+            var payload = CapturePresetAdjustments(scope);
+            try { presetStore.Create(name, payload); return null; }
+            catch (AdjustmentPresetException duplicate) when (duplicate.Reason == PresetFailure.DuplicateName && duplicate.Existing != null) {
+                var confirmation = new AdjustmentPresetConfirmationDialog(editor!, duplicate.Existing, true);
+                confirmation.ShowDialog();
+                if (confirmation.Choice == PresetConfirmationChoice.Confirm) { presetStore.Overwrite(duplicate.Existing, payload); return null; }
+                return confirmation.Choice == PresetConfirmationChoice.SaveAs ? Loc.Text("请输入不同的预设名称。") : Loc.Text("同名预设已存在，请使用其他名称。");
+            }
+        },settings.IsHDREditing, PreviewAdjustmentPayload, AdjustmentSummaryLookName);
+        editor.ShowDialog();
     }
 }

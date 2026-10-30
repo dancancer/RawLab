@@ -273,7 +273,7 @@ class BatchExportModel(
             val input = resolver.openInputStream(uri) ?: throw IOException(AppStrings.text(R.string.message_unable_to_read_file))
             try { input.use { source -> destination.outputStream().use { source.copyTo(it) } }
                 processorFactory(gpuMode, storage.lensDatabase()).use {
-                    it.preview(destination, null, EditSettings(processing = snapshot.source.settings.processing), 256, false, inputKind)
+                    it.preview(destination, null, EditSettings(processing = snapshot.source.settings.processing, x3fMode = snapshot.source.settings.x3fMode), 256, false, inputKind)
                 }
             } catch (error: Exception) { destination.delete(); throw error }
         }

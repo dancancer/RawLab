@@ -310,6 +310,13 @@
     <string name="preset_new_name">"新预设"</string>
     <string name="preset_overwrite">"覆盖"</string>
     <string name="preset_overwrite_confirm">"覆盖预设？"</string>
+    <string name="preset_quick_apply_current">"应用到当前照片"</string>
+    <string name="preset_quick_apply_multiple">"应用到多张照片"</string>
+    <string name="preset_quick_checking">"正在检查预设…"</string>
+    <string name="preset_quick_error_incompatible">"此预设与当前照片不兼容，请选择其他预设。"</string>
+    <string name="preset_quick_error_mode">"此预设包含 HDR 相对白平衡，当前编辑模式不支持。"</string>
+    <string name="preset_quick_error_preserve">"此预设无法保留照片的其他调整，请选择其他预设。"</string>
+    <string name="preset_quick_manage">"管理预设"</string>
     <string name="preset_reload">"重新载入"</string>
     <string name="preset_rename">"重命名预设"</string>
     <string name="preset_rename_action">"重命名"</string>
@@ -430,4 +437,10 @@
     <string name="vibrance">"鲜艳度"</string>
     <string name="vignette_highlights_unavailable">"仅在暗角强度为负值时可用。"</string>
     <string name="white_point">"白场"</string>
+    <string name="x3f_legacy">"伪红外（旧版）"</string>
+    <string name="x3f_legacy_description">"保留旧版的特殊色彩。"</string>
+    <string name="x3f_normal">"正常显影"</string>
+    <string name="x3f_relative_wb">"以文件保存的显影为基准，白平衡作相对调整。"</string>
+    <string name="x3f_rendering">"X3F 显影"</string>
+    <string name="x3f_retry_legacy">"使用旧版显影重试"</string>
 </resources>

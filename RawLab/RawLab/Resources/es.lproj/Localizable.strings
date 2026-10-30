@@ -57,6 +57,7 @@
 "Selected item is not a supported image." = "El elemento seleccionado no es una imagen compatible.";
 "Sony2Fuji output copy failed." = "Error al copiar la salida de Sony2Fuji.";
 "Sony2Fuji session create failed: %@" = "Error al crear la sesión de Sony2Fuji: %@";
+"X3F 显影" = "Revelado X3F";
 "三分网格" = "Cuadrícula de tercios";
 "三线性" = "Trilineal";
 "上下拖动调整，方向键微调，Esc 取消" = "Arrastra hacia arriba o abajo para ajustar, usa las flechas para cambios precisos y Esc para cancelar";
@@ -89,13 +90,16 @@
 "从照片库选择" = "Elegir de la biblioteca de fotos";
 "以下为配方逻辑值；强度为 %@。部分范围会按此强度换算。" = "Estos son valores lógicos de la receta; la intensidad es %@. Algunos campos se escalan con esta intensidad.";
 "以下目标尚未完成本次历史操作，请检查原因后重试。" = "La operación de historial no se ha completado para estas fotos. Comprueba el motivo y vuelve a intentarlo.";
+"以文件保存的显影为基准，白平衡作相对调整。" = "Usa el revelado guardado como base, con ajustes relativos del balance de blancos.";
 "任务使用的外观文件不可用，请重新创建任务。" = "El archivo de look que usa la tarea no está disponible. Vuelve a crear la tarea.";
 "任务操作" = "Acciones de la tarea";
 "任务未保存：%@" = "Tarea no guardada: %@";
 "传感器基准" = "Referencia del sensor";
+"伪红外（旧版）" = "Falso infrarrojo (anterior)";
 "位置与尺寸" = "Posición y tamaño";
 "使用 RawLab 中性显影作为基础，不代表还原了相机的标准风格。" = "Usa el revelado neutro de RawLab como base. No reproduce el estilo estándar de la cámara.";
 "使用当前调整批量导出…" = "Exportar por lotes con los ajustes actuales…";
+"使用旧版显影重试" = "Reintentar con el revelado anterior";
 "使用统计已关闭。" = "El análisis de uso está desactivado.";
 "依据部分文件线索 · 仍有假设" = "Indicios parciales del archivo · Aún hay hipótesis";
 "保井崇志" = "Takashi Yasui";
@@ -111,6 +115,7 @@
 "保存时发生中断，请先核对照片图库，避免重复生成。" = "La escritura se interrumpió. Comprueba Fotos antes de volver a generar.";
 "保存结果待确认" = "Se debe confirmar el resultado guardado";
 "保存预设" = "Guardar ajuste preestablecido";
+"保留旧版的特殊色彩。" = "Conserva los colores particulares del revelado anterior.";
 "保留这次几何或镜头修改？" = "¿Conservar estos cambios de geometría u objetivo?";
 "候选效果" = "Resultados candidatos";
 "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。" = "Color falso: azul en sombras, ámbar sobre el blanco de referencia, rosa sobre la capacidad de la pantalla.";
@@ -274,6 +279,8 @@
 "平均差异 %@/255 · 最大差异 %@/255" = "Diferencia media %@/255 · Diferencia máxima %@/255";
 "并排" = "En paralelo";
 "应用" = "Aplicar";
+"应用到多张照片" = "Aplicar a varias fotos";
+"应用到当前照片" = "Aplicar a la foto actual";
 "应用并保存" = "Aplicar y guardar";
 "应用草稿" = "Aplicar borrador";
 "应用草稿并继续" = "Aplicar borrador y continuar";
@@ -453,9 +460,11 @@
 "正在显影" = "Revelando";
 "正在显影…" = "Revelando…";
 "正在检查目标…" = "Comprobando fotos…";
+"正在检查预设…" = "Comprobando ajuste preestablecido…";
 "正在生成效果预览…" = "Generando vista previa del resultado…";
 "正在生成预览…" = "Generando vistas previas…";
 "正在读取镜头信息…" = "Leyendo información de lente…";
+"正常显影" = "Revelado normal";
 "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。" = "Este LUT no tiene toda la información de color. Confirma cómo aplicarlo. Se marcará como compatible, con un resultado sin verificar.";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "No se pudo analizar el balance de blancos de toma de este RAW; no se puede aplicar el matiz de la receta.";
 "此像素不可取样。" = "No se puede tomar una muestra de este píxel.";
@@ -465,7 +474,10 @@
 "此输入不支持镜头校正" = "Esta entrada no admite corrección de lente";
 "此配置与预览照片类型不匹配，请更换照片或配置。" = "Esta configuración no coincide con el tipo de foto de vista previa. Elige otra foto o configuración.";
 "此镜头没有所选校正的标定数据" = "No hay datos de calibración para las correcciones elegidas";
+"此预设与当前照片不兼容，请选择其他预设。" = "Este ajuste no es compatible con la foto actual. Elige otro ajuste.";
+"此预设包含 HDR 相对白平衡，当前编辑模式不支持。" = "Este ajuste incluye balance de blancos HDR relativo, que el modo de edición actual no admite.";
 "此预设库来自更新版本，请更新应用后重试。" = "Esta biblioteca de ajustes procede de una versión más reciente. Actualiza la aplicación e inténtalo de nuevo.";
+"此预设无法保留照片的其他调整，请选择其他预设。" = "Este ajuste no puede conservar los demás ajustes de la foto. Elige otro ajuste.";
 "此默认值不可达，请重置裁切组。" = "No se puede alcanzar este valor predeterminado. Restablece los ajustes de recorte.";
 "每张照片使用确认时冻结的独立调整。" = "Cada foto usa sus ajustes individuales fijados al confirmar.";
 "水平位置" = "Posición horizontal";
@@ -525,6 +537,7 @@
 "童话绘本油画感，深邃沉静暗部，暖金柔光包裹与漫反射微光" = "Óleo de cuento ilustrado, sombras profundas y serenas, luz dorada envolvente y brillo difuso";
 "端点固定" = "Los extremos son fijos";
 "等待导出" = "En espera de exportación";
+"管理预设" = "Gestionar ajustes preestablecidos";
 "管理预设：%@" = "Administrar ajuste: %@";
 "粗糙度" = "Rugosidad";
 "粗色斑抑制" = "Supresión de artefactos gruesos";

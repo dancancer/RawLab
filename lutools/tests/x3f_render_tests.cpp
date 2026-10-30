@@ -70,6 +70,7 @@ void replacedSource(const char* source) {
     auto cached = session();
     const auto before = render(cached.get(), input.u8string().c_str(), SONY2FUJI_X3F_NORMAL);
     std::filesystem::copy_file(input, replacement);
+    std::filesystem::permissions(replacement, std::filesystem::perms::owner_write, std::filesystem::perm_options::add);
     int slot = -1;
     for (int i = 0; i < 32; ++i) if (header[72 + i] == 1) slot = i;
     require(slot >= 0, "fixture has saved exposure");
@@ -83,7 +84,16 @@ void replacedSource(const char* source) {
         edit.seekp(104 + slot * 4); edit.write(reinterpret_cast<const char*>(value), 4);
         require(bool(edit), "modify only temporary copy");
     }
-    std::filesystem::remove(input);
+    std::error_code replaceError;
+    std::filesystem::remove(input, replaceError);
+#ifdef _WIN32
+    // LibRaw 的 Windows 流没有 FILE_SHARE_DELETE；此平台不能制造打开期间的同路径替换。
+    if (replaceError.value() == 32) {
+        std::cout << "SKIP same-path replacement: Windows LibRaw input denies file deletion while open\n";
+        return;
+    }
+#endif
+    require(!replaceError, "remove temporary source for replacement");
     std::filesystem::rename(replacement, input);
     std::filesystem::last_write_time(input, stamp);
     require(std::filesystem::file_size(input) == size && std::filesystem::last_write_time(input) == stamp,
@@ -136,6 +146,28 @@ void formatIdentity() {
             std::memcmp(normal.data(), image.pixels.data(), normal.size() * sizeof(sony2fuji::RGB)) == 0,
             "non-X3F pixels remain unchanged");
 }
+
+void errorSemantics(const char* path) {
+    auto s = session();
+    require(sony2fuji_session_set_x3f_mode(s.get(), SONY2FUJI_X3F_NORMAL) == SONY2FUJI_STATUS_OK, "normal error probe");
+    sony2fuji_lens_correction_config lens{};
+    lens.version = SONY2FUJI_LENS_CORRECTION_CONFIG_VERSION; lens.struct_size = sizeof(lens); lens.distortion = 1;
+    require(sony2fuji_session_set_lens_correction(s.get(), &lens) == SONY2FUJI_STATUS_OK, "lens error probe");
+    sony2fuji_request request{};
+    request.version = SONY2FUJI_REQUEST_VERSION; request.struct_size = sizeof(request);
+    request.input_type = SONY2FUJI_INPUT_RAW; request.input_path = path;
+    request.output_target = SONY2FUJI_TARGET_BUFFER; request.output_format = SONY2FUJI_OUTPUT_RGBA8;
+    request.wb_mode = SONY2FUJI_WB_CAMERA; request.temperature = 6500;
+    request.brightness = request.contrast = request.saturation = 1;
+    std::fill(std::begin(request.wb_mul), std::end(request.wb_mul), 1);
+    request.intent = SONY2FUJI_INTENT_PREVIEW; request.preview_long_edge = 32;
+    sony2fuji_buffer buffer{};
+    require(sony2fuji_process(s.get(), &request, &buffer) == SONY2FUJI_STATUS_UNSUPPORTED, "normal lens rejection");
+    require(std::string(sony2fuji_session_x3f_error(s.get())).find("lens") != std::string::npos, "normal lens error is specific");
+    float ev = 0; request.version = 0;
+    require(sony2fuji_session_estimate_auto_exposure(s.get(), &request, &ev) == SONY2FUJI_STATUS_INVALID_ARGUMENT, "invalid meter request");
+    require(std::strlen(sony2fuji_session_x3f_error(s.get())) == 0, "meter failure does not reuse a previous X3F error");
+}
 }
 
 int main(int argc, char** argv) {
@@ -151,6 +183,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         require(sony2fuji_x3f_available() == 1, "normal decoder included");
+        errorSemantics(argv[1]);
         for (int i = 1; i < argc; ++i) {
             const auto legacy = render(s.get(), argv[i], SONY2FUJI_X3F_LEGACY);
             const auto normal = render(s.get(), argv[i], SONY2FUJI_X3F_NORMAL);
@@ -182,6 +215,27 @@ int main(int argc, char** argv) {
                     std::abs(int(std::lround(values[c] * 255)) - int(normal.pixels[n * channels + c])));
             }
             require(maximum <= 1, "shared workflow must not apply another neutral display curve");
+            if (i == 1) {
+                sony2fuji::RAWProcessor identified;
+                require(identified.loadFile(argv[i], sony2fuji::X3fMode::Normal) == sony2fuji::ErrorCode::Success,
+                        "normal X3F identification without duplicate unpack");
+                sony2fuji::ImageData identifiedNormal, identifiedLegacy, referenceLegacy;
+                require(identified.process(options, identifiedNormal) == sony2fuji::ErrorCode::Success,
+                        "metadata-only normal process");
+                auto equal = [](const auto& a, const auto& b) {
+                    return a.width == b.width && a.height == b.height && a.pixels.size() == b.pixels.size() &&
+                        std::equal(a.pixels.begin(), a.pixels.end(), b.pixels.begin(), [](const auto& x, const auto& y) {
+                            return x.r == y.r && x.g == y.g && x.b == y.b;
+                        });
+                };
+                require(equal(direct, identifiedNormal), "metadata-only normal pixels remain exact");
+                options.x3fMode = sony2fuji::X3fMode::Legacy;
+                require(identified.process(options, identifiedLegacy) == sony2fuji::ErrorCode::Success &&
+                        processor.process(options, referenceLegacy) == sony2fuji::ErrorCode::Success,
+                        "legacy mode lazily unpacks the identified source");
+                require(equal(identifiedLegacy, referenceLegacy), "lazy legacy pixels remain exact");
+                std::cout << "PASS metadata-only X3F load and lazy legacy round trip\n";
+            }
             const auto brighter = render(fresh.get(), argv[i], SONY2FUJI_X3F_NORMAL, 1);
             require(brighter.pixels != normal.pixels, "relative exposure participates in normal workflow");
             std::cout << "PASS native X3F workflow " << argv[i] << " " << normal.width << "x" << normal.height

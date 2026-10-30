@@ -57,6 +57,7 @@
 "Selected item is not a supported image." = "Selected Item Is Not a Supported Image.";
 "Sony2Fuji output copy failed." = "Sony2Fuji Output Copy Failed.";
 "Sony2Fuji session create failed: %@" = "Sony2Fuji Session Creation Failed: %@";
+"X3F 显影" = "X3F rendering";
 "三分网格" = "Rule of Thirds Grid";
 "三线性" = "Trilinear";
 "上下拖动调整，方向键微调，Esc 取消" = "Drag up or down to adjust, use arrow keys for fine changes, Esc to cancel";
@@ -89,13 +90,16 @@
 "从照片库选择" = "Choose from photo library";
 "以下为配方逻辑值；强度为 %@。部分范围会按此强度换算。" = "These are recipe logical values; strength is %@. Some fields are scaled by this strength.";
 "以下目标尚未完成本次历史操作，请检查原因后重试。" = "The history operation is incomplete for these photos. Check the reason and retry.";
+"以文件保存的显影为基准，白平衡作相对调整。" = "Uses the saved rendering as the baseline, with relative white-balance adjustments.";
 "任务使用的外观文件不可用，请重新创建任务。" = "The look file used by this task is unavailable. Create the task again.";
 "任务操作" = "Task Actions";
 "任务未保存：%@" = "Task not saved: %@";
 "传感器基准" = "Sensor reference";
+"伪红外（旧版）" = "False infrared (legacy)";
 "位置与尺寸" = "Position and size";
 "使用 RawLab 中性显影作为基础，不代表还原了相机的标准风格。" = "Uses RawLab neutral rendering as the base. This does not reproduce the camera’s Standard style.";
 "使用当前调整批量导出…" = "Batch Export with Current Adjustments…";
+"使用旧版显影重试" = "Retry with legacy rendering";
 "使用统计已关闭。" = "Usage analytics is off.";
 "依据部分文件线索 · 仍有假设" = "Partial file clues · Assumptions remain";
 "保井崇志" = "Takashi Yasui";
@@ -111,6 +115,7 @@
 "保存时发生中断，请先核对照片图库，避免重复生成。" = "An interruption occurred while saving. Check Photos before generating again.";
 "保存结果待确认" = "Save Result Needs Confirmation";
 "保存预设" = "Save Preset";
+"保留旧版的特殊色彩。" = "Preserves the distinctive colors of the legacy renderer.";
 "保留这次几何或镜头修改？" = "Keep these geometry or lens changes?";
 "候选效果" = "Candidate results";
 "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。" = "False color: blue for shadows, amber above reference white, pink beyond display capacity.";
@@ -274,6 +279,8 @@
 "平均差异 %@/255 · 最大差异 %@/255" = "Mean difference %@/255 · Maximum difference %@/255";
 "并排" = "Side by side";
 "应用" = "Apply";
+"应用到多张照片" = "Apply to multiple photos";
+"应用到当前照片" = "Apply to current photo";
 "应用并保存" = "Apply and Save";
 "应用草稿" = "Apply Draft";
 "应用草稿并继续" = "Apply draft and continue";
@@ -453,9 +460,11 @@
 "正在显影" = "Developing";
 "正在显影…" = "Developing…";
 "正在检查目标…" = "Checking photos…";
+"正在检查预设…" = "Checking preset…";
 "正在生成效果预览…" = "Generating Result Preview…";
 "正在生成预览…" = "Generating previews…";
 "正在读取镜头信息…" = "Reading Lens Information…";
+"正常显影" = "Normal rendering";
 "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。" = "This LUT lacks complete color information. Confirm how to apply it. It will be marked as compatible, with an unverified appearance.";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "This RAW’s as-shot white balance could not be parsed; the recipe tint cannot be applied.";
 "此像素不可取样。" = "This pixel cannot be sampled.";
@@ -465,7 +474,10 @@
 "此输入不支持镜头校正" = "Lens Correction Unsupported for This Input";
 "此配置与预览照片类型不匹配，请更换照片或配置。" = "These settings do not match the preview photo type. Choose another photo or configuration.";
 "此镜头没有所选校正的标定数据" = "No Calibration Data for the Selected Corrections";
+"此预设与当前照片不兼容，请选择其他预设。" = "This preset is not compatible with the current photo. Choose another preset.";
+"此预设包含 HDR 相对白平衡，当前编辑模式不支持。" = "This preset includes relative HDR white balance, which the current editing mode does not support.";
 "此预设库来自更新版本，请更新应用后重试。" = "This preset library was created by a newer version. Update the app and try again.";
+"此预设无法保留照片的其他调整，请选择其他预设。" = "This preset cannot preserve the photo’s other adjustments. Choose another preset.";
 "此默认值不可达，请重置裁切组。" = "This default value cannot be reached. Reset the crop settings.";
 "每张照片使用确认时冻结的独立调整。" = "Each photo uses its individual adjustments frozen at confirmation.";
 "水平位置" = "Horizontal position";
@@ -525,6 +537,7 @@
 "童话绘本油画感，深邃沉静暗部，暖金柔光包裹与漫反射微光" = "Fairy-tale picture-book oil painting, deep quiet shadows, enveloping warm-gold light and diffuse glow";
 "端点固定" = "Endpoints are fixed";
 "等待导出" = "Waiting to Export";
+"管理预设" = "Manage presets";
 "管理预设：%@" = "Manage preset: %@";
 "粗糙度" = "Roughness";
 "粗色斑抑制" = "Coarse Artifact Suppression";

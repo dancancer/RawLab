@@ -41,8 +41,10 @@ internal sealed partial class RenderEngine
     internal static int AIBackendForGpuMode(int mode)=>mode==2 ? 3 : 2;
     internal string LastAIBackend=>Marshal.PtrToStringUTF8(Native.sony2fuji_session_get_ai_backend(session)) ?? "";
     internal static void ValidateAIInput(string path)=>ValidateAIInput(path,"");
-    internal static void ValidateAIInput(string path,string deviceID)
+    internal static void ValidateAIInput(string path,string deviceID,X3fMode x3fMode=X3fMode.Legacy)
     {
+        if(PhotoInput.IsX3f(path) && x3fMode==X3fMode.Normal)
+            throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
         if(!PhotoInput.IsRaw(path))throw new AIDenoiseException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
         if(!AIAvailable || !HasBundledAIModel)throw new AIDenoiseException(Loc.Text("此构建未安装 AI 降噪模型。"));
         if(!AIHardwareAvailable)throw new AIDenoiseException(Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。"));
@@ -87,8 +89,9 @@ internal sealed partial class RenderEngine
     private void PrepareAICore(string path,Adjustments settings,AIPreparation progress)
     {
         progress.Token.ThrowIfCancellationRequested();
+        if(PhotoInput.IsNormalX3f(path,settings))throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
         if(!PhotoInput.IsRaw(path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
-        settings=PrepareRecipe(path,settings);SetProcessing(settings.Processing);
+        settings=PrepareRecipe(path,settings);SetProcessing(settings.Processing);SetX3f(path,settings);
         SetTone(settings.RenderToneControls);SetAtmosphere(settings.RenderAtmosphere);
         SetCurve(settings.RenderCurve);SetGrading(settings.RenderGrading);SetLens(settings.Lens);ConfigureAI(true);
         var request=settings.Request(path,null,0,null);

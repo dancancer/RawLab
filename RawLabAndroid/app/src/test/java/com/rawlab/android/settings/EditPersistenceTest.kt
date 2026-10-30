@@ -61,7 +61,7 @@ class EditPersistenceTest {
             val geometryKey = "$record.geometry"
             properties.setProperty(geometryKey, "1,0.2,0.1,0.8,0.7,3,1,1,-10.0")
             file.outputStream().use { properties.store(it, null) }
-            assertEquals(changed.copy(geometry = changed.geometry.copy(perspectiveHorizontal = 0f,
+            assertEquals(changed.copy(x3fMode = X3fMode.LEGACY, geometry = changed.geometry.copy(perspectiveHorizontal = 0f,
                 perspectiveVertical = 0f)), EditStore(directory).load(identity))
             properties.setProperty(key, properties.getProperty(key).split(',').take(24).joinToString(","))
             properties.remove(key.removeSuffix(".values") + ".lens")

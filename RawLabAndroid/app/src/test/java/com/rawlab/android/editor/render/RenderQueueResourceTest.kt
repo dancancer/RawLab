@@ -6,6 +6,21 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class RenderQueueResourceTest {
+    @Test fun replacedAndClosedPendingInputsAreReleasedWithoutRendering() {
+        val started = CountDownLatch(1); val resume = CountDownLatch(1); val released = CountDownLatch(1)
+        val discarded = java.util.Collections.synchronizedList(mutableListOf<Int>())
+        val rendered = java.util.Collections.synchronizedList(mutableListOf<Int>())
+        val queue = RenderQueue<Int, Int>({ value ->
+            rendered += value; started.countDown(); resume.await(); value
+        }, { _, _ -> fail("Closed queue must not publish") }, { released.countDown() },
+            discardPending = { discarded += it })
+        queue.submit(1); assertTrue(started.await(5, TimeUnit.SECONDS))
+        queue.submit(2); queue.submit(3); queue.close(); resume.countDown()
+        assertTrue(released.await(5, TimeUnit.SECONDS))
+        assertEquals(listOf(2, 3), discarded)
+        assertEquals(listOf(1), rendered)
+    }
+
     @Test fun newerRequestCancelsRunningWorkBeforeItCompletes() {
         val started = CountDownLatch(1); val cancelled = CountDownLatch(1)
         val finished = CountDownLatch(1)

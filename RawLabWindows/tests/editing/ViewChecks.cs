@@ -27,10 +27,12 @@ internal static class ViewChecks
         check(!NeutralReference.Matches(key,key.Source with{Created=57},key.Processing,key.Geometry,key.Lens),
             "Replacing the same path invalidates before readiness even when geometry and values are unchanged");
         check(!NeutralReference.Matches(key,key.Source,key.Processing,key.Geometry,key.Lens,1280),"A small neutral frame cannot satisfy a newer larger or native viewing demand");
-        var edited=new Adjustments { Processing=ProcessingIdentity.Legacy,Geometry=new(.1,.2,.7,.6,1,true,false,2),Lens=new(true,true,true,true,"lens-id") };
+        check(!NeutralReference.Matches(key,key.Source,key.Processing,key.Geometry,key.Lens,640,false,X3fMode.Legacy),"Changing X3F mode invalidates neutral readiness");
+        var edited=new Adjustments { Processing=ProcessingIdentity.Legacy,X3fMode=X3fMode.Legacy,Geometry=new(.1,.2,.7,.6,1,true,false,2),Lens=new(true,true,true,true,"lens-id") };
         edited.Set(Parameter.Exposure,.7);edited.Set(Parameter.Temperature,8000);edited.Hsl=edited.Hsl.WithValue(0,2,30);
         var original=edited.Capture();
         var before=NeutralReference.Settings("fixture.ARW",edited);
+        check(before.X3fMode==X3fMode.Legacy,"Neutral reference retains the selected X3F mode");
         check(before.Lens==edited.Lens,"Neutral reference preserves committed lens correction instead of comparing different compositions");
         check(before.Geometry==edited.Geometry && before.Processing==ProcessingIdentity.Legacy,"Neutral reference retains committed geometry and processing identity");
         check(before[Parameter.Exposure]==0 && before.CameraWhiteBalance && before.Hsl.Equals(new HslSettings()),"Neutral reference resets user grading instead of copying the edited frame");

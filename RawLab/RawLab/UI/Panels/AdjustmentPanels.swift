@@ -13,7 +13,7 @@ extension ContentView {
         } else if lensSelected {
             IOSLensControls(settings: lensDraftBinding, info: viewModel.lensInfo)
             .padding(.horizontal, 16)
-            .disabled(!viewModel.hasImage || editingLocked || viewModel.sourceKind != .raw)
+            .disabled(!viewModel.hasImage || editingLocked || viewModel.sourceKind != .raw || usesNormalX3f)
         } else if choosingMasterRecipe {
             masterRecipePanel
         } else if selectedAdjustment == .toneCurve {
@@ -142,6 +142,7 @@ extension ContentView {
                 .accessibilityLabel(L10n.text("曝光基准"))
                 .accessibilityValue(settings.exposureMode.title)
                 .accessibilityIdentifier("exposure.mode")
+                .disabled(usesNormalX3f)
             }
             Button(action: autoExposure) {
                 Label(L10n.text("自动"), systemImage: "wand.and.stars")

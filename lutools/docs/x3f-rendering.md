@@ -4,7 +4,7 @@
 
 `legacy` uses the released LibRaw path, including its false-color appearance.
 `normal-v1` uses the separate pinned X3F renderer. C/C++ sessions default to
-legacy. Mac fresh edits select normal; persisted records missing `x3fMode` decode
+legacy. Fresh edits on all four clients select normal; persisted records missing `x3fMode` decode
 as legacy. Unknown identities are rejected. Reset preserves the selected mode;
 preview, final export, batch snapshots and CLI recipes carry it explicitly.
 Changing mode keeps ordinary edits and look selection. Explicitly switching to
@@ -35,6 +35,16 @@ capture Kelvin. Absolute/automatic RAW WB, FBDD, AI RAW replacement and addition
 lens correction are rejected for normal X3F. GPU Auto uses the CPU path; Force
 returns an unsupported error instead of claiming GPU processing.
 
+Normal X3F loads use LibRaw for identification only; the pinned renderer owns pixel
+decoding. Switching that processor to legacy performs LibRaw unpack lazily. The
+orientation/transfer-function conversion and working-space conversion use the
+existing bounded CPU pixel executor without changing per-pixel arithmetic.
+The upstream decoder already parallelizes TRUE planes and SPP tiles with Rayon,
+but the Merrill SPP path still includes serial stages and rejects GPU execution.
+Output resizing happens after full-resolution development, so a small export does
+not avoid that initial cost. Ordinary scene-view GPU shaders cannot be enabled
+for this display-referred path without implementing its separate tone contract.
+
 ## Camera and saved-setting admission
 
 | Camera family | Renderer | Saved-setting boundary |
@@ -58,15 +68,19 @@ and clipped-highlight differences must not be represented as SPP equivalence.
 
 ## Platforms, export and errors
 
-The current default build enables this renderer on macOS desktop. Other platforms
-keep legacy behavior unless explicitly built with the Rust bridge and a valid
-cross-compilation target. Their normal-mode UI and device validation are pending.
+The product builds enable this renderer on macOS, Windows x64, iOS device/simulator
+and Android arm64/x86_64. All clients expose the same explicit normal/legacy mode,
+preserve it through reset and restore, and disable normal-mode RAW-only controls.
+On mobile, a failed normal import retains its input until the user explicitly
+retries with legacy or starts another import. A retry only saves legacy after a
+successful render; invalid persisted records are not silently discarded.
 
-Mac JPEG/PNG export preserves ImageIO-readable capture metadata. For a successfully
+Apple JPEG/PNG export preserves ImageIO-readable capture metadata. For a successfully
 rendered X3F that ImageIO cannot read, it writes output dimensions, upright
 orientation and color information without fabricated capture EXIF. Rendered DNG
 uses the existing output-referred pixel contract. Source files are never updated
-with RawLab adjustments.
+with RawLab adjustments. Android likewise tolerates missing capture EXIF only
+after native rendering has validated the X3F input.
 
 Cancellation is propagated through an independent atomic token and never publishes
 partial pixels. Changing a source at the same path invalidates its file identity
@@ -79,10 +93,29 @@ CMake option `SONY2FUJI_ENABLE_X3F` enables the bridge. Cross builds require
 `RAWLAB_X3F_RUST_TARGET`; use one Mac architecture per build. Cargo uses the locked
 dependencies. Install Rust 1.88+ and `rust-docs`; packaging gathers dependency and
 standard-library notices from the actual toolchain. No downloaded binary decoder
-or runtime environment tuning is accepted.
+or runtime environment tuning is accepted. Python 3.11+ collects notices, and bindgen
+requires host libclang. Product wrappers select these targets:
+
+| Product | Rust target |
+| --- | --- |
+| macOS | `aarch64-apple-darwin` or `x86_64-apple-darwin` |
+| iOS device | `aarch64-apple-ios` |
+| iOS simulator | `aarch64-apple-ios-sim`, `x86_64-apple-ios` |
+| Android | `aarch64-linux-android`, `x86_64-linux-android` |
+| Windows x64 | `x86_64-pc-windows-msvc` |
+
+iOS uses the matching Xcode SDK and deployment target for C and Rust. Android uses
+the selected NDK ABI/API compiler, archiver and sysroot. Windows uses MSVC; a GCC
+Rust target cannot be substituted. Build jobs prepare Rust 1.99.1 with the listed
+targets and `rust-docs`; all packages include dependency and Rust runtime notices.
 
 Changes to profiles require a new renderer identity and independent held-out
 photographs. See [bridge provenance](../x3f-bridge/README.md). Core regressions cover
 mode/cache isolation, ordinary RAW invariance, invalid signatures and cancellation;
 `RawLabMac/tests/X3FWorkflowTests.swift` exercises the real Mac engine, RGB16 export,
-CLI parity and persisted edits with a supplied original X3F.
+CLI parity and persisted edits with a supplied original X3F. iOS provides
+`RawLab/tests/x3f-workflow.sh` and the dedicated-simulator `x3f-ui.sh`; Android has
+`X3fRenderingTest` and `X3fEditorTest` instrumentation tests; Windows provides
+`RawLabWindows.Tests --x3f <repo> <raw> <output>` and the UIA host with
+`RAWLAB_X3F_UI=1`. Device tests require external fixtures and run locally, separately
+from CI compilation. Build success alone does not establish device or camera coverage.

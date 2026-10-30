@@ -52,6 +52,8 @@ import com.rawlab.android.looks.filmStripItems
 import com.rawlab.android.looks.localizedName
 import com.rawlab.android.looks.localizedSubtitle
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.X3fMode
+import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.settings.ColorGradingZone
 import com.rawlab.android.editor.controls.ColorGradingControls
 import com.rawlab.android.editor.controls.ToneCurveControls
@@ -79,12 +81,14 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     selectGroup: (EditorAdjustmentGroup) -> Unit, channel: Int, onChannelChange: (Int) -> Unit,
     onResetScope: (EditorResetScope) -> Unit, sideDock: Boolean, navigationEnabled: Boolean, compactNavigation: Boolean,
     onGeometryLock: () -> Unit = {}, onGeometrySwap: () -> Unit = {}, onGeometryGrid: () -> Unit = {},
-    onPresets: () -> Unit = {}, gradingZone: ColorGradingZone = ColorGradingZone.SHADOWS,
+    onPresets: () -> Unit = {}, quickPresetsVisible: Boolean = false, quickPresetContent: @Composable () -> Unit = {}, gradingZone: ColorGradingZone = ColorGradingZone.SHADOWS,
     onGradingZoneChange: (ColorGradingZone) -> Unit = {}, hslTarget: HslTargetActions = HslTargetActions(),
     onSelectFilm: (String) -> Boolean = { false }) {
     val edits = state.visibleEdits
     val context = LocalContext.current
     val rawInput = state.photo?.inputKind == PhotoInputKind.RAW
+    val x3fInput = state.photo?.isX3f == true
+    val normalX3f = x3fInput && edits.x3fMode == X3fMode.NORMAL
     val recipes = remember(context) { MasterRecipe.load(context) }
     val bundledFilms = remember(context) { Film.all + BundledLooks.load(context) }
     val filmItems = remember(state.looks, bundledFilms) { filmStripItems(state.looks, bundledFilms) }
@@ -103,7 +107,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     val groupList = rememberLazyListState()
     val toolList = rememberLazyListState()
     val parameterScroll = rememberScrollState()
-    val parameterSession = listOf(state.photo?.identity, state.photo?.file?.absolutePath, tool, tool == 17 && perspective)
+    val parameterSession = listOf(state.photo?.identity, state.photo?.file?.absolutePath, tool, tool == 17 && perspective, quickPresetsVisible)
+    LaunchedEffect(quickPresetsVisible) { parameterScroll.scrollTo(0) }
     // 仅实际导航后的工具身份变化会复位；离开草稿的 Stay 不改变这个 key。
     var fine by rememberSaveable(state.photo?.identity, state.photo?.file?.absolutePath, tool) { mutableStateOf(false) }
     val displayLook = recipes.firstOrNull { it.id == edits.recipeID }?.localizedName
@@ -125,12 +130,19 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
         }
     }
     @Composable fun toolStrip(modifier: Modifier = Modifier) {
-        EditorToolStrip(state, tool, EditorAdjustmentRules.tools(EditorAdjustmentRules.groupFor(tool) ?: EditorAdjustmentGroup.LOOKS),
+        EditorToolStrip(state, if (quickPresetsVisible) -2 else tool, EditorAdjustmentRules.tools(if (quickPresetsVisible) EditorAdjustmentGroup.LOOKS else EditorAdjustmentRules.groupFor(tool) ?: EditorAdjustmentGroup.LOOKS),
             toolList, navigationEnabled, true, modifier, perspective = perspective,
-            onPerspective = { perspective = true; selectTool(17) }, select = { if (it == 17) perspective = false; selectTool(it) })
+            onPerspective = { perspective = true; selectTool(17) }, trailing = if (quickPresetsVisible || EditorAdjustmentRules.groupFor(tool) == EditorAdjustmentGroup.LOOKS) ({
+                TextButton(onClick = onPresets, enabled = navigationEnabled && state.controlsEnabled,
+                    colors = ButtonDefaults.textButtonColors(contentColor = if (quickPresetsVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant),
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("preset-dock").semantics { selected = quickPresetsVisible }) {
+                    Icon(Icons.Outlined.Bookmarks, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.preset_library))
+                }
+            }) else null, select = { if (it == 17) perspective = false; selectTool(it) })
     }
     @Composable fun groupStrip() {
-        EditorGroupStrip(state, expanded, tool, sideDock, groupList, navigationEnabled, true, select = selectGroup)
+        EditorGroupStrip(state, expanded, if (quickPresetsVisible) 0 else tool, sideDock, groupList, navigationEnabled, true, select = selectGroup)
     }
     val showFine = tool !in listOf(0, 9, 15, 16)
     @Composable fun fineControl() {
@@ -145,7 +157,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     @Composable fun toolRow() {
         Column(Modifier.fillMaxWidth()) {
             toolStrip()
-            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp),
+            if (!quickPresetsVisible) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Spacer(Modifier.weight(1f))
                 fineControl()
@@ -164,15 +176,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
         CompositionLocalProvider(LocalAdjustmentSession provides parameterSession, LocalAdjustmentFine provides fine) {
         Column(Modifier.fillMaxWidth()) {
             if (scrollTools) toolRow()
-        when (tool) {
+        if (quickPresetsVisible) quickPresetContent() else when (tool) {
             0 -> LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                item(key = "user-presets") {
-                    Column(Modifier.width(88.dp).testTag("preset-dock"), horizontalAlignment = Alignment.CenterHorizontally) {
-                        ToolIcon(Icons.Outlined.Bookmarks, R.string.preset_library, state.operation == Operation.NONE, onPresets)
-                        Text(stringResource(R.string.preset_library), Modifier.heightIn(min = 42.dp).padding(top = 4.dp),
-                            style = MaterialTheme.typography.labelSmall)
-                    }
-                }
                 item(key = "import-look") {
                     Column(Modifier.width(76.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         ToolIcon(Icons.Outlined.Add, R.string.import_look, state.operation == Operation.NONE, onImportLook)
@@ -243,7 +248,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 val modes = listOf(R.string.exposure_scene, R.string.exposure_preview, R.string.exposure_sensor)
                 Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) {
-                    TextButton(onClick = { modeMenu = true }, enabled = state.controlsEnabled && rawInput,
+                    TextButton(onClick = { modeMenu = true }, enabled = state.controlsEnabled && rawInput && !normalX3f,
                         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)) {
                         Text(stringResource(modes[edits.exposureMode]), style = MaterialTheme.typography.labelMedium)
                     }
@@ -306,7 +311,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 HslControls(edits.hsl, state.controlsEnabled, channel, onChannelChange,
                     { all -> onResetScope(if (all) EditorResetScope.AllHsl else EditorResetScope.HslChannel(channel)) }) { value, dragging -> onEdit(edits.copy(hsl = value), dragging) }
             }
-            16 -> LensControls(edits.lens, state.preview?.lens, rawInput && state.controlsEnabled && state.draft != null, state.rendering, onReset = { onResetScope(EditorResetScope.Tool(16)) }) { value ->
+            16 -> LensControls(edits.lens, state.preview?.lens, rawInput && !normalX3f && state.controlsEnabled && state.draft != null, state.rendering, onReset = { onResetScope(EditorResetScope.Tool(16)) }) { value ->
                 onDraftEdit(edits.copy(lens = value), false)
             }
             17 -> GeometryControls(edits.geometry, state.controlsEnabled && state.draft != null,
@@ -337,7 +342,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
         }
         }
         }
-        if (state.draft != null) {
+        if (state.draft != null && !quickPresetsVisible) {
             Column {
                 HorizontalDivider()
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -351,7 +356,28 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     }
     if (processingContext) AlertDialog(onDismissRequest = { processingContext = false },
         title = { Text(stringResource(R.string.photo_processing_settings)) },
-        text = { Text(displayLook) }, confirmButton = { TextButton(onClick = { processingContext = false }) { Text(stringResource(R.string.confirm)) } })
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(displayLook)
+                if (x3fInput) {
+                    val available = remember { NativeProcessor.nativeX3fAvailable() }
+                    Text(stringResource(R.string.x3f_rendering), Modifier.padding(top = 16.dp), style = MaterialTheme.typography.titleSmall)
+                    X3fMode.entries.forEach { mode ->
+                        val enabled = state.controlsEnabled && state.draft == null && (mode != X3fMode.NORMAL || available)
+                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .testTag("x3f.mode.${mode.id}")
+                            .selectable(selected = edits.x3fMode == mode, enabled = enabled, role = Role.RadioButton,
+                                onClick = { onEdit(edits.copy(x3fMode = mode), false) }),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = edits.x3fMode == mode, onClick = null, enabled = enabled)
+                            Text(stringResource(if (mode == X3fMode.NORMAL) R.string.x3f_normal else R.string.x3f_legacy), Modifier.padding(start = 8.dp))
+                        }
+                    }
+                    Text(stringResource(if (normalX3f) R.string.x3f_relative_wb else R.string.x3f_legacy_description),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }, confirmButton = { TextButton(onClick = { processingContext = false }) { Text(stringResource(R.string.confirm)) } })
     if (allTools) ModalBottomSheet(onDismissRequest = { allTools = false },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         EditorSheetSystemBars()

@@ -310,6 +310,13 @@
     <string name="preset_new_name">"新しいプリセット"</string>
     <string name="preset_overwrite">"上書き"</string>
     <string name="preset_overwrite_confirm">"プリセットを上書きしますか？"</string>
+    <string name="preset_quick_apply_current">"現在の写真に適用"</string>
+    <string name="preset_quick_apply_multiple">"複数の写真に適用"</string>
+    <string name="preset_quick_checking">"プリセットを確認中…"</string>
+    <string name="preset_quick_error_incompatible">"このプリセットは現在の写真に適用できません。別のプリセットを選んでください。"</string>
+    <string name="preset_quick_error_mode">"このプリセットには、現在の編集モードで使えない HDR の相対ホワイトバランスが含まれています。"</string>
+    <string name="preset_quick_error_preserve">"このプリセットでは写真の他の調整を維持できません。別のプリセットを選んでください。"</string>
+    <string name="preset_quick_manage">"プリセットを管理"</string>
     <string name="preset_reload">"再読み込み"</string>
     <string name="preset_rename">"プリセット名を変更"</string>
     <string name="preset_rename_action">"名前を変更"</string>
@@ -430,4 +437,10 @@
     <string name="vibrance">"自然な彩度"</string>
     <string name="vignette_highlights_unavailable">"周辺減光の強度が負の値の場合のみ使用できます。"</string>
     <string name="white_point">"白レベル"</string>
+    <string name="x3f_legacy">"擬似赤外線（従来）"</string>
+    <string name="x3f_legacy_description">"従来の現像による独特な色を保持します。"</string>
+    <string name="x3f_normal">"通常現像"</string>
+    <string name="x3f_relative_wb">"保存済みの現像を基準に、ホワイトバランスを相対調整します。"</string>
+    <string name="x3f_rendering">"X3F 現像"</string>
+    <string name="x3f_retry_legacy">"旧版の現像で再試行"</string>
 </resources>

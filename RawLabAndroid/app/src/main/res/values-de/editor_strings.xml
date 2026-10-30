@@ -310,6 +310,13 @@
     <string name="preset_new_name">"Neue Vorgabe"</string>
     <string name="preset_overwrite">"Überschreiben"</string>
     <string name="preset_overwrite_confirm">"Vorgabe überschreiben?"</string>
+    <string name="preset_quick_apply_current">"Auf aktuelles Foto anwenden"</string>
+    <string name="preset_quick_apply_multiple">"Auf mehrere Fotos anwenden"</string>
+    <string name="preset_quick_checking">"Vorgabe wird geprüft…"</string>
+    <string name="preset_quick_error_incompatible">"Diese Vorgabe ist mit dem aktuellen Foto nicht kompatibel. Wählen Sie eine andere Vorgabe."</string>
+    <string name="preset_quick_error_mode">"Diese Vorgabe enthält relativen HDR-Weißabgleich, den der aktuelle Bearbeitungsmodus nicht unterstützt."</string>
+    <string name="preset_quick_error_preserve">"Diese Vorgabe kann die übrigen Anpassungen des Fotos nicht beibehalten. Wählen Sie eine andere Vorgabe."</string>
+    <string name="preset_quick_manage">"Vorgaben verwalten"</string>
     <string name="preset_reload">"Neu laden"</string>
     <string name="preset_rename">"Vorgabe umbenennen"</string>
     <string name="preset_rename_action">"Umbenennen"</string>
@@ -430,4 +437,10 @@
     <string name="vibrance">"Dynamik"</string>
     <string name="vignette_highlights_unavailable">"Nur bei negativer Vignettenstärke verfügbar."</string>
     <string name="white_point">"Weißpunkt"</string>
+    <string name="x3f_legacy">"Falsch-Infrarot (alt)"</string>
+    <string name="x3f_legacy_description">"Behält die besonderen Farben der früheren Entwicklung bei."</string>
+    <string name="x3f_normal">"Normale Entwicklung"</string>
+    <string name="x3f_relative_wb">"Die gespeicherte Entwicklung ist die Basis; der Weißabgleich wird relativ angepasst."</string>
+    <string name="x3f_rendering">"X3F-Entwicklung"</string>
+    <string name="x3f_retry_legacy">"Mit bisheriger Entwicklung erneut versuchen"</string>
 </resources>

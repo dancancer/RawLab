@@ -161,7 +161,7 @@ public static class EditorAdjustmentRules
     private static readonly Parameter[] ColorParameters = [Parameter.Temperature, Parameter.Tint, Parameter.Saturation];
     private static SavedEdit Defaults(SavedEdit edit)
     {
-        var state = new Adjustments { Processing = edit.Settings.Processing };
+        var state = new Adjustments { Processing = edit.Settings.Processing, X3fMode = edit.Settings.X3fMode };
         if (PhotoInput.IsRaw(edit.Identity.Path)) state.ResolveWhiteBalance(edit.Settings.AsShotTemperature is {} t && edit.Settings.AsShotTint is {} tint ? (t, tint) : null);
         state = PhotoInput.PrepareInputSettings(edit.Identity.Path, state);
         return new(edit.Identity, state.Capture(), null);
@@ -306,7 +306,7 @@ public static class EditorAdjustmentRules
     {
         var a = before.Settings.Restore(); var b = after.Settings.Restore();
         var x = EffectiveRequest(before.Identity.Path, a); var y = EffectiveRequest(after.Identity.Path, b);
-        return x.ExposureEv == y.ExposureEv && x.Contrast == y.Contrast && x.Highlights == y.Highlights &&
+        return a.X3fMode == b.X3fMode && x.ExposureEv == y.ExposureEv && x.Contrast == y.Contrast && x.Highlights == y.Highlights &&
             x.Shadows == y.Shadows && x.Saturation == y.Saturation && x.ToneCurve == y.ToneCurve && x.Sharpening == y.Sharpening &&
             x.WbMode == y.WbMode && x.Temperature == y.Temperature && x.Tint == y.Tint && a.ExposureMode == b.ExposureMode &&
             a.RenderHsl.Values.Select(v => (float)v).SequenceEqual(b.RenderHsl.Values.Select(v => (float)v)) &&

@@ -23,6 +23,7 @@ internal object SettingsCodec {
         val fields = value.split('|')
         require(fields.size in listOf(12, 16, 25, 50, 51, 52, 53, 54))
         return EditSettings(film = fields[0], strength = fields[1].toFloat(), exposure = fields[2].toFloat(),
+            x3fMode = X3fMode.LEGACY,
             highlights = fields[3].toFloat(), shadows = fields[4].toFloat(), contrast = fields[5].toFloat(),
             toneCurve = fields[6].toFloat(), saturation = fields[7].toFloat(), customWb = parseBoolean(fields[8]),
             temperature = fields[9].toFloat(), tint = fields[10].toFloat(), sharpening = fields[11].toFloat(),

@@ -57,6 +57,7 @@
 "Selected item is not a supported image." = "L’élément sélectionné n’est pas une image prise en charge.";
 "Sony2Fuji output copy failed." = "Échec de la copie de la sortie Sony2Fuji.";
 "Sony2Fuji session create failed: %@" = "Échec de la création de la session Sony2Fuji : %@";
+"X3F 显影" = "Développement X3F";
 "三分网格" = "Grille des tiers";
 "三线性" = "Trilinéaire";
 "上下拖动调整，方向键微调，Esc 取消" = "Faites glisser vers le haut ou le bas pour régler, utilisez les flèches pour affiner et Échap pour annuler";
@@ -89,13 +90,16 @@
 "从照片库选择" = "Choisir dans la photothèque";
 "以下为配方逻辑值；强度为 %@。部分范围会按此强度换算。" = "Voici les valeurs logiques de la recette ; l’intensité est de %@. Certains champs sont mis à l’échelle selon cette intensité.";
 "以下目标尚未完成本次历史操作，请检查原因后重试。" = "L’opération d’historique est incomplète pour ces photos. Vérifiez la cause et réessayez.";
+"以文件保存的显影为基准，白平衡作相对调整。" = "Utilise le développement enregistré comme référence, avec des ajustements relatifs de la balance des blancs.";
 "任务使用的外观文件不可用，请重新创建任务。" = "Le fichier de look utilisé par la tâche n’est pas disponible. Recréez la tâche.";
 "任务操作" = "Actions de la tâche";
 "任务未保存：%@" = "Tâche non enregistrée : %@";
 "传感器基准" = "Référence du capteur";
+"伪红外（旧版）" = "Faux infrarouge (ancien)";
 "位置与尺寸" = "Position et dimensions";
 "使用 RawLab 中性显影作为基础，不代表还原了相机的标准风格。" = "Utilise le développement neutre de RawLab comme base, sans reproduire le style Standard de l’appareil.";
 "使用当前调整批量导出…" = "Exporter par lots avec les réglages actuels…";
+"使用旧版显影重试" = "Réessayer avec l’ancien développement";
 "使用统计已关闭。" = "L’analyse d’utilisation est désactivée.";
 "依据部分文件线索 · 仍有假设" = "Indices partiels du fichier · Des hypothèses subsistent";
 "保井崇志" = "Takashi Yasui";
@@ -111,6 +115,7 @@
 "保存时发生中断，请先核对照片图库，避免重复生成。" = "Une interruption s’est produite lors de l’enregistrement. Vérifiez Photos avant de générer à nouveau.";
 "保存结果待确认" = "Confirmation de l’enregistrement requise";
 "保存预设" = "Enregistrer le préréglage";
+"保留旧版的特殊色彩。" = "Conserve les couleurs particulières de l’ancien développement.";
 "保留这次几何或镜头修改？" = "Conserver ces modifications de géométrie ou d’objectif ?";
 "候选效果" = "Résultats proposés";
 "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。" = "Fausses couleurs : bleu pour les ombres, ambre au-dessus du blanc de référence, rose au-delà de la capacité de l’écran.";
@@ -274,6 +279,8 @@
 "平均差异 %@/255 · 最大差异 %@/255" = "Écart moyen %@/255 · Écart maximal %@/255";
 "并排" = "Côte à côte";
 "应用" = "Appliquer";
+"应用到多张照片" = "Appliquer à plusieurs photos";
+"应用到当前照片" = "Appliquer à la photo actuelle";
 "应用并保存" = "Appliquer et enregistrer";
 "应用草稿" = "Appliquer le brouillon";
 "应用草稿并继续" = "Appliquer le brouillon et continuer";
@@ -453,9 +460,11 @@
 "正在显影" = "Développement";
 "正在显影…" = "Développement…";
 "正在检查目标…" = "Vérification des photos…";
+"正在检查预设…" = "Vérification du préréglage…";
 "正在生成效果预览…" = "Génération de l’aperçu…";
 "正在生成预览…" = "Génération des aperçus…";
 "正在读取镜头信息…" = "Lecture des informations de l’objectif…";
+"正常显影" = "Développement normal";
 "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。" = "Les informations colorimétriques de cette LUT sont incomplètes. Confirmez son traitement. Elle sera marquée comme compatible, avec un rendu non vérifié.";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "La balance des blancs prise de vue de ce RAW n’a pas pu être analysée ; la teinte de la recette ne peut pas être appliquée.";
 "此像素不可取样。" = "Ce pixel ne peut pas être échantillonné.";
@@ -465,7 +474,10 @@
 "此输入不支持镜头校正" = "Correction optique non prise en charge pour cette image";
 "此配置与预览照片类型不匹配，请更换照片或配置。" = "Cette configuration ne correspond pas au type de photo d’aperçu. Choisissez une autre photo ou configuration.";
 "此镜头没有所选校正的标定数据" = "Aucune donnée d’étalonnage pour les corrections choisies";
+"此预设与当前照片不兼容，请选择其他预设。" = "Ce préréglage est incompatible avec la photo actuelle. Choisissez un autre préréglage.";
+"此预设包含 HDR 相对白平衡，当前编辑模式不支持。" = "Ce préréglage contient une balance des blancs HDR relative non prise en charge par le mode de retouche actuel.";
 "此预设库来自更新版本，请更新应用后重试。" = "Cette bibliothèque de préréglages provient d’une version plus récente. Mettez l’application à jour, puis réessayez.";
+"此预设无法保留照片的其他调整，请选择其他预设。" = "Ce préréglage ne peut pas préserver les autres retouches de la photo. Choisissez un autre préréglage.";
 "此默认值不可达，请重置裁切组。" = "Cette valeur par défaut ne peut pas être atteinte. Réinitialisez les réglages de recadrage.";
 "每张照片使用确认时冻结的独立调整。" = "Chaque photo utilise ses propres réglages figés lors de la confirmation.";
 "水平位置" = "Position horizontale";
@@ -525,6 +537,7 @@
 "童话绘本油画感，深邃沉静暗部，暖金柔光包裹与漫反射微光" = "Peinture à l'huile de livre de contes, ombres profondes et calmes, lumière dorée enveloppante et lueur diffuse";
 "端点固定" = "Les extrémités sont fixes";
 "等待导出" = "En attente d’exportation";
+"管理预设" = "Gérer les préréglages";
 "管理预设：%@" = "Gérer le préréglage : %@";
 "粗糙度" = "Rugosité";
 "粗色斑抑制" = "Suppression des artefacts grossiers";

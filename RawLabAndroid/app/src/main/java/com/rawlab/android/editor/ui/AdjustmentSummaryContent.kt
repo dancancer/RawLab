@@ -53,7 +53,7 @@ internal fun AdjustmentScopeSummaryContent(preview: Result<AdjustmentPayload>, m
         color = if (empty) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error)
 }
 
-private fun summaryGroupTitle(id: String) = AppStrings.text(when (id) {
+internal fun summaryGroupTitle(id: String) = AppStrings.text(when (id) {
     "looks" -> R.string.transfer_group_looks
     "light" -> R.string.transfer_group_light
     "color" -> R.string.transfer_group_color

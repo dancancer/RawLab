@@ -285,8 +285,13 @@ extension ContentView {
         .accessibilityIdentifier("editor.preview.updating")
     }
 
-    var adjustmentPanel: some View {
-        valuePanel.disabled(resetDraftSuspended || (settings.isHDREditing && !supportsHDR(currentEditorTool)))
+    @ViewBuilder var adjustmentPanel: some View {
+        Group {
+            if viewModel.quickPresetsVisible {
+                IOSQuickPresetView(model: viewModel, requestAction: requestAdjustmentAction,
+                    manage: { adjustmentSheet = .presets }, undo: undoQuickPreset, libraryRevision: presetLibraryRevision)
+            } else { valuePanel }
+        }.disabled(resetDraftSuspended || (settings.isHDREditing && !viewModel.quickPresetsVisible && !supportsHDR(currentEditorTool)))
             .environment(\.adjustmentFine, adjustmentFine)
             .environment(\.adjustmentInputContext, parameterInputContext)
             .padding(.vertical, 8)
@@ -351,6 +356,8 @@ extension ContentView {
         .opacity(rulerFocusOpacity)
     }
 
+    var usesNormalX3f: Bool { viewModel.sourceIsX3f && settings.x3fMode == .normal }
+
     var processingContextSheet: some View {
             NavigationStack {
                 Form {
@@ -362,10 +369,21 @@ extension ContentView {
                             .accessibilityIdentifier("hdr.editMode")
                     }
                     if settings.isHDREditing { HDRMonitoringControls(state:hdrDisplay) }
+                    if viewModel.sourceIsX3f {
+                        Picker(L10n.text("X3F 显影"), selection: $settings.x3fMode) {
+                            ForEach(X3fMode.allCases) { mode in
+                                Text(mode.title).tag(mode).disabled(mode == .normal && sony2fuji_x3f_available() == 0)
+                            }
+                        }
+                        .disabled(isEditorDraftActive || editorBusy)
+                        .accessibilityIdentifier("x3f.mode")
+                        Text(L10n.text(usesNormalX3f ? "以文件保存的显影为基准，白平衡作相对调整。" : "保留旧版的特殊色彩。"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     if viewModel.sourceKind == .raw {
                         Picker(L10n.text("曝光基准"), selection: $settings.exposureMode) {
                             ForEach(RawExposureMode.allCases) { Text($0.title).tag($0) }
-                        }.disabled(isEditorDraftActive || editorBusy)
+                        }.disabled(isEditorDraftActive || editorBusy || usesNormalX3f)
                     }
                 }
                 .navigationTitle(L10n.text("照片处理设置"))
@@ -472,7 +490,7 @@ extension ContentView {
             .background(selectedGroup == group ? Color.yellow.opacity(0.12) : .clear)
         }
         .buttonStyle(.plain)
-        .disabled(settings.isHDREditing && !EditorAdjustmentRules.tools(group).contains(where:supportsHDR))
+        .disabled(settings.isHDREditing && group != .looks && !EditorAdjustmentRules.tools(group).contains(where:supportsHDR))
         .accessibilityLabel(L10n.format(adjustmentsExpanded && selectedGroup == group ? "收起%@组" : "展开%@组", group.title))
         .accessibilityValue(resetModified(.group(group)) ? L10n.text("已调整") : "")
         .accessibilityAddTraits(selectedGroup == group ? .isSelected : [])
@@ -498,18 +516,18 @@ extension ContentView {
                     HStack(spacing: 4) {
                         ForEach(EditorAdjustmentRules.tools(selectedGroup), id: \.self) { tool in
                             Button { if tool == .geometry { geometryPerspective = false }; selectEditorTool(tool) } label: {
-                                AdjustmentToolLabel(title: tool == .geometry ? L10n.text("裁切") : tool.title, symbol: tool.symbol, selected: currentEditorTool == tool && !(tool == .geometry && geometryPerspective),
+                                AdjustmentToolLabel(title: tool == .geometry ? L10n.text("裁切") : tool.title, symbol: tool.symbol, selected: !viewModel.quickPresetsVisible && currentEditorTool == tool && !(tool == .geometry && geometryPerspective),
                                     progress: tool == .adjustment(.toneCurve) && settings.curveSettings.mode == .custom ? 1 :
                                         tool.scalar.map(adjustmentProgress) ?? (resetModified(.tool(tool)) ? 1 : 0), width: toolWidth, height: rowHeight,
                                     maximumWidth: accessibility ? max(44, width - 24) : nil)
                             }
-                            .disabled((tool == .lens && viewModel.sourceKind != .raw) ||
+                            .disabled((tool == .lens && (viewModel.sourceKind != .raw || usesNormalX3f)) ||
                                       (tool == .adjustment(.strength) && !settings.hasLook) ||
                                       (settings.isHDREditing && !supportsHDR(tool)))
                             .accessibilityLabel(tool.title)
                             .accessibilityValue(editorToolAccessibilityValue(tool))
                             .accessibilityHint(resetModified(.tool(tool)) ? L10n.text("已调整") : "")
-                            .accessibilityAddTraits(currentEditorTool == tool && !(tool == .geometry && geometryPerspective) ? .isSelected : [])
+                            .accessibilityAddTraits(!viewModel.quickPresetsVisible && currentEditorTool == tool && !(tool == .geometry && geometryPerspective) ? .isSelected : [])
                             .accessibilityIdentifier("tool.\(tool.stableID)")
                             .contextMenu {
                                 Button(L10n.format("重置%@", tool.title)) { requestEditorReset(.tool(tool)) }
@@ -527,26 +545,32 @@ extension ContentView {
                             }
                         }
                         if selectedGroup == .looks {
-                            Button { adjustmentSheet = .presets } label: {
-                                AdjustmentToolLabel(title: L10n.text("我的预设"), symbol: "bookmark", selected: false,
+                            Button { if viewModel.quickPresetsVisible { closeQuickPresets() } else { showQuickPresets() } } label: {
+                                AdjustmentToolLabel(title: L10n.text("我的预设"), symbol: "bookmark", selected: viewModel.quickPresetsVisible,
                                     progress: 0, width: toolWidth, height: rowHeight,
                                     maximumWidth: accessibility ? max(44, width - 24) : nil)
                             }.disabled(editorBusy).accessibilityLabel(L10n.text("我的预设"))
-                                .accessibilityIdentifier("preset.library")
+                                .accessibilityIdentifier("preset.library").id("preset.quick.entry")
+                                .onAppear { if viewModel.quickPresetsVisible { proxy.scrollTo("preset.quick.entry", anchor: .trailing) } }
                         }
                     }.padding(.horizontal, 12)
                 }
                 .frame(height: rowHeight)
                 .accessibilityIdentifier("editor.tools")
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _ in
-                    proxy.scrollTo(currentEditorTool.stableID, anchor: .center)
+                    proxy.scrollTo(viewModel.quickPresetsVisible ? "preset.quick.entry" : currentEditorTool.stableID, anchor: viewModel.quickPresetsVisible ? .trailing : .center)
                 }
-                .onChange(of: currentEditorTool) { _, tool in proxy.scrollTo(tool.stableID, anchor: .center) }
+                .onChange(of: currentEditorTool) { _, tool in proxy.scrollTo(viewModel.quickPresetsVisible ? "preset.quick.entry" : tool.stableID, anchor: viewModel.quickPresetsVisible ? .trailing : .center) }
+                .onChange(of: viewModel.quickPresetsVisible) { _, visible in
+                    proxy.scrollTo(visible ? "preset.quick.entry" : currentEditorTool.stableID, anchor: visible ? .trailing : .center)
+                }
             }
             .buttonStyle(.plain)
             .disabled(editorBusy || resetDraftSuspended)
-            adjustmentHeader.padding(.horizontal, 8)
-                .frame(maxWidth: .infinity, minHeight: editorToolHeight, alignment: .trailing)
+            if !viewModel.quickPresetsVisible {
+                adjustmentHeader.padding(.horizontal, 8)
+                    .frame(maxWidth: .infinity, minHeight: editorToolHeight, alignment: .trailing)
+            }
         }
     }
 }

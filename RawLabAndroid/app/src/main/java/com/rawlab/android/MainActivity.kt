@@ -44,6 +44,7 @@ import com.rawlab.android.editor.ui.AdjustmentSheet
 import com.rawlab.android.editor.ui.AdjustmentTransferSheet
 import com.rawlab.android.editor.ui.AdjustmentPresetSheet
 import com.rawlab.android.editor.ui.AdjustmentPresetAction
+import com.rawlab.android.editor.ui.QuickPresetContent
 import com.rawlab.android.presets.AdjustmentPreset
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
@@ -88,6 +89,8 @@ fun RawLabTheme(content: @Composable () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: UsageAnalytics) {
     val state by model.state.collectAsStateWithLifecycle()
+    val quickPreset by model.quickPreset.collectAsStateWithLifecycle()
+    var presetLibraryRevision by remember { mutableIntStateOf(0) }
     val hslTarget by model.hslTarget.collectAsStateWithLifecycle()
     val updateState by updates.state.collectAsStateWithLifecycle()
     val usageState by usage.state.collectAsStateWithLifecycle()
@@ -175,11 +178,16 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             onCopyAdjustments = { model.closeAdjustmentOperation(); adjustmentSheet = AdjustmentSheet.COPY },
             onPasteAdjustments = { model.closeAdjustmentOperation(); adjustmentSheet = AdjustmentSheet.PASTE },
             onAdjustmentHistory = { model.closeAdjustmentOperation(); adjustmentSheet = AdjustmentSheet.HISTORY },
-            onPresets = { savingPreset = false; presetLibrary = true }, presetAction = presetAction,
+            onPresets = model::showQuickPresets, onClosePresets = model::closeQuickPresets,
+            quickPresetsVisible = quickPreset.visible,
+            quickPresetContent = { QuickPresetContent(model, presetLibraryRevision,
+                onManage = { savingPreset = false; presetLibrary = true }, onRequest = { presetAction = it }) },
+            presetAction = presetAction,
             onPresetActionConsumed = { presetAction = null }, onPresetActionReady = { action ->
                 when (action) {
                     AdjustmentPresetAction.Save -> { savingPreset = true; presetLibrary = true }
-                    is AdjustmentPresetAction.Apply -> {
+                    is AdjustmentPresetAction.Apply -> { model.showQuickPresets(); model.applyPresetToCurrentPhoto(action.preset) }
+                    is AdjustmentPresetAction.ApplyMultiple -> {
                         model.closeAdjustmentOperation(); selectedPreset = action.preset; adjustmentSheet = AdjustmentSheet.PASTE
                     }
                 }
@@ -220,8 +228,8 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
         AdjustmentTransferSheet(model, kind, selectedPreset) { adjustmentSheet = null; selectedPreset = null }
     }
     if (presetLibrary) AdjustmentPresetSheet(model, savingPreset,
-        onClose = { presetLibrary = false; savingPreset = false },
-        onRequest = { action -> presetLibrary = false; savingPreset = false; presetAction = action })
+        onClose = { presetLibrary = false; savingPreset = false; presetLibraryRevision++ },
+        onRequest = { action -> presetLibrary = false; savingPreset = false; presetLibraryRevision++; presetAction = action })
     if (exportDialog) ModalBottomSheet(
         onDismissRequest = { exportDialog = false; model.cancelExport() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),

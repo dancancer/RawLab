@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 BASE="$ROOT/build-ios-libraw/0.22.2"
-SOURCES="$BASE/sources"
+SOURCES="${RAWLAB_IOS_SOURCE_CACHE:-$BASE/sources}"
 DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET:-18.0}"
 JOBS="${JOBS:-6}"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
@@ -37,6 +37,11 @@ for config in iphoneos-arm64 iphonesimulator-arm64 iphonesimulator-x86_64; do
     sdk="${config%-*}"
     arch="${config##*-}"
     sysroot="$(xcrun --sdk "$sdk" --show-sdk-path)"
+    case "$config" in
+        iphoneos-arm64) rust_target=aarch64-apple-ios ;;
+        iphonesimulator-arm64) rust_target=aarch64-apple-ios-sim ;;
+        iphonesimulator-x86_64) rust_target=x86_64-apple-ios ;;
+    esac
     common=(-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT="$sysroot"
         -DCMAKE_OSX_ARCHITECTURES="$arch" -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET"
         -DCMAKE_BUILD_TYPE=Release -DCMAKE_IGNORE_PREFIX_PATH="/opt/homebrew;/usr/local"
@@ -54,6 +59,7 @@ for config in iphoneos-arm64 iphonesimulator-arm64 iphonesimulator-x86_64; do
     core="$BASE/core-$config"
     cmake -S "$ROOT" -B "$core" -GXcode "${common[@]}" "$@" \
         -DIOS=ON -DBUILD_SHARED_LIB=ON -DBUILD_CLI=OFF -DBUILD_TESTING=OFF \
+        -DSONY2FUJI_ENABLE_X3F=ON -DRAWLAB_X3F_RUST_TARGET="$rust_target" \
         -DSONY2FUJI_ENABLE_LENSFUN=ON -DSONY2FUJI_BUILD_LENS_DEPS=ON \
         -DSONY2FUJI_ENABLE_OPENMP=OFF -DSONY2FUJI_ENABLE_GPU=ON \
         -DSONY2FUJI_BUILD_TIFF_DEPS=ON \
@@ -79,6 +85,9 @@ for config in iphoneos-arm64 iphonesimulator-arm64 iphonesimulator-x86_64; do
     cp "$ROOT/third_party/nlohmann/LICENSE.MIT" "$framework/Licenses/nlohmann-JSON-MIT.txt"
     cp "$ROOT/../RawLabMac/Resources/Licenses/stb-MIT-LICENSE.txt" "$framework/Licenses/"
     cp "$ROOT/../RawLabMac/Resources/Licenses/LibRaw-X3F-BSD.txt" "$framework/Licenses/"
+    cp "$core/x3f-licenses.txt" "$framework/Licenses/X3F-Dependencies.txt"
+    mkdir -p "$framework/Licenses/x3f-rust"
+    cp -R "$core/x3f-rust-licenses/." "$framework/Licenses/x3f-rust/"
     cp -R "$core/licenses/libjpeg-turbo" "$framework/Licenses/"
     cp -R "$core/licenses/libultrahdr" "$framework/Licenses/"
     mkdir -p "$framework/Headers"

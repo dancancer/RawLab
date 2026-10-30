@@ -310,6 +310,13 @@
     <string name="preset_new_name">"Nouveau préréglage"</string>
     <string name="preset_overwrite">"Remplacer"</string>
     <string name="preset_overwrite_confirm">"Remplacer le préréglage ?"</string>
+    <string name="preset_quick_apply_current">"Appliquer à la photo actuelle"</string>
+    <string name="preset_quick_apply_multiple">"Appliquer à plusieurs photos"</string>
+    <string name="preset_quick_checking">"Vérification du préréglage…"</string>
+    <string name="preset_quick_error_incompatible">"Ce préréglage est incompatible avec la photo actuelle. Choisissez un autre préréglage."</string>
+    <string name="preset_quick_error_mode">"Ce préréglage contient une balance des blancs HDR relative non prise en charge par le mode de retouche actuel."</string>
+    <string name="preset_quick_error_preserve">"Ce préréglage ne peut pas préserver les autres retouches de la photo. Choisissez un autre préréglage."</string>
+    <string name="preset_quick_manage">"Gérer les préréglages"</string>
     <string name="preset_reload">"Recharger"</string>
     <string name="preset_rename">"Renommer le préréglage"</string>
     <string name="preset_rename_action">"Renommer"</string>
@@ -430,4 +437,10 @@
     <string name="vibrance">"Vibrance"</string>
     <string name="vignette_highlights_unavailable">"Disponible uniquement lorsque l’intensité du vignettage est négative."</string>
     <string name="white_point">"Point blanc"</string>
+    <string name="x3f_legacy">"Faux infrarouge (ancien)"</string>
+    <string name="x3f_legacy_description">"Conserve les couleurs particulières de l’ancien développement."</string>
+    <string name="x3f_normal">"Développement normal"</string>
+    <string name="x3f_relative_wb">"Utilise le développement enregistré comme référence, avec des ajustements relatifs de la balance des blancs."</string>
+    <string name="x3f_rendering">"Développement X3F"</string>
+    <string name="x3f_retry_legacy">"Réessayer avec l’ancien développement"</string>
 </resources>

@@ -1,5 +1,13 @@
 import Foundation
 
+enum X3fMode: String, CaseIterable, Identifiable, Codable {
+    case legacy = "legacy"
+    case normal = "normal-v1"
+    var id: String { rawValue }
+    var nativeValue: UInt32 { self == .normal ? 1 : 0 }
+    var title: String { L10n.text(self == .normal ? "正常显影" : "伪红外（旧版）") }
+}
+
 struct ProcessingIdentity: Equatable, Hashable, Codable {
     let family: String
     let version: Int
@@ -299,6 +307,7 @@ struct RawSettings: Codable, Equatable {
     }
 
     var processing = ProcessingIdentity.current
+    var x3fMode = X3fMode.normal
     var geometry = GeometrySettings()
     var denoise = RawDenoiseSettings()
     var lensCorrection: LensCorrectionSettings?
@@ -367,7 +376,7 @@ struct RawSettings: Codable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case hdr
+        case hdr, x3fMode
         case exposure, contrast, saturation, temperature, tint, highlights, shadows
         case toneCurve, noiseReduction, sharpening, lutID, lutStrength, whiteBalanceMode
         case denoise, photoEffects, displayChromaDenoise, exposureMode, hsl
@@ -435,6 +444,7 @@ struct RawSettings: Codable, Equatable {
         hdr = try values.decodeIfPresent(HDRSettings.self, forKey: .hdr)
         processing = values.contains(.processing)
             ? try values.decode(ProcessingIdentity.self, forKey: .processing) : .legacy
+        x3fMode = values.contains(.x3fMode) ? try values.decode(X3fMode.self, forKey: .x3fMode) : .legacy
         geometry = try values.decodeIfPresent(GeometrySettings.self, forKey: .geometry) ?? GeometrySettings()
         guard geometry.isValid else {
             throw DecodingError.dataCorruptedError(forKey: .geometry, in: values, debugDescription: "Invalid geometry parameters")
@@ -496,6 +506,7 @@ struct RawSettings: Codable, Equatable {
         var neutral = Self.default
         neutral.hdr = hdr
         neutral.processing = processing
+        neutral.x3fMode = x3fMode
         return neutral
     }
 

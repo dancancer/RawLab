@@ -31,7 +31,7 @@ public partial class MainWindow
         get {if(file==null)return null;try{return OriginalIdentity.Read(file);}catch(IOException){return null;}catch(UnauthorizedAccessException){return null;}}
     }
     private bool ReferenceCurrent=>neutralResult!=null && neutralRevision==openRevision && acceptedAfter==acceptedReference &&
-        NeutralReference.Matches(acceptedReference,CurrentViewSource,settings.Processing,settings.Geometry,settings.Lens,RenderEdge(interacting),settings.IsHDREditing);
+        NeutralReference.Matches(acceptedReference,CurrentViewSource,settings.Processing,settings.Geometry,settings.Lens,RenderEdge(interacting),settings.IsHDREditing,settings.X3fMode);
     private bool ViewInputBlocked=>Keyboard.FocusedElement is TextBoxBase or ComboBox ||
         OwnedWindows.Cast<Window>().Any(window=>window.IsVisible) ||
         MainMenu.Items.OfType<MenuItem>().Any(item=>item.IsSubmenuOpen) || viewingMenus.Count>0;

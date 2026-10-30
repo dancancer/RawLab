@@ -1,6 +1,7 @@
 #include "x3f_processor.h"
 #include "sony2fuji/color_converter.h"
 #include "processing_cancellation.h"
+#include "parallel_pixels.h"
 #include <algorithm>
 #include <cmath>
 #include <cctype>
@@ -118,9 +119,9 @@ ErrorCode X3fProcessor::process(const std::string& path, const std::string& mode
         const int width = decoded.width, height = decoded.height;
         const bool transpose = decoded.orientation >= 5;
         ImageData image(transpose ? height : width, transpose ? width : height);
-        for (int y = 0; y < image.height; ++y) {
-            checkProcessingCancellation();
-            for (int x = 0; x < image.width; ++x) {
+        parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+            for (size_t index = first; index < last; ++index) {
+                const int y = static_cast<int>(index / image.width), x = static_cast<int>(index % image.width);
                 int sx = x, sy = y;
                 switch (decoded.orientation) {
                     case 2: sx = width - 1 - x; break;
@@ -136,7 +137,7 @@ ErrorCode X3fProcessor::process(const std::string& path, const std::string& mode
                     GammaConverter::removeSRGBGamma(std::clamp(p[1], 0.0f, 1.0f)),
                     GammaConverter::removeSRGBGamma(std::clamp(p[2], 0.0f, 1.0f)));
             }
-        }
+        });
         base_ = std::move(image);
         // C++ 持有基准后释放 Rust 图像，避免缓存两份完整浮点图。
         rawlab_x3f_free(handle);
@@ -148,18 +149,19 @@ ErrorCode X3fProcessor::process(const std::string& path, const std::string& mode
     const float gain = std::exp2(options.exposure) * options.brightness;
     if (!std::isfinite(gain) || gain <= 0) return ErrorCode::InvalidFormat;
     output = base_;
-    for (size_t i = 0; i < output.pixels.size(); ++i) {
-        if (i % 4096 == 0) checkProcessingCancellation();
-        auto& pixel = output.pixels[i];
-        pixel = RGB(pixel.r * gain, pixel.g * gain, pixel.b * gain);
-        if (options.outputLinear) pixel = ColorConverter::applyMatrix(pixel, matrix);
-        else {
-            pixel = RGB(GammaConverter::applySRGBGamma(pixel.r), GammaConverter::applySRGBGamma(pixel.g),
-                        GammaConverter::applySRGBGamma(pixel.b));
-            if (options.outputBitsPerSample == 8) pixel = RGB(std::round(pixel.r * 255) / 255,
-                std::round(pixel.g * 255) / 255, std::round(pixel.b * 255) / 255);
+    parallelPixelRanges(output.pixels.size(), [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
+            auto& pixel = output.pixels[i];
+            pixel = RGB(pixel.r * gain, pixel.g * gain, pixel.b * gain);
+            if (options.outputLinear) pixel = ColorConverter::applyMatrix(pixel, matrix);
+            else {
+                pixel = RGB(GammaConverter::applySRGBGamma(pixel.r), GammaConverter::applySRGBGamma(pixel.g),
+                            GammaConverter::applySRGBGamma(pixel.b));
+                if (options.outputBitsPerSample == 8) pixel = RGB(std::round(pixel.r * 255) / 255,
+                    std::round(pixel.g * 255) / 255, std::round(pixel.b * 255) / 255);
+            }
         }
-    }
+    });
     return ErrorCode::Success;
 #endif
 }
