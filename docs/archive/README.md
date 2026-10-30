@@ -19,6 +19,8 @@ See the [documentation index](../README.md) for current references and active wo
 
 ## Integration
 
+- [UI/UX optimization, 2026-10-30](integration/ui-ux-optimization-20261030.md): PRs #155, #156, #158 and #159; implementation, integration and the confirmed release acceptance handoff.
+
 - v0.7: [iteration acceptance index](integration/v0.7/acceptance-index.md), [final composition](integration/v0.7/final-composition.md), [Lens/DNG integration](integration/v0.7/lens-dng.md), [viewport/Lens/DNG integration](integration/v0.7/viewport-lens-dng.md).
 - v0.7 platform integration: [localization](integration/v0.7/platforms/localization.md), [viewport](integration/v0.7/platforms/viewport.md).
 - v0.8: [Agent/geometry phase index](integration/v0.8/phase-one.md), [iOS development integration](integration/v0.8/ios-development.md), [iOS model integration](integration/v0.8/ios-models.md).

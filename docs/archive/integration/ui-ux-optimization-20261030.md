@@ -10,11 +10,13 @@
 
 **Spec:** [产品背景](../../../PRODUCT.md)、[现有设计体系](../../../DESIGN.md)、[紧凑调整栏与裁切精度](../../design/editor-workspace/compact-controls.md)、[编辑迭代需求](../../design/editing-iteration/requirements.md)、[HDR 四端对齐](../../design/hdr-photos/android-windows.md)。本文件第 2 节保存本轮审计到执行项的映射；详细的新交互由 UX-00 阶段形成。
 
-**状态：M0 完成；M1 已通过 [PR #155](https://github.com/dancancer/RawLab/pull/155) 集成；M2 的 UX-01 已通过 [PR #156](https://github.com/dancancer/RawLab/pull/156) 集成；UX-02 已通过 [PR #158](https://github.com/dancancer/RawLab/pull/158) 集成；M3 工作区、外观检索和状态修复已实现，正在完成阶段交付，M4 联合验收尚未关闭。** 编写日期：2026-10-29。主控为提出本规划的协调会话。
+**状态：M0–M4 的实现、独立复核和用户确认范围内的本地验收已完成。前序 PR #155、#156、#158 已集成，最后交付由 [PR #159](https://github.com/dancancer/RawLab/pull/159) 承载；CI 与合入状态以该 PR 为准。** 编写日期：2026-10-29。主控为提出本规划的协调会话。
 用户已确认按此规划推进至全部完成，主控负责细化、分派、验证和协调交付。
 目标集成分支为 `development`，不预设发布版本号或日期。
 
 **范围调整（2026-10-30，用户明确要求）：** 后续不做系统大字号/辅助字号兼容，也不再运行大字号或系统文本缩放检查。后续以默认字号验收；已完成的大字号记录仅保留为历史证据。窄窗、长译文、正常设备 DPI 和交互检查继续按本规划执行。
+
+**收口范围调整（2026-10-30，用户明确确认）：** iPad 分屏、Android 多窗口、Windows 100%/150% 显示 DPI，以及 VoiceOver/TalkBack/Narrator 的完整操作流程移至发布验收。本轮保留默认字号、窄窗、横竖屏、键盘、原生无障碍状态、Windows 200% DPI、组合流程与 Mac 122 张照片的交互观察；这些已延期项目不再作为本轮关闭条件，仍须如实标明未执行。
 
 ## 1. 基线、范围与全局约束
 
@@ -150,10 +152,10 @@ macOS/iOS 的原生 UI 操作需要独占其测试窗口/模拟器；同一环�
 ### 原生界面矩阵
 
 - **Mac：** 默认 1320×850 窗口与 950pt 宽/最小内容高度场景；有/无文件树，直方图展开/收起，单值/HSL/曲线/几何，中文及长译文；实际键鼠、保存/取消/撤销与 VoiceOver 相关状态。
-- **iOS：** 至少一台 iPhone 和一台 iPad 的专属模拟器；窄竖屏、横屏、iPad 分屏、默认字号；原生数值输入、返回/关闭、相册/文件、草稿及 VoiceOver。真实触觉和物理 HDR 亮度另列设备门槛。
-- **Android：** 320/360/412dp 窄窗、横向宽窗和多窗口；默认字号、长译文、IME、Back/TalkBack、RAW/SDR/HDR 流程；任务使用独立 ADB 端口和明确 serial。
-- **Windows：** 1024×720 与常用桌面尺寸；100/150/200% 显示 DPI，系统文字使用默认大小；长译文、Tab/Enter/Escape、Narrator/UIA、HDR/SDR 画布与叠层。RDP 不作为物理 HDR/GPU 证据。
-- **共同组合：** 1 张/多张照片，已有/无预设，取消、失败、重试、重开，部分字段保留、逐张微调后导出；保持旧记录和渲染结果。100+ 目标单列性能观察，不以静态循环推断实测卡顿。
+- **iOS：** 至少一台 iPhone 和一台 iPad 的专属模拟器；窄竖屏、横屏、默认字号；原生数值输入、返回/关闭、相册/文件、草稿及 VoiceOver 相关语义。iPad 分屏与完整读屏操作移至发布验收。真实触觉和物理 HDR 亮度另列设备门槛。
+- **Android：** 320/360/412dp 窄窗、横向宽窗；默认字号、长译文、IME、Back 与 TalkBack 相关语义、RAW/SDR/HDR 流程；多窗口与完整读屏操作移至发布验收；任务使用独立 ADB 端口和明确 serial。
+- **Windows：** 1024×720 与常用桌面尺寸；200% 显示 DPI，系统文字使用默认大小；长译文、Tab/Enter/Escape、UIA 状态、HDR/SDR 画布与叠层。100%/150% DPI 与完整 Narrator 操作移至发布验收。RDP 不作为物理 HDR/GPU 证据。
+- **共同组合：** 1 张/多张照片，已有/无预设，取消、失败、重试、重开，部分字段保留、逐张微调后导出；保持旧记录和渲染结果。本轮 100+ 目标观察在 Mac 执行，记录选择和滚动响应，不将它扩大为其他平台或解码/导出吞吐量结论。
 
 没有设备或工具链的格子记录 `NOT RUN` 与具体条件；未进入的后续步骤记录 `NOT REACHED`，不以静态检查、模拟器、原型或编译成功替代。
 适用/必验表中的必验项只要仍为 `NOT RUN`、`NOT REACHED`、失败或证据不属于当前受影响源，该平台子项就不能标记“已验收”，UX-07 也不能关闭。可继续推进不依赖它的工作，但不能用标注缺口代替完成门槛。
@@ -199,19 +201,19 @@ macOS/iOS 的原生 UI 操作需要独占其测试窗口/模拟器；同一环�
 - [x] 保存总体目标、范围、依赖、职责、关键风险和验收框架。
 - [x] 记录规划基线相对审计基线新增的 Android/Windows HDR 接入。
 - [x] 用户确认总体规划，首批范围为 UX-03 及 UX-01 前置。
-- [x] 完成四端增量核对；[交互合同](interaction-contract.md)记录流程、布局、摘要与必验矩阵。
-- [x] 形成 [M1 范围摘要基础计划](foundation-plan.md)，共享资源先行；M2 的具体实现包随接口固定。
+- [x] 完成四端增量核对；[交互合同](../../design/editor-workspace/ui-ux-interaction-contract.md)记录流程、布局、摘要与必验矩阵。
+- [x] 形成 [M1 范围摘要基础计划](https://github.com/dancancer/RawLab/blob/953cbee257548c9351bd1ca6494a69add71b4f5b/docs/integration/ui-ux-optimization/foundation-plan.md)，共享资源先行；M2 的具体实现包随接口固定。
 - [x] 完成 M1 四端代码接入与独立复核修正；摘要、预览守卫和六语来源已有定向回归。
-- [x] 形成 [M2 当前照片预设实施计划](quick-presets-plan.md)；前置集成前只做设计与验证准备。
+- [x] 形成 [M2 当前照片预设实施计划](https://github.com/dancancer/RawLab/blob/953cbee257548c9351bd1ca6494a69add71b4f5b/docs/integration/ui-ux-optimization/quick-presets-plan.md)；前置集成前只做设计与验证准备。
 - [x] M1 四端受影响原生检查；Mac 最终窗口检查已补齐，iOS、Android、Windows 已通过。完整组合流程仍由 M4 验收，未将本阶段结果扩展为整轮通过。
 - [x] M1 基础 [PR #155](https://github.com/dancancer/RawLab/pull/155) 按授权合入 `development@a6626f483cda246e9688a0b049b6ec10f3e1325a`；M2 以此为基线。
 - [x] M2 的 UX-01 当前照片快捷预设完成四端实现、独立复核与受影响原生验证；普通应用自动预检，支持取消、重试、精准事务撤销和 HDR。
 - [x] M2 的 UX-01 [PR #156](https://github.com/dancancer/RawLab/pull/156) 已按授权合入 `development@a3d6bded14f963cd8f5f44c11109c747bb978adc`。
-- [x] 按 [UX-02 批量流程计划](batch-flow-plan.md) 完成自动预检、一次启动及四端目标级原生验证。
+- [x] 按 [UX-02 批量流程计划](https://github.com/dancancer/RawLab/blob/953cbee257548c9351bd1ca6494a69add71b4f5b/docs/integration/ui-ux-optimization/batch-flow-plan.md) 完成自动预检、一次启动及四端目标级原生验证。
 - [x] UX-02 [PR #158](https://github.com/dancancer/RawLab/pull/158) 已按授权合入 `development@ef21231f5b47da92ee756d318be5122dc51c2e35`。
-- [x] 按 [M3 工作区与外观检索计划](workspace-looks-plan.md) 完成四端实现、独立复核及针对性修复；接入 UX-02 的已合并基线。
-- [ ] M3 完成阶段原生验证与授权交付。
-- [ ] M4 关闭同源组合、100+ 目标观察及剩余默认字号设备矩阵。
-- [ ] 按阶段实施、独立复核、原生验证和已授权集成推进。
+- [x] 按 [M3 工作区与外观检索计划](https://github.com/dancancer/RawLab/blob/953cbee257548c9351bd1ca6494a69add71b4f5b/docs/integration/ui-ux-optimization/workspace-looks-plan.md) 完成四端实现、独立复核及针对性修复；接入 UX-02 的已合并基线。
+- [x] M3 完成四端原生验证，并按授权提交、推送及创建 [PR #159](https://github.com/dancancer/RawLab/pull/159)。
+- [x] M4 完成受影响集成流程、独立视觉复评、100+ 目标交互观察，并记录用户确认的发布验收后移项。
+- [x] 长期交互规则转入设计文档；本过程索引归档，最后 PR 的合入按独立授权执行。
 
-UX-02 已集成；M3 的独立工作区已更新到同一基线，阶段验证与交付正在收尾。M4 联合验收仍未关闭，不将阶段测试扩大表述为整轮通过。具体命令、截图、失败诊断和源码 hash 保留在本轮临时验证目录，阶段交付时写入 PR，不入库为单 PR 验证流水。
+本轮最终接入 `development@9857b4794bfa4ba26559b39fd99c67a27c4d88d7`，保留已合入的 X3F 模式与准入行为。四端受影响集成流程已重验；运行范围、命令、源码与二进制哈希、截图及既有基线限制见 PR #159。未执行的发布设备矩阵继续保持未验证状态，不以归档代替验收。原始照片、渲染算法和持久化格式不属于本轮改动范围。
