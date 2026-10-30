@@ -117,6 +117,8 @@ struct BatchSelectionView: View {
             Text(L10n.text("来源已排除。未选中的调整保持每张照片的原值。")).foregroundStyle(.secondary)
             if count == 0 { Text(L10n.text("没有可同步的目标。请返回集合，选择来源以外的照片。")).foregroundStyle(.secondary) }
             AdjustmentScopeEditor(scope: $scope, fields: $fields,
+                                  preview: Result { try model.previewAdjustmentPayload(scope: scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields)) },
+                                  lookName: model.adjustmentSummaryLookName, errorMessage: { model.adjustmentErrorMessage($0) },
                                   allowed:model.settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
             if let file = model.file, let source, model.batchSelectionPhotos[source]?.url == file, model.collectionHasDraft(source) {
                 Text(L10n.text("来源有未完成的调整，请先应用或放弃。"))
@@ -141,7 +143,7 @@ struct BatchSelectionView: View {
                             model.adjustmentSheet = .synchronize
                         }
                     } catch { message = model.adjustmentErrorMessage(error) }
-                }.buttonStyle(.borderedProminent).disabled(count == 0 || (scope == "custom" && fields.isEmpty))
+                }.buttonStyle(.borderedProminent).disabled(count == 0 || (try? model.previewAdjustmentPayload(scope: scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields))) == nil)
             }
         }.padding(24).frame(width: 580).tint(.yellow)
     }

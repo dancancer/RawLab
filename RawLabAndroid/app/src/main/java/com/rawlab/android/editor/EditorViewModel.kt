@@ -898,6 +898,26 @@ class EditorViewModel @JvmOverloads constructor(
         }
     }
 
+    fun previewAdjustmentPayload(scope: AdjustmentScope): Result<AdjustmentPayload> = runCatching {
+        val current = mutable.value
+        val photo = current.photo ?: throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
+        val record = adjustmentHistory.loaded ?: throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
+        if (disposed || current.committingAdjustments || record.identity != photo.identity || !adjustmentTargetIsCurrent(photo.identity.value))
+            throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
+        AdjustmentTransfer.previewCapture(scope, current.edits,
+            record.settings ?: com.rawlab.android.settings.sourceDefaultSettings(photo.isHDRSource),
+            AdjustmentTransferContext(photo.identity.value, photo.inputKind == PhotoInputKind.RAW,
+                builtinLookIDs = storage.builtinLookIDs(), cameraTemperature = current.preview?.temperature,
+                cameraTint = current.preview?.tint))
+    }
+
+    fun adjustmentSummaryLookName(kind: String, id: String): String? {
+        if (kind == "recipe" || kind == "recipe_lut")
+            return MasterRecipe.load(getApplication()).firstOrNull { it.id == id }?.localizedName
+        val localID = if (kind == "builtin") storage.builtinLookIDs()[id] ?: return null else id
+        return mutable.value.looks.firstOrNull { it.id == localID && it.available }?.name
+    }
+
     fun prepareAdjustmentPaste(payload: AdjustmentPayload, uris: List<Uri>,
         action: AdjustmentHistoryTransaction.Action = AdjustmentHistoryTransaction.Action.PASTE) {
         if (disposed || mutable.value.committingAdjustments) {

@@ -6686,5 +6686,133 @@
     "fr": "Aucune photo",
     "ja": "写真がありません",
     "zh-Hans": "无照片"
+  },
+  "以下为配方逻辑值；强度为 {0}。部分范围会按此强度换算。": {
+    "de": "Dies sind logische Rezeptwerte; die Stärke beträgt {0}. Einige Bereiche werden mit dieser Stärke skaliert.",
+    "en": "These are recipe logical values; strength is {0}. Some fields are scaled by this strength.",
+    "es": "Estos son valores lógicos de la receta; la intensidad es {0}. Algunos campos se escalan con esta intensidad.",
+    "fr": "Voici les valeurs logiques de la recette ; l’intensité est de {0}. Certains champs sont mis à l’échelle selon cette intensité.",
+    "ja": "これはレシピの論理値です。強度は {0} です。一部の範囲はこの強度で換算されます。",
+    "zh-Hans": "以下为配方逻辑值；强度为 {0}。部分范围会按此强度换算。"
+  },
+  "相机白平衡（按目标照片）": {
+    "de": "Kamera-Weißabgleich (pro Zielfoto)",
+    "en": "Camera white balance (per target photo)",
+    "es": "Balance de blancos de cámara (por foto de destino)",
+    "fr": "Balance des blancs de l’appareil (pour chaque photo cible)",
+    "ja": "カメラのホワイトバランス（対象写真ごと）",
+    "zh-Hans": "相机白平衡（按目标照片）"
+  },
+  "默认降噪设置": {
+    "de": "Standard-Rauschreduzierung",
+    "en": "Default denoise settings",
+    "es": "Ajustes de reducción de ruido predeterminados",
+    "fr": "Réglages de réduction du bruit par défaut",
+    "ja": "デフォルトのノイズ低減設定",
+    "zh-Hans": "默认降噪设置"
+  },
+  "自动（按目标照片）": {
+    "de": "Automatisch (pro Zielfoto)",
+    "en": "Automatic (per target photo)",
+    "es": "Automático (por foto de destino)",
+    "fr": "Automatique (pour chaque photo cible)",
+    "ja": "自動（対象写真ごと）",
+    "zh-Hans": "自动（按目标照片）"
+  },
+  "待选择的镜头配置": {
+    "de": "Objektivprofil muss ausgewählt werden",
+    "en": "Lens profile selection required",
+    "es": "Se debe elegir un perfil de lente",
+    "fr": "Sélection du profil d’objectif requise",
+    "ja": "レンズプロファイルを選択してください",
+    "zh-Hans": "待选择的镜头配置"
+  },
+  "内置": {
+    "de": "Integriert",
+    "en": "Built-in",
+    "es": "Integrado",
+    "fr": "Intégré",
+    "ja": "内蔵",
+    "zh-Hans": "内置"
+  },
+  "配方": {
+    "de": "Rezept",
+    "en": "Recipe",
+    "es": "Receta",
+    "fr": "Recette",
+    "ja": "レシピ",
+    "zh-Hans": "配方"
+  },
+  "配方 LUT": {
+    "de": "Rezept-LUT",
+    "en": "Recipe LUT",
+    "es": "LUT de receta",
+    "fr": "LUT de recette",
+    "ja": "レシピ LUT",
+    "zh-Hans": "配方 LUT"
+  },
+  "场景": {
+    "de": "Szene",
+    "en": "Scene",
+    "es": "Escena",
+    "fr": "Scène",
+    "ja": "シーン",
+    "zh-Hans": "场景"
+  },
+  "不适用": {
+    "de": "Nicht anwendbar",
+    "en": "Not applicable",
+    "es": "No se aplica",
+    "fr": "Sans objet",
+    "ja": "対象外",
+    "zh-Hans": "不适用"
+  },
+  "无效的降噪参数": {
+    "de": "Ungültige Rauschreduzierungsparameter",
+    "en": "Invalid denoise settings",
+    "es": "Ajustes de reducción de ruido no válidos",
+    "fr": "Réglages de réduction du bruit invalides",
+    "ja": "ノイズ低減設定が無効です",
+    "zh-Hans": "无效的降噪参数"
+  },
+  "将覆盖以下 {0} 项调整；其他调整保留目标原值。": {
+    "de": "Zu überschreibende Anpassungen: {0}. Andere Anpassungen behalten die Zielwerte.",
+    "en": "Adjustments to overwrite: {0}. Other adjustments keep their target values.",
+    "es": "Ajustes que se sobrescribirán: {0}. Los demás conservarán los valores del destino.",
+    "fr": "Réglages à remplacer : {0}. Les autres conserveront les valeurs de la cible.",
+    "ja": "次の {0} 個の調整を上書きします。その他の調整は対象の値を保持します。",
+    "zh-Hans": "将覆盖以下 {0} 项调整；其他调整保留目标原值。"
+  },
+  "未包含几何与镜头。": {
+    "de": "Geometrie und Objektiv sind nicht enthalten.",
+    "en": "Geometry and lens are not included.",
+    "es": "La geometría y el objetivo no están incluidos.",
+    "fr": "La géométrie et l’objectif ne sont pas inclus.",
+    "ja": "ジオメトリとレンズは含まれません。",
+    "zh-Hans": "未包含几何与镜头。"
+  },
+  "包含几何或镜头调整。": {
+    "de": "Geometrie- oder Objektivanpassungen sind enthalten.",
+    "en": "Geometry or lens adjustments are included.",
+    "es": "Se incluyen ajustes de geometría u objetivo.",
+    "fr": "Les réglages de géométrie ou d’objectif sont inclus.",
+    "ja": "ジオメトリまたはレンズの調整が含まれます。",
+    "zh-Hans": "包含几何或镜头调整。"
+  },
+  "未选择任何调整。": {
+    "de": "Keine Anpassungen ausgewählt.",
+    "en": "No adjustments selected.",
+    "es": "No se ha seleccionado ningún ajuste.",
+    "fr": "Aucun réglage sélectionné.",
+    "ja": "調整が選択されていません。",
+    "zh-Hans": "未选择任何调整。"
+  },
+  "尚无已修改的调整。": {
+    "de": "Noch keine geänderten Anpassungen.",
+    "en": "No modified adjustments yet.",
+    "es": "Aún no hay ajustes modificados.",
+    "fr": "Aucun réglage modifié pour le moment.",
+    "ja": "変更された調整はまだありません。",
+    "zh-Hans": "尚无已修改的调整。"
   }
 }

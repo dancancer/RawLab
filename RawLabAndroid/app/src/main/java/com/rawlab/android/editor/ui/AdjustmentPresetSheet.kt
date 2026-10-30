@@ -81,7 +81,8 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
                     val validName = AdjustmentPreset.normalizedName(name).isNotEmpty()
                     if (creating) AdjustmentScopeEditor(stringResource(R.string.preset_save), "preset-save", validName && editor.controlsEnabled,
                         allowed = if (editor.edits.isHDREditing) com.rawlab.android.adjustments.AdjustmentField.HDR_SUPPORTED
-                            else com.rawlab.android.adjustments.AdjustmentField.entries.filterNot { it.isHDRRelative }.toSet()) { scope ->
+                            else com.rawlab.android.adjustments.AdjustmentField.entries.filterNot { it.isHDRRelative }.toSet(),
+                        previewCapture = model::previewAdjustmentPayload, lookName = model::adjustmentSummaryLookName) { scope ->
                         val savedName = name
                         val generation = ++captureGeneration
                         model.capturePresetAdjustments(scope) capture@ { captured ->
@@ -126,7 +127,9 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
                                         }
                                     }
                                 }
-                                Text(stringResource(R.string.transfer_selected, preset.payload.fields.size.toString()), style = MaterialTheme.typography.bodySmall)
+                                TransferDisclosure(stringResource(R.string.transfer_selected, preset.payload.fields.size.toString()), "preset-summary-${preset.id}") {
+                                    AdjustmentSummaryContent(preset.payload, model::adjustmentSummaryLookName, "preset-summary-${preset.id}")
+                                }
                                 TextButton(onClick = { onRequest(AdjustmentPresetAction.Apply(preset)) }, enabled = editor.controlsEnabled,
                                     modifier = Modifier.heightIn(min = 48.dp).testTag("preset-apply-${preset.id}")) { Text(stringResource(R.string.preset_apply)) }
                             }

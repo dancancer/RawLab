@@ -22,6 +22,16 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         }
         let model = EditorModel(lookDirectory: root.appendingPathComponent("looks"),
             editDirectory: root.appendingPathComponent("edits"), batchDirectory: root.appendingPathComponent("batch"))
+        let originalFilms = model.films
+        let summaryLook = root.appendingPathComponent("summary.cube")
+        try Data("fixture".utf8).write(to: summaryLook)
+        model.films = [Film(name: "Summary look", url: summaryLook, managedID: "summary-look")]
+        try check(model.adjustmentSummaryLookName(kind: "managed", id: "summary-look") == "Summary look",
+                  "Summary resolves a readable managed look")
+        try FileManager.default.removeItem(at: summaryLook)
+        try check(model.adjustmentSummaryLookName(kind: "managed", id: "summary-look") == nil,
+                  "Summary marks a deleted look unavailable even while metadata is cached")
+        model.films = originalFilms
         model.open(first); try rendered(model)
         try check(model.adjustmentSession!.transactions.isEmpty, "opening and resolving metadata create no history")
         model.setInteracting(true)

@@ -14,6 +14,23 @@ enum MacAdjustmentTransfer {
     typealias Field = AdjustmentTransferField
     typealias Value = AdjustmentTransferValue
 
+    static func previewCapture(scope: AdjustmentTransferScope, snapshot: PhotoEditState,
+                               committed: PhotoEditState?, context: MacAdjustmentTransferContext) throws -> AdjustmentTransferPayload {
+        var defaults = Adjustments()
+        defaults.exposureMode = context.isRaw ? context.defaultExposureMode : .sensor
+        if context.sourceIsHDR { defaults.hdr = HDRSettings() }
+        let saved = committed ?? PhotoEditState(settings: defaults, filmID: "")
+        // 相机元数据会补齐 live settings；比较逻辑调整，不能把元数据补齐误判为未保存编辑。
+        guard snapshot.settings.hdr == saved.settings.hdr,
+              snapshot.settings.processing == saved.settings.processing,
+              snapshot.settings.aiDenoiseEnabled == saved.settings.aiDenoiseEnabled,
+              snapshot.settings.recipeSettingsVersion == saved.settings.recipeSettingsVersion,
+              values(snapshot, isRaw: context.isRaw) == values(saved, isRaw: context.isRaw) else {
+            throw AdjustmentTransferError.draftRequiresPreflight
+        }
+        return try capture(scope: scope, snapshot: saved, context: context)
+    }
+
     static func capture(scope: AdjustmentTransferScope, snapshot: PhotoEditState,
                         context: MacAdjustmentTransferContext) throws -> AdjustmentTransferPayload {
         guard !context.hasUncommittedDraft else { throw AdjustmentTransferError.draftRequiresPreflight }

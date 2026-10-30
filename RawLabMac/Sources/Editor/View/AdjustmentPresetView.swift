@@ -29,6 +29,10 @@ struct AdjustmentPresetView: View {
         scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields)
     }
 
+    private var scopePreview: Result<AdjustmentTransferPayload, Error> {
+        Result { try model.previewAdjustmentPayload(scope: selectedScope) }
+    }
+
     var body: some View {
         Group {
             if let applying {
@@ -93,6 +97,7 @@ struct AdjustmentPresetView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(presets) { preset in
+                            VStack(alignment: .leading, spacing: 8) {
                             HStack(spacing: 12) {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(preset.name).font(.headline).lineLimit(2).help(preset.name)
@@ -108,6 +113,11 @@ struct AdjustmentPresetView: View {
                                     .menuStyle(.borderlessButton).fixedSize()
                                     .accessibilityLabel(L10n.format("管理预设：%@", preset.name))
                                     .accessibilityIdentifier("preset.manage.\(preset.id)")
+                            }
+                            DisclosureGroup(L10n.text("查看调整范围")) {
+                                AdjustmentSummaryView(payload: preset.payload, lookName: model.adjustmentSummaryLookName,
+                                    identifier: "preset.summary.\(preset.id)")
+                            }
                             }.padding(.vertical, 12).accessibilityIdentifier("preset.row.\(preset.id)")
                             Divider()
                         }
@@ -121,11 +131,11 @@ struct AdjustmentPresetView: View {
         VStack(alignment: .leading, spacing: 12) {
             TextField(L10n.text("预设名称"), text: $name).textFieldStyle(.roundedBorder)
                 .focused($nameFocused).accessibilityIdentifier("preset.name")
-            if renaming == nil { AdjustmentScopeEditor(scope:$scope,fields:$fields,identifier:"preset.save",titleKey:"调整范围",allowed:model.settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields) }
+            if renaming == nil { AdjustmentScopeEditor(scope:$scope,fields:$fields,preview:scopePreview,lookName:model.adjustmentSummaryLookName,errorMessage: { model.adjustmentErrorMessage($0) },identifier:"preset.save",titleKey:"调整范围",allowed:model.settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields) }
             HStack {
                 Spacer()
                 Button(L10n.text("保存"), action: save).buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
-                    .disabled(AdjustmentPreset.normalizedName(name).isEmpty || renaming == nil && scope == "custom" && fields.isEmpty)
+                    .disabled(AdjustmentPreset.normalizedName(name).isEmpty || renaming == nil && (try? scopePreview.get()) == nil)
                     .accessibilityIdentifier("preset.save.confirm")
             }
         }

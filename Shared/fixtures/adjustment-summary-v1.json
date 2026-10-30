@@ -1,0 +1,414 @@
+{
+  "cases": [
+    {
+      "id": "exposure",
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.ARW",
+          "is_raw": true,
+          "processing_version": 2,
+          "recipe": null
+        },
+        "values": {
+          "light.exposure": 0.7
+        }
+      },
+      "expected": {
+        "groups": [
+          { "id": "light", "fields": ["light.exposure"] }
+        ],
+        "count": 1,
+        "includes_geometry": false,
+        "values_zh": {
+          "light.exposure": "+0.70 EV"
+        },
+        "recipe_note": null
+      }
+    },
+    {
+      "id": "geometry",
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.ARW",
+          "is_raw": true,
+          "processing_version": 2,
+          "recipe": null
+        },
+        "values": {
+          "geometry.crop.x": 0.25,
+          "geometry.crop.y": 0.125,
+          "geometry.crop.width": 0.75,
+          "geometry.crop.height": 0.875,
+          "geometry.quarter_turns": 1
+        }
+      },
+      "expected": {
+        "groups": [
+          { "id": "geometry", "fields": ["geometry.crop.x", "geometry.crop.y", "geometry.crop.width", "geometry.crop.height", "geometry.quarter_turns"] }
+        ],
+        "count": 5,
+        "includes_geometry": true,
+        "values_zh": {
+          "geometry.crop.x": "25%",
+          "geometry.crop.y": "12.5%",
+          "geometry.crop.width": "75%",
+          "geometry.crop.height": "87.5%",
+          "geometry.quarter_turns": "90°"
+        },
+        "recipe_note": null
+      }
+    },
+    {
+      "id": "nonzero-projections",
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.ARW",
+          "is_raw": true,
+          "processing_version": 2,
+          "recipe": null
+        },
+        "values": {
+          "tone.black_point": 37,
+          "tone.white_point": -12.5,
+          "color.vibrance": 20,
+          "effects.clarity": -4.75,
+          "effects.dehaze": 6.25,
+          "geometry.perspective.horizontal": 0.5,
+          "geometry.perspective.vertical": -0.25
+        }
+      },
+      "expected": {
+        "groups": [
+          { "id": "light", "fields": ["tone.black_point", "tone.white_point"] },
+          { "id": "color", "fields": ["color.vibrance"] },
+          { "id": "effects", "fields": ["effects.clarity", "effects.dehaze"] },
+          { "id": "geometry", "fields": ["geometry.perspective.horizontal", "geometry.perspective.vertical"] }
+        ],
+        "count": 7,
+        "includes_geometry": true,
+        "values_zh": {
+          "tone.black_point": "+37%",
+          "tone.white_point": "-12.5%",
+          "color.vibrance": "+20%",
+          "effects.clarity": "-4.75%",
+          "effects.dehaze": "+6.25%",
+          "geometry.perspective.horizontal": "+50",
+          "geometry.perspective.vertical": "-25"
+        },
+        "recipe_note": null
+      }
+    },
+    {
+      "id": "camera-wb",
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.ARW",
+          "is_raw": true,
+          "processing_version": 2,
+          "recipe": null
+        },
+        "values": {
+          "color.white_balance.mode": "camera",
+          "color.white_balance.temperature_kelvin": null,
+          "color.white_balance.tint": null
+        }
+      },
+      "expected": {
+        "groups": [
+          { "id": "color", "fields": ["color.white_balance.mode", "color.white_balance.temperature_kelvin", "color.white_balance.tint"] }
+        ],
+        "count": 3,
+        "includes_geometry": false,
+        "values_zh": {
+          "color.white_balance.mode": "相机白平衡（按目标照片）",
+          "color.white_balance.temperature_kelvin": "相机白平衡（按目标照片）",
+          "color.white_balance.tint": "相机白平衡（按目标照片）"
+        },
+        "recipe_note": null
+      }
+    },
+    {
+      "id": "raster-wb",
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.jpg",
+          "is_raw": false,
+          "processing_version": 2,
+          "recipe": null
+        },
+        "values": {
+          "color.white_balance.mode": "none",
+          "color.white_balance.temperature_kelvin": null,
+          "color.white_balance.tint": null
+        }
+      },
+      "expected": {
+        "groups": [
+          { "id": "color", "fields": ["color.white_balance.mode", "color.white_balance.temperature_kelvin", "color.white_balance.tint"] }
+        ],
+        "count": 3,
+        "includes_geometry": false,
+        "values_zh": {
+          "color.white_balance.mode": "不适用",
+          "color.white_balance.temperature_kelvin": "不适用",
+          "color.white_balance.tint": "不适用"
+        },
+        "recipe_note": null
+      }
+    },
+    {
+      "id": "hdr-seven",
+      "payload": {
+        "payload_version": 2,
+        "scope_version": 2,
+        "source": {
+          "identifier": "source-hdr.jpg",
+          "is_raw": false,
+          "processing_version": 2,
+          "recipe": null,
+          "hdr_processing_version": 1
+        },
+        "values": {
+          "light.exposure": 0.7,
+          "light.contrast": 1.1,
+          "light.highlights": -0.2,
+          "light.shadows": 0.3,
+          "color.saturation": 0.9,
+          "hdr.relative_temperature": 7200,
+          "hdr.relative_tint": -4
+        }
+      },
+      "expected": {
+        "groups": [
+          { "id": "light", "fields": ["light.exposure", "light.contrast", "light.highlights", "light.shadows"] },
+          { "id": "color", "fields": ["color.saturation", "hdr.relative_temperature", "hdr.relative_tint"] }
+        ],
+        "count": 7,
+        "includes_geometry": false,
+        "values_zh": {
+          "light.exposure": "+0.70 EV",
+          "light.contrast": "+10%",
+          "light.highlights": "+20%",
+          "light.shadows": "+30%",
+          "color.saturation": "-10%",
+          "hdr.relative_temperature": "7200 K（相对白平衡）",
+          "hdr.relative_tint": "-4（相对白平衡）"
+        },
+        "recipe_note": null
+      }
+    },
+    {
+      "id": "recipe-v3",
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.ARW",
+          "is_raw": true,
+          "processing_version": 2,
+          "recipe": {
+            "id": "recipe-v3",
+            "strength": 0.65,
+            "settings_version": 3
+          }
+        },
+        "values": {
+          "looks.reference": { "kind": "recipe", "id": "recipe-v3" },
+          "looks.strength": 0.65,
+          "light.exposure": 0.7,
+          "color.white_balance.mode": "camera",
+          "color.white_balance.temperature_kelvin": null,
+          "color.white_balance.tint": 2
+        }
+      },
+      "expected": {
+        "groups": [
+          { "id": "looks", "fields": ["looks.reference", "looks.strength"] },
+          { "id": "light", "fields": ["light.exposure"] },
+          { "id": "color", "fields": ["color.white_balance.mode", "color.white_balance.temperature_kelvin", "color.white_balance.tint"] }
+        ],
+        "count": 6,
+        "includes_geometry": false,
+        "values_zh": {
+          "looks.reference": "配方 · Recipe V3",
+          "looks.strength": "65%",
+          "light.exposure": "+0.70 EV",
+          "color.white_balance.mode": "相机白平衡（按目标照片）",
+          "color.white_balance.temperature_kelvin": "相机白平衡（按目标照片）",
+          "color.white_balance.tint": "+2"
+        },
+        "recipe_note": "以下为配方逻辑值；强度为 65%。部分范围会按此强度换算。"
+      }
+    },
+    {
+      "id": "recipe-v4-objects",
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.ARW",
+          "is_raw": true,
+          "processing_version": 2,
+          "recipe": {
+            "id": "recipe-v4",
+            "strength": 0.5,
+            "settings_version": 4
+          }
+        },
+        "values": {
+          "looks.reference": { "kind": "recipe", "id": "recipe-v4" },
+          "looks.strength": 0.5,
+          "light.curve": { "mode": "custom", "points": [[0, 0], [0.5, 0.7], [1, 1]] },
+          "color.grading.shadows": { "hue": 220, "saturation": 14.5 },
+          "detail.denoise.wavelet": { "enabled": true, "luma": 20, "chroma": 30, "coarse": 40, "preset": "custom" }
+        }
+      },
+      "expected": {
+        "groups": [
+          { "id": "looks", "fields": ["looks.reference", "looks.strength"] },
+          { "id": "light", "fields": ["light.curve"] },
+          { "id": "color", "fields": ["color.grading.shadows"] },
+          { "id": "detail", "fields": ["detail.denoise.wavelet"] }
+        ],
+        "count": 5,
+        "includes_geometry": false,
+        "values_zh": {
+          "looks.reference": "配方 · Recipe V4",
+          "looks.strength": "50%",
+          "light.curve": "多点曲线（3 个控制点）：0.00 → 0.00 · 0.50 → 0.70 · 1.00 → 1.00",
+          "color.grading.shadows": "色相 220° · 饱和度 14.5%",
+          "detail.denoise.wavelet": "开启 · 亮度降噪 20 · 色彩降噪 30 · 粗色斑抑制 40 · 自定义"
+        },
+        "recipe_note": "以下为配方逻辑值；强度为 50%。部分范围会按此强度换算。"
+      }
+    },
+    {
+      "id": "missing-look",
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.ARW",
+          "is_raw": true,
+          "processing_version": 2,
+          "recipe": null
+        },
+        "values": {
+          "looks.reference": { "kind": "managed", "id": "missing-look" }
+        }
+      },
+      "expected": {
+        "groups": [
+          { "id": "looks", "fields": ["looks.reference"] }
+        ],
+        "count": 1,
+        "includes_geometry": false,
+        "values_zh": {
+          "looks.reference": "已保存 · missing-look · 外观不可用。"
+        },
+        "recipe_note": null
+      }
+    },
+    {
+      "id": "null-defaults",
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.ARW",
+          "is_raw": true,
+          "processing_version": 2,
+          "recipe": null
+        },
+        "values": {
+          "detail.denoise.chroma_mode": null,
+          "detail.denoise.wavelet": null,
+          "geometry.lens.profile_id": null
+        }
+      },
+      "expected": {
+        "groups": [
+          { "id": "detail", "fields": ["detail.denoise.chroma_mode", "detail.denoise.wavelet"] },
+          { "id": "geometry", "fields": ["geometry.lens.profile_id"] }
+        ],
+        "count": 3,
+        "includes_geometry": true,
+        "values_zh": {
+          "detail.denoise.chroma_mode": "默认降噪设置",
+          "detail.denoise.wavelet": "默认降噪设置",
+          "geometry.lens.profile_id": "自动（按目标照片）"
+        },
+        "recipe_note": null
+      }
+    },
+    {
+      "id": "explicit-defaults",
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.ARW",
+          "is_raw": true,
+          "processing_version": 2,
+          "recipe": null
+        },
+        "values": {
+          "detail.denoise.chroma_mode": 0,
+          "detail.denoise.wavelet": { "enabled": false, "luma": 0, "chroma": 0, "coarse": 0, "preset": "detail" },
+          "geometry.lens.profile_id": "sony-profile"
+        }
+      },
+      "expected": {
+        "groups": [
+          { "id": "detail", "fields": ["detail.denoise.chroma_mode", "detail.denoise.wavelet"] },
+          { "id": "geometry", "fields": ["geometry.lens.profile_id"] }
+        ],
+        "count": 3,
+        "includes_geometry": true,
+        "values_zh": {
+          "detail.denoise.chroma_mode": "停用",
+          "detail.denoise.wavelet": "停用 · 亮度降噪 0 · 色彩降噪 0 · 粗色斑抑制 0 · 细节优先",
+          "geometry.lens.profile_id": "sony-profile"
+        },
+        "recipe_note": null
+      }
+    },
+    {
+      "id": "manual-lens-sentinel",
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.ARW",
+          "is_raw": true,
+          "processing_version": 2,
+          "recipe": null
+        },
+        "values": {
+          "geometry.lens.profile_id": "__rawlab_manual_selection_required__"
+        }
+      },
+      "expected": {
+        "groups": [
+          { "id": "geometry", "fields": ["geometry.lens.profile_id"] }
+        ],
+        "count": 1,
+        "includes_geometry": true,
+        "values_zh": {
+          "geometry.lens.profile_id": "待选择的镜头配置"
+        },
+        "recipe_note": null
+      }
+    }
+  ]
+}

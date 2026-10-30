@@ -3,6 +3,9 @@ import SwiftUI
 struct IOSAdjustmentScopeEditor: View {
     @Binding var scope: String
     @Binding var fields: Set<AdjustmentTransferField>
+    let preview: Result<AdjustmentTransferPayload, Error>
+    let lookName: (String, String) -> String?
+    let errorMessage: (Error) -> String
     var identifier = "adjustment.copy"
     var fieldIdentifier = "adjustment"
     var titleKey = "复制范围"
@@ -17,11 +20,11 @@ struct IOSAdjustmentScopeEditor: View {
                 Text(L10n.text("仅已修改")).tag("modified")
                 Text(L10n.text("自定义")).tag("custom")
             }.accessibilityIdentifier("\(identifier).scope")
-            Text(L10n.text("几何与镜头仅在“全部”或显式选择时包含。")).font(.footnote).foregroundStyle(.secondary)
+            IOSAdjustmentScopeSummaryView(preview: preview, modified: scope == "modified", lookName: lookName,
+                errorMessage: errorMessage, identifier: identifier + ".summary", showsGroups: scope != "custom")
         }
         if scope == "custom" {
             Section {
-                Text(L10n.format("已选 %@ 项", String(fields.count)))
                 Button(L10n.text("清空选择")) { fields.removeAll() }.accessibilityIdentifier("\(identifier).clear")
                 ForEach(["looks", "light", "color", "effects", "detail", "geometry"].filter { group in allowed.contains { $0.group==group } }, id: \.self) { group in
                     DisclosureGroup {
@@ -40,7 +43,8 @@ struct IOSAdjustmentScopeEditor: View {
                             }
                         }
                     } label: {
-                        Text(AdjustmentTransferField.groupTitle(group)).accessibilityIdentifier("\(fieldIdentifier).group.\(group)")
+                        let members = allowed.filter { $0.group == group }
+                        Text(AdjustmentTransferField.groupTitle(group) + " · " + String(members.filter { fields.contains($0) }.count) + "/" + String(members.count)).accessibilityIdentifier("\(fieldIdentifier).group.\(group)")
                     }
                 }
             }
@@ -48,7 +52,17 @@ struct IOSAdjustmentScopeEditor: View {
     }
 
     private func fieldToggle(_ field: AdjustmentTransferField) -> some View {
-        Toggle(field.displayTitle, isOn: groupBinding([field])).accessibilityIdentifier("\(fieldIdentifier).field.\(field.rawValue)")
+        Toggle(isOn: groupBinding([field])) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(field.displayTitle)
+                if let payload = try? preview.get(), payload.fields.contains(field) {
+                    Text(AdjustmentTransferSummary(payload: payload).valueText(for: field, lookName: lookName))
+                        .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier(identifier + ".summary.value." + field.rawValue)
+                }
+            }
+        }.accessibilityIdentifier("\(fieldIdentifier).field.\(field.rawValue)")
     }
     private func groupBinding(_ members: [AdjustmentTransferField]) -> Binding<Bool> {
         Binding(get: { Set(members).isSubset(of: fields) }, set: {

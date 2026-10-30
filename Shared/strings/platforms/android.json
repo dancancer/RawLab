@@ -1,5 +1,61 @@
 {
   "entries": {
+    "adjustment_summary_overwrite": {
+      "file": "editor_strings.xml", "formats": ["%1$d"],
+      "source": "将覆盖以下 {0} 项调整；其他调整保留目标原值。", "types": ["d"]
+    },
+    "adjustment_summary_geometry_excluded": {
+      "file": "editor_strings.xml", "formats": [], "source": "未包含几何与镜头。", "types": []
+    },
+    "adjustment_summary_geometry_included": {
+      "file": "editor_strings.xml", "formats": [], "source": "包含几何或镜头调整。", "types": []
+    },
+    "adjustment_summary_empty_custom": {
+      "file": "editor_strings.xml", "formats": [], "source": "未选择任何调整。", "types": []
+    },
+    "adjustment_summary_empty_modified": {
+      "file": "editor_strings.xml", "formats": [], "source": "尚无已修改的调整。", "types": []
+    },
+    "adjustment_summary_not_applicable": {
+      "file": "editor_strings.xml", "formats": [], "source": "不适用", "types": []
+    },
+    "adjustment_summary_recipe_note": {
+      "file": "editor_strings.xml", "formats": ["%1$s"],
+      "source": "以下为配方逻辑值；强度为 {0}。部分范围会按此强度换算。", "types": ["s"]
+    },
+    "adjustment_summary_camera_wb": {
+      "file": "editor_strings.xml", "formats": [], "source": "相机白平衡（按目标照片）", "types": []
+    },
+    "adjustment_summary_default_denoise": {
+      "file": "editor_strings.xml", "formats": [], "source": "默认降噪设置", "types": []
+    },
+    "adjustment_summary_auto_target_photo": {
+      "file": "editor_strings.xml", "formats": [], "source": "自动（按目标照片）", "types": []
+    },
+    "adjustment_summary_lens_profile_pending": {
+      "file": "editor_strings.xml", "formats": [], "source": "待选择的镜头配置", "types": []
+    },
+    "adjustment_summary_look_builtin": {
+      "file": "editor_strings.xml", "formats": [], "source": "内置", "types": []
+    },
+    "adjustment_summary_look_recipe": {
+      "file": "editor_strings.xml", "formats": [], "source": "配方", "types": []
+    },
+    "adjustment_summary_look_recipe_lut": {
+      "file": "editor_strings.xml", "formats": [], "source": "配方 LUT", "types": []
+    },
+    "adjustment_summary_exposure_scene": {
+      "file": "editor_strings.xml", "formats": [], "source": "场景", "types": []
+    },
+    "adjustment_summary_exposure_preview": {
+      "file": "editor_strings.xml", "formats": [], "source": "预览", "types": []
+    },
+    "adjustment_summary_relative_white_balance": {
+      "file": "editor_strings.xml", "formats": [], "source": "相对白平衡", "types": []
+    },
+    "adjustment_summary_invalid_denoise": {
+      "file": "editor_strings.xml", "formats": [], "source": "无效的降噪参数", "types": []
+    },
     "about_rawlab": {
       "file": "strings.xml",
       "formats": [],

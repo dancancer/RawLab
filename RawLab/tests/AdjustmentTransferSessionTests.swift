@@ -19,6 +19,25 @@ import Foundation
             IOSAdjustmentTransferTarget(identity: b, displayName: "B", defaultState: state(0), context: context,
                 validateSource: { if failB { throw NSError(domain: "missing B", code: 1) } })]
         let copy = try session.copy(scope: .custom([.exposure]), snapshot: state(1), context: context)
+        let preview = try IOSAdjustmentTransfer.previewCapture(scope: .modified, snapshot: state(1), committed: state(1), context: context)
+        try check(preview.fields == [.exposure] && preview[.exposure] == .number(1),
+                  "Scope preview uses actual modified capture fields and values")
+        let emptyPreview = Result { try IOSAdjustmentTransfer.previewCapture(scope: .modified, snapshot: state(0), committed: state(0), context: context) }
+        if case .failure(let error) = emptyPreview {
+            try check(error as? AdjustmentTransferError == .emptyScope, "Neutral modified preview is an empty scope")
+        } else { try check(false, "Neutral modified preview must be empty") }
+        let stale = Result { try IOSAdjustmentTransfer.previewCapture(scope: .all, snapshot: state(2), committed: state(1), context: context) }
+        if case .failure(let error) = stale {
+            try check(error as? AdjustmentTransferError == .draftRequiresPreflight, "Unsaved settings cannot display a stale scope preview")
+        } else { try check(false, "Stale preview must fail") }
+        var hdrSettings = RawSettings.default; hdrSettings.hdr = HDRSettings()
+        let hdrState = PhotoEditState(settings: hdrSettings)
+        let hdrPreview = try IOSAdjustmentTransfer.previewCapture(scope: .standard(isHDR: true), snapshot: hdrState,
+            committed: hdrState, context: .init(identifier: "hdr", isRaw: false, sourceIsHDR: true))
+        try check(hdrPreview.fields == AdjustmentTransferField.hdrCommon && hdrPreview.source.isHDR,
+                  "HDR scope preview preserves the seven-field family")
+        try check(session.clipboard == copy && session.transactions.isEmpty && store.state(for: a) == nil,
+                  "Scope preview leaves clipboard, history and persistence unchanged")
         let operation = try session.prepare(payload: copy, targets: targets + [targets[0]])
         try check(operation.targets.count == 2, "Stable identities deduplicate operation targets")
         failB = true

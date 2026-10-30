@@ -8,6 +8,12 @@ data class AdjustmentTransferContext(val identifier: String, val isRaw: Boolean,
     val hasUncommittedDraft: Boolean = false, val validateLens: ((LensSettings) -> Unit)? = null)
 
 object AdjustmentTransfer {
+    fun previewCapture(scope: AdjustmentScope, settings: EditSettings, committed: EditSettings,
+        context: AdjustmentTransferContext): AdjustmentPayload {
+        if (!sameAdjustments(settings, committed, context.isRaw)) throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
+        return capture(scope, committed, context)
+    }
+
     fun captureHDRBatch(settings: EditSettings, context: AdjustmentTransferContext, targetIsHDR: Boolean): AdjustmentPayload {
         require(settings.isHDREditing)
         val active=settings.synchronizeHDR()

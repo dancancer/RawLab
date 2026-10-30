@@ -1,5 +1,28 @@
 {
   "entries": {
+    "查看调整范围": { "formats": [], "source": "查看调整范围" },
+    "将覆盖以下 {0} 项调整；其他调整保留目标原值。": {
+      "formats": ["{0}"],
+      "source": "将覆盖以下 {0} 项调整；其他调整保留目标原值。"
+    },
+    "未包含几何与镜头。": { "formats": [], "source": "未包含几何与镜头。" },
+    "包含几何或镜头调整。": { "formats": [], "source": "包含几何或镜头调整。" },
+    "未选择任何调整。": { "formats": [], "source": "未选择任何调整。" },
+    "尚无已修改的调整。": { "formats": [], "source": "尚无已修改的调整。" },
+    "以下为配方逻辑值；强度为 {0}。部分范围会按此强度换算。": {
+      "formats": ["{0}"],
+      "source": "以下为配方逻辑值；强度为 {0}。部分范围会按此强度换算。"
+    },
+    "相机白平衡（按目标照片）": { "formats": [], "source": "相机白平衡（按目标照片）" },
+    "默认降噪设置": { "formats": [], "source": "默认降噪设置" },
+    "自动（按目标照片）": { "formats": [], "source": "自动（按目标照片）" },
+    "待选择的镜头配置": { "formats": [], "source": "待选择的镜头配置" },
+    "内置": { "formats": [], "source": "内置" },
+    "配方": { "formats": [], "source": "配方" },
+    "配方 LUT": { "formats": [], "source": "配方 LUT" },
+    "场景": { "formats": [], "source": "场景" },
+    "相对白平衡": { "formats": [], "source": "相对白平衡" },
+    "无效的降噪参数": { "formats": [], "source": "无效的降噪参数" },
     "\n显示色彩降噪  {0}\n暗角  强度 {1:+0.#;-0.#;0} · 中点 {2:0.#} · 圆度 {3:+0.#;-0.#;0} · 羽化 {4:0.#} · 高光保护 {5:0.#}\n颗粒  强度 {6:0.#} · 大小 {7:0.#} · 粗糙度 {8:0.#}": {
       "formats": [
         "{0}",
@@ -3989,14 +4012,6 @@
       "fr": "Ce RAW ou ce fichier de look n’est pas pris en charge. Sélectionnez un CUBE Fuji déclaré compatible avec l’entrée et la sortie BT.709, ou un fichier .rlook valide.",
       "ja": "このRAWまたはルックファイルはサポートされていません。入力とBT.709出力に対応すると明記されたFuji CUBE、または有効な.rlookファイルを選択してください。",
       "zh-Hans": "不支持此 RAW 或外观文件。请选择声明兼容输入和 BT.709 输出的富士 CUBE，或有效的 .rlook 文件。"
-    },
-    "不适用": {
-      "de": "Nicht anwendbar",
-      "en": "Not applicable",
-      "es": "No se aplica",
-      "fr": "Sans objet",
-      "ja": "対象外",
-      "zh-Hans": "不适用"
     },
     "交互预览": {
       "de": "Interaktive Vorschau",
