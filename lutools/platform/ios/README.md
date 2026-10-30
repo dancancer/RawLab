@@ -1,6 +1,6 @@
 # iOS 集成指南 / iOS Integration
 
-[下载 v0.8.2 未签名 IPA / Download unsigned IPA](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-iOS-0.8.2-unsigned.ipa) · [发布说明 / Release notes](../../../docs/releases/v0.8/v0.8.2.md)
+[下载 v0.9.2 未签名 IPA / Download unsigned IPA](https://github.com/dancancer/RawLab/releases/download/v0.9.2/RawLab-iOS-0.9.2-unsigned.ipa) · [发布说明 / Release notes](../../../docs/releases/v0.9/v0.9.2.md)
 
 IPA 需要自行给应用及内嵌 Framework 重新签名，不能直接安装；不是 App Store 或 TestFlight 发行版。最低 iOS 18.0，物理设备安装和峰值内存尚未验证。
 
