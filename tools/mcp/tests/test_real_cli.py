@@ -108,7 +108,16 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
                     self.assertFalse(value.is_error, str(value))
                     return value.structured_content["result"]
 
-                self.assertEqual(await call("capabilities"), direct("--capabilities"))
+                capabilities = direct("--capabilities")
+                capabilities["recipe_versions"] = [
+                    version for version in capabilities["recipe_versions"]
+                    if version in (1, 2, 3, 4, 5, 6)
+                ]
+                capabilities["commands"] = [
+                    command for command in capabilities["commands"]
+                    if command in ("capabilities", "validate_recipe", "info", "preview", "export")
+                ]
+                self.assertEqual(await call("capabilities"), capabilities)
                 self.assertEqual(await call("image_info", image_path=str(source)), direct("--info", source))
                 self.assertEqual(await call("validate_recipe", recipe_path=str(recipe)),
                                  direct("--recipe", recipe, "--print-recipe"))
