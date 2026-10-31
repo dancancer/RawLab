@@ -1,6 +1,6 @@
 # iOS 集成指南 / iOS Integration
 
-[下载 v0.8.2 未签名 IPA / Download unsigned IPA](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-iOS-0.8.2-unsigned.ipa) · [发布说明 / Release notes](../../../docs/releases/v0.8/v0.8.2.md)
+[下载 v0.9.2 未签名 IPA / Download unsigned IPA](https://github.com/dancancer/RawLab/releases/download/v0.9.2/RawLab-iOS-0.9.2-unsigned.ipa) · [发布说明 / Release notes](../../../docs/releases/v0.9/v0.9.2.md)
 
 IPA 需要自行给应用及内嵌 Framework 重新签名，不能直接安装；不是 App Store 或 TestFlight 发行版。最低 iOS 18.0，物理设备安装和峰值内存尚未验证。
 
@@ -20,6 +20,12 @@ C5 在 CPU 上分块滤波；Auto 可以继续 Metal 显示渲染，Force 不支
 高强度可能削弱低对比度纹理。处理身份随预览、导出、自动曝光、中性对比图及批量快照传递。
 
 ## 1. 构建准备 / Build Prerequisites
+
+正常 X3F 显影需要 Rust 1.88+（CI 使用 1.99.1）、Python 3.11+ 和宿主 libclang。
+安装 `aarch64-apple-ios`、`aarch64-apple-ios-sim`、`x86_64-apple-ios` 目标及
+`rust-docs`；构建脚本为每个切片设置匹配的 Xcode SDK，许可随框架打包。
+`RAWLAB_IOS_SOURCE_CACHE` 可指向共享源码下载目录，编译结果仍按架构隔离。
+支持的机型和保存参数见 [X3F 契约](../../docs/x3f-rendering.md)。
 
 需要 macOS、完整 Xcode/iOS SDK、CMake 和 curl。从仓库根目录运行以下入口，自动下载并校验 LibRaw 0.22.2、Adobe DNG SDK 1.7、应用共享相机补丁，编译三个架构并生成应用使用的 XCFramework。iOS 构建不再通过宿主机 `pkg-config` 查找 LibRaw。
 

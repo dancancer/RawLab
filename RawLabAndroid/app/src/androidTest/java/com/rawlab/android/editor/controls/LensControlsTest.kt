@@ -24,6 +24,19 @@ import com.rawlab.android.settings.LensSettings
 class LensControlsTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun unavailableCorrectionExplainsWhyAndRetainedEnabledCanBeTurnedOff() {
+        var value by mutableStateOf(LensSettings(distortion = true))
+        val candidate = LensCandidate("missing-calibration", "Fixture", "24mm", false, false, true)
+        val info = LensInfo(6, "24mm", "", false, false, 1f, listOf(candidate))
+        compose.setContent { MaterialTheme { LensControls(value, info, true) { value = it } } }
+        compose.onNodeWithTag("lens.tca").assertIsNotEnabled()
+        compose.onNodeWithTag("lens.distortion").assertIsEnabled().performClick()
+        compose.onNodeWithTag("lens.distortion").assertIsNotEnabled()
+        assertFalse(value.distortion)
+        val reason = InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.lens_tca_unavailable)
+        assertTrue(compose.onNodeWithTag("lens.tca").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.StateDescription].contains(reason))
+    }
+
     @Test fun switchesManualSelectionSearchAndResetInCompactLayout() {
         var value by mutableStateOf(LensSettings())
         val candidate = LensCandidate("profile-id", "Fixture", "24mm", true, true, true)

@@ -19,7 +19,7 @@ extension ContentView {
     }
 
     private func editorToolStripHeight(width: CGFloat, accessibility: Bool) -> CGFloat {
-        editorToolRowHeight(width: width, accessibility: accessibility) + editorToolHeight
+        editorToolRowHeight(width: width, accessibility: accessibility) + (viewModel.quickPresetsVisible ? 0 : editorToolHeight)
     }
 
     var groupNavigationButtonWidth: CGFloat {
@@ -97,9 +97,9 @@ extension ContentView {
                                 .frame(maxWidth: .infinity)
                                 .onGeometryChange(for: CGFloat.self) { ceil($0.size.height) } action: { parameterContentHeight = $0 }
                             }
-                                .id("\(currentEditorTool.stableID).\(geometryPerspective)")
+                                .id("\(currentEditorTool.stableID).\(geometryPerspective).\(viewModel.quickPresetsVisible)")
                                 .accessibilityIdentifier("editor.panel")
-                            if geometrySelected || lensSelected {
+                            if (geometrySelected || lensSelected) && !viewModel.quickPresetsVisible {
                                 VStack(spacing: 0) {
                                     Divider()
                                     editorDraftActions.disabled(resetDraftSuspended).padding(.horizontal, 16).padding(.vertical, scrollTools ? 4 : 8)
@@ -137,7 +137,7 @@ extension ContentView {
         let photoSpace = min(scrollTools ? 68 : 96, available)
         let maximum = min(preferred, max(0, available - photoSpace))
         // 只测量滚动内容的自然高度；底栏收紧不改变侧栏预算和草稿操作可达性。
-        let content = parameterContentHeight + ((geometrySelected || lensSelected) ? parameterActionsHeight : 0)
+        let content = parameterContentHeight + ((geometrySelected || lensSelected) && !viewModel.quickPresetsVisible ? parameterActionsHeight : 0)
         return parameterContentHeight > 0 ? min(maximum, content) : maximum
     }
 }

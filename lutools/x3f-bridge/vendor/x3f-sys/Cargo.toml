@@ -1,0 +1,54 @@
+[package]
+name = "x3f-sys"
+version = "0.4.1"
+edition = "2021"
+rust-version = "1.88"
+license = "Apache-2.0"
+repository = "https://github.com/sagwaco/x3fuse-core"
+readme = "README.md"
+keywords = ["foveon", "x3f", "sigma", "raw", "dng"]
+categories = ["multimedia::images", "external-ffi-bindings"]
+description = "Low-level layer for the x3f Foveon raw converter: bindgen FFI plus the tiny remaining C (log/version shims). Consume x3f-core instead."
+links = "x3f"
+
+[lib]
+crate-type = ["rlib"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+default = []
+gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
+serde = ["dep:serde"]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+wgpu = { version = "27", optional = true, default-features = false, features = ["std", "wgsl", "metal", "vulkan", "dx12"] }
+pollster = { version = "0.4", optional = true }
+bytemuck = { version = "1", optional = true }
+
+[dependencies]
+serde = { version = "1", features = ["derive"], optional = true }
+# libc::snprintf is used by src/print_meta.rs to match C `%g` float formatting
+# byte-for-byte (Rust's f64 Display uses Grisu/Ryu shortest-round-trip, which
+# differs from C's 6-significant-digit %g default and would invalidate the
+# tier-2 MD5 hashes pinned in tests/tier2_md5.rs).
+libc = "0.2"
+# M7a: rayon row-parallelism for the convert_data + apply_highlight_clip_dng
+# hot loops in src/process.rs. The per-pixel work is row-independent — see
+# the analysis at the head of process.rs.
+rayon = "1.10"
+
+[build-dependencies]
+bindgen = "0.71"
+cc = { version = "1.2", features = ["parallel"] }
+
+# Bindgen output is full of style "issues"; lint workspace doesn't apply here.
+[lints.rust]
+non_upper_case_globals = "allow"
+non_camel_case_types = "allow"
+non_snake_case = "allow"
+dead_code = "allow"
+
+[lints.clippy]
+all = "allow"

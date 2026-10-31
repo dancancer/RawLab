@@ -23,7 +23,10 @@ extension Sony2FujiProcessor {
     }
 
     func processingFailure(_ status: sony2fuji_status, input: URL? = nil, look: URL? = nil,
-                           output: URL? = nil) -> ProcessorError {
+                           output: URL? = nil, session: OpaquePointer? = nil) -> ProcessorError {
+        if let session, let message = sony2fuji_session_x3f_error(session), message.pointee != 0 {
+            return .processFailed(String(cString: message))
+        }
         switch status {
         case SONY2FUJI_STATUS_OUTPUT_IO_ERROR: return .outputIO
         case SONY2FUJI_STATUS_IO_ERROR:

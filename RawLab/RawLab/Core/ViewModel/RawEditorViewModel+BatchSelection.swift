@@ -41,7 +41,7 @@ extension RawEditorViewModel {
     func prepareCollectionExport(skipping: Set<String>, format: BatchOutputFormat, longEdge: Int?,
                                   completion: @escaping (Result<IOSCollectionExportReview, Error>) -> Void) {
         guard let store = editPersistence else { completion(.failure(EditPersistenceError.corruptStore)); return }
-        let collection = batchSelection
+        let collection = batchSelection.exportInput
         let looks = lutMap
         let active = collectionActiveValidator()
         adjustmentQueue.async {
@@ -63,23 +63,82 @@ extension RawEditorViewModel {
         }
     }
 
-    func freezeCollectionExport(_ review: IOSCollectionExportReview,
+    func cancelCollectionExportPreparation() {
+        collectionExportGeneration = UUID()
+        collectionExportPreparing = false
+        collectionExportReview = nil; collectionExportError = nil
+    }
+
+    func startCollectionExport(skipping: Set<String>, format: BatchOutputFormat, longEdge: Int?,
+                               completed: @escaping (BatchExportJob, BatchJournalStore, Bool) -> Void) {
+        guard !collectionExportPreparing, !collectionExportFreezing else { return }
+        cancelCollectionExportPreparation()
+        let generation = collectionExportGeneration, source = sourceRevision, revision = settingsSaveRevision
+        let selection = batchSelection.selection.targets()
+        let isCurrent: () -> Bool = { [weak self] in
+            guard let self else { return false }
+            return self.collectionExportGeneration == generation && self.sourceRevision == source &&
+                self.settingsSaveRevision == revision && self.batchSelection.selection.targets() == selection
+        }
+        collectionExportPreparing = true
+        prepareCollectionExport(skipping: skipping, format: format, longEdge: longEdge) { [weak self] result in
+            guard let self, self.collectionExportGeneration == generation else { return }
+            guard isCurrent() else {
+                self.collectionExportPreparing = false
+                self.collectionExportError = self.adjustmentErrorMessage(EditPersistenceConflict.changed)
+                return
+            }
+            do {
+                let review = try result.get()
+                self.collectionExportReview = review
+                guard review.ready else { self.collectionExportPreparing = false; return }
+                self.collectionExportFreezing = true
+                self.freezeCollectionExport(review, isCurrent: isCurrent) { result in
+                    self.collectionExportFreezing = false
+                    self.collectionExportPreparing = false
+                    switch result {
+                    case .success(let value):
+                        // 发布后交接不能被页面取消吞掉；过期请求只取消自动启动权。
+                        completed(value.0, value.1, isCurrent())
+                    case .failure(let error):
+                        if self.collectionExportGeneration == generation {
+                            self.collectionExportReview = nil
+                            self.collectionExportError = self.adjustmentErrorMessage(error)
+                        }
+                    }
+                }
+            } catch {
+                self.collectionExportPreparing = false
+                self.collectionExportError = self.adjustmentErrorMessage(error)
+            }
+        }
+    }
+
+    func freezeCollectionExport(_ review: IOSCollectionExportReview, isCurrent: @escaping () -> Bool = { true },
                                  completion: @escaping (Result<(BatchExportJob, BatchJournalStore), Error>) -> Void) {
         guard let store = editPersistence else { completion(.failure(EditPersistenceError.corruptStore)); return }
-        let collection = batchSelection, active = collectionActiveValidator()
+        let collection = batchSelection.exportInput, active = collectionActiveValidator(isCurrent: isCurrent, review: review)
+        let makeJournal = makeCollectionJournal
         adjustmentQueue.async {
             let result = Result {
-                let journal = try BatchJournalStore.appStore()
+                let journal = try makeJournal()
                 return (try collection.freeze(review, store: store, journal: journal, validateActive: active), journal)
             }
             self.resultDelivery { completion(result) }
         }
     }
 
-    private func collectionActiveValidator() -> (String) throws -> Void {
+    private func collectionActiveValidator(isCurrent: @escaping () -> Bool = { true },
+                                           review: IOSCollectionExportReview? = nil) -> (String) throws -> Void {
         { [weak self] key in
             let check = {
-                guard let self else { throw CocoaError(.userCancelled) }
+                guard let self, isCurrent() else { throw CocoaError(.userCancelled) }
+                if let review {
+                    guard self.batchSelection.selection.targets() == review.selection,
+                          self.batchSelection.photos[key]?.photo.file == review.rows.first(where: { $0.id == key })?.photo.photo.file else {
+                        throw EditPersistenceConflict.changed
+                    }
+                }
                 try self.validateCollectionActive(key)
             }
             if Thread.isMainThread { try check() } else { try DispatchQueue.main.sync(execute: check) }

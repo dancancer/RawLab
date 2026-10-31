@@ -15,6 +15,7 @@ import com.rawlab.android.looks.DcpFailureReason
 import com.rawlab.android.looks.InvalidLookException
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.photo.PhotoStorage
+import com.rawlab.android.settings.X3fMode
 import com.rawlab.android.settings.ProcessingIdentity
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.HslTargetRevision
@@ -28,20 +29,28 @@ import com.rawlab.android.settings.LookChoice
 //  编辑器提交给渲染队列与外观队列的工作，以及它们的结果
 // ============================================================================
 
+data class HDRPreviewFrame(val width: Int, val height: Int, val hdr: FloatArray, val sdr: FloatArray,
+    val contentHeadroom: Float, val sourceHeadroom: Float,
+    val nativeWidth: Int = width, val nativeHeight: Int = height,
+    val statistics: com.rawlab.android.engine.HDRStatistics = com.rawlab.android.engine.HDRStatistics.analyze(hdr, width, height, width * 3))
+data class HDRPreview(val neutral: HDRPreviewFrame, val result: HDRPreviewFrame)
+
 data class PreviewPair(val neutral: Bitmap, val result: Bitmap, val temperature: Float, val tint: Float,
     val lens: LensInfo? = null, val comparisonWidth: Float = neutral.width.toFloat(),
     val comparisonHeight: Float = neutral.height.toFloat(),
     val originalAspect: Float = neutral.width.toFloat() / neutral.height,
-    val neutralHistogram: RgbHistogram? = null, val resultHistogram: RgbHistogram? = null)
+    val neutralHistogram: RgbHistogram? = null, val resultHistogram: RgbHistogram? = null,
+    val hdr: HDRPreview? = null)
 
 /** A transformed comparison must never reuse the uncropped original or another viewport. */
 internal data class ComparisonPreviewKey(val inputPath: String, val geometry: GeometrySettings,
     val lens: LensSettings, val edge: Int, val interactive: Boolean,
     val processing: ProcessingIdentity = ProcessingIdentity.CURRENT,
-    val sourceIdentity: PhotoIdentity = PhotoIdentity(inputPath), val inputKind: PhotoInputKind = PhotoInputKind.RAW)
+    val sourceIdentity: PhotoIdentity = PhotoIdentity(inputPath), val inputKind: PhotoInputKind = PhotoInputKind.RAW,
+    val x3fMode: X3fMode = X3fMode.NORMAL)
 
 internal data class NeutralSourceKey(val sourceIdentity: PhotoIdentity, val inputPath: String,
-    val inputKind: PhotoInputKind, val processing: ProcessingIdentity)
+    val inputKind: PhotoInputKind, val processing: ProcessingIdentity, val x3fMode: X3fMode = X3fMode.NORMAL)
 
 /** Mobile 100% remains the fixed comparison-preview pixels, independent of current render demand. */
 internal fun comparisonDimensions(width: Int, height: Int): Pair<Float, Float> {
@@ -52,10 +61,12 @@ internal fun comparisonDimensions(width: Int, height: Int): Pair<Float, Float> {
 
 
 internal sealed interface Work {
-    data class Import(val uri: Uri, val gpuMode: Int, val retained: ImportedPhoto? = null) : Work
+    data class Import(val uri: Uri, val gpuMode: Int, val retained: ImportedPhoto? = null,
+        val x3fModeOverride: X3fMode? = null, val ownsRetained: Boolean = false) : Work
     data class Preview(val photo: ImportedPhoto, val edits: EditSettings, val interactive: Boolean,
         val gpuMode: Int, val importing: Boolean = false, val restored: Boolean = false,
-        val edge: Int = 1600, val draft: Boolean = false, val importedRecord: VersionedPhotoEdit? = null) : Work
+        val edge: Int = 1600, val draft: Boolean = false, val importedRecord: VersionedPhotoEdit? = null,
+        val persistOnImport: Boolean = false, val ownsImportedInput: Boolean = false) : Work
     data class HslProbe(val preview: Preview, val before: EditSettings, val revision: HslTargetRevision,
         val token: Long, val axis: Int, val x: Float, val y: Float) : Work
     data class Export(val photo: ImportedPhoto, val edits: EditSettings, val destination: Uri?, val format: ExportFormat,
@@ -63,11 +74,24 @@ internal sealed interface Work {
     data class AutoExposure(val photo: ImportedPhoto, val edits: EditSettings) : Work
 }
 internal sealed interface WorkResult {
+    data class X3fImportFailure(val retry: Work.Import, val error: Throwable) : WorkResult
     data class Preview(val request: Work.Preview, val pair: PreviewPair) : WorkResult
-    data class MissingLook(val photo: ImportedPhoto, val edits: EditSettings, val importedRecord: VersionedPhotoEdit?) : WorkResult
+    data class MissingLook(val photo: ImportedPhoto, val edits: EditSettings, val importedRecord: VersionedPhotoEdit?,
+        val persistOnImport: Boolean = false, val ownsImportedInput: Boolean = false) : WorkResult
     data class HslProbe(val request: Work.HslProbe, val sample: HslTargetSample) : WorkResult
     data object Export : WorkResult
     data class AutoExposure(val request: Work.AutoExposure, val exposure: Float) : WorkResult
+}
+internal fun Work.discardOwnedInput() {
+    if (this is Work.Import && ownsRetained) retained?.file?.delete()
+}
+internal fun WorkResult.discardOwnedInput() {
+    when (this) {
+        is WorkResult.X3fImportFailure -> retry.discardOwnedInput()
+        is WorkResult.Preview -> if (request.importing && request.ownsImportedInput) request.photo.file.delete()
+        is WorkResult.MissingLook -> if (ownsImportedInput) photo.file.delete()
+        else -> Unit
+    }
 }
 internal sealed interface LookWork {
     data object Load : LookWork

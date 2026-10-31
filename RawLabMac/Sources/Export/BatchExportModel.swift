@@ -138,7 +138,7 @@ final class BatchExportModel: ObservableObject {
                 do {
                     let snapshot = try hdrPreparation?.prepare(item,ordinal:0,format:validationJob.format,longEdge:validationJob.longEdge) ?? validationJob.snapshot(for:item)
                     if !snapshot.settings.isHDREditing && snapshot.settings.aiDenoiseEnabled {
-                        try RenderEngine.validateAIInput(item.input)
+                        try RenderEngine.validateAIInput(item.input, settings: snapshot.settings)
                     } else {
                         if engine == nil { engine = try RenderEngine() }
                         _ = try engine!.render(item.input, settings: snapshot.settings, lut: snapshot.look, edge: 180, interactive: true)
@@ -206,8 +206,15 @@ final class BatchExportModel: ObservableObject {
         return !updateJournalFailed
     }
 
-    func start(_ scope: BatchRunScope = .unfinished) {
-        guard canRun else { return }
+    @discardableResult func start(_ scope: BatchRunScope = .unfinished) -> Bool {
+        guard !running else { return false }
+        guard !validating else { error = L10n.text("正在检查照片…"); return false }
+        guard job.mode == .perTargetFrozen || !sourceEditingGeometry else {
+            error = L10n.text("来源有未完成的调整，请先应用或放弃。")
+            return false
+        }
+        guard job.selectedCount > 0 else { error = L10n.text("尚未选择照片"); return false }
+        guard job.outputDirectory != nil else { error = L10n.text("选择输出文件夹"); return false }
         let cancellation = BatchCancellation()
         self.cancellation = cancellation
         error = nil; running = true; stopping = false
@@ -244,7 +251,12 @@ final class BatchExportModel: ObservableObject {
                     _ = try self.engine!.render(input, settings: settings, lut: look, edge: nil, output: output,
                         exportLongEdge:frozen.longEdge,exportFormat:frozen.outputFormat)
                 }
-            } catch { failure = error.localizedDescription; work.interrupted = true }
+            } catch {
+                failure = error.localizedDescription
+                work.interrupted = true; work.failure = failure
+                do { try journal.save(work) }
+                catch { failure = L10n.format("任务未保存：%@", error.localizedDescription) + "\n" + (work.failure ?? "") }
+            }
             let final = work, message = failure
             let succeeded = max(0, final.succeededCount - snapshot.succeededCount)
             let failed = final.items.filter { attempted.contains($0.id) && $0.status == .failed }.count
@@ -256,6 +268,7 @@ final class BatchExportModel: ObservableObject {
                 self.onUsage(.batchExportCompleted(succeeded: succeeded, failed: failed, outcome: outcome))
             }
         }
+        return true
     }
 
     private func freezeHDRJob(_ draft: BatchExportJob,shouldCancel: () -> Bool) throws -> BatchExportJob {
@@ -288,6 +301,11 @@ final class BatchExportModel: ObservableObject {
     func discardDraft() -> Bool {
         guard !job.started else { return false }
         return discardTask()
+    }
+
+    func close() -> Bool {
+        guard !running, !validating, !previewing else { return false }
+        return job.started || job.mode == .perTargetFrozen || discardDraft()
     }
 
     func discardTask() -> Bool {

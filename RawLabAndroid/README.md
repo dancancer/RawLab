@@ -18,6 +18,9 @@ Auto 可接续 GLES 显示渲染，Force 不支持需要执行 C5 的滤波。�
 
 ## 功能 / Features
 
+- 手机 HDR JPEG/HEIF 默认打开 HDR 编辑，提供曝光、相对色温/色偏、对比度、高光、阴影、饱和度及几何；预设、选择性同步、历史和批量导出保留独立 HDR 状态。HDR JPEG 重新生成增益图，显式 SDR JPEG/PNG16/DNG 使用 SDR rendition。切到 SDR 编辑后可使用 LUT 兼容向导。HDR 处理使用 CPU，FP16 硬件显示需 API 34+、HDR/SDR 比率和硬件加速窗口，条件不足显示 SDR；不支持 GPU Force。普通 SDR HEIF 的平台解码需 API 28+。范围见[平台对齐设计](../docs/design/hdr-photos/android-windows.md)。
+  Phone HDR JPEG/HEIF defaults to HDR editing with seven basic adjustments and geometry. Presets, selective synchronization, history and batch snapshots preserve independent HDR state. HDR JPEG regenerates a gain map; explicit SDR exports use the SDR rendition. Switch to SDR editing for LUT compatibility previews. Processing uses the CPU; FP16 presentation requires API 34+, an available HDR/SDR ratio and a hardware-accelerated window, with SDR fallback. GPU Force is unsupported. Ordinary SDR HEIF decoding requires API 28+.
+
 - 几何面板支持百分比裁切、90° 旋转、水平/垂直翻转、±100% 水平/垂直透视及 ±45° 拉直；透视和拉直自动保留中心无黑边画面。所有操作在 RAW 方向校正之后、输出缩放之前执行，顺序为旋转/翻转→透视→拉直→裁切，裁切坐标基于变换后的画面。参数接入逐照片记忆与批量快照；旧基础几何记录保留原有设置并将透视设为零，无几何记录保持原图。原图对比使用同一几何，原始 RAW 不写回。当前几何在 CPU 执行，Auto 可回退，Force 不隐藏 CPU 混合处理。
   Geometry controls support normalized cropping, clockwise quarter-turns, horizontal/vertical flips, ±100% horizontal/vertical perspective and ±45° straightening within an inscribed centered canvas. Geometry follows RAW orientation and precedes output resizing, in the order turns/flips → perspective → straightening → crop. Crop percentages refer to the transformed canvas. Edit memory and batch snapshots retain the full settings; legacy basic geometry records keep their settings with zero perspective, and records without geometry default to identity. Neutral comparison uses the same geometry; source RAWs remain unchanged. Geometry currently executes on CPU; Auto retains fallback and Force rejects mixed CPU processing.
 
@@ -58,9 +61,9 @@ v0.5.0 新增逐照片本机调整记忆和批量 RAW 导出。任务固定当�
 - 渲染型 DNG 固化外观，不是传感器 RAW，也不提供可恢复的调整滑块。不复制来源拍摄 EXIF；未压缩 float32 RGB 约占每像素 12 字节。格式和存储边界见[渲染型 DNG 契约](../lutools/docs/color-contract.md#rendered-dng)。
   Rendered DNG bakes appearance, not sensor RAW or reversible controls. It omits source capture EXIF and uses about 12 bytes per pixel for uncompressed float32 RGB. See the linked verification for runtime limits.
 
-只处理 RAW，不是 JPEG/HEIC 修图器。原始文件不写回；编辑参数按原始资源身份在本机自动保存，重选同一资源可恢复。
+支持 RAW、普通 JPEG/PNG 和受支持的手机 gain-map HDR JPEG/HEIF。原始文件不写回；编辑参数按原始资源身份在本机自动保存，重选同一资源可恢复。
 
-RAW inputs only, not a JPEG/HEIC editor. Originals are never rewritten; edits persist locally by original resource identity.
+Supports RAW, ordinary JPEG/PNG and supported phone gain-map HDR JPEG/HEIF. Originals are never rewritten; edits persist locally by original resource identity.
 
 外观导入不执行 Python/OCIO，也不修改源文件；CUBE、RLOOK 和受支持的 DCP 均通过 shared native 校验，DCP 会在 Android 上直接编译成托管 RLOOK。RLOOK 在 Android 使用 CPU，Auto 不会伪装成 GLES 原生 DCP 加速。可导入和可运行不等于已验证原厂或 Adobe 外观忠实度。卸载应用会移除托管外观，保留原始预设备份。
 
@@ -94,6 +97,13 @@ Requirements: JDK 17 or 21, Android SDK 35, build-tools 35.0.0,
 NDK 27.2.12479018, CMake 3.22.1. Minimum Android 8.0 / API 26.
 The APK includes `arm64-v8a` and `x86_64`; target SDK is 35.
 
+Normal X3F rendering also requires Rust 1.88+ (CI uses 1.99.1), Python 3.11+
+and host libclang. Install the `aarch64-linux-android` and `x86_64-linux-android`
+targets plus `rust-docs`; set `LIBCLANG_PATH` when libclang is outside the standard
+search path. CMake selects the matching NDK compiler and API sysroot. The APK
+includes X3F dependency and Rust runtime notices. See the shared
+[X3F contract](../lutools/docs/x3f-rendering.md) for supported cameras/settings.
+
 在 Android Studio 中打开此目录，或安装官方 SDK command-line tools 后执行：
 
 Open this directory in Android Studio, or install the official SDK command-line tools:
@@ -125,11 +135,11 @@ Assets are generated from existing repository resources rather than duplicated i
 
 ## Release
 
-[下载 Android v0.8.2 APK / Download Android v0.8.2 APK](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-Android-0.8.2.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.8.2) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.8.2/SHA256SUMS.txt)
+[下载 Android v0.9.2 APK / Download Android v0.9.2 APK](https://github.com/dancancer/RawLab/releases/download/v0.9.2/RawLab-Android-0.9.2.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.9.2) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.9.2/SHA256SUMS.txt)
 
-发布 APK 为 `versionName=0.8.2`、`versionCode=14`，沿用正式发布签名，支持同签名旧正式版覆盖升级。新增 DCP 直接导入、扩展 RAW 兼容性，并提升批量导出、任务恢复和进度保存的稳定性，见[发布说明](../docs/releases/v0.8/v0.8.2.md)。既有默认开启的使用统计和关于页关闭开关保留。本版本完成构建和 JVM 测试，未完成真机验收；历史开发测试不代表所有设备或最低系统通过，实际范围见发布附件 `BUILD-PROVENANCE.json`。
+发布 APK 为 `versionName=0.9.2`、`versionCode=17`，沿用正式发布签名，支持同签名旧正式版覆盖升级。新增手机 HDR、普通 X3F 显影、快捷预设、集合导出与外观搜索，并修复 HDR 批量取消和混合批量导出的中间数组内存问题，见[发布说明](../docs/releases/v0.9/v0.9.2.md)。既有默认开启的使用统计和关于页关闭开关保留。实际构建、JVM、模拟器与设备覆盖见发布附件 `BUILD-PROVENANCE.json`。
 
-The release APK uses version 0.8.2/code 14 and the existing release identity. It adds direct DCP import, extends RAW compatibility and improves batch export recovery and progress reliability. Usage-statistics defaults are unchanged. See the [release notes](../docs/releases/v0.8/v0.8.2.md) and package provenance for actual build/test coverage; physical-device acceptance remains outstanding.
+The release APK uses version 0.9.2/code 17 and the existing release identity. It adds phone HDR, normal X3F rendering, quick presets, collection export and look search, and fixes HDR batch cancellation and export intermediate-array memory use. Usage-statistics defaults are unchanged. See the [release notes](../docs/releases/v0.9/v0.9.2.md) and package provenance for actual build, emulator and physical-device coverage.
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。

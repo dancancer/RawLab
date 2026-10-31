@@ -5,7 +5,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
 namespace RawLab.Windows;
-internal sealed record RenderedImage(BitmapSource Image, BitmapSource? Clipping, uint[] Histogram, double Shadows, double Highlights, float Baseline, (double Temperature,double Tint)? WhiteBalance, int Backend, LensInfo? Lens = null, int NativeWidth = 0, int NativeHeight = 0);
+internal sealed record RenderedImage(BitmapSource Image, BitmapSource? Clipping, uint[] Histogram, double Shadows, double Highlights, float Baseline, (double Temperature,double Tint)? WhiteBalance, int Backend, LensInfo? Lens = null, int NativeWidth = 0, int NativeHeight = 0, HDRRenderedPair? HDR = null);
 internal sealed record PreviewFrame(RenderedImage Neutral,RenderedImage Result);
 internal sealed record EmbeddedPreview(BitmapSource? Image,int Width,int Height);
 internal sealed partial class RenderEngine : IDisposable
@@ -16,7 +16,7 @@ internal sealed partial class RenderEngine : IDisposable
     private readonly StatisticsAnalyzer statisticsAnalyzer;
     private sealed record Stamp(string Path,long Length,long Time,long Created=0);
     private sealed record PreviewKey(Native.Request Request,DenoiseSettings Denoise,PhotoEffectsSettings Effects,ToneControlsSettings ToneControls,AtmosphereSettings Atmosphere,ColorGradingSettings ColorGrading,ToneCurveSettings Curve,int DisplayChromaDenoise,
-        int ExposureMode,HslSettings Hsl,LensSettings Lens,GeometrySettings Geometry,ProcessingIdentity Processing,int RecipeSettingsVersion,double Strength,bool AIEnabled,int Mode,bool Compare,bool Clipping,Stamp Raw,Stamp? Lut);
+        int ExposureMode,HslSettings Hsl,LensSettings Lens,GeometrySettings Geometry,ProcessingIdentity Processing,X3fMode X3fMode,int RecipeSettingsVersion,double Strength,bool AIEnabled,int Mode,bool Compare,bool Clipping,Stamp Raw,Stamp? Lut,HDRSettings? HDR,string? SourceFingerprint);
     private readonly string lensDatabase;
     private Stamp? lensStamp;
     private LensCandidate[] lensCandidates = [];
@@ -26,17 +26,20 @@ internal sealed partial class RenderEngine : IDisposable
     private readonly Dictionary<int,PreviewFrame> previews=new();
     // The optional result cache is separate from the active comparison image.
     internal long CachedPreviewBytes=>previews.Values.Sum(FrameBytes);
-    private static long ImageBytes(RenderedImage value)=>(long)value.Image.PixelWidth*value.Image.PixelHeight*4*(value.Clipping==null ? 1 : 2);
+    private static long ImageBytes(RenderedImage value)=>(long)value.Image.PixelWidth*value.Image.PixelHeight*4*(value.Clipping==null ? 1 : 2) +
+        (value.HDR is { } pair ? (long)pair.HDR.RGB.Length * sizeof(float) + (long)pair.SDR.RGB.Length * sizeof(float) : 0);
     private static long FrameBytes(PreviewFrame frame)=>ImageBytes(frame.Result)+
         (ReferenceEquals(frame.Neutral,frame.Result) ? 0 : ImageBytes(frame.Neutral));
     public int LastBackend => Native.sony2fuji_session_get_last_backend(session);
-    public RenderEngine(int gpuMode=1, string? lensDatabase=null,StatisticsAnalyzer? statisticsAnalyzer=null,string? aiModelDirectory=null,string? aiCacheDirectory=null,int? aiBackend=null)
+    public RenderEngine(int gpuMode=1, string? lensDatabase=null,StatisticsAnalyzer? statisticsAnalyzer=null,string? aiModelDirectory=null,string? aiCacheDirectory=null,int? aiBackend=null,
+        string aiDeviceID="",AIDiagnosticStore? aiDiagnostics=null)
     {
         this.statisticsAnalyzer=statisticsAnalyzer ?? AnalyzeStatistics;
         this.lensDatabase = lensDatabase ?? Path.Combine(AppContext.BaseDirectory,"Lensfun");
         this.aiModelDirectory=aiModelDirectory ?? BundledAIModel;
         this.aiCacheDirectory=aiCacheDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RawLab","Cache","DualDn");
         aiBackendOverride=aiBackend;
+        this.aiDeviceID=aiDeviceID;aiDiagnosticStore=aiDiagnostics ?? AIDiagnosticStore.Default;
         try { InitializeSession(); SetGpuMode(gpuMode); }
         catch { session.Dispose(); throw; }
     }
@@ -45,17 +48,39 @@ internal sealed partial class RenderEngine : IDisposable
     public void Dispose() {previews.Clear();original=null;Native.sony2fuji_release_buffer(ref displayInput);inputStamp=null;session.Dispose();}
     public double AutoExposure(string path, Adjustments settings)
     {
+        BeginAIOperation("auto_exposure",path);
+        try{return AutoExposureCore(path,settings);}
+        catch(Exception error) when(settings.AIDenoiseEnabled && error is not OperationCanceledException && error is not AINotReadyException)
+        {CaptureAIFailure(error);throw;}
+    }
+    private double AutoExposureCore(string path, Adjustments settings)
+    {
+        if (PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path, out var info) == HDRProbeState.Supported)
+            return AutoExposureHDRSource(path, settings,info!);
         settings = PrepareRecipe(path, settings);
         EnsureInput(path);
-        SetProcessing(settings.Processing);SetTone(settings.RenderToneControls);SetAtmosphere(settings.RenderAtmosphere);SetGrading(settings.RenderGrading);SetCurve(settings.RenderCurve);
+        SetProcessing(settings.Processing);SetX3f(path,settings);SetTone(settings.RenderToneControls);SetAtmosphere(settings.RenderAtmosphere);SetGrading(settings.RenderGrading);SetCurve(settings.RenderCurve);
         ConfigureAI(settings.AIDenoiseEnabled);
         SetLens(settings.Lens);
         SetGeometry(settings.Geometry);
         Native.Check(Native.sony2fuji_session_set_raw_exposure_mode(session,settings.ExposureMode));
         var request=settings.Request(path,null,0,null);
         SetInput(ref request,path);
+        aiNativeOperationStarted=true;
         var status=Native.sony2fuji_session_estimate_auto_exposure(session,ref request,out var ev);
-        if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status);
+        if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status,session);
+        return ev;
+    }
+
+    private double AutoExposureHDRSource(string path, Adjustments settings,HDRSourceInfo info)
+    {
+        using var source = HDRSourceCache.Acquire(path,info,false,256);
+        var pair = HDRDisplay.CopyPair(source.Owner.Pair);
+        using var input = new HDRSdrInput(pair.SDR);
+        var prepared = PrepareRequest(path, settings, null, 256, false, null, null, true, input.Buffer);
+        var request = prepared.Item2;
+        var status = Native.sony2fuji_session_estimate_auto_exposure(session, ref request, out var ev);
+        if (settings.AIDenoiseEnabled) CheckAI(status); else Native.Check(status,session);
         return ev;
     }
     public PreviewFrame RenderPreview(string path,Adjustments settings,string? lut,int edge,bool interactive,bool compare,bool clipping)
@@ -72,12 +97,15 @@ internal sealed partial class RenderEngine : IDisposable
             session.Dispose();session=new();InitializeSession();SetGpuMode(gpuMode);lensStamp=null;
         }
         sourceStamp=(rawStamp,lutStamp);
+        var sourceFingerprint=PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path,out var info)==HDRProbeState.Supported
+            ? Convert.ToHexString(info!.SourceSha256) : null;
         var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.Effects,settings.ToneControls,settings.Atmosphere,settings.ColorGrading,settings.Curve,settings.DisplayChromaDenoise,
-            settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,settings.MasterRecipeSettingsVersion,settings[Parameter.Strength],settings.AIDenoiseEnabled,gpuMode,compare,clipping,rawStamp,lutStamp);
+            settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,settings.X3fMode,settings.MasterRecipeSettingsVersion,settings[Parameter.Strength],settings.AIDenoiseEnabled,gpuMode,compare,clipping,rawStamp,lutStamp,settings.HDR,sourceFingerprint);
+        var fingerprintChanged=previewKey?.SourceFingerprint!=sourceFingerprint;
         if(previewKey!=key){previews.Clear();previewKey=key;}
         var referenceKey=new NeutralReferenceKey(new(rawStamp.Path,rawStamp.Length,rawStamp.Time,rawStamp.Created),
-            PhotoInput.IsRaster(path),settings.Processing,settings.Geometry,settings.Lens,edge);
-        if(original?.Key!=referenceKey)original=null;
+            PhotoInput.IsRaster(path),settings.Processing,settings.Geometry,settings.Lens,edge,settings.IsHDREditing,settings.X3fMode);
+        if(original?.Key!=referenceKey || fingerprintChanged)original=null;
         var cacheEdge=edge;
         // AI 模型或磁盘结果可在 WPF 帧之外变化，必须经过 native 的完整性与身份检查。
         if(!settings.AIDenoiseEnabled && previews.TryGetValue(cacheEdge,out var cached))return cached;
@@ -101,17 +129,36 @@ internal sealed partial class RenderEngine : IDisposable
         }
         return frame;
     }
-    public RenderedImage? Render(string path, Adjustments settings, string? lut, int edge, bool interactive = false, string? output = null, bool statistics = true, bool clipping = true, int? longEdge = null, bool viewportPreview = false)
+    public RenderedImage? Render(string path, Adjustments settings, string? lut, int edge, bool interactive = false, string? output = null, bool statistics = true, bool clipping = true, int? longEdge = null, bool viewportPreview = false, ExportFormat? formatOverride = null)
     {
+        BeginAIOperation(output==null ? "preview" : "export",path);
+        try{return RenderCore(path,settings,lut,edge,interactive,output,statistics,clipping,longEdge,viewportPreview,formatOverride);}
+        catch(Exception error) when(settings.AIDenoiseEnabled && error is not OperationCanceledException && error is not AINotReadyException)
+        {CaptureAIFailure(error);throw;}
+    }
+    private RenderedImage? RenderCore(string path,Adjustments settings,string? lut,int edge,bool interactive,string? output,bool statistics,bool clipping,int? longEdge,bool viewportPreview,ExportFormat? formatOverride)
+    {
+        if (output != null && formatOverride == ExportFormat.HdrJpeg &&
+            (settings.HDR is not { Mode: HDRMode.Hdr } || !PhotoInput.IsHDRContainer(path)))
+            throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
+        if (settings.IsHDREditing && !PhotoInput.IsHDRContainer(path))
+            throw new HDRModeException(HDRModeFailure.UnsupportedSource);
+        if (PhotoInput.IsHDRContainer(path))
+        {
+            var probe = PhotoInput.ProbeHDR(path, out var info);
+            if (probe == HDRProbeState.Supported) return RenderHDR(path, settings, lut, edge, output, longEdge, formatOverride,info!,statistics,clipping);
+            if (settings.IsHDREditing) throw new HDRModeException(HDRModeFailure.UnsupportedSource);
+        }
         (settings,var request)=PrepareRequest(path,settings,lut,edge,interactive,output,longEdge,viewportPreview);
         var format=output==null ? (ExportFormat?)null : ExportFormatExtensions.FromPath(output);
         Native.Buffer buffer = default, mask = default;
         try
         {
+            aiNativeOperationStarted=true;
             var status = Native.sony2fuji_process(session,ref request,out buffer);
             if (output != null && (status == 6 || (status == 3 && format != ExportFormat.RenderedDng)))
                 throw new OutputWriteException(Loc.Text("无法写入成片，请检查输出位置和剩余空间。"));
-            if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status);
+            if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status,session);
             if (output != null) {
                 if (format != ExportFormat.RenderedDng)
                 {
@@ -134,19 +181,87 @@ internal sealed partial class RenderEngine : IDisposable
             float baseline=0,temperature=6500,tint=0;
             var raster=LibraryEntry.IsRaster(path);
             if(!raster)Native.Check(Native.sony2fuji_session_get_raw_exposure(session,out baseline,out _));
-            var calibrated = !raster && Native.sony2fuji_session_get_raw_white_balance(session,out temperature,out tint) == 0;
+            var normalX3f=PhotoInput.IsNormalX3f(path,settings);
+            var calibrated = normalX3f || !raster && Native.sony2fuji_session_get_raw_white_balance(session,out temperature,out tint) == 0;
             var count = (double)buffer.Width * buffer.Height;
             // Statistics consume RGBA before the private output buffers are swizzled for WPF.
             return new(Bitmap(buffer),!statisticsAvailable || mask.Data==IntPtr.Zero ? null : Bitmap(mask,false),bins,shadows/count,highlights/count,baseline,
-                calibrated ? RoundCameraWhiteBalance(temperature,tint) : null,LastBackend,raster ? null : ReadLens(path),checked((int)nativeWidth),checked((int)nativeHeight));
+                calibrated ? RoundCameraWhiteBalance(temperature,tint) : null,LastBackend,raster || normalX3f ? null : ReadLens(path),checked((int)nativeWidth),checked((int)nativeHeight));
         }
         finally { Native.sony2fuji_release_buffer(ref buffer); Native.sony2fuji_release_buffer(ref mask); }
     }
-    private (Adjustments,Native.Request) PrepareRequest(string path,Adjustments settings,string? lut,int edge,bool interactive,string? output,int? longEdge,bool viewportPreview)
+
+    private RenderedImage? RenderHDR(string path, Adjustments settings, string? lut, int edge, string? output,
+        int? longEdge, ExportFormat? formatOverride,HDRSourceInfo info,bool statistics,bool clipping)
+    {
+        var final = output != null;
+        var edgeValue = checked((uint)Math.Clamp(edge <= 0 ? 2000 : edge, 1, 2000));
+        using var source = HDRSourceCache.Acquire(path,info,final,edgeValue);
+        if (!settings.IsHDREditing && formatOverride == ExportFormat.HdrJpeg)
+            throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
+        if (!settings.IsHDREditing)
+            return RenderHDRAsSDR(path, settings, lut, edge, output, longEdge, formatOverride, source.Owner,statistics,clipping);
+
+        using var rendered = HDRNative.Render(session, source.Owner, settings.HDR!, final ? HDRIntent.Final : HDRIntent.Preview,
+            final ? checked((uint)Math.Clamp(longEdge ?? 0, 0, 65535)) : edgeValue);
+        if (output != null)
+        {
+            var format = formatOverride ?? (Path.GetExtension(output).Equals(".dng", StringComparison.OrdinalIgnoreCase)
+                ? ExportFormat.RenderedDng : ExportFormat.HdrJpeg);
+            if (format == ExportFormat.HdrJpeg) HDRNative.ExportHDR(rendered, path, output, rendered.Pair.SourceSha256 ?? []);
+            else HDRNative.ExportSDR(rendered, format, path, output, rendered.Pair.SourceSha256 ?? []);
+            return null;
+        }
+        var pair = HDRDisplay.CopyPair(rendered.Pair);
+        if(statistics)_ = pair.Statistics;
+        var analysis = statistics || clipping ? HDRDisplay.Statistics(pair.SDR,clipping) :
+            (Histogram:Array.Empty<uint>(),Shadows:0d,Highlights:0d,Clipping:(BitmapSource?)null);
+        return new(pair.SDRBitmap, analysis.Clipping, analysis.Histogram, analysis.Shadows, analysis.Highlights, 0, null, LastBackend,
+            NativeWidth: checked((int)pair.OutputNativeWidth), NativeHeight: checked((int)pair.OutputNativeHeight), HDR: pair);
+    }
+
+    private RenderedImage? RenderHDRAsSDR(string path, Adjustments settings, string? lut, int edge, string? output,
+        int? longEdge, ExportFormat? formatOverride, HDRPairOwner source,bool statistics,bool clipping)
+    {
+        var pair = HDRDisplay.CopyPair(source.Pair);
+        using var input = new HDRSdrInput(pair.SDR);
+        var prepared = PrepareRequest(path, settings, lut, edge, false, output, longEdge, output == null, input.Buffer);
+        var request = prepared.Item2;
+        Native.Buffer buffer = default, mask = default;
+        try
+        {
+            var status = Native.sony2fuji_process(session, ref request, out buffer);
+            var format = output == null ? (ExportFormat?)null : formatOverride ?? ExportFormatExtensions.FromPath(output);
+            if (output != null && (status == 6 || status == 3 && format != ExportFormat.RenderedDng))
+                throw new OutputWriteException(Loc.Text("无法写入成片，请检查输出位置和剩余空间。"));
+            Native.Check(status);
+            if (output != null)
+            {
+                if (HDRNative.Probe(path, out var currentSource) != HDRProbeState.Supported || currentSource == null ||
+                    !currentSource.SourceSha256.SequenceEqual(pair.SourceSha256))
+                    throw new HDRSourceException(1, 9, 1);
+                if (format != ExportFormat.RenderedDng) ExportMetadata.Preserve(path, output);
+                return null;
+            }
+            var (nativeWidth,nativeHeight)=HDRNative.GeometrySize(pair.NativeWidth,pair.NativeHeight,settings.Geometry);
+            var bins = statistics || clipping ? new uint[768] : Array.Empty<uint>(); uint shadows = 0, highlights = 0;
+            var available = false;
+            if(statistics || clipping) {
+                available = statisticsAnalyzer(ref buffer, clipping, bins, out shadows, out highlights, out mask) == 0;
+                if (!available) {bins = [];shadows=highlights=0;}
+            }
+            var count = Math.Max(1d, (double)buffer.Width * buffer.Height);
+            return new(Bitmap(buffer), !available || mask.Data==IntPtr.Zero ? null : Bitmap(mask,false), bins, shadows / count, highlights / count, 0, null, LastBackend,
+                NativeWidth: checked((int)nativeWidth), NativeHeight: checked((int)nativeHeight));
+        }
+        finally { Native.sony2fuji_release_buffer(ref buffer); Native.sony2fuji_release_buffer(ref mask); }
+    }
+
+    private (Adjustments,Native.Request) PrepareRequest(string path,Adjustments settings,string? lut,int edge,bool interactive,string? output,int? longEdge,bool viewportPreview,Native.Buffer? inputOverride = null)
     {
         settings = PrepareRecipe(path, settings);
-        EnsureInput(path);
-        SetProcessing(settings.Processing);SetTone(settings.RenderToneControls);SetAtmosphere(settings.RenderAtmosphere);SetGrading(settings.RenderGrading);SetCurve(settings.RenderCurve);
+        if (inputOverride == null) EnsureInput(path);
+        SetProcessing(settings.Processing);SetX3f(path,settings);SetTone(settings.RenderToneControls);SetAtmosphere(settings.RenderAtmosphere);SetGrading(settings.RenderGrading);SetCurve(settings.RenderCurve);
         ConfigureAI(settings.AIDenoiseEnabled);
         SetLens(settings.Lens);
         SetGeometry(settings.Geometry);
@@ -161,18 +276,30 @@ internal sealed partial class RenderEngine : IDisposable
         Native.Check(Native.sony2fuji_session_set_photo_effects(session,ref effects));
         Native.Check(Native.sony2fuji_session_set_chroma_denoise(session,settings.DisplayChromaDenoise));
         var request = settings.Request(path,lut,edge,output,longEdge);
-        SetInput(ref request,path);
+        if (inputOverride is { } display) SetInput(ref request, display); else SetInput(ref request,path);
         return (settings,request);
     }
     internal HslTargetSample SampleHsl(string path,Adjustments settings,string? lut,int edge,bool interactive,HslTargetRevision revision,double x,double y)
     {
+        BeginAIOperation("hsl_probe",path);
+        try{return SampleHslCore(path,settings,lut,edge,interactive,revision,x,y);}
+        catch(Exception error) when(settings.AIDenoiseEnabled && error is not OperationCanceledException && error is not AINotReadyException)
+        {CaptureAIFailure(error);throw;}
+    }
+    private HslTargetSample SampleHslCore(string path,Adjustments settings,string? lut,int edge,bool interactive,HslTargetRevision revision,double x,double y)
+    {
         if(!double.IsFinite(x) || !double.IsFinite(y))return HslTargetSample.Unavailable(revision,HslTargetAvailability.Nonfinite);
         if(x<0 || x>1 || y<0 || y>1)return HslTargetSample.Unavailable(revision,HslTargetAvailability.Outside);
-        var prepared=PrepareRequest(path,settings,lut,edge,interactive,null,null,true);
+        using var source=PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path,out var info)==HDRProbeState.Supported
+            ? HDRSourceCache.Acquire(path,info!,false,checked((uint)Math.Clamp(edge<=0 ? 2000 : edge,1,2000))) : null;
+        using var input=source==null ? null : new HDRSdrInput(HDRDisplay.CopyPair(source.Owner.Pair).SDR);
+        var prepared=PrepareRequest(path,settings,lut,edge,interactive,null,null,true,input?.Buffer);
         var request=prepared.Item2;
         IntPtr probe=IntPtr.Zero;
         try {
-            Native.Check(Native.sony2fuji_session_create_hsl_probe(session,ref request,revision.Source,revision.Request,out probe));
+            aiNativeOperationStarted=true;
+            var status=Native.sony2fuji_session_create_hsl_probe(session,ref request,revision.Source,revision.Request,out probe);
+            if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status,session);
             var query=new Native.HslProbeQuery {Version=1,StructSize=(uint)Marshal.SizeOf<Native.HslProbeQuery>(),SourceRevision=revision.Source,RequestRevision=revision.Request,X=(float)x,Y=(float)y};
             Native.Check(Native.sony2fuji_hsl_probe_sample(probe,ref query,out var sample));
             if(sample.SourceRevision!=revision.Source || sample.RequestRevision!=revision.Request)
@@ -208,6 +335,13 @@ internal sealed partial class RenderEngine : IDisposable
         var config = value.NativeConfig();
         Native.Check(Native.sony2fuji_session_set_tone_controls(session, ref config));
     }
+    internal static bool X3fAvailable => Native.sony2fuji_x3f_available() != 0;
+    private void SetX3f(string path, Adjustments settings)
+    {
+        if (PhotoInput.IsNormalX3f(path,settings) && settings.AIDenoiseEnabled)
+            throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
+        Native.Check(Native.sony2fuji_session_set_x3f_mode(session,settings.X3fMode));
+    }
     private void SetProcessing(ProcessingIdentity value) =>
         Native.Check(Native.sony2fuji_session_set_processing_version(session,ProcessingIdentity.Require(value).Version));
     private void SetLens(LensSettings value)
@@ -241,8 +375,11 @@ internal sealed partial class RenderEngine : IDisposable
     {
         if(LibraryEntry.IsRaster(path))return PrepareInputSettings(path,settings);
         if (settings.MasterRecipeID == null || (settings.CameraWhiteBalance && settings[Parameter.Tint] * settings[Parameter.Strength] == 0)) return settings;
+        if (PhotoInput.IsNormalX3f(path,settings)) {
+            var relative = settings.Clone(); relative.ResolveWhiteBalance((6500,0)); return relative;
+        }
         // 配方色调属于目标 RAW 的拍摄白平衡，不沿用冻结来源的相机值。
-        var neutral = new Adjustments { ExposureMode = settings.ExposureMode, Processing = settings.Processing };
+        var neutral = new Adjustments { ExposureMode = settings.ExposureMode, Processing = settings.Processing, X3fMode = settings.X3fMode };
         var camera = Render(path, neutral, null, 32, statistics: false, clipping: false)?.WhiteBalance
             ?? throw new InvalidOperationException(Loc.Text("此 RAW 无法解析拍摄白平衡，不能应用配方色调。"));
         var prepared = settings.Clone();
@@ -272,6 +409,12 @@ internal sealed partial class RenderEngine : IDisposable
         Native.Buffer buffer = default;
         try
         {
+            if (PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path, out _) == HDRProbeState.Supported)
+            {
+                using var decoded = HDRNative.Decode(path, HDRIntent.Preview, checked((uint)Math.Clamp(edge, 1, 65535)));
+                var pair = HDRDisplay.CopyPair(decoded.Pair);
+                return new(pair.SDRBitmap, pair.SDR.Width, pair.SDR.Height);
+            }
             if(LibraryEntry.IsRaster(path))
             {
                 if(edge<=0 || Native.rawlab_display_preview(path,(uint)edge,ref buffer,out var sourceWidth,out var sourceHeight)!=0)return new(null,0,0);

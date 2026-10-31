@@ -38,8 +38,13 @@ internal static class TestWindowState
         notice.Visibility=updates.HasUpdate ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         updates.PropertyChanged+=(_,_)=>notice.Visibility=updates.HasUpdate ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         Set("editStore",new EditStore(Path.Combine(root,"edits")));
+        Set("recentLooksPath",Path.Combine(root,"recent-looks.json"));
+        Set("recentLooks",new RecentLooks());
         Set("presetStore",new AdjustmentPresetStore(Path.Combine(root,"presets")));
         Set("batchJournal",new BatchJournal(Path.Combine(root,"batch")));
+        Set("aiPreferenceStore",new AIGpuPreferenceStore(Path.Combine(root,"ai-gpu.json")));
+        Set("aiDiagnostics",new AIDiagnosticStore(Path.Combine(root,"ai-diagnostics")));
+        Set("aiPreference",new AIGpuPreference());
         var library=typeof(MainWindow).GetField("library",flags)!.GetValue(window)!;
         library.GetType().GetField("settingsPath",flags)!.SetValue(library,Path.Combine(root,"folders.json"));
         ((System.Collections.IList)library.GetType().GetProperty("Roots")!.GetValue(library)!).Clear();

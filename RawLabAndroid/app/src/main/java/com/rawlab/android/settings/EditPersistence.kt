@@ -162,6 +162,7 @@ class EditStore(private val directory: File,
         val fields = values.split(',').map(String::toFloat)
         require(fields.size in listOf(11, 15, 24, 49))
         return EditSettings(film = film, strength = fields[0], exposure = fields[1],
+            x3fMode = X3fMode.LEGACY,
             highlights = fields[2], shadows = fields[3], contrast = fields[4], toneCurve = fields[5],
             saturation = fields[6], customWb = parseBoolean(fields[7]), temperature = fields[8], tint = fields[9],
             sharpening = fields[10], denoise = if (fields.size == 15)

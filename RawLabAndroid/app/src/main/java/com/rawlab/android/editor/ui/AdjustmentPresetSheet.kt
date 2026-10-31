@@ -30,6 +30,7 @@ import com.rawlab.android.ui.EditorSheetSystemBars
 sealed interface AdjustmentPresetAction {
     data object Save : AdjustmentPresetAction
     data class Apply(val preset: AdjustmentPreset) : AdjustmentPresetAction
+    data class ApplyMultiple(val preset: AdjustmentPreset) : AdjustmentPresetAction
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -79,7 +80,10 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }))
                     val validName = AdjustmentPreset.normalizedName(name).isNotEmpty()
-                    if (creating) AdjustmentScopeEditor(stringResource(R.string.preset_save), "preset-save", validName && editor.controlsEnabled) { scope ->
+                    if (creating) AdjustmentScopeEditor(stringResource(R.string.preset_save), "preset-save", validName && editor.controlsEnabled,
+                        allowed = if (editor.edits.isHDREditing) com.rawlab.android.adjustments.AdjustmentField.HDR_SUPPORTED
+                            else com.rawlab.android.adjustments.AdjustmentField.entries.filterNot { it.isHDRRelative }.toSet(),
+                        previewCapture = model::previewAdjustmentPayload, lookName = model::adjustmentSummaryLookName) { scope ->
                         val savedName = name
                         val generation = ++captureGeneration
                         model.capturePresetAdjustments(scope) capture@ { captured ->
@@ -117,6 +121,9 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
                                             Icon(Icons.Outlined.MoreVert, stringResource(R.string.preset_manage, preset.name))
                                         }
                                         DropdownMenu(menu, { menu = false }) {
+                                            DropdownMenuItem(text = { Text(stringResource(R.string.preset_quick_apply_multiple)) },
+                                                onClick = { menu = false; onRequest(AdjustmentPresetAction.ApplyMultiple(preset)) },
+                                                enabled = editor.controlsEnabled, modifier = Modifier.testTag("preset-multiple-${preset.id}"))
                                             DropdownMenuItem(text = { Text(stringResource(R.string.preset_rename_action)) },
                                                 onClick = { menu = false; rename = preset; name = preset.name; error = null }, modifier = Modifier.testTag("preset-rename"))
                                             DropdownMenuItem(text = { Text(stringResource(R.string.preset_delete)) },
@@ -124,7 +131,9 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
                                         }
                                     }
                                 }
-                                Text(stringResource(R.string.transfer_selected, preset.payload.fields.size.toString()), style = MaterialTheme.typography.bodySmall)
+                                TransferDisclosure(stringResource(R.string.transfer_selected, preset.payload.fields.size.toString()), "preset-summary-${preset.id}") {
+                                    AdjustmentSummaryContent(preset.payload, model::adjustmentSummaryLookName, "preset-summary-${preset.id}")
+                                }
                                 TextButton(onClick = { onRequest(AdjustmentPresetAction.Apply(preset)) }, enabled = editor.controlsEnabled,
                                     modifier = Modifier.heightIn(min = 48.dp).testTag("preset-apply-${preset.id}")) { Text(stringResource(R.string.preset_apply)) }
                             }
@@ -154,7 +163,7 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
     }
 }
 
-private fun presetErrorMessage(error: Throwable): String {
+internal fun presetErrorMessage(error: Throwable): String {
     if (error is AdjustmentTransferException || error is EditPersistenceConflict) return adjustmentErrorMessage(error)
     return if (error is AdjustmentPresetException) AppStrings.text(when (error.reason) {
         PresetFailure.EMPTY_NAME -> R.string.preset_enter_name

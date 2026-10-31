@@ -52,7 +52,7 @@ class GeometrySettingsTest {
         assertEquals(expected, GeometrySettings.decode(record))
         val settings = EditSettings(geometry = expected, exposureMode = 2)
         val oldSnapshot = legacyPipeSettings(settings).split('|').toMutableList().also { it[52] = record }
-        assertEquals(settings, SettingsCodec.decode(oldSnapshot.joinToString("|")))
+        assertEquals(settings.copy(x3fMode = com.rawlab.android.settings.X3fMode.LEGACY), SettingsCodec.decode(oldSnapshot.joinToString("|")))
     }
 
     @Test fun rejectsInvalidCropsFlagsVersionsAndAngles() {

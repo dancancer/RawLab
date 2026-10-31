@@ -28,6 +28,11 @@
         <!-- 打开编辑菜单时按当前工具重建，与调整栏的重置菜单同源。 -->
       </MenuItem>
       <MenuItem Header="{DynamicResource '查看(_V)'}">
+        <MenuItem x:Name="HDREditMenu" Header="{DynamicResource 'HDR 编辑'}" IsCheckable="True" Click="HDREditClicked" AutomationProperties.AutomationId="hdr.editing"/>
+        <MenuItem x:Name="HDRPreviewMenu" Header="{DynamicResource '自动 HDR'}" IsCheckable="True" IsChecked="True" Click="HDRPreviewClicked" AutomationProperties.AutomationId="hdr.preview.auto"/>
+        <MenuItem x:Name="HDRSdrPreviewMenu" Header="{DynamicResource 'SDR 兼容预览'}" IsCheckable="True" Click="HDRSdrPreviewClicked" AutomationProperties.AutomationId="hdr.preview.sdr"/>
+        <MenuItem x:Name="HDRFalseColorMenu" Header="{DynamicResource 'HDR 假色'}" IsCheckable="True" Click="HDRFalseColorClicked" AutomationProperties.AutomationId="hdr.false-color"/>
+        <Separator/>
         <MenuItem Header="{DynamicResource '文件树'}" Click="LibraryToggle"/>
         <MenuItem Header="{DynamicResource '调整栏'}" Click="DockToggle"/>
         <MenuItem Header="{DynamicResource '直方图'}" Click="HistogramClicked"/>
@@ -51,7 +56,7 @@
           <local:EditorIcon Kind="Export" Width="22" Height="22"/>
           <Button.ContextMenu><ContextMenu>
             <MenuItem Header="{DynamicResource '导出尺寸'}"><MenuItem x:Name="ExportOriginalSize" Header="{DynamicResource '原尺寸'}" IsCheckable="True" Click="ExportOriginalSizeClicked"/><MenuItem x:Name="ExportSize2048" Header="{DynamicResource '长边 2048 px'}" IsCheckable="True" Click="ExportSizeClicked" Tag="2048"/><MenuItem x:Name="ExportSize3000" Header="{DynamicResource '长边 3000 px'}" IsCheckable="True" Click="ExportSizeClicked" Tag="3000"/><MenuItem x:Name="ExportSize4096" Header="{DynamicResource '长边 4096 px'}" IsCheckable="True" Click="ExportSizeClicked" Tag="4096"/><MenuItem x:Name="ExportCustomSize" Header="{DynamicResource '自定义…'}" IsCheckable="True" Click="ExportCustomSizeClicked"/></MenuItem>
-            <Separator/><MenuItem x:Name="ExportJpeg" ToolTip="{DynamicResource 'JPEG：质量 95，保留可读取拍摄信息。'}" Header="{DynamicResource 'JPEG…'}" Click="ExportJpegClicked" IsEnabled="False"/><MenuItem x:Name="ExportPng" ToolTip="{DynamicResource 'PNG：16-bit，保留可读取拍摄信息。'}" Header="{DynamicResource 'PNG · 16-bit…'}" Click="ExportPngClicked" IsEnabled="False"/><MenuItem x:Name="ExportDng" ToolTip="{DynamicResource 'DNG：渲染型成片，不含原始传感器数据或拍摄 EXIF。'}" Header="{DynamicResource '导出渲染型 DNG'}" Click="ExportDngClicked" IsEnabled="False"/><Separator/><MenuItem x:Name="BatchExportMenu" Header="{DynamicResource '使用当前调整批量导出…'}" Click="BatchExportClicked" IsEnabled="False"/><MenuItem x:Name="ViewBatchMenu" Header="{DynamicResource '查看批量任务…'}" Click="ShowBatchClicked" IsEnabled="False"/>
+            <Separator/><MenuItem x:Name="ExportJpeg" ToolTip="{DynamicResource 'JPEG：质量 95，保留可读取拍摄信息。'}" Header="{DynamicResource 'JPEG…'}" Click="ExportJpegClicked" IsEnabled="False"/><MenuItem x:Name="ExportHdrJpeg" Header="{DynamicResource 'HDR JPEG'}" Click="ExportHdrJpegClicked" IsEnabled="False"/><MenuItem x:Name="ExportSdrJpeg" Header="{DynamicResource '保存 SDR JPEG'}" Click="ExportSdrJpegClicked" IsEnabled="False"/><MenuItem x:Name="ExportPng" ToolTip="{DynamicResource 'PNG：16-bit，保留可读取拍摄信息。'}" Header="{DynamicResource 'PNG · 16-bit…'}" Click="ExportPngClicked" IsEnabled="False"/><MenuItem x:Name="ExportDng" ToolTip="{DynamicResource 'DNG：渲染型成片，不含原始传感器数据或拍摄 EXIF。'}" Header="{DynamicResource '导出渲染型 DNG'}" Click="ExportDngClicked" IsEnabled="False"/><Separator/><MenuItem x:Name="BatchExportMenu" Header="{DynamicResource '使用当前调整批量导出…'}" Click="BatchExportClicked" IsEnabled="False"/><MenuItem x:Name="ViewBatchMenu" Header="{DynamicResource '查看批量任务…'}" Click="ShowBatchClicked" IsEnabled="False"/>
           </ContextMenu></Button.ContextMenu>
         </Button>
         <StackPanel Orientation="Horizontal">
@@ -126,6 +131,8 @@
           <Grid.ColumnDefinitions><ColumnDefinition x:Name="NeutralColumn" Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
           <local:PhotoCanvas x:Name="NeutralCanvas" Grid.Row="1" Margin="0"/>
           <local:PhotoCanvas x:Name="ResultCanvas" Grid.Row="1" Grid.Column="1"/>
+          <local:HDRSurface x:Name="NeutralHDRSurface" Grid.Row="1" Visibility="Hidden"/>
+          <local:HDRSurface x:Name="ResultHDRSurface" Grid.Row="1" Grid.Column="1" Visibility="Hidden"/>
           <Border x:Name="HslTargetBanner" Grid.RowSpan="2" Grid.ColumnSpan="2" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Bottom" MaxWidth="560" Margin="12" Padding="10" Background="{DynamicResource OverlaySurface}" CornerRadius="8" AutomationProperties.AutomationId="hsl.target.canvas">
             <StackPanel>
               <WrapPanel><TextBlock x:Name="HslTargetBannerTitle" TextWrapping="Wrap" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/><Button Content="{DynamicResource '退出目标调整'}" Click="ExitHslTargetClicked" AutomationProperties.AutomationId="hsl.target.exit"/></WrapPanel>
@@ -148,7 +155,7 @@
             <WrapPanel HorizontalAlignment="Center"><Button Content="{DynamicResource '打开 RAW'}" Click="OpenClicked" MinWidth="128" Margin="4,10" Style="{StaticResource AccentButton}"/><Button Content="{DynamicResource '添加目录'}" Click="AddFolderClicked" Margin="4,10"/></WrapPanel>
           </StackPanel>
           <Border x:Name="HistogramSurface" Grid.RowSpan="2" Grid.ColumnSpan="2" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="14" Background="{DynamicResource OverlaySurface}" CornerRadius="8" Padding="8" Width="220" Visibility="Collapsed">
-            <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <Grid x:Name="HistogramHost"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
               <Button x:Name="HistogramButton" Click="HistogramClicked" HorizontalAlignment="Right" Style="{StaticResource QuietButton}" Padding="6,2" ToolTip="{DynamicResource '展开直方图'}" AutomationProperties.Name="{DynamicResource 'RGB 直方图'}"><local:EditorIcon Kind="Histogram" Width="18" Height="18"/></Button>
               <Grid x:Name="HistogramPanel" Grid.Row="1"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                 <TextBlock x:Name="HistogramTitle" Text="{DynamicResource 'RGB 直方图'}" FontSize="{DynamicResource EditorCaptionSize}" FontWeight="SemiBold" TextWrapping="Wrap"/>
@@ -158,6 +165,9 @@
               </Grid>
             </Grid>
           </Border>
+          <Popup x:Name="HistogramPopup" PlacementTarget="{Binding ElementName=HistogramButton}" Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
+            <Border x:Name="HistogramPopupContent" Width="236" Padding="12" Background="{DynamicResource PopupSurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="1" CornerRadius="6"/>
+          </Popup>
         </Grid>
         <GridSplitter x:Name="AdjustmentSplitter" Grid.Row="1" Height="6" HorizontalAlignment="Stretch" Background="{DynamicResource Outline}" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" KeyboardIncrement="8" AutomationProperties.Name="{DynamicResource '调整栏'}"/>
         <Border x:Name="AdjustmentPanel" Grid.Row="2" Background="{DynamicResource Surface}" Padding="14,5,14,8">
@@ -165,6 +175,7 @@
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
             <DockPanel x:Name="DockHeader" LastChildFill="True" MinHeight="36">
               <Button Content="{DynamicResource '收起'}" Click="DockToggle" PreviewMouseDown="ParameterNavigationPressed" DockPanel.Dock="Right" Padding="8,3" Style="{StaticResource QuietButton}"/>
+              <Button x:Name="PanelAutomatic" Content="{DynamicResource '恢复自动高度'}" Click="RestoreAutomaticPanel" Visibility="Collapsed" DockPanel.Dock="Right" Style="{StaticResource QuietButton}" AutomationProperties.AutomationId="workspace.panel.auto"/>
               <Button x:Name="ResetAllButton" Click="ResetMenuClicked" DockPanel.Dock="Right" Padding="8,3" Style="{StaticResource QuietButton}" ToolTip="{DynamicResource '重置调整'}" AutomationProperties.Name="{DynamicResource '重置调整'}"><local:EditorIcon Kind="Reset" Width="18" Height="18"/></Button>
               <Button x:Name="ProcessingSettingsButton" Click="ProcessingSettingsClicked" DockPanel.Dock="Right" Padding="8,3" Style="{StaticResource QuietButton}" ToolTip="{DynamicResource '照片处理设置'}" AutomationProperties.Name="{DynamicResource '照片处理设置'}" AutomationProperties.AutomationId="processing.settings"><local:EditorIcon Kind="Processing" Width="18" Height="18"/></Button>
               <ScrollViewer x:Name="GroupsScroller" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"><StackPanel x:Name="Groups" Orientation="Horizontal" HorizontalAlignment="Left"/></ScrollViewer>
@@ -177,6 +188,14 @@
                     <TextBlock x:Name="ActiveFilm" Foreground="{DynamicResource Muted}" Margin="0,0,0,12" TextWrapping="Wrap"/>
                     <TextBlock Text="{DynamicResource '处理版本'}" Margin="0,0,0,4"/>
                     <ComboBox x:Name="ProcessingVersion" SelectedIndex="1" SelectionChanged="ProcessingVersionChanged" AutomationProperties.Name="{DynamicResource '处理版本'}"><ComboBoxItem Content="{DynamicResource '处理 v1（旧版）'}"/><ComboBoxItem Content="{DynamicResource '处理 v2'}"/></ComboBox>
+                    <StackPanel x:Name="X3fSettingsPanel" Visibility="Collapsed">
+                      <TextBlock Text="{DynamicResource 'X3F 显影'}" Margin="0,10,0,4"/>
+                      <ComboBox x:Name="X3fRendering" SelectionChanged="X3fRenderingChanged" AutomationProperties.Name="{DynamicResource 'X3F 显影'}" AutomationProperties.AutomationId="x3f.mode">
+                        <ComboBoxItem Content="{DynamicResource '伪红外（旧版）'}"/>
+                        <ComboBoxItem x:Name="X3fNormalOption" Content="{DynamicResource '正常显影'}"/>
+                      </ComboBox>
+                      <TextBlock x:Name="X3fDescription" Foreground="{DynamicResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
                     <TextBlock Text="{DynamicResource '曝光基准'}" Margin="0,10,0,4"/>
                     <ComboBox x:Name="ExposureMode" SelectedIndex="0" SelectionChanged="ExposureModeChanged" AutomationProperties.Name="{DynamicResource '曝光基准'}"><ComboBoxItem Content="{DynamicResource '标准显影'}"/><ComboBoxItem Content="{DynamicResource '匹配内嵌预览'}"/><ComboBoxItem Content="{DynamicResource '传感器基准'}"/></ComboBox>
                     <TextBlock x:Name="BaselineLabel" Text="{DynamicResource '基础偏移 —'}" Foreground="{DynamicResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap"/>
@@ -224,12 +243,27 @@
               <Button x:Name="ResetGroupButton" Content="{DynamicResource '重置分组'}" Click="ResetGroupClicked" Padding="8,3" Style="{StaticResource QuietButton}"/>
               </WrapPanel>
             </StackPanel></ScrollViewer>
-            <ScrollViewer x:Name="FilmPanel" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><Grid Margin="0,3,0,0">
-              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-              <Button x:Name="FilmScrollLeft" Click="FilmScrollLeftClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" ToolTip="" AutomationProperties.Name=""><local:EditorIcon Kind="ChevronDown" Width="18" Height="18"><local:EditorIcon.RenderTransform><RotateTransform Angle="90" CenterX="9" CenterY="9"/></local:EditorIcon.RenderTransform></local:EditorIcon></Button>
-              <ScrollViewer x:Name="FilmScroller" Grid.Column="1" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled" VerticalContentAlignment="Center" ScrollChanged="FilmScrollChanged"><StackPanel x:Name="FilmStrip" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center"/></ScrollViewer>
-              <Button x:Name="FilmScrollRight" Grid.Column="2" Click="FilmScrollRightClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" ToolTip="" AutomationProperties.Name=""><local:EditorIcon Kind="ChevronDown" Width="18" Height="18"><local:EditorIcon.RenderTransform><RotateTransform Angle="-90" CenterX="9" CenterY="9"/></local:EditorIcon.RenderTransform></local:EditorIcon></Button>
-            </Grid></ScrollViewer>
+            <ScrollViewer x:Name="QuickPresetSurface" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" AutomationProperties.AutomationId="preset.quick.panel"/>
+            <Grid x:Name="FilmPanel" Grid.Row="2" Visibility="Collapsed" Margin="0,3,0,0" AutomationProperties.AutomationId="looks.browser">
+              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+              <Grid Margin="0,0,0,6">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <ComboBox x:Name="LookCategory" Width="150" MinHeight="32" SelectionChanged="LookCategoryChanged" AutomationProperties.Name="{DynamicResource '外观分类'}" AutomationProperties.AutomationId="looks.category"/>
+                <TextBox x:Name="LookSearch" Grid.Column="1" MinHeight="32" Margin="8,0" VerticalContentAlignment="Center" TextChanged="LookSearchChanged" ToolTip="{DynamicResource '搜索外观'}" AutomationProperties.Name="{DynamicResource '搜索外观'}" AutomationProperties.AutomationId="looks.search"/>
+                <Button x:Name="LookSearchClear" Grid.Column="2" Content="×" Visibility="Collapsed" Click="ClearLookSearch" AutomationProperties.Name="{DynamicResource '清除搜索'}" AutomationProperties.AutomationId="looks.search.clear"/>
+                <Button x:Name="LookImport" Grid.Column="3" Content="{DynamicResource '导入外观'}" Click="ImportClicked" MinHeight="32" AutomationProperties.AutomationId="looks.import"/>
+              </Grid>
+              <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <Button x:Name="FilmScrollLeft" Click="FilmScrollLeftClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" ToolTip="" AutomationProperties.Name=""><local:EditorIcon Kind="ChevronDown" Width="18" Height="18"><local:EditorIcon.RenderTransform><RotateTransform Angle="90" CenterX="9" CenterY="9"/></local:EditorIcon.RenderTransform></local:EditorIcon></Button>
+                <ScrollViewer x:Name="FilmScroller" Grid.Column="1" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Center" ScrollChanged="FilmScrollChanged"><StackPanel x:Name="FilmStrip" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center"/></ScrollViewer>
+                <Button x:Name="FilmScrollRight" Grid.Column="2" Click="FilmScrollRightClicked" Visibility="Collapsed" Style="{StaticResource QuietButton}" ToolTip="" AutomationProperties.Name=""><local:EditorIcon Kind="ChevronDown" Width="18" Height="18"><local:EditorIcon.RenderTransform><RotateTransform Angle="-90" CenterX="9" CenterY="9"/></local:EditorIcon.RenderTransform></local:EditorIcon></Button>
+                <StackPanel x:Name="LookEmpty" Grid.ColumnSpan="3" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" AutomationProperties.AutomationId="looks.empty">
+                  <TextBlock Text="{DynamicResource '没有匹配的外观'}" Foreground="{DynamicResource Muted}"/>
+                  <Button x:Name="LookEmptyAction" Click="ClearLookSearch" Margin="0,6"/>
+                </StackPanel>
+              </Grid>
+            </Grid>
             <ScrollViewer x:Name="MasterRecipePanel" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><Grid Margin="0,3,0,0">
               <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
               <Button x:Name="RecipeScrollLeft" Click="RecipeScrollLeftClicked" Style="{StaticResource QuietButton}" ToolTip="" AutomationProperties.Name=""><local:EditorIcon Kind="ChevronDown" Width="18" Height="18"><local:EditorIcon.RenderTransform><RotateTransform Angle="90" CenterX="9" CenterY="9"/></local:EditorIcon.RenderTransform></local:EditorIcon></Button>

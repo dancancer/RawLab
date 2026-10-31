@@ -30,6 +30,11 @@ internal static class BatchSelectionUiChecks
                     var scope=app.Windows.OfType<AdjustmentScopeDialog>().FirstOrDefault(dialog=>dialog.IsVisible);
                     if(scope!=null && stage==0) {
                         scope.UpdateLayout();Find<ComboBox>(scope,"adjustment.copy.scope").SelectedIndex=3;
+                        if(Get<Adjustments>(window,"settings").IsHDREditing) {
+                            check(Find<CheckBox>(scope,"adjustment.field.hdr.relative_temperature").IsVisible &&
+                                Find<CheckBox>(scope,"adjustment.field.hdr.relative_tint").IsVisible,
+                                "Actual HDR collection scope shows relative WB controls");
+                        }
                         Find<Button>(scope,"adjustment.copy.clear").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                         Find<CheckBox>(scope,"adjustment.field.light.exposure").IsChecked=true;stage=1;
                         Find<Button>(scope,"adjustment.copy.confirm").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));return;
@@ -61,8 +66,52 @@ internal static class BatchSelectionUiChecks
             check(skipped.Ready && skipped.Rows.Count==1 && window.Collection.Selected.Count==2,"Skipping draft preserves collection selection");
             check(window.ResolveCollectionDraft(targetID,false),"Explicit discard resolves the active draft");Ready(window);
             var review=window.PrepareCollectionExport([],ExportFormat.Png,256,root);check(review.Ready,"Both committed target snapshots are shown after draft resolution");
-            var job=window.FreezeCollectionExport(review);
+            var failureJournal=new BatchJournal(Path.Combine(root,"init-failure"));
+            var failureJob=new BatchSelectionExport(store,failureJournal,_=>null).Freeze(window.Collection,review,_=>null);
+            var failedWindow=new BatchExportWindow(failureJob,failureJournal,_=>throw new IOException("Injected engine initialization failure")){Owner=window};
+            Loc.SetPreference("en",Path.Combine(root,"language.txt"));foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
+            failedWindow.Show();
+            var batchSurface=EditorShellChecks.ArrangeLayout(failedWindow,new Size(1024,720));
+            var duplicate=PhotoFeatureChecks.Descendants<TextBlock>(failedWindow).Single(text=>text.Text==Loc.Text("重名文件"));
+            var sequence=PhotoFeatureChecks.Descendants<TextBlock>(failedWindow).Single(text=>text.Text==Loc.Text("自动添加序号"));
+            var duplicateBounds=duplicate.TransformToAncestor(failedWindow).TransformBounds(new Rect(duplicate.RenderSize));
+            var sequenceBounds=sequence.TransformToAncestor(failedWindow).TransformBounds(new Rect(sequence.RenderSize));
+            Console.WriteLine($"Batch filename layout: label={duplicateBounds}, detail={sequenceBounds}, actual={sequence.ActualHeight}, desired={sequence.DesiredSize.Height}");
+            // 独立截图移出 Window 后，透明内容仍使用原窗口背景。
+            if(batchSurface is Panel background && background.Background==null)background.Background=failedWindow.Background;
+            EditorShellChecks.CaptureLayout(failedWindow,batchSurface,Path.Combine(root,"batch-english-config.png"));
+            check(!duplicateBounds.IntersectsWith(sequenceBounds) && sequenceBounds.Top+.5>=duplicateBounds.Bottom && sequence.ActualHeight+sequence.Margin.Top+sequence.Margin.Bottom+.5>=sequence.DesiredSize.Height,
+                "Default English duplicate-file explanation wraps without overlapping the label");
+            var failedStart=failedWindow.StartExecution();
+            check(!failedWindow.StartExecution().GetAwaiter().GetResult(),"Duplicate start is declined without cancelling the admitted run");
+            InteractionChecks.PumpUntil(()=>failedStart.IsCompleted);check(failedStart.Result,"First start is admitted");
+            check(!failedWindow.Job.Started && failedWindow.Job.Error!=null,"Initialization failure remains visible before runner start");
+            failedWindow.Close();
+            check(failureJournal.Load()?.Id==failureJob.Id && !failedWindow.Discarded,
+                "Closing after initialization failure preserves the same frozen collection job");
+            var recovered=new BatchExportWindow(failureJournal.Load()!,failureJournal){Owner=window};recovered.Show();
+            var recovery=recovered.StartExecution();InteractionChecks.PumpUntil(()=>recovery.IsCompleted);
+            check(recovery.Result && recovered.Job.Id==failureJob.Id && recovered.Job.SucceededCount==2,
+                "Recovery exports both photos using the original frozen job");
+            recovered.Close();failureJournal.Discard(recovered.Job);
+            var uniform=BatchJob.Create(source,new Adjustments().Capture(),null,"Neutral");
+            var uniformWindow=new BatchExportWindow(uniform,failureJournal){Owner=window};uniformWindow.Show();uniformWindow.Close();
+            check(uniformWindow.Discarded && failureJournal.Load()==null,"Closing an unstarted uniform draft still discards it");
+            var cancelled=window.PrepareCollectionExportAsync([],ExportFormat.Png,256,root);window.CancelCollectionOperation();
+            InteractionChecks.PumpUntil(()=>cancelled.IsCompleted);
+            check(cancelled.Result==null && !window.CollectionHasExport,"Cancelled preflight cannot hand off a task");
+            var dialog=new CollectionExportDialog(collection,window);Set(dialog,"directory",root);
+            Get<TextBox>(dialog,"edge").Text="256";
+            Get<ComboBox>(dialog,"formats").SelectedItem=ExportFormat.Png;
+            var start=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(50)};
+            start.Tick+=(_,_)=>{start.Stop();dialog.UpdateLayout();Find<Button>(dialog,"collection.export-confirm").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));};
+            start.Start();check(dialog.ShowDialog()==true,"One final action closes the export configuration and hands off the frozen task");
             var batch=app.Windows.OfType<BatchExportWindow>().Single();batch.UpdateLayout();
+            InteractionChecks.PumpUntil(()=>!batch.Running);
+            var job=batch.Job;
+            check(job.Started && job.SucceededCount==2,"One final action starts the runner and writes both outputs");
+            check(job.Items.All(item=>item.Output!=null && File.Exists(item.Output)),"Both per-photo outputs exist");
+            check(!File.ReadAllBytes(job.Items[0].Output!).SequenceEqual(File.ReadAllBytes(job.Items[1].Output!)),"Different saved adjustments produce different outputs");
             check(!batch.FormatOptions.IsEnabled && !batch.ChooseFolder.IsEnabled && !batch.SizeSelection.IsEnabled,"Frozen task output controls are locked");
             window.OrdinaryParameter.Number.Text="2";check(window.OrdinaryParameter.Commit(),"Later editor value changes independently");Ready(window);
             var frozen=job.Items.Single(item=>item.Input==target).Frozen!;
@@ -74,7 +123,7 @@ internal static class BatchSelectionUiChecks
                 check(!Pixels(before).SequenceEqual(Pixels(after)),"Native frozen preview differs from the later editor state");
             }
             batch.Close();collection.Close();
-            check(store.Find(target)!.Settings.Restore()[Parameter.Exposure]==2 && File.Exists(target),"Cancelling the frozen export preserves saved micro-edits and source files");
+            check(store.Find(target)!.Settings.Restore()[Parameter.Exposure]==2 && File.Exists(target),"Closing the frozen export preserves saved micro-edits and source files");
         }finally{window.Close();app.Shutdown();}
     }
     private static byte[] Pixels(BitmapSource image)

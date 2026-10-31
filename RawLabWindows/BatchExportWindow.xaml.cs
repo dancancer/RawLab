@@ -15,6 +15,7 @@ namespace RawLab.Windows;
 public partial class BatchExportWindow : Window
 {
     private BatchJob job;
+    private readonly AIDiagnosticStore aiDiagnostics;
     private readonly BatchJournal journal;
     private readonly Func<int,RenderEngine> createEngine;
     private readonly ObservableCollection<BatchRow> rows = [];
@@ -35,14 +36,17 @@ public partial class BatchExportWindow : Window
     public event Action<bool>? BusyChanged;
     public event Action<BatchJob, BatchJob, int>? RunCompleted;
 
-    public BatchExportWindow(BatchJob job, BatchJournal journal) : this(job,journal,backend=>new RenderEngine(aiBackend:backend)) { }
-    internal BatchExportWindow(BatchJob job, BatchJournal journal, Func<int,RenderEngine> createEngine)
+    public BatchExportWindow(BatchJob job, BatchJournal journal) : this(job,journal,backend=>new RenderEngine(aiBackend:backend,aiDeviceID:job.AIDeviceID)) { }
+    internal BatchExportWindow(BatchJob job, BatchJournal journal, Func<int,RenderEngine> createEngine,AIDiagnosticStore? aiDiagnostics=null)
     {
         this.job = job; this.journal = journal; this.createEngine=createEngine;
+        this.aiDiagnostics=aiDiagnostics ?? AIDiagnosticStore.Default;
         InitializeComponent(); Targets.ItemsSource = rows;
         Loc.Changed += RefreshLanguage;
         Closed += (_, _) => {closed=true;Loc.Changed -= RefreshLanguage;};
         Jpeg.IsChecked = job.Format == ExportFormat.Jpeg;
+        HdrJpeg.IsChecked = job.Format == ExportFormat.HdrJpeg;
+        SdrJpeg.IsChecked = job.Format == ExportFormat.SdrJpeg;
         Png.IsChecked = job.Format == ExportFormat.Png;
         Dng.IsChecked = job.Format == ExportFormat.RenderedDng;
         SourceName.Text = Path.GetFileName(job.Source); SourceName.ToolTip = job.Source;
@@ -53,7 +57,7 @@ public partial class BatchExportWindow : Window
         };
         Closing += (_, args) => {
             if(Running || preflighting){args.Cancel=true;closeRequested=true;if(Running)CancelExecution();return;}
-            if(!PreserveOnUpdateExit && !job.Started && !Discarded)try{journal.Discard(job);Discarded=true;CloseFailed=false;}catch(Exception error){args.Cancel=true;CloseFailed=true;closeRequested=false;job.Error=error.Message;Refresh();_=LoadThumbnails();}
+            if(!PreserveOnUpdateExit && !Frozen && !job.Started && !Discarded)try{journal.Discard(job);Discarded=true;CloseFailed=false;}catch(Exception error){args.Cancel=true;CloseFailed=true;closeRequested=false;job.Error=error.Message;Refresh();_=LoadThumbnails();}
         };
         ready = true;
         RefreshLanguage();
@@ -109,7 +113,7 @@ public partial class BatchExportWindow : Window
             if (row == null) { row = new BatchRow(item, Select); rows.Add(row); }
             row.Refresh(item, !Frozen && !job.Started && !preflighting, !Running && !preflighting && item.CanSelect);
         }
-        CloseAction.Content = job.Started ? Loc.Text("关闭") : Loc.Text("取消"); CloseAction.IsEnabled = !Running;
+        CloseAction.Content = job.Started || Frozen ? Loc.Text("关闭") : Loc.Text("取消"); CloseAction.IsEnabled = !Running;
         RevealFolder.Visibility = job.SucceededCount > 0 ? Visibility.Visible : Visibility.Collapsed;
         PrimaryAction.Content = Running ? cancellation.IsCancellationRequested ? Loc.Text("正在停止…") : Loc.Text("取消导出") :
             !job.Started ? Loc.Format("导出 {0} 张", job.SelectedCount) : job.RemainingCount > 0 ? Loc.Format("继续未完成的 {0} 张", job.SelectedCount - job.SucceededCount) : Loc.Format("重试失败的 {0} 张", job.FailedCount);
@@ -153,14 +157,16 @@ public partial class BatchExportWindow : Window
         try
         {
             var checkedItems=await Task.Run(()=>{
-                var accepted=new List<BatchItem>();using var validator=new RenderEngine(0,aiBackend:job.AIBackend);
+                var accepted=new List<BatchItem>();using var validator=new RenderEngine(0,aiBackend:job.AIBackend,aiDeviceID:job.AIDeviceID,aiDiagnostics:aiDiagnostics);
                 foreach(var input in inputs.Distinct(StringComparer.OrdinalIgnoreCase))
                 {
                     if(closeRequested)break;
                     try{
                         var item=BatchItem.Create(input);
                         try{var effective=RenderEngine.PrepareBatchSettings(job.Source,input,settings.Restore());
-                            if(effective.AIDenoiseEnabled)RenderEngine.ValidateAIInput(input);
+                            if (job.Format == ExportFormat.HdrJpeg && effective.HDR is not { Mode: HDRMode.Hdr })
+                                throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
+                            if(effective.AIDenoiseEnabled)RenderEngine.ValidateAIInput(input,job.AIDeviceID,effective.X3fMode);
                             else validator.Render(input,effective,look,64,statistics:false,clipping:false,viewportPreview:true);
                             item=item with{Selected=true};}
                         catch(Exception error){item=item with{ValidationError=error.Message,Selected=false};}
@@ -218,7 +224,8 @@ public partial class BatchExportWindow : Window
         if (ready && !Frozen && !job.Started && !Running)
         {
             job.Format = Dng.IsChecked == true ? ExportFormat.RenderedDng :
-                Png.IsChecked == true ? ExportFormat.Png : ExportFormat.Jpeg;
+                Png.IsChecked == true ? ExportFormat.Png : HdrJpeg.IsChecked == true ? ExportFormat.HdrJpeg :
+                SdrJpeg.IsChecked == true ? ExportFormat.SdrJpeg : ExportFormat.Jpeg;
             SaveDraft();
         }
     }
@@ -293,10 +300,14 @@ public partial class BatchExportWindow : Window
     public void CancelExecution() { cancellation.Cancel(); Refresh(); }
     private async void PrimaryClicked(object sender, RoutedEventArgs e)
     {
-        if(preflighting)return;
         if (Running) { CancelExecution(); return; }
-        if (job.SelectedCount == 0 || job.OutputDirectory == null) return;
-        if (!job.Started && editingCustomSize && !CommitCustomSize()) return;
+        await StartExecution();
+    }
+    internal async Task<bool> StartExecution()
+    {
+        if(closed || closeRequested || preflighting || Running || Discarded)return false;
+        if (job.SelectedCount == 0 || job.OutputDirectory == null) return false;
+        if (!job.Started && editingCustomSize && !CommitCustomSize()) return false;
         CloseFailed=closeRequested=false;Running = true; cancellation = new(); BusyChanged?.Invoke(true); Refresh();
         var before = job.Copy();
         var work = job.Copy(); var failuresOnly = job.Started && job.RemainingCount == 0;
@@ -305,8 +316,8 @@ public partial class BatchExportWindow : Window
         try
         {
             await Task.Run(() => {
-                if (work.Format != ExportFormat.RenderedDng) ExportMetadata.VerifyAvailable();
-                using var engine = createEngine(work.AIBackend);
+                if (work.Format is not (ExportFormat.RenderedDng or ExportFormat.HdrJpeg)) ExportMetadata.VerifyAvailable();
+                using var engine = createEngine(work.AIBackend);engine.SetAIDevice(work.AIDeviceID);
                 BatchRunner.Run(work, journal, failuresOnly, cancellation.Token,
                     (updated, _) => {
                         foreach (var item in updated.Items)
@@ -327,12 +338,14 @@ public partial class BatchExportWindow : Window
                         }
                         cancellation.Token.ThrowIfCancellationRequested();
                         engine.Render(input, settings, look, 32, statistics: false, clipping: false);
-                        engine.Render(input, settings, look, 0, output: destination, longEdge: longEdge);
+                        engine.Render(input, settings, look, 0, output: destination, longEdge: longEdge, formatOverride: work.Format);
                     });
             });
         }
         catch (Exception error)
         {
+            if(work.Settings.AIDenoiseEnabled || work.Items.Any(item=>item.Selected && item.Frozen?.Settings.AIDenoiseEnabled==true))
+                aiDiagnostics.Capture(error,new("batch",work.AIDeviceID,work.AIBackend,Devices:RenderEngine.GetAIDevices().JSON));
             work.Error = error.Message; work.Interrupted = true;
             try { journal.Save(work); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
@@ -343,6 +356,7 @@ public partial class BatchExportWindow : Window
             Running = false; aiProgress=null; Refresh(); BusyChanged?.Invoke(false);
             if (closeRequested && IsLoaded) Close();
         }
+        return true;
     }
 
     private async void InspectClicked(object sender, RoutedEventArgs e)
@@ -361,7 +375,7 @@ public partial class BatchExportWindow : Window
                 var frozen=snapshot.SnapshotFor(row.Item);
                 if(snapshot.Mode==BatchJob.PerTargetFrozen)frozen.VerifyLook();
                 else if (frozen.Look != null && !File.Exists(frozen.Look)) throw new InvalidOperationException(Loc.Text("任务使用的外观文件不可用，请重新创建任务。"));
-                using var engine = new RenderEngine(aiBackend:snapshot.AIBackend);
+                using var engine = new RenderEngine(aiBackend:snapshot.AIBackend,aiDeviceID:snapshot.AIDeviceID,aiDiagnostics:aiDiagnostics);
                 var settings=frozen.Settings.Restore();
                 return engine.Render(row.Input, settings, frozen.Look, 1600, statistics: false, clipping: false);
             });

@@ -22,6 +22,10 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             CGImageDestinationAddImage(destination, image, nil)
             guard CGImageDestinationFinalize(destination) else { fatalError("fixture") }
         }
+        try BatchFlowModelTests.preparedSourceChange(root: root, fixture: first)
+        try BatchFlowModelTests.automaticLaunch(root: root, fixture: first)
+        try BatchFlowModelTests.pendingLaunches(root: root, fixture: first)
+        try BatchFlowModelTests.x3fSnapshots(root: root)
         let alias = root.appendingPathComponent("alias.png")
         try FileManager.default.linkItem(at: first, to: alias)
         let model = EditorModel(lookDirectory: root.appendingPathComponent("looks"),
@@ -70,7 +74,10 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         catch is EditPersistenceConflict { print("PASS: late edits invalidate final confirmation") }
         let final = try model.prepareCollectionExport(skipping: [], format: .jpeg, longEdge: 1024, directory: root)
         let job = try model.freezeCollectionExport(final)
+        try check(model.collectionExportBlockedByTask, "an unstarted frozen task still blocks another collection export")
         try check(job.mode == .perTargetFrozen && job.items.map { $0.frozen!.settings.exposure } == [1.2, 2.6, 1.2], "freeze retains per-photo settings and order")
+        try BatchFlowModelTests.declinedStart(job: job, journal: model.batchJournal)
+        try BatchFlowModelTests.initializationFailure(job: job, root: root)
         model.settings.exposure = 3; try check(model.saveEdits(), "edit after freeze saved independently")
         let restored = try model.batchJournal.load()!
         try check(restored.items[1].frozen!.settings.exposure == 2.6 && restored.items[1].frozen!.settings.contrast == 19, "recovery never reads later live editor settings")

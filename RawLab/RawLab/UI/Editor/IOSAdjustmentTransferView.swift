@@ -2,7 +2,7 @@ import PhotosUI
 import SwiftUI
 
 enum IOSAdjustmentSheet: String, Identifiable { case copy, paste, history, presets, presetSave, presetApply; var id: String { rawValue } }
-enum IOSAdjustmentAction: Equatable { case copy, paste, history, undo, redo, presetSave, presetApply(AdjustmentPreset) }
+enum IOSAdjustmentAction: Equatable { case copy, paste, history, undo, redo, presetSave, presetApply(AdjustmentPreset), presetApplyMultiple(AdjustmentPreset) }
 
 struct IOSAdjustmentTransferView: View {
     @ObservedObject var model: RawEditorViewModel
@@ -26,6 +26,7 @@ struct IOSAdjustmentTransferView: View {
     @State private var skipped = Set<String>()
     @State private var pasteResults: [IOSAdjustmentTransferOutcome] = []
     @State private var message: String?
+    @State private var initialized = false
 
     private var title: String { L10n.text(synchronization != nil ? "同步调整" : preset != nil ? "应用预设" : kind == .copy ? "复制调整" : kind == .paste ? "粘贴调整" : "本次会话历史") }
     private var busy: Bool { loading || model.adjustmentPreparing }
@@ -34,6 +35,13 @@ struct IOSAdjustmentTransferView: View {
             prepared?.targets.allSatisfy { $0.error == nil || skipped.contains($0.id) } == true
     }
     private var hasPending: Bool { pasteResults.isEmpty || pasteResults.contains { [.blocked, .failed, .conflict].contains($0.status) } }
+    private var needsRecheck: Bool {
+        pasteResults.isEmpty && ((prepared == nil && message != nil) || prepared?.targets.contains { $0.error != nil } == true)
+    }
+
+    private var scopePreview: Result<AdjustmentTransferPayload, Error> {
+        Result { try model.previewAdjustmentPayload(scope: scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields), settings: settings) }
+    }
 
     var body: some View {
         NavigationStack {
@@ -64,12 +72,18 @@ struct IOSAdjustmentTransferView: View {
         }
         .tint(.yellow)
         .onAppear {
+            guard !initialized else { return }
+            initialized = true
             if kind == .copy { fields=settings.isHDREditing ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common }
             if kind == .paste {
                 payload = synchronization?.payload ?? preset?.payload ?? model.adjustmentSession?.clipboard
                 sourceName = synchronization?.sourceName ?? preset?.name ?? model.adjustmentClipboardSourceName ?? payload?.source.identifier ?? ""
                 photos = synchronization?.photos ?? model.currentAdjustmentPhoto.map { [$0] } ?? []
+                prepare()
             }
+        }
+        .onChange(of: model.sourceRevision) { _, _ in
+            if kind == .paste { model.cancelAdjustmentPreparation(); dismiss() }
         }
         .onDisappear {
             loadTask?.cancel()
@@ -80,7 +94,7 @@ struct IOSAdjustmentTransferView: View {
     }
 
     @ViewBuilder private var copyContent: some View {
-        IOSAdjustmentScopeEditor(scope:$scope,fields:$fields,sourceName:model.sourceDisplayName ?? "",allowed:settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
+        IOSAdjustmentScopeEditor(scope:$scope,fields:$fields,preview:scopePreview,lookName:model.adjustmentSummaryLookName,errorMessage: { model.adjustmentErrorMessage($0) },sourceName:model.sourceDisplayName ?? "",allowed:settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
         Section {
             Button(L10n.text("复制调整")) {
                 do {
@@ -88,7 +102,7 @@ struct IOSAdjustmentTransferView: View {
                     try model.copyAdjustments(scope: selection, settings: settings)
                     dismiss()
                 } catch { message = model.adjustmentErrorMessage(error) }
-            }.disabled(scope == "custom" && fields.isEmpty).accessibilityIdentifier("adjustment.copy.confirm")
+            }.disabled((try? scopePreview.get()) == nil).accessibilityIdentifier("adjustment.copy.confirm")
         }
     }
 
@@ -97,8 +111,7 @@ struct IOSAdjustmentTransferView: View {
             Section {
                 Text(L10n.format("来源：%@ · %@ 项调整", sourceName, String(payload.fields.count))).font(.headline)
                 DisclosureGroup(L10n.text("查看调整范围")) {
-                    Text(payload.fields.sorted { $0.rawValue < $1.rawValue }.map(\.displayTitle).joined(separator: "、"))
-                        .font(.callout).foregroundStyle(.secondary)
+                    IOSAdjustmentSummaryView(payload: payload, lookName: model.adjustmentSummaryLookName)
                 }
                 Text(L10n.format("目标：%@ 张照片", String(photos.count)))
                 if synchronization == nil {
@@ -107,8 +120,10 @@ struct IOSAdjustmentTransferView: View {
                 Button(L10n.text("从文件导入")) { showingFiles = true }.disabled(busy)
                     .accessibilityIdentifier("adjustment.paste.chooseFiles")
                 }
-                Button(L10n.text("检查目标"), action: prepare).disabled(busy || photos.isEmpty)
-                    .accessibilityIdentifier("adjustment.paste.preflight")
+                if needsRecheck {
+                    Button(L10n.text("重新检查"), action: prepare).disabled(busy || photos.isEmpty)
+                        .accessibilityIdentifier("adjustment.paste.preflight")
+                }
                 if busy { ProgressView(L10n.text("正在检查目标…")) }
             }
             Section {
@@ -231,7 +246,7 @@ struct IOSAdjustmentTransferView: View {
         prepared = nil; pasteResults = []; skipped = []; message = nil; model.adjustmentHistoryResults = []
     }
     private func prepare() {
-        guard let payload else { return }
+        guard let payload, !photos.isEmpty else { return }
         invalidatePreparation()
         model.prepareAdjustmentPaste(payload, photos: photos, action: synchronization != nil ? .synchronize : preset == nil ? .paste : .preset) { result in
             switch result {
@@ -248,7 +263,7 @@ struct IOSAdjustmentTransferView: View {
     }
     @MainActor private func addPickerItems(_ items: [PhotosPickerItem]) async {
         loading = true; invalidatePreparation()
-        defer { loading = false; pickerItems = [] }
+        defer { loading = false; pickerItems = []; if !Task.isCancelled { prepare() } }
         for item in items {
             guard !Task.isCancelled else { return }
             do {
@@ -263,7 +278,7 @@ struct IOSAdjustmentTransferView: View {
     }
     @MainActor private func addFiles(_ urls: [URL]) async {
         loading = true; invalidatePreparation()
-        defer { loading = false }
+        defer { loading = false; if !Task.isCancelled { prepare() } }
         for url in urls {
             guard !Task.isCancelled else { return }
             let access = url.startAccessingSecurityScopedResource()

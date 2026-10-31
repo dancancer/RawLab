@@ -10,6 +10,7 @@ extension RawEditorViewModel {
     }
 
     func queueSettingsSave(_ settings: RawSettings) {
+        if quickPresetState.isPreparing { cancelQuickPreset() }
         guard let source = editorEditSource else { return }
         retainEditMetadata(currentEditState(settings: settings))
         pendingSettings = settings
@@ -50,6 +51,7 @@ extension RawEditorViewModel {
             validateSource: adjustmentSourceValidator)
         if let saved = outcome.saved {
             adjustmentReloadRequired = false
+            if let state = saved.state { recordSavedLookChange(from: expected.state, to: state) }
             loadedEditRecord = saved
             retainEditMetadata(saved.state ?? candidate)
             pendingSettings = nil
@@ -254,7 +256,7 @@ extension RawEditorViewModel {
         DispatchQueue.global(qos: .userInitiated).async {
             sourceFile.withReadAccess { url in
                 do {
-                    let rawPreview = try self.buildRawPreviewBase(url: url, geometry: settings.geometry, processing: settings.processing, lens: settings.lensSettings)
+                    let rawPreview = try self.buildRawPreviewBase(url: url, geometry: settings.geometry, processing: settings.processing, x3fMode: settings.x3fMode, lens: settings.lensSettings)
                     let previewResult = try self.processor.processRaw(
                         url: url,
                         settings: settings,

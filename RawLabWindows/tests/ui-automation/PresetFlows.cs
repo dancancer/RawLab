@@ -40,6 +40,44 @@ internal static partial class Program
             EditCommand("adjustment.undo"); WaitReady(); Wait(() => Math.Abs(GetRangeValue("ParameterValueSlider") - 1.25) < .0001);
             Check(!File.Exists(source), "External UIA applies the source-independent preset and traverses Undo/Redo");
         }
+        private void PresetSummaryFlow()
+        {
+            EditCommand("preset.library.open");
+            Invoke(FindById(PresetDialog("preset.library"), "preset.create")!);
+            var form = PresetDialog("preset.name-dialog");
+            SetValue(FindById(form, "preset.name")!, "UIA Summary");
+            var before = File.ReadAllBytes(Path.Combine(profile, "edits", "edits.json"));
+            var scope = FindById(form, "preset.save.scope")!;
+            ((ExpandCollapsePattern)scope.GetCurrentPattern(ExpandCollapsePattern.Pattern)).Expand();
+            var modified = Wait(() => FindByNames(scope, "仅已修改", "Modified only"))!;
+            ((SelectionItemPattern)modified.GetCurrentPattern(SelectionItemPattern.Pattern)).Select();
+            var light = Wait(() => FindById(form, "preset.save.summary.group.light"))!;
+            ((ExpandCollapsePattern)light.GetCurrentPattern(ExpandCollapsePattern.Pattern)).Expand();
+            Check(Wait(() => FindById(form, "preset.save.summary.value.light.exposure"))!.Current.Name == "+1.25 EV",
+                "External UIA exposes the actual modified exposure value");
+            ((ExpandCollapsePattern)scope.GetCurrentPattern(ExpandCollapsePattern.Pattern)).Expand();
+            var custom = Wait(() => FindByNames(scope, "自定义", "Custom"))!;
+            ((SelectionItemPattern)custom.GetCurrentPattern(SelectionItemPattern.Pattern)).Select();
+            Invoke(Wait(() => FindById(form, "preset.save.clear"))!);
+            Check(!FindById(form, "preset.save.confirm")!.Current.IsEnabled &&
+                FindById(form, "preset.save.summary.empty") != null,
+                "External UIA exposes empty custom scope and disables Save");
+            Invoke(FindById(form, "preset.cancel")!);
+            Wait(() => FindById(root, "preset.name-dialog") == null);
+            ClosePresetLibrary();
+            Check(before.SequenceEqual(File.ReadAllBytes(Path.Combine(profile, "edits", "edits.json"))),
+                "External UIA scope changes and cancellation preserve the photo record");
+        }
+        private void SetPresetExposure(double value)
+        {
+            SetForegroundWindow(new IntPtr(main.Current.NativeWindowHandle));
+            var number = FindById(main, "ParameterValueText")!;
+            number.SetFocus(); SetValue(number, value.ToString(System.Globalization.CultureInfo.GetCultureInfo(Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_LANGUAGE") ?? "en")));
+            Keys(0x0d);
+            Trace($"exposure input={((ValuePattern)number.GetCurrentPattern(ValuePattern.Pattern)).Current.Value} value={GetRangeValue("ParameterValueSlider")} focus={AutomationElement.FocusedElement.Current.AutomationId}");
+            WaitReady();
+            Wait(() => Math.Abs(GetRangeValue("ParameterValueSlider") - value) < .0001);
+        }
         private void PresetRestartFlow()
         {
             var id = PresetID("UIA Restart"); ApplyPreset(id);
@@ -62,10 +100,9 @@ internal static partial class Program
         private void ApplyPreset(string id)
         {
             EditCommand("preset.library.open"); Invoke(FindById(PresetDialog("preset.library"), "preset.apply." + id)!);
-            var results = Wait(() => FindById(root, "adjustment.results"))!;
-            var apply = FindById(results, "adjustment.results.apply")!; Wait(() => apply.Current.IsEnabled); Invoke(apply);
-            Wait(() => !apply.Current.IsEnabled); Invoke(FindById(results, "adjustment.results.close")!);
-            Wait(() => FindById(root, "adjustment.results") == null); ClosePresetLibrary(); WaitReady();
+            Wait(() => FindById(root, "preset.library") == null);
+            Wait(() => FindById(main, "preset.quick.undo") != null || FindById(main, "preset.quick.status")?.Current.Name.Contains("未变化") == true);
+            Invoke(FindById(main, "preset.quick.open")!); WaitReady();
         }
         private AutomationElement PresetDialog(string id) => Wait(() => {
             var dialog = FindById(root, id); return dialog != null && dialog.Current.IsEnabled ? dialog : null;

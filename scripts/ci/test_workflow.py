@@ -25,6 +25,19 @@ class WorkflowContractTests(unittest.TestCase):
         # BaseLoader keeps GitHub's YAML 1.2 `on` key intact.
         self.workflow = yaml.load(self.text, Loader=yaml.BaseLoader)
 
+    def test_posix_x3f_jobs_bootstrap_missing_rustup(self):
+        targets = {
+            "macos": "aarch64-apple-darwin x86_64-apple-darwin",
+            "ios": "aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios",
+            "android": "aarch64-linux-android x86_64-linux-android",
+        }
+        for platform, expected in targets.items():
+            with self.subTest(platform=platform):
+                step = next(step for step in self.workflow["jobs"][platform]["steps"]
+                            if step.get("name") == "Prepare X3F Rust renderer toolchain")
+                self.assertIn(f"bash scripts/ci/prepare-rust.sh {expected}", step["run"])
+                self.assertEqual(step["if"], "needs.changes.outputs.build == 'true'")
+
     def test_events_do_not_publish(self):
         events = self.workflow["on"]
         self.assertEqual(set(events), {"pull_request", "push", "workflow_dispatch"})

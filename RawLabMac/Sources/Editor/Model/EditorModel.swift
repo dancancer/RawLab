@@ -19,11 +19,13 @@ final class EditorModel: ObservableObject {
     struct AIWorkIdentity: Equatable {
         let source: RawWhiteBalanceCacheKey
         let processing: ProcessingIdentity
+        let x3fMode: X3fMode
         let whiteBalance: [Float]
         let lens: LensCorrectionSettings
         init(_ file: URL, settings: Adjustments) throws {
             source = try RawWhiteBalanceCacheKey(file)
             processing = settings.processing
+            x3fMode = settings.x3fMode
             whiteBalance = settings.aiWhiteBalanceSignature
             lens = settings.lensSettings
         }
@@ -64,7 +66,9 @@ final class EditorModel: ObservableObject {
         let editingGeometry: Bool
     }
 
-    @Published var adjustmentNavigation = EditorAdjustmentNavigation()
+    @Published var adjustmentNavigation = EditorAdjustmentNavigation() { didSet {
+        if quickPresetsVisible && (adjustmentNavigation.expandedGroup != .looks || oldValue.tool != adjustmentNavigation.tool) { closeQuickPresets() }
+    } }
     @Published var resetConfirmation: PreparedReset?
     @Published var resetConfirmationScope: EditorResetScope?
     @Published var resetBlockedMessage: String?
@@ -73,6 +77,17 @@ final class EditorModel: ObservableObject {
     var resetSource: URL?
 
     @Published var settings = Adjustments() { didSet { if !updatingMetadata && oldValue != settings { edited() } } }
+    func selectX3fMode(_ mode: X3fMode) {
+        guard RenderEngine.isX3fInput(file), settings.x3fMode != mode else { return }
+        var next = settings
+        // 一次提交显影身份和兼容设置，保存与预览始终使用同一候选状态。
+        next.selectX3fMode(mode)
+        settings = next
+    }
+    var canUseLensCorrection: Bool {
+        file != nil && !RenderEngine.isRasterInput(file) &&
+            !(RenderEngine.isX3fInput(file) && settings.x3fMode == .normal)
+    }
     @Published var geometryDraft: MacGeometryDraft?
     @Published var geometryDraftPreviewReady = false
     @Published var geometryDraftTab = MacGeometryTab.crop
@@ -122,6 +137,9 @@ final class EditorModel: ObservableObject {
     }
     var updatingMetadata = false
     @Published var films = Film.bundled()
+    @Published var lookBrowser = LookBrowserState()
+    @Published var recentLooks = RecentLooks()
+    let recentLooksURL: URL
     @Published var selectedFilmID = "" {
         didSet {
             if selectedFilmID.hasPrefix("recipe-lut:") { independentRecipeLookIDs.insert(selectedFilmID) }
@@ -157,6 +175,8 @@ final class EditorModel: ObservableObject {
     var hslSourceRevision: UInt64 = 1
     @Published var sourceRevision = UUID() { didSet {
         hslSourceRevision &+= 1; hslAcceptedRequest = nil; hslAcceptedSettings = nil
+        closeQuickPresets()
+        cancelCollectionExportPreparation()
     } }
     @Published var file: URL?
     @Published var sourceIsHDR=false
@@ -166,7 +186,10 @@ final class EditorModel: ObservableObject {
     @Published var result: RenderedImage?
     @Published var busy = false { didSet { if oldValue && !busy { resumeResetToolIfReady() } } }
     @Published var autoExposing = false
-    var editRevision = UUID()
+    var editRevision = UUID() { didSet {
+        if quickPresetState.isPreparing { cancelQuickPreset() }
+        if collectionExportPreparing { cancelCollectionExportPreparation() }
+    } }
     @Published var exporting = false
     @Published var aiState = AIDenoiseState.idle
     var aiIdentity: AIWorkIdentity?
@@ -183,6 +206,7 @@ final class EditorModel: ObservableObject {
     var aiControlsVisible: Bool { RenderEngine.aiAvailable || settings.aiDenoiseEnabled }
     var canStartAI: Bool {
         file != nil && !RenderEngine.isRasterInput(file) && RenderEngine.aiAvailable &&
+            !(RenderEngine.isX3fInput(file) && settings.x3fMode == .normal) &&
             RenderEngine.bundledAIModel != nil && !exporting && geometryDraft == nil
     }
     @Published var lookLibraryBusy = false
@@ -211,6 +235,12 @@ final class EditorModel: ObservableObject {
     @Published var batch: BatchExportModel?
     @Published var batchSelection = BatchSelectionSession<String>()
     @Published var batchSelectionPhotos: [String: MacCollectionPhoto] = [:]
+    @Published var collectionExportPreparing = false
+    @Published var collectionExportReview: MacCollectionExportReview?
+    @Published var collectionExportError: String?
+    var collectionExportGeneration = UUID()
+    let collectionExportQueue = DispatchQueue(label: "rawlab.collection.prepare", qos: .userInitiated)
+    var prepareCollectionExportOperation: (MacCollectionExportPreparation) throws -> MacCollectionExportReview = { try $0.prepare() }
     @Published var collectionError: String?
     @Published var exportLongEdge: Int?
     let queue = DispatchQueue(label: "rawlab.render", qos: .userInitiated)
@@ -241,6 +271,8 @@ final class EditorModel: ObservableObject {
     @Published var adjustmentSheet: AdjustmentSheetKind?
     @Published var adjustmentSheetInCollection = false
     var adjustmentSheetPayload: AdjustmentTransferPayload?
+    var adjustmentSheetPreset: AdjustmentPreset?
+    var adjustmentSheetStartsPresetSave = false
     var adjustmentSheetTargets: [URL]?
     var adjustmentSheetExcludedSource: String?
     var adjustmentSheetExcludedIdentity: String?
@@ -249,6 +281,13 @@ final class EditorModel: ObservableObject {
     @Published var adjustmentOutcomes: [AdjustmentTransferOutcome] = []
     var lastAdjustmentTransaction: UUID?
     var presetStore: AdjustmentPresetStore
+    @Published var quickPresetsVisible = false
+    @Published var quickPresetState = QuickPresetState.idle
+    var quickPresetGeneration = UUID()
+    let quickPresetQueue = DispatchQueue(label: "rawlab.preset.prepare", qos: .userInitiated)
+    var prepareQuickPresetOperation: (AdjustmentTransferSession, AdjustmentTransferPayload, [AdjustmentTransferTarget]) throws -> PreparedAdjustmentTransfer = {
+        try $0.prepare(payload: $1, targets: $2, action: .preset)
+    }
     let editDirectory: URL
     let batchJournal: BatchJournal
     var updateJournalLoadFailed = false
@@ -276,14 +315,18 @@ final class EditorModel: ObservableObject {
          batchDirectory: URL = BatchJournal.defaultDirectory,
          presetDirectory: URL = AdjustmentPresetStore.defaultDirectory,
          onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
+        recentLooksURL = editDirectory.appendingPathComponent("recent-looks.json")
         self.onUsage = onUsage
         self.editDirectory = editDirectory
         presetStore = AdjustmentPresetStore(directory: presetDirectory)
         batchJournal = BatchJournal(directory: batchDirectory)
+        recentLooks = RecentLooks.load(from: recentLooksURL)
+        independentRecipeLookIDs.formUnion(recentLooks.ids.filter { $0.hasPrefix("recipe-lut:") })
         do {
             let library = try LookLibrary(directory: lookDirectory)
             lookLibrary = library
             films += library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id, colorNotice: $0.colorNotice, isCompatibility: $0.isCompatibility) }
+            pruneRecentLooks()
         } catch {
             self.error = error.localizedDescription
         }
@@ -374,6 +417,11 @@ extension EditorModel {
             return
         }
         guard !aiRequiresExplicitRetry, let file else { return }
+        if RenderEngine.isX3fInput(file) && settings.x3fMode == .normal {
+            resetAITask()
+            aiState = .failed(L10n.text("此 X3F 显影模式不支持 AI 降噪。"))
+            return
+        }
         do {
             let snapshot = geometryPreviewSettings
             let identity = try AIWorkIdentity(file, settings: snapshot)

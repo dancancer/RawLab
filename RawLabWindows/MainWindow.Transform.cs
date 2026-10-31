@@ -59,7 +59,10 @@ public partial class MainWindow
         {
             if(file==null || transformSource==null || !transformSource.Matches(file,openRevision,editRevision,CaptureCurrentEdit(),lut))
                 throw new InvalidOperationException(Loc.Text("原始文件已被替换，请重新选择照片。"));
-            var candidate=settings.Capture() with{Geometry=transform.Geometry,Lens=transform.Lens};
+            var candidate=settings.Capture();
+            candidate = settings.IsHDREditing
+                ? candidate with { HDR = candidate.HDR! with { Geometry = transform.Geometry }, Lens = transform.Lens }
+                : candidate with { Geometry = transform.Geometry, Lens = transform.Lens };
             editSaveTimer.Stop();
             CommitCurrentEdit(candidate);
         }
@@ -82,7 +85,7 @@ public partial class MainWindow
     {
         ++transformGeneration;transformPreviewReady=false;exactReady=false;interacting=false;
         transformSource=null;transformSaveFailed=false;
-        choosingLens=choosingGeometry=choosingGrading=false;selectedParameter=Parameter.Exposure;selectedToneParameter=null;selectedAtmosphereParameter=null;expandedGroup=EditorAdjustmentGroup.Light;ResultCanvas.GeometryEditing=false;ResultCanvas.SetCropDraft(null,null,false);
+        choosingLens=choosingGeometry=choosingGrading=false;selectedParameter=Parameter.Exposure;selectedToneParameter=null;selectedAtmosphereParameter=null;expandedGroup=quickPresetsVisible ? EditorAdjustmentGroup.Looks : EditorAdjustmentGroup.Light;ResultCanvas.GeometryEditing=false;ResultCanvas.SetCropDraft(null,null,false);
         GeometryEditor.Begin(settings.Geometry);
         view.SetEnabled(savedTransformCompare);
         RefreshComparisonLayout();RefreshComparisonToolTip();viewport.Fit();

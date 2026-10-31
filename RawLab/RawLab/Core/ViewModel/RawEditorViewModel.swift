@@ -18,6 +18,7 @@ final class RawEditorViewModel: ObservableObject {
     @Published var basePreviewImage: UIImage?
     @Published var hasImage = false
     @Published var statusMessage: String?
+    @Published var retryLegacyX3fImport: ((@escaping (RawSettings) -> Void) -> Void)?
     @Published var isBusy = false
     @Published var previewRendering = false
     @Published var previewResizePending = false
@@ -34,6 +35,7 @@ final class RawEditorViewModel: ObservableObject {
         let identity: PhotoIdentity?
         let kind: ImageSourceKind?
         let processing: ProcessingIdentity
+        let x3fMode: X3fMode
         let geometry: GeometrySettings
         let lens: LensCorrectionSettings
         let longEdge: Int
@@ -44,6 +46,9 @@ final class RawEditorViewModel: ObservableObject {
     @Published var histogram: Sony2FujiProcessor.RGBHistogram? = nil
     @Published var baseHistogram: Sony2FujiProcessor.RGBHistogram? = nil
     @Published var availableLUTs: [LUTOption] = []
+    @Published var lookBrowser = LookBrowserState()
+    @Published var recentLooks = RecentLooks()
+    var recentLooksURL: URL?
     @Published var isLoadingLUTs = false
     @Published var isImportingLooks = false
     @Published var rawWhiteBalance: Sony2FujiProcessor.RawWhiteBalance?
@@ -68,8 +73,9 @@ final class RawEditorViewModel: ObservableObject {
     let renderQueue = DispatchQueue(label: "com.rawlab.preview", qos: .userInitiated)
     let renderStateLock = NSLock()
     @Published var sourceFile: PhotoSourceFile?
-    @Published var sourceRevision = UUID() { didSet { hslSourceRevision &+= 1; acceptedPreviewRequest = nil } }
+    @Published var sourceRevision = UUID() { didSet { hslSourceRevision &+= 1; acceptedPreviewRequest = nil; closeQuickPresets() } }
     var sourceKind: ImageSourceKind?
+    var sourceIsX3f: Bool { sourceKind == .raw && (sourceDisplayName as NSString?)?.pathExtension.lowercased() == "x3f" }
     var sourceIdentity: PhotoIdentity?
     @Published var sourceDisplayName: String?
     var restoredSettings: RawSettings?
@@ -81,10 +87,16 @@ final class RawEditorViewModel: ObservableObject {
     var failedDraftSource: EditorEditSource?
     var loadedEditRecord: VersionedPhotoEdit?
     let batchSelection = IOSBatchSelection()
+    @Published var collectionExportPreparing = false
+    @Published var collectionExportFreezing = false
+    @Published var collectionExportReview: IOSCollectionExportReview?
+    @Published var collectionExportError: String?
+    var collectionExportGeneration = UUID()
+    var makeCollectionJournal: () throws -> BatchJournalStore = BatchJournalStore.appStore
     var adjustmentSession: IOSAdjustmentTransferSession?
     var adjustmentInteraction: IOSAdjustmentInteraction?
     var adjustmentSourceValidator: (() throws -> Void)?
-    var hasAdjustmentDraft = false
+    var hasAdjustmentDraft = false { didSet { if hasAdjustmentDraft && quickPresetState.isPreparing { cancelQuickPreset() } } }
     @Published var adjustmentInteractionRejected = false
     @Published var adjustmentReloadRequired = false
     @Published var adjustmentHistoryRevision = UUID()
@@ -95,6 +107,9 @@ final class RawEditorViewModel: ObservableObject {
     @Published var adjustmentPreparing = false
     var adjustmentPreparationID = UUID()
     var adjustmentClipboardSourceName: String?
+    @Published var quickPresetsVisible = false { didSet { if !quickPresetsVisible { cancelQuickPreset() } } }
+    @Published var quickPresetState = IOSQuickPresetState.idle
+    var quickPresetGeneration = UUID()
     var editNoticeID = UUID()
     var basePreviewGeometry = GeometrySettings()
     var basePreviewProcessing = ProcessingIdentity.current
@@ -142,6 +157,8 @@ final class RawEditorViewModel: ObservableObject {
             let store = try editPersistence ?? EditPersistence.appStore()
             self.editPersistence = store
             adjustmentSession = IOSAdjustmentTransferSession(store: store)
+            recentLooksURL = store.directory.appendingPathComponent("recent-looks.json")
+            recentLooks = RecentLooks.load(from: recentLooksURL!)
         }
         catch { self.editPersistence = nil; editSaveState = .failed(error.localizedDescription) }
     }

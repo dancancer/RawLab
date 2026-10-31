@@ -74,7 +74,7 @@ class BatchStateIntegrityTest {
         }
     }
 
-    @Test fun workerRowUpdateCannotLoseStoppingAndRetryStillWorks() {
+    @Test fun workerRowUpdateCannotLoseStoppingAndContinueStillWorks() {
         val initializations = AtomicInteger()
         BatchStateTestFixture(factory = { mode, _ ->
             initializations.incrementAndGet()
@@ -105,8 +105,15 @@ class BatchStateIntegrityTest {
             } finally { release.countDown(); finish.countDown() }
             fixture.joinWorker()
             assertEquals(BatchPhase.CANCELLED, fixture.model.state.value.phase)
-            val first = fixture.model.state.value.job.rows.first()
+            val stopped = fixture.model.state.value
+            assertEquals(listOf(BatchRowStatus.SUCCESS, BatchRowStatus.CANCELLED), stopped.job.rows.map { it.status })
+            val first = stopped.job.rows.first()
+            val beforeContinue = initializations.get()
             fixture.main { fixture.model.retryFailed() }
+            fixture.joinWorker()
+            assertEquals("Failed-only retry must leave cancelled rows unchanged", stopped, fixture.model.state.value)
+            assertEquals(beforeContinue, initializations.get())
+            fixture.main { fixture.model.continueUnfinished() }
             fixture.joinWorker()
             assertEquals(BatchPhase.COMPLETE, fixture.model.state.value.phase)
             assertEquals(first, fixture.model.state.value.job.rows.first())

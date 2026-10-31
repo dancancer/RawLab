@@ -13,6 +13,7 @@ public partial class MainWindow
 {
     private bool choosingRecipes;
     private readonly Dictionary<string, Button> recipeButtons = new();
+    private readonly Dictionary<string,TextBlock> recipeSelectionMarkers=new();
     // ┌─ 当前外观的显示名：标题栏、对比标签、批量任务和导出文件名共用 ─────────────┐
     // │ 大师配方与“中性”按界面语言显示；胶片和导入外观用自己的名字                    │
     // └────────────────────────────────────────────────────────────────────────────┘
@@ -31,8 +32,14 @@ public partial class MainWindow
             title.SetResourceReference(TextBlock.FontSizeProperty,"EditorBodySize");content.Children.Add(title);
             var caption=new TextBlock { Text = Loc.Text(recipe?.Subtitle ?? "中性直出"), MinHeight = 32, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center };
             caption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");content.Children.Add(caption);
-            var button = new Button { Content = content, Style = (Style)FindResource("QuietButton"), Padding = new Thickness(0),
+            var marker=new TextBlock{Text="✓",FontSize=16,FontWeight=FontWeights.Bold,HorizontalAlignment=HorizontalAlignment.Right,
+                VerticalAlignment=VerticalAlignment.Top,Visibility=Visibility.Hidden,IsHitTestVisible=false};
+            marker.SetResourceReference(TextBlock.ForegroundProperty,"Accent");
+            var card=new Grid();card.Children.Add(content);card.Children.Add(marker);
+            var button = new Button { Content = card, Style = (Style)FindResource("QuietButton"), Padding = new Thickness(0),
                 BorderThickness = new Thickness(0), ToolTip = Loc.Text(recipe?.Summary ?? "中性直出") };
+            recipeSelectionMarkers[recipe?.Id ?? ""]=marker;
+            AutomationProperties.SetAutomationId(button,"recipe."+(recipe?.Id ?? "neutral"));
             AutomationProperties.SetName(button, Loc.Text(recipe?.Name ?? "无配方"));
             button.Click += (_, _) => {
                 if (exporting || !ResolveTransformDraft()) return;

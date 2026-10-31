@@ -18,6 +18,12 @@ GLES source validation with glslang. CPU neural-inference validation is excluded
 ordinary CPU photo processing and deterministic ISP tests remain applicable.
 Hardware-unavailable skips do not satisfy the separate release GPU acceptance gate.
 
+Product builds enable the pinned X3F renderer on every platform. Build jobs prepare
+Rust 1.99.1, the platform targets and `rust-docs`; Android/Windows also prepare host
+libclang. Apple uses Xcode's libclang. Python 3.11+ collects dependency and runtime
+notices into each package. Model-only jobs do not build Rust or native dependencies.
+The supported camera/settings boundary remains the [X3F contract](../../lutools/docs/x3f-rendering.md).
+
 ## Verification Levels
 
 | Event or request | Automatic coverage |
@@ -319,6 +325,13 @@ runner, change `windows_runner` in `affected_platforms.py` and its scheduling
 regressions; do not skip required checks or remove the runner environment setup.
 
 ## Local Apple Runners
+
+The macOS, iOS and Android build jobs use `scripts/ci/prepare-rust.sh` to select
+Rust 1.99.1, its standard-library notices and the required target slices. If
+`rustup` is absent from the job PATH, the helper verifies the official installer
+checksum and installs it under `RUNNER_TEMP/rawlab-x3f-tools`, exporting the job's
+Cargo/Rustup paths. It does not require an administrator or change the runner's
+login profile. Windows prepares the same pinned toolchain in its own job directory.
 
 macOS arm64 and iOS both select `[self-hosted, macOS, ARM64, rawlab-apple]`.
 Each Mac runs one runner, so Apple jobs can execute concurrently without

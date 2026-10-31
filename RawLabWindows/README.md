@@ -9,23 +9,42 @@
 
 Agent v08 接入了共享 v4 JSON/CLI、普通 JPEG/PNG/经典 TIFF 和默认单张预览。
 普通图像只接受单帧、不透明的 8-bit SDR RGB，最多 64M 像素；方向与 ICC 转 sRGB 各处理一次，
-不套用 RAW 曝光基线、相机白平衡、FBDD 或镜头校准。HEIF、BigTIFF、透明、高位深、浮点/HDR、CMYK、多帧以及不支持的色彩描述会明确拒绝，不能据此宣称支持所有 ICC。
+不套用 RAW 曝光基线、相机白平衡、FBDD 或镜头校准。普通图像路径不接受 BigTIFF、透明、高位深、浮点 HDR、CMYK、多帧及不支持的色彩描述；手机增益图 HDR 使用下述独立路径，不能据此宣称支持所有 ICC。
 新窗口、重新打开及历史恢复默认关闭对比；同图手动选择的并排/滑动会保留到切图。
 Windows 各轮实测源码快照、限制及物理项目见 [Agent v08 验证记录](VERIFICATION-agent-v08.md)；历史源码验证不替代最终候选包验收。
 
 v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG；当前版本还支持渲染型 DNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 
-## 下载 v0.8.2 Windows 包
+## 手机 HDR 图片
 
-[Windows x64 独立运行包](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-Windows-0.8.2-win-x64.zip) · [发布说明](https://github.com/dancancer/RawLab/releases/tag/v0.8.2) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.8.2/SHA256SUMS.txt)
+支持手机 gain-map HDR JPEG/HEIF，新原片默认 HDR 编辑，旧 SDR 记录保持原模式。
+提供七项基本调整及几何，预设、选择性同步、历史和批量快照保存独立 HDR 状态。
+HDR JPEG 重新生成 ISO/XMP 增益图；显式 SDR JPEG、PNG16、渲染型 DNG 使用 SDR rendition。
+切到 SDR 编辑后支持有界预览、自动曝光和 LUT 兼容向导。HDR 编辑阶段不开放 SDR 自动曝光。
 
-解压后运行 `RawLab.exe`，保留完整目录。版本0.8.2/build14，self-contained .NET8，包含重新构建的原生核心、Visual C++ 运行库、LUT、Lens DB、ExifTool 和许可文件，程序未签名。正式包带阿里云 RUM SDK，默认开启使用统计，可在关于页关闭。本次新增 DCP 直接导入、扩展 RAW 兼容性，并修复部分 JPEG 导入和首帧颜色；详见[发布说明](../docs/releases/v0.8/v0.8.2.md)。原生、WPF 和实际 Direct3D 11 检查结果及设备覆盖边界见发布附件 `BUILD-PROVENANCE.json`。
+HDR 处理使用 CPU 多核，GPU Force 明确拒绝。HDR 显示使用硬件 Direct3D 11 的 FP16
+scRGB swap chain，需要当前显示器启用 HDR；RDP、虚拟显示器及能力不足时显示 SDR。
+裁切和裁切警告叠层使用 SDR canvas 保留交互；真实 HDR 亮度需物理设备验收。
+来源指纹、双图、缓存和格式边界见[平台对齐设计](../docs/design/hdr-photos/android-windows.md)。
+
+## 下载 v0.9.2 Windows 包
+
+[Windows x64 安装程序](https://github.com/dancancer/RawLab/releases/download/v0.9.2/RawLab.Desktop-stable-Setup.exe) · [手动安装 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.9.2/RawLab-Windows-0.9.2-x64.zip) · [发布说明](../docs/releases/v0.9/v0.9.2.md) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.9.2/SHA256SUMS.txt)
+
+版本 `0.9.2` / build `17`，self-contained .NET 8，包含原生核心、运行库、LUT、Lens DB、ExifTool、GPU AI 模型和许可文件。安装程序按当前用户安装，支持签名描述文件校验的自动更新；ZIP 解压后运行 `RawLab.exe`，必须保留完整目录并手动更新。程序没有 Authenticode 签名，首次安装可能需要在 SmartScreen 选择“更多信息 → 仍要运行”。
+
+本次提供手机 HDR、普通 X3F 显影、快捷预设和外观搜索，修复显示 sRGB CUBE 的 GPU 回退并增加 AI GPU 选择与诊断导出。正式包带阿里云 RUM SDK，默认开启使用统计，可在关于页关闭。构建、原生/WPF 检查、实际设备与更新覆盖见发布附件 `BUILD-PROVENANCE.json`。
 
 ## 构建
 
 需要 .NET 8 SDK、Visual Studio 2022 Build Tools 的“使用 C++ 的桌面开发”组件
 （含 Windows SDK 与 CMake），首次构建需要联网下载校验过的 LibRaw 0.22.2 / zlib 1.3.1 /
 libtiff 4.7.1 源码。
+
+正常 X3F 显影还需要 Rust 1.88+（CI 使用 1.99.1）、`x86_64-pc-windows-msvc`
+目标、`rust-docs`、Python 3.11+ 和宿主 libclang。若 libclang 不在默认搜索路径，
+通过 `LIBCLANG_PATH` 指向 DLL 所在目录。构建会打包 X3F 依赖与 Rust 运行库许可；
+支持的机型、保存参数和旧版兼容边界见 [X3F 契约](../lutools/docs/x3f-rendering.md)。
 
 ```powershell
 ./RawLabWindows/build.ps1 -Test
@@ -73,9 +92,20 @@ DirectML 1.23.0、DirectML 1.15.4；依赖下载和校验在 `build-ai-dependenc
 预览与导出使用同一份全尺寸结果；曝光和外观调整复用缓存，白平衡改变重算 RGB 阶段，
 镜头校正改变重算通用 RGB 路径。
 普通降噪参数会保留，关闭 AI 后恢复。缓存位于 `%LOCALAPPDATA%/RawLab/Cache/DualDn`。
+“设置 → AI 降噪显卡”默认使用“自动（优先独显）”：优先可用独显，再按 Windows 高性能顺序
+和专用显存选择。也可指定一张显卡；此设置只影响 AI 降噪。选择按硬件身份保存，显卡消失或
+无法唯一识别时明确报错，不静默改用其他设备。更换显卡会重新准备 AI 结果，正在运行的任务
+保持原来的设备。设置保存在 `%LOCALAPPDATA%/RawLab/ai-gpu.json`。
 批量与集合导出保留 AI 启用状态、请求后端和冻结参数。预检只检查 RAW 类型与 AI 可用性；
 导出时自动准备缺失结果，显示进度并支持取消。取消准备后当前照片保留为待处理，已完成的输出保留。
+批量任务同时保存所选 AI 显卡，恢复任务时沿用该选择。
 Agent JSON v5 暂不表达 AI 降噪，复制配方会要求先关闭 AI。
+
+AI 准备、预览和导出失败时自动保存本地诊断，最近 20 份存放在
+`%LOCALAPPDATA%/RawLab/Diagnostics/AI`。降噪面板的失败状态可导出对应诊断，设置页可导出
+最近一次诊断。ZIP 包含错误、失败阶段、应用与系统版本、请求及实际 GPU、驱动、显存信息、
+模型摘要和有数量上限的运行库日志；排除照片内容并过滤个人文件路径，不自动上传。
+取消任务不生成错误报告，诊断写入失败不替换原始错误。
 
 AI 不支持 CPU 模式。普通显影选择 CPU 时，AI 仍请求硬件 DirectML；Auto 和 Force
 的神经网络失败都直接报错，软件适配器和不可用硬件不能替代硬件 GPU。
@@ -86,7 +116,8 @@ AI 不支持 CPU 模式。普通显影选择 CPU 时，AI 仍请求硬件 Direct
 完整照片验证需要另行使用受支持样片运行 `dualdn_probe`，再执行测试程序的
 `--ai-denoise <model> <raw> <cache> <Auto|DirectML>`；它检查缓存复用、实际后端、
 普通降噪旁路、自动曝光、预览与导出一致性和白平衡失效。界面六语布局可单独运行
-`--ai-panel <output>`。`--ai-batch <model> <raw> <output>` 检查真实批量窗口的预检、进度、取消与继续导出。
+`--ai-panel <output>`；`--ai-gpu <output>` 检查六语显卡设置、不可用设备和诊断导出入口。
+`--ai-batch <model> <raw> <output>` 检查真实批量窗口的预检、进度、取消与继续导出。
 硬件检查通过范围以实际设备和日志为准。
 
 ### 从 Mac 远程编译
@@ -181,6 +212,10 @@ RAW 显影的 Direct3D 11 计算与 WPF 画布绘制是独立的加速路径，�
 需要支持 Direct3D feature level 11.0 的硬件显卡。优先选择独立显存较大的硬件
 适配器，不将 WARP 软件渲染器标记为 GPU。矩阵、线性曝光、F-Log2、3D LUT、
 强度、明暗/色彩、细节、暗角/颗粒、小波过滤、显示色度引导滤波和双线性缩放在 GPU 执行。
+声明为 sRGB→sRGB / BT.709 的 CUBE（包括 Kodak 2383 RGB 等内置外观）也支持
+Auto 和 Force GPU：先生成中性 sRGB 显示颜色，再采样 LUT 并按强度混合。
+原生 DCP/RLOOK、带显式颜色契约且要求 CPU 的 LUT，以及其他 CPU 专用处理阶段
+仍沿用各自的 Auto 回退和 Force 拒绝规则。
 锐化、暗角/颗粒和显示色度均在原像素尺度处理。RAW 解包、白平衡、去马赛克、
 高光重建、噪声估计、OpenCV Lab 转换、文件编码及直方图统计保留在 CPU。
 每个会话复用 GPU 设备、LUT、线性 RAW 上传及中间缓冲；切换白平衡后更新上传。

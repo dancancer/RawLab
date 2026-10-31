@@ -39,15 +39,15 @@ The left pane is the neutral render and the right pane is Velvia. Film selection
 镜头工具提供独立的畸变矫正、横向色差校正、自动/手动匹配和自动裁边，默认关闭校正。配置随逐照片编辑保存，批量自动模式逐张匹配；中性对照不校正。离线数据库、依赖和功能边界见[跨平台说明](../docs/reference/platforms/lens-correction.md)。紫绿去边暂未实现。
 
 
-v0.8.2 构建14 新增 DCP 直接导入，扩展 RAW 格式兼容性，并优化胶片外观、裁剪、旋转和透视预览。既有使用统计设置和渲染工作流保留，详见 [v0.8.2 发布说明](../docs/releases/v0.8/v0.8.2.md)。
+v0.9.2 构建 17 新增普通 X3F 显影，简化当前照片预设与集合导出，并提供外观分类、搜索和最近使用。功能与已知问题修复见 [v0.9.2 发布说明](../docs/releases/v0.9/v0.9.2.md)。
 
-预编译版本：[GitHub Release v0.8.2](https://github.com/dancancer/RawLab/releases/tag/v0.8.2)。下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-Mac-0.8.2-macOS14-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.8.2/RawLab-Mac-0.8.2-macOS14-x86_64.zip)，解压后将 `RawLab Mac.app` 放入 Applications。最低部署目标为 macOS14.0；采用 ad-hoc 签名，没有 Developer ID 签名或 Apple 公证。新版系统上的构建、架构与依赖检查不等于物理 macOS14 验收。
+预编译版本：[GitHub Release v0.9.2](https://github.com/dancancer/RawLab/releases/tag/v0.9.2)。下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.9.2/RawLab-Mac-0.9.2-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.9.2/RawLab-Mac-0.9.2-x86_64.zip)，解压后将 `RawLab Mac.app` 放入当前用户可写的位置。最低部署目标为 macOS 14，HDR 编辑需要 macOS 15+。发行包使用固定自签名证书与 Sparkle EdDSA 更新签名，没有 Apple 公证；首次运行可能需要在“隐私与安全性”选择“仍要打开”。新版系统上的构建不等于物理 macOS 14 验收。
 
-Prebuilt apps: [v0.8.2](https://github.com/dancancer/RawLab/releases/tag/v0.8.2), build 14, for Apple Silicon and Intel. Both target macOS14 and are ad-hoc signed without notarization. See the [release notes](../docs/releases/v0.8/v0.8.2.md) and published build provenance for actual coverage and minimum-OS limits.
+Prebuilt apps: [v0.9.2](https://github.com/dancancer/RawLab/releases/tag/v0.9.2), build 17, for Apple Silicon and Intel. Both target macOS 14; HDR editing requires macOS 15+. Packages use the fixed self-signed certificate and Sparkle EdDSA without notarization. See the [release notes](../docs/releases/v0.9/v0.9.2.md) and package provenance for actual runtime coverage.
 
-构建 6 新增应用菜单“关于 RawLab”和“检查更新”。“关于”包含 GitHub 仓库、作者小红书主页及自动检测开关；启动后每 24 小时最多后台检查一次，手动检查不受间隔限制。发现新版本后打开官方发布页，不自动替换应用。
+“关于 RawLab”和“检查更新”提供仓库、作者主页及更新设置。默认自动检查更新；自动下载和退出时安装需要用户开启，随后由 Sparkle 校验并替换应用。应用目录必须对当前用户可写；从 0.8.2 升级需要手动安装一次受信任的 0.9.0 或更新版本。
 
-Build 6 adds About RawLab and Check for Updates to the app menu. About includes repository/author links and an automatic-check toggle. Startup checks run at most once per 24 hours; manual checks bypass the interval. Updates open the official release page without replacing the app automatically.
+About RawLab and Check for Updates include repository/author links and update settings. Automatic checks default on; automatic download and installation on quit require opt-in. Sparkle verifies updates before replacing the app in a user-writable location. Upgrading from 0.8.2 needs one manual installation of a trusted 0.9.0 or later package.
 
 在仓库根目录执行：
 
@@ -67,9 +67,9 @@ open "build/RawLab Mac.app"
 `development` 集成，但不构成原作者许可或正式发布授权；编译不受此记录阻断。
 清单、改造约定和未解决风险见 [LUT 接入记录](../docs/luts/README.md)。
 
-依赖 CMake 3.24+、pkg-config、Python 3.11+ 和 Apple Command Line Tools 或 Xcode。LibRaw、GLib、Lensfun 等依赖从固定版本源码构建，不能直接混用最低系统高于 14 的 Homebrew 动态库。Panasonic S5 II 的 RW2 使用 encoding 8，旧 LibRaw 0.21.x 会错误解码；LibRaw 0.22 还改变了 ABI，因此不要仅替换应用内动态库。脚本默认以 14.0 为 deployment target，归档在主工作区 `.cache/shared/macos-sources` 共用，依赖产物在 `build/macos-deps/<target>/<arch>` 和 `build/lensfun/<target>/<arch>` 隔离。`SDKROOT` 可以指定构建 SDK；较新的 SDK 不等于较高的最低运行系统。
+依赖 CMake 3.24+、pkg-config、Python 3.11+、Rust 1.88+（Cargo 和 `rust-docs` 组件）和 Apple Command Line Tools 或 Xcode。LibRaw、GLib、Lensfun 等依赖从固定版本源码构建，不能直接混用最低系统高于 14 的 Homebrew 动态库。Panasonic S5 II 的 RW2 使用 encoding 8，旧 LibRaw 0.21.x 会错误解码；LibRaw 0.22 还改变了 ABI，因此不要仅替换应用内动态库。脚本默认以 14.0 为 deployment target，归档在主工作区 `.cache/shared/macos-sources` 共用，依赖产物在 `build/macos-deps/<target>/<arch>` 和 `build/lensfun/<target>/<arch>` 隔离。`SDKROOT` 可以指定构建 SDK；较新的 SDK 不等于较高的最低运行系统。
 
-Requires CMake 3.24+, pkg-config, Python 3.11+ and Apple Command Line Tools or Xcode. Pinned source builds provide LibRaw, GLib and Lensfun without borrowing higher-minimum Homebrew binaries. LibRaw 0.21.x incorrectly decodes Panasonic S5 II encoding-8 RW2 files; 0.22 also changes the ABI, so do not replace only the bundled dylib. The default target is 14.0. Archives are shared in the primary workspace's `.cache/shared/macos-sources`; dependency outputs are isolated in `build/macos-deps/<target>/<arch>` and `build/lensfun/<target>/<arch>`. `SDKROOT` can select a newer build SDK without raising the minimum runtime version.
+Requires CMake 3.24+, pkg-config, Python 3.11+, Rust 1.88+ (Cargo and the `rust-docs` component), and Apple Command Line Tools or Xcode. Pinned source builds provide LibRaw, GLib and Lensfun without borrowing higher-minimum Homebrew binaries. LibRaw 0.21.x incorrectly decodes Panasonic S5 II encoding-8 RW2 files; 0.22 also changes the ABI, so do not replace only the bundled dylib. The default target is 14.0. Archives are shared in the primary workspace's `.cache/shared/macos-sources`; dependency outputs are isolated in `build/macos-deps/<target>/<arch>` and `build/lensfun/<target>/<arch>`. `SDKROOT` can select a newer build SDK without raising the minimum runtime version.
 
 构建脚本打包源码构建的动态库并进行本地 ad-hoc 签名，不做分发公证，不修改系统 Xcode license 状态。
 
@@ -282,3 +282,17 @@ lutools/build-macos/render_benchmark RawLab/RawLab/Resources/Samples/DSC09067.AR
 具体工作空间、曝光约定、LUT 要求见 `../lutools/docs/color-contract.md`。相机颜色准确度仍需要受控光源/灰卡/色卡标定；能够处理 RAW 不等同于复刻 Fuji 机内 JPEG。
 
 See the [color contract](../lutools/docs/color-contract.md) for working spaces, exposure and LUT requirements. Camera color accuracy still requires controlled lighting and gray/color-chart calibration; processing a RAW is not equivalent to reproducing Fuji in-camera JPEGs.
+
+
+## X3F 显影 / X3F rendering
+
+新打开且没有旧编辑记录的 X3F 默认使用“正常显影”。“处理设置”可以切换到原有的伪红外模式，
+切换保留曝光、外观和其他调整。旧编辑记录缺少模式字段时仍使用旧模式，重置调整不会更换模式。
+正常模式支持 DP1S 的标定近似，以及 Merrill、Quattro 的已验证参数组合；尚未验证的机型或保存参数
+会报错，可以改用旧模式。具体范围见 [X3F 显影契约](../lutools/docs/x3f-rendering.md)。
+
+Normal rendering is the default for fresh X3F edits. Processing Settings also offers
+the previous false-color mode, and old records retain that mode. The current renderer
+has camera and saved-parameter limits; it does not claim complete SPP equivalence.
+ImageIO cannot read capture metadata from some X3F files. JPEG/PNG export still writes
+correct rendered dimensions, orientation and color tags; unavailable capture EXIF is omitted.

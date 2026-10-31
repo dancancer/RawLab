@@ -6,6 +6,8 @@
   <ItemGroup>
     <Compile Include="../../BundledLook.cs" Link="BundledLook.cs" />
     <Compile Include="../../FilmGrouping.cs" Link="FilmGrouping.cs" />
+    <Compile Include="../../LookBrowser.cs" Link="LookBrowser.cs" />
+    <Compile Include="../../WorkspaceLayout.cs" Link="WorkspaceLayout.cs" />
     <Compile Include="../../Localization.cs" Link="Localization.cs" />
     <Compile Include="../../PInvokeNative.cs" Link="PInvokeNative.cs" />
     <Compile Include="../../DcpCompiler.cs" Link="DcpCompiler.cs" />

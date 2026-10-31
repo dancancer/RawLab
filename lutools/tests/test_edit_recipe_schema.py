@@ -19,6 +19,29 @@ except ImportError:  # pragma: no cover - exercised by environments without the 
 
 
 class EditRecipeSchema(unittest.TestCase):
+    def test_v7_x3f_identity(self):
+        schema = json.loads((ROOT / "docs/edit-json-v7.schema.json").read_text())
+        document = json.loads((ROOT / "examples/edit-recipes/x3f-v7.json").read_text())
+        for mode in ("normal-v1", "legacy"):
+            document["x3f_mode"] = mode
+            normalized = self.normalize(document)
+            self.assertEqual(normalized["x3f_mode"], mode)
+            if jsonschema:
+                jsonschema.Draft202012Validator.check_schema(schema)
+                jsonschema.Draft202012Validator(schema).validate(normalized)
+        for mode in (None, 1, "future"):
+            invalid = copy.deepcopy(document)
+            invalid["x3f_mode"] = mode
+            self.reject(invalid, "x3f_mode")
+        del document["x3f_mode"]
+        self.reject(document, "x3f_mode")
+        document["x3f_mode"] = "normal-v1"
+        document["input"]["type"] = "raster"
+        self.reject(document, "X3F raw input")
+        document["input"]["type"] = "raw"
+        document["schema_version"] = 5
+        self.reject(document, "x3f_mode")
+
     def test_v6_hdr_schema_and_strict_groups(self):
         schema=json.loads((ROOT / "docs/edit-json-v6.schema.json").read_text())
         document=json.loads((ROOT / "examples/edit-recipes/hdr-v6.json").read_text())

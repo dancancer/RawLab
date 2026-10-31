@@ -126,71 +126,77 @@ extension EditorModel {
         pendingAdjustmentHistory = nil; adjustmentSheetInCollection = true; adjustmentSheet = .synchronize
     }
 
-    func prepareCollectionExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?,
-                                 directory: URL) throws -> MacCollectionExportReview {
+    private func collectionExportPreparation(skipping: Set<String>, format: ExportFormat, longEdge: Int?,
+                                             directory: URL) throws -> MacCollectionExportPreparation {
         _ = try requireAdjustmentSession()
-        guard longEdge == nil || (1...65535).contains(longEdge!) else { throw BatchExportFailure.destination }
         let selection = batchSelection.targets()
-        let rows = selection.compactMap { id -> MacCollectionExportReview.Row? in
-            guard let photo = batchSelectionPhotos[id] else { return nil }
-            let draft = collectionHasDraft(id)
-            if skipping.contains(id) {
-                return .init(id: id, url: photo.url, hasDraft: draft, skipped: true, snapshot: nil, error: nil)
-            }
-            do {
-                guard !draft else { throw AdjustmentTransferError.draftRequiresPreflight }
-                let snapshot = try collectionExportSnapshot(photo)
-                if format == .hdrJPEG && !snapshot.settings.isHDREditing {
-                    throw RenderError.failed(L10n.text("HDR JPEG 需要启用 HDR 编辑。"))
-                }
-                return .init(id: id, url: photo.url, hasDraft: false, skipped: false, snapshot: snapshot, error: nil)
-            } catch {
-                return .init(id: id, url: photo.url, hasDraft: draft, skipped: false, snapshot: nil, error: error)
-            }
-        }
-        return MacCollectionExportReview(selection: selection, skipped: skipping, rows: rows,
-            format: format, longEdge: longEdge, directory: directory)
+        return MacCollectionExportPreparation(selection: selection, photos: batchSelectionPhotos,
+            drafts: Set(selection.filter(collectionHasDraft)), activeFile: file, activeRecord: committedEdit,
+            activeRevision: editRevision, activeAIBusy: aiState.isRunning, store: editStore!, films: films,
+            skipped: skipping, format: format, longEdge: longEdge, directory: directory)
     }
 
-    private func collectionExportSnapshot(_ photo: MacCollectionPhoto) throws -> MacCollectionExportReview.Snapshot {
-        try photo.validate()
-        guard !collectionHasDraft(photo.id) else { throw AdjustmentTransferError.draftRequiresPreflight }
-        let record = try editStore!.versionedState(for: photo.url)
-        guard record.identity == photo.original else { throw BatchExportFailure.changedInput }
-        if file == photo.url {
-            guard committedEdit == record, !aiState.isRunning else { throw EditPersistenceConflict.changed }
-        }
-        var defaults = Adjustments()
-        defaults.exposureMode = RenderEngine.isRasterInput(photo.url) ? .sensor : .preview
-        if record.state==nil,try HDRSourceInfo.probe(photo.url) != nil { defaults.hdr=HDRSettings() }
-        let state = record.state ?? PhotoEditState(settings: defaults, filmID: "")
-        if !state.settings.isHDREditing && state.settings.aiDenoiseEnabled { try RenderEngine.validateAIInput(photo.url) }
-        let look: URL?, lookName: String
-        if state.settings.isHDREditing { look=nil; lookName="HDR" }
-        else if let recipeID = state.settings.masterRecipeID {
-            guard let recipe = MasterRecipe.allRecipes.first(where: { $0.id == recipeID }), let url = recipe.lutURL() else {
-                throw BatchExportFailure.missingLook
+    func prepareCollectionExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?,
+                                 directory: URL) throws -> MacCollectionExportReview {
+        try collectionExportPreparation(skipping: skipping, format: format, longEdge: longEdge, directory: directory).prepare()
+    }
+
+    func cancelCollectionExportPreparation() {
+        collectionExportGeneration = UUID()
+        collectionExportPreparing = false; collectionExportReview = nil; collectionExportError = nil
+    }
+
+    func startCollectionExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?, directory: URL,
+                               completed: @escaping (UUID) -> Void = { _ in }) {
+        guard !collectionExportPreparing, !exporting else { return }
+        cancelCollectionExportPreparation()
+        do {
+            let input = try collectionExportPreparation(skipping: skipping, format: format, longEdge: longEdge, directory: directory)
+            let generation = collectionExportGeneration, source = sourceRevision, revision = editRevision
+            let prepare = prepareCollectionExportOperation
+            collectionExportPreparing = true
+            collectionExportQueue.async { [weak self] in
+                let result = Result { try prepare(input) }
+                DispatchQueue.main.async {
+                    guard let self, self.collectionExportGeneration == generation else { return }
+                    self.collectionExportPreparing = false
+                    guard self.sourceRevision == source, self.editRevision == revision,
+                          self.batchSelection.targets() == input.selection else {
+                        self.collectionExportError = self.adjustmentErrorMessage(EditPersistenceConflict.changed)
+                        return
+                    }
+                    do {
+                        let review = try result.get()
+                        self.collectionExportReview = review
+                        guard review.ready else { return }
+                        let job = try self.freezeCollectionExport(review)
+                        _ = self.batch?.start()
+                        completed(job.id)
+                    } catch {
+                        self.collectionExportReview = nil
+                        self.collectionExportError = self.adjustmentErrorMessage(error)
+                    }
+                }
             }
-            look = url; lookName = recipe.title
-        } else if !state.filmID.isEmpty {
-            guard let film = Film.independentRecipe(state.filmID) ?? films.first(where: {
-                $0.id == state.filmID || "builtin:\($0.url.lastPathComponent)" == state.filmID
-            }) else { throw BatchExportFailure.missingLook }
-            look = film.url; lookName = film.name
-        } else { look = nil; lookName = "中性" }
-        let checksum = try look.map(BatchFrozenSettings.checksum)
-        return .init(photo: photo, record: record, settings: state.settings, look: look,
-            lookSHA256: checksum, lookName: lookName, editorRevision: file == photo.url ? editRevision : nil)
+        } catch { collectionExportError = adjustmentErrorMessage(error) }
+    }
+
+    var collectionExportBlockedByTask: Bool {
+        guard let batch else { return false }
+        return batch.running || batch.validating || batch.previewing || !batch.job.started ||
+            batch.job.succeededCount != batch.job.selectedCount
     }
 
     func freezeCollectionExport(_ review: MacCollectionExportReview) throws -> BatchExportJob {
         guard review.ready, !exporting, batchSelection.targets() == review.selection else { throw EditPersistenceConflict.changed }
-        if let batch, batch.running || batch.validating || batch.previewing || !batch.job.started || batch.job.succeededCount != batch.job.selectedCount {
+        if collectionExportBlockedByTask {
             throw RenderError.failed(L10n.text("请先完成或关闭现有批量任务。"))
         }
+        let current = try collectionExportPreparation(skipping: review.skipped, format: review.format,
+            longEdge: review.longEdge, directory: review.directory)
         func validateReview() throws {
             for snapshot in review.snapshots {
-                let fresh = try collectionExportSnapshot(snapshot.photo)
+                let fresh = try current.snapshot(snapshot.photo)
                 guard fresh.record == snapshot.record, fresh.settings == snapshot.settings,
                       fresh.look == snapshot.look, fresh.lookSHA256 == snapshot.lookSHA256,
                       fresh.editorRevision == snapshot.editorRevision else { throw EditPersistenceConflict.changed }

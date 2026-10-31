@@ -68,7 +68,8 @@ class AdjustmentTargetPickerUITest {
             compose.runOnUiThread { model.copyAdjustments(AdjustmentScope.Custom(setOf(AdjustmentField.EXPOSURE))); model.edit(model.state.value.edits.copy(exposure = .9f)) }; ready()
             compose.onNode(hasContentDescription(activity.getString(R.string.more)) and !hasAnyAncestor(hasTestTag("adjustment-dock"))).performClick()
             compose.onNodeWithTag("adjustment-menu-paste").performClick()
-            compose.onNodeWithTag("adjustment-paste-files").performScrollTo().performClick()
+            compose.waitUntil(30_000) { model.adjustmentTransfer.value.prepared != null && !model.adjustmentTransfer.value.preparing }
+            compose.onNodeWithTag("adjustment-paste-files").performScrollTo().assertIsEnabled().performClick()
             if (!clickNative(setOf(name), 1500)) {
                 assertTrue("System Files roots open", clickNative(setOf("Show roots", "显示根目录", "显示根目录菜单", "Open navigation drawer")))
                 assertTrue("Downloads root exists", clickNative(setOf("Downloads", "下载", "下载内容")))
@@ -76,7 +77,7 @@ class AdjustmentTargetPickerUITest {
             }
             clickNative(setOf("Open", "打开"), 500)
             compose.onNodeWithText("目标：2 张照片").assertExists()
-            compose.onNodeWithTag("adjustment-paste-preflight").performScrollTo().performClick()
+            compose.onNodeWithTag("adjustment-paste-preflight").assertDoesNotExist()
             compose.waitUntil(30_000) { model.adjustmentTransfer.value.prepared != null }
             val operation = requireNotNull(model.adjustmentTransfer.value.prepared)
             assertEquals(2, operation.targets.size); assertTrue(operation.targets.all { it.error == null })

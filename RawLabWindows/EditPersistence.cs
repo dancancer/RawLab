@@ -4,6 +4,23 @@ using System.Text.Json.Serialization;
 
 namespace RawLab.Windows;
 
+[JsonConverter(typeof(X3fModeConverter))]
+public enum X3fMode { Legacy = 0, Normal = 1 }
+
+public sealed class X3fModeConverter : JsonConverter<X3fMode>
+{
+    public override X3fMode Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options) =>
+        reader.TokenType == JsonTokenType.String ? reader.GetString() switch {
+            "legacy" => X3fMode.Legacy, "normal-v1" => X3fMode.Normal,
+            _ => throw new JsonException("Unsupported X3F rendering mode")
+        } : throw new JsonException("Invalid X3F rendering mode");
+    public override void Write(Utf8JsonWriter writer, X3fMode value, JsonSerializerOptions options) =>
+        writer.WriteStringValue(value switch {
+            X3fMode.Legacy => "legacy", X3fMode.Normal => "normal-v1",
+            _ => throw new JsonException("Unsupported X3F rendering mode")
+        });
+}
+
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ProcessingIdentity(
     [property: JsonPropertyName("family"), JsonRequired] string Family,
@@ -33,9 +50,11 @@ public sealed record AdjustmentSnapshot(
     HslSettings? Hsl = null,
     string? MasterRecipeID = null,
     LensSettings? Lens = null,
-    GeometrySettings? Geometry = null)
+    GeometrySettings? Geometry = null,
+    HDRSettings? HDR = null)
 {
     public ProcessingIdentity Processing { get; init; } = ProcessingIdentity.Legacy;
+    public X3fMode X3fMode { get; init; } = X3fMode.Legacy;
     public bool AIDenoiseEnabled { get; init; }
     public int MasterRecipeSettingsVersion { get; init; } = 3;
     [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
@@ -47,7 +66,7 @@ public sealed record AdjustmentSnapshot(
     [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
     public ToneCurveSettings? Curve { get; init; }
     public Adjustments Restore() => Adjustments.FromSnapshot(this);
-    public bool SameAs(AdjustmentSnapshot other) => Processing == other.Processing &&
+    public bool SameAs(AdjustmentSnapshot other) => Processing == other.Processing && X3fMode == other.X3fMode &&
         AIDenoiseEnabled == other.AIDenoiseEnabled && MasterRecipeID == other.MasterRecipeID && MasterRecipeSettingsVersion == other.MasterRecipeSettingsVersion && ExposureMode == other.ExposureMode && CameraWhiteBalance == other.CameraWhiteBalance &&
         AsShotTemperature == other.AsShotTemperature && AsShotTint == other.AsShotTint && Values.SequenceEqual(other.Values) &&
         (Denoise ?? new()) == (other.Denoise ?? new()) &&
@@ -55,7 +74,8 @@ public sealed record AdjustmentSnapshot(
         (Hsl ?? new()).Equals(other.Hsl ?? new()) && (Lens ?? new()) == (other.Lens ?? new()) &&
         (Geometry ?? new()) == (other.Geometry ?? new()) && (ToneControls ?? new()) == (other.ToneControls ?? new()) &&
         (Atmosphere ?? new()) == (other.Atmosphere ?? new()) &&
-        (ColorGrading ?? new()) == (other.ColorGrading ?? new()) && (Curve ?? new()) == (other.Curve ?? new());
+        (ColorGrading ?? new()) == (other.ColorGrading ?? new()) && (Curve ?? new()) == (other.Curve ?? new()) &&
+        HDR == other.HDR;
     public AdjustmentSnapshot Copy() => this with { Values = (double[])Values.Clone() };
 }
 

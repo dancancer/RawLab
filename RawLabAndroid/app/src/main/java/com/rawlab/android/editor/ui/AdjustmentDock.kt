@@ -3,6 +3,7 @@ package com.rawlab.android.editor.ui
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -52,6 +53,8 @@ import com.rawlab.android.looks.filmStripItems
 import com.rawlab.android.looks.localizedName
 import com.rawlab.android.looks.localizedSubtitle
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.X3fMode
+import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.settings.ColorGradingZone
 import com.rawlab.android.editor.controls.ColorGradingControls
 import com.rawlab.android.editor.controls.ToneCurveControls
@@ -62,6 +65,8 @@ import com.rawlab.android.ui.EditorSheetSystemBars
 import com.rawlab.android.ui.ToolIcon
 import com.rawlab.android.ui.assetBitmap
 import com.rawlab.android.looks.applyRecipe
+import com.rawlab.android.looks.LookBrowserCategory
+import com.rawlab.android.looks.browseLooks
 
 // ============================================================================
 //  调整面板：工具栏、当前工具的控件、胶片与大师配方选择
@@ -79,16 +84,24 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     selectGroup: (EditorAdjustmentGroup) -> Unit, channel: Int, onChannelChange: (Int) -> Unit,
     onResetScope: (EditorResetScope) -> Unit, sideDock: Boolean, navigationEnabled: Boolean, compactNavigation: Boolean,
     onGeometryLock: () -> Unit = {}, onGeometrySwap: () -> Unit = {}, onGeometryGrid: () -> Unit = {},
-    onPresets: () -> Unit = {}, gradingZone: ColorGradingZone = ColorGradingZone.SHADOWS,
+    onPresets: () -> Unit = {}, quickPresetsVisible: Boolean = false, quickPresetContent: @Composable () -> Unit = {}, gradingZone: ColorGradingZone = ColorGradingZone.SHADOWS,
     onGradingZoneChange: (ColorGradingZone) -> Unit = {}, hslTarget: HslTargetActions = HslTargetActions(),
     onSelectFilm: (String) -> Boolean = { false }) {
     val edits = state.visibleEdits
     val context = LocalContext.current
     val rawInput = state.photo?.inputKind == PhotoInputKind.RAW
+    val x3fInput = state.photo?.isX3f == true
+    val normalX3f = x3fInput && edits.x3fMode == X3fMode.NORMAL
     val recipes = remember(context) { MasterRecipe.load(context) }
     val bundledFilms = remember(context) { Film.all + BundledLooks.load(context) }
-    val filmItems = remember(state.looks, bundledFilms) { filmStripItems(state.looks, bundledFilms) }
-    val calibrated = state.preview?.temperature?.isFinite() == true
+    var lookCategory by rememberSaveable { mutableStateOf(LookBrowserCategory.ALL) }
+    var lookQuery by rememberSaveable { mutableStateOf("") }
+    val filmItems = remember(state.looks, bundledFilms, lookCategory, lookQuery, state.recentLookIds) {
+        browseLooks(state.looks, bundledFilms, lookCategory, lookQuery, state.recentLookIds)
+    }
+    val calibrated = edits.isHDREditing || state.preview?.temperature?.isFinite() == true
+    val neutralTemperature = if (edits.isHDREditing) 6500f else state.preview?.temperature?.takeIf { it.isFinite() } ?: 6500f
+    val neutralTint = if (edits.isHDREditing) 0f else state.preview?.tint?.takeIf { it.isFinite() } ?: 0f
     var menuLookId by remember { mutableStateOf<String?>(null) }
     var renameLookId by remember { mutableStateOf<String?>(null) }
     var deleteLookId by remember { mutableStateOf<String?>(null) }
@@ -101,7 +114,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     val groupList = rememberLazyListState()
     val toolList = rememberLazyListState()
     val parameterScroll = rememberScrollState()
-    val parameterSession = listOf(state.photo?.identity, state.photo?.file?.absolutePath, tool, tool == 17 && perspective)
+    val parameterSession = listOf(state.photo?.identity, state.photo?.file?.absolutePath, tool, tool == 17 && perspective, quickPresetsVisible)
+    LaunchedEffect(quickPresetsVisible) { parameterScroll.scrollTo(0) }
     // 仅实际导航后的工具身份变化会复位；离开草稿的 Stay 不改变这个 key。
     var fine by rememberSaveable(state.photo?.identity, state.photo?.file?.absolutePath, tool) { mutableStateOf(false) }
     val displayLook = recipes.firstOrNull { it.id == edits.recipeID }?.localizedName
@@ -123,12 +137,19 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
         }
     }
     @Composable fun toolStrip(modifier: Modifier = Modifier) {
-        EditorToolStrip(state, tool, EditorAdjustmentRules.tools(EditorAdjustmentRules.groupFor(tool) ?: EditorAdjustmentGroup.LOOKS),
+        EditorToolStrip(state, if (quickPresetsVisible) -2 else tool, EditorAdjustmentRules.tools(if (quickPresetsVisible) EditorAdjustmentGroup.LOOKS else EditorAdjustmentRules.groupFor(tool) ?: EditorAdjustmentGroup.LOOKS),
             toolList, navigationEnabled, true, modifier, perspective = perspective,
-            onPerspective = { perspective = true; selectTool(17) }, select = { if (it == 17) perspective = false; selectTool(it) })
+            onPerspective = { perspective = true; selectTool(17) }, trailing = if (quickPresetsVisible || EditorAdjustmentRules.groupFor(tool) == EditorAdjustmentGroup.LOOKS) ({
+                TextButton(onClick = onPresets, enabled = navigationEnabled && state.controlsEnabled,
+                    colors = ButtonDefaults.textButtonColors(contentColor = if (quickPresetsVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant),
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("preset-dock").semantics { selected = quickPresetsVisible }) {
+                    Icon(Icons.Outlined.Bookmarks, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.preset_library))
+                }
+            }) else null, select = { if (it == 17) perspective = false; selectTool(it) })
     }
     @Composable fun groupStrip() {
-        EditorGroupStrip(state, expanded, tool, sideDock, groupList, navigationEnabled, true, select = selectGroup)
+        EditorGroupStrip(state, expanded, if (quickPresetsVisible) 0 else tool, sideDock, groupList, navigationEnabled, true, select = selectGroup)
     }
     val showFine = tool !in listOf(0, 9, 15, 16)
     @Composable fun fineControl() {
@@ -143,7 +164,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     @Composable fun toolRow() {
         Column(Modifier.fillMaxWidth()) {
             toolStrip()
-            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp),
+            if (!quickPresetsVisible) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Spacer(Modifier.weight(1f))
                 fineControl()
@@ -162,29 +183,25 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
         CompositionLocalProvider(LocalAdjustmentSession provides parameterSession, LocalAdjustmentFine provides fine) {
         Column(Modifier.fillMaxWidth()) {
             if (scrollTools) toolRow()
-        when (tool) {
-            0 -> LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                item(key = "user-presets") {
-                    Column(Modifier.width(88.dp).testTag("preset-dock"), horizontalAlignment = Alignment.CenterHorizontally) {
-                        ToolIcon(Icons.Outlined.Bookmarks, R.string.preset_library, state.operation == Operation.NONE, onPresets)
-                        Text(stringResource(R.string.preset_library), Modifier.heightIn(min = 42.dp).padding(top = 4.dp),
-                            style = MaterialTheme.typography.labelSmall)
+        if (quickPresetsVisible) quickPresetContent() else when (tool) {
+            0 -> Column {
+                LookBrowserControls(lookCategory, { lookCategory = it }, lookQuery, { lookQuery = it }, state.operation == Operation.NONE, onImportLook)
+                if (filmItems.isEmpty()) {
+                    Column(Modifier.fillMaxWidth().testTag("looks.empty"), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(stringResource(R.string.look_search_empty))
+                        TextButton({ if (lookQuery.isEmpty()) lookCategory = LookBrowserCategory.ALL else lookQuery = "" }) {
+                            Text(stringResource(if (lookQuery.isEmpty()) R.string.look_category_all else R.string.look_search_clear))
+                        }
                     }
                 }
-                item(key = "import-look") {
-                    Column(Modifier.width(76.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        ToolIcon(Icons.Outlined.Add, R.string.import_look, state.operation == Operation.NONE, onImportLook)
-                        Text(stringResource(R.string.import_look), Modifier.heightIn(min = 42.dp).padding(top = 4.dp),
-                            maxLines = 3, style = MaterialTheme.typography.labelSmall)
-                    }
-                }
+                LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(filmItems, key = { it.look.id }) { item ->
                     val look = item.look
                     val builtIn = bundledFilms.firstOrNull { it.id == look.id }
                     val artwork = if (builtIn?.file != null) assetBitmap("artwork/${builtIn.artworkName}.png", 80.dp) else null
                     val additional = builtIn != null && Film.all.none { it.id == builtIn.id }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (item.startsGroup) VerticalDivider(Modifier.height(122.dp).padding(horizontal = 12.dp)
+                        if (item.startsGroup) VerticalDivider(Modifier.height(106.dp).padding(horizontal = 12.dp)
                             .testTag("film-group-divider-${look.id}"))
                         Box(Modifier.width(if (additional) 132.dp else 96.dp)) {
                             Column(Modifier.fillMaxWidth().selectable(selected = edits.film == look.id,
@@ -197,7 +214,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                                     })
                                 }),
                                 horizontalAlignment = Alignment.CenterHorizontally) {
-                                Box(Modifier.size(80.dp).border(if (edits.film == look.id) 2.dp else 0.dp,
+                                Box(Modifier.size(64.dp).border(if (edits.film == look.id) 2.dp else 0.dp,
                                     if (edits.film == look.id) MaterialTheme.colorScheme.primary else Color.Transparent).padding(3.dp), contentAlignment = Alignment.Center) {
                                     if (artwork != null) Image(artwork.asImageBitmap(), null, Modifier.fillMaxSize().testTag("film-artwork-${look.id}"))
                                     else Icon(Icons.Outlined.Image, null, Modifier.size(32.dp))
@@ -231,6 +248,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                         }
                     }
                 }
+                }
             }
             1 -> NumericControl(R.string.strength, edits.strength * 100, 0f..200f, "%", state.controlsEnabled && (edits.film != "neutral" || edits.recipeID != null),
                 { value, dragging -> onEdit(edits.copy(strength = value / 100), dragging) }, { onEdit(edits.copy(strength = 1f), false) })
@@ -241,7 +259,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 val modes = listOf(R.string.exposure_scene, R.string.exposure_preview, R.string.exposure_sensor)
                 Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) {
-                    TextButton(onClick = { modeMenu = true }, enabled = state.controlsEnabled && rawInput,
+                    TextButton(onClick = { modeMenu = true }, enabled = state.controlsEnabled && rawInput && !normalX3f,
                         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)) {
                         Text(stringResource(modes[edits.exposureMode]), style = MaterialTheme.typography.labelMedium)
                     }
@@ -253,7 +271,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                         }
                     }
                 }
-                TextButton(onClick = onAutoExposure, enabled = state.controlsEnabled && !state.rendering,
+                TextButton(onClick = onAutoExposure, enabled = state.controlsEnabled && !state.rendering && !state.edits.isHDREditing,
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
                     modifier = Modifier.testTag("exposure.auto")) {
                     Icon(Icons.Outlined.AutoFixHigh, null, Modifier.size(18.dp))
@@ -277,14 +295,14 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 else Column {
                     NumericControl(R.string.temperature, edits.temperature, 2000f..50000f, "K", state.controlsEnabled,
                         { value, dragging -> onEdit(edits.copy(customWb = true, temperature = value), dragging) },
-                        { onEdit(edits.copy(temperature = state.preview?.temperature ?: 6500f,
-                            customWb = edits.recipeID == null && edits.tint != state.preview?.tint), false) }, reciprocal = true,
-                            defaultValue = state.preview?.temperature ?: edits.temperature)
+                        { onEdit(edits.copy(temperature = neutralTemperature,
+                            customWb = edits.recipeID == null && edits.tint != neutralTint), false) }, reciprocal = true,
+                            defaultValue = neutralTemperature)
                     NumericControl(R.string.tint, edits.tint, -150f..150f, "", state.controlsEnabled,
                         { value, dragging -> onEdit(edits.copy(customWb = if (edits.recipeID == null) true else edits.customWb, tint = value), dragging) },
-                        { onEdit(edits.copy(tint = if (edits.recipeID == null) state.preview?.tint ?: 0f else 0f,
-                            customWb = edits.customWb && edits.temperature != state.preview?.temperature), false) },
-                            defaultValue = if (edits.recipeID == null) state.preview?.tint ?: 0f else 0f)
+                        { onEdit(edits.copy(tint = if (edits.recipeID == null) neutralTint else 0f,
+                            customWb = edits.customWb && edits.temperature != neutralTemperature), false) },
+                            defaultValue = if (edits.recipeID == null) neutralTint else 0f)
                 }
             }
             11 -> DenoiseControls(edits.denoise, state.controlsEnabled, { onResetScope(EditorResetScope.Tool(11)) }) { value, dragging ->
@@ -304,7 +322,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 HslControls(edits.hsl, state.controlsEnabled, channel, onChannelChange,
                     { all -> onResetScope(if (all) EditorResetScope.AllHsl else EditorResetScope.HslChannel(channel)) }) { value, dragging -> onEdit(edits.copy(hsl = value), dragging) }
             }
-            16 -> LensControls(edits.lens, state.preview?.lens, rawInput && state.controlsEnabled && state.draft != null, state.rendering, onReset = { onResetScope(EditorResetScope.Tool(16)) }) { value ->
+            16 -> LensControls(edits.lens, state.preview?.lens, rawInput && !normalX3f && state.controlsEnabled && state.draft != null, state.rendering, onReset = { onResetScope(EditorResetScope.Tool(16)) }) { value ->
                 onDraftEdit(edits.copy(lens = value), false)
             }
             17 -> GeometryControls(edits.geometry, state.controlsEnabled && state.draft != null,
@@ -335,7 +353,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
         }
         }
         }
-        if (state.draft != null) {
+        if (state.draft != null && !quickPresetsVisible) {
             Column {
                 HorizontalDivider()
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -349,7 +367,28 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     }
     if (processingContext) AlertDialog(onDismissRequest = { processingContext = false },
         title = { Text(stringResource(R.string.photo_processing_settings)) },
-        text = { Text(displayLook) }, confirmButton = { TextButton(onClick = { processingContext = false }) { Text(stringResource(R.string.confirm)) } })
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(displayLook)
+                if (x3fInput) {
+                    val available = remember { NativeProcessor.nativeX3fAvailable() }
+                    Text(stringResource(R.string.x3f_rendering), Modifier.padding(top = 16.dp), style = MaterialTheme.typography.titleSmall)
+                    X3fMode.entries.forEach { mode ->
+                        val enabled = state.controlsEnabled && state.draft == null && (mode != X3fMode.NORMAL || available)
+                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .testTag("x3f.mode.${mode.id}")
+                            .selectable(selected = edits.x3fMode == mode, enabled = enabled, role = Role.RadioButton,
+                                onClick = { onEdit(edits.copy(x3fMode = mode), false) }),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = edits.x3fMode == mode, onClick = null, enabled = enabled)
+                            Text(stringResource(if (mode == X3fMode.NORMAL) R.string.x3f_normal else R.string.x3f_legacy), Modifier.padding(start = 8.dp))
+                        }
+                    }
+                    Text(stringResource(if (normalX3f) R.string.x3f_relative_wb else R.string.x3f_legacy_description),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }, confirmButton = { TextButton(onClick = { processingContext = false }) { Text(stringResource(R.string.confirm)) } })
     if (allTools) ModalBottomSheet(onDismissRequest = { allTools = false },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         EditorSheetSystemBars()
@@ -389,6 +428,9 @@ internal fun MasterRecipePicker(recipes: List<MasterRecipe>, selected: String?, 
                     if (artwork != null) Image(artwork.asImageBitmap(), null, Modifier.fillMaxSize().testTag("recipe-artwork-${recipe?.id}"),
                         contentScale = ContentScale.Crop)
                     else Icon(Icons.Outlined.Layers, null, Modifier.size(32.dp), tint = if (selected == recipe?.id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (selected == recipe?.id) Icon(Icons.Outlined.CheckCircle, null,
+                        Modifier.align(Alignment.TopEnd).size(20.dp).background(MaterialTheme.colorScheme.surface, CircleShape)
+                            .testTag("recipe-selected-${recipe?.id ?: "neutral"}"), tint = MaterialTheme.colorScheme.primary)
                 }
                 Text(recipe?.localizedName ?: stringResource(R.string.no_recipe), Modifier.heightIn(min = 22.dp),
                     style = MaterialTheme.typography.labelMedium,

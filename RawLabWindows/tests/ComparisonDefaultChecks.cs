@@ -187,6 +187,7 @@ internal static class ComparisonDefaultChecks
 
             var first = RunHostedWindow(repo, profile, raw, fixtures, "first",gpuSelection);
             if (first == 2 || first != 0) return first;
+            if(Environment.GetEnvironmentVariable("RAWLAB_BATCH_FLOW_UI")=="1")return first;
             return RunRestartHost(repo, profile);
         }
         finally { Environment.SetEnvironmentVariable("RAWLAB_COMPARISON_RAW", previousRaw); }
@@ -223,11 +224,37 @@ internal static class ComparisonDefaultChecks
 
     private static int RunHostedWindow(string repo, string profile, string raw, Fixtures fixtures, string phase,int gpuSelection)
     {
+        var quickPresets = Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_UI") == "1";
+        var batchFlow=Environment.GetEnvironmentVariable("RAWLAB_BATCH_FLOW_UI")=="1";
+        var lookBrowser=Environment.GetEnvironmentVariable("RAWLAB_LOOK_BROWSER_UI")=="1";
+        if(lookBrowser)Loc.Initialize("en");
+        else if(quickPresets || batchFlow)Loc.Initialize(Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_LANGUAGE") ?? "en");
         var app = TestWindowState.CreateApplication();
+        if (quickPresets && Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_LARGE") == "1") {
+            app.Resources["EditorBodySize"] = 18d; app.Resources["EditorCaptionSize"] = 16d;
+        }
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         var window = new MainWindow { Width = 1200, Height = 800 };
         TestWindowState.Isolate(window, Path.Combine(profile, "window-state"));
         UseProfile(window, profile);
+        if(batchFlow || lookBrowser){window.Width=1024;window.Height=720;}
+        if(lookBrowser) {
+            string Describe(object? element)=>element is FrameworkElement value ? value.GetType().Name+":"+value.Name+":"+AutomationProperties.GetName(value) : element?.ToString() ?? "null";
+            window.AddHandler(System.Windows.Input.Keyboard.GotKeyboardFocusEvent,new System.Windows.Input.KeyboardFocusChangedEventHandler((_,e)=>Console.WriteLine("FOCUS "+Describe(e.OldFocus)+" -> "+Describe(e.NewFocus))),true);
+            window.AddHandler(System.Windows.Input.Keyboard.PreviewKeyDownEvent,new System.Windows.Input.KeyEventHandler((_,e)=>Console.WriteLine("KEY "+e.Key+" source="+Describe(e.OriginalSource)+" focus="+Describe(System.Windows.Input.Keyboard.FocusedElement))),true);
+            window.AddHandler(Button.ClickEvent,new RoutedEventHandler((_,e)=>Console.WriteLine("CLICK "+Describe(e.OriginalSource))),true);
+        }
+        if (quickPresets) {
+            window.Width = 1024; window.Height = 720;
+            window.QuickPresetPrepared = async () => {
+                var hold = Path.Combine(profile, "hold-preset.flag");
+                if (!File.Exists(hold)) return;
+                File.WriteAllText(Path.Combine(profile, "prepared-preset.flag"), "ready");
+                var timeout = Stopwatch.StartNew();
+                while (File.Exists(hold) && timeout.Elapsed < TimeSpan.FromMinutes(2)) await Task.Delay(30);
+                File.WriteAllText(Path.Combine(profile, "released-preset.flag"), "released");
+            };
+        }
         window.GpuMode.SelectedIndex = gpuSelection;
         Process? driver = null;
         Task<string>? driverOutput = null, driverError = null;
@@ -260,6 +287,16 @@ internal static class ComparisonDefaultChecks
         try
         {
             window.Show();
+            if(Environment.GetEnvironmentVariable("RAWLAB_X3F_UI")=="1") {
+                var captured=new HashSet<X3fMode>();
+                var captureTimer=new DispatcherTimer(DispatcherPriority.Background){Interval=TimeSpan.FromMilliseconds(100)};
+                captureTimer.Tick+=(_,_)=>{
+                    var settings=(Adjustments)typeof(MainWindow).GetField("settings",Private)!.GetValue(window)!;
+                    if(window.ExportPng.IsEnabled && captured.Add(settings.X3fMode))
+                        PhotoFeatureChecks.Screenshot(window,Path.Combine(profile,$"x3f-{phase}-{settings.X3fMode}.png"));
+                };
+                window.Closed+=(_,_)=>captureTimer.Stop();captureTimer.Start();
+            }
             timeoutTimer = new DispatcherTimer(DispatcherPriority.Background)
             {
                 Interval = TimeSpan.FromMinutes(9)
@@ -328,7 +365,9 @@ internal static class ComparisonDefaultChecks
 
     private static DriverPath ResolveDriver(string repo)
     {
-        var directory = Path.Combine(repo, "RawLabWindows", "tests", "ui-automation", "bin", "Release", "net8.0-windows");
+        var outputRoot = Path.Combine(repo, "RawLabWindows", "tests", "ui-automation", "bin");
+        var directory = Path.Combine(outputRoot, "x64", "Release", "net8.0-windows");
+        if (!Directory.Exists(directory)) directory = Path.Combine(outputRoot, "Release", "net8.0-windows");
         var exe = Path.Combine(directory, "RawLabWindows.UiAutomation.exe");
         if (File.Exists(exe)) return new(exe, null);
         var assembly = Path.Combine(directory, "RawLabWindows.UiAutomation.dll");
@@ -361,6 +400,8 @@ internal static class ComparisonDefaultChecks
             new AdjustmentPresetStore(Path.Combine(profile, "presets")));
         typeof(MainWindow).GetField("editStore", Private)!.SetValue(window,
             new EditStore(Path.Combine(profile, "edits")));
+        typeof(MainWindow).GetField("recentLooksPath",Private)!.SetValue(window,Path.Combine(profile,"recent-looks.json"));
+        typeof(MainWindow).GetMethod("LoadRecentLooks",Private)!.Invoke(window,null);
         typeof(MainWindow).GetField("batchJournal", Private)!.SetValue(window,
             new BatchJournal(Path.Combine(profile, "batch")));
     }

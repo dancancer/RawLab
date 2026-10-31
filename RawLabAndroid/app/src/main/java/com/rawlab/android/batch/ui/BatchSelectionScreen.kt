@@ -38,6 +38,7 @@ import com.rawlab.android.ui.ExportSizeControls
 internal fun BatchSelectionScreen(model: EditorViewModel, onBack: () -> Unit, onEdit: () -> Unit) {
     val collection by model.collection.collectAsStateWithLifecycle()
     val editor by model.state.collectAsStateWithLifecycle()
+    val pending by model.pendingBatch.collectAsStateWithLifecycle()
     var album by remember { mutableStateOf(false) }
     var scope by remember { mutableStateOf(false) }
     var captureGeneration by remember { mutableIntStateOf(0) }
@@ -100,7 +101,14 @@ internal fun BatchSelectionScreen(model: EditorViewModel, onBack: () -> Unit, on
             if (editor.photo != null && targets.isEmpty()) Text(stringResource(R.string.collection_no_sync_targets))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { scope = true }, enabled = !collection.busy && targets.isNotEmpty(), modifier = Modifier.weight(1f).testTag("collection-sync")) { Text(stringResource(R.string.collection_sync)) }
-                Button(onClick = { export = true }, enabled = !collection.busy && collection.selected.isNotEmpty(), modifier = Modifier.weight(1f).testTag("collection-export")) { Text(stringResource(R.string.collection_export)) }
+                Button(onClick = { export = true }, enabled = !collection.busy && pending.isEmpty() && collection.selected.isNotEmpty(), modifier = Modifier.weight(1f).testTag("collection-export")) { Text(stringResource(R.string.collection_export)) }
+            }
+            pending.firstOrNull()?.let { job ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.message_unfinished_batch_export), Modifier.weight(1f))
+                    TextButton(onClick = { model.resumeBatch(job) }, enabled = !collection.busy && !editor.committingAdjustments,
+                        modifier = Modifier.testTag("collection-resume")) { Text(stringResource(R.string.message_view_task)) }
+                }
             }
             if (collection.lastSynchronization != null) TextButton(onClick = { model.closeAdjustmentOperation(); history = true }, enabled = !collection.busy) { Text(stringResource(R.string.collection_sync_history)) }
         }
@@ -126,7 +134,10 @@ internal fun BatchSelectionScreen(model: EditorViewModel, onBack: () -> Unit, on
                 TextButton(onClick = { model.resolveCollectionDraft(true) }) { Text(stringResource(R.string.collection_apply_draft)) }
                 TextButton(onClick = { model.resolveCollectionDraft(false) }) { Text(stringResource(R.string.collection_discard_draft)) }
             }
-            AdjustmentScopeEditor(stringResource(R.string.collection_check_targets), "collection-sync-preflight", enabled = draft == null && !editor.committingAdjustments) { selected ->
+            AdjustmentScopeEditor(stringResource(R.string.collection_check_targets), "collection-sync-preflight", enabled = draft == null && !editor.committingAdjustments,
+                allowed = if (editor.edits.isHDREditing) com.rawlab.android.adjustments.AdjustmentField.HDR_SUPPORTED
+                    else com.rawlab.android.adjustments.AdjustmentField.entries.filterNot { it.isHDRRelative }.toSet(),
+                previewCapture = model::previewAdjustmentPayload, lookName = model::adjustmentSummaryLookName) { selected ->
                 val generation = ++captureGeneration
                 model.captureCollectionSynchronization(selected) { captured ->
                     if (scope && generation == captureGeneration) captured?.let { closeScope(); synchronization = it }
@@ -147,33 +158,39 @@ internal fun BatchSelectionScreen(model: EditorViewModel, onBack: () -> Unit, on
 private fun CollectionExportSheet(model: EditorViewModel, onClose: () -> Unit) {
     val collection by model.collection.collectAsStateWithLifecycle()
     val editor by model.state.collectAsStateWithLifecycle()
+    val flow by model.collectionExport.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var skipped by remember { mutableStateOf(emptySet<String>()) }
     var format by remember { mutableStateOf(ExportFormat.JPEG) }
     var size by remember { mutableStateOf(ExportSizeChoice.ORIGINAL) }
     var custom by remember { mutableStateOf("") }
     var destination by remember { mutableStateOf<Uri?>(null) }
-    var review by remember { mutableStateOf<CollectionExportReview?>(null) }
+    val review = flow.review
+    val busy = collection.busy || flow.preparing || flow.freezing
     val directory = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             runCatching { context.contentResolver.takePersistableUriPermission(uri,
                 android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
-            destination = uri; review = null
+            destination = uri
         }
     }
-    LaunchedEffect(collection.selected, editor.adjustmentRevision) { review = null }
-    ModalBottomSheet(onDismissRequest = { if (!collection.busy) onClose() },
+    LaunchedEffect(collection.selected, editor.adjustmentRevision, editor.photo?.identity, format, size, custom, destination, skipped) {
+        model.cancelCollectionExport()
+    }
+    DisposableEffect(model) { onDispose { model.cancelCollectionExport() } }
+    ModalBottomSheet(onDismissRequest = { model.cancelCollectionExport(); onClose() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxHeight(.94f).padding(horizontal = 20.dp).testTag("collection-export-review"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.collection_export), style = MaterialTheme.typography.titleLarge)
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (!collection.busy) {
-                    ExportFormatControls(format, { format = it; review = null })
-                    ExportSizeControls(size, custom, { size = it; review = null }, { custom = it; review = null })
+                if (!busy) {
+                    ExportFormatControls(format, { format = it },
+                        hdrEditing = collection.selectedPhotos.isNotEmpty() && collection.selectedPhotos.all { it.sourceIsHDR })
+                    ExportSizeControls(size, custom, { size = it }, { custom = it })
                     TextButton(onClick = { directory.launch(destination) }) { Text(destination?.toString() ?: stringResource(R.string.collection_output_directory)) }
-                    if (Build.VERSION.SDK_INT >= 29 && format.allowsGallery) TextButton(onClick = { destination = null; review = null }) { Text(stringResource(R.string.save_album)) }
+                    if (Build.VERSION.SDK_INT >= 29 && format.allowsGallery) TextButton(onClick = { destination = null }) { Text(stringResource(R.string.save_album)) }
                 }
-                Text(stringResource(R.string.collection_draft_hint))
+                Text(stringResource(R.string.collection_export_saved_settings))
                 for (photo in collection.selectedPhotos) {
                     OutlinedCard(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -182,11 +199,11 @@ private fun CollectionExportSheet(model: EditorViewModel, onClose: () -> Unit) {
                             val row = review?.rows?.firstOrNull { it.target.id == photo.id }
                             (row?.error ?: collection.failures[photo.id] ?: draft)?.let { Text(collectionMessage(it), color = MaterialTheme.colorScheme.error) }
                             if (draft != null && editor.photo?.identity?.value == photo.id) Row {
-                                TextButton(onClick = { model.resolveCollectionDraft(true); review = null }, enabled = !collection.busy && photo.id !in skipped) { Text(stringResource(R.string.collection_apply_draft)) }
-                                TextButton(onClick = { model.resolveCollectionDraft(false); review = null }, enabled = !collection.busy && photo.id !in skipped) { Text(stringResource(R.string.collection_discard_draft)) }
+                                TextButton(onClick = { model.cancelCollectionExport(); model.resolveCollectionDraft(true) }, enabled = !busy && photo.id !in skipped) { Text(stringResource(R.string.collection_apply_draft)) }
+                                TextButton(onClick = { model.cancelCollectionExport(); model.resolveCollectionDraft(false) }, enabled = !busy && photo.id !in skipped) { Text(stringResource(R.string.collection_discard_draft)) }
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(photo.id in skipped, { checked -> skipped = if (checked) skipped + photo.id else skipped - photo.id; review = null }, enabled = !collection.busy)
+                                Checkbox(photo.id in skipped, { checked -> skipped = if (checked) skipped + photo.id else skipped - photo.id }, enabled = !busy)
                                 Text(stringResource(R.string.collection_skip))
                             }
                             row?.settings?.let { settings ->
@@ -204,12 +221,17 @@ private fun CollectionExportSheet(model: EditorViewModel, onClose: () -> Unit) {
             val valid = (size != ExportSizeChoice.CUSTOM || edge != null) && (destination != null || (format.allowsGallery && Build.VERSION.SDK_INT >= 29))
             val count = collection.selectedPhotos.count { it.id !in skipped }
             if (count == 0) Text(stringResource(R.string.collection_no_export_targets))
-            if (collection.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            if (review?.ready == true) Button(onClick = { model.freezeCollectionExport(review!!) { success -> review = null; if (success) onClose() } },
-                enabled = !collection.busy, modifier = Modifier.fillMaxWidth().testTag("collection-export-freeze")) { Text(stringResource(R.string.collection_freeze)) }
-            else Button(onClick = { model.prepareCollectionExport(skipped, format, edge, destination) { review = it } },
-                enabled = !collection.busy && valid && count > 0, modifier = Modifier.fillMaxWidth().testTag("collection-export-preflight")) { Text(stringResource(R.string.collection_review)) }
-            TextButton(onClick = onClose, enabled = !collection.busy, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.cancel)) }
+            if (busy) {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text(stringResource(R.string.collection_preparing_export))
+            }
+            Button(onClick = { model.startCollectionExport(skipped, format, edge, destination) { if (it) onClose() } },
+                enabled = !busy && valid && count > 0, modifier = Modifier.fillMaxWidth().testTag("collection-export-start")) {
+                Text(stringResource(R.string.collection_start_export, count))
+            }
+            TextButton(onClick = { model.cancelCollectionExport(); onClose() }, modifier = Modifier.fillMaxWidth().testTag("collection-export-cancel")) {
+                Text(stringResource(if (busy) R.string.collection_cancel_check else R.string.cancel))
+            }
         }
     }
 }

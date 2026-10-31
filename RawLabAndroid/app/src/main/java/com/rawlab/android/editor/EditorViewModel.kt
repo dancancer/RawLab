@@ -30,6 +30,7 @@ import com.rawlab.android.editor.render.RenderQueue
 import com.rawlab.android.editor.render.Work
 import com.rawlab.android.editor.render.WorkResult
 import com.rawlab.android.editor.render.runLookWork
+import com.rawlab.android.editor.render.discardOwnedInput
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
@@ -39,6 +40,8 @@ import com.rawlab.android.looks.DcpFailureReason
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.canonicalZeros
+import com.rawlab.android.settings.synchronizeHDR
+import com.rawlab.android.settings.withHDRMode
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.editor.storage.EditorEditStore
 import com.rawlab.android.editor.storage.EditSaveResult
@@ -61,6 +64,11 @@ class EditorViewModel @JvmOverloads constructor(
 ) : AndroidViewModel(application) {
     val storage = PhotoStorage(application)
     val presetStore = AdjustmentPresetStore(File(application.filesDir, "presets"))
+    private val lookPreferences = application.getSharedPreferences("look-browser", android.content.Context.MODE_PRIVATE)
+    private val recentLooks = com.rawlab.android.looks.RecentLooks(runCatching {
+        val entries = org.json.JSONArray(lookPreferences.getString("recent", "[]"))
+        List(entries.length()) { entries.getString(it) }
+    }.getOrDefault(emptyList()))
     private val usage = UsageAnalyticsRegistry.get(application)
     private val editStore = EditorEditStore(File(application.filesDir, "edits"), editStoreFactory)
     private val adjustmentHistory = EditorAdjustmentHistory(editStore)
@@ -73,6 +81,9 @@ class EditorViewModel @JvmOverloads constructor(
         private set
     private val mutableAdjustmentTransfer = MutableStateFlow(EditorAdjustmentTransferState())
     val adjustmentTransfer = mutableAdjustmentTransfer.asStateFlow()
+    private val mutableQuickPreset = MutableStateFlow(EditorQuickPresetState())
+    val quickPreset = mutableQuickPreset.asStateFlow()
+    private var quickPresetGeneration = UUID.randomUUID()
     private var adjustmentOwnedFiles = emptyMap<String, File>()
     @Volatile private var adjustmentPreparationGeneration = UUID.randomUUID()
     private var adjustmentPreparations = 0
@@ -82,11 +93,15 @@ class EditorViewModel @JvmOverloads constructor(
     }
     private val collections = EditorCollections(storage, viewModelScope, File(application.filesDir, "RawLab/BatchJobs"),
         editStore::versionedState, ::captureCollectionActiveValidation, canRelease = { photo ->
-            mutable.value.photo?.file != photo.file && adjustmentPreparations == 0 && !mutable.value.committingAdjustments
+            mutable.value.photo?.file != photo.file && failedX3fImport?.retained?.file != photo.file &&
+                mutable.value.operation != Operation.IMPORT && adjustmentPreparations == 0 && !mutable.value.committingAdjustments
         })
     val collection = collections.state
     val batch = batches.active
     val pendingBatch = batches.pending
+    private val mutableCollectionExport = MutableStateFlow(CollectionExportFlow())
+    val collectionExport = mutableCollectionExport.asStateFlow()
+    @Volatile private var collectionExportGeneration = UUID.randomUUID()
     private val mutableHslTarget = MutableStateFlow(HslTargetState())
     val hslTarget = mutableHslTarget.asStateFlow()
     private val hslInteraction = HslTargetInteraction()
@@ -96,7 +111,7 @@ class EditorViewModel @JvmOverloads constructor(
     private var acceptedHslSettings: EditSettings? = null
     private var acceptedHslRevision: HslTargetRevision? = null
     private var currentRevision = 0L
-    private var sourceRevision = 0L
+    @Volatile private var sourceRevision = 0L
     private var editRevision = 0L
     private var draftRevision = 0L
     private var durablePreview: EditorDurablePreview? = null
@@ -108,24 +123,29 @@ class EditorViewModel @JvmOverloads constructor(
     private var previewResizeJob: Job? = null
     private val interactivePreviewSize = com.rawlab.android.editor.render.InteractivePreviewSize()
     private val pendingPhotoImport = PendingPhotoImport()
+    private var failedX3fImport: Work.Import? = null
     private var lookRevision = 0L
     private var releases = 0
-    private val mutable = MutableStateFlow(EditorState())
+    private val mutable = MutableStateFlow(EditorState(recentLookIds = recentLooks.ids))
     val state = mutable.asStateFlow()
     @Volatile private var disposed = false
     private val renderer = EditorRenderer(storage, { if (editStore.available) editStore.versionedState(it) else null },
         (application.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0)
+    private val renderDelivery = android.os.Handler(android.os.Looper.getMainLooper())
     private val queue = RenderQueue<Work, WorkResult>(renderer::perform, { revision, result ->
-        viewModelScope.launch {
+        // 结果持有临时输入；即使 ViewModel scope 已取消，也要在主线程完成移交或释放。
+        renderDelivery.post {
             if (!disposed && revision == currentRevision) accept(result)
+            else result.getOrNull()?.discardOwnedInput()
         }
-    }, { renderer.close(); releaseStorage() })
+    }, { renderer.close(); releaseStorage() }, { it.discardOwnedInput() }, { it.discardOwnedInput() })
     private val lookQueue = RenderQueue<LookWork, LookResult>({ runLookWork(storage, it) }, { revision, result ->
         viewModelScope.launch {
             if (!disposed && revision == lookRevision) acceptLook(result)
         }
     }, ::releaseStorage)
     private val adjustmentPreparation = EditorAdjustmentPreparation(application, storage, editStore)
+    internal var prepareAdjustmentOperation: (AdjustmentPreparationWork, () -> Boolean) -> AdjustmentPreparationResult = adjustmentPreparation::prepare
     private val adjustmentQueue = SerialWorkQueue(::releaseStorage)
     private val adjustmentPreparationQueue = SerialWorkQueue(::releaseStorage)
 
@@ -228,6 +248,13 @@ class EditorViewModel @JvmOverloads constructor(
     private fun accept(result: Result<WorkResult>) {
         result.fold({ value ->
             when (value) {
+                is WorkResult.X3fImportFailure -> {
+                    clearX3fRecovery()
+                    failedX3fImport = value.retry
+                    pendingPhotoImport.clear()
+                    mutable.value = EditorStateReducer.renderFinished(mutable.value).copy(
+                        error = failure(value.error), retryLegacyX3f = true)
+                }
                 is WorkResult.MissingLook -> {
                     releasePreviousPhoto(value.photo)
                     adjustmentHistory.acceptSource(value.photo, value.importedRecord)
@@ -236,6 +263,9 @@ class EditorViewModel @JvmOverloads constructor(
                         edits = value.edits, preview = null, exact = false,
                         saveState = EditSaveState.RESTORED, error = text(R.string.look_unavailable))
                     includeIndependentRecipeLook(value.edits)
+                    if (value.persistOnImport) persist(value.photo, value.edits) { saved ->
+                        mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
+                    }
                 }
                 is WorkResult.HslProbe -> acceptHslTarget(value)
                 is WorkResult.Preview -> {
@@ -285,6 +315,9 @@ class EditorViewModel @JvmOverloads constructor(
                     acceptedHslSettings = settings
                     acceptedHslRevision = HslTargetRevision(sourceRevision, currentRevision)
                     includeIndependentRecipeLook(settings)
+                    if (request.persistOnImport) persist(request.photo, settings) { saved ->
+                        mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
+                    }
                 }
                 WorkResult.Export -> {
                     mutable.value = mutable.value.copy(operation = Operation.NONE, message = text(R.string.export_done))
@@ -327,7 +360,9 @@ class EditorViewModel @JvmOverloads constructor(
         when (result) {
             is LookResult.Loaded -> {
                 mutable.value = EditorStateReducer.looksLoaded(mutable.value, result.looks)
+                recentLooks.ids.filter { it.startsWith("recipe-lut:") }.forEach { includeIndependentRecipeLook(EditSettings(film = it)) }
                 includeIndependentRecipeLook(mutable.value.edits)
+                updateRecentLooks()
             }
             is LookResult.Imported -> {
                 val mutation = result.imported.lastOrNull()?.let { EditorStateReducer.lookImported(mutable.value, it) }
@@ -363,6 +398,7 @@ class EditorViewModel @JvmOverloads constructor(
             is LookResult.Deleted -> {
                 val mutation = EditorStateReducer.lookDeleted(mutable.value, result.id)
                 mutable.value = mutation.state.copy(looks = result.looks)
+                updateRecentLooks()
                 scheduleLookPreview(mutation.preview)
             }
             is LookResult.Failed -> {
@@ -417,19 +453,29 @@ class EditorViewModel @JvmOverloads constructor(
             }
         } else { startPhotoImport(uri); completed(true) }
     }
-    private fun startPhotoImport(uri: Uri) {
+    private fun clearX3fRecovery() {
+        failedX3fImport?.let { if (it.ownsRetained) it.retained?.file?.delete() }
+        failedX3fImport = null
+        collections.releaseDeferred()
+    }
+
+    private fun startPhotoImport(uri: Uri, retry: Work.Import? = null) {
+        closeQuickPresets()
+        if (retry !== failedX3fImport) clearX3fRecovery()
         sourceRevision += 1
         closeAdjustmentOperation()
         durablePreview = null
         pendingPhotoImport.begin(PhotoIdentity(uri.toString()))
-        mutable.value = mutable.value.copy(operation = Operation.IMPORT, rendering = true, error = null)
+        mutable.value = mutable.value.copy(operation = Operation.IMPORT, rendering = true, error = null, retryLegacyX3f = false)
+        // closeAdjustmentOperation 会释放延迟文件，先建立导入保护再移交恢复引用。
+        failedX3fImport = null
         previewResizeJob?.cancel()
         previewResizeJob = null
         previewLongEdge = 1600
         requestedPreviewLongEdge = 1600
         mutable.value = mutable.value.copy(previewResizePending = false)
         val retained = collections.photo(uri.toString())
-        currentRevision = submitRender(Work.Import(uri, gpuMode(), retained))
+        currentRevision = submitRender(retry?.copy(gpuMode = gpuMode()) ?: Work.Import(uri, gpuMode(), retained))
     }
 
     fun importLook(uri: Uri?) {
@@ -482,10 +528,11 @@ class EditorViewModel @JvmOverloads constructor(
     }
 
     fun edit(requested: EditSettings, interactive: Boolean = false) {
-        val edits = requested.canonicalZeros()
+        val edits = requested.canonicalZeros().synchronizeHDR()
         if (!applyingHslTarget) cancelHslTarget()
         val current = mutable.value
         if (!current.controlsEnabled || current.draft != null) return
+        if (mutableQuickPreset.value.phase == QuickPresetPhase.PREPARING) cancelQuickPreset()
         if (interactive && !adjustmentHistory.interacting) {
             val saved = adjustmentHistory.begin(current.photo!!, current.edits, sourceRevision)
             if (saved.state == EditSaveState.FAILED) {
@@ -544,6 +591,7 @@ class EditorViewModel @JvmOverloads constructor(
     }
 
     fun beginDraft(group: AdjustmentGroup) {
+        if (mutableQuickPreset.value.phase == QuickPresetPhase.PREPARING) cancelQuickPreset()
         val current = mutable.value
         if (!current.canExport) return
         previewResizeJob?.cancel()
@@ -661,6 +709,7 @@ class EditorViewModel @JvmOverloads constructor(
     }
 
     fun retry() {
+        failedX3fImport?.let { startPhotoImport(it.uri, it); return }
         if (mutable.value.draft != null) renderDraft(false)
         else if (mutable.value.controlsEnabled) renderCommittedForNavigation()
     }
@@ -735,9 +784,22 @@ class EditorViewModel @JvmOverloads constructor(
     private fun gpuMode() = if (mutable.value.gpuEnabled) NativeProcessor.AUTO else NativeProcessor.CPU
 
     private fun persist(photo: ImportedPhoto, edits: EditSettings, completed: (EditSaveResult) -> Unit) {
-        commitAdjustments({ adjustmentHistory.commit(photo, edits) }) { result ->
-            completed(result.getOrElse { EditSaveResult(EditSaveState.FAILED, it) })
+        val previousFilm = adjustmentHistory.loaded?.settings?.film
+        val source = sourceRevision
+        commitAdjustments({ adjustmentHistory.commit(photo, edits.synchronizeHDR()) }) { result ->
+            val saved = result.getOrElse { EditSaveResult(EditSaveState.FAILED, it) }
+            if (saved.state == EditSaveState.SAVED && source == sourceRevision && mutable.value.photo?.identity == photo.identity &&
+                mutable.value.edits.film == edits.film && edits.recipeID == null && previousFilm != edits.film) updateRecentLooks(edits.film)
+            completed(saved)
         }
+    }
+
+    private fun updateRecentLooks(applied: String? = null) {
+        val available = mutable.value.looks.filter { it.available }.mapTo(mutableSetOf()) { it.id }
+        if (applied == null) recentLooks.prune(available) else recentLooks.record(applied, available)
+        if (mutable.value.recentLookIds == recentLooks.ids) return
+        mutable.value = mutable.value.copy(recentLookIds = recentLooks.ids)
+        lookPreferences.edit().putString("recent", org.json.JSONArray(recentLooks.ids).toString()).apply()
     }
 
     private fun releasePreviousPhoto(next: ImportedPhoto) {
@@ -825,7 +887,8 @@ class EditorViewModel @JvmOverloads constructor(
                 if (result.targetID != photo.identity.value || result.targetID in cachedTargets ||
                     result.status !in setOf(AdjustmentStatus.APPLIED, AdjustmentStatus.UNCHANGED)) continue
                 try {
-                    if (adjustmentHistory.acceptSaved(photo, saved, receiptsVerified)) restored = saved.settings ?: EditSettings()
+                    if (adjustmentHistory.acceptSaved(photo, saved, receiptsVerified)) restored = saved.settings ?:
+                        com.rawlab.android.settings.sourceDefaultSettings(photo.isHDRSource)
                 } catch (error: Exception) { receiptError = error }
             }
         }
@@ -837,9 +900,14 @@ class EditorViewModel @JvmOverloads constructor(
                 saved = null, error = error) else it }
         }
         if (restored != null) {
+            if (!mutableQuickPreset.value.busy) {
+                quickPresetGeneration = UUID.randomUUID()
+                mutableQuickPreset.value = EditorQuickPresetState(visible = mutableQuickPreset.value.visible)
+            }
             editRevision += 1
             mutable.value = mutable.value.copy(edits = restored, saveState = EditSaveState.SAVED, saveError = null, error = null)
             includeIndependentRecipeLook(restored)
+            if (restored.recipeID == null && current.edits.film != restored.film) updateRecentLooks(restored.film)
             renderCommittedForNavigation()
         }
         return results
@@ -883,7 +951,8 @@ class EditorViewModel @JvmOverloads constructor(
             cameraTint = current.preview?.tint)
         commitAdjustments({
             val record = editStore.versionedState(photo.identity)
-            if (record != expected || !AdjustmentTransfer.sameAdjustments(record.settings ?: EditSettings(), current.edits,
+            if (record != expected || !AdjustmentTransfer.sameAdjustments(record.settings ?:
+                com.rawlab.android.settings.sourceDefaultSettings(photo.isHDRSource), current.edits,
                     photo.inputKind == PhotoInputKind.RAW)) throw EditPersistenceConflict()
             AdjustmentTransfer.capture(scope, current.edits, context)
         }) { result ->
@@ -894,6 +963,26 @@ class EditorViewModel @JvmOverloads constructor(
         }
     }
 
+    fun previewAdjustmentPayload(scope: AdjustmentScope): Result<AdjustmentPayload> = runCatching {
+        val current = mutable.value
+        val photo = current.photo ?: throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
+        val record = adjustmentHistory.loaded ?: throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
+        if (disposed || current.committingAdjustments || record.identity != photo.identity || !adjustmentTargetIsCurrent(photo.identity.value))
+            throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
+        AdjustmentTransfer.previewCapture(scope, current.edits,
+            record.settings ?: com.rawlab.android.settings.sourceDefaultSettings(photo.isHDRSource),
+            AdjustmentTransferContext(photo.identity.value, photo.inputKind == PhotoInputKind.RAW,
+                builtinLookIDs = storage.builtinLookIDs(), cameraTemperature = current.preview?.temperature,
+                cameraTint = current.preview?.tint))
+    }
+
+    fun adjustmentSummaryLookName(kind: String, id: String): String? {
+        if (kind == "recipe" || kind == "recipe_lut")
+            return MasterRecipe.load(getApplication()).firstOrNull { it.id == id }?.localizedName
+        val localID = if (kind == "builtin") storage.builtinLookIDs()[id] ?: return null else id
+        return mutable.value.looks.firstOrNull { it.id == localID && it.available }?.name
+    }
+
     fun prepareAdjustmentPaste(payload: AdjustmentPayload, uris: List<Uri>,
         action: AdjustmentHistoryTransaction.Action = AdjustmentHistoryTransaction.Action.PASTE) {
         if (disposed || mutable.value.committingAdjustments) {
@@ -902,6 +991,10 @@ class EditorViewModel @JvmOverloads constructor(
             return
         }
         closeAdjustmentOperation()
+        startAdjustmentPreparation(payload, uris, action)
+    }
+    private fun startAdjustmentPreparation(payload: AdjustmentPayload, uris: List<Uri>,
+        action: AdjustmentHistoryTransaction.Action, completed: (Result<PreparedAdjustmentTransfer>) -> Unit = {}) {
         adjustmentCloseRequested = false
         val generation = UUID.randomUUID()
         adjustmentPreparationGeneration = generation
@@ -914,7 +1007,8 @@ class EditorViewModel @JvmOverloads constructor(
                     ?: error("Photo left the collection")
             } else null)
         adjustmentPreparations += 1
-        adjustmentPreparationQueue.submit({ adjustmentPreparation.prepare(work) { generation != adjustmentPreparationGeneration } }) { result ->
+        val prepare = prepareAdjustmentOperation
+        adjustmentPreparationQueue.submit({ prepare(work) { generation != adjustmentPreparationGeneration } }) { result ->
             // viewModelScope 已取消时也必须释放工作结果，不能依赖一个不再执行的 UI 回调。
             if (disposed) result.getOrNull()?.ownedFiles?.values?.forEach(File::delete)
             else viewModelScope.launch {
@@ -924,10 +1018,13 @@ class EditorViewModel @JvmOverloads constructor(
                         adjustmentOwnedFiles = value.ownedFiles
                         mutableAdjustmentTransfer.value = mutableAdjustmentTransfer.value.copy(preparing = false, prepared = value.operation,
                             results = emptyList(), error = null)
+                        completed(Result.success(value.operation))
                     } else value.ownedFiles.values.forEach(File::delete)
                 }, { error ->
-                    if (!disposed && generation == adjustmentPreparationGeneration)
+                    if (!disposed && generation == adjustmentPreparationGeneration) {
                         mutableAdjustmentTransfer.value = mutableAdjustmentTransfer.value.copy(preparing = false, error = adjustmentErrorMessage(error))
+                        completed(Result.failure(error))
+                    }
                 })
                 collections.releaseDeferred()
         } }
@@ -948,6 +1045,8 @@ class EditorViewModel @JvmOverloads constructor(
         }
     }
     fun closeAdjustmentOperation() {
+        quickPresetGeneration = UUID.randomUUID()
+        mutableQuickPreset.value = EditorQuickPresetState(visible = mutableQuickPreset.value.visible)
         adjustmentPreparationGeneration = UUID.randomUUID()
         mutableAdjustmentTransfer.value = EditorAdjustmentTransferState()
         adjustmentCloseRequested = true
@@ -960,11 +1059,97 @@ class EditorViewModel @JvmOverloads constructor(
         adjustmentOwnedFiles = emptyMap()
         adjustmentCloseRequested = false
     }
+    fun showQuickPresets() {
+        if (mutable.value.photo != null && mutable.value.operation == Operation.NONE)
+            mutableQuickPreset.value = mutableQuickPreset.value.copy(visible = true)
+    }
+    fun closeQuickPresets() {
+        if (!mutableQuickPreset.value.visible && !mutableQuickPreset.value.busy) return
+        closeAdjustmentOperation()
+        mutableQuickPreset.value = EditorQuickPresetState()
+    }
+    fun cancelQuickPreset() { closeAdjustmentOperation() }
+
+    fun applyPresetToCurrentPhoto(preset: com.rawlab.android.presets.AdjustmentPreset) {
+        val current = mutable.value
+        val photo = current.photo ?: return
+        if (!mutableQuickPreset.value.visible || mutableQuickPreset.value.busy || !current.controlsEnabled || current.draft != null) return
+        closeAdjustmentOperation()
+        val generation = UUID.randomUUID()
+        val source = sourceRevision
+        val revision = editRevision
+        quickPresetGeneration = generation
+        mutableQuickPreset.value = EditorQuickPresetState(true, QuickPresetPhase.PREPARING, preset)
+        fun active() = !disposed && quickPresetGeneration == generation && mutableQuickPreset.value.visible &&
+            mutable.value.photo == photo && sourceRevision == source && editRevision == revision
+        fun failed(error: Throwable?) {
+            mutableQuickPreset.value = EditorQuickPresetState(true, QuickPresetPhase.FAILED, preset, message = quickPresetErrorMessage(error))
+        }
+        persist(photo, current.edits) { saved ->
+            if (!active()) return@persist
+            if (saved.state == EditSaveState.FAILED) {
+                mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
+                failed(saved.error); return@persist
+            }
+            mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
+            val expected = adjustmentHistory.loaded
+            if (expected == null || expected.identity != photo.identity || !adjustmentTargetIsCurrent(photo.identity.value)) {
+                failed(AdjustmentTransferException(AdjustmentFailure.DRAFT)); return@persist
+            }
+            startAdjustmentPreparation(preset.payload, listOf(photo.uri), AdjustmentHistoryTransaction.Action.PRESET) { result ->
+                if (!active()) { if (quickPresetGeneration == generation) cancelQuickPreset(); return@startAdjustmentPreparation }
+                val operation = result.getOrElse { failed(it); return@startAdjustmentPreparation }
+                val target = operation.targets.singleOrNull()
+                if (target?.error != null) { failed(target.error); return@startAdjustmentPreparation }
+                if (target?.original != expected || adjustmentHistory.loaded != expected) {
+                    failed(EditPersistenceConflict()); return@startAdjustmentPreparation
+                }
+                mutableQuickPreset.value = mutableQuickPreset.value.copy(phase = QuickPresetPhase.COMMITTING)
+                applyAdjustmentPaste(operation) { outcomes ->
+                    if (quickPresetGeneration != generation || !mutableQuickPreset.value.visible) return@applyAdjustmentPaste
+                    val outcome = outcomes.singleOrNull()
+                    if (outcome?.saved == null || adjustmentHistory.loaded != outcome.saved) { failed(outcome?.error); return@applyAdjustmentPaste }
+                    val phase = when (outcome.status) {
+                        AdjustmentStatus.APPLIED -> QuickPresetPhase.SAVED
+                        AdjustmentStatus.UNCHANGED -> QuickPresetPhase.UNCHANGED
+                        else -> { failed(outcome.error); return@applyAdjustmentPaste }
+                    }
+                    mutableQuickPreset.value = EditorQuickPresetState(true, phase, preset, operation.id)
+                }
+            }
+        }
+    }
+
+    fun undoQuickPreset() {
+        val quick = mutableQuickPreset.value
+        val transaction = quick.transactionID ?: return
+        if (quick.phase !in setOf(QuickPresetPhase.SAVED, QuickPresetPhase.UNDO_FAILED) || !mutable.value.controlsEnabled || mutable.value.draft != null) return
+        val generation = quickPresetGeneration
+        mutableQuickPreset.value = quick.copy(phase = QuickPresetPhase.COMMITTING, message = null)
+        performAdjustmentHistory(true, transactionID = transaction) { outcomes ->
+            if (quickPresetGeneration != generation || !mutableQuickPreset.value.visible) return@performAdjustmentHistory
+            val outcome = outcomes.singleOrNull()
+            mutableQuickPreset.value = if (outcome?.status == AdjustmentStatus.APPLIED && outcome.saved == adjustmentHistory.loaded)
+                quick.copy(phase = QuickPresetPhase.UNDONE, message = null)
+            else quick.copy(phase = QuickPresetPhase.UNDO_FAILED, message = adjustmentErrorMessage(outcome?.error))
+        }
+    }
+
     fun setGpuEnabled(enabled: Boolean) {
         if (mutable.value.committingAdjustments || mutable.value.operation != Operation.NONE) return
         mutable.value = mutable.value.copy(gpuEnabled = enabled)
         if (mutable.value.draft != null) renderDraft(false)
         else if (mutable.value.photo != null) edit(mutable.value.edits)
+    }
+
+    fun setHDRMode(enabled: Boolean) {
+        val current = mutable.value
+        val photo = current.photo ?: return
+        if (!photo.isHDRSource || !current.controlsEnabled || current.draft != null) return
+        val candidate = runCatching { current.edits.withHDRMode(enabled, sourceIsHDR = true, hasLook = current.edits.film != "neutral" || current.edits.recipeID != null) }
+            .getOrElse { error -> mutable.value = current.copy(error = text(if(error is com.rawlab.android.settings.HDRModeError.Conflicts)
+                R.string.hdr_conflicts else R.string.hdr_unsupported)); return }
+        edit(candidate)
     }
 
     fun beginExport(completed: (Boolean) -> Unit = {}) {
@@ -1008,7 +1193,8 @@ class EditorViewModel @JvmOverloads constructor(
         val photo = current.photo?.takeIf { it.identity.value == id } ?: return null
         if (!adjustmentTargetIsCurrent(id) || adjustmentHistory.reloadRequired) return current.saveError ?: "Apply, discard or skip this photo's draft"
         val record = adjustmentHistory.loaded
-        return if (record == null || !AdjustmentTransfer.sameAdjustments(record.settings ?: EditSettings(), current.edits,
+        return if (record == null || !AdjustmentTransfer.sameAdjustments(record.settings ?:
+            com.rawlab.android.settings.sourceDefaultSettings(photo.isHDRSource), current.edits,
                 photo.inputKind == PhotoInputKind.RAW)) "Apply, discard or skip this photo's draft" else null
     }
     private fun captureCollectionActiveValidation(): (String) -> Unit {
@@ -1082,12 +1268,57 @@ class EditorViewModel @JvmOverloads constructor(
         completed: (com.rawlab.android.batch.CollectionExportReview?) -> Unit) =
         collections.prepare(skipping, format, longEdge, destination, completed)
     fun freezeCollectionExport(review: com.rawlab.android.batch.CollectionExportReview, completed: (Boolean) -> Unit) {
-        if (batch.value != null) { collections.failure("Close the current export task first"); completed(false); return }
-        collections.freeze(review) { job ->
-            if (job == null) completed(false)
-            else releaseEditorRasterForBatch { released ->
-                if (released) batches.resume(job, gpuMode())
-                completed(released)
+        freezeAndAttachCollectionExport(review, false, { true }) { _, attached -> completed(attached) }
+    }
+
+    fun cancelCollectionExport() {
+        collectionExportGeneration = UUID.randomUUID()
+        mutableCollectionExport.value = mutableCollectionExport.value.copy(preparing = false, review = null)
+    }
+
+    fun startCollectionExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?, destination: Uri?,
+        completed: (Boolean) -> Unit = {}) {
+        if (mutableCollectionExport.value.preparing || mutableCollectionExport.value.freezing || collection.value.busy) return
+        cancelCollectionExport()
+        val generation = collectionExportGeneration
+        val source = mutable.value.photo
+        val sourceVersion = sourceRevision
+        val revision = mutable.value.adjustmentRevision
+        val selected = collection.value.selected
+        val current = { !disposed && generation == collectionExportGeneration && sourceRevision == sourceVersion && mutable.value.photo === source &&
+            mutable.value.adjustmentRevision == revision && collection.value.selected == selected }
+        mutableCollectionExport.value = CollectionExportFlow(preparing = true)
+        collections.prepare(skipping, format, longEdge, destination) { review ->
+            if (generation != collectionExportGeneration) return@prepare
+            if (!current()) {
+                mutableCollectionExport.value = CollectionExportFlow()
+                collections.failure("Review the selected photos again")
+            } else if (review?.ready != true) {
+                mutableCollectionExport.value = CollectionExportFlow(review = review)
+            } else {
+                mutableCollectionExport.value = CollectionExportFlow(preparing = true, freezing = true, review = review)
+                freezeAndAttachCollectionExport(review, true, current) { job, _ ->
+                    mutableCollectionExport.value = CollectionExportFlow()
+                    if (job != null) completed(true)
+                }
+            }
+        }
+    }
+
+    private fun freezeAndAttachCollectionExport(review: com.rawlab.android.batch.CollectionExportReview,
+        automaticallyStart: Boolean, isCurrent: () -> Boolean, completed: (BatchJob?, Boolean) -> Unit) {
+        if (batch.value != null || pendingBatch.value.isNotEmpty()) {
+            collections.failure("Close the current export task first"); completed(null, false); return
+        }
+        collections.freeze(review, isCurrent) { job ->
+            if (job == null) completed(null, false)
+            else {
+                batches.retain(job)
+                releaseEditorRasterForBatch { released ->
+                    if (released) batches.resume(job, gpuMode(), startAutomatically = automaticallyStart && isCurrent())
+                    else collections.failure(mutable.value.error)
+                    completed(job, released)
+                }
             }
         }
     }
@@ -1117,7 +1348,7 @@ class EditorViewModel @JvmOverloads constructor(
         // 页面切换沿用存储动作的输入门禁；只在渲染队列上释放完整解码图，保留仍在显示的预览。
         mutable.value = mutable.value.copy(committingAdjustments = true)
         queue.performAfterPending {
-            val result = runCatching { renderer.releaseDecodedRaster() }
+            val result = runCatching { releaseEditorRasterOperation() }
             viewModelScope.launch {
                 if (!disposed) {
                     mutable.value = mutable.value.copy(committingAdjustments = false)
@@ -1129,9 +1360,11 @@ class EditorViewModel @JvmOverloads constructor(
             }
         }
     }
+    internal var releaseEditorRasterOperation: () -> Unit = { renderer.releaseDecodedRaster() }
     fun closeBatch() = batches.close()
 
     fun onBackground() {
+        cancelCollectionExport()
         if (mutable.value.committingAdjustments) { batches.cancelForBackground(); return }
         cancelAdjustmentInteraction()
         batches.cancelForBackground()
@@ -1146,6 +1379,7 @@ class EditorViewModel @JvmOverloads constructor(
         else text(R.string.process_error) + "\n" + (error.message ?: error.javaClass.simpleName)
 
     override fun onCleared() {
+        clearX3fRecovery()
         disposed = true
         adjustmentPreparationGeneration = UUID.randomUUID()
         previewResizeJob?.cancel()

@@ -146,7 +146,8 @@ internal static class AdjustmentPresetDialogChecks
                     "Preset field count uses the selected native language: " + language + "/" + font);
                 check(Fits(library, "preset.close") && Fits(library, "preset.create") && Fits(library, "preset.apply." + initial.ID), "Preset library actions fit narrow native layout: " + language + "/" + font);
                 Screenshot(library, Path.Combine(output, $"library-{language}-{font}.png")); library.Close();
-                var save = new AdjustmentPresetNameDialog(owner, "保存预设", "My long preset", true, (_, _) => null) { Width = 520, FontSize = font };
+                var save = new AdjustmentPresetNameDialog(owner, "保存预设", "My long preset", true, (_, _) => null,
+                    preview: owner.PreviewAdjustmentPayload, lookName: owner.AdjustmentSummaryLookName) { Width = 520, FontSize = font };
                 save.Show(); Find<ComboBox>(save, "preset.save.scope").SelectedIndex = 3; save.UpdateLayout();
                 check(Fits(save, "preset.save.confirm") && Fits(save, "preset.cancel") && Fits(save, "preset.name"), "Preset save controls fit narrow native layout: " + language + "/" + font);
                 Screenshot(save, Path.Combine(output, $"save-{language}-{font}.png")); save.Close();
@@ -159,16 +160,19 @@ internal static class AdjustmentPresetDialogChecks
     private static void Drive(MainWindow owner, Step[] sequence)
     {
         var pending = new Queue<Step>(sequence); var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
-        var watch = Stopwatch.StartNew(); Exception? failure = null; var dispatched = false;
+        var watch = Stopwatch.StartNew(); var progress = Stopwatch.StartNew(); Exception? failure = null; var dispatched = false;
         timer.Tick += (_, _) => {
             var windows = Application.Current.Windows.OfType<Window>().Where(w => w != owner && w.IsVisible).ToArray();
-            if (watch.Elapsed > TimeSpan.FromSeconds(30)) failure ??= new TimeoutException("Preset dialog sequence stalled at " + pending.FirstOrDefault()?.ID);
+            if (progress.Elapsed > TimeSpan.FromSeconds(30)) failure ??= new TimeoutException("Preset dialog sequence stalled at " + pending.FirstOrDefault()?.ID +
+                "; windows=" + string.Join(" | ", windows.Select(w => AutomationProperties.GetAutomationId(w) + ":enabled=" + w.IsEnabled + ":" +
+                    string.Join(";", UiDetailChecks.Descendants(w).OfType<TextBlock>().Select(t => t.Text).Where(t => t.Length > 0).TakeLast(12)))));
             if (failure != null) { foreach (var w in windows.Reverse()) w.Close(); if (windows.Length == 0) timer.Stop(); return; }
             if (pending.Count == 0) { if (windows.Length == 0) timer.Stop(); return; }
             if (dispatched) return;
             var expected = pending.Peek(); var dialog = windows.LastOrDefault(w => AutomationProperties.GetAutomationId(w) == expected.ID && w.IsEnabled);
             if (dialog == null) return;
-            pending.Dequeue(); dispatched = true;
+            pending.Dequeue(); dispatched = true; progress.Restart();
+            Console.WriteLine("PRESET_UI step=" + expected.ID + " remaining=" + pending.Count + " elapsed=" + watch.Elapsed.TotalSeconds);
             // 模态按钮通过独立 dispatcher 回调进入，避免占住 timer tick 后无法驱动下一层窗口。
             owner.Dispatcher.BeginInvoke(() => { dispatched = false; try { expected.Run(dialog); } catch (Exception error) { failure = error; } });
         };

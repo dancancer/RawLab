@@ -11,7 +11,7 @@ import zipfile
 
 SOURCE_PATHS = ['RawLabWindows', 'lutools', 'RawLabMac/Resources', 'Shared', 'LICENSE',
                 'LICENSE-ALIYUN-RUM-EXCEPTION', 'docs/reference/licensing.md']
-RAW_SUFFIXES = {'.arw', '.nef', '.cr2', '.cr3', '.raf', '.rw2', '.orf', '.3fr', '.dng', '.pef'}
+RAW_SUFFIXES = {'.arw', '.nef', '.cr2', '.cr3', '.raf', '.rw2', '.orf', '.3fr', '.dng', '.pef', '.x3f'}
 SYNTHETIC_RAW_FIXTURES = {
     'lutools/tests/fixtures/' + name for name in
     ('bayer-demosaic.dng', 'linear-jxl.dng', 'linear-uncompressed.dng', 'linear-jxl-gain.dng', 'linear-doubled.dng',

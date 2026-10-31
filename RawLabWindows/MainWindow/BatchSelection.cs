@@ -89,7 +89,7 @@ public partial class MainWindow
         AdjustmentPayload? payload=null;
         var scope=new AdjustmentScopeDialog(owner,Path.GetFileName(file)+" · "+Loc.Format("目标：{0} 张照片",targets.Count),selected=>{
             try{payload=CapturePresetAdjustments(selected);return null;}catch(Exception error){return error.Message;}
-        },"同步调整","检查同步目标");
+        },"同步调整","检查同步目标",settings.IsHDREditing,PreviewAdjustmentPayload,AdjustmentSummaryLookName);
         if(scope.ShowDialog()!=true || payload==null)return;
         try {
             var expected=targets.ToDictionary(photo=>photo.Path,StringComparer.OrdinalIgnoreCase);
@@ -107,7 +107,7 @@ public partial class MainWindow
                 return results;
             },sourceSummary:Loc.Format("来源：{0} · {1} 项调整",Path.GetFileName(source.Path),payload.Fields.Count),
                 historyParts:()=>session.Transactions.FirstOrDefault(transaction=>transaction.ID==operation.ID)?.Parts ?? [],
-                changeHistory:undo=>RunAdjustmentHistory(operation.ID,null,undo,dialog!));
+                changeHistory:undo=>RunAdjustmentHistory(operation.ID,null,undo,dialog!),payload:payload,lookName:AdjustmentSummaryLookName);
             dialog.ShowDialog();
         }catch(Exception error){if(owner.IsVisible)MessageBox.Show(owner,error.Message,Loc.Text("调整未应用"),MessageBoxButton.OK,MessageBoxImage.Information);}
         finally{collectionWindow?.Refresh();}
@@ -122,17 +122,33 @@ public partial class MainWindow
     internal CollectionExportReview PrepareCollectionExport(IReadOnlyCollection<string> skipping,ExportFormat format,int? longEdge,string directory)
     {
         editStore ??=new(EditStore.DefaultDirectory);
-        return new BatchSelectionExport(editStore,batchJournal,ResolveLook,RenderEngine.ValidateAIInput).Prepare(Collection,skipping,format,longEdge,directory,CollectionDraftFailure);
+        return new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,aiPreference.DeviceID)).Prepare(Collection,skipping,format,longEdge,directory,CollectionDraftFailure);
     }
-    internal BatchJob FreezeCollectionExport(CollectionExportReview review)
+    internal async Task<CollectionExportReview?> PrepareCollectionExportAsync(IReadOnlyCollection<string> skipping,ExportFormat format,int? longEdge,string directory)
+    {
+        if(CollectionBusy)return null;
+        editStore ??=new(EditStore.DefaultDirectory);
+        var photos=Collection.SelectedPhotos.ToArray();var skipped=skipping.ToHashSet(StringComparer.Ordinal);
+        var failures=photos.ToDictionary(photo=>photo.ID,photo=>CollectionDraftFailure(photo.ID));
+        var generation=++transferGeneration;var opened=openRevision;var revision=editRevision;var current=file;
+        var device=aiPreference.DeviceID;
+        var exporter=new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,device));
+        transferPreparing=true;
+        try {
+            var result=await Task.Run(()=>exporter.Prepare(photos,skipped,format,longEdge,directory,id=>failures.GetValueOrDefault(id)));
+            return !closing && generation==transferGeneration && opened==openRevision && revision==editRevision && file==current &&
+                photos.Select(photo=>photo.ID).SequenceEqual(Collection.SelectedPhotos.Select(photo=>photo.ID)) ? result : null;
+        }finally{if(generation==transferGeneration)transferPreparing=false;}
+    }
+    internal BatchJob FreezeCollectionExport(CollectionExportReview review,bool autoStart=false)
     {
         if(CollectionBusy)throw new InvalidOperationException(Loc.Text("请等待当前操作完成。"));
         if(CurrentBatch is {} previous && previous.SelectedCount>previous.SucceededCount)
             throw new InvalidOperationException(Loc.Text("请先结束或完成当前导出任务。"));
         if(batchWindow!=null){batchWindow.Close();if(batchWindow!=null)throw new InvalidOperationException(Loc.Text("请先关闭当前任务窗口。"));}
         editStore ??=new(EditStore.DefaultDirectory);
-        var job=new BatchSelectionExport(editStore,batchJournal,ResolveLook,RenderEngine.ValidateAIInput).Freeze(Collection,review,CollectionDraftFailure);
-        previousBatch=job;ShowBatch(job);return job;
+        var job=new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,aiPreference.DeviceID)).Freeze(Collection,review,CollectionDraftFailure,RequestedAIBackend,aiPreference.DeviceID);
+        previousBatch=job;ShowBatch(job,autoStart);return job;
     }
     internal void ViewCollectionExport()=>ShowBatchClicked(this,new());
 }

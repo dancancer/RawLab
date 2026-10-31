@@ -220,7 +220,7 @@ private fun BatchConfirmContent(
         }
         item {
             Text(AppStrings.text(R.string.message_output), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(20.dp, 16.dp, 20.dp, 4.dp))
-            ExportFormatControls(format, onFormat, Modifier.padding(horizontal = 20.dp))
+            ExportFormatControls(format, onFormat, Modifier.padding(horizontal = 20.dp), hdrEditing = state.job.source.settings.isHDREditing)
             Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (Build.VERSION.SDK_INT >= 29 && format.allowsGallery) {
                     FilterChip(selected = destination == null, onClick = onAlbumOutput, label = { Text(AppStrings.text(R.string.message_photo_gallery)) })

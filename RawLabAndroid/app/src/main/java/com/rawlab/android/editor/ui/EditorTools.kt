@@ -53,6 +53,8 @@ internal val editorToolIcons: List<ImageVector> get() = listOf(Icons.Outlined.Ph
     Icons.Outlined.Deblur, Icons.Outlined.NoiseAware, Icons.Outlined.Circle, Icons.Outlined.Grain,
     Icons.Outlined.ColorLens, Icons.Outlined.Layers, Icons.Outlined.CenterFocusStrong, Icons.Outlined.CropRotate, Icons.Filled.Circle, Icons.Outlined.RadioButtonUnchecked, Icons.Filled.WaterDrop, Icons.Outlined.Palette, Icons.Outlined.Tonality, Icons.Outlined.Cloud)
 
+private fun hdrToolSupported(index: Int): Boolean = index in setOf(2, 3, 4, 5, 7, 8, 9, 17)
+
 internal fun whiteBalanceChanged(edits: EditSettings, shotTemperature: Float?, shotTint: Float?): Boolean {
     val temperature = shotTemperature ?: edits.temperature
     val tint = if (edits.recipeID != null) 0f else shotTint ?: edits.tint
@@ -62,23 +64,24 @@ internal fun whiteBalanceChanged(edits: EditSettings, shotTemperature: Float?, s
 @Composable
 internal fun EditorToolStrip(state: EditorState, selected: Int, tools: List<Int> = editorToolOrder, list: LazyListState = rememberLazyListState(),
     navigationEnabled: Boolean = true, inlineLabels: Boolean = true, modifier: Modifier = Modifier,
-    perspective: Boolean = false, onPerspective: (() -> Unit)? = null, select: (Int) -> Unit) {
+    perspective: Boolean = false, onPerspective: (() -> Unit)? = null, trailing: (@Composable () -> Unit)? = null, select: (Int) -> Unit) {
     val entries = tools.flatMap { if (it == 17 && onPerspective != null) listOf(it, -1) else listOf(it) }
     val active = if (selected == 17 && perspective) -1 else selected
     LaunchedEffect(active) {
-        val index = entries.indexOf(active).coerceAtLeast(0)
+        val index = if (active == -2 && trailing != null) entries.size else entries.indexOf(active).coerceAtLeast(0)
         if (list.layoutInfo.visibleItemsInfo.none { it.index == index && it.offset >= 0 &&
             it.offset + it.size <= list.layoutInfo.viewportEndOffset }) list.scrollToItem(index)
     }
     LazyRow(modifier.fillMaxWidth().clipToBounds().testTag("editor-tools"), state = list, contentPadding = PaddingValues(horizontal = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         items(entries, key = { it }) { index ->
-            if (index == -1) TextButton(onClick = { onPerspective?.invoke() }, enabled = navigationEnabled && state.controlsEnabled,
+            if (index == -1) TextButton(onClick = { onPerspective?.invoke() }, enabled = navigationEnabled && state.controlsEnabled && (!state.edits.isHDREditing || hdrToolSupported(17)),
                 modifier = Modifier.heightIn(min = 48.dp).testTag("editor-tool-perspective").semantics { this.selected = active == -1 }) {
                 Icon(Icons.Outlined.Transform, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.geometry_perspective_tool))
             } else EditorTool(state, index, active == index, navigationEnabled, true) { select(index) }
         }
+        if (trailing != null) item(key = "trailing") { trailing() }
     }
 
 }
@@ -115,11 +118,20 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, navig
     val valueDescription = if (index == 8) listOf(
         "${formatAdjustment(edits.temperature, 1f)} K", formatAdjustment(edits.tint, 1f)
     ).joinToString(" · ") else number
+    val unavailableReason = when {
+        state.edits.isHDREditing && !hdrToolSupported(index) -> stringResource(R.string.tool_unavailable_hdr)
+        index == 16 && state.photo?.isX3f == true && edits.x3fMode == com.rawlab.android.settings.X3fMode.NORMAL -> stringResource(R.string.lens_input_unsupported)
+        index == 16 && !rawOnly -> stringResource(R.string.tool_raw_lens_only)
+        index == 8 && !state.edits.isHDREditing && (!rawOnly || state.preview?.temperature?.isFinite() != true) -> stringResource(R.string.tool_white_balance_unavailable)
+        else -> null
+    }
     val selectable = Modifier.selectable(selected,
-        enabled = navigationEnabled && state.controlsEnabled && (index != 8 || rawOnly) && (index != 16 || rawOnly),
+        enabled = navigationEnabled && state.controlsEnabled && (!state.edits.isHDREditing || hdrToolSupported(index)) &&
+            (index != 8 || rawOnly || state.edits.isHDREditing) &&
+            (index != 16 || rawOnly && !(state.photo?.isX3f == true && edits.x3fMode == com.rawlab.android.settings.X3fMode.NORMAL)),
         role = Role.Tab, onClick = onClick).testTag("editor-tool-$index").semantics(mergeDescendants = true) {
         contentDescription = title
-        stateDescription = listOfNotNull(valueDescription, status).joinToString(" · ")
+        stateDescription = listOfNotNull(unavailableReason, valueDescription, status).joinToString(" · ")
     }
     Row(selectable.heightIn(min = 48.dp).background(if (selected) primary.copy(alpha = .12f) else Color.Transparent, RoundedCornerShape(5.dp))
         .padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

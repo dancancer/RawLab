@@ -28,6 +28,26 @@ internal static class AdjustmentPresetUiChecks
             var session = (AdjustmentTransferSession)typeof(MainWindow).GetProperty("TransferSession", Private)!.GetValue(window)!;
             session.Copy(AdjustmentScope.Custom([AdjustmentField.Contrast]), new(OriginalIdentity.Read(source), settings.Capture(), null), new(source, true));
             var clipboard = session.Clipboard; var revision = edits.VersionedState(source); var history = session.Transactions.Count;
+            var summaryDialog = new AdjustmentPresetNameDialog(window, "保存预设", "Summary", true, (_, _) => null,
+                preview: window.PreviewAdjustmentPayload, lookName: window.AdjustmentSummaryLookName);
+            summaryDialog.Show(); summaryDialog.UpdateLayout();
+            var summaryScope = Find<ComboBox>(summaryDialog, "preset.save.scope");
+            summaryScope.SelectedIndex = 2; summaryDialog.UpdateLayout();
+            Find<Expander>(summaryDialog, "preset.save.summary.group.light").IsExpanded = true; summaryDialog.UpdateLayout();
+            check(Find<TextBlock>(summaryDialog, "preset.save.summary.value.light.exposure").Text == "+1.25 EV" &&
+                window.PreviewAdjustmentPayload(AdjustmentScope.Modified).Fields.SetEquals([AdjustmentField.Exposure]),
+                "Native modified summary shows the actual capture field and value");
+            summaryScope.SelectedIndex = 1; summaryDialog.UpdateLayout();
+            check(Find<TextBlock>(summaryDialog, "preset.save.summary.count").Text.Contains(AdjustmentFields.All.Count.ToString()),
+                "Native all summary follows the full payload count");
+            summaryScope.SelectedIndex = 3;
+            Find<Button>(summaryDialog, "preset.save.clear").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); summaryDialog.UpdateLayout();
+            check(!Find<Button>(summaryDialog, "preset.save.confirm").IsEnabled &&
+                Find<TextBlock>(summaryDialog, "preset.save.summary.empty").Text == Loc.Text("未选择任何调整。"),
+                "Native summary distinguishes empty custom scope and disables Save");
+            summaryDialog.Close();
+            check(edits.VersionedState(source).SameAs(revision) && session.Clipboard == clipboard && session.Transactions.Count == history,
+                "Switching summary scopes and cancelling preserves the receipt, clipboard and history");
             var payload = window.CapturePresetAdjustments(AdjustmentScope.Custom([AdjustmentField.Exposure]));
             var preset = library.Create("Morning", payload);
             check(payload.Fields.SetEquals([AdjustmentField.Exposure]) && edits.VersionedState(source).SameAs(revision) &&
@@ -36,6 +56,10 @@ internal static class AdjustmentPresetUiChecks
             var rejected = false;
             try { window.CapturePresetAdjustments(AdjustmentScope.Standard); } catch (EditPersistenceConflict) { rejected = true; }
             check(rejected && edits.Find(source)!.Settings.Values[1] == 1.8, "Native preset capture rejects an external photo revision");
+            Set(window, "adjustmentReloadRequired", false);
+            rejected = false;
+            try { window.CopyCurrentAdjustments(AdjustmentScope.Standard); } catch (EditPersistenceConflict) { rejected = true; }
+            check(rejected && session.Clipboard == clipboard, "Copy confirmation revalidates the source and preserves the clipboard on conflict");
             window.ReloadCurrentAdjustments(); Ready(window);
             window.OpenFile(target); Ready(window); File.Delete(source);
             var preparation = window.PrepareAdjustmentTargets(preset.Payload, [target], AdjustmentHistoryAction.Preset);

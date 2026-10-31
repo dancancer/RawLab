@@ -1,5 +1,221 @@
 {
   "entries": {
+    "collection_cancel_check": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "取消检查",
+      "types": []
+    },
+    "collection_draft_ready": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "草稿已处理，请开始导出。",
+      "types": []
+    },
+    "collection_export_saved_settings": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "将按每张照片已保存的调整导出。跳过只影响本次导出。",
+      "types": []
+    },
+    "collection_preparing_export": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "正在准备导出…",
+      "types": []
+    },
+    "collection_review_targets": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "查看目标",
+      "types": []
+    },
+    "collection_saved_continue": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "任务已保存，请继续导出。",
+      "types": []
+    },
+    "collection_start_export": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$d"
+      ],
+      "source": "开始导出 {0} 张",
+      "types": [
+        "d"
+      ]
+    },
+    "transfer_recheck": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重新检查",
+      "types": []
+    },
+    "preset_quick_error_mode": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "此预设包含 HDR 相对白平衡，当前编辑模式不支持。",
+      "types": []
+    },
+    "preset_quick_error_incompatible": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "此预设与当前照片不兼容，请选择其他预设。",
+      "types": []
+    },
+    "preset_quick_error_preserve": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "此预设无法保留照片的其他调整，请选择其他预设。",
+      "types": []
+    },
+    "preset_quick_manage": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "管理预设",
+      "types": []
+    },
+    "preset_quick_apply_current": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "应用到当前照片",
+      "types": []
+    },
+    "preset_quick_apply_multiple": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "应用到多张照片",
+      "types": []
+    },
+    "preset_quick_checking": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "正在检查预设…",
+      "types": []
+    },
+    "x3f_retry_legacy": {"formats":[],"source":"使用旧版显影重试","file":"editor_strings.xml","types":[]},
+    "x3f_rendering": {"file":"editor_strings.xml","formats":[],"source":"X3F 显影","types":[]},
+    "x3f_normal": {"file":"editor_strings.xml","formats":[],"source":"正常显影","types":[]},
+    "x3f_legacy": {"file":"editor_strings.xml","formats":[],"source":"伪红外（旧版）","types":[]},
+    "x3f_relative_wb": {"file":"editor_strings.xml","formats":[],"source":"以文件保存的显影为基准，白平衡作相对调整。","types":[]},
+    "x3f_legacy_description": {"file":"editor_strings.xml","formats":[],"source":"保留旧版的特殊色彩。","types":[]},
+    "adjustment_summary_overwrite": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$d"
+      ],
+      "source": "将覆盖以下 {0} 项调整；其他调整保留目标原值。",
+      "types": [
+        "d"
+      ]
+    },
+    "adjustment_summary_geometry_excluded": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "未包含几何与镜头。",
+      "types": []
+    },
+    "adjustment_summary_geometry_included": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "包含几何或镜头调整。",
+      "types": []
+    },
+    "adjustment_summary_empty_custom": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "未选择任何调整。",
+      "types": []
+    },
+    "adjustment_summary_empty_modified": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "尚无已修改的调整。",
+      "types": []
+    },
+    "adjustment_summary_not_applicable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "不适用",
+      "types": []
+    },
+    "adjustment_summary_recipe_note": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "以下为配方逻辑值；强度为 {0}。部分范围会按此强度换算。",
+      "types": [
+        "s"
+      ]
+    },
+    "adjustment_summary_camera_wb": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "相机白平衡（按目标照片）",
+      "types": []
+    },
+    "adjustment_summary_default_denoise": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "默认降噪设置",
+      "types": []
+    },
+    "adjustment_summary_auto_target_photo": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "自动（按目标照片）",
+      "types": []
+    },
+    "adjustment_summary_lens_profile_pending": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "待选择的镜头配置",
+      "types": []
+    },
+    "adjustment_summary_look_builtin": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "内置",
+      "types": []
+    },
+    "adjustment_summary_look_recipe": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "配方",
+      "types": []
+    },
+    "adjustment_summary_look_recipe_lut": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "配方 LUT",
+      "types": []
+    },
+    "adjustment_summary_exposure_scene": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "场景",
+      "types": []
+    },
+    "adjustment_summary_exposure_preview": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "预览",
+      "types": []
+    },
+    "adjustment_summary_relative_white_balance": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "相对白平衡",
+      "types": []
+    },
+    "adjustment_summary_invalid_denoise": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "无效的降噪参数",
+      "types": []
+    },
     "about_rawlab": {
       "file": "strings.xml",
       "formats": [],
@@ -4565,6 +4781,212 @@
       "formats": [],
       "source": "使用此照片",
       "types": []
+    },
+    "hdr_above_white": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "参考白以上 {0}",
+      "types": [
+        "s"
+      ]
+    },
+    "hdr_conflicts": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。",
+      "types": []
+    },
+    "hdr_display_unavailable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "HDR 显示不可用，当前显示 SDR。",
+      "types": []
+    },
+    "hdr_editing": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "HDR 编辑",
+      "types": []
+    },
+    "hdr_false_color": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "HDR 假色",
+      "types": []
+    },
+    "hdr_histogram": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "HDR 亮度直方图",
+      "types": []
+    },
+    "hdr_jpeg": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "HDR JPEG",
+      "types": []
+    },
+    "hdr_preview_auto": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "自动 HDR",
+      "types": []
+    },
+    "hdr_preview_sdr": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "SDR 兼容预览",
+      "types": []
+    },
+    "hdr_processing_cpu": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。",
+      "types": []
+    },
+    "hdr_unsupported": {
+      "source": "不支持此 HDR 格式或颜色描述。",
+      "formats": [],
+      "types": [],
+      "file": "editor_strings.xml"
+    },
+    "hdr_memory": {
+      "source": "内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。",
+      "formats": [],
+      "types": [],
+      "file": "editor_strings.xml"
+    },
+    "hdr_output_failed": {
+      "source": "无法写入 HDR 导出文件，请检查可用空间和目标权限。",
+      "formats": [],
+      "types": [],
+      "file": "editor_strings.xml"
+    },
+    "hdr_not_hdr": {
+      "source": "此照片没有可编辑的 HDR 增益图。",
+      "formats": [],
+      "types": [],
+      "file": "editor_strings.xml"
+    },
+    "hdr_processing_failed": {
+      "source": "HDR 处理失败（{0}）。",
+      "formats": [
+        "%1$d"
+      ],
+      "types": [
+        "d"
+      ],
+      "file": "editor_strings.xml"
+    },
+    "hdr_jpeg_description": {
+      "source": "Display P3 SDR 底图 + HDR 增益图 · ISO / XMP",
+      "formats": [],
+      "types": [],
+      "file": "editor_strings.xml"
+    },
+    "look_category_all": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "全部外观",
+      "types": []
+    },
+    "look_category_fuji": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "Fuji",
+      "types": []
+    },
+    "look_category_kodak": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "Kodak",
+      "types": []
+    },
+    "look_category_other": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "其他",
+      "types": []
+    },
+    "look_category_custom": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "用户外观",
+      "types": []
+    },
+    "look_category_recent": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "最近使用",
+      "types": []
+    },
+    "look_search": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "搜索外观",
+      "types": []
+    },
+    "look_search_empty": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "没有匹配的外观",
+      "types": []
+    },
+    "look_search_clear": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "清除搜索",
+      "types": []
+    },
+    "look_category": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "外观分类",
+      "types": []
+    },
+    "tool_unavailable_hdr": {
+      "formats": [],
+      "source": "HDR 模式暂不支持此工具。",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "tool_raw_lens_only": {
+      "formats": [],
+      "source": "仅 RAW 照片支持镜头校正。",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "tool_white_balance_unavailable": {
+      "formats": [],
+      "source": "此照片没有可用的相机白平衡校准。",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "tool_select_look_first": {
+      "formats": [],
+      "source": "请先选择外观或配方。",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "lens_distortion_unavailable": {
+      "formats": [],
+      "source": "畸变标定不可用",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "lens_tca_unavailable": {
+      "formats": [],
+      "source": "横向色差标定不可用",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "preset_quick_error_white_balance_scope": {
+      "formats": [],
+      "source": "请将白平衡模式、色温和色调一起保存，再应用此预设。",
+      "file": "editor_strings.xml",
+      "types": []
     }
   },
   "overrides": {
@@ -5466,6 +5888,14 @@
       "fr": "Choisir le dossier de sortie",
       "ja": "出力先を選択",
       "zh-Hans": "选择输出目录"
+    },
+    "Display P3 SDR 底图 + HDR 增益图 · ISO / XMP": {
+      "zh-Hans": "Display P3 SDR 底图 + HDR 增益图 · ISO / XMP",
+      "en": "Display P3 SDR base + HDR gain map · ISO / XMP",
+      "de": "Display-P3-SDR-Basis + HDR-Gain-Map · ISO / XMP",
+      "es": "Base SDR Display P3 + mapa de ganancia HDR · ISO / XMP",
+      "fr": "Base SDR Display P3 + carte de gain HDR · ISO / XMP",
+      "ja": "Display P3 SDR ベース + HDR ゲインマップ · ISO / XMP"
     }
   }
 }

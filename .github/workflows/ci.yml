@@ -101,6 +101,7 @@ jobs:
           python tests/test_localization.py GeneratorFormatTests GeneratorSourceTests
           python lutools/tests/test_cli_test_encoding.py
           python lutools/tests/test_tiff_dependencies.py
+          python lutools/tests/test_hdr_sources.py
           python RawLabMac/tests/test_single_preview.py
           python RawLabMac/tests/test_tool_group_ui.py
           python -m unittest Shared/tests/test_bundled_looks.py Shared/tests/test_lut_source_audit.py Shared/tests/test_prepare_bundled_looks.py -v
@@ -149,6 +150,11 @@ jobs:
           python -c 'import sys; assert sys.version_info[:2] == (3, 12)'
           python -m pip install -r scripts/ci/requirements.txt
           python scripts/ci/native_cache.py key --platform macos --arch "$RAWLAB_ARCH"
+      - name: Prepare X3F Rust renderer toolchain
+        if: needs.changes.outputs.build == 'true'
+        shell: bash
+        run: |
+          bash scripts/ci/prepare-rust.sh aarch64-apple-darwin x86_64-apple-darwin
       - name: Restore native dependencies, or only look them up for a cold build
         id: native-cache
         if: needs.changes.outputs.build == 'true'
@@ -302,6 +308,31 @@ jobs:
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: '8.0.x'
+      - name: Prepare X3F Rust renderer toolchain
+        if: needs.changes.outputs.build == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tools = Join-Path $env:RUNNER_TEMP 'rawlab-x3f-tools'
+          New-Item -ItemType Directory -Force $tools | Out-Null
+          $env:CARGO_HOME = "$tools/cargo"
+          $env:RUSTUP_HOME = "$tools/rustup"
+          $rustup = "$env:CARGO_HOME/bin/rustup.exe"
+          if (!(Test-Path $rustup)) {
+            $url = 'https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe'
+            Invoke-WebRequest $url -OutFile "$tools/rustup-init.exe"
+            Invoke-WebRequest "$url.sha256" -OutFile "$tools/rustup-init.sha256"
+            $expected = (Get-Content "$tools/rustup-init.sha256").Trim().Split(' ')[0]
+            if ((Get-FileHash "$tools/rustup-init.exe" -Algorithm SHA256).Hash.ToLower() -ne $expected) { throw 'Rust installer checksum mismatch' }
+            & "$tools/rustup-init.exe" -y --no-modify-path --profile minimal --default-toolchain 1.99.1
+            if ($LASTEXITCODE) { throw 'Cannot install Rust' }
+          }
+          & $rustup toolchain install 1.99.1 --profile minimal --component rust-docs
+          if ($LASTEXITCODE) { throw 'Cannot prepare Rust runtime notices' }
+          python -m pip install --target "$tools/libclang" libclang==18.1.1
+          if ($LASTEXITCODE) { throw 'Cannot prepare libclang' }
+          @("CARGO_HOME=$env:CARGO_HOME", "RUSTUP_HOME=$env:RUSTUP_HOME", 'RUSTUP_TOOLCHAIN=1.99.1', "LIBCLANG_PATH=$tools/libclang/clang/native") | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "$env:CARGO_HOME/bin" | Out-File $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Identify native dependency cache
         id: native-key
         if: needs.changes.outputs.build == 'true'
@@ -425,6 +456,13 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
+      - name: Prepare X3F Rust renderer toolchain
+        if: needs.changes.outputs.build == 'true'
+        shell: bash
+        run: |
+          bash scripts/ci/prepare-rust.sh aarch64-linux-android x86_64-linux-android
+          python -m pip install --target "$RUNNER_TEMP/rawlab-x3f-libclang" libclang==18.1.1
+          echo "LIBCLANG_PATH=$RUNNER_TEMP/rawlab-x3f-libclang/clang/native" >> "$GITHUB_ENV"
       - name: Install toolchain and identify native dependency cache
         id: native-key
         if: needs.changes.outputs.build == 'true'
@@ -500,6 +538,11 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Prepare X3F Rust renderer toolchain
+        if: needs.changes.outputs.build == 'true'
+        shell: bash
+        run: |
+          bash scripts/ci/prepare-rust.sh aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
       - name: Identify native dependency cache
         id: native-key
         if: needs.changes.outputs.build == 'true'

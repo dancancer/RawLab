@@ -44,6 +44,7 @@ import com.rawlab.android.editor.ui.AdjustmentSheet
 import com.rawlab.android.editor.ui.AdjustmentTransferSheet
 import com.rawlab.android.editor.ui.AdjustmentPresetSheet
 import com.rawlab.android.editor.ui.AdjustmentPresetAction
+import com.rawlab.android.editor.ui.QuickPresetContent
 import com.rawlab.android.presets.AdjustmentPreset
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
@@ -88,6 +89,8 @@ fun RawLabTheme(content: @Composable () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: UsageAnalytics) {
     val state by model.state.collectAsStateWithLifecycle()
+    val quickPreset by model.quickPreset.collectAsStateWithLifecycle()
+    var presetLibraryRevision by remember { mutableIntStateOf(0) }
     val hslTarget by model.hslTarget.collectAsStateWithLifecycle()
     val updateState by updates.state.collectAsStateWithLifecycle()
     val usageState by usage.state.collectAsStateWithLifecycle()
@@ -135,7 +138,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
         model.importLooks(uris)
     }
     val saveJpeg = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/jpeg")) {
-        if (it == null) exportDialog = true else model.export(it, ExportFormat.JPEG, pendingExportLongEdgeText.toIntOrNull())
+        if (it == null) exportDialog = true else model.export(it, format, pendingExportLongEdgeText.toIntOrNull())
     }
     val savePng = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) {
         if (it == null) exportDialog = true else model.export(it, ExportFormat.PNG, pendingExportLongEdgeText.toIntOrNull())
@@ -175,11 +178,16 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             onCopyAdjustments = { model.closeAdjustmentOperation(); adjustmentSheet = AdjustmentSheet.COPY },
             onPasteAdjustments = { model.closeAdjustmentOperation(); adjustmentSheet = AdjustmentSheet.PASTE },
             onAdjustmentHistory = { model.closeAdjustmentOperation(); adjustmentSheet = AdjustmentSheet.HISTORY },
-            onPresets = { savingPreset = false; presetLibrary = true }, presetAction = presetAction,
+            onPresets = model::showQuickPresets, onClosePresets = model::closeQuickPresets,
+            quickPresetsVisible = quickPreset.visible,
+            quickPresetContent = { QuickPresetContent(model, presetLibraryRevision,
+                onManage = { savingPreset = false; presetLibrary = true }, onRequest = { presetAction = it }) },
+            presetAction = presetAction,
             onPresetActionConsumed = { presetAction = null }, onPresetActionReady = { action ->
                 when (action) {
                     AdjustmentPresetAction.Save -> { savingPreset = true; presetLibrary = true }
-                    is AdjustmentPresetAction.Apply -> {
+                    is AdjustmentPresetAction.Apply -> { model.showQuickPresets(); model.applyPresetToCurrentPhoto(action.preset) }
+                    is AdjustmentPresetAction.ApplyMultiple -> {
                         model.closeAdjustmentOperation(); selectedPreset = action.preset; adjustmentSheet = AdjustmentSheet.PASTE
                     }
                 }
@@ -190,7 +198,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             onExport = {
                 exportSizeKey = ExportSizeChoice.ORIGINAL.key
                 exportCustomSize = ""
-                format = ExportFormat.JPEG
+                format = if (state.edits.isHDREditing) ExportFormat.HDR_JPEG else ExportFormat.JPEG
                 model.beginExport { if (it) exportDialog = true }
             },
             onBatchExport = model::beginBatch,
@@ -201,6 +209,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
                 } else { model.retainCurrentInCollection(); collectionOpen = true }
             },
             onMessageDismiss = model::dismissMessage, onLicenses = { licenses = true }, onGpuChange = model::setGpuEnabled,
+            onHDRChange = model::setHDRMode,
             onImportLook = { openLook.launch(arrayOf("*/*")) }, onRenameLook = model::renameLook,
             onDeleteLook = model::deleteLook, onLookImportReportDismiss = model::dismissLookImportReport,
             onAbout = { about = true }, updateVersion = updateState.available?.version,
@@ -219,8 +228,8 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
         AdjustmentTransferSheet(model, kind, selectedPreset) { adjustmentSheet = null; selectedPreset = null }
     }
     if (presetLibrary) AdjustmentPresetSheet(model, savingPreset,
-        onClose = { presetLibrary = false; savingPreset = false },
-        onRequest = { action -> presetLibrary = false; savingPreset = false; presetAction = action })
+        onClose = { presetLibrary = false; savingPreset = false; presetLibraryRevision++ },
+        onRequest = { action -> presetLibrary = false; savingPreset = false; presetLibraryRevision++; presetAction = action })
     if (exportDialog) ModalBottomSheet(
         onDismissRequest = { exportDialog = false; model.cancelExport() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -232,7 +241,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             val longEdge = ExportSize.parse(selectedSize, exportCustomSize)
             val sizeValid = selectedSize != ExportSizeChoice.CUSTOM || longEdge != null
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                ExportFormatControls(format, { format = it })
+                ExportFormatControls(format, { format = it }, hdrEditing = state.edits.isHDREditing)
                 ExportSizeControls(
                     selected = selectedSize,
                     customText = exportCustomSize,
@@ -259,7 +268,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
                     pendingExportLongEdgeText = longEdge?.toString().orEmpty()
                     val name = "RawLab-${System.currentTimeMillis()}"
                     when (format) {
-                        ExportFormat.JPEG -> saveJpeg.launch("$name.jpg")
+                        ExportFormat.JPEG, ExportFormat.HDR_JPEG -> saveJpeg.launch("$name.jpg")
                         ExportFormat.PNG -> savePng.launch("$name.png")
                         ExportFormat.DNG -> saveDng.launch("$name.dng")
                     }

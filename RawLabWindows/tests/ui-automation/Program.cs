@@ -55,13 +55,33 @@ internal static partial class Program
             Trace("main-window");
             WaitMode("off",false);
             Check(true,"A fresh native window exposes single mode before a photo is opened");
+            if(Environment.GetEnvironmentVariable("RAWLAB_BATCH_FLOW_UI")=="1") {
+                BatchFlow();CloseMainWindow();return 0;
+            }
+            if(Environment.GetEnvironmentVariable("RAWLAB_LOOK_BROWSER_UI")=="1") {
+                LookBrowserFlow();CloseMainWindow();return 0;
+            }
+            if (Environment.GetEnvironmentVariable("RAWLAB_QUICK_PRESET_UI") == "1") {
+                QuickPresetFlow(); CloseMainWindow(); return 0;
+            }
+            if (Environment.GetEnvironmentVariable("RAWLAB_X3F_UI") == "1") { X3fFlow(); return 0; }
             if (phase.Equals("restart", StringComparison.OrdinalIgnoreCase))
             {
                 OpenPhoto(raw);
                 WaitMode("off");
                 var value = GetRangeValue("ParameterValueSlider");
                 Check(Math.Abs(value - 1.25) < .02, "Restarted profile restores RAW exposure history");
-                if (Environment.GetEnvironmentVariable("RAWLAB_PRESET_UI") == "1") PresetRestartFlow();
+                if (Environment.GetEnvironmentVariable("RAWLAB_PRESET_UI") == "1" &&
+                    Environment.GetEnvironmentVariable("RAWLAB_PRESET_SUMMARY_UI") != "1") PresetRestartFlow();
+                CloseMainWindow();
+                return 0;
+            }
+
+            if (Environment.GetEnvironmentVariable("RAWLAB_PRESET_SUMMARY_UI") == "1")
+            {
+                OpenPhoto(raw);
+                SetPresetExposure(1.25);
+                PresetSummaryFlow();
                 CloseMainWindow();
                 return 0;
             }
@@ -145,11 +165,12 @@ internal static partial class Program
                 Trace("open-filename-found " + edit.Current.ControlType.ProgrammaticName);
                 SetValue(edit, path);
                 Trace("open-filename-set " + System.IO.Path.GetFileName(path));
-                var accept = FindByNames(dialog, "打开", "Open", "选择", "Select") ??
-                    dialog.FindFirst(TreeScope.Descendants, new AndCondition(
-                        new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button),
-                        new PropertyCondition(AutomationElement.AutomationIdProperty, "1")));
+                var accept = Wait(()=>FindByNames(dialog, "打开", "Open", "选择", "Select") ??
+                    dialog.FindFirst(TreeScope.Descendants,
+                        new PropertyCondition(AutomationElement.AutomationIdProperty, "1")),TimeSpan.FromSeconds(10));
                 if (accept == null) throw new InvalidOperationException("OpenFileDialog accept button is missing.");
+                Trace("open-accept-control " + accept.Current.ControlType.ProgrammaticName + " id=" + accept.Current.AutomationId +
+                    " enabled=" + accept.Current.IsEnabled + " patterns=" + string.Join(",", accept.GetSupportedPatterns().Select(pattern => pattern.ProgrammaticName)));
                 Invoke(accept);
                 Trace("open-accepted " + System.IO.Path.GetFileName(path));
                 if (!invocation.Wait(TimeSpan.FromSeconds(10)))

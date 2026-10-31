@@ -50,9 +50,20 @@ internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentShe
     }
     val prepared = transfer.prepared
     val busy = transfer.preparing
+    val openedSource = remember { editor.photo?.identity }
     val ready = !busy && prepared?.targets?.any { it.id !in skipped } == true &&
         prepared.targets.all { it.error == null || it.id in skipped }
     DisposableEffect(model) { onDispose { model.closeAdjustmentOperation() } }
+    LaunchedEffect(editor.photo?.identity) {
+        if (kind == AdjustmentSheet.PASTE && editor.photo?.identity != openedSource) onClose()
+    }
+    LaunchedEffect(payload, targets) {
+        if (kind == AdjustmentSheet.PASTE && payload != null && targets.isNotEmpty()) {
+            skipped = emptySet()
+            model.prepareAdjustmentPaste(payload, targets, if (synchronization != null) AdjustmentHistoryTransaction.Action.SYNCHRONIZE
+                else if (preset == null) AdjustmentHistoryTransaction.Action.PASTE else AdjustmentHistoryTransaction.Action.PRESET)
+        }
+    }
     ModalBottomSheet(onDismissRequest = onClose,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         EditorSheetSystemBars()
@@ -70,21 +81,21 @@ internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentShe
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 when (kind) {
-                    AdjustmentSheet.COPY -> CopyAdjustmentContent(editor.photo?.name.orEmpty()) { scope ->
+                    AdjustmentSheet.COPY -> CopyAdjustmentContent(editor.photo?.name.orEmpty(), editor.edits.isHDREditing, model::previewAdjustmentPayload, model::adjustmentSummaryLookName) { scope ->
                         if (model.copyAdjustments(scope) != null) onClose()
                     }
                     AdjustmentSheet.PASTE -> if (payload == null) Text(stringResource(R.string.transfer_no_clipboard)) else {
                         Text(stringResource(R.string.transfer_source, sourceName, payload.fields.size.toString()),
                             style = MaterialTheme.typography.titleMedium)
                         TransferDisclosure(stringResource(R.string.transfer_range), "adjustment-paste-range") {
-                            Text(payload.fields.sortedBy { it.id }.joinToString(" · ") { it.title })
+                            AdjustmentSummaryContent(payload, model::adjustmentSummaryLookName)
                         }
                         Text(stringResource(R.string.transfer_targets, targets.size.toString()))
                         if (synchronization == null) TextButton(onClick = { files.launch(arrayOf("*/*")) }, enabled = !busy,
                             modifier = Modifier.testTag("adjustment-paste-files")) { Text(stringResource(R.string.transfer_choose_files)) }
-                        Button(onClick = { skipped = emptySet(); model.prepareAdjustmentPaste(payload, targets, if (synchronization != null) AdjustmentHistoryTransaction.Action.SYNCHRONIZE else if (preset == null) AdjustmentHistoryTransaction.Action.PASTE else AdjustmentHistoryTransaction.Action.PRESET) },
+                        if (transfer.results.isEmpty() && (transfer.error != null || prepared?.targets?.any { it.error != null } == true)) Button(onClick = { skipped = emptySet(); model.prepareAdjustmentPaste(payload, targets, if (synchronization != null) AdjustmentHistoryTransaction.Action.SYNCHRONIZE else if (preset == null) AdjustmentHistoryTransaction.Action.PASTE else AdjustmentHistoryTransaction.Action.PRESET) },
                             enabled = !busy && targets.isNotEmpty(), modifier = Modifier.testTag("adjustment-paste-preflight")) {
-                            Text(stringResource(R.string.transfer_preflight))
+                            Text(stringResource(R.string.transfer_recheck))
                         }
                         if (busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(stringResource(R.string.transfer_preparing)) }
                         for (uri in targets) {
@@ -158,16 +169,25 @@ internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentShe
 }
 
 @Composable
-private fun CopyAdjustmentContent(source: String, onCopy: (AdjustmentScope) -> Unit) {
+private fun CopyAdjustmentContent(source: String, hdr: Boolean, preview: (AdjustmentScope) -> Result<AdjustmentPayload>,
+    lookName: (String, String) -> String?, onCopy: (AdjustmentScope) -> Unit) {
     Text(source, style = MaterialTheme.typography.titleMedium)
-    AdjustmentScopeEditor(stringResource(R.string.transfer_copy), "adjustment-copy-confirm", onConfirm = onCopy)
+    AdjustmentScopeEditor(stringResource(R.string.transfer_copy), "adjustment-copy-confirm",
+        allowed = if (hdr) AdjustmentField.HDR_SUPPORTED else AdjustmentField.entries.filterNot { it.isHDRRelative }.toSet(),
+        previewCapture = preview, lookName = lookName, onConfirm = onCopy)
 }
 
 @Composable
 internal fun AdjustmentScopeEditor(confirmTitle: String, confirmTag: String, enabled: Boolean = true,
+    allowed: Set<AdjustmentField> = AdjustmentField.entries.filterNot { it.isHDRRelative }.toSet(),
+    previewCapture: (AdjustmentScope) -> Result<AdjustmentPayload>, lookName: (String, String) -> String?,
     onConfirm: (AdjustmentScope) -> Unit) {
-    var scope by remember { mutableIntStateOf(2) }
-    var fields by remember { mutableStateOf<Set<AdjustmentField>>(AdjustmentField.COMMON) }
+    var scope by remember(allowed) { mutableIntStateOf(2) }
+    var fields by remember(allowed) { mutableStateOf(
+        (if (allowed.any { it.isHDRRelative }) AdjustmentField.HDR_COMMON else AdjustmentField.COMMON).intersect(allowed)) }
+    val selectedScope = when (scope) { 0 -> AdjustmentScope.All; 1 -> AdjustmentScope.Modified; else -> AdjustmentScope.Custom(fields) }
+    val preview = previewCapture(selectedScope)
+    val summary = preview.getOrNull()?.let { adjustmentSummary(it) }
     Text(stringResource(R.string.transfer_scope))
     listOf(R.string.transfer_all, R.string.transfer_modified, R.string.transfer_custom).forEachIndexed { index, title ->
         Row(Modifier.fillMaxWidth().clickable { scope = index }.testTag("adjustment-copy-scope-$index"),
@@ -175,30 +195,31 @@ internal fun AdjustmentScopeEditor(confirmTitle: String, confirmTag: String, ena
             RadioButton(scope == index, { scope = index }); Text(stringResource(title))
         }
     }
-    Text(stringResource(R.string.transfer_geometry_hint), style = MaterialTheme.typography.bodySmall)
+    AdjustmentScopeSummaryContent(preview, scope == 1, lookName, "$confirmTag-summary", scope != 2)
     if (scope == 2) {
-        Text(stringResource(R.string.transfer_selected, fields.size.toString()))
         TextButton(onClick = { fields = emptySet() }, modifier = Modifier.testTag("adjustment-copy-clear")) { Text(stringResource(R.string.transfer_clear)) }
         val groups = listOf("looks" to R.string.transfer_group_looks, "light" to R.string.transfer_group_light,
             "color" to R.string.transfer_group_color, "effects" to R.string.transfer_group_effects,
             "detail" to R.string.transfer_group_detail, "geometry" to R.string.transfer_group_geometry)
         fun select(members: Set<AdjustmentField>, checked: Boolean) { fields = if (checked) fields + members else fields - members }
-        for ((group, title) in groups) TransferDisclosure(stringResource(title), "adjustment-group-$group") {
-            val members = AdjustmentField.entries.filter { it.group == group }.toSet()
+        for ((group, title) in groups) if (allowed.any { it.group == group }) TransferDisclosure(stringResource(title) + " · " + fields.count { it.group == group }, "adjustment-group-$group") {
+            val members = allowed.filter { it.group == group }.toSet()
             TransferCheck(stringResource(R.string.transfer_select_group), fields.containsAll(members), true, "adjustment-select-group-$group") { select(members, it) }
             for (field in members.filter { it.hslLocation == null })
-                TransferCheck(field.title, field in fields, true, "adjustment-field-${field.id}") { select(setOf(field), it) }
-            if (group == "color") for ((axis, axisTitle) in listOf(R.string.transfer_axis_0, R.string.transfer_axis_1, R.string.transfer_axis_2).withIndex()) {
+                TransferCheck(field.title, field in fields, true, "adjustment-field-${field.id}",
+                    subtitle = if (field in fields) summary?.valueText(field, lookName) else null) { select(setOf(field), it) }
+            if (group == "color" && members.any { it.hslLocation != null }) for ((axis, axisTitle) in listOf(R.string.transfer_axis_0, R.string.transfer_axis_1, R.string.transfer_axis_2).withIndex()) {
                 TransferDisclosure("HSL · ${stringResource(axisTitle)}", "adjustment-axis-$axis") {
                     val channels = members.filter { it.hslLocation?.first == axis }.toSet()
                     TransferCheck(stringResource(R.string.transfer_select_group), fields.containsAll(channels), true, "adjustment-select-axis-$axis") { select(channels, it) }
-                    for (field in channels) TransferCheck(field.title, field in fields, true, "adjustment-field-${field.id}") { select(setOf(field), it) }
+                    for (field in channels) TransferCheck(field.title, field in fields, true, "adjustment-field-${field.id}",
+                    subtitle = if (field in fields) summary?.valueText(field, lookName) else null) { select(setOf(field), it) }
                 }
             }
         }
     }
-    Button(onClick = { onConfirm(when (scope) { 0 -> AdjustmentScope.All; 1 -> AdjustmentScope.Modified; else -> AdjustmentScope.Custom(fields) }) },
-        enabled = enabled && (scope != 2 || fields.isNotEmpty()), modifier = Modifier.heightIn(min = 48.dp).testTag(confirmTag)) { Text(confirmTitle) }
+    Button(onClick = { onConfirm(selectedScope) },
+        enabled = enabled && preview.isSuccess, modifier = Modifier.heightIn(min = 48.dp).testTag(confirmTag)) { Text(confirmTitle) }
 }
 
 @Composable
@@ -229,7 +250,7 @@ private fun HistoryRecovery(model: EditorViewModel) {
 }
 
 @Composable
-private fun TransferDisclosure(title: String, tag: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun TransferDisclosure(title: String, tag: String, content: @Composable ColumnScope.() -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Column {
         TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth().testTag(tag)) {
@@ -240,9 +261,13 @@ private fun TransferDisclosure(title: String, tag: String, content: @Composable 
 }
 
 @Composable
-private fun TransferCheck(title: String, checked: Boolean, enabled: Boolean, tag: String, onChange: (Boolean) -> Unit) {
+private fun TransferCheck(title: String, checked: Boolean, enabled: Boolean, tag: String, subtitle: String? = null, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = checked, enabled = enabled, role = Role.Checkbox, onValueChange = onChange).testTag(tag),
         verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked, null, enabled = enabled); Text(title, Modifier.weight(1f))
+        Checkbox(checked, null, enabled = enabled)
+        Column(Modifier.weight(1f).padding(vertical = 4.dp)) {
+            Text(title)
+            subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("$tag-summary-value")) }
+        }
     }
 }

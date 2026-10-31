@@ -33,4 +33,11 @@ internal sealed partial class RenderEngine
         request.InputPixelFormat=displayInput.PixelFormat;request.InputColorSpace=0;request.InputIsLinear=0;
         request.WbMode=0;request.Temperature=6500;request.Tint=0;
     }
+    private static void SetInput(ref Native.Request request, Native.Buffer input)
+    {
+        request.InputType=2; request.InputPixels=input.Data; request.InputWidth=input.Width;
+        request.InputHeight=input.Height; request.InputPixelFormat=input.PixelFormat;
+        request.InputColorSpace=0; request.InputIsLinear=0; request.WbMode=0;
+        request.Temperature=6500; request.Tint=0;
+    }
 }

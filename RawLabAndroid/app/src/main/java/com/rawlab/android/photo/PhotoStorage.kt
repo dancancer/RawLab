@@ -25,6 +25,7 @@ import com.rawlab.android.looks.LookValidator
 import com.rawlab.android.looks.ManagedLook
 import com.rawlab.android.looks.LUTCompatibility
 import com.rawlab.android.engine.NativeProcessor
+import com.rawlab.android.engine.NativeHDRBridge
 import com.rawlab.android.editor.PendingLookCompatibility
 import com.rawlab.android.looks.MasterRecipe
 import com.rawlab.android.looks.NativeDcpCompiler
@@ -41,7 +42,11 @@ data class AlbumPhoto(val uri: Uri, val name: String, val album: String,
 data class ImportedPhoto(val uri: Uri, val name: String, val file: File,
     val identity: PhotoIdentity = PhotoIdentity(uri.toString()),
     val inputKind: PhotoInputKind = PhotoInputKind.RAW,
-    val validateOriginal: (() -> Unit)? = null)
+    val validateOriginal: (() -> Unit)? = null,
+    val hdrSource: HDRSourceInfo? = null) {
+    val isHDRSource get() = hdrSource != null
+    val isX3f get() = inputKind == PhotoInputKind.RAW && name.substringAfterLast('.', "").equals("x3f", ignoreCase = true)
+}
 
 internal fun albumAspectRatio(width: Int, height: Int, orientation: Int): Float? {
     if (width <= 0 || height <= 0) return null
@@ -123,10 +128,12 @@ class PhotoStorage(
             ?: throw IOException("Selected item is not a supported photo")
         val validate = OriginalPhotoSource.capture(resolver, uri)
         val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot open input")
-        val file = WorkingCopy.import(directory, stream)
+        val file = WorkingCopy.import(directory, stream, name)
         try {
             validate()
-            return ImportedPhoto(uri, name, file, PhotoIdentity(uri.toString()), inputKind, validate)
+            val hdrSource = if (inputKind == PhotoInputKind.RASTER &&
+                HDRSourceInfo.mayContainGainMap(name, resolver.getType(uri))) NativeHDRBridge.probe(file) else null
+            return ImportedPhoto(uri, name, file, PhotoIdentity(uri.toString()), inputKind, validate, hdrSource)
         } catch (error: Throwable) { file.delete(); throw error }
     }
 

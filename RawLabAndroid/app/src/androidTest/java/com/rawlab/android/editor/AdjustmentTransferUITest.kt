@@ -55,7 +55,12 @@ class AdjustmentTransferUITest {
             compose.runOnUiThread { model.edit(model.state.value.edits.copy(exposure = 1.2f)) }; ready()
             compose.runOnUiThread { model.importPhoto(Uri.fromFile(second)) }; ready()
             openMenu("adjustment-menu-paste")
-            compose.onNodeWithTag("adjustment-paste-preflight").performScrollTo().performClick()
+            compose.onNodeWithTag("adjustment-paste-range").performScrollTo().performClick()
+            compose.onNodeWithTag("adjustment-summary-count").assertTextContains("1", substring = true)
+            compose.onNodeWithTag("adjustment-summary-group-light").performScrollTo().performClick()
+            compose.onNodeWithTag("adjustment-summary-value-light.exposure").assertTextEquals("+0.60 EV")
+            screenshot("paste-summary-frozen-value")
+            compose.onNodeWithTag("adjustment-paste-preflight").assertDoesNotExist()
             compose.waitUntil(30_000) { model.adjustmentTransfer.value.prepared != null }
             compose.onNodeWithTag("adjustment-paste-apply").performScrollTo().assertIsEnabled().performClick()
             ready()

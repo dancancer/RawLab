@@ -11,7 +11,9 @@ struct EditorView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var clipping = false
     @State private var histogramExpanded = true
-    @State private var showFiles = true
+    @State private var workspaceLayout = MacWorkspaceLayout()
+    @State private var windowWidth: CGFloat = 1320
+    @State private var canvasSize = CGSize.zero
     @State private var showsProcessingSettings = false
     @State private var selectedParameter: AdjustmentParameter? = .exposure
     @State private var viewport = PhotoViewport()
@@ -22,6 +24,7 @@ struct EditorView: View {
     @State private var infoMode = PhotoInfoMode.hidden
     @State private var photoInformation: PhotoInformation?
     @State private var geometryViewState: GeometryViewState?
+    @State private var queuedQuickPreset: (preset: AdjustmentPreset, source: UUID)?
     @StateObject private var hdrDisplay=HDRDisplayState()
     private struct GeometryViewState {
         let file: URL?
@@ -29,9 +32,17 @@ struct EditorView: View {
         let fullResolution: Bool
         let panel: AdjustmentPanelLayout
     }
+    private var showFiles: Bool { workspaceLayout.showsFiles(width: windowWidth, hasFolders: !library.roots.isEmpty) }
+    private var automaticPanelHeight: CGFloat {
+        !model.quickPresetsVisible && model.geometryDraft == nil &&
+        model.adjustmentNavigation.tool.parameter != nil && model.adjustmentNavigation.tool != .whiteBalance &&
+        !(model.adjustmentNavigation.tool == .toneCurve && model.settings.curveSettings.mode == .custom) ? 220 : 320
+    }
+    private func panelHeight(available: CGFloat) -> CGFloat {
+        adjustmentPanel.height(available: available, automatic: automaticPanelHeight)
+    }
 
-    var body: some View {
-        let _ = localizationLocale
+    private var editorContent: some View {
         GeometryReader { geometry in
             HSplitView {
                 if showFiles {
@@ -43,11 +54,14 @@ struct EditorView: View {
                 VStack(spacing: 0) {
                   workspace.frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color(nsColor: NSColor(white: 0.12, alpha: 1)))
+                    .background { GeometryReader { area in
+                        Color.clear.onChange(of: area.size, initial: true) { _, size in canvasSize = size }
+                    } }
                     .overlay(alignment: .topTrailing) {
                         if model.geometryDraft == nil {
                             FloatingHistogram(frame: viewing.holdingBefore ? model.neutral : model.result,
                                 before: viewing.holdingBefore, clipping: $clipping, expanded: $histogramExpanded,
-                                hdrDisplay:hdrDisplay).padding(12)
+                                hdrDisplay:hdrDisplay, compact: MacWorkspaceLayout.compactHistogram(canvas: canvasSize)).padding(12)
                         }
                     }
                     .overlay(alignment: .topLeading) {
@@ -105,21 +119,29 @@ struct EditorView: View {
                       .frame(height: adjustmentPanel.collapsed ? 0 : 13).clipped()
                       .allowsHitTesting(!adjustmentPanel.collapsed).accessibilityHidden(adjustmentPanel.collapsed)
                   bottomControls
-                      .frame(height: adjustmentPanel.collapsed ? 0 : (model.adjustmentNavigation.expandedGroup == nil ? 86 : adjustmentPanel.height(available: geometry.size.height)) - 13)
+                      .frame(height: adjustmentPanel.collapsed ? 0 : (model.adjustmentNavigation.expandedGroup == nil ? 86 : panelHeight(available: geometry.size.height)) - 13)
                       .clipped().allowsHitTesting(!adjustmentPanel.collapsed).accessibilityHidden(adjustmentPanel.collapsed)
                   }
                   Divider()
                   statusBar
                 }
             }
+            .onChange(of: geometry.size.width, initial: true) { _, width in windowWidth = width }
         }
         .frame(minWidth: 950, minHeight: 620)
         .preferredColorScheme(.dark)
+    }
+
+    private var observedEditor: some View {
+        editorContent
         .onChange(of: model.sourceRevision) { _, _ in
+            queuedQuickPreset = nil
             viewing.sourceChanged()
             fit()
         }
         .onChange(of: model.hslTargetEnabled) { _, _ in viewing.hold(false, allowed: false) }
+        .onChange(of: model.quickPresetsVisible) { _, visible in if visible { adjustmentPanel.collapsed = false } }
+        .onChange(of: adjustmentPanel.collapsed) { _, collapsed in if collapsed { model.closeQuickPresets() } }
         .onChange(of: model.geometryDraft != nil, initial: true) { _, editing in geometryEditingChanged(editing) }
         .onChange(of: model.busy) { _, _ in model.resumeResetToolIfReady() }
         .onChange(of: model.pendingGeometryPresentation) { _, _ in model.resumeResetToolIfReady() }
@@ -131,19 +153,27 @@ struct EditorView: View {
             if !Task.isCancelled && model.file == file { photoInformation = info }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            if model.quickPresetState.isPreparing { model.cancelQuickPreset() }
             model.cancelHSLTarget()
             if [.colorGrading, .toneCurve].contains(model.adjustmentNavigation.tool) { model.cancelAdjustmentInteraction() }
             model.saveEdits()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
+            if model.quickPresetState.isPreparing { model.cancelQuickPreset() }
             model.cancelHSLTarget()
             if [.colorGrading, .toneCurve].contains(model.adjustmentNavigation.tool) { model.cancelAdjustmentInteraction() }
             model.saveEdits()
         }
         .toolbar { editorToolbar }
-        .sheet(item: Binding(get: { model.adjustmentSheetInCollection ? nil : model.adjustmentSheet }, set: { model.adjustmentSheet = $0 })) { kind in
-            if kind == .presets { AdjustmentPresetView(model: model) }
-            else { AdjustmentTransferView(model: model, kind: kind) }
+    }
+
+    private var presentedEditor: some View {
+        observedEditor
+        .sheet(item: adjustmentSheetBinding, onDismiss: applyQueuedQuickPreset) { kind in
+            if kind == .presets { AdjustmentPresetView(model: model, startSaving: model.adjustmentSheetStartsPresetSave) { preset in
+                queuedQuickPreset = (preset, model.sourceRevision); model.adjustmentSheet = nil
+            } }
+            else { AdjustmentTransferView(model: model, kind: kind, preset: model.adjustmentSheetPreset) }
         }
         .onExitCommand { exitHSLTarget(); model.cancelAdjustmentInteraction() }
         .background(MacViewingKeyboard(canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) },
@@ -159,12 +189,12 @@ struct EditorView: View {
         .alert(L10n.text("无法重置调整"), isPresented: Binding(get: { model.resetBlockedMessage != nil }, set: { if !$0 { model.resetBlockedMessage = nil } })) {
             Button(L10n.text("关闭"), role: .cancel) { model.resetBlockedMessage = nil }
         } message: { Text(model.resetBlockedMessage ?? "") }
-        .onAppear {
-            let args = CommandLine.arguments
-            if let index = args.firstIndex(of: "--sample"), args.indices.contains(index + 1) {
-                model.open(URL(fileURLWithPath: args[index + 1]))
-            }
-        }
+    }
+
+    var body: some View {
+        let _ = localizationLocale
+        presentedEditor
+        .onAppear(perform: openCommandLineSample)
         .alert(L10n.text("操作失败"), isPresented: Binding(
             get: { model.result != nil && model.error != nil && model.lookImportReport == nil },
             set: { if !$0 { model.error = nil } }
@@ -185,6 +215,25 @@ struct EditorView: View {
                     Button(L10n.text("关闭")) { model.lookImportReport = nil }.keyboardShortcut(.defaultAction)
                 }
             }.padding(24).frame(width: 520, height: 380)
+        }
+    }
+
+    private var adjustmentSheetBinding: Binding<AdjustmentSheetKind?> {
+        Binding(get: { model.adjustmentSheetInCollection ? nil : model.adjustmentSheet },
+                set: { model.adjustmentSheet = $0 })
+    }
+
+    private func applyQueuedQuickPreset() {
+        guard let queued = queuedQuickPreset else { return }
+        queuedQuickPreset = nil
+        guard queued.source == model.sourceRevision else { return }
+        model.showQuickPresets(); model.applyPresetToCurrentPhoto(queued.preset)
+    }
+
+    private func openCommandLineSample() {
+        let args = CommandLine.arguments
+        if let index = args.firstIndex(of: "--sample"), args.indices.contains(index + 1) {
+            model.open(URL(fileURLWithPath: args[index + 1]))
         }
     }
 
@@ -220,10 +269,21 @@ struct EditorView: View {
                 Text(L10n.text("处理 v2")).tag(ProcessingIdentity.current)
             }.id(localizationLocale.identifier).accessibilityIdentifier("processing.version")
                 .disabled(model.geometryDraft != nil)
+            if RenderEngine.isX3fInput(model.file) {
+                Picker(L10n.text("X3F 显影"), selection: Binding(get: { model.settings.x3fMode }, set: model.selectX3fMode)) {
+                    ForEach(X3fMode.allCases) { mode in
+                        Text(mode.title).tag(mode).disabled(mode == .normal && !RenderEngine.x3fAvailable)
+                    }
+                }.accessibilityIdentifier("x3f.mode").disabled(model.geometryDraft != nil)
+                Text(L10n.text(model.settings.x3fMode == .normal ?
+                    "以文件保存的显影为基准，白平衡作相对调整。" : "保留旧版的特殊色彩。"))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             Picker(L10n.text("曝光基准"), selection: $model.settings.exposureMode) {
                 ForEach(ExposureMode.allCases) { Text($0.title).tag($0) }
             }.id(localizationLocale.identifier)
-                .disabled(RenderEngine.isRasterInput(model.file) || model.geometryDraft != nil)
+                .disabled(RenderEngine.isRasterInput(model.file) || model.geometryDraft != nil ||
+                    (RenderEngine.isX3fInput(model.file) && model.settings.x3fMode == .normal))
             Text(RenderEngine.isRasterInput(model.file) ? "-- EV" : model.result.map { String(format: "%+.2f EV", $0.baselineEV) } ?? "-- EV")
                 .font(.caption).monospacedDigit().foregroundStyle(.secondary).help(L10n.text("基础曝光偏移"))
             }
@@ -235,16 +295,23 @@ struct EditorView: View {
             Color(nsColor: .windowBackgroundColor)
             Capsule().fill(Color.secondary.opacity(0.5)).frame(width: 32, height: 3)
             HStack {
+                if !adjustmentPanel.isAutomatic {
+                    Button { adjustmentPanel.restoreAutomaticHeight() } label: {
+                        Image(systemName: "arrow.uturn.backward").font(.system(size: 9))
+                    }.buttonStyle(.plain).frame(width: 28, height: 13)
+                        .help(L10n.text("恢复自动高度")).accessibilityLabel(L10n.text("恢复自动高度"))
+                        .accessibilityIdentifier("workspace.panel.auto")
+                }
                 Spacer()
                 Button { collapsePanel() } label: {
                     Image(systemName: "chevron.down").font(.system(size: 9))
                 }.buttonStyle(.plain).frame(width: 28, height: 13)
                     .help(L10n.text("收起调整栏")).accessibilityLabel(L10n.text("收起调整栏"))
-            }.padding(.trailing, 12)
+            }.padding(.horizontal, 12)
         }.frame(height: 13).contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .global)
                 .onChanged { value in
-                    if resizeStart == nil { resizeStart = adjustmentPanel.height(available: available) }
+                    if resizeStart == nil { resizeStart = panelHeight(available: available) }
                     adjustmentPanel.resize(to: (resizeStart ?? 252) - value.translation.height, available: available)
                 }.onEnded { _ in resizeStart = nil })
             .onHover { inside in (inside ? NSCursor.resizeUpDown : NSCursor.arrow).set() }
@@ -252,7 +319,7 @@ struct EditorView: View {
             .accessibilityLabel(L10n.text("调整栏高度"))
             .accessibilityAdjustableAction { direction in
                 let delta: CGFloat = direction == .increment ? 20 : -20
-                adjustmentPanel.resize(to: adjustmentPanel.height(available: available) + delta, available: available)
+                adjustmentPanel.resize(to: panelHeight(available: available) + delta, available: available)
             }
     }
 
@@ -361,7 +428,7 @@ struct EditorView: View {
 
     @ToolbarContentBuilder private var editorToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
-            Button { showFiles.toggle() } label: { Image(systemName: "sidebar.left") }
+            Button { workspaceLayout.toggleFiles(width: windowWidth, hasFolders: !library.roots.isEmpty) } label: { Image(systemName: "sidebar.left") }
                 .help(L10n.text("显示或收起文件树")).accessibilityLabel(L10n.text("文件树"))
                 .accessibilityValue(showFiles ? L10n.text("已展开") : L10n.text("已收起"))
             Button(action: model.openPanel) { Image(systemName: "folder") }
@@ -583,9 +650,30 @@ struct FloatingHistogram: View {
     @Binding var clipping: Bool
     @Binding var expanded: Bool
     var hdrDisplay: HDRDisplayState? = nil
+    var compact = false
+    @State private var showsCompactHistogram = false
     private var source: String { L10n.text(before ? "调整前" : "调整后") }
     private var title: String { L10n.text(frame?.hdr == nil ? "RGB 直方图" : "HDR 亮度直方图") }
     var body: some View {
+        if compact {
+            Button { showsCompactHistogram.toggle() } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "chart.bar.xaxis")
+                    Image(systemName: "chevron.down").font(.system(size: 10))
+                }.padding(12)
+            }.buttonStyle(.plain).foregroundStyle(.white)
+                .background(Color.black.opacity(0.62), in: RoundedRectangle(cornerRadius: 8))
+                .help(L10n.text("展开直方图")).accessibilityLabel(title + " · " + source)
+                .accessibilityIdentifier("histogram.toggle")
+                .popover(isPresented: $showsCompactHistogram) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        histogramContents
+                        Toggle(L10n.text("显示裁切提示"), isOn: $clipping).disabled(frame?.clipping == nil)
+                    }.padding(16).frame(width: 270)
+                }
+        } else { expandedHistogram }
+    }
+    private var expandedHistogram: some View {
         VStack(spacing: 10) {
         let _ = localizationLocale
             HStack(spacing: 12) {
@@ -605,40 +693,41 @@ struct FloatingHistogram: View {
                     .font(.system(size: 10)).buttonStyle(.plain)
                     .accessibilityLabel(expanded ? L10n.text("收起直方图") : L10n.text("展开直方图"))
             }
-            if expanded {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.system(size: 12, weight: .semibold))
-                    Text(source).font(.system(size: 11))
-                }.frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel(title + " · " + source)
-                    .accessibilityIdentifier("histogram.source")
-                Group {
-                    if let hdr=frame?.hdr {
-                        HDRLuminanceHistogram(statistics:hdr.statistics,headroom:hdrDisplay?.headroom ?? 1)
-                    } else { HistogramView(bins:frame?.histogram ?? []) }
-                }.frame(height:68)
-                    .accessibilityLabel(title + " · " + source)
-                    .accessibilityIdentifier("histogram.plot")
-                if frame?.hdr == nil && frame?.histogram.isEmpty != false {
-                    Text(L10n.text("统计不可用")).font(.system(size: 11))
-                        .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("histogram.unavailable")
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    if let hdr=frame?.hdr {
-                        Text(L10n.format("参考白以上 %@",percent(Double(hdr.statistics.aboveWhite)/Double(hdr.statistics.pixels))))
-                        Text(L10n.format("内容容量 %@ EV",String(format:"%.2f",log2(Double(hdr.statistics.headroom)))))
-                    } else {
-                    Text(L10n.format("高光 %@", String(describing: percent(frame?.highlights))))
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(L10n.format("黑位 %@", String(describing: percent(frame?.shadows))))
-                        .fixedSize(horizontal: false, vertical: true)
-                    }
-                }.font(.system(size: 11)).monospacedDigit().foregroundStyle(Color.white.opacity(0.9))
-            }
+            if expanded { histogramContents }
         }.padding(12).frame(width: expanded ? 242 : 66)
             .background(Color.black.opacity(0.62), in: RoundedRectangle(cornerRadius: 8))
             .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(Color.white.opacity(0.1), lineWidth: 1) }
+    }
+    @ViewBuilder private var histogramContents: some View {
+    VStack(alignment: .leading, spacing: 4) {
+        Text(title).font(.system(size: 12, weight: .semibold))
+        Text(source).font(.system(size: 11))
+    }.frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(title + " · " + source)
+        .accessibilityIdentifier("histogram.source")
+    Group {
+        if let hdr=frame?.hdr {
+            HDRLuminanceHistogram(statistics:hdr.statistics,headroom:hdrDisplay?.headroom ?? 1)
+        } else { HistogramView(bins:frame?.histogram ?? []) }
+    }.frame(height:68)
+        .accessibilityLabel(title + " · " + source)
+        .accessibilityIdentifier("histogram.plot")
+    if frame?.hdr == nil && frame?.histogram.isEmpty != false {
+        Text(L10n.text("统计不可用")).font(.system(size: 11))
+            .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("histogram.unavailable")
+    }
+    VStack(alignment: .leading, spacing: 4) {
+        if let hdr=frame?.hdr {
+            Text(L10n.format("参考白以上 %@",percent(Double(hdr.statistics.aboveWhite)/Double(hdr.statistics.pixels))))
+            Text(L10n.format("内容容量 %@ EV",String(format:"%.2f",log2(Double(hdr.statistics.headroom)))))
+        } else {
+        Text(L10n.format("高光 %@", String(describing: percent(frame?.highlights))))
+            .fixedSize(horizontal: false, vertical: true)
+        Text(L10n.format("黑位 %@", String(describing: percent(frame?.shadows))))
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }.font(.system(size: 11)).monospacedDigit().foregroundStyle(Color.white.opacity(0.9))
     }
     private func percent(_ value: Double?) -> String { value.map { String(format: "%.2f%%", $0 * 100) } ?? "--" }
 }

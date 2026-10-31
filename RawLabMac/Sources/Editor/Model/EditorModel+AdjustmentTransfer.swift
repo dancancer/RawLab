@@ -6,10 +6,12 @@ enum AdjustmentSheetKind: String, Identifiable {
 }
 
 extension EditorModel {
-    func requestAdjustmentSheet(_ kind: AdjustmentSheetKind) {
+    func requestAdjustmentSheet(_ kind: AdjustmentSheetKind, preset: AdjustmentPreset? = nil, savingPreset: Bool = false) {
         if kind == .presets {
             guard !exporting, !lookLibraryBusy, adjustmentSheet == nil, !geometryDraftDeparturePending else { return }
-            adjustmentSheetPayload = nil; adjustmentSheetTargets = nil
+            if quickPresetState.isPreparing { cancelQuickPreset() }
+            adjustmentSheetPayload = nil; adjustmentSheetTargets = nil; adjustmentSheetPreset = nil
+            adjustmentSheetStartsPresetSave = savingPreset
             adjustmentSheetExcludedSource = nil; adjustmentSheetExcludedIdentity = nil; pendingAdjustmentHistory = nil
             adjustmentSheetInCollection = false; adjustmentSheet = .presets
             return
@@ -17,10 +19,12 @@ extension EditorModel {
         guard !exporting, !lookLibraryBusy, adjustmentSheet == nil, !geometryDraftDeparturePending,
               kind == .history || !aiState.isRunning,
               kind == .history || file != nil else { return }
+        if quickPresetState.isPreparing { cancelQuickPreset() }
         guard ParameterValueField.resolvePendingInputs() else { return }
         if scheduler.interacting { setInteracting(false) }
         guard saveEdits() else { return }
-        adjustmentSheetPayload = nil; adjustmentSheetTargets = nil
+        adjustmentSheetPayload = nil; adjustmentSheetTargets = nil; adjustmentSheetPreset = preset
+        adjustmentSheetStartsPresetSave = false
         adjustmentSheetExcludedSource = nil; adjustmentSheetExcludedIdentity = nil; pendingAdjustmentHistory = nil
         let show: () -> Void = { [weak self] in self?.adjustmentSheetInCollection = false; self?.adjustmentSheet = kind }
         if kind == .copy, geometryDraft != nil { requestLeavingGeometryDraft(show) }
@@ -62,6 +66,7 @@ extension EditorModel {
     func adjustmentTransferTargets(_ urls: [URL], payload: AdjustmentTransferPayload, excludingSource: String? = nil,
                                    excludingIdentity: String? = nil, collection: Bool = false) -> [AdjustmentTransferTarget] {
         let activePath = file?.resolvingSymlinksInPath().standardizedFileURL.path
+        let source = sourceRevision
         let revision = editRevision
         return urls.filter { $0.resolvingSymlinksInPath().standardizedFileURL.path != excludingSource &&
             (excludingIdentity == nil || (try? BatchExportItem.resourceKey($0)) != excludingIdentity) }.map { url in
@@ -82,7 +87,7 @@ extension EditorModel {
             return AdjustmentTransferTarget(url: url, defaultState: PhotoEditState(settings: defaults, filmID: ""), context: context, expectedIdentity: collectionPhoto?.original,
                 isCurrent: { [weak self] in
                     let check = {
-                        guard let self else { return false }
+                        guard let self, self.sourceRevision == source else { return false }
                         guard path != excludingSource else { return false }
                         if let excludingIdentity, (try? BatchExportItem.resourceKey(url)) == excludingIdentity { return false }
                         if collection {

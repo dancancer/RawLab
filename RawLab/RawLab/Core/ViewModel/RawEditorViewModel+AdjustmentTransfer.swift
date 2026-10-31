@@ -39,12 +39,12 @@ extension RawEditorViewModel {
         let generation = UUID()
         adjustmentPreparationID = generation
         adjustmentPreparing = true
-        let activeSource = editorEditSource
+        let activeSource = editorEditSource, source = sourceRevision
         let contexts = photos.map { adjustmentContext(identifier: $0.id, isRaw: $0.isRaw) }
         let validateCurrent: (String) -> Bool = { [weak self] key in
             let check = {
                 guard let self else { return false }
-                return self.adjustmentPreparationID == generation && self.adjustmentTargetIsCurrent(key) &&
+                return self.adjustmentPreparationID == generation && self.sourceRevision == source && self.adjustmentTargetIsCurrent(key) &&
                     (self.sourceIdentity?.key != key || self.editorEditSource == activeSource)
             }
             return Thread.isMainThread ? check() : DispatchQueue.main.sync(execute: check)
@@ -60,9 +60,13 @@ extension RawEditorViewModel {
                     validation = { try photo.validateSource?(); try original() }
                     try validation?()
                     if photo.isRaw {
+                        let saved = try self.editPersistence?.versionedState(for: photo.identity).state?.settings ?? .default
+                        var neutral = RawSettings.default
+                        neutral.processing = saved.processing
+                        neutral.x3fMode = saved.x3fMode
                         let processor = Sony2FujiProcessor()
                         let result = try file.withReadAccess {
-                            try processor.processRaw(url: $0, settings: .default, previewLongEdge: 128, lutURL: nil)
+                            try processor.processRaw(url: $0, settings: neutral, previewLongEdge: 128, lutURL: nil)
                         }
                         if result.rawWhiteBalance?.isCalibrated == true {
                             context.cameraTemperature = result.rawWhiteBalance?.temperature
@@ -70,7 +74,7 @@ extension RawEditorViewModel {
                         }
                         context.validateLensRequest = { lens in
                             let processor = Sony2FujiProcessor()
-                            var settings = RawSettings.default
+                            var settings = neutral
                             settings.lensCorrection = lens
                             let result = try file.withReadAccess {
                                 try processor.processRaw(url: $0, settings: settings, previewLongEdge: 128, lutURL: nil)

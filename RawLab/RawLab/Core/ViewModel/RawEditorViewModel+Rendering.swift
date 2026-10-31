@@ -132,7 +132,7 @@ extension RawEditorViewModel {
                     do {
                         let comparison = comparisonChanged ? try self.renderComparison(
                             url: sourceURL, buffer: nil, geometry: referenceSettings.geometrySettings, processing: referenceSettings.processing,
-                            lens: referenceSettings.lensSettings, longEdge: maxDimension) : nil
+                            x3fMode: referenceSettings.x3fMode, lens: referenceSettings.lensSettings, longEdge: maxDimension) : nil
                         let result = try self.processor.processRaw(
                             url: sourceURL,
                             settings: settings,
@@ -160,6 +160,7 @@ extension RawEditorViewModel {
                                                      lens: referenceSettings.lensSettings, key: referenceKey)
                             }
                             self.lensInfo = result.lensInfo
+                            self.rawWhiteBalance = result.rawWhiteBalance
                             if self.sourceOrientation == nil {
                                 self.sourceOrientation = result.orientation
                             }
@@ -216,7 +217,7 @@ extension RawEditorViewModel {
             do {
                 comparison = comparisonChanged ? try self.renderComparison(
                     url: nil, buffer: inputBuffer, geometry: referenceSettings.geometrySettings, processing: referenceSettings.processing,
-                            lens: referenceSettings.lensSettings, longEdge: maxDimension) : nil
+                            x3fMode: referenceSettings.x3fMode, lens: referenceSettings.lensSettings, longEdge: maxDimension) : nil
                 outputBuffer = try self.processor.processBuffer(
                     buffer: inputBuffer,
                     settings: settings,
@@ -270,10 +271,11 @@ extension RawEditorViewModel {
 
     func renderComparison(url: URL?, buffer: Sony2FujiProcessor.Buffer?,
                           geometry: GeometrySettings, processing: ProcessingIdentity,
-                          lens: LensCorrectionSettings = LensCorrectionSettings(), longEdge: Int? = nil) throws -> (UIImage?, Sony2FujiProcessor.RGBHistogram?) {
+                          x3fMode: X3fMode = .normal, lens: LensCorrectionSettings = LensCorrectionSettings(), longEdge: Int? = nil) throws -> (UIImage?, Sony2FujiProcessor.RGBHistogram?) {
         var neutral = RawSettings.default
         neutral.geometry = geometry
         neutral.processing = processing
+        neutral.x3fMode = x3fMode
         neutral.lensCorrection = lens
         let output: Sony2FujiProcessor.Buffer
         if let url {
@@ -299,7 +301,7 @@ extension RawEditorViewModel {
 
     func comparisonKey(settings: RawSettings, longEdge: Int) -> ComparisonReferenceKey {
         ComparisonReferenceKey(sourceRevision: sourceRevision, file: sourceFile, identity: sourceIdentity,
-                               kind: sourceKind, processing: settings.processing, geometry: settings.geometrySettings,
+                               kind: sourceKind, processing: settings.processing, x3fMode: settings.x3fMode, geometry: settings.geometrySettings,
                                lens: settings.lensSettings, longEdge: longEdge,hdrMode:settings.hdr?.mode)
     }
 

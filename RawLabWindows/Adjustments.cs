@@ -57,7 +57,11 @@ public sealed record ParameterSpec(Parameter Id, string Title, string Group, dou
 public sealed class Adjustments
 {
     private double[] values = [100,0,6500,0,0,0,0,0,0,0];
+    private GeometrySettings geometry = new();
     public ProcessingIdentity Processing { get; set; } = ProcessingIdentity.Current;
+    public X3fMode X3fMode { get; set; } = X3fMode.Normal;
+    public HDRSettings? HDR { get; set; }
+    public bool IsHDREditing => HDR?.Mode == HDRMode.Hdr;
     public int ExposureMode { get; set; } = 1;
     public HslSettings Hsl { get; set; } = new();
     public DenoiseSettings Denoise { get; set; } = new();
@@ -70,7 +74,15 @@ public sealed class Adjustments
     public string? MasterRecipeID { get; private set; }
     public int MasterRecipeSettingsVersion { get; private set; } = 3;
     public LensSettings Lens { get; set; } = new();
-    public GeometrySettings Geometry { get; set; } = new();
+    public GeometrySettings Geometry
+    {
+        get => IsHDREditing ? HDR?.Geometry ?? geometry : geometry;
+        set
+        {
+            if (IsHDREditing && HDR is { } hdr) HDR = hdr with { Geometry = value };
+            else geometry = value;
+        }
+    }
     public MasterRecipe? Recipe => MasterRecipeID == null ? null : MasterRecipe.Find(MasterRecipeID);
     public double RefinementScale => MasterRecipeID != null && MasterRecipeSettingsVersion >= 4 ? this[Parameter.Strength] / 100 : 1;
     public HslSettings RenderHsl => Hsl.Scaled(MasterRecipeID == null || MasterRecipeSettingsVersion < 3 ? 1 : this[Parameter.Strength] / 100);
@@ -136,19 +148,27 @@ public sealed class Adjustments
     }
     public bool CameraWhiteBalance { get; private set; } = true;
     public (double Temperature, double Tint)? AsShot { get; private set; }
-    public double this[Parameter id] => values[(int)id];
+    public double this[Parameter id] => IsHDREditing && (id is Parameter.Exposure or Parameter.Temperature or Parameter.Tint or
+        Parameter.Contrast or Parameter.Highlights or Parameter.Shadows or Parameter.Saturation)
+        ? HDR!.Get(id) : values[(int)id];
     public Adjustments Clone() { var copy = (Adjustments)MemberwiseClone(); copy.values = (double[])values.Clone(); return copy; }
-    public AdjustmentSnapshot Capture() => new((double[])values.Clone(), ExposureMode, CameraWhiteBalance, AsShot?.Temperature, AsShot?.Tint,
-        Denoise, Effects, DisplayChromaDenoise, Hsl, MasterRecipeID, Lens, Geometry) {
-        Processing = ProcessingIdentity.Require(Processing), AIDenoiseEnabled = AIDenoiseEnabled,
+    public AdjustmentSnapshot Capture()
+    {
+        if (HDR is { } hdr && !hdr.IsValid) throw new System.IO.InvalidDataException(Loc.Text("HDR 调整记录无效，原有文件未被覆盖。"));
+        return new((double[])values.Clone(), ExposureMode, CameraWhiteBalance, AsShot?.Temperature, AsShot?.Tint,
+        Denoise, Effects, DisplayChromaDenoise, Hsl, MasterRecipeID, Lens, geometry) {
+        Processing = ProcessingIdentity.Require(Processing), X3fMode = X3fMode, AIDenoiseEnabled = AIDenoiseEnabled,
         MasterRecipeSettingsVersion = MasterRecipeSettingsVersion,
+        HDR = HDR,
         Atmosphere = Atmosphere.IsIdentity ? null : Atmosphere,
         ToneControls = ToneControls.IsIdentity ? null : ToneControls,
         ColorGrading = ColorGrading.IsDefault ? null : ColorGrading,
         Curve = Curve.IsDefault ? null : Curve
-    };
+        };
+    }
     public static Adjustments FromSnapshot(AdjustmentSnapshot snapshot)
     {
+        if (!Enum.IsDefined(snapshot.X3fMode)) throw new System.IO.InvalidDataException("Invalid X3F rendering mode");
         if (snapshot.MasterRecipeSettingsVersion is not (2 or 3 or 4))
             throw new System.IO.InvalidDataException("Invalid master recipe version");
         if (snapshot.Values.Length != ParameterSpec.All.Length || snapshot.ExposureMode is < 0 or > 2 ||
@@ -157,6 +177,8 @@ public sealed class Adjustments
         var denoise = snapshot.Denoise ?? new DenoiseSettings();
         var effects = snapshot.Effects ?? new PhotoEffectsSettings();
         var geometry = snapshot.Geometry ?? new GeometrySettings();
+        if (snapshot.HDR is { } hdr && !hdr.IsValid)
+            throw new System.IO.InvalidDataException(Loc.Text("HDR 调整记录无效，原有文件未被覆盖。"));
         var atmosphere = snapshot.Atmosphere ?? new AtmosphereSettings();
         _ = atmosphere.NativeConfig();
         var tone = snapshot.ToneControls ?? new ToneControlsSettings();
@@ -168,8 +190,9 @@ public sealed class Adjustments
         _ = geometry.NativeConfig();
         if (snapshot.DisplayChromaDenoise is < 0 or > 2)
             throw new System.IO.InvalidDataException("调整记录中的显示色彩降噪模式无效，原有文件未被覆盖。");
-        return new Adjustments {
+        var result = new Adjustments {
             Processing = ProcessingIdentity.Require(snapshot.Processing),
+            X3fMode = snapshot.X3fMode,
             Denoise = denoise,
             AIDenoiseEnabled = snapshot.AIDenoiseEnabled,
             Effects = effects,
@@ -181,17 +204,26 @@ public sealed class Adjustments
             MasterRecipeID = snapshot.MasterRecipeID,
             MasterRecipeSettingsVersion = snapshot.MasterRecipeSettingsVersion,
             Lens = snapshot.Lens ?? new(),
-            Geometry = geometry,
             DisplayChromaDenoise = snapshot.DisplayChromaDenoise,
             values = (double[])snapshot.Values.Clone(), ExposureMode = snapshot.ExposureMode,
             CameraWhiteBalance = snapshot.CameraWhiteBalance,
-            AsShot = snapshot.AsShotTemperature is {} temperature && snapshot.AsShotTint is {} tint ? (temperature, tint) : null
+            AsShot = snapshot.AsShotTemperature is {} temperature && snapshot.AsShotTint is {} tint ? (temperature, tint) : null,
+            HDR = snapshot.HDR
         };
+        result.geometry = geometry;
+        return result;
     }
-    public double Default(Parameter id) => id == Parameter.Strength ? 100 : id == Parameter.Temperature ? AsShot?.Temperature ?? 6500 : id == Parameter.Tint ? (MasterRecipeID == null ? AsShot?.Tint ?? 0 : 0) : 0;
+    public double Default(Parameter id) => IsHDREditing && (id is Parameter.Temperature or Parameter.Tint) ? id == Parameter.Temperature ? 6500 : 0 :
+        id == Parameter.Strength ? 100 : id == Parameter.Temperature ? AsShot?.Temperature ?? 6500 : id == Parameter.Tint ? (MasterRecipeID == null ? AsShot?.Tint ?? 0 : 0) : 0;
     public void Set(Parameter id, double value)
     {
         if (!double.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
+        if (IsHDREditing && (id is Parameter.Exposure or Parameter.Temperature or Parameter.Tint or Parameter.Contrast or
+            Parameter.Highlights or Parameter.Shadows or Parameter.Saturation))
+        {
+            HDR = HDR!.Set(id, value);
+            return;
+        }
         var spec = ParameterSpec.All[(int)id];
         values[(int)id] = Math.Clamp(value, spec.Min, spec.Max);
         if (MasterRecipeID != null) { if (id == Parameter.Temperature) CameraWhiteBalance = AsShot?.Temperature == value; return; }
@@ -201,12 +233,17 @@ public sealed class Adjustments
     public void ResolveWhiteBalance((double Temperature, double Tint)? wb)
     {
         AsShot = wb;
+        if (IsHDREditing) return;
         if (CameraWhiteBalance) {
             if (MasterRecipeID != null) values[2] = wb?.Temperature ?? 6500;
             else ResetWhiteBalance();
         }
     }
-    public void ResetWhiteBalance() { values[2] = Default(Parameter.Temperature); values[3] = Default(Parameter.Tint); CameraWhiteBalance = true; }
+    public void ResetWhiteBalance()
+    {
+        if (IsHDREditing) { HDR = HDR! with { Temperature = 6500, Tint = 0 }; return; }
+        values[2] = Default(Parameter.Temperature); values[3] = Default(Parameter.Tint); CameraWhiteBalance = true;
+    }
     public void SetAtmosphere(AtmosphereParameter id, double value)
     {
         if (!double.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
@@ -253,7 +290,33 @@ public sealed class Adjustments
         if (group == "镜头") Lens = new();
         if (group == "几何") Geometry = new();
     }
-    public void ResetAll() { Atmosphere = new(); Curve = new(); ColorGrading = new(); ToneControls = new(); AIDenoiseEnabled = false; MasterRecipeID = null; MasterRecipeSettingsVersion = 3; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); }
+    public void ResetAll() { Atmosphere = new(); Curve = new(); ColorGrading = new(); ToneControls = new(); AIDenoiseEnabled = false; MasterRecipeID = null; MasterRecipeSettingsVersion = 3; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); if (HDR is { } hdr) HDR = hdr.Reset() with { Mode = hdr.Mode }; }
+
+    public void SetHDRMode(bool enabled, bool sourceIsHDR, IEnumerable<string>? conflicts = null)
+    {
+        if (enabled)
+        {
+            var blocked = conflicts?.ToArray() ?? HDRConflicts();
+            HDR = HDRSettings.Enabling(HDR, HDRSettings.FromSdr(this), sourceIsHDR, blocked);
+            return;
+        }
+        if (HDR is { } hdr) HDR = hdr with { Mode = HDRMode.Sdr };
+    }
+
+    private IEnumerable<string> HDRConflicts()
+    {
+        if (this[Parameter.Temperature] != 6500 || this[Parameter.Tint] != 0) yield return "white_balance";
+        if (MasterRecipeID != null) yield return "look";
+        if (!ToneControls.IsIdentity) yield return "tone_controls";
+        if (!Curve.IsIdentity || this[Parameter.ToneCurve] != 0) yield return "tone_curve";
+        if (!Hsl.IsIdentity) yield return "hsl";
+        if (!ColorGrading.IsDefault) yield return "color_grading";
+        if (!Atmosphere.IsIdentity) { yield return "clarity"; yield return "dehaze"; }
+        if (this[Parameter.Sharpening] != 0) yield return "sharpening";
+        if (AIDenoiseEnabled || Denoise != new DenoiseSettings() || DisplayChromaDenoise != 0) yield return "denoise";
+        if (Effects != new PhotoEffectsSettings()) yield return "effects";
+        if (Lens != new LensSettings()) yield return "lens_correction";
+    }
     internal Native.Request Request(string path, string? lut, int edge, string? output, int? longEdge = null)
     {
         if (longEdge is { } requested && !ExportSize.IsValid(requested))

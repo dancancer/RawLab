@@ -8,9 +8,11 @@ enum ExportMetadata {
     }
 
     static func properties(from url: URL, width: Int, height: Int,
-                           orientation: CGImagePropertyOrientation) throws -> [CFString: Any] {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let original = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else {
+                           orientation: CGImagePropertyOrientation,
+                           fallbackSourceProperties: [CFString: Any]? = nil) throws -> [CFString: Any] {
+        let source = CGImageSourceCreateWithURL(url as CFURL, nil)
+        let sourceProperties = source.flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }
+        guard let original = sourceProperties ?? fallbackSourceProperties else {
             throw Failure.unreadableSource
         }
         var exif = original[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
@@ -48,19 +50,21 @@ enum ExportMetadata {
     }
 
     static func jpegData(image: CGImage, sourceURL: URL, orientation: CGImagePropertyOrientation,
-                         quality: CGFloat) throws -> Data {
+                         quality: CGFloat, fallbackSourceProperties: [CFString: Any]? = nil) throws -> Data {
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else {
             throw Failure.invalidDestination
         }
-        var values = try properties(from: sourceURL, width: image.width, height: image.height, orientation: orientation)
+        var values = try properties(from: sourceURL, width: image.width, height: image.height, orientation: orientation,
+                                    fallbackSourceProperties: fallbackSourceProperties)
         values[kCGImageDestinationLossyCompressionQuality] = quality
         CGImageDestinationAddImage(destination, image, values as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { throw Failure.cannotWriteMetadata }
         return data as Data
     }
 
-    static func preserve(from original: URL, in rendered: URL) throws {
+    static func preserve(from original: URL, in rendered: URL,
+                         fallbackSourceProperties: [CFString: Any]? = nil) throws {
         guard original.resolvingSymlinksInPath() != rendered.resolvingSymlinksInPath() else {
             throw Failure.sameFile
         }
@@ -71,7 +75,8 @@ enum ExportMetadata {
               let height = dimensions[kCGImagePropertyPixelHeight] as? Int else {
             throw Failure.invalidDestination
         }
-        let values = try properties(from: original, width: width, height: height, orientation: .up)
+        let values = try properties(from: original, width: width, height: height, orientation: .up,
+                                    fallbackSourceProperties: fallbackSourceProperties)
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data, type, 1, nil) else {
             throw Failure.invalidDestination
@@ -83,8 +88,8 @@ enum ExportMetadata {
             try (data as Data).write(to: rendered, options: .atomic)
             return
         }
-        let originalSource = CGImageSourceCreateWithURL(original as CFURL, nil)!
-        let originalMetadata = CGImageSourceCopyMetadataAtIndex(originalSource, 0, nil)
+        let originalSource = CGImageSourceCreateWithURL(original as CFURL, nil)
+        let originalMetadata = originalSource.flatMap { CGImageSourceCopyMetadataAtIndex($0, 0, nil) }
         let metadata = CGImageMetadataCreateMutable()
         for dictionary in [kCGImagePropertyTIFFDictionary, kCGImagePropertyExifDictionary,
                            kCGImagePropertyGPSDictionary, kCGImagePropertyExifAuxDictionary] {

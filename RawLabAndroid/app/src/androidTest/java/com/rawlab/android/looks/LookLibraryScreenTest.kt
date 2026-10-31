@@ -55,6 +55,68 @@ class LookLibraryScreenTest {
 
     @Test fun importedLookCanBeRenamedAndRemovedInEnglish() = verifyManagedLook("en")
 
+    @Test fun searchAndRecentKeepTheAppliedLookAndFixedImportAction() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val token = UUID.randomUUID().toString().take(8)
+        val photo = File(context.cacheDir, "browse-$token.png")
+        val source = File(context.cacheDir, "Été-$token.cube")
+        val bitmap = Bitmap.createBitmap(96, 64, Bitmap.Config.ARGB_8888).apply { eraseColor(0xff779988.toInt()) }
+        photo.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
+        val bundled = context.assets.list("films")!!.first { it.endsWith(".cube") }
+        context.assets.open("films/$bundled").use { input -> source.outputStream().use(input::copyTo) }
+        var lookId: String? = null
+        try {
+            compose.runOnUiThread { compose.activity.model.importPhoto(Uri.fromFile(photo)) }
+            compose.waitUntil(30_000) { compose.activity.model.state.value.canExport }
+            compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-looks"))
+            val looksGroup = compose.onNodeWithTag("editor-group-looks")
+            if (looksGroup.fetchSemanticsNode().config[SemanticsProperties.Selected] != true) looksGroup.performClick()
+            compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag("editor-tool-0"))
+            compose.onNodeWithTag("editor-tool-0").performClick()
+            compose.runOnUiThread { compose.activity.model.importLook(Uri.fromFile(source)) }
+            compose.waitUntil(30_000) { compose.activity.model.state.value.let { it.canExport && it.looks.any { look -> look.name == source.name } } }
+            lookId = compose.activity.model.state.value.edits.film
+            assertEquals(lookId, compose.activity.model.state.value.recentLookIds.first())
+            val saved = compose.activity.model.state.value.edits
+            compose.onNodeWithTag("looks.search").performScrollTo().performTextReplacement("ETE")
+            compose.onNodeWithTag("looks.search").performImeAction()
+            compose.onNodeWithText(source.name).assertExists()
+            compose.onNodeWithTag("looks.search").performTextReplacement("no matching look")
+            compose.onNodeWithTag("looks.search").performImeAction()
+            compose.onNodeWithTag("looks.empty").performScrollTo().assertIsDisplayed()
+            assertEquals(saved, compose.activity.model.state.value.edits)
+            compose.onNodeWithTag("looks.import").performScrollTo().assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithTag("looks.search").performTextClearance()
+            compose.onNodeWithTag("looks.search").performImeAction()
+            compose.onNodeWithTag("looks.category").performScrollTo().performClick()
+            compose.onNodeWithTag("looks.category.RECENT").performClick()
+            compose.onNodeWithText(source.name).assertExists()
+            compose.waitUntil(10_000) { compose.activity.model.state.value.message == null }
+            compose.onNodeWithText(source.name).performScrollTo().assertIsDisplayed()
+            val screenshots = requireNotNull(context.getExternalFilesDir("look-browser"))
+            File(screenshots, "recent-${context.resources.configuration.screenWidthDp}.png").outputStream().use {
+                instrumentation.uiAutomation.takeScreenshot().compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+            compose.runOnUiThread { compose.activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+            compose.waitUntil(10_000) { context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE }
+            compose.onNodeWithTag("looks.search").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("looks.import").assertIsDisplayed().assertIsEnabled()
+            assertEquals(saved, compose.activity.model.state.value.edits)
+            instrumentation.uiAutomation.waitForIdle(750, 5_000)
+            File(screenshots, "recent-landscape.png").outputStream().use {
+                instrumentation.uiAutomation.takeScreenshot().compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+            compose.runOnUiThread { compose.activity.model.deleteLook(lookId!!) }
+            compose.waitUntil(30_000) { compose.activity.model.state.value.looks.none { it.id == lookId } }
+            assertTrue(lookId !in compose.activity.model.state.value.recentLookIds)
+        } finally {
+            compose.runOnUiThread { compose.activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
+            lookId?.let { id -> compose.runOnUiThread { if (compose.activity.model.state.value.looks.any { it.id == id }) compose.activity.model.deleteLook(id) } }
+            source.delete(); photo.delete()
+        }
+    }
+
     private fun verifyManagedLook(language: String) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

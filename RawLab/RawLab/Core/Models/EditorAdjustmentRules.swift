@@ -245,6 +245,7 @@ enum EditorAdjustmentRules {
         case .all:
             var neutral = self.defaults(context)
             neutral.processing = settings.processing
+            neutral.x3fMode = settings.x3fMode
             return neutral
         case .tool(let tool):
             switch tool {

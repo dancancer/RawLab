@@ -167,6 +167,38 @@ extension EditorUITests {
         XCTAssertTrue(app.staticTexts["RAW Photo"].waitForExistence(timeout: 5), app.debugDescription)
     }
 
+    func testRAWRecipeSelectionAndLensCapabilityStates() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN", "-RawLab.language", "zh-Hans"]
+        app.launch(); importRAWFile(in: app)
+        tapTool("masterRecipe", in: app)
+        let recipe = app.buttons["recipe.hamada_daylight_v2"]
+        XCTAssertTrue(recipe.waitForExistence(timeout: 10));recipe.tap()
+        XCTAssertTrue(recipe.isSelected)
+        let selected = XCTAttachment(screenshot: recipe.screenshot());selected.name="raw-recipe-selection-mark";selected.lifetime = .keepAlways;add(selected)
+        tapTool("lens", in: app)
+        XCTAssertTrue(app.staticTexts["lens.status"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["lens.status"].label.isEmpty)
+        let manual=app.segmentedControls["lens.mode"].buttons["手动"]
+        XCTAssertTrue(manual.waitForExistence(timeout: 10));manual.tap()
+        let profile=app.buttons["lens.profile"]
+        XCTAssertTrue(profile.isEnabled);profile.tap()
+        let search=app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 10));search.tap();search.typeText("Tamron")
+        let candidate=app.buttons["lens.candidate"].firstMatch
+        XCTAssertTrue(candidate.waitForExistence(timeout: 10));candidate.tap()
+        for id in ["lens.distortion","lens.tca"] {
+            let toggle=app.switches[id]
+            XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+            if toggle.isEnabled {
+                if toggle.value as? String != "1" {toggle.tap()}
+                XCTAssertEqual(toggle.value as? String,"1")
+                toggle.tap();XCTAssertEqual(toggle.value as? String,"0")
+            } else {XCTAssertEqual(toggle.value as? String,"0")}
+        }
+        capture("raw-lens-capability-states")
+    }
+
     func testLensControls() {
         let app = XCUIApplication()
         app.launchArguments += ["-RawLab.language", "zh-Hans"]

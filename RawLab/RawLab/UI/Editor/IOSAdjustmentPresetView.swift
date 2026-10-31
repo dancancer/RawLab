@@ -29,6 +29,10 @@ struct IOSAdjustmentPresetView: View {
     }
     private var title: String { editing ? renaming == nil ? "保存预设" : "重命名预设" : "我的预设" }
 
+    private var scopePreview: Result<AdjustmentTransferPayload, Error> {
+        Result { try model.previewAdjustmentPayload(scope: scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields), settings: settings) }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -88,13 +92,18 @@ struct IOSAdjustmentPresetView: View {
                 ForEach(presets) { preset in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(preset.name).font(.headline).fixedSize(horizontal: false, vertical: true)
-                        Text(L10n.format("已选 %@ 项", String(preset.payload.fields.count))).font(.caption).foregroundStyle(.secondary)
+                        DisclosureGroup(L10n.format("已选 %@ 项", String(preset.payload.fields.count))) {
+                            IOSAdjustmentSummaryView(payload: preset.payload, lookName: model.adjustmentSummaryLookName,
+                                identifier: "preset.summary.\(preset.id)")
+                        }
                         HStack {
                             Button(L10n.text("应用")) { requestPhotoAction(.presetApply(preset)) }
                                 .frame(minWidth: 44, minHeight: 44)
                                 .disabled(!model.hasImage || model.isBusy).accessibilityIdentifier("preset.apply.\(preset.id)")
                             Spacer()
                             Menu {
+                                Button(L10n.text("应用到多张照片")) { requestPhotoAction(.presetApplyMultiple(preset)) }
+                                    .disabled(!model.hasImage || model.isBusy).accessibilityIdentifier("preset.multiple.\(preset.id)")
                                 Button(L10n.text("重命名")) {
                                     renaming = preset; name = preset.name; message = nil; editing = true; nameFocused = true
                                 }.accessibilityIdentifier("preset.rename.\(preset.id)")
@@ -117,12 +126,13 @@ struct IOSAdjustmentPresetView: View {
                 .accessibilityIdentifier("preset.name")
         }
         if renaming == nil {
-            IOSAdjustmentScopeEditor(scope: $scope, fields: $fields, identifier: "preset.save",
+            IOSAdjustmentScopeEditor(scope: $scope, fields: $fields, preview: scopePreview,
+                lookName: model.adjustmentSummaryLookName, errorMessage: { model.adjustmentErrorMessage($0) }, identifier: "preset.save",
                 fieldIdentifier:"preset",titleKey:"调整范围",allowed:settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
         }
         Section {
             Button(L10n.text("保存预设"), action: save)
-                .disabled(AdjustmentPreset.normalizedName(name).isEmpty || renaming == nil && scope == "custom" && fields.isEmpty)
+                .disabled(AdjustmentPreset.normalizedName(name).isEmpty || renaming == nil && (try? scopePreview.get()) == nil)
                 .accessibilityIdentifier("preset.save.confirm")
         }
     }

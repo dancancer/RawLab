@@ -23,7 +23,7 @@ while IFS= read -r file; do SOURCES+=("$file"); done < <(rg --files "$ROOT/RawLa
 xcrun --sdk iphonesimulator swiftc -swift-version 5 -O -sdk "$SDK" -target "$TARGET" \
     -module-cache-path "$CACHE" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" \
-    "${SOURCES[@]}" "$ROOT/RawLab/tests/AdjustmentHistoryModelTests.swift" "$OUT/bridge.o" \
+    "${SOURCES[@]}" "$ROOT/RawLab/tests/AdjustmentHistoryModelTests.swift" "$ROOT/RawLab/tests/IOSQuickPresetModelChecks.swift" "$ROOT/RawLab/tests/IOSBatchFlowModelChecks.swift" "$OUT/bridge.o" \
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \
     -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/adjustment-history-model"
 codesign --force --deep --sign - "$HARNESS" >/dev/null

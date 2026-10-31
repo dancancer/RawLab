@@ -3,6 +3,7 @@ package com.rawlab.android.batch
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -32,6 +33,8 @@ import com.rawlab.android.photo.BatchGlobalFailure
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.PhotoIdentity
+import com.rawlab.android.settings.EditStore
+import com.rawlab.android.adjustments.AdjustmentTransferException
 
 // ============================================================================
 //  批量导出界面的状态与生命周期
@@ -81,6 +84,9 @@ internal class BatchCancellation {
     fun request(interrupted: Boolean = false) {
         reason.compareAndSet(null, if (interrupted) UsageBatchOutcome.Interrupted else UsageBatchOutcome.Cancelled)
     }
+
+    // 预检尚未产生 CANCELLED 行，需要直接读取首次停止请求的原因。
+    fun cancellationOutcome(): UsageBatchOutcome = reason.get() ?: UsageBatchOutcome.Interrupted
 
     fun outcome(job: BatchJob): UsageBatchOutcome = when {
         job.globalError != null || job.rows.any { it.status == BatchRowStatus.NEEDS_CONFIRMATION } -> UsageBatchOutcome.Interrupted
@@ -196,7 +202,9 @@ class BatchExportModel(
         cancelRequested.reset()
         running = scope.launch(Dispatchers.IO) {
             try {
-                val materialized = configured
+                val materialized = if(configured.settingsMode==BatchSettingsMode.UNIFORM_FROZEN && configured.source.settings.isHDREditing)
+                    hdrPreparation(configured.source).freeze(configured,journalRoot,cancelRequested::get) else configured
+                mutable.update { it.copy(job = materialized) }
                 if (materialized.settingsMode == BatchSettingsMode.UNIFORM_FROZEN && !materialized.source.sourceFile.isFile) {
                     throw BatchGlobalFailure(AppStrings.text(R.string.message_task_source_unavailable))
                 }
@@ -207,7 +215,7 @@ class BatchExportModel(
                 journal.save(materialized)
                 val processor = processorFactory(gpuMode, storage.lensDatabase())
                 val result = try {
-                    val output = BatchOutputPublisher(context, storage, processor, materialized, destination)
+                    val output = BatchOutputPublisher(context, storage, processor, materialized, destination, gpuMode)
                     mutable.update { it.copy(phase = BatchPhase.RUNNING) }
                     BatchRunner.run(materialized, output::render, { _, _, _ -> }, cancelRequested::get, journal,
                         didUpdate = {
@@ -224,9 +232,14 @@ class BatchExportModel(
                         else -> BatchPhase.COMPLETE
                     }, outputFormat = format, destination = destination, error = result.globalError)
                 reportTerminal(result, cancelRequested.outcome(result))
+            } catch (error: CancellationException) {
+                mutable.update { it.copy(phase = if(it.job.settingsMode==BatchSettingsMode.UNIFORM_FROZEN && it.job.source.settings.isHDREditing)
+                    BatchPhase.SELECTING else BatchPhase.CANCELLED, stopping = false, error = null) }
+                reportTerminal(mutable.value.job, cancelRequested.cancellationOutcome())
             } catch (error: Throwable) {
-                mutable.update { it.copy(phase = BatchPhase.FAILED, stopping = false,
-                    error = error.message ?: error.javaClass.simpleName) }
+                mutable.update { it.copy(phase = if(it.job.settingsMode==BatchSettingsMode.UNIFORM_FROZEN && it.job.source.settings.isHDREditing)
+                    BatchPhase.SELECTING else BatchPhase.FAILED, stopping = false,
+                    error = if(error is AdjustmentTransferException) AppStrings.text(R.string.transfer_incompatible) else error.message ?: error.javaClass.simpleName) }
                 reportTerminal(mutable.value.job, UsageBatchOutcome.Interrupted)
             }
         }
@@ -260,11 +273,13 @@ class BatchExportModel(
             val input = resolver.openInputStream(uri) ?: throw IOException(AppStrings.text(R.string.message_unable_to_read_file))
             try { input.use { source -> destination.outputStream().use { source.copyTo(it) } }
                 processorFactory(gpuMode, storage.lensDatabase()).use {
-                    it.preview(destination, null, EditSettings(processing = snapshot.source.settings.processing), 256, false, inputKind)
+                    it.preview(destination, null, EditSettings(processing = snapshot.source.settings.processing, x3fMode = snapshot.source.settings.x3fMode), 256, false, inputKind)
                 }
             } catch (error: Exception) { destination.delete(); throw error }
         }
-        return BatchTarget(identity, destination, name, uri.toString(), inputKind)
+        val hdr = com.rawlab.android.photo.HDRSourceInfo.mayContainGainMap(name, resolver.getType(uri)) &&
+            com.rawlab.android.engine.NativeHDRBridge.probe(destination) != null
+        return BatchTarget(identity, destination, name, uri.toString(), inputKind, sourceIsHDR = hdr)
     }
 
     private fun displayName(uri: Uri): String = runCatching {
@@ -285,6 +300,10 @@ class BatchExportModel(
         return job.copy(source = job.source.copy(sourceFile = sourceCopy, lookFile = look))
     }
 
+    private fun hdrPreparation(source: BatchSourceSnapshot): BatchHDRPreparation = BatchHDRPreparation(source,
+        EditStore(File(context.filesDir,"edits"))::versionedState,storage::lookPath,
+        { file -> com.rawlab.android.photo.HDRSourceInfo.mayContainGainMap(file) && com.rawlab.android.engine.NativeHDRBridge.probe(file)!=null })
+
     private fun inputFile(jobID: String, identity: PhotoIdentity, name: String): File {
         val root = File(context.filesDir, "RawLab/BatchJobs/${jobID}/inputs")
         if (!root.exists()) root.mkdirs()
@@ -301,10 +320,22 @@ class BatchExportModel(
             if (snapshot.settingsMode == BatchSettingsMode.PER_TARGET_FROZEN) target.frozen!!.verifyFiles(target.sourceFile)
             // 效果查看先限长再降噪，最终导出仍保留完整质量。
             processorFactory(gpuMode, storage.lensDatabase()).use {
-                it.preview(target.sourceFile, snapshot.lookFor(target), snapshot.settingsFor(target), 1280, true, target.inputKind)
+                val prepared=if(snapshot.settingsMode==BatchSettingsMode.UNIFORM_FROZEN && snapshot.source.settings.isHDREditing)
+                    hdrPreparation(snapshot.source).prepare(target,0,snapshot.outputFormat,snapshot.outputLongEdge) else target.frozen
+                val settings = prepared?.settings ?: snapshot.settingsFor(target)
+                if (settings.isHDREditing) {
+                    if (gpuMode == NativeProcessor.FORCE) throw com.rawlab.android.engine.HDRProcessingException(2,13,6)
+                    val info = requireNotNull(com.rawlab.android.engine.NativeHDRBridge.probe(target.sourceFile))
+                    com.rawlab.android.engine.NativeHDRBridge.decode(target.sourceFile, info, 1280).use { source ->
+                        it.setGpuMode(NativeProcessor.CPU)
+                        it.renderHDR(source, requireNotNull(settings.hdr).copy(geometry = settings.geometry), 1280).use { pair -> pair.sdrBitmap() }
+                    }
+                } else it.preview(target.sourceFile, if(prepared!=null)prepared.lookFile else snapshot.lookFor(target), settings, 1280, true, target.inputKind).bitmap()
             }
         }
-        try { work.await().bitmap() } finally { work.cancel() }
+        try { work.await() }
+        catch(error: AdjustmentTransferException) {throw IOException(AppStrings.text(R.string.transfer_incompatible),error)}
+        finally { work.cancel() }
     }
 
     private fun reconcile(job: BatchJob): BatchJob {

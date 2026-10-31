@@ -8,41 +8,69 @@ extension MasterRecipe {
 
 extension ContentView {
     func filmPanel(imageSize: CGFloat) -> some View {
-        let sections = FilmGroup.sections(viewModel.availableLUTs, group: { FilmPresentation(fileName: $0.id).group })
-        return ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    filmButton(name: L10n.text("中性"), id: nil, imageSize: imageSize)
-                    ForEach(sections.indices, id: \.self) { index in
-                        if index > 0 {
-                            Divider().frame(height: imageSize + 30).padding(.horizontal, 12)
-                                .accessibilityIdentifier("film.group-divider.\(index)")
-                        }
-                        ForEach(sections[index]) { lut in
-                            filmButton(name: lut.name, id: lut.id, imageSize: imageSize, colorNotice: lut.colorNotice, isCompatibility: lut.isCompatibility)
-                                .contextMenu {
-                                    if viewModel.lutMap[lut.id]?.isCustom == true {
-                                        Button(L10n.text("重命名外观"), systemImage: "pencil") {
-                                            renamingLUT = lut; renamedLUTName = lut.name; showingLookRename = true
-                                        }.disabled(editingLocked || viewModel.isImportingLooks)
-                                    }
-                                }
-                        }
-                    }
+        let choices = FilmGroup.sections(viewModel.availableLUTs, group: { FilmPresentation(fileName: $0.id).group }).flatMap { $0 }
+        let items = choices.map { LookBrowserItem(id: $0.id, name: $0.name, group: FilmPresentation(fileName: $0.id).group,
+            isCustom: viewModel.lutMap[$0.id]?.isCustom == true) }
+        let visible = viewModel.lookBrowser.visibleIDs(in: items, recent: viewModel.recentLooks.ids.filter(viewModel.readableLookBrowserIDs.contains))
+        let looks = visible.compactMap { id in choices.first { $0.id == id } }
+        let showsNeutral = viewModel.lookBrowser.category == .all && viewModel.lookBrowser.query.isEmpty
+        return VStack(spacing: 4) {
+            HStack(spacing: 8) {
+                TextField(L10n.text("搜索外观"), text: $viewModel.lookBrowser.query)
+                    .textFieldStyle(.roundedBorder).frame(minHeight: 44)
+                    .autocorrectionDisabled().textInputAutocapitalization(.never).accessibilityIdentifier("looks.search")
+                if !viewModel.lookBrowser.query.isEmpty {
+                    Button { viewModel.lookBrowser.query = "" } label: {
+                        Image(systemName: "xmark.circle.fill").frame(width: 44, height: 44)
+                    }.accessibilityLabel(L10n.text("清除搜索")).accessibilityIdentifier("looks.search.clear")
                 }
-                .padding(.horizontal, 16)
+                Button { showingLookImporter = true } label: { Image(systemName: "plus").frame(width: 44, height: 44) }
+                    .accessibilityLabel(L10n.text("导入外观")).accessibilityIdentifier("looks.import")
+                    .disabled(editorBusy || isEditorDraftChanged || viewModel.isImportingLooks)
+            }.padding(.horizontal, 16)
+            Menu {
+                Picker(L10n.text("外观分类"), selection: $viewModel.lookBrowser.category) {
+                    ForEach(LookBrowserCategory.allCases, id: \.self) { Text(L10n.text($0.titleKey)).tag($0) }
+                }
+            } label: {
+                HStack {
+                    Label(L10n.text(viewModel.lookBrowser.category.titleKey), systemImage: "line.3.horizontal.decrease")
+                    Spacer();Image(systemName: "chevron.down").font(.caption)
+                }.frame(minHeight: 44).padding(.horizontal, 16).contentShape(Rectangle())
+            }.accessibilityLabel(L10n.text("外观分类")).accessibilityValue(L10n.text(viewModel.lookBrowser.category.titleKey))
+                .accessibilityIdentifier("looks.category")
+            if looks.isEmpty && !showsNeutral && !viewModel.isLoadingLUTs {
+                VStack(spacing: 4) {
+                    Text(L10n.text("没有匹配的外观")).font(.subheadline).foregroundStyle(.secondary)
+                    Button {
+                        if viewModel.lookBrowser.query.isEmpty { viewModel.lookBrowser.category = .all }
+                        else { viewModel.lookBrowser.query = "" }
+                    } label: { Text(L10n.text(viewModel.lookBrowser.query.isEmpty ? "全部外观" : "清除搜索")).frame(minHeight: 44) }
+                }.frame(maxWidth: .infinity).accessibilityIdentifier("looks.empty")
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(spacing: 8) {
+                            if showsNeutral { filmButton(name: L10n.text("中性"), id: nil, imageSize: imageSize) }
+                            ForEach(looks) { lut in
+                                filmButton(name: lut.name, id: lut.id, imageSize: imageSize, colorNotice: lut.colorNotice, isCompatibility: lut.isCompatibility)
+                                    .contextMenu {
+                                        if viewModel.lutMap[lut.id]?.isCustom == true {
+                                            Button(L10n.text("重命名外观"), systemImage: "pencil") {
+                                                renamingLUT = lut; renamedLUTName = lut.name; showingLookRename = true
+                                            }.disabled(editingLocked || viewModel.isImportingLooks)
+                                        }
+                                    }
+                            }
+                        }.padding(.horizontal, 16)
+                    }.accessibilityIdentifier("film.choices")
+                        .onAppear { proxy.scrollTo(settings.lutID ?? "neutral", anchor: .center) }
+                        .onChange(of: settings.lutID) { _, id in proxy.scrollTo(id ?? "neutral", anchor: .center) }
+                }
             }
-            .accessibilityIdentifier("film.choices")
-            .onAppear { proxy.scrollTo(settings.lutID ?? "neutral", anchor: .center) }
-            .onChange(of: settings.lutID) { _, id in proxy.scrollTo(id ?? "neutral", anchor: .center) }
         }
         .overlay {
-            if viewModel.isLoadingLUTs {
-                ProgressView(L10n.text("正在加载胶片")).padding(8).background(.regularMaterial)
-            } else if viewModel.availableLUTs.isEmpty {
-                Text(L10n.text("未找到胶片 LUT")).font(.caption).foregroundStyle(.secondary)
-                    .padding(8).background(.regularMaterial)
-            }
+            if viewModel.isLoadingLUTs { ProgressView(L10n.text("正在加载胶片")).padding(8).background(.regularMaterial) }
         }
         .disabled(!viewModel.hasImage || editingLocked || viewModel.isLoadingLUTs)
     }
@@ -122,6 +150,11 @@ extension ContentView {
             .frame(width: width)
             .padding(.vertical, 6)
             .foregroundStyle(settings.masterRecipeID == recipe?.id ? Color.yellow : Color.primary)
+            .overlay(alignment: .topTrailing) {
+                if settings.masterRecipeID == recipe?.id {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.yellow).padding(4).accessibilityHidden(true)
+                }
+            }
         }.disabled(!viewModel.hasImage || editingLocked)
             .accessibilityLabel(recipe?.title ?? L10n.text("无配方")).accessibilityIdentifier("recipe.\(recipe?.id ?? "neutral")")
             .accessibilityAddTraits(settings.masterRecipeID == recipe?.id ? .isSelected : [])

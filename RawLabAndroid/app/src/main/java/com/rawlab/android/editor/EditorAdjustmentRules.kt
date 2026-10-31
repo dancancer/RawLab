@@ -2,6 +2,8 @@ package com.rawlab.android.editor
 
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.hdrDefaults
+import com.rawlab.android.settings.synchronizeHDR
 import com.rawlab.android.settings.HslSettings
 import com.rawlab.android.settings.ColorGradingZone
 import com.rawlab.android.settings.canonicalZeros
@@ -96,6 +98,7 @@ object EditorAdjustmentRules {
 
     /** 忽略不生效的相机元数据；保留自定义 WB 模式、配方 tint 与所有关闭的辅助对象。 */
     private fun markerSnapshot(snapshot: EditSettings, context: EditorResetContext): EditSettings = when {
+        snapshot.isHDREditing -> snapshot.synchronizeHDR()
         context.input == PhotoInputKind.RASTER -> snapshot.copy(exposureMode = 2, customWb = false,
             temperature = 6500f, tint = if (snapshot.recipeID != null) snapshot.tint else 0f)
         !snapshot.customWb -> snapshot.copy(temperature = 6500f,
@@ -108,7 +111,8 @@ object EditorAdjustmentRules {
         scope == EditorResetScope.Tool(8) || scope == EditorResetScope.Tool(9)
 
     private fun defaults(scope: EditorResetScope, snapshot: EditSettings, context: EditorResetContext): EditSettings {
-        val defaults = context.defaults.effectiveFor(context.input).copy(processing = snapshot.processing)
+        if (snapshot.isHDREditing) return snapshot.hdrDefaults()
+        val defaults = context.defaults.effectiveFor(context.input).copy(processing = snapshot.processing, x3fMode = snapshot.x3fMode)
         if (context.input == PhotoInputKind.RAW && includesWhiteBalance(scope) && context.asShot != null) {
             val source = if (scope == EditorResetScope.All) snapshot.copy(recipeID = null) else snapshot
             val wb = source.resetWhiteBalance(context.asShot.temperature, context.asShot.tint)

@@ -1,0 +1,23 @@
+{
+  "schema_version": 7,
+  "processing": {
+    "family": "rawlab",
+    "version": 2,
+    "quality": "standard"
+  },
+  "x3f_mode": "normal-v1",
+  "input": {
+    "path": "sample.X3F",
+    "type": "raw"
+  },
+  "edits": {
+    "exposure": {
+      "mode": "preview",
+      "ev": 0
+    }
+  },
+  "output": {
+    "path": "rendered.png",
+    "format": "png"
+  }
+}

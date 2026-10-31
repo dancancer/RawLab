@@ -54,7 +54,8 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
                     checkActive()
                     val validate = sourceValidator
                     val saved = store.versionedState(identity)
-                    val neutral = EditSettings(processing = saved.settings?.processing ?: EditSettings().processing)
+                    val neutral = EditSettings(processing = saved.settings?.processing ?: EditSettings().processing,
+                        x3fMode = saved.settings?.x3fMode ?: EditSettings().x3fMode)
                     val database = storage.lensDatabase()
                     val frame = NativeProcessor(NativeProcessor.CPU, database).use {
                         it.preview(photo.file, null, neutral, 128, false, photo.inputKind)
@@ -71,7 +72,8 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
                             if ((request.distortion && report?.appliedDistortion != true) || (request.tca && report?.appliedTca != true))
                                 throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "target lens calibration unavailable")
                         })
-                    AdjustmentTransferTarget(identity, displayName, EditSettings(), transferContext,
+                    AdjustmentTransferTarget(identity, displayName,
+                        com.rawlab.android.settings.sourceDefaultSettings(photo.isHDRSource), transferContext,
                         isCurrent = { work.isCurrent(identity.value) }, validateSource = validate,
                         validateHistorySource = EditorAdjustmentHistory.historySourceValidation(photo))
                 } catch (error: java.util.concurrent.CancellationException) { throw error }

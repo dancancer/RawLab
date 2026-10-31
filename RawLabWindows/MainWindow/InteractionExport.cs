@@ -74,13 +74,14 @@ public partial class MainWindow
     private void RefreshStateToolTips()
     {
         HistogramButton.ToolTip=HistogramSurface.Visibility==Visibility.Visible ?
-            Loc.Text(HistogramPanel.Visibility==Visibility.Visible ? "收起直方图" : "展开直方图") : null;
+            Loc.Text((histogramCompact ? HistogramPopup.IsOpen : histogramExpanded) ? "收起直方图" : "展开直方图") : null;
         AdjustToggleButton.ToolTip=Loc.Text(AdjustmentPanel.Visibility==Visibility.Visible ? "收起调整栏" : "展开调整栏");
     }
     private EditorAdjustmentTool? hiddenTransformTool;
     private void DockToggle(object sender,RoutedEventArgs e)
     {
         if(file==null || pendingAllReset!=null)return;
+        CloseQuickPresets();
         CancelParameterInputs();
         var visible=AdjustmentPanel.Visibility==Visibility.Visible;
         if(visible) {
@@ -105,17 +106,23 @@ public partial class MainWindow
     }
     private void UpdateDockMinimum()
     {
+        if(resizingDock)return;
         if(AdjustmentPanel.Visibility==Visibility.Visible && expandedGroup!=null && EditorArea.ActualHeight>0)
         {
             DockRow.MinHeight=216;
             DockRow.MaxHeight=Math.Max(216,EditorArea.ActualHeight-166);
-            if(DockRow.Height.Value>DockRow.MaxHeight)DockRow.Height=new(DockRow.MaxHeight);
+            var complex=quickPresetsVisible || choosingFilm || choosingRecipes || choosingDenoise || choosingLens || choosingGeometry ||
+                choosingHsl || choosingGrading || choosingWhiteBalance || choosingPhotoEffects || selectedParameter==Parameter.ToneCurve;
+            dockHeight=workspaceLayout.PanelHeight(complex,EditorArea.ActualHeight);
+            DockRow.Height=new(dockHeight);
         }
+        PanelAutomatic.Visibility=workspaceLayout.IsAutomatic ? Visibility.Collapsed : Visibility.Visible;
     }
     private void HistogramClicked(object sender,RoutedEventArgs e)
     {
-        HistogramPanel.Visibility=HistogramPanel.Visibility==Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
-        RefreshStateToolTips();
+        if(histogramCompact)HistogramPopup.IsOpen=!HistogramPopup.IsOpen;
+        else histogramExpanded=!histogramExpanded;
+        RefreshHistogramWorkspace();
     }
     private void ClippingClicked(object sender,RoutedEventArgs e) { clipping=!clipping;NeutralCanvas.ShowClipping=ResultCanvas.ShowClipping=clipping;NeutralCanvas.InvalidateVisual();ResultCanvas.InvalidateVisual();RefreshControls();Schedule(); }
     // 工具栏下拉菜单贴着按钮下沿弹出；默认的 MousePoint 在键盘打开时会跑到鼠标所在的任意位置
@@ -132,6 +139,7 @@ public partial class MainWindow
         var startsBeforeKey=viewingKey==Key.Oem5 && !beforeKeyDown;
         if(viewingKey==Key.Oem5)beforeKeyDown=true;
         if(e.OriginalSource is TextBoxBase or ComboBox || Keyboard.FocusedElement is TextBoxBase or ComboBox)return;
+        if(e.Key==Key.Escape && quickPresetsVisible){CloseQuickPresets();e.Handled=true;return;}
         if(e.Key==Key.Escape && hslTargetEnabled){SetHslTargetMode(false,hslTargetAxis);e.Handled=true;return;}
         if(e.Key==Key.Escape && editGesture!=null){CancelParameterInputs();CancelEditGesture();e.Handled=true;return;}
         if(e.Key==Key.Z && Keyboard.Modifiers==ModifierKeys.Control){RunPhotoHistory(true);e.Handled=true;return;}
@@ -147,6 +155,8 @@ public partial class MainWindow
         else if(viewingKey==Key.I)InfoClicked(sender,e);
     }
     private void ExportJpegClicked(object sender,RoutedEventArgs e)=>Export(ExportFormat.Jpeg);
+    private void ExportHdrJpegClicked(object sender,RoutedEventArgs e)=>Export(ExportFormat.HdrJpeg);
+    private void ExportSdrJpegClicked(object sender,RoutedEventArgs e)=>Export(ExportFormat.SdrJpeg);
     private void ExportPngClicked(object sender,RoutedEventArgs e)=>Export(ExportFormat.Png);
     private void ExportDngClicked(object sender,RoutedEventArgs e)=>Export(ExportFormat.RenderedDng);
     private void ExportOriginalSizeClicked(object sender,RoutedEventArgs e) { exportLongEdge=null; RefreshExportSizeMenu(); }
@@ -178,7 +188,7 @@ public partial class MainWindow
         if(AIBlocksOutput || !exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null || engine==null)return;
         var suffix=format.Suffix();
         var dialog=new SaveFileDialog{Title=Loc.Text("导出"),Filter=format switch {
-                ExportFormat.Jpeg => format.Title()+"|*.jpg;*.jpeg",
+                ExportFormat.Jpeg or ExportFormat.HdrJpeg or ExportFormat.SdrJpeg => format.Title()+"|*.jpg;*.jpeg",
                 ExportFormat.Png => format.Title()+"|*.png",
                 ExportFormat.RenderedDng => Loc.Text("DNG · 渲染型")+"|*.dng",
                 _ => throw new ArgumentOutOfRangeException(nameof(format))
@@ -212,7 +222,7 @@ public partial class MainWindow
                 SetStatus(() => Loc.Text("不能覆盖原始文件。"), true);
                 return;
             }
-            await Task.Run(()=>engine.Render(input,adjustment,film,0,false,temp,longEdge:size));
+            await Task.Run(()=>engine.Render(input,adjustment,film,0,false,temp,longEdge:size,formatOverride:format));
             if (WindowsFileIdentity.IsSameFile(sourceLock, destination))
             {
                 SetStatus(() => Loc.Text("不能覆盖原始文件。"), true);

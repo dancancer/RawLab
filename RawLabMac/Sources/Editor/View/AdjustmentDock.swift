@@ -22,28 +22,32 @@ struct AdjustmentDock: View {
                 headerAccessory.padding(.trailing, 12)
             }.frame(height: 36)
             if let group = navigation.expandedGroup {
-                if model.geometryDraft != nil {
+                if model.geometryDraft != nil && !model.quickPresetsVisible {
                     MacGeometryWorkspace(model: model)
                 } else {
                     HorizontalPicker(selectedID: navigation.tool.rawValue, name: L10n.text("调整工具"), showsScrollIndicators: false) {
                         HStack(spacing: 6) {
                             ForEach(group.tools) { toolButton($0) }
                             if group == .looks {
-                                Button { model.requestAdjustmentSheet(.presets) } label: {
+                                Button { if model.quickPresetsVisible { model.closeQuickPresets() } else { model.showQuickPresets() } } label: {
                                     Label(L10n.text("我的预设"), systemImage: "bookmark")
                                         .font(.system(size: 12)).padding(.horizontal, 10).frame(height: 28)
+                                        .foregroundStyle(model.quickPresetsVisible ? Color.yellow : Color.primary)
                                 }.buttonStyle(.plain).disabled(model.exporting || model.lookLibraryBusy)
                                     .accessibilityIdentifier("preset.library")
+                                    .accessibilityAddTraits(model.quickPresetsVisible ? .isSelected : [])
                             }
                         }
                             .scrollTargetLayout().padding(.horizontal, 12)
                     }.frame(height: 32).fixedSize(horizontal: false, vertical: true)
-                    GeometryReader { editor in
+                    if model.quickPresetsVisible {
+                        QuickPresetView(model: model)
+                    } else { GeometryReader { editor in
                         ScrollView(.vertical) {
                             editorContent.frame(maxWidth: .infinity, minHeight: editor.size.height)
                                 .disabled(model.settings.isHDREditing && !supportsHDR(navigation.tool))
                         }
-                    }
+                    } }
                 }
             }
         }.frame(maxWidth: .infinity)
@@ -63,7 +67,7 @@ struct AdjustmentDock: View {
                 .background(active ? Color.yellow.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
                 .foregroundStyle(active ? Color.yellow : Color.primary)
         }.buttonStyle(.plain).id(group.rawValue)
-            .disabled(model.settings.isHDREditing && !group.tools.contains(where: supportsHDR))
+            .disabled(model.settings.isHDREditing && group != .looks && !group.tools.contains(where: supportsHDR))
             .accessibilityIdentifier("group.\(group.rawValue)")
             .accessibilityLabel(group.title)
             .accessibilityValue([active ? L10n.text("已展开") : L10n.text("已收起"), changed ? L10n.text("已调整") : ""].filter { !$0.isEmpty }.joined(separator: ", "))
@@ -72,7 +76,7 @@ struct AdjustmentDock: View {
     }
 
     private func toolButton(_ tool: EditorAdjustmentTool) -> some View {
-        let active = navigation.tool == tool
+        let active = navigation.tool == tool && !model.quickPresetsVisible
         let changed = model.isAdjustmentModified(.tool(tool))
         return Button { model.selectAdjustmentTool(tool) } label: {
             HStack(spacing: 6) {
@@ -86,13 +90,26 @@ struct AdjustmentDock: View {
             .accessibilityIdentifier("tool.\(tool.rawValue)")
             .accessibilityLabel(tool.title).accessibilityValue(changed ? L10n.text("已调整") : "")
             .accessibilityAddTraits(active ? .isSelected : [])
+            .help(toolUnavailableReason(tool) ?? tool.title)
+            .accessibilityHint(toolUnavailableReason(tool) ?? "")
             .disabled((model.result == nil && !(tool == .denoise && model.file != nil && model.aiControlsVisible)) ||
-                      (tool == .lens && RenderEngine.isRasterInput(model.file)) ||
+                      (tool == .lens && !model.canUseLensCorrection) ||
                       (model.settings.isHDREditing && !supportsHDR(tool)))
             .contextMenu {
                 Button(L10n.format("重置%@", tool.title)) { model.requestAdjustmentReset(.tool(tool)) }
                     .disabled(!changed)
             }
+    }
+
+    private func toolUnavailableReason(_ tool: EditorAdjustmentTool) -> String? {
+        if model.settings.isHDREditing && !supportsHDR(tool) { return L10n.text("HDR 模式暂不支持此工具。") }
+        if tool == .lens && RenderEngine.isX3fInput(model.file) && model.settings.x3fMode == .normal { return L10n.text("此输入不支持镜头校正") }
+        if tool == .lens && RenderEngine.isRasterInput(model.file) { return L10n.text("仅 RAW 照片支持镜头校正。") }
+        if tool == .whiteBalance && !model.settings.isHDREditing && model.settings.asShotWhiteBalance == nil {
+            return L10n.text("此照片没有可用的相机白平衡校准。")
+        }
+        if tool.parameter == .strength && model.selectedFilm == nil && model.settings.masterRecipe == nil { return L10n.text("请先选择外观或配方。") }
+        return nil
     }
 
     @ViewBuilder private var editorContent: some View {
@@ -142,6 +159,9 @@ struct AdjustmentDock: View {
                     }.fixedSize().controlSize(.small).padding(.bottom, 4).id(localizationLocale.identifier)
                     }
                     parameterRow(.temperature); parameterRow(.tint)
+                    if !model.settings.isHDREditing && model.settings.asShotWhiteBalance == nil {
+                        Text(L10n.text("此照片没有可用的相机白平衡校准。")).font(.caption).foregroundStyle(.secondary)
+                    }
                 } else { parameterRow(parameter) }
             }.frame(maxWidth: 720).padding(.horizontal, 16)
                 .disabled(parameter == .strength && model.selectedFilm == nil && model.settings.masterRecipe == nil)
@@ -149,7 +169,7 @@ struct AdjustmentDock: View {
         } else if navigation.tool == .recipe {
             MasterRecipeDock(model: model).frame(height: AdjustmentPanelLayout.RecipeCard.dockHeight)
         } else {
-            FilmDock(model: model).frame(height: 124)
+            FilmDock(model: model).frame(height: 188)
         }
     }
 

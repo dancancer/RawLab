@@ -20,14 +20,15 @@ public partial class MainWindow
     {
         if(!PrepareAdjustmentCommand())return;
         try {
-            var source=CaptureCurrentEdit();var context=CurrentTransferContext();
             var dialog=new AdjustmentScopeDialog(this,file!,scope=>{
-                try {TransferSession.Copy(scope,source,context);return null;}
+                try {CopyCurrentAdjustments(scope);return null;}
                 catch(Exception error){return AdjustmentTransferPresentation.Error(error);}
-            });
+            },hdr:settings.IsHDREditing,preview:PreviewAdjustmentPayload,lookName:AdjustmentSummaryLookName);
             if(dialog.ShowDialog()==true)SetStatus(()=>Loc.Text("调整已复制。"),false);
         }catch(Exception error){ShowAdjustmentError(error);}
     }
+    internal AdjustmentPayload CopyCurrentAdjustments(AdjustmentScope scope)
+        => TransferSession.Copy(scope,CaptureVerifiedAdjustmentSource(),CurrentTransferContext());
     private async void PasteAdjustmentsClicked(object sender,RoutedEventArgs e)
     {
         if(!PrepareAdjustmentCommand())return;
@@ -59,7 +60,7 @@ public partial class MainWindow
                     try {
                         collectionTargets?.GetValueOrDefault(path)?.Validate();
                         var identity=OriginalIdentity.Read(path);var raw=PhotoInput.IsRaw(path);
-                        var defaults=RenderEngine.PrepareInputSettings(path,new Adjustments());
+                        var defaults=PhotoInput.PrepareHDRInputSettings(path,new Adjustments());
                         (double Temperature,double Tint)? calibration=null;
                         if(raw) {
                             using var native=new RenderEngine(1);
@@ -99,7 +100,7 @@ public partial class MainWindow
             var session=TransferSession;AdjustmentResultDialog? dialog=null;
             dialog=new AdjustmentResultDialog(this,action==AdjustmentHistoryAction.Preset ? "应用预设" : "粘贴调整",initial,true,skipping=>AdoptAdjustmentOutcomes(session.Apply(operation,skipping),adopted),
                 ()=>ReloadEditsClicked(this,new()),Loc.Format("来源：{0} · {1} 项调整",sourceName ?? Path.GetFileName(payload.Source.Identifier),payload.Fields.Count),
-                ()=>session.Transactions.FirstOrDefault(t=>t.ID==operation.ID)?.Parts ?? [],undo=>RunAdjustmentHistory(operation.ID,null,undo,dialog!));
+                ()=>session.Transactions.FirstOrDefault(t=>t.ID==operation.ID)?.Parts ?? [],undo=>RunAdjustmentHistory(operation.ID,null,undo,dialog!),payload,AdjustmentSummaryLookName);
             dialog.ShowDialog();
         }catch(Exception error){ShowAdjustmentError(error);}
     }
@@ -110,7 +111,11 @@ public partial class MainWindow
                 !StringComparer.OrdinalIgnoreCase.Equals(saved.Identity.Path,file))return outcome;
             var key=saved.Identity.Path+"\n"+saved.Revision;
             if(adopted.TryGetValue(key,out var previousError))return previousError==null ? outcome : outcome with {Error=previousError,RequiresHistoryDecision=false};
-            try{AdoptSavedEdit(saved);adopted[key]=null;return outcome;}
+            try{
+                AdoptSavedEdit(saved);
+                if(quickPresetsVisible && quickPreset.Phase!=QuickPresetPhase.Preparing)CancelQuickPreset();
+                adopted[key]=null;return outcome;
+            }
             catch(Exception error){adopted[key]=error;adjustmentReloadRequired=true;RefreshControls();return outcome with {Error=error,RequiresHistoryDecision=false};}
         }).ToArray();
     }

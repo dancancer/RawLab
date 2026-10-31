@@ -18,14 +18,17 @@ public partial class MainWindow
     internal void OpenFile(string path,BitmapSource? placeholder=null)
     {
         if(exporting || closing)return;
+        CloseQuickPresets();
         CancelParameterInputs();
         try
         {
             path=Collection.CanonicalPath(Path.GetFullPath(path));
             if(!LibraryEntry.IsImage(path))throw new InvalidOperationException(Loc.Text("请选择支持的照片文件。"));
+            HDRSourceInfo? openedHDR = null;
+            if (PhotoInput.IsHDRContainer(path)) PhotoInput.ProbeHDR(path, out openedHDR);
             CancelViewingInput();
             if(!ResolveTransformDraft() || !SaveEdits())return;
-            ResetAITask();RestoreEdits(path);
+            ResetAITask();RestoreEdits(path); hdrSource = openedHDR;
             CancelViewingInput();view.SourceChanged();neutralResult=null;
             lastExportedPath=null;ExportRevealButton.Visibility=Visibility.Collapsed;
             if(file==null){AdjustmentPanel.Visibility=AdjustmentSplitter.Visibility=Visibility.Visible;DockRow.MinHeight=216;DockRow.Height=new(dockHeight);SplitterRow.Height=new(6);}
@@ -130,7 +133,7 @@ public partial class MainWindow
         var proxy=interacting || initialPreview;
         var previewSettings=settings.Clone();previewSettings.Geometry=PreviewGeometry;previewSettings.Lens=PreviewLens;
         if(CurrentViewSource is not {} source) {exactReady=false;renderFailed=true;SetStatus(()=>Loc.Text("预览未更新"),true);UpdateBusy();return;}
-        var referenceKey=new NeutralReferenceKey(source,PhotoInput.IsRaster(file),previewSettings.Processing,previewSettings.Geometry,previewSettings.Lens,RenderEdge(proxy));
+        var referenceKey=new NeutralReferenceKey(source,PhotoInput.IsRaster(file),previewSettings.Processing,previewSettings.Geometry,previewSettings.Lens,RenderEdge(proxy),previewSettings.IsHDREditing,previewSettings.X3fMode);
         if(acceptedReference!=referenceKey){neutralResult=null;acceptedReference=null;RefreshViewingFrames();}
         scheduler.Submit(new(file,previewSettings,lut,RenderEdge(proxy),proxy,GpuMode.SelectedIndex==0 ? 1 : GpuMode.SelectedIndex==1 ? 0 : 2,view.NeedsReference,clipping,initialPreview,transformGeneration,openRevision,source,settings.AIDenoiseEnabled ? aiJob.Identity : null));
         exactReady=false; SetStatus(() => interacting ? Loc.Text("正在生成交互预览…") : Loc.Text("正在显影…")); UpdateBusy();
@@ -143,7 +146,7 @@ public partial class MainWindow
         try
         {
             (neutral,rendered)=await Task.Run(()=> {
-                engine ??= new(); var w=ticket.Value;engine.SetGpuMode(w.GpuMode);
+                engine ??= new(aiDiagnostics:aiDiagnostics); var w=ticket.Value;engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
                 if(w.Probe is {} probe) {
                     hslSample=engine.SampleHsl(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,probe.Revision,probe.Point.X,probe.Point.Y);
                     return ((RenderedImage?)null,(RenderedImage?)null);
@@ -158,17 +161,19 @@ public partial class MainWindow
         var work=ticket.Value;
         if(work.Probe is {} probeWork) {
             AcceptHslTarget(work,hslSample ?? HslTargetSample.Unavailable(probeWork.Revision,HslTargetAvailability.Failed),current);
+            if(current && failure!=null && work.OpenRevision==openRevision && work.File==file && work.AIIdentity==aiJob.Identity)
+                HandleAIFailure(failure);
             UpdateBusy();Pump();QueuePendingReset();return;
         }
         // A current-file proxy may publish while dragging; stale exact work never publishes.
-        if(CurrentViewSource is {} currentSource && work.Source.SameFile(currentSource) && work.OpenRevision==openRevision && work.File==file && work.Lut==lut && work.Settings.AIDenoiseEnabled==settings.AIDenoiseEnabled &&
+        if(CurrentViewSource is {} currentSource && work.Source.SameFile(currentSource) && work.OpenRevision==openRevision && work.File==file && work.Lut==lut && work.Settings.AIDenoiseEnabled==settings.AIDenoiseEnabled && work.Settings.X3fMode==settings.X3fMode &&
             (!settings.AIDenoiseEnabled || AIResultReady && work.AIIdentity==aiJob.Identity) && work.Settings.Geometry==PreviewGeometry && work.Settings.Lens==PreviewLens && work.TransformGeneration==transformGeneration && (!view.NeedsReference || work.Compare) && work.Clipping==clipping && (current || (work.Interactive && interacting && work.Edge==RenderEdge(true))))
         {
             if(failure!=null) { if(current){ClearPendingAllReset();exactReady=false;transformPreviewReady=false;renderFailed=true;RefreshCropDraft();RefreshRenderLabels();if(!HandleAIFailure(failure))SetStatus(()=>Loc.Text("预览未更新")+" · "+failure.Message,true);} }
             else if(rendered!=null && neutral!=null)
             {
                 if(work.Settings.AIDenoiseEnabled) { aiNotReadyIdentity=null;aiNotReadyAttempts=0; }
-                result=rendered;acceptedAfter=new(work.Source,PhotoInput.IsRaster(work.File),work.Settings.Processing,work.Settings.Geometry,work.Settings.Lens,work.Edge);
+                result=rendered;acceptedAfter=new(work.Source,PhotoInput.IsRaster(work.File),work.Settings.Processing,work.Settings.Geometry,work.Settings.Lens,work.Edge,work.Settings.IsHDREditing,work.Settings.X3fMode);
                 if(!transform.Active)settings.ResolveWhiteBalance(rendered.WhiteBalance);
                 hslAcceptedWork=work;
                 var acceptedSettings=work.Settings.Clone();acceptedSettings.ResolveWhiteBalance(rendered.WhiteBalance);hslAcceptedSettings=acceptedSettings.Capture();
@@ -180,7 +185,7 @@ public partial class MainWindow
                 renderedGpuMode=work.GpuMode;
                 ResultCanvas.SetImage(rendered.Image,rendered.Clipping);
                 if(work.Compare) {
-                    neutralResult=neutral;neutralRevision=openRevision;acceptedReference=new(work.Source,PhotoInput.IsRaster(work.File),work.Settings.Processing,work.Settings.Geometry,work.Settings.Lens,work.Edge);
+                    neutralResult=neutral;neutralRevision=openRevision;acceptedReference=new(work.Source,PhotoInput.IsRaster(work.File),work.Settings.Processing,work.Settings.Geometry,work.Settings.Lens,work.Edge,work.Settings.IsHDREditing,work.Settings.X3fMode);
                 }
                 RefreshViewingFrames();
                 RefreshRenderLabels();
@@ -206,6 +211,13 @@ public partial class MainWindow
         UpdateBusy(); Pump();QueuePendingReset();
     }
     private void ExposureModeChanged(object sender,SelectionChangedEventArgs e) { if(!ready || syncing || exporting || transform.Active)return;settings.ExposureMode=ExposureMode.SelectedIndex;MarkEdited();Schedule(); }
+    private void X3fRenderingChanged(object sender,SelectionChangedEventArgs e)
+    {
+        if(!ready || syncing || exporting || transform.Active || !PhotoInput.IsX3f(file) || X3fRendering.SelectedIndex is < 0 or > 1)return;
+        settings.X3fMode=(X3fMode)X3fRendering.SelectedIndex;
+        if(settings.X3fMode==X3fMode.Normal) { ResetAITask();settings.AIDenoiseEnabled=false; }
+        MarkEdited();RefreshControls();Schedule();
+    }
     private void ProcessingVersionChanged(object sender,SelectionChangedEventArgs e)
     {
         if(!ready || syncing || exporting || transform.Active || file==null || ProcessingVersion.SelectedIndex is < 0 or > 1)return;
@@ -217,13 +229,14 @@ public partial class MainWindow
     private void ResetAllClicked(object sender,RoutedEventArgs e) => RequestReset(new(EditorResetKind.All));
     private async void AutoExposureClicked(object sender,RoutedEventArgs e)
     {
-        if(file==null || result==null || AIBlocksOutput || autoExposing || exporting || transform.Active)return;
+        if(file==null || result==null || settings.IsHDREditing || AIBlocksOutput || autoExposing || exporting || transform.Active)return;
         var path=file;var snapshot=settings.Clone();var revision=editRevision;var photoRevision=openRevision;
         var aiBackend=RequestedAIBackend;
+        var aiDevice=aiPreference.DeviceID;
         autoExposing=true;RefreshControls();
         try
         {
-            var ev=await Task.Run(()=>{using var meter=new RenderEngine(aiBackend:aiBackend);return meter.AutoExposure(path,snapshot);});
+            var ev=await Task.Run(()=>{using var meter=new RenderEngine(aiBackend:aiBackend,aiDeviceID:aiDevice,aiDiagnostics:aiDiagnostics);return meter.AutoExposure(path,snapshot);});
             if(closing || file!=path || openRevision!=photoRevision || editRevision!=revision || !snapshot.Capture().SameAs(settings.Capture()))return;
             settings.Set(Parameter.Exposure,NumericRange.For(ParameterSpec.All[(int)Parameter.Exposure]).Clamp(ev));MarkEdited();Schedule();
         }

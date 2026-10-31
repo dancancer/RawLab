@@ -1,5 +1,121 @@
 {
   "entries": {
+    "此 X3F 显影模式不支持 AI 降噪。": {"formats": [],"source": "此 X3F 显影模式不支持 AI 降噪。"},
+    "正常显影": {"formats": [],"source": "正常显影"},
+    "伪红外（旧版）": {"formats": [],"source": "伪红外（旧版）"},
+    "X3F 显影": {"formats": [],"source": "X3F 显影"},
+    "以文件保存的显影为基准，白平衡作相对调整。": {"formats": [],"source": "以文件保存的显影为基准，白平衡作相对调整。"},
+    "保留旧版的特殊色彩。": {"formats": [],"source": "保留旧版的特殊色彩。"},
+    "不支持此 X3F 显影模式。": {"formats": [],"source": "不支持此 X3F 显影模式。"},
+    "无法正常显影 X3F：%@": {"formats": ["%@"],"source": "无法正常显影 X3F：{0}"},
+    "任务已保存，请继续导出。": {"formats": [], "source": "任务已保存，请继续导出。"},
+    "取消检查": {"formats": [], "source": "取消检查"},
+    "将按每张照片已保存的调整导出。跳过只影响本次导出。": {"formats": [], "source": "将按每张照片已保存的调整导出。跳过只影响本次导出。"},
+    "开始导出 %@ 张": {"formats": ["%@"], "source": "开始导出 {0} 张"},
+    "查看目标": {"formats": [], "source": "查看目标"},
+    "正在准备导出…": {"formats": [], "source": "正在准备导出…"},
+    "草稿已处理，请开始导出。": {"formats": [], "source": "草稿已处理，请开始导出。"},
+    "重新检查": {"formats": [], "source": "重新检查"},
+    "此预设包含 HDR 相对白平衡，当前编辑模式不支持。": {
+      "formats": [],
+      "source": "此预设包含 HDR 相对白平衡，当前编辑模式不支持。"
+    },
+    "此预设与当前照片不兼容，请选择其他预设。": {
+      "formats": [],
+      "source": "此预设与当前照片不兼容，请选择其他预设。"
+    },
+    "此预设无法保留照片的其他调整，请选择其他预设。": {
+      "formats": [],
+      "source": "此预设无法保留照片的其他调整，请选择其他预设。"
+    },
+    "管理预设": {
+      "formats": [],
+      "source": "管理预设"
+    },
+    "应用到当前照片": {
+      "formats": [],
+      "source": "应用到当前照片"
+    },
+    "应用到多张照片": {
+      "formats": [],
+      "source": "应用到多张照片"
+    },
+    "正在检查预设…": {
+      "formats": [],
+      "source": "正在检查预设…"
+    },
+    "将覆盖以下 %@ 项调整；其他调整保留目标原值。": {
+      "formats": [
+        "%@"
+      ],
+      "source": "将覆盖以下 {0} 项调整；其他调整保留目标原值。"
+    },
+    "未包含几何与镜头。": {
+      "formats": [],
+      "source": "未包含几何与镜头。"
+    },
+    "包含几何或镜头调整。": {
+      "formats": [],
+      "source": "包含几何或镜头调整。"
+    },
+    "未选择任何调整。": {
+      "formats": [],
+      "source": "未选择任何调整。"
+    },
+    "尚无已修改的调整。": {
+      "formats": [],
+      "source": "尚无已修改的调整。"
+    },
+    "不适用": {
+      "formats": [],
+      "source": "不适用"
+    },
+    "以下为配方逻辑值；强度为 %@。部分范围会按此强度换算。": {
+      "formats": [
+        "%@"
+      ],
+      "source": "以下为配方逻辑值；强度为 {0}。部分范围会按此强度换算。"
+    },
+    "相机白平衡（按目标照片）": {
+      "formats": [],
+      "source": "相机白平衡（按目标照片）"
+    },
+    "默认降噪设置": {
+      "formats": [],
+      "source": "默认降噪设置"
+    },
+    "自动（按目标照片）": {
+      "formats": [],
+      "source": "自动（按目标照片）"
+    },
+    "待选择的镜头配置": {
+      "formats": [],
+      "source": "待选择的镜头配置"
+    },
+    "内置": {
+      "formats": [],
+      "source": "内置"
+    },
+    "配方": {
+      "formats": [],
+      "source": "配方"
+    },
+    "配方 LUT": {
+      "formats": [],
+      "source": "配方 LUT"
+    },
+    "场景": {
+      "formats": [],
+      "source": "场景"
+    },
+    "外观不可用。": {
+      "formats": [],
+      "source": "外观不可用。"
+    },
+    "无效的降噪参数": {
+      "formats": [],
+      "source": "无效的降噪参数"
+    },
     "%@ · %@%%": {
       "formats": [
         "%@",
@@ -3977,10 +4093,75 @@
     "照片库为空，请先在主窗口添加照片目录。": {
       "formats": [],
       "source": "照片库为空，请先在主窗口添加照片目录。"
+    },
+    "全部外观": {
+      "formats": [],
+      "source": "全部外观"
+    },
+    "Fuji": {
+      "formats": [],
+      "source": "Fuji"
+    },
+    "Kodak": {
+      "formats": [],
+      "source": "Kodak"
+    },
+    "其他": {
+      "formats": [],
+      "source": "其他"
+    },
+    "用户外观": {
+      "formats": [],
+      "source": "用户外观"
+    },
+    "最近使用": {
+      "formats": [],
+      "source": "最近使用"
+    },
+    "搜索外观": {
+      "formats": [],
+      "source": "搜索外观"
+    },
+    "没有匹配的外观": {
+      "formats": [],
+      "source": "没有匹配的外观"
+    },
+    "清除搜索": {
+      "formats": [],
+      "source": "清除搜索"
+    },
+    "恢复自动高度": {
+      "formats": [],
+      "source": "恢复自动高度"
+    },
+    "外观分类": {
+      "formats": [],
+      "source": "外观分类"
+    },
+    "HDR 模式暂不支持此工具。": {
+      "formats": [],
+      "source": "HDR 模式暂不支持此工具。"
+    },
+    "仅 RAW 照片支持镜头校正。": {
+      "formats": [],
+      "source": "仅 RAW 照片支持镜头校正。"
+    },
+    "此照片没有可用的相机白平衡校准。": {
+      "formats": [],
+      "source": "此照片没有可用的相机白平衡校准。"
+    },
+    "请先选择外观或配方。": {
+      "formats": [],
+      "source": "请先选择外观或配方。"
+    },
+    "请将白平衡模式、色温和色调一起保存，再应用此预设。": {
+      "formats": [],
+      "source": "请将白平衡模式、色温和色调一起保存，再应用此预设。"
     }
   },
   "overrides": {},
   "unique": {
+    "不支持此 X3F 显影模式。": {"de": "Dieser X3F-Entwicklungsmodus wird nicht unterstützt.","en": "This X3F rendering mode is not supported.","es": "Este modo de revelado X3F no es compatible.","fr": "Ce mode de développement X3F n’est pas pris en charge.","ja": "この X3F 現像モードはサポートされていません。","zh-Hans": "不支持此 X3F 显影模式。"},
     "0 至 100": {
       "de": "0 bis 100",
       "en": "0 to 100",
@@ -4597,14 +4778,6 @@
       "ja": "倍率色収差の校正データ",
       "zh-Hans": "横向色差标定"
     },
-    "横向色差标定不可用": {
-      "de": "Kalibrierung der lateralen chromatischen Aberration nicht verfügbar",
-      "en": "Lateral Chromatic Aberration Calibration Unavailable",
-      "es": "Calibración de aberración cromática lateral no disponible",
-      "fr": "Étalonnage de l’aberration chromatique latérale indisponible",
-      "ja": "倍率色収差の校正データなし",
-      "zh-Hans": "横向色差标定不可用"
-    },
     "正在准备编辑画布…": {
       "de": "Bearbeitungsfläche wird vorbereitet…",
       "en": "Preparing Editing Canvas…",
@@ -4676,14 +4849,6 @@
       "fr": "Étalonnage de la distorsion",
       "ja": "歪曲収差の校正データ",
       "zh-Hans": "畸变标定"
-    },
-    "畸变标定不可用": {
-      "de": "Verzeichnungskalibrierung nicht verfügbar",
-      "en": "Distortion Calibration Unavailable",
-      "es": "Calibración de distorsión no disponible",
-      "fr": "Étalonnage de la distorsion indisponible",
-      "ja": "歪曲収差の校正データなし",
-      "zh-Hans": "畸变标定不可用"
     },
     "精确调整": {
       "de": "Präzise Anpassung",

@@ -4,6 +4,169 @@ import XCTest
 extension ViewingEditorUITests {
     private func presets(_ app: XCUIApplication) -> [[String: Any]] { receipt(app)["presets"] as? [[String: Any]] ?? [] }
 
+    func testLookPresetAndCollectionExportTogether() {
+        let app = launch(language: "en", presetFixtures: true, looksFixtures: true)
+        openPresets(app); createPreset("Combined exposure", exposureOnly: true, app: app)
+        let id = presets(app)[0]["id"] as! String
+        app.buttons["preset.close"].tap()
+        let film = app.buttons["tool.film"]
+        if !film.exists { app.buttons["editor.group.looks"].tap() }
+        film.tap()
+        let search = app.textFields["looks.search"]
+        search.tap(); search.typeText("ACROS\n")
+        let acros = app.buttons["ACROS"]
+        for _ in 0..<4 { if acros.isHittable { break }; app.scrollViews["editor.panel"].swipeUp() }
+        acros.tap()
+        wait(app) { $0["ready"] as? Bool == true && ($0["recentLookIDs"] as? [String])?.first?.contains("ACROS") == true }
+        let look = receipt(app)["selectedLookID"] as! String
+        app.buttons["editor.group.light"].tap(); setExposure("+1.00", app: app)
+        openAdjustmentAction("preset.library.open", app: app)
+        let apply = app.buttons["preset.quick.apply.\(id)"]; revealFormControl(apply, app: app); apply.tap()
+        wait(app) { $0["ready"] as? Bool == true && $0["sourceStoredExposure"] as? Double == 0.5 }
+        XCTAssertEqual(receipt(app)["selectedLookID"] as? String, look)
+        XCTAssertEqual((receipt(app)["recentLookIDs"] as? [String])?.first, look)
+        openAdjustmentAction("collection.open", app: app)
+        XCTAssertTrue(app.buttons["collection.export"].waitForExistence(timeout: 10));app.buttons["collection.export"].tap()
+        let start = app.buttons["collection.export.start"];revealFormControl(start, app: app);start.tap()
+        wait(app, timeout: 120) { $0["batchStatus"] as? String == "completed" && $0["batchCompleted"] as? Int == 1 }
+        XCTAssertEqual(receipt(app)["batchFrozenExposure"] as? [Double], [0.5])
+        capture(app, "look-preset-collection-completed")
+        app.buttons["Task Actions"].tap();app.buttons["Discard Task"].tap();app.buttons["Discard Task"].tap()
+        wait(app) { $0["batchMode"] as? String == "" }
+    }
+
+
+    func testQuickPresetEntryStaysVisible() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        for language in ["en", "de"] {
+            XCUIDevice.shared.orientation = .portrait
+            let app = launch(language: language, presetFixtures: true)
+            let entry = app.buttons["preset.library"]
+            if language == "en" { openAdjustmentAction("preset.library.open", app: app) }
+            else {
+                for _ in 0..<8 {
+                    if entry.exists && app.scrollViews["editor.tools"].frame.contains(entry.frame) { break }
+                    app.scrollViews["editor.tools"].swipeLeft()
+                }
+                XCTAssertTrue(entry.waitForExistence(timeout: 5)); entry.tap()
+            }
+            XCTAssertTrue(entry.waitForExistence(timeout: 5))
+            XCTAssertTrue(app.scrollViews["editor.tools"].frame.contains(entry.frame), "The selected preset entry must remain fully visible")
+            capture(app, "quick-preset-entry-visible-\(language)")
+            XCUIDevice.shared.orientation = .landscapeLeft
+            wait(app) { $0["ready"] as? Bool == true }
+            XCTAssertTrue(app.scrollViews["editor.tools"].frame.contains(entry.frame), "The selected preset entry remains visible after rotation")
+            let photo = (receipt(app)["nativePhotoRects"] as! [[Double]]).first!
+            let canvas = app.descendants(matching: .any).matching(identifier: "editor.photo").firstMatch.frame
+            XCTAssertGreaterThanOrEqual(canvas.width, 44); XCTAssertGreaterThanOrEqual(canvas.height, 44)
+            // 44pt 约束的是画布叠层触点；按宽高比缩放的照片不使用控件命中尺寸作为下限。
+            XCTAssertGreaterThan(photo[2], 0); XCTAssertGreaterThan(photo[3], 0)
+            capture(app, "quick-preset-landscape-\(language)")
+            app.terminate()
+        }
+    }
+
+    func testQuickPresetApplyCancelUndoAndFailure() {
+        let app = launch(language: "en", presetFixtures: true)
+        openPresets(app); createPreset("Quick exposure", exposureOnly: true, app: app)
+        wait(app) { ($0["presets"] as? [[String: Any]])?.count == 1 }
+        let id = presets(app)[0]["id"] as! String
+        app.buttons["preset.close"].tap()
+        app.buttons["editor.group.light"].tap(); setExposure("+1.00", app: app)
+        openAdjustmentAction("preset.library.open", app: app)
+        let apply = app.buttons["preset.quick.apply.\(id)"]
+        revealFormControl(apply, app: app)
+        let before = receipt(app)
+        func notify(_ name: String) {
+            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName(name as CFString), nil, nil, true)
+        }
+        notify("com.rawlab.quick-preset.hold")
+        wait(app) { $0["quickPreparationHeld"] as? Bool == true }
+        apply.tap()
+        wait(app) { $0["quickPreparing"] as? Bool == true }
+        let cancel = app.buttons["preset.quick.cancel"]; revealFormControl(cancel, app: app); cancel.tap()
+        notify("com.rawlab.quick-preset.release")
+        wait(app) { $0["quickPreparationHeld"] as? Bool == false && $0["quickPreparing"] as? Bool == false }
+        XCTAssertEqual(receipt(app)["sourceStoredRevision"] as? String, before["sourceStoredRevision"] as? String)
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, before["historyCount"] as? Int)
+        capture(app, "quick-preset-cancel")
+        notify("com.rawlab.s3.fail-next-save")
+        wait(app) { $0["failNextSave"] as? Bool == true }
+        revealFormControl(apply, app: app); apply.tap()
+        let retry = app.buttons["preset.quick.retry"]
+        revealFormControl(retry, app: app); XCTAssertTrue(retry.waitForExistence(timeout: 15))
+        XCTAssertEqual(receipt(app)["sourceStoredRevision"] as? String, before["sourceStoredRevision"] as? String)
+        retry.tap()
+        wait(app) { $0["sourceStoredExposure"] as? Double == 0.5 && $0["exposure"] as? Double == 0.5 }
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, (before["historyCount"] as! Int) + 1)
+        XCTAssertEqual((receipt(app)["history"] as! [[String: Any]]).last?["action"] as? String, "preset")
+        XCTAssertFalse(app.buttons["adjustment.paste.preflight"].exists)
+        let photo = (receipt(app)["nativePhotoRects"] as! [[Double]]).first!
+        XCTAssertGreaterThan(photo[2], 44); XCTAssertGreaterThan(photo[3], 44)
+        capture(app, "quick-preset-saved")
+        openAdjustmentAction("adjustment.history.undo", app: app)
+        wait(app) { $0["sourceStoredExposure"] as? Double == 1.0 && $0["exposure"] as? Double == 1.0 }
+        XCTAssertFalse(app.staticTexts["preset.quick.status"].exists)
+        XCTAssertTrue(app.buttons["preset.quick.manage"].exists)
+        revealFormControl(apply, app: app); apply.tap()
+        wait(app) { $0["sourceStoredExposure"] as? Double == 0.5 }
+        let undo = app.buttons["preset.quick.undo"]; revealFormControl(undo, app: app); undo.tap()
+        wait(app) { $0["sourceStoredExposure"] as? Double == 1.0 && $0["exposure"] as? Double == 1.0 }
+        revealFormControl(apply, app: app); apply.tap()
+        wait(app) { $0["sourceStoredExposure"] as? Double == 0.5 }
+        let saved = receipt(app)
+        revealFormControl(apply, app: app); apply.tap()
+        wait(app) { $0["quickPreparing"] as? Bool == false }
+        XCTAssertEqual(receipt(app)["sourceStoredRevision"] as? String, saved["sourceStoredRevision"] as? String)
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, saved["historyCount"] as? Int)
+        let status = app.staticTexts["preset.quick.status"]; revealFormControl(status, app: app)
+        XCTAssertTrue(status.label.contains("Unchanged"), status.label)
+        app.buttons["editor.group.light"].tap()
+        XCTAssertTrue(app.buttons["adjustment.value"].waitForExistence(timeout: 5), "Leaving presets opens the requested tool without collapsing its panel")
+    }
+
+    func testScopeSummaryMatchesCaptureWithoutSaving() {
+        let app = launch(language: "en", presetFixtures: true)
+        let initial = receipt(app)
+        openPresets(app)
+        app.buttons["preset.create"].tap()
+        presetName("Scope summary", app: app)
+        func chooseScope(_ title: String) {
+            let picker = app.descendants(matching: .any).matching(identifier: "preset.save.scope").firstMatch
+            revealFormControl(picker, app: app); picker.tap()
+            app.buttons[title].firstMatch.tap()
+        }
+        chooseScope("Modified only")
+        let count = app.staticTexts["preset.save.summary.count"]
+        revealFormControl(count, app: app)
+        XCTAssertTrue(count.label.contains("Adjustments to overwrite: 1."), count.label)
+        let light = app.descendants(matching: .any).matching(identifier: "preset.save.summary.group.light").firstMatch
+        revealFormControl(light, app: app); light.tap()
+        let exposure = app.descendants(matching: .any).matching(identifier: "preset.save.summary.value.light.exposure").firstMatch
+        revealFormControl(exposure, app: app)
+        XCTAssertTrue(exposure.label.contains("+0.50 EV"), app.debugDescription)
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, initial["historyCount"] as? Int)
+        XCTAssertEqual(receipt(app)["sourceStoredRevision"] as? String, initial["sourceStoredRevision"] as? String)
+        XCTAssertTrue(receipt(app)["clipboard"] is NSNull)
+        capture(app, "scope-summary-modified")
+        chooseScope("Custom")
+        let clear = app.buttons["preset.save.clear"]
+        revealFormControl(clear, app: app); clear.tap()
+        let empty = app.staticTexts["preset.save.summary.empty"]
+        revealFormControl(empty, app: app); XCTAssertTrue(empty.exists)
+        let save = app.buttons["preset.save.confirm"]
+        revealFormControl(save, app: app); XCTAssertFalse(save.isEnabled)
+        capture(app, "scope-summary-empty-custom")
+        chooseScope("Modified only")
+        revealFormControl(save, app: app); XCTAssertTrue(save.isEnabled); save.tap()
+        wait(app) { ($0["presets"] as? [[String: Any]])?.count == 1 }
+        let payload = presets(app)[0]["payload"] as! [String: Any]
+        let values = payload["values"] as! [String: Any]
+        XCTAssertEqual(Set(values.keys), ["light.exposure"])
+        XCTAssertEqual(values["light.exposure"] as? Double, 0.5)
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, initial["historyCount"] as? Int)
+    }
+
     private func presetName(_ name: String, app: XCUIApplication) {
         let field = app.textFields["preset.name"]
         XCTAssertTrue(field.waitForExistence(timeout: 10), app.debugDescription)
@@ -30,6 +193,8 @@ extension ViewingEditorUITests {
 
     private func openPresets(_ app: XCUIApplication) {
         openAdjustmentAction("preset.library.open", app: app)
+        let manage = app.buttons["preset.quick.manage"]
+        revealFormControl(manage, app: app); XCTAssertTrue(manage.waitForExistence(timeout: 10)); manage.tap()
         XCTAssertTrue(app.buttons["preset.create"].waitForExistence(timeout: 10), app.debugDescription)
     }
 
@@ -83,6 +248,7 @@ extension ViewingEditorUITests {
         app.buttons["editor.group.looks"].tap()
         let library = app.buttons["preset.library"]
         XCTAssertTrue(library.waitForExistence(timeout: 5)); library.tap()
+        app.buttons["preset.quick.manage"].tap()
         createPreset("Portrait exposure", exposureOnly: true, app: app)
         wait(app) { ($0["presets"] as? [[String: Any]])?.count == 1 }
         let original = presets(app)[0], id = original["id"] as! String
@@ -100,20 +266,11 @@ extension ViewingEditorUITests {
         app.buttons["preset.close"].tap()
         app.buttons["editor.group.light"].tap(); setExposure("+1.00", app: app)
         openPresets(app); app.buttons["preset.apply.\(id)"].tap()
-        XCTAssertTrue(app.buttons["adjustment.paste.preflight"].waitForExistence(timeout: 10))
-        app.buttons["adjustment.paste.preflight"].tap()
-        let apply = app.buttons["adjustment.paste.apply"]
-        revealFormControl(apply, app: app)
-        XCTAssertTrue(apply.waitForExistence(timeout: 10))
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: apply)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed); apply.tap()
         wait(app) { $0["exposure"] as? Double == 0.75 && $0["sourceStoredExposure"] as? Double == 0.75 }
         XCTAssertEqual((receipt(app)["history"] as! [[String: Any]]).last?["action"] as? String, "preset")
         XCTAssertEqual(receipt(app)["clipboard"] as? NSDictionary, clipboard)
         capture(app, "preset-apply-native-history")
-        let done = app.buttons["adjustment.paste.done"]; revealFormControl(done, app: app); done.tap()
-        XCTAssertTrue(app.buttons["preset.create"].waitForExistence(timeout: 10), "Completing application returns to the library")
-        app.buttons["preset.close"].tap()
+        XCTAssertTrue(app.buttons["preset.quick.undo"].waitForExistence(timeout: 10), "Current-photo application returns to the inline list")
         openAdjustmentAction("adjustment.history.undo", app: app)
         wait(app) { $0["ready"] as? Bool == true && $0["sourceStoredExposure"] as? Double == 1.0 }
         openAdjustmentAction("adjustment.history.redo", app: app)
@@ -215,15 +372,24 @@ extension ViewingEditorUITests {
                 app.buttons["editor.group.looks"].tap()
             }
             let library = app.buttons["preset.library"]
-            for _ in 0..<3 where !library.isHittable { app.scrollViews["editor.tools"].swipeLeft() }
+            // 屏幕外的 SwiftUI 按钮在部分 Simulator 上查询 isHittable 会报错；先把其完整 frame 滚入视口。
+            for _ in 0..<8 {
+                if library.exists && !library.frame.isEmpty && app.frame.contains(library.frame) { break }
+                app.scrollViews["editor.tools"].swipeLeft()
+            }
             XCTAssertTrue(library.waitForExistence(timeout: 5)); library.tap()
+            let manage = app.buttons["preset.quick.manage"]; revealFormControl(manage, app: app); manage.tap()
             let create = app.buttons["preset.create"]; revealFormControl(create, app: app); create.tap()
             presetName("晨光 · Portrait / Sehr langer benutzerdefinierter Vorgabenname", app: app)
             let clear = app.buttons["preset.save.clear"]; revealFormControl(clear, app: app); clear.tap()
             let light = app.descendants(matching: .any).matching(identifier: "preset.group.light").firstMatch
             revealFormControl(light, app: app); light.tap()
             let exposure = app.switches["preset.field.light.exposure"]
-            revealFormControl(exposure, app: app); XCTAssertGreaterThanOrEqual(exposure.frame.height, 44); toggleField(exposure)
+            revealFormControl(exposure, app: app); XCTAssertGreaterThanOrEqual(exposure.frame.height, 44)
+            let nativeSwitch = exposure.switches.firstMatch
+            if nativeSwitch.exists { nativeSwitch.tap() } else { exposure.tap() }
+            // 空摘要变为覆盖说明后，超大字号可能将当前行推到视口外；重新滚到字段再验证状态。
+            revealFormControl(exposure, app: app); XCTAssertEqual(exposure.value as? String, "1")
             capture(app, "preset-scope-large-\(language)")
             let save = app.buttons["preset.save.confirm"]; revealFormControl(save, app: app)
             let titles = ["en": "Save Preset", "zh-Hans": "保存预设", "de": "Vorgabe speichern",
@@ -236,6 +402,12 @@ extension ViewingEditorUITests {
             let apply = app.buttons["preset.apply.\(id)"]; revealFormControl(apply, app: app)
             XCTAssertGreaterThanOrEqual(apply.frame.height, 44)
             capture(app, "preset-library-large-\(language)")
+            app.buttons["preset.close"].tap()
+            let quickApply = app.buttons["preset.quick.apply.\(id)"]; revealFormControl(quickApply, app: app)
+            XCTAssertGreaterThanOrEqual(quickApply.frame.height, 44)
+            let photo = (receipt(app)["nativePhotoRects"] as! [[Double]]).first!
+            XCTAssertGreaterThan(photo[2], 44); XCTAssertGreaterThan(photo[3], 44)
+            capture(app, "quick-preset-large-\(language)")
             app.terminate()
         }
     }

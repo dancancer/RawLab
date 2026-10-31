@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ColorSpace
 import android.graphics.Matrix
+import android.graphics.ImageDecoder
 import android.os.Build
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
@@ -22,6 +23,10 @@ internal class DecodedRaster(val bitmap: Bitmap) : AutoCloseable {
 
 internal object RasterImageDecoder {
     fun decode(file: File): DecodedRaster {
+        val heif=file.inputStream().use { input ->
+            val header=ByteArray(12);input.read(header)==header.size && header.copyOfRange(4,8).contentEquals("ftyp".toByteArray(Charsets.US_ASCII))
+        }
+        if (heif) return decodeHEIF(file)
         val validation = file.inputStream().use(RasterContainerValidator::inspect)
         val info = validation.info ?: throw IOException(validation.error ?: "Unsupported raster image")
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -58,6 +63,28 @@ internal object RasterImageDecoder {
             oriented?.recycle()
             throw error
         } finally { if (oriented !== bitmap) bitmap.recycle() }
+    }
+
+    private fun decodeHEIF(file: File): DecodedRaster {
+        // 只有原生探测确认 NOT_HDR 后才允许平台解码器处理普通 HEIF。
+        if (com.rawlab.android.engine.NativeHDRBridge.probe(file) != null)
+            throw IOException("HDR sources require the HDR decoder")
+        if (Build.VERSION.SDK_INT < 28) throw IOException("SDR HEIF requires Android 9 or later")
+        val bitmap = ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
+            if (info.size.width.toLong() * info.size.height > RasterContainerValidator.MAX_PIXELS)
+                throw IOException("Image is too large")
+            if (!isSupportedSdrColorSpace(info.colorSpace)) throw IOException("Image color space is not supported")
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            decoder.setTargetColorSpace(ColorSpace.get(ColorSpace.Named.SRGB))
+            decoder.setOnPartialImageListener { false }
+        }
+        try {
+            if (bitmap.config != Bitmap.Config.ARGB_8888 || bitmap.colorSpace?.isSrgb != true ||
+                (Build.VERSION.SDK_INT >= 34 && bitmap.hasGainmap()) || !isOpaque(bitmap))
+                throw IOException("Unsupported HEIF pixels")
+            // ImageDecoder 已应用容器方向，不能再次应用 EXIF。
+            return DecodedRaster(bitmap)
+        } catch (error: Throwable) { bitmap.recycle(); throw error }
     }
 
     private fun isOpaque(bitmap: Bitmap): Boolean {

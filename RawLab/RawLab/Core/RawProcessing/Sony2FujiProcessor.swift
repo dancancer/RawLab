@@ -198,6 +198,7 @@ struct Sony2FujiProcessor {
         return try withRawSession(reuse: false, inputType: inputType) { session in
             let settings = try effectiveSettings(settings, session: session, url: url, inputType: inputType)
             try configureProcessing(session, identity: settings.processing)
+            try configureX3f(session, mode: settings.x3fMode)
             try configureTone(session, settings: settings.toneSettings)
             try configureAtmosphere(session, settings: settings.atmosphereSettings)
             try configureLens(session, settings: settings.lensSettings)
@@ -225,7 +226,8 @@ struct Sony2FujiProcessor {
                 }
             } else { throw ProcessorError.rasterDecodeFailed }
             guard status == SONY2FUJI_STATUS_OK else {
-                throw ProcessorError.processFailed(L10n.format("无法自动调整曝光：%@", String(describing: statusMessage(status))))
+                let detail = sony2fuji_session_x3f_error(session).map { String(cString: $0) } ?? ""
+                throw ProcessorError.processFailed(L10n.format("无法自动调整曝光：%@", detail.isEmpty ? statusMessage(status) : detail))
             }
             return Double(ev)
         }
@@ -317,13 +319,15 @@ struct Sony2FujiProcessor {
                 outBuffer: &buffer
             )
             guard status == SONY2FUJI_STATUS_OK else {
-                throw processingFailure(status)
+                throw processingFailure(status, session: session)
             }
 
-            var output = try takeBuffer(&buffer, semantic: .legacy)
+            let normalX3f = isNormalX3f(url, settings: settings)
+            var output = try takeBuffer(&buffer, semantic: normalX3f ? .display : .legacy)
             output.nativeSize = geometrySize(session)
-            let rawWhiteBalance = readRawWhiteBalance(from: session)
-            return ProcessResult(buffer: output, orientation: .up, rawWhiteBalance: rawWhiteBalance, lensInfo: try readLens(session, url: url))
+            let rawWhiteBalance = normalX3f ? RawWhiteBalance(temperature: 6500, tint: 0, isCalibrated: true)
+                : readRawWhiteBalance(from: session)
+            return ProcessResult(buffer: output, orientation: .up, rawWhiteBalance: rawWhiteBalance, lensInfo: normalX3f ? nil : try readLens(session, url: url))
         }
     }
 
@@ -411,7 +415,7 @@ struct Sony2FujiProcessor {
                                           inputPath: url.path, lutPath: lutURL?.path, outputPath: outputURL.path)
             if status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR { throw ProcessorError.outputIO }
             guard status == SONY2FUJI_STATUS_OK else {
-                throw processingFailure(status, input: url, look: lutURL, output: outputURL)
+                throw processingFailure(status, input: url, look: lutURL, output: outputURL, session: session)
             }
         }
     }
@@ -501,7 +505,8 @@ struct Sony2FujiProcessor {
             throw ProcessorError.rasterDecodeFailed
         }
         return try ExportMetadata.jpegData(image: cgImage, sourceURL: sourceURL,
-                                          orientation: orientation ?? .up, quality: quality)
+                                          orientation: orientation ?? .up, quality: quality,
+                                          fallbackSourceProperties: sourceURL.pathExtension.lowercased() == "x3f" ? [:] : nil)
     }
 
     func computeRGBHistogram(from buffer: Buffer) -> RGBHistogram? {

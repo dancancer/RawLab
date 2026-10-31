@@ -128,7 +128,10 @@ internal fun RenderError(state: EditorState, onRetry: () -> Unit, modifier: Modi
             .padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("${stringResource(R.string.editor_preview_outdated)}\n$error", Modifier.weight(1f).verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer)
-            if (state.photo != null) TextButton(onClick = onRetry, enabled = state.operation == Operation.NONE) { Text(stringResource(R.string.retry)) }
+            if (state.photo != null || state.retryLegacyX3f) TextButton(onClick = onRetry, enabled = state.operation == Operation.NONE,
+                modifier = Modifier.testTag(if (state.retryLegacyX3f) "x3f.retryLegacy" else "preview.retry")) {
+                Text(stringResource(if (state.retryLegacyX3f) R.string.x3f_retry_legacy else R.string.retry))
+            }
         }
     }
 }

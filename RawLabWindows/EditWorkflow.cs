@@ -16,7 +16,7 @@ public partial class MainWindow
     private readonly BatchJournal batchJournal = new(BatchJournal.DefaultDirectory);
     private BatchJob? previousBatch;
     private BatchExportWindow? batchWindow;
-    private bool LookAvailable => lut == null || File.Exists(lut);
+    private bool LookAvailable => settings.IsHDREditing || lut == null || File.Exists(lut);
     private BatchJob? CurrentBatch => batchWindow?.Job ?? previousBatch;
 
     private void InitializeEditWorkflow()
@@ -24,6 +24,7 @@ public partial class MainWindow
         editSaveTimer.Tick += (_, _) => { editSaveTimer.Stop(); SaveEdits(); };
         editNoticeTimer.Tick += (_, _) => { editNoticeTimer.Stop(); if (RetrySave.Visibility != Visibility.Visible && !adjustmentReloadRequired) {SaveState.Text = "";saveNoticeKey=null;} };
         Deactivated += (_, _) => {
+            if (quickPreset.Phase == QuickPresetPhase.Preparing) CancelQuickPreset();
             if(preservingUpdateNavigation)return;
             // 浏览预设不结束参数输入；其他窗口失活仍按原规则取消半输入。
             if(!OwnedWindows.OfType<AdjustmentPresetLibraryDialog>().Any(window=>window.IsVisible))CancelParameterInputs();
@@ -39,6 +40,7 @@ public partial class MainWindow
 
     private void MarkEdited()
     {
+        if (quickPreset.Phase == QuickPresetPhase.Preparing) CancelQuickPreset();
         ++editRevision;
         if (!ready || syncing || file == null) return;
         editDirty = true;
@@ -133,7 +135,9 @@ public partial class MainWindow
         editStore ??= new EditStore(EditStore.DefaultDirectory);
         currentEditRecord=editStore.VersionedState(input);editGesture=null;adjustmentReloadRequired=false;
         var saved = currentEditRecord.Edit;
-        settings = saved?.Settings.Restore() ?? new Adjustments();
+        // New HDR sources start in HDR mode; an existing snapshot without HDR
+        // remains the legacy SDR record by construction.
+        settings = saved?.Settings.Restore() ?? PhotoInput.PrepareHDRInputSettings(input, new Adjustments());
         lut = saved == null ? null : ResolveLook(saved);
         if (settings.MasterRecipeID == null && lut != null && !films.Any(f => StringComparer.OrdinalIgnoreCase.Equals(f.Path, lut)))
         {
@@ -178,7 +182,7 @@ public partial class MainWindow
             if (batchWindow != null) { batchWindow.Close();if(batchWindow?.IsVisible==true)return;batchWindow=null; }
             if (previous != null) batchJournal.Discard(previous);
             var job = BatchJob.Create(file, settings.Capture(), lut, LookTitle);
-            job.AIBackend=RequestedAIBackend;
+            job.AIBackend=RequestedAIBackend;job.AIDeviceID=aiPreference.DeviceID;
             batchJournal.FreezeLook(job); batchJournal.Save(job); previousBatch = job;
             ShowBatch(job);
         }
@@ -192,9 +196,10 @@ public partial class MainWindow
         if (batchWindow != null) { batchWindow.Activate(); return; }
         if (previousBatch != null) ShowBatch(previousBatch);
     }
-    private void ShowBatch(BatchJob job)
+    private void ShowBatch(BatchJob job,bool autoStart=false)
     {
-        var window = new BatchExportWindow(job, batchJournal) { Owner = this, IsEnabled = !UpdateInstallationActive };
+        var window = new BatchExportWindow(job, batchJournal,backend=>new RenderEngine(aiBackend:backend,
+            aiDeviceID:job.AIDeviceID,aiDiagnostics:aiDiagnostics),aiDiagnostics) { Owner = this, IsEnabled = !UpdateInstallationActive };
         batchWindow = window;
         window.RunCompleted += (before, after, runFailedCount) =>
         {
@@ -217,6 +222,7 @@ public partial class MainWindow
             RefreshBatchNotice(); UpdateBusy();
         };
         window.Show(); RefreshBatchNotice(); UpdateBusy();
+        if(autoStart)_=window.StartExecution();
     }
     private void RecoverFailedClose(BatchExportWindow window)
     {

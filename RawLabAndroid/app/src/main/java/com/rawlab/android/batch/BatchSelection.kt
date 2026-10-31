@@ -64,7 +64,8 @@ class BatchSelectionExport(private val directory: File,
                 validateActive(photo.id); validateSource(photo)
                 val inputHash = BatchFrozenSettings.checksum(photo.sourceFile)
                 val record = readRecord(photo.identity)
-                val settings = record.settings ?: EditSettings()
+                val settings = record.settings ?: com.rawlab.android.settings.sourceDefaultSettings(photo.sourceIsHDR)
+                require(format != ExportFormat.HDR_JPEG || settings.isHDREditing) { "HDR JPEG requires HDR editing" }
                 val look = resolveLook(settings)
                 check((settings.film == "neutral" && settings.recipeID == null) || look != null) { "Photo look is unavailable" }
                 CollectionExportReview.Row(photo, record, settings, inputHash, look, look?.let(BatchFrozenSettings::checksum))

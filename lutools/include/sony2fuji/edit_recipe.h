@@ -19,6 +19,7 @@ struct HDRRecipeSettings {
 struct EditRecipe {
     uint32_t schemaVersion = 1;
     sony2fuji_processing_version processingVersion = SONY2FUJI_PROCESSING_LEGACY;
+    sony2fuji_x3f_mode x3fMode = SONY2FUJI_X3F_LEGACY;
     std::string inputPath;
     bool rasterInput = false;
     // v6 只接受 HDR 来源；相对 WB/处理版本不借用旧 RAW 字段。

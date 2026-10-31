@@ -1,5 +1,147 @@
 {
   "entries": {
+    "任务已保存，请继续导出。": {
+      "formats": [],
+      "source": "任务已保存，请继续导出。"
+    },
+    "取消检查": {
+      "formats": [],
+      "source": "取消检查"
+    },
+    "将按每张照片已保存的调整导出。跳过只影响本次导出。": {
+      "formats": [],
+      "source": "将按每张照片已保存的调整导出。跳过只影响本次导出。"
+    },
+    "开始导出 {0} 张": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "开始导出 {0} 张"
+    },
+    "查看目标": {
+      "formats": [],
+      "source": "查看目标"
+    },
+    "正在准备导出…": {
+      "formats": [],
+      "source": "正在准备导出…"
+    },
+    "草稿已处理，请开始导出。": {
+      "formats": [],
+      "source": "草稿已处理，请开始导出。"
+    },
+    "重新检查": {
+      "formats": [],
+      "source": "重新检查"
+    },
+    "更多": {
+      "formats": [],
+      "source": "更多"
+    },
+    "此预设包含 HDR 相对白平衡，当前编辑模式不支持。": {
+      "formats": [],
+      "source": "此预设包含 HDR 相对白平衡，当前编辑模式不支持。"
+    },
+    "此预设与当前照片不兼容，请选择其他预设。": {
+      "formats": [],
+      "source": "此预设与当前照片不兼容，请选择其他预设。"
+    },
+    "此预设无法保留照片的其他调整，请选择其他预设。": {
+      "formats": [],
+      "source": "此预设无法保留照片的其他调整，请选择其他预设。"
+    },
+    "管理预设": {
+      "formats": [],
+      "source": "管理预设"
+    },
+    "应用到当前照片": {
+      "formats": [],
+      "source": "应用到当前照片"
+    },
+    "应用到多张照片": {
+      "formats": [],
+      "source": "应用到多张照片"
+    },
+    "正在检查预设…": {
+      "formats": [],
+      "source": "正在检查预设…"
+    },
+    "X3F 显影": {"formats":[],"source":"X3F 显影"},
+    "正常显影": {"formats":[],"source":"正常显影"},
+    "伪红外（旧版）": {"formats":[],"source":"伪红外（旧版）"},
+    "以文件保存的显影为基准，白平衡作相对调整。": {"formats":[],"source":"以文件保存的显影为基准，白平衡作相对调整。"},
+    "保留旧版的特殊色彩。": {"formats":[],"source":"保留旧版的特殊色彩。"},
+    "此 X3F 显影模式不支持 AI 降噪。": {"formats":[],"source":"此 X3F 显影模式不支持 AI 降噪。"},
+    "无法正常显影 X3F：{0}": {"formats":["{0}"],"source":"无法正常显影 X3F：{0}"},
+    "查看调整范围": { "formats": [], "source": "查看调整范围" },
+    "将覆盖以下 {0} 项调整；其他调整保留目标原值。": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "将覆盖以下 {0} 项调整；其他调整保留目标原值。"
+    },
+    "未包含几何与镜头。": {
+      "formats": [],
+      "source": "未包含几何与镜头。"
+    },
+    "包含几何或镜头调整。": {
+      "formats": [],
+      "source": "包含几何或镜头调整。"
+    },
+    "未选择任何调整。": {
+      "formats": [],
+      "source": "未选择任何调整。"
+    },
+    "尚无已修改的调整。": {
+      "formats": [],
+      "source": "尚无已修改的调整。"
+    },
+    "以下为配方逻辑值；强度为 {0}。部分范围会按此强度换算。": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "以下为配方逻辑值；强度为 {0}。部分范围会按此强度换算。"
+    },
+    "相机白平衡（按目标照片）": {
+      "formats": [],
+      "source": "相机白平衡（按目标照片）"
+    },
+    "默认降噪设置": {
+      "formats": [],
+      "source": "默认降噪设置"
+    },
+    "自动（按目标照片）": {
+      "formats": [],
+      "source": "自动（按目标照片）"
+    },
+    "待选择的镜头配置": {
+      "formats": [],
+      "source": "待选择的镜头配置"
+    },
+    "内置": {
+      "formats": [],
+      "source": "内置"
+    },
+    "配方": {
+      "formats": [],
+      "source": "配方"
+    },
+    "配方 LUT": {
+      "formats": [],
+      "source": "配方 LUT"
+    },
+    "场景": {
+      "formats": [],
+      "source": "场景"
+    },
+    "相对白平衡": {
+      "formats": [],
+      "source": "相对白平衡"
+    },
+    "无效的降噪参数": {
+      "formats": [],
+      "source": "无效的降噪参数"
+    },
     "\n显示色彩降噪  {0}\n暗角  强度 {1:+0.#;-0.#;0} · 中点 {2:0.#} · 圆度 {3:+0.#;-0.#;0} · 羽化 {4:0.#} · 高光保护 {5:0.#}\n颗粒  强度 {6:0.#} · 大小 {7:0.#} · 粗糙度 {8:0.#}": {
       "formats": [
         "{0}",
@@ -3689,6 +3831,210 @@
     "无照片": {
       "formats": [],
       "source": "无照片"
+    },
+    "HDR 编辑": {
+      "source": "HDR 编辑",
+      "formats": []
+    },
+    "自动 HDR": {
+      "source": "自动 HDR",
+      "formats": []
+    },
+    "SDR 兼容预览": {
+      "source": "SDR 兼容预览",
+      "formats": []
+    },
+    "HDR 假色": {
+      "source": "HDR 假色",
+      "formats": []
+    },
+    "HDR 亮度直方图": {
+      "source": "HDR 亮度直方图",
+      "formats": []
+    },
+    "HDR 显示不可用，当前显示 SDR。": {
+      "source": "HDR 显示不可用，当前显示 SDR。",
+      "formats": []
+    },
+    "HDR JPEG": {
+      "source": "HDR JPEG",
+      "formats": []
+    },
+    "保存 SDR JPEG": {
+      "source": "保存 SDR JPEG",
+      "formats": []
+    },
+    "参考白以上 {0}": {
+      "source": "参考白以上 {0}",
+      "formats": [
+        "{0}"
+      ]
+    },
+    "此照片没有可编辑的 HDR 增益图。": {
+      "source": "此照片没有可编辑的 HDR 增益图。",
+      "formats": []
+    },
+    "不支持此 HDR 格式或颜色描述。": {
+      "source": "不支持此 HDR 格式或颜色描述。",
+      "formats": []
+    },
+    "HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。": {
+      "source": "HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。",
+      "formats": []
+    },
+    "内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。": {
+      "source": "内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。",
+      "formats": []
+    },
+    "无法写入 HDR 导出文件，请检查可用空间和目标权限。": {
+      "source": "无法写入 HDR 导出文件，请检查可用空间和目标权限。",
+      "formats": []
+    },
+    "HDR 处理失败（{0}）。": {
+      "source": "HDR 处理失败（{0}）。",
+      "formats": [
+        "{0}"
+      ]
+    },
+    "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。": {
+      "source": "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。",
+      "formats": []
+    },
+    "HDR 调整记录无效，原有文件未被覆盖。": {
+      "source": "HDR 调整记录无效，原有文件未被覆盖。",
+      "formats": []
+    },
+    "HDR JPEG 需要启用 HDR 编辑。": {
+      "source": "HDR JPEG 需要启用 HDR 编辑。",
+      "formats": []
+    },
+    "AI 任务正在运行，完成后可更换显卡。": {
+      "formats": [],
+      "source": "AI 任务正在运行，完成后可更换显卡。"
+    },
+    "AI 显卡执行失败，请更换 AI 显卡或导出诊断包。": {
+      "formats": [],
+      "source": "AI 显卡执行失败，请更换 AI 显卡或导出诊断包。"
+    },
+    "AI 诊断包已导出，可手动发送给开发者。": {
+      "formats": [],
+      "source": "AI 诊断包已导出，可手动发送给开发者。"
+    },
+    "AI 降噪将使用：{0}": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "AI 降噪将使用：{0}"
+    },
+    "AI 降噪显卡": {
+      "formats": [],
+      "source": "AI 降噪显卡"
+    },
+    "{0}（不可用）": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "{0}（不可用）"
+    },
+    "失败时自动保存本地诊断；导出后可手动发送，不包含照片内容。": {
+      "formats": [],
+      "source": "失败时自动保存本地诊断；导出后可手动发送，不包含照片内容。"
+    },
+    "导出 AI 诊断包…": {
+      "formats": [],
+      "source": "导出 AI 诊断包…"
+    },
+    "所选 AI 显卡不可用，请在设置中重新选择。": {
+      "formats": [],
+      "source": "所选 AI 显卡不可用，请在设置中重新选择。"
+    },
+    "无法保存诊断包，请检查磁盘空间和写入权限。": {
+      "formats": [],
+      "source": "无法保存诊断包，请检查磁盘空间和写入权限。"
+    },
+    "无法导出 AI 诊断包。": {
+      "formats": [],
+      "source": "无法导出 AI 诊断包。"
+    },
+    "暂无可导出的 AI 诊断。": {
+      "formats": [],
+      "source": "暂无可导出的 AI 诊断。"
+    },
+    "自动（优先独显）": {
+      "formats": [],
+      "source": "自动（优先独显）"
+    },
+    "全部外观": {
+      "formats": [],
+      "source": "全部外观"
+    },
+    "Fuji": {
+      "formats": [],
+      "source": "Fuji"
+    },
+    "Kodak": {
+      "formats": [],
+      "source": "Kodak"
+    },
+    "其他": {
+      "formats": [],
+      "source": "其他"
+    },
+    "用户外观": {
+      "formats": [],
+      "source": "用户外观"
+    },
+    "最近使用": {
+      "formats": [],
+      "source": "最近使用"
+    },
+    "搜索外观": {
+      "formats": [],
+      "source": "搜索外观"
+    },
+    "没有匹配的外观": {
+      "formats": [],
+      "source": "没有匹配的外观"
+    },
+    "清除搜索": {
+      "formats": [],
+      "source": "清除搜索"
+    },
+    "恢复自动高度": {
+      "formats": [],
+      "source": "恢复自动高度"
+    },
+    "外观分类": {
+      "formats": [],
+      "source": "外观分类"
+    },
+    "HDR 模式暂不支持此工具。": {
+      "formats": [],
+      "source": "HDR 模式暂不支持此工具。"
+    },
+    "仅 RAW 照片支持镜头校正。": {
+      "formats": [],
+      "source": "仅 RAW 照片支持镜头校正。"
+    },
+    "此照片没有可用的相机白平衡校准。": {
+      "formats": [],
+      "source": "此照片没有可用的相机白平衡校准。"
+    },
+    "请先选择外观或配方。": {
+      "formats": [],
+      "source": "请先选择外观或配方。"
+    },
+    "畸变标定不可用": {
+      "formats": [],
+      "source": "畸变标定不可用"
+    },
+    "横向色差标定不可用": {
+      "formats": [],
+      "source": "横向色差标定不可用"
+    },
+    "请将白平衡模式、色温和色调一起保存，再应用此预设。": {
+      "formats": [],
+      "source": "请将白平衡模式、色温和色调一起保存，再应用此预设。"
     }
   },
   "overrides": {
@@ -3857,14 +4203,6 @@
       "fr": "Ce RAW ou ce fichier de look n’est pas pris en charge. Sélectionnez un CUBE Fuji déclaré compatible avec l’entrée et la sortie BT.709, ou un fichier .rlook valide.",
       "ja": "このRAWまたはルックファイルはサポートされていません。入力とBT.709出力に対応すると明記されたFuji CUBE、または有効な.rlookファイルを選択してください。",
       "zh-Hans": "不支持此 RAW 或外观文件。请选择声明兼容输入和 BT.709 输出的富士 CUBE，或有效的 .rlook 文件。"
-    },
-    "不适用": {
-      "de": "Nicht anwendbar",
-      "en": "Not applicable",
-      "es": "No se aplica",
-      "fr": "Sans objet",
-      "ja": "対象外",
-      "zh-Hans": "不适用"
     },
     "交互预览": {
       "de": "Interaktive Vorschau",
@@ -5193,6 +5531,118 @@
       "fr": "Looks de film|*.cube;*.vlt;*.rlook;*.dcp|CUBE / VLT LUT|*.cube;*.vlt|Looks RLOOK RawLab|*.rlook|Looks DCP|*.dcp",
       "ja": "フィルムルック|*.cube;*.vlt;*.rlook;*.dcp|CUBE / VLT LUT|*.cube;*.vlt|RawLab RLOOK ルック|*.rlook|DCP ルック|*.dcp",
       "zh-Hans": "胶片外观|*.cube;*.vlt;*.rlook;*.dcp|CUBE / VLT LUT|*.cube;*.vlt|RawLab RLOOK 外观|*.rlook|DCP 外观|*.dcp"
+    },
+    "HDR 调整记录无效，原有文件未被覆盖。": {
+      "zh-Hans": "HDR 调整记录无效，原有文件未被覆盖。",
+      "en": "The HDR adjustment record is invalid. The original file was preserved.",
+      "de": "Der HDR-Anpassungsdatensatz ist ungültig. Die Originaldatei wurde beibehalten.",
+      "es": "El registro de ajustes HDR no es válido. Se conservó el archivo original.",
+      "fr": "Les réglages HDR sont invalides. Le fichier original a été conservé.",
+      "ja": "HDR 調整記録が無効です。元のファイルは保持されています。"
+    },
+    "AI 任务正在运行，完成后可更换显卡。": {
+      "de": "Eine KI-Aufgabe läuft. Danach können Sie die GPU wechseln.",
+      "en": "An AI task is running. You can change the GPU when it finishes.",
+      "es": "Hay una tarea de IA en curso. Podrás cambiar la GPU cuando termine.",
+      "fr": "Une tâche IA est en cours. Vous pourrez changer de GPU une fois terminée.",
+      "ja": "AI処理中です。完了後にGPUを変更できます。",
+      "zh-Hans": "AI 任务正在运行，完成后可更换显卡。"
+    },
+    "AI 显卡执行失败，请更换 AI 显卡或导出诊断包。": {
+      "de": "Die KI-GPU ist fehlgeschlagen. Wählen Sie eine andere GPU oder exportieren Sie die Diagnose.",
+      "en": "The AI GPU failed. Select another AI GPU or export diagnostics.",
+      "es": "La GPU de IA falló. Selecciona otra GPU o exporta el diagnóstico.",
+      "fr": "Le GPU IA a échoué. Changez de GPU IA ou exportez le diagnostic.",
+      "ja": "AI用GPUの処理に失敗しました。別のGPUを選ぶか、診断をエクスポートしてください。",
+      "zh-Hans": "AI 显卡执行失败，请更换 AI 显卡或导出诊断包。"
+    },
+    "AI 诊断包已导出，可手动发送给开发者。": {
+      "de": "KI-Diagnose exportiert. Sie können die ZIP-Datei an die Entwickler senden.",
+      "en": "AI diagnostics exported. You can send the ZIP to the developers.",
+      "es": "Diagnóstico de IA exportado. Puedes enviar el ZIP a los desarrolladores.",
+      "fr": "Diagnostic IA exporté. Vous pouvez envoyer le ZIP aux développeurs.",
+      "ja": "AI診断をエクスポートしました。ZIPを開発者に送信できます。",
+      "zh-Hans": "AI 诊断包已导出，可手动发送给开发者。"
+    },
+    "AI 降噪将使用：{0}": {
+      "de": "KI-Entrauschung verwendet: {0}",
+      "en": "AI denoise will use: {0}",
+      "es": "La reducción de ruido IA usará: {0}",
+      "fr": "Le débruitage IA utilisera : {0}",
+      "ja": "AIノイズ低減で使用：{0}",
+      "zh-Hans": "AI 降噪将使用：{0}"
+    },
+    "AI 降噪显卡": {
+      "de": "GPU für KI-Entrauschung",
+      "en": "AI denoise GPU",
+      "es": "GPU para reducción de ruido IA",
+      "fr": "GPU pour le débruitage IA",
+      "ja": "AIノイズ低減のGPU",
+      "zh-Hans": "AI 降噪显卡"
+    },
+    "{0}（不可用）": {
+      "de": "{0} (nicht verfügbar)",
+      "en": "{0} (unavailable)",
+      "es": "{0} (no disponible)",
+      "fr": "{0} (indisponible)",
+      "ja": "{0}（利用不可）",
+      "zh-Hans": "{0}（不可用）"
+    },
+    "失败时自动保存本地诊断；导出后可手动发送，不包含照片内容。": {
+      "de": "Bei Fehlern werden Diagnosen lokal gespeichert. Sie können sie exportieren und selbst senden; Bilddaten sind nicht enthalten.",
+      "en": "Diagnostics are saved locally after a failure. Export and share them manually; photo data is excluded.",
+      "es": "Los diagnósticos se guardan localmente tras un fallo. Puedes exportarlos y enviarlos; no contienen fotos.",
+      "fr": "Les diagnostics sont enregistrés localement en cas d’échec. Vous pouvez les exporter et les envoyer ; ils ne contiennent pas vos photos.",
+      "ja": "失敗時に診断を端末に保存します。書き出して手動で送信できます。写真の内容は含まれません。",
+      "zh-Hans": "失败时自动保存本地诊断；导出后可手动发送，不包含照片内容。"
+    },
+    "导出 AI 诊断包…": {
+      "de": "KI-Diagnose exportieren…",
+      "en": "Export AI diagnostics…",
+      "es": "Exportar diagnóstico de IA…",
+      "fr": "Exporter le diagnostic IA…",
+      "ja": "AI診断をエクスポート…",
+      "zh-Hans": "导出 AI 诊断包…"
+    },
+    "所选 AI 显卡不可用，请在设置中重新选择。": {
+      "de": "Die ausgewählte KI-GPU ist nicht verfügbar. Wählen Sie in den Einstellungen eine andere GPU.",
+      "en": "The selected AI GPU is unavailable. Choose another GPU in Settings.",
+      "es": "La GPU de IA seleccionada no está disponible. Elige otra en Ajustes.",
+      "fr": "Le GPU IA sélectionné est indisponible. Choisissez-en un autre dans les réglages.",
+      "ja": "選択したAI用GPUは利用できません。設定で選び直してください。",
+      "zh-Hans": "所选 AI 显卡不可用，请在设置中重新选择。"
+    },
+    "无法保存诊断包，请检查磁盘空间和写入权限。": {
+      "de": "Diagnose konnte nicht gespeichert werden. Prüfen Sie Speicherplatz und Schreibrechte.",
+      "en": "Could not save diagnostics. Check disk space and write permissions.",
+      "es": "No se pudo guardar el diagnóstico. Comprueba el espacio y los permisos de escritura.",
+      "fr": "Impossible d’enregistrer le diagnostic. Vérifiez l’espace disque et les droits d’écriture.",
+      "ja": "診断を保存できません。空き容量と書き込み権限を確認してください。",
+      "zh-Hans": "无法保存诊断包，请检查磁盘空间和写入权限。"
+    },
+    "无法导出 AI 诊断包。": {
+      "de": "KI-Diagnose konnte nicht exportiert werden.",
+      "en": "Could not export AI diagnostics.",
+      "es": "No se pudo exportar el diagnóstico de IA.",
+      "fr": "Impossible d’exporter le diagnostic IA.",
+      "ja": "AI診断をエクスポートできません。",
+      "zh-Hans": "无法导出 AI 诊断包。"
+    },
+    "暂无可导出的 AI 诊断。": {
+      "de": "Keine KI-Diagnose zum Exportieren vorhanden.",
+      "en": "No AI diagnostics are available to export.",
+      "es": "No hay diagnósticos de IA para exportar.",
+      "fr": "Aucun diagnostic IA à exporter.",
+      "ja": "エクスポートできるAI診断はありません。",
+      "zh-Hans": "暂无可导出的 AI 诊断。"
+    },
+    "自动（优先独显）": {
+      "de": "Automatisch (dedizierte GPU bevorzugen)",
+      "en": "Auto (prefer discrete GPU)",
+      "es": "Automático (preferir GPU dedicada)",
+      "fr": "Auto (GPU dédiée de préférence)",
+      "ja": "自動（外部GPUを優先）",
+      "zh-Hans": "自动（优先独显）"
     }
   }
 }

@@ -32,6 +32,7 @@ extension EditorModel {
             guard let saved = outcome.saved else {
                 throw outcome.error ?? AdjustmentTransferError.incompatible("save")
             }
+            if let state = saved.state { recordSavedLookChange(from: committedEdit?.state, to: state) }
             committedEdit = saved
             adjustmentHistoryRevision &+= 1
             saveError = nil; saveStatusKey = "调整已保存"
@@ -93,6 +94,8 @@ extension EditorModel {
         if !dirty, geometryDraft == nil,
            let saved = outcomes.first(where: { $0.targetID == path && $0.saved != nil })?.saved,
            let file, (try? editStore?.versionedState(for: file)) == saved {
+            if !quickPresetState.isPreparing { cancelQuickPreset() }
+            if let state = saved.state { recordSavedLookChange(from: committedEdit?.state, to: state) }
             committedEdit = saved
             var defaults = Adjustments()
             defaults.exposureMode = RenderEngine.isRasterInput(file) ? .sensor : .preview

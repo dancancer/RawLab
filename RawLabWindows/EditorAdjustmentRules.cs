@@ -79,6 +79,7 @@ public static class EditorAdjustmentRules
     public static bool IsModified(EditorResetScope scope, SavedEdit edit)
     {
         Validate(scope, edit);
+        if (edit.Settings.HDR is { Mode: HDRMode.Hdr } hdr) return ResetHDR(scope, hdr) != hdr;
         return !SameScope(scope, edit, Defaults(edit));
     }
     public static EditorResetCandidate PrepareReset(EditorResetScope scope, SavedEdit edit)
@@ -89,6 +90,13 @@ public static class EditorAdjustmentRules
         }
         if (edit.Settings.MasterRecipeID is {} recipe && MasterRecipe.Find(recipe) == null)
             return new(EditorResetStatus.Blocked, Reason: "Unknown master recipe.");
+        if (edit.Settings.HDR is { Mode: HDRMode.Hdr } hdr)
+        {
+            var reset = ResetHDR(scope, hdr);
+            if (reset == hdr) return new(EditorResetStatus.NoChange);
+            return new(EditorResetStatus.Ready, new SavedEdit(edit.Identity, edit.Settings with { HDR = reset }, edit.Look),
+                RequiresConfirmation: false);
+        }
         var defaults = Defaults(edit);
         if (SameScope(scope, edit, defaults)) return new(EditorResetStatus.NoChange);
         var source = edit.Settings.Copy();
@@ -153,7 +161,7 @@ public static class EditorAdjustmentRules
     private static readonly Parameter[] ColorParameters = [Parameter.Temperature, Parameter.Tint, Parameter.Saturation];
     private static SavedEdit Defaults(SavedEdit edit)
     {
-        var state = new Adjustments { Processing = edit.Settings.Processing };
+        var state = new Adjustments { Processing = edit.Settings.Processing, X3fMode = edit.Settings.X3fMode };
         if (PhotoInput.IsRaw(edit.Identity.Path)) state.ResolveWhiteBalance(edit.Settings.AsShotTemperature is {} t && edit.Settings.AsShotTint is {} tint ? (t, tint) : null);
         state = PhotoInput.PrepareInputSettings(edit.Identity.Path, state);
         return new(edit.Identity, state.Capture(), null);
@@ -221,6 +229,7 @@ public static class EditorAdjustmentRules
     };
     private static bool SameScope(EditorResetScope scope, SavedEdit value, SavedEdit defaults)
     {
+        if (value.Settings.HDR is { Mode: HDRMode.Hdr } hdr) return ResetHDR(scope, hdr) == hdr;
         if (PhotoInput.IsRaster(value.Identity.Path)) {
             // 普通图片的 RAW 专属元数据不参与标记；配方 tint 仍是待用的逻辑贡献。
             var comparable = value.Settings.Copy() with {
@@ -249,6 +258,31 @@ public static class EditorAdjustmentRules
         if (scope.Group == EditorAdjustmentGroup.Color && value.Settings.MasterRecipeID != null) groupDefaults.Values[(int)Parameter.Tint] = 0;
         return value.Settings.SameAs(ResetGroup(scope.Group, value.Settings.Copy(), groupDefaults));
     }
+
+    private static HDRSettings ResetHDR(EditorResetScope scope, HDRSettings value)
+    {
+        if (scope.Kind == EditorResetKind.All) return value.Reset() with { Mode = value.Mode };
+        if (scope.Kind == EditorResetKind.Group)
+        {
+            return scope.Group switch {
+                EditorAdjustmentGroup.Light => value with { Exposure = 0, Contrast = 0, Highlights = 0, Shadows = 0 },
+                EditorAdjustmentGroup.Color => value with { Temperature = 6500, Tint = 0, Saturation = 0 },
+                EditorAdjustmentGroup.Geometry => value with { Geometry = new() },
+                _ => value
+            };
+        }
+        if (scope.Kind != EditorResetKind.Tool) return value;
+        return scope.Tool switch {
+            EditorAdjustmentTool.Exposure => value with { Exposure = 0 },
+            EditorAdjustmentTool.Highlights => value with { Highlights = 0 },
+            EditorAdjustmentTool.Shadows => value with { Shadows = 0 },
+            EditorAdjustmentTool.Contrast => value with { Contrast = 0 },
+            EditorAdjustmentTool.Saturation => value with { Saturation = 0 },
+            EditorAdjustmentTool.WhiteBalance => value with { Temperature = 6500, Tint = 0 },
+            EditorAdjustmentTool.Geometry => value with { Geometry = new() },
+            _ => value
+        };
+    }
     private static void Validate(EditorResetScope scope, SavedEdit edit)
     {
         if (!Enum.IsDefined(scope.Zone) || !Enum.IsDefined(scope.Kind) || !Enum.IsDefined(scope.Group) || !Enum.IsDefined(scope.Tool) || scope.Kind == EditorResetKind.HslChannel && scope.Channel is < 0 or > 7)
@@ -272,7 +306,7 @@ public static class EditorAdjustmentRules
     {
         var a = before.Settings.Restore(); var b = after.Settings.Restore();
         var x = EffectiveRequest(before.Identity.Path, a); var y = EffectiveRequest(after.Identity.Path, b);
-        return x.ExposureEv == y.ExposureEv && x.Contrast == y.Contrast && x.Highlights == y.Highlights &&
+        return a.X3fMode == b.X3fMode && x.ExposureEv == y.ExposureEv && x.Contrast == y.Contrast && x.Highlights == y.Highlights &&
             x.Shadows == y.Shadows && x.Saturation == y.Saturation && x.ToneCurve == y.ToneCurve && x.Sharpening == y.Sharpening &&
             x.WbMode == y.WbMode && x.Temperature == y.Temperature && x.Tint == y.Tint && a.ExposureMode == b.ExposureMode &&
             a.RenderHsl.Values.Select(v => (float)v).SequenceEqual(b.RenderHsl.Values.Select(v => (float)v)) &&

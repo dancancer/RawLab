@@ -63,6 +63,8 @@
             <TextBlock Text="{DynamicResource '输出'}" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,14"/>
             <WrapPanel x:Name="FormatOptions" Margin="0,0,0,20">
               <RadioButton x:Name="Jpeg" Content="JPEG" GroupName="Format" Checked="FormatChanged" Margin="0,0,24,0" Foreground="{DynamicResource Foreground}"/>
+              <RadioButton x:Name="HdrJpeg" Content="{DynamicResource 'HDR JPEG'}" GroupName="Format" Checked="FormatChanged" Margin="0,0,24,0" Foreground="{DynamicResource Foreground}"/>
+              <RadioButton x:Name="SdrJpeg" Content="{DynamicResource '保存 SDR JPEG'}" GroupName="Format" Checked="FormatChanged" Margin="0,0,24,0" Foreground="{DynamicResource Foreground}"/>
               <RadioButton x:Name="Png" Content="{DynamicResource '16-bit PNG'}" GroupName="Format" Checked="FormatChanged" Margin="0,0,24,0" Foreground="{DynamicResource Foreground}"/>
               <RadioButton x:Name="Dng" Content="{DynamicResource 'DNG · 渲染型'}" AutomationProperties.Name="{DynamicResource 'DNG · 渲染型'}" GroupName="Format" Checked="FormatChanged" Foreground="{DynamicResource Foreground}"/>
             </WrapPanel>
@@ -82,7 +84,10 @@
               <TextBlock Text="{DynamicResource '保存到'}" VerticalAlignment="Center" Margin="0,0,12,0"/>
               <TextBlock x:Name="Destination" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
             </DockPanel>
-            <DockPanel><TextBlock Text="{DynamicResource '自动添加序号'}" Foreground="{DynamicResource Muted}" DockPanel.Dock="Right"/><TextBlock Text="{DynamicResource '重名文件'}"/></DockPanel>
+            <StackPanel>
+              <TextBlock Text="{DynamicResource '重名文件'}" TextWrapping="Wrap"/>
+              <TextBlock Text="{DynamicResource '自动添加序号'}" Foreground="{DynamicResource Muted}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+            </StackPanel>
           </StackPanel>
         </ScrollViewer>
       </Border>

@@ -7,6 +7,11 @@ package com.rawlab.android.format
 enum class PhotoInputKind { RAW, RASTER }
 
 internal object PhotoFiles {
+    fun isX3f(file: java.io.File): Boolean = file.inputStream().use {
+        val signature = ByteArray(4)
+        it.read(signature) == 4 && signature.contentEquals(byteArrayOf(70, 79, 86, 98))
+    }
+
     fun kind(name: String, mime: String?): PhotoInputKind? {
         val raw = RawFiles.accepts(name, mime)
         val raster = RasterFiles.accepts(name, mime)
@@ -22,8 +27,8 @@ internal object PhotoFiles {
 }
 
 internal object RasterFiles {
-    private val extensions = setOf("jpg", "jpeg", "png")
-    private val mimes = setOf("image/jpeg", "image/png")
+    private val extensions = setOf("jpg", "jpeg", "png", "heic", "heif")
+    private val mimes = setOf("image/jpeg", "image/png", "image/heic", "image/heif", "image/heif-sequence")
 
     fun accepts(name: String, mime: String?): Boolean =
         name.substringAfterLast('.', "").lowercase() in extensions || mime?.lowercase() in mimes

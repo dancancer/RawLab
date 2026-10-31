@@ -12,6 +12,12 @@ extension Sony2FujiProcessor {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
         else {
+            if url.pathExtension.lowercased() == "x3f" {
+                let dimensions = url.path.withCString { rawlab_get_raw_dimensions($0) }
+                if dimensions.width > 0, dimensions.height > 0 {
+                    return ImageMetadata(width: dimensions.width, height: dimensions.height, orientation: .up)
+                }
+            }
             throw ProcessorError.metadataUnavailable
         }
 
@@ -49,6 +55,15 @@ extension Sony2FujiProcessor {
         }
     }
 
+    func configureX3f(_ session: OpaquePointer, mode: X3fMode) throws {
+        let status = sony2fuji_session_set_x3f_mode(session, sony2fuji_x3f_mode(rawValue: mode.nativeValue))
+        guard status == SONY2FUJI_STATUS_OK else { throw processingFailure(status, session: session) }
+    }
+
+    func isNormalX3f(_ url: URL, settings: RawSettings) -> Bool {
+        url.pathExtension.lowercased() == "x3f" && settings.x3fMode == .normal
+    }
+
     func configureCurve(_ session: OpaquePointer, settings: ToneCurveSettings) throws {
         guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的曲线参数")) }
         var config = settings.nativeConfig
@@ -84,6 +99,7 @@ extension Sony2FujiProcessor {
     func configureSession(_ session: OpaquePointer, settings: RawSettings, interactive: Bool,
                           viewportPreview: Bool = false) throws {
         try configureProcessing(session, identity: settings.processing)
+        try configureX3f(session, mode: settings.x3fMode)
         try configureTone(session, settings: settings.toneSettings)
         try configureAtmosphere(session, settings: settings.atmosphereSettings)
         try configureCurve(session, settings: settings.curveSettings)
@@ -180,11 +196,15 @@ extension Sony2FujiProcessor {
     func prepareRecipe(_ settings: RawSettings, session: OpaquePointer, url: URL?) throws -> RawSettings {
         guard settings.masterRecipeID != nil else { return settings }
         guard let url else { return settings.renderedRecipe(cameraTemperature: 6500, cameraTint: 0) }
+        if isNormalX3f(url, settings: settings) {
+            return settings.renderedRecipe(cameraTemperature: 6500, cameraTint: 0)
+        }
         if settings.whiteBalanceMode == .camera && settings.tint * settings.recipeScale == 0 {
             return settings.renderedRecipe(cameraTemperature: settings.temperature, cameraTint: 0)
         }
-        let camera = try recipeWhiteBalance.resolve(url: url, processing: settings.processing) {
-            try loadRecipeWhiteBalance(session: session, url: url, exposureMode: settings.exposureMode, processing: settings.processing)
+        let camera = try recipeWhiteBalance.resolve(url: url, processing: settings.processing, x3fMode: settings.x3fMode) {
+            try loadRecipeWhiteBalance(session: session, url: url, exposureMode: settings.exposureMode,
+                                       processing: settings.processing, x3fMode: settings.x3fMode)
         }
         return settings.renderedRecipe(cameraTemperature: camera.temperature, cameraTint: camera.tint)
     }
@@ -203,10 +223,11 @@ extension Sony2FujiProcessor {
     }
 
     func loadRecipeWhiteBalance(session: OpaquePointer, url: URL,
-                               exposureMode: RawExposureMode, processing: ProcessingIdentity) throws -> RawWhiteBalance {
+                               exposureMode: RawExposureMode, processing: ProcessingIdentity, x3fMode: X3fMode) throws -> RawWhiteBalance {
         // Read the target RAW once; saved recipe values are not its as-shot WB.
         var neutral = RawSettings.default
         neutral.processing = processing
+        neutral.x3fMode = x3fMode
         neutral.exposureMode = exposureMode
         try configureSession(session, settings: neutral, interactive: false)
         var request = makeBaseRequest(settings: neutral, inputType: SONY2FUJI_INPUT_RAW)

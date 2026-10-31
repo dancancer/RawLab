@@ -213,10 +213,10 @@ struct BatchExportView: View {
             if model.running {
                 Button(model.stopping ? L10n.text("正在停止…") : L10n.text("取消导出"), action: model.cancel).disabled(model.stopping)
             } else {
-                Button(model.job.started ? L10n.text("关闭") : L10n.text("取消")) {
-                    if model.job.started || model.discardDraft() { dismissWindow(id: "batch-export") }
+                Button(model.job.started || model.job.mode == .perTargetFrozen ? L10n.text("关闭") : L10n.text("取消")) {
+                    if model.close() { dismissWindow(id: "batch-export") }
                 }.disabled(model.validating)
-                if model.job.started && model.job.succeededCount != model.job.selectedCount {
+                if (model.job.started || model.job.mode == .perTargetFrozen) && model.job.succeededCount != model.job.selectedCount {
                     Button(L10n.text("结束任务…")) { confirmDiscard = true }.disabled(model.previewing)
                 }
                 if model.job.succeededCount > 0 {

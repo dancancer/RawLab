@@ -13,6 +13,7 @@ public partial class DenoisePanel : UserControl
     public event Action<DenoiseSettings,bool>? Changed;
     public event Action<bool>? AIChanged;
     public event Action? AICancelRequested,AIRetryRequested;
+    public event Action? AIDiagnosticsRequested;
     public DenoisePanel()
     {
         InitializeComponent();
@@ -49,6 +50,7 @@ public partial class DenoisePanel : UserControl
         AICancel.Visibility=state.IsRunning ? Visibility.Visible : Visibility.Collapsed;
         AIRetry.Visibility=state.Status is AIDenoiseStatus.Failed or AIDenoiseStatus.Cancelled ? Visibility.Visible : Visibility.Collapsed;
         AIRetry.IsEnabled=canStart;
+        AIExportDiagnostics.Visibility=state.Status==AIDenoiseStatus.Failed && state.DiagnosticPath!=null ? Visibility.Visible : Visibility.Collapsed;
         AIProgress.Visibility=state.IsRunning ? Visibility.Visible : Visibility.Collapsed;
         AIProgress.IsIndeterminate=state.Total==0;AIProgress.Value=state.Total==0 ? 0 : Math.Clamp((double)state.Done/state.Total,0,1);
         OrdinaryDenoise.IsEnabled=!enabled && !state.IsRunning;
@@ -62,10 +64,12 @@ public partial class DenoisePanel : UserControl
             _=>unavailableHint ?? Loc.Text(canStart ? "支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。" : "此照片或构建尚不能使用 AI 降噪。")
         };
         if(cpuPreview)AIStatus.Text+="\n"+Loc.Text("普通显影使用 CPU；AI 降噪仍使用硬件 GPU。");
+        if(state.Status==AIDenoiseStatus.Failed && state.DiagnosticSaveFailed)AIStatus.Text+="\n"+Loc.Text("无法保存诊断包，请检查磁盘空间和写入权限。");
         if(enabled)AIStatus.Text+="\n"+Loc.Text("普通降噪参数已保留，关闭 AI 降噪即可恢复。");
         syncing=false;
     }
     private void AIEnabledChanged(object sender,RoutedEventArgs e) { if(!syncing)AIChanged?.Invoke(AIEnabledBox.IsChecked==true); }
     private void AICancelClicked(object sender,RoutedEventArgs e)=>AICancelRequested?.Invoke();
     private void AIRetryClicked(object sender,RoutedEventArgs e)=>AIRetryRequested?.Invoke();
+    private void AIExportDiagnosticsClicked(object sender,RoutedEventArgs e)=>AIDiagnosticsRequested?.Invoke();
 }

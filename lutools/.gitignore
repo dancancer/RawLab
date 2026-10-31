@@ -12,7 +12,9 @@ CMakeFiles/
 cmake_install.cmake
 cmake-build-*/
 *.cmake
+!cmake/hdr-portable.cmake
 !cmake/hdr-codec.cmake
+!cmake/x3f.cmake
 !cmake/libraw-sony-arw6.cmake
 !cmake/libraw-cameras.cmake
 !cmake/raw-jpeg.cmake
@@ -76,6 +78,8 @@ docs/.doctrees/
 # Package managers
 node_modules/
 vendor/
+!x3f-bridge/vendor/
+!x3f-bridge/vendor/**
 
 # Compiled addons
 *.node
@@ -111,3 +115,7 @@ third_party/*
 !third_party/dng-sdk/
 !third_party/dng-sdk/*.txt
 !cmake/dng-sdk.cmake
+
+# Rust renderer build output
+x3f-bridge/target/
+x3f-bridge/vendor/*/target/

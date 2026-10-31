@@ -96,9 +96,9 @@ class AgentCommands(unittest.TestCase):
         return value
 
     def test_capabilities_and_flag_order(self):
-        hdr=sys.platform=="darwin" and tuple(map(int,platform.mac_ver()[0].split(".")[:2]))>=(15,0)
+        hdr=sys.platform!="darwin" or tuple(map(int,platform.mac_ver()[0].split(".")[:2]))>=(15,0)
         expected = {
-            "recipe_versions": [1, 2, 3, 4, 5]+([6] if hdr else []),
+            "recipe_versions": [1, 2, 3, 4, 5]+([6] if hdr else [])+[7],
             "commands": ["capabilities", "validate_recipe", "info", "preview", "export"],
             "input_types": (["raw", "raster"] if sys.platform in ("darwin", "win32") else ["raw"])+(["hdr_raster"] if hdr else []),
             "output_formats": ["jpeg", "png", "dng"]+(["hdr_jpeg"] if hdr else []),
@@ -110,6 +110,10 @@ class AgentCommands(unittest.TestCase):
                 result = self.envelope(self.run_cli(*arguments), "capabilities")
                 for key, value in expected.items():
                     self.assertEqual(result["result"][key], value)
+                x3f = result["result"]["x3f"]
+                self.assertIs(type(x3f["normal_available"]), bool)
+                self.assertEqual(x3f["recipe_min_version"], 7)
+                self.assertEqual(x3f["modes"], ["legacy", "normal-v1"])
                 features = result["result"]["optional_features"]
                 self.assertEqual(result["result"]["tone_controls"], {
                     "version": 1, "recipe_min_version": 5, "range": [-1, 1],

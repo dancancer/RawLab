@@ -6,6 +6,7 @@
 #include "file_path.h"
 #include "processing_cancellation.h"
 #include <libraw/libraw.h>
+#include "x3f_processor.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -119,10 +120,11 @@ class RAWProcessor::Impl {
 public:
     Impl() : rawProcessor_(std::make_unique<LibRaw>()) {}
 
-    ErrorCode loadFile(const std::string& filepath) {
+    ErrorCode loadFile(const std::string& filepath, X3fMode mode = X3fMode::Legacy) {
         RawCancellationScope cancellation(*rawProcessor_);
         invalidateState();
         if (filepath.empty()) return ErrorCode::FileNotFound;
+        if (mode != X3fMode::Legacy && mode != X3fMode::Normal) return ErrorCode::InvalidFormat;
 
         filepath_ = filepath;
         auto& params = rawProcessor_->imgdata.params;
@@ -130,7 +132,8 @@ public:
         params.use_camera_wb = 1;
         params.use_auto_wb = 0;
         params.half_size = 0;
-        const int ret = openAndUnpack(true, false);
+        const bool metadataOnly = mode == X3fMode::Normal && hasX3fSignature(filepath);
+        const int ret = openAndUnpack(true, false, !metadataOnly);
         if (ret != LIBRAW_SUCCESS) {
             std::cerr << "无法打开 RAW 文件: " << libraw_strerror(ret) << std::endl;
             invalidateState();
@@ -159,12 +162,28 @@ public:
             return ErrorCode::InvalidFormat;
         if (!std::isfinite(options.exposure) || !std::isfinite(options.brightness) ||
             options.brightness <= 0 || std::abs(options.exposure) > 20) return ErrorCode::InvalidFormat;
-        const bool customWB = options.useCustomWhiteBalance || options.useTemperatureWhiteBalance;
-        float multipliers[4];
-        std::copy_n(options.customWhiteBalance,4,multipliers);
-        if (options.useTemperatureWhiteBalance &&
-            (!whiteBalance_ || !whiteBalance_->multipliers(options.temperature, options.tint, multipliers)))
+        if (options.x3fMode != X3fMode::Legacy && options.x3fMode != X3fMode::Normal) return ErrorCode::InvalidFormat;
+        displayReferred_ = false;
+        lastError_.clear();
+        const bool x3fSignature = options.x3fMode == X3fMode::Normal && hasX3fSignature(filepath_);
+        if (options.x3fMode == X3fMode::Normal && !x3fSignature &&
+            (rawProcessor_->imgdata.idata.is_foveon || hasX3fExtension(filepath_))) {
+            lastError_ = "The X3F source does not contain a valid FOVb header";
             return ErrorCode::InvalidFormat;
+        }
+        if (x3fSignature) {
+            if (!x3fProcessor_) x3fProcessor_ = std::make_unique<X3fProcessor>();
+            const auto result = x3fProcessor_->process(filepath_, cameraModel_, rawProcessor_->imgdata.sizes.flip, options, output);
+            lastError_ = x3fProcessor_->error();
+            if (result != ErrorCode::Success) return result;
+            displayReferred_ = true;
+            baselineExposureEV_ = previewExposureEV_ = 0;
+            outputSpace_ = options.outputLinear && options.outputAdobe ? ColorSpace::AdobeRGB :
+                (options.outputLinear && options.outputAces ? ColorSpace::ACES2065_1 : ColorSpace::sRGB);
+            lensReport_ = {};
+            return ErrorCode::Success;
+        }
+        const bool customWB = options.useCustomWhiteBalance || options.useTemperatureWhiteBalance;
         const bool cameraWB = options.useCameraWhiteBalance && !customWB && !options.useAutoWhiteBalance;
         const bool autoWB = options.useAutoWhiteBalance && !customWB;
         auto& params = rawProcessor_->imgdata.params;
@@ -173,6 +192,11 @@ public:
         params.fbdd_noiserd = options.rawNoiseReduction;
         const ErrorCode identificationResult = ensureIdentificationMode(cameraWB, autoWB);
         if (identificationResult != ErrorCode::Success) return identificationResult;
+        float multipliers[4];
+        std::copy_n(options.customWhiteBalance,4,multipliers);
+        if (options.useTemperatureWhiteBalance &&
+            (!whiteBalance_ || !whiteBalance_->multipliers(options.temperature, options.tint, multipliers)))
+            return ErrorCode::InvalidFormat;
         // 非 Bayer 必须重置，避免复用处理器时把 X-Trans 误送入 VNG。
         params.user_qual = bayerSource_ && options.bayerDemosaic != BayerDemosaicMethod::Legacy ?
             (options.bayerDemosaic == BayerDemosaicMethod::VNG ? 1 : 11) : -1;
@@ -402,6 +426,7 @@ public:
     float getBaselineExposureEV() const { return baselineExposureEV_; }
     float getMetadataExposureEV() const { return metadataExposureEV_; }
     bool getAsShotWhiteBalance(float& temperature, float& tint) const {
+        if (displayReferred_) return false;
         if (!whiteBalance_ || !whiteBalance_->available()) return false;
         temperature=whiteBalance_->asShot().temperature;
         tint=whiteBalance_->asShot().tint;
@@ -409,6 +434,8 @@ public:
     }
 
     bool supportsNoiseReduction() const { return sourceReady_ && bayerSource_; }
+    bool isDisplayReferred() const { return displayReferred_; }
+    const std::string& getLastError() const { return lastError_; }
     LensCorrectionReport getLensCorrectionReport() const { return lensReport_; }
 
     bool getCameraColorMatrix(float matrix[3][3]) const {
@@ -420,9 +447,13 @@ public:
 
 private:
     void invalidateState() {
+        x3fProcessor_.reset();
+        displayReferred_ = false;
+        lastError_.clear();
         rawProcessor_->recycle();
         filepath_.clear();
         sourceReady_ = false;
+        sourceUnpacked_ = false;
         identificationCameraWB_ = false;
         identificationAutoWB_ = false;
         width_ = height_ = 0;
@@ -441,11 +472,12 @@ private:
         bayerMetadata_ = {}; bayerMetadataReady_ = false; bayerDaylightWB_ = {};
     }
 
-    int openAndUnpack(bool cameraWB, bool autoWB) {
+    int openAndUnpack(bool cameraWB, bool autoWB, bool unpackPixels = true) {
         // open_file replaces LibRaw's datastream ownership flag before opening.
         // Explicitly close the previous stream first (Windows otherwise leaks a
         // file handle on camera/custom WB mode switches).
         rawProcessor_->recycle();
+        sourceUnpacked_ = false;
         // recycle 不清警告位，Stage3 状态只能属于当前输入。
         rawProcessor_->imgdata.process_warnings &= ~LIBRAW_WARN_DNG_STAGE3_APPLIED;
 #ifdef SONY2FUJI_ENABLE_DNGSDK
@@ -463,6 +495,7 @@ private:
         const int openResult = openRawFile(*rawProcessor_, filepath_);
         if (openResult != LIBRAW_SUCCESS) return openResult;
         sdkStage3_ = false;
+        if (!unpackPixels) return LIBRAW_SUCCESS;
 #ifdef SONY2FUJI_ENABLE_DNGSDK
         // 仅 JPEG XL 使用 SDK，其他 RAW 保留现有解码和白平衡路径。
         const char* decoder = rawProcessor_->unpack_function_name();
@@ -482,6 +515,7 @@ private:
         // 部分解码器只记录损坏计数却返回成功，不能继续导出损坏的像素。
         if (rawProcessor_->error_count()!=0) return LIBRAW_DATA_ERROR;
         rawProcessor_->adjust_to_raw_inset_crop(3);
+        sourceUnpacked_ = true;
         return LIBRAW_SUCCESS;
     }
 
@@ -549,8 +583,9 @@ private:
     }
 
     ErrorCode ensureIdentificationMode(bool cameraWB, bool autoWB) {
-        if (cameraWB == identificationCameraWB_ && autoWB == identificationAutoWB_)
+        if (sourceUnpacked_ && cameraWB == identificationCameraWB_ && autoWB == identificationAutoWB_)
             return ErrorCode::Success;
+        const bool needsCalibration = !sourceUnpacked_;
         const int ret = openAndUnpack(cameraWB, autoWB);
         if (ret != LIBRAW_SUCCESS) {
             std::cerr << "无法重新加载 RAW 文件: " << libraw_strerror(ret) << std::endl;
@@ -561,6 +596,7 @@ private:
         identificationCameraWB_ = cameraWB;
         identificationAutoWB_ = autoWB;
         sourceReady_ = true;
+        if (needsCalibration) snapshotCalibration();
         return ErrorCode::Success;
     }
 
@@ -576,6 +612,9 @@ private:
     std::unique_ptr<dng_host> dngHost_;
 #endif
     std::unique_ptr<LibRaw> rawProcessor_;
+    std::unique_ptr<X3fProcessor> x3fProcessor_;
+    bool displayReferred_ = false;
+    std::string lastError_;
     std::string filepath_;
     std::string cameraMake_;
     std::string cameraModel_;
@@ -584,6 +623,7 @@ private:
     bool cameraColorMatrixValid_ = false;
     bool bayerSource_ = false;
     bool sourceReady_ = false;
+    bool sourceUnpacked_ = false;
     bool identificationCameraWB_ = false;
     bool identificationAutoWB_ = false;
     bool fujiRotate_ = false;
@@ -613,10 +653,16 @@ RAWProcessor::~RAWProcessor() = default;
 ErrorCode RAWProcessor::loadFile(const std::string& filepath) {
     return pImpl_->loadFile(filepath);
 }
+ErrorCode RAWProcessor::loadFile(const std::string& filepath, X3fMode mode) {
+    return pImpl_->loadFile(filepath, mode);
+}
 
 ErrorCode RAWProcessor::process(const RAWProcessOptions& options, ImageData& output) {
     return pImpl_->process(options, output);
 }
+
+bool RAWProcessor::isDisplayReferred() const { return pImpl_->isDisplayReferred(); }
+const std::string& RAWProcessor::getLastError() const { return pImpl_->getLastError(); }
 
 ErrorCode RAWProcessor::readBayerSource(const RAWProcessOptions& options, RAWBayerSource& output) {
     return pImpl_->readBayerSource(options, output);

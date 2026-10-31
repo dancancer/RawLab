@@ -8,17 +8,35 @@ data class AdjustmentTransferContext(val identifier: String, val isRaw: Boolean,
     val hasUncommittedDraft: Boolean = false, val validateLens: ((LensSettings) -> Unit)? = null)
 
 object AdjustmentTransfer {
+    fun previewCapture(scope: AdjustmentScope, settings: EditSettings, committed: EditSettings,
+        context: AdjustmentTransferContext): AdjustmentPayload {
+        if (!sameAdjustments(settings, committed, context.isRaw)) throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
+        return capture(scope, committed, context)
+    }
+
+    fun captureHDRBatch(settings: EditSettings, context: AdjustmentTransferContext, targetIsHDR: Boolean): AdjustmentPayload {
+        require(settings.isHDREditing)
+        val active=settings.synchronizeHDR()
+        val fields=AdjustmentField.HDR_SUPPORTED.toMutableSet()
+        if(!targetIsHDR && active.hdr!!.temperature==6500f && active.hdr.tint==0f)
+            fields.removeAll(setOf(AdjustmentField.HDR_TEMPERATURE,AdjustmentField.HDR_TINT))
+        return capture(AdjustmentScope.Custom(fields),active,context)
+    }
     fun sameAdjustments(left: EditSettings, right: EditSettings, isRaw: Boolean): Boolean {
+        if (left.isHDREditing || right.isHDREditing) {
+            return left.synchronizeHDR() == right.synchronizeHDR()
+        }
         val context = AdjustmentTransferContext("comparison", isRaw)
-        return left.processing == right.processing && left.masterRecipeSettingsVersion == right.masterRecipeSettingsVersion &&
+        return left.processing == right.processing && left.x3fMode == right.x3fMode && left.masterRecipeSettingsVersion == right.masterRecipeSettingsVersion &&
             AdjustmentTransferValues.values(left, context) == AdjustmentTransferValues.values(right, context)
     }
     fun capture(scope: AdjustmentScope, settings: EditSettings, context: AdjustmentTransferContext): AdjustmentPayload {
         if (context.hasUncommittedDraft) throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
+        if (settings.isHDREditing) return captureHDR(scope, settings.synchronizeHDR(), context)
         val original = AdjustmentTransferValues.values(settings, context)
         val defaults = AdjustmentTransferValues.values(EditSettings(exposureMode = if (context.isRaw) context.defaultExposureMode else 2), context)
         val selected = when (scope) {
-            AdjustmentScope.All -> AdjustmentField.entries.toSet()
+            AdjustmentScope.All -> AdjustmentField.entries.filterTo(linkedSetOf()) { !it.isHDRRelative }
             AdjustmentScope.Modified -> AdjustmentField.COMMON.filterTo(linkedSetOf()) { original[it] != defaults[it] }
             is AdjustmentScope.Custom -> scope.fields
         }
@@ -26,10 +44,20 @@ object AdjustmentTransfer {
             recipe(settings)), original.filterKeys { it in selected })
     }
 
-    fun prepare(payload: AdjustmentPayload, target: EditSettings, context: AdjustmentTransferContext): EditSettings = try {
-        prepareChecked(payload, target, context)
-    } catch (error: AdjustmentTransferException) { throw error }
-      catch (error: IllegalArgumentException) { throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, error.message.orEmpty()) }
+    fun prepare(payload: AdjustmentPayload, target: EditSettings, context: AdjustmentTransferContext): EditSettings {
+        return try {
+            if(context.hasUncommittedDraft)throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
+            if (target.isHDREditing) prepareHDR(payload, target, context) else {
+                val legacy=if(payload.source.isHDR) {
+                    payload.validate()
+                    if(payload.fields.any {it.isHDRRelative})throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.relative_white_balance")
+                    AdjustmentPayload(payload.source.copy(hdrProcessingVersion=null),payload.values)
+                } else payload
+                prepareChecked(legacy, target, context)
+            }
+        } catch (error: AdjustmentTransferException) { throw error }
+          catch (error: IllegalArgumentException) { throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, error.message.orEmpty()) }
+    }
 
     private fun prepareChecked(payload: AdjustmentPayload, target: EditSettings, context: AdjustmentTransferContext): EditSettings {
         if (context.hasUncommittedDraft) throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
@@ -127,5 +155,72 @@ object AdjustmentTransfer {
             if (alternative != null && effectiveNumbers(alternative)[field] == value) return alternative
         }
         throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, field.id)
+    }
+
+    private fun captureHDR(scope: AdjustmentScope, settings: EditSettings, context: AdjustmentTransferContext): AdjustmentPayload {
+        if (context.isRaw) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.source")
+        val values = hdrValues(settings)
+        val defaults = hdrValues(EditSettings().withHDRMode(true, true))
+        val selected = when (scope) {
+            AdjustmentScope.All -> AdjustmentField.HDR_SUPPORTED
+            AdjustmentScope.Modified -> AdjustmentField.HDR_COMMON.filterTo(linkedSetOf()) { values[it] != defaults[it] }
+            is AdjustmentScope.Custom -> scope.fields
+        }
+        if (selected.isEmpty()) throw AdjustmentTransferException(AdjustmentFailure.EMPTY_SCOPE)
+        return AdjustmentPayload(AdjustmentSource(context.identifier, isRaw = false,
+            processingVersion = settings.processing.version, recipe = null, hdrProcessingVersion = 1),
+            values.filterKeys { it in selected })
+    }
+
+    private fun prepareHDR(payload: AdjustmentPayload, target: EditSettings, context: AdjustmentTransferContext): EditSettings {
+        if (context.isRaw || !target.isHDREditing) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.target")
+        payload.validate()
+        if(!AdjustmentField.HDR_SUPPORTED.containsAll(payload.fields))
+            throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.fields")
+        var result = target.synchronizeHDR()
+        var hdr = result.hdr ?: throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.target")
+        fun number(field: AdjustmentField): Double? = payload[field]?.number
+        number(AdjustmentField.EXPOSURE)?.let { result = result.copy(exposure = it.toFloat()); hdr = hdr.copy(exposure = it.toFloat()) }
+        number(AdjustmentField.CONTRAST)?.let { result = result.copy(contrast = (it - 1).toFloat()); hdr = hdr.copy(contrast = ((it - 1) * 100).toFloat()) }
+        number(AdjustmentField.HIGHLIGHTS)?.let { result = result.copy(highlights = (-it).toFloat()); hdr = hdr.copy(highlights = (-it * 100).toFloat()) }
+        number(AdjustmentField.SHADOWS)?.let { result = result.copy(shadows = it.toFloat()); hdr = hdr.copy(shadows = (it * 100).toFloat()) }
+        number(AdjustmentField.SATURATION)?.let { result = result.copy(saturation = (it - 1).toFloat()); hdr = hdr.copy(saturation = ((it - 1) * 100).toFloat()) }
+        number(AdjustmentField.HDR_TEMPERATURE)?.let { result = result.copy(temperature = it.toFloat()); hdr = hdr.copy(temperature = it.toFloat()) }
+        number(AdjustmentField.HDR_TINT)?.let { result = result.copy(tint = it.toFloat()); hdr = hdr.copy(tint = it.toFloat()) }
+        var geometry = result.geometry
+        number(AdjustmentField.CROP_X)?.let { geometry = geometry.copy(cropX = it.toFloat()) }
+        number(AdjustmentField.CROP_Y)?.let { geometry = geometry.copy(cropY = it.toFloat()) }
+        number(AdjustmentField.CROP_WIDTH)?.let { geometry = geometry.copy(cropWidth = it.toFloat()) }
+        number(AdjustmentField.CROP_HEIGHT)?.let { geometry = geometry.copy(cropHeight = it.toFloat()) }
+        number(AdjustmentField.QUARTER_TURNS)?.let { geometry = geometry.copy(quarterTurns = it.toInt()) }
+        payload[AdjustmentField.FLIP_HORIZONTAL]?.boolean?.let { geometry = geometry.copy(flipHorizontal = it) }
+        payload[AdjustmentField.FLIP_VERTICAL]?.boolean?.let { geometry = geometry.copy(flipVertical = it) }
+        number(AdjustmentField.STRAIGHTEN)?.let { geometry = geometry.copy(straightenDegrees = it.toFloat()) }
+        number(AdjustmentField.PERSPECTIVE_HORIZONTAL)?.let { geometry = geometry.copy(perspectiveHorizontal = it.toFloat()) }
+        number(AdjustmentField.PERSPECTIVE_VERTICAL)?.let { geometry = geometry.copy(perspectiveVertical = it.toFloat()) }
+        result = result.copy(geometry = geometry, hdr = hdr.copy(geometry = geometry)).synchronizeHDR()
+        return result
+    }
+
+    private fun hdrValues(settings: EditSettings): Map<AdjustmentField, AdjustmentValue> = buildMap {
+        put(AdjustmentField.EXPOSURE, AdjustmentValue.Number(settings.exposure.toDouble()))
+        val hdr = settings.hdr ?: throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.settings")
+        put(AdjustmentField.CONTRAST, AdjustmentValue.Number(1.0 + hdr.contrast / 100.0))
+        put(AdjustmentField.HIGHLIGHTS, AdjustmentValue.Number(-hdr.highlights / 100.0))
+        put(AdjustmentField.SHADOWS, AdjustmentValue.Number(hdr.shadows / 100.0))
+        put(AdjustmentField.SATURATION, AdjustmentValue.Number(1.0 + hdr.saturation / 100.0))
+        put(AdjustmentField.HDR_TEMPERATURE, AdjustmentValue.Number(hdr.temperature.toDouble()))
+        put(AdjustmentField.HDR_TINT, AdjustmentValue.Number(hdr.tint.toDouble()))
+        val geometry = hdr.geometry
+        put(AdjustmentField.CROP_X, AdjustmentValue.Number(geometry.cropX.toDouble()))
+        put(AdjustmentField.CROP_Y, AdjustmentValue.Number(geometry.cropY.toDouble()))
+        put(AdjustmentField.CROP_WIDTH, AdjustmentValue.Number(geometry.cropWidth.toDouble()))
+        put(AdjustmentField.CROP_HEIGHT, AdjustmentValue.Number(geometry.cropHeight.toDouble()))
+        put(AdjustmentField.QUARTER_TURNS, AdjustmentValue.Number(geometry.quarterTurns.toDouble()))
+        put(AdjustmentField.FLIP_HORIZONTAL, AdjustmentValue.Boolean(geometry.flipHorizontal))
+        put(AdjustmentField.FLIP_VERTICAL, AdjustmentValue.Boolean(geometry.flipVertical))
+        put(AdjustmentField.STRAIGHTEN, AdjustmentValue.Number(geometry.straightenDegrees.toDouble()))
+        put(AdjustmentField.PERSPECTIVE_HORIZONTAL, AdjustmentValue.Number(geometry.perspectiveHorizontal.toDouble()))
+        put(AdjustmentField.PERSPECTIVE_VERTICAL, AdjustmentValue.Number(geometry.perspectiveVertical.toDouble()))
     }
 }

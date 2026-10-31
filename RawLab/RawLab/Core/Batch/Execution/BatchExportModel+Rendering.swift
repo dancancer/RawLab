@@ -108,6 +108,7 @@ extension BatchExportModel {
     func prepareTarget(_ source: PhotoImportSource, identity: PhotoIdentity, jobID: UUID,
                                journalStore: BatchJournalStore) async throws -> BatchTarget {
         let processing = job.source.settings.processing
+        let x3fMode = job.source.settings.x3fMode
         return try await perform {
             let inputDirectory=try BatchInputStore.directory(for:jobID,root:journalStore.directory)
             let existing=Set(try FileManager.default.contentsOfDirectory(at:inputDirectory,includingPropertiesForKeys:nil))
@@ -118,6 +119,7 @@ extension BatchExportModel {
             let processor = Sony2FujiProcessor()
             var neutral = RawSettings.default
             neutral.processing = processing
+            neutral.x3fMode = x3fMode
             if source.isRaw {
                 _ = try processor.processRaw(url: owned, settings: neutral,
                                              previewLongEdge: 160, lutURL: nil)

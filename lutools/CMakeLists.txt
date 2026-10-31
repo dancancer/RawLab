@@ -11,6 +11,7 @@ option(BUILD_CLI "Build command line tool" ON)
 option(BUILD_SHARED_LIB "Build shared library for mobile integration" ON)
 option(BUILD_EXAMPLES "Build examples" OFF)
 include(CTest)
+include(cmake/x3f.cmake)
 
 # 依赖库查找
 find_package(PkgConfig)
@@ -156,6 +157,7 @@ set(CORE_SOURCES
     src/core/dcp_compiler.cpp
     src/core/color_converter.cpp
     src/core/raw_processor.cpp
+    src/core/x3f_processor.cpp
     src/core/lens_correction.cpp
     src/core/chroma_denoise.cpp
     src/core/noise_aware_sharpen.cpp
@@ -191,14 +193,22 @@ if(WIN32)
 else()
     list(APPEND CORE_SOURCES src/platform/display_image.cpp)
 endif()
+set(portable_hdr_test_default ON)
+if(APPLE)
+    set(portable_hdr_test_default OFF)
+endif()
+option(SONY2FUJI_TEST_PORTABLE_HDR "Exercise non-Apple HDR file adapters on the host" ${portable_hdr_test_default})
 if(APPLE)
     list(APPEND CORE_SOURCES src/platform/hdr_image_apple.mm)
-    list(APPEND CORE_SOURCES src/core/hdr_jpeg.cpp)
-    enable_language(C)
-    include(cmake/hdr-codec.cmake)
     set_source_files_properties(src/platform/hdr_image_apple.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc -Werror=unguarded-availability")
 else()
-    list(APPEND CORE_SOURCES src/platform/hdr_image_stub.cpp)
+    list(APPEND CORE_SOURCES src/platform/hdr_image_portable.cpp src/platform/hdr_heif.cpp src/platform/hdr_heif_color.cpp src/platform/hdr_metadata.cpp)
+endif()
+list(APPEND CORE_SOURCES src/core/hdr_jpeg.cpp)
+enable_language(C)
+include(cmake/hdr-codec.cmake)
+if(NOT APPLE OR SONY2FUJI_TEST_PORTABLE_HDR)
+    include(cmake/hdr-portable.cmake)
 endif()
 
 if(SONY2FUJI_ENABLE_GPU)
@@ -219,12 +229,21 @@ endif()
 
 # 创建核心库
 add_library(sony2fuji_core STATIC ${CORE_SOURCES})
+if(SONY2FUJI_ENABLE_X3F)
+    target_link_libraries(sony2fuji_core rawlab_x3f)
+endif()
+target_link_libraries(sony2fuji_core uhdr rawlab_jpeg)
+if(NOT APPLE)
+    target_link_libraries(sony2fuji_core heif rawlab_lcms)
+    target_include_directories(sony2fuji_core BEFORE PRIVATE "${RAWLAB_HDR_LCMS_INCLUDE}")
+endif()
 if(APPLE)
     target_link_libraries(sony2fuji_core uhdr "-framework Foundation" "-framework CoreImage")
 endif()
 target_include_directories(sony2fuji_core PRIVATE third_party)
+target_include_directories(sony2fuji_core PRIVATE "${RAWLAB_HDR_UHDR_INCLUDE}" "${RAWLAB_HDR_XML_INCLUDE}")
 if(WIN32)
-    target_link_libraries(sony2fuji_core windowscodecs ole32)
+    target_link_libraries(sony2fuji_core windowscodecs ole32 psapi)
 endif()
 if(SONY2FUJI_ENABLE_GPU AND WIN32)
     target_link_libraries(sony2fuji_core d3d11 dxgi d3dcompiler)
@@ -266,9 +285,18 @@ endif()
 # 创建共享库 (用于移动端集成)
 if(BUILD_SHARED_LIB)
     add_library(sony2fuji SHARED ${CORE_SOURCES})
+    if(SONY2FUJI_ENABLE_X3F)
+        target_link_libraries(sony2fuji rawlab_x3f)
+    endif()
+    target_link_libraries(sony2fuji uhdr rawlab_jpeg)
+    if(NOT APPLE)
+        target_link_libraries(sony2fuji heif rawlab_lcms)
+        target_include_directories(sony2fuji BEFORE PRIVATE "${RAWLAB_HDR_LCMS_INCLUDE}")
+    endif()
     target_include_directories(sony2fuji PRIVATE third_party)
+    target_include_directories(sony2fuji PRIVATE "${RAWLAB_HDR_UHDR_INCLUDE}" "${RAWLAB_HDR_XML_INCLUDE}")
     if(WIN32)
-        target_link_libraries(sony2fuji windowscodecs ole32)
+        target_link_libraries(sony2fuji windowscodecs ole32 psapi)
     endif()
     if(SONY2FUJI_ENABLE_GPU AND WIN32)
         target_link_libraries(sony2fuji d3d11 dxgi d3dcompiler)
@@ -384,6 +412,25 @@ if(BUILD_TESTING AND NOT IOS)
 endif()
 
 if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
+    add_executable(x3f_render_tests tests/x3f_render_tests.cpp)
+    target_link_libraries(x3f_render_tests PRIVATE sony2fuji_core)
+    add_test(NAME x3f_render COMMAND x3f_render_tests)
+    if(SONY2FUJI_ENABLE_X3F)
+        add_test(NAME x3f_bridge_contracts COMMAND "${CMAKE_COMMAND}" -E env ${x3f_environment}
+            "${RAWLAB_CARGO}" test --release --locked --offline
+            --manifest-path "${x3f_source}/Cargo.toml" --target "${RAWLAB_X3F_RUST_TARGET}")
+        add_test(NAME x3f_parallel_contracts COMMAND "${CMAKE_COMMAND}" -E env ${x3f_environment}
+            "${RAWLAB_CARGO}" test --release --locked --offline
+            --manifest-path "${x3f_source}/Cargo.toml" --target "${RAWLAB_X3F_RUST_TARGET}"
+            -p x3f-sys --lib parallel)
+        # 上游的逐位原生参考来自 ARM64 macOS；MSVC 软件 FMA/libm 的末位不同。
+        if(RAWLAB_X3F_RUST_TARGET STREQUAL "aarch64-apple-darwin")
+            add_test(NAME x3f_decoder_contracts COMMAND "${CMAKE_COMMAND}" -E env ${x3f_environment}
+                "${RAWLAB_CARGO}" test --release --locked --offline
+                --manifest-path "${x3f_source}/Cargo.toml" --target "${RAWLAB_X3F_RUST_TARGET}"
+                -p x3f-sys --lib)
+        endif()
+    endif()
     add_executable(cpu_workspace_tests tests/cpu_workspace_tests.cpp)
     target_link_libraries(cpu_workspace_tests PRIVATE sony2fuji_core)
     add_test(NAME cpu_workspace COMMAND cpu_workspace_tests
@@ -614,6 +661,23 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     set_target_properties(hdr_c_header_check PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
     target_link_libraries(hdr_api_tests sony2fuji_core)
     add_test(NAME hdr_api_validation COMMAND hdr_api_tests)
+    if(SONY2FUJI_TEST_PORTABLE_HDR)
+        add_executable(hdr_portable_tests tests/hdr_portable_tests.cpp
+            src/platform/hdr_image_portable.cpp src/platform/hdr_heif.cpp src/platform/hdr_heif_color.cpp src/platform/hdr_metadata.cpp)
+        target_include_directories(hdr_portable_tests BEFORE PRIVATE src "${RAWLAB_HDR_LCMS_INCLUDE}"
+            "${RAWLAB_HDR_UHDR_INCLUDE}" "${RAWLAB_HDR_XML_INCLUDE}")
+        target_link_libraries(hdr_portable_tests sony2fuji_core heif rawlab_lcms)
+        target_compile_definitions(hdr_portable_tests PRIVATE TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+        if(APPLE)
+            target_sources(hdr_portable_tests PRIVATE tests/hdr_heif_fixture.mm)
+            set_source_files_properties(tests/hdr_heif_fixture.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+            target_compile_definitions(hdr_portable_tests PRIVATE RAWLAB_HDR_TEST_APPLE_AUTHOR)
+        endif()
+        add_test(NAME hdr_portable_files COMMAND hdr_portable_tests)
+    endif()
+    add_executable(hdr_half_tests tests/hdr_half_tests.cpp)
+    target_include_directories(hdr_half_tests PRIVATE src)
+    add_test(NAME hdr_half_float COMMAND hdr_half_tests)
     if(APPLE)
         add_executable(display_image_tests tests/display_image_tests.cpp)
         target_link_libraries(display_image_tests sony2fuji_core)
@@ -706,6 +770,8 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
                 --cli $<TARGET_FILE:sony2fuji_cli>
                 --raw "${CLI_TEST_RAW}"
                 --fixtures "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+            add_test(NAME hdr_source_cache COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hdr_sources.py")
             add_test(NAME agent_commands COMMAND ${Python3_EXECUTABLE}
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_agent_commands.py"
                 --cli $<TARGET_FILE:sony2fuji_cli>
@@ -773,6 +839,9 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
             add_test(NAME acceleration_sony_windows COMMAND acceleration_tests
                 "${SONY2FUJI_TEST_RAW}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/flog-2-new/FLog2_to_PROVIA_65grid_V.1.00.cube")
+            add_test(NAME acceleration_sony_bundled_2383 COMMAND acceleration_tests
+                "${SONY2FUJI_TEST_RAW}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/../Shared/BundledLooks/RawLab_look_2383_sRGB_v1.cube")
         endif()
         foreach(fixture "${CMAKE_CURRENT_SOURCE_DIR}/examples/DSC06251.ARW" "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG")
             if(EXISTS "${fixture}")
@@ -872,6 +941,8 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     add_test(NAME photo_effects COMMAND photo_effects_tests)
     add_executable(srgb_look_tests tests/srgb_look_tests.cpp)
     target_link_libraries(srgb_look_tests sony2fuji_core)
+    target_compile_definitions(srgb_look_tests PRIVATE
+        BUNDLED_LOOKS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../Shared/BundledLooks")
     if(MSVC)
         target_compile_options(srgb_look_tests PRIVATE /UNDEBUG)
     else()

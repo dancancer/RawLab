@@ -80,17 +80,23 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
 {
     public CollectionExportReview Prepare(BatchSelectionSession selection,IReadOnlyCollection<string> skipping,
         ExportFormat format,int? longEdge,string outputDirectory,Func<string,string?> activeFailure)
+        =>Prepare(selection.SelectedPhotos.ToArray(),skipping,format,longEdge,outputDirectory,activeFailure);
+    public CollectionExportReview Prepare(IReadOnlyList<CollectionPhoto> photos,IReadOnlyCollection<string> skipping,
+        ExportFormat format,int? longEdge,string outputDirectory,Func<string,string?> activeFailure)
     {
         if(!Enum.IsDefined(format) || longEdge is {} edge && !ExportSize.IsValid(edge))throw new ArgumentException("Invalid output settings");
         if(!Directory.Exists(outputDirectory))throw new DirectoryNotFoundException(Loc.Text("请选择输出文件夹。"));
         var rows=new List<CollectionExportRow>();
-        foreach(var photo in selection.SelectedPhotos.Where(photo=>!skipping.Contains(photo.ID))) {
+        foreach(var photo in photos.Where(photo=>!skipping.Contains(photo.ID))) {
             try {
                 if(activeFailure(photo.ID) is {} draft)throw new InvalidOperationException(draft);
                 photo.Validate();var record=store.VersionedState(photo.Path);
                 if(!record.Identity.SameFile(photo.Identity))throw new EditPersistenceConflict();
-                var settings=(record.Edit?.Settings.Restore() ?? PhotoInput.PrepareInputSettings(photo.Path,new Adjustments())).Capture();
+                var settings=(record.Edit?.Settings.Restore() ?? PhotoInput.PrepareHDRInputSettings(photo.Path,new Adjustments())).Capture();
+                if(format==ExportFormat.HdrJpeg && (settings.HDR is not {Mode:HDRMode.Hdr} || PhotoInput.ProbeHDR(photo.Path,out _)!=HDRProbeState.Supported))
+                    throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
                 if(settings.AIDenoiseEnabled) {
+                    if(PhotoInput.IsX3f(photo.Path) && settings.X3fMode==X3fMode.Normal)throw new InvalidOperationException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
                     if(!PhotoInput.IsRaw(photo.Path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
                     validateAI?.Invoke(photo.Path);
                 }
@@ -100,9 +106,9 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                 rows.Add(new(photo,record.Copy(),settings.Copy(),look,hash,look==null ? Loc.Text("中性") : System.IO.Path.GetFileNameWithoutExtension(look)));
             }catch(Exception error){rows.Add(new(photo,Error:error.Message));}
         }
-        return new(selection.SelectedPhotos.Select(photo=>photo.ID).ToArray(),rows,format,longEdge,System.IO.Path.GetFullPath(outputDirectory));
+        return new(photos.Select(photo=>photo.ID).ToArray(),rows,format,longEdge,System.IO.Path.GetFullPath(outputDirectory));
     }
-    public BatchJob Freeze(BatchSelectionSession selection,CollectionExportReview review,Func<string,string?> activeFailure)
+    public BatchJob Freeze(BatchSelectionSession selection,CollectionExportReview review,Func<string,string?> activeFailure,int aiBackend=2,string aiDeviceID="")
     {
         if(!review.Ready || !selection.SelectedPhotos.Select(photo=>photo.ID).SequenceEqual(review.SelectionIDs))
             throw new InvalidOperationException(Loc.Text("照片选择已变化，请重新检查。"));
@@ -115,9 +121,12 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                 row.Photo.Validate();
                 var current=store.VersionedState(row.Photo.Path);
                 if(!current.SameAs(row.Record))throw new EditPersistenceConflict();
-                var expected=(current.Edit?.Settings.Restore() ?? PhotoInput.PrepareInputSettings(row.Photo.Path,new Adjustments())).Capture();
+                var expected=(current.Edit?.Settings.Restore() ?? PhotoInput.PrepareHDRInputSettings(row.Photo.Path,new Adjustments())).Capture();
+                if(review.Format==ExportFormat.HdrJpeg && (expected.HDR is not {Mode:HDRMode.Hdr} || PhotoInput.ProbeHDR(row.Photo.Path,out _)!=HDRProbeState.Supported))
+                    throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
                 if(!expected.SameAs(row.Settings!))throw new EditPersistenceConflict();
                 if(expected.AIDenoiseEnabled) {
+                    if(PhotoInput.IsX3f(row.Photo.Path) && expected.X3fMode==X3fMode.Normal)throw new InvalidOperationException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
                     if(!PhotoInput.IsRaw(row.Photo.Path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
                     validateAI?.Invoke(row.Photo.Path);
                 }
@@ -140,7 +149,7 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                     OutputFormat=review.Format,LongEdge=review.LongEdge}};
             }).ToList();
             Validate();
-            var job=new BatchJob{Version=3,SettingsMode=BatchJob.PerTargetFrozen,Source=items[0].Input,
+            var job=new BatchJob{Version=3,AIBackend=aiBackend,AIDeviceID=aiDeviceID,SettingsMode=BatchJob.PerTargetFrozen,Source=items[0].Input,
                 Settings=items[0].Frozen!.Settings,Items=items,OutputFormat=review.Format,Png=review.Format==ExportFormat.Png,
                 LongEdge=review.LongEdge,OutputDirectory=review.OutputDirectory};
             journal.Save(job);owned.Clear();

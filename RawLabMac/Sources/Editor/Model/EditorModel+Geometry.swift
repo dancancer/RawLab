@@ -34,7 +34,7 @@ enum MacGeometryDeparture { case apply, discard, stay }
 
 extension EditorModel {
     @discardableResult func beginGeometryDraft(tab: MacGeometryTab = .crop) -> Bool {
-        if tab == .lens && RenderEngine.isRasterInput(file) { return false }
+        if tab == .lens && !canUseLensCorrection { return false }
         if geometryDraft != nil { return selectGeometryDraftTab(tab) }
         guard file != nil, result != nil, !exporting, !lookLibraryBusy, saveEdits() else { return false }
         geometryDraftEntrySaveError = saveError
@@ -53,7 +53,7 @@ extension EditorModel {
     }
 
     @discardableResult func selectGeometryDraftTab(_ tab: MacGeometryTab) -> Bool {
-        if tab == .lens && RenderEngine.isRasterInput(file) { return false }
+        if tab == .lens && !canUseLensCorrection { return false }
         ParameterValueField.cancelPendingInputs()
         guard geometryDraft != nil, invalidGeometryDraftInputs.isEmpty else { return false }
         geometryDraftTab = tab
@@ -81,7 +81,7 @@ extension EditorModel {
     }
 
     func updateLensDraft(_ edit: (inout LensCorrectionSettings) -> Void) {
-        guard var draft = geometryDraft else { return }
+        guard canUseLensCorrection, var draft = geometryDraft else { return }
         edit(&draft.lens)
         guard draft != geometryDraft else { return }
         geometryDraft = draft; geometryDraftPreviewReady = false
@@ -201,7 +201,7 @@ extension EditorModel {
     }
 
     private func endGeometryDraft() {
-        if resetReturnTool == nil && !geometryDraftDeparturePending { adjustmentNavigation.selectTool(.exposure) }
+        if resetReturnTool == nil && !geometryDraftDeparturePending && !quickPresetsVisible { adjustmentNavigation.selectTool(.exposure) }
         geometryDraft = nil; geometryDraftPreviewReady = false
         geometryCropInteracting = false; invalidGeometryDraftInputs.removeAll()
         geometryDraftEntrySaveError = nil; geometryDraftSaveFailed = false

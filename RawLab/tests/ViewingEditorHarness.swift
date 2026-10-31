@@ -12,6 +12,15 @@ final class ViewingEditorProbe {
     var externalEdit: (() -> Void)?
     var changePresetFault: ((String) -> Void)?
     var presetFault = ""
+    var quickPreparationHeld = false
+    var adjustmentQueueDrains = 0
+    var setQuickPreparationHeld: ((Bool) -> Void)?
+    var holdBatchDelivery = false
+    var batchDeliveries = [() -> Void]()
+    var shouldHoldBatchDelivery: (() -> Bool)?
+    var batchHandoffs = [[String: Any]]()
+    var batchStarts = [String]()
+    var scenePhase = "inactive"
     var resizing = false
     var saves: [[String: Any]] = []
     var previews: [[String: Any]] = []
@@ -20,6 +29,21 @@ final class ViewingEditorProbe {
     var clearStatistics: (() -> Void)?
     var histogramTransitions: [[String: Any]] = []
     var histogramDrawing: [String: [Int]] = [:]
+
+    func deliver(_ callback: @escaping () -> Void) {
+        if holdBatchDelivery && shouldHoldBatchDelivery?() == true { batchDeliveries.append(callback) }
+        else { callback() }
+    }
+
+    func releaseBatchDelivery() {
+        holdBatchDelivery = false
+        let pending = batchDeliveries; batchDeliveries = []
+        pending.forEach { $0() }
+    }
+
+    func recordBatchHandoff(_ automatic: Bool, phase: ScenePhase) {
+        batchHandoffs.append(["automatic": automatic, "phase": String(describing: phase)])
+    }
 
     func histogramInfo(_ histogram: Sony2FujiProcessor.RGBHistogram?) -> [String: Any] {
         guard let histogram else { return [:] }
@@ -88,6 +112,7 @@ final class ViewingEditorProbe {
         func all(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(all) }
         func rect(_ frame: CGRect) -> [Double] { [frame.minX, frame.minY, frame.width, frame.height] }
         if let window {
+            value["nativeSceneActive"] = window.windowScene?.activationState == .foregroundActive
             let views = all(window)
             value["nativePhotoRects"] = views.compactMap { view -> [Double]? in
                 guard let scroll = view as? PhotoScrollView, !scroll.isHidden else { return nil }
@@ -154,6 +179,33 @@ extension ContentView {
         CFNotificationCenterAddObserver(center, nil, { _, _, _, _, _ in
             Task { @MainActor in ViewingEditorProbe.shared.externalEdit?() }
         }, "com.rawlab.iter03.external-edit" as CFString, nil, .deliverImmediately)
+        probe.setQuickPreparationHeld = { held in
+            guard held != probe.quickPreparationHeld else { return }
+            probe.quickPreparationHeld = held
+            if held { viewModel.adjustmentQueue.suspend() }
+            else {
+                viewModel.adjustmentQueue.resume()
+                viewModel.adjustmentQueue.async {
+                    DispatchQueue.main.async { probe.adjustmentQueueDrains += 1 }
+                }
+            }
+        }
+        probe.shouldHoldBatchDelivery = { viewModel.collectionExportFreezing }
+        for action in ["hold", "release"] {
+            CFNotificationCenterAddObserver(center, nil, { _, _, name, _, _ in
+                let held = (name?.rawValue as String?)?.hasSuffix(".hold") == true
+                Task { @MainActor in
+                    if held { ViewingEditorProbe.shared.holdBatchDelivery = true }
+                    else { ViewingEditorProbe.shared.releaseBatchDelivery() }
+                }
+            }, "com.rawlab.batch-flow.\(action)" as CFString, nil, .deliverImmediately)
+        }
+        for action in ["hold", "release"] {
+            CFNotificationCenterAddObserver(center, nil, { _, _, name, _, _ in
+                let held = (name?.rawValue as String?)?.hasSuffix(".hold") == true
+                Task { @MainActor in ViewingEditorProbe.shared.setQuickPreparationHeld?(held) }
+            }, "com.rawlab.quick-preset.\(action)" as CFString, nil, .deliverImmediately)
+        }
         probe.clearReference = { viewModel.basePreviewImage = nil; viewModel.baseHistogram = nil }
         probe.clearStatistics = { viewModel.histogram = nil; viewModel.baseHistogram = nil }
         if ProcessInfo.processInfo.arguments.contains("-RawLab.presetUI") {
@@ -202,6 +254,8 @@ extension ContentView {
         var initial = RawSettings.default
         initial.exposure = 0.5
         initial.geometry.cropWidth = 0.8
+        let looksFixture = ProcessInfo.processInfo.arguments.contains("-RawLab.looksUI")
+        if looksFixture { initial.lutID = "FLog2_to_ETERNA_65grid_V.1.00" }
         try! store.save(identity, state: PhotoEditState(settings: initial))
         if ProcessInfo.processInfo.arguments.contains("-RawLab.adjustmentTransferUI") {
             let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -222,6 +276,8 @@ extension ContentView {
         }
         viewModel.editPersistence = store
         viewModel.adjustmentSession = IOSAdjustmentTransferSession(store: store)
+        viewModel.recentLooksURL = store.directory.appendingPathComponent("recent-looks.json")
+        viewModel.recentLooks = RecentLooks()
         viewModel.importImage(from: .raster(url), identity: identity, onSettingsRestored: { settings = $0 })
         probe.readEditor = {
             var receipt: [String: Any] = ["ready": viewModel.hasImage && !editorBusy && !viewModel.previewRendering && !viewModel.previewResizePending,
@@ -234,11 +290,15 @@ extension ContentView {
              "pendingPhoto": pendingPhotoImport, "pendingFile": pendingFileImport,
              "photoPicker": showingPhotoImporter, "filePicker": showingFileImporter,
              "saveState": String(describing: viewModel.editSaveState),
+             "recentLookIDs": viewModel.recentLooks.ids, "selectedLookID": settings.lutID ?? "",
              "historyCount": viewModel.adjustmentSession?.transactions.count ?? 0,
              "presets": (try? viewModel.presetStore.list()).map {
                  (try? JSONSerialization.jsonObject(with: JSONEncoder().encode($0))) ?? []
              } ?? [],
              "presetFault": probe.presetFault,
+             "quickPreparationHeld": probe.quickPreparationHeld,
+             "quickPreparing": viewModel.quickPresetState.isPreparing,
+             "quickVisible": viewModel.quickPresetsVisible,
              "adjustmentSheet": adjustmentSheet?.rawValue ?? "",
              "pendingAdjustmentAction": String(describing: pendingAdjustmentAction),
              "queuedPresetAction": String(describing: queuedPresetAction),
@@ -286,6 +346,21 @@ extension ContentView {
             receipt["batchShowing"] = showingBatchExport
             receipt["batchMode"] = batchModel?.job.settingsMode.rawValue ?? ""
             receipt["batchFrozenExposure"] = batchModel?.job.targets.compactMap { $0.frozen?.settings.exposure } ?? []
+            receipt["batchID"] = batchModel?.job.id.uuidString ?? ""
+            receipt["batchStatus"] = batchModel?.job.status.rawValue ?? ""
+            receipt["batchRunning"] = batchModel?.isRunning ?? false
+            receipt["batchCompleted"] = batchModel?.completedCount ?? 0
+            receipt["collectionChecking"] = viewModel.collectionExportPreparing
+            receipt["adjustmentQueueDrains"] = probe.adjustmentQueueDrains
+            receipt["scenePhase"] = probe.scenePhase
+            receipt["batchHandoffs"] = probe.batchHandoffs
+            receipt["batchStarts"] = probe.batchStarts
+            receipt["batchDeliveryHeld"] = probe.holdBatchDelivery
+            receipt["pendingBatchDeliveries"] = probe.batchDeliveries.count
+            let journalDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+                .appendingPathComponent("RawLab/BatchJobs")
+            receipt["batchJournalIDs"] = ((try? FileManager.default.contentsOfDirectory(at: journalDirectory, includingPropertiesForKeys: nil)) ?? [])
+                .filter { $0.pathExtension == "json" }.map { $0.deletingPathExtension().lastPathComponent }.sorted()
             return receipt
         }
     }
@@ -298,15 +373,33 @@ private final class ViewingEditorDelegate: NSObject, UIApplicationDelegate {
         return configuration
     }
 }
+private final class ViewingSceneState: ObservableObject {
+    @Published var phase = ScenePhase.inactive
+}
+
+private struct ViewingRootView: View {
+    @ObservedObject var scene: ViewingSceneState
+    var body: some View {
+        ContentView().environment(\.scenePhase, scene.phase)
+            .onChange(of: scene.phase, initial: true) { _, phase in ViewingEditorProbe.shared.scenePhase = String(describing: phase) }
+            .overlay(alignment: .topLeading) { ViewingReceiptView().frame(width: 1, height: 1).allowsHitTesting(false) }
+    }
+}
+
 private final class ViewingEditorScene: NSObject, UIWindowSceneDelegate {
     var window: UIWindow?
+    private let sceneState = ViewingSceneState()
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
         let window = UIWindow(windowScene: scene as! UIWindowScene)
-        let host = UIHostingController(rootView: ContentView().overlay(alignment: .topLeading) { ViewingReceiptView().frame(width: 1, height: 1).allowsHitTesting(false) })
+        let host = UIHostingController(rootView: ViewingRootView(scene: sceneState))
         window.rootViewController = host
         window.makeKeyAndVisible()
         self.window = window
     }
+    func sceneDidBecomeActive(_ scene: UIScene) { sceneState.phase = .active }
+    func sceneWillResignActive(_ scene: UIScene) { sceneState.phase = .inactive }
+    func sceneDidEnterBackground(_ scene: UIScene) { sceneState.phase = .background }
+    func sceneWillEnterForeground(_ scene: UIScene) { sceneState.phase = .inactive }
 }
 @main enum ViewingEditorMain {
     static func main() { UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromClass(ViewingEditorDelegate.self)) }
