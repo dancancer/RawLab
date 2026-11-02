@@ -315,10 +315,17 @@ extension ContentView {
     func continueEditorImport() {
         guard pendingFileImport || pendingPhotoImport else { return }
         guard viewModel.saveCurrentSettings(settings) else { return }
-        showingFileImporter = pendingFileImport
+        if pendingFileImport { documentImportKind = .photo }
+        showingDocumentImporter = pendingFileImport
         showingPhotoImporter = pendingPhotoImport
         pendingFileImport = false
         pendingPhotoImport = false
+    }
+
+    func requestLookImport() {
+        guard !editorBusy, !isEditorDraftChanged else { return }
+        documentImportKind = .looks
+        showingDocumentImporter = true
     }
 
     @MainActor

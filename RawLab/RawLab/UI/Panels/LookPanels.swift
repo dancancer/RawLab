@@ -24,7 +24,7 @@ extension ContentView {
                         Image(systemName: "xmark.circle.fill").frame(width: 44, height: 44)
                     }.accessibilityLabel(L10n.text("清除搜索")).accessibilityIdentifier("looks.search.clear")
                 }
-                Button { showingLookImporter = true } label: { Image(systemName: "plus").frame(width: 44, height: 44) }
+                Button(action: requestLookImport) { Image(systemName: "plus").frame(width: 44, height: 44) }
                     .accessibilityLabel(L10n.text("导入外观")).accessibilityIdentifier("looks.import")
                     .disabled(editorBusy || isEditorDraftChanged || viewModel.isImportingLooks)
             }.padding(.horizontal, 16)

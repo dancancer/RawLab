@@ -10,6 +10,20 @@ struct LookCompatibilityPresentation: Identifiable {
     let draft: LUTCompatibility
 }
 
+enum EditorDocumentImportKind {
+    case photo
+    case looks
+
+    var contentTypes: [UTType] {
+        switch self {
+        case .photo: PhotoImportFile.supportedContentTypes
+        case .looks: PhotoImportFile.supportedLookContentTypes
+        }
+    }
+
+    var allowsMultipleSelection: Bool { self == .looks }
+}
+
 struct ContentView: View {
     @Environment(\.locale) var localizationLocale
     @AppStorage(L10n.preferenceKey) var languagePreference = AppLanguage.system.rawValue
@@ -88,8 +102,8 @@ struct ContentView: View {
     @State var photoImportTask: Task<Void, Never>?
     @State var photoImportRequestID: UUID?
     @State var showingPhotoImporter = false
-    @State var showingFileImporter = false
-    @State var showingLookImporter = false
+    @State var documentImportKind = EditorDocumentImportKind.photo
+    @State var showingDocumentImporter = false
     @State var pendingLookCompatibility: LookCompatibilityPresentation?
     @State var lookCompatibilityCompletion: ((LUTCompatibility?) -> Void)?
     @State var confirmedLookCompatibility: LUTCompatibility?
@@ -158,21 +172,21 @@ struct ContentView: View {
     }
 
     private func applyEditorPresentation<Content: View>(to content: Content) -> some View {
-        content
+        // 同一宿主只注册一个文件窗口，避免 iPadOS 26 的照片入口被后一个导入器遮蔽。
+        let importKind = documentImportKind
+        return content
         .preferredColorScheme(.dark)
         .tint(.yellow)
         .photosPicker(isPresented: $showingPhotoImporter, selection: $selectedPhotoItem,
                       matching: .images, preferredItemEncoding: .current)
         .sheet(isPresented: $showingPrivacy) { UsagePrivacyView() }
-        .fileImporter(isPresented: $showingFileImporter,
-                      allowedContentTypes: PhotoImportFile.supportedContentTypes,
-                      allowsMultipleSelection: false) { result in
-            importFromFile(result)
-        }
-        .fileImporter(isPresented: $showingLookImporter,
-                      allowedContentTypes: PhotoImportFile.supportedLookContentTypes,
-                      allowsMultipleSelection: true) { result in
-            importLooks(result)
+        .fileImporter(isPresented: $showingDocumentImporter,
+                      allowedContentTypes: importKind.contentTypes,
+                      allowsMultipleSelection: importKind.allowsMultipleSelection) { result in
+            switch importKind {
+            case .photo: importFromFile(result)
+            case .looks: importLooks(result)
+            }
         }
         .sheet(item: $pendingLookCompatibility, onDismiss: {
             let completion = lookCompatibilityCompletion
