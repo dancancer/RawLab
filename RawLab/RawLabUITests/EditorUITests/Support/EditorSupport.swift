@@ -98,7 +98,8 @@ extension EditorUITests {
         for _ in 0..<12 {
             let frame = ruler.frame
             let visible = panel.frame.insetBy(dx: 0, dy: min(40, panel.frame.height * 0.2))
-            if visible.contains(CGPoint(x: frame.midX, y: frame.midY)) && ruler.isHittable { return }
+            // 短面板的首行本来就靠近边缘；完整可点的控件无需再滚动居中。
+            if !frame.isEmpty && panel.frame.contains(frame) && ruler.isHittable { return }
             let up = frame.isEmpty || frame.midY > visible.midY
             let distance = frame.isEmpty ? panel.frame.height * 0.6 : abs(frame.midY - panel.frame.midY)
             let amount = min(0.6, max(0.12, distance / max(1, panel.frame.height)))

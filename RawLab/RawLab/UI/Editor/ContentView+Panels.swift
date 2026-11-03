@@ -559,7 +559,9 @@ extension ContentView {
                         }
                     }.padding(.horizontal, 12)
                 }
-                .frame(height: rowHeight)
+                // 横向滚动内容留在工作区内，避免绘制到 Duo 的纵向导航栏下方。
+                .frame(width: width, height: rowHeight)
+                .clipped()
                 .accessibilityIdentifier("editor.tools")
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _ in
                     proxy.scrollTo(viewModel.quickPresetsVisible ? "preset.quick.entry" : currentEditorTool.stableID, anchor: viewModel.quickPresetsVisible ? .trailing : .center)

@@ -180,13 +180,13 @@ extension EditorUITests {
         XCTAssertTrue(app.staticTexts["lens.status"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts["lens.status"].label.isEmpty)
         let manual=app.segmentedControls["lens.mode"].buttons["手动"]
-        XCTAssertTrue(manual.waitForExistence(timeout: 10));manual.tap()
+        revealRuler(manual, in: app)
+        manual.tap()
         let profile=app.buttons["lens.profile"]
-        XCTAssertTrue(profile.isEnabled);profile.tap()
-        let search=app.searchFields.firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout: 10));search.tap();search.typeText("Tamron")
-        let candidate=app.buttons["lens.candidate"].firstMatch
-        XCTAssertTrue(candidate.waitForExistence(timeout: 10));candidate.tap()
+        revealRuler(profile, in: app)
+        XCTAssertTrue(profile.isEnabled)
+        profile.tap()
+        selectTamronLens(in: app)
         for id in ["lens.distortion","lens.tca"] {
             let toggle=app.switches[id]
             XCTAssertTrue(toggle.waitForExistence(timeout: 10))
@@ -204,31 +204,61 @@ extension EditorUITests {
         app.launchArguments += ["-RawLab.language", "zh-Hans"]
         app.launch()
         importPhoto(in: app)
-        let toolbar = app.scrollViews.containing(.button, identifier: "tool.lens").allElementsBoundByIndex.min { $0.frame.height < $1.frame.height }!
-        for _ in 0..<5 where !app.buttons["tool.lens"].isHittable { toolbar.swipeRight() }
-        app.buttons["tool.lens"].tap()
+        tapTool("lens", in: app)
         XCTAssertTrue(app.switches["lens.distortion"].waitForExistence(timeout: 10))
-        for id in ["lens.distortion", "lens.tca", "lens.crop"] { XCTAssertTrue(app.switches[id].isHittable) }
-        app.switches["lens.distortion"].tap()
-        app.segmentedControls["lens.mode"].buttons["手动"].tap()
+        for id in ["lens.distortion", "lens.tca", "lens.crop"] {
+            let control = app.switches[id]
+            revealRuler(control, in: app)
+            XCTAssertTrue(control.isHittable, id)
+        }
+        let distortion = app.switches["lens.distortion"]
+        revealRuler(distortion, in: app)
+        distortion.tap()
+        let manual = app.segmentedControls["lens.mode"].buttons["手动"]
+        revealRuler(manual, in: app)
+        manual.tap()
         let profile = app.buttons["lens.profile"]
         XCTAssertTrue(profile.waitForExistence(timeout: 10))
+        revealRuler(profile, in: app)
         profile.tap()
-        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 10))
-        app.searchFields.firstMatch.tap(); app.searchFields.firstMatch.typeText("Tamron")
-        let candidate = app.buttons["lens.candidate"].firstMatch
-        XCTAssertTrue(candidate.waitForExistence(timeout: 10)); candidate.tap()
+        selectTamronLens(in: app)
         capture("lens-controls-portrait")
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(app.switches["lens.crop"].waitForExistence(timeout: 10))
         let panel = app.scrollViews["editor.panel"]
-        for _ in 0..<3 where !profile.isHittable { panel.swipeUp() }
+        revealRuler(profile, in: app)
         XCTAssertTrue(profile.isHittable, "Lens selection remains reachable in landscape")
         capture("lens-controls-landscape")
         panel.swipeDown()
-        app.buttons["lens.reset"].tap()
+        let reset = app.buttons["lens.reset"]
+        revealRuler(reset, in: app)
+        reset.tap()
         XCTAssertEqual(app.switches["lens.distortion"].value as? String, "0")
         XCUIDevice.shared.orientation = .portrait
+    }
+
+    private func selectTamronLens(in app: XCUIApplication) {
+        let search = app.searchFields.firstMatch
+        let searchButton = app.buttons["搜索"]
+        // Duo 可将原生搜索栏收成工具栏按钮，等待界面呈现其中一种状态。
+        let ready = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in search.isHittable || searchButton.isHittable },
+            object: nil
+        )
+        guard XCTWaiter.wait(for: [ready], timeout: 10) == .completed else {
+            XCTFail("Lens search did not become reachable")
+            return
+        }
+        if !search.isHittable {
+            searchButton.tap()
+        }
+        XCTAssertTrue(search.waitForExistence(timeout: 10))
+        search.tap()
+        search.typeText("Tamron")
+        let candidate = app.buttons.matching(identifier: "lens.candidate")
+            .matching(NSPredicate(format: "label CONTAINS[c] %@", "Tamron")).firstMatch
+        XCTAssertTrue(candidate.waitForExistence(timeout: 10))
+        candidate.tap()
     }
 
     func testMasterRecipeControls() {

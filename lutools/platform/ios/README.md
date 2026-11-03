@@ -21,6 +21,21 @@ C5 在 CPU 上分块滤波；Auto 可以继续 Metal 显示渲染，Force 不支
 
 ## 1. 构建准备 / Build Prerequisites
 
+RawLab 应用使用 Xcode 27.1+ 的 iOS 27.1+ SDK 构建，最低部署版本仍为 iOS 18.0。
+通过 `DEVELOPER_DIR` 选择 Xcode 后，可从仓库根目录运行
+`bash scripts/ci/check-ios-sdk.sh` 检查设备和模拟器 SDK；应用目标也会检查实际选用的 SDK。
+新版 SDK 使应用能使用 iPhone Duo 的完整屏幕，布局仍须在专用 Duo 模拟器上检查展开、
+折叠、横竖屏、分屏及不对称安全区域，编译通过不等于设备验收。
+参见 [Apple 适配说明](https://developer.apple.com/videos/play/tech-talks/111461/)。
+
+Build the RawLab app with Xcode 27.1+ and the iOS 27.1+ SDK, while retaining the
+iOS 18.0 deployment target. Select Xcode with `DEVELOPER_DIR`, then run
+`bash scripts/ci/check-ios-sdk.sh` from the repository root to check device and
+simulator SDKs; the app target also checks its selected SDK. The newer SDK opts
+into iPhone Duo's full display. Verify open/closed poses, rotation, Split View
+and asymmetric safe areas on a dedicated Duo simulator; compilation alone is
+not device acceptance. See [Apple's guidance](https://developer.apple.com/videos/play/tech-talks/111461/).
+
 正常 X3F 显影需要 Rust 1.88+（CI 使用 1.99.1）、Python 3.11+ 和宿主 libclang。
 安装 `aarch64-apple-ios`、`aarch64-apple-ios-sim`、`x86_64-apple-ios` 目标及
 `rust-docs`；构建脚本为每个切片设置匹配的 Xcode SDK，许可随框架打包。
