@@ -24,6 +24,87 @@ import java.util.concurrent.atomic.AtomicReference
 class HDRWorkflowTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
+    @Test fun cameraRawModePersistsAndExportsBothJpegRenditions() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val source = File(compose.activity.cacheDir, "camera-hdr-ui-${UUID.randomUUID()}.dng")
+        instrumentation.context.assets.open("bayer-demosaic.dng").use { input ->
+            source.outputStream().use { input.copyTo(it) }
+        }
+        val model = compose.activity.model
+        val resolver = compose.activity.contentResolver
+        val galleryUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        fun gallery(): Set<Long> = resolver.query(galleryUri, arrayOf(MediaStore.Images.Media._ID),
+            "${MediaStore.Images.Media.RELATIVE_PATH} = ?", arrayOf("Pictures/RawLab/"), null)!!.use { cursor ->
+            buildSet { while (cursor.moveToNext()) add(cursor.getLong(0)) }
+        }
+        fun ready() = compose.waitUntil(120_000) {
+            val state = model.state.value
+            if (state.error != null) throw AssertionError(state.error)
+            state.canExport
+        }
+        fun mode(enabled: Boolean) {
+            compose.onNode(hasContentDescription(compose.activity.getString(R.string.more)) and
+                hasAnyAncestor(hasTestTag("editor-menu"))).performClick()
+            compose.onNodeWithText(compose.activity.getString(R.string.editor_settings)).performClick()
+            compose.onNodeWithTag("hdr-editing").performClick()
+            compose.onNodeWithText(compose.activity.getString(R.string.confirm)).performClick()
+            ready()
+            assertEquals(enabled, model.state.value.edits.isHDREditing)
+        }
+        fun export(format: String, expectHDR: Boolean) {
+            val before = gallery()
+            compose.onNodeWithContentDescription(compose.activity.getString(R.string.export)).performClick()
+            compose.onNodeWithTag("export-format-$format").performClick().assertIsSelected()
+            compose.onNodeWithText(compose.activity.getString(R.string.save_album)).performScrollTo().performClick()
+            compose.onNode(hasText(compose.activity.getString(R.string.export)) and hasClickAction()).performClick()
+            ready()
+            val created = gallery() - before
+            try {
+                assertEquals(1, created.size)
+                val uri = ContentUris.withAppendedId(galleryUri, created.single())
+                val copy = File(compose.activity.cacheDir, "camera-export-${UUID.randomUUID()}.jpg")
+                try {
+                    resolver.openInputStream(uri)!!.use { input -> copy.outputStream().use { input.copyTo(it) } }
+                    assertEquals(expectHDR, NativeHDRBridge.probe(copy) != null)
+                    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    android.graphics.BitmapFactory.decodeFile(copy.path, bounds)
+                    assertEquals(128, bounds.outWidth)
+                    assertEquals(96, bounds.outHeight)
+                } finally {
+                    copy.delete()
+                }
+            } finally {
+                created.forEach { resolver.delete(ContentUris.withAppendedId(galleryUri, it), null, null) }
+            }
+        }
+        try {
+            compose.runOnUiThread { model.importPhoto(Uri.fromFile(source)) }
+            ready()
+            assertTrue(model.state.value.photo!!.isCameraRawHDR)
+            assertFalse(model.state.value.edits.isHDREditing)
+            compose.runOnUiThread { model.edit(model.state.value.edits.copy(exposure = .5f)) }
+            ready()
+
+            mode(true)
+            assertEquals(0f, model.state.value.edits.exposure)
+            compose.runOnUiThread { model.edit(model.state.value.edits.copy(exposure = 1.25f)) }
+            ready()
+            mode(false)
+            assertEquals(.5f, model.state.value.edits.exposure)
+            mode(true)
+            assertEquals(1.25f, model.state.value.edits.exposure)
+            compose.runOnUiThread { model.importPhoto(Uri.fromFile(source)) }
+            ready()
+            assertTrue(model.state.value.edits.isHDREditing)
+            assertEquals(1.25f, model.state.value.edits.exposure)
+
+            export("HDR_JPEG", expectHDR = true)
+            export("JPEG", expectHDR = false)
+        } finally {
+            source.delete()
+        }
+    }
+
     @Test fun freshImportPresetMonitoringModeSwitchAndExportChoices() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         assumeTrue("Supply -PrawlabTestHDRJPEG", instrumentation.context.assets.list("")!!.contains("hdr-sample.jpg"))

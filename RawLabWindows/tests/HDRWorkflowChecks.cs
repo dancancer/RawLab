@@ -14,6 +14,122 @@ internal static class HDRWorkflowChecks
     private static T Get<T>(object owner,string field)=>(T)owner.GetType().GetField(field,Private)!.GetValue(owner)!;
     private static void Invoke(object owner,string method)=>owner.GetType().GetMethod(method,Private)!.Invoke(owner,null);
     private static void Ready(MainWindow window)=>InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
+
+    internal static void RunCameraRaw(string repo, string fixture, Action<bool, string> check)
+    {
+        var root = Path.Combine(Path.GetFullPath(repo), "build", "camera-raw-hdr-workflow", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var source = Path.Combine(root, Path.GetFileName(fixture));
+        File.Copy(fixture, source);
+        string SourceHash()
+        {
+            using var stream = File.OpenRead(source);
+            return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream));
+        }
+        var originalHash = SourceHash();
+        Loc.Initialize("en");
+        var app = TestWindowState.CreateApplication();
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
+        MainWindow? window = null;
+        void Open()
+        {
+            window = new MainWindow(Path.Combine(root, "looks"));
+            TestWindowState.Isolate(window, root, editDirectory: Path.Combine(root, "edits"));
+            window.Show();
+            window.OpenFile(source);
+            Ready(window);
+        }
+        Adjustments Settings() => Get<Adjustments>(window!, "settings");
+        RenderedImage Frame() => Get<RenderedImage>(window!, "result");
+        void Toggle(bool enabled)
+        {
+            check(window!.HDREditMenu.IsEnabled, "Camera RAW offers the HDR edit switch");
+            window.HDREditMenu.IsChecked = enabled;
+            window.HDREditMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled && Settings().IsHDREditing == enabled &&
+                (Frame().HDR != null) == enabled);
+            check(window.HDREditMenu.IsChecked == enabled, "HDR menu matches the rendered edit mode");
+        }
+        void EditExposure(double value)
+        {
+            var tools = Get<Dictionary<EditorAdjustmentTool, (Button Button, AdjustmentRing Ring)>>(window!, "workspaceTools");
+            tools[EditorAdjustmentTool.Exposure].Button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            window!.OrdinaryParameter.Number.Text = value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            check(window.OrdinaryParameter.Commit(), "Exposure commits through the visible adjustment");
+            Ready(window);
+            check(Settings()[Parameter.Exposure] == value, "Active mode receives the exposure edit");
+        }
+        void Export(ExportFormat format, string output)
+        {
+            var task = window!.ExportPhoto(format, output);
+            InteractionChecks.PumpUntil(() => task.IsCompleted);
+            task.GetAwaiter().GetResult();
+            check(File.Exists(output) && new FileInfo(output).Length > 100,
+                $"Editor exports {format}: {window.Status.Text}");
+        }
+        try
+        {
+            Open();
+            check(!Settings().IsHDREditing && Frame().HDR == null, "Fresh camera RAW opens in SDR");
+            EditExposure(.5);
+            Toggle(true);
+            if (System.Diagnostics.Process.GetCurrentProcess().SessionId == 0)
+                check(!window!.ResultHDRSurface.Available, "HDR editing remains usable with the SDR canvas in Windows session 0");
+            check(Settings()[Parameter.Exposure] == 0, "First HDR edit starts with independent exposure");
+            EditExposure(1.25);
+            Toggle(false);
+            check(Settings()[Parameter.Exposure] == .5, "Switching to SDR restores the SDR exposure");
+            Toggle(true);
+            check(Settings()[Parameter.Exposure] == 1.25, "Switching back to HDR restores the HDR exposure");
+
+            var closed = false;
+            window!.Closed += (_, _) => closed = true;
+            window.Close();
+            InteractionChecks.PumpUntil(() => closed);
+            Open();
+            check(window.HDREditMenu.IsChecked && Settings().IsHDREditing && Frame().HDR != null &&
+                Settings()[Parameter.Exposure] == 1.25, "Reopened editor restores the last mode and HDR exposure");
+            Toggle(false);
+            check(Settings()[Parameter.Exposure] == .5, "Reopened editor also restores the independent SDR exposure");
+            Toggle(true);
+
+            var menu = window.ExportButton.ContextMenu!;
+            menu.PlacementTarget = window.ExportButton;
+            menu.IsOpen = true;
+            InteractionChecks.PumpUntil(() => window.ExportHdrJpeg.IsVisible && window.ExportSdrJpeg.IsVisible);
+            check(window.ExportHdrJpeg.IsEnabled && window.ExportSdrJpeg.IsEnabled,
+                "Both JPEG exports are available in the HDR editor");
+            menu.IsOpen = false;
+            var frame = Frame();
+            var hdr = Path.Combine(root, "hdr.jpg");
+            var sdr = Path.Combine(root, "sdr.jpg");
+            Export(ExportFormat.HdrJpeg, hdr);
+            Ready(window);
+            Export(ExportFormat.SdrJpeg, sdr);
+            check(HDRNative.Probe(hdr, out var info) == HDRProbeState.Supported &&
+                info!.Width == frame.NativeWidth && info.Height == frame.NativeHeight,
+                "HDR JPEG contains a gain map and retains full rendered dimensions");
+            check(HDRNative.Probe(sdr, out _) == HDRProbeState.NotHDR, "SDR JPEG has no HDR gain map");
+            using (var stream = File.OpenRead(sdr))
+            {
+                var jpeg = new JpegBitmapDecoder(stream, BitmapCreateOptions.DelayCreation, BitmapCacheOption.None).Frames[0];
+                check(jpeg.PixelWidth == frame.NativeWidth && jpeg.PixelHeight == frame.NativeHeight,
+                    $"SDR JPEG decodes at full size ({jpeg.PixelWidth} × {jpeg.PixelHeight})");
+            }
+            check(SourceHash() == originalHash, "Camera RAW source remains byte-for-byte unchanged");
+        }
+        catch
+        {
+            Console.Error.WriteLine($"Camera RAW HDR editor status: {window?.Status.Text}");
+            throw;
+        }
+        finally
+        {
+            window?.Close();
+            app.Shutdown();
+        }
+    }
+
     internal static void Run(string repo,string fixture,Action<bool,string> check)
     {
         var root=Path.Combine(Path.GetFullPath(repo),"build","hdr-workflow",Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);

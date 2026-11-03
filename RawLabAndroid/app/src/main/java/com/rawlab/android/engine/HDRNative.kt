@@ -11,6 +11,9 @@ internal object NativeHDRBridge {
     init { System.loadLibrary("rawlab-jni") }
 
     fun probe(file: File): HDRSourceInfo? = nativeProbe(file.absolutePath)?.let(HDRSourceInfo::decode)
+    fun probeCameraRaw(file: File): HDRSourceInfo? = nativeProbeCameraRaw(file.absolutePath)?.let {
+        HDRSourceInfo.decode(it).copy(cameraStamp = HDRSourceInfo.CameraStamp(file.length(), file.lastModified()))
+    }
     fun geometrySize(info: HDRSourceInfo, geometry: GeometrySettings): IntArray = nativeGeometry(
         if (info.orientation >= 5) info.height else info.width,
         if (info.orientation >= 5) info.width else info.height,
@@ -22,6 +25,23 @@ internal object NativeHDRBridge {
         if (handle == 0L) error("HDR decode returned an empty owner")
         try {
             require(nativeFingerprint(handle).contentEquals(info.fingerprint)) { "HDR source changed" }
+            return NativeHDRImage(handle, info, nativeMetadata(handle))
+        } catch (error: Throwable) {
+            nativeRelease(handle)
+            throw error
+        }
+    }
+
+    fun decodeCameraRaw(processor: Long, file: File, info: HDRSourceInfo, edge: Int,
+        cancellationGeneration: Long = -1L): NativeHDRImage {
+        require(info.isCameraRaw) { "Camera RAW HDR decode requires a camera RAW source" }
+        require(edge in 0..65535)
+        val handle = nativeDecodeCameraRaw(processor, file.absolutePath, edge, cancellationGeneration)
+        if (handle == 0L) error("Camera RAW HDR decode returned an empty owner")
+        try {
+            info.cameraStamp?.let { expected ->
+                require(expected == HDRSourceInfo.CameraStamp(file.length(), file.lastModified())) { "HDR source changed" }
+            }
             return NativeHDRImage(handle, info, nativeMetadata(handle))
         } catch (error: Throwable) {
             nativeRelease(handle)
@@ -43,17 +63,21 @@ internal object NativeHDRBridge {
     fun plane(pair: NativeHDRImage, hdr: Boolean): FloatArray = nativePlane(pair.handle, hdr)
     fun sdrBitmap(pair: NativeHDRImage, bitmap: Bitmap) = nativeSdrBitmap(pair.handle, bitmap)
     fun release(pair: Long) = nativeRelease(pair)
-    fun exportJpeg(pair: NativeHDRImage, source: File, output: File, baseColor: Int = 2) =
-        nativeExportJpeg(pair.handle, source.absolutePath, output.absolutePath, baseColor)
-    fun exportSdr(pair: NativeHDRImage, source: File, output: File, format: Int) =
-        nativeExportSdr(pair.handle, source.absolutePath, output.absolutePath, format)
+    fun exportJpeg(pair: NativeHDRImage, source: File?, output: File, baseColor: Int = 2) =
+        nativeExportJpeg(pair.handle, source?.absolutePath, output.absolutePath, baseColor)
+    fun exportSdr(pair: NativeHDRImage, source: File?, output: File, format: Int) =
+        nativeExportSdr(pair.handle, source?.absolutePath, output.absolutePath, format)
 
     @JvmStatic
     private external fun nativeProbe(path: String): ByteArray?
     @JvmStatic
+    private external fun nativeProbeCameraRaw(path: String): ByteArray?
+    @JvmStatic
     private external fun nativeGeometry(width: Int, height: Int, values: FloatArray): IntArray
     @JvmStatic
     private external fun nativeDecode(path: String, longEdge: Int): Long
+    @JvmStatic
+    private external fun nativeDecodeCameraRaw(session: Long, path: String, longEdge: Int, cancellationGeneration: Long): Long
     @JvmStatic
     private external fun nativeRender(session: Long, source: Long, values: FloatArray, longEdge: Int, cancellationGeneration: Long): Long
     @JvmStatic
@@ -67,9 +91,9 @@ internal object NativeHDRBridge {
     @JvmStatic
     private external fun nativeRelease(pair: Long)
     @JvmStatic
-    private external fun nativeExportJpeg(pair: Long, source: String, output: String, baseColor: Int)
+    private external fun nativeExportJpeg(pair: Long, source: String?, output: String, baseColor: Int)
     @JvmStatic
-    private external fun nativeExportSdr(pair: Long, source: String, output: String, format: Int)
+    private external fun nativeExportSdr(pair: Long, source: String?, output: String, format: Int)
 }
 
 internal class NativeHDRImage internal constructor(

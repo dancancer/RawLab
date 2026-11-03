@@ -34,6 +34,7 @@ import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.Film
 import com.rawlab.android.settings.LookChoice
 import com.rawlab.android.settings.PhotoIdentity
+import com.rawlab.android.settings.sourceDefaultSettings
 
 data class AlbumPhoto(val uri: Uri, val name: String, val album: String,
     val width: Int = 0, val height: Int = 0, val orientation: Int = 0) {
@@ -45,7 +46,9 @@ data class ImportedPhoto(val uri: Uri, val name: String, val file: File,
     val validateOriginal: (() -> Unit)? = null,
     val hdrSource: HDRSourceInfo? = null) {
     val isHDRSource get() = hdrSource != null
+    val isCameraRawHDR get() = hdrSource?.isCameraRaw == true
     val isX3f get() = inputKind == PhotoInputKind.RAW && name.substringAfterLast('.', "").equals("x3f", ignoreCase = true)
+    fun defaultEditSettings(): EditSettings = sourceDefaultSettings(isHDRSource, cameraRaw = isCameraRawHDR)
 }
 
 internal fun albumAspectRatio(width: Int, height: Int, orientation: Int): Float? {
@@ -131,8 +134,11 @@ class PhotoStorage(
         val file = WorkingCopy.import(directory, stream, name)
         try {
             validate()
-            val hdrSource = if (inputKind == PhotoInputKind.RASTER &&
-                HDRSourceInfo.mayContainGainMap(name, resolver.getType(uri))) NativeHDRBridge.probe(file) else null
+            val hdrSource = when (inputKind) {
+                PhotoInputKind.RASTER -> if (HDRSourceInfo.mayContainGainMap(name, resolver.getType(uri)))
+                    NativeHDRBridge.probe(file) else null
+                PhotoInputKind.RAW -> NativeHDRBridge.probeCameraRaw(file)
+            }
             return ImportedPhoto(uri, name, file, PhotoIdentity(uri.toString()), inputKind, validate, hdrSource)
         } catch (error: Throwable) { file.delete(); throw error }
     }

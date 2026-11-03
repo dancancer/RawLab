@@ -12,6 +12,10 @@ extension Sony2FujiProcessor {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
         else {
+            if let camera = try HDRSourceInfo.probeCameraRAW(url) {
+                return ImageMetadata(width: camera.native.width, height: camera.native.height,
+                                     orientation: CGImagePropertyOrientation(rawValue: camera.native.orientation) ?? .up)
+            }
             if url.pathExtension.lowercased() == "x3f" {
                 let dimensions = url.path.withCString { rawlab_get_raw_dimensions($0) }
                 if dimensions.width > 0, dimensions.height > 0 {

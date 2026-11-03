@@ -25,7 +25,12 @@ public static class AdjustmentTransfer
     public static AdjustmentPayload Capture(AdjustmentScope scope,SavedEdit edit,AdjustmentTransferContext context)
     {
         if(context.HasUncommittedDraft) throw new AdjustmentTransferException(AdjustmentFailure.Draft);
-        if (edit.Settings.HDR is { Mode: HDRMode.Hdr }) return HDRAdjustmentTransfer.Capture(scope, edit, context);
+        if (edit.Settings.HDR is { Mode: HDRMode.Hdr })
+        {
+            if (PhotoInput.IsCameraRaw(edit.Identity.Path))
+                throw new AdjustmentTransferException(AdjustmentFailure.Incompatible, "hdr.camera_raw");
+            return HDRAdjustmentTransfer.Capture(scope, edit, context);
+        }
         if(edit.Settings.AIDenoiseEnabled && scope.Kind is "all" or "modified")
             throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"AI denoise has no transfer field");
         var values=AdjustmentTransferValues.Values(edit,context);

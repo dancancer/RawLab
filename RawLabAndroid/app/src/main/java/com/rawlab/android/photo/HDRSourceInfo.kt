@@ -14,6 +14,7 @@ data class HDRSourceInfo(
     val contentHeadroom: Float,
     val headroomKind: Int,
     val fingerprint: ByteArray,
+    val cameraStamp: CameraStamp? = null,
 ) {
     init {
         require(width > 0 && height > 0)
@@ -22,7 +23,13 @@ data class HDRSourceInfo(
         require(fingerprint.size == FINGERPRINT_BYTES)
     }
 
+    val isCameraRaw: Boolean get() = container == CONTAINER_CAMERA_RAW
+    val isCameraRAW: Boolean get() = isCameraRaw
+
+    data class CameraStamp(val length: Long, val modified: Long)
+
     companion object {
+        const val CONTAINER_CAMERA_RAW = 3
         private const val BYTES = 64
         private const val FINGERPRINT_BYTES = 32
         private val extensions = setOf("jpg", "jpeg", "heic", "heif")

@@ -798,10 +798,14 @@ struct PhotoEditSession {
 
 
 extension Adjustments {
-    func withHDRMode(_ enabled: Bool, sourceIsHDR: Bool, hasLook: Bool) throws -> Adjustments {
+    func withHDRMode(_ enabled: Bool, sourceIsHDR: Bool, hasLook: Bool, cameraRAW: Bool = false) throws -> Adjustments {
         var result = self
         guard enabled else { result.hdr?.mode = .sdr; return result }
         var initial = HDRSettings()
+        if cameraRAW {
+            result.hdr = try HDRSettings.enabling(stored: hdr, initial: initial, sourceIsHDR: true, conflicts: [])
+            return result
+        }
         initial.exposure = exposure; initial.contrast = contrast; initial.highlights = highlights
         initial.shadows = shadows; initial.saturation = saturation; initial.geometry = geometry ?? GeometrySettings()
         var conflicts: [String] = []

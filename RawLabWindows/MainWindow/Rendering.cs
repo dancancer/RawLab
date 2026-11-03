@@ -26,6 +26,7 @@ public partial class MainWindow
             if(!LibraryEntry.IsImage(path))throw new InvalidOperationException(Loc.Text("请选择支持的照片文件。"));
             HDRSourceInfo? openedHDR = null;
             if (PhotoInput.IsHDRContainer(path)) PhotoInput.ProbeHDR(path, out openedHDR);
+            else if (PhotoInput.IsCameraRaw(path)) PhotoInput.ProbeCameraRaw(path, out openedHDR);
             CancelViewingInput();
             if(!ResolveTransformDraft() || !SaveEdits())return;
             ResetAITask();RestoreEdits(path); hdrSource = openedHDR;
@@ -123,8 +124,11 @@ public partial class MainWindow
     {
         if(!ready || file==null || closing)return;
         if(exporting){previewDeferred=true;return;}
-        ReconcileAI();
-        if(settings.AIDenoiseEnabled && (aiJob.State.IsRunning || !AIResultReady)) { exactReady=false;UpdateBusy();return; }
+        if (!settings.IsHDREditing)
+        {
+            ReconcileAI();
+            if(settings.AIDenoiseEnabled && (aiJob.State.IsRunning || !AIResultReady)) { exactReady=false;UpdateBusy();return; }
+        }
         previewDeferred=false;
         if(transform.Active){transformPreviewReady=false;RefreshCropDraft();}
         if(!settings.Denoise.Enabled && previewResize.IsEnabled){previewResize.Stop();previewLongEdge=requestedPreviewLongEdge;}
@@ -167,16 +171,22 @@ public partial class MainWindow
         }
         // A current-file proxy may publish while dragging; stale exact work never publishes.
         if(CurrentViewSource is {} currentSource && work.Source.SameFile(currentSource) && work.OpenRevision==openRevision && work.File==file && work.Lut==lut && work.Settings.AIDenoiseEnabled==settings.AIDenoiseEnabled && work.Settings.X3fMode==settings.X3fMode &&
-            (!settings.AIDenoiseEnabled || AIResultReady && work.AIIdentity==aiJob.Identity) && work.Settings.Geometry==PreviewGeometry && work.Settings.Lens==PreviewLens && work.TransformGeneration==transformGeneration && (!view.NeedsReference || work.Compare) && work.Clipping==clipping && (current || (work.Interactive && interacting && work.Edge==RenderEdge(true))))
+            (!work.Settings.AIDenoiseEnabled || work.Settings.IsHDREditing || AIResultReady && work.AIIdentity==aiJob.Identity) && work.Settings.Geometry==PreviewGeometry && work.Settings.Lens==PreviewLens && work.TransformGeneration==transformGeneration && (!view.NeedsReference || work.Compare) && work.Clipping==clipping && (current || (work.Interactive && interacting && work.Edge==RenderEdge(true))))
         {
             if(failure!=null) { if(current){ClearPendingAllReset();exactReady=false;transformPreviewReady=false;renderFailed=true;RefreshCropDraft();RefreshRenderLabels();if(!HandleAIFailure(failure))SetStatus(()=>Loc.Text("预览未更新")+" · "+failure.Message,true);} }
             else if(rendered!=null && neutral!=null)
             {
                 if(work.Settings.AIDenoiseEnabled) { aiNotReadyIdentity=null;aiNotReadyAttempts=0; }
                 result=rendered;acceptedAfter=new(work.Source,PhotoInput.IsRaster(work.File),work.Settings.Processing,work.Settings.Geometry,work.Settings.Lens,work.Edge,work.Settings.IsHDREditing,work.Settings.X3fMode);
-                if(!transform.Active)settings.ResolveWhiteBalance(rendered.WhiteBalance);
+                // HDR camera rendering has no legacy RAW WB result. Keep the
+                // dormant SDR AsShot calibration intact across HDR previews.
+                if(!transform.Active && rendered.WhiteBalance is { } whiteBalance)
+                    settings.ResolveWhiteBalance(whiteBalance);
                 hslAcceptedWork=work;
-                var acceptedSettings=work.Settings.Clone();acceptedSettings.ResolveWhiteBalance(rendered.WhiteBalance);hslAcceptedSettings=acceptedSettings.Capture();
+                var acceptedSettings=work.Settings.Clone();
+                if (rendered.WhiteBalance is { } acceptedWhiteBalance)
+                    acceptedSettings.ResolveWhiteBalance(acceptedWhiteBalance);
+                hslAcceptedSettings=acceptedSettings.Capture();
                 hslAcceptedRevision=new((ulong)openRevision,(ulong)ticket.Id);
                 // The core supplies the post-geometry canvas before preview/export resizing.
                 syncing=true;

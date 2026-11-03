@@ -43,5 +43,6 @@
     <Compile Include="../../HDRSourceInfo.cs" Link="HDRSourceInfo.cs" />
     <Compile Include="../../HDRNative.cs" Link="HDRNative.cs" />
     <Compile Include="../../HDRAdjustmentTransfer.cs" Link="HDRAdjustmentTransfer.cs" />
+    <Compile Include="../CameraRawHDRChecks.cs" Link="CameraRawHDRChecks.cs" />
   </ItemGroup>
 </Project>

@@ -74,7 +74,7 @@ public sealed record HDRSettings
     };
 
     public static HDRSettings Enabling(HDRSettings? stored, HDRSettings initial, bool sourceIsHDR,
-        IEnumerable<string>? conflicts = null)
+        IEnumerable<string>? conflicts = null, bool cameraRaw = false)
     {
         if (!sourceIsHDR) throw new HDRModeException(HDRModeFailure.UnsupportedSource);
         if (stored is { } existing)
@@ -84,7 +84,12 @@ public sealed record HDRSettings
         }
         var blocked = conflicts?.Where(value => !string.IsNullOrEmpty(value)).ToArray() ?? Array.Empty<string>();
         if (blocked.Length != 0) throw new HDRModeException(HDRModeFailure.Conflicts, blocked);
-        var result = initial with { Mode = HDRMode.Hdr, Temperature = 6500, Tint = 0 };
+        // Camera RAW keeps the existing SDR record (including LUT, as-shot WB
+        // and RAW denoise) but starts its separate HDR record from a neutral
+        // scene snapshot. Geometry is the only shared edit copied here.
+        var result = cameraRaw
+            ? new HDRSettings { Mode = HDRMode.Hdr, Geometry = initial.Geometry }
+            : initial with { Mode = HDRMode.Hdr, Temperature = 6500, Tint = 0 };
         if (!result.IsValid) throw new HDRModeException(HDRModeFailure.InvalidSettings);
         return result;
     }

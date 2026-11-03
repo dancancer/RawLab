@@ -176,7 +176,7 @@ extension EditorModel {
                 self.neutral = neutral
                 self.result = result
                 if completion == .publishExact { previewOutdated = false }
-                if request.value.settings.aiDenoiseEnabled && !self.aiState.isRunning {
+                if !request.value.settings.isHDREditing && request.value.settings.aiDenoiseEnabled && !self.aiState.isRunning {
                     self.aiState = .ready
                     self.aiIdentity = try? AIWorkIdentity(request.value.file, settings: request.value.settings)
                 }
@@ -196,16 +196,18 @@ extension EditorModel {
                     pendingImportEvent = false
                     onUsage(.photoImported)
                 }
-                updatingMetadata = true
-                settings.resolveWhiteBalance(result.asShotWhiteBalance)
-                settings.resolveRawNoiseReductionSupport(result.supportsRawNoiseReduction)
-                updatingMetadata = false
+                if !request.value.settings.isHDREditing {
+                    updatingMetadata = true
+                    settings.resolveWhiteBalance(result.asShotWhiteBalance)
+                    settings.resolveRawNoiseReductionSupport(result.supportsRawNoiseReduction)
+                    updatingMetadata = false
+                }
                 hslAcceptedRequest = request
                 hslAcceptedSettings = settings
                 if completion == .publishInteractive {
                     statusState = .interactive(result.image.width, result.image.height)
                 } else {
-                    statusState = .preview(result.image.width, result.image.height, original: request.value.edge == nil)
+                    statusState = .preview(result.image.width, result.image.height, original: result.isFullResolution)
                 }
             }
         case .discard, .ignored:

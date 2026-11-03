@@ -24,7 +24,9 @@ public partial class MainWindow
             catch(Exception error) when(error is IOException or UnauthorizedAccessException) { return false; }
         }
     }
-    private bool AIBlocksOutput=>aiJob.State.IsRunning || !AIResultReady;
+    // HDR rendering intentionally bypasses the dormant SDR/AI denoise path;
+    // an old AI result must not block camera HDR preview or export.
+    private bool AIBlocksOutput=>!settings.IsHDREditing && (aiJob.State.IsRunning || !AIResultReady);
     private void InitializeAI()
     {
         aiJob.Changed+=()=>{
@@ -108,7 +110,7 @@ public partial class MainWindow
     }
     private bool HandleAIFailure(Exception error)
     {
-        if(!settings.AIDenoiseEnabled)return false;
+        if(!settings.AIDenoiseEnabled || settings.IsHDREditing)return false;
         if(error is AINotReadyException) {AIResultUnavailable();return true;}
         if(error is AIDenoiseException) {
             ClearPendingAllReset();aiJob.Fail(error.Message,AIDiagnosticStore.ReportPath(error),AIDiagnosticStore.SaveFailed(error));RefreshControls();return true;

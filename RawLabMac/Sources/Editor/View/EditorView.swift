@@ -255,7 +255,7 @@ struct EditorView: View {
     private var processingSettings: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(L10n.text("照片处理设置")).font(.headline)
-            if model.sourceIsHDR {
+            if model.sourceIsHDR || model.sourceSupportsCameraHDR {
                 Toggle(L10n.text("HDR 编辑"),isOn:Binding(get:{ model.settings.isHDREditing },set:model.setHDREditing))
                     .disabled(!model.canExport).accessibilityIdentifier("hdr.editMode")
             }

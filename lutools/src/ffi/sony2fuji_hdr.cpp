@@ -2,6 +2,11 @@
 #include "ffi/hdr_session.h"
 #include "platform/hdr_image.h"
 #include "core/rendered_dng.h"
+#include "core/hdr_resample.h"
+#include "core/parallel_pixels.h"
+#include "core/photo_rendering.h"
+#include "core/sha256.h"
+#include "sony2fuji/raw_processor.h"
 
 #include <algorithm>
 #include <array>
@@ -28,6 +33,7 @@ struct Owner {
 std::mutex ownersMutex;
 std::unordered_map<uint64_t, std::shared_ptr<Owner>> owners;
 std::atomic<uint64_t> nextToken{1};
+std::atomic<uint64_t> nextCameraRevision{1};
 
 [[noreturn]] void fail(uint32_t reason, uint32_t field, const char* message,
     sony2fuji_status status = SONY2FUJI_STATUS_INVALID_ARGUMENT) {
@@ -59,6 +65,9 @@ template<class Function> sony2fuji_status boundary(sony2fuji_hdr_diagnostic_v1* 
         if (diagnostic) { diagnostic->reason = reason; diagnostic->field = field; }
     };
     try { function(); report(0, 0); return SONY2FUJI_STATUS_OK; }
+    catch (const ProcessingCancelled&) {
+        report(0, 0); return SONY2FUJI_STATUS_CANCELLED;
+    }
     catch (const Error& error) { report(error.reason, error.field); return error.status; }
     catch (const std::bad_alloc&) {
         report(SONY2FUJI_HDR_REASON_OUT_OF_MEMORY, SONY2FUJI_HDR_FIELD_RESULT); return SONY2FUJI_STATUS_OUT_OF_MEMORY;
@@ -199,6 +208,58 @@ void finalSource(const HDRImagePair& image) {
 void path(const char* value) {
     if (!value || !*value) fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_PATH, "Missing HDR file path");
 }
+void cameraRawStatus(ErrorCode code) {
+    switch (code) {
+        case ErrorCode::Success: return;
+        case ErrorCode::OutOfMemory: throw std::bad_alloc();
+        case ErrorCode::FileNotFound:
+            fail(SONY2FUJI_HDR_REASON_INPUT_IO, SONY2FUJI_HDR_FIELD_PATH,
+                "Cannot read camera RAW", SONY2FUJI_STATUS_IO_ERROR);
+        case ErrorCode::InvalidFormat:
+            fail(SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW, SONY2FUJI_HDR_FIELD_SOURCE,
+                "Unsupported camera RAW for HDR", SONY2FUJI_STATUS_UNSUPPORTED);
+        default:
+            fail(SONY2FUJI_HDR_REASON_INVALID_BUFFER, SONY2FUJI_HDR_FIELD_SOURCE,
+                "Camera RAW development failed", SONY2FUJI_STATUS_PROCESSING_ERROR);
+    }
+}
+
+struct CameraRawStamp {
+    uintmax_t size;
+    std::filesystem::file_time_type modified;
+};
+
+CameraRawStamp cameraRawStamp(const std::filesystem::path& file) {
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(file, error)) cameraRawStatus(ErrorCode::FileNotFound);
+    const auto size = std::filesystem::file_size(file, error);
+    if (error || !size) cameraRawStatus(ErrorCode::FileNotFound);
+    if (size > 512ull * 1024 * 1024)
+        fail(SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW, SONY2FUJI_HDR_FIELD_PATH, "Camera RAW exceeds the source file limit",
+            SONY2FUJI_STATUS_UNSUPPORTED);
+    const auto modified = std::filesystem::last_write_time(file, error);
+    if (error) cameraRawStatus(ErrorCode::FileNotFound);
+    return {size, modified};
+}
+
+float cameraLuminance(const RGB& pixel) {
+    return .2126f * pixel.r + .7152f * pixel.g + .0722f * pixel.b;
+}
+
+RGB cameraSDR(const RGB& pixel) {
+    const float y = cameraLuminance(pixel);
+    if (y <= 0) return {0, 0, 0};
+    const float mapped = neutralDisplayLinear(y);
+    const float highest = std::max({pixel.r, pixel.g, pixel.b});
+    const float lowest = std::min({pixel.r, pixel.g, pixel.b});
+    // Reduce chroma about mapped luminance only as far as sRGB requires.
+    float chroma = mapped / y;
+    if (highest > y) chroma = std::min(chroma, (1 - mapped) / (highest - y));
+    if (lowest < y) chroma = std::min(chroma, mapped / (y - lowest));
+    auto component = [&](float value) { return std::clamp(mapped + (value - y) * chroma, 0.0f, 1.0f); };
+    return {component(pixel.r), component(pixel.g), component(pixel.b)};
+}
+
 bool overlaps(const void* a,uint64_t aSize,const void* b,uint64_t bSize) {
     if (!a || !b || !aSize || !bSize) return false;
     const auto ap=reinterpret_cast<uintptr_t>(a),bp=reinterpret_cast<uintptr_t>(b);
@@ -336,6 +397,121 @@ sony2fuji_status sony2fuji_hdr_decode(const char* file, const sony2fuji_hdr_deco
         publish(std::move(owner), result);
     });
 }
+sony2fuji_status sony2fuji_hdr_probe_camera_raw(const char* file, sony2fuji_hdr_source_info_v1* info,
+    sony2fuji_hdr_diagnostic_v1* diagnostic) {
+    return boundary(diagnostic, [&] {
+        header(info, SONY2FUJI_HDR_FIELD_RESULT); clearOutput(info); path(file);
+        cameraRawStamp(std::filesystem::u8path(file));
+        RAWProcessor processor;
+        int width = 0, height = 0;
+        uint64_t sensorPixels = 0;
+        cameraRawStatus(processor.inspectCameraHDR(file, width, height, sensorPixels));
+        info->container = SONY2FUJI_HDR_CONTAINER_CAMERA_RAW;
+        info->color_description = SONY2FUJI_HDR_COLOR_SRGB;
+        info->width = width;
+        info->height = height;
+        info->orientation = 1;
+    });
+}
+
+sony2fuji_status sony2fuji_hdr_decode_camera_raw(sony2fuji_session* session, const char* file,
+    const sony2fuji_hdr_decode_options_v1* options, sony2fuji_hdr_image_pair_v1* result,
+    sony2fuji_hdr_diagnostic_v1* diagnostic) {
+    return boundary(diagnostic, [&] {
+        prepareOutput(result); header(options, SONY2FUJI_HDR_FIELD_REQUEST); path(file);
+        const bool preview = options->intent == SONY2FUJI_INTENT_PREVIEW;
+        if (options->intent > 1 || (preview ? !options->long_edge || options->long_edge > 65535 : options->long_edge != 0))
+            fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_REQUEST, "Invalid camera RAW HDR decode size");
+        if (hdrSessionForcesGPU(session))
+            fail(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU, SONY2FUJI_HDR_FIELD_SESSION, "Camera RAW HDR development is CPU only",
+                SONY2FUJI_STATUS_UNSUPPORTED);
+        const ProcessingCancellationScope cancellation(hdrSessionCancellation(session));
+        checkProcessingCancellation();
+        const auto filePath = std::filesystem::u8path(file);
+        const auto before = cameraRawStamp(filePath);
+
+        auto owner = std::make_shared<Owner>();
+        auto& pair = owner->pixels;
+        {
+            RAWProcessor processor;
+            int width = 0, height = 0;
+            uint64_t sensorPixels = 0;
+            cameraRawStatus(processor.inspectCameraHDR(file, width, height, sensorPixels));
+            const uint64_t developedPixels = preview ? uint64_t((width + 1) / 2) * ((height + 1) / 2)
+                                                    : uint64_t(width) * height;
+            // The mosaic still unpacks at sensor size. LibRaw's working RGBA16
+            // and the float RGB development are smaller in half-size mode.
+            hdr::admitMemory(before.size + sensorPixels * 4 + developedPixels * 24);
+            cameraRawStatus(processor.unpackInspectedCameraHDR());
+            RAWBayerSource bayer;
+            if (!processor.getBayerMetadata(bayer)) cameraRawStatus(ErrorCode::InvalidFormat);
+            pair.nativeWidth = (bayer.flip & 4) ? bayer.height : bayer.width;
+            pair.nativeHeight = (bayer.flip & 4) ? bayer.width : bayer.height;
+            if (pair.nativeWidth != uint32_t(width) || pair.nativeHeight != uint32_t(height))
+                cameraRawStatus(ErrorCode::InvalidFormat);
+            RAWProcessOptions raw;
+            raw.halfSize = preview;
+            raw.outputLinear = true;
+            raw.applyBaselineExposure = false;
+            // Camera RAW HDR v1 anchors reference white at one quarter of the
+            // baseline-adjusted scene scale, with two stops above diffuse white.
+            raw.exposure = processor.getMetadataExposureEV() + 2.0f;
+            cameraRawStatus(processor.process(raw, pair.hdr));
+        }
+        if (preview) {
+            const auto longest = std::max(pair.hdr.width, pair.hdr.height);
+            if (uint32_t(longest) > options->long_edge) {
+                const double scale = double(options->long_edge) / longest;
+                auto width = std::max(1l, std::lround(pair.hdr.width * scale));
+                auto height = std::max(1l, std::lround(pair.hdr.height * scale));
+                hdr::admitMemory(uint64_t(width) * height * sizeof(RGB));
+                pair.hdr = hdr::resample(pair.hdr, uint32_t(width), uint32_t(height));
+            }
+        } else if (uint32_t(pair.hdr.width) != pair.nativeWidth || uint32_t(pair.hdr.height) != pair.nativeHeight) {
+            cameraRawStatus(ErrorCode::InvalidFormat);
+        }
+        hdr::admitMemory(pair.hdr.pixels.size() * sizeof(RGB));
+        pair.sdr = ImageData(pair.hdr.width, pair.hdr.height);
+        std::atomic<bool> nonfinite{false};
+        parallelPixelRanges(pair.hdr.pixels.size(), [&](size_t first, size_t last) {
+            for (size_t i = first; i < last; ++i) {
+                const auto& pixel = pair.hdr.pixels[i];
+                if (!std::isfinite(pixel.r) || !std::isfinite(pixel.g) || !std::isfinite(pixel.b)) {
+                    nonfinite.store(true, std::memory_order_relaxed);
+                    return;
+                }
+                pair.sdr.pixels[i] = cameraSDR(pixel);
+            }
+        });
+        if (nonfinite.load(std::memory_order_relaxed))
+            fail(SONY2FUJI_HDR_REASON_NONFINITE, SONY2FUJI_HDR_FIELD_SOURCE, "Nonfinite camera RAW pixel",
+                SONY2FUJI_STATUS_PROCESSING_ERROR);
+        if (!preview) {
+            pair.sourceHeadroom = 1;
+            for (const auto& pixel : pair.hdr.pixels)
+                pair.sourceHeadroom = std::max(pair.sourceHeadroom, cameraLuminance(pixel));
+            owner->sourceHeadroomKind = SONY2FUJI_HDR_HEADROOM_MEASURED;
+        }
+        std::string digest;
+        try { digest = hash::sha256File(file); }
+        catch (const std::runtime_error&) { cameraRawStatus(ErrorCode::FileNotFound); }
+        const auto after = cameraRawStamp(filePath);
+        if (before.size != after.size || before.modified != after.modified)
+            fail(SONY2FUJI_HDR_REASON_SOURCE_CHANGED, SONY2FUJI_HDR_FIELD_SOURCE, "Camera RAW source changed during decode");
+        for (size_t i = 0; i < owner->sha.size(); ++i) {
+            auto digit = [](char c) { return c <= '9' ? c - '0' : c - 'a' + 10; };
+            owner->sha[i] = uint8_t(digit(digest[2*i]) * 16 + digit(digest[2*i+1]));
+        }
+        checkProcessingCancellation();
+        pair.sourceQuality = pair.renderQuality = static_cast<HDRQuality>(options->intent);
+        pair.isProxy = preview;
+        pair.decodeRevision = nextCameraRevision.fetch_add(1);
+        owner->sourcePath = file;
+        publish(std::move(owner), result);
+        if (session) hdrSessionDidRenderCPU(session);
+    });
+}
+
 sony2fuji_status sony2fuji_hdr_export_jpeg(const sony2fuji_hdr_image_pair_v1* image,
     const sony2fuji_hdr_export_config_v1* config, const char* file, sony2fuji_hdr_diagnostic_v1* diagnostic) {
     return boundary(diagnostic, [&] {

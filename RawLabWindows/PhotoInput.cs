@@ -5,8 +5,13 @@ namespace RawLab.Windows;
 internal static class PhotoInput
 {
     internal static readonly HashSet<string> RawExtensions = new("arw arq dng nef nrw cr2 cr3 crw raf rw2 rwl orf pef srw raw 3fr fff iiq mos x3f".Split(' '),StringComparer.OrdinalIgnoreCase);
+    // The first Windows camera-HDR slice is explicitly validated for Sony
+    // ARW and Bayer DNG. Other RAW families (including ProRAW variants) stay
+    // on their existing SDR route until they have their own validation.
+    internal static readonly HashSet<string> CameraRawExtensions = new("arw dng".Split(' '),StringComparer.OrdinalIgnoreCase);
     internal static readonly HashSet<string> RasterExtensions = new("jpg jpeg png tif tiff heic heif".Split(' '),StringComparer.OrdinalIgnoreCase);
     internal static bool IsRaw(string path) => RawExtensions.Contains(Path.GetExtension(path).TrimStart('.'));
+    internal static bool IsCameraRaw(string path) => CameraRawExtensions.Contains(Path.GetExtension(path).TrimStart('.'));
     internal static bool IsX3f(string? path) => string.Equals(Path.GetExtension(path), ".x3f", StringComparison.OrdinalIgnoreCase);
     internal static bool IsNormalX3f(string? path, Adjustments settings) => IsX3f(path) && settings.X3fMode == X3fMode.Normal;
     internal static bool IsRaster(string path) => RasterExtensions.Contains(Path.GetExtension(path).TrimStart('.'));
@@ -21,6 +26,13 @@ internal static class PhotoInput
     {
         if (!IsHDRContainer(path)) { info = null; return HDRProbeState.NotHDR; }
         return HDRNative.Probe(path, out info);
+    }
+
+    internal static HDRProbeState ProbeCameraRaw(string path, out HDRSourceInfo? info)
+    {
+        if (!IsCameraRaw(path)) { info = null; return HDRProbeState.NotHDR; }
+        try { return HDRNative.ProbeCameraRaw(path, out info); }
+        catch (EntryPointNotFoundException) { info = null; return HDRProbeState.NotHDR; }
     }
 
     internal static Adjustments PrepareInputSettings(string path,Adjustments value)

@@ -63,6 +63,22 @@ import Foundation
             } }
             try result.exportJPEG(to:directory.appendingPathComponent("hdr.jpg"))
             try result.exportSDR(to:directory.appendingPathComponent("sdr.dng"),format:SONY2FUJI_OUTPUT_DNG)
+            let camera = directory.appendingPathComponent("camera.dng")
+            try FileManager.default.copyItem(at: URL(fileURLWithPath: CommandLine.arguments[2]), to: camera)
+            let cameraInfo = try HDRSourceInfo.probeCameraRAW(camera)!
+            require(cameraInfo.isCameraRAW && (try? HDRSourceInfo.probe(camera)) == nil,
+                    "camera RAW changed ordinary raster HDR detection")
+            let cameraPreview = try cache.preview(camera, info: cameraInfo, longEdge: 32)
+            require(cameraPreview.isProxy && cameraPreview.width == 32 && cameraPreview.nativeWidth == 128,
+                    "camera RAW preview lost its bounds or native size")
+            let cameraFinal = try HDRImage.decode(camera, info: cameraInfo, intent: SONY2FUJI_INTENT_FINAL)
+            let cameraHDR = directory.appendingPathComponent("camera-hdr.jpg")
+            let cameraSDR = directory.appendingPathComponent("camera-sdr.jpg")
+            try cameraFinal.exportJPEG(to: cameraHDR)
+            try cameraFinal.exportSDR(to: cameraSDR, format: SONY2FUJI_OUTPUT_JPEG)
+            require((try? HDRSourceInfo.probe(cameraHDR)) != nil && (try? HDRSourceInfo.probe(cameraSDR)) == nil,
+                    "camera RAW exports used the wrong JPEG rendition")
+            cache.clear()
             do { try preview.exportJPEG(to:directory.appendingPathComponent("proxy.jpg")); fatalError("preview exported as FINAL") }
             catch let error as HDRNativeError { require(error.reason==UInt32(SONY2FUJI_HDR_REASON_PREVIEW_SOURCE),"wrong proxy diagnostic") }
         }

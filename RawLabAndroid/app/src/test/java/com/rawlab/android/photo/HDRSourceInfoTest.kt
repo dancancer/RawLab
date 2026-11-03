@@ -43,4 +43,9 @@ class HDRSourceInfoTest {
         assertTrue(HDRSourceInfo.mayContainGainMap("phone.jpg", "image/jpeg"))
         assertTrue(!HDRSourceInfo.mayContainGainMap("camera.png", "image/png"))
     }
+
+    @Test fun cameraRawContainerIsASeparateHdrCapability() {
+        val value = HDRSourceInfo(64, 32, 1, HDRSourceInfo.CONTAINER_CAMERA_RAW, 0, 1, 0f, 0, ByteArray(32))
+        assertTrue(value.isCameraRaw)
+    }
 }

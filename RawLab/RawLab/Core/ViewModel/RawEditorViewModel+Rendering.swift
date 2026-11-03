@@ -3,6 +3,40 @@ import Foundation
 import UIKit
 
 extension RawEditorViewModel {
+    func preflightCameraHDR(settings: RawSettings, completion: @escaping (Result<Void, Error>) -> Void) {
+        guard sourceSupportsCameraHDR, settings.isHDREditing, let sourceFile else {
+            completion(.failure(HDRRequestError.invalidSettings))
+            return
+        }
+        let sourceRevision = self.sourceRevision
+        let previewLongEdge = Int(previewMaxDimension)
+        cameraHDRPreflight = true
+        isBusy = true
+        exportQueue.async { [weak self] in
+            guard let self else { return }
+            let result: Result<Void, Error>
+            do {
+                try sourceFile.withReadAccess { url in
+                    _ = try self.processor.processHDR(url: url, settings: settings.hdr!,
+                                                      previewLongEdge: previewLongEdge)
+                }
+                result = .success(())
+            } catch {
+                result = .failure(error)
+            }
+            self.resultDelivery {
+                guard self.sourceRevision == sourceRevision else {
+                    self.cameraHDRPreflight = false
+                    self.isBusy = false
+                    return
+                }
+                self.cameraHDRPreflight = false
+                self.isBusy = false
+                completion(result)
+            }
+        }
+    }
+
     func updatePreviewSize(_ edge: Int, settings: RawSettings) {
         guard activeImportRevision == nil, hasImage, edge > 0,
               edge != requestedPreviewLongEdge || (edge != previewLongEdge && previewResizeWorkItem == nil) else { return }

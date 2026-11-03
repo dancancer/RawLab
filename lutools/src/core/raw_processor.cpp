@@ -120,7 +120,7 @@ class RAWProcessor::Impl {
 public:
     Impl() : rawProcessor_(std::make_unique<LibRaw>()) {}
 
-    ErrorCode loadFile(const std::string& filepath, X3fMode mode = X3fMode::Legacy) {
+    ErrorCode loadFile(const std::string& filepath, X3fMode mode = X3fMode::Legacy, bool inspectOnly = false) {
         RawCancellationScope cancellation(*rawProcessor_);
         invalidateState();
         if (filepath.empty()) return ErrorCode::FileNotFound;
@@ -132,7 +132,7 @@ public:
         params.use_camera_wb = 1;
         params.use_auto_wb = 0;
         params.half_size = 0;
-        const bool metadataOnly = mode == X3fMode::Normal && hasX3fSignature(filepath);
+        const bool metadataOnly = inspectOnly || (mode == X3fMode::Normal && hasX3fSignature(filepath));
         const int ret = openAndUnpack(true, false, !metadataOnly);
         if (ret != LIBRAW_SUCCESS) {
             std::cerr << "无法打开 RAW 文件: " << libraw_strerror(ret) << std::endl;
@@ -146,6 +146,49 @@ public:
         identificationAutoWB_ = false;
         snapshotCalibration();
         return ErrorCode::Success;
+    }
+
+    ErrorCode inspectCameraHDR(const std::string& filepath, int& width, int& height, uint64_t& sensorPixels) {
+        const auto status = loadFile(filepath, X3fMode::Legacy, true);
+        if (status != ErrorCode::Success) return status;
+        auto& data = rawProcessor_->imgdata;
+        const auto headerSizes = data.sizes;
+        const auto rawSizes = data.rawdata.sizes;
+        rawProcessor_->adjust_to_raw_inset_crop(3);
+        const auto cropped = data.sizes;
+        data.sizes = headerSizes;
+        data.rawdata.sizes = rawSizes;
+        const bool bayerDNG = data.idata.dng_version && cameraMake_ != "Apple" &&
+            data.idata.maker_index != LIBRAW_CAMERAMAKER_Apple;
+        const bool validatedSony = !data.idata.dng_version &&
+            data.idata.maker_index == LIBRAW_CAMERAMAKER_Sony &&
+            std::strcmp(data.idata.normalized_model, "ILCE-7CM2") == 0;
+        const auto* decoder = rawProcessor_->unpack_function_name();
+        sensorPixels = uint64_t(data.sizes.raw_width) * data.sizes.raw_height;
+        if (!bayerSource_ || (!validatedSony && !bayerDNG) || !decoder ||
+            std::strcmp(decoder, "jxl_dng_load_raw_placeholder()") == 0 || !whiteBalance_->available() ||
+            fujiRotate_ || !std::isfinite(data.sizes.pixel_aspect) || std::abs(data.sizes.pixel_aspect - 1) > .005 ||
+            cropped.width < 2 || cropped.height < 2 || !sensorPixels || sensorPixels > 128000000 ||
+            uint64_t(cropped.width) * cropped.height > sensorPixels)
+            return ErrorCode::InvalidFormat;
+        const bool transpose = (data.sizes.flip & 4) != 0;
+        width = transpose ? cropped.height : cropped.width;
+        height = transpose ? cropped.width : cropped.height;
+        cameraHDRInspected_ = true;
+        return ErrorCode::Success;
+    }
+
+    ErrorCode unpackInspectedCameraHDR() {
+        if (!cameraHDRInspected_ || sourceUnpacked_) return ErrorCode::InvalidFormat;
+        RawCancellationScope cancellation(*rawProcessor_);
+        const int result = unpackPixels();
+        if (result != LIBRAW_SUCCESS) {
+            invalidateState();
+            if (result == LIBRAW_CANCELLED_BY_CALLBACK) throw ProcessingCancelled();
+            return decodeError(result);
+        }
+        snapshotCalibration();
+        return bayerMetadataReady_ ? ErrorCode::Success : ErrorCode::InvalidFormat;
     }
 
     ErrorCode process(const RAWProcessOptions& options, ImageData& output) {
@@ -235,6 +278,8 @@ public:
             // Require a fresh load rather than advertising a reusable source.
             invalidateState();
             if (processed == LIBRAW_CANCELLED_BY_CALLBACK) throw ProcessingCancelled();
+            if (processed == LIBRAW_UNSUFFICIENT_MEMORY || processed == LIBRAW_MEMPOOL_OVERFLOW)
+                return ErrorCode::OutOfMemory;
             return ErrorCode::ProcessingError;
         }
         auto& data = rawProcessor_->imgdata;
@@ -447,6 +492,7 @@ public:
 
 private:
     void invalidateState() {
+        cameraHDRInspected_ = false;
         x3fProcessor_.reset();
         displayReferred_ = false;
         lastError_.clear();
@@ -472,7 +518,7 @@ private:
         bayerMetadata_ = {}; bayerMetadataReady_ = false; bayerDaylightWB_ = {};
     }
 
-    int openAndUnpack(bool cameraWB, bool autoWB, bool unpackPixels = true) {
+    int openAndUnpack(bool cameraWB, bool autoWB, bool unpack = true) {
         // open_file replaces LibRaw's datastream ownership flag before opening.
         // Explicitly close the previous stream first (Windows otherwise leaks a
         // file handle on camera/custom WB mode switches).
@@ -495,7 +541,7 @@ private:
         const int openResult = openRawFile(*rawProcessor_, filepath_);
         if (openResult != LIBRAW_SUCCESS) return openResult;
         sdkStage3_ = false;
-        if (!unpackPixels) return LIBRAW_SUCCESS;
+        if (!unpack) return LIBRAW_SUCCESS;
 #ifdef SONY2FUJI_ENABLE_DNGSDK
         // 仅 JPEG XL 使用 SDK，其他 RAW 保留现有解码和白平衡路径。
         const char* decoder = rawProcessor_->unpack_function_name();
@@ -509,6 +555,10 @@ private:
             rawProcessor_->set_dng_host(dngHost_.get());
         }
 #endif
+        return unpackPixels();
+    }
+
+    int unpackPixels() {
         const int unpackResult = rawProcessor_->unpack();
         if (unpackResult != LIBRAW_SUCCESS) return unpackResult;
         sdkStage3_ = (rawProcessor_->imgdata.process_warnings & LIBRAW_WARN_DNG_STAGE3_APPLIED) != 0;
@@ -623,6 +673,7 @@ private:
     bool cameraColorMatrixValid_ = false;
     bool bayerSource_ = false;
     bool sourceReady_ = false;
+    bool cameraHDRInspected_ = false;
     bool sourceUnpacked_ = false;
     bool identificationCameraWB_ = false;
     bool identificationAutoWB_ = false;
@@ -655,6 +706,14 @@ ErrorCode RAWProcessor::loadFile(const std::string& filepath) {
 }
 ErrorCode RAWProcessor::loadFile(const std::string& filepath, X3fMode mode) {
     return pImpl_->loadFile(filepath, mode);
+}
+
+ErrorCode RAWProcessor::inspectCameraHDR(const std::string& filepath, int& width, int& height, uint64_t& sensorPixels) {
+    return pImpl_->inspectCameraHDR(filepath, width, height, sensorPixels);
+}
+
+ErrorCode RAWProcessor::unpackInspectedCameraHDR() {
+    return pImpl_->unpackInspectedCameraHDR();
 }
 
 ErrorCode RAWProcessor::process(const RAWProcessOptions& options, ImageData& output) {

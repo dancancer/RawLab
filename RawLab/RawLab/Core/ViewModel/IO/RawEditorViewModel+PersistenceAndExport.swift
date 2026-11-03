@@ -285,6 +285,8 @@ extension RawEditorViewModel {
                     DispatchQueue.main.async {
                         self.sourceFile = sourceFile
                         self.sourceKind = .raw
+                        self.sourceIsHDR = false
+                        self.sourceSupportsCameraHDR = false
                         self.sourceDisplayName = url.lastPathComponent
                         self.sourceOrientation = previewResult.orientation ?? rawPreview.orientation
                         self.draftBuffer = rawPreview.buffer
@@ -319,6 +321,8 @@ extension RawEditorViewModel {
                         self.draftBuffer = nil
                         self.sourceFile = nil
                         self.sourceKind = nil
+                        self.sourceIsHDR = false
+                        self.sourceSupportsCameraHDR = false
                         self.sourceDisplayName = nil
                         self.sourceOrientation = nil
                         self.rawLUTID = nil

@@ -84,10 +84,11 @@ struct Surface {
         ComPtr<IDXGIFactory1> factory;if(FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))){reset();return false;}
         ComPtr<IDXGIAdapter1> selected;DXGI_OUTPUT_DESC1 output{};
         for(unsigned a=0;!selected;++a) {
-            ComPtr<IDXGIAdapter1> adapter;if(factory->EnumAdapters1(a,&adapter)==DXGI_ERROR_NOT_FOUND)break;
+            ComPtr<IDXGIAdapter1> adapter;if(FAILED(factory->EnumAdapters1(a,&adapter)))break;
             DXGI_ADAPTER_DESC1 description{};if(FAILED(adapter->GetDesc1(&description)) || description.Flags&DXGI_ADAPTER_FLAG_SOFTWARE)continue;
             for(unsigned o=0;;++o) {
-                ComPtr<IDXGIOutput> item;if(adapter->EnumOutputs(o,&item)==DXGI_ERROR_NOT_FOUND)break;
+                // A display output can be unavailable in a noninteractive Windows session.
+                ComPtr<IDXGIOutput> item;if(FAILED(adapter->EnumOutputs(o,&item)))break;
                 ComPtr<IDXGIOutput6> advanced;DXGI_OUTPUT_DESC1 desc{};
                 if(SUCCEEDED(item.As(&advanced)) && SUCCEEDED(advanced->GetDesc1(&desc)) && desc.Monitor==current &&
                     desc.ColorSpace==DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 && std::isfinite(desc.MaxLuminance) && desc.MaxLuminance>80) {
