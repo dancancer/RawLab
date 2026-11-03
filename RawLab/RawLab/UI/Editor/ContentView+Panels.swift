@@ -27,7 +27,7 @@ extension ContentView {
                 }
                 .disabled(editorBusy)
                 .accessibilityIdentifier("editor.import.file")
-                Button { showingLookImporter = true } label: {
+                Button(action: requestLookImport) {
                     Label(L10n.text("导入外观"), systemImage: "camera.filters")
                 }
                 .disabled(editorBusy || isEditorDraftChanged || viewModel.isImportingLooks)
@@ -123,7 +123,7 @@ extension ContentView {
                     ZoomablePhoto(image: image, referenceImage: viewModel.basePreviewImage,
                                   label: L10n.text("调整后"), viewing: $photoViewing, viewport: $photoViewport,
                                   isDraft: isEditorDraftActive,
-                                  interactionEnabled: !editorBusy && !draftExitPresented && !resetConfirmationPresented && !showingFileImporter && !showingLookImporter,
+                                  interactionEnabled: !editorBusy && !draftExitPresented && !resetConfirmationPresented && !showingDocumentImporter,
                                   overlayAvoidanceRect: photoComparisonControlBounds,
                                   onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) },
                                   hslTarget: hslTargetActive ? hslTargetInput : nil, hslTargetPoint: hslTargetPoint,

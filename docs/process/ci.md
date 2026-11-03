@@ -141,6 +141,10 @@ CI never repeats runtime UI checks. UI-test target compilation is not a UI-test 
 
 - Apple fast models: `bash scripts/ci/apple-models.sh macos` or `ios`; no prebuilt
   C++ core or simulator is required.
+- iOS Files/LUT UI: `IOS_SIMULATOR_UDID=<dedicated-device> bash RawLab/tests/document-import-ui.sh <build-for-testing-products> <new-output-directory>`.
+  The runner stages generated PNG/CUBE fixtures in a test app copy and executes
+  picker opening, selection, cancellation and reopening. Run on each required
+  iPadOS runtime; `RAWLAB_DOCUMENT_IMPORT_TEST` selects a narrower XCTest case.
 - Windows fast models: `./scripts/ci/windows-models.ps1`; no WPF window, native
   rendering DLL, RAW fixture or self-contained app build is required.
 - Android models: `./gradlew :app:testDebugUnitTest`; the task graph excludes native
