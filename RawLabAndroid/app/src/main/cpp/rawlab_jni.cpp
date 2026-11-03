@@ -255,7 +255,13 @@ void prepareRecipeWb(Session& owner, const char* input, bool active, float stren
     Buffer buffer;
     check(sony2fuji_process(session, &neutral, &buffer.value), session);
     float cameraTemperature = 0, cameraTint = 0;
-    check(sony2fuji_session_get_raw_white_balance(session, &cameraTemperature, &cameraTint));
+    const auto status = sony2fuji_session_get_raw_white_balance(session, &cameraTemperature, &cameraTint);
+    if (status == SONY2FUJI_STATUS_UNSUPPORTED) {
+        // 无法校准色温和色调时，沿用基础显影的相机白平衡。
+        custom = false;
+        return;
+    }
+    check(status);
     if (!std::isfinite(cameraTemperature) || !std::isfinite(cameraTint))
         throw std::runtime_error("Cannot resolve target RAW white balance for master recipe");
     if (!custom) temperature = std::round(cameraTemperature);
