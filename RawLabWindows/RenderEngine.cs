@@ -50,7 +50,7 @@ internal sealed partial class RenderEngine : IDisposable
     {
         BeginAIOperation("auto_exposure",path);
         try{return AutoExposureCore(path,settings);}
-        catch(Exception error) when(settings.AIDenoiseEnabled && error is not OperationCanceledException && error is not AINotReadyException)
+        catch(Exception error) when(settings.AIDenoiseEnabled && !settings.IsHDREditing && error is not OperationCanceledException && error is not AINotReadyException)
         {CaptureAIFailure(error);throw;}
     }
     private double AutoExposureCore(string path, Adjustments settings)
@@ -74,7 +74,7 @@ internal sealed partial class RenderEngine : IDisposable
 
     private double AutoExposureHDRSource(string path, Adjustments settings,HDRSourceInfo info)
     {
-        using var source = HDRSourceCache.Acquire(path,info,false,256);
+        using var source = HDRSourceCache.Acquire(path,info,false,256,session);
         var pair = HDRDisplay.CopyPair(source.Owner.Pair);
         using var input = new HDRSdrInput(pair.SDR);
         var prepared = PrepareRequest(path, settings, null, 256, false, null, null, true, input.Buffer);
@@ -97,8 +97,12 @@ internal sealed partial class RenderEngine : IDisposable
             session.Dispose();session=new();InitializeSession();SetGpuMode(gpuMode);lensStamp=null;
         }
         sourceStamp=(rawStamp,lutStamp);
-        var sourceFingerprint=PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path,out var info)==HDRProbeState.Supported
-            ? Convert.ToHexString(info!.SourceSha256) : null;
+        string? sourceFingerprint = null;
+        if (PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path, out var gainMapInfo) == HDRProbeState.Supported)
+            sourceFingerprint = gainMapInfo!.CacheIdentity;
+        else if (settings.IsHDREditing && PhotoInput.IsCameraRaw(path) &&
+            PhotoInput.ProbeCameraRaw(path, out var cameraInfo) == HDRProbeState.Supported)
+            sourceFingerprint = cameraInfo!.CacheIdentity;
         var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.Effects,settings.ToneControls,settings.Atmosphere,settings.ColorGrading,settings.Curve,settings.DisplayChromaDenoise,
             settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,settings.X3fMode,settings.MasterRecipeSettingsVersion,settings[Parameter.Strength],settings.AIDenoiseEnabled,gpuMode,compare,clipping,rawStamp,lutStamp,settings.HDR,sourceFingerprint);
         var fingerprintChanged=previewKey?.SourceFingerprint!=sourceFingerprint;
@@ -133,21 +137,26 @@ internal sealed partial class RenderEngine : IDisposable
     {
         BeginAIOperation(output==null ? "preview" : "export",path);
         try{return RenderCore(path,settings,lut,edge,interactive,output,statistics,clipping,longEdge,viewportPreview,formatOverride);}
-        catch(Exception error) when(settings.AIDenoiseEnabled && error is not OperationCanceledException && error is not AINotReadyException)
+        catch(Exception error) when(settings.AIDenoiseEnabled && !settings.IsHDREditing && error is not OperationCanceledException && error is not AINotReadyException)
         {CaptureAIFailure(error);throw;}
     }
     private RenderedImage? RenderCore(string path,Adjustments settings,string? lut,int edge,bool interactive,string? output,bool statistics,bool clipping,int? longEdge,bool viewportPreview,ExportFormat? formatOverride)
     {
         if (output != null && formatOverride == ExportFormat.HdrJpeg &&
-            (settings.HDR is not { Mode: HDRMode.Hdr } || !PhotoInput.IsHDRContainer(path)))
+            (settings.HDR is not { Mode: HDRMode.Hdr } ||
+             !(PhotoInput.IsHDRContainer(path) || PhotoInput.IsCameraRaw(path))))
             throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
-        if (settings.IsHDREditing && !PhotoInput.IsHDRContainer(path))
-            throw new HDRModeException(HDRModeFailure.UnsupportedSource);
         if (PhotoInput.IsHDRContainer(path))
         {
             var probe = PhotoInput.ProbeHDR(path, out var info);
             if (probe == HDRProbeState.Supported) return RenderHDR(path, settings, lut, edge, output, longEdge, formatOverride,info!,statistics,clipping);
             if (settings.IsHDREditing) throw new HDRModeException(HDRModeFailure.UnsupportedSource);
+        }
+        else if (settings.IsHDREditing && PhotoInput.IsCameraRaw(path))
+        {
+            var probe = PhotoInput.ProbeCameraRaw(path, out var info);
+            if (probe == HDRProbeState.Supported) return RenderHDR(path, settings, lut, edge, output, longEdge, formatOverride, info!, statistics, clipping);
+            throw new HDRModeException(HDRModeFailure.UnsupportedSource);
         }
         (settings,var request)=PrepareRequest(path,settings,lut,edge,interactive,output,longEdge,viewportPreview);
         var format=output==null ? (ExportFormat?)null : ExportFormatExtensions.FromPath(output);
@@ -196,7 +205,7 @@ internal sealed partial class RenderEngine : IDisposable
     {
         var final = output != null;
         var edgeValue = checked((uint)Math.Clamp(edge <= 0 ? 2000 : edge, 1, 2000));
-        using var source = HDRSourceCache.Acquire(path,info,final,edgeValue);
+        using var source = HDRSourceCache.Acquire(path,info,final,edgeValue,session);
         if (!settings.IsHDREditing && formatOverride == ExportFormat.HdrJpeg)
             throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
         if (!settings.IsHDREditing)
@@ -208,8 +217,9 @@ internal sealed partial class RenderEngine : IDisposable
         {
             var format = formatOverride ?? (Path.GetExtension(output).Equals(".dng", StringComparison.OrdinalIgnoreCase)
                 ? ExportFormat.RenderedDng : ExportFormat.HdrJpeg);
-            if (format == ExportFormat.HdrJpeg) HDRNative.ExportHDR(rendered, path, output, rendered.Pair.SourceSha256 ?? []);
-            else HDRNative.ExportSDR(rendered, format, path, output, rendered.Pair.SourceSha256 ?? []);
+            var metadataSource = info.IsCameraRaw ? null : path;
+            if (format == ExportFormat.HdrJpeg) HDRNative.ExportHDR(rendered, metadataSource, output, rendered.Pair.SourceSha256 ?? []);
+            else HDRNative.ExportSDR(rendered, format, metadataSource, output, rendered.Pair.SourceSha256 ?? []);
             return null;
         }
         var pair = HDRDisplay.CopyPair(rendered.Pair);
@@ -283,7 +293,7 @@ internal sealed partial class RenderEngine : IDisposable
     {
         BeginAIOperation("hsl_probe",path);
         try{return SampleHslCore(path,settings,lut,edge,interactive,revision,x,y);}
-        catch(Exception error) when(settings.AIDenoiseEnabled && error is not OperationCanceledException && error is not AINotReadyException)
+        catch(Exception error) when(settings.AIDenoiseEnabled && !settings.IsHDREditing && error is not OperationCanceledException && error is not AINotReadyException)
         {CaptureAIFailure(error);throw;}
     }
     private HslTargetSample SampleHslCore(string path,Adjustments settings,string? lut,int edge,bool interactive,HslTargetRevision revision,double x,double y)
@@ -291,7 +301,7 @@ internal sealed partial class RenderEngine : IDisposable
         if(!double.IsFinite(x) || !double.IsFinite(y))return HslTargetSample.Unavailable(revision,HslTargetAvailability.Nonfinite);
         if(x<0 || x>1 || y<0 || y>1)return HslTargetSample.Unavailable(revision,HslTargetAvailability.Outside);
         using var source=PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path,out var info)==HDRProbeState.Supported
-            ? HDRSourceCache.Acquire(path,info!,false,checked((uint)Math.Clamp(edge<=0 ? 2000 : edge,1,2000))) : null;
+            ? HDRSourceCache.Acquire(path,info!,false,checked((uint)Math.Clamp(edge<=0 ? 2000 : edge,1,2000)),session) : null;
         using var input=source==null ? null : new HDRSdrInput(HDRDisplay.CopyPair(source.Owner.Pair).SDR);
         var prepared=PrepareRequest(path,settings,lut,edge,interactive,null,null,true,input?.Buffer);
         var request=prepared.Item2;

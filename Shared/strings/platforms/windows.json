@@ -1,5 +1,17 @@
 {
   "entries": {
+    "不支持此相机 RAW 的 HDR 显影。": {
+      "formats": [],
+      "source": "不支持此相机 RAW 的 HDR 显影。"
+    },
+    "相机 RAW HDR 暂不支持批量导出。": {
+      "formats": [],
+      "source": "相机 RAW HDR 暂不支持批量导出。"
+    },
+    "相机 RAW HDR 暂不支持预设或批量传递。": {
+      "formats": [],
+      "source": "相机 RAW HDR 暂不支持预设或批量传递。"
+    },
     "任务已保存，请继续导出。": {
       "formats": [],
       "source": "任务已保存，请继续导出。"
@@ -4084,6 +4096,30 @@
     }
   },
   "unique": {
+    "不支持此相机 RAW 的 HDR 显影。": {
+      "zh-Hans": "不支持此相机 RAW 的 HDR 显影。",
+      "en": "HDR development is not supported for this camera RAW.",
+      "de": "Die HDR-Entwicklung wird für dieses Kamera-RAW nicht unterstützt.",
+      "fr": "Le développement HDR n’est pas pris en charge pour ce fichier RAW.",
+      "ja": "このカメラ RAW の HDR 現像には対応していません。",
+      "es": "El revelado HDR no es compatible con este archivo RAW de cámara."
+    },
+    "相机 RAW HDR 暂不支持批量导出。": {
+      "zh-Hans": "相机 RAW HDR 暂不支持批量导出。",
+      "en": "Batch export is not yet supported for camera RAW HDR.",
+      "de": "Der Stapel-Export von Kamera-RAW-HDR wird noch nicht unterstützt.",
+      "fr": "L’exportation par lots du HDR RAW d’appareil photo n’est pas encore prise en charge.",
+      "ja": "カメラ RAW HDR の一括書き出しにはまだ対応していません。",
+      "es": "La exportación por lotes de RAW HDR de cámara todavía no es compatible."
+    },
+    "相机 RAW HDR 暂不支持预设或批量传递。": {
+      "zh-Hans": "相机 RAW HDR 暂不支持预设或批量传递。",
+      "en": "Presets and adjustment transfer are not yet supported for camera RAW HDR.",
+      "de": "Voreinstellungen und die Übertragung von Anpassungen werden für Kamera-RAW-HDR noch nicht unterstützt.",
+      "fr": "Les préréglages et le transfert des réglages ne sont pas encore pris en charge pour le HDR RAW d’appareil photo.",
+      "ja": "カメラ RAW HDR のプリセットと調整の転送にはまだ対応していません。",
+      "es": "Los ajustes preestablecidos y la transferencia de ajustes aún no son compatibles con RAW HDR de cámara."
+    },
     "\n显示色彩降噪  {0}\n暗角  强度 {1} · 中点 {2} · 圆度 {3} · 羽化 {4} · 高光保护 {5}\n颗粒  强度 {6} · 大小 {7} · 粗糙度 {8}": {
       "de": "\nAnzeigefarb-Rauschreduzierung  {0}\nVignette  Stärke {1} · Mittelpunkt {2} · Rundheit {3} · Weichzeichnung {4} · Lichter-Schutz {5}\nKörnung  Stärke {6} · Größe {7} · Rauheit {8}",
       "en": "\nDisplay chroma denoise  {0}\nVignette  Strength {1} · Midpoint {2} · Roundness {3} · Feather {4} · Highlight protection {5}\nGrain  Strength {6} · Size {7} · Roughness {8}",

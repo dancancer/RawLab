@@ -363,8 +363,11 @@ extension ContentView {
                 Form {
                     Text(selectedFilmName)
                     editSaveStatus
-                    if viewModel.sourceIsHDR {
-                        Toggle(L10n.text("HDR 编辑"),isOn:Binding(get:{ settings.isHDREditing },set:setHDREditing))
+                    if viewModel.sourceIsHDR || viewModel.sourceSupportsCameraHDR {
+                        Toggle(L10n.text("HDR 编辑"),isOn:Binding(
+                            get:{ settings.isHDREditing || viewModel.cameraHDRPreflight },
+                            set:setHDREditing
+                        ))
                             .disabled(isEditorDraftActive || editorBusy || viewModel.previewRendering)
                             .accessibilityIdentifier("hdr.editMode")
                     }
@@ -384,7 +387,7 @@ extension ContentView {
                         Text(L10n.text(usesNormalX3f ? "以文件保存的显影为基准，白平衡作相对调整。" : "保留旧版的特殊色彩。"))
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    if viewModel.sourceKind == .raw {
+                    if viewModel.sourceKind == .raw && !settings.isHDREditing {
                         Picker(L10n.text("曝光基准"), selection: $settings.exposureMode) {
                             ForEach(RawExposureMode.allCases) { Text($0.title).tag($0) }
                         }.disabled(isEditorDraftActive || editorBusy || usesNormalX3f)

@@ -9,6 +9,11 @@ if (args.Contains("--summary-only")) {
 
 if (args.Contains("--hdr-only")) {
     HDRChecks.Run();
+    CameraRawHDRChecks.Run();
+    return;
+}
+if (args.Contains("--camera-raw-hdr")) {
+    CameraRawHDRChecks.Run();
     return;
 }
 X3fPersistenceChecks();
@@ -36,6 +41,7 @@ AdjustmentTransferChecks.Run();
 AdjustmentHistoryChecks.Run();
 AdjustmentPresetChecks.Run();
 HDRChecks.Run();
+CameraRawHDRChecks.Run();
 AdjustmentSummaryChecks.Run();
 
 static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }

@@ -56,7 +56,7 @@ final class HDRImage {
     }
 
     static func decode(_ url: URL, info: HDRSourceInfo, intent: sony2fuji_intent,
-                       longEdge: Int? = nil) throws -> HDRImage {
+                       longEdge: Int? = nil, session: OpaquePointer? = nil) throws -> HDRImage {
         guard intent==SONY2FUJI_INTENT_FINAL || intent==SONY2FUJI_INTENT_PREVIEW,
               longEdge.map({ (1...65535).contains($0) }) ?? true,
               intent != SONY2FUJI_INTENT_FINAL || longEdge==nil else { throw HDRRequestError.invalidSettings }
@@ -64,10 +64,18 @@ final class HDRImage {
         options.version=1; options.struct_size=UInt32(MemoryLayout.size(ofValue:options))
         options.intent=UInt32(intent.rawValue); options.long_edge=UInt32(longEdge ?? 0)
         var result=emptyPair(); var diagnostic=emptyDiagnostic()
-        let status=url.path.withCString { sony2fuji_hdr_decode($0,&options,&result,&diagnostic) }
+        let status = url.path.withCString { path in
+            if info.isCameraRAW {
+                return sony2fuji_hdr_decode_camera_raw(session, path, &options, &result, &diagnostic)
+            }
+            return sony2fuji_hdr_decode(path, &options, &result, &diagnostic)
+        }
         guard status==SONY2FUJI_STATUS_OK else { throw failure(status,diagnostic) }
         let actual=withUnsafeBytes(of:result.source_sha256) { Data($0) }
-        guard actual==info.fingerprint else {
+        let sameSource = info.isCameraRAW
+            ? (try? HDRSourceInfo.CameraStamp(url)) == info.cameraStamp
+            : actual == info.fingerprint
+        guard sameSource else {
             sony2fuji_hdr_release_pair(&result)
             throw HDRNativeError(status:SONY2FUJI_STATUS_INVALID_ARGUMENT,
                 reason:UInt32(SONY2FUJI_HDR_REASON_SOURCE_CHANGED),field:UInt32(SONY2FUJI_HDR_FIELD_SOURCE))
@@ -91,7 +99,7 @@ final class HDRImage {
         config.metadata_policy=UInt32(SONY2FUJI_HDR_METADATA_ISO_XMP); config.source_sha256=storage.source_sha256
         var diagnostic=Self.emptyDiagnostic()
         let status=sourceURL.path.withCString { source in output.path.withCString { destination in
-            config.metadata_source_path=source
+            config.metadata_source_path = sourceInfo.isCameraRAW ? nil : source
             return withPair { sony2fuji_hdr_export_jpeg($0,&config,destination,&diagnostic) }
         } }
         guard status==SONY2FUJI_STATUS_OK else { throw Self.failure(status,diagnostic) }
@@ -103,7 +111,7 @@ final class HDRImage {
         config.output_format=UInt32(format.rawValue); config.quality=95; config.source_sha256=storage.source_sha256
         var diagnostic=Self.emptyDiagnostic()
         let status=sourceURL.path.withCString { source in output.path.withCString { destination in
-            config.metadata_source_path=source
+            config.metadata_source_path = sourceInfo.isCameraRAW ? nil : source
             return withPair { sony2fuji_hdr_export_sdr($0,&config,destination,&diagnostic) }
         } }
         guard status==SONY2FUJI_STATUS_OK else { throw Self.failure(status,diagnostic) }
@@ -125,7 +133,12 @@ final class HDRImage {
 // 只缓存不可变的解码来源；结果属于当前画布或短期任务，不复制进此缓存。
 final class HDRSourceCache {
     static let shared=HDRSourceCache()
-    private struct Key: Hashable { let url: URL; let fingerprint: Data; let edge: Int }
+    private struct Key: Hashable {
+        let url: URL
+        let fingerprint: Data
+        let cameraStamp: HDRSourceInfo.CameraStamp?
+        let edge: Int
+    }
     private struct Entry { let image: HDRImage; var use: UInt64 }
     private var entries=[Key:Entry]()
     private var clock: UInt64=0
@@ -134,15 +147,15 @@ final class HDRSourceCache {
     private(set) var bytes=0
     init(limit: Int = 128*1024*1024) { self.limit=max(0,limit) }
 
-    func preview(_ url: URL, info: HDRSourceInfo, longEdge: Int) throws -> HDRImage {
+    func preview(_ url: URL, info: HDRSourceInfo, longEdge: Int, session: OpaquePointer? = nil) throws -> HDRImage {
         lock.lock(); defer { lock.unlock() }
-        if entries.keys.contains(where:{ $0.url != url.standardizedFileURL || $0.fingerprint != info.fingerprint }) {
+        if entries.keys.contains(where:{ $0.url != url.standardizedFileURL || $0.fingerprint != info.fingerprint || $0.cameraStamp != info.cameraStamp }) {
             entries.removeAll(); bytes=0
         }
         clock &+= 1
-        let key=Key(url:url.standardizedFileURL,fingerprint:info.fingerprint,edge:longEdge)
+        let key=Key(url:url.standardizedFileURL,fingerprint:info.fingerprint,cameraStamp:info.cameraStamp,edge:longEdge)
         if var cached=entries[key] { cached.use=clock; entries[key]=cached; return cached.image }
-        let image=try HDRImage.decode(url,info:info,intent:SONY2FUJI_INTENT_PREVIEW,longEdge:longEdge)
+        let image=try HDRImage.decode(url,info:info,intent:SONY2FUJI_INTENT_PREVIEW,longEdge:longEdge,session:session)
         if image.byteCount<=limit {
             while bytes+image.byteCount>limit, let oldest=entries.min(by:{ $0.value.use<$1.value.use }) {
                 bytes-=oldest.value.image.byteCount; entries.removeValue(forKey:oldest.key)

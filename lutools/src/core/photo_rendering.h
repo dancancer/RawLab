@@ -15,11 +15,15 @@ inline float sceneExposureEV(float cameraBaselineEV) {
 // Zero-black, unit-white log-logistic view curve. Middle gray is invariant;
 // the 1.5 exponent controls contrast, while highlights approach white smoothly.
 // This is a fixed mathematical subset, not darktable's full color pipeline.
-inline float neutralDisplay(float linear) {
+inline float neutralDisplayLinear(float linear) {
     if (linear<=0) return 0;
     constexpr float gray=.1845f;
     const float shoulder=(1-gray)/gray*std::pow(gray/linear,1.5f);
-    return GammaConverter::applySRGBGamma(1/(1+shoulder));
+    return 1/(1+shoulder);
+}
+
+inline float neutralDisplay(float linear) {
+    return GammaConverter::applySRGBGamma(neutralDisplayLinear(linear));
 }
 
 } // namespace sony2fuji

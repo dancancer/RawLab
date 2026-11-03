@@ -119,7 +119,7 @@ extension ContentView {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
             : AnyLayout(HStackLayout(spacing: 8))
         return layout {
-            if viewModel.sourceKind == .raw {
+            if viewModel.sourceKind == .raw && !settings.isHDREditing {
                 Menu {
                     Picker(L10n.text("曝光基准"), selection: $settings.exposureMode) {
                         ForEach(RawExposureMode.allCases) { Text($0.title).tag($0) }
@@ -158,7 +158,7 @@ extension ContentView {
         let isRaster = viewModel.sourceKind == .raster && !settings.isHDREditing
         return VStack(alignment: .leading, spacing: 12) {
             if settings.isHDREditing { Text(L10n.text("相对白平衡")).font(.caption).foregroundStyle(.secondary) }
-            if viewModel.sourceKind == .raw {
+            if viewModel.sourceKind == .raw && !settings.isHDREditing {
                 Picker(L10n.text("白平衡"), selection: Binding(
                     get: { settings.whiteBalanceMode }, set: { setWhiteBalanceMode($0) }
                 )) {
@@ -201,7 +201,7 @@ extension ContentView {
 
     // 底部说明：RAW 缺少相机校准时提示；有校准时给出拍摄时数值作参照
     private var whiteBalanceNote: String? {
-        guard viewModel.sourceKind == .raw else { return nil }
+        guard viewModel.sourceKind == .raw && !settings.isHDREditing else { return nil }
         guard let camera = viewModel.rawWhiteBalance else { return L10n.text("缺少有效相机校准，保留拍摄时白平衡") }
         return AdjustmentKind.asShotNote(for: settings, cameraTemperature: camera.temperature, cameraTint: camera.tint)
     }
@@ -235,7 +235,9 @@ extension ContentView {
             }
             var updated = settings
             AdjustmentKind.tint.setValue(min(max(value.rounded(),RawSettings.tintRange.lowerBound),RawSettings.tintRange.upperBound),in:&updated)
-            if viewModel.sourceKind == .raw, updated.masterRecipeID == nil { updated.whiteBalanceMode = .custom }
+            if !settings.isHDREditing, viewModel.sourceKind == .raw, updated.masterRecipeID == nil {
+                updated.whiteBalanceMode = .custom
+            }
             applySettingsChange(updated)
         })
     }

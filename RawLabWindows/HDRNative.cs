@@ -24,6 +24,10 @@ internal static class HDRNative
     internal const uint ReasonUnsupportedGpu = 13;
     internal const uint PixelRGB32FLinear = 1;
     internal const uint LinearSRGB = 1;
+    internal const uint ContainerCameraRaw = 3;
+    internal const uint ColorSrgb = 1;
+    internal const uint HeadroomUnknown = 0;
+    internal const uint ReasonUnsupportedRaw = 17;
     internal const uint OutputJpeg = 0;
     internal const uint OutputPng = 1;
     internal const uint OutputDng = 4;
@@ -58,24 +62,63 @@ internal static class HDRNative
         throw new HDRSourceException(status, diagnostic.Reason, diagnostic.Field);
     }
 
-    internal static HDRPairOwner Decode(string path, HDRIntent intent, uint longEdge = 0, HDRSourceInfo? expected = null)
+    internal static HDRProbeState ProbeCameraRaw(string path, out HDRSourceInfo? info)
+    {
+        var native = SourceInfo(); var diagnostic = Diagnostic();
+        var status = Native.sony2fuji_hdr_probe_camera_raw(path, ref native, ref diagnostic);
+        if (status == StatusOk)
+        {
+            info = new(HDRProbeState.Supported, native.Width, native.Height, native.Orientation, native.Container,
+                native.Protocol, native.ColorDescription, native.ContentHeadroom, native.HeadroomKind,
+                native.SourceSha256?.ToArray() ?? []) { CameraStamp = HDRFileStamp.Read(path) };
+            return HDRProbeState.Supported;
+        }
+        if (status == StatusUnsupported && diagnostic.Reason == ReasonUnsupportedRaw)
+        {
+            info = null;
+            return HDRProbeState.NotHDR;
+        }
+        throw new HDRSourceException(status, diagnostic.Reason, diagnostic.Field);
+    }
+
+    internal static HDRPairOwner Decode(string path, HDRIntent intent, uint longEdge = 0, HDRSourceInfo? expected = null,
+        Native.Session? session = null)
     {
         if (expected == null) {
             if (Probe(path, out expected) != HDRProbeState.Supported || expected == null)
                 throw new HDRModeException(HDRModeFailure.UnsupportedSource);
         }
         if (longEdge > 65535) throw new ArgumentOutOfRangeException(nameof(longEdge));
+        if (expected.IsCameraRaw && expected.CameraStamp is { } stamp && HDRFileStamp.Read(path) != stamp)
+            throw new HDRSourceException(1, 9, 1);
         var options = new Native.HDRDecodeOptions {
             Version = 1, StructSize = (uint)Marshal.SizeOf<Native.HDRDecodeOptions>(), Intent = (uint)intent, LongEdge = longEdge
         };
         var pair = Pair(); var diagnostic = Diagnostic();
-        var status = Native.sony2fuji_hdr_decode(path, ref options, ref pair, ref diagnostic);
+        var status = expected.IsCameraRaw
+            ? Native.sony2fuji_hdr_decode_camera_raw(session, path, ref options, ref pair, ref diagnostic)
+            : Native.sony2fuji_hdr_decode(path, ref options, ref pair, ref diagnostic);
         if (status != StatusOk)
         {
             Native.sony2fuji_hdr_release_pair(ref pair);
             throw new HDRSourceException(status, diagnostic.Reason, diagnostic.Field);
         }
-        if (pair.SourceSha256 == null || !pair.SourceSha256.SequenceEqual(expected.SourceSha256)) {
+        if (expected.IsCameraRaw)
+        {
+            bool sameStamp;
+            try { sameStamp = expected.CameraStamp is not { } expectedStamp || HDRFileStamp.Read(path) == expectedStamp; }
+            catch
+            {
+                Native.sony2fuji_hdr_release_pair(ref pair);
+                throw;
+            }
+            if (!sameStamp)
+            {
+                Native.sony2fuji_hdr_release_pair(ref pair);
+                throw new HDRSourceException(1, 9, 1);
+            }
+        }
+        else if (pair.SourceSha256 == null || !pair.SourceSha256.SequenceEqual(expected.SourceSha256)) {
             Native.sony2fuji_hdr_release_pair(ref pair);
             throw new HDRSourceException(1, 9, 1);
         }
@@ -106,18 +149,18 @@ internal static class HDRNative
         return(w,h);
     }
 
-    internal static void ExportHDR(HDRPairOwner source, string input, string destination, byte[] sha256, uint quality = 95)
+    internal static void ExportHDR(HDRPairOwner source, string? metadataSourcePath, string destination, byte[] sha256, uint quality = 95)
     {
         var config = new Native.HDRExportConfig {
             Version = 1, StructSize = (uint)Marshal.SizeOf<Native.HDRExportConfig>(), JpegQuality = quality,
-            BaseColor = 1, MetadataPolicy = 1, MetadataSourcePath = input, SourceSha256 = sha256.ToArray()
+            BaseColor = 1, MetadataPolicy = 1, MetadataSourcePath = metadataSourcePath, SourceSha256 = sha256.ToArray()
         };
         var diagnostic = Diagnostic();
         var status = Native.sony2fuji_hdr_export_jpeg(ref source.Pair, ref config, destination, ref diagnostic);
         if (status != StatusOk) throw new HDRSourceException(status, diagnostic.Reason, diagnostic.Field);
     }
 
-    internal static void ExportSDR(HDRPairOwner source, ExportFormat format, string input, string destination,
+    internal static void ExportSDR(HDRPairOwner source, ExportFormat format, string? metadataSourcePath, string destination,
         byte[] sha256, uint quality = 95)
     {
         var output = format switch {
@@ -128,7 +171,7 @@ internal static class HDRNative
         };
         var config = new Native.HDRSdrExportConfig {
             Version = 1, StructSize = (uint)Marshal.SizeOf<Native.HDRSdrExportConfig>(), OutputFormat = output,
-            Quality = quality, MetadataSourcePath = input, SourceSha256 = sha256.ToArray()
+            Quality = quality, MetadataSourcePath = metadataSourcePath, SourceSha256 = sha256.ToArray()
         };
         var diagnostic = Diagnostic();
         var status = Native.sony2fuji_hdr_export_sdr(ref source.Pair, ref config, destination, ref diagnostic);

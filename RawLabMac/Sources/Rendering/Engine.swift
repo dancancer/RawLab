@@ -607,19 +607,21 @@ final class RenderEngine {
             throw HDRNativeError(status:SONY2FUJI_STATUS_UNSUPPORTED,reason:UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU),field:UInt32(SONY2FUJI_HDR_FIELD_SESSION))
         }
         guard let session,let record=settings.hdr,record.isValid,
-              let info=try HDRSourceInfo.probe(url) else {
+              let info=try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeCameraRAW(url) else {
             throw RenderError.failed(L10n.text("此照片没有可编辑的 HDR 增益图。"))
         }
         displayCache=nil
-        let final=edge==nil
-        let source=try final ? HDRImage.decode(url,info:info,intent:SONY2FUJI_INTENT_FINAL) :
-            hdrSources.preview(url,info:info,longEdge:edge!)
+        let previewEdge = edge ?? (info.isCameraRAW && output == nil ? 2000 : nil)
+        let final = previewEdge == nil
+        if final && info.isCameraRAW { hdrSources.clear() }
+        let source = try final ? HDRImage.decode(url,info:info,intent:SONY2FUJI_INTENT_FINAL,session:session) :
+            hdrSources.preview(url,info:info,longEdge:previewEdge!,session:session)
         let rendered: HDRImage
         if record==HDRSettings() && longEdge==nil {
             rendered=source
         } else {
             rendered=try source.rendered(session:session,settings:record,
-                intent:final ? SONY2FUJI_INTENT_FINAL : SONY2FUJI_INTENT_PREVIEW,longEdge:final ? longEdge : edge)
+                intent:final ? SONY2FUJI_INTENT_FINAL : SONY2FUJI_INTENT_PREVIEW,longEdge:final ? longEdge : previewEdge)
         }
         if let output {
             let selected=format ?? (ExportFormat.forOutput(output) == .jpeg ? .hdrJPEG : ExportFormat.forOutput(output))

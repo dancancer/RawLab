@@ -13,6 +13,8 @@ final class RawEditorViewModel: ObservableObject {
     @Published var hdrPresentation: HDRPresentation?
     @Published var hdrReference: HDRPresentation?
     @Published var sourceIsHDR=false
+    @Published var sourceSupportsCameraHDR=false
+    @Published var cameraHDRPreflight=false
     var importPreviousRevision: UUID?
     @Published var nativeImageSize: CGSize?
     @Published var basePreviewImage: UIImage?

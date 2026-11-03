@@ -292,12 +292,16 @@ public sealed class Adjustments
     }
     public void ResetAll() { Atmosphere = new(); Curve = new(); ColorGrading = new(); ToneControls = new(); AIDenoiseEnabled = false; MasterRecipeID = null; MasterRecipeSettingsVersion = 3; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); if (HDR is { } hdr) HDR = hdr.Reset() with { Mode = hdr.Mode }; }
 
-    public void SetHDRMode(bool enabled, bool sourceIsHDR, IEnumerable<string>? conflicts = null)
+    public void SetHDRMode(bool enabled, bool sourceIsHDR, IEnumerable<string>? conflicts = null, bool cameraRaw = false)
     {
         if (enabled)
         {
-            var blocked = conflicts?.ToArray() ?? HDRConflicts();
-            HDR = HDRSettings.Enabling(HDR, HDRSettings.FromSdr(this), sourceIsHDR, blocked);
+            // Camera RAW's existing SDR tools remain dormant while HDR is
+            // active. They must survive the mode switch instead of becoming a
+            // conversion conflict or being silently reset.
+            var blocked = conflicts?.ToArray() ?? (cameraRaw ? Array.Empty<string>() : HDRConflicts());
+            var initial = cameraRaw ? new HDRSettings { Geometry = Geometry } : HDRSettings.FromSdr(this);
+            HDR = HDRSettings.Enabling(HDR, initial, sourceIsHDR, blocked, cameraRaw);
             return;
         }
         if (HDR is { } hdr) HDR = hdr with { Mode = HDRMode.Sdr };

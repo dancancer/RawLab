@@ -73,7 +73,7 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
                                 throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "target lens calibration unavailable")
                         })
                     AdjustmentTransferTarget(identity, displayName,
-                        com.rawlab.android.settings.sourceDefaultSettings(photo.isHDRSource), transferContext,
+                        photo.defaultEditSettings(), transferContext,
                         isCurrent = { work.isCurrent(identity.value) }, validateSource = validate,
                         validateHistorySource = EditorAdjustmentHistory.historySourceValidation(photo))
                 } catch (error: java.util.concurrent.CancellationException) { throw error }

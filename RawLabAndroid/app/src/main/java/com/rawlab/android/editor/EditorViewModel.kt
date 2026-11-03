@@ -268,6 +268,13 @@ class EditorViewModel @JvmOverloads constructor(
                     }
                 }
                 is WorkResult.HslProbe -> acceptHslTarget(value)
+                is WorkResult.CameraHDRPreflight -> {
+                    val request = value.request
+                    val current = mutable.value
+                    if (current.photo?.identity == request.photo.identity && sourceRevision == request.sourceRevision &&
+                        current.edits == request.before && current.operation == Operation.NONE && current.draft == null)
+                        edit(request.edits)
+                }
                 is WorkResult.Preview -> {
                     val request = value.request
                     if (request.draft) {
@@ -888,7 +895,7 @@ class EditorViewModel @JvmOverloads constructor(
                     result.status !in setOf(AdjustmentStatus.APPLIED, AdjustmentStatus.UNCHANGED)) continue
                 try {
                     if (adjustmentHistory.acceptSaved(photo, saved, receiptsVerified)) restored = saved.settings ?:
-                        com.rawlab.android.settings.sourceDefaultSettings(photo.isHDRSource)
+                        photo.defaultEditSettings()
                 } catch (error: Exception) { receiptError = error }
             }
         }
@@ -952,7 +959,7 @@ class EditorViewModel @JvmOverloads constructor(
         commitAdjustments({
             val record = editStore.versionedState(photo.identity)
             if (record != expected || !AdjustmentTransfer.sameAdjustments(record.settings ?:
-                com.rawlab.android.settings.sourceDefaultSettings(photo.isHDRSource), current.edits,
+                photo.defaultEditSettings(), current.edits,
                     photo.inputKind == PhotoInputKind.RAW)) throw EditPersistenceConflict()
             AdjustmentTransfer.capture(scope, current.edits, context)
         }) { result ->
@@ -970,7 +977,7 @@ class EditorViewModel @JvmOverloads constructor(
         if (disposed || current.committingAdjustments || record.identity != photo.identity || !adjustmentTargetIsCurrent(photo.identity.value))
             throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
         AdjustmentTransfer.previewCapture(scope, current.edits,
-            record.settings ?: com.rawlab.android.settings.sourceDefaultSettings(photo.isHDRSource),
+            record.settings ?: photo.defaultEditSettings(),
             AdjustmentTransferContext(photo.identity.value, photo.inputKind == PhotoInputKind.RAW,
                 builtinLookIDs = storage.builtinLookIDs(), cameraTemperature = current.preview?.temperature,
                 cameraTint = current.preview?.tint))
@@ -1146,10 +1153,19 @@ class EditorViewModel @JvmOverloads constructor(
         val current = mutable.value
         val photo = current.photo ?: return
         if (!photo.isHDRSource || !current.controlsEnabled || current.draft != null) return
-        val candidate = runCatching { current.edits.withHDRMode(enabled, sourceIsHDR = true, hasLook = current.edits.film != "neutral" || current.edits.recipeID != null) }
+        val candidate = runCatching { current.edits.withHDRMode(enabled, sourceIsHDR = !photo.isCameraRawHDR,
+            hasLook = current.edits.film != "neutral" || current.edits.recipeID != null,
+            cameraRaw = photo.isCameraRawHDR) }
             .getOrElse { error -> mutable.value = current.copy(error = text(if(error is com.rawlab.android.settings.HDRModeError.Conflicts)
                 R.string.hdr_conflicts else R.string.hdr_unsupported)); return }
-        edit(candidate)
+        if (enabled && photo.isCameraRawHDR) {
+            // Keep the last committed SDR frame/export readiness while the bounded
+            // camera decode validates the new HDR mode. A failed preflight must not
+            // turn a still-valid SDR preview into an unusable editor state.
+            mutable.value = current.copy(rendering = true, error = null)
+            currentRevision = submitRender(Work.CameraHDRPreflight(photo, current.edits, candidate, gpuMode(), sourceRevision,
+                previewLongEdge))
+        } else edit(candidate)
     }
 
     fun beginExport(completed: (Boolean) -> Unit = {}) {
@@ -1194,7 +1210,7 @@ class EditorViewModel @JvmOverloads constructor(
         if (!adjustmentTargetIsCurrent(id) || adjustmentHistory.reloadRequired) return current.saveError ?: "Apply, discard or skip this photo's draft"
         val record = adjustmentHistory.loaded
         return if (record == null || !AdjustmentTransfer.sameAdjustments(record.settings ?:
-            com.rawlab.android.settings.sourceDefaultSettings(photo.isHDRSource), current.edits,
+            photo.defaultEditSettings(), current.edits,
                 photo.inputKind == PhotoInputKind.RAW)) "Apply, discard or skip this photo's draft" else null
     }
     private fun captureCollectionActiveValidation(): (String) -> Unit {

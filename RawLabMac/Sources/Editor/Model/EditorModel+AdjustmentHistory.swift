@@ -109,11 +109,14 @@ extension EditorModel {
     }
 
     func restoreAdjustmentState(_ snapshot: PhotoEditState) {
+        let returningToCameraSDR = sourceSupportsCameraHDR && settings.isHDREditing && !snapshot.settings.isHDREditing
         let camera = settings.asShotWhiteBalance, support = settings.supportsRawNoiseReduction
         updatingMetadata = true
         settings = snapshot.settings
-        settings.resolveWhiteBalance(camera)
-        settings.resolveRawNoiseReductionSupport(support)
+        if !returningToCameraSDR {
+            settings.resolveWhiteBalance(camera)
+            settings.resolveRawNoiseReductionSupport(support)
+        }
         selectedFilmID = snapshot.settings.masterRecipeID != nil ? "" :
             films.first(where: { $0.id == snapshot.filmID || "builtin:\($0.url.lastPathComponent)" == snapshot.filmID })?.id ?? snapshot.filmID
         updatingMetadata = false

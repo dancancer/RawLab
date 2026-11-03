@@ -110,6 +110,19 @@ int main(int argc, const char* argv[]) {
             check(read(std::filesystem::u8path(destination)).size()>100,"SDR export is empty");
         }
         sony2fuji_hdr_release_pair(&pair);
+        const auto camera=(std::filesystem::path(TEST_FIXTURE_DIR)/"bayer-demosaic.dng").u8string();
+        const auto cameraOutput=(root/"camera-hdr.jpg").u8string();
+        pair=init<sony2fuji_hdr_image_pair_v1>();
+        check(sony2fuji_hdr_decode_camera_raw(nullptr,camera.c_str(),&options,&pair,&diagnostic)==SONY2FUJI_STATUS_OK,
+            "camera RAW development failed with the portable file adapter");
+        check(sony2fuji_hdr_export_jpeg(&pair,&config,cameraOutput.c_str(),&diagnostic)==SONY2FUJI_STATUS_OK,
+            "portable camera RAW gain-map export failed");
+        sony2fuji_hdr_release_pair(&pair);
+        pair=init<sony2fuji_hdr_image_pair_v1>();
+        check(sony2fuji_hdr_decode(cameraOutput.c_str(),&options,&pair,&diagnostic)==SONY2FUJI_STATUS_OK &&
+            pair.native_width==128 && pair.native_height==96 && pair.hdr.content_headroom>1,
+            "portable camera RAW gain-map round trip lost its canvas or highlights");
+        sony2fuji_hdr_release_pair(&pair);
         const auto legacy=(std::filesystem::path(TEST_FIXTURE_DIR)/"hdr/apple-legacy-macos26.jpg").u8string();
         info=init<sony2fuji_hdr_source_info_v1>();
         const auto legacyBytes=read(std::filesystem::u8path(legacy));

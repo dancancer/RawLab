@@ -16,6 +16,52 @@ final class HDRPhotoUITests: XCTestCase {
         super.record(issue)
     }
 
+    func testCameraRawHDRModePersistenceAndExports() throws {
+        guard ProcessInfo.processInfo.environment["RAWLAB_CAMERA_HDR_UI"] == "1" else {
+            throw XCTSkip("Dedicated camera RAW HDR simulator only")
+        }
+        continueAfterFailure = false
+        authorizeDevicePhotoAudit()
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        app.launchArguments = ["-RawLab.language", "zh-Hans"]
+        app.launch()
+        app.buttons["editor.import.file"].tap()
+        chooseCameraRawFixture(app)
+        wait { app.buttons["editor.compare"].isEnabled || app.alerts.firstMatch.exists }
+        XCTAssertTrue(app.buttons["editor.compare"].isEnabled, app.debugDescription)
+        XCTAssertTrue(app.buttons["editor.group.detail"].isEnabled, "Camera RAW must initially use SDR editing")
+
+        app.buttons["editor.group.light"].tap()
+        let exposure = app.buttons["tool.exposure"]
+        let sdrExposure = exposure.value as? String
+        deviceEditingMode(app, hdr: true)
+        XCTAssertFalse(app.buttons["editor.group.detail"].isEnabled)
+        let neutralHDR = exposure.value as? String
+        let ruler = app.descendants(matching: .any)["adjustment.ruler"]
+        XCTAssertTrue(ruler.waitForExistence(timeout: 10))
+        ruler.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)).press(forDuration: 0.1,
+            thenDragTo: ruler.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)))
+        wait { exposure.value as? String != neutralHDR }
+        let hdrExposure = exposure.value as? String
+
+        deviceEditingMode(app, hdr: false)
+        XCTAssertEqual(exposure.value as? String, sdrExposure)
+        deviceEditingMode(app, hdr: true)
+        XCTAssertEqual(exposure.value as? String, hdrExposure)
+        app.terminate()
+        app.launch()
+        app.buttons["editor.import.file"].tap()
+        chooseCameraRawFixture(app)
+        wait { app.buttons["editor.compare"].isEnabled && exposure.value as? String == hdrExposure }
+
+        let hdr = try deviceSaveAndAudit(app, name: "camera-hdr", width: 128, height: 96)
+        let sdr = try deviceSaveAndAudit(app, name: "camera-sdr", width: 128, height: 96, menuItem: "保存 SDR JPEG")
+        let iso = Data("urn:iso:std:iso:ts:21496:-1".utf8)
+        XCTAssertNotNil(hdr.range(of: iso))
+        XCTAssertNil(sdr.range(of: iso))
+    }
+
     func testFreshHDRPresetAndCollectionScope() throws {
         guard ProcessInfo.processInfo.environment["RAWLAB_HDR_UI"]=="1" else { throw XCTSkip("Dedicated HDR simulator only") }
         continueAfterFailure=false
@@ -440,6 +486,26 @@ final class HDRPhotoUITests: XCTestCase {
         button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
+    private func chooseCameraRawFixture(_ app: XCUIApplication) {
+        let file = app.cells.matching(NSPredicate(format: "label CONTAINS %@", "CameraHDRFixture")).firstMatch
+        if !file.waitForExistence(timeout: 3) {
+            let browse = app.tabBars.buttons.matching(NSPredicate(format: "label IN %@", ["Browse", "浏览"])).firstMatch
+            XCTAssertTrue(browse.waitForExistence(timeout: 10), app.debugDescription)
+            browse.tap()
+            let local = app.cells.matching(NSPredicate(format: "label CONTAINS[c] %@", "iPhone")).firstMatch
+            if !local.waitForExistence(timeout: 3) { browse.tap() }
+            XCTAssertTrue(local.waitForExistence(timeout: 10), app.debugDescription)
+            local.tap()
+            let folder = app.cells.matching(NSPredicate(format: "identifier == %@ OR label BEGINSWITH %@", "RawLab", "RawLab")).firstMatch
+            XCTAssertTrue(folder.waitForExistence(timeout: 10), app.debugDescription)
+            folder.tap()
+        }
+        XCTAssertTrue(file.waitForExistence(timeout: 15), app.debugDescription)
+        file.tap()
+        let open = app.buttons.matching(NSPredicate(format: "label IN %@", ["Open", "打开"])).firstMatch
+        if open.waitForExistence(timeout: 3) { open.tap() }
+    }
+
     private func chooseDeviceFile(_ app: XCUIApplication, name: String) {
         deviceDismissNetworkPrompt()
         let browse = app.tabBars.buttons.matching(NSPredicate(format: "label IN %@", ["Browse", "浏览"])).firstMatch
@@ -504,12 +570,14 @@ final class HDRPhotoUITests: XCTestCase {
         return result
     }
 
-    private func deviceSaveAndAudit(_ app: XCUIApplication, name: String, width: Int, height: Int) throws {
+    @discardableResult
+    private func deviceSaveAndAudit(_ app: XCUIApplication, name: String, width: Int, height: Int,
+                                    menuItem: String = "保存当前照片") throws -> Data {
         let before = devicePhotoIDs()
-        saveCurrentToPhotos(app, screenshot: "device-\(name)-photos-saved")
+        saveCurrentToPhotos(app, screenshot: "device-\(name)-photos-saved", menuItem: menuItem)
         let created = devicePhotoIDs().subtracting(before)
         XCTAssertEqual(created.count, 1, "Cannot uniquely identify this UI export; no unrelated photo will be read")
-        guard created.count == 1, let asset = PHAsset.fetchAssets(withLocalIdentifiers: Array(created), options: nil).firstObject else { return }
+        guard created.count == 1, let asset = PHAsset.fetchAssets(withLocalIdentifiers: Array(created), options: nil).firstObject else { return Data() }
         XCTAssertEqual(asset.pixelWidth, width); XCTAssertEqual(asset.pixelHeight, height)
         let resource = try XCTUnwrap(PHAssetResource.assetResources(for: asset).first { $0.type == .photo })
         let downloaded = expectation(description: "Read back the exact UI-created Photos original")
@@ -528,11 +596,12 @@ final class HDRPhotoUITests: XCTestCase {
         attachment.name = "device-\(name)-photos-original.jpg"; attachment.lifetime = .keepAlways
         add(attachment)
         print("PHOTOS_UI_EXPORT \(name) \(width)x\(height) \(data.count) bytes resource=\(resource.uniformTypeIdentifier)")
+        return data
     }
 
-    private func saveCurrentToPhotos(_ app: XCUIApplication, screenshot: String) {
+    private func saveCurrentToPhotos(_ app: XCUIApplication, screenshot: String, menuItem: String = "保存当前照片") {
         app.buttons["editor.export"].tap()
-        let save = app.buttons["保存当前照片"]
+        let save = app.buttons[menuItem]
         wait { save.isEnabled && save.isHittable }
         save.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         let confirm = app.buttons["editor.export.confirm"]

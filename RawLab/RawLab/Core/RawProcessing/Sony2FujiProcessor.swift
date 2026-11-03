@@ -23,10 +23,15 @@ struct Sony2FujiProcessor {
         guard gpuMode != SONY2FUJI_GPU_FORCE else {
             throw HDRNativeError(status:SONY2FUJI_STATUS_UNSUPPORTED,reason:UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU),field:UInt32(SONY2FUJI_HDR_FIELD_SESSION))
         }
-        return try withRawSession(reuse:false,inputType:SONY2FUJI_INPUT_DISPLAY_BUFFER) { session in
-            guard let info=try HDRSourceInfo.probe(url) else { throw HDRSettings.ModeError.unsupportedSource }
-            let source=try previewLongEdge.map { try hdrSources.preview(url,info:info,longEdge:$0) } ??
-                HDRImage.decode(url,info:info,intent:SONY2FUJI_INTENT_FINAL)
+        guard let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeCameraRAW(url) else {
+            throw HDRSettings.ModeError.unsupportedSource
+        }
+        let inputType = info.isCameraRAW ? SONY2FUJI_INPUT_RAW : SONY2FUJI_INPUT_DISPLAY_BUFFER
+        return try withRawSession(reuse:false,inputType:inputType) { session in
+            let source=try previewLongEdge.map {
+                try hdrSources.preview(url,info:info,longEdge:$0,session:info.isCameraRAW ? session : nil)
+            } ?? HDRImage.decode(url,info:info,intent:SONY2FUJI_INTENT_FINAL,
+                                 session:info.isCameraRAW ? session : nil)
             if settings.isIdentity && exportLongEdge==nil { return source }
             return try source.rendered(session:session,settings:settings,
                 intent:previewLongEdge==nil ? SONY2FUJI_INTENT_FINAL : SONY2FUJI_INTENT_PREVIEW,

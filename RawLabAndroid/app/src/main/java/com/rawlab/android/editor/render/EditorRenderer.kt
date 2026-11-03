@@ -43,7 +43,8 @@ internal class EditorRenderer(
     private fun engine() = processor ?: NativeProcessor(lensDatabase = storage.lensDatabase()).also { processor = it }
 
     fun perform(work: Work, cancellation: RenderCancellation): WorkResult = synchronized(storage) {
-        if (work !is Work.Preview && work !is Work.HslProbe && work !is Work.Import) return@synchronized perform(work)
+        if (work !is Work.Preview && work !is Work.HslProbe && work !is Work.Import && work !is Work.CameraHDRPreflight)
+            return@synchronized perform(work)
         cancellation.check()
         val native = engine()
         val generation = native.cancellationGeneration()
@@ -64,7 +65,7 @@ internal class EditorRenderer(
                 photo.validateOriginal?.invoke()
                 val record = restore(photo.identity)
                 var restored = record?.settings ?: if (photo.hdrSource != null)
-                    com.rawlab.android.settings.sourceDefaultSettings(true) else null
+                    photo.defaultEditSettings() else null
                 if (work.x3fModeOverride != null) restored = (restored ?: EditSettings()).copy(x3fMode = work.x3fModeOverride)
                 canRetryLegacy = photo.isX3f && (restored ?: EditSettings()).x3fMode == com.rawlab.android.settings.X3fMode.NORMAL
                 if (restored != null && runCatching { storage.lookPath(restored) }.isFailure) {
@@ -124,6 +125,7 @@ internal class EditorRenderer(
             }.getOrElse { HslTargetSample.unavailable(work.revision, HslTargetAvailability.FAILED) }
             WorkResult.HslProbe(work, sample)
         }
+        is Work.CameraHDRPreflight -> performCameraHDRPreflight(work, generation)
         is Work.Export -> {
             if (work.photo.hdrSource != null && work.edits.isHDREditing) return performHDRExport(work)
             val output = storage.temporaryOutput(work.format)
@@ -146,34 +148,58 @@ internal class EditorRenderer(
         val native = engine()
         native.setGpuMode(NativeProcessor.CPU)
         val key = Triple(work.photo.file.canonicalPath, work.photo.file.length(), work.photo.file.lastModified())
-        if (hdrSourceKey != key || hdrSource?.sourceInfo?.fingerprint?.contentEquals(info.fingerprint) != true) {
-            releaseHDRSource()
-            hdrSourceLease=com.rawlab.android.engine.HDRSourceCache.acquire(work.photo.file,info,1600)
-            hdrSource=hdrSourceLease!!.image;hdrSourceKey=key
-        }
-        val source = checkNotNull(hdrSource)
-        run {
-            val geometry = work.edits.geometry
-            val canvas=NativeHDRBridge.geometrySize(info,geometry)
-            val edge=com.rawlab.android.engine.HDRPreviewBudget.edge(canvas[0],canvas[1],work.edge.coerceIn(1,1600))
-            val neutralSettings = HDRSettings(mode = work.edits.hdr?.mode ?: com.rawlab.android.settings.HDRMode.SDR, geometry = geometry)
-            val resultSettings = (work.edits.hdr ?: HDRSettings(mode = com.rawlab.android.settings.HDRMode.SDR)).copy(geometry = geometry)
-            val neutral = native.renderHDR(source, neutralSettings, edge, generation)
-            val result = try { native.renderHDR(source, resultSettings, edge, generation) }
-            catch (error: Throwable) { neutral.close(); throw error }
-            try {
-                val neutralFrame = neutral.snapshot()
-                val resultFrame = result.snapshot()
-                val dimensions = comparisonDimensions(resultFrame.nativeWidth, resultFrame.nativeHeight)
-                WorkResult.Preview(work, PreviewPair(
-                    sdrBitmap(neutralFrame), sdrBitmap(resultFrame), Float.NaN, Float.NaN,
-                    null, dimensions.first, dimensions.second,
-                    (if (info.orientation >= 5) info.height.toFloat() / info.width else info.width.toFloat() / info.height), null, null,
-                    HDRPreview(neutralFrame, resultFrame)))
-            } finally {
-                result.close(); neutral.close()
+        val geometry = work.edits.geometry
+        val canvas=NativeHDRBridge.geometrySize(info,geometry)
+        val edge=com.rawlab.android.engine.HDRPreviewBudget.edge(canvas[0],canvas[1],work.edge.coerceIn(1,1600))
+        val source = if (info.isCameraRaw) {
+            if (hdrSourceKey != key || hdrSource?.sourceInfo?.cameraStamp != info.cameraStamp) {
+                releaseHDRSource()
+                hdrSourceLease = com.rawlab.android.engine.HDRSourceCache.acquire(work.photo.file, info, 1600) {
+                    native.decodeHDRCamera(work.photo.file, info, 1600, generation)
+                }
+                hdrSource = hdrSourceLease!!.image
+                hdrSourceKey = key
             }
+            checkNotNull(hdrSource)
+        } else {
+            if (hdrSourceKey != key || hdrSource?.sourceInfo?.fingerprint?.contentEquals(info.fingerprint) != true) {
+                releaseHDRSource()
+                hdrSourceLease=com.rawlab.android.engine.HDRSourceCache.acquire(work.photo.file,info,1600)
+                hdrSource=hdrSourceLease!!.image;hdrSourceKey=key
+            }
+            checkNotNull(hdrSource)
         }
+        val neutralSettings = HDRSettings(mode = work.edits.hdr?.mode ?: com.rawlab.android.settings.HDRMode.SDR, geometry = geometry)
+        val resultSettings = (work.edits.hdr ?: HDRSettings(mode = com.rawlab.android.settings.HDRMode.SDR)).copy(geometry = geometry)
+        val neutral = native.renderHDR(source, neutralSettings, edge, generation)
+        val result = try { native.renderHDR(source, resultSettings, edge, generation) }
+        catch (error: Throwable) { neutral.close(); throw error }
+        try {
+            val neutralFrame = neutral.snapshot()
+            val resultFrame = result.snapshot()
+            val dimensions = comparisonDimensions(resultFrame.nativeWidth, resultFrame.nativeHeight)
+            return WorkResult.Preview(work, PreviewPair(
+                sdrBitmap(neutralFrame), sdrBitmap(resultFrame), Float.NaN, Float.NaN,
+                null, dimensions.first, dimensions.second,
+                (if (info.orientation >= 5) info.height.toFloat() / info.width else info.width.toFloat() / info.height), null, null,
+                HDRPreview(neutralFrame, resultFrame)))
+        } finally {
+            result.close(); neutral.close()
+        }
+    }
+
+    private fun performCameraHDRPreflight(work: Work.CameraHDRPreflight, generation: Long): WorkResult {
+        val info = checkNotNull(work.photo.hdrSource?.takeIf { it.isCameraRaw })
+        val native = engine()
+        native.setGpuMode(NativeProcessor.CPU)
+        val canvas = NativeHDRBridge.geometrySize(info, work.edits.geometry)
+        val edge = com.rawlab.android.engine.HDRPreviewBudget.edge(canvas[0], canvas[1], work.edge.coerceIn(1, 1600))
+        val source = native.decodeHDRCamera(work.photo.file, info, edge, generation)
+        try {
+            val settings = (work.edits.hdr ?: HDRSettings()).copy(geometry = work.edits.geometry)
+            native.renderHDR(source, settings, edge, generation).close()
+        } finally { source.close() }
+        return WorkResult.CameraHDRPreflight(work)
     }
 
     private fun performHDRExport(work: Work.Export): WorkResult = synchronized(storage) {
@@ -183,15 +209,17 @@ internal class EditorRenderer(
         val info = checkNotNull(work.photo.hdrSource)
         val native = engine()
         native.setGpuMode(NativeProcessor.CPU)
-        val source = NativeHDRBridge.decode(work.photo.file, info, 0)
+        val source = if (info.isCameraRaw) native.decodeHDRCamera(work.photo.file, info, 0) else
+            NativeHDRBridge.decode(work.photo.file, info, 0)
         val settings = (work.edits.hdr ?: HDRSettings(mode = com.rawlab.android.settings.HDRMode.SDR))
             .copy(geometry = work.edits.geometry)
         val rendered = try { native.renderHDR(source, settings, work.longEdge ?: 0) } finally { source.close() }
         val output = storage.temporaryOutput(work.format)
         try {
+            val metadataSource = work.photo.hdrSource?.takeUnless { it.isCameraRaw }?.let { work.photo.file }
             if (work.format == ExportFormat.HDR_JPEG)
-                NativeHDRBridge.exportJpeg(rendered, work.photo.file, output)
-            else NativeHDRBridge.exportSdr(rendered, work.photo.file, output, work.format.nativeValue)
+                NativeHDRBridge.exportJpeg(rendered, metadataSource, output)
+            else NativeHDRBridge.exportSdr(rendered, metadataSource, output, work.format.nativeValue)
             if (work.destination == null) storage.saveAlbum(output, work.format)
             else storage.saveDocument(output, work.destination, work.photo.uri)
         } finally {

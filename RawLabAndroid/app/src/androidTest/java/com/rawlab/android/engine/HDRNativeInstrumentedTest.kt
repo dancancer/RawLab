@@ -32,6 +32,40 @@ class HDRNativeInstrumentedTest {
     @Test fun jpegPreviewIsBoundedAndFingerprintIsEnforced() = checkPreview("hdr-sample.jpg")
     @Test fun heicPreviewIsOrientedAndBounded() = checkPreview("hdr-sample.heic")
 
+    @Test fun cameraRawBayerPreviewIsBoundedAndExportsHdrAndSdrWithoutCaptureMetadata() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        assumeTrue("Bayer DNG fixture is missing", instrumentation.context.assets.list("")!!.contains("bayer-demosaic.dng"))
+        val root = File(instrumentation.targetContext.cacheDir, "camera-hdr-${UUID.randomUUID()}").apply { mkdirs() }
+        val source = File(root, "camera.dng")
+        instrumentation.context.assets.open("bayer-demosaic.dng").use { input -> source.outputStream().use { input.copyTo(it) } }
+        try {
+            val info = requireNotNull(NativeHDRBridge.probeCameraRaw(source))
+            assertTrue(info.isCameraRaw)
+            assertNull("Camera RAW must not enter gain-map raster HDR routing", NativeHDRBridge.probe(source))
+            NativeProcessor(NativeProcessor.CPU).use { processor ->
+                val preview = processor.decodeHDRCamera(source, info, 64)
+                try {
+                    assertTrue(maxOf(preview.width, preview.height) <= 64)
+                    assertEquals(info.width, preview.nativeWidth)
+                    assertEquals(info.height, preview.nativeHeight)
+                } finally { preview.close() }
+
+                val full = processor.decodeHDRCamera(source, info, 0)
+                try {
+                    processor.renderHDR(full, HDRSettings(), 0).use { rendered ->
+                        val hdr = File(root, "camera-hdr.jpg")
+                        val sdr = File(root, "camera-sdr.jpg")
+                        NativeHDRBridge.exportJpeg(rendered, null, hdr)
+                        NativeHDRBridge.exportSdr(rendered, null, sdr, ExportFormat.JPEG.nativeValue)
+                        assertNotNull(NativeHDRBridge.probe(hdr))
+                        assertNull(NativeHDRBridge.probe(sdr))
+                        assertNull(NativeHDRBridge.probeCameraRaw(hdr))
+                    }
+                } finally { full.close() }
+            }
+        } finally { root.deleteRecursively() }
+    }
+
     private fun checkPreview(name: String) = withFixture(name) { file, _ ->
         val info = requireNotNull(NativeHDRBridge.probe(file))
         assertEquals(32, info.fingerprint.size)

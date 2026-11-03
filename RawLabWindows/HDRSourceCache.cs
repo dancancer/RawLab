@@ -13,9 +13,9 @@ internal sealed class HDRSourceLease(HDRPairOwner owner,Action release) : IDispo
 internal static class HDRSourceCache
 {
     private const ulong Budget=128UL*1024*1024;
-    private sealed class Entry(string path,string fingerprint,uint edge,HDRPairOwner owner,ulong bytes)
+    private sealed class Entry(string path,string identity,uint edge,HDRPairOwner owner,ulong bytes)
     {
-        internal readonly string Path=path,Fingerprint=fingerprint;
+        internal readonly string Path=path,Identity=identity;
         internal readonly uint Edge=edge;
         internal readonly HDRPairOwner Owner=owner;
         internal readonly ulong Bytes=bytes;
@@ -26,24 +26,24 @@ internal static class HDRSourceCache
     private static readonly LinkedList<Entry> Entries=new();
     private static ulong bytes;
     internal static ulong CachedBytes {get {lock(Gate)return bytes;}}
-    internal static HDRSourceLease Acquire(string path,HDRSourceInfo info,bool final,uint edge)
+    internal static HDRSourceLease Acquire(string path,HDRSourceInfo info,bool final,uint edge,Native.Session? session=null)
     {
         if(final) {
-            Clear();var owner=HDRNative.Decode(path,HDRIntent.Final,0,info);
+            Clear();var owner=HDRNative.Decode(path,HDRIntent.Final,0,info,session);
             return new(owner,owner.Dispose);
         }
-        var canonical=System.IO.Path.GetFullPath(path);var fingerprint=Convert.ToHexString(info.SourceSha256);
+        var canonical=System.IO.Path.GetFullPath(path);var identity=info.CacheIdentity;
         lock(Gate) {
             for(var node=Entries.First;node!=null;) {
                 var next=node.Next;
                 var value=node.Value;
                 if(!StringComparer.OrdinalIgnoreCase.Equals(value.Path,canonical)){node=next;continue;}
-                if(value.Fingerprint!=fingerprint){Remove(node);node=next;continue;}
+                if(value.Identity!=identity){Remove(node);node=next;continue;}
                 if(value.Edge<edge){node=next;continue;}
                 Entries.Remove(node);Entries.AddFirst(node);return Lease(value);
             }
-            var decoded=HDRNative.Decode(path,HDRIntent.Preview,edge,info);
-            var entry=new Entry(canonical,fingerprint,edge,decoded,decoded.Pair.Hdr.SizeBytes+decoded.Pair.Sdr.SizeBytes);
+            var decoded=HDRNative.Decode(path,HDRIntent.Preview,edge,info,session);
+            var entry=new Entry(canonical,identity,edge,decoded,decoded.Pair.Hdr.SizeBytes+decoded.Pair.Sdr.SizeBytes);
             if(entry.Bytes<=Budget) {
                 while(bytes+entry.Bytes>Budget && Entries.Last!=null)Remove(Entries.Last);
                 Entries.AddFirst(entry);entry.Retained=true;bytes+=entry.Bytes;

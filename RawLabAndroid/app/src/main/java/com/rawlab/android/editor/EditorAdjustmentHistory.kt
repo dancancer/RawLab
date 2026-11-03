@@ -120,7 +120,7 @@ internal class EditorAdjustmentHistory(private val store: EditorEditStore) {
     }
     companion object {
         private fun sourceDefaults(photo: ImportedPhoto, record: VersionedPhotoEdit) =
-            com.rawlab.android.settings.sourceDefaultSettings(photo.isHDRSource)
+            photo.defaultEditSettings()
         private data class SourceStamp(val inode: Long, val length: Long, val modified: Long)
         fun historySourceValidation(photo: ImportedPhoto): () -> Unit = photo.validateOriginal ?: sourceValidation(photo.file)
         fun sourceValidation(photo: ImportedPhoto): () -> Unit {

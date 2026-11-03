@@ -2,6 +2,19 @@ using System.IO;
 
 namespace RawLab.Windows;
 
+// Camera RAW probing deliberately does not hash or unpack the source. The
+// stamp is therefore part of the managed cache identity until decode returns
+// the actual SHA-256 digest.
+internal sealed record HDRFileStamp(long Length, long Modified, long Created)
+{
+    internal static HDRFileStamp Read(string path)
+    {
+        var file = new FileInfo(Path.GetFullPath(path));
+        if (!file.Exists) throw new FileNotFoundException(Loc.Text("无法访问原始照片。"), path);
+        return new(file.Length, file.LastWriteTimeUtc.Ticks, file.CreationTimeUtc.Ticks);
+    }
+}
+
 public enum HDRProbeState { NotHDR, Supported }
 
 public sealed record HDRSourceInfo(
@@ -17,6 +30,14 @@ public sealed record HDRSourceInfo(
     byte[] SourceSha256)
 {
     public bool IsHDR => State == HDRProbeState.Supported;
+    public bool IsCameraRaw => Container == HDRNative.ContainerCameraRaw;
+
+    // Probe returns an empty digest for camera RAW because hashing belongs to
+    // the decode transaction. Keep the file stamp in the preview cache key.
+    internal HDRFileStamp? CameraStamp { get; init; }
+    internal string CacheIdentity => IsCameraRaw
+        ? $"camera:{CameraStamp?.Length}:{CameraStamp?.Modified}:{CameraStamp?.Created}"
+        : Convert.ToHexString(SourceSha256 ?? []);
 }
 
 public sealed class HDRSourceException(int status, uint reason, uint field) : IOException(LocalizedMessage(status, reason))
@@ -28,6 +49,7 @@ public sealed class HDRSourceException(int status, uint reason, uint field) : IO
     private static string LocalizedMessage(int status, uint reason) => reason switch {
         HDRNative.ReasonNotHDR => Loc.Text("此照片没有可编辑的 HDR 增益图。"),
         2 or 3 or 4 => Loc.Text("不支持此 HDR 格式或颜色描述。"),
+        HDRNative.ReasonUnsupportedRaw => Loc.Text("不支持此相机 RAW 的 HDR 显影。"),
         13 => Loc.Text("HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。"),
         10 => Loc.Text("内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。"),
         11 => Loc.Text("无法写入 HDR 导出文件，请检查可用空间和目标权限。"),

@@ -18,7 +18,7 @@ internal static class TestWindowState
         var path=Path.Combine(directory,"job.json");
         if(File.Exists(path))throw new InvalidOperationException("Preserve existing batch job: "+path+". Use an isolated test account.");
     }
-    internal static void Isolate(MainWindow window,string output,HttpClient? updatesClient=null)
+    internal static void Isolate(MainWindow window,string output,HttpClient? updatesClient=null,string? editDirectory=null)
     {
         var root=Path.Combine(Path.GetFullPath(output),"profile-"+Guid.NewGuid().ToString("N")[..8]);Directory.CreateDirectory(root);
         const BindingFlags flags=BindingFlags.Instance|BindingFlags.NonPublic;
@@ -37,7 +37,7 @@ internal static class TestWindowState
         var notice=(System.Windows.FrameworkElement)window.FindName("UpdateNotice");notice.DataContext=updates;
         notice.Visibility=updates.HasUpdate ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         updates.PropertyChanged+=(_,_)=>notice.Visibility=updates.HasUpdate ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-        Set("editStore",new EditStore(Path.Combine(root,"edits")));
+        Set("editStore",new EditStore(editDirectory ?? Path.Combine(root,"edits")));
         Set("recentLooksPath",Path.Combine(root,"recent-looks.json"));
         Set("recentLooks",new RecentLooks());
         Set("presetStore",new AdjustmentPresetStore(Path.Combine(root,"presets")));

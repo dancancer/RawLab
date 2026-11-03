@@ -21,6 +21,7 @@ enum {
 };
 enum {
     SONY2FUJI_HDR_CONTAINER_UNKNOWN = 0, SONY2FUJI_HDR_CONTAINER_JPEG = 1, SONY2FUJI_HDR_CONTAINER_HEIF = 2,
+    SONY2FUJI_HDR_CONTAINER_CAMERA_RAW = 3,
     SONY2FUJI_HDR_PROTOCOL_UNKNOWN = 0, SONY2FUJI_HDR_PROTOCOL_APPLE = 1,
     SONY2FUJI_HDR_PROTOCOL_ISO = 2, SONY2FUJI_HDR_PROTOCOL_XMP = 3, SONY2FUJI_HDR_PROTOCOL_ISO_XMP = 4,
     SONY2FUJI_HDR_COLOR_UNKNOWN = 0, SONY2FUJI_HDR_COLOR_SRGB = 1,
@@ -35,7 +36,7 @@ enum {
     SONY2FUJI_HDR_REASON_OUT_OF_MEMORY = 10, SONY2FUJI_HDR_REASON_OUTPUT_IO = 11,
     SONY2FUJI_HDR_REASON_INVALID_ARGUMENT = 12, SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU = 13,
     SONY2FUJI_HDR_REASON_INPUT_IO = 14, SONY2FUJI_HDR_REASON_SAME_FILE = 15,
-    SONY2FUJI_HDR_REASON_NOT_HDR = 16
+    SONY2FUJI_HDR_REASON_NOT_HDR = 16, SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW = 17
 };
 enum {
     SONY2FUJI_HDR_FIELD_NONE = 0, SONY2FUJI_HDR_FIELD_SOURCE = 1,
@@ -122,6 +123,15 @@ sony2fuji_status sony2fuji_hdr_probe(const char* path, sony2fuji_hdr_source_info
     sony2fuji_hdr_diagnostic_v1* diagnostic);
 sony2fuji_status sony2fuji_hdr_decode(const char* path, const sony2fuji_hdr_decode_options_v1* options,
     sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic);
+// Explicit camera RAW development. Probe inspects the header only and does not hash
+// or unpack the file. Decode returns the oriented canvas and the source digest.
+sony2fuji_status sony2fuji_hdr_probe_camera_raw(const char* path, sony2fuji_hdr_source_info_v1* info,
+    sony2fuji_hdr_diagnostic_v1* diagnostic);
+// PREVIEW requires a positive long edge. An optional session supplies cancellation
+// and the GPU policy. Release the result with sony2fuji_hdr_release_pair.
+sony2fuji_status sony2fuji_hdr_decode_camera_raw(sony2fuji_session* session, const char* path,
+    const sony2fuji_hdr_decode_options_v1* options, sony2fuji_hdr_image_pair_v1* result,
+    sony2fuji_hdr_diagnostic_v1* diagnostic);
 // 只计算已定向原片的几何输出尺寸，不解码或分配像素；失败时保留两个输出值。
 sony2fuji_status sony2fuji_hdr_geometry_size(uint32_t native_width, uint32_t native_height,
     const sony2fuji_hdr_request_v1* request, uint32_t* width, uint32_t* height,

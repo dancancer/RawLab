@@ -1,6 +1,8 @@
 package com.rawlab.android.batch
 
 import com.rawlab.android.batch.journal.BatchJournal
+import com.rawlab.android.adjustments.AdjustmentFailure
+import com.rawlab.android.adjustments.AdjustmentTransferException
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
 import com.rawlab.android.settings.*
@@ -65,6 +67,8 @@ class BatchSelectionExport(private val directory: File,
                 val inputHash = BatchFrozenSettings.checksum(photo.sourceFile)
                 val record = readRecord(photo.identity)
                 val settings = record.settings ?: com.rawlab.android.settings.sourceDefaultSettings(photo.sourceIsHDR)
+                if (settings.isHDREditing && !photo.sourceIsHDR)
+                    throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.source")
                 require(format != ExportFormat.HDR_JPEG || settings.isHDREditing) { "HDR JPEG requires HDR editing" }
                 val look = resolveLook(settings)
                 check((settings.film == "neutral" && settings.recipeID == null) || look != null) { "Photo look is unavailable" }

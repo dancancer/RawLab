@@ -83,7 +83,8 @@ internal class EditorCollections(private val storage: PhotoStorage, parentScope:
                         validate.content()
                         imported[id] = photo; validators[id] = validate
                         additions += BatchTarget(photo.identity, photo.file, photo.name, photo.uri.toString(), photo.inputKind,
-                            sourceIsHDR = photo.isHDRSource)
+                            // Camera RAW HDR is an explicit editor mode, not a batch/raster default.
+                            sourceIsHDR = photo.isHDRSource && !photo.isCameraRawHDR)
                     } catch (error: Exception) {
                         val id = uri.toString()
                         failures[id] = error.message ?: error.javaClass.simpleName

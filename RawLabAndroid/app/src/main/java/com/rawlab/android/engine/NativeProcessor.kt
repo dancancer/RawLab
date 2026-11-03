@@ -211,6 +211,12 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         return NativeHDRBridge.render(handle, source, settings, edge, cancellationGeneration)
     }
 
+    internal fun decodeHDRCamera(file: File, info: com.rawlab.android.photo.HDRSourceInfo, edge: Int,
+        cancellationGeneration: Long = -1L): NativeHDRImage {
+        check(handle != 0L) { "Processor is closed" }
+        return NativeHDRBridge.decodeCameraRaw(handle, file, info, edge, cancellationGeneration)
+    }
+
     // 取消不能等待 preview 的 Java monitor 或 native session 渲染锁。
     internal fun cancellationGeneration(): Long = nativeCancellationGeneration(handle)
     internal fun cancelPreview() { nativeCancelPreview(handle) }
