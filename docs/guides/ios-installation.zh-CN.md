@@ -64,7 +64,7 @@ Windows 用户还需按 Sideloadly 官网的安装提示准备 **网页下载版
 
 此方法只适用于 Mac，通过 Apple 官方工具构建和安装，**不是把未签名 IPA 拖进 Xcode**。安装的是当前源码；若要与某个发布版一致，应另外取得对应版本源码，不要重置已有工作目录。
 
-1. 从 Mac App Store 或 [Apple 开发者网站](https://developer.apple.com/xcode/)安装完整 Xcode。首次打开，按提示安装 iOS 支持组件。Xcode 必须支持手机当前的 iOS 版本；只有 Command Line Tools 不够。
+1. 从 Mac App Store 或 [Apple 开发者网站](https://developer.apple.com/xcode/)安装完整 Xcode 27.1 或更高版本。源码构建要求 iOS 27.1+ SDK，以使用 iPhone Duo 的完整屏幕；最低支持的设备系统仍为 iOS 18.0。首次打开，按提示安装 iOS 支持组件。Xcode 还必须支持手机当前的 iOS 版本；只有 Command Line Tools 不够。
 2. 准备[仓库源码](https://github.com/dancancer/RawLab)和 CMake。已有源码时进入现有仓库根目录；没有源码时，在一个合适的目录运行下面的命令，新建独立源码目录：
 
 ```bash
@@ -110,18 +110,18 @@ Xcode 会处理应用和内嵌框架的签名，不需要手工重复添加框�
 
 所有命令从仓库根目录执行。先完成方法二中的 Xcode 初始化、用户账号登录和手机配对。可以让用户在 Xcode 界面选择自己的 Team；若无法确认其 Team ID，就使用 Xcode 界面运行，不猜测、不照抄项目默认值。
 
-先检查环境和可选设备，任一步失败都先处理该项，不继续安装：
+如果默认工具链指向 Command Line Tools 或旧版 Xcode，先在当前终端设置 `DEVELOPER_DIR` 为实际 Xcode 27.1+ 的 `Contents/Developer` 路径，例如 `export DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"`，不必修改全局工具链。
+
+先检查环境和可选设备。框架构建同时需要设备和模拟器 SDK；任一步失败都先处理该项，不继续安装：
 
 ```bash
 xcodebuild -version
-xcrun --sdk iphoneos --show-sdk-version
+bash scripts/ci/check-ios-sdk.sh
 cmake --version
 xcodebuild -list -project RawLab/RawLab.xcodeproj
 xcodebuild -showdestinations -project RawLab/RawLab.xcodeproj -scheme RawLab
 xcrun devicectl list devices
 ```
-
-如果 `xcodebuild` 指向 Command Line Tools，可在当前终端设置 `DEVELOPER_DIR` 为实际 Xcode 的 `Contents/Developer` 路径，例如 `export DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"`，不必修改全局工具链。
 
 在当前终端设置以下真实参数后再执行构建。不要把占位符直接传给命令：
 

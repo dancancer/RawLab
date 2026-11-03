@@ -538,6 +538,14 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Check iOS SDK for iPhone Duo
+        if: needs.changes.outputs.build == 'true'
+        shell: bash
+        run: |
+          DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
+          export DEVELOPER_DIR
+          xcodebuild -version
+          bash scripts/ci/check-ios-sdk.sh
       - name: Prepare X3F Rust renderer toolchain
         if: needs.changes.outputs.build == 'true'
         shell: bash

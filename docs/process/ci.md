@@ -372,6 +372,15 @@ always refused, and CI jobs must not use sudo. Prepare full Xcode and Homebrew
 administrator. Use `DEVELOPER_DIR` rather than changing another user's selected
 developer tools.
 
+For iOS builds, both pool Macs need Xcode 27.1+ with device and simulator SDKs
+at least 27.1. This enables iPhone Duo's full display without raising RawLab's
+iOS 18.0 deployment target. `bash scripts/ci/check-ios-sdk.sh` checks the selected
+toolchain during runner provisioning and before the iOS build job prepares Rust
+or native caches. The app target checks its actual SDK for local and release
+builds too. Model-only jobs retain their standalone macOS-SDK route. Upgrade
+the prepared Xcode copy on each pool host before running iOS build/native/full
+checks; CI does not install Xcode or change global toolchain selection.
+
 Native dependency outputs embed the workspace, Xcode SDK and Python paths, so the
 cache key includes them. Both pool Macs therefore use one identical layout on a
 case-sensitive APFS volume named `RawLabCI`, mounted at `/Volumes/RawLabCI`

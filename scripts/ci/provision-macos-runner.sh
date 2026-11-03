@@ -42,6 +42,7 @@ xcodebuild -checkFirstLaunchStatus
 xcrun --sdk macosx --show-sdk-path
 xcrun --sdk iphoneos --show-sdk-path
 xcrun --sdk iphonesimulator --show-sdk-path
+bash "$(dirname "$0")/check-ios-sdk.sh"
 xcrun simctl list runtimes available -j | "$python" -c '
 import json, sys
 runtimes = json.load(sys.stdin).get("runtimes", [])

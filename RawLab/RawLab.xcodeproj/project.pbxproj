@@ -1047,6 +1047,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 86048109104C15A6E77F6FC2 /* Build configuration list for PBXNativeTarget "RawLab" */;
 			buildPhases = (
+				AB4000000000000000000002 /* Check iOS SDK */,
 				AB4000000000000000000001 /* Embed RUM SDK */,
 				E20DD483661FD62C27502C63 /* Sources */,
 				7A7847F15E616132CAD7AF18 /* Frameworks */,
@@ -1140,6 +1141,23 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		AB4000000000000000000002 /* Check iOS SDK */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../scripts/ci/check-ios-sdk.sh",
+			);
+			name = "Check iOS SDK";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "bash \"$SRCROOT/../scripts/ci/check-ios-sdk.sh\" \"$SDKROOT\"\n";
+			showEnvVarsInLog = 0;
+		};
 		AB4000000000000000000001 /* Embed RUM SDK */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
