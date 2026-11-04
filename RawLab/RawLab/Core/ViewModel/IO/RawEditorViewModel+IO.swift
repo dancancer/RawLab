@@ -173,9 +173,8 @@ extension RawEditorViewModel {
                             ? try HDRSourceInfo.probe(localURL)
                             : try HDRSourceInfo.probeRAW(localURL)
                         let proRAW = hdrInfo?.proRAW
-                        if proRAW != nil, let version = restoredSettings.proRAWDecodeVersion,
-                           version != ProRAWSource.decodeVersion, restoredSettings.isHDREditing {
-                            throw HDRSettings.ModeError.invalidSettings
+                        if proRAW != nil, restoredSettings.isHDREditing {
+                            try ProRAWSource.validatedDecodeVersion(restoredSettings.proRAWDecodeVersion)
                         }
                         let cameraHDR = hdrInfo?.isDevelopedRAW == true
                         let rasterHDR = hdrInfo != nil && !cameraHDR

@@ -26,9 +26,26 @@ import ImageIO
             check(!fresh.settings.isHDREditing && fresh.settings.exposure == 1,
                   "fresh ProRAW batch target was silently upgraded to HDR")
             var saved = Adjustments(); saved.exposure = -2; saved.hdr = HDRSettings()
+            saved.proRAWDecodeVersion = ProRAWSource.decodeVersion + 1
+            try store.save(raw, state: PhotoEditState(settings: saved, filmID: ""))
+            do {
+                _ = try preparer.prepare(item, ordinal: 2, format: .hdrJPEG, longEdge: nil)
+                fatalError("Incompatible ProRAW version passed HDR preflight")
+            } catch HDRSettings.ModeError.invalidSettings {}
+            saved.hdr?.mode = .sdr
+            try store.save(raw, state: PhotoEditState(settings: saved, filmID: ""))
+            let sdr = try preparer.prepare(item, ordinal: 2, format: .jpeg, longEdge: nil)
+            check(!sdr.settings.isHDREditing && sdr.settings.proRAWDecodeVersion == saved.proRAWDecodeVersion,
+                  "ProRAW preflight rejected or rewrote the dormant decoder version in SDR mode")
+            saved.hdr?.mode = .hdr
+            saved.proRAWDecodeVersion = nil
+            saved.masterRecipeID = "unavailable-dormant-recipe"
             try store.save(raw, state: PhotoEditState(settings: saved, filmID: ""))
             let beforeRaw = try store.versionedState(for: raw)
             let hdr = try preparer.prepare(item, ordinal: 2, format: .hdrJPEG, longEdge: nil)
+            try hdr.validate()
+            check(hdr.look == nil && hdr.settings.masterRecipeID == saved.masterRecipeID,
+                  "An inactive SDR recipe must not block an HDR target or be removed")
             check(hdr.settings.isHDREditing && hdr.settings.hdr?.exposure == 1 && hdr.settings.exposure == -2,
                   "saved ProRAW HDR batch target lost its mode or dormant SDR state")
             let afterRaw = try store.versionedState(for: raw)

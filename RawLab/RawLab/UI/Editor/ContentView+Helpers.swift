@@ -26,13 +26,15 @@ extension ContentView {
     func setHDREditing(_ enabled: Bool) {
         guard (viewModel.sourceIsHDR || viewModel.sourceSupportsCameraHDR),enabled != settings.isHDREditing,!editorBusy,!isEditorDraftActive,
               let source=viewModel.editorEditSource else { return }
-        guard viewModel.saveCurrentSettings(settings) else { return }
         do {
             var candidate=try settings.withHDRMode(enabled,sourceIsHDR:viewModel.sourceIsHDR,
                                                    hasLook:settings.hasLook,
                                                    cameraRAW:viewModel.sourceSupportsCameraHDR)
+            if enabled, viewModel.sourceProRAW != nil {
+                candidate.proRAWDecodeVersion = try ProRAWSource.validatedDecodeVersion(settings.proRAWDecodeVersion)
+            }
+            guard viewModel.saveCurrentSettings(settings) else { return }
             if enabled && viewModel.sourceSupportsCameraHDR {
-                candidate.proRAWDecodeVersion = viewModel.sourceProRAW.map { _ in ProRAWSource.decodeVersion }
                 let proposed = candidate
                 let sourceRevision = viewModel.sourceRevision
                 viewModel.preflightCameraHDR(settings: proposed) { result in

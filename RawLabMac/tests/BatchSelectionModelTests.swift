@@ -110,6 +110,29 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try check(model.adjustmentOutcomes.first { $0.targetID == second.path }?.status == .blocked,
             "write guard refuses a target replaced with the frozen source identity")
         try draftAndLookChecks(root: root, fixture: first)
+        if let fixture = ProcessInfo.processInfo.environment["RAWLAB_TEST_PRORAW"] {
+            try incompatibleProRAWModeSwitch(root: root, fixture: URL(fileURLWithPath: fixture))
+        }
+    }
+
+    static func incompatibleProRAWModeSwitch(root: URL, fixture: URL) throws {
+        let photo = root.appendingPathComponent("versioned-proraw.dng")
+        try FileManager.default.copyItem(at: fixture, to: photo)
+        let model = EditorModel(lookDirectory: root.appendingPathComponent("proraw-looks"),
+            editDirectory: root.appendingPathComponent("proraw-edits"), batchDirectory: root.appendingPathComponent("proraw-batch"),
+            presetDirectory: root.appendingPathComponent("proraw-presets"))
+        var settings = Adjustments()
+        var hdr = HDRSettings(); hdr.mode = .sdr; hdr.exposure = 0.75
+        settings.hdr = hdr
+        settings.proRAWDecodeVersion = ProRAWSource.decodeVersion + 1
+        try model.editStore!.save(photo, state: PhotoEditState(settings: settings, filmID: ""))
+        model.open(photo); try rendered(model)
+        try check(model.sourceSupportsCameraHDR && !model.settings.isHDREditing, "incompatible ProRAW record still opens in SDR")
+        let before = try model.editStore!.versionedState(for: photo)
+        model.setHDREditing(true)
+        try check(model.error == HDRSettings.ModeError.invalidSettings.localizedDescription && !model.settings.isHDREditing,
+                  "enabling HDR rejects the saved incompatible decoder")
+        try check(try model.editStore!.versionedState(for: photo) == before, "rejected HDR toggle leaves the edit record unchanged")
     }
 
     static func draftAndLookChecks(root: URL, fixture: URL) throws {

@@ -7,14 +7,14 @@ extension EditorModel {
     }
     func setHDREditing(_ enabled: Bool) {
         guard sourceIsHDR || sourceSupportsCameraHDR, enabled != settings.isHDREditing, canExport, let file else { return }
-        guard saveEdits() else { return }
         do {
             var candidate=try settings.withHDRMode(enabled,sourceIsHDR:sourceIsHDR,
                 hasLook:!selectedFilmID.isEmpty || settings.masterRecipeID != nil,
                 cameraRAW:sourceSupportsCameraHDR)
             if enabled, sourceSupportsCameraHDR, try HDRSourceInfo.probeRAW(file)?.proRAW != nil {
-                candidate.proRAWDecodeVersion = ProRAWSource.decodeVersion
+                candidate.proRAWDecodeVersion = try ProRAWSource.validatedDecodeVersion(settings.proRAWDecodeVersion)
             }
+            guard saveEdits() else { return }
             let snapshot=editState(settings:candidate)
             if enabled && sourceSupportsCameraHDR {
                 preflightCameraHDR(file, snapshot: snapshot)

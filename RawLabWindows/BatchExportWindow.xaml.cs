@@ -18,6 +18,7 @@ public partial class BatchExportWindow : Window
     private readonly AIDiagnosticStore aiDiagnostics;
     private readonly BatchJournal journal;
     private readonly Func<int,RenderEngine> createEngine;
+    private readonly BatchHDRPreparation? hdrPreparation;
     private readonly ObservableCollection<BatchRow> rows = [];
     private CancellationTokenSource cancellation = new();
     private bool ready, refreshingSize, editingCustomSize,preflighting,closed;
@@ -37,10 +38,12 @@ public partial class BatchExportWindow : Window
     public event Action<BatchJob, BatchJob, int>? RunCompleted;
 
     public BatchExportWindow(BatchJob job, BatchJournal journal) : this(job,journal,backend=>new RenderEngine(aiBackend:backend,aiDeviceID:job.AIDeviceID)) { }
-    internal BatchExportWindow(BatchJob job, BatchJournal journal, Func<int,RenderEngine> createEngine,AIDiagnosticStore? aiDiagnostics=null)
+    internal BatchExportWindow(BatchJob job, BatchJournal journal, Func<int,RenderEngine> createEngine,
+        AIDiagnosticStore? aiDiagnostics=null, BatchHDRPreparation? hdrPreparation=null)
     {
         this.job = job; this.journal = journal; this.createEngine=createEngine;
         this.aiDiagnostics=aiDiagnostics ?? AIDiagnosticStore.Default;
+        this.hdrPreparation=hdrPreparation;
         InitializeComponent(); Targets.ItemsSource = rows;
         Loc.Changed += RefreshLanguage;
         Closed += (_, _) => {closed=true;Loc.Changed -= RefreshLanguage;};
@@ -153,7 +156,7 @@ public partial class BatchExportWindow : Window
     {
         if(Frozen || Running || job.Started || preflighting || closed)return;
         CloseFailed=closeRequested=false;preflighting=true;BusyChanged?.Invoke(true);Refresh();var errors=new List<string>();
-        var settings=job.Settings.Copy();var look=job.Look;
+        var snapshot=job.Copy();
         try
         {
             var checkedItems=await Task.Run(()=>{
@@ -163,14 +166,16 @@ public partial class BatchExportWindow : Window
                     if(closeRequested)break;
                     try{
                         var item=BatchItem.Create(input);
-                        try{var effective=RenderEngine.PrepareBatchSettings(job.Source,input,settings.Restore());
-                            if (job.Format == ExportFormat.HdrJpeg && effective.HDR is not { Mode: HDRMode.Hdr })
+                        try{
+                            var prepared=BatchHDRPreparation.Required(snapshot) ? RequireHDRPreparation().Prepare(snapshot,item) : null;
+                            var effective=prepared?.Settings.Restore() ?? RenderEngine.PrepareBatchSettings(snapshot.Source,input,snapshot.Settings.Restore());
+                            if (prepared == null && snapshot.Format == ExportFormat.HdrJpeg && !effective.IsHDREditing)
                                 throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
                             if (effective.HDR is { Mode: HDRMode.Hdr } && effective.ProRAWDecodeVersion == HDRNative.ProRAWDecodeVersion &&
                                 !PhotoInput.SupportsProRAWHDR(input))
                                 throw new InvalidOperationException(Loc.Text("不支持此相机 RAW 的 HDR 显影。"));
-                            if(effective.AIDenoiseEnabled)RenderEngine.ValidateAIInput(input,job.AIDeviceID,effective.X3fMode);
-                            else validator.Render(input,effective,look,64,statistics:false,clipping:false,viewportPreview:true);
+                            if(!effective.IsHDREditing && effective.AIDenoiseEnabled)RenderEngine.ValidateAIInput(input,job.AIDeviceID,effective.X3fMode);
+                            else validator.Render(input,effective,prepared == null ? snapshot.Look : prepared.Look,64,statistics:false,clipping:false,viewportPreview:true);
                             item=item with{Selected=true};}
                         catch(Exception error){item=item with{ValidationError=error.Message,Selected=false};}
                         accepted.Add(item);
@@ -301,6 +306,7 @@ public partial class BatchExportWindow : Window
             Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
     }
     public void CancelExecution() { cancellation.Cancel(); Refresh(); }
+    private BatchHDRPreparation RequireHDRPreparation() => hdrPreparation ?? throw new InvalidOperationException(Loc.Text("无法读取调整记录"));
     private async void PrimaryClicked(object sender, RoutedEventArgs e)
     {
         if (Running) { CancelExecution(); return; }
@@ -319,6 +325,7 @@ public partial class BatchExportWindow : Window
         try
         {
             await Task.Run(() => {
+                if (BatchHDRPreparation.Required(work)) work=RequireHDRPreparation().Freeze(work,journal,cancellation.Token);
                 if (work.Format is not (ExportFormat.RenderedDng or ExportFormat.HdrJpeg)) ExportMetadata.VerifyAvailable();
                 using var engine = createEngine(work.AIBackend);engine.SetAIDevice(work.AIDeviceID);engine.SetCancellation(cancellation.Token);
                 BatchRunner.Run(work, journal, failuresOnly, cancellation.Token,
@@ -329,10 +336,10 @@ public partial class BatchExportWindow : Window
                                 runFailed.Add(item.Id);
                             previousStatuses[item.Id] = item.Status;
                         }
-                        Dispatcher.BeginInvoke(new Action(() => { job = updated; Refresh(); }));
+                        Dispatcher.BeginInvoke(new Action(() => SetRunJob(updated)));
                     },
                     (input, settings, look, destination, longEdge) => {
-                        if(settings.AIDenoiseEnabled) {
+                        if(!settings.IsHDREditing && settings.AIDenoiseEnabled) {
                             using var progress=new AIPreparation((phase,done,total)=>
                                 Dispatcher.BeginInvoke(new Action(()=>{aiProgress=new(AIDenoiseStatus.Running,phase,done,total);Refresh();})));
                             using var registration=cancellation.Token.Register(progress.Cancel);
@@ -345,6 +352,7 @@ public partial class BatchExportWindow : Window
                     });
             });
         }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { work.Cancelled=true; }
         catch (Exception error)
         {
             if(work.Settings.AIDenoiseEnabled || work.Items.Any(item=>item.Selected && item.Frozen?.Settings.AIDenoiseEnabled==true))
@@ -354,12 +362,20 @@ public partial class BatchExportWindow : Window
         }
         finally
         {
-            job = work;
+            Running = false; aiProgress=null;
+            SetRunJob(work);
             RunCompleted?.Invoke(before, job.Copy(), runFailed.Count);
-            Running = false; aiProgress=null; Refresh(); BusyChanged?.Invoke(false);
+            BusyChanged?.Invoke(false);
             if (closeRequested && IsLoaded) Close();
         }
         return true;
+    }
+
+    private void SetRunJob(BatchJob value)
+    {
+        var modeChanged = job.Mode != value.Mode;
+        job = value;
+        if (modeChanged) RefreshLanguage(); else Refresh();
     }
 
     private async void InspectClicked(object sender, RoutedEventArgs e)
@@ -373,16 +389,17 @@ public partial class BatchExportWindow : Window
         var snapshot = job.Copy();
         try
         {
-            var frame = await Task.Run(() => {
+            var (frame, lookName) = await Task.Run(() => {
                 if (!row.Item.Identity.SameFile(OriginalIdentity.Read(row.Input))) throw new InvalidOperationException(Loc.Text("原始文件已被替换，请重新选择照片。"));
-                var frozen=snapshot.SnapshotFor(row.Item);
-                if(snapshot.Mode==BatchJob.PerTargetFrozen)frozen.VerifyLook();
+                var prepareHDR=BatchHDRPreparation.Required(snapshot);
+                var frozen=prepareHDR ? RequireHDRPreparation().Prepare(snapshot,row.Item) : snapshot.SnapshotFor(row.Item);
+                if(snapshot.Mode==BatchJob.PerTargetFrozen || prepareHDR)frozen.VerifyLook();
                 else if (frozen.Look != null && !File.Exists(frozen.Look)) throw new InvalidOperationException(Loc.Text("任务使用的外观文件不可用，请重新创建任务。"));
                 using var engine = new RenderEngine(aiBackend:snapshot.AIBackend,aiDeviceID:snapshot.AIDeviceID,aiDiagnostics:aiDiagnostics);
                 var settings=frozen.Settings.Restore();
-                return engine.Render(row.Input, settings, frozen.Look, 1600, statistics: false, clipping: false);
+                return (engine.Render(row.Input, settings, frozen.Look, 1600, statistics: false, clipping: false),frozen.LookName);
             });
-            if (preview.IsVisible) { image.Source = frame?.Image; title.Text = Loc.Format("{0} · 本次导出效果", snapshot.SnapshotFor(row.Item).LookName); }
+            if (preview.IsVisible) { image.Source = frame?.Image; title.Text = Loc.Format("{0} · 本次导出效果", lookName); }
         }
         catch (Exception error) { if (preview.IsVisible) title.Text = error.Message; }
     }

@@ -446,7 +446,8 @@ final class BatchExportModel: ObservableObject {
             }
             let processor = Sony2FujiProcessor()
             if targetSettings.isHDREditing,let hdr=targetSettings.hdr {
-                let pair=try processor.processHDR(url:target.sourceURL,settings:hdr,previewLongEdge:1280)
+                let pair=try processor.processHDR(url:target.sourceURL,settings:hdr,previewLongEdge:1280,
+                    proRAWDecodeVersion:targetSettings.proRAWDecodeVersion)
                 let presentation=try HDRPresentation(pair)
                 return Preview(image:UIImage(cgImage:presentation.sdrImage),hdr:presentation)
             }

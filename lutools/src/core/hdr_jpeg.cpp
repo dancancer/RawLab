@@ -12,6 +12,7 @@
 #include <csetjmp>
 #include <cstdlib>
 #include <jpeglib.h>
+#include <jerror.h>
 #include <ultrahdr/jpegr.h>
 #include <ultrahdr/jpegdecoderhelper.h>
 #include <ultrahdr/icc.h>
@@ -346,17 +347,53 @@ std::vector<uint8_t> encodeSDRJPEG(const ImageData& image,uint32_t quality) {
 std::vector<uint8_t> encodeSDRJPEGRows(uint32_t width, uint32_t height, uint32_t quality, const JPEGRowReader& read) {
     if (!width || !height || width>65500 || height>65500 || quality<1 || quality>100 || !read)
         throw std::invalid_argument("Invalid SDR JPEG dimensions or quality");
+    // Keep the current buffer owned by C++ even if encoding exits before jpeg_finish_compress.
+    struct Destination : jpeg_destination_mgr {
+        std::vector<uint8_t> bytes = std::vector<uint8_t>(4096);
+
+        static void init(j_compress_ptr codec) {
+            auto& dest = *static_cast<Destination*>(codec->dest);
+            dest.next_output_byte = dest.bytes.data();
+            dest.free_in_buffer = dest.bytes.size();
+        }
+
+        static boolean grow(j_compress_ptr codec) {
+            auto& dest = *static_cast<Destination*>(codec->dest);
+            const auto size = dest.bytes.size();
+            bool grown = false;
+            if (size <= dest.bytes.max_size() / 2) {
+                try {
+                    dest.bytes.resize(size * 2);
+                    grown = true;
+                } catch (const std::bad_alloc&) {}
+            }
+            // Use libjpeg's error handler after leaving the C++ catch block.
+            if (!grown) ERREXIT1(codec, JERR_OUT_OF_MEMORY, 10);
+            dest.next_output_byte = dest.bytes.data() + size;
+            dest.free_in_buffer = size;
+            return TRUE;
+        }
+
+        static void finish(j_compress_ptr codec) {
+            auto& dest = *static_cast<Destination*>(codec->dest);
+            dest.bytes.resize(dest.bytes.size() - dest.free_in_buffer);
+        }
+    };
     struct State {
         jpeg_compress_struct codec{}; JPEGError error;
-        unsigned char* bytes=nullptr; unsigned long size=0;
+        Destination destination{};
         std::vector<uint8_t> row;
-        ~State() { jpeg_destroy_compress(&codec); std::free(bytes); }
+        ~State() { jpeg_destroy_compress(&codec); }
     };
     auto state=std::make_unique<State>(); state->row.resize(size_t(width)*3);
     state->codec.err=jpeg_std_error(&state->error.manager);
     state->error.manager.error_exit=[](j_common_ptr codec) { std::longjmp(reinterpret_cast<JPEGError*>(codec->err)->jump,1); };
     if (setjmp(state->error.jump)) throw std::runtime_error("SDR JPEG encoding failed");
-    jpeg_create_compress(&state->codec); jpeg_mem_dest(&state->codec,&state->bytes,&state->size);
+    jpeg_create_compress(&state->codec);
+    state->destination.init_destination = Destination::init;
+    state->destination.empty_output_buffer = Destination::grow;
+    state->destination.term_destination = Destination::finish;
+    state->codec.dest = &state->destination;
     state->codec.image_width=width; state->codec.image_height=height;
     state->codec.input_components=3; state->codec.in_color_space=JCS_RGB;
     jpeg_set_defaults(&state->codec); jpeg_set_quality(&state->codec,int(quality),TRUE);
@@ -372,7 +409,7 @@ std::vector<uint8_t> encodeSDRJPEGRows(uint32_t width, uint32_t height, uint32_t
         JSAMPROW row=state->row.data(); jpeg_write_scanlines(&state->codec,&row,1);
     }
     jpeg_finish_compress(&state->codec); checkProcessingCancellation();
-    return {state->bytes,state->bytes+state->size};
+    return std::move(state->destination.bytes);
 }
 
 std::vector<uint8_t> jpegBase(const void* data,size_t size) {

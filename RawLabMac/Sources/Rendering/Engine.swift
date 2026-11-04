@@ -610,9 +610,7 @@ final class RenderEngine {
               let info=try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url) else {
             throw RenderError.failed(L10n.text("此照片没有可编辑的 HDR 增益图。"))
         }
-        if info.proRAW != nil, let version = settings.proRAWDecodeVersion, version != ProRAWSource.decodeVersion {
-            throw HDRSettings.ModeError.invalidSettings
-        }
+        if info.proRAW != nil { try ProRAWSource.validatedDecodeVersion(settings.proRAWDecodeVersion) }
         displayCache=nil
         let previewEdge = edge ?? (info.isDevelopedRAW && output == nil ? 2000 : nil)
         let final = previewEdge == nil

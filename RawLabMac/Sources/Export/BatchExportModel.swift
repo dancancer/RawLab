@@ -30,6 +30,9 @@ final class MacHDRBatchPreparation {
         var defaults=Adjustments(); defaults.exposureMode=raster ? .sensor : .preview
         if info != nil { defaults.hdr=HDRSettings() }
         let target=record.state ?? PhotoEditState(settings:defaults,filmID:"")
+        if supportsProRAWHDR, target.settings.isHDREditing {
+            try ProRAWSource.validatedDecodeVersion(target.settings.proRAWDecodeVersion)
+        }
         let payload=try HDRAdjustmentTransfer.batchPayload(settings:settings.hdr!,identifier:source.path,
             processingVersion:settings.processing.version,targetIsHDR:target.settings.isHDREditing)
         let context=MacAdjustmentTransferContext(identifier:item.identity.path,isRaw:!raster,
@@ -44,7 +47,9 @@ final class MacHDRBatchPreparation {
             }
             look=film.url; name=film.name
         } else { look=nil; name="neutral" }
-        if prepared.settings.masterRecipeID != nil && look==nil { throw BatchExportFailure.missingLook }
+        if !prepared.settings.isHDREditing && prepared.settings.masterRecipeID != nil && look==nil {
+            throw BatchExportFailure.missingLook
+        }
         return BatchFrozenSettings(ordinal:ordinal,settings:prepared.settings,look:look,
             lookSHA256:try look.map(BatchFrozenSettings.checksum),lookName:name,outputFormat:format,longEdge:longEdge)
     }

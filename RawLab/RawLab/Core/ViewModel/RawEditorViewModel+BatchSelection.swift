@@ -58,6 +58,10 @@ extension RawEditorViewModel {
                         return (recipe?.lutURL(), recipe?.name)
                     }
                     return (looks[id]?.sourceURL, looks[id]?.name)
+                }, validateHDRVersion: { url, version in
+                    if version != ProRAWSource.decodeVersion, try HDRSourceInfo.probeRAW(url)?.proRAW != nil {
+                        try ProRAWSource.validatedDecodeVersion(version)
+                    }
                 })
             self.resultDelivery { completion(.success(review)) }
         }

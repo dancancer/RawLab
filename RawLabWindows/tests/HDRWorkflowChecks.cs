@@ -15,6 +15,76 @@ internal static class HDRWorkflowChecks
     private static void Invoke(object owner,string method)=>owner.GetType().GetMethod(method,Private)!.Invoke(owner,null);
     private static void Ready(MainWindow window)=>InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
 
+    internal static void RunProRAWBatch(string repo, string fixture, Action<bool,string> check)
+    {
+        var root=Path.Combine(Path.GetFullPath(repo),"build","proraw-batch-workflow",Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        string Copy(string name) { var path=Path.Combine(root,name+".dng"); File.Copy(fixture,path); return path; }
+        var source=Copy("source"); var low=Copy("sdr-target"); var high=Copy("hdr-target");
+        var store=new EditStore(Path.Combine(root,"edits"));
+        var hdr=new Adjustments(); hdr.SetHDRMode(true,true,cameraRaw:true,proRAW:true); hdr.Set(Parameter.Exposure,.75);
+        var sdr=hdr.Clone(); sdr.SetHDRMode(false,true,cameraRaw:true,proRAW:true);
+        sdr.Set(Parameter.Temperature,5200); sdr.Set(Parameter.Tint,9);
+        var savedHDR=hdr.Clone(); savedHDR.Set(Parameter.Exposure,-.5);
+        store.Save(low,sdr.Capture(),null); store.Save(high,savedHDR.Capture(),"builtin:missing-dormant-look.cube");
+        var sdrRecord=store.VersionedState(low); var hdrRecord=store.VersionedState(high);
+
+        var selection=new BatchSelectionSession(); selection.Add([high,low]);
+        var collectionJournal=new BatchJournal(Path.Combine(root,"collection-journal"));
+        var exporter=new BatchSelectionExport(store,collectionJournal,_=>null);
+        var review=exporter.Prepare(selection,[],ExportFormat.HdrJpeg,512,root,_=>null);
+        check(review.Rows[0].Error==null && review.Rows[1].Error!=null,"Collection admits HDR ProRAW and rejects the SDR target for HDR JPEG");
+        selection.Select(selection.Photos[1].ID,false);
+        review=exporter.Prepare(selection,[],ExportFormat.HdrJpeg,512,root,_=>null);
+        var collection=exporter.Freeze(selection,review,_=>null);
+        check(collection.Items.Single().Frozen?.Settings.ProRAWDecodeVersion==HDRNative.ProRAWDecodeVersion,
+            "Collection freeze retains the saved ProRAW HDR settings");
+
+        var journal=new BatchJournal(Path.Combine(root,"uniform-journal"));
+        var preparation=new BatchHDRPreparation(store,_=>null);
+        BatchJob Job(Adjustments settings) {
+            var job=BatchJob.Create(source,settings.Capture(),null,"HDR");
+            job.SourceIsProRAW=true; job.OutputDirectory=root; job.Format=ExportFormat.SdrJpeg; job.LongEdge=512;
+            return job;
+        }
+        var tinted=hdr.Clone(); tinted.Set(Parameter.Tint,10);
+        var rejected=Job(tinted); rejected.Items=[BatchItem.Create(low) with {Selected=true}];
+        try { preparation.Freeze(rejected,journal,CancellationToken.None); check(false,"Non-neutral HDR WB reached an SDR target"); }
+        catch(AdjustmentTransferException error) { check(error.Detail=="hdr.relative_white_balance" && journal.Load()==null,
+            "Non-neutral HDR WB rejects the SDR target before creating a frozen job"); }
+
+        var app=TestWindowState.CreateApplication();
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
+        var window=new BatchExportWindow(Job(hdr),journal,_=>new RenderEngine(0),hdrPreparation:preparation);
+        try {
+            window.Show();
+            var adding=window.AddInputs([low,high]); InteractionChecks.PumpUntil(()=>adding.IsCompleted); adding.GetAwaiter().GetResult();
+            check(window.Job.SelectedCount==2,"Unified ProRAW preflight accepts both saved target modes");
+            var run=window.StartExecution(); InteractionChecks.PumpUntil(()=>run.IsCompleted); run.GetAwaiter().GetResult();
+            var saved=journal.Load()!;
+            check(saved.Mode==BatchJob.PerTargetFrozen && saved.SucceededCount==2,"Unified ProRAW exports both frozen targets: "+saved.Error);
+            var lowSettings=saved.SnapshotFor(saved.Items.Single(item=>item.Input==low)).Settings.Restore();
+            var highSettings=saved.SnapshotFor(saved.Items.Single(item=>item.Input==high)).Settings.Restore();
+            check(!lowSettings.IsHDREditing && lowSettings[Parameter.Exposure]==.75 && lowSettings[Parameter.Temperature]==5200 &&
+                lowSettings[Parameter.Tint]==9 && lowSettings.HDR==sdr.HDR,"Frozen SDR preserves mode, camera WB and dormant HDR settings");
+            check(highSettings.IsHDREditing && highSettings[Parameter.Exposure]==.75,"Frozen HDR target keeps HDR mode");
+            check(store.VersionedState(low).SameAs(sdrRecord) && store.VersionedState(high).SameAs(hdrRecord),"Batch leaves both edit records unchanged");
+            store.Save(low,new Adjustments().Capture(),null);
+            var resumed=journal.Load()!;
+            check(resumed.SnapshotFor(resumed.Items.Single(item=>item.Input==low)).Settings.SameAs(lowSettings.Capture()),
+                "Reloading the batch does not read later target edits");
+            var collectionWindow=new BatchExportWindow(collection,collectionJournal,_=>new RenderEngine(0));
+            try {
+                collectionWindow.Show();
+                var export=collectionWindow.StartExecution(); InteractionChecks.PumpUntil(()=>export.IsCompleted); export.GetAwaiter().GetResult();
+                var published=collectionJournal.Load()!.Items.Single();
+                check(published.Status==BatchStatus.Succeeded && published.Output!=null &&
+                    PhotoInput.ProbeHDR(published.Output,out _)==HDRProbeState.Supported,
+                    "Per-photo ProRAW collection publishes the HDR gain-map JPEG");
+            } finally {collectionWindow.Close();}
+        } finally {window.Close(); app.Shutdown();}
+    }
+
     internal static void RunCameraRaw(string repo, string fixture, Action<bool, string> check)
     {
         var root = Path.Combine(Path.GetFullPath(repo), "build", "camera-raw-hdr-workflow", Guid.NewGuid().ToString("N"));

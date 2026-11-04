@@ -19,13 +19,14 @@ struct Sony2FujiProcessor {
     private let hdrSources=HDRSourceCache.shared
 
     func exportHDR(url: URL, settings: HDRSettings, output: URL, longEdge: Int? = nil,
-                   keepHDR: Bool, cancelled: () -> Bool = { false }) throws {
+                   proRAWDecodeVersion: Int? = nil, keepHDR: Bool, cancelled: () -> Bool = { false }) throws {
         guard settings.mode == .hdr, settings.isValid else { throw HDRRequestError.invalidSettings }
         guard gpuMode != SONY2FUJI_GPU_FORCE else {
             throw HDRNativeError(status: SONY2FUJI_STATUS_UNSUPPORTED,
                 reason: UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU), field: UInt32(SONY2FUJI_HDR_FIELD_SESSION))
         }
         if let info = try HDRSourceInfo.probeRAW(url), let source = info.proRAW {
+            try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion)
             guard source.permitsStreamedJPEGExport else { throw ProcessorError.proRAWExportUnavailable }
             hdrSources.clear()
             try withRawSession(reuse: false, inputType: SONY2FUJI_INPUT_DISPLAY_BUFFER) { session in
@@ -42,7 +43,7 @@ struct Sony2FujiProcessor {
     }
 
     func processHDR(url: URL,settings: HDRSettings,previewLongEdge: Int?, exportLongEdge: Int? = nil,
-                    cancelled: () -> Bool = { false }) throws -> HDRImage {
+                    proRAWDecodeVersion: Int? = nil, cancelled: () -> Bool = { false }) throws -> HDRImage {
         guard settings.mode == .hdr,settings.isValid else { throw HDRRequestError.invalidSettings }
         guard gpuMode != SONY2FUJI_GPU_FORCE else {
             throw HDRNativeError(status:SONY2FUJI_STATUS_UNSUPPORTED,reason:UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU),field:UInt32(SONY2FUJI_HDR_FIELD_SESSION))
@@ -50,6 +51,7 @@ struct Sony2FujiProcessor {
         guard let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url) else {
             throw HDRSettings.ModeError.unsupportedSource
         }
+        if info.proRAW != nil { try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion) }
         if previewLongEdge == nil, let proRAW = info.proRAW, !proRAW.permitsFullSizeExport {
             throw ProcessorError.proRAWExportUnavailable
         }

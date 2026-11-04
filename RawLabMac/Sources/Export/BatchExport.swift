@@ -23,7 +23,7 @@ struct BatchFrozenSettings: Codable {
     func validate() throws {
         guard version == 1, settingsVersion == 1, ordinal >= 0,
               longEdge == nil || (1...65535).contains(longEdge!),
-              settings.masterRecipeID == nil || look != nil,
+              settings.isHDREditing || settings.masterRecipeID == nil || look != nil,
               (look == nil && lookSHA256 == nil) || (look != nil && lookSHA256?.count == 64 &&
                 lookSHA256!.allSatisfy { "0123456789abcdef".contains($0) }) else {
             throw CocoaError(.fileReadCorruptFile)

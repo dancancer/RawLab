@@ -33,11 +33,48 @@ HDRImagePair fixture() {
     }
     return pair;
 }
+
+void interruptSDRJPEGAfterGrowth() {
+    constexpr uint32_t width = 1024, height = 256, interruptRow = 128;
+    std::vector<RGB> pixels(size_t(width) * height);
+    uint32_t seed = 1;
+    auto sample = [&] {
+        seed = seed * 1664525u + 1013904223u;
+        return float(seed >> 24) / 255;
+    };
+    for (auto& pixel : pixels) pixel = {sample(), sample(), sample()};
+    auto row = [&](uint32_t y) { return pixels.data() + size_t(y) * width; };
+    // Even the prefix exceeds jpeg_mem_dest's initial 4096-byte buffer.
+    check(hdr::encodeSDRJPEGRows(width, interruptRow - 16, 100, row).size() > 4096,
+        "SDR cancellation fixture must grow the encoder buffer before interruption");
+
+    bool cancel = false, cancelled = false;
+    uint32_t rowsRead = 0;
+    ProcessingCancellationScope cancellation({[](void* context) { return *static_cast<bool*>(context) ? 1 : 0; }, &cancel});
+    try {
+        (void)hdr::encodeSDRJPEGRows(width, height, 100, [&](uint32_t y) {
+            cancel = ++rowsRead == interruptRow;
+            return row(y);
+        });
+    } catch (const ProcessingCancelled&) { cancelled = true; }
+    check(cancelled && rowsRead == interruptRow, "SDR encode did not cancel after buffer growth");
+
+    cancel = false;
+    bool rejected = false;
+    try {
+        (void)hdr::encodeSDRJPEGRows(width, height, 100, [&](uint32_t y) {
+            return y == interruptRow ? nullptr : row(y);
+        });
+    } catch (const std::invalid_argument&) { rejected = true; }
+    check(rejected, "SDR encode did not reject a missing row after buffer growth");
+    check(!hdr::encodeSDRJPEGRows(width, height, 100, row).empty(), "SDR encode did not recover");
+}
 }
 
 int main() {
     auto root = fs::temp_directory_path() / ("rawlab-stream-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     try {
+        interruptSDRJPEGAfterGrowth();
         fs::create_directory(root);
         auto pair = fixture();
         int reads = 0, finishes = 0, failAfter = -1;

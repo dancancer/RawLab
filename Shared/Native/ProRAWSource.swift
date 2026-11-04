@@ -11,6 +11,13 @@ struct ProRAWSource: Hashable {
     let width: Int
     let height: Int
 
+    @discardableResult
+    static func validatedDecodeVersion(_ saved: Int?) throws -> Int {
+        let version = saved ?? decodeVersion
+        guard version == decodeVersion else { throw HDRSettings.ModeError.invalidSettings }
+        return version
+    }
+
     static func probe(_ url: URL) throws -> Self? {
         // 探测返回纯值，及时释放系统解码器的临时对象，避免与全尺寸编码同时驻留。
         try autoreleasepool {

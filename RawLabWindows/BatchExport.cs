@@ -121,7 +121,8 @@ public sealed class BatchJob
             throw new InvalidDataException(Loc.Text("相机 RAW HDR 暂不支持批量导出。"));
         if (Settings.HDR is { Mode: HDRMode.Hdr } && SourceIsProRAW && Settings.ProRAWDecodeVersion != HDRNative.ProRAWDecodeVersion)
             throw new InvalidDataException(Loc.Text("不支持此处理版本，原有记录未被覆盖。"));
-        if (AIBackend == 0 && (Settings.AIDenoiseEnabled || Items.Any(item => item.Frozen?.Settings.AIDenoiseEnabled == true)))
+        static bool ActiveAI(AdjustmentSnapshot settings) => settings.HDR is not { Mode: HDRMode.Hdr } && settings.AIDenoiseEnabled;
+        if (AIBackend == 0 && (ActiveAI(Settings) || Items.Any(item => item.Frozen is {} frozen && ActiveAI(frozen.Settings))))
             throw new InvalidDataException(Loc.Text("AI 降噪不支持 CPU，请重新创建使用 GPU 的批量任务。"));
         if (Mode != PerTargetFrozen)
         {
