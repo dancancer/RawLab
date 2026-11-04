@@ -208,10 +208,15 @@ internal sealed class BatchHDRPreparation(EditStore store, Func<SavedEdit,string
     {
         var work = job.Copy();
         var items = work.Items.Where(item => item.Selected && item.CanSelect).ToArray();
-        var candidates = items.Select((item,index) => {
+        var candidates = new (VersionedPhotoEdit? Record, BatchFrozenSettings Frozen)[items.Length];
+        for (var index=0; index<items.Length; index++) {
             cancellation.ThrowIfCancellationRequested();
-            return Candidate(work,item,index,true);
-        }).ToArray();
+            var item = items[index];
+            // 旧任务的成功项不再参与导出，即使原片或外观已经不可用也保留其完成记录。
+            candidates[index] = item.Status == BatchStatus.Succeeded
+                ? (null, work.SnapshotFor(item) with { Ordinal=index,Look=null })
+                : Candidate(work,item,index,true);
+        }
         var owned = new List<string>();
         try {
             Directory.CreateDirectory(journal.DirectoryPath);
@@ -219,6 +224,8 @@ internal sealed class BatchHDRPreparation(EditStore store, Func<SavedEdit,string
                 cancellation.ThrowIfCancellationRequested();
                 var frozen = candidates[index].Frozen;
                 if (frozen.Look is {} look) {
+                    // 每次冻结使用新的资源名，避免异常退出留下的副本阻断重试。
+                    item = item with { Id=Guid.NewGuid() };
                     var copy = Path.Combine(journal.DirectoryPath,item.Id+Path.GetExtension(look));
                     using (var output = new FileStream(copy,FileMode.CreateNew)) {
                         owned.Add(copy);
@@ -232,7 +239,7 @@ internal sealed class BatchHDRPreparation(EditStore store, Func<SavedEdit,string
             }).ToList();
             for (var index=0; index<items.Length; index++) {
                 cancellation.ThrowIfCancellationRequested();
-                if (!store.VersionedState(items[index].Input).SameAs(candidates[index].Record))
+                if (candidates[index].Record is {} record && !store.VersionedState(items[index].Input).SameAs(record))
                     throw new EditPersistenceConflict();
             }
             work.Version=3; work.SettingsMode=BatchJob.PerTargetFrozen;

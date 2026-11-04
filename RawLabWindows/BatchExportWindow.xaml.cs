@@ -169,7 +169,7 @@ public partial class BatchExportWindow : Window
                         try{
                             var prepared=BatchHDRPreparation.Required(snapshot) ? RequireHDRPreparation().Prepare(snapshot,item) : null;
                             var effective=prepared?.Settings.Restore() ?? RenderEngine.PrepareBatchSettings(snapshot.Source,input,snapshot.Settings.Restore());
-                            if (prepared == null && snapshot.Format == ExportFormat.HdrJpeg && !effective.IsHDREditing)
+                            if (snapshot.Format == ExportFormat.HdrJpeg && !effective.IsHDREditing)
                                 throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
                             if (effective.HDR is { Mode: HDRMode.Hdr } && effective.ProRAWDecodeVersion == HDRNative.ProRAWDecodeVersion &&
                                 !PhotoInput.SupportsProRAWHDR(input))
@@ -321,11 +321,11 @@ public partial class BatchExportWindow : Window
         var before = job.Copy();
         var work = job.Copy(); var failuresOnly = job.Started && job.RemainingCount == 0;
         var runFailed = new HashSet<Guid>();
-        var previousStatuses = work.Items.ToDictionary(item => item.Id, item => item.Status);
         try
         {
             await Task.Run(() => {
                 if (BatchHDRPreparation.Required(work)) work=RequireHDRPreparation().Freeze(work,journal,cancellation.Token);
+                var previousStatuses = work.Items.ToDictionary(item => item.Id, item => item.Status);
                 if (work.Format is not (ExportFormat.RenderedDng or ExportFormat.HdrJpeg)) ExportMetadata.VerifyAvailable();
                 using var engine = createEngine(work.AIBackend);engine.SetAIDevice(work.AIDeviceID);engine.SetCancellation(cancellation.Token);
                 BatchRunner.Run(work, journal, failuresOnly, cancellation.Token,

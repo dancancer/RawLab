@@ -53,6 +53,18 @@ internal static class HDRWorkflowChecks
         catch(AdjustmentTransferException error) { check(error.Detail=="hdr.relative_white_balance" && journal.Load()==null,
             "Non-neutral HDR WB rejects the SDR target before creating a frozen job"); }
 
+        var legacy=Job(hdr); legacy.Started=true;
+        var removed=Copy("already-exported");
+        var completed=BatchItem.Create(removed) with { Selected=true,Status=BatchStatus.Succeeded,Output=Path.Combine(root,"previous.jpg") };
+        legacy.Items=[completed,BatchItem.Create(low) with {Selected=true}];
+        var legacyJournal=new BatchJournal(Path.Combine(root,"legacy-journal"));
+        legacyJournal.Save(legacy);
+        File.Delete(removed);
+        var migrated=preparation.Freeze(legacyJournal.Load()!,legacyJournal,CancellationToken.None);
+        check(migrated.Items[0].Id==completed.Id && migrated.Items[0].Status==BatchStatus.Succeeded &&
+            migrated.Items[0].Output==completed.Output && migrated.Items[1].Frozen?.Settings.HDR?.Mode==HDRMode.Sdr,
+            "Recovering a legacy job does not reopen successful inputs and freezes the remaining SDR target");
+
         var app=TestWindowState.CreateApplication();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         var window=new BatchExportWindow(Job(hdr),journal,_=>new RenderEngine(0),hdrPreparation:preparation);
