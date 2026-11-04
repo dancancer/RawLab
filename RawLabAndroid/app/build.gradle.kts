@@ -62,6 +62,7 @@ val testRaster = providers.gradleProperty("rawlabTestRaster").orElse(providers.e
 val testSonyArw6 = providers.gradleProperty("rawlabTestSonyArw6").orElse(providers.environmentVariable("RAWLAB_TEST_SONY_ARW6"))
 val testHDRJPEG = providers.gradleProperty("rawlabTestHDRJPEG").orElse(providers.environmentVariable("RAWLAB_TEST_HDR_JPEG"))
 val testHDRHEIC = providers.gradleProperty("rawlabTestHDRHEIC").orElse(providers.environmentVariable("RAWLAB_TEST_HDR_HEIC"))
+val testProRAW = providers.gradleProperty("rawlabTestProRAW").orElse(providers.environmentVariable("RAWLAB_TEST_PRORAW"))
 val testAssets = layout.buildDirectory.dir("generated/rawlabTestAssets")
 val prepareTestAssets by tasks.registering(Sync::class) {
     into(testAssets)
@@ -76,6 +77,7 @@ val prepareTestAssets by tasks.registering(Sync::class) {
     if (testSonyArw6.isPresent) from(testSonyArw6.get()) { rename { "sony-arw6.ARW" } }
     if (testHDRJPEG.isPresent) from(testHDRJPEG.get()) { rename { "hdr-sample.jpg" } }
     if (testHDRHEIC.isPresent) from(testHDRHEIC.get()) { rename { "hdr-sample.heic" } }
+    if (testProRAW.isPresent) from(testProRAW.get()) { rename { "proraw-sample.dng" } }
 }
 val generatedAssets = layout.buildDirectory.dir("generated/rawlabAssets")
 val hdrCodecSources = providers.exec {

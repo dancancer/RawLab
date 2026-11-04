@@ -30,10 +30,11 @@ public sealed record HDRSourceInfo(
     byte[] SourceSha256)
 {
     public bool IsHDR => State == HDRProbeState.Supported;
-    public bool IsCameraRaw => Container == HDRNative.ContainerCameraRaw;
+    public bool IsProRAW => Container == HDRNative.ContainerProRAW;
+    public bool IsCameraRaw => Container is HDRNative.ContainerCameraRaw or HDRNative.ContainerProRAW;
 
-    // Probe returns an empty digest for camera RAW because hashing belongs to
-    // the decode transaction. Keep the file stamp in the preview cache key.
+    // Camera RAW and ProRAW probes do not hash or unpack the source. Keep the
+    // file stamp in the preview cache key until decode returns the SHA-256.
     internal HDRFileStamp? CameraStamp { get; init; }
     internal string CacheIdentity => IsCameraRaw
         ? $"camera:{CameraStamp?.Length}:{CameraStamp?.Modified}:{CameraStamp?.Created}"

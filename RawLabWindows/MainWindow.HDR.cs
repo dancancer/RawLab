@@ -110,7 +110,7 @@ public partial class MainWindow
         {
             if (enabled && !cameraRaw && lut != null && candidate.HDR == null)
                 throw new HDRModeException(HDRModeFailure.Conflicts, ["look"]);
-            candidate.SetHDRMode(enabled, hdrSource.IsHDR, cameraRaw: cameraRaw);
+            candidate.SetHDRMode(enabled, hdrSource.IsHDR, cameraRaw: cameraRaw, proRAW: hdrSource.IsProRAW);
         }
         catch (Exception error) { RefreshControls(); Report(error); return; }
 

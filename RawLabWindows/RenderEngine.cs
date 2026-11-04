@@ -1,6 +1,7 @@
 using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
@@ -13,6 +14,8 @@ internal sealed partial class RenderEngine : IDisposable
     internal delegate int StatisticsAnalyzer(ref Native.Buffer buffer,bool clipping,uint[] bins,out uint shadows,out uint highlights,out Native.Buffer mask);
     private Native.Session session = new();
     private int gpuMode;
+    private GCHandle cancellationHandle;
+    private Native.CancellationCallback? cancellationCallback;
     private readonly StatisticsAnalyzer statisticsAnalyzer;
     private sealed record Stamp(string Path,long Length,long Time,long Created=0);
     private sealed record PreviewKey(Native.Request Request,DenoiseSettings Denoise,PhotoEffectsSettings Effects,ToneControlsSettings ToneControls,AtmosphereSettings Atmosphere,ColorGradingSettings ColorGrading,ToneCurveSettings Curve,int DisplayChromaDenoise,
@@ -45,7 +48,43 @@ internal sealed partial class RenderEngine : IDisposable
     }
     private void InitializeSession() => Native.Check(Native.sony2fuji_session_set_lens_database(session,lensDatabase));
     public void SetGpuMode(int mode) { var config=new Native.GpuConfig{Version=1,StructSize=12,Mode=mode};Native.Check(Native.sony2fuji_session_set_gpu_config(session,ref config));gpuMode=mode; }
-    public void Dispose() {previews.Clear();original=null;Native.sony2fuji_release_buffer(ref displayInput);inputStamp=null;session.Dispose();}
+    private void RecreateSession()
+    {
+        session.Dispose();
+        session = new();
+        try
+        {
+            InitializeSession();
+            SetGpuMode(gpuMode);
+            if (cancellationCallback != null && cancellationHandle.IsAllocated)
+                Native.Check(Native.sony2fuji_session_set_cancellation_callback(session, cancellationCallback,
+                    GCHandle.ToIntPtr(cancellationHandle)));
+        }
+        catch
+        {
+            session.Dispose();
+            throw;
+        }
+    }
+    internal void SetCancellation(CancellationToken token)
+    {
+        ClearCancellation();
+        if (!token.CanBeCanceled) return;
+        var state = new CancellationState(token);
+        cancellationHandle = GCHandle.Alloc(state);
+        cancellationCallback = static context => ((CancellationState)GCHandle.FromIntPtr(context).Target!).Token.IsCancellationRequested ? 1 : 0;
+        Native.Check(Native.sony2fuji_session_set_cancellation_callback(session, cancellationCallback,
+            GCHandle.ToIntPtr(cancellationHandle)));
+    }
+    private void ClearCancellation()
+    {
+        if (!session.IsInvalid && !session.IsClosed)
+            Native.Check(Native.sony2fuji_session_set_cancellation_callback(session, null, IntPtr.Zero));
+        cancellationCallback = null;
+        if (cancellationHandle.IsAllocated) cancellationHandle.Free();
+    }
+    private sealed record CancellationState(CancellationToken Token);
+    public void Dispose() { ClearCancellation(); previews.Clear();original=null;Native.sony2fuji_release_buffer(ref displayInput);inputStamp=null;session.Dispose();}
     public double AutoExposure(string path, Adjustments settings)
     {
         BeginAIOperation("auto_exposure",path);
@@ -94,7 +133,7 @@ internal sealed partial class RenderEngine : IDisposable
              (previous.Lut?.Path==lutStamp?.Path && previous.Lut!=lutStamp)))
         {
             if(previous.Raw!=rawStamp){Native.sony2fuji_release_buffer(ref displayInput);inputStamp=null;}
-            session.Dispose();session=new();InitializeSession();SetGpuMode(gpuMode);lensStamp=null;
+            RecreateSession();lensStamp=null;
         }
         sourceStamp=(rawStamp,lutStamp);
         string? sourceFingerprint = null;
@@ -146,6 +185,13 @@ internal sealed partial class RenderEngine : IDisposable
             (settings.HDR is not { Mode: HDRMode.Hdr } ||
              !(PhotoInput.IsHDRContainer(path) || PhotoInput.IsCameraRaw(path))))
             throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
+        if (settings.IsHDREditing && settings.ProRAWDecodeVersion == HDRNative.ProRAWDecodeVersion)
+        {
+            var proRAW = false;
+            if (PhotoInput.IsCameraRaw(path) && PhotoInput.ProbeCameraRaw(path, out var proRAWInfo) == HDRProbeState.Supported)
+                proRAW = proRAWInfo?.IsProRAW == true;
+            if (!proRAW) throw new HDRModeException(HDRModeFailure.UnsupportedSource);
+        }
         if (PhotoInput.IsHDRContainer(path))
         {
             var probe = PhotoInput.ProbeHDR(path, out var info);
@@ -204,6 +250,16 @@ internal sealed partial class RenderEngine : IDisposable
         int? longEdge, ExportFormat? formatOverride,HDRSourceInfo info,bool statistics,bool clipping)
     {
         var final = output != null;
+        var format = output == null ? (ExportFormat?)null : formatOverride ?? (Path.GetExtension(output).Equals(".dng", StringComparison.OrdinalIgnoreCase)
+            ? ExportFormat.RenderedDng : ExportFormat.HdrJpeg);
+        if (final && info.IsProRAW && format is (ExportFormat.Jpeg or ExportFormat.HdrJpeg or ExportFormat.SdrJpeg))
+        {
+            using var stream = File.OpenRead(path);
+            var digest = SHA256.HashData(stream);
+            HDRNative.ExportProRAW(session, path, settings.HDR!, output!, digest, format!.Value == ExportFormat.HdrJpeg,
+                checked((uint)Math.Clamp(longEdge ?? 0, 0, 65535)));
+            return null;
+        }
         var edgeValue = checked((uint)Math.Clamp(edge <= 0 ? 2000 : edge, 1, 2000));
         using var source = HDRSourceCache.Acquire(path,info,final,edgeValue,session);
         if (!settings.IsHDREditing && formatOverride == ExportFormat.HdrJpeg)
@@ -215,11 +271,9 @@ internal sealed partial class RenderEngine : IDisposable
             final ? checked((uint)Math.Clamp(longEdge ?? 0, 0, 65535)) : edgeValue);
         if (output != null)
         {
-            var format = formatOverride ?? (Path.GetExtension(output).Equals(".dng", StringComparison.OrdinalIgnoreCase)
-                ? ExportFormat.RenderedDng : ExportFormat.HdrJpeg);
             var metadataSource = info.IsCameraRaw ? null : path;
             if (format == ExportFormat.HdrJpeg) HDRNative.ExportHDR(rendered, metadataSource, output, rendered.Pair.SourceSha256 ?? []);
-            else HDRNative.ExportSDR(rendered, format, metadataSource, output, rendered.Pair.SourceSha256 ?? []);
+            else HDRNative.ExportSDR(rendered, format!.Value, metadataSource, output, rendered.Pair.SourceSha256 ?? []);
             return null;
         }
         var pair = HDRDisplay.CopyPair(rendered.Pair);

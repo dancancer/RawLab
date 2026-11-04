@@ -50,6 +50,7 @@ struct Adjustments: Equatable, Codable {
     var processing = ProcessingIdentity.current
     var x3fMode = X3fMode.normal
     var hdr: HDRSettings?
+    var proRAWDecodeVersion: Int?
     var isHDREditing: Bool { hdr?.mode == .hdr }
     var exposureMode = ExposureMode.preview
     var exposure = 0.0
@@ -683,6 +684,7 @@ extension Adjustments {
             try values.decode(ProcessingIdentity.self, forKey: .processing) : .legacy
         x3fMode = values.contains(.x3fMode) ? try values.decode(X3fMode.self, forKey: .x3fMode) : .legacy
         hdr = try values.decodeIfPresent(HDRSettings.self, forKey: .hdr)
+        proRAWDecodeVersion = try values.decodeIfPresent(Int.self, forKey: .proRAWDecodeVersion)
         toneCurveConfig = try values.decodeIfPresent(ToneCurveSettings.self, forKey: .toneCurveConfig)
         colorGrading = try values.decodeIfPresent(ColorGradingSettings.self, forKey: .colorGrading)
         if colorGrading?.isDefault == true { colorGrading = nil }

@@ -43,9 +43,11 @@ struct BatchExportRunner {
                 if job.settingsMode == .perTargetFrozen { try target.frozen!.verifyFiles(input: target.sourceURL) }
                 let payload = try render(target, job.settings(for: target))
                 defer { cleanup(payload) }
+                if shouldCancel() { throw CancellationError() }
                 job.targets[index].status = .publishing
                 try journalStore?.save(job)
                 didUpdate(job)
+                if shouldCancel() { throw CancellationError() }
                 try write(payload, job.targets[index].outputName, job.targets[index]) { identifier in
                     if identifier.hasPrefix("file:") {
                         job.targets[index].outputFileURL = URL(fileURLWithPath: String(identifier.dropFirst(5)))
@@ -58,6 +60,16 @@ struct BatchExportRunner {
                     didUpdate(job)
                 }
                 job.targets[index].status = .succeeded
+            } catch is CancellationError {
+                // 已进入图库事务的结果仍需确认，不能标为可安全重试的取消项。
+                let hasPublication = job.targets[index].outputAssetIdentifier != nil || job.targets[index].outputFileURL != nil
+                job.targets[index].status = hasPublication ? .needsConfirmation : .cancelled
+                markRemainingCancelled(&job, from: index + 1)
+                job.status = hasPublication ? .interrupted : .cancelled
+                job.updatedAt = Date()
+                try journalStore?.save(job)
+                didUpdate(job)
+                return job
             } catch let error as BatchExportError {
                 switch error {
                 case .uncertain(let message):

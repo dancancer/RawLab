@@ -25,19 +25,40 @@ struct HDRNativeError: LocalizedError {
 struct HDRSourceInfo {
     let native: sony2fuji_hdr_source_info_v1
     var cameraStamp: CameraStamp? = nil
+    var proRAW: ProRAWSource? = nil
+    var isDevelopedRAW: Bool { isCameraRAW || proRAW != nil }
     var isCameraRAW: Bool { native.container == UInt32(SONY2FUJI_HDR_CONTAINER_CAMERA_RAW) }
 
     struct CameraStamp: Hashable {
         let modified: Date?
         let size: NSNumber?
         let inode: NSNumber?
+        let device: NSNumber?
 
         init(_ url: URL) throws {
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
             modified = attributes[.modificationDate] as? Date
             size = attributes[.size] as? NSNumber
             inode = attributes[.systemFileNumber] as? NSNumber
+            device = attributes[.systemNumber] as? NSNumber
         }
+    }
+
+    static func probeRAW(_ url: URL) throws -> HDRSourceInfo? {
+        guard #available(macOS 15, iOS 18, *) else { return nil }
+        if url.pathExtension.lowercased() == "dng" {
+            let stamp = try CameraStamp(url)
+            if let proRAW = try ProRAWSource.probe(url), try CameraStamp(url) == stamp {
+                var info = sony2fuji_hdr_source_info_v1()
+                info.version = 1
+                info.struct_size = UInt32(MemoryLayout.size(ofValue: info))
+                info.width = UInt32(proRAW.width)
+                info.height = UInt32(proRAW.height)
+                info.orientation = 1
+                return HDRSourceInfo(native: info, cameraStamp: stamp, proRAW: proRAW)
+            }
+        }
+        return try probeCameraRAW(url)
     }
 
     static func probeCameraRAW(_ url: URL) throws -> HDRSourceInfo? {

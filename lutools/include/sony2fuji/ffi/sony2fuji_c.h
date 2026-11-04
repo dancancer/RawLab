@@ -719,7 +719,8 @@ sony2fuji_status sony2fuji_session_set_gpu_config(
 // Return nonzero to cancel. Set/clear only on the session's serialized worker;
 // the callback may read an atomic signal updated by another thread. It must not
 // throw, reenter the session, or outlive its context. Null disables cancellation.
-// File output ignores this callback. Cancelled previews return CANCELLED without
+// Legacy file output ignores this callback; streamed HDR export checks it before
+// publishing. Cancelled previews return CANCELLED without
 // publishing a partial output buffer; the session can render another request.
 typedef int32_t (*sony2fuji_cancel_callback)(void* context);
 sony2fuji_status sony2fuji_session_set_cancellation_callback(

@@ -26,12 +26,14 @@ final class MacHDRBatchPreparation {
         guard try OriginalFileIdentity(item.input)==item.identity else { throw BatchExportFailure.changedInput }
         let record=try store.versionedState(for:item.input)
         let raster=RenderEngine.isRasterInput(item.input),info=try HDRSourceInfo.probe(item.input)
+        let supportsProRAWHDR = try HDRSourceInfo.probeRAW(item.input)?.proRAW != nil
         var defaults=Adjustments(); defaults.exposureMode=raster ? .sensor : .preview
         if info != nil { defaults.hdr=HDRSettings() }
         let target=record.state ?? PhotoEditState(settings:defaults,filmID:"")
         let payload=try HDRAdjustmentTransfer.batchPayload(settings:settings.hdr!,identifier:source.path,
             processingVersion:settings.processing.version,targetIsHDR:target.settings.isHDREditing)
-        let context=MacAdjustmentTransferContext(identifier:item.identity.path,isRaw:!raster,sourceIsHDR:info != nil)
+        let context=MacAdjustmentTransferContext(identifier:item.identity.path,isRaw:!raster,
+            sourceIsHDR:info != nil, sourceSupportsProRAWHDR: supportsProRAWHDR)
         let prepared=try MacAdjustmentTransfer.prepare(payload:payload,target:target,context:context)
         let look: URL?,name: String
         if prepared.settings.isHDREditing { look=nil; name="HDR" }

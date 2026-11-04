@@ -488,6 +488,7 @@
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Only adjustments in the %@ group will be reset. Other groups will stay unchanged.";
 "此照片没有可用的相机白平衡校准。" = "This photo has no usable camera white balance calibration.";
 "此照片没有可编辑的 HDR 增益图。" = "This photo has no editable HDR gain map.";
+"此设备暂不支持导出 HDR 模式下的 ProRAW 照片。" = "This device does not yet support exporting ProRAW photos in HDR editing mode.";
 "此输入不支持镜头校正" = "Lens Correction Unsupported for This Input";
 "此配置与预览照片类型不匹配，请更换照片或配置。" = "These settings do not match the preview photo type. Choose another photo or configuration.";
 "此镜头没有所选校正的标定数据" = "No Calibration Data for the Selected Corrections";

@@ -9,6 +9,38 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HDRSettingsTest {
+    @Test fun proRawHdrPinsItsDecoderWhilePreservingBothModeRecords() {
+        val sdr = EditSettings(film = "velvia", exposure = -.5f)
+        val hdr = sdr.withHDRMode(true, false, cameraRaw = true, proRAW = true)
+            .copy(exposure = 1.5f).synchronizeHDR()
+        assertEquals(2, hdr.proRAWDecodeVersion)
+        val restored = hdr.withHDRMode(false, false, cameraRaw = true, proRAW = true)
+        assertEquals(sdr.exposure, restored.exposure)
+        assertEquals(sdr.film, restored.film)
+        assertEquals(2, restored.proRAWDecodeVersion)
+        assertEquals(2, restored.reset().proRAWDecodeVersion)
+        assertEquals(1.5f, restored.withHDRMode(true, false, cameraRaw = true, proRAW = true).exposure)
+    }
+
+    @Test fun incompatibleProRawDecoderRemainsReadableButCannotEnterHdr() {
+        for (version in listOf(1, 3, 99)) {
+            val stored = EditSettings(proRAWDecodeVersion = version)
+            val restored = SettingsCodec.decode(SettingsCodec.encode(stored))
+            assertEquals(version, restored.proRAWDecodeVersion)
+            assertThrows(HDRModeError.InvalidSettings::class.java) {
+                restored.withHDRMode(true, false, cameraRaw = true, proRAW = true)
+            }
+            assertEquals(stored, restored)
+        }
+    }
+    @Test fun proRawDecoderIdentitySurvivesStructuredSettingsRoundTrip() {
+        val encoded = StructuredSettingsCodec.encode(EditSettings().withHDRMode(true, false, cameraRaw = true), "photo_edit")
+        val document = org.json.JSONObject(encoded.removePrefix("v2:"))
+        document.getJSONObject("settings").put("proRAWDecodeVersion", 2)
+        val decoded = StructuredSettingsCodec.decode("v2:$document", "photo_edit")
+        val saved = org.json.JSONObject(StructuredSettingsCodec.encode(decoded, "photo_edit").removePrefix("v2:"))
+        assertEquals(2, saved.getJSONObject("settings").getInt("proRAWDecodeVersion"))
+    }
     @Test fun tombstoneWithoutSettingsStillUsesTheHdrSourceDefault() {
         assertTrue(sourceDefaultSettings(true).isHDREditing)
     }

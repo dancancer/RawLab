@@ -28,6 +28,7 @@ internal static class HDRWorkflowChecks
         }
         var originalHash = SourceHash();
         Loc.Initialize("en");
+        SessionCancellationAfterDisplayReset(root, source, check);
         var app = TestWindowState.CreateApplication();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         MainWindow? window = null;
@@ -70,6 +71,7 @@ internal static class HDRWorkflowChecks
         try
         {
             Open();
+            Capture(window!, Path.Combine(root, "camera-raw-sdr-editor.png"));
             check(!Settings().IsHDREditing && Frame().HDR == null, "Fresh camera RAW opens in SDR");
             EditExposure(.5);
             Toggle(true);
@@ -92,6 +94,7 @@ internal static class HDRWorkflowChecks
             Toggle(false);
             check(Settings()[Parameter.Exposure] == .5, "Reopened editor also restores the independent SDR exposure");
             Toggle(true);
+            Capture(window!, Path.Combine(root, "camera-raw-hdr-editor.png"));
 
             var menu = window.ExportButton.ContextMenu!;
             menu.PlacementTarget = window.ExportButton;
@@ -128,6 +131,34 @@ internal static class HDRWorkflowChecks
             window?.Close();
             app.Shutdown();
         }
+    }
+
+    private static void SessionCancellationAfterDisplayReset(string root, string source, Action<bool, string> check)
+    {
+        static void WriteRaster(string path, byte value)
+        {
+            var pixels = Enumerable.Repeat(new byte[] { value, (byte)(value + 7), (byte)(value + 13) }, 16 * 16)
+                .SelectMany(pixel => pixel).ToArray();
+            var bitmap = BitmapSource.Create(16, 16, 96, 96, PixelFormats.Rgb24, null, pixels, 16 * 3);
+            var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using var output = File.Create(path); encoder.Save(output);
+        }
+
+        var first = Path.Combine(root, "cancel-reset-first.png");
+        var second = Path.Combine(root, "cancel-reset-second.png");
+        WriteRaster(first, 32); WriteRaster(second, 64);
+        using var engine = new RenderEngine(0);
+        using var cancellation = new CancellationTokenSource();
+        engine.SetCancellation(cancellation.Token);
+        engine.Render(first, new(), null, 32, statistics: false, clipping: false);
+        engine.Render(second, new(), null, 32, statistics: false, clipping: false);
+        var settings = new Adjustments();
+        settings.SetHDRMode(true, sourceIsHDR: true, cameraRaw: true, proRAW: true);
+        cancellation.Cancel();
+        var cancelled = false;
+        try { engine.Render(source, settings, null, 32, statistics: false, clipping: false); }
+        catch (OperationCanceledException) { cancelled = true; }
+        check(cancelled, "Cancellation remains bound after raster session replacement before ProRAW HDR decode");
     }
 
     internal static void Run(string repo,string fixture,Action<bool,string> check)

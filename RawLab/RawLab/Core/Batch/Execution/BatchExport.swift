@@ -367,7 +367,7 @@ final class BatchExportModel: ObservableObject {
         cancellation.lock(); didCancel = true; cancellation.unlock()
     }
 
-    private var isCancellationRequested: Bool {
+    var isCancellationRequested: Bool {
         cancellation.lock(); defer { cancellation.unlock() }
         return didCancel
     }

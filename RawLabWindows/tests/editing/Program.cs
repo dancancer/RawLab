@@ -10,6 +10,7 @@ if (args.Contains("--summary-only")) {
 if (args.Contains("--hdr-only")) {
     HDRChecks.Run();
     CameraRawHDRChecks.Run();
+    ProRAWHDRChecks.Run(Check);
     return;
 }
 if (args.Contains("--camera-raw-hdr")) {
@@ -42,6 +43,7 @@ AdjustmentHistoryChecks.Run();
 AdjustmentPresetChecks.Run();
 HDRChecks.Run();
 CameraRawHDRChecks.Run();
+ProRAWHDRChecks.Run(Check);
 AdjustmentSummaryChecks.Run();
 
 static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }

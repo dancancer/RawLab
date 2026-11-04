@@ -27,6 +27,9 @@ for target in targets:
     camera = os.environ.get('RAWLAB_HDR_UI_TEST', '').endswith('/testCameraRawHDRModePersistenceAndExports')
     if camera:
         env['RAWLAB_CAMERA_HDR_UI']='1'
+    proraw = '/testProRAW' in os.environ.get('RAWLAB_HDR_UI_TEST', '')
+    if proraw:
+        env['RAWLAB_PRORAW_UI']='1'
     if 'UITargetAppPath' not in target:continue
     # 仅测试副本开启文件共享，使真实 Files picker 能访问本地 CUBE；不修改产品源码或构建产物。
     app=out/'RawLabHDRUI.app';original_app=target['UITargetAppPath']
@@ -43,6 +46,10 @@ for target in targets:
     fixture.write_text('TITLE "HDRCompatibilityUnknown"\nLUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n')
     if camera:
         shutil.copyfile(Path(os.environ['RAWLAB_CAMERA_HDR_FIXTURE']), documents/'CameraHDRFixture.dng')
+    if proraw:
+        for resolution in ['12', '48']:
+            shutil.copyfile(Path(os.environ['RAWLAB_PRORAW_' + resolution + '_FIXTURE']),
+                            documents/('ProRAW' + resolution + 'Fixture.dng'))
     target['UITargetAppPath']=str(app)
     target['DependentProductPaths']=[str(app) if p==original_app else p for p in target.get('DependentProductPaths',[])]
 plistlib.dump(value,(out/'hdr.xctestrun').open('wb'))
@@ -58,7 +65,7 @@ import json,os,sys
 v=json.load(open(sys.argv[1]))
 assert v['failedTests']==0 and v['expectedFailures']==0 and v['passedTests']>0,v
 if not os.environ.get('RAWLAB_HDR_UI_TEST'):
-    assert (v['passedTests'],v['skippedTests'],v['totalTestCount'])==(5,3,8),v
+    assert (v['passedTests'],v['skippedTests'],v['totalTestCount'])==(5,7,12),v
 assert not any('Publishing changes from within view updates' in w['message'] for w in v['runtimeWarnings']),v['runtimeWarnings']
 PY
 echo "PASS executed HDR UI test; results: $OUT/HDRUI.xcresult"

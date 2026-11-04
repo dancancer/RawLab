@@ -7,6 +7,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 #if defined(SONY2FUJI_ENABLE_CHROMA_DENOISE) || defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
 #include <opencv2/core.hpp>
@@ -148,6 +149,16 @@ void validation() {
     rejects([&] { renderHDRPair(source, {}); }, "nonfinite pixels accepted");
 }
 
+void moveReuse() {
+    auto source = fixture();
+    const auto* hdrStorage = source.hdr.pixels.data();
+    const auto* sdrStorage = source.sdr.pixels.data();
+    const auto result = renderHDRPair(std::move(source), {});
+    check(result.hdr.pixels.data() == hdrStorage && result.sdr.pixels.data() == sdrStorage,
+        "rvalue HDR render did not reuse exclusive pixel storage");
+    check(result.hdr.width == 8 && result.sdr.height == 2, "rvalue HDR render lost image metadata");
+}
+
 #if defined(SONY2FUJI_ENABLE_CHROMA_DENOISE) || defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
 void parallel() {
     HDRImagePair source;
@@ -194,6 +205,7 @@ int main(int argc, char* argv[]) {
         else if (name == "white_balance") whiteBalance();
         else if (name == "geometry") geometry();
         else if (name == "validation") validation();
+        else if (name == "move_reuse") moveReuse();
 #if defined(SONY2FUJI_ENABLE_CHROMA_DENOISE) || defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
         else if (name == "parallel") parallel();
 #endif

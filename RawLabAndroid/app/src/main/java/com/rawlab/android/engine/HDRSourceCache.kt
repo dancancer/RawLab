@@ -29,6 +29,9 @@ internal object HDRSourceCache {
     @Synchronized fun acquire(file: File, info: HDRSourceInfo, edge: Int,
         decoder: (() -> NativeHDRImage)? = null): HDRSourceLease {
         require(edge>0)
+        info.cameraStamp?.let { expected ->
+            require(expected == HDRSourceInfo.CameraStamp(file.length(), file.lastModified())) { "HDR source changed" }
+        }
         val path=file.canonicalPath
         val iterator=entries.iterator()
         while(iterator.hasNext()) {

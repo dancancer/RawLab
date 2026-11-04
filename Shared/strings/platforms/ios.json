@@ -1,5 +1,9 @@
 {
   "entries": {
+    "此设备暂不支持导出 HDR 模式下的 ProRAW 照片。": {
+      "formats": [],
+      "source": "此设备暂不支持导出 HDR 模式下的 ProRAW 照片。"
+    },
     "任务已保存，请继续导出。": {
       "formats": [],
       "source": "任务已保存，请继续导出。"
@@ -3312,6 +3316,14 @@
     }
   },
   "unique": {
+    "此设备暂不支持导出 HDR 模式下的 ProRAW 照片。": {
+      "de": "Dieses Gerät unterstützt den Export von ProRAW-Fotos im HDR-Modus noch nicht.",
+      "en": "This device does not yet support exporting ProRAW photos in HDR editing mode.",
+      "es": "Este dispositivo aún no admite exportar fotos ProRAW en el modo HDR.",
+      "fr": "Cet appareil ne prend pas encore en charge l’exportation de photos ProRAW en mode HDR.",
+      "ja": "このデバイスでは HDR 編集モードの ProRAW 写真をまだ書き出せません。",
+      "zh-Hans": "此设备暂不支持导出 HDR 模式下的 ProRAW 照片。"
+    },
     "Failed to load the selected photo.": {
       "de": "Das ausgewählte Foto konnte nicht geladen werden.",
       "en": "Failed to Load the Selected Photo.",

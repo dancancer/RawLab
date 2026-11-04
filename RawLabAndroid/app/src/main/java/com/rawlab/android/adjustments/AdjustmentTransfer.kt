@@ -5,7 +5,8 @@ import com.rawlab.android.settings.*
 data class AdjustmentTransferContext(val identifier: String, val isRaw: Boolean,
     val availableLookIDs: Set<String> = emptySet(), val builtinLookIDs: Map<String, String> = emptyMap(),
     val cameraTemperature: Float? = null, val cameraTint: Float? = null, val defaultExposureMode: Int = 1,
-    val hasUncommittedDraft: Boolean = false, val validateLens: ((LensSettings) -> Unit)? = null)
+    val hasUncommittedDraft: Boolean = false, val validateLens: ((LensSettings) -> Unit)? = null,
+    val sourceSupportsProRAWHDR: Boolean = false)
 
 object AdjustmentTransfer {
     fun previewCapture(scope: AdjustmentScope, settings: EditSettings, committed: EditSettings,
@@ -158,7 +159,8 @@ object AdjustmentTransfer {
     }
 
     private fun captureHDR(scope: AdjustmentScope, settings: EditSettings, context: AdjustmentTransferContext): AdjustmentPayload {
-        if (context.isRaw) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.source")
+        if (context.isRaw && !context.sourceSupportsProRAWHDR) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.source")
+        settings.requireProRAWDecoder()
         val values = hdrValues(settings)
         val defaults = hdrValues(EditSettings().withHDRMode(true, true))
         val selected = when (scope) {
@@ -173,7 +175,8 @@ object AdjustmentTransfer {
     }
 
     private fun prepareHDR(payload: AdjustmentPayload, target: EditSettings, context: AdjustmentTransferContext): EditSettings {
-        if (context.isRaw || !target.isHDREditing) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.target")
+        if (!target.isHDREditing || context.isRaw && !context.sourceSupportsProRAWHDR) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.target")
+        target.requireProRAWDecoder()
         payload.validate()
         if(!AdjustmentField.HDR_SUPPORTED.containsAll(payload.fields))
             throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.fields")

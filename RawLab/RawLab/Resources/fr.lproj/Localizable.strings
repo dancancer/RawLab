@@ -488,6 +488,7 @@
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Seuls les réglages du groupe %@ seront réinitialisés. Les autres groupes resteront inchangés.";
 "此照片没有可用的相机白平衡校准。" = "Cette photo ne possède pas d’étalonnage exploitable de la balance des blancs de l’appareil.";
 "此照片没有可编辑的 HDR 增益图。" = "Cette photo ne contient pas de carte de gain HDR modifiable.";
+"此设备暂不支持导出 HDR 模式下的 ProRAW 照片。" = "Cet appareil ne prend pas encore en charge l’exportation de photos ProRAW en mode HDR.";
 "此输入不支持镜头校正" = "Correction optique non prise en charge pour cette image";
 "此配置与预览照片类型不匹配，请更换照片或配置。" = "Cette configuration ne correspond pas au type de photo d’aperçu. Choisissez une autre photo ou configuration.";
 "此镜头没有所选校正的标定数据" = "Aucune donnée d’étalonnage pour les corrections choisies";

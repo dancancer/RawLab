@@ -27,6 +27,12 @@ scRGB swap chain，需要当前显示器启用 HDR；RDP、虚拟显示器及能
 裁切和裁切警告叠层使用 SDR canvas 保留交互；真实 HDR 亮度需物理设备验收。
 来源指纹、双图、缓存和格式边界见[平台对齐设计](../docs/design/hdr-photos/android-windows.md)。
 
+Apple ProRAW DNG 仍按普通 RAW 打开并使用既有 SDR 显影；只有用户显式开启 HDR 编辑时，
+Windows 才要求严格的 ProRAW container4 探测并使用 portable decoder revision2。HDR 编辑中的
+SDR rendition 和 SDR/HDR JPEG 使用共享 DNG profile/增益表后端及有界流式导出；未知 ProRAW
+decoder revision 在恢复或进入 HDR 前拒绝。预设、同步和批量 HDR 仅对实际探测为 ProRAW 的
+RAW 放行，不能因 `.dng` 扩展名把普通 Bayer RAW 提升到该路径。
+
 ## 下载 v0.9.2 Windows 包
 
 [Windows x64 安装程序](https://github.com/dancancer/RawLab/releases/download/v0.9.2/RawLab.Desktop-stable-Setup.exe) · [手动安装 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.9.2/RawLab-Windows-0.9.2-x64.zip) · [发布说明](../docs/releases/v0.9/v0.9.2.md) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.9.2/SHA256SUMS.txt)

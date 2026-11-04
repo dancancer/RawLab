@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstddef>
 #include <new>
+#include <stdexcept>
 
 namespace sony2fuji {
 namespace {
@@ -67,18 +68,30 @@ RGB interpolate(const RGB& first, const RGB& second, float fraction) {
         first.b + (second.b - first.b) * fraction};
 }
 
-RGB sampleBilinear(const ImageData& image, Point point) {
+template<class Reader> RGB sampleBilinear(int width, int height, const Reader& read, Point point) {
     // Pixels cover half a pixel past their centers. Extend those edge pixels
     // when the inscribed canvas samples that support; never introduce black.
-    const double x = std::clamp(point.x, 0.0, double(image.width - 1));
-    const double y = std::clamp(point.y, 0.0, double(image.height - 1));
+    const double x = std::clamp(point.x, 0.0, double(width - 1));
+    const double y = std::clamp(point.y, 0.0, double(height - 1));
     // 钳位后非负，截断等同 floor。
     const int left = static_cast<int>(x), top = static_cast<int>(y);
-    const int right = std::min(left + 1, image.width - 1);
-    const int bottom = std::min(top + 1, image.height - 1);
+    const int right = std::min(left + 1, width - 1);
+    const int bottom = std::min(top + 1, height - 1);
     const float dx = static_cast<float>(x - left), dy = static_cast<float>(y - top);
-    return interpolate(interpolate(image.at(left, top), image.at(right, top), dx),
-        interpolate(image.at(left, bottom), image.at(right, bottom), dx), dy);
+    return interpolate(interpolate(read(left, top), read(right, top), dx),
+        interpolate(read(left, bottom), read(right, bottom), dx), dy);
+}
+
+Point transformedPoint(int x, int y, const Canvas& canvas, const GeometryOptions& options) {
+    const double dy = canvas.top + y - (canvas.height - 1) * .5;
+    const double dx = canvas.left + x - (canvas.width - 1) * .5;
+    // 两种存储路径共用乘加顺序，不累加坐标或改用倒数。
+    const double rotated_x = canvas.cosine * dx + canvas.sine * dy;
+    const double rotated_y = -canvas.sine * dx + canvas.cosine * dy;
+    const double denominator = 1 + .25 * options.perspective_horizontal * (2 * rotated_x / canvas.rotated_width) +
+        .25 * options.perspective_vertical * (2 * rotated_y / canvas.rotated_height);
+    return {(canvas.rotated_width - 1) * .5 + rotated_x / denominator,
+        (canvas.rotated_height - 1) * .5 + rotated_y / denominator};
 }
 
 void copyRectangle(const RGB* source, RGB* target, int width, int height,
@@ -128,24 +141,16 @@ void resample(const ImageData& image, ImageData& result, const Canvas& canvas,
     std::array<Point, 256> points;
     for (int y = 0; y < result.height; ++y) {
         checkProcessingCancellation();
-        const double dy = canvas.top + y - (canvas.height - 1) * .5;
         auto* target = result.pixels.data() + size_t(y) * result.width;
         for (int begin = 0; begin < result.width;) {
             const int count = std::min(int(points.size()), result.width - begin);
             // 分批计算坐标，让独立除法流水执行。
             for (int i = 0; i < count; ++i) {
-                const int x = begin + i;
-                const double dx = canvas.left + x - (canvas.width - 1) * .5;
-                // 保持乘加顺序，不累加坐标或改用倒数。
-                const double rotated_x = canvas.cosine * dx + canvas.sine * dy;
-                const double rotated_y = -canvas.sine * dx + canvas.cosine * dy;
-                const double denominator = 1 + .25 * options.perspective_horizontal * (2 * rotated_x / canvas.rotated_width) +
-                    .25 * options.perspective_vertical * (2 * rotated_y / canvas.rotated_height);
-                points[i] = {(canvas.rotated_width - 1) * .5 + rotated_x / denominator,
-                    (canvas.rotated_height - 1) * .5 + rotated_y / denominator};
+                points[i] = transformedPoint(begin + i, y, canvas, options);
             }
             for (int i = 0; i < count; ++i)
-                target[begin + i] = sampleBilinear(image,
+                target[begin + i] = sampleBilinear(image.width, image.height,
+                    [&](int x, int y) { return image.at(x, y); },
                     sourcePoint(points[i], canvas, options, image.width, image.height));
             begin += count;
         }
@@ -176,6 +181,24 @@ std::pair<int, int> geometryOutputSize(int width, int height, const GeometryOpti
     if (width <= 0 || height <= 0 || !options.valid()) return {0, 0};
     const auto canvas = canvasFor(width, height, options);
     return {canvas.right - canvas.left, canvas.bottom - canvas.top};
+}
+
+GeometryPixelSampler makeGeometrySampler(int width, int height, const GeometryOptions& options) {
+    if (width <= 0 || height <= 0 || !options.valid())
+        throw std::invalid_argument("Invalid geometry sampler");
+    const auto canvas = canvasFor(width, height, options);
+    const bool resample = options.straighten_degrees != 0 ||
+        options.perspective_horizontal != 0 || options.perspective_vertical != 0;
+    return [=](int x, int y, const GeometryPixelReader& read) {
+        if (x < 0 || y < 0 || x >= canvas.right - canvas.left || y >= canvas.bottom - canvas.top)
+            throw std::invalid_argument("Geometry sample is outside the output canvas");
+        if (!resample) {
+            const auto point = sourcePoint({double(canvas.left + x), double(canvas.top + y)}, canvas, options, width, height);
+            return read(int(point.x), int(point.y));
+        }
+        return sampleBilinear(width, height, read,
+            sourcePoint(transformedPoint(x, y, canvas, options), canvas, options, width, height));
+    };
 }
 
 std::pair<int, int> geometryViewportSourceSize(int width, int height,

@@ -1,5 +1,6 @@
 #include "platform/hdr_image.h"
 #include "core/hdr_jpeg.h"
+#include "core/processing_cancellation.h"
 #import <Foundation/Foundation.h>
 #import <CoreImage/CoreImage.h>
 #import <ImageIO/ImageIO.h>
@@ -14,6 +15,9 @@
 #include <cmath>
 #include <cstring>
 #include <memory>
+#include <malloc/malloc.h>
+#include <cerrno>
+#include <unistd.h>
 
 namespace sony2fuji::hdr {
 namespace {
@@ -60,7 +64,7 @@ void validateMap(NSDictionary* map) {
         SONY2FUJI_HDR_REASON_MALFORMED_AUX, "Invalid auxiliary dimensions or storage");
 }
 
-void read(File& file, const char* path) {
+void readMetadataSource(File& file, const char* path, const uint8_t* expectedSHA = nullptr) {
     NSString* name = [NSString stringWithUTF8String:path];
     if (!name) error(SONY2FUJI_STATUS_INVALID_ARGUMENT, SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, "Invalid UTF-8 HDR path");
     NSNumber* regular = nil;
@@ -69,9 +73,27 @@ void read(File& file, const char* path) {
     if (!regular.boolValue) error(SONY2FUJI_STATUS_IO_ERROR, SONY2FUJI_HDR_REASON_INPUT_IO, "HDR source is not a regular file");
     file.data = [NSData dataWithContentsOfURL:url options:NSDataReadingMappedIfSafe error:nil];
     if (!file.data.length) error(SONY2FUJI_STATUS_IO_ERROR, SONY2FUJI_HDR_REASON_INPUT_IO, "Cannot read HDR source");
+    // 源身份不依赖路径/mtime，元数据保存使用同一 SHA-256 校验原容器。
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    CC_SHA256_CTX digest; CC_SHA256_Init(&digest);
+    const auto* bytes = static_cast<const uint8_t*>(file.data.bytes);
+    for (size_t offset = 0; offset < file.data.length;) {
+        checkProcessingCancellation();
+        const size_t count = std::min<size_t>(file.data.length-offset, 1024*1024);
+        CC_SHA256_Update(&digest,bytes+offset,CC_LONG(count)); offset+=count;
+    }
+    CC_SHA256_Final(file.info.source_sha256,&digest);
+#pragma clang diagnostic pop
+    if (expectedSHA && std::memcmp(file.info.source_sha256, expectedSHA, 32) != 0)
+        error(SONY2FUJI_STATUS_INVALID_ARGUMENT, SONY2FUJI_HDR_REASON_SOURCE_CHANGED, "HDR metadata source has changed");
     file.source = CGImageSourceCreateWithData((__bridge CFDataRef)file.data,
         (__bridge CFDictionaryRef)@{(__bridge NSString*)kCGImageSourceShouldCache:@NO});
     require(file.source, SONY2FUJI_HDR_REASON_MALFORMED_AUX, "Cannot parse HDR container");
+}
+
+void read(File& file, const char* path) {
+    readMetadataSource(file,path);
     const CFStringRef type = CGImageSourceGetType(file.source);
     file.info.version = 1; file.info.struct_size = sizeof(file.info);
     if (type && CFEqual(type, CFSTR("public.jpeg"))) file.info.container = SONY2FUJI_HDR_CONTAINER_JPEG;
@@ -148,17 +170,7 @@ void open(File& file, const char* path) HDR_AVAILABLE {
         if (!modernJPEG) jpeg=probeJPEG(file.data.bytes,file.data.length);
         file.info.content_headroom=jpeg.headroom;
     }
-    // 源身份不依赖路径/mtime，元数据保存使用同一 SHA-256 校验原容器。
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    CC_SHA256_CTX digest; CC_SHA256_Init(&digest);
-    const auto* bytes = static_cast<const uint8_t*>(file.data.bytes);
-    for (size_t offset = 0; offset < file.data.length;) {
-        const size_t count = std::min<size_t>(file.data.length-offset, 1024*1024);
-        CC_SHA256_Update(&digest,bytes+offset,CC_LONG(count)); offset+=count;
-    }
-    CC_SHA256_Final(file.info.source_sha256,&digest);
-#pragma clang diagnostic pop
+
 }
 
 ImageData pixels(CIContext* context, CIImage* input, int width, int height) {
@@ -263,12 +275,10 @@ void differentFile(const char* source,const char* target) {
         error(SONY2FUJI_STATUS_INVALID_ARGUMENT,SONY2FUJI_HDR_REASON_SAME_FILE,"HDR export cannot replace its source");
 }
 
-NSDictionary* metadata(const char* source,const uint8_t sha[32],uint32_t width,uint32_t height,const char* target) HDR_AVAILABLE {
+NSDictionary* metadata(File& file,const char* source,const uint8_t sha[32],uint32_t width,uint32_t height,const char* target) HDR_AVAILABLE {
     if (!source) return @{(__bridge NSString*)kCGImagePropertyOrientation:@1};
     differentFile(source,target);
-    File file; open(file,source);
-    if (std::memcmp(file.info.source_sha256,sha,32)!=0)
-        error(SONY2FUJI_STATUS_INVALID_ARGUMENT,SONY2FUJI_HDR_REASON_SOURCE_CHANGED,"HDR metadata source has changed");
+    readMetadataSource(file,source,sha);
     NSDictionary* original=CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(file.source,0,nullptr));
     NSMutableDictionary* exif=[original[(__bridge NSString*)kCGImagePropertyExifDictionary] mutableCopy] ?: [NSMutableDictionary dictionary];
     for (NSString* key in @[(__bridge NSString*)kCGImagePropertyExifMakerNote,(__bridge NSString*)kCGImagePropertyExifCFAPattern,
@@ -293,20 +303,48 @@ NSDictionary* metadata(const char* source,const uint8_t sha[32],uint32_t width,u
     return values;
 }
 
-NSData* addBaseMetadata(NSData* base,NSDictionary* properties) {
+NSData* addBaseMetadata(NSData* base,NSDictionary* properties,CGImageSourceRef original) {
     CGImageSourceRef source=CGImageSourceCreateWithData((__bridge CFDataRef)base,nullptr);
     NSMutableData* data=[NSMutableData data];
     CGImageDestinationRef destination=CGImageDestinationCreateWithData((__bridge CFMutableDataRef)data,CFSTR("public.jpeg"),1,nullptr);
     CGMutableImageMetadataRef tags=CGImageMetadataCreateMutable();
+    CGImageMetadataRef originalTags=original ? CGImageSourceCopyMetadataAtIndex(original,0,nullptr) : nullptr;
     bool success=source && destination && tags;
     for (NSString* dictionary in properties) {
         if (![properties[dictionary] isKindOfClass:NSDictionary.class]) continue;
-        for (NSString* key in properties[dictionary])
-            success &= CGImageMetadataSetValueMatchingImageProperty(tags,(__bridge CFStringRef)dictionary,
-                (__bridge CFStringRef)key,(__bridge CFTypeRef)properties[dictionary][key]);
+        for (NSString* key in properties[dictionary]) {
+            if ([key isEqualToString:(__bridge NSString*)kCGImagePropertyExifISOSpeedRatings]) {
+                // ImageIO 的 XMP 序列需使用文本元素；NSNumber 序列会静默丢失 ISO。
+                NSMutableArray* ratings=[NSMutableArray array];
+                for (id value in properties[dictionary][key]) [ratings addObject:[value description]];
+                success &= CGImageMetadataSetValueMatchingImageProperty(tags,(__bridge CFStringRef)dictionary,
+                    (__bridge CFStringRef)key,(__bridge CFArrayRef)ratings);
+                continue;
+            }
+            const bool replaced=[@[
+                (__bridge NSString*)kCGImagePropertyExifPixelXDimension,
+                (__bridge NSString*)kCGImagePropertyExifPixelYDimension,
+                (__bridge NSString*)kCGImagePropertyExifColorSpace,
+                (__bridge NSString*)kCGImagePropertyTIFFOrientation,
+                (__bridge NSString*)kCGImagePropertyTIFFSoftware] containsObject:key];
+            CGImageMetadataTagRef tag=originalTags && !replaced
+                ? CGImageMetadataCopyTagMatchingImageProperty(originalTags,(__bridge CFStringRef)dictionary,(__bridge CFStringRef)key) : nullptr;
+            NSString* prefix=tag ? CFBridgingRelease(CGImageMetadataTagCopyPrefix(tag)) : nil;
+            NSString* name=tag ? CFBridgingRelease(CGImageMetadataTagCopyName(tag)) : nil;
+            if (prefix && name) {
+                NSString* path=[NSString stringWithFormat:@"%@:%@",prefix,name];
+                success &= CGImageMetadataSetTagWithPath(tags,nullptr,(__bridge CFStringRef)path,tag);
+            } else {
+                success &= CGImageMetadataSetValueMatchingImageProperty(tags,(__bridge CFStringRef)dictionary,
+                    (__bridge CFStringRef)key,(__bridge CFTypeRef)properties[dictionary][key]);
+            }
+            if (tag) CFRelease(tag);
+        }
     }
     if (success) success=CGImageDestinationCopyImageSource(destination,source,
-        (__bridge CFDictionaryRef)@{(__bridge NSString*)kCGImageDestinationMetadata:(__bridge id)tags},nullptr);
+        (__bridge CFDictionaryRef)@{(__bridge NSString*)kCGImageDestinationMetadata:(__bridge id)tags,
+            (__bridge NSString*)kCGImageMetadataShouldExcludeXMP:@YES},nullptr);
+    if (originalTags) CFRelease(originalTags);
     if (source) CFRelease(source); if (destination) CFRelease(destination); if (tags) CFRelease(tags);
     require(success,SONY2FUJI_HDR_REASON_OUTPUT_IO,"Cannot write JPEG base metadata"); return data;
 }
@@ -315,6 +353,52 @@ void atomicWrite(NSData* data,const char* path) {
     NSString* name=[NSString stringWithUTF8String:path];
     if (!name || ![data writeToFile:name options:NSDataWritingAtomic error:nil])
         error(SONY2FUJI_STATUS_OUTPUT_IO_ERROR,SONY2FUJI_HDR_REASON_OUTPUT_IO,"Atomic HDR output write failed");
+}
+
+void atomicStreamWrite(NSData* data, const char* path, const sony2fuji_hdr_export_config_v1& config) {
+    std::string temporary = std::string(path) + ".rawlab-XXXXXX";
+    struct Pending {
+        int descriptor;
+        const std::string& path;
+        ~Pending() { if (descriptor >= 0) close(descriptor); unlink(path.c_str()); }
+    } pending{mkstemp(temporary.data()), temporary};
+    if (pending.descriptor < 0)
+        error(SONY2FUJI_STATUS_OUTPUT_IO_ERROR, SONY2FUJI_HDR_REASON_OUTPUT_IO, "Cannot stage streamed JPEG output");
+    const auto* bytes = static_cast<const uint8_t*>(data.bytes);
+    for (size_t offset = 0; offset < data.length;) {
+        checkProcessingCancellation();
+        const auto written = write(pending.descriptor, bytes + offset, std::min<size_t>(1024 * 1024, data.length - offset));
+        if (written < 0 && errno == EINTR) continue;
+        if (written <= 0)
+            error(SONY2FUJI_STATUS_OUTPUT_IO_ERROR, SONY2FUJI_HDR_REASON_OUTPUT_IO, "Cannot write streamed JPEG output");
+        offset += size_t(written);
+    }
+    if (fsync(pending.descriptor) != 0)
+        error(SONY2FUJI_STATUS_OUTPUT_IO_ERROR, SONY2FUJI_HDR_REASON_OUTPUT_IO, "Cannot finish streamed JPEG output");
+    const int closed = close(pending.descriptor); pending.descriptor = -1;
+    if (closed != 0)
+        error(SONY2FUJI_STATUS_OUTPUT_IO_ERROR, SONY2FUJI_HDR_REASON_OUTPUT_IO, "Cannot close streamed JPEG output");
+    // 发布前再次核对来源；解码完成后的原片替换不能配上旧像素与新 EXIF。
+    File verification; readMetadataSource(verification, config.metadata_source_path, config.source_sha256);
+    differentFile(config.metadata_source_path, path);
+    checkProcessingCancellation();
+    if (rename(temporary.c_str(), path) != 0)
+        error(SONY2FUJI_STATUS_OUTPUT_IO_ERROR, SONY2FUJI_HDR_REASON_OUTPUT_IO, "Cannot publish streamed JPEG output");
+}
+
+std::vector<uint8_t> withSRGBProfile(const std::vector<uint8_t>& jpeg) {
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    NSData* profile = space ? CFBridgingRelease(CGColorSpaceCopyICCData(space)) : nil;
+    if (space) CGColorSpaceRelease(space);
+    if (!profile.length || profile.length > 65519 || jpeg.size() < 2 || jpeg[0] != 0xff || jpeg[1] != 0xd8)
+        throw std::runtime_error("Cannot attach SDR sRGB profile");
+    const size_t length = profile.length + 16;
+    std::vector<uint8_t> output{0xff, 0xd8, 0xff, 0xe2, uint8_t(length >> 8), uint8_t(length),
+        'I','C','C','_','P','R','O','F','I','L','E',0,1,1};
+    const auto* bytes = static_cast<const uint8_t*>(profile.bytes);
+    output.insert(output.end(), bytes, bytes + profile.length);
+    output.insert(output.end(), jpeg.begin() + 2, jpeg.end());
+    return output;
 }
 
 CGImageRef sdrImage(const ImageData& image,bool sixteenBit) {
@@ -347,7 +431,7 @@ CGImageRef sdrImage(const ImageData& image,bool sixteenBit) {
 }
 } // namespace
 
-void admitMemory(uint64_t additionalBytes) {
+static uint64_t availableMemory() {
     uint64_t available=0;
 #if TARGET_OS_IPHONE
     available=os_proc_available_memory();
@@ -362,8 +446,68 @@ void admitMemory(uint64_t additionalBytes) {
     const uint64_t limit=NSProcessInfo.processInfo.physicalMemory/2;
     available=task.phys_footprint<limit ? limit-task.phys_footprint : 0;
 #endif
-    if (additionalBytes>available*.65)
+    return available;
+}
+
+void admitMemory(uint64_t additionalBytes) {
+    if (additionalBytes > availableMemory() * .65)
         error(SONY2FUJI_STATUS_OUT_OF_MEMORY,SONY2FUJI_HDR_REASON_OUT_OF_MEMORY,"HDR task exceeds current memory budget");
+}
+
+void admitStreamingMemory(uint64_t additionalBytes) {
+    // 提交上一阶段已释放的 allocator 页；不能把仍活跃的预览/解码缓存扣除两次。
+    malloc_zone_pressure_relief(nullptr, 0);
+    const auto available = availableMemory();
+    const auto reserve = std::max<uint64_t>(256ull << 20, available / 5);
+    if (available < reserve || additionalBytes > available - reserve)
+        error(SONY2FUJI_STATUS_OUT_OF_MEMORY, SONY2FUJI_HDR_REASON_OUT_OF_MEMORY,
+            "Streamed HDR codec exceeds current memory budget");
+}
+
+void validateStreamSource(const sony2fuji_hdr_export_config_v1& config, uint32_t width, uint32_t height, const char* path) {
+    @autoreleasepool {
+        differentFile(config.metadata_source_path, path);
+        File source; readMetadataSource(source, config.metadata_source_path, config.source_sha256);
+        NSDictionary* values = CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(source.source, 0, nullptr));
+        uint32_t actualWidth = [values[(__bridge NSString*)kCGImagePropertyPixelWidth] unsignedIntValue];
+        uint32_t actualHeight = [values[(__bridge NSString*)kCGImagePropertyPixelHeight] unsignedIntValue];
+        const auto orientation = [values[(__bridge NSString*)kCGImagePropertyOrientation] unsignedIntValue];
+        if (orientation >= 5 && orientation <= 8) std::swap(actualWidth, actualHeight);
+        if (actualWidth != width || actualHeight != height)
+            error(SONY2FUJI_STATUS_INVALID_ARGUMENT, SONY2FUJI_HDR_REASON_PREVIEW_SOURCE,
+                "Stream must read the complete oriented source canvas");
+    }
+}
+
+void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t height,
+    const sony2fuji_hdr_export_config_v1& config, bool hdr, const char* path) {
+    @autoreleasepool {
+        if (@available(macOS 15.0, iOS 18.0, *)) {
+            checkProcessingCancellation();
+            NSNumber* sourceBytes = [[[NSFileManager defaultManager]
+                attributesOfItemAtPath:[NSString stringWithUTF8String:config.metadata_source_path] error:nil] objectForKey:NSFileSize];
+            if (!sourceBytes)
+                error(SONY2FUJI_STATUS_IO_ERROR, SONY2FUJI_HDR_REASON_INPUT_IO, "Cannot inspect streamed metadata source");
+            // 元数据重封装有自己的 compressed/NSData 工作集，不能沿用已结束的 codec 准入。
+            admitStreamingMemory(uint64_t(data.size()) * 8 + sourceBytes.unsignedLongLongValue * 2 + (64ull << 20));
+            File source;
+            NSDictionary* properties = metadata(source, config.metadata_source_path, config.source_sha256, width, height, path);
+            if (hdr) {
+                const auto base = jpegBase(data.data(), data.size());
+                NSData* tagged = addBaseMetadata([NSData dataWithBytesNoCopy:const_cast<uint8_t*>(base.data()) length:base.size() freeWhenDone:NO],
+                    properties, source.source);
+                data = replaceJPEGBase(data.data(), data.size(), tagged.bytes, tagged.length);
+                probeJPEG(data.data(), data.size());
+            } else {
+                data = withSRGBProfile(data);
+                NSData* tagged = addBaseMetadata([NSData dataWithBytesNoCopy:data.data() length:data.size() freeWhenDone:NO], properties, source.source);
+                data.assign(static_cast<const uint8_t*>(tagged.bytes), static_cast<const uint8_t*>(tagged.bytes) + tagged.length);
+            }
+            atomicStreamWrite([NSData dataWithBytesNoCopy:data.data() length:data.size() freeWhenDone:NO], path, config);
+            return;
+        }
+        error(SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM, "HDR requires macOS15/iOS18");
+    }
 }
 
 sony2fuji_hdr_source_info_v1 probeFile(const char* path) {
@@ -387,11 +531,12 @@ void exportJPEG(const HDRImagePair& image,const sony2fuji_hdr_export_config_v1& 
         if (@available(macOS 15.0,iOS 18.0,*)) {
             if (config.metadata_policy!=SONY2FUJI_HDR_METADATA_ISO_XMP)
                 throw std::invalid_argument("HDR JPEG requires ISO and XMP metadata");
-            NSDictionary* properties=metadata(config.metadata_source_path,config.source_sha256,image.hdr.width,image.hdr.height,path);
+            File metadataFile;
+            NSDictionary* properties=metadata(metadataFile,config.metadata_source_path,config.source_sha256,image.hdr.width,image.hdr.height,path);
             auto data=encodeJPEG(image,config.jpeg_quality ? config.jpeg_quality : 95,config.base_color);
             if (config.metadata_source_path) {
                 const auto base=jpegBase(data.data(),data.size());
-                NSData* tagged=addBaseMetadata([NSData dataWithBytes:base.data() length:base.size()],properties);
+                NSData* tagged=addBaseMetadata([NSData dataWithBytes:base.data() length:base.size()],properties,metadataFile.source);
                 data=replaceJPEGBase(data.data(),data.size(),tagged.bytes,tagged.length);
             }
             probeJPEG(data.data(),data.size());
@@ -406,7 +551,8 @@ void exportSDR(const HDRImagePair& image,const sony2fuji_hdr_sdr_export_config_v
             if (config.output_format!=SONY2FUJI_OUTPUT_JPEG && config.output_format!=SONY2FUJI_OUTPUT_PNG)
                 error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_PROTOCOL,"Unsupported SDR rendition output format");
             if (config.quality>100) throw std::invalid_argument("Invalid SDR quality");
-            NSDictionary* properties=metadata(config.metadata_source_path,config.source_sha256,image.sdr.width,image.sdr.height,path);
+            File metadataFile;
+            NSDictionary* properties=metadata(metadataFile,config.metadata_source_path,config.source_sha256,image.sdr.width,image.sdr.height,path);
             NSMutableDictionary* values=[properties mutableCopy];
             values[(__bridge NSString*)kCGImageDestinationLossyCompressionQuality]=@((config.quality ? config.quality : 95)/100.0);
             NSMutableData* data=[NSMutableData data];

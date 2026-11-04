@@ -166,6 +166,9 @@ public partial class BatchExportWindow : Window
                         try{var effective=RenderEngine.PrepareBatchSettings(job.Source,input,settings.Restore());
                             if (job.Format == ExportFormat.HdrJpeg && effective.HDR is not { Mode: HDRMode.Hdr })
                                 throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
+                            if (effective.HDR is { Mode: HDRMode.Hdr } && effective.ProRAWDecodeVersion == HDRNative.ProRAWDecodeVersion &&
+                                !PhotoInput.SupportsProRAWHDR(input))
+                                throw new InvalidOperationException(Loc.Text("不支持此相机 RAW 的 HDR 显影。"));
                             if(effective.AIDenoiseEnabled)RenderEngine.ValidateAIInput(input,job.AIDeviceID,effective.X3fMode);
                             else validator.Render(input,effective,look,64,statistics:false,clipping:false,viewportPreview:true);
                             item=item with{Selected=true};}
@@ -317,7 +320,7 @@ public partial class BatchExportWindow : Window
         {
             await Task.Run(() => {
                 if (work.Format is not (ExportFormat.RenderedDng or ExportFormat.HdrJpeg)) ExportMetadata.VerifyAvailable();
-                using var engine = createEngine(work.AIBackend);engine.SetAIDevice(work.AIDeviceID);
+                using var engine = createEngine(work.AIBackend);engine.SetAIDevice(work.AIDeviceID);engine.SetCancellation(cancellation.Token);
                 BatchRunner.Run(work, journal, failuresOnly, cancellation.Token,
                     (updated, _) => {
                         foreach (var item in updated.Items)

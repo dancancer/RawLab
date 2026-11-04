@@ -66,6 +66,7 @@ public sealed class BatchJob
     public int Version { get; set; } = 1;
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Source { get; set; } = "";
+    public bool SourceIsProRAW { get; set; }
     public AdjustmentSnapshot Settings { get; set; } = new Adjustments().Capture();
     public int AIBackend { get; set; } = 2;
     public string AIDeviceID { get; set; } = "";
@@ -99,7 +100,7 @@ public sealed class BatchJob
         Source = source, Settings = settings.Copy(), Look = look, LookName = name
     };
     public BatchJob Copy() => new() {
-        Version=Version, SettingsMode=SettingsMode, Id=Id, Source=Source, Settings=Settings.Copy(), AIBackend=AIBackend, AIDeviceID=AIDeviceID, Look=Look, LookName=LookName,
+        Version=Version, SettingsMode=SettingsMode, Id=Id, Source=Source, SourceIsProRAW=SourceIsProRAW, Settings=Settings.Copy(), AIBackend=AIBackend, AIDeviceID=AIDeviceID, Look=Look, LookName=LookName,
         OutputDirectory=OutputDirectory, Png=Png, OutputFormat=OutputFormat, LongEdge=LongEdge, Started=Started, Interrupted=Interrupted, Cancelled=Cancelled,
         Error=Error, Items=Items.Select(x => x with { Frozen = x.Frozen?.Copy() }).ToList()
     };
@@ -116,8 +117,10 @@ public sealed class BatchJob
         if (AIBackend is not (0 or 2 or 3)) throw new InvalidDataException("Invalid Windows AI backend in batch journal.");
         if (AIDeviceID is not {Length:<=256}) throw new InvalidDataException("Invalid Windows AI device in batch journal.");
         _ = Settings.Restore();
-        if (PhotoInput.IsCameraRaw(Source) && Settings.HDR is { Mode: HDRMode.Hdr })
+        if (Settings.HDR is { Mode: HDRMode.Hdr } && PhotoInput.IsCameraRaw(Source) && !SourceIsProRAW)
             throw new InvalidDataException(Loc.Text("相机 RAW HDR 暂不支持批量导出。"));
+        if (Settings.HDR is { Mode: HDRMode.Hdr } && SourceIsProRAW && Settings.ProRAWDecodeVersion != HDRNative.ProRAWDecodeVersion)
+            throw new InvalidDataException(Loc.Text("不支持此处理版本，原有记录未被覆盖。"));
         if (AIBackend == 0 && (Settings.AIDenoiseEnabled || Items.Any(item => item.Frozen?.Settings.AIDenoiseEnabled == true)))
             throw new InvalidDataException(Loc.Text("AI 降噪不支持 CPU，请重新创建使用 GPU 的批量任务。"));
         if (Mode != PerTargetFrozen)

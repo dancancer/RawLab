@@ -182,6 +182,7 @@ public partial class MainWindow
             if (batchWindow != null) { batchWindow.Close();if(batchWindow?.IsVisible==true)return;batchWindow=null; }
             if (previous != null) batchJournal.Discard(previous);
             var job = BatchJob.Create(file, settings.Capture(), lut, LookTitle);
+            job.SourceIsProRAW = hdrSource?.IsProRAW == true;
             job.AIBackend=RequestedAIBackend;job.AIDeviceID=aiPreference.DeviceID;
             batchJournal.FreezeLook(job); batchJournal.Save(job); previousBatch = job;
             ShowBatch(job);

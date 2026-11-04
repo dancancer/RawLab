@@ -20,6 +20,22 @@ import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.SettingsCodec
 
 class BatchExportTest {
+    @Test fun cancellationAfterRenderingDisposesOutputWithoutPublishing() {
+        val root = java.nio.file.Files.createTempDirectory("batch-cancel").toFile()
+        try {
+            val input = File(root, "input.raw").apply { writeText("source") }
+            val target = BatchTarget(PhotoIdentity("target"), input, input.name)
+            val job = BatchJob(BatchSourceSnapshot(PhotoIdentity("source"), input, EditSettings()), listOf(target))
+            var cancelled = false
+            var published = false
+            var disposed = false
+            val result = BatchRunner.run(job, { _, _ -> cancelled = true; "output" },
+                { _, _, _ -> published = true }, { cancelled }, dispose = { disposed = true })
+            assertFalse(published)
+            assertTrue(disposed)
+            assertEquals(BatchRowStatus.CANCELLED, result.rows.single().status)
+        } finally { root.deleteRecursively() }
+    }
     @Test fun perTargetJournalKeepsDifferencesThroughCancelResumeAndFailedOnlyRetry() {
         val root = Files.createTempDirectory("rawlab-frozen-targets").toFile()
         try {
@@ -40,12 +56,13 @@ class BatchExportTest {
             val restored = journal.load(job.id)!!
             assertEquals(BatchSettingsMode.PER_TARGET_FROZEN, restored.settingsMode)
             assertEquals(listOf(.5f), exposures)
+            assertTrue(restored.rows.all { it.status == BatchRowStatus.CANCELLED })
             assertEquals(3, restored.rows.map { it.outputName }.distinct().size)
             val failed = BatchRunner.run(restored, render = { target, settings ->
                 exposures += settings.exposure
                 if (target.id == "1") error("Retry me")
             }, write = { _, _, _ -> }, journal = journal)
-            assertEquals(listOf(.5f, 1f, 1.5f), exposures)
+            assertEquals(listOf(.5f, .5f, 1f, 1.5f), exposures)
             // 一个取消项不能混入“只重试失败”调度。
             val retry = failed.withRows(failed.rows.map { if (it.id == "2") it.copy(status = BatchRowStatus.CANCELLED) else it })
             val pending = failed.withRows(failed.rows.map { if (it.id == "2") it.copy(status = BatchRowStatus.PENDING) else it })
@@ -53,7 +70,7 @@ class BatchExportTest {
             assertEquals(BatchRowStatus.PENDING, cancelledRetry.rows[2].status)
             val done = BatchRunner.retryFailed(retry, render = { _, settings -> exposures += settings.exposure },
                 write = { _, _, _ -> }, journal = journal)
-            assertEquals(listOf(.5f, 1f, 1.5f, 1f), exposures)
+            assertEquals(listOf(.5f, .5f, 1f, 1.5f, 1f), exposures)
             assertEquals(BatchRowStatus.CANCELLED, done.rows[2].status)
             assertThrows(IllegalArgumentException::class.java) { journal.save(job.copy(outputLongEdge = 2048)) }
             assertThrows(IllegalArgumentException::class.java) {

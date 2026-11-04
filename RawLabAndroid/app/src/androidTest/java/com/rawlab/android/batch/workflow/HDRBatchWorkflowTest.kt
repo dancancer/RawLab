@@ -31,15 +31,20 @@ class HDRBatchWorkflowTest {
     private val cleanup = BatchTestCleanup(instrumentation.targetContext)
     @get:Rule val rules = org.junit.rules.RuleChain.outerRule(cleanup).around(LanguageTestRule()).around(ForegroundTestRule()).around(compose)
 
-    @Test fun uniformHDRSourcePreflightsMixedTargetsAndFreezesTheirModes() {
+    @Test fun uniformHDRSourcePreflightsMixedTargetsAndFreezesTheirModes() = mixedTargets(false)
+
+    @Test fun proRAWMixedBatchCancelsTheCurrentRenderAndResumesWithoutChangingRecords() = mixedTargets(true)
+
+    private fun mixedTargets(proRAW: Boolean) {
         val id=UUID.randomUUID().toString();cleanup.begin(id)
         val context=instrumentation.targetContext
         val root=File(context.cacheDir,"hdr-batch-$id").apply { mkdirs() }
         fun asset(name: String, file: String)=File(root,file).also { output ->
             instrumentation.context.assets.open(name).use { input -> output.outputStream().use { input.copyTo(it) } }
         }
-        val hdr=asset("hdr-sample.jpg","batch-gpu-$id-hdr.jpg")
-        val oldHDR=hdr.copyTo(File(root,"batch-gpu-$id-old-hdr.jpg"))
+        val suffix = if (proRAW) "dng" else "jpg"
+        val hdr=asset(if (proRAW) "proraw-sample.dng" else "hdr-sample.jpg","batch-gpu-$id-hdr.$suffix")
+        val oldHDR=hdr.copyTo(File(root,"batch-gpu-$id-old-hdr.$suffix"))
         val raw=asset("sample.RAW","batch-gpu-$id-raw.dng")
         val jpeg=File(root,"batch-gpu-$id-ordinary.jpg").also { file ->
             val image=Bitmap.createBitmap(48,32,Bitmap.Config.ARGB_8888);image.eraseColor(android.graphics.Color.rgb(180,80,30))
@@ -53,6 +58,12 @@ class HDRBatchWorkflowTest {
         try {
             compose.runOnUiThread { model.setGpuEnabled(false);model.importPhoto(Uri.fromFile(hdr)) }
             compose.waitUntil(120_000) { model.state.value.canExport || model.state.value.error!=null };assertNull(model.state.value.error)
+            if (proRAW) {
+                assertTrue(model.state.value.photo!!.hdrSource?.isProRAW == true)
+                compose.runOnUiThread { model.setHDRMode(true); model.updatePreviewSize(777) }
+                compose.waitUntil(120_000) { model.state.value.canExport && model.state.value.edits.isHDREditing || model.state.value.error != null }
+                assertNull(model.state.value.error)
+            }
             compose.runOnUiThread { model.edit(model.state.value.edits.copy(exposure=.5f)) }
             compose.waitUntil(120_000) { model.state.value.canExport && model.state.value.edits.exposure==.5f }
             val sourceSettings=model.state.value.edits
@@ -74,6 +85,14 @@ class HDRBatchWorkflowTest {
             val previewTarget=batch.state.value.job.rows.first { it.target.displayName==jpeg.name }.target
             val preview=runCatching { runBlocking { batch.preview(previewTarget) }.also { it.recycle() } }
             compose.runOnUiThread { batch.start(ExportFormat.JPEG,null,128) }
+            if (proRAW) {
+                compose.waitUntil(120_000) { batch.state.value.job.rows.any { it.status == BatchRowStatus.PROCESSING } }
+                Thread.sleep(150)
+                compose.runOnUiThread { batch.cancel() }
+                compose.waitUntil(120_000) { batch.state.value.phase !in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING) }
+                assertTrue(batch.state.value.job.rows.all { it.status == BatchRowStatus.CANCELLED && it.outputUri == null })
+                compose.runOnUiThread { batch.continueUnfinished() }
+            }
             compose.waitUntil(240_000) { batch.state.value.phase !in setOf(BatchPhase.PREPARING,BatchPhase.RUNNING) }
             val state=batch.state.value
             assertTrue("Mixed batch failed: ${state.error}; ${state.job.rows.map { it.error }}",state.job.rows.all { it.status==BatchRowStatus.SUCCESS })

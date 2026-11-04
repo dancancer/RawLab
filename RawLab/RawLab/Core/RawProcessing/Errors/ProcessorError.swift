@@ -4,7 +4,7 @@ extension Sony2FujiProcessor {
     enum ProcessorError: LocalizedError {
         case metadataUnavailable, invalidDimensions
         case sessionCreateFailed(String), processFailed(String), localizedFailure(String)
-        case outputIO, bufferCopyFailed, rasterDecodeFailed, invalidExportSize
+        case outputIO, bufferCopyFailed, rasterDecodeFailed, invalidExportSize, proRAWExportUnavailable
 
         var errorDescription: String? {
             switch self {
@@ -17,6 +17,7 @@ extension Sony2FujiProcessor {
             case .outputIO: return L10n.text("无法写入成片，请检查输出位置和剩余空间。")
             case .bufferCopyFailed: return L10n.text("Sony2Fuji output copy failed.")
             case .rasterDecodeFailed: return L10n.text("Raster decode failed.")
+            case .proRAWExportUnavailable: return L10n.text("此设备暂不支持导出 HDR 模式下的 ProRAW 照片。")
             case .invalidExportSize: return L10n.text("导出长边必须为 1-65535 像素。")
             }
         }

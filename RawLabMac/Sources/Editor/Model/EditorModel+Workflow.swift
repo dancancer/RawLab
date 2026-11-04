@@ -389,7 +389,7 @@ extension EditorModel {
         var candidate=restoredRecord.state?.settings ?? Adjustments()
         if restoredRecord.state==nil && RenderEngine.isRasterInput(url) { candidate.exposureMode = .sensor }
         if info != nil && restoredRecord.state==nil { candidate.hdr=HDRSettings() }
-        let cameraHDR = info == nil && (try? HDRSourceInfo.probeCameraRAW(url)) != nil
+        let cameraHDR = info == nil && (try? HDRSourceInfo.probeRAW(url)) != nil
         guard !candidate.isHDREditing || info != nil || cameraHDR else {
             self.error=L10n.text("此照片没有可编辑的 HDR 增益图。")
             return

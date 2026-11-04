@@ -70,8 +70,9 @@ fun EditSettings.hdrDefaults(): EditSettings = applyHDRValues(
 
 /** Enable/disable HDR without changing the inactive mode's edit snapshot. */
 fun EditSettings.withHDRMode(enabled: Boolean, sourceIsHDR: Boolean, hasLook: Boolean = false,
-    cameraRaw: Boolean = false): EditSettings {
+    cameraRaw: Boolean = false, proRAW: Boolean = false): EditSettings {
     if (!sourceIsHDR && !cameraRaw) throw HDRModeError.UnsupportedSource
+    if (enabled && proRAW) requireProRAWDecoder()
     val synchronized = synchronizeHDR()
     if (enabled == synchronized.isHDREditing) return synchronized
     if (enabled) {
@@ -81,7 +82,9 @@ fun EditSettings.withHDRMode(enabled: Boolean, sourceIsHDR: Boolean, hasLook: Bo
             // edit in the inactive snapshot and start the HDR request from neutral
             // values (or the previously saved HDR snapshot).
             val base = synchronized.copy(hdr = null, sdrSnapshot = null)
-            return base.applyHDRValues(stored ?: HDRSettings(), HDRMode.HDR, SettingsCodec.encode(base))
+            return base.applyHDRValues(stored ?: HDRSettings(), HDRMode.HDR, SettingsCodec.encode(base)).let {
+                if (proRAW) it.copy(proRAWDecodeVersion = com.rawlab.android.photo.HDRSourceInfo.PRORAW_DECODE_VERSION) else it
+            }
         }
         if (stored == null) {
             val conflicts = buildList {
@@ -106,7 +109,12 @@ fun EditSettings.withHDRMode(enabled: Boolean, sourceIsHDR: Boolean, hasLook: Bo
     }
     val stored = synchronized.hdr ?: return synchronized.copy(sdrSnapshot = null)
     val restored = synchronized.sdrSnapshotSettings() ?: synchronized.copy(hdr = null, sdrSnapshot = null)
-    return restored.copy(hdr = stored.copy(mode = HDRMode.SDR), sdrSnapshot = null)
+    return restored.copy(hdr = stored.copy(mode = HDRMode.SDR), sdrSnapshot = null, proRAWDecodeVersion = proRAWDecodeVersion)
+}
+
+fun EditSettings.requireProRAWDecoder() {
+    if (proRAWDecodeVersion != null && proRAWDecodeVersion != com.rawlab.android.photo.HDRSourceInfo.PRORAW_DECODE_VERSION)
+        throw HDRModeError.InvalidSettings
 }
 
 /** Keep the active scalar/geometry fields and the typed HDR record byte-for-byte aligned. */
