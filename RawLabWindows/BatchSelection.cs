@@ -207,22 +207,31 @@ internal sealed class BatchHDRPreparation(EditStore store, Func<SavedEdit,string
     internal BatchJob Freeze(BatchJob job, BatchJournal journal, CancellationToken cancellation)
     {
         var work = job.Copy();
-        var items = work.Items.Where(item => item.Selected && item.CanSelect).ToArray();
-        var candidates = new (VersionedPhotoEdit? Record, BatchFrozenSettings Frozen)[items.Length];
-        for (var index=0; index<items.Length; index++) {
-            cancellation.ThrowIfCancellationRequested();
-            var item = items[index];
-            // 旧任务的成功项不再参与导出，即使原片或外观已经不可用也保留其完成记录。
-            candidates[index] = item.Status == BatchStatus.Succeeded
-                ? (null, work.SnapshotFor(item) with { Ordinal=index,Look=null })
-                : Candidate(work,item,index,true);
-        }
+        var migrating = work.Mode != BatchJob.PerTargetFrozen;
+        if (migrating) work.Items = work.Items.Where(item => item.Selected && item.CanSelect).ToList();
         var owned = new List<string>();
         try {
             Directory.CreateDirectory(journal.DirectoryPath);
-            work.Items = items.Select((item,index) => {
+            for (var index=0; index<work.Items.Count; index++) {
                 cancellation.ThrowIfCancellationRequested();
-                var frozen = candidates[index].Frozen;
+                var item = work.Items[index];
+                if (!migrating && !item.AwaitingTargetSettings) continue;
+                // 已成功的旧任务项只保留原有结果，无需访问其原片或外观。
+                if (item.Status == BatchStatus.Succeeded) {
+                    work.Items[index] = item with { Frozen=work.SnapshotFor(item) with { Ordinal=index,Look=null } };
+                    continue;
+                }
+                BatchFrozenSettings frozen;
+                try {
+                    var candidate = Candidate(work,item,index,true);
+                    if (!store.VersionedState(item.Input).SameAs(candidate.Record)) throw new EditPersistenceConflict();
+                    frozen = candidate.Frozen;
+                } catch (Exception error) when (work.Started &&
+                    error is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception) {
+                    // 保存逐行失败，恢复后重试时再读取目标的调整。
+                    work.Items[index] = item with { Status=BatchStatus.Failed,Error=error.Message,AwaitingTargetSettings=true };
+                    continue;
+                }
                 if (frozen.Look is {} look) {
                     // 每次冻结使用新的资源名，避免异常退出留下的副本阻断重试。
                     item = item with { Id=Guid.NewGuid() };
@@ -235,12 +244,7 @@ internal sealed class BatchHDRPreparation(EditStore store, Func<SavedEdit,string
                     frozen = frozen with { Look=copy };
                     frozen.VerifyLook();
                 }
-                return item with { Frozen=frozen };
-            }).ToList();
-            for (var index=0; index<items.Length; index++) {
-                cancellation.ThrowIfCancellationRequested();
-                if (candidates[index].Record is {} record && !store.VersionedState(items[index].Input).SameAs(record))
-                    throw new EditPersistenceConflict();
+                work.Items[index] = item with { Frozen=frozen,AwaitingTargetSettings=false };
             }
             work.Version=3; work.SettingsMode=BatchJob.PerTargetFrozen;
             cancellation.ThrowIfCancellationRequested();

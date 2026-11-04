@@ -49,7 +49,11 @@ public sealed record BatchItem(Guid Id, string Input, OriginalIdentity Identity)
     public OriginalIdentity? CompletedIdentity { get; init; }
     public string? Error { get; init; }
     public string? ValidationError { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? HDRJpegIncompatible { get; init; }
     public BatchFrozenSettings? Frozen { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool AwaitingTargetSettings { get; init; }
     [System.Text.Json.Serialization.JsonIgnore] public bool CanSelect=>ValidationError==null;
     public static BatchItem Create(string input) => new(Guid.NewGuid(), Path.GetFullPath(input), OriginalIdentity.Read(input));
     public string StatusText => ValidationError!=null ? Loc.Text("验证失败") : Status switch {
@@ -108,7 +112,7 @@ public sealed class BatchJob
         ? item.Frozen ?? throw new InvalidDataException("Missing frozen batch item.")
         : new() { Ordinal = 0, Settings = PhotoInput.PrepareBatchSettings(Source, item.Input, Settings.Restore()).Capture(),
             Look = Look, LookName = LookName, OutputFormat = Format, LongEdge = LongEdge };
-    public string TemporaryPath(BatchItem item) => Path.Combine(OutputDirectory!, $".rawlab-{Id}-{item.Id}.{SnapshotFor(item).OutputFormat.Suffix()}");
+    public string TemporaryPath(BatchItem item) => Path.Combine(OutputDirectory!, $".rawlab-{Id}-{item.Id}.{(item.Frozen?.OutputFormat ?? Format).Suffix()}");
 
     public void Validate()
     {
@@ -126,7 +130,7 @@ public sealed class BatchJob
             throw new InvalidDataException(Loc.Text("AI 降噪不支持 CPU，请重新创建使用 GPU 的批量任务。"));
         if (Mode != PerTargetFrozen)
         {
-            if (Version == 3 || Items.Any(x => x.Frozen != null)) throw new InvalidDataException("Frozen items require per-target mode.");
+            if (Version == 3 || Items.Any(x => x.Frozen != null || x.AwaitingTargetSettings)) throw new InvalidDataException("Frozen items require per-target mode.");
             return;
         }
         if (Version != 3 || Items.Count == 0 || Items.Select(x => x.Id).Distinct().Count() != Items.Count ||
@@ -134,7 +138,15 @@ public sealed class BatchJob
             throw new InvalidDataException("Invalid per-target batch.");
         for (var i = 0; i < Items.Count; i++)
         {
-            var frozen = Items[i].Frozen;
+            var item = Items[i];
+            var frozen = item.Frozen;
+            if (item.AwaitingTargetSettings)
+            {
+                if (!Started || !SourceIsProRAW || Settings.HDR is not { Mode: HDRMode.Hdr } ||
+                    !item.Selected || !item.CanSelect || item.Status != BatchStatus.Failed || frozen != null)
+                    throw new InvalidDataException("Invalid deferred batch item.");
+                continue;
+            }
             if (frozen == null || frozen.Ordinal != i) throw new InvalidDataException("Missing frozen batch item or order.");
             frozen.Validate();
         }
@@ -250,7 +262,8 @@ public static class BatchRunner
             for (var i = 0; i < job.Items.Count; i++)
             {
                 var item = job.Items[i];
-                if (!item.Selected || !item.CanSelect || item.Status == BatchStatus.Succeeded || (failuresOnly && item.Status != BatchStatus.Failed)) continue;
+                if (!item.Selected || !item.CanSelect || item.AwaitingTargetSettings || item.Status == BatchStatus.Succeeded ||
+                    (failuresOnly && item.Status != BatchStatus.Failed)) continue;
                 if (cancellation.IsCancellationRequested) { job.Cancelled = true; break; }
                 VerifyDestination(job.OutputDirectory);
                 job.Items[i] = item with { Status = BatchStatus.Running, Error = null };

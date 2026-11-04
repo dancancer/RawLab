@@ -55,7 +55,10 @@ internal static class HDRWorkflowChecks
 
         var legacy=Job(hdr); legacy.Started=true;
         var removed=Copy("already-exported");
-        var completed=BatchItem.Create(removed) with { Selected=true,Status=BatchStatus.Succeeded,Output=Path.Combine(root,"previous.jpg") };
+        var previousOutput=Path.Combine(root,"previous.jpg");
+        File.WriteAllText(previousOutput,"completed output");
+        var completed=BatchItem.Create(removed) with { Selected=true,Status=BatchStatus.Succeeded,
+            Output=previousOutput,CompletedIdentity=OriginalIdentity.Read(previousOutput) };
         legacy.Items=[completed,BatchItem.Create(low) with {Selected=true}];
         var legacyJournal=new BatchJournal(Path.Combine(root,"legacy-journal"));
         legacyJournal.Save(legacy);
@@ -67,6 +70,83 @@ internal static class HDRWorkflowChecks
 
         var app=TestWindowState.CreateApplication();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
+        var pending=Copy("missing-pending");
+        store.Save(pending,sdr.Capture(),null);
+        legacy.Items.Insert(1,BatchItem.Create(pending) with { Selected=true });
+        legacyJournal.Save(legacy);
+        var parked=pending+".parked";
+        File.Move(pending,parked);
+        void Run(BatchExportWindow batch) {
+            var run=batch.StartExecution();
+            InteractionChecks.PumpUntil(()=>run.IsCompleted);
+            run.GetAwaiter().GetResult();
+        }
+        BatchExportWindow OpenLegacy() {
+            var batch=new BatchExportWindow(legacyJournal.Load()!,legacyJournal,_=>new RenderEngine(0),hdrPreparation:preparation);
+            batch.Show();
+            return batch;
+        }
+        var legacyWindow=OpenLegacy();
+        try {
+            Run(legacyWindow);
+            var first=legacyJournal.Load()!;
+            var invalid=first.Items.Single(item=>item.Input==pending);
+            check(first.SucceededCount==2 && invalid.Status==BatchStatus.Failed && invalid.Selected && invalid.Error!=null &&
+                first.Items[0].Id==completed.Id && first.Items[0].Output==completed.Output && first.Error==null,
+                "Legacy resume reports a missing unfinished target by row and exports the remaining photo: "+first.Error);
+            var savedOutput=first.Items.Single(item=>item.Input==low).Output;
+            legacyWindow.Close();
+            File.Move(parked,pending);
+            legacyWindow=OpenLegacy();
+            Run(legacyWindow);
+            var retried=legacyJournal.Load()!;
+            check(retried.SucceededCount==3 && retried.Items.Single(item=>item.Input==low).Output==savedOutput &&
+                retried.Items.Single(item=>item.Input==pending).Frozen?.Settings.HDR?.Mode==HDRMode.Sdr &&
+                File.ReadAllText(previousOutput)=="completed output",
+                "Legacy retry freezes the restored target in its saved SDR mode and preserves prior outputs: "+retried.Error);
+        } finally {legacyWindow.Close();}
+
+        var formatJob=Job(hdr); formatJob.Format=ExportFormat.HdrJpeg;
+        var formatJournal=new BatchJournal(Path.Combine(root,"format-journal"));
+        var broken=Path.Combine(root,"broken.jpg"); File.WriteAllText(broken,"not a photo");
+        var missingLook=Copy("sdr-with-missing-look");
+        store.Save(missingLook,sdr.Capture(),"builtin:missing-look.cube");
+        var formatWindow=new BatchExportWindow(formatJob,formatJournal,_=>new RenderEngine(0),hdrPreparation:preparation);
+        try {
+            formatWindow.Show();
+            var adding=formatWindow.AddInputs([low,high,broken,missingLook]);
+            InteractionChecks.PumpUntil(()=>adding.IsCompleted); adding.GetAwaiter().GetResult();
+            if (formatWindow.Job.Items.Count!=4)
+                throw new InvalidOperationException("Format preflight did not retain all four inputs: "+formatWindow.Job.Error);
+            BatchItem Item(string path)=>formatWindow.Job.Items.Single(item=>item.Input==path);
+            check(!Item(low).CanSelect && Item(high).Selected && !Item(broken).CanSelect && !Item(missingLook).CanSelect,
+                "HDR JPEG admits the HDR photo and rejects SDR, unreadable inputs and missing looks");
+            var sdrId=Item(low).Id; var brokenError=Item(broken).ValidationError; var lookError=Item(missingLook).ValidationError;
+            ((RadioButton)formatWindow.FindName("SdrJpeg")).IsChecked=true;
+            InteractionChecks.PumpUntil(()=>!formatWindow.Busy);
+            check(formatWindow.Job.Format==ExportFormat.SdrJpeg && Item(low).Id==sdrId && Item(low).CanSelect &&
+                Item(high).Selected && Item(broken).ValidationError==brokenError && Item(missingLook).ValidationError==lookError,
+                "Switching to SDR JPEG restores the same SDR row and preserves file and decode errors");
+            var targets=(ListBox)formatWindow.FindName("Targets");
+            var sdrRow=targets.Items.Cast<BatchRow>().Single(row=>row.Input==low);
+            sdrRow.Selected=true;
+            check(Item(low).Selected,"The restored SDR row can be checked in the batch list");
+            ((RadioButton)formatWindow.FindName("HdrJpeg")).IsChecked=true;
+            InteractionChecks.PumpUntil(()=>!formatWindow.Busy);
+            check(!Item(low).CanSelect && Item(high).Selected && Item(broken).ValidationError==brokenError,
+                "Switching back recomputes HDR compatibility and preserves the decode error");
+            var oldDraft=formatWindow.Job.Copy();
+            oldDraft.Items=oldDraft.Items.Select(item=>item with { HDRJpegIncompatible=null }).ToList();
+            formatWindow.Close();
+            formatJournal.Save(oldDraft);
+            formatWindow=new BatchExportWindow(formatJournal.Load()!,formatJournal,_=>new RenderEngine(0),hdrPreparation:preparation);
+            formatWindow.Show();
+            ((RadioButton)formatWindow.FindName("SdrJpeg")).IsChecked=true;
+            InteractionChecks.PumpUntil(()=>!formatWindow.Busy);
+            check(Item(low).CanSelect && Item(broken).ValidationError==brokenError && Item(missingLook).ValidationError==lookError,
+                "An older draft revalidates missing compatibility data when the format changes");
+        } finally {formatWindow.Close();}
+
         var window=new BatchExportWindow(Job(hdr),journal,_=>new RenderEngine(0),hdrPreparation:preparation);
         try {
             window.Show();

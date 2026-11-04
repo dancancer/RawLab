@@ -74,8 +74,10 @@ public partial class BatchExportWindow : Window
         SourceLook.Text = $"{lookName} · {job.Settings.Values[(int)Parameter.Strength]:0}%";
         SourceSummary.Text = Loc.Format("曝光  {0:+0.00;-0.00;0.00} EV\n白平衡  {1}\n曝光基准  {2}", state[Parameter.Exposure], raster ? Loc.Text("不适用") : state.CameraWhiteBalance ? Loc.Text("拍摄时设置") : Loc.Text("自定义"), raster ? Loc.Text("显示图像") : new[] { Loc.Text("标准显影"), Loc.Text("匹配内嵌预览"), Loc.Text("传感器基准") }[state.ExposureMode]);
         AllSettings.Text = Frozen ? string.Join("\n\n",job.Items.Select(item=>
-            Path.GetFileName(item.Input)+" · "+item.Frozen!.OutputFormat+" · "+(item.Frozen.LongEdge?.ToString() ?? Loc.Text("原尺寸"))+"\n"+
-            BatchSettingsText.Describe(item.Frozen.Settings,item.Frozen.LookName,item.Input))) :
+            item.Frozen is {} frozen ?
+                Path.GetFileName(item.Input)+" · "+frozen.OutputFormat+" · "+(frozen.LongEdge?.ToString() ?? Loc.Text("原尺寸"))+"\n"+
+                BatchSettingsText.Describe(frozen.Settings,frozen.LookName,item.Input) :
+                Path.GetFileName(item.Input)+"\n"+item.Error)) :
             BatchSettingsText.Describe(job.Settings,lookName,job.Source);
         SourceHeading.Text=Loc.Text(Frozen ? "逐张参数已冻结" : "调整来源");
         SourcePhoto.Visibility=SourceSummary.Visibility=Frozen ? Visibility.Collapsed : Visibility.Visible;
@@ -114,7 +116,7 @@ public partial class BatchExportWindow : Window
         {
             var row = rows.FirstOrDefault(row => row.Item.Id == item.Id);
             if (row == null) { row = new BatchRow(item, Select); rows.Add(row); }
-            row.Refresh(item, !Frozen && !job.Started && !preflighting, !Running && !preflighting && item.CanSelect);
+            row.Refresh(item, !Frozen && !job.Started && !preflighting, !Running && !preflighting && item.CanSelect && !item.AwaitingTargetSettings);
         }
         CloseAction.Content = job.Started || Frozen ? Loc.Text("关闭") : Loc.Text("取消"); CloseAction.IsEnabled = !Running;
         RevealFolder.Visibility = job.SucceededCount > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -164,22 +166,7 @@ public partial class BatchExportWindow : Window
                 foreach(var input in inputs.Distinct(StringComparer.OrdinalIgnoreCase))
                 {
                     if(closeRequested)break;
-                    try{
-                        var item=BatchItem.Create(input);
-                        try{
-                            var prepared=BatchHDRPreparation.Required(snapshot) ? RequireHDRPreparation().Prepare(snapshot,item) : null;
-                            var effective=prepared?.Settings.Restore() ?? RenderEngine.PrepareBatchSettings(snapshot.Source,input,snapshot.Settings.Restore());
-                            if (snapshot.Format == ExportFormat.HdrJpeg && !effective.IsHDREditing)
-                                throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
-                            if (effective.HDR is { Mode: HDRMode.Hdr } && effective.ProRAWDecodeVersion == HDRNative.ProRAWDecodeVersion &&
-                                !PhotoInput.SupportsProRAWHDR(input))
-                                throw new InvalidOperationException(Loc.Text("不支持此相机 RAW 的 HDR 显影。"));
-                            if(!effective.IsHDREditing && effective.AIDenoiseEnabled)RenderEngine.ValidateAIInput(input,job.AIDeviceID,effective.X3fMode);
-                            else validator.Render(input,effective,prepared == null ? snapshot.Look : prepared.Look,64,statistics:false,clipping:false,viewportPreview:true);
-                            item=item with{Selected=true};}
-                        catch(Exception error){item=item with{ValidationError=error.Message,Selected=false};}
-                        accepted.Add(item);
-                    }
+                    try { accepted.Add(ValidateInput(snapshot,BatchItem.Create(input) with {Selected=true},validator)); }
                     catch(Exception error){errors.Add(Path.GetFileName(input)+": "+error.Message);}
                 }
                 return accepted;
@@ -191,6 +178,33 @@ public partial class BatchExportWindow : Window
         }
         catch(Exception error){if(!closed)job.Error=error.Message;}
         finally{preflighting=false;if(!closed){Refresh();if(closeRequested)Close();}BusyChanged?.Invoke(false);}
+    }
+    private BatchItem ValidateInput(BatchJob snapshot, BatchItem item, RenderEngine validator)
+    {
+        try {
+            if (!item.Identity.SameFile(OriginalIdentity.Read(item.Input))) throw new EditPersistenceConflict();
+            var prepared=BatchHDRPreparation.Required(snapshot) ? RequireHDRPreparation().Prepare(snapshot,item) : null;
+            var effective=prepared?.Settings.Restore() ??
+                RenderEngine.PrepareBatchSettings(snapshot.Source,item.Input,snapshot.Settings.Restore());
+            if (effective.IsHDREditing && effective.ProRAWDecodeVersion == HDRNative.ProRAWDecodeVersion &&
+                !PhotoInput.SupportsProRAWHDR(item.Input))
+                throw new InvalidOperationException(Loc.Text("不支持此相机 RAW 的 HDR 显影。"));
+            if (!effective.IsHDREditing && effective.AIDenoiseEnabled)
+                RenderEngine.ValidateAIInput(item.Input,snapshot.AIDeviceID,effective.X3fMode);
+            else
+                validator.Render(item.Input,effective,prepared == null ? snapshot.Look : prepared.Look,64,statistics:false,clipping:false,viewportPreview:true);
+            return ApplyFormatValidation(item with {ValidationError=null,HDRJpegIncompatible=!effective.IsHDREditing},snapshot.Format);
+        } catch (Exception error) {
+            return item with {ValidationError=error.Message,HDRJpegIncompatible=false,Selected=false};
+        }
+    }
+    private static BatchItem ApplyFormatValidation(BatchItem item, ExportFormat format)
+    {
+        // 只有通过文件和解码检查的 SDR 项才会记录格式冲突。
+        if (item.HDRJpegIncompatible != true) return item;
+        return format == ExportFormat.HdrJpeg
+            ? item with {ValidationError=Loc.Text("HDR JPEG 需要启用 HDR 编辑。"),Selected=false}
+            : item with {ValidationError=null};
     }
     private Task LoadThumbnails()
     {
@@ -219,7 +233,7 @@ public partial class BatchExportWindow : Window
     }
     private void RemoveClicked(object sender, RoutedEventArgs e)
     {
-        if (!Frozen && !job.Started && !Running && sender is FrameworkElement { DataContext: BatchRow row }) { job.Items.RemoveAll(x => x.Id == row.Item.Id); SaveDraft(); }
+        if (!Frozen && !job.Started && !Running && !preflighting && sender is FrameworkElement { DataContext: BatchRow row }) { job.Items.RemoveAll(x => x.Id == row.Item.Id); SaveDraft(); }
     }
     private void FolderClicked(object sender, RoutedEventArgs e)
     {
@@ -227,14 +241,53 @@ public partial class BatchExportWindow : Window
         var picker = new OpenFolderDialog { Title = Loc.Text("选择输出文件夹") };
         if (picker.ShowDialog(this) == true) { job.OutputDirectory = picker.FolderName; SaveDraft(); }
     }
-    private void FormatChanged(object sender, RoutedEventArgs e)
+    private async void FormatChanged(object sender, RoutedEventArgs e)
     {
-        if (ready && !Frozen && !job.Started && !Running)
-        {
-            job.Format = Dng.IsChecked == true ? ExportFormat.RenderedDng :
-                Png.IsChecked == true ? ExportFormat.Png : HdrJpeg.IsChecked == true ? ExportFormat.HdrJpeg :
-                SdrJpeg.IsChecked == true ? ExportFormat.SdrJpeg : ExportFormat.Jpeg;
+        if (!ready || Frozen || job.Started || Running || preflighting || closed) return;
+        var format = Dng.IsChecked == true ? ExportFormat.RenderedDng :
+            Png.IsChecked == true ? ExportFormat.Png : HdrJpeg.IsChecked == true ? ExportFormat.HdrJpeg :
+            SdrJpeg.IsChecked == true ? ExportFormat.SdrJpeg : ExportFormat.Jpeg;
+        if (job.Format == format) return;
+        if (job.Items.All(item => item.HDRJpegIncompatible != null) ||
+            job.Format != ExportFormat.HdrJpeg && format != ExportFormat.HdrJpeg) {
+            job.Format=format;
+            job.Items=job.Items.Select(item => ApplyFormatValidation(item,format)).ToList();
             SaveDraft();
+            return;
+        }
+        CloseFailed=closeRequested=false;
+        preflighting=true;
+        BusyChanged?.Invoke(true);
+        Refresh();
+        var snapshot=job.Copy();
+        snapshot.Format=format;
+        try {
+            var checkedItems=await Task.Run(() => {
+                using var validator=new RenderEngine(0,aiBackend:snapshot.AIBackend,aiDeviceID:snapshot.AIDeviceID,aiDiagnostics:aiDiagnostics);
+                var items=new List<BatchItem>();
+                foreach (var item in snapshot.Items) {
+                    if (closeRequested) break;
+                    items.Add(item.HDRJpegIncompatible == null ? ValidateInput(snapshot,item,validator) : ApplyFormatValidation(item,format));
+                }
+                return items;
+            });
+            if (closed || closeRequested) return;
+            job.Format=format;
+            job.Items=checkedItems;
+            SaveDraft();
+        } catch (Exception error) {
+            if (!closed) {
+                var previous = job.Format switch {
+                    ExportFormat.HdrJpeg => HdrJpeg, ExportFormat.SdrJpeg => SdrJpeg,
+                    ExportFormat.Png => Png, ExportFormat.RenderedDng => Dng, _ => Jpeg
+                };
+                previous.IsChecked=true;
+                job.Error=error.Message;
+            }
+        } finally {
+            preflighting=false;
+            if (!closed) { Refresh(); if (closeRequested) Close(); }
+            BusyChanged?.Invoke(false);
         }
     }
     private void RefreshSizeControls()
@@ -324,7 +377,11 @@ public partial class BatchExportWindow : Window
         try
         {
             await Task.Run(() => {
-                if (BatchHDRPreparation.Required(work)) work=RequireHDRPreparation().Freeze(work,journal,cancellation.Token);
+                if (BatchHDRPreparation.Required(work) || work.Items.Any(item => item.AwaitingTargetSettings)) {
+                    work=RequireHDRPreparation().Freeze(work,journal,cancellation.Token);
+                    foreach (var item in work.Items.Where(item => item.AwaitingTargetSettings))
+                        runFailed.Add(item.Id);
+                }
                 var previousStatuses = work.Items.ToDictionary(item => item.Id, item => item.Status);
                 if (work.Format is not (ExportFormat.RenderedDng or ExportFormat.HdrJpeg)) ExportMetadata.VerifyAvailable();
                 using var engine = createEngine(work.AIBackend);engine.SetAIDevice(work.AIDeviceID);engine.SetCancellation(cancellation.Token);
@@ -373,9 +430,10 @@ public partial class BatchExportWindow : Window
 
     private void SetRunJob(BatchJob value)
     {
-        var modeChanged = job.Mode != value.Mode;
+        var settingsChanged = job.Mode != value.Mode ||
+            !job.Items.Where(item => item.AwaitingTargetSettings).SequenceEqual(value.Items.Where(item => item.AwaitingTargetSettings));
         job = value;
-        if (modeChanged) RefreshLanguage(); else Refresh();
+        if (settingsChanged) RefreshLanguage(); else Refresh();
     }
 
     private async void InspectClicked(object sender, RoutedEventArgs e)
