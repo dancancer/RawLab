@@ -15,7 +15,8 @@ public partial class MainWindow
             ? "builtin:"+Path.GetFileName(f.Path) : lookLibrary?.IdentityForPath(f.Path) ?? f.Path!)
         .Concat(MasterRecipe.All.Where(r=>File.Exists(r.LutPath)).Select(r=>"recipe:"+r.Id)).ToHashSet(StringComparer.Ordinal);
     private AdjustmentTransferContext CurrentTransferContext()=>new(file!,PhotoInput.IsRaw(file!),AvailableTransferLooks(),
-        HasUncommittedDraft:transform.Active || editGesture!=null,CameraWhiteBalance:settings.AsShot);
+        HasUncommittedDraft:transform.Active || editGesture!=null,CameraWhiteBalance:settings.AsShot,
+        IsProRAW:hdrSource?.IsProRAW == true);
     private void CopyAdjustmentsClicked(object sender,RoutedEventArgs e)
     {
         if(!PrepareAdjustmentCommand())return;
@@ -59,7 +60,9 @@ public partial class MainWindow
                     if(!IsCurrent())return null;
                     try {
                         collectionTargets?.GetValueOrDefault(path)?.Validate();
-                        var identity=OriginalIdentity.Read(path);var raw=PhotoInput.IsRaw(path);
+                        var identity=OriginalIdentity.Read(path);var raw=PhotoInput.IsRaw(path);var proRAW=false;
+                        if(raw && PhotoInput.ProbeCameraRaw(path,out var probed) == HDRProbeState.Supported)
+                            proRAW=probed?.IsProRAW == true;
                         var defaults=PhotoInput.PrepareHDRInputSettings(path,new Adjustments());
                         (double Temperature,double Tint)? calibration=null;
                         if(raw) {
@@ -67,7 +70,7 @@ public partial class MainWindow
                             calibration=native.Render(path,defaults,null,32,statistics:false,clipping:false)?.WhiteBalance;
                         }
                         if(!OriginalIdentity.Read(path).SameFile(identity))throw new EditPersistenceConflict();
-                        var context=new AdjustmentTransferContext(path,raw,looks,CameraWhiteBalance:calibration,ValidateLens:lens=>{
+                        var context=new AdjustmentTransferContext(path,raw,looks,CameraWhiteBalance:calibration,IsProRAW:proRAW,ValidateLens:lens=>{
                             using var native=new RenderEngine(1);var probe=new Adjustments{Lens=lens};
                             var report=native.Render(path,probe,null,32,statistics:false,clipping:false)?.Lens;
                             if(report==null || lens.Distortion && !report.AppliedDistortion || lens.Tca && !report.AppliedTca)

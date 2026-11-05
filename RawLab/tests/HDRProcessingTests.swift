@@ -8,9 +8,29 @@ import UIKit
         guard let path=ProcessInfo.processInfo.environment["RAWLAB_TEST_HDR"] else { fatalError("Pass RAWLAB_TEST_HDR original") }
         let source=URL(fileURLWithPath:path)
         let bytes=try Data(contentsOf:source)
-        let info=try HDRSourceInfo.probe(source)!
+        let info=try (HDRSourceInfo.probe(source) ?? HDRSourceInfo.probeRAW(source))!
         let processor=Sony2FujiProcessor(gpuMode:SONY2FUJI_GPU_OFF)
         let output=URL(fileURLWithPath:CommandLine.arguments[2],isDirectory:true)
+        if info.proRAW != nil {
+            var settings=HDRSettings()
+            settings.geometry.quarterTurns=1; settings.geometry.straightenDegrees=7
+            settings.geometry.cropWidth=0.5; settings.geometry.perspectiveHorizontal=0.12
+            var edge=1280
+            for _ in 0..<4 {
+                let image=try processor.processHDR(url:source,settings:settings,previewLongEdge:edge)
+                let next=max(image.width,image.height)
+                require(next==1280,"ProRAW geometry preview shrinks on viewport feedback")
+                require(image.isProxy && image.nativeWidth==Int(info.native.width) &&
+                    image.nativeHeight==Int(info.native.height),"ProRAW preview lost original canvas")
+                edge=next
+            }
+            let neutral=try processor.processHDR(url:source,settings:HDRSettings(),previewLongEdge:256)
+            require(max(neutral.width,neutral.height)==256,"Identity bypass ignored ProRAW viewport size")
+            let unchanged=try Data(contentsOf:source)
+            require(unchanged==bytes,"ProRAW original changed")
+            print("PASS iOS ProRAW geometry preview converges and preserves bounded identity/native canvas")
+            return
+        }
         try autoreleasepool {
             print("HDR_STAGE preview")
             var settings=HDRSettings()

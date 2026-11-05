@@ -15,6 +15,7 @@ internal class BatchHDRPreparation(
     private val readRecord: (PhotoIdentity) -> VersionedPhotoEdit,
     private val resolveLook: (EditSettings) -> File?,
     private val probeSource: (File) -> Boolean,
+    private val probeProRAW: (File) -> Boolean = { false },
 ) {
     private data class Candidate(val record: VersionedPhotoEdit,val frozen: BatchFrozenSettings)
 
@@ -22,12 +23,14 @@ internal class BatchHDRPreparation(
         val hash=BatchFrozenSettings.checksum(target.sourceFile)
         val isHDR=probeSource(target.sourceFile)
         val record=readRecord(target.identity)
-        val previous=record.settings ?: sourceDefaultSettings(isHDR)
+        val previous=record.settings ?: sourceDefaultSettings(isHDR, cameraRaw = target.inputKind == PhotoInputKind.RAW)
         if(previous.isHDREditing && !isHDR) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.source")
         val payload=AdjustmentTransfer.captureHDRBatch(source.settings,
-            AdjustmentTransferContext(source.identity.value,source.inputKind==PhotoInputKind.RAW),previous.isHDREditing)
+            AdjustmentTransferContext(source.identity.value,source.inputKind==PhotoInputKind.RAW,
+                sourceSupportsProRAWHDR = probeProRAW(source.sourceFile)),previous.isHDREditing)
         val settings=AdjustmentTransfer.prepare(payload,previous,
-            AdjustmentTransferContext(target.id,target.inputKind==PhotoInputKind.RAW))
+            AdjustmentTransferContext(target.id,target.inputKind==PhotoInputKind.RAW,
+                sourceSupportsProRAWHDR = probeProRAW(target.sourceFile)))
         if(format==ExportFormat.HDR_JPEG && !settings.isHDREditing)
             throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.output")
         val look=if(settings.isHDREditing) null else resolveLook(settings)

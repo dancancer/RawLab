@@ -28,10 +28,12 @@ import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
 import com.rawlab.android.format.PhotoFiles
+import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.photo.BatchGlobalFailure
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.requireProRAWDecoder
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.EditStore
 import com.rawlab.android.adjustments.AdjustmentTransferException
@@ -108,6 +110,7 @@ class BatchExportModel(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val resolver = context.contentResolver
     private val cancelRequested = BatchCancellation()
+    private val activeProcessor = AtomicReference<NativeProcessor?>(null)
     private var running: Job? = null
     private var discardCompletion: CompletableDeferred<Unit>? = null
     private val journalRoot = File(context.filesDir, "RawLab/BatchJobs")
@@ -214,8 +217,11 @@ class BatchExportModel(
                 val journal = BatchJournal(journalRoot)
                 journal.save(materialized)
                 val processor = processorFactory(gpuMode, storage.lensDatabase())
+                val cancellationGeneration = processor.cancellationGeneration()
+                activeProcessor.set(processor)
+                if (cancelRequested.get()) processor.cancelPreview()
                 val result = try {
-                    val output = BatchOutputPublisher(context, storage, processor, materialized, destination, gpuMode)
+                    val output = BatchOutputPublisher(context, storage, processor, materialized, destination, gpuMode, cancellationGeneration)
                     mutable.update { it.copy(phase = BatchPhase.RUNNING) }
                     BatchRunner.run(materialized, output::render, { _, _, _ -> }, cancelRequested::get, journal,
                         didUpdate = {
@@ -223,7 +229,7 @@ class BatchExportModel(
                             mutable.update { current -> current.copy(job = it) }
                         }, dispose = { it.delete() }, publish = { rendered, name, _, checkpoint -> output.publish(rendered, name, checkpoint) },
                         onlyIDs = if (retry) materialized.rows.filter { it.status == BatchRowStatus.FAILED }.map { it.id }.toSet() else null)
-                } finally { processor.close() }
+                } finally { activeProcessor.compareAndSet(processor, null); processor.close() }
                 mutable.value = BatchExportState(result,
                     phase = when {
                         result.globalError != null -> BatchPhase.FAILED
@@ -257,6 +263,7 @@ class BatchExportModel(
 
     fun cancel(forBackground: Boolean = false) {
         cancelRequested.request(interrupted = forBackground)
+        activeProcessor.get()?.cancelPreview()
         mutable.update {
             if (it.phase in setOf(BatchPhase.RUNNING, BatchPhase.PREPARING)) it.copy(stopping = true) else it
         }
@@ -277,8 +284,8 @@ class BatchExportModel(
                 }
             } catch (error: Exception) { destination.delete(); throw error }
         }
-        val hdr = com.rawlab.android.photo.HDRSourceInfo.mayContainGainMap(name, resolver.getType(uri)) &&
-            com.rawlab.android.engine.NativeHDRBridge.probe(destination) != null
+        val hdrInfo = com.rawlab.android.engine.NativeHDRBridge.probeSource(destination, inputKind == PhotoInputKind.RAW)
+        val hdr = hdrInfo != null && (!hdrInfo.isCameraRaw || hdrInfo.isProRAW)
         return BatchTarget(identity, destination, name, uri.toString(), inputKind, sourceIsHDR = hdr)
     }
 
@@ -293,7 +300,7 @@ class BatchExportModel(
         val sourceCopy = inputFile(job.id, sourceIdentity, job.source.displayName)
         val look = synchronized(storage) {
             if (!sourceCopy.exists()) job.source.sourceFile.copyTo(sourceCopy)
-            storage.lookPath(job.source.settings)?.let { original ->
+            (if (job.source.settings.isHDREditing) null else storage.lookPath(job.source.settings))?.let { original ->
                 File(journalRoot, "${job.id}/look.${original.extension}").also { original.copyTo(it, overwrite = true) }
             }
         }
@@ -302,7 +309,9 @@ class BatchExportModel(
 
     private fun hdrPreparation(source: BatchSourceSnapshot): BatchHDRPreparation = BatchHDRPreparation(source,
         EditStore(File(context.filesDir,"edits"))::versionedState,storage::lookPath,
-        { file -> com.rawlab.android.photo.HDRSourceInfo.mayContainGainMap(file) && com.rawlab.android.engine.NativeHDRBridge.probe(file)!=null })
+        { file -> com.rawlab.android.engine.NativeHDRBridge.probeSource(file, !com.rawlab.android.photo.HDRSourceInfo.mayContainGainMap(file))
+            ?.let { !it.isCameraRaw || it.isProRAW } == true },
+        { file -> com.rawlab.android.engine.NativeHDRBridge.probeCameraRaw(file)?.isProRAW == true })
 
     private fun inputFile(jobID: String, identity: PhotoIdentity, name: String): File {
         val root = File(context.filesDir, "RawLab/BatchJobs/${jobID}/inputs")
@@ -325,8 +334,11 @@ class BatchExportModel(
                 val settings = prepared?.settings ?: snapshot.settingsFor(target)
                 if (settings.isHDREditing) {
                     if (gpuMode == NativeProcessor.FORCE) throw com.rawlab.android.engine.HDRProcessingException(2,13,6)
-                    val info = requireNotNull(com.rawlab.android.engine.NativeHDRBridge.probe(target.sourceFile))
-                    com.rawlab.android.engine.NativeHDRBridge.decode(target.sourceFile, info, 1280).use { source ->
+                    val info = requireNotNull(com.rawlab.android.engine.NativeHDRBridge.probeSource(target.sourceFile, target.inputKind == PhotoInputKind.RAW))
+                    if (info.isProRAW) settings.requireProRAWDecoder()
+                    val decoded = if (info.isCameraRaw) it.decodeHDRCamera(target.sourceFile, info, 1280)
+                        else com.rawlab.android.engine.NativeHDRBridge.decode(target.sourceFile, info, 1280)
+                    decoded.use { source ->
                         it.setGpuMode(NativeProcessor.CPU)
                         it.renderHDR(source, requireNotNull(settings.hdr).copy(geometry = settings.geometry), 1280).use { pair -> pair.sdrBitmap() }
                     }

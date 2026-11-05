@@ -65,6 +65,8 @@ public sealed record AdjustmentSnapshot(
     public ColorGradingSettings? ColorGrading { get; init; }
     [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
     public ToneCurveSettings? Curve { get; init; }
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public int? ProRAWDecodeVersion { get; init; }
     public Adjustments Restore() => Adjustments.FromSnapshot(this);
     public bool SameAs(AdjustmentSnapshot other) => Processing == other.Processing && X3fMode == other.X3fMode &&
         AIDenoiseEnabled == other.AIDenoiseEnabled && MasterRecipeID == other.MasterRecipeID && MasterRecipeSettingsVersion == other.MasterRecipeSettingsVersion && ExposureMode == other.ExposureMode && CameraWhiteBalance == other.CameraWhiteBalance &&
@@ -75,7 +77,7 @@ public sealed record AdjustmentSnapshot(
         (Geometry ?? new()) == (other.Geometry ?? new()) && (ToneControls ?? new()) == (other.ToneControls ?? new()) &&
         (Atmosphere ?? new()) == (other.Atmosphere ?? new()) &&
         (ColorGrading ?? new()) == (other.ColorGrading ?? new()) && (Curve ?? new()) == (other.Curve ?? new()) &&
-        HDR == other.HDR;
+        HDR == other.HDR && ProRAWDecodeVersion == other.ProRAWDecodeVersion;
     public AdjustmentSnapshot Copy() => this with { Values = (double[])Values.Clone() };
 }
 

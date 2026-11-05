@@ -26,17 +26,21 @@ extension ContentView {
     func setHDREditing(_ enabled: Bool) {
         guard (viewModel.sourceIsHDR || viewModel.sourceSupportsCameraHDR),enabled != settings.isHDREditing,!editorBusy,!isEditorDraftActive,
               let source=viewModel.editorEditSource else { return }
-        guard viewModel.saveCurrentSettings(settings) else { return }
         do {
-            let candidate=try settings.withHDRMode(enabled,sourceIsHDR:viewModel.sourceIsHDR,
+            var candidate=try settings.withHDRMode(enabled,sourceIsHDR:viewModel.sourceIsHDR,
                                                    hasLook:settings.hasLook,
                                                    cameraRAW:viewModel.sourceSupportsCameraHDR)
+            if enabled, viewModel.sourceProRAW != nil {
+                candidate.proRAWDecodeVersion = try ProRAWSource.validatedDecodeVersion(settings.proRAWDecodeVersion)
+            }
+            guard viewModel.saveCurrentSettings(settings) else { return }
             if enabled && viewModel.sourceSupportsCameraHDR {
+                let proposed = candidate
                 let sourceRevision = viewModel.sourceRevision
-                viewModel.preflightCameraHDR(settings: candidate) { result in
+                viewModel.preflightCameraHDR(settings: proposed) { result in
                     guard viewModel.sourceRevision == sourceRevision else { return }
                     switch result {
-                    case .success: activateHDRMode(candidate, source: source)
+                    case .success: activateHDRMode(proposed, source: source)
                     case .failure(let error): viewModel.statusMessage = error.localizedDescription
                     }
                 }
@@ -121,7 +125,7 @@ extension ContentView {
                 saveToPhotoLibrary(data)
             case .failure(let error):
                 isSaving = false
-                viewModel.statusMessage = error.localizedDescription
+                viewModel.statusMessage = error is CancellationError ? L10n.text("导出已取消") : error.localizedDescription
             }
         }
     }

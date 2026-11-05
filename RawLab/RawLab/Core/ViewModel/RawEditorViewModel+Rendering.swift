@@ -130,9 +130,10 @@ extension RawEditorViewModel {
                 guard let sourceFile,let hdr=settings.hdr else { return }
                 sourceFile.withReadAccess { url in
                     do {
-                        let edited=try self.processor.processHDR(url:url,settings:hdr,previewLongEdge:maxDimension)
+                        let cancelled = { !self.isLatestRenderID(renderID) }
+                        let edited=try self.processor.processHDR(url:url,settings:hdr,previewLongEdge:maxDimension,cancelled:cancelled)
                         var neutral=HDRSettings(); neutral.geometry=hdr.geometry
-                        let original=try self.processor.processHDR(url:url,settings:neutral,previewLongEdge:maxDimension)
+                        let original=try self.processor.processHDR(url:url,settings:neutral,previewLongEdge:maxDimension,cancelled:cancelled)
                         let presentation=try HDRPresentation(edited),reference=try HDRPresentation(original)
                         self.resultDelivery {
                             guard self.sourceRevision==sourceRevision,self.isLatestRenderID(renderID) else { return }

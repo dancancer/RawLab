@@ -46,6 +46,7 @@ object BatchRunner {
                 if (current.settingsMode == BatchSettingsMode.PER_TARGET_FROZEN) row.target.frozen!!.verifyFiles(row.target.sourceFile)
                 val payload = render(row.target, current.settingsFor(row.target))
                 try {
+                    if (shouldCancel()) throw java.util.concurrent.CancellationException()
                     current = current.withRows(current.rows.mapIndexed { i, item -> if (i == index) item.copy(status = BatchRowStatus.PUBLISHING) else item })
                     commit(index)
                     if (publish == null) write(payload, row.outputName, row.target)
@@ -68,8 +69,10 @@ object BatchRunner {
                 return current
             } catch (error: Throwable) {
                 val failed = current.rows.toMutableList()
-                failed[index] = failed[index].copy(status = if (failed[index].status == BatchRowStatus.PUBLISHING) BatchRowStatus.NEEDS_CONFIRMATION else BatchRowStatus.FAILED,
-                    error = error.message ?: error.javaClass.simpleName)
+                val cancelled = shouldCancel() && failed[index].status != BatchRowStatus.PUBLISHING
+                failed[index] = failed[index].copy(status = if (cancelled) BatchRowStatus.CANCELLED
+                    else if (failed[index].status == BatchRowStatus.PUBLISHING) BatchRowStatus.NEEDS_CONFIRMATION else BatchRowStatus.FAILED,
+                    error = if (cancelled) null else error.message ?: error.javaClass.simpleName)
                 current = current.withRows(failed)
             }
             commit(index)

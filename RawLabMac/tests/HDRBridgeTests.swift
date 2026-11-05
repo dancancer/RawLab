@@ -1,7 +1,65 @@
 import Foundation
+import CoreImage
+import ImageIO
 
 @main enum HDRBridgeTests {
     static func require(_ condition: @autoclosure () -> Bool,_ text: String) { if !condition() { fatalError(text) } }
+    static func verifyProRAWRows(_ image: HDRImage, edge: Int) {
+        let raw = CIRAWFilter(imageURL: image.sourceURL)!
+        raw.scaleFactor = Float(edge) / Float(max(image.nativeWidth, image.nativeHeight))
+        let color = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!
+        let context = CIContext(options: [.workingColorSpace: color])
+        for isHDR in [true, false] {
+            raw.extendedDynamicRangeAmount = isHDR ? 1 : 0
+            let reference = raw.outputImage!
+            var rgba = [Float](repeating: 0, count: image.width * image.height * 4)
+            rgba.withUnsafeMutableBytes {
+                context.render(reference, toBitmap: $0.baseAddress!, rowBytes: image.width * 16,
+                               bounds: reference.extent.integral, format: .RGBAf, colorSpace: color)
+            }
+            image.withPair { pair in
+                let buffer = isHDR ? pair.pointee.hdr : pair.pointee.sdr
+                let pixels = buffer.data!.assumingMemoryBound(to: Float.self)
+                var error: Float = 0
+                for pixel in 0..<(image.width * image.height) {
+                    for channel in 0..<3 {
+                        let value = rgba[pixel * 4 + channel]
+                        let expected = isHDR ? value : min(1, max(0, value))
+                        error = max(error, abs(pixels[pixel * 3 + channel] - expected))
+                    }
+                }
+                require(error < 0.001, "ProRAW tile rows differ from whole-image rendering: \(error)")
+            }
+        }
+    }
+    static func verifyProRAWMetadata(source: URL, output: URL, width: Int, height: Int) {
+        func properties(_ url: URL) -> NSDictionary {
+            CGImageSourceCopyPropertiesAtIndex(CGImageSourceCreateWithURL(url as CFURL, nil)!, 0, nil)! as NSDictionary
+        }
+        let original = properties(source), saved = properties(output)
+        let originalTIFF = original[kCGImagePropertyTIFFDictionary] as! NSDictionary
+        let savedTIFF = saved[kCGImagePropertyTIFFDictionary] as? NSDictionary
+        require(savedTIFF?[kCGImagePropertyTIFFModel] as? String == originalTIFF[kCGImagePropertyTIFFModel] as? String,
+                "ProRAW camera model was lost")
+        let originalExif = original[kCGImagePropertyExifDictionary] as! NSDictionary
+        let savedExif = saved[kCGImagePropertyExifDictionary] as? NSDictionary
+        for key in [kCGImagePropertyExifExposureTime, kCGImagePropertyExifFNumber, kCGImagePropertyExifISOSpeedRatings,
+                    kCGImagePropertyExifFocalLength, kCGImagePropertyExifDateTimeOriginal, kCGImagePropertyExifLensModel] {
+            if let value = originalExif[key] as? NSObject {
+                if let expected = value as? NSNumber, let actual = savedExif?[key] as? NSNumber {
+                    require(abs(expected.doubleValue - actual.doubleValue) <= max(1e-10, abs(expected.doubleValue) * 1e-6),
+                            "ProRAW numeric EXIF changed: \(key)")
+                } else {
+                    require(value.isEqual(savedExif?[key]), "ProRAW shooting EXIF was lost or changed: \(key), source=\(value), saved=\(String(describing: savedExif?[key]))")
+                }
+            }
+        }
+        require(savedExif?[kCGImagePropertyExifPixelXDimension] as? Int == width &&
+                savedExif?[kCGImagePropertyExifPixelYDimension] as? Int == height, "Stale ProRAW EXIF canvas")
+        require(saved[kCGImagePropertyOrientation] as? Int == 1, "ProRAW orientation was applied twice")
+        require(savedExif?[kCGImagePropertyExifMakerNote] == nil && savedExif?[kCGImagePropertyExifCFAPattern] == nil,
+                "ProRAW sensor metadata leaked into rendered JPEG")
+    }
     static func main() throws {
         let input=URL(fileURLWithPath:CommandLine.arguments[1])
         let info=try HDRSourceInfo.probe(input)!
@@ -83,6 +141,49 @@ import Foundation
             catch let error as HDRNativeError { require(error.reason==UInt32(SONY2FUJI_HDR_REASON_PREVIEW_SOURCE),"wrong proxy diagnostic") }
         }
         require(HDRImage.liveAllocations.count==0 && HDRImage.liveAllocations.bytes==0,"HDR owners survived their scope")
+        for path in CommandLine.arguments.dropFirst(3) {
+            try autoreleasepool {
+                let url = URL(fileURLWithPath: path)
+                guard let info = try HDRSourceInfo.probeRAW(url), info.proRAW != nil else { fatalError("ProRAW fixture was not recognized") }
+                let allocationCount = HDRImage.liveAllocations.count
+                var checkpoints = 0
+                do {
+                    _ = try HDRImage.decode(url, info: info, intent: SONY2FUJI_INTENT_PREVIEW, longEdge: 320) {
+                        checkpoints += 1
+                        return checkpoints == 3
+                    }
+                    fatalError("ProRAW decode ignored cancellation")
+                } catch is CancellationError {
+                    require(HDRImage.liveAllocations.count == allocationCount, "cancelled ProRAW decode published a frame")
+                }
+                let preview = try HDRImage.decode(url, info: info, intent: SONY2FUJI_INTENT_PREVIEW, longEdge: 640)
+                require(preview.isProxy && max(preview.width, preview.height) <= 640, "ProRAW preview exceeded its bounds")
+                verifyProRAWRows(preview, edge: 640)
+                let final = try HDRImage.decode(url, info: info, intent: SONY2FUJI_INTENT_FINAL)
+                require(!final.isProxy && final.width == final.nativeWidth && final.height == final.nativeHeight,
+                        "ProRAW FINAL lost its oriented canvas")
+                require(final.editedHeadroom > 1, "ProRAW lost values above reference white")
+                var session: OpaquePointer?
+                require(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK, "session creation failed")
+                defer { sony2fuji_session_destroy(session) }
+                var settings = HDRSettings(); settings.exposure = 0.25
+                let result = try final.rendered(session: session!, settings: settings, intent: SONY2FUJI_INTENT_FINAL)
+                require(result.editedHeadroom > final.editedHeadroom, "ProRAW exposure did not reach shared HDR rendering")
+                let hdr = directory.appendingPathComponent("proraw-hdr.jpg")
+                let sdr = directory.appendingPathComponent("proraw-sdr.jpg")
+                try result.exportJPEG(to: hdr)
+                try result.exportSDR(to: sdr, format: SONY2FUJI_OUTPUT_JPEG)
+                verifyProRAWMetadata(source: url, output: hdr, width: final.width, height: final.height)
+                verifyProRAWMetadata(source: url, output: sdr, width: final.width, height: final.height)
+                let decodedInfo = try HDRSourceInfo.probe(hdr)!
+                let decoded = try HDRImage.decode(hdr, info: decodedInfo, intent: SONY2FUJI_INTENT_FINAL)
+                require(decoded.width == final.width && decoded.height == final.height && decoded.editedHeadroom > 1,
+                        "ProRAW gain-map round trip lost dimensions or highlights")
+                let sdrInfo = try HDRSourceInfo.probe(sdr)
+                require(sdrInfo == nil, "ProRAW SDR JPEG unexpectedly contained a gain map")
+                print("PASS ProRAW \(final.width)x\(final.height) preview, edit and JPEG round trip")
+            }
+        }
         print("PASS Swift HDR ownership, source cache, full quality, export provenance and release")
     }
 }

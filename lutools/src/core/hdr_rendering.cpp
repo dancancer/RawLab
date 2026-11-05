@@ -6,6 +6,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 
 namespace sony2fuji {
 namespace {
@@ -109,28 +110,33 @@ void edit(ImageData& image, const HDRRenderOptions& o, bool hdr) {
         throw std::overflow_error("HDR adjustments exceeded finite float range");
 }
 
+template<class Reader> RGB sampleResize(int x, int y, int width, int height, int outputWidth, int outputHeight,
+    const Reader& read) {
+    if (width == outputWidth && height == outputHeight) return read(x, y);
+    const float sy = outputHeight > 1 ? float(y) * (height - 1) / (outputHeight - 1) : (height - 1) * .5f;
+    const int y0 = int(sy), y1 = std::min(y0 + 1, height - 1);
+    const float fy = sy - y0;
+    const float sx = outputWidth > 1 ? float(x) * (width - 1) / (outputWidth - 1) : (width - 1) * .5f;
+    const int x0 = int(sx), x1 = std::min(x0 + 1, width - 1);
+    const float fx = sx - x0;
+    const auto a = read(x0, y0), b = read(x1, y0), c = read(x0, y1), d = read(x1, y1);
+    auto blend = [&](float av, float bv, float cv, float dv) {
+        return (av + (bv - av) * fx) * (1 - fy) + (cv + (dv - cv) * fx) * fy;
+    };
+    return {blend(a.r, b.r, c.r, d.r), blend(a.g, b.g, c.g, d.g), blend(a.b, b.b, c.b, d.b)};
+}
+
 void resize(ImageData& image, uint32_t longEdge) {
     const int edge = std::max(image.width, image.height);
     if (longEdge == 0 || longEdge >= uint32_t(edge)) return;
-    const double scale = double(longEdge) / edge;
-    const int width = std::max(1, int(std::lround(image.width * scale)));
-    const int height = std::max(1, int(std::lround(image.height * scale)));
+    const auto size = hdrResizeSize(image.width, image.height, longEdge);
+    const int width = size.first, height = size.second;
     ImageData output(width, height);
     parallelPixelRanges(output.pixels.size(), [&](size_t begin, size_t end) {
         for (size_t i = begin; i < end; ++i) {
             const int y = int(i / width), x = int(i % width);
-            const float sy = height > 1 ? float(y) * (image.height - 1) / (height - 1) : (image.height - 1) * .5f;
-            const int y0 = int(sy), y1 = std::min(y0 + 1, image.height - 1);
-            const float fy = sy - y0;
-            const float sx = width > 1 ? float(x) * (image.width - 1) / (width - 1) : (image.width - 1) * .5f;
-            const int x0 = int(sx), x1 = std::min(x0 + 1, image.width - 1);
-            const float fx = sx - x0;
-            const auto& a = image.at(x0, y0); const auto& b = image.at(x1, y0);
-            const auto& c = image.at(x0, y1); const auto& d = image.at(x1, y1);
-            auto blend = [&](float av, float bv, float cv, float dv) {
-                return (av + (bv - av) * fx) * (1 - fy) + (cv + (dv - cv) * fx) * fy;
-            };
-            output.at(x, y) = {blend(a.r, b.r, c.r, d.r), blend(a.g, b.g, c.g, d.g), blend(a.b, b.b, c.b, d.b)};
+            output.at(x, y) = sampleResize(x, y, image.width, image.height, width, height,
+                [&](int sx, int sy) { return image.at(sx, sy); });
         }
     });
     image = std::move(output);
@@ -138,22 +144,23 @@ void resize(ImageData& image, uint32_t longEdge) {
 
 } // namespace
 
-HDRImagePair renderHDRPair(const HDRImagePair& source, const HDRRenderOptions& o) {
+namespace {
+
+void validateRenderInput(const HDRImagePair& source, const HDRRenderOptions& o) {
     validateImage(source.hdr); validateImage(source.sdr);
+    validateHDRRenderOptions(o);
     if (source.hdr.width != source.sdr.width || source.hdr.height != source.sdr.height ||
-        o.processingVersion != 1 || !inRange(o.exposureEV, -4, 4) || !inRange(o.temperature, 2000, 50000) ||
-        !inRange(o.tint, -150, 150) || !inRange(o.contrast, -100, 100) || !inRange(o.highlights, -100, 100) ||
-        !inRange(o.shadows, -100, 100) || !inRange(o.saturation, -100, 100) ||
-        !o.geometry.valid() || o.longEdge > 65535 ||
-        (o.intent != HDRQuality::Preview && o.intent != HDRQuality::Final) ||
         (source.sourceQuality != HDRQuality::Preview && source.sourceQuality != HDRQuality::Final) ||
         (source.renderQuality != HDRQuality::Preview && source.renderQuality != HDRQuality::Final) ||
         !std::isfinite(source.sourceHeadroom) || (source.sourceHeadroom != 0 && source.sourceHeadroom < 1) ||
         (o.intent == HDRQuality::Final && (source.isProxy || source.sourceQuality != HDRQuality::Final ||
             source.renderQuality != HDRQuality::Final)))
         throw std::invalid_argument("Invalid HDR pair, settings, version or FINAL provenance");
-    HDRImagePair result = source;
-    const auto nativeSize=geometryOutputSize(int(source.nativeWidth),int(source.nativeHeight),o.geometry);
+}
+
+HDRImagePair renderHDRPairOwned(HDRImagePair source, const HDRRenderOptions& o) {
+    HDRImagePair result = std::move(source);
+    const auto nativeSize=geometryOutputSize(int(result.nativeWidth),int(result.nativeHeight),o.geometry);
     result.outputNativeWidth=nativeSize.first; result.outputNativeHeight=nativeSize.second;
     edit(result.hdr, o, true); edit(result.sdr, o, false);
     for (auto* image : {&result.hdr, &result.sdr}) {
@@ -163,7 +170,7 @@ HDRImagePair renderHDRPair(const HDRImagePair& source, const HDRRenderOptions& o
         resize(*image, o.longEdge);
     }
     result.renderQuality = o.intent;
-    result.isProxy = source.isProxy || o.intent == HDRQuality::Preview;
+    result.isProxy = result.isProxy || o.intent == HDRQuality::Preview;
     result.editedHeadroom = 1;
     for (const auto& pixel : result.hdr.pixels) {
         if (!finite(pixel)) throw std::overflow_error("HDR geometry exceeded finite float range");
@@ -171,6 +178,46 @@ HDRImagePair renderHDRPair(const HDRImagePair& source, const HDRRenderOptions& o
     }
     if (!std::isfinite(result.editedHeadroom)) throw std::overflow_error("HDR headroom exceeded finite float range");
     return result;
+}
+
+} // namespace
+
+HDRImagePair renderHDRPair(const HDRImagePair& source, const HDRRenderOptions& o) {
+    validateRenderInput(source, o);
+    return renderHDRPairOwned(HDRImagePair(source), o);
+}
+
+HDRImagePair renderHDRPair(HDRImagePair&& source, const HDRRenderOptions& o) {
+    validateRenderInput(source, o);
+    return renderHDRPairOwned(std::move(source), o);
+}
+
+void validateHDRRenderOptions(const HDRRenderOptions& o) {
+    if (o.processingVersion != 1 || !inRange(o.exposureEV, -4, 4) || !inRange(o.temperature, 2000, 50000) ||
+        !inRange(o.tint, -150, 150) || !inRange(o.contrast, -100, 100) || !inRange(o.highlights, -100, 100) ||
+        !inRange(o.shadows, -100, 100) || !inRange(o.saturation, -100, 100) ||
+        !o.geometry.valid() || o.longEdge > 65535 ||
+        (o.intent != HDRQuality::Preview && o.intent != HDRQuality::Final))
+        throw std::invalid_argument("Invalid HDR render settings");
+}
+
+void editHDRPixels(ImageData& image, const HDRRenderOptions& options, bool hdr) {
+    validateHDRRenderOptions(options);
+    validateImage(image);
+    edit(image, options, hdr);
+}
+
+std::pair<int, int> hdrResizeSize(int width, int height, uint32_t longEdge) {
+    if (width <= 0 || height <= 0 || longEdge > 65535) throw std::invalid_argument("Invalid HDR resize size");
+    const int edge = std::max(width, height);
+    if (!longEdge || longEdge >= uint32_t(edge)) return {width, height};
+    const double scale = double(longEdge) / edge;
+    return {std::max(1, int(std::lround(width * scale))), std::max(1, int(std::lround(height * scale)))};
+}
+
+RGB sampleHDRResize(int x, int y, int width, int height, int outputWidth, int outputHeight,
+    const GeometryPixelReader& read) {
+    return sampleResize(x, y, width, height, outputWidth, outputHeight, read);
 }
 
 } // namespace sony2fuji

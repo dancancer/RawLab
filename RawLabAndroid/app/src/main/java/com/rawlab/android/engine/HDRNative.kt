@@ -14,6 +14,8 @@ internal object NativeHDRBridge {
     fun probeCameraRaw(file: File): HDRSourceInfo? = nativeProbeCameraRaw(file.absolutePath)?.let {
         HDRSourceInfo.decode(it).copy(cameraStamp = HDRSourceInfo.CameraStamp(file.length(), file.lastModified()))
     }
+    fun probeSource(file: File, raw: Boolean): HDRSourceInfo? = if (raw) probeCameraRaw(file)
+        else if (HDRSourceInfo.mayContainGainMap(file)) probe(file) else null
     fun geometrySize(info: HDRSourceInfo, geometry: GeometrySettings): IntArray = nativeGeometry(
         if (info.orientation >= 5) info.height else info.width,
         if (info.orientation >= 5) info.width else info.height,
@@ -36,7 +38,9 @@ internal object NativeHDRBridge {
         cancellationGeneration: Long = -1L): NativeHDRImage {
         require(info.isCameraRaw) { "Camera RAW HDR decode requires a camera RAW source" }
         require(edge in 0..65535)
-        val handle = nativeDecodeCameraRaw(processor, file.absolutePath, edge, cancellationGeneration)
+        if (edge == 0) HDRSourceCache.clear()
+        val handle = nativeDecodeCameraRaw(processor, file.absolutePath, edge, cancellationGeneration,
+            info.isProRAW, requireNotNull(file.parentFile).absolutePath)
         if (handle == 0L) error("Camera RAW HDR decode returned an empty owner")
         try {
             info.cameraStamp?.let { expected ->
@@ -68,6 +72,20 @@ internal object NativeHDRBridge {
     fun exportSdr(pair: NativeHDRImage, source: File?, output: File, format: Int) =
         nativeExportSdr(pair.handle, source?.absolutePath, output.absolutePath, format)
 
+    fun exportProRAW(processor: Long, file: File, info: HDRSourceInfo, settings: HDRSettings,
+        output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long) {
+        require(info.isProRAW && edge in 0..65535)
+        info.cameraStamp?.let { require(it == HDRSourceInfo.CameraStamp(file.length(), file.lastModified())) { "HDR source changed" } }
+        HDRSourceCache.clear()
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val bytes = ByteArray(1024 * 1024)
+            while (true) { val count = input.read(bytes); if (count < 0) break; digest.update(bytes, 0, count) }
+        }
+        nativeExportProRAW(processor, file.absolutePath, settings.requestValues(), edge, keepHDR,
+            digest.digest(), requireNotNull(output.parentFile).absolutePath, output.absolutePath, cancellationGeneration)
+    }
+
     @JvmStatic
     private external fun nativeProbe(path: String): ByteArray?
     @JvmStatic
@@ -77,7 +95,11 @@ internal object NativeHDRBridge {
     @JvmStatic
     private external fun nativeDecode(path: String, longEdge: Int): Long
     @JvmStatic
-    private external fun nativeDecodeCameraRaw(session: Long, path: String, longEdge: Int, cancellationGeneration: Long): Long
+    private external fun nativeDecodeCameraRaw(session: Long, path: String, longEdge: Int, cancellationGeneration: Long,
+        proRAW: Boolean, temporaryRoot: String): Long
+    @JvmStatic
+    private external fun nativeExportProRAW(session: Long, path: String, values: FloatArray, longEdge: Int,
+        keepHDR: Boolean, fingerprint: ByteArray, temporaryRoot: String, output: String, cancellationGeneration: Long)
     @JvmStatic
     private external fun nativeRender(session: Long, source: Long, values: FloatArray, longEdge: Int, cancellationGeneration: Long): Long
     @JvmStatic

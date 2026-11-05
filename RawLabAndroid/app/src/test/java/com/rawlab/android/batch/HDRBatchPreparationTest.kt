@@ -62,6 +62,19 @@ class HDRBatchPreparationTest {
         assertEquals(before,f.store.versionedState(f.targets.last().identity))
     }
 
+    @Test fun capableCameraRawKeepsDefaultSdrAndRestoresItsHdrRecord() = test { f ->
+        val target = f.targets[2]
+        val preparation = BatchHDRPreparation(f.source, f.store::versionedState, { null }, { true }, { it == target.sourceFile })
+        assertFalse(preparation.prepare(target, 0, ExportFormat.JPEG, 128).settings.isHDREditing)
+        val edits = EditSettings().withHDRMode(true, false, cameraRaw = true, proRAW = true)
+        f.store.save(target.identity, edits)
+        val result = preparation.prepare(target, 0, ExportFormat.HDR_JPEG, 128).settings
+        assertTrue(result.isHDREditing)
+        assertEquals(2, result.proRAWDecodeVersion)
+        assertEquals(.5f, result.exposure)
+        assertEquals(edits, f.store.versionedState(target.identity).settings)
+    }
+
     @Test fun nonneutralRelativeWhiteBalanceRejectsTheWholeMixedBatch() = test { f ->
         val settings=f.sourceSettings.copy(temperature=7300f).synchronizeHDR()
         val error=assertThrows(AdjustmentTransferException::class.java) { f.preparation(settings).freeze(f.job(settings),f.directory){false} }

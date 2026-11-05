@@ -78,9 +78,16 @@ int main() {
             std::memcmp(output.sdr.data, source.sdr.data(), 24) == 0, "float identity clipped or quantized");
         check(output.decode_revision == 99 && output.source_headroom == 8 && output.hdr.content_headroom > 1,
             "headroom or provenance was lost");
+        const std::vector<uint8_t> ownerHdrBefore(static_cast<const uint8_t*>(output.hdr.data),
+            static_cast<const uint8_t*>(output.hdr.data) + output.hdr.size_bytes);
+        const std::vector<uint8_t> ownerSdrBefore(static_cast<const uint8_t*>(output.sdr.data),
+            static_cast<const uint8_t*>(output.sdr.data) + output.sdr.size_bytes);
         auto chained = init<sony2fuji_hdr_image_pair_v1>();
         check(sony2fuji_hdr_render(session,&output,&settings,&chained,&diagnostic)==SONY2FUJI_STATUS_OK,
             "owned output could not be borrowed as a new source");
+        check(std::memcmp(output.hdr.data, ownerHdrBefore.data(), ownerHdrBefore.size()) == 0 &&
+            std::memcmp(output.sdr.data, ownerSdrBefore.data(), ownerSdrBefore.size()) == 0,
+            "published HDR owner was modified by an lvalue render");
         sony2fuji_hdr_release_pair(&chained);
         auto copy = output;
         sony2fuji_hdr_release_pair(&copy);
@@ -167,6 +174,27 @@ int main() {
         reset(); check(render() == SONY2FUJI_STATUS_OK, "row padding was not supported");
         check(static_cast<float*>(output.hdr.data)[3] == 2, "row padding was read as pixels");
         sony2fuji_hdr_release_pair(&output);
+
+        // A pair borrowed from an external caller is copied once by readPair,
+        // then may be moved through the internal renderer. Neither success nor
+        // validation failure may mutate the caller-owned pixels.
+        Source borrowed;
+        const auto borrowedHdr = borrowed.hdr;
+        const auto borrowedSdr = borrowed.sdr;
+        auto borrowedOutput = init<sony2fuji_hdr_image_pair_v1>();
+        auto borrowedSettings = request();
+        check(sony2fuji_hdr_render(session, &borrowed.pair, &borrowedSettings, &borrowedOutput, &diagnostic) == SONY2FUJI_STATUS_OK,
+            "borrowed HDR pair render failed");
+        check(borrowed.hdr == borrowedHdr && borrowed.sdr == borrowedSdr,
+            "borrowed HDR pair was mutated by a successful render");
+        sony2fuji_hdr_release_pair(&borrowedOutput);
+        borrowedSettings.exposure_ev = 5;
+        borrowedOutput = init<sony2fuji_hdr_image_pair_v1>();
+        check(sony2fuji_hdr_render(session, &borrowed.pair, &borrowedSettings, &borrowedOutput, &diagnostic) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+            "invalid borrowed HDR request was accepted");
+        check(borrowed.hdr == borrowedHdr && borrowed.sdr == borrowedSdr,
+            "borrowed HDR pair was damaged by a failed render");
+
         sony2fuji_session_destroy(session);
         std::cout << "PASS hdr_api_validation\n";
         return 0;

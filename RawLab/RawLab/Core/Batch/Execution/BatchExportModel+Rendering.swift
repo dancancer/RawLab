@@ -15,12 +15,17 @@ final class IOSHDRBatchPreparation {
         guard let store else { throw EditPersistenceError.corruptStore }
         let record=try store.versionedState(for:target.identity)
         let info=try HDRSourceInfo.probe(target.sourceURL)
+        let supportsProRAWHDR = try HDRSourceInfo.probeRAW(target.sourceURL)?.proRAW != nil
         var defaults=RawSettings.default
         if info != nil { defaults.hdr=HDRSettings() }
         let previous=record.state ?? PhotoEditState(settings:defaults)
+        if supportsProRAWHDR, previous.settings.isHDREditing {
+            try ProRAWSource.validatedDecodeVersion(previous.settings.proRAWDecodeVersion)
+        }
         let payload=try HDRAdjustmentTransfer.batchPayload(settings:source.settings.hdr!,identifier:source.identity.key,
             processingVersion:source.settings.processing.version,targetIsHDR:previous.settings.isHDREditing)
-        let context=IOSAdjustmentTransferContext(identifier:target.id,isRaw:target.sourceKind == .raw,sourceIsHDR:info != nil)
+        let context=IOSAdjustmentTransferContext(identifier:target.id,isRaw:target.sourceKind == .raw,
+            sourceIsHDR:info != nil, sourceSupportsProRAWHDR: supportsProRAWHDR)
         let prepared=try IOSAdjustmentTransfer.prepare(payload:payload,target:previous,context:context)
         let settings=prepared.settings
         let look: URL?
@@ -41,11 +46,11 @@ extension BatchExportModel {
         return try autoreleasepool {
             let processor = Sony2FujiProcessor()
             if let hdr=settings.hdr,settings.isHDREditing {
-                let pair=try processor.processHDR(url:target.sourceURL,settings:hdr,previewLongEdge:nil,exportLongEdge:longEdge)
                 let output=FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-batch-\(UUID().uuidString).jpg")
                 defer { try? FileManager.default.removeItem(at:output) }
-                if format == .hdrJPEG { try pair.exportJPEG(to:output) }
-                else { try pair.exportSDR(to:output,format:SONY2FUJI_OUTPUT_JPEG) }
+                try processor.exportHDR(url: target.sourceURL, settings: hdr, output: output, longEdge: longEdge,
+                    proRAWDecodeVersion: settings.proRAWDecodeVersion, keepHDR: format == .hdrJPEG,
+                    cancelled: { self.isCancellationRequested })
                 return try Data(contentsOf:output)
             }
             guard format != .hdrJPEG else { throw BatchExportError.target(L10n.text("HDR JPEG 需要启用 HDR 编辑。")) }
@@ -75,7 +80,8 @@ extension BatchExportModel {
             _ = try BatchFileOutputStore.directory(for: jobID)
             do {
                 if let hdr=settings.hdr,settings.isHDREditing {
-                    let pair=try processor.processHDR(url:target.sourceURL,settings:hdr,previewLongEdge:nil,exportLongEdge:longEdge)
+                    let pair=try processor.processHDR(url:target.sourceURL,settings:hdr,previewLongEdge:nil,
+                        exportLongEdge:longEdge,proRAWDecodeVersion:settings.proRAWDecodeVersion)
                     try pair.exportSDR(to:output,format:SONY2FUJI_OUTPUT_DNG)
                 } else if target.sourceKind == .raw {
                     try processor.exportDNG(url: target.sourceURL, settings: settings, lutURL: look,

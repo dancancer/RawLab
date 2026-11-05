@@ -221,6 +221,8 @@
         D14100000000000000000001 /* HDRAdjustmentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14100000000000000000011; };
         D14200000000000000000001 /* HDRRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14200000000000000000011; };
         D14300000000000000000001 /* HDRSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14300000000000000000011; };
+        D15E00000000000000000001 /* ProRAWSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15E00000000000000000011; };
+        D15F00000000000000000001 /* ProRAWExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15F00000000000000000011; };
         D14400000000000000000001 /* HDRRecipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14400000000000000000011; };
         D14500000000000000000001 /* HDRDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14500000000000000000011; };
         D14600000000000000000001 /* HDRImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14600000000000000000011; };
@@ -228,6 +230,7 @@
         D14800000000000000000001 /* HDRCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14800000000000000000011; };
         D14900000000000000000001 /* HDRMonitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14900000000000000000011; };
         D15000000000000000000001 /* HDRPhotoUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15000000000000000000011; };
+        D16000000000000000000001 /* ProRAWStreamUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D16000000000000000000011; };
         A8F400000000000000000001 /* DocumentImportUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8F400000000000000000011; };
         A8F300000000000000000001 /* X3fRenderingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8F300000000000000000011; };
 		025457773222452EB536902E /* IOSLUTLibrarySelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82401F63082E43C6B11A2D97 /* IOSLUTLibrarySelection.swift */; };
@@ -592,6 +595,8 @@
         D14100000000000000000011 /* HDRAdjustmentTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRAdjustmentTransfer.swift; path = "../Shared/HDRAdjustmentTransfer.swift"; sourceTree = SOURCE_ROOT; };
         D14200000000000000000011 /* HDRRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRRequest.swift; path = "../Shared/Native/HDRRequest.swift"; sourceTree = SOURCE_ROOT; };
         D14300000000000000000011 /* HDRSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRSource.swift; path = "../Shared/Native/HDRSource.swift"; sourceTree = SOURCE_ROOT; };
+        D15E00000000000000000011 /* ProRAWSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ProRAWSource.swift; path = "../Shared/Native/ProRAWSource.swift"; sourceTree = SOURCE_ROOT; };
+        D15F00000000000000000011 /* ProRAWExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ProRAWExport.swift; path = "../Shared/Native/ProRAWExport.swift"; sourceTree = SOURCE_ROOT; };
         D14400000000000000000011 /* HDRRecipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRRecipe.swift; path = "../Shared/HDRRecipe.swift"; sourceTree = SOURCE_ROOT; };
         D14500000000000000000011 /* HDRDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRDisplay.swift; path = "../Shared/HDRDisplay.swift"; sourceTree = SOURCE_ROOT; };
         D14600000000000000000011 /* HDRImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRImage.swift; path = "../Shared/Native/HDRImage.swift"; sourceTree = SOURCE_ROOT; };
@@ -599,6 +604,7 @@
         D14800000000000000000011 /* HDRCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRCanvas.swift; path = "../Shared/Native/HDRCanvas.swift"; sourceTree = SOURCE_ROOT; };
         D14900000000000000000011 /* HDRMonitoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRMonitoring.swift; path = "../Shared/Native/HDRMonitoring.swift"; sourceTree = SOURCE_ROOT; };
         D15000000000000000000011 /* HDRPhotoUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/HDRPhotoUITests.swift; sourceTree = SOURCE_ROOT; };
+        D16000000000000000000011 /* ProRAWStreamUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/ProRAWStreamUITests.swift; sourceTree = SOURCE_ROOT; };
         A8F400000000000000000011 /* DocumentImportUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/DocumentImportUITests.swift; sourceTree = SOURCE_ROOT; };
         A8F300000000000000000011 /* X3fRenderingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/X3fRenderingUITests.swift; sourceTree = SOURCE_ROOT; };
 		82401F63082E43C6B11A2D97 /* IOSLUTLibrarySelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Looks/IOSLUTLibrarySelection.swift"; sourceTree = SOURCE_ROOT; };
@@ -686,6 +692,8 @@
 				D14100000000000000000011,
 				D14200000000000000000011,
 				D14300000000000000000011,
+				D15E00000000000000000011,
+				D15F00000000000000000011,
 				D14400000000000000000011,
 				D14500000000000000000011,
 				D14600000000000000000011,
@@ -888,6 +896,7 @@
 				A0D17B5E0000000000000004,
 				D01000000000000000000011,
 				D15000000000000000000011,
+				D16000000000000000000011,
                 A8F400000000000000000011,
                 A8F300000000000000000011,
 				2F6D48C6086EC660301E288B,
@@ -1187,6 +1196,7 @@
 				A0D17B5E0000000000000003,
 				D01000000000000000000001,
 				D15000000000000000000001,
+				D16000000000000000000001,
                 A8F400000000000000000001,
                 A8F300000000000000000001,
 				8FC75E90CDC70C4708EB37A2,
@@ -1242,6 +1252,8 @@
 				D14100000000000000000001,
 				D14200000000000000000001,
 				D14300000000000000000001,
+				D15E00000000000000000001,
+				D15F00000000000000000001,
 				D14400000000000000000001,
 				D14500000000000000000001,
 				D14600000000000000000001,

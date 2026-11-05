@@ -123,3 +123,76 @@ uses the current process memory allowance; Simulator has a bounded fallback
 when that API returns zero. Mac budgets against half of physical RAM minus the
 current process footprint. Admission is conservative and cannot substitute for
 the required physical-device size/recovery measurements.
+
+
+## Complete-source streamed JPEG export
+
+`sony2fuji_hdr_export_stream` accepts a versioned row source, not a partial
+`sony2fuji_hdr_image_pair_v1`. The source supplies both complete oriented FINAL
+renditions, original dimensions, decoder identity, decode revision and a nonzero
+SHA-256 matching the frozen metadata source. Preview provenance is rejected.
+Apple clients supply Core Image rows through this entry. Android and Windows use
+`sony2fuji_hdr_export_proraw`, which supplies DNG SDK rows to the same stream
+pipeline. The portable file adapter preserves the same publication contract.
+
+Bounded color strips feed private float spools. Geometry uses the same global
+mapping as the full-frame path; resize samples four geometry results as a second
+bilinear operation. The result separately reports original dimensions, geometry
+bounds at original resolution, encoded dimensions, source and edited headroom.
+Neither source statistics nor FINAL provenance may be inferred from one strip.
+
+The codec receives compact inputs one at a time and owns its copies. Source
+resources are released before codec allocation. Memory admission runs before
+decode, codec and compressed-data/metadata work; disk admission includes both
+float renditions and compact outputs. This limits simultaneous storage but is not
+constant-memory encoding: libultrahdr retains full-image buffers.
+
+A successful operation publishes one JPEG through an adjacent temporary file and
+atomic rename. Source fingerprint and cancellation are checked before publication;
+failure preserves an existing destination and clears task scratch. Each scratch
+directory publishes a marker only after acquiring its exclusive file lock. The
+next export recovers marked directories whose locks are no longer held; active
+and unmarked directories remain untouched. Cancellation
+inside an uninterruptible codec is observed when it returns. `finish_decode` runs
+after both renditions are read successfully. Callers must also release callback
+resources after any earlier error or cancellation. Source files and hardlinks are
+never valid destinations. The SDR stream writer uses the shared scalar JPEG
+conversion with an sRGB ICC profile; metadata mapping excludes MakerNote/RAW data.
+
+## Portable ProRAW development
+
+`SONY2FUJI_HDR_CONTAINER_PRORAW` is a distinct source capability, checked from the
+Apple iPhone linear DNG, linearization, embedded profile and profile gain-table
+metadata. Generic camera RAW or raster HDR support does not imply this capability.
+The probe reads metadata; the decoder and final export compute and revalidate the
+source SHA-256. Clients also invalidate preview leases when the file stamp changes.
+
+Portable decode revision 2 uses DNG SDK 1.7.1, original camera white balance,
+baseline exposure and the embedded gain table. SDR uses the original embedded
+profile. HDR uses a copy with HDR dynamic-range information and a maximum-output
+hint of 4, enabling the SDK's overrange path. Both renditions are oriented linear
+sRGB float32. This is a separately versioned interpretation; it is not pixel
+equivalent to Apple Core Image revision 1. Neither rendition is normalized by its
+sample peak. A saved incompatible decode revision is rejected without rewriting it.
+
+SDK stage and render images use private file storage with bounded tile access.
+The SDK allocator also checks allocations that bypass image storage, including
+JPEG XL decode buffers. PREVIEW limits the returned pair to 2048 pixels on its
+long edge; Android uses a smaller source-preview limit. FINAL reads the complete
+original even for a reduced output. Stage files add to the stream's disk budget,
+and JPEG XL/codec allocations remain subject to runtime memory admission.
+Portable export also checks the combined stage and stream disk budget before
+starting SDK development. Per-phase checks remain in place. This is admission,
+not a cross-process space reservation; later I/O failures still preserve the
+existing destination.
+
+
+For pinned libultrahdr 2.0.2, the major simultaneous gain-map allocations are
+12 bytes/pixel of raw clones, 6 bytes/pixel of output capacity, 12 bytes/pixel of
+float gain-map scratch and 3 bytes/pixel of RGB gain map. The later compressed
+repack releases the first encoder and does not add these working sets together.
+Admission retains a conservative 42 bytes/output-pixel plus 128 MiB for codec
+scratch, alignment and allocator retention, then independently reserves the
+greater of 256 MiB and 20% of currently available process memory. Metadata
+rewriting has its own compressed-size-based admission after encoding. These
+estimates must be rechecked when codec version, format or ownership changes.

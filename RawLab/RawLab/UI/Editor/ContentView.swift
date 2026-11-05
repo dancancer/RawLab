@@ -266,7 +266,10 @@ struct ContentView: View {
                 cancelSliderInteraction()
                 viewModel.saveCurrentSettings(settings)
             }
-            if phase == .background { batchModel?.cancel(forBackground: true) }
+            if phase == .background {
+                batchModel?.cancel(forBackground: true)
+                viewModel.cancelHDRExport()
+            }
             if phase != .active {
                 collectionBatchHandoff.cancelAutomaticStart()
                 viewModel.cancelCollectionExportPreparation()

@@ -6,6 +6,7 @@ import com.rawlab.android.engine.NativeHDRBridge
 import com.rawlab.android.engine.HDRDisplayMath
 import com.rawlab.android.settings.HDRSettings
 import com.rawlab.android.settings.withHDRMode
+import com.rawlab.android.settings.requireProRAWDecoder
 import com.rawlab.android.format.ExportFormat
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -43,7 +44,7 @@ internal class EditorRenderer(
     private fun engine() = processor ?: NativeProcessor(lensDatabase = storage.lensDatabase()).also { processor = it }
 
     fun perform(work: Work, cancellation: RenderCancellation): WorkResult = synchronized(storage) {
-        if (work !is Work.Preview && work !is Work.HslProbe && work !is Work.Import && work !is Work.CameraHDRPreflight)
+        if (work !is Work.Preview && work !is Work.HslProbe && work !is Work.Import && work !is Work.CameraHDRPreflight && work !is Work.Export)
             return@synchronized perform(work)
         cancellation.check()
         val native = engine()
@@ -68,7 +69,7 @@ internal class EditorRenderer(
                     photo.defaultEditSettings() else null
                 if (work.x3fModeOverride != null) restored = (restored ?: EditSettings()).copy(x3fMode = work.x3fModeOverride)
                 canRetryLegacy = photo.isX3f && (restored ?: EditSettings()).x3fMode == com.rawlab.android.settings.X3fMode.NORMAL
-                if (restored != null && runCatching { storage.lookPath(restored) }.isFailure) {
+                if (restored != null && !restored.isHDREditing && runCatching { storage.lookPath(restored) }.isFailure) {
                     val native = engine()
                     native.setGpuMode(work.gpuMode)
                     val validation = native.preview(photo.file, null, restored.copy(film = "neutral", recipeID = null), 256, false, photo.inputKind, generation)
@@ -127,7 +128,7 @@ internal class EditorRenderer(
         }
         is Work.CameraHDRPreflight -> performCameraHDRPreflight(work, generation)
         is Work.Export -> {
-            if (work.photo.hdrSource != null && work.edits.isHDREditing) return performHDRExport(work)
+            if (work.photo.hdrSource != null && work.edits.isHDREditing) return performHDRExport(work, generation)
             val output = storage.temporaryOutput(work.format)
             try {
                 engine().setGpuMode(work.gpuMode)
@@ -145,6 +146,7 @@ internal class EditorRenderer(
         if (work.gpuMode == NativeProcessor.FORCE)
             throw com.rawlab.android.engine.HDRProcessingException(2,13,6)
         val info = checkNotNull(work.photo.hdrSource)
+        if (info.isProRAW) work.edits.requireProRAWDecoder()
         val native = engine()
         native.setGpuMode(NativeProcessor.CPU)
         val key = Triple(work.photo.file.canonicalPath, work.photo.file.length(), work.photo.file.lastModified())
@@ -189,7 +191,10 @@ internal class EditorRenderer(
     }
 
     private fun performCameraHDRPreflight(work: Work.CameraHDRPreflight, generation: Long): WorkResult {
+        if (work.gpuMode == NativeProcessor.FORCE)
+            throw com.rawlab.android.engine.HDRProcessingException(2,13,6)
         val info = checkNotNull(work.photo.hdrSource?.takeIf { it.isCameraRaw })
+        if (info.isProRAW) work.edits.requireProRAWDecoder()
         val native = engine()
         native.setGpuMode(NativeProcessor.CPU)
         val canvas = NativeHDRBridge.geometrySize(info, work.edits.geometry)
@@ -202,24 +207,38 @@ internal class EditorRenderer(
         return WorkResult.CameraHDRPreflight(work)
     }
 
-    private fun performHDRExport(work: Work.Export): WorkResult = synchronized(storage) {
+    private fun performHDRExport(work: Work.Export, generation: Long): WorkResult = synchronized(storage) {
         releaseDecodedRaster()
         if (work.gpuMode == NativeProcessor.FORCE)
             throw com.rawlab.android.engine.HDRProcessingException(2,13,6)
         val info = checkNotNull(work.photo.hdrSource)
+        if (info.isProRAW) work.edits.requireProRAWDecoder()
         val native = engine()
         native.setGpuMode(NativeProcessor.CPU)
-        val source = if (info.isCameraRaw) native.decodeHDRCamera(work.photo.file, info, 0) else
+        if (info.isProRAW && work.format in setOf(ExportFormat.HDR_JPEG, ExportFormat.JPEG)) {
+            com.rawlab.android.engine.HDRSourceCache.clear()
+            val output = storage.temporaryOutput(work.format)
+            try {
+                native.exportProRAW(work.photo.file, info, work.edits, output,
+                    work.format == ExportFormat.HDR_JPEG, work.longEdge ?: 0, generation)
+                if (generation >= 0 && native.cancellationGeneration() != generation) throw java.util.concurrent.CancellationException()
+                if (work.destination == null) storage.saveAlbum(output, work.format)
+                else storage.saveDocument(output, work.destination, work.photo.uri)
+            } finally { output.delete() }
+            return WorkResult.Export
+        }
+        val source = if (info.isCameraRaw) native.decodeHDRCamera(work.photo.file, info, 0, generation) else
             NativeHDRBridge.decode(work.photo.file, info, 0)
         val settings = (work.edits.hdr ?: HDRSettings(mode = com.rawlab.android.settings.HDRMode.SDR))
             .copy(geometry = work.edits.geometry)
-        val rendered = try { native.renderHDR(source, settings, work.longEdge ?: 0) } finally { source.close() }
+        val rendered = try { native.renderHDR(source, settings, work.longEdge ?: 0, generation) } finally { source.close() }
         val output = storage.temporaryOutput(work.format)
         try {
-            val metadataSource = work.photo.hdrSource?.takeUnless { it.isCameraRaw }?.let { work.photo.file }
+            val metadataSource = work.photo.hdrSource?.takeUnless { it.isCameraRaw && !it.isProRAW }?.let { work.photo.file }
             if (work.format == ExportFormat.HDR_JPEG)
                 NativeHDRBridge.exportJpeg(rendered, metadataSource, output)
             else NativeHDRBridge.exportSdr(rendered, metadataSource, output, work.format.nativeValue)
+            if (generation >= 0 && native.cancellationGeneration() != generation) throw java.util.concurrent.CancellationException()
             if (work.destination == null) storage.saveAlbum(output, work.format)
             else storage.saveDocument(output, work.destination, work.photo.uri)
         } finally {

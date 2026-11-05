@@ -78,40 +78,51 @@ extension ContentView {
             .accessibilityIdentifier("editor.adjustments")
             .opacity(rulerFocusOpacity)
 
-            Menu {
-                Button(L10n.text("保存当前照片")) {
-                    singleExportFormat = settings.isHDREditing ? .hdrJPEG : .jpeg
-                    exportLongEdge = nil
-                    showingExportSize = true
+            if viewModel.isExportingHDR {
+                Button(action: viewModel.cancelHDRExport) { Image(systemName: "xmark.circle") }
+                    .accessibilityLabel(L10n.text("取消导出"))
+                    .help(L10n.text("取消导出"))
+                    .accessibilityIdentifier("editor.cancelExport")
+            } else {
+                Menu {
+                    let restricted = settings.isHDREditing && viewModel.proRAWExportRestricted
+                    if restricted {
+                        Text(L10n.text("此设备暂不支持导出 HDR 模式下的 ProRAW 照片。"))
+                    }
+                    Button(L10n.text("保存当前照片")) {
+                        singleExportFormat = settings.isHDREditing ? .hdrJPEG : .jpeg
+                        exportLongEdge = nil
+                        showingExportSize = true
+                    }
+                    .disabled(restricted || !viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
+                    if settings.isHDREditing {
+                        Button(L10n.text("保存 SDR JPEG")) {
+                            singleExportFormat = .jpeg; exportLongEdge=nil; showingExportSize=true
+                        }.disabled(restricted || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewFailed)
+                    }
+                    Button(L10n.text("导出渲染型 DNG…")) {
+                        singleExportFormat = .renderedDNG
+                        exportLongEdge = nil
+                        showingExportSize = true
+                    }
+                    .disabled((settings.isHDREditing && viewModel.proRAWFullPairExportRestricted) || !viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
+                    // 同时只有一个批量任务：已有任务时只给"查看"，不再并列一个同样打开旧任务的新建入口
+                    if batchModel == nil {
+                        Button(L10n.text("使用当前调整批量导出…"), action: openBatchExport)
+                            .disabled(restricted || !viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
+                            .accessibilityIdentifier("editor.batchExport")
+                    } else {
+                        Button(L10n.text("查看批量任务…")) { showingBatchExport = true }
+                    }
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
                 }
-                .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
-                if settings.isHDREditing {
-                    Button(L10n.text("保存 SDR JPEG")) {
-                        singleExportFormat = .jpeg; exportLongEdge=nil; showingExportSize=true
-                    }.disabled(editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewFailed)
-                }
-                Button(L10n.text("导出渲染型 DNG…")) {
-                    singleExportFormat = .renderedDNG
-                    exportLongEdge = nil
-                    showingExportSize = true
-                }
-                .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
-                // 同时只有一个批量任务：已有任务时只给"查看"，不再并列一个同样打开旧任务的新建入口
-                if batchModel == nil {
-                    Button(L10n.text("使用当前调整批量导出…"), action: openBatchExport)
-                        .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
-                        .accessibilityIdentifier("editor.batchExport")
-                } else {
-                    Button(L10n.text("查看批量任务…")) { showingBatchExport = true }
-                }
-            } label: {
-                Image(systemName: "square.and.arrow.up")
+                .accessibilityLabel(L10n.text("导出"))
+                .help(L10n.text("导出"))
+                .disabled(isEditorDraftActive || ((!viewModel.hasImage || editorBusy) && batchModel == nil))
+                .accessibilityIdentifier("editor.export")
+                .opacity(rulerFocusOpacity)
             }
-            .accessibilityLabel(L10n.text("导出"))
-            .help(L10n.text("导出"))
-            .disabled(isEditorDraftActive || ((!viewModel.hasImage || editorBusy) && batchModel == nil))
-            .accessibilityIdentifier("editor.export")
-            .opacity(rulerFocusOpacity)
         }
     }
 

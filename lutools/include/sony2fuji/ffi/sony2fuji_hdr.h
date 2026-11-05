@@ -21,7 +21,7 @@ enum {
 };
 enum {
     SONY2FUJI_HDR_CONTAINER_UNKNOWN = 0, SONY2FUJI_HDR_CONTAINER_JPEG = 1, SONY2FUJI_HDR_CONTAINER_HEIF = 2,
-    SONY2FUJI_HDR_CONTAINER_CAMERA_RAW = 3,
+    SONY2FUJI_HDR_CONTAINER_CAMERA_RAW = 3, SONY2FUJI_HDR_CONTAINER_PRORAW = 4,
     SONY2FUJI_HDR_PROTOCOL_UNKNOWN = 0, SONY2FUJI_HDR_PROTOCOL_APPLE = 1,
     SONY2FUJI_HDR_PROTOCOL_ISO = 2, SONY2FUJI_HDR_PROTOCOL_XMP = 3, SONY2FUJI_HDR_PROTOCOL_ISO_XMP = 4,
     SONY2FUJI_HDR_COLOR_UNKNOWN = 0, SONY2FUJI_HDR_COLOR_SRGB = 1,
@@ -113,6 +113,33 @@ typedef struct sony2fuji_hdr_sdr_export_config_v1 {
     uint8_t source_sha256[32];
 } sony2fuji_hdr_sdr_export_config_v1;
 
+// 独立的完整来源接口，不借用 HDRImagePair 的 FINAL/owner 语义。
+// read_rows 按 HDR(1)、SDR(0) 顺序，各从第 0 行连续读取已定向 RGB32F；
+// output 为核心提供的 width*count*3 个 float。回调只在当前线程同步执行，不可抛异常。
+// finish_decode 在两份呈现读取完成后调用，供调用方释放解码资源并复核来源。
+// 任何失败后调用方仍须销毁自己的 context；不得把预览或不完整画布接到此入口。
+typedef sony2fuji_status (*sony2fuji_hdr_read_rows_callback)(void* context, uint32_t hdr,
+    uint32_t first_row, uint32_t row_count, float* output);
+typedef sony2fuji_status (*sony2fuji_hdr_finish_decode_callback)(void* context);
+typedef struct sony2fuji_hdr_stream_source_v1 {
+    uint32_t version, struct_size;
+    uint32_t native_width, native_height, orientation_applied, source_intent;
+    uint64_t decode_revision;
+    const char* decoder_identifier;
+    uint8_t source_sha256[32];
+    void* context;
+    sony2fuji_hdr_read_rows_callback read_rows;
+    sony2fuji_hdr_finish_decode_callback finish_decode;
+    sony2fuji_cancel_callback is_cancelled;
+} sony2fuji_hdr_stream_source_v1;
+
+typedef struct sony2fuji_hdr_stream_result_v1 {
+    uint32_t version, struct_size;
+    uint32_t width, height, native_width, native_height, output_native_width, output_native_height;
+    uint64_t decode_revision;
+    float source_headroom, edited_headroom; // SDR-only 输出的 edited_headroom 为 0。
+} sony2fuji_hdr_stream_result_v1;
+
 enum { SONY2FUJI_HDR_METADATA_ISO_XMP = 1 };
 
 // 所有结构先清零、填写 version=1/struct_size。请求温度默认 6500，crop 为 0/0/1/1。
@@ -132,6 +159,18 @@ sony2fuji_status sony2fuji_hdr_probe_camera_raw(const char* path, sony2fuji_hdr_
 sony2fuji_status sony2fuji_hdr_decode_camera_raw(sony2fuji_session* session, const char* path,
     const sony2fuji_hdr_decode_options_v1* options, sony2fuji_hdr_image_pair_v1* result,
     sony2fuji_hdr_diagnostic_v1* diagnostic);
+// 显式 ProRAW 路径，DNG SDK 显影配置 v2；PREVIEW 的 long_edge 为 1...2048。
+// temporary_root 是现有可写缓存目录；成功、失败和取消均回收本次解码文件。
+sony2fuji_status sony2fuji_hdr_probe_proraw(const char* path, sony2fuji_hdr_source_info_v1* info,
+    sony2fuji_hdr_diagnostic_v1* diagnostic);
+sony2fuji_status sony2fuji_hdr_decode_proraw(sony2fuji_session* session, const char* path,
+    const sony2fuji_hdr_decode_options_v1* options, const char* temporary_root,
+    sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic);
+// 完整来源由原生后端分块读取；config 的路径和 SHA 必须对应冻结的原片。
+sony2fuji_status sony2fuji_hdr_export_proraw(sony2fuji_session* session, const char* source_path,
+    const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_export_config_v1* config,
+    uint32_t keep_hdr, const char* temporary_root, const char* path,
+    sony2fuji_hdr_stream_result_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic);
 // 只计算已定向原片的几何输出尺寸，不解码或分配像素；失败时保留两个输出值。
 sony2fuji_status sony2fuji_hdr_geometry_size(uint32_t native_width, uint32_t native_height,
     const sony2fuji_hdr_request_v1* request, uint32_t* width, uint32_t* height,
@@ -143,6 +182,14 @@ sony2fuji_status sony2fuji_hdr_export_jpeg(const sony2fuji_hdr_image_pair_v1* im
     const sony2fuji_hdr_export_config_v1* config, const char* path, sony2fuji_hdr_diagnostic_v1* diagnostic);
 sony2fuji_status sony2fuji_hdr_export_sdr(const sony2fuji_hdr_image_pair_v1* image,
     const sony2fuji_hdr_sdr_export_config_v1* config, const char* path, sony2fuji_hdr_diagnostic_v1* diagnostic);
+// 跨平台流式 JPEG 导出。keep_hdr=1 为 ISO/XMP HDR JPEG，0 为 sRGB SDR JPEG。
+// config 必须指定冻结的原片路径和 SHA-256；temporary_root 必须是可写现有目录。
+// 先颜色、后几何、再 resize，完整成功后才原子替换单个目标。失败清空 result 并保留旧目标。
+// session 提供 CPU/GPU policy 和取消回调；codec 内取消延迟到其返回后、发布之前生效。
+sony2fuji_status sony2fuji_hdr_export_stream(sony2fuji_session* session,
+    const sony2fuji_hdr_stream_source_v1* source, const sony2fuji_hdr_request_v1* request,
+    const sony2fuji_hdr_export_config_v1* config, uint32_t keep_hdr, const char* temporary_root,
+    const char* path, sony2fuji_hdr_stream_result_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic);
 void sony2fuji_hdr_release_pair(sony2fuji_hdr_image_pair_v1* image);
 
 #ifdef __cplusplus

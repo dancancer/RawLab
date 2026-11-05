@@ -181,7 +181,8 @@ public partial class MainWindow
         {
             if (batchWindow != null) { batchWindow.Close();if(batchWindow?.IsVisible==true)return;batchWindow=null; }
             if (previous != null) batchJournal.Discard(previous);
-            var job = BatchJob.Create(file, settings.Capture(), lut, LookTitle);
+            var job = BatchJob.Create(file, settings.Capture(), settings.IsHDREditing ? null : lut, LookTitle);
+            job.SourceIsProRAW = hdrSource?.IsProRAW == true;
             job.AIBackend=RequestedAIBackend;job.AIDeviceID=aiPreference.DeviceID;
             batchJournal.FreezeLook(job); batchJournal.Save(job); previousBatch = job;
             ShowBatch(job);
@@ -199,7 +200,8 @@ public partial class MainWindow
     private void ShowBatch(BatchJob job,bool autoStart=false)
     {
         var window = new BatchExportWindow(job, batchJournal,backend=>new RenderEngine(aiBackend:backend,
-            aiDeviceID:job.AIDeviceID,aiDiagnostics:aiDiagnostics),aiDiagnostics) { Owner = this, IsEnabled = !UpdateInstallationActive };
+            aiDeviceID:job.AIDeviceID,aiDiagnostics:aiDiagnostics),aiDiagnostics,
+            editStore is {} store ? new BatchHDRPreparation(store,ResolveLook) : null) { Owner = this, IsEnabled = !UpdateInstallationActive };
         batchWindow = window;
         window.RunCompleted += (before, after, runFailedCount) =>
         {

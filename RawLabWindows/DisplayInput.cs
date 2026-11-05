@@ -20,7 +20,7 @@ internal sealed partial class RenderEngine
         Native.sony2fuji_release_buffer(ref displayInput);
         if(inputStamp is {} previous && (wasDisplay || LibraryEntry.IsRaster(path) ||
             (previous.Path.Equals(stamp.Path,StringComparison.OrdinalIgnoreCase) && previous!=stamp)))
-        {session.Dispose();session=new();InitializeSession();SetGpuMode(gpuMode);lensStamp=null;}
+        {RecreateSession();lensStamp=null;}
         inputStamp=null;
         if(LibraryEntry.IsRaster(path))Native.Check(Native.sony2fuji_load_display_image(path,ref displayInput));
         inputStamp=stamp;

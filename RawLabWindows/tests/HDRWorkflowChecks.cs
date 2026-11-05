@@ -15,6 +15,168 @@ internal static class HDRWorkflowChecks
     private static void Invoke(object owner,string method)=>owner.GetType().GetMethod(method,Private)!.Invoke(owner,null);
     private static void Ready(MainWindow window)=>InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
 
+    internal static void RunProRAWBatch(string repo, string fixture, Action<bool,string> check)
+    {
+        var root=Path.Combine(Path.GetFullPath(repo),"build","proraw-batch-workflow",Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        string Copy(string name) { var path=Path.Combine(root,name+".dng"); File.Copy(fixture,path); return path; }
+        var source=Copy("source"); var low=Copy("sdr-target"); var high=Copy("hdr-target");
+        var store=new EditStore(Path.Combine(root,"edits"));
+        var hdr=new Adjustments(); hdr.SetHDRMode(true,true,cameraRaw:true,proRAW:true); hdr.Set(Parameter.Exposure,.75);
+        var sdr=hdr.Clone(); sdr.SetHDRMode(false,true,cameraRaw:true,proRAW:true);
+        sdr.Set(Parameter.Temperature,5200); sdr.Set(Parameter.Tint,9);
+        var savedHDR=hdr.Clone(); savedHDR.Set(Parameter.Exposure,-.5);
+        store.Save(low,sdr.Capture(),null); store.Save(high,savedHDR.Capture(),"builtin:missing-dormant-look.cube");
+        var sdrRecord=store.VersionedState(low); var hdrRecord=store.VersionedState(high);
+
+        var selection=new BatchSelectionSession(); selection.Add([high,low]);
+        var collectionJournal=new BatchJournal(Path.Combine(root,"collection-journal"));
+        var exporter=new BatchSelectionExport(store,collectionJournal,_=>null);
+        var review=exporter.Prepare(selection,[],ExportFormat.HdrJpeg,512,root,_=>null);
+        check(review.Rows[0].Error==null && review.Rows[1].Error!=null,"Collection admits HDR ProRAW and rejects the SDR target for HDR JPEG");
+        selection.Select(selection.Photos[1].ID,false);
+        review=exporter.Prepare(selection,[],ExportFormat.HdrJpeg,512,root,_=>null);
+        var collection=exporter.Freeze(selection,review,_=>null);
+        check(collection.Items.Single().Frozen?.Settings.ProRAWDecodeVersion==HDRNative.ProRAWDecodeVersion,
+            "Collection freeze retains the saved ProRAW HDR settings");
+
+        var journal=new BatchJournal(Path.Combine(root,"uniform-journal"));
+        var preparation=new BatchHDRPreparation(store,_=>null);
+        BatchJob Job(Adjustments settings) {
+            var job=BatchJob.Create(source,settings.Capture(),null,"HDR");
+            job.SourceIsProRAW=true; job.OutputDirectory=root; job.Format=ExportFormat.SdrJpeg; job.LongEdge=512;
+            return job;
+        }
+        var tinted=hdr.Clone(); tinted.Set(Parameter.Tint,10);
+        var rejected=Job(tinted); rejected.Items=[BatchItem.Create(low) with {Selected=true}];
+        try { preparation.Freeze(rejected,journal,CancellationToken.None); check(false,"Non-neutral HDR WB reached an SDR target"); }
+        catch(AdjustmentTransferException error) { check(error.Detail=="hdr.relative_white_balance" && journal.Load()==null,
+            "Non-neutral HDR WB rejects the SDR target before creating a frozen job"); }
+
+        var legacy=Job(hdr); legacy.Started=true;
+        var removed=Copy("already-exported");
+        var previousOutput=Path.Combine(root,"previous.jpg");
+        File.WriteAllText(previousOutput,"completed output");
+        var completed=BatchItem.Create(removed) with { Selected=true,Status=BatchStatus.Succeeded,
+            Output=previousOutput,CompletedIdentity=OriginalIdentity.Read(previousOutput) };
+        legacy.Items=[completed,BatchItem.Create(low) with {Selected=true}];
+        var legacyJournal=new BatchJournal(Path.Combine(root,"legacy-journal"));
+        legacyJournal.Save(legacy);
+        File.Delete(removed);
+        var migrated=preparation.Freeze(legacyJournal.Load()!,legacyJournal,CancellationToken.None);
+        check(migrated.Items[0].Id==completed.Id && migrated.Items[0].Status==BatchStatus.Succeeded &&
+            migrated.Items[0].Output==completed.Output && migrated.Items[1].Frozen?.Settings.HDR?.Mode==HDRMode.Sdr,
+            "Recovering a legacy job does not reopen successful inputs and freezes the remaining SDR target");
+
+        var app=TestWindowState.CreateApplication();
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
+        var pending=Copy("missing-pending");
+        store.Save(pending,sdr.Capture(),null);
+        legacy.Items.Insert(1,BatchItem.Create(pending) with { Selected=true });
+        legacyJournal.Save(legacy);
+        var parked=pending+".parked";
+        File.Move(pending,parked);
+        void Run(BatchExportWindow batch) {
+            var run=batch.StartExecution();
+            InteractionChecks.PumpUntil(()=>run.IsCompleted);
+            run.GetAwaiter().GetResult();
+        }
+        BatchExportWindow OpenLegacy() {
+            var batch=new BatchExportWindow(legacyJournal.Load()!,legacyJournal,_=>new RenderEngine(0),hdrPreparation:preparation);
+            batch.Show();
+            return batch;
+        }
+        var legacyWindow=OpenLegacy();
+        try {
+            Run(legacyWindow);
+            var first=legacyJournal.Load()!;
+            var invalid=first.Items.Single(item=>item.Input==pending);
+            check(first.SucceededCount==2 && invalid.Status==BatchStatus.Failed && invalid.Selected && invalid.Error!=null &&
+                first.Items[0].Id==completed.Id && first.Items[0].Output==completed.Output && first.Error==null,
+                "Legacy resume reports a missing unfinished target by row and exports the remaining photo: "+first.Error);
+            var savedOutput=first.Items.Single(item=>item.Input==low).Output;
+            legacyWindow.Close();
+            File.Move(parked,pending);
+            legacyWindow=OpenLegacy();
+            Run(legacyWindow);
+            var retried=legacyJournal.Load()!;
+            check(retried.SucceededCount==3 && retried.Items.Single(item=>item.Input==low).Output==savedOutput &&
+                retried.Items.Single(item=>item.Input==pending).Frozen?.Settings.HDR?.Mode==HDRMode.Sdr &&
+                File.ReadAllText(previousOutput)=="completed output",
+                "Legacy retry freezes the restored target in its saved SDR mode and preserves prior outputs: "+retried.Error);
+        } finally {legacyWindow.Close();}
+
+        var formatJob=Job(hdr); formatJob.Format=ExportFormat.HdrJpeg;
+        var formatJournal=new BatchJournal(Path.Combine(root,"format-journal"));
+        var broken=Path.Combine(root,"broken.jpg"); File.WriteAllText(broken,"not a photo");
+        var missingLook=Copy("sdr-with-missing-look");
+        store.Save(missingLook,sdr.Capture(),"builtin:missing-look.cube");
+        var formatWindow=new BatchExportWindow(formatJob,formatJournal,_=>new RenderEngine(0),hdrPreparation:preparation);
+        try {
+            formatWindow.Show();
+            var adding=formatWindow.AddInputs([low,high,broken,missingLook]);
+            InteractionChecks.PumpUntil(()=>adding.IsCompleted); adding.GetAwaiter().GetResult();
+            if (formatWindow.Job.Items.Count!=4)
+                throw new InvalidOperationException("Format preflight did not retain all four inputs: "+formatWindow.Job.Error);
+            BatchItem Item(string path)=>formatWindow.Job.Items.Single(item=>item.Input==path);
+            check(!Item(low).CanSelect && Item(high).Selected && !Item(broken).CanSelect && !Item(missingLook).CanSelect,
+                "HDR JPEG admits the HDR photo and rejects SDR, unreadable inputs and missing looks");
+            var sdrId=Item(low).Id; var brokenError=Item(broken).ValidationError; var lookError=Item(missingLook).ValidationError;
+            ((RadioButton)formatWindow.FindName("SdrJpeg")).IsChecked=true;
+            InteractionChecks.PumpUntil(()=>!formatWindow.Busy);
+            check(formatWindow.Job.Format==ExportFormat.SdrJpeg && Item(low).Id==sdrId && Item(low).CanSelect &&
+                Item(high).Selected && Item(broken).ValidationError==brokenError && Item(missingLook).ValidationError==lookError,
+                "Switching to SDR JPEG restores the same SDR row and preserves file and decode errors");
+            var targets=(ListBox)formatWindow.FindName("Targets");
+            var sdrRow=targets.Items.Cast<BatchRow>().Single(row=>row.Input==low);
+            sdrRow.Selected=true;
+            check(Item(low).Selected,"The restored SDR row can be checked in the batch list");
+            ((RadioButton)formatWindow.FindName("HdrJpeg")).IsChecked=true;
+            InteractionChecks.PumpUntil(()=>!formatWindow.Busy);
+            check(!Item(low).CanSelect && Item(high).Selected && Item(broken).ValidationError==brokenError,
+                "Switching back recomputes HDR compatibility and preserves the decode error");
+            var oldDraft=formatWindow.Job.Copy();
+            oldDraft.Items=oldDraft.Items.Select(item=>item with { HDRJpegIncompatible=null }).ToList();
+            formatWindow.Close();
+            formatJournal.Save(oldDraft);
+            formatWindow=new BatchExportWindow(formatJournal.Load()!,formatJournal,_=>new RenderEngine(0),hdrPreparation:preparation);
+            formatWindow.Show();
+            ((RadioButton)formatWindow.FindName("SdrJpeg")).IsChecked=true;
+            InteractionChecks.PumpUntil(()=>!formatWindow.Busy);
+            check(Item(low).CanSelect && Item(broken).ValidationError==brokenError && Item(missingLook).ValidationError==lookError,
+                "An older draft revalidates missing compatibility data when the format changes");
+        } finally {formatWindow.Close();}
+
+        var window=new BatchExportWindow(Job(hdr),journal,_=>new RenderEngine(0),hdrPreparation:preparation);
+        try {
+            window.Show();
+            var adding=window.AddInputs([low,high]); InteractionChecks.PumpUntil(()=>adding.IsCompleted); adding.GetAwaiter().GetResult();
+            check(window.Job.SelectedCount==2,"Unified ProRAW preflight accepts both saved target modes");
+            var run=window.StartExecution(); InteractionChecks.PumpUntil(()=>run.IsCompleted); run.GetAwaiter().GetResult();
+            var saved=journal.Load()!;
+            check(saved.Mode==BatchJob.PerTargetFrozen && saved.SucceededCount==2,"Unified ProRAW exports both frozen targets: "+saved.Error);
+            var lowSettings=saved.SnapshotFor(saved.Items.Single(item=>item.Input==low)).Settings.Restore();
+            var highSettings=saved.SnapshotFor(saved.Items.Single(item=>item.Input==high)).Settings.Restore();
+            check(!lowSettings.IsHDREditing && lowSettings[Parameter.Exposure]==.75 && lowSettings[Parameter.Temperature]==5200 &&
+                lowSettings[Parameter.Tint]==9 && lowSettings.HDR==sdr.HDR,"Frozen SDR preserves mode, camera WB and dormant HDR settings");
+            check(highSettings.IsHDREditing && highSettings[Parameter.Exposure]==.75,"Frozen HDR target keeps HDR mode");
+            check(store.VersionedState(low).SameAs(sdrRecord) && store.VersionedState(high).SameAs(hdrRecord),"Batch leaves both edit records unchanged");
+            store.Save(low,new Adjustments().Capture(),null);
+            var resumed=journal.Load()!;
+            check(resumed.SnapshotFor(resumed.Items.Single(item=>item.Input==low)).Settings.SameAs(lowSettings.Capture()),
+                "Reloading the batch does not read later target edits");
+            var collectionWindow=new BatchExportWindow(collection,collectionJournal,_=>new RenderEngine(0));
+            try {
+                collectionWindow.Show();
+                var export=collectionWindow.StartExecution(); InteractionChecks.PumpUntil(()=>export.IsCompleted); export.GetAwaiter().GetResult();
+                var published=collectionJournal.Load()!.Items.Single();
+                check(published.Status==BatchStatus.Succeeded && published.Output!=null &&
+                    PhotoInput.ProbeHDR(published.Output,out _)==HDRProbeState.Supported,
+                    "Per-photo ProRAW collection publishes the HDR gain-map JPEG");
+            } finally {collectionWindow.Close();}
+        } finally {window.Close(); app.Shutdown();}
+    }
+
     internal static void RunCameraRaw(string repo, string fixture, Action<bool, string> check)
     {
         var root = Path.Combine(Path.GetFullPath(repo), "build", "camera-raw-hdr-workflow", Guid.NewGuid().ToString("N"));
@@ -28,6 +190,7 @@ internal static class HDRWorkflowChecks
         }
         var originalHash = SourceHash();
         Loc.Initialize("en");
+        SessionCancellationAfterDisplayReset(root, source, check);
         var app = TestWindowState.CreateApplication();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         MainWindow? window = null;
@@ -70,6 +233,7 @@ internal static class HDRWorkflowChecks
         try
         {
             Open();
+            Capture(window!, Path.Combine(root, "camera-raw-sdr-editor.png"));
             check(!Settings().IsHDREditing && Frame().HDR == null, "Fresh camera RAW opens in SDR");
             EditExposure(.5);
             Toggle(true);
@@ -92,6 +256,7 @@ internal static class HDRWorkflowChecks
             Toggle(false);
             check(Settings()[Parameter.Exposure] == .5, "Reopened editor also restores the independent SDR exposure");
             Toggle(true);
+            Capture(window!, Path.Combine(root, "camera-raw-hdr-editor.png"));
 
             var menu = window.ExportButton.ContextMenu!;
             menu.PlacementTarget = window.ExportButton;
@@ -128,6 +293,34 @@ internal static class HDRWorkflowChecks
             window?.Close();
             app.Shutdown();
         }
+    }
+
+    private static void SessionCancellationAfterDisplayReset(string root, string source, Action<bool, string> check)
+    {
+        static void WriteRaster(string path, byte value)
+        {
+            var pixels = Enumerable.Repeat(new byte[] { value, (byte)(value + 7), (byte)(value + 13) }, 16 * 16)
+                .SelectMany(pixel => pixel).ToArray();
+            var bitmap = BitmapSource.Create(16, 16, 96, 96, PixelFormats.Rgb24, null, pixels, 16 * 3);
+            var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using var output = File.Create(path); encoder.Save(output);
+        }
+
+        var first = Path.Combine(root, "cancel-reset-first.png");
+        var second = Path.Combine(root, "cancel-reset-second.png");
+        WriteRaster(first, 32); WriteRaster(second, 64);
+        using var engine = new RenderEngine(0);
+        using var cancellation = new CancellationTokenSource();
+        engine.SetCancellation(cancellation.Token);
+        engine.Render(first, new(), null, 32, statistics: false, clipping: false);
+        engine.Render(second, new(), null, 32, statistics: false, clipping: false);
+        var settings = new Adjustments();
+        settings.SetHDRMode(true, sourceIsHDR: true, cameraRaw: true, proRAW: true);
+        cancellation.Cancel();
+        var cancelled = false;
+        try { engine.Render(source, settings, null, 32, statistics: false, clipping: false); }
+        catch (OperationCanceledException) { cancelled = true; }
+        check(cancelled, "Cancellation remains bound after raster session replacement before ProRAW HDR decode");
     }
 
     internal static void Run(string repo,string fixture,Action<bool,string> check)

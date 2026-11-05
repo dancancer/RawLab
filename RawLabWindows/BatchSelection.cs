@@ -78,6 +78,17 @@ public sealed record CollectionExportReview(IReadOnlyList<string> SelectionIDs,I
 public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Func<SavedEdit,string?> resolveLook,
     Action<string>? validateAI=null)
 {
+    internal static void ValidateHDRFormat(string path, AdjustmentSnapshot settings, ExportFormat format)
+    {
+        var hdr = settings.HDR is { Mode: HDRMode.Hdr };
+        var proRAW = hdr && (settings.ProRAWDecodeVersion != null ||
+            format == ExportFormat.HdrJpeg && PhotoInput.IsCameraRaw(path)) && PhotoInput.SupportsProRAWHDR(path);
+        if (format == ExportFormat.HdrJpeg && (!hdr || !proRAW && PhotoInput.ProbeHDR(path,out _) != HDRProbeState.Supported))
+            throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
+        if (hdr && settings.ProRAWDecodeVersion == HDRNative.ProRAWDecodeVersion && !proRAW)
+            throw new InvalidOperationException(Loc.Text("不支持此相机 RAW 的 HDR 显影。"));
+    }
+
     public CollectionExportReview Prepare(BatchSelectionSession selection,IReadOnlyCollection<string> skipping,
         ExportFormat format,int? longEdge,string outputDirectory,Func<string,string?> activeFailure)
         =>Prepare(selection.SelectedPhotos.ToArray(),skipping,format,longEdge,outputDirectory,activeFailure);
@@ -93,15 +104,15 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                 photo.Validate();var record=store.VersionedState(photo.Path);
                 if(!record.Identity.SameFile(photo.Identity))throw new EditPersistenceConflict();
                 var settings=(record.Edit?.Settings.Restore() ?? PhotoInput.PrepareHDRInputSettings(photo.Path,new Adjustments())).Capture();
-                if(format==ExportFormat.HdrJpeg && (settings.HDR is not {Mode:HDRMode.Hdr} || PhotoInput.ProbeHDR(photo.Path,out _)!=HDRProbeState.Supported))
-                    throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
-                if(settings.AIDenoiseEnabled) {
+                ValidateHDRFormat(photo.Path,settings,format);
+                var hdr = settings.HDR is { Mode: HDRMode.Hdr };
+                if(!hdr && settings.AIDenoiseEnabled) {
                     if(PhotoInput.IsX3f(photo.Path) && settings.X3fMode==X3fMode.Normal)throw new InvalidOperationException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
                     if(!PhotoInput.IsRaw(photo.Path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
                     validateAI?.Invoke(photo.Path);
                 }
-                var look=record.Edit is {} edit ? resolveLook(edit) : null;
-                if((record.Edit?.Look!=null || settings.MasterRecipeID!=null) && look==null)throw new FileNotFoundException(Loc.Text("外观不可用。"));
+                var look=!hdr && record.Edit is {} edit ? resolveLook(edit) : null;
+                if(!hdr && (record.Edit?.Look!=null || settings.MasterRecipeID!=null) && look==null)throw new FileNotFoundException(Loc.Text("外观不可用。"));
                 var hash=look==null ? null : BatchFrozenSettings.Checksum(look);
                 rows.Add(new(photo,record.Copy(),settings.Copy(),look,hash,look==null ? Loc.Text("中性") : System.IO.Path.GetFileNameWithoutExtension(look)));
             }catch(Exception error){rows.Add(new(photo,Error:error.Message));}
@@ -122,10 +133,9 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                 var current=store.VersionedState(row.Photo.Path);
                 if(!current.SameAs(row.Record))throw new EditPersistenceConflict();
                 var expected=(current.Edit?.Settings.Restore() ?? PhotoInput.PrepareHDRInputSettings(row.Photo.Path,new Adjustments())).Capture();
-                if(review.Format==ExportFormat.HdrJpeg && (expected.HDR is not {Mode:HDRMode.Hdr} || PhotoInput.ProbeHDR(row.Photo.Path,out _)!=HDRProbeState.Supported))
-                    throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
+                ValidateHDRFormat(row.Photo.Path,expected,review.Format);
                 if(!expected.SameAs(row.Settings!))throw new EditPersistenceConflict();
-                if(expected.AIDenoiseEnabled) {
+                if(expected.HDR is not { Mode: HDRMode.Hdr } && expected.AIDenoiseEnabled) {
                     if(PhotoInput.IsX3f(row.Photo.Path) && expected.X3fMode==X3fMode.Normal)throw new InvalidOperationException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
                     if(!PhotoInput.IsRaw(row.Photo.Path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
                     validateAI?.Invoke(row.Photo.Path);
@@ -150,11 +160,99 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
             }).ToList();
             Validate();
             var job=new BatchJob{Version=3,AIBackend=aiBackend,AIDeviceID=aiDeviceID,SettingsMode=BatchJob.PerTargetFrozen,Source=items[0].Input,
+                SourceIsProRAW=PhotoInput.SupportsProRAWHDR(items[0].Input),
                 Settings=items[0].Frozen!.Settings,Items=items,OutputFormat=review.Format,Png=review.Format==ExportFormat.Png,
                 LongEdge=review.LongEdge,OutputDirectory=review.OutputDirectory};
             journal.Save(job);owned.Clear();
             if(previous!=null)try{journal.ReleaseResources(previous);}catch(IOException){}catch(UnauthorizedAccessException){}
             return job;
         }catch {foreach(var path in owned)if(File.Exists(path))File.Delete(path);throw;}
+    }
+}
+
+internal sealed class BatchHDRPreparation(EditStore store, Func<SavedEdit,string?> resolveLook)
+{
+    internal static bool Required(BatchJob job) => job.Mode == BatchJob.UniformFrozen &&
+        job.SourceIsProRAW && job.Settings.HDR is { Mode: HDRMode.Hdr };
+
+    private (VersionedPhotoEdit Record, BatchFrozenSettings Frozen) Candidate(BatchJob job, BatchItem item, int ordinal, bool validateFormat)
+    {
+        var record = store.VersionedState(item.Input);
+        if (!record.Identity.SameFile(item.Identity)) throw new EditPersistenceConflict();
+        var target = record.Edit ?? new SavedEdit(record.Identity,
+            PhotoInput.PrepareHDRInputSettings(item.Input,new Adjustments()).Capture(),null);
+        var source = new SavedEdit(new OriginalIdentity(job.Source,0,0,0),job.Settings,null);
+        var hdr = job.Settings.HDR!;
+        var fields = AdjustmentFields.HDRSupported;
+        if (target.Settings.HDR is not { Mode: HDRMode.Hdr } && hdr.Temperature == 6500 && hdr.Tint == 0)
+            fields = fields.Where(field => !field.IsHDRRelative()).ToHashSet();
+        var payload = AdjustmentTransfer.Capture(AdjustmentScope.Custom(fields),source,new(job.Source,true,IsProRAW:true));
+        var prepared = AdjustmentTransfer.Prepare(payload,target,
+            new(item.Input,PhotoInput.IsRaw(item.Input),IsProRAW:PhotoInput.SupportsProRAWHDR(item.Input)));
+        if (validateFormat) BatchSelectionExport.ValidateHDRFormat(item.Input,prepared.Settings,job.Format);
+        var isHDR = prepared.Settings.HDR is { Mode: HDRMode.Hdr };
+        var look = isHDR ? null : resolveLook(prepared);
+        if (!isHDR && (prepared.Look != null || prepared.Settings.MasterRecipeID != null) && look == null)
+            throw new FileNotFoundException(Loc.Text("外观不可用。"));
+        var frozen = new BatchFrozenSettings { Ordinal=ordinal,Settings=prepared.Settings,Look=look,
+            LookSha256=look == null ? null : BatchFrozenSettings.Checksum(look),
+            LookName=isHDR ? "HDR" : look == null ? Loc.Text("中性") : Path.GetFileNameWithoutExtension(look),
+            OutputFormat=job.Format,LongEdge=job.LongEdge };
+        frozen.Validate();
+        return (record,frozen);
+    }
+
+    internal BatchFrozenSettings Prepare(BatchJob job, BatchItem item) => Candidate(job,item,0,false).Frozen;
+
+    internal BatchJob Freeze(BatchJob job, BatchJournal journal, CancellationToken cancellation)
+    {
+        var work = job.Copy();
+        var migrating = work.Mode != BatchJob.PerTargetFrozen;
+        if (migrating) work.Items = work.Items.Where(item => item.Selected && item.CanSelect).ToList();
+        var owned = new List<string>();
+        try {
+            Directory.CreateDirectory(journal.DirectoryPath);
+            for (var index=0; index<work.Items.Count; index++) {
+                cancellation.ThrowIfCancellationRequested();
+                var item = work.Items[index];
+                if (!migrating && !item.AwaitingTargetSettings) continue;
+                // 已成功的旧任务项只保留原有结果，无需访问其原片或外观。
+                if (item.Status == BatchStatus.Succeeded) {
+                    work.Items[index] = item with { Frozen=work.SnapshotFor(item) with { Ordinal=index,Look=null } };
+                    continue;
+                }
+                BatchFrozenSettings frozen;
+                try {
+                    var candidate = Candidate(work,item,index,true);
+                    if (!store.VersionedState(item.Input).SameAs(candidate.Record)) throw new EditPersistenceConflict();
+                    frozen = candidate.Frozen;
+                } catch (Exception error) when (work.Started &&
+                    error is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception) {
+                    // 保存逐行失败，恢复后重试时再读取目标的调整。
+                    work.Items[index] = item with { Status=BatchStatus.Failed,Error=error.Message,AwaitingTargetSettings=true };
+                    continue;
+                }
+                if (frozen.Look is {} look) {
+                    // 每次冻结使用新的资源名，避免异常退出留下的副本阻断重试。
+                    item = item with { Id=Guid.NewGuid() };
+                    var copy = Path.Combine(journal.DirectoryPath,item.Id+Path.GetExtension(look));
+                    using (var output = new FileStream(copy,FileMode.CreateNew)) {
+                        owned.Add(copy);
+                        using var input = File.OpenRead(look);
+                        input.CopyTo(output);
+                    }
+                    frozen = frozen with { Look=copy };
+                    frozen.VerifyLook();
+                }
+                work.Items[index] = item with { Frozen=frozen,AwaitingTargetSettings=false };
+            }
+            work.Version=3; work.SettingsMode=BatchJob.PerTargetFrozen;
+            cancellation.ThrowIfCancellationRequested();
+            journal.Save(work);
+            return work;
+        } catch {
+            foreach (var path in owned) File.Delete(path);
+            throw;
+        }
     }
 }

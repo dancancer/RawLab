@@ -41,7 +41,8 @@ class HDRNativeInstrumentedTest {
         try {
             val info = requireNotNull(NativeHDRBridge.probeCameraRaw(source))
             assertTrue(info.isCameraRaw)
-            assertNull("Camera RAW must not enter gain-map raster HDR routing", NativeHDRBridge.probe(source))
+            assertFalse("Camera RAW must not enter gain-map raster HDR routing",
+                com.rawlab.android.photo.HDRSourceInfo.mayContainGainMap(source))
             NativeProcessor(NativeProcessor.CPU).use { processor ->
                 val preview = processor.decodeHDRCamera(source, info, 64)
                 try {

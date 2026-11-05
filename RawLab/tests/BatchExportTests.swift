@@ -230,6 +230,19 @@ struct BatchExportTests {
         check(cancelled.targets.filter { $0.status == .succeeded }.count == 2, "cancellation preserves completed rows")
         check(cancelled.targets.dropFirst(2).contains(where: { $0.status == .cancelled }), "cancellation marks remaining rows")
 
+        var stoppedDuringRender = false
+        var stoppedWrites = 0, cleanedPayloads = 0
+        let stopped = try BatchExportRunner.run(job: BatchExportJob(source: source, targets: targets), journalStore: nil,
+            render: { _, _ in stoppedDuringRender = true; return Data([1]) },
+            write: { _, _, _, _ in stoppedWrites += 1 }, cleanup: { _ in cleanedPayloads += 1 },
+            shouldCancel: { stoppedDuringRender })
+        check(stopped.status == .cancelled && stopped.targets.allSatisfy { $0.status == .cancelled } &&
+            stoppedWrites == 0 && cleanedPayloads == 1, "cancellation during render must clean payload before Photos publication")
+        let interruptedRender: BatchExportJob = try BatchExportRunner.run(job: BatchExportJob(source: source, targets: targets), journalStore: nil,
+            render: { _, _ -> Data in throw CancellationError() }, write: { _, _, _, _ in stoppedWrites += 1 })
+        check(interruptedRender.status == .cancelled && interruptedRender.targets.allSatisfy { $0.status == .cancelled } && stoppedWrites == 0,
+            "cancelled native export must not become a failed row or start later targets")
+
         var retry = job
         retry = try BatchExportRunner.retryFailed(job: retry, journalStore: journal,
                                                    render: { _, _ in Data([9]) },
@@ -475,9 +488,10 @@ private func checkPerTargetSnapshots(_ root: URL) throws {
     try BatchExportTests.require(missingRejected, "new per-target job version cannot fall back to uniform after losing its mode and snapshots")
 
     var exposures: [Double] = []
+    var published = 0
     _ = try BatchExportRunner.run(job: frozen, journalStore: journal, render: { _, settings in
         exposures.append(settings.exposure)
-    }, write: { _, _, _, _ in }, shouldCancel: { exposures.count == 1 })
+    }, write: { _, _, _, _ in published += 1 }, shouldCancel: { published == 1 })
     var restored = try journal.load(id: frozen.id)!
     try BatchExportTests.require(exposures == [0.5], "cancel retains first item's distinct setting")
     restored = try BatchExportRunner.run(job: restored, journalStore: journal, render: { target, settings in

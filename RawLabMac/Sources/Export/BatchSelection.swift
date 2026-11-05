@@ -102,6 +102,10 @@ struct MacCollectionExportPreparation {
         defaults.exposureMode = RenderEngine.isRasterInput(photo.url) ? .sensor : .preview
         if record.state == nil, try HDRSourceInfo.probe(photo.url) != nil { defaults.hdr = HDRSettings() }
         let state = record.state ?? PhotoEditState(settings: defaults, filmID: "")
+        if state.settings.isHDREditing, let version = state.settings.proRAWDecodeVersion,
+           version != ProRAWSource.decodeVersion, try HDRSourceInfo.probeRAW(photo.url)?.proRAW != nil {
+            throw HDRSettings.ModeError.invalidSettings
+        }
         if !state.settings.isHDREditing && state.settings.aiDenoiseEnabled {
             try RenderEngine.validateAIInput(photo.url, settings: state.settings)
         }

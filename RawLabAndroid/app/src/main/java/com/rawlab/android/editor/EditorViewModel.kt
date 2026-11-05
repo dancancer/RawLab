@@ -111,6 +111,7 @@ class EditorViewModel @JvmOverloads constructor(
     private var acceptedHslSettings: EditSettings? = null
     private var acceptedHslRevision: HslTargetRevision? = null
     private var currentRevision = 0L
+    private var cameraHDRPreflightPending = false
     @Volatile private var sourceRevision = 0L
     private var editRevision = 0L
     private var draftRevision = 0L
@@ -173,6 +174,7 @@ class EditorViewModel @JvmOverloads constructor(
     private fun submitRender(work: Work): Long {
         // 新任务替换取色时，队列可能不再回调旧请求；这里同步清除等待状态。
         if (work !is Work.HslProbe && hslInteraction.waiting) clearHslTarget()
+        cameraHDRPreflightPending = work is Work.CameraHDRPreflight
         return queue.submit(work)
     }
 
@@ -246,6 +248,7 @@ class EditorViewModel @JvmOverloads constructor(
     }
 
     private fun accept(result: Result<WorkResult>) {
+        cameraHDRPreflightPending = false
         result.fold({ value ->
             when (value) {
                 is WorkResult.X3fImportFailure -> {
@@ -548,7 +551,7 @@ class EditorViewModel @JvmOverloads constructor(
             }
         } else if (!interactive && !adjustmentHistory.finish(current.photo!!, sourceRevision)) return
         val look = current.looks.firstOrNull { it.id == edits.film }
-        if (look?.managed == true && !look.available) {
+        if (!edits.isHDREditing && look?.managed == true && !look.available) {
             mutable.value = current.copy(error = text(R.string.look_unavailable))
             return
         }
@@ -573,6 +576,11 @@ class EditorViewModel @JvmOverloads constructor(
         var current = mutable.value
         if (disposed || current.photo == null || current.draft != null || edge !in 1..1600 ||
             (edge == requestedPreviewLongEdge && (edge == previewLongEdge || previewResizeJob != null))) return
+        if (cameraHDRPreflightPending) {
+            // 视口变化保留最新尺寸，不能用旧 SDR 预览替换尚未完成的 HDR 能力预检。
+            requestedPreviewLongEdge = edge
+            return
+        }
         cancelHslTarget()
         current = mutable.value
         requestedPreviewLongEdge = edge
@@ -936,7 +944,7 @@ class EditorViewModel @JvmOverloads constructor(
             val captured = adjustmentHistory.session!!.copy(scope, current.edits,
                 AdjustmentTransferContext(photo.identity.value, photo.inputKind == PhotoInputKind.RAW,
                     builtinLookIDs = storage.builtinLookIDs(), cameraTemperature = current.preview?.temperature,
-                    cameraTint = current.preview?.tint))
+                    cameraTint = current.preview?.tint, sourceSupportsProRAWHDR = photo.hdrSource?.isProRAW == true))
             adjustmentClipboardSourceName = photo.name
             mutable.value = current.copy(adjustmentRevision = current.adjustmentRevision + 1)
             captured
@@ -955,7 +963,7 @@ class EditorViewModel @JvmOverloads constructor(
         val expected = adjustmentHistory.loaded
         val context = AdjustmentTransferContext(photo.identity.value, photo.inputKind == PhotoInputKind.RAW,
             builtinLookIDs = storage.builtinLookIDs(), cameraTemperature = current.preview?.temperature,
-            cameraTint = current.preview?.tint)
+            cameraTint = current.preview?.tint, sourceSupportsProRAWHDR = photo.hdrSource?.isProRAW == true)
         commitAdjustments({
             val record = editStore.versionedState(photo.identity)
             if (record != expected || !AdjustmentTransfer.sameAdjustments(record.settings ?:
@@ -980,7 +988,7 @@ class EditorViewModel @JvmOverloads constructor(
             record.settings ?: photo.defaultEditSettings(),
             AdjustmentTransferContext(photo.identity.value, photo.inputKind == PhotoInputKind.RAW,
                 builtinLookIDs = storage.builtinLookIDs(), cameraTemperature = current.preview?.temperature,
-                cameraTint = current.preview?.tint))
+                cameraTint = current.preview?.tint, sourceSupportsProRAWHDR = photo.hdrSource?.isProRAW == true))
     }
 
     fun adjustmentSummaryLookName(kind: String, id: String): String? {
@@ -1155,7 +1163,7 @@ class EditorViewModel @JvmOverloads constructor(
         if (!photo.isHDRSource || !current.controlsEnabled || current.draft != null) return
         val candidate = runCatching { current.edits.withHDRMode(enabled, sourceIsHDR = !photo.isCameraRawHDR,
             hasLook = current.edits.film != "neutral" || current.edits.recipeID != null,
-            cameraRaw = photo.isCameraRawHDR) }
+            cameraRaw = photo.isCameraRawHDR, proRAW = photo.hdrSource?.isProRAW == true) }
             .getOrElse { error -> mutable.value = current.copy(error = text(if(error is com.rawlab.android.settings.HDRModeError.Conflicts)
                 R.string.hdr_conflicts else R.string.hdr_unsupported)); return }
         if (enabled && photo.isCameraRawHDR) {

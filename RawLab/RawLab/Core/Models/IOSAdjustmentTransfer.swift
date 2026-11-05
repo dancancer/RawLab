@@ -4,6 +4,7 @@ struct IOSAdjustmentTransferContext {
     var identifier: String
     var isRaw: Bool
     var sourceIsHDR = false
+    var sourceSupportsProRAWHDR = false
     var availableLookIDs: Set<String> = []
     var builtinLookIDs: [String: String] = [:]
     var cameraTemperature: Double? = nil
@@ -27,7 +28,7 @@ enum IOSAdjustmentTransfer {
                         context: IOSAdjustmentTransferContext) throws -> AdjustmentTransferPayload {
         guard !context.hasUncommittedDraft else { throw AdjustmentTransferError.draftRequiresPreflight }
         if snapshot.settings.isHDREditing {
-            guard context.sourceIsHDR, !context.isRaw else { throw AdjustmentTransferError.incompatible("hdr.source") }
+            guard supportsHDRTransfer(context) else { throw AdjustmentTransferError.incompatible("hdr.source") }
             return try HDRAdjustmentTransfer.capture(settings: snapshot.settings.hdr!, identifier: context.identifier,
                 processingVersion: snapshot.settings.processing.version, scope: scope)
         }
@@ -55,7 +56,7 @@ enum IOSAdjustmentTransfer {
         guard !context.hasUncommittedDraft else { throw AdjustmentTransferError.draftRequiresPreflight }
         try payload.validate()
         if target.settings.isHDREditing {
-            guard context.sourceIsHDR, !context.isRaw else { throw AdjustmentTransferError.incompatible("hdr.source") }
+            guard supportsHDRTransfer(context) else { throw AdjustmentTransferError.incompatible("hdr.source") }
             var settings = target.settings
             settings.hdr = try HDRAdjustmentTransfer.prepare(payload: payload, target: target.settings.hdr!)
             return target.replacing(settings: settings, preservingFilmID: target.filmID)
@@ -166,6 +167,10 @@ enum IOSAdjustmentTransfer {
         if let id = settings.masterRecipeID, MasterRecipe.recipe(for: id) == nil {
             throw AdjustmentTransferError.missingLook("recipe:\(id)")
         }
+    }
+
+    private static func supportsHDRTransfer(_ context: IOSAdjustmentTransferContext) -> Bool {
+        (!context.isRaw && context.sourceIsHDR) || (context.isRaw && context.sourceSupportsProRAWHDR)
     }
     static func isRecipeScaled(_ field: Field, version: Int = 3) -> Bool {
         [.exposure, .contrast, .highlights, .shadows, .saturation].contains(field) || version >= 4 && Field.refinementScalars.contains(field)
