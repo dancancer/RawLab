@@ -3,6 +3,26 @@
 Release history is kept here rather than in the project READMEs. Detailed
 release notes include assets, installation requirements and validation limits.
 
+## [0.9.3]
+
+### Added
+
+- HDR editing and gain-map or SDR JPEG export for supported camera RAW and
+  Apple ProRAW on macOS, iOS, Android and Windows.
+- iPhone Duo layout support with the iOS 27.1 SDK.
+
+### Fixed
+
+- iPad document picker presentation for photo and LUT import.
+- Android master recipe rendering when calibrated as-shot white balance is unavailable.
+- Windows ProRAW batch recovery when a target original is missing and stale
+  format errors after switching to SDR JPEG.
+- SDR JPEG cancellation during encoding and ProRAW decoder version validation
+  on macOS and iOS.
+
+Version `0.9.3`, build `18`. See the
+[release notes](docs/releases/v0.9/v0.9.3.md) for compatibility and coverage.
+
 ## [0.9.2] - 2026-10-31
 
 ### Added
