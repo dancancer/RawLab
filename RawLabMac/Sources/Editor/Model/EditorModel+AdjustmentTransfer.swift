@@ -40,9 +40,15 @@ extension EditorModel {
     func adjustmentTransferContext(for url: URL) -> MacAdjustmentTransferContext {
         MacAdjustmentTransferContext(identifier: url.resolvingSymlinksInPath().standardizedFileURL.path, isRaw: !RenderEngine.isRasterInput(url),
             sourceIsHDR: file == url ? sourceIsHDR : ((try? HDRSourceInfo.probe(url)) != nil),
+            sourceSupportsProRAWHDR: supportsProRAWHDR(url),
             availableLookIDs: availableAdjustmentLooks,
             defaultExposureMode: RenderEngine.isRasterInput(url) ? .sensor : .preview,
             hasUncommittedDraft: file == url && (geometryDraft != nil || dirty))
+    }
+
+    private func supportsProRAWHDR(_ url: URL) -> Bool {
+        do { return try HDRSourceInfo.probeRAW(url)?.proRAW != nil }
+        catch { return false }
     }
 
     @discardableResult func copyAdjustments(scope: AdjustmentTransferScope) throws -> AdjustmentTransferPayload {

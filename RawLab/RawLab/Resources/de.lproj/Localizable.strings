@@ -488,6 +488,7 @@
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Nur Anpassungen in der Gruppe „%@“ werden zurückgesetzt. Andere Gruppen bleiben unverändert.";
 "此照片没有可用的相机白平衡校准。" = "Dieses Foto enthält keine nutzbare Kamera-Weißabgleichkalibrierung.";
 "此照片没有可编辑的 HDR 增益图。" = "Dieses Foto hat keine bearbeitbare HDR-Gain-Map.";
+"此设备暂不支持导出 HDR 模式下的 ProRAW 照片。" = "Dieses Gerät unterstützt den Export von ProRAW-Fotos im HDR-Modus noch nicht.";
 "此输入不支持镜头校正" = "Objektivkorrektur für diese Eingabe nicht unterstützt";
 "此配置与预览照片类型不匹配，请更换照片或配置。" = "Diese Einstellungen passen nicht zum Typ des Vorschaubilds. Wählen Sie ein anderes Foto oder eine andere Konfiguration.";
 "此镜头没有所选校正的标定数据" = "Keine Kalibrierungsdaten für die gewählten Korrekturen";

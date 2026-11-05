@@ -15,6 +15,9 @@
   LUT 兼容向导使用有界 PREVIEW；导出重新获取 FINAL。不得用代理图导出。
 - 新 HDR 原片默认 HDR 编辑；旧的无 HDR 字段记录仍为 SDR。独立保存 HDR 参数与
   SDR 参数；模式切换、重置、撤销重做遵守现有 Apple 客户端的规则。
+- ProRAW 使用明确的来源能力和 DNG SDK 解码版本 2，默认保持普通 RAW 的 SDR 编辑；
+  显式开启 HDR 前完成有界预检。版本、双图解释和分块导出遵循 [ProRAW 契约](proraw.md)。
+  普通 Bayer RAW 不因这次接入而获得 ProRAW 的调整传递能力。
 - HDR 仅开放曝光、相对色温、相对色偏、对比度、高光、阴影、饱和度及几何。
   不支持的外观、配方和高级算子必须明确禁用或由预检整体拒绝。
 - HDR 调整传递使用 v2 和 `hdr_processing_version = 1`，不自动改变目标模式。

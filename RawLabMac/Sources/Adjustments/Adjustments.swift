@@ -50,6 +50,7 @@ struct Adjustments: Equatable, Codable {
     var processing = ProcessingIdentity.current
     var x3fMode = X3fMode.normal
     var hdr: HDRSettings?
+    var proRAWDecodeVersion: Int?
     var isHDREditing: Bool { hdr?.mode == .hdr }
     var exposureMode = ExposureMode.preview
     var exposure = 0.0
@@ -683,6 +684,7 @@ extension Adjustments {
             try values.decode(ProcessingIdentity.self, forKey: .processing) : .legacy
         x3fMode = values.contains(.x3fMode) ? try values.decode(X3fMode.self, forKey: .x3fMode) : .legacy
         hdr = try values.decodeIfPresent(HDRSettings.self, forKey: .hdr)
+        proRAWDecodeVersion = try values.decodeIfPresent(Int.self, forKey: .proRAWDecodeVersion)
         toneCurveConfig = try values.decodeIfPresent(ToneCurveSettings.self, forKey: .toneCurveConfig)
         colorGrading = try values.decodeIfPresent(ColorGradingSettings.self, forKey: .colorGrading)
         if colorGrading?.isDefault == true { colorGrading = nil }
@@ -798,10 +800,14 @@ struct PhotoEditSession {
 
 
 extension Adjustments {
-    func withHDRMode(_ enabled: Bool, sourceIsHDR: Bool, hasLook: Bool) throws -> Adjustments {
+    func withHDRMode(_ enabled: Bool, sourceIsHDR: Bool, hasLook: Bool, cameraRAW: Bool = false) throws -> Adjustments {
         var result = self
         guard enabled else { result.hdr?.mode = .sdr; return result }
         var initial = HDRSettings()
+        if cameraRAW {
+            result.hdr = try HDRSettings.enabling(stored: hdr, initial: initial, sourceIsHDR: true, conflicts: [])
+            return result
+        }
         initial.exposure = exposure; initial.contrast = contrast; initial.highlights = highlights
         initial.shadows = shadows; initial.saturation = saturation; initial.geometry = geometry ?? GeometrySettings()
         var conflicts: [String] = []

@@ -169,8 +169,16 @@ extension RawEditorViewModel {
                     let sourceFile = try PhotoSourceFile.copy(inputURL)
                     failedSource = sourceFile
                     try sourceFile.withReadAccess { localURL in
-                        let hdrInfo=sourceKind == .raster ? try HDRSourceInfo.probe(localURL) : nil
-                        if hdrInfo != nil && record==nil { restoredSettings.hdr=HDRSettings() }
+                        let hdrInfo = sourceKind == .raster
+                            ? try HDRSourceInfo.probe(localURL)
+                            : try HDRSourceInfo.probeRAW(localURL)
+                        let proRAW = hdrInfo?.proRAW
+                        if proRAW != nil, restoredSettings.isHDREditing {
+                            try ProRAWSource.validatedDecodeVersion(restoredSettings.proRAWDecodeVersion)
+                        }
+                        let cameraHDR = hdrInfo?.isDevelopedRAW == true
+                        let rasterHDR = hdrInfo != nil && !cameraHDR
+                        if rasterHDR && record == nil { restoredSettings.hdr=HDRSettings() }
                         let restoredSettings=restoredSettings
                         let missingLook = !self.isLookAvailable(for: restoredSettings)
                         if let hdr=restoredSettings.hdr,restoredSettings.isHDREditing {
@@ -182,7 +190,9 @@ extension RawEditorViewModel {
                                 guard self.activeImportRevision==importRevision else { return }
                                 self.invalidatePreviewRequests(); self.activeImportRevision=nil; self.importPreviousRevision=nil
                                 self.sourceFile=sourceFile; self.sourceKind=sourceKind; self.sourceIdentity=resolvedIdentity
-                                self.sourceDisplayName=source.displayName; self.sourceIsHDR=true
+                                self.sourceDisplayName=source.displayName; self.sourceIsHDR=rasterHDR
+                                self.sourceSupportsCameraHDR=cameraHDR
+                                self.sourceProRAW = proRAW
                                 self.restoredSettings=restoredSettings; self.currentPreviewSettings=restoredSettings; self.pendingSettings=nil
                                 self.sourceOrientation = .up; self.draftBuffer=nil; self.draftPreviewBuffer=nil
                                 self.hdrPresentation=presentation; self.hdrReference=reference
@@ -219,7 +229,9 @@ extension RawEditorViewModel {
                                 self.invalidatePreviewRequests()
                                 self.activeImportRevision = nil
                                 self.importPreviousRevision=nil
-                                self.hdrPresentation=nil; self.hdrReference=nil; self.sourceIsHDR=hdrInfo != nil
+                                self.hdrPresentation=nil; self.hdrReference=nil; self.sourceIsHDR=rasterHDR
+                                self.sourceSupportsCameraHDR=cameraHDR
+                                self.sourceProRAW = proRAW
                                 self.sourceFile = sourceFile
                                 self.sourceKind = sourceKind
                                 self.sourceIdentity = resolvedIdentity
@@ -276,7 +288,9 @@ extension RawEditorViewModel {
                                 self.invalidatePreviewRequests()
                                 self.activeImportRevision = nil
                                 self.importPreviousRevision=nil
-                                self.hdrPresentation=nil; self.hdrReference=nil; self.sourceIsHDR=hdrInfo != nil
+                                self.hdrPresentation=nil; self.hdrReference=nil; self.sourceIsHDR=rasterHDR
+                                self.sourceSupportsCameraHDR=cameraHDR
+                                self.sourceProRAW = proRAW
                                 self.sourceFile = sourceFile
                                 self.sourceKind = sourceKind
                                 self.sourceIdentity = resolvedIdentity

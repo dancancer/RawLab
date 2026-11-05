@@ -389,12 +389,13 @@ extension EditorModel {
         var candidate=restoredRecord.state?.settings ?? Adjustments()
         if restoredRecord.state==nil && RenderEngine.isRasterInput(url) { candidate.exposureMode = .sensor }
         if info != nil && restoredRecord.state==nil { candidate.hdr=HDRSettings() }
-        guard !candidate.isHDREditing || info != nil else {
+        let cameraHDR = info == nil && (try? HDRSourceInfo.probeRAW(url)) != nil
+        guard !candidate.isHDREditing || info != nil || cameraHDR else {
             self.error=L10n.text("此照片没有可编辑的 HDR 增益图。")
             return
         }
         let opening=UUID(); pendingOpenID=opening
-        if info != nil {
+        if info != nil || candidate.isHDREditing {
             importing=true
             let snapshot=candidate
             let storedLook=restoredRecord.state?.filmID ?? ""
@@ -408,7 +409,7 @@ extension EditorModel {
                     DispatchQueue.main.async {
                         guard self.pendingOpenID==opening else { return }
                         self.importing=false
-                        self.activateOpen(url,record:restoredRecord,settings:snapshot,isHDR:true,neutral:neutral,result:result)
+                        self.activateOpen(url,record:restoredRecord,settings:snapshot,isHDR:info != nil,cameraHDR:cameraHDR,neutral:neutral,result:result)
                     }
                 } catch {
                     DispatchQueue.main.async {
@@ -420,11 +421,11 @@ extension EditorModel {
             return
         }
         importing=false
-        activateOpen(url,record:restoredRecord,settings:candidate,isHDR:false)
+        activateOpen(url,record:restoredRecord,settings:candidate,isHDR:false,cameraHDR:cameraHDR)
     }
 
     private func activateOpen(_ url: URL,record restoredRecord: VersionedPhotoEdit,settings candidate: Adjustments,
-                              isHDR: Bool,neutral stagedNeutral: RenderedImage? = nil,result stagedResult: RenderedImage? = nil) {
+                              isHDR: Bool,cameraHDR: Bool,neutral stagedNeutral: RenderedImage? = nil,result stagedResult: RenderedImage? = nil) {
         resetAITask()
         cancelViewportResize()
         committedEdit = restoredRecord
@@ -432,7 +433,7 @@ extension EditorModel {
         editRevision = UUID()
         scheduler.setInteracting(false)
         sourceRevision = UUID()
-        file = url; sourceIsHDR=isHDR; neutral=stagedNeutral; result=stagedResult
+        file = url; sourceIsHDR=isHDR; sourceSupportsCameraHDR=cameraHDR; neutral=stagedNeutral; result=stagedResult
         error=nil; previewOutdated=false; statusState = .none
         pendingImportEvent = true
         updatingMetadata = true

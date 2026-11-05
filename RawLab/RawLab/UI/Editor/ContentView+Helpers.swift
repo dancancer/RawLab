@@ -24,19 +24,41 @@ extension ContentView {
     }
 
     func setHDREditing(_ enabled: Bool) {
-        guard viewModel.sourceIsHDR,enabled != settings.isHDREditing,!editorBusy,!isEditorDraftActive,
+        guard (viewModel.sourceIsHDR || viewModel.sourceSupportsCameraHDR),enabled != settings.isHDREditing,!editorBusy,!isEditorDraftActive,
               let source=viewModel.editorEditSource else { return }
-        guard viewModel.saveCurrentSettings(settings) else { return }
         do {
-            let candidate=try settings.withHDRMode(enabled,sourceIsHDR:true,hasLook:settings.hasLook)
-            guard viewModel.persistEditCandidate(viewModel.currentEditState(settings:candidate),source:source) else { return }
-            viewModel.persistedEditorSettings=PersistedEditorSettings(source:source,settings:candidate)
-            viewModel.committedPreviewSettings=candidate
-            settings=candidate; selectEditorTool(.adjustment(.exposure))
-            viewModel.updatePreview(settings:candidate)
+            var candidate=try settings.withHDRMode(enabled,sourceIsHDR:viewModel.sourceIsHDR,
+                                                   hasLook:settings.hasLook,
+                                                   cameraRAW:viewModel.sourceSupportsCameraHDR)
+            if enabled, viewModel.sourceProRAW != nil {
+                candidate.proRAWDecodeVersion = try ProRAWSource.validatedDecodeVersion(settings.proRAWDecodeVersion)
+            }
+            guard viewModel.saveCurrentSettings(settings) else { return }
+            if enabled && viewModel.sourceSupportsCameraHDR {
+                let proposed = candidate
+                let sourceRevision = viewModel.sourceRevision
+                viewModel.preflightCameraHDR(settings: proposed) { result in
+                    guard viewModel.sourceRevision == sourceRevision else { return }
+                    switch result {
+                    case .success: activateHDRMode(proposed, source: source)
+                    case .failure(let error): viewModel.statusMessage = error.localizedDescription
+                    }
+                }
+            } else {
+                activateHDRMode(candidate, source: source)
+            }
         } catch HDRSettings.ModeError.conflicts {
             viewModel.statusMessage=L10n.text("当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。")
         } catch { viewModel.statusMessage=error.localizedDescription }
+    }
+
+    private func activateHDRMode(_ candidate: RawSettings, source: EditorEditSource) {
+        guard viewModel.persistEditCandidate(viewModel.currentEditState(settings:candidate),source:source) else { return }
+        viewModel.persistedEditorSettings=PersistedEditorSettings(source:source,settings:candidate)
+        viewModel.committedPreviewSettings=candidate
+        settings=candidate
+        selectEditorTool(.adjustment(.exposure))
+        viewModel.updatePreview(settings:candidate)
     }
     var editingLocked: Bool { isImporting || isSaving || viewModel.isBusy || batchModel?.isRunning == true }
     var editorBusy: Bool { viewModel.isBusy || viewModel.isLoadingLUTs || viewModel.isImportingLooks || editingLocked }
@@ -89,7 +111,8 @@ extension ContentView {
     }
 
     var manualWhiteBalanceSettings: RawSettings {
-        guard viewModel.sourceKind == .raw, let camera = viewModel.rawWhiteBalance else { return settings }
+        guard !settings.isHDREditing, viewModel.sourceKind == .raw,
+              let camera = viewModel.rawWhiteBalance else { return settings }
         return settings.customWhiteBalance(cameraTemperature: camera.temperature, cameraTint: camera.tint)
     }
 
@@ -102,7 +125,7 @@ extension ContentView {
                 saveToPhotoLibrary(data)
             case .failure(let error):
                 isSaving = false
-                viewModel.statusMessage = error.localizedDescription
+                viewModel.statusMessage = error is CancellationError ? L10n.text("导出已取消") : error.localizedDescription
             }
         }
     }
@@ -147,10 +170,10 @@ extension ContentView {
         Binding(
             get: { adjustment.value(from: settings) },
             set: { value in
-                var updated = viewModel.sourceKind == .raw && (adjustment == .temperature || (adjustment == .tint && settings.masterRecipeID == nil))
+                var updated = !settings.isHDREditing && viewModel.sourceKind == .raw && (adjustment == .temperature || (adjustment == .tint && settings.masterRecipeID == nil))
                     ? manualWhiteBalanceSettings : settings
                 adjustment.setValue(value, in: &updated)
-                if viewModel.sourceKind == .raw,
+                if !settings.isHDREditing, viewModel.sourceKind == .raw,
                    (adjustment == .temperature || adjustment == .tint) && !(updated.masterRecipeID != nil && adjustment == .tint) {
                     updated.whiteBalanceMode = .custom
                 }
@@ -162,7 +185,7 @@ extension ContentView {
     func reset(_ adjustment: AdjustmentKind) {
         var updated = settings
         adjustment.reset(in: &updated)
-        if viewModel.sourceKind == .raw,
+        if !settings.isHDREditing, viewModel.sourceKind == .raw,
            adjustment == .temperature || adjustment == .tint {
             if let whiteBalance = viewModel.rawWhiteBalance {
                 if adjustment == .temperature { updated.temperature = whiteBalance.temperature }
@@ -190,6 +213,7 @@ extension ContentView {
     }
 
     func setWhiteBalanceMode(_ mode: RawWhiteBalanceMode) {
+        guard !settings.isHDREditing else { return }
         var updated = settings
         if mode == .custom,
            settings.whiteBalanceMode == .camera,
@@ -234,7 +258,7 @@ extension ContentView {
             set: { value in
                 var updated = manualWhiteBalanceSettings
                 AdjustmentKind.temperature.setValue(RawSettings.temperature(forReciprocalSliderValue:value),in:&updated)
-                if viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
+                if !settings.isHDREditing, viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
                 applySettingsChange(updated)
             }
         )
@@ -248,7 +272,7 @@ extension ContentView {
                 var updated = manualWhiteBalanceSettings
                 AdjustmentKind.temperature.setValue(min(max(value.rounded(),RawSettings.temperatureRange.lowerBound),
                     RawSettings.temperatureRange.upperBound),in:&updated)
-                if viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
+                if !settings.isHDREditing, viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
                 applySettingsChange(updated)
             }
         )
@@ -315,10 +339,17 @@ extension ContentView {
     func continueEditorImport() {
         guard pendingFileImport || pendingPhotoImport else { return }
         guard viewModel.saveCurrentSettings(settings) else { return }
-        showingFileImporter = pendingFileImport
+        if pendingFileImport { documentImportKind = .photo }
+        showingDocumentImporter = pendingFileImport
         showingPhotoImporter = pendingPhotoImport
         pendingFileImport = false
         pendingPhotoImport = false
+    }
+
+    func requestLookImport() {
+        guard !editorBusy, !isEditorDraftChanged else { return }
+        documentImportKind = .looks
+        showingDocumentImporter = true
     }
 
     @MainActor

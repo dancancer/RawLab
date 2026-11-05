@@ -1,6 +1,8 @@
 package com.rawlab.android.batch
 
 import com.rawlab.android.batch.journal.BatchJournal
+import com.rawlab.android.adjustments.AdjustmentFailure
+import com.rawlab.android.adjustments.AdjustmentTransferException
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
 import com.rawlab.android.settings.*
@@ -64,10 +66,13 @@ class BatchSelectionExport(private val directory: File,
                 validateActive(photo.id); validateSource(photo)
                 val inputHash = BatchFrozenSettings.checksum(photo.sourceFile)
                 val record = readRecord(photo.identity)
-                val settings = record.settings ?: com.rawlab.android.settings.sourceDefaultSettings(photo.sourceIsHDR)
+                val settings = record.settings ?: com.rawlab.android.settings.sourceDefaultSettings(photo.sourceIsHDR, cameraRaw = photo.inputKind == com.rawlab.android.format.PhotoInputKind.RAW)
+                if (settings.isHDREditing && !photo.sourceIsHDR)
+                    throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.source")
+                if (settings.isHDREditing) settings.requireProRAWDecoder()
                 require(format != ExportFormat.HDR_JPEG || settings.isHDREditing) { "HDR JPEG requires HDR editing" }
-                val look = resolveLook(settings)
-                check((settings.film == "neutral" && settings.recipeID == null) || look != null) { "Photo look is unavailable" }
+                val look = if (settings.isHDREditing) null else resolveLook(settings)
+                check(settings.isHDREditing || (settings.film == "neutral" && settings.recipeID == null) || look != null) { "Photo look is unavailable" }
                 CollectionExportReview.Row(photo, record, settings, inputHash, look, look?.let(BatchFrozenSettings::checksum))
             } catch (error: Exception) { CollectionExportReview.Row(photo, error = error.message ?: error.javaClass.simpleName) }
         }

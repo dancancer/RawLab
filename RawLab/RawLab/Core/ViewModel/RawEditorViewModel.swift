@@ -13,6 +13,11 @@ final class RawEditorViewModel: ObservableObject {
     @Published var hdrPresentation: HDRPresentation?
     @Published var hdrReference: HDRPresentation?
     @Published var sourceIsHDR=false
+    @Published var sourceSupportsCameraHDR=false
+    @Published var sourceProRAW: ProRAWSource?
+    var proRAWExportRestricted: Bool { sourceProRAW?.permitsStreamedJPEGExport == false }
+    var proRAWFullPairExportRestricted: Bool { sourceProRAW?.permitsFullSizeExport == false }
+    @Published var cameraHDRPreflight=false
     var importPreviousRevision: UUID?
     @Published var nativeImageSize: CGSize?
     @Published var basePreviewImage: UIImage?
@@ -20,6 +25,15 @@ final class RawEditorViewModel: ObservableObject {
     @Published var statusMessage: String?
     @Published var retryLegacyX3fImport: ((@escaping (RawSettings) -> Void) -> Void)?
     @Published var isBusy = false
+    @Published var isExportingHDR = false
+    final class ExportCancellation {
+        private let lock = NSLock()
+        private var cancelled = false
+        var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+        func cancel() { lock.lock(); cancelled = true; lock.unlock() }
+    }
+    var hdrExportCancellation: ExportCancellation?
+    func cancelHDRExport() { hdrExportCancellation?.cancel() }
     @Published var previewRendering = false
     @Published var previewResizePending = false
     @Published var previewFailed = false

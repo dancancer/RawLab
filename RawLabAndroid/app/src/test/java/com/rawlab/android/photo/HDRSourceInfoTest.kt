@@ -8,6 +8,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HDRSourceInfoTest {
+    @Test fun proRawContainerIsAnExplicitRawCapability() {
+        val source = HDRSourceInfo(8064, 6048, 1, 4, 0, 1, 0f, 0, ByteArray(32))
+        assertTrue(source.isCameraRaw)
+        assertTrue(source.isProRAW)
+        assertTrue(!com.rawlab.android.settings.sourceDefaultSettings(true, cameraRaw = source.isCameraRaw).isHDREditing)
+    }
     @Test fun unknownSourceHeadroomIsDistinctFromInvalidDeclaredHeadroom() {
         val value=HDRSourceInfo(64,32,1,1,1,1,0f,0,ByteArray(32))
         assertEquals(0f,value.contentHeadroom)
@@ -42,5 +48,10 @@ class HDRSourceInfoTest {
         assertTrue(HDRSourceInfo.mayContainGainMap("phone.HEIC", "image/heic"))
         assertTrue(HDRSourceInfo.mayContainGainMap("phone.jpg", "image/jpeg"))
         assertTrue(!HDRSourceInfo.mayContainGainMap("camera.png", "image/png"))
+    }
+
+    @Test fun cameraRawContainerIsASeparateHdrCapability() {
+        val value = HDRSourceInfo(64, 32, 1, HDRSourceInfo.CONTAINER_CAMERA_RAW, 0, 1, 0f, 0, ByteArray(32))
+        assertTrue(value.isCameraRaw)
     }
 }

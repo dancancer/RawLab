@@ -8,7 +8,7 @@ namespace RawLab.Windows;
 public partial class MainWindow
 {
     private HDRSourceInfo? hdrSource;
-    private bool hdrSdrPreview, hdrFalseColor;
+    private bool hdrSdrPreview, hdrFalseColor, cameraHDRPreflight;
     private readonly DispatcherTimer hdrDisplayTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly Dictionary<HDRFloatImage, BitmapSource> hdrFalseColorCache = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<HDRFloatImage> hdrFalseColorPending = new(ReferenceEqualityComparer.Instance);
@@ -89,28 +89,69 @@ public partial class MainWindow
 
     private void RefreshHDRControls()
     {
-        HDREditMenu.IsEnabled = file != null && hdrSource != null && !exporting && !transform.Active && !adjustmentReloadRequired;
+        HDREditMenu.IsEnabled = file != null && hdrSource != null && !exporting && !transform.Active &&
+            !adjustmentReloadRequired && !cameraHDRPreflight;
         HDREditMenu.IsChecked = settings.IsHDREditing;
         HDRPreviewMenu.IsEnabled = HDRSdrPreviewMenu.IsEnabled = HDRFalseColorMenu.IsEnabled = settings.IsHDREditing;
         HDRPreviewMenu.IsChecked = !hdrSdrPreview; HDRSdrPreviewMenu.IsChecked = hdrSdrPreview;
         HDRFalseColorMenu.IsChecked = hdrFalseColor;
     }
 
-    private void HDREditClicked(object sender, RoutedEventArgs e)
+    private async void HDREditClicked(object sender, RoutedEventArgs e)
     {
-        if (file == null || hdrSource == null) { RefreshHDRControls(); return; }
+        if (file == null || hdrSource == null || cameraHDRPreflight) { RefreshHDRControls(); return; }
         CancelParameterInputs();
         if (!ResolveTransformDraft() || !SaveEdits()) { RefreshHDRControls(); return; }
         var before = settings;
-        try {
-            var candidate = settings.Clone();
-            if (HDREditMenu.IsChecked && lut != null && candidate.HDR == null)
+        var candidate = before.Clone();
+        var enabled = HDREditMenu.IsChecked;
+        var cameraRaw = hdrSource.IsCameraRaw;
+        try
+        {
+            if (enabled && !cameraRaw && lut != null && candidate.HDR == null)
                 throw new HDRModeException(HDRModeFailure.Conflicts, ["look"]);
-            candidate.SetHDRMode(HDREditMenu.IsChecked, true);
-            settings = candidate; MarkEdited();
-            if (!SaveEdits()) { settings = before; RefreshControls(); return; }
-            RefreshControls(); Schedule();
-        } catch (Exception error) { settings = before; RefreshControls(); Report(error); }
+            candidate.SetHDRMode(enabled, hdrSource.IsHDR, cameraRaw: cameraRaw, proRAW: hdrSource.IsProRAW);
+        }
+        catch (Exception error) { RefreshControls(); Report(error); return; }
+
+        if (enabled && cameraRaw)
+        {
+            var path = file;
+            var opened = openRevision;
+            var revision = editRevision;
+            var edge = previewLongEdge;
+            var gpu = GpuMode.SelectedIndex == 0 ? 1 : GpuMode.SelectedIndex == 1 ? 0 : 2;
+            bool IsCurrent() => !closing && !exporting && !transform.Active && file == path &&
+                openRevision == opened && editRevision == revision;
+            cameraHDRPreflight = true;
+            RefreshHDRControls();
+            try
+            {
+                await Task.Run(() =>
+                {
+                    using var validator = new RenderEngine(gpuMode: gpu);
+                    validator.Render(path, candidate, null, edge, statistics: false, clipping: false);
+                });
+                if (!IsCurrent()) return;
+            }
+            catch (Exception error)
+            {
+                if (IsCurrent()) Report(error);
+                return;
+            }
+            finally
+            {
+                cameraHDRPreflight = false;
+                if (!closing) RefreshHDRControls();
+            }
+        }
+
+        if (enabled && candidate.AIDenoiseEnabled) ResetAITask();
+        settings = candidate;
+        MarkEdited();
+        if (!SaveEdits()) { settings = before; RefreshControls(); return; }
+        RefreshControls();
+        Schedule();
     }
 
     private void HDRPreviewClicked(object sender, RoutedEventArgs e) { hdrSdrPreview = false; RefreshHDRControls(); RefreshViewingFrames(); }

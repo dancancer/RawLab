@@ -115,7 +115,8 @@ struct IOSCollectionExportInput {
     func prepareExport(store: EditPersistence, skipping: Set<String>, format: BatchOutputFormat, longEdge: Int?,
                        probeHDR: (URL) throws -> Bool,
                        validateActive: (String) throws -> Void,
-                       resolveLook: (RawSettings) throws -> (URL?, String?)) -> IOSCollectionExportReview {
+                       resolveLook: (RawSettings) throws -> (URL?, String?),
+                       validateHDRVersion: (URL, Int) throws -> Void = { _, _ in }) -> IOSCollectionExportReview {
         let selected = selection
         let rows = selected.filter { !skipping.contains($0) }.compactMap { id -> IOSCollectionExportReview.Row? in
             guard let photo = photos[id] else { return nil }
@@ -126,6 +127,9 @@ struct IOSCollectionExportInput {
                 let record = try store.versionedState(for: photo.photo.identity)
                 var settings = record.state?.settings ?? .default
                 if record.state==nil,let file=photo.photo.file,try file.withReadAccess(probeHDR) { settings.hdr=HDRSettings() }
+                if settings.isHDREditing, let version = settings.proRAWDecodeVersion, let file = photo.photo.file {
+                    try file.withReadAccess { try validateHDRVersion($0, version) }
+                }
                 if format == .hdrJPEG && !settings.isHDREditing { throw BatchExportError.target(L10n.text("HDR JPEG 需要启用 HDR 编辑。")) }
                 let (look, name) = try settings.isHDREditing ? (nil,nil) : resolveLook(settings)
                 if settings.hasLook && look == nil {

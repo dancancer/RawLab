@@ -8,6 +8,7 @@ import UIKit
         let root=URL(fileURLWithPath:CommandLine.arguments[1],isDirectory:true)
         let input=URL(fileURLWithPath:CommandLine.arguments[2])
         let store=try EditPersistence(directory:root.appendingPathComponent("edits"))
+        let journal=try BatchJournalStore(directory:root.appendingPathComponent("journal"))
         let editor=RawEditorViewModel(editPersistence:store)
         let legacy=root.appendingPathComponent("legacy.jpg")
         try FileManager.default.copyItem(at:input,to:legacy)
@@ -21,6 +22,43 @@ import UIKit
         let a=BatchTarget(identity:aID,sourceURL:input,displayName:"new-hdr.jpg",sourceKind:.raster)
         let b=BatchTarget(identity:bID,sourceURL:legacy,displayName:"legacy.jpg",sourceKind:.raster)
         let preparation=IOSHDRBatchPreparation(source:source,editor:editor)
+        if let path = ProcessInfo.processInfo.environment["RAWLAB_TEST_PRORAW"] {
+            let raw = URL(fileURLWithPath: path)
+            let info = try HDRSourceInfo.probeRAW(raw)
+            check(info?.proRAW != nil, "ProRAW fixture was not recognized")
+            let rawID = PhotoIdentity(resourceIdentifier: "proraw")
+            let target = BatchTarget(identity: rawID, sourceURL: raw, displayName: raw.lastPathComponent, sourceKind: .raw)
+            let fresh = try preparation.prepare(target, ordinal: 2, format: .jpeg, longEdge: nil)
+            check(!fresh.settings.isHDREditing && fresh.settings.exposure == 1,
+                  "fresh ProRAW batch target was silently upgraded to HDR")
+            var saved = RawSettings.default; saved.exposure = -2; saved.hdr = HDRSettings()
+            saved.proRAWDecodeVersion = ProRAWSource.decodeVersion + 1
+            try store.save(rawID, state: PhotoEditState(settings: saved))
+            do {
+                _ = try preparation.prepare(target, ordinal: 2, format: .hdrJPEG, longEdge: nil)
+                fatalError("Incompatible ProRAW version passed HDR preflight")
+            } catch HDRSettings.ModeError.invalidSettings {}
+            let recovered = BatchExportModel(job: BatchExportJob(source: source, targets: [target]), journalStore: journal)
+            do {
+                _ = try recovered.render(target: target, settings: saved, look: nil, longEdge: 512, format: .hdrJPEG)
+                fatalError("Incompatible frozen ProRAW settings reached JPEG export")
+            } catch HDRSettings.ModeError.invalidSettings {}
+            saved.hdr?.mode = .sdr
+            try store.save(rawID, state: PhotoEditState(settings: saved))
+            let sdr = try preparation.prepare(target, ordinal: 2, format: .jpeg, longEdge: nil)
+            check(!sdr.settings.isHDREditing && sdr.settings.proRAWDecodeVersion == saved.proRAWDecodeVersion,
+                  "ProRAW preflight rejected or rewrote the dormant decoder version in SDR mode")
+            saved.hdr?.mode = .hdr
+            saved.proRAWDecodeVersion = ProRAWSource.decodeVersion
+            try store.save(rawID, state: PhotoEditState(settings: saved))
+            let beforeRaw = try store.versionedState(for: rawID)
+            let hdr = try preparation.prepare(target, ordinal: 2, format: .hdrJPEG, longEdge: nil)
+            check(hdr.settings.isHDREditing && hdr.settings.hdr?.exposure == 1 && hdr.settings.exposure == -2,
+                  "saved ProRAW HDR batch target lost its mode or dormant SDR state")
+            let afterRaw = try store.versionedState(for: rawID)
+            check(afterRaw == beforeRaw, "ProRAW batch preparation wrote target records")
+            print("PASS ProRAW batch capability, frozen target modes and record isolation")
+        }
         let first=try preparation.prepare(a,ordinal:0,format:.jpeg,longEdge:32)
         let second=try preparation.prepare(b,ordinal:1,format:.jpeg,longEdge:32)
         check(first.settings.isHDREditing && first.settings.hdr?.exposure==1,"new HDR target missing HDR defaults")
@@ -34,7 +72,6 @@ import UIKit
             _ = try IOSHDRBatchPreparation(source:incompatible,editor:editor).prepare(b,ordinal:1,format:.jpeg,longEdge:32)
             fatalError("relative HDR white balance entered an SDR target")
         } catch AdjustmentTransferError.incompatible {}
-        let journal=try BatchJournalStore(directory:root.appendingPathComponent("journal"))
         let invalidFormat=BatchExportModel(job:BatchExportJob(source:source,targets:[a,b],outputFormat:.hdrJPEG,longEdge:32),
             journalStore:journal,jpegWriter:{ _,_,_,_ in fatalError("incompatible format reached output") },editor:editor)
         invalidFormat.start()

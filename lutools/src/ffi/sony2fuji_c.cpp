@@ -119,6 +119,11 @@ void hdrSessionDidRenderCPU(sony2fuji_session* session) {
     session->last_backend = SONY2FUJI_BACKEND_CPU;
 }
 
+sony2fuji::ProcessingCancellation hdrSessionCancellation(const sony2fuji_session* session) {
+    if (!session) return {};
+    return {session->cancellation_callback, session->cancellation_context};
+}
+
 struct sony2fuji_hsl_probe {
     sony2fuji::ImageData image;
     uint64_t source_revision = 0, request_revision = 0;

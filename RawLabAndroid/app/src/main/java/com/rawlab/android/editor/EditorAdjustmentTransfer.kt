@@ -13,6 +13,7 @@ import com.rawlab.android.looks.MasterRecipe
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.requireProRAWDecoder
 import com.rawlab.android.settings.PhotoIdentity
 import java.io.IOException
 import java.io.File
@@ -57,12 +58,20 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
                     val neutral = EditSettings(processing = saved.settings?.processing ?: EditSettings().processing,
                         x3fMode = saved.settings?.x3fMode ?: EditSettings().x3fMode)
                     val database = storage.lensDatabase()
-                    val frame = NativeProcessor(NativeProcessor.CPU, database).use {
-                        it.preview(photo.file, null, neutral, 128, false, photo.inputKind)
+                    val frame = NativeProcessor(NativeProcessor.CPU, database).use { native ->
+                        if (saved.settings?.isHDREditing == true) {
+                            val info = photo.hdrSource ?: throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.source")
+                            if (info.isProRAW) saved.settings.requireProRAWDecoder()
+                            val decoded = if (info.isCameraRaw) native.decodeHDRCamera(photo.file, info, 128)
+                                else com.rawlab.android.engine.NativeHDRBridge.decode(photo.file, info, 128)
+                            decoded.use { native.renderHDR(it, requireNotNull(saved.settings.hdr), 128).close() }
+                            null
+                        } else native.preview(photo.file, null, neutral, 128, false, photo.inputKind)
                     }
                     checkActive()
                     val transferContext = AdjustmentTransferContext(identity.value, photo.inputKind == PhotoInputKind.RAW,
-                        available, builtin, frame.temperature.takeIf { it.isFinite() }, frame.tint.takeIf { it.isFinite() },
+                        available, builtin, frame?.temperature?.takeIf { it.isFinite() }, frame?.tint?.takeIf { it.isFinite() },
+                        sourceSupportsProRAWHDR = photo.hdrSource?.isProRAW == true,
                         validateLens = { request ->
                             checkActive()
                             val report = NativeProcessor(NativeProcessor.CPU, database).use {
@@ -73,7 +82,7 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
                                 throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "target lens calibration unavailable")
                         })
                     AdjustmentTransferTarget(identity, displayName,
-                        com.rawlab.android.settings.sourceDefaultSettings(photo.isHDRSource), transferContext,
+                        photo.defaultEditSettings(), transferContext,
                         isCurrent = { work.isCurrent(identity.value) }, validateSource = validate,
                         validateHistorySource = EditorAdjustmentHistory.historySourceValidation(photo))
                 } catch (error: java.util.concurrent.CancellationException) { throw error }

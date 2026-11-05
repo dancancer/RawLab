@@ -25,29 +25,22 @@ cleanup() {
 trap cleanup EXIT
 
 if [ -z "$DEVICE" ]; then
-    DEVICE_TYPE="$(xcrun simctl list devicetypes -j | python3 -c '
-import json, sys
-items = json.load(sys.stdin).get("devicetypes", [])
-preferred = ["iPhone 16", "iPhone 15", "iPhone 14"]
-for name in preferred:
-    match = next((item for item in items if item.get("name") == name and item.get("identifier")), None)
-    if match:
-        print(match["identifier"])
-        break
-else:
-    match = next((item for item in items if item.get("name", "").startswith("iPhone") and item.get("identifier")), None)
-    if match:
-        print(match["identifier"])
-')"
-    RUNTIME="$(xcrun simctl list runtimes available -j | python3 -c '
+    SIMULATOR_PAIR="$(xcrun simctl list runtimes available -j | python3 -c '
 import json, sys
 items = json.load(sys.stdin).get("runtimes", [])
 available = [item for item in items if item.get("platform") == "iOS" and item.get("isAvailable") and item.get("identifier")]
-if available:
-    print(sorted(available, key=lambda item: item.get("version", ""))[-1]["identifier"])
+preferred = ("iPhone 16", "iPhone 15", "iPhone 14")
+for runtime in sorted(available, key=lambda item: tuple(map(int, item["version"].split("."))), reverse=True):
+    phones = {device["name"]: device["identifier"] for device in runtime.get("supportedDeviceTypes", [])
+              if device.get("name", "").startswith("iPhone") and device.get("identifier")}
+    if phones:
+        name = next((name for name in preferred if name in phones), next(iter(phones)))
+        print(runtime["identifier"], phones[name])
+        break
+else:
+    sys.exit("No available iOS simulator runtime supports an iPhone device type")
 ')"
-    [ -n "$DEVICE_TYPE" ] || { echo "No available iPhone simulator device type" >&2; exit 1; }
-    [ -n "$RUNTIME" ] || { echo "No available iOS simulator runtime" >&2; exit 1; }
+    read -r RUNTIME DEVICE_TYPE <<< "$SIMULATOR_PAIR"
     DEVICE="$(xcrun simctl create "RawLab Look Import $$" "$DEVICE_TYPE" "$RUNTIME")"
     OWNED_DEVICE=1
 fi

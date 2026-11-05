@@ -10,6 +10,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HDRAdjustmentTransferTest {
+    @Test fun cameraHdrUsesRelativeValuesAndKeepsTargetDecoderIdentity() {
+        val source = EditSettings().withHDRMode(true, false, cameraRaw = true, proRAW = true)
+            .copy(exposure = 1f, temperature = 7100f).synchronizeHDR()
+        val target = EditSettings(exposure = -2f).withHDRMode(true, false, cameraRaw = true, proRAW = true)
+        val payload = AdjustmentTransfer.capture(AdjustmentScope.All, source, AdjustmentTransferContext("source", true, sourceSupportsProRAWHDR = true))
+        val result = AdjustmentTransfer.prepare(payload, target, AdjustmentTransferContext("target", true, sourceSupportsProRAWHDR = true))
+        assertEquals(7100f, result.temperature)
+        assertEquals(-2f, result.sdrSnapshotSettings()!!.exposure)
+        assertEquals(2, result.proRAWDecodeVersion)
+        org.junit.Assert.assertThrows(AdjustmentTransferException::class.java) {
+            AdjustmentTransfer.prepare(payload, target, AdjustmentTransferContext("ordinary-camera", true))
+        }
+        org.junit.Assert.assertThrows(AdjustmentTransferException::class.java) {
+            AdjustmentTransfer.prepare(payload, target.copy(proRAWDecodeVersion = 99), AdjustmentTransferContext("target", true, sourceSupportsProRAWHDR = true))
+        }
+        org.junit.Assert.assertThrows(AdjustmentTransferException::class.java) {
+            AdjustmentTransfer.prepare(payload, EditSettings(), AdjustmentTransferContext("sdr", true))
+        }
+    }
     @Test fun sdrLogicalScalarsReachHdrAndUnsupportedFieldsAreRejectedAsAWhole() {
         val context=AdjustmentTransferContext("hdr",false)
         val target=EditSettings().withHDRMode(true,true)

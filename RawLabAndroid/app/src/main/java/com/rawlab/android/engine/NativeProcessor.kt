@@ -1,5 +1,7 @@
 package com.rawlab.android.engine
 
+import com.rawlab.android.settings.requireProRAWDecoder
+
 import android.graphics.Bitmap
 import java.io.IOException
 import java.io.File
@@ -209,6 +211,20 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         check(handle != 0L) { "Processor is closed" }
         require(edge in 0..65535)
         return NativeHDRBridge.render(handle, source, settings, edge, cancellationGeneration)
+    }
+
+    internal fun decodeHDRCamera(file: File, info: com.rawlab.android.photo.HDRSourceInfo, edge: Int,
+        cancellationGeneration: Long = -1L): NativeHDRImage {
+        check(handle != 0L) { "Processor is closed" }
+        return NativeHDRBridge.decodeCameraRaw(handle, file, info, edge, cancellationGeneration)
+    }
+
+    internal fun exportProRAW(file: File, info: com.rawlab.android.photo.HDRSourceInfo,
+        edits: EditSettings, output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long = -1L) {
+        check(handle != 0L) { "Processor is closed" }
+        edits.requireProRAWDecoder()
+        NativeHDRBridge.exportProRAW(handle, file, info, requireNotNull(edits.hdr).copy(geometry = edits.geometry),
+            output, keepHDR, edge, cancellationGeneration)
     }
 
     // 取消不能等待 preview 的 Java monitor 或 native session 渲染锁。

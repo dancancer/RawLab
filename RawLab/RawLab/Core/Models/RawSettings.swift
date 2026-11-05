@@ -255,6 +255,7 @@ enum RawExposureMode: Int, Codable, CaseIterable, Identifiable {
 
 struct RawSettings: Codable, Equatable {
     var hdr: HDRSettings?
+    var proRAWDecodeVersion: Int?
     var isHDREditing: Bool { hdr?.mode == .hdr }
     static let lutStrengthRange: ClosedRange<Double> = 0...2
     static let temperatureRange: ClosedRange<Double> = 2000...50000
@@ -382,7 +383,7 @@ struct RawSettings: Codable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case hdr, x3fMode
+        case hdr, proRAWDecodeVersion, x3fMode
         case exposure, contrast, saturation, temperature, tint, highlights, shadows
         case toneCurve, noiseReduction, sharpening, lutID, lutStrength, whiteBalanceMode
         case denoise, photoEffects, displayChromaDenoise, exposureMode, hsl
@@ -448,6 +449,7 @@ struct RawSettings: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         hdr = try values.decodeIfPresent(HDRSettings.self, forKey: .hdr)
+        proRAWDecodeVersion = try values.decodeIfPresent(Int.self, forKey: .proRAWDecodeVersion)
         processing = values.contains(.processing)
             ? try values.decode(ProcessingIdentity.self, forKey: .processing) : .legacy
         x3fMode = values.contains(.x3fMode) ? try values.decode(X3fMode.self, forKey: .x3fMode) : .legacy
@@ -623,10 +625,16 @@ extension RawSettings {
         else { geometry = state }
     }
 
-    func withHDRMode(_ enabled: Bool, sourceIsHDR: Bool, hasLook: Bool) throws -> RawSettings {
+    func withHDRMode(_ enabled: Bool, sourceIsHDR: Bool, hasLook: Bool,
+                     cameraRAW: Bool = false) throws -> RawSettings {
         var result = self
         guard enabled else { result.hdr?.mode = .sdr; return result }
         var initial = HDRSettings()
+        if cameraRAW {
+            result.hdr = try HDRSettings.enabling(stored: hdr, initial: initial,
+                                                  sourceIsHDR: true, conflicts: [])
+            return result
+        }
         initial.exposure = exposure; initial.contrast = (contrast - 1) * 100
         initial.highlights = -highlights * 100; initial.shadows = shadows * 100
         initial.saturation = (saturation - 1) * 100; initial.geometry = geometry

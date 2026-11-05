@@ -3,6 +3,40 @@ import Foundation
 import UIKit
 
 extension RawEditorViewModel {
+    func preflightCameraHDR(settings: RawSettings, completion: @escaping (Result<Void, Error>) -> Void) {
+        guard sourceSupportsCameraHDR, settings.isHDREditing, let sourceFile else {
+            completion(.failure(HDRRequestError.invalidSettings))
+            return
+        }
+        let sourceRevision = self.sourceRevision
+        let previewLongEdge = Int(previewMaxDimension)
+        cameraHDRPreflight = true
+        isBusy = true
+        exportQueue.async { [weak self] in
+            guard let self else { return }
+            let result: Result<Void, Error>
+            do {
+                try sourceFile.withReadAccess { url in
+                    _ = try self.processor.processHDR(url: url, settings: settings.hdr!,
+                                                      previewLongEdge: previewLongEdge)
+                }
+                result = .success(())
+            } catch {
+                result = .failure(error)
+            }
+            self.resultDelivery {
+                guard self.sourceRevision == sourceRevision else {
+                    self.cameraHDRPreflight = false
+                    self.isBusy = false
+                    return
+                }
+                self.cameraHDRPreflight = false
+                self.isBusy = false
+                completion(result)
+            }
+        }
+    }
+
     func updatePreviewSize(_ edge: Int, settings: RawSettings) {
         guard activeImportRevision == nil, hasImage, edge > 0,
               edge != requestedPreviewLongEdge || (edge != previewLongEdge && previewResizeWorkItem == nil) else { return }
@@ -96,9 +130,10 @@ extension RawEditorViewModel {
                 guard let sourceFile,let hdr=settings.hdr else { return }
                 sourceFile.withReadAccess { url in
                     do {
-                        let edited=try self.processor.processHDR(url:url,settings:hdr,previewLongEdge:maxDimension)
+                        let cancelled = { !self.isLatestRenderID(renderID) }
+                        let edited=try self.processor.processHDR(url:url,settings:hdr,previewLongEdge:maxDimension,cancelled:cancelled)
                         var neutral=HDRSettings(); neutral.geometry=hdr.geometry
-                        let original=try self.processor.processHDR(url:url,settings:neutral,previewLongEdge:maxDimension)
+                        let original=try self.processor.processHDR(url:url,settings:neutral,previewLongEdge:maxDimension,cancelled:cancelled)
                         let presentation=try HDRPresentation(edited),reference=try HDRPresentation(original)
                         self.resultDelivery {
                             guard self.sourceRevision==sourceRevision,self.isLatestRenderID(renderID) else { return }

@@ -1,6 +1,7 @@
 #include "core/hdr_jpeg.h"
 #include "core/hdr_half.h"
 #include "core/hdr_resample.h"
+#include "core/processing_cancellation.h"
 #include "platform/hdr_image.h"
 #include "platform/hdr_metadata.h"
 #include <ultrahdr_api.h>
@@ -11,6 +12,7 @@
 #include <csetjmp>
 #include <cstdlib>
 #include <jpeglib.h>
+#include <jerror.h>
 #include <ultrahdr/jpegr.h>
 #include <ultrahdr/jpegdecoderhelper.h>
 #include <ultrahdr/icc.h>
@@ -338,33 +340,76 @@ ImageData decodeJPEGPreview(const void* data,size_t size,uint32_t longEdge) {
 }
 
 std::vector<uint8_t> encodeSDRJPEG(const ImageData& image,uint32_t quality) {
-    if (image.width<=0 || image.height<=0 || image.width>65500 || image.height>65500 || quality<1 || quality>100)
+    return encodeSDRJPEGRows(image.width, image.height, quality,
+        [&](uint32_t y) { return image.pixels.data() + size_t(y) * image.width; });
+}
+
+std::vector<uint8_t> encodeSDRJPEGRows(uint32_t width, uint32_t height, uint32_t quality, const JPEGRowReader& read) {
+    if (!width || !height || width>65500 || height>65500 || quality<1 || quality>100 || !read)
         throw std::invalid_argument("Invalid SDR JPEG dimensions or quality");
+    // Keep the current buffer owned by C++ even if encoding exits before jpeg_finish_compress.
+    struct Destination : jpeg_destination_mgr {
+        std::vector<uint8_t> bytes = std::vector<uint8_t>(4096);
+
+        static void init(j_compress_ptr codec) {
+            auto& dest = *static_cast<Destination*>(codec->dest);
+            dest.next_output_byte = dest.bytes.data();
+            dest.free_in_buffer = dest.bytes.size();
+        }
+
+        static boolean grow(j_compress_ptr codec) {
+            auto& dest = *static_cast<Destination*>(codec->dest);
+            const auto size = dest.bytes.size();
+            bool grown = false;
+            if (size <= dest.bytes.max_size() / 2) {
+                try {
+                    dest.bytes.resize(size * 2);
+                    grown = true;
+                } catch (const std::bad_alloc&) {}
+            }
+            // Use libjpeg's error handler after leaving the C++ catch block.
+            if (!grown) ERREXIT1(codec, JERR_OUT_OF_MEMORY, 10);
+            dest.next_output_byte = dest.bytes.data() + size;
+            dest.free_in_buffer = size;
+            return TRUE;
+        }
+
+        static void finish(j_compress_ptr codec) {
+            auto& dest = *static_cast<Destination*>(codec->dest);
+            dest.bytes.resize(dest.bytes.size() - dest.free_in_buffer);
+        }
+    };
     struct State {
         jpeg_compress_struct codec{}; JPEGError error;
-        unsigned char* bytes=nullptr; unsigned long size=0;
+        Destination destination{};
         std::vector<uint8_t> row;
-        ~State() { jpeg_destroy_compress(&codec); std::free(bytes); }
+        ~State() { jpeg_destroy_compress(&codec); }
     };
-    auto state=std::make_unique<State>(); state->row.resize(size_t(image.width)*3);
+    auto state=std::make_unique<State>(); state->row.resize(size_t(width)*3);
     state->codec.err=jpeg_std_error(&state->error.manager);
     state->error.manager.error_exit=[](j_common_ptr codec) { std::longjmp(reinterpret_cast<JPEGError*>(codec->err)->jump,1); };
     if (setjmp(state->error.jump)) throw std::runtime_error("SDR JPEG encoding failed");
-    jpeg_create_compress(&state->codec); jpeg_mem_dest(&state->codec,&state->bytes,&state->size);
-    state->codec.image_width=image.width; state->codec.image_height=image.height;
+    jpeg_create_compress(&state->codec);
+    state->destination.init_destination = Destination::init;
+    state->destination.empty_output_buffer = Destination::grow;
+    state->destination.term_destination = Destination::finish;
+    state->codec.dest = &state->destination;
+    state->codec.image_width=width; state->codec.image_height=height;
     state->codec.input_components=3; state->codec.in_color_space=JCS_RGB;
     jpeg_set_defaults(&state->codec); jpeg_set_quality(&state->codec,int(quality),TRUE);
     jpeg_start_compress(&state->codec,TRUE);
     while (state->codec.next_scanline<state->codec.image_height) {
-        const int y=int(state->codec.next_scanline);
-        for (int x=0;x<image.width;++x) {
-            const auto& p=image.at(x,y); const float values[]={p.r,p.g,p.b};
+        checkProcessingCancellation();
+        const auto* pixels = read(state->codec.next_scanline);
+        if (!pixels) throw std::invalid_argument("Missing SDR JPEG row");
+        for (uint32_t x=0;x<width;++x) {
+            const auto& p=pixels[x]; const float values[]={p.r,p.g,p.b};
             for (int c=0;c<3;++c) state->row[size_t(x)*3+c]=uint8_t(std::lround(srgb(values[c])*255));
         }
         JSAMPROW row=state->row.data(); jpeg_write_scanlines(&state->codec,&row,1);
     }
-    jpeg_finish_compress(&state->codec);
-    return {state->bytes,state->bytes+state->size};
+    jpeg_finish_compress(&state->codec); checkProcessingCancellation();
+    return std::move(state->destination.bytes);
 }
 
 std::vector<uint8_t> jpegBase(const void* data,size_t size) {
@@ -391,27 +436,54 @@ std::vector<uint8_t> encodeJPEG(const HDRImagePair& image,uint32_t quality,uint3
     if (width>65500 || height>65500) throw std::invalid_argument("HDR JPEG exceeds codec dimension ceiling");
     std::vector<uint16_t> hdr(size_t(width)*height*4);
     std::vector<uint8_t> sdr(hdr.size());
-    float headroom=1;
-    for (size_t i=0;i<image.hdr.pixels.size();++i) {
-        const RGB h=outputRGB(image.hdr.pixels[i],baseColor),s=outputRGB(image.sdr.pixels[i],baseColor);
-        const float hc[]={h.r,h.g,h.b},sc[]={s.r,s.g,s.b};
-        for (size_t c=0;c<3;++c) {
-            if (!std::isfinite(hc[c]) || std::abs(hc[c])>65504 || !std::isfinite(sc[c]))
+    const float headroom = packJPEGInput(image.hdr.pixels.data(), image.hdr.pixels.size(), true, baseColor, hdr.data());
+    packJPEGInput(image.sdr.pixels.data(), image.sdr.pixels.size(), false, baseColor, sdr.data());
+    return encodeJPEGInputs(width, height, quality, baseColor, headroom,
+        [&](bool high, const std::function<void(const void*)>& consume) {
+            consume(high ? static_cast<const void*>(hdr.data()) : static_cast<const void*>(sdr.data()));
+        });
+}
+
+float packJPEGInput(const RGB* pixels, size_t count, bool hdr, uint32_t baseColor, void* output) {
+    auto* high = static_cast<uint16_t*>(output);
+    auto* low = static_cast<uint8_t*>(output);
+    float headroom = 1;
+    for (size_t i = 0; i < count; ++i) {
+        const auto p = outputRGB(pixels[i], baseColor);
+        const float values[] = {p.r, p.g, p.b};
+        for (size_t c = 0; c < 3; ++c) {
+            if (!std::isfinite(values[c]) || (hdr && std::abs(values[c]) > 65504))
                 throw std::overflow_error("HDR JPEG exceeds finite half-float codec range");
-            // 输出色域映射只在 writer 中进行，不回写扩展线性工作图。
-            hdr[i*4+c]=floatToHalf(std::max(0.0f,hc[c]));
-            sdr[i*4+c]=uint8_t(std::lround(srgb(sc[c])*255));
-            headroom=std::max(headroom,hc[c]);
+            if (hdr) {
+                high[i * 4 + c] = floatToHalf(std::max(0.0f, values[c]));
+                headroom = std::max(headroom, values[c]);
+            } else low[i * 4 + c] = uint8_t(std::lround(srgb(values[c]) * 255));
         }
-        hdr[i*4+3]=floatToHalf(1); sdr[i*4+3]=255;
+        if (hdr) high[i * 4 + 3] = floatToHalf(1);
+        else low[i * 4 + 3] = 255;
     }
-    uhdr_raw_image_t h{},s{};
-    h.fmt=UHDR_IMG_FMT_64bppRGBAHalfFloat; s.fmt=UHDR_IMG_FMT_32bppRGBA8888;
-    h.cg=s.cg=baseColor==SONY2FUJI_HDR_COLOR_DISPLAY_P3 ? UHDR_CG_DISPLAY_P3 : UHDR_CG_BT_709;
-    h.ct=UHDR_CT_LINEAR; s.ct=UHDR_CT_SRGB; h.range=s.range=UHDR_CR_FULL_RANGE;
-    h.w=s.w=width; h.h=s.h=height; h.stride[0]=s.stride[0]=width; h.planes[0]=hdr.data(); s.planes[0]=sdr.data();
+    return headroom;
+}
+
+std::vector<uint8_t> encodeJPEGInputs(uint32_t width, uint32_t height, uint32_t quality,
+    uint32_t baseColor, float headroom, const JPEGInputBorrower& borrow) {
+    if (!width || !height || width > 65500 || height > 65500 || uint64_t(width) * height > 128000000 ||
+        quality < 1 || quality > 100 || !borrow || !std::isfinite(headroom) || headroom < 1 ||
+        (baseColor != SONY2FUJI_HDR_COLOR_SRGB && baseColor != SONY2FUJI_HDR_COLOR_DISPLAY_P3))
+        throw std::invalid_argument("Invalid compact HDR JPEG input");
     Encoder enc(uhdr_create_encoder(),uhdr_release_encoder); if (!enc) throw std::bad_alloc();
-    checked(uhdr_enc_set_raw_image(enc.get(),&h,UHDR_HDR_IMG)); checked(uhdr_enc_set_raw_image(enc.get(),&s,UHDR_SDR_IMG));
+    for (bool hdr : {true, false}) {
+        checkProcessingCancellation();
+        borrow(hdr, [&](const void* data) {
+            if (!data) throw std::invalid_argument("Missing compact JPEG input");
+            uhdr_raw_image_t image{};
+            image.fmt = hdr ? UHDR_IMG_FMT_64bppRGBAHalfFloat : UHDR_IMG_FMT_32bppRGBA8888;
+            image.cg = baseColor == SONY2FUJI_HDR_COLOR_DISPLAY_P3 ? UHDR_CG_DISPLAY_P3 : UHDR_CG_BT_709;
+            image.ct = hdr ? UHDR_CT_LINEAR : UHDR_CT_SRGB; image.range = UHDR_CR_FULL_RANGE;
+            image.w = width; image.h = height; image.stride[0] = width; image.planes[0] = const_cast<void*>(data);
+            checked(uhdr_enc_set_raw_image(enc.get(), &image, hdr ? UHDR_HDR_IMG : UHDR_SDR_IMG));
+        });
+    }
     checked(uhdr_enc_set_quality(enc.get(),quality,UHDR_BASE_IMG)); checked(uhdr_enc_set_quality(enc.get(),quality,UHDR_GAIN_MAP_IMG));
     checked(uhdr_enc_set_using_multi_channel_gainmap(enc.get(),1)); checked(uhdr_enc_set_gainmap_scale_factor(enc.get(),1));
     checked(uhdr_enc_set_preset(enc.get(),UHDR_USAGE_BEST_QUALITY));
@@ -419,7 +491,9 @@ std::vector<uint8_t> encodeJPEG(const HDRImagePair& image,uint32_t quality,uint3
     // 留出可由 ISO rational 和 XMP 小数共同表达的最小间隔，避免暗片生成非法文件。
     const float capacity=std::max(1.001f,headroom);
     checked(uhdr_enc_set_target_display_peak_brightness(enc.get(),std::min(capacity*203,10000.0f)));
+    checkProcessingCancellation();
     auto encoded=stream(enc.get());
+    enc.reset(); checkProcessingCancellation();
     // 第二次只封装已生成的 JPEG，更新真实成片容量；不受 setter 的 10000-nit 上限限制。
     auto dec=decoder(encoded.data(),encoded.size(),false);
     auto metadata=*uhdr_dec_get_gainmap_metadata(dec.get()); metadata.hdr_capacity_max=capacity;
@@ -429,6 +503,8 @@ std::vector<uint8_t> encodeJPEG(const HDRImagePair& image,uint32_t quality,uint3
     auto b=compressed(base->data,base->data_sz),g=compressed(gain->data,gain->data_sz);
     checked(uhdr_enc_set_compressed_image(packed.get(),&b,UHDR_BASE_IMG));
     checked(uhdr_enc_set_gainmap_image(packed.get(),&g,&metadata));
-    return stream(packed.get());
+    dec.reset(); std::vector<uint8_t>().swap(encoded);
+    auto output = stream(packed.get()); checkProcessingCancellation();
+    return output;
 }
 } // namespace sony2fuji::hdr

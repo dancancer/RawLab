@@ -62,11 +62,13 @@ val testRaster = providers.gradleProperty("rawlabTestRaster").orElse(providers.e
 val testSonyArw6 = providers.gradleProperty("rawlabTestSonyArw6").orElse(providers.environmentVariable("RAWLAB_TEST_SONY_ARW6"))
 val testHDRJPEG = providers.gradleProperty("rawlabTestHDRJPEG").orElse(providers.environmentVariable("RAWLAB_TEST_HDR_JPEG"))
 val testHDRHEIC = providers.gradleProperty("rawlabTestHDRHEIC").orElse(providers.environmentVariable("RAWLAB_TEST_HDR_HEIC"))
+val testProRAW = providers.gradleProperty("rawlabTestProRAW").orElse(providers.environmentVariable("RAWLAB_TEST_PRORAW"))
 val testAssets = layout.buildDirectory.dir("generated/rawlabTestAssets")
 val prepareTestAssets by tasks.registering(Sync::class) {
     into(testAssets)
     filePermissions { unix("rw-r--r--") }
     from(repo.resolve("lutools/tests/fixtures/jpeg-lossy.dng"))
+    from(repo.resolve("lutools/tests/fixtures/bayer-demosaic.dng"))
     from(repo.resolve("lutools/tests/fixtures/hdr/apple-legacy-macos26.jpg"))
     from(repo.resolve("Shared/fixtures/adjustment-presets-v1.json"))
     if (testRaw.isPresent) from(testRaw.get()) { rename { "sample.RAW" } }
@@ -75,6 +77,7 @@ val prepareTestAssets by tasks.registering(Sync::class) {
     if (testSonyArw6.isPresent) from(testSonyArw6.get()) { rename { "sony-arw6.ARW" } }
     if (testHDRJPEG.isPresent) from(testHDRJPEG.get()) { rename { "hdr-sample.jpg" } }
     if (testHDRHEIC.isPresent) from(testHDRHEIC.get()) { rename { "hdr-sample.heic" } }
+    if (testProRAW.isPresent) from(testProRAW.get()) { rename { "proraw-sample.dng" } }
 }
 val generatedAssets = layout.buildDirectory.dir("generated/rawlabAssets")
 val hdrCodecSources = providers.exec {
@@ -137,8 +140,8 @@ android {
         applicationId = "com.rawlab.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "0.9.2"
+        versionCode = 18
+        versionName = "0.9.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         externalNativeBuild { cmake { arguments += listOf("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON", "-DANDROID_STL=c++_shared") } }

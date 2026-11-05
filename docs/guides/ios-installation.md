@@ -120,7 +120,7 @@ app. **It does not mean dragging the unsigned IPA into Xcode.** You will install
 the current source. To match a particular release, obtain that version's source
 separately; do not reset an existing working directory.
 
-1. Install full Xcode from the Mac App Store or [Apple's developer website](https://developer.apple.com/xcode/). On first launch, install iOS support components when prompted. Xcode must support your phone's current iOS version; Command Line Tools alone are not enough.
+1. Install full Xcode 27.1 or later from the Mac App Store or [Apple's developer website](https://developer.apple.com/xcode/). Source builds require the iOS 27.1+ SDK for iPhone Duo's full display; the minimum supported device OS remains iOS 18.0. On first launch, install iOS support components when prompted. Xcode must also support your phone's current iOS version; Command Line Tools alone are not enough.
 2. Prepare the [repository source](https://github.com/dancancer/RawLab) and CMake. If you already have the source, open a terminal at its repository root. Otherwise, run the following commands in a suitable directory to create a separate checkout:
 
 ```bash
@@ -179,22 +179,24 @@ account sign-in, and phone pairing from Method 2. The user can select their own
 Team in Xcode. If you cannot confirm the Team ID, use Xcode's UI to run the app;
 do not guess or copy the project's default value.
 
-Check the environment and available devices first. If any check fails, resolve
-it before continuing:
+If the default toolchain points to Command Line Tools or an older Xcode, set
+`DEVELOPER_DIR` in the current terminal to the actual Xcode 27.1+
+`Contents/Developer` directory, for example
+`export DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"`. There is no
+need to change the global toolchain selection.
+
+Check the environment and available devices first. Both device and simulator
+SDKs are required by the framework build. If any check fails, resolve it before
+continuing:
 
 ```bash
 xcodebuild -version
-xcrun --sdk iphoneos --show-sdk-version
+bash scripts/ci/check-ios-sdk.sh
 cmake --version
 xcodebuild -list -project RawLab/RawLab.xcodeproj
 xcodebuild -showdestinations -project RawLab/RawLab.xcodeproj -scheme RawLab
 xcrun devicectl list devices
 ```
-
-If `xcodebuild` points to Command Line Tools, set `DEVELOPER_DIR` in the current
-terminal to the actual Xcode `Contents/Developer` directory, for example
-`export DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"`. There is no
-need to change the global toolchain selection.
 
 Set the following variables to real values in the current terminal before
 building. Do not pass placeholders to the commands:

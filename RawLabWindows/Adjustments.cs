@@ -56,11 +56,15 @@ public sealed record ParameterSpec(Parameter Id, string Title, string Group, dou
 
 public sealed class Adjustments
 {
+    internal const int CurrentProRAWDecodeVersion = 2;
     private double[] values = [100,0,6500,0,0,0,0,0,0,0];
     private GeometrySettings geometry = new();
     public ProcessingIdentity Processing { get; set; } = ProcessingIdentity.Current;
     public X3fMode X3fMode { get; set; } = X3fMode.Normal;
     public HDRSettings? HDR { get; set; }
+    // Null keeps ordinary camera RAW and gain-map records on their existing
+    // paths; ProRAW HDR explicitly pins the portable decoder revision.
+    public int? ProRAWDecodeVersion { get; set; }
     public bool IsHDREditing => HDR?.Mode == HDRMode.Hdr;
     public int ExposureMode { get; set; } = 1;
     public HslSettings Hsl { get; set; } = new();
@@ -160,6 +164,7 @@ public sealed class Adjustments
         Processing = ProcessingIdentity.Require(Processing), X3fMode = X3fMode, AIDenoiseEnabled = AIDenoiseEnabled,
         MasterRecipeSettingsVersion = MasterRecipeSettingsVersion,
         HDR = HDR,
+        ProRAWDecodeVersion = ProRAWDecodeVersion,
         Atmosphere = Atmosphere.IsIdentity ? null : Atmosphere,
         ToneControls = ToneControls.IsIdentity ? null : ToneControls,
         ColorGrading = ColorGrading.IsDefault ? null : ColorGrading,
@@ -179,6 +184,8 @@ public sealed class Adjustments
         var geometry = snapshot.Geometry ?? new GeometrySettings();
         if (snapshot.HDR is { } hdr && !hdr.IsValid)
             throw new System.IO.InvalidDataException(Loc.Text("HDR 调整记录无效，原有文件未被覆盖。"));
+        if (snapshot.ProRAWDecodeVersion is { } proRAWVersion && proRAWVersion != CurrentProRAWDecodeVersion)
+            throw new System.IO.InvalidDataException(Loc.Text("不支持此处理版本，原有记录未被覆盖。"));
         var atmosphere = snapshot.Atmosphere ?? new AtmosphereSettings();
         _ = atmosphere.NativeConfig();
         var tone = snapshot.ToneControls ?? new ToneControlsSettings();
@@ -208,7 +215,8 @@ public sealed class Adjustments
             values = (double[])snapshot.Values.Clone(), ExposureMode = snapshot.ExposureMode,
             CameraWhiteBalance = snapshot.CameraWhiteBalance,
             AsShot = snapshot.AsShotTemperature is {} temperature && snapshot.AsShotTint is {} tint ? (temperature, tint) : null,
-            HDR = snapshot.HDR
+            HDR = snapshot.HDR,
+            ProRAWDecodeVersion = snapshot.ProRAWDecodeVersion
         };
         result.geometry = geometry;
         return result;
@@ -292,12 +300,21 @@ public sealed class Adjustments
     }
     public void ResetAll() { Atmosphere = new(); Curve = new(); ColorGrading = new(); ToneControls = new(); AIDenoiseEnabled = false; MasterRecipeID = null; MasterRecipeSettingsVersion = 3; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); if (HDR is { } hdr) HDR = hdr.Reset() with { Mode = hdr.Mode }; }
 
-    public void SetHDRMode(bool enabled, bool sourceIsHDR, IEnumerable<string>? conflicts = null)
+    public void SetHDRMode(bool enabled, bool sourceIsHDR, IEnumerable<string>? conflicts = null, bool cameraRaw = false,
+        bool proRAW = false)
     {
+        if (ProRAWDecodeVersion is { } storedVersion && storedVersion != CurrentProRAWDecodeVersion)
+            throw new HDRModeException(HDRModeFailure.InvalidSettings);
         if (enabled)
         {
-            var blocked = conflicts?.ToArray() ?? HDRConflicts();
-            HDR = HDRSettings.Enabling(HDR, HDRSettings.FromSdr(this), sourceIsHDR, blocked);
+            if (proRAW && !cameraRaw) throw new HDRModeException(HDRModeFailure.UnsupportedSource);
+            if (proRAW) ProRAWDecodeVersion = CurrentProRAWDecodeVersion;
+            // Camera RAW's existing SDR tools remain dormant while HDR is
+            // active. They must survive the mode switch instead of becoming a
+            // conversion conflict or being silently reset.
+            var blocked = conflicts?.ToArray() ?? (cameraRaw ? Array.Empty<string>() : HDRConflicts());
+            var initial = cameraRaw ? new HDRSettings { Geometry = Geometry } : HDRSettings.FromSdr(this);
+            HDR = HDRSettings.Enabling(HDR, initial, sourceIsHDR, blocked, cameraRaw);
             return;
         }
         if (HDR is { } hdr) HDR = hdr with { Mode = HDRMode.Sdr };

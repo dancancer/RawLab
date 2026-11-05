@@ -105,6 +105,9 @@ public:
     ErrorCode loadFile(const std::string& filepath);
     // Normal X3F 只让 LibRaw 识别元数据，像素由专用解码器读取；切回 Legacy 时再解包。
     ErrorCode loadFile(const std::string& filepath, X3fMode mode);
+    // Inspects a supported camera HDR source without unpacking the mosaic.
+    ErrorCode inspectCameraHDR(const std::string& filepath, int& width, int& height, uint64_t& sensorPixels);
+    ErrorCode unpackInspectedCameraHDR();
 
     /**
      * @brief 处理 RAW 数据并转换为 ImageData

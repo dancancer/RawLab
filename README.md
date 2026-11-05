@@ -34,6 +34,10 @@ film looks do not promise an exact match to in-camera JPEGs.
   photos can use ordinary LUT previews after switching to SDR editing.
   HDR processing uses the CPU; HDR presentation requires a capable display and
   platform support. See [platform scope](docs/design/hdr-photos/android-windows.md).
+- HDR editing for supported camera RAW and Apple ProRAW files on all four
+  clients. RAW starts in SDR, with independent saved settings for the HDR mode.
+  See [camera RAW support](docs/design/hdr-photos/camera-raw.md) and
+  [ProRAW export limits](docs/design/hdr-photos/proraw.md).
 - New RAW edits start with embedded-preview exposure matching. One-shot Auto
   exposure and an eight-channel HSL mixer are shared across all four clients;
   existing saved exposure baselines are preserved.
@@ -89,14 +93,14 @@ film looks do not promise an exact match to in-camera JPEGs.
 HDR editing requires macOS 15+ on Mac. Android HDR presentation requires API 34+
 and suitable display/window support; Windows uses FP16/scRGB when available.
 Supported HDR photos remain editable with an SDR presentation on other displays.
-See the [0.9.2 compatibility notes](docs/releases/v0.9/v0.9.2.md#compatibility-and-known-limits)
+See the [0.9.3 compatibility notes](docs/releases/v0.9/v0.9.3.md#compatibility-and-known-limits)
 for X3F, AI, update and device-coverage limits.
 
 ## Downloads and Documentation
 
 - [Documentation index](docs/README.md)
 - [Download the latest release](https://github.com/dancancer/RawLab/releases/latest)
-- [v0.9.2 release notes (build 17)](docs/releases/v0.9/v0.9.2.md)
+- [v0.9.3 release notes (build 18)](docs/releases/v0.9/v0.9.3.md)
 - [Installation and distribution notes](docs/guides/installation.md)
 - [iPhone installation guide](docs/guides/ios-installation.md)
 - [Changelog](CHANGELOG.md)

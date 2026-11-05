@@ -125,6 +125,10 @@ extension RawEditorViewModel {
         }
 
         isBusy = true
+        let cancellation = ExportCancellation()
+        if settings.isHDREditing && sourceProRAW != nil {
+            hdrExportCancellation = cancellation; isExportingHDR = true
+        }
         exportQueue.async {
             sourceFile.withReadAccess { sourceURL in
                 do {
@@ -132,11 +136,10 @@ extension RawEditorViewModel {
                     let data: Data
 
                     if let hdr=settings.hdr,settings.isHDREditing {
-                        let pair=try self.processor.processHDR(url:sourceURL,settings:hdr,previewLongEdge:nil,exportLongEdge:longEdge)
                         let output=FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-\(UUID().uuidString).jpg")
                         defer { try? FileManager.default.removeItem(at:output) }
-                        if keepHDR { try pair.exportJPEG(to:output) }
-                        else { try pair.exportSDR(to:output,format:SONY2FUJI_OUTPUT_JPEG) }
+                        try self.processor.exportHDR(url: sourceURL, settings: hdr, output: output, longEdge: longEdge,
+                            keepHDR: keepHDR, cancelled: { cancellation.isCancelled })
                         data=try Data(contentsOf:output)
                     } else if sourceKind == .raw {
                         let result = try self.processor.processRaw(
@@ -172,13 +175,13 @@ extension RawEditorViewModel {
                     }
 
                     DispatchQueue.main.async {
-                        self.isBusy = false
-                        completion(.success(data))
+                        self.isBusy = false; self.isExportingHDR = false; self.hdrExportCancellation = nil
+                        completion(cancellation.isCancelled ? .failure(CancellationError()) : .success(data))
                         self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
                     }
                 } catch {
                     DispatchQueue.main.async {
-                        self.isBusy = false
+                        self.isBusy = false; self.isExportingHDR = false; self.hdrExportCancellation = nil
                         completion(.failure(error))
                         self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
                     }
@@ -285,6 +288,9 @@ extension RawEditorViewModel {
                     DispatchQueue.main.async {
                         self.sourceFile = sourceFile
                         self.sourceKind = .raw
+                        self.sourceIsHDR = false
+                        self.sourceSupportsCameraHDR = false
+                        self.sourceProRAW = nil
                         self.sourceDisplayName = url.lastPathComponent
                         self.sourceOrientation = previewResult.orientation ?? rawPreview.orientation
                         self.draftBuffer = rawPreview.buffer
@@ -319,6 +325,9 @@ extension RawEditorViewModel {
                         self.draftBuffer = nil
                         self.sourceFile = nil
                         self.sourceKind = nil
+                        self.sourceIsHDR = false
+                        self.sourceSupportsCameraHDR = false
+                        self.sourceProRAW = nil
                         self.sourceDisplayName = nil
                         self.sourceOrientation = nil
                         self.rawLUTID = nil

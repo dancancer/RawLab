@@ -5,7 +5,7 @@ namespace RawLab.Windows;
 
 public sealed record AdjustmentTransferContext(string Identifier,bool IsRaw,
     IReadOnlySet<string>? AvailableLookIDs=null,int DefaultExposureMode=1,bool HasUncommittedDraft=false,Action<LensSettings>? ValidateLens=null,
-    (double Temperature,double Tint)? CameraWhiteBalance=null);
+    (double Temperature,double Tint)? CameraWhiteBalance=null, bool IsProRAW=false);
 
 public static class AdjustmentTransfer
 {
@@ -25,7 +25,14 @@ public static class AdjustmentTransfer
     public static AdjustmentPayload Capture(AdjustmentScope scope,SavedEdit edit,AdjustmentTransferContext context)
     {
         if(context.HasUncommittedDraft) throw new AdjustmentTransferException(AdjustmentFailure.Draft);
-        if (edit.Settings.HDR is { Mode: HDRMode.Hdr }) return HDRAdjustmentTransfer.Capture(scope, edit, context);
+        if (edit.Settings.HDR is { Mode: HDRMode.Hdr })
+        {
+            if ((context.IsRaw || PhotoInput.IsCameraRaw(edit.Identity.Path)) && !context.IsProRAW)
+                throw new AdjustmentTransferException(AdjustmentFailure.Incompatible, "hdr.camera_raw");
+            if (context.IsProRAW && edit.Settings.ProRAWDecodeVersion != HDRNative.ProRAWDecodeVersion)
+                throw new AdjustmentTransferException(AdjustmentFailure.Incompatible, "hdr.proraw_version");
+            return HDRAdjustmentTransfer.Capture(scope, edit, context);
+        }
         if(edit.Settings.AIDenoiseEnabled && scope.Kind is "all" or "modified")
             throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"AI denoise has no transfer field");
         var values=AdjustmentTransferValues.Values(edit,context);
@@ -52,8 +59,12 @@ public static class AdjustmentTransfer
     {
         if(context.HasUncommittedDraft) throw new AdjustmentTransferException(AdjustmentFailure.Draft);
         p.Validate();
-        if (target.Settings.HDR is { Mode: HDRMode.Hdr } && context.IsRaw)
+        if (target.Settings.HDR is { Mode: HDRMode.Hdr } &&
+            (context.IsRaw || PhotoInput.IsCameraRaw(target.Identity.Path)) && !context.IsProRAW)
             throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.target");
+        if (target.Settings.HDR is { Mode: HDRMode.Hdr } && context.IsProRAW &&
+            target.Settings.ProRAWDecodeVersion != HDRNative.ProRAWDecodeVersion)
+            throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.proraw_version");
         if (target.Settings.HDR is { Mode: HDRMode.Hdr })
             return HDRAdjustmentTransfer.Prepare(p,target);
         if(p.Source.IsHDR) {

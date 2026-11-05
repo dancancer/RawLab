@@ -255,7 +255,13 @@ void prepareRecipeWb(Session& owner, const char* input, bool active, float stren
     Buffer buffer;
     check(sony2fuji_process(session, &neutral, &buffer.value), session);
     float cameraTemperature = 0, cameraTint = 0;
-    check(sony2fuji_session_get_raw_white_balance(session, &cameraTemperature, &cameraTint));
+    const auto status = sony2fuji_session_get_raw_white_balance(session, &cameraTemperature, &cameraTint);
+    if (status == SONY2FUJI_STATUS_UNSUPPORTED) {
+        // 无法校准色温和色调时，沿用基础显影的相机白平衡。
+        custom = false;
+        return;
+    }
+    check(status);
     if (!std::isfinite(cameraTemperature) || !std::isfinite(cameraTint))
         throw std::runtime_error("Cannot resolve target RAW white balance for master recipe");
     if (!custom) temperature = std::round(cameraTemperature);
@@ -671,6 +677,48 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeProbe(JNIEnv* env, jclass, 
     return nullptr;
 }
 
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_rawlab_android_engine_NativeHDRBridge_nativeProbeCameraRaw(JNIEnv* env, jclass, jstring path) {
+    try {
+        UtfChars source(env, path);
+        if (!source.chars || !*source.chars) throw std::invalid_argument("Missing camera RAW source path");
+        sony2fuji_hdr_source_info_v1 info{};
+        info.version = SONY2FUJI_HDR_VERSION;
+        info.struct_size = sizeof(info);
+        sony2fuji_hdr_diagnostic_v1 diagnostic{};
+        diagnostic.version = SONY2FUJI_HDR_VERSION;
+        diagnostic.struct_size = sizeof(diagnostic);
+        auto status = sony2fuji_hdr_probe_camera_raw(source.chars, &info, &diagnostic);
+        if (status == SONY2FUJI_STATUS_UNSUPPORTED && diagnostic.reason == SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW)
+            status = sony2fuji_hdr_probe_proraw(source.chars, &info, &diagnostic);
+        if (status == SONY2FUJI_STATUS_UNSUPPORTED &&
+            diagnostic.reason == SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW) return nullptr;
+        if (status != SONY2FUJI_STATUS_OK) throw HDRStatusError(status, diagnostic);
+        std::array<uint8_t, 64> encoded{};
+        size_t offset = 0;
+        auto append = [&](const void* value, size_t size) {
+            if (offset + size > encoded.size()) throw std::runtime_error("HDR metadata overflow");
+            std::memcpy(encoded.data() + offset, value, size); offset += size;
+        };
+        append(&info.width, sizeof(info.width)); append(&info.height, sizeof(info.height));
+        append(&info.orientation, sizeof(info.orientation)); append(&info.container, sizeof(info.container));
+        append(&info.protocol, sizeof(info.protocol)); append(&info.color_description, sizeof(info.color_description));
+        append(&info.content_headroom, sizeof(info.content_headroom)); append(&info.headroom_kind, sizeof(info.headroom_kind));
+        append(info.source_sha256, sizeof(info.source_sha256));
+        auto result = env->NewByteArray(static_cast<jsize>(encoded.size()));
+        if (!result) return nullptr;
+        env->SetByteArrayRegion(result, 0, static_cast<jsize>(encoded.size()), reinterpret_cast<const jbyte*>(encoded.data()));
+        return env->ExceptionCheck() ? nullptr : result;
+    } catch (const std::bad_alloc&) {
+        throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory for camera RAW HDR probe");
+    } catch (const std::invalid_argument& error) {
+        throwJava(env, "java/lang/IllegalArgumentException", error.what());
+    } catch (const std::exception& error) {
+        throwHDRFailure(env, error);
+    }
+    return nullptr;
+}
+
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(JNIEnv* env, jclass, jstring path, jint longEdge) {
     try {
@@ -703,6 +751,97 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(JNIEnv* env, jclass,
         throwHDRFailure(env,error);
     }
     return 0;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecodeCameraRaw(JNIEnv* env, jclass, jlong sessionId,
+    jstring path, jint longEdge, jlong cancellationGeneration, jboolean proRAW, jstring temporaryRoot) {
+    try {
+        UtfChars source(env, path), temporary(env, temporaryRoot);
+        if (!source.chars || !*source.chars || longEdge < 0 || longEdge > 65535)
+            throw std::invalid_argument("Invalid camera RAW HDR preview request");
+        std::lock_guard<std::mutex> sessionLock(sessionsMutex);
+        const auto session = sessions.find(sessionId);
+        if (session == sessions.end()) throw std::invalid_argument("Processor is closed");
+        CancellationScope cancellation(session->second, cancellationGeneration);
+        if (cancellation.isCancelled()) throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
+        sony2fuji_hdr_decode_options_v1 options{};
+        options.version = SONY2FUJI_HDR_VERSION;
+        options.struct_size = sizeof(options);
+        options.intent = longEdge == 0 ? SONY2FUJI_INTENT_FINAL : SONY2FUJI_INTENT_PREVIEW;
+        options.long_edge = static_cast<uint32_t>(longEdge);
+        sony2fuji_hdr_image_pair_v1 result{};
+        result.version = SONY2FUJI_HDR_VERSION;
+        result.struct_size = sizeof(result);
+        sony2fuji_hdr_diagnostic_v1 diagnostic{};
+        diagnostic.version = SONY2FUJI_HDR_VERSION;
+        diagnostic.struct_size = sizeof(diagnostic);
+        const auto status = proRAW
+            ? sony2fuji_hdr_decode_proraw(session->second.get(), source.chars, &options, temporary.chars, &result, &diagnostic)
+            : sony2fuji_hdr_decode_camera_raw(session->second.get(), source.chars, &options, &result, &diagnostic);
+        if (cancellation.isCancelled()) {
+            sony2fuji_hdr_release_pair(&result);
+            throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
+        }
+        if (status != SONY2FUJI_STATUS_OK) {
+            sony2fuji_hdr_release_pair(&result);
+            if (status == SONY2FUJI_STATUS_CANCELLED) throw NativeStatusError(status);
+            throw HDRStatusError(status, diagnostic);
+        }
+        std::lock_guard<std::mutex> lock(hdrPairsMutex);
+        return retainHdrPair(result);
+    } catch (const std::bad_alloc&) {
+        throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory for camera RAW HDR decode");
+    } catch (const NativeStatusError& error) {
+        throwNativeStatus(env, error);
+    } catch (const std::invalid_argument& error) {
+        throwJava(env, "java/lang/IllegalArgumentException", error.what());
+    } catch (const std::exception& error) {
+        throwHDRFailure(env, error);
+    }
+    return 0;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportProRAW(JNIEnv* env, jclass, jlong sessionId,
+    jstring path, jfloatArray values, jint longEdge, jboolean keepHDR, jbyteArray fingerprint,
+    jstring temporaryRoot, jstring outputPath, jlong cancellationGeneration) {
+    try {
+        if (!values || env->GetArrayLength(values) != 17 || !fingerprint || env->GetArrayLength(fingerprint) != 32 ||
+            longEdge < 0 || longEdge > 65535) throw std::invalid_argument("Invalid ProRAW export request");
+        std::array<jfloat, 17> input{};
+        env->GetFloatArrayRegion(values, 0, 17, input.data());
+        if (env->ExceptionCheck()) return;
+        UtfChars source(env, path), temporary(env, temporaryRoot), output(env, outputPath);
+        std::lock_guard<std::mutex> sessionLock(sessionsMutex);
+        const auto session = sessions.find(sessionId);
+        if (session == sessions.end()) throw std::invalid_argument("Processor is closed");
+        CancellationScope cancellation(session->second, cancellationGeneration);
+        if (cancellation.isCancelled()) throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
+        sony2fuji_hdr_request_v1 request{};
+        request.version = SONY2FUJI_HDR_VERSION; request.struct_size = sizeof(request);
+        request.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_VERSION;
+        request.intent = SONY2FUJI_INTENT_FINAL;
+        request.exposure_ev = input[0]; request.temperature = input[1]; request.tint = input[2];
+        request.contrast = input[3]; request.highlights = input[4]; request.shadows = input[5]; request.saturation = input[6];
+        request.crop_x = input[7]; request.crop_y = input[8]; request.crop_width = input[9]; request.crop_height = input[10];
+        request.quarter_turns = static_cast<int32_t>(input[11]); request.flip_horizontal = input[12] != 0;
+        request.flip_vertical = input[13] != 0; request.straighten_degrees = input[14];
+        request.perspective_horizontal = input[15]; request.perspective_vertical = input[16]; request.long_edge = longEdge;
+        sony2fuji_hdr_export_config_v1 config{};
+        config.version = SONY2FUJI_HDR_VERSION; config.struct_size = sizeof(config);
+        config.jpeg_quality = 95; config.base_color = SONY2FUJI_HDR_COLOR_DISPLAY_P3;
+        config.metadata_policy = SONY2FUJI_HDR_METADATA_ISO_XMP; config.metadata_source_path = source.chars;
+        env->GetByteArrayRegion(fingerprint, 0, 32, reinterpret_cast<jbyte*>(config.source_sha256));
+        if (env->ExceptionCheck()) return;
+        sony2fuji_hdr_stream_result_v1 result{SONY2FUJI_HDR_VERSION, sizeof(result)};
+        sony2fuji_hdr_diagnostic_v1 diagnostic{SONY2FUJI_HDR_VERSION, sizeof(diagnostic)};
+        const auto status = sony2fuji_hdr_export_proraw(session->second.get(), source.chars, &request, &config,
+            keepHDR ? 1 : 0, temporary.chars, output.chars, &result, &diagnostic);
+        if (status == SONY2FUJI_STATUS_CANCELLED) throw NativeStatusError(status);
+        if (status != SONY2FUJI_STATUS_OK) throw HDRStatusError(status, diagnostic);
+    } catch (const NativeStatusError& error) { throwNativeStatus(env, error); }
+      catch (const std::exception& error) { throwHDRFailure(env, error); }
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
@@ -885,7 +1024,7 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportJpeg(JNIEnv* env, jcl
     jstring sourcePath, jstring outputPath, jint baseColor) {
     try {
         UtfChars source(env, sourcePath), output(env, outputPath);
-        if (!source.chars || !output.chars || !*output.chars || baseColor < SONY2FUJI_HDR_COLOR_SRGB || baseColor > SONY2FUJI_HDR_COLOR_BT2020)
+        if (!output.chars || !*output.chars || baseColor < SONY2FUJI_HDR_COLOR_SRGB || baseColor > SONY2FUJI_HDR_COLOR_BT2020)
             throw std::invalid_argument("Invalid HDR JPEG export request");
         std::lock_guard<std::mutex> lock(hdrPairsMutex);
         auto& pair = hdrPairFor(pairId);
@@ -893,7 +1032,8 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportJpeg(JNIEnv* env, jcl
         config.version = SONY2FUJI_HDR_VERSION; config.struct_size = sizeof(config);
         config.jpeg_quality = 95; config.base_color = static_cast<uint32_t>(baseColor);
         config.metadata_policy = SONY2FUJI_HDR_METADATA_ISO_XMP;
-        config.metadata_source_path = source.chars; std::memcpy(config.source_sha256, pair.source_sha256, 32);
+        config.metadata_source_path = source.chars;
+        if (source.chars) std::memcpy(config.source_sha256, pair.source_sha256, 32);
         sony2fuji_hdr_diagnostic_v1 diagnostic{SONY2FUJI_HDR_VERSION, sizeof(diagnostic)};
         const auto status = sony2fuji_hdr_export_jpeg(&pair, &config, output.chars, &diagnostic);
         if (status != SONY2FUJI_STATUS_OK) throw HDRStatusError(status,diagnostic);
@@ -905,7 +1045,7 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportSdr(JNIEnv* env, jcla
     jstring sourcePath, jstring outputPath, jint format) {
     try {
         UtfChars source(env, sourcePath), output(env, outputPath);
-        if (!source.chars || !output.chars || !*output.chars ||
+        if (!output.chars || !*output.chars ||
             (format != SONY2FUJI_OUTPUT_JPEG && format != SONY2FUJI_OUTPUT_PNG && format != SONY2FUJI_OUTPUT_DNG))
             throw std::invalid_argument("Invalid SDR export request");
         std::lock_guard<std::mutex> lock(hdrPairsMutex);
@@ -913,7 +1053,8 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportSdr(JNIEnv* env, jcla
         sony2fuji_hdr_sdr_export_config_v1 config{};
         config.version = SONY2FUJI_HDR_VERSION; config.struct_size = sizeof(config);
         config.output_format = static_cast<uint32_t>(format); config.quality = 95;
-        config.metadata_source_path = source.chars; std::memcpy(config.source_sha256, pair.source_sha256, 32);
+        config.metadata_source_path = source.chars;
+        if (source.chars) std::memcpy(config.source_sha256, pair.source_sha256, 32);
         sony2fuji_hdr_diagnostic_v1 diagnostic{SONY2FUJI_HDR_VERSION, sizeof(diagnostic)};
         const auto status = sony2fuji_hdr_export_sdr(&pair, &config, output.chars, &diagnostic);
         if (status != SONY2FUJI_STATUS_OK) throw HDRStatusError(status,diagnostic);

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ImageIO
 
 @main enum HDRBatchTests {
     static func check(_ condition: @autoclosure () -> Bool,_ message: String) { if !condition() { fatalError(message) } }
@@ -16,6 +17,69 @@ import Foundation
         let before=try store.versionedState(for:legacy)
         var source=Adjustments(); source.hdr=HDRSettings(); source.hdr?.exposure=1
         let preparer=MacHDRBatchPreparation(source:input,settings:source,store:store,films:[])
+        if let path = ProcessInfo.processInfo.environment["RAWLAB_TEST_PRORAW"] {
+            let raw = URL(fileURLWithPath: path)
+            let info = try HDRSourceInfo.probeRAW(raw)
+            check(info?.proRAW != nil, "ProRAW fixture was not recognized")
+            let item = try BatchExportItem(url: raw)
+            let fresh = try preparer.prepare(item, ordinal: 2, format: .jpeg, longEdge: nil)
+            check(!fresh.settings.isHDREditing && fresh.settings.exposure == 1,
+                  "fresh ProRAW batch target was silently upgraded to HDR")
+            var saved = Adjustments(); saved.exposure = -2; saved.hdr = HDRSettings()
+            saved.proRAWDecodeVersion = ProRAWSource.decodeVersion + 1
+            try store.save(raw, state: PhotoEditState(settings: saved, filmID: ""))
+            do {
+                _ = try preparer.prepare(item, ordinal: 2, format: .hdrJPEG, longEdge: nil)
+                fatalError("Incompatible ProRAW version passed HDR preflight")
+            } catch HDRSettings.ModeError.invalidSettings {}
+            saved.hdr?.mode = .sdr
+            try store.save(raw, state: PhotoEditState(settings: saved, filmID: ""))
+            let sdr = try preparer.prepare(item, ordinal: 2, format: .jpeg, longEdge: nil)
+            check(!sdr.settings.isHDREditing && sdr.settings.proRAWDecodeVersion == saved.proRAWDecodeVersion,
+                  "ProRAW preflight rejected or rewrote the dormant decoder version in SDR mode")
+            saved.hdr?.mode = .hdr
+            saved.proRAWDecodeVersion = nil
+            saved.masterRecipeID = "unavailable-dormant-recipe"
+            try store.save(raw, state: PhotoEditState(settings: saved, filmID: ""))
+            let beforeRaw = try store.versionedState(for: raw)
+            let hdr = try preparer.prepare(item, ordinal: 2, format: .hdrJPEG, longEdge: nil)
+            try hdr.validate()
+            check(hdr.look == nil && hdr.settings.masterRecipeID == saved.masterRecipeID,
+                  "An inactive SDR recipe must not block an HDR target or be removed")
+            check(hdr.settings.isHDREditing && hdr.settings.hdr?.exposure == 1 && hdr.settings.exposure == -2,
+                  "saved ProRAW HDR batch target lost its mode or dormant SDR state")
+            let afterRaw = try store.versionedState(for: raw)
+            check(afterRaw == beforeRaw, "ProRAW batch preparation wrote target records")
+            var editedSource = source
+            editedSource.hdr?.geometry.quarterTurns = 1
+            editedSource.hdr?.geometry.straightenDegrees = 7
+            editedSource.hdr?.geometry.cropWidth = 0.5
+            let streamPreparation = MacHDRBatchPreparation(source: input, settings: editedSource, store: store, films: [])
+            for format in [ExportFormat.hdrJPEG, .jpeg] {
+                var streamJob = BatchExportJob(source: input, settings: editedSource, look: nil, lookName: "HDR")
+                var target = item; target.selected = true
+                streamJob.items = [target]; streamJob.outputDirectory = directory
+                streamJob.longEdge = 512; streamJob.format = format
+                let streamModel = BatchExportModel(job: streamJob,
+                    journal: BatchJournal(directory: directory.appendingPathComponent(UUID().uuidString)),
+                    hdrPreparation: streamPreparation)
+                streamModel.start()
+                let deadline = Date().addingTimeInterval(90)
+                while streamModel.running && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+                check(!streamModel.running && streamModel.error == nil && streamModel.job.succeededCount == 1,
+                      "ProRAW stream batch failed: \(streamModel.error ?? "timeout")")
+                let output = streamModel.job.items[0].output!
+                let probe = try HDRSourceInfo.probe(output)
+                check((probe != nil) == (format == .hdrJPEG), "ProRAW batch rendition routing differs")
+                let image = CGImageSourceCreateWithURL(output as CFURL, nil)!
+                let properties = CGImageSourceCopyPropertiesAtIndex(image, 0, nil)! as NSDictionary
+                check(max(properties[kCGImagePropertyPixelWidth] as! Int, properties[kCGImagePropertyPixelHeight] as! Int) == 512,
+                      "ProRAW batch skipped geometry/resize")
+                check(properties[kCGImagePropertyOrientation] as? Int == 1, "ProRAW batch output orientation differs")
+            }
+            print("PASS ProRAW batch capability, frozen target modes and record isolation")
+            print("PASS Mac ProRAW stream Engine routing and HDR/SDR batch file publication")
+        }
         var first=try BatchExportItem(url:input),second=try BatchExportItem(url:legacy)
         first.selected=true; second.selected=true
         let a=try preparer.prepare(first,ordinal:0,format:.jpeg,longEdge:32)

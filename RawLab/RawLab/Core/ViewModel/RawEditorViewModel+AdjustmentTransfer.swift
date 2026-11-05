@@ -10,7 +10,9 @@ extension RawEditorViewModel {
         let lookIDs = Set(available.map { $0.isCustom ? $0.id : "builtin:\($0.sourceURL.lastPathComponent)" })
             .union(recipes.map { "recipe:\($0.id)" })
         return IOSAdjustmentTransferContext(identifier: identifier, isRaw: isRaw,
-            sourceIsHDR:identifier==sourceIdentity?.key && sourceIsHDR,availableLookIDs: lookIDs,
+            sourceIsHDR:identifier==sourceIdentity?.key && sourceIsHDR,
+            sourceSupportsProRAWHDR: identifier == sourceIdentity?.key && sourceProRAW != nil,
+            availableLookIDs: lookIDs,
             builtinLookIDs: builtins,
             cameraTemperature: whiteBalance?.isCalibrated == true ? whiteBalance?.temperature : nil,
             cameraTint: whiteBalance?.isCalibrated == true ? whiteBalance?.tint : nil)
@@ -64,24 +66,29 @@ extension RawEditorViewModel {
                         var neutral = RawSettings.default
                         neutral.processing = saved.processing
                         neutral.x3fMode = saved.x3fMode
-                        let processor = Sony2FujiProcessor()
-                        let result = try file.withReadAccess {
-                            try processor.processRaw(url: $0, settings: neutral, previewLongEdge: 128, lutURL: nil)
+                        context.sourceSupportsProRAWHDR = try file.withReadAccess {
+                            try HDRSourceInfo.probeRAW($0)?.proRAW != nil
                         }
-                        if result.rawWhiteBalance?.isCalibrated == true {
-                            context.cameraTemperature = result.rawWhiteBalance?.temperature
-                            context.cameraTint = result.rawWhiteBalance?.tint
-                        }
-                        context.validateLensRequest = { lens in
+                        if !(saved.isHDREditing && context.sourceSupportsProRAWHDR) {
                             let processor = Sony2FujiProcessor()
-                            var settings = neutral
-                            settings.lensCorrection = lens
                             let result = try file.withReadAccess {
-                                try processor.processRaw(url: $0, settings: settings, previewLongEdge: 128, lutURL: nil)
+                                try processor.processRaw(url: $0, settings: neutral, previewLongEdge: 128, lutURL: nil)
                             }
-                            guard let report = result.lensInfo,
-                                  (!lens.distortion || report.appliedDistortion), (!lens.tca || report.appliedTCA) else {
-                                throw AdjustmentTransferError.incompatible(result.lensInfo?.message ?? L10n.text("镜头配置"))
+                            if result.rawWhiteBalance?.isCalibrated == true {
+                                context.cameraTemperature = result.rawWhiteBalance?.temperature
+                                context.cameraTint = result.rawWhiteBalance?.tint
+                            }
+                            context.validateLensRequest = { lens in
+                                let processor = Sony2FujiProcessor()
+                                var settings = neutral
+                                settings.lensCorrection = lens
+                                let result = try file.withReadAccess {
+                                    try processor.processRaw(url: $0, settings: settings, previewLongEdge: 128, lutURL: nil)
+                                }
+                                guard let report = result.lensInfo,
+                                      (!lens.distortion || report.appliedDistortion), (!lens.tca || report.appliedTCA) else {
+                                    throw AdjustmentTransferError.incompatible(result.lensInfo?.message ?? L10n.text("镜头配置"))
+                                }
                             }
                         }
                     } else {

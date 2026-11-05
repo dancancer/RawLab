@@ -41,6 +41,7 @@ internal object StructuredSettingsCodec {
                 .put("quality", s.processing.quality))
         s.hdr?.let { value.put("hdr", hdrJSON(it)) }
         s.sdrSnapshot?.let { value.put("sdrSnapshot", it) }
+        s.proRAWDecodeVersion?.let { value.put("proRAWDecodeVersion", it) }
         if (s.clarity != 0f || s.dehaze != 0f) value.put("atmosphere",
             JSONObject().put("clarity", s.clarity).put("dehaze", s.dehaze))
         return "v2:" + JSONObject().put("format", format).put("version", 2).put("settings", value).toString()
@@ -49,10 +50,10 @@ internal object StructuredSettingsCodec {
     fun decode(encoded: String, format: String): EditSettings {
         require(encoded.startsWith("v2:")) { "Unsupported settings encoding" }
         val json = encoded.removePrefix("v2:")
-        validateStrictJSON(json, setOf("version", "masterRecipeSettingsVersion", "exposureMode", "displayChromaDenoise", "quarterTurns"))
+        validateStrictJSON(json, setOf("version", "masterRecipeSettingsVersion", "exposureMode", "displayChromaDenoise", "quarterTurns", "proRAWDecodeVersion"))
         val root = JSONObject(json).keysExactly("format", "version", "settings")
         require(root.string("format") == format && root.integer("version") == 2) { "Unsupported settings format" }
-        val s = root.getJSONObject("settings").keysWithOptional(setOf("colorGrading", "curve", "atmosphere", "masterRecipeSettingsVersion", "hdr", "sdrSnapshot", "x3fMode"), "film", "strength", "exposure", "exposureMode", "highlights",
+        val s = root.getJSONObject("settings").keysWithOptional(setOf("colorGrading", "curve", "atmosphere", "masterRecipeSettingsVersion", "hdr", "sdrSnapshot", "x3fMode", "proRAWDecodeVersion"), "film", "strength", "exposure", "exposureMode", "highlights",
             "shadows", "contrast", "toneCurve", "saturation", "sharpening", "customWb", "temperature", "tint",
             "recipeID", "displayChromaDenoise", "hsl", "tone", "denoise", "effects", "lens", "geometry", "processing")
         val atmosphere = if (s.has("atmosphere")) s.getJSONObject("atmosphere").keysExactly("clarity", "dehaze") else null
@@ -91,7 +92,8 @@ internal object StructuredSettingsCodec {
                 geometry.boolean("flipVertical"), geometry.number("straightenDegrees", -45.0..45.0), geometry.number("perspectiveHorizontal", -1.0..1.0),
                 geometry.number("perspectiveVertical", -1.0..1.0)),
             processing = ProcessingIdentity(processing.string("family"), processing.integer("version"), processing.string("quality")),
-            hdr = hdr, sdrSnapshot = sdrSnapshot)
+            hdr = hdr, sdrSnapshot = sdrSnapshot,
+            proRAWDecodeVersion = if (s.has("proRAWDecodeVersion")) s.integer("proRAWDecodeVersion") else null)
     }
 
     private fun hdrJSON(value: HDRSettings): JSONObject = JSONObject()

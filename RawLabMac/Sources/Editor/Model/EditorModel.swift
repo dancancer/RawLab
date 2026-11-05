@@ -180,6 +180,7 @@ final class EditorModel: ObservableObject {
     } }
     @Published var file: URL?
     @Published var sourceIsHDR=false
+    @Published var sourceSupportsCameraHDR=false
     @Published var importing=false
     var pendingOpenID=UUID()
     @Published var neutral: RenderedImage?

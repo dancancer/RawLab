@@ -6,13 +6,62 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import com.rawlab.android.engine.NativeProcessor
+import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.SettingsCodec
 
 @RunWith(AndroidJUnit4::class)
 class MasterRecipeNativeTest {
+    @Test fun recipeSkipsTintWhenAsShotWhiteBalanceIsUnavailable() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val input = File.createTempFile("recipe-unavailable-wb-", ".dng", context.cacheDir)
+        val expectedOutput = File.createTempFile("recipe-camera-wb-", ".jpg", context.cacheDir)
+        val actualOutput = File.createTempFile("recipe-fallback-wb-", ".jpg", context.cacheDir)
+        try {
+            val dng = instrumentation.context.assets.open("bayer-demosaic.dng").use { it.readBytes() }
+            val tags = ByteBuffer.wrap(dng).order(ByteOrder.LITTLE_ENDIAN)
+            val ifd = tags.getInt(4)
+            val asShotNeutral = (0 until tags.getShort(ifd).toInt())
+                .map { ifd + 2 + it * 12 }
+                .first { (tags.getShort(it).toInt() and 0xffff) == 50728 }
+            assertEquals(5, tags.getShort(asShotNeutral + 2).toInt()) // TIFF RATIONAL
+            assertEquals(3, tags.getInt(asShotNeutral + 4))
+            tags.position(tags.getInt(asShotNeutral + 8))
+            for (value in intArrayOf(1, 1, 1, 100, 1, 1)) tags.putInt(value)
+            input.writeBytes(dng)
+
+            PhotoStorage(context).use { storage ->
+                NativeProcessor(NativeProcessor.CPU).use { cpu ->
+                    val neutral = cpu.preview(input, null, EditSettings(), 160, false)
+                    assertTrue(neutral.temperature.isNaN())
+                    val recipe = MasterRecipe.load(context).first { it.id == "takashi_yasui_zen" }
+                    val edits = EditSettings().applyRecipe(recipe)
+                    assertEquals(2f, edits.tint, 0f)
+                    val lut = storage.lookPath(edits)!!
+                    val cameraWb = edits.copy(tint = 0f)
+                    val expected = cpu.preview(input, lut, cameraWb, 160, false)
+                    assertFalse("Recipe must still change pixels", neutral.pixels.contentEquals(expected.pixels))
+                    val actual = cpu.preview(input, lut, edits, 160, false)
+                    assertArrayEquals(expected.pixels, actual.pixels)
+                    assertEquals(cpu.autoExposure(input, cameraWb), cpu.autoExposure(input, edits), 0f)
+                    cpu.export(input, lut, cameraWb, expectedOutput, ExportFormat.JPEG)
+                    cpu.export(input, lut, edits, actualOutput, ExportFormat.JPEG)
+                    assertTrue(actualOutput.length() > 0)
+                    assertArrayEquals(expectedOutput.readBytes(), actualOutput.readBytes())
+                }
+            }
+        } finally {
+            input.delete()
+            expectedOutput.delete()
+            actualOutput.delete()
+        }
+    }
+
     @Test fun allFourteenRecipesMatchExplicitControlsOnRaw() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

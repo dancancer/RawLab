@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sony2fuji/common.h"
+#include <functional>
 #include <utility>
 
 namespace sony2fuji {
@@ -29,6 +30,12 @@ struct GeometryOptions {
 // Output resizing belongs to the caller. Identity is an exact bypass;
 // failures preserve input.
 ErrorCode applyGeometry(ImageData& image, const GeometryOptions& options);
+
+// 分块存储按全局输出坐标取样；读取器提供已定向的原始画布像素。
+// 整数旋转/翻转/裁切保留原始 float，透视/拉直沿用整图的单次双线性插值。
+using GeometryPixelReader = std::function<RGB(int, int)>;
+using GeometryPixelSampler = std::function<RGB(int, int, const GeometryPixelReader&)>;
+GeometryPixelSampler makeGeometrySampler(int width, int height, const GeometryOptions& options);
 
 /* 只计算画布，使用与像素变换相同的取整；无效参数返回零尺寸。 */
 std::pair<int, int> geometryOutputSize(int width, int height, const GeometryOptions& options);

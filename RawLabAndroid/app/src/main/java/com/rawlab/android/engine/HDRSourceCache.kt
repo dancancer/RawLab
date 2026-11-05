@@ -17,7 +17,8 @@ internal class HDRSourceLease(val image: NativeHDRImage, private val release: ()
 /** 一个进程共享 source-only 预算；lease 保护正在渲染的不可变双图。 */
 internal object HDRSourceCache {
     private const val BUDGET=128L*1024*1024
-    private class Entry(val path: String,val fingerprint: ByteArray,val edge: Int,val image: NativeHDRImage) {
+    private class Entry(val path: String, val fingerprint: ByteArray, val cameraStamp: HDRSourceInfo.CameraStamp?,
+        val edge: Int, val image: NativeHDRImage) {
         val bytes=image.width.toLong()*image.height*24
         var users=0
         var retained=false
@@ -25,18 +26,25 @@ internal object HDRSourceCache {
     private val entries=LinkedList<Entry>()
     private var bytes=0L
     private val cleanup=CoroutineScope(SupervisorJob()+Dispatchers.Default)
-    @Synchronized fun acquire(file: File,info: HDRSourceInfo,edge: Int): HDRSourceLease {
+    @Synchronized fun acquire(file: File, info: HDRSourceInfo, edge: Int,
+        decoder: (() -> NativeHDRImage)? = null): HDRSourceLease {
         require(edge>0)
+        info.cameraStamp?.let { expected ->
+            require(expected == HDRSourceInfo.CameraStamp(file.length(), file.lastModified())) { "HDR source changed" }
+        }
         val path=file.canonicalPath
         val iterator=entries.iterator()
         while(iterator.hasNext()) {
             val entry=iterator.next()
             if(entry.path!=path)continue
-            if(!entry.fingerprint.contentEquals(info.fingerprint)) {iterator.remove();detach(entry);continue}
+            val sameSource = if (info.isCameraRaw && info.cameraStamp != null)
+                entry.cameraStamp == info.cameraStamp else entry.fingerprint.contentEquals(info.fingerprint)
+            if(!sameSource) {iterator.remove();detach(entry);continue}
             if(entry.edge<edge)continue
             iterator.remove();entries.addFirst(entry);return lease(entry)
         }
-        val entry=Entry(path,info.fingerprint.copyOf(),edge,NativeHDRBridge.decode(file,info,edge))
+        val entry=Entry(path, info.fingerprint.copyOf(), info.cameraStamp, edge,
+            decoder?.invoke() ?: NativeHDRBridge.decode(file,info,edge))
         if(entry.bytes<=BUDGET) {
             while(bytes+entry.bytes>BUDGET && entries.isNotEmpty())detach(entries.removeLast())
             entries.addFirst(entry);entry.retained=true;bytes+=entry.bytes

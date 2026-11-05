@@ -14,6 +14,7 @@ import com.rawlab.android.photo.BatchGlobalFailure
 import com.rawlab.android.photo.BatchPublicationUncertain
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.requireProRAWDecoder
 import com.rawlab.android.photo.HDRSourceInfo
 import java.io.File
 import java.io.IOException
@@ -29,6 +30,7 @@ internal class BatchOutputPublisher(
     private val job: BatchJob,
     private val destination: Uri?,
     private val gpuMode: Int,
+    private val cancellationGeneration: Long = -1L,
 ) {
     private val resolver = context.contentResolver
 
@@ -36,21 +38,33 @@ internal class BatchOutputPublisher(
         val format = job.formatFor(target)
         val temporary = File.createTempFile("render-", format.suffix, context.filesDir)
         try {
-            val hdrInfo = if (HDRSourceInfo.mayContainGainMap(target.sourceFile)) NativeHDRBridge.probe(target.sourceFile) else null
+            val hdrInfo = NativeHDRBridge.probeSource(target.sourceFile, target.inputKind == com.rawlab.android.format.PhotoInputKind.RAW)
             if (settings.isHDREditing) {
                 requireNotNull(hdrInfo) { "HDR editing requires an HDR source" }
                 val edge = job.longEdgeFor(target) ?: 0
                 if (edge !in 0..65535) throw IOException("Invalid output size")
                 if (settings.isHDREditing && gpuMode == NativeProcessor.FORCE) throw com.rawlab.android.engine.HDRProcessingException(2,13,6)
-                val source = NativeHDRBridge.decode(target.sourceFile, hdrInfo, 0)
+                if (hdrInfo.isProRAW) settings.requireProRAWDecoder()
+                val generation = cancellationGeneration
+                processor.setGpuMode(NativeProcessor.CPU)
+                processor.releaseRasterCache()
+                com.rawlab.android.engine.HDRSourceCache.clear()
+                if (hdrInfo.isProRAW && format in setOf(com.rawlab.android.format.ExportFormat.HDR_JPEG, com.rawlab.android.format.ExportFormat.JPEG)) {
+                    processor.exportProRAW(target.sourceFile, hdrInfo, settings, temporary,
+                        format == com.rawlab.android.format.ExportFormat.HDR_JPEG, edge, generation)
+                    return temporary
+                }
+                val source = if (hdrInfo.isCameraRaw) processor.decodeHDRCamera(target.sourceFile, hdrInfo, 0, generation)
+                    else NativeHDRBridge.decode(target.sourceFile, hdrInfo, 0)
                 val rendered = try {
                     processor.setGpuMode(NativeProcessor.CPU)
-                    processor.renderHDR(source, requireNotNull(settings.hdr).copy(geometry = settings.geometry), edge)
+                    processor.renderHDR(source, requireNotNull(settings.hdr).copy(geometry = settings.geometry), edge, generation)
                 } finally { source.close() }
                 try {
+                    val metadata = target.sourceFile.takeUnless { hdrInfo.isCameraRaw && !hdrInfo.isProRAW }
                     if (format == com.rawlab.android.format.ExportFormat.HDR_JPEG)
-                        NativeHDRBridge.exportJpeg(rendered, target.sourceFile, temporary)
-                    else NativeHDRBridge.exportSdr(rendered, target.sourceFile, temporary, format.nativeValue)
+                        NativeHDRBridge.exportJpeg(rendered, metadata, temporary)
+                    else NativeHDRBridge.exportSdr(rendered, metadata, temporary, format.nativeValue)
                 } finally { rendered.close() }
                 return temporary
             }

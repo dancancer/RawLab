@@ -11,7 +11,7 @@ internal static class QuickPresetHDRChecks
     internal static void Run(string repo, string fixture, Action<bool, string> check)
     {
         var root = Path.Combine(Path.GetFullPath(repo), ".cache", "tmp", "quick-preset-hdr", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root); var source = Path.Combine(root, "source.jpg"); File.Copy(fixture, source);
+        Directory.CreateDirectory(root); var source = Path.Combine(root, "source" + Path.GetExtension(fixture)); File.Copy(fixture, source);
         Loc.Initialize("de"); var app = TestWindowState.CreateApplication(); SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         var window = new MainWindow(Path.Combine(root, "looks")); TestWindowState.Isolate(window, root);
         var store = new EditStore(Path.Combine(root, "edits")); var presets = new AdjustmentPresetStore(Path.Combine(root, "presets"));
@@ -19,6 +19,16 @@ internal static class QuickPresetHDRChecks
         try {
             window.Show(); window.OpenFile(source); Ready(window);
             var settings = Get<Adjustments>(window, "settings");
+            if (!settings.IsHDREditing && PhotoInput.IsCameraRaw(source) &&
+                PhotoInput.ProbeCameraRaw(source, out var sourceInfo) == HDRProbeState.Supported && sourceInfo?.IsProRAW == true)
+            {
+                window.HDREditMenu.IsChecked = true;
+                window.HDREditMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled &&
+                    Get<Adjustments>(window, "settings").IsHDREditing &&
+                    Get<RenderedImage>(window, "result").HDR != null);
+                settings = Get<Adjustments>(window, "settings");
+            }
             check(settings.IsHDREditing, "Quick HDR fixture uses the real HDR processing path");
             settings.Set(Parameter.Exposure, .7); settings.Set(Parameter.Temperature, 7200); settings.Set(Parameter.Tint, -4);
             Invoke(window, "MarkEdited");

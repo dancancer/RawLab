@@ -21,6 +21,17 @@ import Foundation
         check(reenabled.hdr?.exposure == 2, "existing HDR snapshot was rebuilt")
         let reset = reenabled.resettingAdjustments()
         check(reset.isHDREditing && reset.hdr?.isIdentity == true && reset.exposure == 1, "reset changed mode or dormant SDR edit")
+        var cameraSDR = sdr
+        cameraSDR.sharpening = 0.1
+        var cameraHDR = try cameraSDR.withHDRMode(true, sourceIsHDR: false, hasLook: true, cameraRAW: true)
+        check(cameraHDR.hdr == HDRSettings() && cameraHDR.sharpening == 0.1 && cameraHDR.exposure == 1,
+              "camera RAW HDR must start with an independent snapshot")
+        AdjustmentKind.exposure.setValue(3, in: &cameraHDR)
+        let savedCamera = try JSONDecoder().decode(RawSettings.self, from: JSONEncoder().encode(cameraHDR))
+        let cameraOff = try savedCamera.withHDRMode(false, sourceIsHDR: false, hasLook: true, cameraRAW: true)
+        let cameraOn = try cameraOff.withHDRMode(true, sourceIsHDR: false, hasLook: true, cameraRAW: true)
+        check(!cameraOff.isHDREditing && cameraOff.exposure == 1 && cameraOn.hdr?.exposure == 3,
+              "camera RAW mode switch or persisted edit lost either snapshot")
         var conflict = sdr; conflict.sharpening = 0.1
         do { _ = try conflict.withHDRMode(true, sourceIsHDR: true, hasLook: false); fatalError("unsupported control accepted") }
         catch HDRSettings.ModeError.conflicts(let fields) { check(fields.contains("sharpening"), "conflict field missing") }

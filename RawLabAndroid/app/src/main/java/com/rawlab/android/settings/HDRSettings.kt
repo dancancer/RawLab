@@ -4,8 +4,8 @@ import com.rawlab.android.geometry.GeometrySettings
 
 enum class HDRMode { SDR, HDR }
 
-fun sourceDefaultSettings(isHDRSource: Boolean): EditSettings =
-    if (isHDRSource) EditSettings().withHDRMode(true, true) else EditSettings()
+fun sourceDefaultSettings(isHDRSource: Boolean, cameraRaw: Boolean = false): EditSettings =
+    if (isHDRSource && !cameraRaw) EditSettings().withHDRMode(true, true) else EditSettings()
 
 sealed class HDRModeError(message: String) : IllegalArgumentException(message) {
     data object UnsupportedSource : HDRModeError("HDR source is unavailable")
@@ -69,12 +69,23 @@ fun EditSettings.hdrDefaults(): EditSettings = applyHDRValues(
     requireNotNull(hdr).reset(), HDRMode.HDR, sdrSnapshot)
 
 /** Enable/disable HDR without changing the inactive mode's edit snapshot. */
-fun EditSettings.withHDRMode(enabled: Boolean, sourceIsHDR: Boolean, hasLook: Boolean = false): EditSettings {
-    if (!sourceIsHDR) throw HDRModeError.UnsupportedSource
+fun EditSettings.withHDRMode(enabled: Boolean, sourceIsHDR: Boolean, hasLook: Boolean = false,
+    cameraRaw: Boolean = false, proRAW: Boolean = false): EditSettings {
+    if (!sourceIsHDR && !cameraRaw) throw HDRModeError.UnsupportedSource
+    if (enabled && proRAW) requireProRAWDecoder()
     val synchronized = synchronizeHDR()
     if (enabled == synchronized.isHDREditing) return synchronized
     if (enabled) {
         val stored = synchronized.hdr
+        if (cameraRaw) {
+            // Camera RAW HDR is a separate post-demosaic path. Keep every SDR-only
+            // edit in the inactive snapshot and start the HDR request from neutral
+            // values (or the previously saved HDR snapshot).
+            val base = synchronized.copy(hdr = null, sdrSnapshot = null)
+            return base.applyHDRValues(stored ?: HDRSettings(), HDRMode.HDR, SettingsCodec.encode(base)).let {
+                if (proRAW) it.copy(proRAWDecodeVersion = com.rawlab.android.photo.HDRSourceInfo.PRORAW_DECODE_VERSION) else it
+            }
+        }
         if (stored == null) {
             val conflicts = buildList {
                 if (synchronized.temperature != 6500f || synchronized.tint != 0f) add("white_balance")
@@ -98,7 +109,12 @@ fun EditSettings.withHDRMode(enabled: Boolean, sourceIsHDR: Boolean, hasLook: Bo
     }
     val stored = synchronized.hdr ?: return synchronized.copy(sdrSnapshot = null)
     val restored = synchronized.sdrSnapshotSettings() ?: synchronized.copy(hdr = null, sdrSnapshot = null)
-    return restored.copy(hdr = stored.copy(mode = HDRMode.SDR), sdrSnapshot = null)
+    return restored.copy(hdr = stored.copy(mode = HDRMode.SDR), sdrSnapshot = null, proRAWDecodeVersion = proRAWDecodeVersion)
+}
+
+fun EditSettings.requireProRAWDecoder() {
+    if (proRAWDecodeVersion != null && proRAWDecodeVersion != com.rawlab.android.photo.HDRSourceInfo.PRORAW_DECODE_VERSION)
+        throw HDRModeError.InvalidSettings
 }
 
 /** Keep the active scalar/geometry fields and the typed HDR record byte-for-byte aligned. */

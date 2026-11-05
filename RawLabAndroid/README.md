@@ -65,6 +65,16 @@ v0.5.0 新增逐照片本机调整记忆和批量 RAW 导出。任务固定当�
 
 Supports RAW, ordinary JPEG/PNG and supported phone gain-map HDR JPEG/HEIF. Originals are never rewritten; edits persist locally by original resource identity.
 
+Apple ProRAW 默认保留 SDR 编辑，可在编辑设置中显式开启 HDR。HDR 使用单独版本的 DNG SDK
+显影，支持独立模式参数、复制与预设、集合同步及批量导出；HDR JPEG 和普通 SDR JPEG 都从
+完整原片分块生成。色调可能与 Apple Core Image 不同，内存或临时空间不足会明确拒绝该次任务。
+取消后保留原片和已有输出，可重新尝试。解码边界见 [ProRAW 契约](../docs/design/hdr-photos/proraw.md)。
+
+Apple ProRAW keeps SDR editing by default and supports explicit HDR mode. Its separately versioned
+DNG SDK rendition supports mode persistence, adjustment transfer, presets and batch export. Both
+HDR and SDR JPEG export stream the complete original. Rendering can differ from Apple Core Image;
+memory and temporary-disk admission remain required. Originals and existing outputs survive cancellation.
+
 外观导入不执行 Python/OCIO，也不修改源文件；CUBE、RLOOK 和受支持的 DCP 均通过 shared native 校验，DCP 会在 Android 上直接编译成托管 RLOOK。RLOOK 在 Android 使用 CPU，Auto 不会伪装成 GLES 原生 DCP 加速。可导入和可运行不等于已验证原厂或 Adobe 外观忠实度。卸载应用会移除托管外观，保留原始预设备份。
 
 Look import does not execute Python/OCIO or modify the source. CUBE, RLOOK, and supported DCP files pass shared native validation; DCP is compiled to a managed RLOOK on Android. RLOOK uses CPU, not native-DCP GLES acceleration. Runtime support is not manufacturer/Adobe appearance certification. Uninstalling the app removes its managed library.
@@ -135,11 +145,11 @@ Assets are generated from existing repository resources rather than duplicated i
 
 ## Release
 
-[下载 Android v0.9.2 APK / Download Android v0.9.2 APK](https://github.com/dancancer/RawLab/releases/download/v0.9.2/RawLab-Android-0.9.2.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.9.2) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.9.2/SHA256SUMS.txt)
+[下载 Android v0.9.3 APK / Download Android v0.9.3 APK](https://github.com/dancancer/RawLab/releases/download/v0.9.3/RawLab-Android-0.9.3.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.9.3) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.9.3/SHA256SUMS.txt)
 
-发布 APK 为 `versionName=0.9.2`、`versionCode=17`，沿用正式发布签名，支持同签名旧正式版覆盖升级。新增手机 HDR、普通 X3F 显影、快捷预设、集合导出与外观搜索，并修复 HDR 批量取消和混合批量导出的中间数组内存问题，见[发布说明](../docs/releases/v0.9/v0.9.2.md)。既有默认开启的使用统计和关于页关闭开关保留。实际构建、JVM、模拟器与设备覆盖见发布附件 `BUILD-PROVENANCE.json`。
+发布 APK 为 `versionName=0.9.3`、`versionCode=18`，沿用正式发布签名，支持同签名旧正式版覆盖升级。为受支持的相机 RAW 和 Apple ProRAW 新增 HDR 显影，并修复拍摄白平衡不可用时大师配方的显影失败，见[发布说明](../docs/releases/v0.9/v0.9.3.md)。既有默认开启的使用统计和关于页关闭开关保留。实际构建、JVM、模拟器与设备覆盖见发布附件 `BUILD-PROVENANCE.json`。
 
-The release APK uses version 0.9.2/code 17 and the existing release identity. It adds phone HDR, normal X3F rendering, quick presets, collection export and look search, and fixes HDR batch cancellation and export intermediate-array memory use. Usage-statistics defaults are unchanged. See the [release notes](../docs/releases/v0.9/v0.9.2.md) and package provenance for actual build, emulator and physical-device coverage.
+The release APK uses version 0.9.3/code 18 and the existing release identity. It adds HDR editing for supported camera RAW and Apple ProRAW files, and fixes master recipe rendering when calibrated as-shot white balance is unavailable. Usage-statistics defaults are unchanged. See the [release notes](../docs/releases/v0.9/v0.9.3.md) and package provenance for actual build, emulator and physical-device coverage.
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。

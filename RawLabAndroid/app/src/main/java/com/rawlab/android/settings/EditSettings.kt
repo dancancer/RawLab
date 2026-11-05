@@ -62,6 +62,7 @@ data class EditSettings(
     /** Null preserves pre-HDR records as SDR; non-null also retains the inactive mode snapshot. */
     val hdr: HDRSettings? = null,
     val sdrSnapshot: String? = null,
+    val proRAWDecodeVersion: Int? = null,
 ) {
     init {
         require(masterRecipeSettingsVersion in 2..4)
@@ -89,7 +90,8 @@ data class EditSettings(
             contrast = value.contrast, highlights = value.highlights, shadows = value.shadows,
             saturation = value.saturation, geometry = value.geometry, hdr = value,
             sdrSnapshot = sdrSnapshot)
-    } else EditSettings(film = film, processing = processing, x3fMode = x3fMode, hdr = hdr)
+    } else EditSettings(film = film, processing = processing, x3fMode = x3fMode, hdr = hdr,
+        proRAWDecodeVersion = proRAWDecodeVersion)
 
     /** Camera-only controls are resolved per target; the persisted edit remains unchanged. */
     fun effectiveFor(input: PhotoInputKind): EditSettings = if (isHDREditing) this else if (input == PhotoInputKind.RASTER) copy(
