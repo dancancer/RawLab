@@ -15,57 +15,105 @@ public sealed class LibraryEntry : INotifyPropertyChanged
     public static bool IsImage(string path) => IsRaw(path) || IsRaster(path);
     internal static string ImageFilter => string.Join(';',RawExtensions.Concat(RasterExtensions).Select(x=>"*."+x));
     public string Path { get; }
-    public string Name => System.IO.Path.GetFileName(IsFolder ? Path.TrimEnd('\\', '/') : Path);
+    public string Name => System.IO.Path.GetFileName(IsFolder ? System.IO.Path.TrimEndingDirectorySeparator(Path) : Path) is { Length: > 0 } name ? name : Path;
     public bool IsFolder { get; }
-    private bool loaded;
+    private Task? directoryLoad;
+    private bool directoryLoaded;
     private BitmapSource? thumbnail;
     private bool thumbnailVisible;
+    private int thumbnailRequest;
     public BitmapSource? Thumbnail { get=>thumbnail; private set { thumbnail=value; OnPropertyChanged(); } }
-    public ObservableCollection<LibraryEntry> Children { get; }=[];
-    public ObservableCollection<object> TreeChildren { get; }=[];
+    public LibraryEntry? Parent { get; private set; }
+    public ObservableCollection<LibraryEntry> Children { get; } = [];
+    public ObservableCollection<LibraryEntry> Folders { get; } = [];
+    public IReadOnlyList<LibraryEntry> Photos { get; private set; } = [];
     private bool isSelected;
+    private bool isMarked;
     private bool isExpanded;
     public bool IsSelected { get=>isSelected; set { if(isSelected==value)return;isSelected=value;OnPropertyChanged(); } }
+    public bool IsMarked { get=>isMarked; set { if(isMarked==value)return;isMarked=value;OnPropertyChanged(); } }
     public bool IsExpanded { get=>isExpanded; set { if(isExpanded==value)return;isExpanded=value;OnPropertyChanged(); } }
-    public LibraryEntry(string path,bool folder) { Path=path; IsFolder=folder; if(folder){var placeholder=new LibraryEntry("",false);Children.Add(placeholder);TreeChildren.Add(placeholder);} }
+    public LibraryEntry(string path, bool folder)
+    {
+        Path = path;
+        IsFolder = folder;
+        if (folder)
+        {
+            var placeholder = new LibraryEntry("", false);
+            Children.Add(placeholder);
+            Folders.Add(placeholder);
+        }
+    }
     public async Task Load()
     {
-        if(!IsFolder || loaded)return;
-        loaded=true;
-        try
-        {
-            var entries=await Task.Run(()=>new DirectoryInfo(Path).EnumerateFileSystemInfos()
-                .Where(f=>(f.Attributes&(FileAttributes.Hidden|FileAttributes.ReparsePoint))==0)
-                .Where(f=>f is DirectoryInfo || IsImage(f.FullName))
-                .OrderBy(f=>f is DirectoryInfo ? 0 : 1).ThenBy(f=>f.Name,StringComparer.CurrentCultureIgnoreCase)
-                .Select(f=>(f.FullName,Folder:f is DirectoryInfo)).ToArray());
-            Children.Clear(); foreach(var entry in entries)Children.Add(new(entry.FullName,entry.Folder));
-            TreeChildren.Clear();foreach(var entry in Children.Where(e=>e.IsFolder))TreeChildren.Add(entry);
-            var photos=Children.Where(e=>!e.IsFolder).ToArray();
-            if(photos.Length>0)TreeChildren.Add(new PhotoGroup(photos));
-        }
-        catch { loaded=false; throw; }
+        if (!IsFolder || directoryLoaded) return;
+        var load = directoryLoad ??= ReadDirectory();
+        try { await load; }
+        finally { if (ReferenceEquals(load, directoryLoad)) directoryLoad = null; }
     }
-    private static readonly SemaphoreSlim ThumbnailSlots=new(2);
+    internal async Task Reload()
+    {
+        if (directoryLoad != null)
+        {
+            try { await Load(); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+        }
+        directoryLoaded = false;
+        await Load();
+    }
+    private async Task ReadDirectory()
+    {
+        var paths = await Task.Run(() => new DirectoryInfo(Path).EnumerateFileSystemInfos()
+            .Where(entry => (entry.Attributes & (FileAttributes.Hidden | FileAttributes.ReparsePoint)) == 0)
+            .Where(entry => entry is DirectoryInfo || IsImage(entry.FullName))
+            .OrderBy(entry => entry is DirectoryInfo ? 0 : 1).ThenBy(entry => entry.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Select(entry => (entry.FullName, Folder: entry is DirectoryInfo)).ToArray());
+        var existing = Children.ToDictionary(entry => entry.Path, StringComparer.Ordinal);
+        var entries = paths.Select(path =>
+            existing.TryGetValue(path.FullName, out var entry) && entry.IsFolder == path.Folder
+                ? entry : new LibraryEntry(path.FullName, path.Folder) { Parent = this }).ToArray();
+        Photos = entries.Where(entry => !entry.IsFolder).ToArray();
+        // Keep existing folder instances and expansion state while refreshing children.
+        foreach (var removed in Folders.Except(entries).ToArray()) Folders.Remove(removed);
+        var index = 0;
+        foreach (var child in entries.Where(entry => entry.IsFolder))
+        {
+            var position = Folders.IndexOf(child);
+            if (position < 0) Folders.Insert(index, child);
+            else if (position != index) Folders.Move(position, index);
+            index++;
+        }
+        Children.Clear();
+        foreach (var entry in entries) Children.Add(entry);
+        directoryLoaded = true;
+    }
+    private static readonly SemaphoreSlim ThumbnailSlots = new(2);
     public async Task LoadThumbnail()
     {
-        thumbnailVisible=true;
-        if(IsFolder || loaded || string.IsNullOrEmpty(Path))return;
-        loaded=true;
+        if (IsFolder || thumbnailVisible || string.IsNullOrEmpty(Path)) return;
+        thumbnailVisible = true;
+        var request = ++thumbnailRequest;
         await ThumbnailSlots.WaitAsync();
-        try { if(thumbnailVisible) { var image=await Task.Run(()=>RenderEngine.Thumbnail(Path));if(thumbnailVisible)Thumbnail=image; } }
-        catch(Exception ex) when(ex is IOException or InvalidOperationException or DllNotFoundException or BadImageFormatException or EntryPointNotFoundException) { }
+        try
+        {
+            if (request != thumbnailRequest) return;
+            var image = await Task.Run(() => RenderEngine.Thumbnail(Path));
+            if (request == thumbnailRequest) Thumbnail = image;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException or DllNotFoundException or BadImageFormatException or EntryPointNotFoundException) { }
         finally { ThumbnailSlots.Release(); }
     }
-    public void ReleaseThumbnail() { if(IsFolder)return;thumbnailVisible=false;loaded=false;Thumbnail=null; }
+    public void ReleaseThumbnail()
+    {
+        if (!thumbnailVisible) return;
+        thumbnailVisible = false;
+        ++thumbnailRequest;
+        Thumbnail = null;
+    }
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName]string? name=null)=>PropertyChanged?.Invoke(this,new(name));
     // 文件树的读屏名称取自 ToString：读目录或文件名，不读类型名
     public override string ToString()=>Name;
-}
-public sealed record PhotoGroup(IReadOnlyList<LibraryEntry> Photos)
-{
-    public override string ToString()=>Loc.Text("照片");
 }
 internal sealed class Library
 {

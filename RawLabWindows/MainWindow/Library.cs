@@ -108,37 +108,6 @@ public partial class MainWindow
         var dialog=new OpenFolderDialog{Title=Loc.Text("添加照片目录"),Multiselect=true};
         if(dialog.ShowDialog(this)==true)try { foreach(var path in dialog.FolderNames)library.Add(path); } catch(Exception ex){Report(ex);}
     }
-    private async void FolderExpanded(object sender,RoutedEventArgs e) { if(e.OriginalSource is TreeViewItem {DataContext:LibraryEntry entry})try{await entry.Load();}catch(Exception ex){Report(ex);} }
-    private void QueueThumbnailRefresh() { if(!closing){thumbnailRefresh.Stop();thumbnailRefresh.Start();} }
-    private void ThumbnailLoaded(object sender,RoutedEventArgs e)=>QueueThumbnailRefresh();
-    private void ThumbnailUnloaded(object sender,RoutedEventArgs e) { if(sender is Image {DataContext:LibraryEntry entry}){entry.ReleaseThumbnail();visibleThumbnails.Remove(entry);} }
-    internal void RefreshVisibleThumbnails()
-    {
-        var visible=new HashSet<LibraryEntry>();
-        var viewportRect=new Rect(0,0,Files.ActualWidth,Files.ActualHeight);
-        void Visit(DependencyObject element)
-        {
-            if(element is Image {DataContext:LibraryEntry entry} image && VisualTreeHelper.GetParent(image) is FrameworkElement tile && tile.ActualWidth>0 && tile.ActualHeight>0)
-            {
-                // An unloaded Image has zero size; use its reserved tile to start loading.
-                var bounds=new Rect(tile.TranslatePoint(new Point(),Files),tile.RenderSize);
-                if(Files.Visibility==Visibility.Visible && viewportRect.IntersectsWith(bounds)){visible.Add(entry);entry.IsSelected=entry.Path.Equals(file,StringComparison.OrdinalIgnoreCase);}
-            }
-            for(var i=0;i<VisualTreeHelper.GetChildrenCount(element);i++)Visit(VisualTreeHelper.GetChild(element,i));
-        }
-        Visit(Files);
-        foreach(var entry in visibleThumbnails.Except(visible))entry.ReleaseThumbnail();
-        foreach(var entry in visible.Except(visibleThumbnails))_ = entry.LoadThumbnail();
-        visibleThumbnails.Clear();visibleThumbnails.UnionWith(visible);
-    }
-    private void PhotoSelected(object sender,RoutedEventArgs e)
-    {
-        if(sender is not Button {DataContext:LibraryEntry entry} || exporting)return;
-        OpenFile(entry.Path,entry.Thumbnail);
-        if(!StringComparer.OrdinalIgnoreCase.Equals(file,Path.GetFullPath(entry.Path)))return;
-        if(selectedThumbnail!=null)selectedThumbnail.IsSelected=false;
-        selectedThumbnail=entry;entry.IsSelected=true;QueueThumbnailRefresh();
-    }
     private void FilesContextKeyDown(object sender,KeyEventArgs e)
     {
         if(e.Key!=Key.Apps && !(e.Key==Key.F10 && Keyboard.Modifiers==ModifierKeys.Shift))return;
@@ -147,7 +116,6 @@ public partial class MainWindow
         if(contextEntry==null)return;
         var menu=button?.ContextMenu ?? FileTreeContextMenu;menu.PlacementTarget=(UIElement?)button ?? Files;menu.IsOpen=true;e.Handled=true;
     }
-    private void FileSelected(object sender,RoutedPropertyChangedEventArgs<object> e) { if(e.NewValue is LibraryEntry{IsFolder:false} entry && entry.Path!="")OpenFile(entry.Path,entry.Thumbnail); }
     private static T? FindParent<T>(DependencyObject? element) where T : DependencyObject
     {
         while (element != null)
@@ -167,14 +135,6 @@ public partial class MainWindow
     {
         var source=(DependencyObject)e.OriginalSource;
         contextEntry=null;
-        var photoButton=FindParent<Button>(source);
-        if (photoButton?.DataContext is LibraryEntry photo && !photo.IsFolder)
-        {
-            contextEntry=photo;
-            if(photoButton.ContextMenu is { } menu) { menu.PlacementTarget=photoButton; menu.IsOpen=true; }
-            e.Handled=true;
-            return;
-        }
         if (FindParent<TreeViewItem>(source) is { DataContext: LibraryEntry entry })
         {
             contextEntry=entry;
@@ -182,10 +142,17 @@ public partial class MainWindow
             e.Handled=true;
         }
     }
+    private void PhotoTileContextPressed(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Button { ContextMenu: { } menu } tile) return;
+        menu.PlacementTarget = tile;
+        menu.IsOpen = true;
+        e.Handled = true;
+    }
     private void FileTreeContextMenuOpened(object sender, RoutedEventArgs e)
     {
         var isRoot=contextEntry != null && library.Roots.Contains(contextEntry);
-        RemoveRootMenu.IsEnabled=isRoot; RefreshRootMenu.IsEnabled=isRoot;
+        RemoveRootMenu.IsEnabled=isRoot; RefreshRootMenu.IsEnabled=contextEntry is { IsFolder: true };
         ApplyTreeEntryMenu.IsEnabled=CanApplyCurrentSettings;
     }
     private bool CanApplyCurrentSettings => file != null && result != null && !AIBlocksOutput && exactReady && !scheduler.Busy && !previewResize.IsEnabled && !exporting && LookAvailable;
@@ -309,10 +276,17 @@ public partial class MainWindow
         var entry=ResolveContextEntry(sender) ?? Files.SelectedItem as LibraryEntry;
         if(entry != null && library.Roots.Contains(entry))try{library.Remove(entry);}catch(Exception ex){Report(ex);}
     }
-    private void RefreshFolderClicked(object sender,RoutedEventArgs e)
+    private async void RefreshFolderClicked(object sender, RoutedEventArgs e)
     {
-        var entry=ResolveContextEntry(sender) ?? Files.SelectedItem as LibraryEntry;
-        if(entry != null && library.Roots.Contains(entry)) { var index=library.Roots.IndexOf(entry);library.Roots[index]=new(entry.Path,true); }
+        if ((ResolveContextEntry(sender) ?? Files.SelectedItem as LibraryEntry) is not { IsFolder: true } entry) return;
+        if (entry == browsedFolder) { await BrowseFolder(entry, reload: true); return; }
+        try
+        {
+            await entry.Reload();
+            ReconcileFolders();
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        { SetStatus(() => Loc.Format("无法读取目录：{0}", error.Message), true); }
     }
     private void LibraryDragOver(object sender,DragEventArgs e)
     {
@@ -343,12 +317,5 @@ public partial class MainWindow
         var folders=paths.Where(Directory.Exists).ToArray();
         try{foreach(var path in folders)library.Add(path);if(folders.Length>0)e.Effects=DragDropEffects.Copy;}catch(Exception ex){Report(ex);}
         if(paths.FirstOrDefault(path=>File.Exists(path) && LibraryEntry.IsImage(path)) is {} raw){OpenFile(raw);e.Effects=DragDropEffects.Copy;}
-    }
-    private void LibraryToggle(object sender,RoutedEventArgs e)
-    {
-        workspaceLayout.ToggleFiles(ActualWidth,library.Roots.Count>0);
-        SetFileTreeVisible(workspaceLayout.ShowsFiles(ActualWidth,library.Roots.Count>0));
-        RefreshControls();
-        QueueThumbnailRefresh();
     }
 }

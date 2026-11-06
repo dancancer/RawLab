@@ -4235,46 +4235,6 @@
   },
   "overrides": {},
   "unique": {
-    "{0} 张照片": {
-      "de": "Fotos: {0}",
-      "en": "Photos: {0}",
-      "es": "Fotos: {0}",
-      "fr": "Photos : {0}",
-      "ja": "写真 {0} 枚",
-      "zh-Hans": "{0} 张照片"
-    },
-    "上一级": {
-      "de": "Übergeordneter Ordner",
-      "en": "Parent Folder",
-      "es": "Carpeta superior",
-      "fr": "Dossier parent",
-      "ja": "親フォルダ",
-      "zh-Hans": "上一级"
-    },
-    "加入选片集合": {
-      "de": "Zur Auswahl hinzufügen",
-      "en": "Add to Photo Selection",
-      "es": "Añadir a la selección",
-      "fr": "Ajouter à la sélection",
-      "ja": "写真の選択に追加",
-      "zh-Hans": "加入选片集合"
-    },
-    "在目录树中定位": {
-      "de": "Im Ordnerbaum anzeigen",
-      "en": "Reveal in Folder Tree",
-      "es": "Mostrar en el árbol de carpetas",
-      "fr": "Afficher dans l’arborescence des dossiers",
-      "ja": "フォルダツリーに表示",
-      "zh-Hans": "在目录树中定位"
-    },
-    "外观强度": {
-      "de": "Look-Intensität",
-      "en": "Look Strength",
-      "es": "Intensidad del look",
-      "fr": "Intensité du look",
-      "ja": "ルックの強さ",
-      "zh-Hans": "外观强度"
-    },
     "工作区": {
       "de": "Arbeitsbereich",
       "en": "Workspace",
@@ -4282,30 +4242,6 @@
       "fr": "Espace de travail",
       "ja": "ワークスペース",
       "zh-Hans": "工作区"
-    },
-    "已选": {
-      "de": "Ausgewählt",
-      "en": "Selected",
-      "es": "Seleccionada",
-      "fr": "Sélectionnée",
-      "ja": "選択済み",
-      "zh-Hans": "已选"
-    },
-    "当前外观": {
-      "de": "Aktueller Look",
-      "en": "Current Look",
-      "es": "Look actual",
-      "fr": "Look actuel",
-      "ja": "現在のルック",
-      "zh-Hans": "当前外观"
-    },
-    "收起全部": {
-      "de": "Alle einklappen",
-      "en": "Collapse All",
-      "es": "Contraer todo",
-      "fr": "Tout replier",
-      "ja": "すべて折りたたむ",
-      "zh-Hans": "收起全部"
     },
     "收起分支": {
       "de": "Zweig einklappen",
@@ -4323,14 +4259,6 @@
       "ja": "別のフォルダの写真を編集中",
       "zh-Hans": "正在编辑另一目录的照片"
     },
-    "正在读取目录…": {
-      "de": "Ordner wird geladen…",
-      "en": "Loading folder…",
-      "es": "Cargando carpeta…",
-      "fr": "Chargement du dossier…",
-      "ja": "フォルダを読み込み中…",
-      "zh-Hans": "正在读取目录…"
-    },
     "浏览栏宽度": {
       "de": "Breite des Fotobrowsers",
       "en": "Browser Width",
@@ -4338,14 +4266,6 @@
       "fr": "Largeur du navigateur",
       "ja": "ブラウザの幅",
       "zh-Hans": "浏览栏宽度"
-    },
-    "纯预览": {
-      "de": "Vorschau",
-      "en": "Preview",
-      "es": "Vista previa",
-      "fr": "Aperçu",
-      "ja": "プレビュー",
-      "zh-Hans": "纯预览"
     },
     "胶片、导入外观和大师配方共用": {
       "de": "Für Filmsimulationen, importierte Looks und Meisterrezepte",
@@ -4362,14 +4282,6 @@
       "fr": "Largeur du panneau de réglages",
       "ja": "調整パネルの幅",
       "zh-Hans": "调整栏宽度"
-    },
-    "选片": {
-      "de": "Auswahl",
-      "en": "Select",
-      "es": "Selección",
-      "fr": "Sélection",
-      "ja": "選択",
-      "zh-Hans": "选片"
     },
     "不支持此 X3F 显影模式。": {"de": "Dieser X3F-Entwicklungsmodus wird nicht unterstützt.","en": "This X3F rendering mode is not supported.","es": "Este modo de revelado X3F no es compatible.","fr": "Ce mode de développement X3F n’est pas pris en charge.","ja": "この X3F 現像モードはサポートされていません。","zh-Hans": "不支持此 X3F 显影模式。"},
     "0 至 100": {
@@ -4748,14 +4660,6 @@
       "ja": "強度は0です。他の設定値は保持されます。",
       "zh-Hans": "强度为 0，其他参数会保留。"
     },
-    "当前通道 {0}，修改仅作用于该颜色。": {
-      "de": "Aktueller Kanal: {0}. Änderungen gelten nur für diese Farbe.",
-      "en": "Current channel: {0}. Changes apply only to this color.",
-      "es": "Canal actual: {0}. Los cambios solo se aplican a este color.",
-      "fr": "Canal actuel : {0}. Les modifications s’appliquent uniquement à cette couleur.",
-      "ja": "現在のチャンネル：{0}。変更はこの色にのみ適用されます。",
-      "zh-Hans": "当前通道 {0}，修改仅作用于该颜色。"
-    },
     "所选镜头不可用": {
       "de": "Gewähltes Objektiv nicht verfügbar",
       "en": "Selected Lens Unavailable",
@@ -4803,14 +4707,6 @@
       "fr": "Aperçu de l'effet",
       "ja": "エフェクトのプレビュー",
       "zh-Hans": "效果预览"
-    },
-    "文件夹": {
-      "de": "Ordner",
-      "en": "Folders",
-      "es": "Carpetas",
-      "fr": "Dossiers",
-      "ja": "フォルダ",
-      "zh-Hans": "文件夹"
     },
     "新建任务": {
       "de": "Neue Aufgabe erstellen",
@@ -5427,14 +5323,6 @@
       "fr": "Appliquer et enregistrer les réglages sur les photos sélectionnées…",
       "ja": "選択した写真に調整を適用して保存…",
       "zh-Hans": "应用调整并保存到所选照片…"
-    },
-    "当前照片": {
-      "de": "Aktuelles Foto",
-      "en": "Current photo",
-      "es": "Foto actual",
-      "fr": "Photo actuelle",
-      "ja": "現在の写真",
-      "zh-Hans": "当前照片"
     },
     "批量编辑…": {
       "de": "Stapelbearbeitung…",

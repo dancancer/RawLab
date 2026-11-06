@@ -441,6 +441,14 @@ internal static class HDRWorkflowChecks
             var first=engine.RenderPreview(source,sdr,null,128,false,true,false);
             var next=engine.RenderPreview(source,neutral,null,128,false,true,false);
             check(first.Result.HDR==null && next.Result.HDR!=null && next.Neutral.HDR!=null,"Result and neutral caches include HDR mode");
+            var native=engine.RenderPreview(source,neutral,null,0,false,true,false);
+            check(ReferenceEquals(next,engine.RenderPreview(source,neutral,null,128,false,true,false)) &&
+                ReferenceEquals(native,engine.RenderPreview(source,neutral,null,2000,false,true,false)),
+                "HDR viewport sizes reuse completed frames and both requests for the 2000px limit share one frame");
+            var adjusted=neutral.Clone();adjusted.Set(Parameter.Exposure,.5);
+            var adjustedFrame=engine.RenderPreview(source,adjusted,null,2000,false,true,false);
+            check(ReferenceEquals(native.Neutral,adjustedFrame.Neutral) && !ReferenceEquals(native.Result,adjustedFrame.Result),
+                "HDR color edits reuse the matching neutral frame but regenerate the adjusted pixels");
             var meter=engine.AutoExposure(source,sdr);check(double.IsFinite(meter),"SDR HDR-source auto exposure completes on bounded input");
             neutral.Geometry=new GeometrySettings { QuarterTurns=1,CropWidth=.75 };
             var geometry=engine.RenderPreview(source,neutral,null,128,false,false,false).Result;

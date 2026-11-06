@@ -7,7 +7,11 @@ internal static class NeutralReference
     internal static Adjustments Settings(string path,Adjustments committed)
     {
         var result = PhotoInput.PrepareInputSettings(path, new Adjustments { Lens = committed.Lens, Processing = committed.Processing, X3fMode = committed.X3fMode });
-        if (committed.HDR is { } hdr) result.HDR = hdr.Reset() with { Mode = hdr.Mode };
+        if (committed.HDR is { } hdr)
+        {
+            result.HDR = hdr.Reset() with { Mode = hdr.Mode };
+            result.ProRAWDecodeVersion = committed.ProRAWDecodeVersion;
+        }
         result.Geometry = committed.Geometry;
         return result;
     }

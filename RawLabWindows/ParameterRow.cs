@@ -13,7 +13,7 @@ namespace RawLab.Windows;
 
 public sealed class ParameterRow : Grid
 {
-    public ParameterSlider Slider { get; } = new() { Minimum=0,Maximum=1,MinWidth=140 };
+    public ParameterSlider Slider { get; } = new() { Minimum=0,Maximum=1 };
     public ParameterNumberBox Number { get; } = new() { MinHeight=26,Padding=new Thickness(5,2,5,2),VerticalContentAlignment=VerticalAlignment.Center };
     // 保留对象供旧调用方设置可访问名称；实际入口由语义菜单和名称/轨道双击提供。
     public Button ResetButton { get; } = new() { Visibility=Visibility.Collapsed };
@@ -92,27 +92,29 @@ public sealed class ParameterRow : Grid
     }
     private void LayoutRow()
     {
-        var scale=Math.Max(1,TextElement.GetFontSize(this)/13);
-        var large=TextElement.GetFontSize(this)>=20;
-        var typeface=new Typeface(Number.FontFamily,Number.FontStyle,Number.FontWeight,Number.FontStretch);
-        var width=new FormattedText(range.Format(value),System.Globalization.CultureInfo.GetCultureInfo(Loc.Language),FlowDirection.LeftToRight,typeface,Number.FontSize,Brushes.Black,1).WidthIncludingTrailingWhitespace+18;
-        Number.Width=Math.Max(72*scale,width);
-        if(Compact) {
-            Slider.Visibility=Visibility.Collapsed;
-            ColumnDefinitions[0].Width=new(1,GridUnitType.Star);ColumnDefinitions[1].Width=new(0);
-            ColumnDefinitions[2].Width=GridLength.Auto;ColumnDefinitions[3].Width=GridLength.Auto;
-            SetRow(label,0);SetColumn(label,0);label.Margin=new(0,0,6,0);
-            SetRow(Number,0);SetColumn(Number,2);Number.Margin=new(0,0,4,0);
-            SetRow(unit,0);SetColumn(unit,3);unit.MinWidth=18;
-            return;
-        }
-        ColumnDefinitions[0].Width=large ? new(1,GridUnitType.Star) : new(ActualWidth<600 ? 120 : 130);
-        ColumnDefinitions[1].Width=large ? GridLength.Auto : new(1,GridUnitType.Star);
-        ColumnDefinitions[2].Width=GridLength.Auto;ColumnDefinitions[3].Width=large ? new(0) : GridLength.Auto;
-        SetRow(label,0);SetColumn(label,0);label.Margin=new(0,0,10,0);
-        SetRow(Number,0);SetColumn(Number,large ? 1 : 2);Number.Margin=new(0,0,10,0);
-        SetRow(unit,0);SetColumn(unit,large ? 2 : 3);unit.MinWidth=22*scale;
-        SetRow(Slider,large ? 1 : 0);SetColumn(Slider,large ? 0 : 1);SetColumnSpan(Slider,large ? 3 : 1);Slider.Margin=new(0,0,10,0);
+        var fontSize = TextElement.GetFontSize(this);
+        var scale = Math.Max(1, fontSize / 13);
+        var typeface = new Typeface(Number.FontFamily, Number.FontStyle, Number.FontWeight, Number.FontStretch);
+        var culture = System.Globalization.CultureInfo.GetCultureInfo(Loc.Language);
+        double TextWidth(double bound) => new FormattedText(range.Format(bound), culture, FlowDirection.LeftToRight,
+            typeface, Number.FontSize, Brushes.Black, VisualTreeHelper.GetDpi(this).PixelsPerDip).WidthIncludingTrailingWhitespace;
+        Number.Width = Math.Max(72 * scale, Math.Ceiling(Math.Max(TextWidth(range.Min), TextWidth(range.Max))) + 18);
+        unit.MinWidth = suffix.Length == 0 ? 0 : 22 * scale;
+        Number.Margin = new(0, 0, suffix.Length == 0 ? 0 : 4, 0);
+        label.Margin = new(0, 0, 8, 0);
+
+        const double labelWidth = 130, railWidth = 140;
+        var stacked = fontSize >= 20 || ActualWidth < labelWidth + railWidth + Number.Width + unit.MinWidth + 24;
+        ColumnDefinitions[0].Width = Compact || stacked ? new(1, GridUnitType.Star) : new(labelWidth);
+        ColumnDefinitions[1].Width = Compact || stacked ? new(0) : new(1, GridUnitType.Star);
+        ColumnDefinitions[2].Width = ColumnDefinitions[3].Width = GridLength.Auto;
+        SetColumn(Number, 2);
+        SetColumn(unit, 3);
+        Slider.Visibility = Compact ? Visibility.Collapsed : Visibility.Visible;
+        SetRow(Slider, stacked ? 1 : 0);
+        SetColumn(Slider, stacked ? 0 : 1);
+        SetColumnSpan(Slider, stacked ? 4 : 1);
+        Slider.Margin = stacked ? new(0, 1, 0, 0) : new(0, 0, 8, 0);
     }
     public void Refresh(string title,NumericRange limits,double current,double reset,string suffix="",bool enabled=true,object? inputScope=null)
     {

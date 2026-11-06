@@ -23,14 +23,12 @@ internal static class StatusLayoutChecks
                 var updates=new UpdateChecker("0.8.0",Path.Combine(output,Guid.NewGuid().ToString("N"),"updates.json")){Automatic=false};
                 typeof(MainWindow).GetField("updates",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(window,updates);
                 TestWindowState.Isolate(window,output);window.Show();
-                window.AdjustmentPanel.Visibility=window.AdjustmentSplitter.Visibility=Visibility.Visible;
-                window.DockRow.Height=new GridLength(288);window.SplitterRow.Height=new GridLength(6);window.UpdateLayout();
                 try
                 {
                     foreach(var font in new[]{13.0,26.0})foreach(var size in new[]{new Size(1000,680),new Size(1440,920)})
                     {
                         window.FontSize=font;var surface=EditorShellChecks.ArrangeLayout(window,size);
-                        window.DockRow.Height=new GridLength(window.DockRow.MaxHeight);window.UpdateLayout();
+                        window.AdjustmentPanel.Visibility=Visibility.Visible;window.InspectorColumn.Width=new GridLength(280);window.UpdateLayout();
                         var bar=(FrameworkElement)((FrameworkElement)window.Status.Parent).Parent;
                         var before=Frame();
                         foreach(var state in new[]{"saved","retry","export","batch","render-error","all","empty"})
@@ -42,8 +40,8 @@ internal static class StatusLayoutChecks
                             window.RetryButton.Visibility=state is "render-error" or "all" ? Visibility.Visible : Visibility.Collapsed;
                             window.UpdateLayout();var after=Frame();
                             Console.WriteLine($"Status layout {language}/{font}/{size}/{state}: {before} -> {after}");
-                            check(Math.Abs(before.Bar-after.Bar)<.5 && Math.Abs(before.Editor-after.Editor)<.5 && Math.Abs(before.Dock-after.Dock)<.5 && Math.Abs(before.Canvas-after.Canvas)<.5,
-                                $"Status notification retains bar/editor/dock/canvas frame: {language}/{font}/{size}/{state}");
+                            check(Math.Abs(before.Bar-after.Bar)<.5 && Math.Abs(before.Editor-after.Editor)<.5 && Math.Abs(before.Inspector-after.Inspector)<.5 && Math.Abs(before.Canvas-after.Canvas)<.5,
+                                $"Status notification retains bar/editor/inspector/canvas frame: {language}/{font}/{size}/{state}");
                             var controls=new FrameworkElement[]{window.GpuMode,window.RetrySave,window.ExportRevealButton,window.BatchNotice,window.RetryButton};
                             check(controls.Where(control=>control.Visibility==Visibility.Visible).All(control=>
                             {
@@ -64,7 +62,7 @@ internal static class StatusLayoutChecks
                             EditorShellChecks.CaptureLayout(window,surface,Path.Combine(output,"status-"+language+"-large.png"));
                             window.RetrySave.Visibility=window.ExportRevealButton.Visibility=window.BatchNotice.Visibility=window.RetryButton.Visibility=Visibility.Collapsed;
                         }
-                        (double Bar,double Editor,double Dock,double Canvas) Frame()=>(bar.ActualHeight,window.EditorArea.ActualHeight,window.DockRow.ActualHeight,window.ResultCanvas.ActualHeight);
+                        (double Bar,double Editor,double Inspector,double Canvas) Frame()=>(bar.ActualHeight,window.EditorArea.ActualHeight,window.AdjustmentPanel.ActualWidth,window.ResultCanvas.ActualHeight);
                     }
                 }
                 finally{window.Close();}

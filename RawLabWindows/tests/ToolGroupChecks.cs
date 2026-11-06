@@ -172,7 +172,7 @@ internal static class ToolGroupChecks
             var available = Math.Min(label.ActualWidth, LayoutInformation.GetLayoutSlot(label).Width);
             check(available + 1 >= text.Width, "Vignette label fits without clipping: " + label.Text);
         }
-        window.PhotoEffectsSurface.ScrollToBottom(); window.UpdateLayout();
+        window.ToolsScroller.ScrollToBottom(); window.UpdateLayout();
         var highlightsPosition = vignetteHighlights.TransformToAncestor(window.PhotoEffectsSurface)
             .Transform(new Point(0, vignetteHighlights.ActualHeight / 2));
         check(highlightsPosition.Y >= 0 && highlightsPosition.Y < window.PhotoEffectsSurface.ActualHeight,

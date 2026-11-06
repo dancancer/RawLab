@@ -1,6 +1,8 @@
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 
@@ -14,6 +16,7 @@ public sealed partial class HslPanel : StackPanel
     private readonly ParameterRow[] rows=[new(),new(),new()];
     private readonly Button[] swatches=new Button[8];
     private readonly Border[] markers=new Border[8];
+    private readonly TextBlock channelScope = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 3, 0, 4) };
     private readonly Button resetColor=new(),resetAll=new();
     private static readonly string[] colorKeys=["红","橙","黄","绿","青","蓝","紫","洋红"];
     private static readonly string[] axisKeys=["色相","饱和度","明度"];
@@ -29,7 +32,7 @@ public sealed partial class HslPanel : StackPanel
     {
         MaxWidth=720;Margin=new Thickness(4);
         InitializeTargetControls();
-        var selector=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Center};
+        var selector = new UniformGrid { Rows = 1, Columns = 8 };
         var colors=new[]{Colors.Red,Colors.Orange,Colors.Yellow,Colors.LimeGreen,Colors.Cyan,Colors.DodgerBlue,Colors.Purple,Colors.Magenta};
         for(var i=0;i<8;++i)
         {
@@ -39,12 +42,25 @@ public sealed partial class HslPanel : StackPanel
             content.Children.Add(new Ellipse{Width=20,Height=20,Fill=new SolidColorBrush(colors[i])});
             var marker=new Border{Width=4,Height=4,CornerRadius=new CornerRadius(2),Margin=new Thickness(0,3,0,0),Visibility=Visibility.Hidden};
             marker.SetResourceReference(Border.BackgroundProperty,"Indicator");markers[i]=marker;content.Children.Add(marker);
-            var button=new Button{Width=40,Height=44,Margin=new Thickness(2),Padding=new Thickness(0),Content=content};
+            var button = new Button { MinHeight = 34, Margin = new Thickness(1, 0, 1, 0), Padding = new Thickness(0), Content = content };
+            button.SetResourceReference(StyleProperty, "QuietButton");
+            AutomationProperties.SetAutomationId(button, "hsl.channel." + index);
+            button.PreviewKeyDown += (_, e) => {
+                if (e.Key is not (Key.Left or Key.Right)) return;
+                var next = (index + (e.Key == Key.Left ? 7 : 1)) % 8;
+                SelectChannel(next);
+                swatches[next].Focus();
+                e.Handled = true;
+            };
             button.Click+=(_,_)=>{SelectChannel(index);};
             swatches[i]=button;selector.Children.Add(button);
         }
         selector.PreviewMouseDown+=(_,_)=>{foreach(var row in rows)row.CancelInput();};
-        Children.Add(new ScrollViewer { Content=selector,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled });
+        Children.Add(selector);
+        channelScope.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
+        channelScope.SetResourceReference(TextBlock.FontSizeProperty, "EditorCaptionSize");
+        AutomationProperties.SetAutomationId(channelScope, "hsl.scope");
+        Children.Add(channelScope);
         for(var i=0;i<3;++i)
         {
             var axis=i;Children.Add(rows[i]);rows[i].PreviewMouseDown+=(_,_)=>TargetInputCancelled?.Invoke();rows[i].Changed+=(value,dragging)=>{
@@ -88,6 +104,7 @@ public sealed partial class HslPanel : StackPanel
             AutomationProperties.SetHelpText(swatches[i],modified ? Loc.Text("已调整") : "");
             AutomationProperties.SetItemStatus(swatches[i],string.Join(" · ",new[]{i==channel ? Loc.Text("当前颜色") : "",modified ? Loc.Text("已调整") : ""}.Where(text=>text.Length>0)));
         }
+        channelScope.Text = Loc.Format("当前通道 {0}，修改仅作用于该颜色。", SelectedChannelName);
         resetColor.Content=Loc.Format("重置当前颜色（{0}）",SelectedChannelName);
         AutomationProperties.SetName(resetColor,resetColor.Content.ToString());
         resetColor.IsEnabled=Enumerable.Range(0,3).Any(axis=>value.Value(axis,channel)!=0);
