@@ -17,6 +17,9 @@
 #include <CoreGraphics/CoreGraphics.h>
 #include <ImageIO/ImageIO.h>
 #include <TargetConditionals.h>
+#include <tiffio.h>
+#include <unistd.h>
+#include <vector>
 #endif
 
 namespace {
@@ -122,7 +125,66 @@ bool hasHDRGainMap(CGImageSourceRef source) {
     return false;
 }
 
-bool hasSigmaTIFFPreview(CGImageSourceRef source, CFDictionaryRef properties,
+bool tiffDirectoryHasNoPageMarker(TIFF* tiff) {
+    // libtiff locates the IFD, but discards OldSubfileType. Read the page
+    // entries directly so a legacy tag cannot be mistaken for an absent one.
+    const bool bigTIFF = TIFFIsBigTIFF(tiff);
+    const bool bigEndian = TIFFIsBigEndian(tiff);
+    const size_t countSize = bigTIFF ? 8 : 2;
+    const size_t entrySize = bigTIFF ? 20 : 12;
+    const size_t valueOffset = bigTIFF ? 12 : 8;
+    const auto readUnsigned = [bigEndian](const uint8_t* bytes, size_t size) {
+        uint64_t value = 0;
+        for (size_t i = 0; i < size; ++i)
+            value = (value << 8) | bytes[bigEndian ? i : size - 1 - i];
+        return value;
+    };
+    const uint64_t offset = TIFFCurrentDirOffset(tiff);
+    constexpr uint64_t maxOffset = std::numeric_limits<off_t>::max();
+    if (offset == 0 || offset > maxOffset - countSize) return false;
+    const int fd = TIFFFileno(tiff);
+    uint8_t countBytes[8];
+    if (pread(fd, countBytes, countSize, static_cast<off_t>(offset)) != static_cast<ssize_t>(countSize))
+        return false;
+    const uint64_t count = readUnsigned(countBytes, countSize);
+    if (count == 0 || count > UINT16_MAX) return false;
+    const size_t length = static_cast<size_t>(count) * entrySize;
+    if (offset > maxOffset - countSize - length) return false;
+    std::vector<uint8_t> entries(length);
+    if (pread(fd, entries.data(), length, static_cast<off_t>(offset + countSize)) !=
+        static_cast<ssize_t>(length)) return false;
+
+    for (size_t i = 0; i < length; i += entrySize) {
+        const uint8_t* entry = entries.data() + i;
+        const uint64_t tag = readUnsigned(entry, 2);
+        if (tag == TIFFTAG_PAGENUMBER) return false;
+        const bool legacy = tag == TIFFTAG_OSUBFILETYPE;
+        if (!legacy && tag != TIFFTAG_SUBFILETYPE) continue;
+        if (readUnsigned(entry + 2, 2) != (legacy ? TIFF_SHORT : TIFF_LONG) ||
+            readUnsigned(entry + 4, valueOffset - 4) != 1) return false;
+        const uint64_t type = readUnsigned(entry + valueOffset, legacy ? 2 : 4);
+        if (legacy ? type == OFILETYPE_PAGE : (type & FILETYPE_PAGE) != 0) return false;
+    }
+    return true;
+}
+
+bool hasUnpaginatedTIFFPair(const char* path) {
+    // ImageIO's TIFF properties omit the page tags. Check the two IFDs
+    // without decoding their pixels.
+    std::unique_ptr<TIFFOpenOptions, decltype(&TIFFOpenOptionsFree)> options(
+        TIFFOpenOptionsAlloc(), TIFFOpenOptionsFree);
+    if (!options) return false;
+    TIFFOpenOptionsSetMaxCumulatedMemAlloc(options.get(), 16 * 1024 * 1024);
+    const auto ignoreDiagnostic = [](TIFF*, void*, const char*, const char*, va_list) { return 1; };
+    TIFFOpenOptionsSetErrorHandlerExtR(options.get(), ignoreDiagnostic, nullptr);
+    TIFFOpenOptionsSetWarningHandlerExtR(options.get(), ignoreDiagnostic, nullptr);
+    std::unique_ptr<TIFF, decltype(&TIFFClose)> tiff(
+        TIFFOpenExt(path, "rm", options.get()), TIFFClose);
+    return tiff && tiffDirectoryHasNoPageMarker(tiff.get()) && TIFFReadDirectory(tiff.get()) &&
+        TIFFLastDirectory(tiff.get()) && tiffDirectoryHasNoPageMarker(tiff.get());
+}
+
+bool hasSigmaTIFFPreview(const char* path, CGImageSourceRef source, CFDictionaryRef properties,
                         int64_t width, int64_t height) {
     // Sigma Photo Pro writes its 160-pixel thumbnail as a second IFD without
     // the TIFF reduced-resolution flag. Check both writer and preview geometry
@@ -141,7 +203,8 @@ bool hasSigmaTIFFPreview(CGImageSourceRef source, CFDictionaryRef properties,
         numberValue(preview.get(), kCGImagePropertyDepth, &previewDepth) && previewDepth == 8 &&
         previewWidth > 0 && previewHeight > 0 && previewWidth < width && previewHeight < height &&
         std::max(previewWidth, previewHeight) == 160 &&
-        std::abs(width * previewHeight - height * previewWidth) <= std::max(width, height);
+        std::abs(width * previewHeight - height * previewWidth) <= std::max(width, height) &&
+        hasUnpaginatedTIFFPair(path);
 }
 
 CGAffineTransform tiffOrientation(int64_t orientation, CGFloat width, CGFloat height) {
@@ -201,7 +264,7 @@ sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* outpu
     numberValue(properties.get(), kCGImagePropertyDepth, &depth);
     const bool tiff16 = depth == 16 && equalUTI(type, CFSTR("public.tiff"));
     if (depth != 8 && !tiff16) return SONY2FUJI_STATUS_UNSUPPORTED;
-    if (imageCount == 2 && (!tiff16 || !hasSigmaTIFFPreview(source.get(), properties.get(), width, height)))
+    if (imageCount == 2 && (!tiff16 || !hasSigmaTIFFPreview(path, source.get(), properties.get(), width, height)))
         return SONY2FUJI_STATUS_UNSUPPORTED;
 
     int64_t orientation = 1;

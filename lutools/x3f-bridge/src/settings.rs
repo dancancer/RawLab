@@ -19,6 +19,14 @@ pub struct SavedSettings {
 }
 
 pub fn parse(data: &[u8]) -> Result<SavedSettings, String> {
+    parse_settings(data, false)
+}
+
+pub fn parse_merrill(data: &[u8]) -> Result<SavedSettings, String> {
+    parse_settings(data, true)
+}
+
+fn parse_settings(data: &[u8], skip_unknown: bool) -> Result<SavedSettings, String> {
     if data.len() < 8 || &data[..4] != b"FOVb" {
         return Err("Truncated or invalid X3F header".into());
     }
@@ -58,7 +66,9 @@ pub fn parse(data: &[u8]) -> Result<SavedSettings, String> {
     }
     let mut seen = [false; 256];
     for (i, kind) in data[types..types + count].iter().copied().enumerate() {
-        if kind == 0 {
+        // The format does not define a payload type for private extensions.
+        // Merrill skips the entire slot before checking duplicates or reading a float.
+        if kind == 0 || (skip_unknown && kind > 10) {
             continue;
         }
         if seen[kind as usize] {
@@ -107,6 +117,14 @@ mod tests {
         bytes
     }
 
+    fn merrill_header() -> Vec<u8> {
+        let mut bytes = header();
+        bytes.resize(424, 0);
+        bytes[4..8].copy_from_slice(&0x30000_u32.to_le_bytes());
+        bytes[72..79].copy_from_slice(b"Neutral");
+        bytes
+    }
+
     #[test]
     fn classic_header_uses_saved_values_and_zero_color_is_identity() {
         let mut data = header();
@@ -133,19 +151,33 @@ mod tests {
 
     #[test]
     fn merrill_layout_uses_sixty_four_slots_after_color_mode() {
-        let mut bytes = header();
-        bytes.resize(424, 0);
-        bytes[4..8].copy_from_slice(&0x30000_u32.to_le_bytes());
-        bytes[72..79].copy_from_slice(b"Neutral");
+        let mut bytes = merrill_header();
         bytes[104] = 1;
         bytes[105] = 12;
         bytes[168..172].copy_from_slice(&0.5_f32.to_le_bytes());
         bytes[172..176].copy_from_slice(&0.5_f32.to_le_bytes());
-        let s = parse(&bytes).unwrap();
+        let s = parse_merrill(&bytes).unwrap();
         assert_eq!(s.color_mode, "Neutral");
         assert_eq!(s.exposure, 0.5);
-        assert_eq!(s.unknown, vec![(12, 0.5)]);
-        assert!(parse(&bytes[..423]).is_err());
+        assert!(s.unknown.is_empty());
+        assert!(parse_merrill(&bytes[..423]).is_err());
+    }
+
+    #[test]
+    fn merrill_ignores_private_payloads_but_validates_known_adjustments() {
+        let mut bytes = merrill_header();
+        bytes[104..107].copy_from_slice(&[31, 31, 2]);
+        bytes[168..172].copy_from_slice(&0x7f800000_u32.to_le_bytes());
+        bytes[172..176].copy_from_slice(&0x7fc00000_u32.to_le_bytes());
+        bytes[176..180].copy_from_slice(&0.25_f32.to_le_bytes());
+        let s = parse_merrill(&bytes).unwrap();
+        assert_eq!(s.contrast, 0.25);
+        assert!(s.unknown.is_empty());
+
+        bytes[105] = 2;
+        assert!(parse_merrill(&bytes).unwrap_err().contains("Nonfinite"));
+        bytes[172..176].copy_from_slice(&0.0_f32.to_le_bytes());
+        assert!(parse_merrill(&bytes).unwrap_err().contains("Duplicate"));
     }
 
     #[test]
@@ -154,6 +186,8 @@ mod tests {
         data[72] = 31;
         data[104..108].copy_from_slice(&0.75_f32.to_le_bytes());
         assert_eq!(parse(&data).unwrap().unknown, vec![(31, 0.75)]);
+        data[104..108].copy_from_slice(&0x7f800000_u32.to_le_bytes());
+        assert!(parse(&data).unwrap_err().contains("Nonfinite"));
     }
 
     #[test]

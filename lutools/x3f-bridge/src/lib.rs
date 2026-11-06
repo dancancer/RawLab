@@ -106,7 +106,8 @@ fn decode(
         return Err("Invalid X3F signature".into());
     }
     let merrill = if pipeline == 2 {
-        Some(native_settings::merrill(&settings::parse(&header)?)?)
+        let settings = settings::parse_merrill(&header)?;
+        Some(native_settings::merrill(&settings)?)
     } else {
         None
     };

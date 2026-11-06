@@ -19,9 +19,8 @@ if(NOT TARGET ZLIB::ZLIB)
     find_package(ZLIB REQUIRED)
 endif()
 
-# libtiff is used only for the structured rendered-DNG writer. Desktop builds
-# use the system package; mobile builds use the pinned static dependency so the
-# writer does not require a platform TIFF installation.
+# libtiff handles rendered-DNG writing and Apple TIFF directory metadata.
+# Desktop builds use the system package. Mobile builds use a pinned static copy.
 set(SONY2FUJI_BUILD_TIFF_DEPS_DEFAULT OFF)
 if(IOS OR ANDROID OR WIN32)
     set(SONY2FUJI_BUILD_TIFF_DEPS_DEFAULT ON)

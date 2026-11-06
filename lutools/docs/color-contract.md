@@ -92,7 +92,8 @@ their rendering are unchanged. The shared macOS/iOS ImageIO adapter applies EXIF
 once and converts tagged RGB to sRGB; untagged RGB assumes sRGB. It accepts
 single-frame 8-bit SDR JPEG, PNG, TIFF and HEIF, plus 16-bit integer RGB TIFF.
 For Sigma Photo Pro TIFF exports with a separate 160-pixel preview IFD, it
-decodes the full-resolution primary image only.
+decodes the full-resolution primary image only. An explicitly paginated IFD
+is never treated as a preview.
 TIFF's 16-bit precision is retained at the sRGB buffer boundary and through
 float processing before output encoding. Transparency, other high-bit-depth
 inputs, floating-point/HDR, multi-frame/page and CMYK inputs are rejected.
