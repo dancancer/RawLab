@@ -58,7 +58,7 @@ struct MacWorkspaceLibrary: View {
 
     @ViewBuilder private var photoContent: some View {
         if let folder = navigation.folder, let location = navigation.location {
-            WorkspacePhotoGrid(folder: folder, location: location, navigation: navigation, selected: selected, grid: false,
+            WorkspacePhotoGrid(library: library, folder: folder, location: location, navigation: navigation, selected: selected, grid: false,
                 open: open, canApplySettings: canApplySettings, applySettings: applySettings)
                 .id(location)
         } else {
@@ -161,7 +161,7 @@ struct MacWorkspaceSelection: View {
             if let folder = navigation.folder, let location = navigation.location {
                 WorkspacePhotoHeader(library: library, navigation: navigation, selected: selected, showTree: showTree)
                 Divider()
-                WorkspacePhotoGrid(folder: folder, location: location, navigation: navigation, selected: selected,
+                WorkspacePhotoGrid(library: library, folder: folder, location: location, navigation: navigation, selected: selected,
                     grid: true, open: open).id(location)
             } else {
                 VStack(spacing: 12) {
@@ -196,7 +196,7 @@ private struct WorkspacePhotoHeader: View {
 
     var body: some View {
         if let folder = navigation.folder {
-            WorkspaceFolderHeading(folder: folder, navigation: navigation, selected: selected, showTree: showTree) {
+            WorkspaceFolderHeading(library: library, folder: folder, navigation: navigation, selected: selected, showTree: showTree) {
                 guard let selected else { return }
                 navigation.locate(selected, in: library) { NSWorkspace.shared.activateFileViewerSelecting([selected]) }
             }
@@ -205,6 +205,7 @@ private struct WorkspacePhotoHeader: View {
 }
 
 private struct WorkspaceFolderHeading: View {
+    let library: PhotoLibrary
     @ObservedObject var folder: PhotoFolder
     @ObservedObject var navigation: MacWorkspaceBrowserState
     let selected: URL?
@@ -226,7 +227,7 @@ private struct WorkspaceFolderHeading: View {
             Text(breadcrumb).lineLimit(1).truncationMode(.middle).font(.caption.weight(.medium))
                 .help(folder.url.path).accessibilityIdentifier("workspace.photos.path")
                 .contextMenu {
-                    Button(L10n.text("重新读取目录"), action: folder.refresh)
+                    Button(L10n.text("重新读取目录")) { navigation.refresh(folder, in: library) }
                 }
             HStack(spacing: 9) {
                 Button { navigation.goUp() } label: {
@@ -254,6 +255,7 @@ private struct WorkspaceFolderHeading: View {
 }
 
 private struct WorkspacePhotoGrid: View {
+    let library: PhotoLibrary
     @ObservedObject var folder: PhotoFolder
     let location: MacWorkspaceBrowserState.Location
     @ObservedObject var navigation: MacWorkspaceBrowserState
@@ -273,7 +275,7 @@ private struct WorkspacePhotoGrid: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Label(error, systemImage: "exclamationmark.triangle").font(.caption)
                         .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    Button(L10n.text("重新读取目录"), action: folder.load)
+                    Button(L10n.text("重新读取目录")) { navigation.refresh(folder, in: library) }
                 }.padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else if folder.photos.isEmpty {
                 Text(L10n.text("无照片")).font(.caption).foregroundStyle(.secondary)

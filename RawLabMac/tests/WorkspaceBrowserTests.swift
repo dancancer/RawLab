@@ -46,7 +46,7 @@ import Foundation
         precondition(model.anchor(in: location, grid: false) == photos[1_843])
         try await verifyDirectoryRetry()
         try await verifyMissingDirectoryFallsBack()
-        print("PASS detached folder navigation, large-directory anchors, retry, parent refresh, Shift selection, double-click, partial handoff")
+        print("PASS detached folder navigation, large-directory anchors, retry, navigation during refresh, Shift selection, double-click, partial handoff")
     }
 
     @MainActor private static func verifyDirectoryRetry() async throws {
@@ -105,11 +105,26 @@ import Foundation
         let model = MacWorkspaceBrowserState()
         model.browse([root, parent, parent.folders[0]], load: false)
 
-        try files.moveItem(at: childURL, to: rootURL.appendingPathComponent("MovedChild"))
+        let movedChild = rootURL.appendingPathComponent("MovedChild")
+        try files.moveItem(at: childURL, to: movedChild)
         model.refresh(parent, in: library)
         await load(parent)
         precondition(model.folder === parent && model.folder?.photos.map(\.lastPathComponent) == [photo.lastPathComponent],
                      "Refreshing a parent replaces the removed child's photo list with the nearest surviving folder")
+
+        try files.moveItem(at: movedChild, to: childURL)
+        model.refresh(parent, in: library)
+        await load(parent)
+        let child = parent.folders[0]
+        await load(child)
+        try files.moveItem(at: childURL, to: movedChild)
+        model.refresh(parent, in: library)
+        precondition(parent.loading && parent.folders.first === child)
+        model.browse([root, parent, child])
+        precondition(model.folder === child)
+        await load(parent)
+        precondition(model.folder === parent && parent.folders.isEmpty,
+                     "Refreshing a parent reconciles the path selected while the read was pending")
 
         try files.moveItem(at: parentURL, to: rootURL.appendingPathComponent("MovedParent"))
         model.refresh(root, in: library)
