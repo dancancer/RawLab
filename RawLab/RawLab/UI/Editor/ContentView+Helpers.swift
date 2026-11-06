@@ -136,7 +136,7 @@ extension ContentView {
     }
 
     func exportDNG(longEdge: Int? = nil) {
-        guard !isEditorDraftActive else { return }
+        guard !isEditorDraftActive, canStartFileExport else { return }
         isSaving = true
         viewModel.exportDNG(settings: settings, longEdge: longEdge) { result in
             switch result {

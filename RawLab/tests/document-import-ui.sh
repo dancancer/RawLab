@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PRODUCTS="${1:?Pass the current build-for-testing Build/Products directory}"
 OUT="${2:?Pass a new output directory}"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
+TEST_FILTER="${RAWLAB_DOCUMENT_IMPORT_TEST:-RawLabUITests/DocumentImportUITests}"
 if [[ -e "$OUT" ]]; then echo "Output already exists: $OUT" >&2; exit 1; fi
 mkdir -p "$OUT"
 python3 - "$ROOT" "$PRODUCTS" "$OUT" <<'PY'
@@ -97,7 +98,7 @@ xcodebuild test-without-building -xctestrun "$OUT/document-import.xctestrun" \
     -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_UDID" \
     -resultBundlePath "$OUT/DocumentImport.xcresult" -parallel-testing-enabled NO \
     -collect-test-diagnostics never \
-    -only-testing:"${RAWLAB_DOCUMENT_IMPORT_TEST:-RawLabUITests/DocumentImportUITests}" \
+    -only-testing:"$TEST_FILTER" \
     > "$OUT/document-import-ui.log" 2>&1 || STATUS=$?
 xcrun xcresulttool get test-results summary --path "$OUT/DocumentImport.xcresult" --compact > "$OUT/summary.json"
 python3 - "$OUT" <<'PY'
@@ -123,6 +124,26 @@ import json, os, sys
 result = json.load(open(sys.argv[1]))
 assert result['failedTests'] == 0 and result['passedTests'] > 0 and result['skippedTests'] == 0, result
 if not os.environ.get('RAWLAB_DOCUMENT_IMPORT_TEST'):
-    assert result['passedTests'] == result['totalTestCount'] == 5, result
+    assert result['passedTests'] == result['totalTestCount'] == 6, result
 PY
+if [[ "$TEST_FILTER" == RawLabUITests/DocumentImportUITests ||
+      "$TEST_FILTER" == RawLabUITests/DocumentImportUITests/testTargetSelectionErrorsAreExported ]]; then
+    APP_ID="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$OUT/RawLabImportUI.app/Info.plist")"
+    DATA="$(xcrun simctl get_app_container "$IOS_SIMULATOR_UDID" "$APP_ID" data)"
+    python3 - "$DATA/Documents" <<'PY'
+import json, pathlib, sys
+reports = list(pathlib.Path(sys.argv[1]).glob('RawLab-ErrorLog-*.json'))
+assert len(reports) == 1, 'Expected one report saved through Files'
+events = json.loads(reports[0].read_text())['events']
+for workflow in ('batchSelection', 'adjustmentPaste'):
+    failures = [event for event in events if event['operation'] == 'adjustment'
+                and event['context'].get('workflow') == workflow]
+    assert len(failures) == 1, (workflow, failures)
+    event = failures[0]
+    assert event['stage'] == 'retainPickerSource' and event['outcome'] == 'failed', event
+    assert event['context']['entryPoint'] == 'files' and event['context']['extension'] == 'jpeg', event
+    assert event['error']['domain'] == 'RawLab.PhotoImportError' and event['error']['code'] == 0, event
+print('PASS: exported JSON contains the original failure for both target pickers')
+PY
+fi
 echo "PASS: document import UI; results: $OUT/DocumentImport.xcresult"

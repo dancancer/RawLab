@@ -224,6 +224,7 @@ struct ContentView: View {
             }
             if viewModel.statusHasDiagnostics {
                 Button(L10n.text("导出错误日志"), action: exportErrorDiagnostics)
+                    .disabled(!canStartFileExport)
                     .accessibilityIdentifier("diagnostics.export.alert")
             }
             Button(L10n.text("关闭"), role: .cancel) {

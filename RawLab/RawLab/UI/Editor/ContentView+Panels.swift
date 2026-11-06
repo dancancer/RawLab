@@ -35,6 +35,7 @@ extension ContentView {
                 Button(action: exportErrorDiagnostics) {
                     Label(L10n.text("导出错误日志"), systemImage: "doc.text")
                 }
+                .disabled(!canStartFileExport)
                 .accessibilityIdentifier("diagnostics.export")
             } label: {
                 Image(systemName: "gearshape")

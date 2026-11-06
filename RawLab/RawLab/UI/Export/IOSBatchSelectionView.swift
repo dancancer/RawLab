@@ -82,7 +82,10 @@ struct IOSBatchSelectionView: View {
                           allowsMultipleSelection: true) { result in
                 switch result {
                 case .success(let urls): loadTask = Task { await addFiles(urls) }
-                case .failure(let error): message = error.localizedDescription
+                case .failure(let error):
+                    ErrorDiagnostics.log(error, operation: .adjustment, stage: "filePicker",
+                                         context: ["workflow": "batchSelection", "entryPoint": "files"])
+                    message = error.localizedDescription
                 }
             }
             .onChange(of: pickerItems) { _, items in
@@ -129,10 +132,7 @@ struct IOSBatchSelectionView: View {
         for item in items {
             guard !Task.isCancelled else { return }
             do {
-                let source = try await PhotoImportFile.load(from: item)
-                defer { PhotoImportFile.release(source.url) }
-                let identity = item.itemIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
-                let photo = try await model.retainAdjustmentPhoto(source, identity: identity)
+                let photo = try await model.loadAdjustmentPhoto(from: item, workflow: "batchSelection")
                 guard !Task.isCancelled else { return }
                 collection.append(photo)
             } catch { appendFailure(L10n.text("选择照片…"), error) }
@@ -144,9 +144,7 @@ struct IOSBatchSelectionView: View {
         for url in urls {
             guard !Task.isCancelled else { return }
             do {
-                let source = try await PhotoImportFile.load(fromFile: url)
-                defer { PhotoImportFile.release(source.url) }
-                let photo = try await model.retainAdjustmentPhoto(source)
+                let photo = try await model.loadAdjustmentPhoto(fromFile: url, workflow: "batchSelection")
                 guard !Task.isCancelled else { return }
                 collection.append(photo)
             } catch { appendFailure(url.lastPathComponent, error) }
