@@ -29,7 +29,8 @@ internal static class WorkspaceGroupChecks
             Invoke(window,"SelectGroup",group);window.UpdateLayout();
             check((EditorAdjustmentTool)typeof(MainWindow).GetProperty("CurrentTool",Private)!.GetValue(window)! ==defaults[index],"Group opens its default tool: "+group);
             var expectedTools=group==EditorAdjustmentGroup.Geometry ? new[]{"Geometry","Perspective","Lens"}
-                : EditorAdjustmentRules.Tools(group).Select(tool=>tool.ToString());
+                : EditorAdjustmentRules.Tools(group).Where(tool=>tool!=EditorAdjustmentTool.Strength).Select(tool=>tool.ToString())
+                    .Concat(group == EditorAdjustmentGroup.Looks ? ["preset.quick.open"] : Array.Empty<string>());
             check(window.Tools.Children.OfType<Button>().Where(button=>button.Visibility==Visibility.Visible)
                 .Select(AutomationProperties.GetAutomationId).SequenceEqual(expectedTools),
                 "Group renders only its own tools in descriptor order: "+group);
@@ -58,29 +59,29 @@ internal static class WorkspaceGroupChecks
         InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
         var previous=Loc.Preference;var originalFont=window.FontSize;
         var preferencePath=Path.Combine(output,"workspace-language.txt");
-        // 固定边界属于用户手动高度；自动模式按当前工具分配空间。
-        Get<WorkspaceLayout>(window,"workspaceLayout").Resize(344,window.EditorArea.ActualHeight);
+        // 工具内容变化时保留调整栏与照片之间的边界。
+        Get<WorkspaceLayout>(window,"workspaceLayout").ResizeInspector(344);
         try {
             foreach(var language in new[]{"de","zh-Hans","en","fr","ja","es"})foreach(var size in new[]{new Size(1024,720),new Size(1440,920)})foreach(var font in new[]{13.0,26.0}) {
                 // 与设置入口一样触发 Changed，刷新已创建控件；语言偏好只写测试目录。
                 Loc.SetPreference(language,preferencePath);foreach(var pair in Loc.Strings)Application.Current.Resources[pair.Key]=pair.Value;
                 window.FontSize=font;
                 EditorShellChecks.ArrangeLayout(window,size);window.UpdateLayout();
-                var boundary=window.AdjustmentPanel.TransformToAncestor(window).Transform(new Point()).Y;
-                var height=window.AdjustmentPanel.ActualHeight;
+                var boundary=window.AdjustmentPanel.TransformToAncestor(window).Transform(new Point()).X;
+                var width=window.AdjustmentPanel.ActualWidth;
                 foreach(var tool in Enum.GetValues<EditorAdjustmentTool>()) {
                     Invoke(window,"SelectTool",tool);window.UpdateLayout();
-                    check(Math.Abs(window.AdjustmentPanel.ActualHeight-height)<1 &&
-                        Math.Abs(window.AdjustmentPanel.TransformToAncestor(window).Transform(new Point()).Y-boundary)<1,
-                        $"Tool content preserves the manual photo/dock boundary: {language}/{size}/{tool}");
+                    check(Math.Abs(window.AdjustmentPanel.ActualWidth-width)<1 &&
+                        Math.Abs(window.AdjustmentPanel.TransformToAncestor(window).Transform(new Point()).X-boundary)<1,
+                        $"Tool content preserves the photo/inspector boundary: {language}/{size}/{tool}");
                 }
                 Invoke(window,"SelectTool",EditorAdjustmentTool.Hsl);window.UpdateLayout();
                 check(window.Groups.Children.OfType<Button>().Select(AutomationProperties.GetName)
                     .SequenceEqual(Enum.GetValues<EditorAdjustmentGroup>().Select(group=>Loc.Text(EditorAdjustmentRules.Title(group)))),
                     "All group captions/accessibility names use the selected language: "+language);
                 check(window.HslEditor.SelectedChannel==6,"Language and layout retain session HSL channel: "+language);
-                window.HslSurface.ScrollToBottom();window.UpdateLayout();
                 var reset=PhotoFeatureChecks.Descendants<Button>(window.HslEditor).Single(button=>Equals(button.Content,Loc.Text("重置 HSL")));
+                reset.BringIntoView();window.UpdateLayout();
                 var last=reset.TransformToAncestor(window.HslSurface).Transform(new Point(0,reset.ActualHeight/2));
                 FrameworkElement? presenter=reset;
                 while(presenter!=null && presenter is not ScrollContentPresenter)presenter=VisualTreeHelper.GetParent(presenter) as FrameworkElement;
@@ -89,14 +90,14 @@ internal static class WorkspaceGroupChecks
                     rows=((Grid)window.DockHeader.Parent).RowDefinitions.Select(row=>row.ActualHeight),
                     header=window.DockHeader.ActualHeight,headerDesired=window.DockHeader.DesiredSize,
                     hslVisible=window.HslSurface.IsVisible,hsl=window.HslSurface.ActualHeight,
-                    window.HslSurface.ViewportHeight,window.HslSurface.ExtentHeight,window.HslSurface.VerticalOffset,window.HslSurface.ScrollableHeight,
+                    window.ToolsScroller.ViewportHeight,window.ToolsScroller.ExtentHeight,window.ToolsScroller.VerticalOffset,window.ToolsScroller.ScrollableHeight,
                     resetVisible=reset.IsVisible,resetSize=reset.RenderSize,
                     resetBounds=reset.TransformToAncestor(window.HslSurface).TransformBounds(new Rect(reset.RenderSize)),resetCenter=last.Y,
                     presenterSize=presenter?.RenderSize,presenterBounds=presenter==null ? (Rect?)null : reset.TransformToAncestor(presenter).TransformBounds(new Rect(reset.RenderSize))
                 }));
                 var before=EditorShellChecks.ArrangeLayout(window,size);
                 EditorShellChecks.CaptureLayout(window,before,Path.Combine(output,$"workspace-hsl-{language}-{size.Width}-{font}.png"));
-                EditorShellChecks.ArrangeLayout(window,size);window.HslSurface.ScrollToBottom();window.UpdateLayout();
+                EditorShellChecks.ArrangeLayout(window,size);reset.BringIntoView();window.UpdateLayout();
                 try {
                     var resetBounds=presenter==null ? Rect.Empty : reset.TransformToAncestor(presenter).TransformBounds(new Rect(reset.RenderSize));
                     check(presenter!=null && presenter.ActualHeight>=reset.ActualHeight && resetBounds.Top>=-.5 && resetBounds.Bottom<=presenter.ActualHeight+.5,

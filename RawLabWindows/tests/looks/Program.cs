@@ -36,11 +36,40 @@ Check(recent.IDs.SequenceEqual(new[]{"builtin:a","managed:b"}), "Recent looks de
 Check(LookBrowser.Filter(browserItems, LookBrowserCategory.Recent, "", recent.IDs).SequenceEqual(recent.IDs), "Recent category preserves application order");
 Check(LookBrowser.Filter(browserItems, LookBrowserCategory.All, "absent", []).Count==0, "Unmatched search has no fallback selection");
 var layout = new WorkspaceLayout();
-Check(layout.PanelHeight(false,600)==220 && layout.PanelHeight(true,600)==344, "Automatic panel separates single and complex controls");
-layout.Resize(290,600);
-Check(layout.PanelHeight(false,600)==290 && layout.PanelHeight(true,600)==290, "Manual panel height survives tool changes");
-layout.RestoreAutomatic();
-Check(layout.PanelHeight(false,600)==220 && layout.IsAutomatic, "Automatic height can be restored");
-Check(!layout.ShowsFiles(1024,false) && layout.ShowsFiles(1024,true), "Only empty narrow file trees collapse automatically");
-layout.ToggleFiles(1024,false);
-Check(layout.ShowsFiles(1024,false), "Manual file tree choice survives automatic sizing");
+Check(layout.Mode == WorkspaceMode.Editing && layout.LibraryAt(1440) == LibraryPresentation.Docked &&
+    layout.LibraryAt(1024) == LibraryPresentation.Hidden && layout.ShowsInspector(true), "Edit uses a docked library at wide sizes and a right inspector");
+layout.ResizeLibrary(300);
+layout.ResizeInspector(332);
+Check(layout.LibraryWidth == 288 && layout.InspectorWidthAt(1440) == 332 && layout.InspectorWidthAt(1024) == 280,
+    "Width limits are independent and the narrow inspector leaves the remembered width intact");
+layout.ToggleLibrary(1024);
+Check(layout.LibraryAt(1024) == LibraryPresentation.Drawer, "Narrow file navigation opens a drawer");
+layout.SetMode(WorkspaceMode.Preview);
+Check(layout.LibraryAt(1024) == LibraryPresentation.Hidden && !layout.ShowsInspector(true), "Preview gives the photograph both panes' space");
+Check(layout.DismissTransient() && layout.Mode == WorkspaceMode.Editing &&
+    layout.LibraryAt(1024) == LibraryPresentation.Drawer, "Escape restores the editing workspace and its drawer");
+layout.WindowResized(1024, 1440);
+Check(layout.LibraryAt(1440) == LibraryPresentation.Docked && layout.LibraryAt(1024) == LibraryPresentation.Hidden,
+    "Crossing the compact breakpoint closes the transient drawer");
+layout.ToggleInspector();
+layout.SetMode(WorkspaceMode.Selection);
+layout.SetMode(WorkspaceMode.Preview);
+Check(layout.DismissTransient() && layout.Mode == WorkspaceMode.Selection && !layout.ShowsInspector(true),
+    "Escape restores Select when Preview opened from Select");
+layout.ToggleLibrary(1024);
+layout.PhotoOpened();
+Check(layout.Mode == WorkspaceMode.Editing && layout.LibraryAt(1024) == LibraryPresentation.Hidden && !layout.ShowsInspector(true),
+    "Opening a photo from Select restores Edit with its independent inspector preference");
+
+var marks = new WorkspacePhotoSelection();
+string[] photos = ["a", "b", "c", "d"];
+marks.Toggle("b", photos, false);
+marks.Toggle("d", photos, true);
+Check(marks.Marks.SetEquals(["b", "c", "d"]), "Shift extends the selection across one folder");
+marks.BeforeOpening("d");
+Check(marks.Marks.SetEquals(["b"]), "Double-click restores marks as they were before the first click");
+marks.ForgetRange();
+marks.Toggle("x", ["x","y"], true);
+Check(marks.Marks.SetEquals(["b","x"]), "Folder changes preserve marked photos and start a new range");
+marks.Remove(["b"]);
+Check(marks.Marks.SetEquals(["x"]), "Transferring one photo leaves unaccepted selections available");

@@ -152,8 +152,8 @@ internal static class PhotoFeatureChecks
             Click(window.InfoButton);
             Check(window.InfoCaptureText.Text.Contains("SONY", StringComparison.OrdinalIgnoreCase), "Real WPF capture overlay shows camera metadata");
             Screenshot(window, Path.Combine(output, "info.png"));
-            window.LibraryColumn.Width = new GridLength(520); window.UpdateLayout();
-            Check(window.InfoOverlay.ActualWidth + 268 <= window.EditorArea.ActualWidth + 1, "Info overlay reserves histogram space at wide file-tree width");
+            window.LibraryColumn.Width = new GridLength(288); window.UpdateLayout();
+            Check(window.InfoOverlay.ActualWidth + 28 <= window.EditorArea.ActualWidth + 1, "Info overlay stays within the photo column");
             Click(window.InfoButton); Check(window.InfoOverlay.Visibility == Visibility.Collapsed, "WPF info action cycles back to hidden");
             window.OpenFile(target); window.OpenFile(source);
             Click(window.InfoButton);
@@ -165,15 +165,14 @@ internal static class PhotoFeatureChecks
             InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled);
             var current = ((Adjustments)Field(window, "settings")!).Capture();
             var folder = new LibraryEntry(targets, true);
-            window.Files.ItemsSource = new[] { folder };
-            var loading = folder.Load(); InteractionChecks.PumpUntil(() => loading.IsCompleted); loading.GetAwaiter().GetResult();
-            window.UpdateLayout();
-            var root = (TreeViewItem)window.Files.ItemContainerGenerator.ContainerFromIndex(0);
-            root.IsExpanded = true; window.UpdateLayout();
-            InteractionChecks.PumpUntil(() => Descendants<Button>(window.Files).Any(button => button.DataContext is LibraryEntry entry && entry.Path == target));
-            var tile = Descendants<Button>(window.Files).Single(button => button.DataContext is LibraryEntry entry && entry.Path == target);
+            var library = (Library)Field(window, "library")!;
+            library.Roots.Add(folder);
+            if (!window.LibraryPanel.IsVisible) Click(window.LibraryToggleButton);
+            InteractionChecks.PumpUntil(() => Descendants<Button>(window.SidebarGallery).Any(button => button.DataContext is LibraryEntry entry && entry.Path == target));
+            var tile = Descendants<Button>(window.SidebarGallery).Single(button => button.DataContext is LibraryEntry entry && entry.Path == target);
+            var root = (TreeViewItem)window.Files.ItemContainerGenerator.ContainerFromItem(folder);
             OpenContext(window, tile);
-            Check(tile.ContextMenu!.IsOpen && tile.ContextMenu.Items.OfType<MenuItem>().Count() == 2, "Photo right-click opens the two native context actions");
+            Check(tile.ContextMenu!.IsOpen && tile.ContextMenu.Items.OfType<MenuItem>().Count() == 3, "Photo right-click opens the native photo context actions");
             Check((string?)Field(window, "file") == source, "Photo right-click preserves current settings source");
             tile.ContextMenu.IsOpen = false;
             OpenContext(window, root);
@@ -197,13 +196,14 @@ internal static class PhotoFeatureChecks
                 try
                 {
                     OpenContext(window, tile);
-                    var openItem = tile.ContextMenu!.Items.OfType<MenuItem>().First();
+                    var openItem = tile.ContextMenu!.Items.OfType<MenuItem>()
+                        .Single(item => Equals(item.Header, Loc.Text("在资源管理器中打开")));
                     var resolved = (LibraryEntry?)window.GetType().GetMethod("ResolveContextEntry", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [openItem]);
                     Check(resolved?.Path == target, "Explorer menu resolves the clicked photo rather than the previous folder");
-                    Console.WriteLine("Explorer action header=" + tile.ContextMenu!.Items.OfType<MenuItem>().First().Header + "; placement=" + ((LibraryEntry)((FrameworkElement)tile.ContextMenu.PlacementTarget).DataContext).Path);
+                    Console.WriteLine("Explorer action header=" + openItem.Header + "; placement=" + ((LibraryEntry)((FrameworkElement)tile.ContextMenu.PlacementTarget).DataContext).Path);
                     window.Dispatcher.Invoke(() => {
                         Console.WriteLine("Explorer handler context=" + SynchronizationContext.Current?.GetType().Name);
-                        tile.ContextMenu!.Items.OfType<MenuItem>().First().RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                        openItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                     });
                     tile.ContextMenu.IsOpen = false;
                     Console.WriteLine($"Explorer probe session={Process.GetCurrentProcess().SessionId}, target={target}, status={window.Status.Text}");
@@ -280,7 +280,7 @@ internal static class PhotoFeatureChecks
 
     private static void OpenContext(MainWindow window, FrameworkElement target)
     {
-        window.Files.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Right) {
+        (target is Button ? target : window.Files).RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Right) {
             RoutedEvent = UIElement.PreviewMouseRightButtonDownEvent, Source = target
         });
     }

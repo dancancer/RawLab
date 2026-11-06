@@ -19,7 +19,7 @@ public partial class MainWindow : Window
     internal TextBox ValueText => OrdinaryParameter.Number;
     private Button ResetParameterButton => OrdinaryParameter.ResetButton;
     private record Film(string Name,string? Path,string? Artwork,FilmGroup Group=FilmGroup.Other,bool AppearanceUnverified=false,int CompatibilityMode=0);
-    private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Clipping,bool Refine,long TransformGeneration,long OpenRevision,OriginalIdentity Source,AIDenoiseIdentity? AIIdentity,HslProbeWork? Probe=null);
+    private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Refine,long TransformGeneration,long OpenRevision,OriginalIdentity Source,AIDenoiseIdentity? AIIdentity,HslProbeWork? Probe=null);
     private readonly Library library=new();
     private LookLibrary? lookLibrary;
     private Exception? lookLibraryLoadError;
@@ -59,8 +59,6 @@ public partial class MainWindow : Window
     private PhotoInfoMode photoInfoMode;
     private long photoInfoRevision;
     private LibraryEntry? contextEntry;
-    private double dockHeight=220;
-    private double libraryWidth=244;
     private RenderedImage? result;
     private int renderedGpuMode;
     private int? rasterPreviousGpuMode;
@@ -70,7 +68,6 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer previewResize=new(){Interval=TimeSpan.FromMilliseconds(200)};
     private int previewLongEdge=2000,requestedPreviewLongEdge=2000;
     private bool previewDeferred;
-    private LibraryEntry? selectedThumbnail;
     private readonly UpdateChecker updates = new(typeof(App).Assembly.GetName().Version?.ToString(3) ?? "unknown");
     private readonly UsageAnalytics usageAnalytics;
     private AboutWindow? aboutWindow;
@@ -111,6 +108,7 @@ public partial class MainWindow : Window
             RefreshSaveNotice();
             if (localizedStatus != null) { var statusText=localizedStatus(); Status.Text=statusText; Status.ToolTip=statusText; }
             RefreshComparisonToolTip();
+            RefreshWorkspaceBrowserLayout();
             updates.RefreshLanguage();
         }
         Loc.Changed += RefreshLanguage;
@@ -119,20 +117,12 @@ public partial class MainWindow : Window
         updates.PropertyChanged += (_, _) => RefreshUpdateNotice();
         RefreshUpdateNotice();
         Closed += (_, _) => updateCancellation.Cancel();
-        foreach(var navigation in new UIElement[]{Groups,Tools,Files,OpenPhoto,AdjustToggleButton,MainMenu})
+        foreach(var navigation in new UIElement[]{Groups,Tools,OpenPhoto,AdjustToggleButton,MainMenu})
             navigation.AddHandler(PreviewMouseDownEvent,new MouseButtonEventHandler(ParameterNavigationPressed),true);
         PreviewKeyDown+=(_,e)=>{if(e.Key==Key.System && e.SystemKey is Key.F or Key.F4)CancelParameterInputs();};
-        Files.ItemsSource=library.Roots;
         InitializeWorkspace();
-        Files.PreviewKeyDown+=FilesContextKeyDown;
-        AdjustmentPanel.Visibility=AdjustmentSplitter.Visibility=Visibility.Collapsed;DockRow.MinHeight=0;DockRow.Height=new(0);SplitterRow.Height=new(0);
         thumbnailRefresh.Tick+=(_,_)=>{thumbnailRefresh.Stop();RefreshVisibleThumbnails();};
-        Files.AddHandler(ScrollViewer.ScrollChangedEvent,new ScrollChangedEventHandler((_,_)=>QueueThumbnailRefresh()));
-        Files.SizeChanged+=(_,_)=>QueueThumbnailRefresh();
-        Files.Loaded+=(_,_)=>QueueThumbnailRefresh();
-        EditorArea.SizeChanged+=(_,_)=>{InfoOverlay.MaxWidth=Math.Max(80,Math.Min(380,EditorArea.ActualWidth-268));UpdateDockMinimum();};
-        DockHeader.SizeChanged+=(_,_)=>UpdateDockMinimum();
-        ToolsScroller.SizeChanged+=(_,_)=>UpdateDockMinimum();
+        EditorArea.SizeChanged+=(_,_)=>InfoOverlay.MaxWidth=Math.Max(80,Math.Min(380,EditorArea.ActualWidth-32));
         NeutralCanvas.Viewport=ResultCanvas.Viewport=viewport;
         ResultCanvas.PreviewSizeChanged+=UpdatePreviewSize;
         ResultCanvas.HoldStarted+=BeginHoldingBefore;
@@ -216,6 +206,13 @@ public partial class MainWindow : Window
             else if(selectedToneParameter is {} tone)settings.SetTone(tone,value);else settings.Set(selectedParameter,value);
             MarkEdited();RefreshControls();Schedule();
         };
+        LookStrengthRow.Changed += (value, dragging) => {
+            if (!ready || syncing || exporting || transform.Active) return;
+            interacting = dragging;
+            settings.Set(Parameter.Strength, value);
+            MarkEdited(); RefreshControls(); Schedule();
+        };
+        LookStrengthRow.InvalidInput += () => SetStatus(() => Loc.Text("请输入有效数字"), true);
         OrdinaryParameter.InvalidInput+=()=>SetStatus(() => Loc.Text("请输入有效数字"),true);
         SetPhotoMargin(true);
         ready=true; RefreshControls(); RefreshRenderLabels(); RefreshCopyLabels();

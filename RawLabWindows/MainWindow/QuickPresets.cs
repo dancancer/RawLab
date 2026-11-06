@@ -27,9 +27,11 @@ public partial class MainWindow
         if (file == null || closing || exporting) return;
         PreserveQuickPresetInputs(); CancelHslTarget();
         quickPresetsVisible = true; expandedGroup = EditorAdjustmentGroup.Looks;
-        AdjustmentPanel.Visibility = AdjustmentSplitter.Visibility = Visibility.Visible;
-        DockRow.Height = new(dockHeight); DockRow.MinHeight = 216; SplitterRow.Height = new(6);
-        RefreshQuickPresets(reload: true); RefreshControls(); UpdateDockMinimum();
+        suspendedTransform = null;
+        workspaceLayout.SetMode(WorkspaceMode.Editing);
+        workspaceLayout.ShowInspector();
+        RefreshWorkspace();
+        RefreshQuickPresets(reload: true); RefreshControls();
     }
 
     internal void CloseQuickPresets()

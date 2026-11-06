@@ -1,6 +1,7 @@
 package com.rawlab.android.editor.render
 
 import android.graphics.Bitmap
+import android.system.Os
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.engine.NativeHDRBridge
 import com.rawlab.android.engine.HDRDisplayMath
@@ -12,11 +13,14 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 import com.rawlab.android.engine.RgbHistogram
 import com.rawlab.android.photo.PhotoStorage
+import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.settings.HslTargetAvailability
 import com.rawlab.android.settings.HslTargetSample
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.VersionedPhotoEdit
+import java.io.File
+import java.util.IdentityHashMap
 
 // ============================================================================
 //  编辑器的渲染执行：只在渲染队列的线程上调用
@@ -33,13 +37,35 @@ internal class EditorRenderer(
     private var original: Pair<NeutralSourceKey, ReferenceFrame>? = null
     private var originalAspect = 1f
     private var transformedNeutral: Pair<ComparisonPreviewKey, ReferenceFrame>? = null
+    private data class FileStamp(val path: String, val device: Long, val inode: Long, val size: Long, val modified: Long) {
+        companion object {
+            fun read(file: File): FileStamp? = runCatching {
+                val path = file.canonicalPath
+                val stat = Os.stat(path)
+                FileStamp(path, stat.st_dev, stat.st_ino, stat.st_size, file.lastModified())
+            }.getOrNull()
+        }
+    }
+    private data class PreviewScope(val photo: ImportedPhoto, val source: FileStamp, val lut: FileStamp?,
+        val edits: EditSettings, val gpuMode: Int)
+    private var previewScope: PreviewScope? = null
+    private val previews = LinkedHashMap<Int, PreviewPair>(3, .75f, true)
+    private val heapLimit = Runtime.getRuntime().maxMemory()
+
+    private data class HDRReferenceKey(val source: FileStamp, val photo: ImportedPhoto, val settings: HDRSettings,
+        val edge: Int, val decodeVersion: Int?)
+    private data class HDRReference(val frame: HDRPreviewFrame, val bitmap: Bitmap)
+    private var hdrReference: Pair<HDRReferenceKey, HDRReference>? = null
     private var hdrSource: com.rawlab.android.engine.NativeHDRImage? = null
     private var hdrSourceLease: com.rawlab.android.engine.HDRSourceLease? = null
     private var hdrSourceKey: Triple<String, Long, Long>? = null
 
     fun close() { releaseDecodedRaster();com.rawlab.android.engine.HDRSourceCache.clear();processor?.close() }
-    private fun releaseHDRSource() {hdrSourceLease?.close();hdrSourceLease=null;hdrSource=null;hdrSourceKey=null}
-    fun releaseDecodedRaster() { processor?.releaseRasterCache();releaseHDRSource() }
+    private fun releaseHDRSource() {hdrSourceLease?.close();hdrSourceLease=null;hdrSource=null;hdrSourceKey=null;hdrReference=null}
+    fun releaseDecodedRaster() {
+        previews.clear(); previewScope = null
+        processor?.releaseRasterCache(); releaseHDRSource()
+    }
 
     private fun engine() = processor ?: NativeProcessor(lensDatabase = storage.lensDatabase()).also { processor = it }
 
@@ -87,37 +113,7 @@ internal class EditorRenderer(
                 else { if (owned) photo.file.delete(); throw error }
             }
         }
-        is Work.Preview -> {
-            if (work.photo.hdrSource != null && work.edits.isHDREditing) return performHDR(work, generation)
-            if (hdrSource != null) releaseHDRSource()
-            val edge = work.edge
-            val native = engine()
-            native.setGpuMode(work.gpuMode)
-            val sourceKey = NeutralSourceKey(work.photo.identity, work.photo.file.absolutePath, work.photo.inputKind, work.edits.processing, work.edits.x3fMode)
-            if (original?.first != sourceKey) {
-                original = null
-                transformedNeutral = null
-                val source = native.preview(work.photo.file, null, EditSettings(processing = work.edits.processing, x3fMode = work.edits.x3fMode), 1600, false, work.photo.inputKind, generation)
-                originalAspect = source.geometryWidth.toFloat() / source.geometryHeight
-                original = sourceKey to ReferenceFrame(source.bitmap(), source.histogram)
-            }
-            val neutral = if (work.edits.geometry.isIdentity && !work.edits.lens.enabled) original!!.second else {
-                val key = ComparisonPreviewKey(work.photo.file.absolutePath, work.edits.geometry, work.edits.lens, edge, work.interactive,
-                    work.edits.processing, work.photo.identity, work.photo.inputKind, work.edits.x3fMode)
-                if (transformedNeutral?.first != key) {
-                    transformedNeutral = null
-                    val comparison = EditSettings(geometry = work.edits.geometry, lens = work.edits.lens, processing = work.edits.processing, x3fMode = work.edits.x3fMode)
-                    val frame = native.preview(work.photo.file, null, comparison, edge, work.interactive, work.photo.inputKind, generation)
-                    transformedNeutral = key to ReferenceFrame(frame.bitmap(), frame.histogram)
-                }
-                transformedNeutral!!.second
-            }
-            val lut = storage.lookPath(work.edits)
-            val film = native.preview(work.photo.file, lut, work.edits, edge, work.interactive, work.photo.inputKind, generation)
-            val dimensions = comparisonDimensions(film.geometryWidth, film.geometryHeight)
-            WorkResult.Preview(work, PreviewPair(neutral.bitmap, film.bitmap(), film.temperature, film.tint, film.lens,
-                dimensions.first, dimensions.second, originalAspect, neutral.histogram, film.histogram))
-        }
+        is Work.Preview -> WorkResult.Preview(work, preview(work, generation))
         is Work.HslProbe -> {
             val preview = work.preview
             val sample = runCatching {
@@ -142,7 +138,86 @@ internal class EditorRenderer(
             engine().autoExposure(work.photo.file, work.edits, work.photo.inputKind))
     } }
 
-    private fun performHDR(work: Work.Preview, generation: Long): WorkResult = synchronized(storage) {
+    private fun preview(work: Work.Preview, generation: Long): PreviewPair {
+        val hdr = work.photo.hdrSource != null && work.edits.isHDREditing
+        val lut = if (hdr) null else storage.lookPath(work.edits)
+        val source = FileStamp.read(work.photo.file)
+        val lutStamp = lut?.let { FileStamp.read(it) }
+        // 拍摄白平衡的显示值会随首帧回填；配方的相对色调仍是渲染输入。
+        val edits = if (work.edits.customWb) work.edits else work.edits.copy(temperature = 6500f,
+            tint = if (work.edits.recipeID == null) 0f else work.edits.tint)
+        val scope = if (work.interactive || work.draft || source == null || (lut != null && lutStamp == null)) null
+            else PreviewScope(work.photo, source, lutStamp, edits, work.gpuMode)
+        if (previewScope != scope) {
+            previews.clear()
+            previewScope = scope
+        }
+        if (scope != null) previews[work.edge]?.let { return it }
+
+        val pair = if (hdr) performHDR(work, source, generation) else performSDR(work, lut, generation)
+        if (scope != null && (pair.hdr != null || pair.resultHistogram != null && pair.neutralHistogram != null)) {
+            val previewBudget = if (pair.hdr != null) minOf(128L * 1024 * 1024, heapLimit / 3)
+                else minOf(64L * 1024 * 1024, heapLimit / 8)
+            if (previewBytes(listOf(pair)) <= previewBudget) {
+                while (previews.size >= 3 || previewBytes(previews.values + pair) > previewBudget) {
+                    previews.remove(previews.keys.first())
+                }
+                previews[work.edge] = pair
+            }
+        }
+        return pair
+    }
+
+    private fun previewBytes(pairs: List<PreviewPair>): Long {
+        val bitmaps = IdentityHashMap<Bitmap, Unit>()
+        val planes = IdentityHashMap<FloatArray, Unit>()
+        for (pair in pairs) {
+            bitmaps[pair.neutral] = Unit
+            bitmaps[pair.result] = Unit
+            pair.hdr?.let {
+                for (frame in listOf(it.neutral, it.result)) {
+                    planes[frame.hdr] = Unit
+                    planes[frame.sdr] = Unit
+                }
+            }
+        }
+        // 原图由现有参考缓存持有。其他共用的对照帧只计算一次实际分配。
+        original?.second?.bitmap?.let(bitmaps::remove)
+        return bitmaps.keys.sumOf { it.allocationByteCount.toLong() } +
+            planes.keys.sumOf { it.size.toLong() * Float.SIZE_BYTES }
+    }
+
+    private fun performSDR(work: Work.Preview, lut: File?, generation: Long): PreviewPair {
+        if (hdrSource != null) releaseHDRSource()
+        val edge = work.edge
+        val native = engine()
+        native.setGpuMode(work.gpuMode)
+        val sourceKey = NeutralSourceKey(work.photo.identity, work.photo.file.absolutePath, work.photo.inputKind, work.edits.processing, work.edits.x3fMode)
+        if (original?.first != sourceKey) {
+            original = null
+            transformedNeutral = null
+            val source = native.preview(work.photo.file, null, EditSettings(processing = work.edits.processing, x3fMode = work.edits.x3fMode), 1600, false, work.photo.inputKind, generation)
+            originalAspect = source.geometryWidth.toFloat() / source.geometryHeight
+            original = sourceKey to ReferenceFrame(source.bitmap(), source.histogram)
+        }
+        val neutral = if (work.edits.geometry.isIdentity && !work.edits.lens.enabled) original!!.second else {
+            val key = ComparisonPreviewKey(work.photo.file.absolutePath, work.edits.geometry, work.edits.lens, edge, work.interactive,
+                work.edits.processing, work.photo.identity, work.photo.inputKind, work.edits.x3fMode)
+            if (transformedNeutral?.first != key) {
+                transformedNeutral = null
+                val comparison = EditSettings(geometry = work.edits.geometry, lens = work.edits.lens, processing = work.edits.processing, x3fMode = work.edits.x3fMode)
+                val frame = native.preview(work.photo.file, null, comparison, edge, work.interactive, work.photo.inputKind, generation)
+                transformedNeutral = key to ReferenceFrame(frame.bitmap(), frame.histogram)
+            }
+            transformedNeutral!!.second
+        }
+        val film = native.preview(work.photo.file, lut, work.edits, edge, work.interactive, work.photo.inputKind, generation)
+        val dimensions = comparisonDimensions(film.geometryWidth, film.geometryHeight)
+        return PreviewPair(neutral.bitmap, film.bitmap(), film.temperature, film.tint, film.lens,
+            dimensions.first, dimensions.second, originalAspect, neutral.histogram, film.histogram)
+    }
+
+    private fun performHDR(work: Work.Preview, stamp: FileStamp?, generation: Long): PreviewPair {
         if (work.gpuMode == NativeProcessor.FORCE)
             throw com.rawlab.android.engine.HDRProcessingException(2,13,6)
         val info = checkNotNull(work.photo.hdrSource)
@@ -173,20 +248,21 @@ internal class EditorRenderer(
         }
         val neutralSettings = HDRSettings(mode = work.edits.hdr?.mode ?: com.rawlab.android.settings.HDRMode.SDR, geometry = geometry)
         val resultSettings = (work.edits.hdr ?: HDRSettings(mode = com.rawlab.android.settings.HDRMode.SDR)).copy(geometry = geometry)
-        val neutral = native.renderHDR(source, neutralSettings, edge, generation)
-        val result = try { native.renderHDR(source, resultSettings, edge, generation) }
-        catch (error: Throwable) { neutral.close(); throw error }
-        try {
-            val neutralFrame = neutral.snapshot()
+        val referenceKey = stamp?.let { HDRReferenceKey(it, work.photo, neutralSettings, edge, work.edits.proRAWDecodeVersion) }
+        val reference = hdrReference?.takeIf { it.first == referenceKey }?.second ?: run {
+            native.renderHDR(source, neutralSettings, edge, generation).use { neutral ->
+                val frame = neutral.snapshot()
+                HDRReference(frame, sdrBitmap(frame)).also { hdrReference = referenceKey?.let { key -> key to it } }
+            }
+        }
+        native.renderHDR(source, resultSettings, edge, generation).use { result ->
             val resultFrame = result.snapshot()
             val dimensions = comparisonDimensions(resultFrame.nativeWidth, resultFrame.nativeHeight)
-            return WorkResult.Preview(work, PreviewPair(
-                sdrBitmap(neutralFrame), sdrBitmap(resultFrame), Float.NaN, Float.NaN,
+            return PreviewPair(
+                reference.bitmap, sdrBitmap(resultFrame), Float.NaN, Float.NaN,
                 null, dimensions.first, dimensions.second,
                 (if (info.orientation >= 5) info.height.toFloat() / info.width else info.width.toFloat() / info.height), null, null,
-                HDRPreview(neutralFrame, resultFrame)))
-        } finally {
-            result.close(); neutral.close()
+                HDRPreview(reference.frame, resultFrame))
         }
     }
 

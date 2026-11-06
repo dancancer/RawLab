@@ -71,6 +71,20 @@ internal static class HslTargetUiChecks
             Invoke(window,"SaveEdits");Settled();
             Invoke(window,"ExitHslTargetClicked",window,new RoutedEventArgs());
             check(!window.ResultCanvas.HslTargetEnabled && !window.HslTargetBanner.IsVisible,"Canvas exit restores ordinary photo gestures");
+            var beforePreview=store.VersionedState(input);
+            var transactionCount=session.Transactions.Count;
+            Invoke(window,"SetHslTargetMode",true,1);
+            Invoke(window,"BeginHslTarget",new Point(.5,.5),null!);
+            Invoke(window,"MoveHslTarget",20.0);
+            PhotoFeatureChecks.Click(window.PreviewWorkspaceButton);
+            window.UpdateLayout();
+            check(window.PhotoArea.IsVisible && !window.ResultCanvas.HslTargetEnabled && !window.HslTargetBanner.IsVisible &&
+                !Get<bool>(window,"hslTargetEnabled"),"Entering Preview exits HSL target mode");
+            Invoke(window,"EndHslTarget");Settled();
+            check(store.VersionedState(input).SameAs(beforePreview) && session.Transactions.Count==transactionCount,
+                "A queued HSL sample cannot save edits after entering Preview");
+            PhotoFeatureChecks.Click(window.EditingWorkspaceButton);Settled();
+            check(!window.ResultCanvas.HslTargetEnabled,"Returning to Edit keeps HSL target mode off");
             Invoke(window,"SetHslTargetMode",true,1);
             Invoke(window,"BeginHslTarget",new Point(.5,.5),null!);Invoke(window,"MoveHslTarget",20.0);window.OpenFile(other);Settled();
             check(Get<Adjustments>(window,"settings").Hsl.IsIdentity && !Get<HslTargetInteraction>(window,"hslTarget").Waiting,

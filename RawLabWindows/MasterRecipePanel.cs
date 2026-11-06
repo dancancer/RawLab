@@ -25,7 +25,7 @@ public partial class MainWindow
         foreach (var recipe in MasterRecipe.All) Add(recipe);
         void Add(MasterRecipe? recipe)
         {
-            var content = new StackPanel { Width = 124, Margin = new Thickness(4, 0, 4, 0) };
+            var content = new StackPanel { Margin = new Thickness(4, 5, 4, 5) };
             if (recipe != null) content.Children.Add(new Image { Source = new BitmapImage(new Uri(recipe.ArtworkPath)), Width = 64, Height = 64 });
             else content.Children.Add(new EditorIcon { Kind = "Neutral", Width = 32, Height = 64 });
             var title=new TextBlock { Text = Loc.Text(recipe?.Name ?? "无配方"), MinHeight = 20, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center };
@@ -37,7 +37,7 @@ public partial class MainWindow
             marker.SetResourceReference(TextBlock.ForegroundProperty,"Accent");
             var card=new Grid();card.Children.Add(content);card.Children.Add(marker);
             var button = new Button { Content = card, Style = (Style)FindResource("QuietButton"), Padding = new Thickness(0),
-                BorderThickness = new Thickness(0), ToolTip = Loc.Text(recipe?.Summary ?? "中性直出") };
+                BorderThickness = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Stretch, ToolTip = Loc.Text(recipe?.Summary ?? "中性直出") };
             recipeSelectionMarkers[recipe?.Id ?? ""]=marker;
             AutomationProperties.SetAutomationId(button,"recipe."+(recipe?.Id ?? "neutral"));
             AutomationProperties.SetName(button, Loc.Text(recipe?.Name ?? "无配方"));
@@ -55,30 +55,4 @@ public partial class MainWindow
         }
     }
     private void MasterRecipeCategoryClicked(object sender, RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.MasterRecipe);
-    private void RecipeScrollLeftClicked(object sender, RoutedEventArgs e) => RecipeScroller.ScrollToHorizontalOffset(RecipeScroller.HorizontalOffset - RecipeScroller.ViewportWidth * .8);
-    private void RecipeScrollRightClicked(object sender, RoutedEventArgs e) => RecipeScroller.ScrollToHorizontalOffset(RecipeScroller.HorizontalOffset + RecipeScroller.ViewportWidth * .8);
-    private void RecipeScrollChanged(object sender, ScrollChangedEventArgs e) => UpdateScrollButtons(RecipeScroller, RecipeScrollLeft, RecipeScrollRight);
-    private void FilmScrollLeftClicked(object sender, RoutedEventArgs e) => FilmScroller.ScrollToHorizontalOffset(FilmScroller.HorizontalOffset - FilmScroller.ViewportWidth * .8);
-    private void FilmScrollRightClicked(object sender, RoutedEventArgs e) => FilmScroller.ScrollToHorizontalOffset(FilmScroller.HorizontalOffset + FilmScroller.ViewportWidth * .8);
-    private void FilmScrollChanged(object sender, ScrollChangedEventArgs e) => UpdateScrollButtons(FilmScroller, FilmScrollLeft, FilmScrollRight);
-    // ┌─ 工具条说明文字只在空格或连字符处换行 ─────────────────────────────────────┐
-    // │ 60 是 72 宽按钮扣掉内边距与边框后的文字宽度。单个词放不下时把按钮撑宽，      │
-    // │ 不让 “Weißabgleic/h”“コントラス/ト” 这样从词中间断开                          │
-    // └──────────────────────────────────────────────────────────────────────────────┘
-    private void FitToolCaptions()
-    {
-        foreach(var button in Tools.Children.OfType<Button>()) {
-            if(button.Content is not StackPanel stack || stack.Children[stack.Children.Count-1] is not TextBlock caption)continue;
-            caption.MaxWidth=double.PositiveInfinity;caption.TextWrapping=TextWrapping.NoWrap;
-            button.ClearValue(WidthProperty);
-        }
-    }
-    private static void UpdateScrollButtons(ScrollViewer scroller, Button left, Button right)
-    {
-        var fullWidth = scroller.ViewportWidth + left.ActualWidth + right.ActualWidth;
-        var overflow = scroller.ExtentWidth > fullWidth + 1;
-        left.Visibility = right.Visibility = overflow ? Visibility.Visible : Visibility.Collapsed;
-        left.IsEnabled = scroller.HorizontalOffset > 1;
-        right.IsEnabled = scroller.HorizontalOffset < scroller.ScrollableWidth - 1;
-    }
 }

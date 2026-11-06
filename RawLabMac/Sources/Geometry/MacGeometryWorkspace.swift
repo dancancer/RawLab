@@ -8,45 +8,34 @@ struct MacGeometryWorkspace: View {
     var body: some View {
         let _ = localizationLocale
         VStack(spacing: 6) {
-            HStack(spacing: 12) {
-                ForEach(MacGeometryTab.allCases, id: \.self) { tab in
-                    Button {
-                        ParameterValueField.cancelPendingInputs()
-                        model.selectAdjustmentGeometryTab(tab)
-                    } label: {
-                        Label(tab.title, systemImage: tab == .crop ? "crop.rotate" : tab == .perspective ? "perspective" : "camera.filters")
-                            .font(.system(size: 12)).fixedSize()
-                            .padding(.vertical, 5)
-                            .overlay(alignment: .bottom) {
-                                if model.geometryDraftTab == tab { Capsule().fill(.yellow).frame(height: 2) }
-                            }
-                    }.buttonStyle(.plain)
-                        .foregroundStyle(model.geometryDraftTab == tab ? Color.yellow : Color.secondary)
-                        .accessibilityIdentifier("geometry.tab.\(tab.rawValue)")
-                        .accessibilityAddTraits(model.geometryDraftTab == tab ? .isSelected : [])
-                        .disabled(tab == .lens && !model.canUseLensCorrection)
-                }
-                Spacer(minLength: 8)
-                Button {
-                    ParameterValueField.cancelPendingInputs()
-                    model.requestAdjustmentReset(.tool(model.geometryDraftTab == .lens ? .lens : .geometry))
-                } label: { Image(systemName: "arrow.counterclockwise").frame(width: 28, height: 28) }
-                    .buttonStyle(.borderless).help(L10n.text("重置本工具"))
-                    .accessibilityLabel(L10n.text("重置本工具")).accessibilityIdentifier("geometry.draft.reset")
-                Button(L10n.text("取消")) { ParameterValueField.cancelPendingInputs(); model.cancelGeometryDraft() }
-                    .accessibilityLabel(L10n.text("取消几何和镜头编辑"))
-                    .accessibilityIdentifier("geometry.draft.cancel")
-                Button(L10n.text("应用")) { finishInput(); _ = model.applyGeometryDraft() }
-                    .buttonStyle(.borderedProminent).tint(.yellow)
-                    .disabled(!model.geometryDraftCanApply)
-                    .accessibilityLabel(L10n.text("应用几何和镜头编辑"))
-                    .accessibilityIdentifier("geometry.draft.apply")
-            }.controlSize(.small).padding(.horizontal, 16).frame(minHeight: 32)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(MacGeometryTab.allCases, id: \.self) { tab in
+                        Button {
+                            ParameterValueField.cancelPendingInputs()
+                            model.selectAdjustmentGeometryTab(tab)
+                        } label: {
+                            Label(tab.title, systemImage: tab == .crop ? "crop.rotate" : tab == .perspective ? "perspective" : "camera.filters")
+                                .font(.system(size: 12)).fixedSize()
+                                .padding(.vertical, 5)
+                                .overlay(alignment: .bottom) {
+                                    if model.geometryDraftTab == tab { Capsule().fill(.yellow).frame(height: 2) }
+                                }
+                                .contentShape(Rectangle())
+                        }.buttonStyle(.plain)
+                            .foregroundStyle(model.geometryDraftTab == tab ? Color.yellow : Color.secondary)
+                            .accessibilityIdentifier("geometry.tab.\(tab.rawValue)")
+                            .accessibilityAddTraits(model.geometryDraftTab == tab ? .isSelected : [])
+                            .disabled(tab == .lens && !model.canUseLensCorrection)
+                    }
+                }.padding(.horizontal, 10)
+            }.frame(height: 32)
             ScrollView(.vertical) {
                 if model.geometryDraftTab == .lens { LensControls(model: model) }
                 else { GeometryControls(model: model, tab: model.geometryDraftTab) }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            HStack {
+            Divider()
+            VStack(alignment: .leading, spacing: 5) {
                 if !model.invalidGeometryDraftInputs.isEmpty {
                     Label(L10n.text("请先纠正无效数值"), systemImage: "exclamationmark.circle").foregroundStyle(.yellow)
                 } else if !model.geometryDraftPreviewReady {
@@ -54,10 +43,31 @@ struct MacGeometryWorkspace: View {
                 } else {
                     Text(L10n.text("草稿尚未应用")).foregroundStyle(.secondary)
                 }
-                Spacer(minLength: 0)
-            }.font(.system(size: 11)).padding(.horizontal, 16).padding(.bottom, 8)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) { draftActions }
+                    VStack(alignment: .trailing, spacing: 6) { draftActions }
+                }.frame(maxWidth: .infinity, alignment: .trailing)
+            }.font(.system(size: 11)).padding(.horizontal, 10).padding(.bottom, 8)
         }.accessibilityElement(children: .contain)
             .accessibilityLabel(L10n.text("几何与镜头草稿"))
+    }
+
+    @ViewBuilder private var draftActions: some View {
+        Button {
+            ParameterValueField.cancelPendingInputs()
+            model.requestAdjustmentReset(.tool(model.geometryDraftTab == .lens ? .lens : .geometry))
+        } label: { Image(systemName: "arrow.counterclockwise").frame(width: 24, height: 24) }
+            .buttonStyle(.borderless).help(L10n.text("重置本工具"))
+            .accessibilityLabel(L10n.text("重置本工具")).accessibilityIdentifier("geometry.draft.reset")
+        Button(L10n.text("取消")) { ParameterValueField.cancelPendingInputs(); model.cancelGeometryDraft() }
+            .fixedSize().controlSize(.small)
+            .accessibilityLabel(L10n.text("取消几何和镜头编辑"))
+            .accessibilityIdentifier("geometry.draft.cancel")
+        Button(L10n.text("应用")) { finishInput(); _ = model.applyGeometryDraft() }
+            .fixedSize().controlSize(.small).buttonStyle(.borderedProminent).tint(.yellow)
+            .disabled(!model.geometryDraftCanApply)
+            .accessibilityLabel(L10n.text("应用几何和镜头编辑"))
+            .accessibilityIdentifier("geometry.draft.apply")
     }
 
     private func finishInput() { NSApp.keyWindow?.makeFirstResponder(nil) }

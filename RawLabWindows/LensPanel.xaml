@@ -14,7 +14,7 @@
   <Button x:Name="ProfileButton" Click="ChooseClicked" HorizontalContentAlignment="Left" Margin="0,4" Padding="8,4" AutomationProperties.Name="{DynamicResource '选择镜头配置文件'}">
    <TextBlock x:Name="SelectedTitle" Text="{DynamicResource '选择镜头'}" TextTrimming="CharacterEllipsis"/>
   </Button>
-  <WrapPanel><TextBlock x:Name="StatusText" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,2,12,0" AutomationProperties.LiveSetting="Polite"/><TextBlock x:Name="CropText" Foreground="{DynamicResource Muted}" Margin="0,2,0,0"/></WrapPanel>
+  <StackPanel><TextBlock x:Name="StatusText" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,2,0,0" AutomationProperties.LiveSetting="Polite"/><TextBlock x:Name="CropText" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Margin="0,2,0,0"/></StackPanel>
   <Popup x:Name="Chooser" PlacementTarget="{Binding ElementName=ProfileButton}" Placement="Top" StaysOpen="False" AllowsTransparency="True">
    <Border Background="{DynamicResource PopupSurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="1" Padding="8" CornerRadius="4" Width="500">
     <StackPanel>

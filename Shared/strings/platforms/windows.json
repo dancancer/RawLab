@@ -4047,6 +4047,84 @@
     "请将白平衡模式、色温和色调一起保存，再应用此预设。": {
       "formats": [],
       "source": "请将白平衡模式、色温和色调一起保存，再应用此预设。"
+    },
+    "文件夹": {
+      "formats": [],
+      "source": "文件夹"
+    },
+    "收起全部": {
+      "formats": [],
+      "source": "收起全部"
+    },
+    "上一级": {
+      "formats": [],
+      "source": "上一级"
+    },
+    "在目录树中定位": {
+      "formats": [],
+      "source": "在目录树中定位"
+    },
+    "当前照片": {
+      "formats": [],
+      "source": "当前照片"
+    },
+    "已选": {
+      "formats": [],
+      "source": "已选"
+    },
+    "已展开": {
+      "formats": [],
+      "source": "已展开"
+    },
+    "已收起": {
+      "formats": [],
+      "source": "已收起"
+    },
+    "选片": {
+      "formats": [],
+      "source": "选片"
+    },
+    "纯预览": {
+      "formats": [],
+      "source": "纯预览"
+    },
+    "加入选片集合": {
+      "formats": [],
+      "source": "加入选片集合"
+    },
+    "正在读取目录…": {
+      "formats": [],
+      "source": "正在读取目录…"
+    },
+    "{0} 张照片": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "{0} 张照片"
+    },
+    "当前外观": {
+      "formats": [],
+      "source": "当前外观"
+    },
+    "外观强度": {
+      "formats": [],
+      "source": "外观强度"
+    },
+    "当前通道 {0}，修改仅作用于该颜色。": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "当前通道 {0}，修改仅作用于该颜色。"
+    },
+    "无法读取目录：{0}": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "无法读取目录：{0}"
+    },
+    "收起文件树": {
+      "formats": [],
+      "source": "收起文件树"
     }
   },
   "overrides": {
@@ -5679,6 +5757,22 @@
       "fr": "Auto (GPU dédiée de préférence)",
       "ja": "自動（外部GPUを優先）",
       "zh-Hans": "自动（优先独显）"
+    },
+    "无法读取目录：{0}": {
+      "de": "Ordner kann nicht gelesen werden: {0}",
+      "en": "Could not read the folder: {0}",
+      "es": "No se pudo leer la carpeta: {0}",
+      "fr": "Impossible de lire le dossier : {0}",
+      "ja": "フォルダを読み込めません：{0}",
+      "zh-Hans": "无法读取目录：{0}"
+    },
+    "收起文件树": {
+      "de": "Ordner ausblenden",
+      "en": "Hide folders",
+      "es": "Ocultar carpetas",
+      "fr": "Masquer les dossiers",
+      "ja": "フォルダを非表示",
+      "zh-Hans": "收起文件树"
     }
   }
 }

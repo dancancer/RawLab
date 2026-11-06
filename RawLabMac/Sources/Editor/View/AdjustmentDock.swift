@@ -4,69 +4,79 @@ import AppKit
 struct AdjustmentDock: View {
     @Environment(\.locale) private var localizationLocale
     @ObservedObject var model: EditorModel
-    @Binding var selected: AdjustmentParameter?
     let resetVersion: Int
-    var onPreferredHeight: (CGFloat) -> Void = { _ in }
-    var headerAccessory = AnyView(EmptyView())
+    @State private var showsExposure = true
+    @State private var showsTones = true
+    @State private var collapsedTool: EditorAdjustmentTool?
     private var navigation: EditorAdjustmentNavigation { model.adjustmentNavigation }
 
     var body: some View {
         let _ = localizationLocale
         VStack(spacing: 0) {
-            HStack(spacing: 4) {
-                HorizontalPicker(selectedID: navigation.expandedGroup?.rawValue ?? "", name: L10n.text("调整工具"), showsScrollIndicators: false) {
-                    HStack(spacing: 4) {
-                        ForEach(EditorAdjustmentGroup.allCases) { group in groupButton(group) }
-                    }.padding(.horizontal, 8)
+            ViewThatFits(in: .horizontal) {
+                groupRow(EditorAdjustmentGroup.allCases)
+                VStack(alignment: .leading, spacing: 2) {
+                    groupRow(EditorAdjustmentGroup.allCases.prefix(3))
+                    groupRow(EditorAdjustmentGroup.allCases.suffix(3))
                 }
-                headerAccessory.padding(.trailing, 12)
-            }.frame(height: 36)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 6).padding(.vertical, 2)
+            Divider()
             if let group = navigation.expandedGroup {
+                if group == .looks && !model.settings.isHDREditing {
+                    VStack(alignment: .leading, spacing: 3) {
+                        parameterRow(.strength, title: L10n.text("外观强度"))
+                            .disabled(model.selectedFilm == nil && model.settings.masterRecipe == nil)
+                        Text(L10n.text(model.selectedFilm == nil && model.settings.masterRecipe == nil
+                                      ? "请先选择外观或配方。" : "胶片、导入外观和大师配方共用"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }.padding(.horizontal, 10).padding(.vertical, 5)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("workspace.lookStrength")
+                    Divider()
+                }
                 if model.geometryDraft != nil && !model.quickPresetsVisible {
                     MacGeometryWorkspace(model: model)
+                } else if model.quickPresetsVisible {
+                    QuickPresetView(model: model)
                 } else {
-                    HorizontalPicker(selectedID: navigation.tool.rawValue, name: L10n.text("调整工具"), showsScrollIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(group.tools) { toolButton($0) }
-                            if group == .looks {
-                                Button { if model.quickPresetsVisible { model.closeQuickPresets() } else { model.showQuickPresets() } } label: {
-                                    Label(L10n.text("我的预设"), systemImage: "bookmark")
-                                        .font(.system(size: 12)).padding(.horizontal, 10).frame(height: 28)
-                                        .foregroundStyle(model.quickPresetsVisible ? Color.yellow : Color.primary)
-                                }.buttonStyle(.plain).disabled(model.exporting || model.lookLibraryBusy)
-                                    .accessibilityIdentifier("preset.library")
-                                    .accessibilityAddTraits(model.quickPresetsVisible ? .isSelected : [])
-                            }
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 0) {
+                                Color.clear.frame(height: 0).id("adjustment.start").accessibilityHidden(true)
+                                if group == .light { lightSections }
+                                else { groupTools(group) }
+                            }.frame(maxWidth: .infinity, alignment: .leading)
                         }
-                            .scrollTargetLayout().padding(.horizontal, 12)
-                    }.frame(height: 32).fixedSize(horizontal: false, vertical: true)
-                    if model.quickPresetsVisible {
-                        QuickPresetView(model: model)
-                    } else { GeometryReader { editor in
-                        ScrollView(.vertical) {
-                            editorContent.frame(maxWidth: .infinity, minHeight: editor.size.height)
-                                .disabled(model.settings.isHDREditing && !supportsHDR(navigation.tool))
-                        }
-                    } }
+                        .onChange(of: group) { _, _ in proxy.scrollTo("adjustment.start", anchor: .top) }
+                    }
                 }
-            }
-        }.frame(maxWidth: .infinity)
-            .environment(\.parameterInputScope, "\(model.file?.absoluteString ?? "").\(navigation.tool.rawValue)")
-            .background(Color(nsColor: .windowBackgroundColor)).tint(.yellow)
+            } else { Spacer(minLength: 0) }
+        }
+        .onChange(of: navigation.tool) { _, _ in collapsedTool = nil }
+        .frame(maxWidth: .infinity)
+        .environment(\.parameterInputScope, "\(model.file?.absoluteString ?? "").\(navigation.tool.rawValue)")
+        .background(Color(nsColor: .windowBackgroundColor)).tint(.yellow)
+    }
+
+    private func groupRow(_ groups: some RandomAccessCollection<EditorAdjustmentGroup>) -> some View {
+        HStack(spacing: 2) {
+            ForEach(Array(groups)) { groupButton($0) }
+        }.fixedSize(horizontal: true, vertical: false)
     }
 
     private func groupButton(_ group: EditorAdjustmentGroup) -> some View {
         let active = navigation.expandedGroup == group
         let changed = model.isAdjustmentModified(.group(group))
         return Button { model.selectAdjustmentGroup(group) } label: {
-            HStack(spacing: 5) {
-                Text(group.title).font(.system(size: 12, weight: active ? .semibold : .regular))
-                    .fixedSize()
-                Circle().fill(changed ? Color.yellow : Color.clear).frame(width: 4, height: 4)
-            }.padding(.horizontal, 10).frame(minHeight: 32)
+            HStack(spacing: 3) {
+                Text(group.title).font(.system(size: 12, weight: .medium)).fixedSize()
+                Circle().fill(.yellow).frame(width: 3, height: 3).opacity(changed ? 1 : 0).accessibilityHidden(true)
+            }.padding(.horizontal, 5).frame(minHeight: 29)
                 .background(active ? Color.yellow.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
                 .foregroundStyle(active ? Color.yellow : Color.primary)
-        }.buttonStyle(.plain).id(group.rawValue)
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain)
             .disabled(model.settings.isHDREditing && group != .looks && !group.tools.contains(where: supportsHDR))
             .accessibilityIdentifier("group.\(group.rawValue)")
             .accessibilityLabel(group.title)
@@ -75,60 +85,122 @@ struct AdjustmentDock: View {
             .help(L10n.format(active ? "收起%@组" : "展开%@组", group.title))
     }
 
-    private func toolButton(_ tool: EditorAdjustmentTool) -> some View {
-        let active = navigation.tool == tool && !model.quickPresetsVisible
+    @ViewBuilder private var lightSections: some View {
+        section(title: L10n.text("曝光"), id: "light.exposure", open: showsExposure, available: true,
+                toggle: { showsExposure.toggle() }) {
+            parameterRow(.exposure)
+            parameterRow(.contrast)
+        }
+        section(title: L10n.text("明暗"), id: "light.tones", open: showsTones, available: true,
+                toggle: { showsTones.toggle() }) {
+            parameterRow(.highlights, showsTicks: true)
+            parameterRow(.shadows)
+            parameterRow(.whitePoint).disabled(model.settings.isHDREditing)
+                .accessibilityHint(model.settings.isHDREditing ? L10n.text("HDR 模式暂不支持此工具。") : "")
+            parameterRow(.blackPoint).disabled(model.settings.isHDREditing)
+                .accessibilityHint(model.settings.isHDREditing ? L10n.text("HDR 模式暂不支持此工具。") : "")
+        }
+        toolSection(.toneCurve)
+    }
+
+    @ViewBuilder private func groupTools(_ group: EditorAdjustmentGroup) -> some View {
+        ForEach(group.tools) { tool in
+            if tool != .strength { toolSection(tool) }
+        }
+        if group == .looks {
+            Button(action: model.showQuickPresets) {
+                Label(L10n.text("我的预设"), systemImage: "bookmark")
+                    .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading).contentShape(Rectangle())
+            }.buttonStyle(.plain).padding(.horizontal, 10).disabled(model.lookLibraryBusy)
+                .accessibilityIdentifier("preset.library")
+        }
+    }
+
+    private func toolSection(_ tool: EditorAdjustmentTool) -> some View {
+        let open = !tool.usesGeometryDraft && navigation.tool == tool && collapsedTool != tool
         let changed = model.isAdjustmentModified(.tool(tool))
-        return Button { model.selectAdjustmentTool(tool) } label: {
-            HStack(spacing: 6) {
-                Image(systemName: tool.symbol).font(.system(size: 13)).frame(width: 18)
-                Text(tool.title).font(.system(size: 12)).fixedSize()
-                Circle().fill(changed ? Color.yellow : Color.clear).frame(width: 3, height: 3)
-            }.padding(.horizontal, 10).frame(height: 28)
-                .background(active ? Color.yellow.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
-                .foregroundStyle(active ? Color.yellow : Color.primary)
-        }.buttonStyle(.plain).id(tool.rawValue)
-            .accessibilityIdentifier("tool.\(tool.rawValue)")
-            .accessibilityLabel(tool.title).accessibilityValue(changed ? L10n.text("已调整") : "")
-            .accessibilityAddTraits(active ? .isSelected : [])
-            .help(toolUnavailableReason(tool) ?? tool.title)
-            .accessibilityHint(toolUnavailableReason(tool) ?? "")
-            .disabled((model.result == nil && !(tool == .denoise && model.file != nil && model.aiControlsVisible)) ||
-                      (tool == .lens && !model.canUseLensCorrection) ||
-                      (model.settings.isHDREditing && !supportsHDR(tool)))
-            .contextMenu {
-                Button(L10n.format("重置%@", tool.title)) { model.requestAdjustmentReset(.tool(tool)) }
-                    .disabled(!changed)
+        let reason = toolUnavailableReason(tool)
+        return section(title: tool.title, id: "tool.\(tool.rawValue)", open: open,
+                       available: reason == nil && (model.result != nil || (tool == .denoise && model.aiControlsVisible)),
+                       changed: changed, reason: reason, toggle: {
+            if tool.usesGeometryDraft {
+                model.selectAdjustmentGeometryTab(tool == .lens ? .lens : .crop)
+            } else if navigation.tool != tool {
+                collapsedTool = nil
+                model.selectAdjustmentTool(tool)
+            } else if open {
+                if tool == .colorGrading || tool == .toneCurve { model.cancelAdjustmentInteraction() }
+                if tool == .hsl { model.cancelHSLTarget(); model.hslTargetEnabled = false }
+                ParameterValueField.cancelPendingInputs()
+                collapsedTool = tool
+            } else {
+                collapsedTool = nil
             }
+        }) {
+            if !tool.usesGeometryDraft { editorContent(tool) }
+        }
+        .contextMenu {
+            Button(L10n.format("重置%@", tool.title)) { model.requestAdjustmentReset(.tool(tool)) }
+                .disabled(!changed)
+        }
+    }
+
+    private func section<Content: View>(title: String, id: String, open: Bool, available: Bool,
+                                        changed: Bool = false, reason: String? = nil, toggle: @escaping () -> Void,
+                                        @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: toggle) {
+                HStack(spacing: 7) {
+                    Image(systemName: open ? "chevron.down" : "chevron.right").font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.secondary).frame(width: 11)
+                    Text(title).font(.system(size: 12, weight: .semibold))
+                    Spacer(minLength: 4)
+                    if changed { Circle().fill(.yellow).frame(width: 4, height: 4).accessibilityHidden(true) }
+                }.frame(minHeight: 31).contentShape(Rectangle())
+            }.buttonStyle(.plain).padding(.horizontal, 10).disabled(!available)
+                .accessibilityIdentifier(id).accessibilityLabel(title)
+                .accessibilityValue(L10n.text(open ? "已展开" : "已收起"))
+                .accessibilityHint(reason ?? "").help(reason ?? title)
+                .accessibilityAddTraits(open && id.hasPrefix("tool.") ? .isSelected : [])
+            if open {
+                if let reason {
+                    Text(reason).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 10).padding(.bottom, 6)
+                }
+                VStack(spacing: 4) { content() }
+                    .padding(.horizontal, 10).padding(.bottom, 8).disabled(!available)
+            }
+            Divider()
+        }
     }
 
     private func toolUnavailableReason(_ tool: EditorAdjustmentTool) -> String? {
         if model.settings.isHDREditing && !supportsHDR(tool) { return L10n.text("HDR 模式暂不支持此工具。") }
         if tool == .lens && RenderEngine.isX3fInput(model.file) && model.settings.x3fMode == .normal { return L10n.text("此输入不支持镜头校正") }
         if tool == .lens && RenderEngine.isRasterInput(model.file) { return L10n.text("仅 RAW 照片支持镜头校正。") }
-        if tool == .whiteBalance && !model.settings.isHDREditing && model.settings.asShotWhiteBalance == nil {
-            return L10n.text("此照片没有可用的相机白平衡校准。")
-        }
-        if tool.parameter == .strength && model.selectedFilm == nil && model.settings.masterRecipe == nil { return L10n.text("请先选择外观或配方。") }
+        if tool == .lens && !model.canUseLensCorrection { return L10n.text("此输入不支持镜头校正") }
         return nil
     }
 
-    @ViewBuilder private var editorContent: some View {
-        if navigation.tool == .toneCurve {
+    @ViewBuilder private func editorContent(_ tool: EditorAdjustmentTool) -> some View {
+        if tool == .toneCurve {
             let source = model.sourceRevision
             MacToneCurveControls(settings: Binding(get: { model.settings.curveSettings }, set: { model.settings.curveSettings = $0 }),
                 legacy: $model.settings.toneCurve, source: String(describing: source),
                 isCurrent: { model.sourceRevision == source && model.adjustmentNavigation.tool == .toneCurve && model.adjustmentNavigation.expandedGroup != nil },
                 onEditingChanged: model.setInteracting, onCancelled: model.cancelAdjustmentInteraction)
-                .padding(.horizontal, 16).disabled(model.result == nil)
-        } else if navigation.tool == .colorGrading {
+        } else if tool == .colorGrading {
             let source = model.sourceRevision
             MacColorGradingControls(settings: Binding(get: { model.settings.gradingSettings }, set: { model.settings.gradingSettings = $0 }),
                 zone: $model.adjustmentNavigation.selectedGradingZone, source: String(describing: source),
                 isCurrent: { model.sourceRevision == source && model.adjustmentNavigation.tool == .colorGrading && model.adjustmentNavigation.expandedGroup != nil },
-                onEditingChanged: model.setInteracting, onCancelled: model.cancelAdjustmentInteraction)
-                .padding(.horizontal, 16).disabled(model.result == nil)
-        } else if navigation.tool == .hsl {
-            VStack(spacing: 10) {
+                onEditingChanged: model.setInteracting, onCancelled: model.cancelAdjustmentInteraction, compact: true)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) { gradingResets }
+                VStack(alignment: .leading, spacing: 4) { gradingResets }
+            }.controlSize(.small)
+        } else if tool == .hsl {
+            VStack(spacing: 8) {
                 HSLTargetControls(enabled: $model.hslTargetEnabled, axis: $model.hslTargetAxis,
                     sample: model.hslTargetInteraction.selection, waiting: model.hslTargetInteraction.isWaiting,
                     notice: model.hslTargetNotice, onCancel: model.cancelHSLTarget)
@@ -138,53 +210,65 @@ struct AdjustmentDock: View {
                         if editing { model.cancelHSLTarget() }
                         model.setInteracting(editing)
                     }, onCancelTarget: model.cancelHSLTarget)
-            }.padding(.horizontal, 16).disabled(model.result == nil)
-        } else if navigation.tool == .denoise {
-            DenoiseControls(model: model, onReset: { model.requestAdjustmentReset(.tool(.denoise)) })
-                .id(resetVersion).frame(maxWidth: 720).padding(.horizontal, 16)
-        } else if let parameter = navigation.tool.parameter, parameter.isPhotoEffect {
-            PhotoEffectsControls(model: model, tool: parameter, onReset: { model.requestAdjustmentReset(.tool(navigation.tool)) })
-                .id("\(parameter.rawValue).\(resetVersion)").disabled(model.result == nil)
-        } else if let parameter = navigation.tool.parameter {
-            VStack(spacing: 0) {
-                if parameter.isWhiteBalance {
-                    if model.settings.isHDREditing {
-                        Text(L10n.text("相对白平衡")).font(.caption).foregroundStyle(.secondary)
-                    } else {
-                    Picker(L10n.text("白平衡"), selection: Binding(get: { model.settings.whiteBalanceMode }, set: { mode in
-                        if mode == .asShot { model.settings.resetWhiteBalance() }
-                        else { model.settings.whiteBalanceMode = mode }
-                    })) {
-                        ForEach(WhiteBalanceMode.allCases) { Text($0.title).tag($0) }
-                    }.fixedSize().controlSize(.small).padding(.bottom, 4).id(localizationLocale.identifier)
-                    }
-                    parameterRow(.temperature); parameterRow(.tint)
-                    if !model.settings.isHDREditing && model.settings.asShotWhiteBalance == nil {
-                        Text(L10n.text("此照片没有可用的相机白平衡校准。")).font(.caption).foregroundStyle(.secondary)
-                    }
-                } else { parameterRow(parameter) }
-            }.frame(maxWidth: 720).padding(.horizontal, 16)
-                .disabled(parameter == .strength && model.selectedFilm == nil && model.settings.masterRecipe == nil)
-                .disabled(parameter.isWhiteBalance && !model.settings.isHDREditing && model.settings.asShotWhiteBalance == nil)
-        } else if navigation.tool == .recipe {
+            }
+        } else if tool == .denoise {
+            DenoiseControls(model: model, onReset: { model.requestAdjustmentReset(.tool(.denoise)) }).id(resetVersion)
+        } else if let parameter = tool.parameter, parameter.isPhotoEffect {
+            PhotoEffectsControls(model: model, tool: parameter, onReset: { model.requestAdjustmentReset(.tool(tool)) })
+                .id("\(parameter.rawValue).\(resetVersion)")
+        } else if let parameter = tool.parameter {
+            if parameter.isWhiteBalance { whiteBalance }
+            else { parameterRow(parameter) }
+        } else if tool == .recipe {
             MasterRecipeDock(model: model).frame(height: AdjustmentPanelLayout.RecipeCard.dockHeight)
-        } else {
-            FilmDock(model: model).frame(height: 188)
+        } else if tool == .film {
+            FilmDock(model: model)
         }
     }
 
-    private func parameterRow(_ parameter: AdjustmentParameter) -> some View {
+    private var whiteBalance: some View {
+        VStack(spacing: 4) {
+            if model.settings.isHDREditing {
+                Text(L10n.text("相对白平衡")).font(.caption).foregroundStyle(.secondary)
+            } else {
+                Picker(L10n.text("白平衡"), selection: Binding(get: { model.settings.whiteBalanceMode }, set: { mode in
+                    if mode == .asShot { model.settings.resetWhiteBalance() }
+                    else { model.settings.whiteBalanceMode = mode }
+                })) {
+                    ForEach(WhiteBalanceMode.allCases) { Text($0.title).tag($0) }
+                }.controlSize(.small).id(localizationLocale.identifier)
+            }
+            parameterRow(.temperature)
+            parameterRow(.tint)
+            if !model.settings.isHDREditing && model.settings.asShotWhiteBalance == nil {
+                Text(L10n.text("此照片没有可用的相机白平衡校准。")).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }.disabled(!model.settings.isHDREditing && model.settings.asShotWhiteBalance == nil)
+    }
+
+    @ViewBuilder private var gradingResets: some View {
+        gradingReset(.gradingZone(navigation.selectedGradingZone), "重置当前分区")
+        gradingReset(.allGrading, "重置颜色分级")
+    }
+
+    private func gradingReset(_ scope: EditorResetScope, _ title: String) -> some View {
+        Button(L10n.text(title)) { model.requestAdjustmentReset(scope) }
+            .disabled(model.busy || !model.isAdjustmentModified(scope))
+    }
+
+    private func parameterRow(_ parameter: AdjustmentParameter, title: String? = nil, showsTicks: Bool = false) -> some View {
         AdjustmentRow(parameter: parameter, value: Binding(
-            get: { parameter.value(from:model.settings) },
+            get: { parameter.value(from: model.settings) },
             set: { model.settings.set(parameter, to: $0) }
-        ), showsTicks: true, specOverride: parameter.spec(for: model.settings),
-        onEditingChanged: model.setInteracting,
-        onAuto: parameter == .exposure && !model.settings.isHDREditing ? model.autoExposure : nil, autoBusy: model.autoExposing)
+        ), showsTicks: showsTicks, specOverride: parameter.spec(for: model.settings), onEditingChanged: model.setInteracting,
+        onAuto: parameter == .exposure && !model.settings.isHDREditing ? model.autoExposure : nil,
+        autoBusy: model.autoExposing, compact: true, titleOverride: title)
         .id("\(parameter.rawValue).\(resetVersion)")
+        .disabled(model.result == nil)
     }
 
     private func supportsHDR(_ tool: EditorAdjustmentTool) -> Bool {
         tool == .geometry || tool == .whiteBalance || tool.parameter?.hdrKeyPath != nil
     }
-
 }

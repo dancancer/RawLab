@@ -39,6 +39,7 @@ internal static class TestWindowState
         updates.PropertyChanged+=(_,_)=>notice.Visibility=updates.HasUpdate ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         Set("editStore",new EditStore(editDirectory ?? Path.Combine(root,"edits")));
         Set("recentLooksPath",Path.Combine(root,"recent-looks.json"));
+        Set("workspaceWidthsPath", Path.Combine(root,"workspace-widths.json"));
         Set("recentLooks",new RecentLooks());
         Set("presetStore",new AdjustmentPresetStore(Path.Combine(root,"presets")));
         Set("batchJournal",new BatchJournal(Path.Combine(root,"batch")));

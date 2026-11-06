@@ -17,14 +17,17 @@ public partial class DenoisePanel : UserControl
     public DenoisePanel()
     {
         InitializeComponent();
-        for(var i=0;i<rows.Length;++i){var axis=i;Parameters.Children.Add(rows[i]);rows[i].Changed+=(number,dragging)=>Set(axis,number,dragging);}
+        for (var i = 0; i < rows.Length; i++) {
+            var axis = i;
+            (i == 0 ? LumaParameter : Parameters).Children.Add(rows[i]);
+            rows[i].Changed += (number, dragging) => Set(axis, number, dragging);
+        }
         Refresh(value);
     }
     public void Refresh(DenoiseSettings settings)
     {
         syncing=true;value=settings;
         EnabledBox.IsChecked=value.Enabled;PresetBox.SelectedIndex=value.Preset;
-        Summary.Text=$"{Loc.Text(titles[0])} {value.Luma:0.#} / {Loc.Text(titles[1])} {value.Chroma:0.#} / {Loc.Text(titles[2])} {value.Coarse:0.#}";
         var numbers=new[]{value.Luma,value.Chroma,value.Coarse};var defaults=new[]{0.0,46,50};
         for(var i=0;i<rows.Length;++i)rows[i].Refresh(Loc.Text(titles[i]),new(0,100),numbers[i],defaults[i],"%",value.Enabled);
         syncing=false;

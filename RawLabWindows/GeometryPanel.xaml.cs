@@ -29,10 +29,10 @@ public partial class GeometryPanel : UserControl
         InitializeComponent();
         TransformRows.Children.Add(angle);PerspectiveRows.Children.Add(horizontal);PerspectiveRows.Children.Add(vertical);
         for(var i=0;i<crops.Length;++i){
-            var component=(CropComponent)i;var row=crops[i];Grid.SetRow(row,i/2);Grid.SetColumn(row,i%2);
-            row.Margin=new Thickness(i%2==0 ? 0 : 8,2,i%2==0 ? 8 : 0,2);CropRows.Children.Add(row);
+            var component=(CropComponent)i;var row=crops[i];CropRows.Children.Add(row);
             row.Changed+=(number,dragging)=>SetCrop(component,number,dragging);
         }
+        SizeChanged += (_, e) => CropRows.Columns = e.NewSize.Width < 420 ? 1 : 2;
         RegisterName("CropX",crops[0].Number);RegisterName("CropY",crops[1].Number);
         RegisterName("CropWidth",crops[2].Number);RegisterName("CropHeight",crops[3].Number);
         RegisterName("StraightenSlider",angle.Slider);

@@ -1,53 +1,88 @@
 import Foundation
 
-struct AdjustmentPanelLayout {
-    // ------------------------------------------------------------------------
-    //  各工具面板共用的外框：拖动条 13 + 标题行 31 + 工具行 72
-    // ------------------------------------------------------------------------
-    static let chrome: CGFloat = 116
+enum MacWorkspaceMode: String, CaseIterable {
+    case editing, selection, preview
+}
 
-    // ------------------------------------------------------------------------
-    //  效果面板按可见行数要高度：组标题 28 + 每行 32 + 底部提示 22
-    //  提示随强度出现或消失，始终留出它的位置，拖动滑杆时面板不跳动
-    // ------------------------------------------------------------------------
-    static func effectsHeight(rows: Int) -> CGFloat {
-        max(252, chrome + 28 + 32 * CGFloat(rows) + 22)
-    }
-
-    var collapsed = false
-    private var preferredHeight: CGFloat?
-    var isAutomatic: Bool { preferredHeight == nil }
-
-    func height(available: CGFloat, automatic: CGFloat = 220) -> CGFloat {
-        collapsed ? 0 : min(preferredHeight ?? max(220, automatic), Self.maximum(available))
-    }
-
-    mutating func restoreAutomaticHeight() { preferredHeight = nil }
-
-    mutating func resize(to height: CGFloat, available: CGFloat) {
-        preferredHeight = min(max(height, 220), Self.maximum(available))
-    }
-
-    private static func maximum(_ available: CGFloat) -> CGFloat {
-        max(220, min(380, available * 0.5))
-    }
+enum MacLibraryPresentation: Equatable {
+    case hidden, pinned, drawer
 }
 
 struct MacWorkspaceLayout {
-    private(set) var fileTreeChoice: Bool?
+    static let compactThreshold: CGFloat = 1180
+    static let libraryRange: ClosedRange<CGFloat> = 200...288
+    static let inspectorRange: ClosedRange<CGFloat> = 280...360
+    static let defaultLibraryWidth: CGFloat = 232
+    static let defaultInspectorWidth: CGFloat = 304
+    static let drawerWidth: CGFloat = 264
 
-    func showsFiles(width: CGFloat, hasFolders: Bool) -> Bool {
-        fileTreeChoice ?? (hasFolders || width >= 1100)
+    private(set) var mode: MacWorkspaceMode = .editing
+    private var modeBeforePreview: MacWorkspaceMode = .editing
+    private var libraryPinned = true
+    private var inspectorPinned = true
+    private var drawerOpen = false
+    private var drawerBeforePreview = false
+
+    static func isCompact(_ width: CGFloat) -> Bool { width < compactThreshold }
+
+    static func libraryWidth(_ width: CGFloat) -> CGFloat {
+        min(libraryRange.upperBound, max(libraryRange.lowerBound, width))
     }
 
-    mutating func toggleFiles(width: CGFloat, hasFolders: Bool) {
-        fileTreeChoice = !showsFiles(width: width, hasFolders: hasFolders)
+    static func inspectorWidth(_ width: CGFloat, windowWidth: CGFloat) -> CGFloat {
+        if isCompact(windowWidth) { return inspectorRange.lowerBound }
+        return min(inspectorRange.upperBound, max(inspectorRange.lowerBound, width))
     }
 
-    static func compactHistogram(canvas: CGSize) -> Bool {
-        canvas.width < 760 || canvas.height < 400
+    func libraryPresentation(width: CGFloat) -> MacLibraryPresentation {
+        guard mode != .preview else { return .hidden }
+        if Self.isCompact(width) { return drawerOpen ? .drawer : .hidden }
+        return libraryPinned ? .pinned : .hidden
+    }
+
+    func showsInspector(hasPhoto: Bool) -> Bool { mode == .editing && inspectorPinned && hasPhoto }
+
+    mutating func toggleLibrary(width: CGFloat) {
+        guard mode != .preview else { return }
+        if Self.isCompact(width) { drawerOpen.toggle() }
+        else { libraryPinned.toggle() }
+    }
+
+    mutating func toggleInspector() { inspectorPinned.toggle() }
+    mutating func showInspector() { inspectorPinned = true }
+
+    mutating func setMode(_ next: MacWorkspaceMode) {
+        guard mode != next else { return }
+        if next == .preview {
+            modeBeforePreview = mode
+            drawerBeforePreview = drawerOpen
+        }
+        drawerOpen = mode == .preview && next == modeBeforePreview && drawerBeforePreview
+        mode = next
+    }
+
+    mutating func windowResized(from oldWidth: CGFloat, to newWidth: CGFloat) {
+        if Self.isCompact(oldWidth) != Self.isCompact(newWidth) {
+            drawerOpen = false
+            drawerBeforePreview = false
+        }
+    }
+
+    mutating func photoOpened() {
+        drawerOpen = false
+        drawerBeforePreview = false
+        if mode == .selection { setMode(.editing) }
+    }
+
+    @discardableResult mutating func dismissTransient() -> Bool {
+        if drawerOpen { drawerOpen = false; return true }
+        if mode == .preview { setMode(modeBeforePreview); return true }
+        return false
     }
 }
+
+// Recipe artwork keeps its own stable size inside the scrolling inspector.
+enum AdjustmentPanelLayout {}
 
 // ----------------------------------------------------------------------------
 //  大师配方卡片：名称最多两行，说明最多三行（德、法、西文的说明在 112 pt 宽时要三行）
@@ -55,7 +90,7 @@ struct MacWorkspaceLayout {
 // ----------------------------------------------------------------------------
 extension AdjustmentPanelLayout {
     enum RecipeCard {
-        static let dockHeight: CGFloat = 252 - chrome
+        static let dockHeight: CGFloat = 136
         static let width: CGFloat = 112
         static let titleHeight: CGFloat = 28
         static let subtitleSize: CGFloat = 10

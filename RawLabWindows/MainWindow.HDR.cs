@@ -64,7 +64,7 @@ public partial class MainWindow
         if(active && !hdrDisplayTimer.IsEnabled) {
             ResultHDRSurface.RefreshCapabilities();NeutralHDRSurface.RefreshCapabilities();hdrDisplayTimer.Start();
         } else if(!active)hdrDisplayTimer.Stop();
-        var overlays=new FrameworkElement[]{NeutralLabel,FilmLabel,InfoEntryButton,InfoOverlay,HistogramSurface,BusyIndicator,HslTargetBanner};
+        var overlays=new FrameworkElement[]{NeutralLabel,FilmLabel,InfoEntryButton,InfoOverlay,LibraryOverlay,BusyIndicator,HslTargetBanner};
         var resultPresented=false;
         void Present(HDRSurface surface,PhotoCanvas canvas,HDRFloatImage? image,HDRFloatImage? reference) {
             Grid.SetRow(surface,Grid.GetRow(canvas));Grid.SetColumn(surface,Grid.GetColumn(canvas));
@@ -78,13 +78,13 @@ public partial class MainWindow
         Present(ResultHDRSurface,ResultCanvas,result?.HDR?.HDR,reference);
         Present(NeutralHDRSurface,NeutralCanvas,reference,null);
         var shown=view.HoldingBefore && ReferenceCurrent ? neutralResult?.HDR : result?.HDR;
-        Histogram.HDRBins=active ? shown?.Statistics.Bins : null;
-        Histogram.HDRHeadroom=ResultHDRSurface.Headroom;Histogram.InvalidateVisual();
+        Histogram.SetHdrStatistics(active ? shown?.Statistics.Bins : null, ResultHDRSurface.Headroom);
         if(active && shown!=null) {
             HistogramTitle.Text=Loc.Text("HDR 亮度直方图");
             HistogramSource.Text=Loc.Text(hdrFalseColor ? "HDR 假色" : hdrSdrPreview ? "SDR 兼容预览" : resultPresented ? "自动 HDR" : "HDR 显示不可用，当前显示 SDR。");
             ClipStats.Text=Loc.Format("参考白以上 {0}",shown.Statistics.AboveWhite.ToString("P1",System.Globalization.CultureInfo.CurrentCulture));
         } else HistogramTitle.Text=Loc.Text("RGB 直方图");
+        HistogramHeading.Text = HistogramTitle.Text;
     }
 
     private void RefreshHDRControls()

@@ -82,6 +82,12 @@ public sealed partial class PhotoCanvas : FrameworkElement
     public bool ShowClipping { get=>showClipping; set {if(showClipping==value)return;showClipping=value;DrawImages();} }
     public Viewport? Viewport { get => viewport; set { if(viewport!=null) viewport.Changed-=UpdateTransform; viewport=value; if(value!=null)value.Changed+=UpdateTransform;UpdateTransform(); } }
     public void SetImage(BitmapSource? source,BitmapSource? clipping) { if(ReferenceEquals(image,source) && ReferenceEquals(mask,clipping))return;image=source; mask=clipping;DrawImages();UpdateTransform(); }
+    internal void SetClippingMask(BitmapSource clipping)
+    {
+        if (ReferenceEquals(mask, clipping)) return;
+        mask = clipping;
+        DrawImages();
+    }
     public void SetComparison(BitmapSource? source,BitmapSource? clipping) { if(ReferenceEquals(comparison,source) && ReferenceEquals(comparisonMask,clipping))return;comparison=source;comparisonMask=clipping;DrawImages();UpdateComparison(); }
     public PhotoCanvas()
     {
@@ -213,8 +219,16 @@ public sealed partial class PhotoCanvas : FrameworkElement
 
 public sealed class HistogramView : FrameworkElement
 {
-    internal uint[]? HDRBins { get; set; }
-    internal float HDRHeadroom { get; set; } = 1;
+    private uint[]? hdrBins;
+    private float hdrHeadroom = 1;
+
+    internal void SetHdrStatistics(uint[]? bins, float headroom)
+    {
+        if (ReferenceEquals(hdrBins, bins) && hdrHeadroom == headroom) return;
+        hdrBins = bins;
+        hdrHeadroom = headroom;
+        InvalidateVisual();
+    }
     private static readonly DependencyProperty OutlineBrushProperty=DependencyProperty.Register("OutlineBrush",typeof(Brush),typeof(HistogramView),new FrameworkPropertyMetadata(Brushes.Transparent,FrameworkPropertyMetadataOptions.AffectsRender));
     public HistogramView()=>SetResourceReference(OutlineBrushProperty,"HistogramOutline");
     // 高度不足时由 Grid 收缩图形区域，给下方统计文字保留完整行。
@@ -222,11 +236,11 @@ public sealed class HistogramView : FrameworkElement
     public uint[]? Bins { get; set; }
     protected override void OnRender(DrawingContext dc)
     {
-        if(HDRBins is {Length:256} hdr) {
+        if(hdrBins is {Length:256} hdr) {
             var maximum=Math.Max(1,hdr.Max());
             for(var i=0;i<256;i++)dc.DrawRectangle(Brushes.LightGray,null,
                 new Rect(i*ActualWidth/256,ActualHeight*(1-hdr[i]/(double)maximum),ActualWidth/256+.2,ActualHeight*hdr[i]/maximum));
-            var reference=ActualWidth/2;var screen=Math.Clamp((Math.Log2(Math.Max(1,HDRHeadroom))+8)/16*ActualWidth,0,ActualWidth);
+            var reference=ActualWidth/2;var screen=Math.Clamp((Math.Log2(Math.Max(1,hdrHeadroom))+8)/16*ActualWidth,0,ActualWidth);
             dc.DrawLine(new Pen(Brushes.Black,5),new Point(reference,0),new Point(reference,ActualHeight));
             dc.DrawLine(new Pen(Brushes.White,2),new Point(reference,0),new Point(reference,ActualHeight));
             dc.DrawLine(new Pen(Brushes.Black,5),new Point(screen,0),new Point(screen,ActualHeight));

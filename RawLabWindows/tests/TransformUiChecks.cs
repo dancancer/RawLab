@@ -14,7 +14,7 @@ internal static class TransformUiChecks
     internal static void Run(string repo,string raw,Action<bool,string> check)
     {
         if(File.Exists(Path.Combine(BatchJournal.DefaultDirectory,"job.json")))throw new InvalidOperationException("Preserve existing batch job; use an isolated test account.");
-        var output=Path.Combine(repo,"build","windows-v08-ui");Directory.CreateDirectory(output);
+        var output=Path.Combine(Path.GetFullPath(repo),"build","windows-v08-ui");Directory.CreateDirectory(output);
         var directory=Path.Combine(output,Guid.NewGuid().ToString("N"));Directory.CreateDirectory(directory);
         var photo=Path.Combine(directory,"photo"+Path.GetExtension(raw));var other=Path.Combine(directory,"other"+Path.GetExtension(raw));
         File.Copy(raw,photo);File.Copy(raw,other);
@@ -60,7 +60,9 @@ internal static class TransformUiChecks
                 .TransformBounds(new Rect(window.GeometrySurface.RenderSize));
             var actionBounds=window.DraftActions.TransformToAncestor(window.AdjustmentPanel)
                 .TransformBounds(new Rect(window.DraftActions.RenderSize));
-            check(geometryBounds.Height>40 && actionBounds.Top>=geometryBounds.Bottom-.5 &&
+            var toolViewport = window.ToolsScroller.TransformToAncestor(window.AdjustmentPanel)
+                .TransformBounds(new Rect(window.ToolsScroller.RenderSize));
+            check(geometryBounds.Height>40 && actionBounds.Top>=toolViewport.Bottom-.5 &&
                 actionBounds.Bottom<=window.AdjustmentPanel.ActualHeight,
                 "Crop parameters and fixed draft actions occupy separate visible regions");
             window.SetComparisonMode(true,true);window.BeforeViewMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));

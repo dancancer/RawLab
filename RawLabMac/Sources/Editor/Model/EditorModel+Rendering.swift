@@ -66,21 +66,34 @@ extension EditorModel {
         }
         let preview = geometryPreviewSettings
         let interactive = geometryDraft == nil && scheduler.interacting && !forceExact && preview.geometrySettings.isIdentity
-        let effectiveLUT = settings.masterRecipe?.lutURL() ?? selectedFilm?.url
-        let work = RenderWork(file: file, settings: preview, source: referenceSource(file), lut: effectiveLUT,
+        let work = renderWork(file: file, preview: preview,
                               edge: interactive || !fullResolution ? renderPreviewLongEdge : nil,
-                              pass: interactive ? .interactive : .exact,
-                              draftEpoch: geometryDraftEpoch, editingGeometry: geometryDraft != nil)
+                              pass: interactive ? .interactive : .exact)
+        exactPreviewCache.useScope(work.previewScope)
         _ = scheduler.submit(work, fileID: file.standardizedFileURL.path, pass: work.pass)
-        busy = true
         error = nil
-        if interactive {
-            // The serial worker is the throttle while dragging. Start the first
-            // preview immediately; later slider events only replace `pending`.
+        if interactive || exactPreviewCache.frames(for: work) != nil {
+            // 拖动时由串行队列限流。命中精确帧时也可以直接发布。
             if !workerActive { launchNextRender() }
+            else { refreshBusy() }
         } else {
+            busy = true
             debounceTimer?.schedule(deadline: .now() + 0.15, repeating: .never, leeway: .milliseconds(5))
         }
+    }
+
+    func renderWork(file: URL, preview: Adjustments, edge: Int?, pass: RenderPass,
+                    verifiedSource: MacReferenceSource? = nil) -> RenderWork {
+        let effectiveLUT = settings.masterRecipe?.lutURL() ?? selectedFilm?.url
+        let source = verifiedSource ?? referenceSource(file)
+        let lookIdentity = effectiveLUT.flatMap { try? OriginalFileIdentity($0) }
+        // AI 降噪仍需由原生层校验模型和磁盘缓存。
+        let scope: MacExactPreviewCache.Scope? = geometryDraft == nil && !scheduler.interacting && !preview.aiDenoiseEnabled &&
+            source.modified != nil && source.size != nil && (effectiveLUT == nil || lookIdentity != nil)
+            ? .init(source: source, editRevision: editRevision, look: lookIdentity) : nil
+        return RenderWork(file: file, settings: preview, source: source, lut: effectiveLUT,
+                          edge: edge, pass: pass,
+                          draftEpoch: geometryDraftEpoch, editingGeometry: geometryDraft != nil, previewScope: scope)
     }
 
     func launchNextRender() {
@@ -90,6 +103,10 @@ extension EditorModel {
         }
         workerActive = true
         let work = request.value
+        if let cached = exactPreviewCache.frames(for: work) {
+            finish(request, neutral: cached.neutral, result: cached.result, failure: nil)
+            return
+        }
         queue.async { [weak self] in
             guard let self else { return }
             do {
@@ -101,9 +118,17 @@ extension EditorModel {
                 }
                 if self.engine == nil { self.engine = try RenderEngine() }
                 if work.settings.isHDREditing {
-                    self.originalCache=nil; self.geometryReferenceCache=nil
-                    let neutral=try self.engine!.render(work.file,settings:work.settings.neutralGeometrySettings,
-                        lut:nil,edge:work.edge ?? 2000)
+                    self.originalCache = nil
+                    let neutralSettings = work.settings.neutralGeometrySettings
+                    let neutralEdge = work.edge ?? 2000
+                    let key = MacNeutralReferenceKey(source: work.source, settings: neutralSettings, edge: neutralEdge)
+                    let neutral: RenderedImage?
+                    if let cached = self.geometryReferenceCache, cached.key == key, cached.frame.hdr != nil {
+                        neutral = cached.frame
+                    } else {
+                        neutral = try self.engine!.render(work.file, settings: neutralSettings, lut: nil, edge: neutralEdge)
+                        self.geometryReferenceCache = neutral.map { (key, $0) }
+                    }
                     let result=try self.engine!.render(work.file,settings:work.settings,lut:nil,edge:work.edge,
                         interactive:work.pass == .interactive)
                     DispatchQueue.main.async { self.finish(request,neutral:neutral,result:result,failure:nil) }
@@ -149,7 +174,12 @@ extension EditorModel {
 
     private func finish(_ request: RenderRequest<RenderWork>, neutral: RenderedImage?, result: RenderedImage?, failure: Error?) {
         workerActive = false
-        if failure == nil { acceptedOriginalSource = request.value.source }
+        if failure == nil {
+            acceptedOriginalSource = request.value.source
+            if let neutral, let result {
+                exactPreviewCache.store(neutral: neutral, result: result, for: request.value)
+            }
+        }
         let completion = scheduler.finish(request)
         let sameFile = request.value.file.standardizedFileURL == file?.standardizedFileURL
         switch completion {
@@ -220,5 +250,48 @@ extension EditorModel {
     func refreshBusy() {
         busy = workerActive || scheduler.isBusy || viewportResizeWork != nil
         resumeHSLTargetKeys()
+    }
+}
+
+struct MacExactPreviewCache {
+    struct Scope: Equatable {
+        let source: MacReferenceSource
+        let editRevision: UUID
+        let look: OriginalFileIdentity?
+    }
+
+    private var scope: Scope?
+    private var entries: [(edge: Int?, neutral: RenderedImage, result: RenderedImage, bytes: Int)] = []
+    private static let budget = 512 * 1024 * 1024
+
+    mutating func useScope(_ scope: Scope?) {
+        guard self.scope != scope else { return }
+        self.scope = scope
+        entries.removeAll()
+    }
+
+    func frames(for work: EditorModel.RenderWork) -> (neutral: RenderedImage, result: RenderedImage)? {
+        guard work.pass == .exact, scope != nil, work.previewScope == scope,
+              let entry = entries.first(where: { $0.edge == work.edge }) else { return nil }
+        return (entry.neutral, entry.result)
+    }
+
+    mutating func store(neutral: RenderedImage, result: RenderedImage, for work: EditorModel.RenderWork) {
+        guard work.pass == .exact, scope != nil, work.previewScope == scope,
+              (result.hdr != nil || result.histogram.count == 3),
+              (neutral.hdr != nil || neutral.histogram.count == 3) else { return }
+        // SDR 对照帧由编辑器原有的全尺寸参考缓存持有。
+        let bytes = Self.bytes(result) + (neutral.hdr == nil ? 0 : Self.bytes(neutral))
+        guard bytes <= Self.budget else { return }
+        entries.removeAll { $0.edge == work.edge }
+        while entries.count >= 3 || entries.reduce(bytes, { $0 + $1.bytes }) > Self.budget {
+            entries.removeFirst()
+        }
+        entries.append((work.edge, neutral, result, bytes))
+    }
+
+    private static func bytes(_ frame: RenderedImage) -> Int {
+        let mask = frame.clipping.map { $0.bytesPerRow * $0.height } ?? 0
+        return frame.image.bytesPerRow * frame.image.height + mask + (frame.hdr?.image.byteCount ?? 0)
     }
 }

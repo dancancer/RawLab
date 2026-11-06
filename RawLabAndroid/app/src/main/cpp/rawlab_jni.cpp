@@ -2,6 +2,7 @@
 #include <android/bitmap.h>
 #include "render_request.h"
 #include "recipe_probe_stages.h"
+#include "recipe_white_balance_cache.h"
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
 #include <cstring>
 #include <limits>
@@ -31,6 +32,7 @@ struct SessionDeleter {
 struct Session {
     std::unique_ptr<sony2fuji_session, SessionDeleter> value;
     rawlab::RecipeProbeStages stages;
+    rawlab::RecipeWhiteBalanceCache recipeWhiteBalance;
     std::shared_ptr<std::atomic<jlong>> generation = std::make_shared<std::atomic<jlong>>(0);
     explicit Session(sony2fuji_session* pointer) : value(pointer) {}
     sony2fuji_session* get() const { return value.get(); }
@@ -231,15 +233,7 @@ bool isNormalX3f(const char* input, jint mode) {
     char signature[4]{};
     return file.read(signature, sizeof(signature)) && std::memcmp(signature, "FOVb", 4) == 0;
 }
-void prepareRecipeWb(Session& owner, const char* input, bool active, float strength,
-    bool& custom, float& temperature, float& tint, bool normalX3f) {
-    if (!active || (!custom && tint * strength == 0)) return;
-    if (normalX3f) {
-        if (!custom) temperature = 6500;
-        tint = std::clamp(tint * strength, -150.0f, 150.0f);
-        custom = true;
-        return;
-    }
+std::optional<rawlab::RecipeWhiteBalance> probeRecipeWhiteBalance(Session& owner, const char* input) {
     auto* session = owner.get();
     rawlab::RecipeProbeStageScope stages(session, owner.stages);
     // 临时显影只解析目标 RAW 的拍摄白平衡，随后正式请求重设完整配置。
@@ -256,16 +250,28 @@ void prepareRecipeWb(Session& owner, const char* input, bool active, float stren
     check(sony2fuji_process(session, &neutral, &buffer.value), session);
     float cameraTemperature = 0, cameraTint = 0;
     const auto status = sony2fuji_session_get_raw_white_balance(session, &cameraTemperature, &cameraTint);
-    if (status == SONY2FUJI_STATUS_UNSUPPORTED) {
+    if (status == SONY2FUJI_STATUS_UNSUPPORTED) return std::nullopt;
+    check(status);
+    if (!std::isfinite(cameraTemperature) || !std::isfinite(cameraTint))
+        throw std::runtime_error("Cannot resolve target RAW white balance for master recipe");
+    return rawlab::RecipeWhiteBalance{std::round(cameraTemperature), std::round(cameraTint)};
+}
+
+void prepareRecipeWb(Session& owner, const char* input, bool active, float strength,
+    bool& custom, float& temperature, float& tint, int processingVersion, int x3fMode, int exposureMode) {
+    if (!active || (!custom && tint * strength == 0)) return;
+    const auto camera = owner.recipeWhiteBalance.resolve(input, processingVersion, x3fMode, exposureMode,
+        [&]() -> std::optional<rawlab::RecipeWhiteBalance> {
+            if (isNormalX3f(input, x3fMode)) return rawlab::RecipeWhiteBalance{6500, 0};
+            return probeRecipeWhiteBalance(owner, input);
+        });
+    if (!camera) {
         // 无法校准色温和色调时，沿用基础显影的相机白平衡。
         custom = false;
         return;
     }
-    check(status);
-    if (!std::isfinite(cameraTemperature) || !std::isfinite(cameraTint))
-        throw std::runtime_error("Cannot resolve target RAW white balance for master recipe");
-    if (!custom) temperature = std::round(cameraTemperature);
-    tint = std::clamp(std::round(cameraTint) + tint * strength, -150.0f, 150.0f);
+    if (!custom) temperature = camera->temperature;
+    tint = std::clamp(camera->tint + tint * strength, -150.0f, 150.0f);
     custom = true;
 }
 }
@@ -1155,7 +1161,8 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
 
         bool effectiveCustom = customWb;
         if (!displayInput)
-            prepareRecipeWb(found->second, in.chars, recipeActive, strength, effectiveCustom, temperature, tint, isNormalX3f(in.chars, x3fMode));
+            prepareRecipeWb(found->second, in.chars, recipeActive, strength, effectiveCustom, temperature, tint,
+                            processingVersion, x3fMode, exposureMode);
         if (!hslValues || env->GetArrayLength(hslValues) != 24) throw std::invalid_argument("Invalid HSL values");
         float hslData[24];
         env->GetFloatArrayRegion(hslValues, 0, 24, hslData);
@@ -1296,7 +1303,8 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeAutoExposure(JNIEnv* env, j
         check(sony2fuji_session_set_raw_exposure_mode(found->second.get(), static_cast<sony2fuji_raw_exposure_mode>(exposureMode)));
         bool effectiveCustom = customWb;
         if (!displayInput)
-            prepareRecipeWb(found->second, in.chars, recipeActive, strength, effectiveCustom, temperature, tint, isNormalX3f(in.chars, x3fMode));
+            prepareRecipeWb(found->second, in.chars, recipeActive, strength, effectiveCustom, temperature, tint,
+                            processingVersion, x3fMode, exposureMode);
         auto request = displayInput
             ? rawlab::makeDisplayRequest(in.chars, inputBytes.bytes, static_cast<uint32_t>(inputWidth),
                 static_cast<uint32_t>(inputHeight), static_cast<sony2fuji_pixel_format>(inputPixelFormat),
