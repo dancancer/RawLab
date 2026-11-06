@@ -406,7 +406,6 @@
 "明度" = "Lightness";
 "明度：从暗到亮。" = "Lightness: from dark to light.";
 "显示图像" = "Display image";
-"普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。" = "Raster input requires an opaque 8-bit SDR JPEG, PNG, TIFF, or HEIF image.";
 "暂无可导出的错误日志。" = "There is no error log to export.";
 "暂无编辑历史。" = "No edit history yet.";
 "暖调日系 · 漫射金光" = "Warm Japanese · diffused golden light";
@@ -642,6 +641,7 @@
 "请输入不同的预设名称。" = "Enter a different preset name.";
 "请输入预设名称。" = "Enter a preset name.";
 "请选择" = "Choose…";
+"请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。" = "Choose an opaque SDR image: 8-bit JPEG, PNG, TIFF, or HEIF, or 16-bit RGB TIFF.";
 "调整" = "Adjustments";
 "调整内容无法读取，请重新复制。" = "The adjustments cannot be read. Copy them again.";
 "调整前" = "Before";

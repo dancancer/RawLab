@@ -16,8 +16,6 @@ pub struct SavedSettings {
     pub color_adjustment: [f64; 3],
     #[serde(default, alias = "unknown_adjustments")]
     pub unknown: Vec<(u8, f64)>,
-    #[serde(default)]
-    pub extensions: Vec<(u8, f64)>,
 }
 
 pub fn parse(data: &[u8]) -> Result<SavedSettings, String> {
@@ -80,12 +78,8 @@ pub fn parse(data: &[u8]) -> Result<SavedSettings, String> {
             6 => s.sharpness = value,
             7..=9 => s.color_adjustment[(kind - 7) as usize] = value,
             10 => s.fill_light = value,
-            _ => {
-                s.extensions.push((kind, value));
-                if value != 0.0 {
-                    s.unknown.push((kind, value));
-                }
-            }
+            _ if value != 0.0 => s.unknown.push((kind, value)),
+            _ => {}
         }
     }
     // 未编辑的文件使用三个零槽位表示没有颜色轮调整。
@@ -150,7 +144,7 @@ mod tests {
         let s = parse(&bytes).unwrap();
         assert_eq!(s.color_mode, "Neutral");
         assert_eq!(s.exposure, 0.5);
-        assert_eq!(s.extensions, vec![(12, 0.5)]);
+        assert_eq!(s.unknown, vec![(12, 0.5)]);
         assert!(parse(&bytes[..423]).is_err());
     }
 

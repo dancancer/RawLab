@@ -25,7 +25,6 @@ not photographs or proprietary library code. No source RAW is included.
 | Asset | Origin | SHA-256 |
 | --- | --- | --- |
 | `profiles/dp1s-v1.json` | DP1S empirical v2 response, stripped of experiment paths and per-body diagnostic rules | `bdf95f25f3769c94b34378b87438d9929d7f87e4cb021d3bc7348f9658913d61` |
-| `profiles/merrill-neutral-v1.json` | Observed neutral saved-header extension values from the DP2 Merrill reference | `9dff225371ed255ed14a0d94e99a34d35ac10b6dc65b052f7d5176faf6f92275` |
 | `profiles/quattro-neutral-v1.json` | Observed neutral SPPA parameter tables from the Quattro reference | `0d92e29df3752a7a73788f8e5c5b9bee9a9d91d01b4204779f420fb23ef2c986` |
 
 The DP1S source parameter artifact had SHA-256

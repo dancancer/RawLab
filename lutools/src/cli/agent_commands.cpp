@@ -193,6 +193,7 @@ int runAgentCommands(int argc, char* argv[]) {
             raster = {{"formats", {"jpeg", "png", "tiff"}}, {"bits_per_component", 8},
 #else
             raster = {{"formats", {"jpeg", "png", "tiff", "heif"}}, {"bits_per_component", 8},
+                {"tiff_bits_per_component", {8, 16}},
 #endif
                 {"alpha", "opaque_only"}, {"dynamic_range", "sdr"}, {"color_space", "srgb"},
                 {"backend", "cpu"}, {"max_pixels", 128000000}};
@@ -247,10 +248,11 @@ int runAgentCommands(int argc, char* argv[]) {
                 sony2fuji_buffer image{};
                 const auto status = sony2fuji_load_display_image(absolute.c_str(), &image);
                 if (status != SONY2FUJI_STATUS_OK)
-                    return fail(statusCode(status), "Raster input requires a supported single-frame opaque 8-bit SDR image", status);
+                    return fail(statusCode(status), "Raster input requires a supported single-frame opaque SDR image", status);
                 const Json result = {{"input_path", absolute}, {"input_type", "raster"},
                     {"identified_size", {{"width", image.width}, {"height", image.height}, {"orientation", 1}}},
-                    {"rendered_size", nullptr}, {"color_space", "srgb"}, {"bits_per_component", 8},
+                    {"rendered_size", nullptr}, {"color_space", "srgb"},
+                    {"bits_per_component", image.pixel_format == SONY2FUJI_PIXEL_RGBA16 ? 16 : 8},
                     {"camera", nullptr}, {"lens", nullptr}, {"capture", nullptr}, {"as_shot_white_balance", nullptr}};
                 sony2fuji_release_buffer(&image);
                 std::cout << machineJson(envelope(command, result)) << '\n';

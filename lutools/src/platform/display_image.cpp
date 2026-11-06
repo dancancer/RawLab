@@ -122,6 +122,42 @@ bool hasHDRGainMap(CGImageSourceRef source) {
     return false;
 }
 
+bool hasSigmaTIFFPreview(CGImageSourceRef source, CFDictionaryRef properties,
+                        int64_t width, int64_t height) {
+    // Sigma Photo Pro writes its 160-pixel thumbnail as a second IFD without
+    // the TIFF reduced-resolution flag. Check both writer and preview geometry
+    // before treating the second IFD as anything other than a separate page.
+    if (CGImageSourceGetCount(source) != 2) return false;
+    const auto tiff = static_cast<CFDictionaryRef>(
+        CFDictionaryGetValue(properties, kCGImagePropertyTIFFDictionary));
+    if (!tiff || CFGetTypeID(tiff) != CFDictionaryGetTypeID()) return false;
+    const auto writer = static_cast<CFStringRef>(CFDictionaryGetValue(tiff, kCGImagePropertyTIFFSoftware));
+    if (!writer || CFGetTypeID(writer) != CFStringGetTypeID() ||
+        !CFStringHasPrefix(writer, CFSTR("SIGMA Photo Pro "))) return false;
+    CFUnique<CFDictionaryRef> preview(CGImageSourceCopyPropertiesAtIndex(source, 1, nullptr));
+    int64_t previewWidth = 0, previewHeight = 0, previewDepth = 0;
+    return numberValue(preview.get(), kCGImagePropertyPixelWidth, &previewWidth) &&
+        numberValue(preview.get(), kCGImagePropertyPixelHeight, &previewHeight) &&
+        numberValue(preview.get(), kCGImagePropertyDepth, &previewDepth) && previewDepth == 8 &&
+        previewWidth > 0 && previewHeight > 0 && previewWidth < width && previewHeight < height &&
+        std::max(previewWidth, previewHeight) == 160 &&
+        std::abs(width * previewHeight - height * previewWidth) <= std::max(width, height);
+}
+
+CGAffineTransform tiffOrientation(int64_t orientation, CGFloat width, CGFloat height) {
+    // Convert the top-left EXIF mapping to Core Graphics' bottom-left origin.
+    switch (orientation) {
+        case 2: return CGAffineTransformMake(-1, 0, 0, 1, width, 0);
+        case 3: return CGAffineTransformMake(-1, 0, 0, -1, width, height);
+        case 4: return CGAffineTransformMake(1, 0, 0, -1, 0, height);
+        case 5: return CGAffineTransformMake(0, -1, -1, 0, height, width);
+        case 6: return CGAffineTransformMake(0, -1, 1, 0, 0, width);
+        case 7: return CGAffineTransformMake(0, 1, 1, 0, 0, 0);
+        case 8: return CGAffineTransformMake(0, 1, -1, 0, height, 0);
+        default: return CGAffineTransformIdentity;
+    }
+}
+
 sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* output) {
     if (!output) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     clearBuffer(output);
@@ -137,7 +173,9 @@ sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* outpu
     if (!source) return SONY2FUJI_STATUS_PROCESSING_ERROR;
     const CFStringRef type = CGImageSourceGetType(source.get());
     if (!supportedUTI(type)) return SONY2FUJI_STATUS_UNSUPPORTED;
-    if (CGImageSourceGetCount(source.get()) != 1) return SONY2FUJI_STATUS_UNSUPPORTED;
+    const size_t imageCount = CGImageSourceGetCount(source.get());
+    if (imageCount != 1 && !(imageCount == 2 && equalUTI(type, CFSTR("public.tiff"))))
+        return SONY2FUJI_STATUS_UNSUPPORTED;
 
     // A gain map turns an otherwise ordinary 8-bit base image into an HDR asset.
     // This adapter promises opaque SDR pixels, so reject it before ImageIO can
@@ -159,8 +197,11 @@ sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* outpu
     if (pixels > kMaxDisplayPixels || width > std::numeric_limits<uint32_t>::max() / 4)
         return SONY2FUJI_STATUS_UNSUPPORTED;
 
-    int64_t depth = 0;
-    if (numberValue(properties.get(), kCGImagePropertyDepth, &depth) && depth != 8)
+    int64_t depth = 8;
+    numberValue(properties.get(), kCGImagePropertyDepth, &depth);
+    const bool tiff16 = depth == 16 && equalUTI(type, CFSTR("public.tiff"));
+    if (depth != 8 && !tiff16) return SONY2FUJI_STATUS_UNSUPPORTED;
+    if (imageCount == 2 && (!tiff16 || !hasSigmaTIFFPreview(source.get(), properties.get(), width, height)))
         return SONY2FUJI_STATUS_UNSUPPORTED;
 
     int64_t orientation = 1;
@@ -181,29 +222,34 @@ sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* outpu
     if (!decodedSpace || CGColorSpaceGetModel(decodedSpace) != kCGColorSpaceModelRGB)
         return SONY2FUJI_STATUS_UNSUPPORTED;
     const bool hasProfile = CFDictionaryGetValue(properties.get(), kCGImagePropertyProfileName) != nullptr;
-    if (isHDRColorSpace(decodedSpace) || CGImageGetBitsPerComponent(decoded.get()) != 8 ||
+    const size_t bits = tiff16 ? 16 : 8;
+    if (isHDRColorSpace(decodedSpace) || CGImageGetBitsPerComponent(decoded.get()) != bits ||
         (CGImageGetBitmapInfo(decoded.get()) & kCGBitmapFloatComponents) != 0)
         return SONY2FUJI_STATUS_UNSUPPORTED;
-    decoded.reset();
 
-    const int maxPixelSize = static_cast<int>(std::max(width, height));
-    CFUnique<CFNumberRef> maxSize(CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &maxPixelSize));
-    if (!maxSize) return SONY2FUJI_STATUS_OUT_OF_MEMORY;
-    const void* keys[] = {
-        kCGImageSourceCreateThumbnailFromImageAlways,
-        kCGImageSourceCreateThumbnailWithTransform,
-        kCGImageSourceThumbnailMaxPixelSize,
-        kCGImageSourceShouldCacheImmediately
-    };
-    const void* values[] = {kCFBooleanTrue, kCFBooleanTrue, maxSize.get(), kCFBooleanTrue};
-    CFUnique<CFDictionaryRef> options(CFDictionaryCreate(
-        kCFAllocatorDefault, keys, values, 4,
-        &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
-    if (!options) return SONY2FUJI_STATUS_OUT_OF_MEMORY;
-
-    CFUnique<CGImageRef> image(CGImageSourceCreateThumbnailAtIndex(source.get(), 0, options.get()));
+    // Use the original decode for TIFF16. ImageIO's orientation/thumbnail
+    // path does not guarantee retention of the original component depth.
+    CFUnique<CGImageRef> image = std::move(decoded);
+    if (!tiff16) {
+        image.reset();
+        const int maxPixelSize = static_cast<int>(std::max(width, height));
+        CFUnique<CFNumberRef> maxSize(CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &maxPixelSize));
+        if (!maxSize) return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+        const void* keys[] = {
+            kCGImageSourceCreateThumbnailFromImageAlways,
+            kCGImageSourceCreateThumbnailWithTransform,
+            kCGImageSourceThumbnailMaxPixelSize,
+            kCGImageSourceShouldCacheImmediately
+        };
+        const void* values[] = {kCFBooleanTrue, kCFBooleanTrue, maxSize.get(), kCFBooleanTrue};
+        CFUnique<CFDictionaryRef> options(CFDictionaryCreate(
+            kCFAllocatorDefault, keys, values, 4,
+            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
+        if (!options) return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+        image.reset(CGImageSourceCreateThumbnailAtIndex(source.get(), 0, options.get()));
+    }
     if (!image) return SONY2FUJI_STATUS_PROCESSING_ERROR;
-    if (CGImageGetBitsPerComponent(image.get()) != 8 ||
+    if (CGImageGetBitsPerComponent(image.get()) != bits ||
         (CGImageGetBitmapInfo(image.get()) & kCGBitmapFloatComponents) != 0) {
         return SONY2FUJI_STATUS_UNSUPPORTED;
     }
@@ -221,53 +267,53 @@ sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* outpu
         image = std::move(retagged);
     }
 
-    const size_t outputWidth = CGImageGetWidth(image.get());
-    const size_t outputHeight = CGImageGetHeight(image.get());
-    if (outputWidth == 0 || outputHeight == 0 || outputWidth > UINT32_MAX / 4 ||
+    const size_t imageWidth = CGImageGetWidth(image.get());
+    const size_t imageHeight = CGImageGetHeight(image.get());
+    const bool swapAxes = tiff16 && orientation >= 5;
+    const size_t outputWidth = swapAxes ? imageHeight : imageWidth;
+    const size_t outputHeight = swapAxes ? imageWidth : imageHeight;
+    const size_t pixelBytes = tiff16 ? 8 : 4;
+    if (outputWidth == 0 || outputHeight == 0 || outputWidth > UINT32_MAX / pixelBytes ||
         static_cast<uint64_t>(outputWidth) > kMaxDisplayPixels / outputHeight)
         return SONY2FUJI_STATUS_UNSUPPORTED;
-    const size_t stride = outputWidth * 4;
+    const size_t stride = outputWidth * pixelBytes;
     if (outputHeight > std::numeric_limits<size_t>::max() / stride)
         return SONY2FUJI_STATUS_UNSUPPORTED;
     const size_t total = stride * outputHeight;
-    void* pixelsData = std::malloc(total);
+    std::unique_ptr<void, decltype(&std::free)> pixelsData(std::malloc(total), &std::free);
     if (!pixelsData) return SONY2FUJI_STATUS_OUT_OF_MEMORY;
 
     CFUnique<CGColorSpaceRef> sRGB(CGColorSpaceCreateWithName(kCGColorSpaceSRGB));
-    if (!sRGB) {
-        std::free(pixelsData);
-        return SONY2FUJI_STATUS_PROCESSING_ERROR;
-    }
+    if (!sRGB) return SONY2FUJI_STATUS_PROCESSING_ERROR;
     const CGBitmapInfo bitmapInfo = CGBitmapInfo(kCGImageAlphaPremultipliedLast) |
-        CGBitmapInfo(kCGBitmapByteOrder32Big);
+        CGBitmapInfo(tiff16 ? kCGBitmapByteOrder16Little : kCGBitmapByteOrder32Big);
     CFUnique<CGContextRef> context(CGBitmapContextCreate(
-        pixelsData, outputWidth, outputHeight, 8, stride, sRGB.get(), bitmapInfo));
-    if (!context) {
-        std::free(pixelsData);
-        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+        pixelsData.get(), outputWidth, outputHeight, bits, stride, sRGB.get(), bitmapInfo));
+    if (!context) return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    if (tiff16 && orientation != 1) {
+        CGContextSetInterpolationQuality(context.get(), kCGInterpolationNone);
+        CGContextConcatCTM(context.get(), tiffOrientation(orientation, imageWidth, imageHeight));
     }
     const bool checkAlpha = hasAlpha(CGImageGetAlphaInfo(image.get()));
     CGContextSetBlendMode(context.get(), kCGBlendModeCopy);
-    CGContextDrawImage(context.get(), CGRectMake(0, 0, outputWidth, outputHeight), image.get());
+    CGContextDrawImage(context.get(), CGRectMake(0, 0, imageWidth, imageHeight), image.get());
     context.reset();
     image.reset();
 
-    const auto* bytes = static_cast<const uint8_t*>(pixelsData);
+    const auto* bytes = static_cast<const uint8_t*>(pixelsData.get());
     if (checkAlpha) {
-        for (size_t offset = 3; offset < total; offset += 4) {
-            if (bytes[offset] != 255) {
-                std::free(pixelsData);
+        for (size_t offset = pixelBytes - 1; offset < total; offset += pixelBytes) {
+            if (bytes[offset] != 255 || (tiff16 && bytes[offset - 1] != 255))
                 return SONY2FUJI_STATUS_UNSUPPORTED;
-            }
         }
     }
 
-    output->data = pixelsData;
+    output->data = pixelsData.release();
     output->size_bytes = total;
     output->width = static_cast<uint32_t>(outputWidth);
     output->height = static_cast<uint32_t>(outputHeight);
     output->stride_bytes = static_cast<uint32_t>(stride);
-    output->pixel_format = SONY2FUJI_PIXEL_RGBA8;
+    output->pixel_format = tiff16 ? SONY2FUJI_PIXEL_RGBA16 : SONY2FUJI_PIXEL_RGBA8;
     return SONY2FUJI_STATUS_OK;
 }
 

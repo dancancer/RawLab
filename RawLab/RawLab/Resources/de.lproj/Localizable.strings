@@ -406,7 +406,6 @@
 "明度" = "Helligkeit";
 "明度：从暗到亮。" = "Helligkeit: von dunkel zu hell.";
 "显示图像" = "Anzeigebild";
-"普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。" = "Rasterbilder müssen undurchsichtige 8-Bit-SDR-Bilder im Format JPEG, PNG, TIFF oder HEIF sein.";
 "暂无可导出的错误日志。" = "Es ist kein Fehlerprotokoll zum Exportieren vorhanden.";
 "暂无编辑历史。" = "Noch kein Bearbeitungsverlauf.";
 "暖调日系 · 漫射金光" = "Warmer Japan-Look · diffuses goldenes Licht";
@@ -642,6 +641,7 @@
 "请输入不同的预设名称。" = "Geben Sie einen anderen Namen für die Vorgabe ein.";
 "请输入预设名称。" = "Geben Sie einen Namen für die Vorgabe ein.";
 "请选择" = "Auswählen…";
+"请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。" = "Wähle ein undurchsichtiges SDR-Bild: JPEG, PNG, TIFF oder HEIF mit 8 Bit oder RGB-TIFF mit 16 Bit.";
 "调整" = "Anpassungen";
 "调整内容无法读取，请重新复制。" = "Die Anpassungen können nicht gelesen werden. Kopieren Sie sie erneut.";
 "调整前" = "Vorher";

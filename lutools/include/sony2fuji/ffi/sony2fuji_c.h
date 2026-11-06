@@ -45,7 +45,9 @@ typedef enum sony2fuji_input_type {
 
 typedef enum sony2fuji_pixel_format {
     SONY2FUJI_PIXEL_RGB8 = 0,
-    SONY2FUJI_PIXEL_RGBA8 = 1
+    SONY2FUJI_PIXEL_RGBA8 = 1,
+    // Tightly packed little-endian 16-bit RGBA; input only, for DISPLAY_BUFFER.
+    SONY2FUJI_PIXEL_RGBA16 = 2
 } sony2fuji_pixel_format;
 
 typedef enum sony2fuji_look_format {
@@ -442,10 +444,11 @@ sony2fuji_status sony2fuji_session_set_processing_version(
     sony2fuji_session* session, sony2fuji_processing_version version
 );
 
-// File adapters: single-frame opaque 8-bit SDR RGB.
+// File adapters: one opaque SDR RGB image.
 // macOS/iOS ImageIO accepts JPEG/PNG/TIFF/HEIF; Windows WIC accepts JPEG/PNG/TIFF.
+// The Apple adapter also accepts 16-bit integer RGB TIFF and returns RGBA16.
 // Applies orientation and ICC -> sRGB once. Untagged RGB assumes sRGB.
-// Rejects transparency, high-bit-depth/HDR and unsupported encodings.
+// Rejects transparency, HDR and other unsupported encodings.
 // Pass a zero-initialized or previously returned buffer; release with
 // sony2fuji_release_buffer. Android clients decode validated files with the
 // platform decoder and pass DISPLAY_BUFFER; this file API returns UNSUPPORTED.

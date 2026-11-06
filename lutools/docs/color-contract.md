@@ -87,12 +87,16 @@ reuse. The SDK allocation-failure hook verifies the C ABI memory status.
 ### Display-Referred Raster Input
 
 The additive `SONY2FUJI_INPUT_DISPLAY_BUFFER=2` consumes tightly packed opaque
-RGB8/RGBA8 display-sRGB. Existing `RAW=0`, scene `BUFFER=1`, request v2 layout and
+RGB8/RGBA8 or little-endian RGBA16 display-sRGB. Existing `RAW=0`, scene `BUFFER=1`, request v2 layout and
 their rendering are unchanged. The shared macOS/iOS ImageIO adapter applies EXIF orientation
 once and converts tagged RGB to sRGB; untagged RGB assumes sRGB. It accepts
-single-frame 8-bit SDR JPEG, PNG, TIFF and HEIF. Transparency, higher bit depth,
-floating-point/HDR, multi-frame/page and CMYK inputs are rejected, not flattened
-or silently quantized. Untagged grayscale/indexed images are not inferred to use
+single-frame 8-bit SDR JPEG, PNG, TIFF and HEIF, plus 16-bit integer RGB TIFF.
+For Sigma Photo Pro TIFF exports with a separate 160-pixel preview IFD, it
+decodes the full-resolution primary image only.
+TIFF's 16-bit precision is retained at the sRGB buffer boundary and through
+float processing before output encoding. Transparency, other high-bit-depth
+inputs, floating-point/HDR, multi-frame/page and CMYK inputs are rejected.
+Untagged grayscale/indexed images are not inferred to use
 a particular gray transfer function and are rejected.
 
 Raster import adapters accept up to 128,000,000 source pixels, including the

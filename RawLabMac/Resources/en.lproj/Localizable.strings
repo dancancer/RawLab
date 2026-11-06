@@ -529,7 +529,6 @@
 "显示裁切提示" = "Show clipping warnings";
 "显示裁剪三分网格" = "Show Rule of Thirds Crop Grid";
 "显示输出高光与黑位裁切" = "Show output highlight and black-level clipping";
-"普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。" = "Raster input requires an opaque 8-bit SDR JPEG, PNG, TIFF, or HEIF image.";
 "普通降噪参数已保留，关闭 AI 降噪即可恢复。" = "Standard denoise settings are retained. Turn off AI denoise to restore them.";
 "暂无编辑历史。" = "No edit history yet.";
 "暖调日系 · 漫射金光" = "Warm Japanese · diffused golden light";
@@ -847,6 +846,7 @@
 "请返回编辑器完成有效输入后重试。" = "Return to the editor, enter a valid value and try again.";
 "请返回编辑器应用或放弃草稿和未提交输入" = "Return to the editor, then apply or discard the draft and uncommitted input";
 "请选择" = "Choose…";
+"请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。" = "Choose an opaque SDR image: 8-bit JPEG, PNG, TIFF, or HEIF, or 16-bit RGB TIFF.";
 "调整亮度、色彩和粗色斑降噪" = "Adjust luma, chroma and coarse artifact noise reduction";
 "调整内容无法读取，请重新复制。" = "The adjustments cannot be read. Copy them again.";
 "调整前" = "Before";

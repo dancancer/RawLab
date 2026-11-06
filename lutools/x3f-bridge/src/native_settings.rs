@@ -1,7 +1,6 @@
 use crate::settings::SavedSettings;
 use serde::Deserialize;
 use std::{
-    collections::BTreeMap,
     fs::File,
     io::{Read, Seek, SeekFrom},
     path::Path,
@@ -19,35 +18,43 @@ struct QuattroProfile {
     header: Vec<u8>,
     groups: Vec<Vec<Entry>>,
 }
-#[derive(Deserialize)]
-struct MerrillProfile {
-    extensions: Vec<(u8, f64)>,
+pub struct MerrillSettings {
+    pub color_mode: x3f_sys::ColorMode,
+    pub adjustments: x3f_sys::MerrillAdjustments,
 }
 
-pub fn validate_merrill(s: &SavedSettings) -> Result<(), String> {
-    let p: MerrillProfile =
-        serde_json::from_str(include_str!("../profiles/merrill-neutral-v1.json"))
-            .map_err(|e| e.to_string())?;
-    let extensions: BTreeMap<_, _> = s.extensions.iter().copied().collect();
-    if [
-        s.exposure,
-        s.contrast,
-        s.shadow,
-        s.highlight,
-        s.saturation,
-        s.sharpness,
-        s.fill_light,
-    ]
-    .iter()
-    .any(|v| *v != 0.0)
-        || s.color_adjustment != [1.0; 3]
-        || s.color_mode != "Neutral"
-        || extensions.len() != s.extensions.len()
-        || extensions != p.extensions.into_iter().collect()
-    {
-        return Err("Merrill saved adjustments differ from the supported neutral profile; they have not been silently reset".into());
+pub fn merrill(s: &SavedSettings) -> Result<MerrillSettings, String> {
+    use x3f_sys::ColorMode;
+    let color_mode = match s.color_mode.parse() {
+        Ok(
+            mode @ (ColorMode::Standard
+            | ColorMode::Vivid
+            | ColorMode::Neutral
+            | ColorMode::Portrait
+            | ColorMode::Landscape
+            | ColorMode::FCBlue),
+        ) => mode,
+        _ => return Err("Unsupported saved Merrill color mode".into()),
+    };
+    if s.sharpness != 0.0 || s.fill_light != 0.0 || s.color_adjustment != [1.0; 3] {
+        return Err(
+            "Merrill saved sharpness, Fill Light, or color wheel adjustment is not supported"
+                .into(),
+        );
     }
-    Ok(())
+    // Foveon's X3F specification tells readers to skip unknown extended types.
+    // They are not a compatibility check for the known controls in this header.
+    Ok(MerrillSettings {
+        color_mode,
+        adjustments: x3f_sys::MerrillAdjustments::new(
+            s.exposure,
+            s.contrast,
+            s.shadow,
+            s.highlight,
+            s.saturation,
+        )
+        .map_err(|error| error.to_string())?,
+    })
 }
 
 fn word(data: &[u8], offset: usize) -> Result<u32, String> {
@@ -197,20 +204,41 @@ pub fn validate_quattro(path: &Path) -> Result<(), String> {
 mod tests {
     use super::*;
     #[test]
-    fn merrill_non_neutral_color_mode_is_rejected() {
-        let profile: MerrillProfile =
-            serde_json::from_str(include_str!("../profiles/merrill-neutral-v1.json")).unwrap();
+    fn merrill_accepts_camera_modes_and_known_saved_adjustments() {
         let mut settings = SavedSettings {
             color_mode: "Neutral".into(),
             color_adjustment: [1.0; 3],
-            extensions: profile.extensions,
             ..Default::default()
         };
-        assert!(validate_merrill(&settings).is_ok());
+        assert_eq!(
+            merrill(&settings).unwrap().color_mode,
+            x3f_sys::ColorMode::Neutral
+        );
         settings.color_mode = "Vivid".into();
-        assert!(validate_merrill(&settings).is_err());
+        settings.contrast = 0.2;
+        settings.saturation = 0.2;
+        settings.unknown.push((31, 0.2));
+        assert_eq!(
+            merrill(&settings).unwrap().color_mode,
+            x3f_sys::ColorMode::Vivid
+        );
+
+        settings.color_mode = "Portrait".into();
+        settings.contrast = 0.0;
+        settings.saturation = 0.0;
+        settings.unknown.push((38, 1.0));
+        assert_eq!(
+            merrill(&settings).unwrap().color_mode,
+            x3f_sys::ColorMode::Portrait
+        );
+
+        settings.fill_light = 0.25;
+        assert!(merrill(&settings).is_err());
+        settings.fill_light = 0.0;
+        settings.color_mode = "Cinema".into();
+        assert!(merrill(&settings).is_err());
         settings.color_mode.clear();
-        assert!(validate_merrill(&settings).is_err());
+        assert!(merrill(&settings).is_err());
     }
 
     #[test]

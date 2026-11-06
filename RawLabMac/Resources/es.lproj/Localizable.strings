@@ -529,7 +529,6 @@
 "显示裁切提示" = "Mostrar alertas de clipping";
 "显示裁剪三分网格" = "Mostrar la cuadrícula de tercios del recorte";
 "显示输出高光与黑位裁切" = "Mostrar el clipping de las altas luces y del nivel de negros de salida";
-"普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。" = "La imagen debe ser opaca, SDR de 8 bits, en formato JPEG, PNG, TIFF o HEIF.";
 "普通降噪参数已保留，关闭 AI 降噪即可恢复。" = "Los ajustes normales de reducción de ruido se conservan. Desactiva la IA para restaurarlos.";
 "暂无编辑历史。" = "Aún no hay historial de edición.";
 "暖调日系 · 漫射金光" = "Estilo japonés cálido · luz dorada difusa";
@@ -847,6 +846,7 @@
 "请返回编辑器完成有效输入后重试。" = "Vuelve al editor, introduce un valor válido e inténtalo de nuevo.";
 "请返回编辑器应用或放弃草稿和未提交输入" = "Vuelve al editor y aplica o descarta el borrador y las entradas no aplicadas.";
 "请选择" = "Seleccionar…";
+"请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。" = "Elige una imagen SDR opaca: JPEG, PNG, TIFF o HEIF de 8 bits, o TIFF RGB de 16 bits.";
 "调整亮度、色彩和粗色斑降噪" = "Ajustar la reducción de ruido de luminancia, color y manchas";
 "调整内容无法读取，请重新复制。" = "No se pueden leer los ajustes. Vuelve a copiarlos.";
 "调整前" = "Antes";

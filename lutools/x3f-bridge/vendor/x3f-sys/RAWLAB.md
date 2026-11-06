@@ -9,8 +9,11 @@ independently. The original Apache-2.0 license remains in force.
 RawLab's bridge applies this crate with Cargo's source patch mechanism. It does
 not edit Cargo's shared checkout or require a patched upstream download.
 
-The local changes preserve the existing Merrill arithmetic and output identity:
+The local changes preserve the existing output for neutral Merrill controls:
 
+- `src/control.rs`, `src/merrill.rs`, `src/process.rs`: pass saved Merrill
+  tone controls per conversion to the SPP tone curve and apply saved saturation
+  before the sRGB output transfer. The default options keep upstream rendering.
 - `src/cr_offset.rs`: calculate each of the eight workers' row contributions in
   parallel, then accumulate each contribution in the original scale, worker and
   patch order. Workers' windows overlap, so neither concurrent writes nor summing
@@ -30,7 +33,7 @@ The local changes preserve the existing Merrill arithmetic and output identity:
   and dense maps, and all despeckle records and repaired pixels across thread
   counts, including row padding and nonzero repairs.
 
-All other source and fixtures are unchanged. The original stage and kernel
+The original stage and kernel
 regressions remain available from the bridge's locked dependency graph:
 
 ```sh

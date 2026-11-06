@@ -1101,8 +1101,10 @@ sony2fuji_status loadBufferImage(
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     }
 
+    const bool rgba16 = request.input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER &&
+        request.input_pixel_format == SONY2FUJI_PIXEL_RGBA16;
     if (request.input_pixel_format != SONY2FUJI_PIXEL_RGB8 &&
-        request.input_pixel_format != SONY2FUJI_PIXEL_RGBA8) {
+        request.input_pixel_format != SONY2FUJI_PIXEL_RGBA8 && !rgba16) {
         return SONY2FUJI_STATUS_UNSUPPORTED;
     }
 
@@ -1111,16 +1113,20 @@ sony2fuji_status loadBufferImage(
     image.pixels.resize(static_cast<size_t>(request.input_width) * request.input_height);
 
     const uint8_t* data = static_cast<const uint8_t*>(request.input_pixels);
-    uint32_t channels = request.input_pixel_format == SONY2FUJI_PIXEL_RGBA8 ? 4 : 3;
+    const size_t pixelBytes = rgba16 ? 8 : request.input_pixel_format == SONY2FUJI_PIXEL_RGBA8 ? 4 : 3;
+    const auto read16 = [](const uint8_t* p) { return (p[0] | (p[1] << 8)) / 65535.0f; };
 
     for (size_t i = 0; i < image.pixels.size(); ++i) {
         if (i % 4096 == 0) sony2fuji::checkProcessingCancellation();
-        size_t offset = i * channels;
-        if (request.input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER && channels == 4 && data[offset + 3] != 255)
-            return SONY2FUJI_STATUS_UNSUPPORTED;
-        image.pixels[i].r = data[offset] / 255.0f;
-        image.pixels[i].g = data[offset + 1] / 255.0f;
-        image.pixels[i].b = data[offset + 2] / 255.0f;
+        const auto* pixel = data + i * pixelBytes;
+        if (rgba16) {
+            if (pixel[6] != 255 || pixel[7] != 255) return SONY2FUJI_STATUS_UNSUPPORTED;
+            image.pixels[i] = {read16(pixel), read16(pixel + 2), read16(pixel + 4)};
+        } else {
+            if (request.input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER && pixelBytes == 4 && pixel[3] != 255)
+                return SONY2FUJI_STATUS_UNSUPPORTED;
+            image.pixels[i] = {pixel[0] / 255.0f, pixel[1] / 255.0f, pixel[2] / 255.0f};
+        }
     }
 
     if (space) {

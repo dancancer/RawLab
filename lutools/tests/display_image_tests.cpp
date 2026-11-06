@@ -146,7 +146,8 @@ FixtureImage hdrImage(CGColorSpaceRef colorSpace) {
 }
 
 bool writeImage(const std::filesystem::path& path, CFStringRef type, CGImageRef image,
-                CFDictionaryRef properties = nullptr, size_t frameCount = 1) {
+                CFDictionaryRef properties = nullptr, size_t frameCount = 1,
+                CGImageRef lastFrame = nullptr) {
     const auto pathString = path.u8string();
     auto* url = CFURLCreateFromFileSystemRepresentation(
         kCFAllocatorDefault, reinterpret_cast<const UInt8*>(pathString.data()), pathString.size(), false);
@@ -155,8 +156,10 @@ bool writeImage(const std::filesystem::path& path, CFStringRef type, CGImageRef 
         url, type, frameCount, nullptr);
     CFRelease(url);
     if (!destination) return false;
-    for (size_t index = 0; index < frameCount; ++index)
-        CGImageDestinationAddImage(destination, image, properties);
+    for (size_t index = 0; index < frameCount; ++index) {
+        if (lastFrame && index == frameCount - 1) CGImageDestinationAddImage(destination, lastFrame, nullptr);
+        else CGImageDestinationAddImage(destination, image, properties);
+    }
     const bool finalized = CGImageDestinationFinalize(destination);
     CFRelease(destination);
     return finalized;
@@ -262,6 +265,63 @@ void expectEmptyPathClearsBuffer() {
     sony2fuji_release_buffer(&buffer);
 }
 
+void checkTiff16(const std::filesystem::path& root, CGColorSpaceRef sRGB) {
+    auto fixture = rgb16Image(2, 3, sRGB);
+    constexpr size_t order[8][6] = {
+        {0, 1, 2, 3, 4, 5}, {1, 0, 3, 2, 5, 4}, {5, 4, 3, 2, 1, 0}, {4, 5, 2, 3, 0, 1},
+        {0, 2, 4, 1, 3, 5}, {4, 2, 0, 5, 3, 1}, {5, 3, 1, 4, 2, 0}, {1, 3, 5, 0, 2, 4}
+    };
+    for (uint32_t orientation = 1; orientation <= 8; ++orientation) {
+        const auto path = root / ("rgb16-orientation-" + std::to_string(orientation) + ".tif");
+        auto* properties = orientationProperties(orientation);
+        check(fixture.image && properties && writeImage(path, CFSTR("public.tiff"), fixture.image, properties),
+              "Generate oriented 16-bit TIFF " + std::to_string(orientation));
+        if (properties) CFRelease(properties);
+        sony2fuji_buffer buffer{};
+        const auto status = sony2fuji_load_display_image(path.u8string().c_str(), &buffer);
+        const uint32_t width = orientation >= 5 ? 3 : 2;
+        const uint32_t height = orientation >= 5 ? 2 : 3;
+        bool matches = status == SONY2FUJI_STATUS_OK && buffer.width == width &&
+            buffer.height == height && buffer.pixel_format == SONY2FUJI_PIXEL_RGBA16 &&
+            buffer.stride_bytes == width * 8 && buffer.size_bytes == width * height * 8;
+        for (size_t i = 0; matches && i < 6; ++i) {
+            const auto* pixel = static_cast<const uint8_t*>(buffer.data) + i * 8;
+            const auto* expected = fixture.bytes.data() + order[orientation - 1][i] * 6;
+            matches = pixel[6] == 255 && pixel[7] == 255;
+            for (size_t c = 0; matches && c < 3; ++c)
+                matches = pixel[2 * c] == expected[2 * c + 1] && pixel[2 * c + 1] == expected[2 * c];
+        }
+        check(matches, "16-bit TIFF retains all channel bits and applies orientation " + std::to_string(orientation));
+        sony2fuji_release_buffer(&buffer);
+    }
+
+    auto mainImage = rgb16Image(300, 200, sRGB);
+    auto preview = rgbImage(160, 106, sRGB, std::vector<uint8_t>(160 * 106 * 3, 127));
+    const auto path = root / "sigma-photo-pro.tif";
+    const void* softwareKeys[] = {kCGImagePropertyTIFFSoftware};
+    const void* softwareValues[] = {CFSTR("SIGMA Photo Pro 6.9.0")};
+    auto* tiff = CFDictionaryCreate(kCFAllocatorDefault, softwareKeys, softwareValues, 1,
+        &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    const void* keys[] = {kCGImagePropertyTIFFDictionary};
+    const void* values[] = {tiff};
+    auto* properties = CFDictionaryCreate(kCFAllocatorDefault, keys, values, 1,
+        &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    check(mainImage.image && preview.image && writeImage(path, CFSTR("public.tiff"), mainImage.image,
+          properties, 2, preview.image), "Generate Sigma TIFF with a separate preview IFD");
+    CFRelease(properties);
+    CFRelease(tiff);
+    sony2fuji_buffer buffer{};
+    const auto status = sony2fuji_load_display_image(path.u8string().c_str(), &buffer);
+    check(status == SONY2FUJI_STATUS_OK && buffer.width == 300 && buffer.height == 200 &&
+          buffer.pixel_format == SONY2FUJI_PIXEL_RGBA16, "Sigma TIFF imports the main image");
+    sony2fuji_release_buffer(&buffer);
+
+    const auto multipage = root / "rgb16-multipage.tif";
+    check(mainImage.image && preview.image && writeImage(multipage, CFSTR("public.tiff"), mainImage.image,
+          nullptr, 2, preview.image), "Generate two-page TIFF without Sigma writer metadata");
+    expectUnsupported(multipage, "TIFF16 with another page");
+}
+
 void runAppleTests() {
     const auto root = std::filesystem::temp_directory_path() /
         ("rawlab-display-image-" + std::to_string(getpid()));
@@ -361,6 +421,7 @@ void runAppleTests() {
     const auto tiffStatus = sony2fuji_load_display_image(tiff.u8string().c_str(), &tiffBuffer);
     check(tiffStatus == SONY2FUJI_STATUS_OK, "TIFF decodes when the system encoder is available");
     sony2fuji_release_buffer(&tiffBuffer);
+    checkTiff16(root, sRGB);
 
     const auto heif = root / "photo.heic";
     bool heifWritten = fixture.image && writeImage(heif, CFSTR("public.heic"), fixture.image);
