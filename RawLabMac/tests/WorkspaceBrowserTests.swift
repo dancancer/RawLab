@@ -45,7 +45,8 @@ import Foundation
         precondition(model.restoreAnchor(in: location, grid: false, photos: remaining) == photos[1_843])
         precondition(model.anchor(in: location, grid: false) == photos[1_843])
         try await verifyDirectoryRetry()
-        print("PASS detached folder navigation, large-directory anchors, retry, Shift selection, double-click, partial handoff")
+        try await verifyMissingDirectoryFallsBack()
+        print("PASS detached folder navigation, large-directory anchors, retry, parent refresh, Shift selection, double-click, partial handoff")
     }
 
     @MainActor private static func verifyDirectoryRetry() async throws {
@@ -78,6 +79,42 @@ import Foundation
         rootFolder.refresh()
         await load(rootFolder)
         precondition(rootFolder.folders.first === folder)
+    }
+
+    @MainActor private static func verifyMissingDirectoryFallsBack() async throws {
+        let files = FileManager.default
+        let rootURL = files.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent("rawlab-workspace-\(UUID())", isDirectory: true)
+        let parentURL = rootURL.appendingPathComponent("Parent", isDirectory: true)
+        let childURL = parentURL.appendingPathComponent("Child", isDirectory: true)
+        let suite = "rawlab-workspace-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? files.removeItem(at: rootURL)
+        }
+        try files.createDirectory(at: childURL, withIntermediateDirectories: true)
+        let photo = parentURL.appendingPathComponent("surviving.png")
+        try Data().write(to: photo)
+        let library = PhotoLibrary(defaults: defaults)
+        precondition(library.addDirectories([rootURL]))
+        let root = library.roots[0]
+        await load(root)
+        let parent = root.folders[0]
+        await load(parent)
+        let model = MacWorkspaceBrowserState()
+        model.browse([root, parent, parent.folders[0]], load: false)
+
+        try files.moveItem(at: childURL, to: rootURL.appendingPathComponent("MovedChild"))
+        model.refresh(parent, in: library)
+        await load(parent)
+        precondition(model.folder === parent && model.folder?.photos.map(\.lastPathComponent) == [photo.lastPathComponent],
+                     "Refreshing a parent replaces the removed child's photo list with the nearest surviving folder")
+
+        try files.moveItem(at: parentURL, to: rootURL.appendingPathComponent("MovedParent"))
+        model.refresh(root, in: library)
+        await load(root)
+        precondition(model.folder === root, "Refreshing the root removes an obsolete parent from the browse path")
     }
 
     @MainActor private static func load(_ folder: PhotoFolder) async {

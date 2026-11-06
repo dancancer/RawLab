@@ -30,9 +30,28 @@ final class MacWorkspaceBrowserState: ObservableObject {
     }
 
     func reconcile(with library: PhotoLibrary) {
-        if let root = path.first, library.roots.contains(where: { $0 === root }) { return }
-        if let root = library.roots.first { browse([root]) }
-        else { browse([]) }
+        let surviving = survivingPrefix(of: path, in: library)
+        if surviving.isEmpty {
+            browse(library.roots.first.map { [$0] } ?? [])
+        } else if surviving.count != path.count {
+            browse(Array(surviving))
+        }
+    }
+
+    func refresh(_ folder: PhotoFolder, in library: PhotoLibrary) {
+        folder.refresh()
+        folder.load { [weak self, weak library] in
+            guard let self, let library else { return }
+            self.reconcile(with: library)
+        }
+    }
+
+    private func survivingPrefix(of target: [PhotoFolder], in library: PhotoLibrary) -> ArraySlice<PhotoFolder> {
+        guard let root = target.first, library.roots.contains(where: { $0 === root }) else { return target.prefix(0) }
+        let firstMissing = target.indices.dropFirst().first { index in
+            !target[index - 1].folders.contains { $0 === target[index] }
+        }
+        return target.prefix(firstMissing ?? target.count)
     }
 
     func browse(_ target: [PhotoFolder], load: Bool = true) {
@@ -152,7 +171,7 @@ final class MacWorkspaceBrowserState: ObservableObject {
         guard let folder = path.last else { return }
         folder.load { [weak self, weak library, weak folder] in
             guard let self, let library, let folder, self.pendingLocate == token,
-                  library.roots.contains(where: { $0 === path.first }) else { return }
+                  self.survivingPrefix(of: path, in: library).count == path.count else { return }
             if let component = components.first {
                 guard let child = folder.folders.first(where: { $0.url.lastPathComponent == component }) else {
                     self.pendingLocate = nil; otherwise(); return

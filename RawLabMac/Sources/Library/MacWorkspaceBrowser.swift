@@ -118,7 +118,7 @@ struct MacWorkspaceLibrary: View {
                 .contextMenu {
                     Button(L10n.text("在 Finder 中打开")) { NSWorkspace.shared.open(folder.url) }
                     Button(L10n.text("应用当前设置")) { applySettings(folder.url, true) }.disabled(!canApplySettings)
-                    Button(L10n.text("重新读取目录"), action: folder.refresh)
+                    Button(L10n.text("重新读取目录")) { navigation.refresh(folder, in: library) }
                     if row.path.count == 1 {
                         Divider()
                         Button(L10n.text("从侧栏移除此目录")) { library.remove(folder) }
