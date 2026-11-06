@@ -192,13 +192,8 @@ internal static class WorkspaceLookChecks
         var rootPath = Path.Combine(output, "library");
         var nestedPath = Path.Combine(rootPath, "nested");
         Directory.CreateDirectory(nestedPath);
-        var pixels = Enumerable.Repeat((byte)120, 16 * 12 * 3).ToArray();
-        var bitmap = BitmapSource.Create(16, 12, 96, 96, PixelFormats.Rgb24, null, pixels, 16 * 3);
-        var encoder = new PngBitmapEncoder();
-        encoder.Frames.Add(BitmapFrame.Create(bitmap));
-        using var fixture = new MemoryStream();
-        encoder.Save(fixture);
-        var image = fixture.ToArray();
+        var image = Png(16, 12);
+        Array.Resize(ref image, image.Length + 256);
         for (var i = 0; i < 180; i++) File.WriteAllBytes(Path.Combine(rootPath, $"image-{i:D3}.png"), image);
         File.WriteAllBytes(Path.Combine(nestedPath, "another.png"), image);
         var library = Get<Library>(window, "library");
@@ -238,9 +233,47 @@ internal static class WorkspaceLookChecks
         check(Math.Abs(scroller.VerticalOffset - before) < 1,
             $"Returning to the folder restores the thumbnail scroll position ({before} -> {scroller.VerticalOffset})");
         var anchoredPhoto = rows[24].Photos[0];
-        InteractionChecks.PumpUntil(() => anchoredPhoto.Thumbnail != null);
+        var neighbor = rows[24].Photos[1];
+        InteractionChecks.PumpUntil(() => anchoredPhoto.Thumbnail != null && neighbor.Thumbnail != null);
         check(root.Photos.Count(entry => entry.Thumbnail != null) < root.Photos.Count,
             "The browser decodes thumbnails for the visible gallery without loading the whole folder");
+        var unchangedThumbnail = neighbor.Thumbnail;
+        var beforeReplacement = OriginalIdentity.Read(anchoredPhoto.Path);
+        var replacement = Png(32, 12);
+        Array.Resize(ref replacement, image.Length);
+        var incoming = Path.Combine(rootPath, "incoming.tmp");
+        File.WriteAllBytes(incoming, replacement);
+        File.Move(incoming, anchoredPhoto.Path, overwrite: true);
+        File.SetLastWriteTimeUtc(anchoredPhoto.Path, new DateTime(beforeReplacement.Modified, DateTimeKind.Utc));
+        File.SetCreationTimeUtc(anchoredPhoto.Path, new DateTime(beforeReplacement.Created, DateTimeKind.Utc));
+        var afterReplacement = OriginalIdentity.Read(anchoredPhoto.Path);
+        check(beforeReplacement.Length == afterReplacement.Length && beforeReplacement.Modified == afterReplacement.Modified &&
+            beforeReplacement.Created == afterReplacement.Created && beforeReplacement.FileID != afterReplacement.FileID,
+            "The replacement keeps its name, length and timestamps but has a different file ID");
+        var refreshTimer = Get<DispatcherTimer>(window, "thumbnailRefresh");
+        var refreshInterval = refreshTimer.Interval;
+        // Complete the reload before the debounce can observe the temporarily empty gallery.
+        refreshTimer.Interval = TimeSpan.FromSeconds(10);
+        try
+        {
+            var reload = (Task)Invoke(window, "BrowseFolder", root, true)!;
+            InteractionChecks.PumpUntil(() => reload.IsCompleted);
+            reload.GetAwaiter().GetResult();
+            FlushGalleryLayout();
+            window.RefreshVisibleThumbnails();
+            var refreshed = root.Photos.Single(entry => entry.Path == anchoredPhoto.Path);
+            InteractionChecks.PumpUntil(() => refreshed.Thumbnail != null);
+            check(refreshed.Thumbnail?.PixelWidth == 32,
+                "Reload refreshes the visible thumbnail for a same-path replacement");
+            check(root.Photos.Contains(neighbor) && ReferenceEquals(neighbor.Thumbnail, unchangedThumbnail),
+                "Reload preserves an unchanged visible thumbnail");
+            anchoredPhoto = refreshed;
+        }
+        finally
+        {
+            refreshTimer.Stop();
+            refreshTimer.Interval = refreshInterval;
+        }
         var tile = PhotoFeatureChecks.Descendants<Button>(window.SidebarGallery).First(button => button.DataContext == anchoredPhoto);
         tile.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Right) {
             RoutedEvent = UIElement.PreviewMouseRightButtonDownEvent
@@ -267,6 +300,17 @@ internal static class WorkspaceLookChecks
             window.UpdateLayout();
             window.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
             window.UpdateLayout();
+        }
+
+        static byte[] Png(int width, int height)
+        {
+            var pixels = Enumerable.Repeat((byte)120, width * height * 3).ToArray();
+            var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Rgb24, null, pixels, width * 3);
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using var fixture = new MemoryStream();
+            encoder.Save(fixture);
+            return fixture.ToArray();
         }
     }
 }

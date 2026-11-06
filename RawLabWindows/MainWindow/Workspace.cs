@@ -148,6 +148,7 @@ public partial class MainWindow
         if (mode == workspaceLayout.Mode || closing || exporting || UpdateInstallationActive || pendingAllReset != null ||
             (mode == WorkspaceMode.Preview && result == null)) return;
         if (workspaceLayout.Mode == WorkspaceMode.Editing && !SuspendInspectorTool()) return;
+        if (mode != WorkspaceMode.Editing && hslTargetEnabled) SetHslTargetMode(false, hslTargetAxis);
         CancelViewingInput();
         HistogramPopup.IsOpen = ProcessingPopup.IsOpen = false;
         workspaceLayout.SetMode(mode);

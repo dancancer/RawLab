@@ -20,6 +20,7 @@ public sealed class LibraryEntry : INotifyPropertyChanged
     private Task? directoryLoad;
     private bool directoryLoaded;
     private BitmapSource? thumbnail;
+    private OriginalIdentity? thumbnailIdentity;
     private bool thumbnailVisible;
     private int thumbnailRequest;
     public BitmapSource? Thumbnail { get=>thumbnail; private set { thumbnail=value; OnPropertyChanged(); } }
@@ -63,15 +64,26 @@ public sealed class LibraryEntry : INotifyPropertyChanged
     }
     private async Task ReadDirectory()
     {
+        var existing = Children.ToDictionary(entry => entry.Path, StringComparer.Ordinal);
+        var visiblePhotos = existing.Values.Where(entry => entry.thumbnailVisible)
+            .Select(entry => entry.Path).ToHashSet(StringComparer.Ordinal);
         var paths = await Task.Run(() => new DirectoryInfo(Path).EnumerateFileSystemInfos()
             .Where(entry => (entry.Attributes & (FileAttributes.Hidden | FileAttributes.ReparsePoint)) == 0)
             .Where(entry => entry is DirectoryInfo || IsImage(entry.FullName))
             .OrderBy(entry => entry is DirectoryInfo ? 0 : 1).ThenBy(entry => entry.Name, StringComparer.CurrentCultureIgnoreCase)
-            .Select(entry => (entry.FullName, Folder: entry is DirectoryInfo)).ToArray());
-        var existing = Children.ToDictionary(entry => entry.Path, StringComparer.Ordinal);
+            .Select(entry => (entry.FullName, Folder: entry is DirectoryInfo,
+                Identity: visiblePhotos.Contains(entry.FullName) ? ReadThumbnailIdentity(entry.FullName) : null)).ToArray());
         var entries = paths.Select(path =>
-            existing.TryGetValue(path.FullName, out var entry) && entry.IsFolder == path.Folder
-                ? entry : new LibraryEntry(path.FullName, path.Folder) { Parent = this }).ToArray();
+        {
+            if (existing.TryGetValue(path.FullName, out var entry) && entry.IsFolder == path.Folder)
+            {
+                if (!entry.thumbnailVisible || (path.Identity is { } current && entry.thumbnailIdentity?.SameFile(current) == true))
+                    return entry;
+                // Replacing the entry also lets the visible gallery request a new thumbnail.
+                entry.ReleaseThumbnail();
+            }
+            return new LibraryEntry(path.FullName, path.Folder) { Parent = this };
+        }).ToArray();
         Photos = entries.Where(entry => !entry.IsFolder).ToArray();
         // Keep existing folder instances and expansion state while refreshing children.
         foreach (var removed in Folders.Except(entries).ToArray()) Folders.Remove(removed);
@@ -88,6 +100,12 @@ public sealed class LibraryEntry : INotifyPropertyChanged
         directoryLoaded = true;
     }
     private static readonly SemaphoreSlim ThumbnailSlots = new(2);
+    private static OriginalIdentity? ReadThumbnailIdentity(string path)
+    {
+        try { return OriginalIdentity.Read(path); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or Win32Exception) { return null; }
+    }
+
     public async Task LoadThumbnail()
     {
         if (IsFolder || thumbnailVisible || string.IsNullOrEmpty(Path)) return;
@@ -97,8 +115,12 @@ public sealed class LibraryEntry : INotifyPropertyChanged
         try
         {
             if (request != thumbnailRequest) return;
-            var image = await Task.Run(() => RenderEngine.Thumbnail(Path));
-            if (request == thumbnailRequest) Thumbnail = image;
+            var (identity, image) = await Task.Run(() => (ReadThumbnailIdentity(Path), RenderEngine.Thumbnail(Path)));
+            if (request == thumbnailRequest)
+            {
+                thumbnailIdentity = identity;
+                Thumbnail = image;
+            }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException or DllNotFoundException or BadImageFormatException or EntryPointNotFoundException) { }
         finally { ThumbnailSlots.Release(); }
@@ -108,6 +130,7 @@ public sealed class LibraryEntry : INotifyPropertyChanged
         if (!thumbnailVisible) return;
         thumbnailVisible = false;
         ++thumbnailRequest;
+        thumbnailIdentity = null;
         Thumbnail = null;
     }
     public event PropertyChangedEventHandler? PropertyChanged;
