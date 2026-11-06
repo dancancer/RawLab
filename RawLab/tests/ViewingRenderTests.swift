@@ -233,6 +233,33 @@ struct ViewingRenderTests {
             check(reference != nil && model.hdrReference === reference && model.hdrPresentation !== zoom,
                   "HDR exposure regenerates edited pixels and reuses the unchanged reference")
             print("PASS: HDR viewport round trip and comparison reuse")
+
+            let acceptedHDR = model.hdrPresentation
+            let acceptedFrameID = model.acceptedPreviewFrameID
+            let unreadable = out.appendingPathComponent("invalid-hdr.jpg")
+            try Data("invalid image".utf8).write(to: unreadable)
+            model.sourceFile = .externallyManaged(unreadable)
+            var failingSettings = settings
+            failingSettings.hdr?.exposure = 0.75
+            model.updatePreview(settings: failingSettings)
+            wait(model)
+            check(model.previewFailed && model.statusHasDiagnostics && model.hdrPresentation === acceptedHDR,
+                  "Failed HDR rendering retains the accepted pixels and exposes error diagnostics")
+            guard let diagnosticData = try ErrorDiagnostics.app.reportData() else {
+                check(false, "Failed HDR rendering records an exportable diagnostic")
+                return
+            }
+            let report = try JSONSerialization.jsonObject(with: diagnosticData) as? [String: Any]
+            let last = (report?["events"] as? [[String: Any]])?.last
+            let context = last?["context"] as? [String: String]
+            check(last?["stage"] as? String == "renderHDR" && context?["mode"] == "hdr" && context?["longEdge"] == "704",
+                  "The exported diagnostic includes the HDR stage and viewport demand")
+            model.sourceFile = .externallyManaged(url)
+            model.updatePreview(settings: settings)
+            wait(model)
+            check(!model.previewFailed && model.acceptedPreviewFrameID != acceptedFrameID && model.hdrReference === reference,
+                  "HDR retry accepts a preview and reuses the still-valid reference")
+            print("PASS: HDR preview failure retains pixels, exports diagnostics and preserves comparison reuse on retry")
         }
     }
 }

@@ -95,7 +95,7 @@ extension BatchExportModel {
             } catch let error as Sony2FujiProcessor.ProcessorError {
                 try? FileManager.default.removeItem(at: output)
                 if case .outputIO = error {
-                    throw BatchExportError.global(error.localizedDescription)
+                    throw BatchExportError.global(error.localizedDescription, underlying: error)
                 }
                 throw error
             } catch {

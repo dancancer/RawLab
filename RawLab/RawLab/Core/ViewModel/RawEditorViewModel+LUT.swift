@@ -65,7 +65,7 @@ extension RawEditorViewModel {
                     case .failure(let reason):
                         self.availableLUTs = bundled.options
                         self.lutMap = bundled.map
-                        self.statusMessage = reason.localizedDescription
+                        self.reportError(reason, operation: .lookImport, stage: "prepareLook", message: reason.localizedDescription)
                     }
                     self.includeIndependentRecipeLook(self.currentPreviewSettings)
                     self.isLoadingLUTs = false
@@ -117,7 +117,8 @@ extension RawEditorViewModel {
                                                   isCompatibility: look.record.isCompatibility) : option
                     }
                     self.lutMap[id] = LUTReference(id: id, name: look.record.name, sourceURL: look.url, isCustom: true)
-                case .failure(let error): self.statusMessage = error.localizedDescription
+                case .failure(let error):
+                    self.reportError(error, operation: .lookImport, stage: "saveLook", message: error.localizedDescription)
                 }
             }
         }

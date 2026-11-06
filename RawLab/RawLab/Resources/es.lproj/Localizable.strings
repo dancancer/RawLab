@@ -239,6 +239,7 @@
 "导出已完成的 DNG 到文件…" = "Exportar DNG completados a Archivos…";
 "导出渲染型 DNG" = "Exportar DNG revelado";
 "导出渲染型 DNG…" = "Exportar DNG revelado…";
+"导出错误日志" = "Exportar registro de errores";
 "导出长边像素" = "Borde largo al exportar (píxeles)";
 "导出长边必须为 1-65535 像素。" = "El borde largo debe tener entre 1 y 65535 píxeles.";
 "将以下项目转为独立调整，以保留其他分组的当前效果：%@" = "Los siguientes valores se convertirán en ajustes independientes para conservar el aspecto actual de los demás grupos: %@";
@@ -381,6 +382,7 @@
 "无法写入成片，请检查输出位置和剩余空间。" = "No se puede escribir la foto exportada. Verifique la ubicación de salida y el espacio disponible.";
 "无法创建新的预设标识，请重试。" = "No se pudo crear un identificador para el ajuste. Inténtalo de nuevo.";
 "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。" = "No se puede obtener el RAW original. Autoriza el acceso a esta foto en Ajustes del sistema y vuelve a intentarlo.";
+"无法导出错误日志。" = "No se pudo exportar el registro de errores.";
 "无法显示处理结果" = "No se pueden mostrar los resultados del procesamiento";
 "无法生成预览" = "No se puede generar una vista previa";
 "无法生成预览，请检查照片、LUT 和颜色配置。" = "No se pudo generar la vista previa. Comprueba la foto, la LUT y los ajustes de color.";
@@ -405,6 +407,7 @@
 "明度：从暗到亮。" = "Luminosidad: de oscuro a claro.";
 "显示图像" = "Imagen de pantalla";
 "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。" = "La imagen debe ser opaca, SDR de 8 bits, en formato JPEG, PNG, TIFF o HEIF.";
+"暂无可导出的错误日志。" = "No hay ningún registro de errores para exportar.";
 "暂无编辑历史。" = "Aún no hay historial de edición.";
 "暖调日系 · 漫射金光" = "Estilo japonés cálido · luz dorada difusa";
 "暖金光影 · 质感人像" = "Luz dorada cálida · retrato con textura";

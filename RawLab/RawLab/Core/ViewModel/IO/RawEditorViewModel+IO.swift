@@ -124,11 +124,11 @@ extension RawEditorViewModel {
         settings: RawSettings = .default,
         x3fModeOverride: X3fMode? = nil,
         retainedInput: PhotoSourceFile? = nil,
+        diagnosticContext: [String: String] = [:],
         onImported: (() -> Void)? = nil,
         onSettingsRestored: ((RawSettings) -> Void)? = nil
     ) -> UUID {
         cancelQueuedSettingsSave()
-        retryLegacyX3fImport = nil
         adjustmentInteraction = nil
         adjustmentInteractionRejected = false
         statusMessage = nil
@@ -158,6 +158,9 @@ extension RawEditorViewModel {
                 var failedSource: PhotoSourceFile?
                 var importIdentity = identity
                 var attemptedX3fMode = X3fMode.legacy
+                var stage = "restoreEdits"
+                var context = diagnosticContext
+                context["sourceKind"] = source.isRaw ? "raw" : "raster"
                 do {
                     let resolvedIdentity = identity ?? (try? PhotoIdentity.fallback(for: inputURL))
                     importIdentity = resolvedIdentity
@@ -166,9 +169,14 @@ extension RawEditorViewModel {
                     var restoredSettings = record?.settings ?? .default
                     if let x3fModeOverride { restoredSettings.x3fMode = x3fModeOverride }
                     attemptedX3fMode = restoredSettings.x3fMode
+                    context["restoredEdits"] = String(record != nil)
+                    context["mode"] = restoredSettings.isHDREditing ? "hdr" : "sdr"
+                    if inputURL.pathExtension.lowercased() == "x3f" { context["x3fMode"] = attemptedX3fMode.rawValue }
+                    stage = "cacheSource"
                     let sourceFile = try PhotoSourceFile.copy(inputURL)
                     failedSource = sourceFile
                     try sourceFile.withReadAccess { localURL in
+                        stage = "probeHDR"
                         let hdrInfo = sourceKind == .raster
                             ? try HDRSourceInfo.probe(localURL)
                             : try HDRSourceInfo.probeRAW(localURL)
@@ -179,6 +187,9 @@ extension RawEditorViewModel {
                         let cameraHDR = hdrInfo?.isDevelopedRAW == true
                         let rasterHDR = hdrInfo != nil && !cameraHDR
                         if rasterHDR && record == nil { restoredSettings.hdr=HDRSettings() }
+                        context["mode"] = restoredSettings.isHDREditing ? "hdr" : "sdr"
+                        stage = "renderPreview"
+                        let importContext = context.merging(ErrorDiagnostics.fileContext(localURL)) { first, _ in first }
                         let restoredSettings=restoredSettings
                         let missingLook = !self.isLookAvailable(for: restoredSettings)
                         if let hdr=restoredSettings.hdr,restoredSettings.isHDREditing {
@@ -206,6 +217,7 @@ extension RawEditorViewModel {
                                 self.acceptImportedEditRecord(versioned,settings:restoredSettings)
                                 self.persistedEditorSettings=nil; self.failedDraftSource=nil
                                 if self.editPersistence != nil { self.setEditNotice(record==nil ? .idle : .restored) }
+                                ErrorDiagnostics.app.recordImportSuccess(attemptID: importRevision, context: importContext)
                                 onSettingsRestored?(restoredSettings); onImported?()
                             }
                         } else if sourceKind == .raw {
@@ -263,10 +275,14 @@ extension RawEditorViewModel {
                                 if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
                                 onSettingsRestored?(restoredSettings)
                                 if x3fModeOverride != nil { self.queueSettingsSave(restoredSettings) }
-                                if self.hasImage && adjustedImage != nil { onImported?() }
+                                if self.hasImage && adjustedImage != nil {
+                                    ErrorDiagnostics.app.recordImportSuccess(attemptID: importRevision, context: importContext)
+                                    onImported?()
+                                }
                                 if missingLook { self.statusMessage = L10n.text("上次使用的外观不可用，请重新选择或导入外观。") }
                                 if adjustedImage == nil {
-                                    self.statusMessage = L10n.text("无法生成预览")
+                                    self.reportError(EditorError.renderFailed, operation: .photoImport, stage: "renderPreview",
+                                                     attemptID: importRevision, context: importContext, message: L10n.text("无法生成预览"))
                                 }
                             }
                         } else {
@@ -321,28 +337,37 @@ extension RawEditorViewModel {
                                 self.failedDraftSource = nil
                                 if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
                                 onSettingsRestored?(restoredSettings)
-                                if self.hasImage && adjustedImage != nil { onImported?() }
+                                if self.hasImage && adjustedImage != nil {
+                                    ErrorDiagnostics.app.recordImportSuccess(attemptID: importRevision, context: importContext)
+                                    onImported?()
+                                }
                                 if missingLook { self.statusMessage = L10n.text("上次使用的外观不可用，请重新选择或导入外观。") }
                                 if adjustedImage == nil {
-                                    self.statusMessage = L10n.text("无法生成预览")
+                                    self.reportError(EditorError.renderFailed, operation: .photoImport, stage: "renderPreview",
+                                                     attemptID: importRevision, context: importContext, message: L10n.text("无法生成预览"))
                                 }
                             }
                         }
                     }
                 } catch {
+                    let failureStage = stage
+                    let content = failedSource?.withReadAccess { ErrorDiagnostics.fileContext($0, inspectContent: true) }
+                        ?? ErrorDiagnostics.fileContext(inputURL)
+                    let failureContext = context.merging(content) { first, _ in first }
                     self.resultDelivery {
                         guard self.activeImportRevision == importRevision else { return }
                         self.invalidatePreviewRequests()
                         self.activeImportRevision = nil
-                        self.statusMessage = error.localizedDescription
+                        let presented = self.reportError(error, operation: .photoImport, stage: failureStage,
+                                                         attemptID: importRevision, context: failureContext)
                         self.isBusy = false
                         if let previous=self.importPreviousRevision { self.sourceRevision=previous }
                         self.importPreviousRevision=nil
-                        if source.isRaw, source.url.pathExtension.lowercased() == "x3f",
+                        if presented, source.isRaw, source.url.pathExtension.lowercased() == "x3f",
                            attemptedX3fMode == .normal, let failedSource {
                             self.retryLegacyX3fImport = { [weak self] restored in
                                 self?.importImage(from: source, identity: importIdentity, settings: settings,
-                                    x3fModeOverride: .legacy, retainedInput: failedSource,
+                                    x3fModeOverride: .legacy, retainedInput: failedSource, diagnosticContext: diagnosticContext,
                                     onImported: onImported, onSettingsRestored: restored)
                             }
                         }

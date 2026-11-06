@@ -46,12 +46,27 @@ struct EditMemoryTests {
                 fatalError("invalid X3F mode was accepted")
             } catch is DecodingError { }
         }
-        check(PhotoImportFile.sourceKind(for: URL(fileURLWithPath: "/tmp/sigma.X3F"))?.isRaw == true,
-              "Sigma X3F imports as RAW even without a system UTI registration")
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("rawlab-edit-memory-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
+        let mislabeledX3f = root.appendingPathComponent("sigma.jpeg")
+        try Data("FOVb".utf8).write(to: mislabeledX3f)
+        let x3fSource = try PhotoImportFile.retainSource(mislabeledX3f)
+        defer { PhotoImportFile.release(x3fSource.url) }
+        check(x3fSource.isRaw && x3fSource.url.pathExtension == "x3f" && x3fSource.displayName == "sigma.jpeg",
+              "The Sigma signature selects X3F and preserves the selected filename")
+        let mislabeledDNG = root.appendingPathComponent("digital-negative.jpeg")
+        // Little-endian TIFF with the DNGVersion entry in IFD0.
+        let dngHeader: [UInt8] = [
+            0x49, 0x49, 42, 0, 8, 0, 0, 0, 1, 0,
+            0x12, 0xc6, 1, 0, 4, 0, 0, 0, 1, 4, 0, 0, 0, 0, 0, 0,
+        ]
+        try Data(dngHeader).write(to: mislabeledDNG)
+        let dngSource = try PhotoImportFile.retainSource(mislabeledDNG)
+        defer { PhotoImportFile.release(dngSource.url) }
+        check(dngSource.isRaw && dngSource.url.pathExtension == "dng",
+              "DNGVersion in the first TIFF directory selects the DNG decoder")
 
         let first = PhotoIdentity(resourceIdentifier: "asset-a")
         let second = PhotoIdentity(resourceIdentifier: "asset-b")

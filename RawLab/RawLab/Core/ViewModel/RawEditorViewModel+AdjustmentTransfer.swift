@@ -1,4 +1,6 @@
 import Foundation
+import PhotosUI
+import SwiftUI
 
 extension RawEditorViewModel {
     func adjustmentContext(identifier: String, isRaw: Bool,
@@ -127,7 +129,44 @@ extension RawEditorViewModel {
         return results
     }
 
-    func retainAdjustmentPhoto(_ source: PhotoImportSource, identity: PhotoIdentity? = nil) async throws -> IOSAdjustmentPhoto {
+    func loadAdjustmentPhoto(from item: PhotosPickerItem, workflow: String) async throws -> IOSAdjustmentPhoto {
+        let identity = item.itemIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
+        return try await loadAdjustmentPhoto(stage: "readPhotoLibrary",
+                                             context: ["workflow": workflow, "entryPoint": "photos"],
+                                             identity: identity) {
+            try await PhotoImportFile.load(from: item)
+        }
+    }
+
+    func loadAdjustmentPhoto(fromFile url: URL, workflow: String) async throws -> IOSAdjustmentPhoto {
+        var context = ["workflow": workflow, "entryPoint": "files"]
+        context["extension"] = ErrorDiagnostics.fileNameExtension(url)
+        return try await loadAdjustmentPhoto(stage: "retainPickerSource", context: context) {
+            try await PhotoImportFile.load(fromFile: url)
+        }
+    }
+
+    private func loadAdjustmentPhoto(stage sourceStage: String, context sourceContext: [String: String],
+                                     identity: PhotoIdentity? = nil,
+                                     loadSource: () async throws -> PhotoImportSource) async throws -> IOSAdjustmentPhoto {
+        var stage = sourceStage
+        var context = sourceContext
+        do {
+            let source = try await loadSource()
+            defer { PhotoImportFile.release(source.url) }
+            context["sourceKind"] = source.isRaw ? "raw" : "raster"
+            context["extension"] = context["extension"] ?? ErrorDiagnostics.fileNameExtension(source.url)
+            stage = "prepareTarget"
+            return try await retainAdjustmentPhoto(source, identity: identity)
+        } catch {
+            if !Task.isCancelled {
+                ErrorDiagnostics.log(error, operation: .adjustment, stage: stage, context: context)
+            }
+            throw error
+        }
+    }
+
+    private func retainAdjustmentPhoto(_ source: PhotoImportSource, identity: PhotoIdentity?) async throws -> IOSAdjustmentPhoto {
         try await withCheckedThrowingContinuation { continuation in
             adjustmentQueue.async {
                 do {

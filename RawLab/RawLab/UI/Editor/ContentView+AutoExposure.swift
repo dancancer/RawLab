@@ -23,7 +23,7 @@ extension ContentView {
                     var updated = settings
                     updated.exposure = ev
                     applySettingsChange(updated)
-                case .failure(let error): viewModel.statusMessage = error.localizedDescription
+                case .failure(let error): viewModel.reportError(error, operation: .adjustment, stage: "autoExposure")
                 }
             }
         }

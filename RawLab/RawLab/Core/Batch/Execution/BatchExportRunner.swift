@@ -12,7 +12,8 @@ struct BatchExportRunner {
                     cleanup: @escaping (_ payload: Payload) -> Void = { _ in },
                     shouldCancel: @escaping Cancellation = { false },
                     didUpdate: @escaping (BatchExportJob) -> Void = { _ in },
-                    onlyIDs: Set<String>? = nil) throws -> BatchExportJob {
+                    onlyIDs: Set<String>? = nil,
+                    didFail: (_ error: Error, _ stage: String) -> Void = { _, _ in }) throws -> BatchExportJob {
         var job = job
         try job.validate()
         job.status = .running
@@ -71,8 +72,9 @@ struct BatchExportRunner {
                 didUpdate(job)
                 return job
             } catch let error as BatchExportError {
+                didFail(error, job.targets[index].status == .publishing ? "publish" : "render")
                 switch error {
-                case .uncertain(let message):
+                case .uncertain(let message, _):
                     job.targets[index].status = .needsConfirmation
                     job.targets[index].errorMessage = message
                     job.globalError = message
@@ -83,7 +85,7 @@ struct BatchExportRunner {
                 case .target(let message):
                     job.targets[index].status = .failed
                     job.targets[index].errorMessage = message
-                case .global(let message):
+                case .global(let message, _):
                     job.targets[index].status = .failed
                     job.targets[index].errorMessage = message
                     job.globalError = message
@@ -94,6 +96,7 @@ struct BatchExportRunner {
                     return job
                 }
             } catch {
+                didFail(error, job.targets[index].status == .publishing ? "publish" : "render")
                 job.targets[index].status = .failed
                 job.targets[index].errorMessage = error.localizedDescription
             }

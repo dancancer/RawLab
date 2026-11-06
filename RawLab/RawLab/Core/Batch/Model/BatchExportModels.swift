@@ -97,16 +97,30 @@ enum BatchOutputFormat: String, Codable, Equatable, Hashable {
     }
 }
 
-enum BatchExportError: LocalizedError {
+enum BatchExportError: LocalizedError, CustomNSError {
     case target(String)
-    case global(String)
-    case uncertain(String)
+    case global(String, underlying: Error? = nil)
+    case uncertain(String, underlying: Error? = nil)
 
     var errorDescription: String? {
         switch self {
-        case .target(let message), .global(let message), .uncertain(let message):
+        case .target(let message), .global(let message, _), .uncertain(let message, _):
             return message
         }
+    }
+
+    var underlyingError: Error? {
+        switch self {
+        case .target: return nil
+        case .global(_, let error), .uncertain(_, let error): return error
+        }
+    }
+
+    var errorUserInfo: [String: Any] {
+        var info: [String: Any] = [:]
+        info[NSLocalizedDescriptionKey] = errorDescription
+        if let underlyingError { info[NSUnderlyingErrorKey] = underlyingError as NSError }
+        return info
     }
 }
 

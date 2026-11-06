@@ -75,7 +75,7 @@ struct BatchExportView: View {
                 Task { await model.addPickerItems(items) }
             }
             .fileImporter(isPresented: $showingFileImporter,
-                          allowedContentTypes: PhotoImportFile.supportedContentTypes,
+                          allowedContentTypes: PhotoImportFile.photoPickerContentTypes,
                           allowsMultipleSelection: true) { result in
                 guard let urls = try? result.get() else { return }
                 Task { await model.addFiles(urls) }
