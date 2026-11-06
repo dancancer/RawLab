@@ -16,6 +16,57 @@ import com.rawlab.android.settings.SettingsCodec
 
 @RunWith(AndroidJUnit4::class)
 class MasterRecipeNativeTest {
+    private fun withoutCalibratedWhiteBalance(dng: ByteArray): ByteArray = dng.copyOf().also { bytes ->
+        val tags = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        val ifd = tags.getInt(4)
+        val asShotNeutral = (0 until tags.getShort(ifd).toInt())
+            .map { ifd + 2 + it * 12 }
+            .first { (tags.getShort(it).toInt() and 0xffff) == 50728 }
+        assertEquals(5, tags.getShort(asShotNeutral + 2).toInt()) // TIFF RATIONAL
+        assertEquals(3, tags.getInt(asShotNeutral + 4))
+        tags.position(tags.getInt(asShotNeutral + 8))
+        for (value in intArrayOf(1, 1, 1, 100, 1, 1)) tags.putInt(value)
+    }
+
+    @Test fun recipeWhiteBalanceFollowsTheRawAcrossEditsAndReplacement() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val input = File.createTempFile("recipe-wb-reuse-", ".dng", context.cacheDir)
+        val replacement = File.createTempFile("recipe-wb-replacement-", ".dng", context.cacheDir)
+        try {
+            val dng = instrumentation.context.assets.open("bayer-demosaic.dng").use { it.readBytes() }
+            input.writeBytes(dng)
+            PhotoStorage(context).use { storage ->
+                NativeProcessor(NativeProcessor.CPU).use { cpu ->
+                    val recipe = MasterRecipe.load(context).first { it.id == "takashi_yasui_zen" }
+                    val edits = EditSettings().applyRecipe(recipe)
+                    val lut = storage.lookPath(edits)!!
+                    val first = cpu.preview(input, lut, edits, 64, false)
+                    assertTrue(first.temperature.isFinite())
+                    val changed = edits.copy(exposure = .4f, strength = .5f, tint = 12f)
+                    val second = cpu.preview(input, lut, changed, 96, false)
+                    assertTrue(second.width > first.width)
+                    assertEquals(first.temperature, second.temperature, 0f)
+                    assertEquals(first.tint, second.tint, 0f)
+
+                    val modified = input.lastModified()
+                    replacement.writeBytes(withoutCalibratedWhiteBalance(dng))
+                    assertTrue(replacement.setLastModified(modified))
+                    assertTrue(replacement.renameTo(input))
+                    assertEquals(modified, input.lastModified())
+                    assertEquals(dng.size.toLong(), input.length())
+                    val replaced = cpu.preview(input, lut, changed, 96, false)
+                    val expected = cpu.preview(input, lut, changed.copy(tint = 0f), 96, false)
+                    assertTrue(replaced.temperature.isNaN())
+                    assertArrayEquals(expected.pixels, replaced.pixels)
+                }
+            }
+        } finally {
+            input.delete()
+            replacement.delete()
+        }
+    }
+
     @Test fun recipeSkipsTintWhenAsShotWhiteBalanceIsUnavailable() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
@@ -24,16 +75,7 @@ class MasterRecipeNativeTest {
         val actualOutput = File.createTempFile("recipe-fallback-wb-", ".jpg", context.cacheDir)
         try {
             val dng = instrumentation.context.assets.open("bayer-demosaic.dng").use { it.readBytes() }
-            val tags = ByteBuffer.wrap(dng).order(ByteOrder.LITTLE_ENDIAN)
-            val ifd = tags.getInt(4)
-            val asShotNeutral = (0 until tags.getShort(ifd).toInt())
-                .map { ifd + 2 + it * 12 }
-                .first { (tags.getShort(it).toInt() and 0xffff) == 50728 }
-            assertEquals(5, tags.getShort(asShotNeutral + 2).toInt()) // TIFF RATIONAL
-            assertEquals(3, tags.getInt(asShotNeutral + 4))
-            tags.position(tags.getInt(asShotNeutral + 8))
-            for (value in intArrayOf(1, 1, 1, 100, 1, 1)) tags.putInt(value)
-            input.writeBytes(dng)
+            input.writeBytes(withoutCalibratedWhiteBalance(dng))
 
             PhotoStorage(context).use { storage ->
                 NativeProcessor(NativeProcessor.CPU).use { cpu ->
@@ -84,7 +126,11 @@ class MasterRecipeNativeTest {
                                 shadows = current.shadows * strength, highlights = current.highlights * strength,
                                 contrast = current.contrast * strength, saturation = current.saturation * strength,
                                 customWb = strength != 0f, temperature = neutral.temperature,
-                                tint = (neutral.tint + current.tint * strength).coerceIn(-150f, 150f), hsl = current.renderHsl)
+                                tint = (neutral.tint + current.tint * strength).coerceIn(-150f, 150f),
+                                hsl = current.renderHsl, toneCurve = current.renderToneCurve, curve = current.renderCurve,
+                                blackPoint = current.renderBlackPoint, whitePoint = current.renderWhitePoint,
+                                vibrance = current.renderVibrance, clarity = current.renderClarity,
+                                dehaze = current.renderDehaze, colorGrading = current.renderColorGrading)
                             val actual = cpu.preview(input, lut, current, 160, false)
                             assertArrayEquals("${recipe.id} strength $strength", cpu.preview(input, lut, manual, 160, false).pixels, actual.pixels)
                             val automatic = auto.preview(input, lut, current, 160, false)
