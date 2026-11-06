@@ -5,6 +5,7 @@
 "%@ · 曝光 %@ · 查看最终调整" = "%@ · Exposición %@ · Ver ajustes finales";
 "%@ · 本次导出效果" = "%@ · Para esta exportación";
 "%@ · 独立外观" = "%@ · Aspecto independiente";
+"%@ 张照片" = "Fotos: %@";
 "%@ 至 %@" = "%@ a %@";
 "%@ 至 %@ %@" = "%@ a %@ %@";
 "%@数值" = "Valor de %@";
@@ -77,6 +78,7 @@
 "X3F 显影" = "Revelado X3F";
 "三分网格" = "Cuadrícula de tercios";
 "三线性" = "Trilineal";
+"上一级" = "Carpeta superior";
 "上下拖动调整，方向键微调，Esc 取消" = "Arrastra hacia arriba o abajo para ajustar, usa las flechas para cambios precisos y Esc para cancelar";
 "上次使用的外观不可用，请重新选择或导入外观。" = "El último look usado no está disponible. Vuelve a elegir o importar un look.";
 "上次批量任务尚未完成" = "La última exportación por lotes aún no ha terminado";
@@ -191,6 +193,7 @@
 "删除控制点" = "Eliminar punto";
 "删除预设？" = "¿Eliminar el ajuste?";
 "前往下载 %@" = "Descargar %@";
+"加入选片集合" = "Añadir a la selección";
 "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感" = "Luz solar de California fusionada con película japonesa, dorado urbano difuso y brillo cálido transparente";
 "包含几何或镜头调整。" = "Se incluyen ajustes de geometría u objetivo.";
 "匹配内嵌预览" = "Coincidir con la vista previa incrustada";
@@ -237,6 +240,7 @@
 "圆度" = "Redondez";
 "在 Finder 中打开" = "Abrir en el Finder";
 "在照片上取色并上下拖动" = "Toma una muestra en la foto y arrastra hacia arriba o abajo";
+"在目录树中定位" = "Mostrar en el árbol de carpetas";
 "在编辑器中打开照片，然后选择“%@”。" = "Abre una foto en el editor y elige «%@».";
 "场景" = "Escena";
 "场景线性" = "Lineal de escena";
@@ -259,6 +263,7 @@
 "外观分类" = "Categoría de aspectos";
 "外观名称" = "Nombre del look";
 "外观名称不能为空或包含控制字符。" = "El nombre del look no puede estar vacío ni contener caracteres de control.";
+"外观强度" = "Intensidad del look";
 "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。" = "El archivo de look está dañado o es incompatible; se requiere un archivo CUBE o RLOOK compatible.";
 "多点曲线" = "Curva de puntos";
 "多点曲线将从直线开始，旧 S 曲线数值会保留。" = "La curva de puntos comienza como una línea recta. Se conserva el valor de la curva S.";
@@ -316,6 +321,7 @@
 "展开直方图" = "Expandir histograma";
 "展开精细调整" = "Mostrar ajustes finos";
 "展开调整栏" = "Expandir ajustes";
+"工作区" = "Espacio de trabajo";
 "左右拖动刻度尺拉直；方向键每次调整 0.1°" = "Arrastra la regla para enderezar; las flechas ajustan 0,1° por paso.";
 "已保存" = "Guardado";
 "已保存 %@ 张 · 未变化 %@ 张 · 已跳过 %@ 张 · 已撤销 %@ 张 · 未完成 %@ 张" = "Guardadas %@ · Sin cambios %@ · Omitidas %@ · Deshechas %@ · Pendientes %@";
@@ -351,6 +357,7 @@
 "已生成渲染型 DNG，未另存到所选位置。" = "Se creó el DNG revelado, pero no se guardó en la ubicación elegida.";
 "已调整" = "Ajustado";
 "已跳过" = "Omitida";
+"已选" = "Seleccionada";
 "已选 %@ 张" = "Seleccionadas: %@";
 "已选 %@ 项" = "%@ seleccionados";
 "已选中" = "Seleccionado";
@@ -381,6 +388,7 @@
 "强度为 0，其他参数会保留。" = "La intensidad es 0. Los demás ajustes se conservan.";
 "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光" = "Contraste fuerte, sombras profundas cian frío, negros contenidos y toques de luz cálida";
 "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。" = "Los ajustes SDR usan herramientas aún no compatibles con HDR. Restablécelas antes de activar HDR.";
+"当前外观" = "Look actual";
 "当前显示 SDR 兼容预览。" = "Se muestra la vista previa compatible con SDR.";
 "当前构建未配置使用统计，未采集或上报。" = "El análisis de uso no está configurado en esta versión; no se recopila ni se envía ningún dato.";
 "当前照片" = "Foto actual";
@@ -433,7 +441,9 @@
 "操作未完成，请重试。" = "La operación no se ha completado. Inténtalo de nuevo.";
 "支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。" = "Admite varios formatos RAW. El tiempo de procesamiento inicial depende del dispositivo; los resultados se pueden reutilizar.";
 "收起%@组" = "Contraer el grupo %@";
+"收起全部" = "Contraer todo";
 "收起其他方案" = "Ocultar otras opciones";
+"收起分支" = "Contraer rama";
 "收起暗角参数" = "Ocultar ajustes de viñeta";
 "收起直方图" = "Contraer histograma";
 "收起精细调整" = "Ocultar ajustes finos";
@@ -619,6 +629,8 @@
 "正在生成预览…" = "Generando vistas previas…";
 "正在等待编辑和任务处理完成" = "Esperando a que terminen la edición y el procesamiento de tareas";
 "正在等待预览、导出或批量任务结束" = "Esperando a que terminen la vista previa, la exportación o la tarea por lotes";
+"正在编辑另一目录的照片" = "Editando una foto de otra carpeta";
+"正在读取目录…" = "Cargando carpeta…";
 "正在读取镜头信息…" = "Leyendo información de lente…";
 "正在预览镜头校正…" = "Vista previa de la corrección de objetivo…";
 "正常显影" = "Revelado normal";
@@ -658,6 +670,7 @@
 "没有批量任务" = "No hay ninguna exportación por lotes";
 "油润复古 · 城市胶片" = "Vintage cálido · película urbana";
 "洋红" = "Magenta";
+"浏览栏宽度" = "Anchura del explorador";
 "添加 RAW" = "Añadir RAW";
 "添加控制点" = "Añadir punto";
 "添加照片" = "Añadir fotos";
@@ -733,6 +746,7 @@
 "精细调整" = "Ajustes finos";
 "紫" = "Morado";
 "红" = "Rojo";
+"纯预览" = "Vista previa";
 "纽约电影 · 戏剧光影" = "Cine neoyorquino · luz dramática";
 "线性 sRGB" = "sRGB lineal";
 "细节" = "Detalle";
@@ -749,12 +763,14 @@
 "继续查看上次任务，或保留已导出文件并新建任务。" = "Continúe viendo la última tarea o conserve el archivo exportado y cree una nueva tarea.";
 "继续编辑" = "Seguir editando";
 "绿" = "Verde";
+"编辑" = "Editar";
 "缩小" = "Alejar";
 "缩放" = "Ampliar";
 "缩放与显示" = "Zoom y visualización";
 "缺少拍摄时白平衡数据，无法保留配方效果。" = "Faltan los datos del balance de blancos de la toma, por lo que no se puede conservar el aspecto de la receta.";
 "羽化" = "Desvanecimiento";
 "胶片" = "Película";
+"胶片、导入外观和大师配方共用" = "Se aplica a simulaciones de película, looks importados y recetas maestras";
 "胶片模拟" = "Simulación de película";
 "自动" = "Automático";
 "自动 HDR" = "HDR automático";
@@ -842,6 +858,7 @@
 "调整未保存：%@" = "Ajustes no guardados: %@";
 "调整来源" = "Origen de los ajustes";
 "调整栏" = "Panel de ajustes";
+"调整栏宽度" = "Anchura del panel de ajustes";
 "调整栏高度" = "Altura del panel de ajustes";
 "调整照片" = "Ajuste de foto";
 "调整范围" = "Alcance de los ajustes";
@@ -893,6 +910,7 @@
 "选择镜头只更新草稿，应用后保存" = "La selección de objetivo solo actualiza el borrador. Aplica para guardar.";
 "选择镜头配置文件" = "Elegir perfil de lente";
 "选择预览照片" = "Elegir foto de vista previa";
+"选片" = "Selección";
 "透视" = "Perspectiva";
 "通道边界像素：方案 %@% · 参考 %@%" = "Píxeles en los límites de canal: candidato %@%% · referencia %@%%";
 "配方" = "Receta";

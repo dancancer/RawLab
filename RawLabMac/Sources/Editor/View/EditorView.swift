@@ -6,6 +6,11 @@ struct EditorView: View {
     @ObservedObject var model: EditorModel
     @Environment(\.openWindow) private var openWindow
     @StateObject private var library = PhotoLibrary()
+    @StateObject private var browser = MacWorkspaceBrowserState()
+    @AppStorage("workspace.files.width") private var savedLibraryWidth = Double(MacWorkspaceLayout.defaultLibraryWidth)
+    @AppStorage("workspace.adjustments.width") private var savedInspectorWidth = Double(MacWorkspaceLayout.defaultInspectorWidth)
+    @State private var libraryResizeWidth: CGFloat?
+    @State private var inspectorResizeWidth: CGFloat?
     @State private var viewing = MacViewingState()
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -13,14 +18,11 @@ struct EditorView: View {
     @State private var histogramExpanded = true
     @State private var workspaceLayout = MacWorkspaceLayout()
     @State private var windowWidth: CGFloat = 1320
-    @State private var canvasSize = CGSize.zero
     @State private var showsProcessingSettings = false
-    @State private var selectedParameter: AdjustmentParameter? = .exposure
+    @State private var showsHistogram = false
     @State private var viewport = PhotoViewport()
     @State private var dropTarget = false
     @State private var resetVersion = 0
-    @State private var adjustmentPanel = AdjustmentPanelLayout()
-    @State private var resizeStart: CGFloat?
     @State private var infoMode = PhotoInfoMode.hidden
     @State private var photoInformation: PhotoInformation?
     @State private var geometryViewState: GeometryViewState?
@@ -30,106 +32,129 @@ struct EditorView: View {
         let file: URL?
         let viewport: PhotoViewport
         let fullResolution: Bool
-        let panel: AdjustmentPanelLayout
     }
-    private var showFiles: Bool { workspaceLayout.showsFiles(width: windowWidth, hasFolders: !library.roots.isEmpty) }
-    private var automaticPanelHeight: CGFloat {
-        !model.quickPresetsVisible && model.geometryDraft == nil &&
-        model.adjustmentNavigation.tool.parameter != nil && model.adjustmentNavigation.tool != .whiteBalance &&
-        !(model.adjustmentNavigation.tool == .toneCurve && model.settings.curveSettings.mode == .custom) ? 220 : 320
-    }
-    private func panelHeight(available: CGFloat) -> CGFloat {
-        adjustmentPanel.height(available: available, automatic: automaticPanelHeight)
-    }
+    private var showFiles: Bool { workspaceLayout.libraryPresentation(width: windowWidth) != .hidden }
+    private var showInspector: Bool { workspaceLayout.showsInspector(hasPhoto: model.file != nil) }
+    private var showsPhotoWorkspace: Bool { workspaceLayout.mode != .selection }
 
     private var editorContent: some View {
         GeometryReader { geometry in
-            HSplitView {
-                if showFiles {
-                    FileBrowser(library: library, selected: model.file, open: model.open,
-                                canApplySettings: model.canApplySettings, applySettings: model.confirmApplySettings)
-                        .frame(minWidth: 200, idealWidth: 236, maxWidth: 300)
-                        .disabled(model.exporting)
+            let width = geometry.size.width
+            let filePane = workspaceLayout.libraryPresentation(width: width)
+            let filesWidth = MacWorkspaceLayout.libraryWidth(libraryResizeWidth ?? CGFloat(savedLibraryWidth))
+            let toolsWidth = MacWorkspaceLayout.inspectorWidth(inspectorResizeWidth ?? CGFloat(savedInspectorWidth), windowWidth: width)
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    if filePane == .pinned {
+                        fileBrowser.frame(width: filesWidth)
+                        MacWorkspaceDivider(width: filesWidth, limits: MacWorkspaceLayout.libraryRange, leading: true) { value, finished in
+                            libraryResizeWidth = finished ? nil : value
+                            if finished { savedLibraryWidth = Double(value) }
+                        }
+                    }
+                    centerPane.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if showInspector {
+                        if MacWorkspaceLayout.isCompact(width) { Divider() }
+                        else {
+                            MacWorkspaceDivider(width: toolsWidth, limits: MacWorkspaceLayout.inspectorRange, leading: false) { value, finished in
+                                inspectorResizeWidth = finished ? nil : value
+                                if finished { savedInspectorWidth = Double(value) }
+                            }
+                        }
+                    }
+                    if model.file != nil {
+                        adjustmentInspector.frame(width: toolsWidth)
+                            .frame(width: showInspector ? toolsWidth : 0, alignment: .leading)
+                            .clipped().opacity(showInspector ? 1 : 0)
+                            .allowsHitTesting(showInspector).accessibilityHidden(!showInspector)
+                    }
                 }
-                VStack(spacing: 0) {
-                  workspace.frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color(nsColor: NSColor(white: 0.12, alpha: 1)))
-                    .background { GeometryReader { area in
-                        Color.clear.onChange(of: area.size, initial: true) { _, size in canvasSize = size }
-                    } }
-                    .overlay(alignment: .topTrailing) {
-                        if model.geometryDraft == nil {
-                            FloatingHistogram(frame: viewing.holdingBefore ? model.neutral : model.result,
-                                before: viewing.holdingBefore, clipping: $clipping, expanded: $histogramExpanded,
-                                hdrDisplay:hdrDisplay, compact: MacWorkspaceLayout.compactHistogram(canvas: canvasSize)).padding(12)
-                        }
+                .overlay(alignment: .leading) {
+                    if filePane == .drawer {
+                        fileBrowser.frame(width: MacWorkspaceLayout.drawerWidth)
+                            .overlay(alignment: .trailing) { Divider() }
+                            .shadow(color: .black.opacity(0.35), radius: 12, x: 4)
+                            .accessibilityIdentifier("workspace.library.drawer")
                     }
-                    .overlay(alignment: .topLeading) {
-                        VStack(alignment: .leading, spacing: 6) {
-                        Button { infoMode = infoMode.next } label: { Image(systemName: "info.circle") }
-                            .buttonStyle(.plain).frame(width: 28, height: 28)
-                            .background(.black.opacity(0.6), in: Circle())
-                            .accessibilityLabel(L10n.text("照片信息")).accessibilityValue(infoMode.title)
-                            .accessibilityIdentifier("photo.information")
-                        if infoMode != .hidden, let photoInformation {
-                            VStack(alignment: .leading, spacing: 4) {
-                                ForEach(Array(photoInformation.lines(for: infoMode).enumerated()), id: \.offset) { index, line in
-                                    Text(line).font(.system(size: index == 0 ? 14 : 12, weight: index == 0 ? .semibold : .regular))
-                                        .lineLimit(2).truncationMode(.middle)
-                                }
-                            }.foregroundStyle(.white).shadow(color: .black, radius: 2, y: 1)
-                                .padding(10).background(.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 4))
-                                .frame(maxWidth: min(380, max(130, geometry.size.width - (showFiles ? 300 : 0) - 300)), alignment: .leading)
-                                .padding(12).allowsHitTesting(false)
-                                .accessibilityElement(children: .combine)
-                        }
-                        }.padding(8)
-                    }
-                    .overlay(alignment: .top) {
-                        if model.busy || model.importing {
-                            if reduceMotion { Rectangle().fill(.yellow).frame(height: 2) }
-                            else { ProgressView().progressViewStyle(.linear).frame(height: 2).clipped() }
-                        }
-                    }
-                    .accessibilityValue(model.busy ? L10n.text("正在显影…") : model.previewOutdated ? L10n.text("预览未更新") : L10n.text("预览已更新"))
-                    .overlay(alignment: .bottom) {
-                        VStack(spacing: 8) {
-                        if adjustmentPanel.collapsed && model.hslTargetActive {
-                            HSLTargetCanvasControls(axis: model.hslTargetAxis, onExit: exitHSLTarget).padding(8)
-                        }
-                        if model.previewOutdated {
-                            HStack(spacing: 8) {
-                                Label(L10n.text("预览未更新"), systemImage: "exclamationmark.triangle")
-                                Button(L10n.text("重试"), action: model.schedule)
-                            }.font(.callout).padding(8).background(.black.opacity(0.7)).padding(8)
-                        }
-                    }
-                    }
-                    .overlay { if dropTarget { Rectangle().stroke(Color.accentColor, lineWidth: 3) } }
-                    .onDrop(of: [.fileURL], isTargeted: $dropTarget) { providers in
-                        guard !model.exporting, let provider = providers.first else { return false }
-                        _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                            guard let url else { return }
-                            DispatchQueue.main.async { model.open(url) }
-                        }
-                        return true
-                    }
-                  if model.file != nil {
-                  panelResizeHandle(available: geometry.size.height)
-                      .frame(height: adjustmentPanel.collapsed ? 0 : 13).clipped()
-                      .allowsHitTesting(!adjustmentPanel.collapsed).accessibilityHidden(adjustmentPanel.collapsed)
-                  bottomControls
-                      .frame(height: adjustmentPanel.collapsed ? 0 : (model.adjustmentNavigation.expandedGroup == nil ? 86 : panelHeight(available: geometry.size.height)) - 13)
-                      .clipped().allowsHitTesting(!adjustmentPanel.collapsed).accessibilityHidden(adjustmentPanel.collapsed)
-                  }
-                  Divider()
-                  statusBar
                 }
+                Divider()
+                statusBar
             }
-            .onChange(of: geometry.size.width, initial: true) { _, width in windowWidth = width }
+            .onChange(of: width, initial: true) { old, new in
+                workspaceLayout.windowResized(from: old, to: new)
+                windowWidth = new
+            }
         }
         .frame(minWidth: 950, minHeight: 620)
         .preferredColorScheme(.dark)
+    }
+
+    private var fileBrowser: some View {
+        MacWorkspaceLibrary(library: library, navigation: browser, selected: model.file,
+            foldersOnly: workspaceLayout.mode == .selection, open: openWorkspacePhoto,
+            canApplySettings: model.canApplySettings, applySettings: model.confirmApplySettings)
+            .disabled(model.exporting)
+    }
+
+    @ViewBuilder private var centerPane: some View {
+        if workspaceLayout.mode == .selection {
+            MacWorkspaceSelection(library: library, navigation: browser, selected: model.file,
+                open: openWorkspacePhoto, canAdd: !model.exporting && !model.importing, onAdd: addToCollection,
+                showTree: { if !showFiles { workspaceLayout.toggleLibrary(width: windowWidth) } })
+                .disabled(model.exporting)
+        } else {
+            photoPane
+        }
+    }
+
+    private var photoPane: some View {
+        workspace.frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(nsColor: NSColor(white: 0.12, alpha: 1)))
+            .overlay(alignment: .topLeading) {
+                if infoMode != .hidden, let photoInformation {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(Array(photoInformation.lines(for: infoMode).enumerated()), id: \.offset) { index, line in
+                            Text(line).font(.system(size: index == 0 ? 14 : 12, weight: index == 0 ? .semibold : .regular))
+                                .lineLimit(2).truncationMode(.middle)
+                        }
+                    }.foregroundStyle(.white).shadow(color: .black, radius: 2, y: 1)
+                        .padding(10).background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 4))
+                        .frame(maxWidth: 360, alignment: .leading).padding(10)
+                        .allowsHitTesting(false).accessibilityElement(children: .combine)
+                }
+            }
+            .overlay(alignment: .top) {
+                if model.busy || model.importing {
+                    if reduceMotion { Rectangle().fill(.yellow).frame(height: 2) }
+                    else { ProgressView().progressViewStyle(.linear).frame(height: 2).clipped() }
+                }
+            }
+            .overlay(alignment: .bottom) {
+                VStack(spacing: 8) {
+                    if !showInspector && model.hslTargetActive {
+                        HSLTargetCanvasControls(axis: model.hslTargetAxis, onExit: exitHSLTarget).padding(8)
+                    }
+                    if model.previewOutdated {
+                        HStack(spacing: 8) {
+                            Label(L10n.text("预览未更新"), systemImage: "exclamationmark.triangle")
+                            Button(L10n.text("重试"), action: model.schedule)
+                        }.font(.callout).padding(8).background(.black.opacity(0.7)).padding(8)
+                    }
+                }
+            }
+            .overlay { if dropTarget { Rectangle().stroke(Color.accentColor, lineWidth: 3).allowsHitTesting(false) } }
+            .dropDestination(for: URL.self) { urls, _ in
+                guard !model.exporting, let url = urls.first, url.isFileURL else { return false }
+                if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                    return library.addDirectories(urls)
+                }
+                openWorkspacePhoto(url)
+                return true
+            } isTargeted: { dropTarget = $0 }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(L10n.text("照片"))
+            .accessibilityIdentifier("workspace.canvas")
+            .accessibilityValue(model.busy ? L10n.text("正在显影…") : model.previewOutdated ? L10n.text("预览未更新") : L10n.text("预览已更新"))
     }
 
     private var observedEditor: some View {
@@ -138,10 +163,18 @@ struct EditorView: View {
             queuedQuickPreset = nil
             viewing.sourceChanged()
             fit()
+            workspaceLayout.photoOpened()
+        }
+        .onChange(of: library.roots.map(\.id), initial: true) { _, _ in
+            browser.reconcile(with: library)
+        }
+        .onChange(of: model.batchSelection.current) { _, current in
+            if current != nil { workspaceLayout.photoOpened() }
         }
         .onChange(of: model.hslTargetEnabled) { _, _ in viewing.hold(false, allowed: false) }
-        .onChange(of: model.quickPresetsVisible) { _, visible in if visible { adjustmentPanel.collapsed = false } }
-        .onChange(of: adjustmentPanel.collapsed) { _, collapsed in if collapsed { model.closeQuickPresets() } }
+        .onChange(of: model.quickPresetsVisible) { _, visible in
+            if visible { workspaceLayout.setMode(.editing); workspaceLayout.showInspector() }
+        }
         .onChange(of: model.geometryDraft != nil, initial: true) { _, editing in geometryEditingChanged(editing) }
         .onChange(of: model.busy) { _, _ in model.resumeResetToolIfReady() }
         .onChange(of: model.pendingGeometryPresentation) { _, _ in model.resumeResetToolIfReady() }
@@ -164,7 +197,13 @@ struct EditorView: View {
             if [.colorGrading, .toneCurve].contains(model.adjustmentNavigation.tool) { model.cancelAdjustmentInteraction() }
             model.saveEdits()
         }
-        .toolbar { editorToolbar }
+        .toolbar {
+            if #available(macOS 26.0, *) {
+                editorToolbar.sharedBackgroundVisibility(.hidden)
+            } else {
+                editorToolbar
+            }
+        }
     }
 
     private var presentedEditor: some View {
@@ -175,9 +214,11 @@ struct EditorView: View {
             } }
             else { AdjustmentTransferView(model: model, kind: kind, preset: model.adjustmentSheetPreset) }
         }
-        .onExitCommand { exitHSLTarget(); model.cancelAdjustmentInteraction() }
+        .onExitCommand {
+            exitHSLTarget(); model.cancelAdjustmentInteraction()
+        }
         .background(MacViewingKeyboard(canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) },
-            onInformation: { infoMode = infoMode.next }).frame(width: 0, height: 0))
+            onInformation: { infoMode = infoMode.next }, onEscape: { workspaceLayout.dismissTransient() }).frame(width: 0, height: 0))
         .background(MacGeometryWindowGuard(model: model).frame(width: 0, height: 0))
         .sheet(isPresented: Binding(get: { model.geometryDraftDeparturePending && model.adjustmentSheet != .presets }, set: { _ in })) {
             MacGeometryDeparturePrompt(model: model)
@@ -237,19 +278,52 @@ struct EditorView: View {
         }
     }
 
-    private var bottomControls: some View {
-        AdjustmentDock(model: model, selected: $selectedParameter, resetVersion: resetVersion,
-            headerAccessory: AnyView(HStack(spacing: 8) {
-                Button { showsProcessingSettings.toggle() } label: {
-                    Image(systemName: "slider.horizontal.3").frame(width: 28, height: 28)
-                }.buttonStyle(.plain).help(L10n.text("照片处理设置"))
-                    .accessibilityLabel(L10n.text("照片处理设置"))
-                    .accessibilityIdentifier("processing.settings")
-                    .popover(isPresented: $showsProcessingSettings) { processingSettings }
+    private var activeLookName: String {
+        model.selectedMasterRecipe.map { L10n.format("%@ · 大师配方", String(describing: $0.title)) }
+            ?? model.selectedFilm?.name ?? L10n.text("中性")
+    }
+
+    private var adjustmentInspector: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 9) {
+                Text(L10n.text("调整栏")).font(.system(size: 13, weight: .semibold))
+                Spacer(minLength: 6)
                 resetMenu
-            }.controlSize(.small)))
-            .background(Color(nsColor: .windowBackgroundColor))
-            .disabled(model.file == nil || model.exporting || model.importing)
+                Button(action: toggleInspector) { Image(systemName: "sidebar.right") }
+                    .buttonStyle(.borderless).help(L10n.text("收起调整栏"))
+                    .accessibilityLabel(L10n.text("收起调整栏"))
+            }.padding(.horizontal, 12).frame(minHeight: 34)
+            Divider()
+            histogram
+            Divider()
+            AdjustmentDock(model: model, resetVersion: resetVersion)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .disabled(model.exporting || model.importing)
+            if model.geometryDraft == nil {
+                Divider()
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L10n.text("当前外观")).foregroundStyle(.secondary)
+                        Text(activeLookName).fontWeight(.medium).lineLimit(2).truncationMode(.middle)
+                    }.font(.caption).frame(maxWidth: .infinity, alignment: .leading)
+                        .help(activeLookName)
+                    Button { showsProcessingSettings.toggle() } label: {
+                        Label(L10n.text("照片处理设置"), systemImage: "slider.horizontal.3")
+                            .labelStyle(.iconOnly)
+                    }.help(L10n.text("照片处理设置")).accessibilityLabel(L10n.text("照片处理设置"))
+                        .accessibilityIdentifier("processing.settings")
+                        .popover(isPresented: $showsProcessingSettings) { processingSettings }
+                }.controlSize(.small).padding(.horizontal, 12).padding(.vertical, 7)
+            }
+        }.background(Color(nsColor: .windowBackgroundColor))
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(L10n.text("调整栏")).accessibilityIdentifier("workspace.inspector")
+    }
+
+    private var histogram: some View {
+        WorkspaceHistogram(frame: viewing.holdingBefore ? model.neutral : model.result,
+            before: viewing.holdingBefore, clipping: $clipping, expanded: $histogramExpanded,
+            hdrDisplay: hdrDisplay, clippingEnabled: model.geometryDraft == nil)
     }
 
     private var processingSettings: some View {
@@ -262,7 +336,7 @@ struct EditorView: View {
             if model.settings.isHDREditing {
                 HDRMonitoringControls(state:hdrDisplay)
             } else {
-            Text(model.selectedMasterRecipe.map { L10n.format("%@ · 大师配方", String(describing: $0.title)) } ?? model.selectedFilm?.name ?? L10n.text("中性"))
+            Text(activeLookName)
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Picker(L10n.text("处理版本"), selection: $model.settings.processing) {
                 Text(L10n.text("处理 v1（旧版）")).tag(ProcessingIdentity.legacy)
@@ -288,39 +362,6 @@ struct EditorView: View {
                 .font(.caption).monospacedDigit().foregroundStyle(.secondary).help(L10n.text("基础曝光偏移"))
             }
         }.padding(18).frame(width: 320)
-    }
-
-    private func panelResizeHandle(available: CGFloat) -> some View {
-        ZStack {
-            Color(nsColor: .windowBackgroundColor)
-            Capsule().fill(Color.secondary.opacity(0.5)).frame(width: 32, height: 3)
-            HStack {
-                if !adjustmentPanel.isAutomatic {
-                    Button { adjustmentPanel.restoreAutomaticHeight() } label: {
-                        Image(systemName: "arrow.uturn.backward").font(.system(size: 9))
-                    }.buttonStyle(.plain).frame(width: 28, height: 13)
-                        .help(L10n.text("恢复自动高度")).accessibilityLabel(L10n.text("恢复自动高度"))
-                        .accessibilityIdentifier("workspace.panel.auto")
-                }
-                Spacer()
-                Button { collapsePanel() } label: {
-                    Image(systemName: "chevron.down").font(.system(size: 9))
-                }.buttonStyle(.plain).frame(width: 28, height: 13)
-                    .help(L10n.text("收起调整栏")).accessibilityLabel(L10n.text("收起调整栏"))
-            }.padding(.horizontal, 12)
-        }.frame(height: 13).contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .global)
-                .onChanged { value in
-                    if resizeStart == nil { resizeStart = panelHeight(available: available) }
-                    adjustmentPanel.resize(to: (resizeStart ?? 252) - value.translation.height, available: available)
-                }.onEnded { _ in resizeStart = nil })
-            .onHover { inside in (inside ? NSCursor.resizeUpDown : NSCursor.arrow).set() }
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(L10n.text("调整栏高度"))
-            .accessibilityAdjustableAction { direction in
-                let delta: CGFloat = direction == .increment ? 20 : -20
-                adjustmentPanel.resize(to: panelHeight(available: available) + delta, available: available)
-            }
     }
 
     @ViewBuilder private var workspace: some View {
@@ -428,11 +469,18 @@ struct EditorView: View {
 
     @ToolbarContentBuilder private var editorToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
-            Button { workspaceLayout.toggleFiles(width: windowWidth, hasFolders: !library.roots.isEmpty) } label: { Image(systemName: "sidebar.left") }
+            Button { workspaceLayout.toggleLibrary(width: windowWidth) } label: { Image(systemName: "sidebar.left").activeTint(showFiles) }
                 .help(L10n.text("显示或收起文件树")).accessibilityLabel(L10n.text("文件树"))
                 .accessibilityValue(showFiles ? L10n.text("已展开") : L10n.text("已收起"))
+                .accessibilityIdentifier("workspace.library.toggle").disabled(workspaceLayout.mode == .preview)
             Button(action: model.openPanel) { Image(systemName: "folder") }
                 .help(L10n.text("打开照片")).accessibilityLabel(L10n.text("打开照片")).disabled(model.exporting)
+        }
+        ToolbarItem(placement: .principal) {
+            HStack(spacing: 2) {
+                ForEach(MacWorkspaceMode.allCases, id: \.self) { mode in workspaceModeButton(mode) }
+            }
+                .accessibilityElement(children: .contain).accessibilityLabel(L10n.text("工作区"))
         }
         ToolbarItemGroup {
             Menu {
@@ -442,23 +490,37 @@ struct EditorView: View {
                 Button(L10n.text("撤销"), action: model.undoAdjustment).disabled(!model.canUndoAdjustment)
                 Button(L10n.text("重做"), action: model.redoAdjustment).disabled(!model.canRedoAdjustment)
                 Button(L10n.text("本次会话历史…")) { model.requestAdjustmentSheet(.history) }
+                Divider()
+                Button(L10n.text("直方图")) {
+                    if showInspector { histogramExpanded = true }
+                    else { showsHistogram = true }
+                }.disabled(model.result == nil || !showsPhotoWorkspace)
+                Button(L10n.text(model.batchSelection.current == nil ? "批量编辑…" : "返回选片集合"), action: openCollection)
+                    .accessibilityIdentifier("collection.open")
             } label: { Image(systemName: "ellipsis.circle") }
                 .help(L10n.text("更多编辑操作")).accessibilityLabel(L10n.text("更多编辑操作"))
                 .accessibilityIdentifier("adjustment.more").disabled(model.exporting)
+                .popover(isPresented: $showsHistogram) {
+                    WorkspaceHistogram(frame: viewing.holdingBefore ? model.neutral : model.result,
+                        before: viewing.holdingBefore, clipping: $clipping, expanded: .constant(true),
+                        hdrDisplay: hdrDisplay, collapsible: false, clippingEnabled: model.geometryDraft == nil)
+                        .frame(width: 286)
+                }
             Button { viewing.toggle() } label: { Image(systemName: "rectangle.split.2x1").activeTint(viewing.enabled) }
                 .help(L10n.text("中性显影与调整后对比")).accessibilityLabel(L10n.text("对比"))
                 .accessibilityValue(viewing.enabled ? L10n.text("已开启") : L10n.text("已关闭"))
-                .accessibilityIdentifier("compare.toggle").disabled(model.result == nil || !model.canComparePreview)
+                .accessibilityIdentifier("compare.toggle").disabled(model.result == nil || !model.canComparePreview || !showsPhotoWorkspace)
             Menu {
                 Button(L10n.text("并排")) { viewing.select(.sideBySide) }
                 Button(L10n.text("分割线")) { viewing.select(.wipe) }
                 Button(L10n.text("关闭对比")) { viewing.close() }
             } label: { Image(systemName: "chevron.down") }
                 .accessibilityLabel(L10n.text("对比方式")).accessibilityIdentifier("compare.mode")
-                .disabled(model.result == nil || !model.canComparePreview)
+                .disabled(model.result == nil || !model.canComparePreview || !showsPhotoWorkspace)
             Button { infoMode = infoMode.next } label: { Image(systemName: "info.circle").activeTint(infoMode != .hidden) }
                 .help(L10n.text("照片信息")).accessibilityLabel(L10n.text("照片信息")).accessibilityValue(infoMode.title)
-                .disabled(model.file == nil)
+                .accessibilityIdentifier("photo.information")
+                .disabled(model.file == nil || !showsPhotoWorkspace)
             Menu {
                 Button(L10n.text("适合窗口"), action: fit).keyboardShortcut("0")
                 Button(L10n.text("实际像素 · 100%")) {
@@ -471,18 +533,14 @@ struct EditorView: View {
                 Divider()
                 Toggle(L10n.text("照片四周留白"), isOn: $viewing.margins)
             } label: { Image(systemName: "magnifyingglass") }
-                .help(L10n.text("缩放与显示")).accessibilityLabel(L10n.text("缩放与显示")).disabled(model.result == nil || model.geometryDraft != nil)
-            Button {
-                if adjustmentPanel.collapsed { adjustmentPanel.collapsed = false }
-                else { collapsePanel() }
-            } label: { Image(systemName: "slider.horizontal.3").activeTint(!adjustmentPanel.collapsed) }
-                .help(adjustmentPanel.collapsed ? L10n.text("展开调整栏") : L10n.text("收起调整栏"))
-                .accessibilityLabel(L10n.text("调整栏")).accessibilityValue(adjustmentPanel.collapsed ? L10n.text("已收起") : L10n.text("已展开"))
+                .help(L10n.text("缩放与显示")).accessibilityLabel(L10n.text("缩放与显示"))
+                .disabled(model.result == nil || model.geometryDraft != nil || !showsPhotoWorkspace)
+            Button(action: toggleInspector) { Image(systemName: "sidebar.right").activeTint(showInspector) }
+                .help(showInspector ? L10n.text("收起调整栏") : L10n.text("展开调整栏"))
+                .accessibilityLabel(L10n.text("调整栏")).accessibilityValue(showInspector ? L10n.text("已展开") : L10n.text("已收起"))
+                .accessibilityIdentifier("workspace.inspector.toggle")
                 .keyboardShortcut("a", modifiers: [.command, .option])
-            Button(L10n.text(model.batchSelection.current == nil ? "批量编辑…" : "返回选片集合")) {
-                if model.batchSelection.current != nil { model.returnToBatchSelection { openWindow(id: "batch-selection") } }
-                else { openWindow(id: "batch-selection") }
-            }.accessibilityIdentifier("collection.open").disabled(model.exporting)
+                .disabled(model.file == nil || workspaceLayout.mode != .editing)
             Menu {
                 // 与批量导出的格式选择同名：JPEG、16 位 PNG、DNG · 渲染型
                 ForEach(ExportFormat.available(isHDR:model.settings.isHDREditing)) { format in
@@ -497,9 +555,65 @@ struct EditorView: View {
                     Button(L10n.text("查看批量任务…")) { openWindow(id: "batch-export") }
                 }
             } label: { Label(L10n.text("导出"), systemImage: "square.and.arrow.up") }
-            .disabled(model.file == nil && model.batch == nil)
+            .disabled((model.file == nil && model.batch == nil) || !showsPhotoWorkspace)
             .help(model.geometryDraft != nil ? L10n.text("草稿未应用，无法导出或复制设置。") : L10n.text("导出"))
         }
+    }
+
+    private func workspaceModeButton(_ mode: MacWorkspaceMode) -> some View {
+        let title: String
+        let symbol: String
+        switch mode {
+        case .editing: title = L10n.text("编辑"); symbol = "slider.horizontal.3"
+        case .selection: title = L10n.text("选片"); symbol = "square.grid.2x2"
+        case .preview: title = L10n.text("纯预览"); symbol = "arrow.up.left.and.arrow.down.right"
+        }
+        let active = workspaceLayout.mode == mode
+        return Button { switchWorkspace(to: mode) } label: {
+            HStack(spacing: 4) { Image(systemName: symbol); Text(title) }
+                .font(.system(size: 12, weight: active ? .semibold : .regular)).fixedSize()
+                .padding(.horizontal, 8).frame(minHeight: 25)
+                .background(active ? Color.primary.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 4))
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain).help(title)
+            .accessibilityLabel(title).accessibilityIdentifier("workspace.mode.\(mode.rawValue)")
+            .accessibilityAddTraits(active ? .isSelected : [])
+            .disabled(model.exporting || model.importing || (mode == .preview && model.result == nil))
+    }
+
+    private func switchWorkspace(to mode: MacWorkspaceMode) {
+        guard workspaceLayout.mode != mode else { return }
+        let switchMode = {
+            if [.colorGrading, .toneCurve].contains(model.adjustmentNavigation.tool) {
+                model.cancelAdjustmentInteraction()
+            }
+            exitHSLTarget()
+            viewing.hold(false, allowed: false)
+            workspaceLayout.setMode(mode)
+        }
+        if model.geometryDraft != nil { model.requestLeavingGeometryDraft(switchMode) }
+        else if ParameterValueField.resolvePendingInputs() { switchMode() }
+    }
+
+    private func openWorkspacePhoto(_ url: URL) {
+        model.open(url)
+        if model.file?.standardizedFileURL == url.standardizedFileURL, !model.geometryDraftDeparturePending {
+            workspaceLayout.photoOpened()
+        }
+    }
+
+    private func addToCollection(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        model.prepareCollectionSource {
+            let accepted = model.addCollectionPhotos(urls, selectExisting: true)
+            browser.removeSelection(accepted)
+            openWindow(id: "batch-selection")
+        }
+    }
+
+    private func openCollection() {
+        if model.batchSelection.current != nil { model.returnToBatchSelection { openWindow(id: "batch-selection") } }
+        else { openWindow(id: "batch-selection") }
     }
 
     private var resetMenu: some View {
@@ -567,7 +681,7 @@ struct EditorView: View {
         viewport.focus = CGPoint(x: 0.5, y: 0.5)
         if model.fullResolution != viewport.pixelMode { model.fullResolution = viewport.pixelMode }
     }
-    private var canHoldBefore: Bool { !model.hslTargetActive && model.result != nil && model.neutral != nil && model.canComparePreview && !viewing.enabled }
+    private var canHoldBefore: Bool { showsPhotoWorkspace && !model.hslTargetActive && model.result != nil && model.neutral != nil && model.canComparePreview && !viewing.enabled }
 
     private var hslTargetInput: HSLTargetCanvasInput {
         let source = model.sourceRevision, axis = model.hslTargetAxis
@@ -612,17 +726,25 @@ struct EditorView: View {
         model.cancelHSLTarget(); model.hslTargetEnabled = false
     }
 
-    private func collapsePanel() {
-        ParameterValueField.cancelPendingInputs()
-        model.requestLeavingGeometryDraft { adjustmentPanel.collapsed = true }
+    private func toggleInspector() {
+        if showInspector {
+            ParameterValueField.cancelPendingInputs()
+            model.requestLeavingGeometryDraft {
+                model.closeQuickPresets()
+                workspaceLayout.toggleInspector()
+            }
+        } else {
+            workspaceLayout.showInspector()
+        }
     }
 
     private func geometryEditingChanged(_ editing: Bool) {
         if editing {
             viewing.holdingBefore = false
             geometryViewState = GeometryViewState(file: model.file, viewport: viewport,
-                fullResolution: model.fullResolution, panel: adjustmentPanel)
-            adjustmentPanel.collapsed = false
+                fullResolution: model.fullResolution)
+            workspaceLayout.setMode(.editing)
+            workspaceLayout.showInspector()
             fit()
         } else if let previous = geometryViewState {
             geometryViewState = nil
@@ -641,93 +763,4 @@ private extension View {
     @ViewBuilder func activeTint(_ active: Bool) -> some View {
         if active { foregroundStyle(Color.yellow) } else { self }
     }
-}
-
-struct FloatingHistogram: View {
-    let frame: RenderedImage?
-    var before = false
-    @Environment(\.locale) private var localizationLocale
-    @Binding var clipping: Bool
-    @Binding var expanded: Bool
-    var hdrDisplay: HDRDisplayState? = nil
-    var compact = false
-    @State private var showsCompactHistogram = false
-    private var source: String { L10n.text(before ? "调整前" : "调整后") }
-    private var title: String { L10n.text(frame?.hdr == nil ? "RGB 直方图" : "HDR 亮度直方图") }
-    var body: some View {
-        if compact {
-            Button { showsCompactHistogram.toggle() } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "chart.bar.xaxis")
-                    Image(systemName: "chevron.down").font(.system(size: 10))
-                }.padding(12)
-            }.buttonStyle(.plain).foregroundStyle(.white)
-                .background(Color.black.opacity(0.62), in: RoundedRectangle(cornerRadius: 8))
-                .help(L10n.text("展开直方图")).accessibilityLabel(title + " · " + source)
-                .accessibilityIdentifier("histogram.toggle")
-                .popover(isPresented: $showsCompactHistogram) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        histogramContents
-                        Toggle(L10n.text("显示裁切提示"), isOn: $clipping).disabled(frame?.clipping == nil)
-                    }.padding(16).frame(width: 270)
-                }
-        } else { expandedHistogram }
-    }
-    private var expandedHistogram: some View {
-        VStack(spacing: 10) {
-        let _ = localizationLocale
-            HStack(spacing: 12) {
-                Button { expanded.toggle() } label: {
-                    Image(systemName: "chart.bar.xaxis").font(.system(size: 11, weight: .medium))
-                }.buttonStyle(.plain).help(expanded ? L10n.text("收起直方图") : L10n.text("展开直方图"))
-                    .accessibilityLabel(title + " · " + source)
-                    .accessibilityValue(source + " · " + (expanded ? L10n.text("已展开") : L10n.text("已收起")))
-                    .accessibilityIdentifier("histogram.toggle")
-                if expanded {
-                    Spacer()
-                    Toggle(isOn: $clipping) { Image(systemName: "exclamationmark.triangle") }
-                        .toggleStyle(.button).buttonStyle(.borderless).tint(.yellow)
-                        .help(L10n.text("显示输出高光与黑位裁切")).accessibilityLabel(L10n.text("显示裁切提示")).disabled(frame?.clipping == nil)
-                }
-                Button { expanded.toggle() } label: { Image(systemName: expanded ? "chevron.up" : "chevron.down") }
-                    .font(.system(size: 10)).buttonStyle(.plain)
-                    .accessibilityLabel(expanded ? L10n.text("收起直方图") : L10n.text("展开直方图"))
-            }
-            if expanded { histogramContents }
-        }.padding(12).frame(width: expanded ? 242 : 66)
-            .background(Color.black.opacity(0.62), in: RoundedRectangle(cornerRadius: 8))
-            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(Color.white.opacity(0.1), lineWidth: 1) }
-    }
-    @ViewBuilder private var histogramContents: some View {
-    VStack(alignment: .leading, spacing: 4) {
-        Text(title).font(.system(size: 12, weight: .semibold))
-        Text(source).font(.system(size: 11))
-    }.frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(title + " · " + source)
-        .accessibilityIdentifier("histogram.source")
-    Group {
-        if let hdr=frame?.hdr {
-            HDRLuminanceHistogram(statistics:hdr.statistics,headroom:hdrDisplay?.headroom ?? 1)
-        } else { HistogramView(bins:frame?.histogram ?? []) }
-    }.frame(height:68)
-        .accessibilityLabel(title + " · " + source)
-        .accessibilityIdentifier("histogram.plot")
-    if frame?.hdr == nil && frame?.histogram.isEmpty != false {
-        Text(L10n.text("统计不可用")).font(.system(size: 11))
-            .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("histogram.unavailable")
-    }
-    VStack(alignment: .leading, spacing: 4) {
-        if let hdr=frame?.hdr {
-            Text(L10n.format("参考白以上 %@",percent(Double(hdr.statistics.aboveWhite)/Double(hdr.statistics.pixels))))
-            Text(L10n.format("内容容量 %@ EV",String(format:"%.2f",log2(Double(hdr.statistics.headroom)))))
-        } else {
-        Text(L10n.format("高光 %@", String(describing: percent(frame?.highlights))))
-            .fixedSize(horizontal: false, vertical: true)
-        Text(L10n.format("黑位 %@", String(describing: percent(frame?.shadows))))
-            .fixedSize(horizontal: false, vertical: true)
-        }
-    }.font(.system(size: 11)).monospacedDigit().foregroundStyle(Color.white.opacity(0.9))
-    }
-    private func percent(_ value: Double?) -> String { value.map { String(format: "%.2f%%", $0 * 100) } ?? "--" }
 }

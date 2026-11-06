@@ -8,7 +8,7 @@ struct MacHSLMixer: View {
     @Binding var channel: Int
     var onCancelTarget: () -> Void = {}
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    private var channelFontSize: CGFloat { ParameterRow.textSize(for: dynamicTypeSize, base: 11) }
+    @FocusState private var focusedChannel: Int?
     private let colors: [Color] = [.red, .orange, .yellow, .green, .cyan, .blue, .purple, .pink]
 
     init(settings: Binding<HSLSettings>, channel: Binding<Int> = .constant(0),
@@ -20,44 +20,54 @@ struct MacHSLMixer: View {
     var body: some View {
         let _ = localizationLocale
         VStack(spacing: 0) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                channels.padding(.horizontal, 2)
-            }.frame(height: 33 + ceil(channelFontSize * 1.25)).padding(.bottom, 4)
+            channels
+            Text(L10n.format("当前通道 %@，修改仅作用于该颜色。", L10n.text(HSLSettings.channelNames[channel])))
+                .font(.system(size: ParameterRow.textSize(for: dynamicTypeSize, base: 11))).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 4)
+                .accessibilityIdentifier("hsl.scope")
             ForEach(HSLAxis.allCases) { axis in
                 parameterRow(axis)
             }
-            Text(L10n.format("当前通道 %@，修改仅作用于该颜色。", L10n.text(HSLSettings.channelNames[channel])))
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-                .multilineTextAlignment(.center).padding(.top, 4)
-                .accessibilityIdentifier("hsl.scope")
         }.frame(maxWidth: 720).tint(.yellow)
     }
 
     private var channels: some View {
-        HStack(alignment: .top, spacing: 4) {
-            ForEach(0..<8) { index in
-                Button {
-                    onCancelTarget()
-                    ParameterValueField.cancelPendingInputs()
-                    channel = index
-                } label: {
+        HStack(spacing: 2) {
+            ForEach(colors.indices, id: \.self) { index in
+                let title = L10n.text(HSLSettings.channelNames[index])
+                let changed = HSLAxis.allCases.contains { settings.value($0, channel: index) != 0 }
+                Button { selectChannel(index) } label: {
                     VStack(spacing: 2) {
-                        Circle().fill(colors[index]).frame(width: 20, height: 20)
+                        Circle().fill(colors[index]).frame(width: 18, height: 18)
                             .padding(3)
                             .overlay { Circle().strokeBorder(channel == index ? Color.primary : Color.clear, lineWidth: 2) }
-                        Text(L10n.text(HSLSettings.channelNames[index]))
-                            .font(.system(size: channelFontSize)).multilineTextAlignment(.center)
-                            .fixedSize()
-                        Circle().fill(HSLAxis.allCases.contains { settings.value($0, channel: index) != 0 } ? Color.yellow : Color.clear)
-                            .frame(width: 3, height: 3)
-                    }.frame(minWidth: 40)
-                }.buttonStyle(.plain)
-                    .accessibilityLabel(L10n.text(HSLSettings.channelNames[index]))
-                    .accessibilityValue(HSLAxis.allCases.contains { settings.value($0, channel: index) != 0 } ? L10n.text("已调整") : "")
+                        Circle().fill(changed ? Color.yellow : Color.clear).frame(width: 3, height: 3)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 32)
+                    .contentShape(Rectangle())
+                }.buttonStyle(.plain).focusable().focused($focusedChannel, equals: index)
+                    .onMoveCommand { direction in
+                        switch direction {
+                        case .left: selectChannel((index + colors.count - 1) % colors.count)
+                        case .right: selectChannel((index + 1) % colors.count)
+                        default: break
+                        }
+                    }
+                    .help(title)
+                    .accessibilityLabel(title)
+                    .accessibilityValue(changed ? L10n.text("已调整") : "")
                     .accessibilityAddTraits(channel == index ? .isSelected : [])
                     .accessibilityIdentifier("hsl.channel.\(index)")
             }
-        }.fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
+    private func selectChannel(_ index: Int) {
+        onCancelTarget()
+        ParameterValueField.cancelPendingInputs()
+        channel = index
+        focusedChannel = index
     }
 
     private func directionHelp(_ axis: HSLAxis) -> String {

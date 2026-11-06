@@ -33,6 +33,12 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             presetDirectory: root.appendingPathComponent("presets"))
         model.addCollectionPhotos([first, second, third, alias, second])
         let ids = model.batchSelection.ordered
+        model.batchSelection.select(ids[0], false)
+        let unavailable = root.appendingPathComponent("missing.png")
+        let accepted = model.addCollectionPhotos([alias, unavailable], selectExisting: true)
+        try check(accepted == [alias] && model.batchSelection.selected.contains(ids[0]) &&
+            model.batchSelection.ordered == ids && model.collectionError?.contains("missing.png") == true,
+            "workspace handoff reselects existing photos, preserves order, and only consumes accepted URLs")
         model.open(alias); try rendered(model)
         try check(model.file == first, "alias navigation reuses collection identity and its edit record")
         try check(ids.count == 3 && model.batchSelection.selected.count == 3, "collection deduplicates physical files and retains same names with different identities")
@@ -171,6 +177,19 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try rendered(model)
         model.updateGeometryDraft { $0.cropWidth = 0.75 }; try rendered(model)
         try check(model.resolveCollectionDraft(id, apply: true), "applying geometry saves before final confirmation")
+        try rendered(model)
+        model.selectAdjustmentGeometryTab(.crop)
+        try rendered(model)
+        model.updateGeometryDraft { $0.cropWidth = 0.65 }
+        model.requestLeavingGeometryDraft {}
+        model.resolveGeometryDraftDeparture(.discard)
+        try check(model.geometryDraft == nil && model.adjustmentNavigation.tool == .geometry,
+            "leaving for another workspace can retain the selected geometry tool")
+        model.selectAdjustmentGeometryTab(.crop)
+        try check(model.geometryDraft?.geometry.cropWidth == 0.75,
+            "reopening the selected geometry tool starts a draft from the applied crop")
+        model.cancelGeometryDraft()
+        try rendered(model)
         let cube = root.appendingPathComponent("collection-look.cube")
         let data = "LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n".data(using: .utf8)!
         try data.write(to: cube)

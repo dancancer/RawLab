@@ -66,23 +66,12 @@ struct PresentationTests {
         wb.apply(to: &sameWhiteBalance)
         check(sameWhiteBalance.wb_mode == SONY2FUJI_WB_CAMERA,
               "Choosing Custom at the displayed as-shot values does not shift the image")
-        var panel = AdjustmentPanelLayout()
-        check(panel.height(available: 800) == 220 && panel.height(available: 620) == 220,
-              "Automatic single-value panel preserves photo space")
-        let stable = panel.height(available: 800)
-        for group in EditorAdjustmentGroup.allCases {
-            for _ in group.tools { check(panel.height(available: 800) == stable, "Tool contents never change the panel boundary") }
-        }
-        panel.resize(to: 340, available: 800)
-        check(panel.height(available: 800) == 340, "Adjustment panel accepts a dragged height")
-        panel.collapsed = true
-        check(panel.height(available: 800) == 0, "Collapsed adjustments return all space to the canvas")
-        panel.collapsed = false
-        check(panel.height(available: 800) == 340, "Reopening restores the previous panel height")
-        panel.resize(to: 10, available: 620)
-        check(panel.height(available: 620) == 220, "Minimum panel size keeps controls usable")
-        panel.resize(to: 1000, available: 620)
-        check(panel.height(available: 620) <= 310, "Panel resizing preserves half the small window for the canvas")
+        var workspace = MacWorkspaceLayout()
+        check(workspace.showsInspector(hasPhoto: true), "Editor shows the inspector beside an open photo")
+        workspace.toggleInspector()
+        check(!workspace.showsInspector(hasPhoto: true), "Collapsed adjustments return their width to the canvas")
+        workspace.showInspector()
+        check(workspace.showsInspector(hasPhoto: true), "Reopening restores the inspector")
         let parameters = tools.compactMap(\.parameter).filter { $0 != .strength }
         check(tools.filter { $0.parameter?.isWhiteBalance == true } == [.whiteBalance] &&
               parameters.filter(\.isWhiteBalance) == [.temperature],

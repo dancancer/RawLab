@@ -398,18 +398,26 @@ extension EditorModel {
         if info != nil || candidate.isHDREditing {
             importing=true
             let snapshot=candidate
+            let hdrEdge = snapshot.isHDREditing ? previewLongEdge : nil
+            let hdrSource = hdrEdge.map { _ in MacReferenceSource(url, raster: RenderEngine.isRasterInput(url),
+                                                               hdrFingerprint: info?.fingerprint) }
             let storedLook=restoredRecord.state?.filmID ?? ""
             let look=snapshot.masterRecipe?.lutURL() ?? films.first(where:{ $0.id==storedLook || "builtin:\($0.url.lastPathComponent)"==storedLook })?.url
             queue.async { [weak self] in
                 guard let self else { return }
                 do {
                     let engine=try RenderEngine()
-                    let neutral=try engine.render(url,settings:snapshot.neutralGeometrySettings,lut:nil,edge:2000)
-                    let result=try engine.render(url,settings:snapshot,lut:look,edge:2000)
+                    let neutralSettings = snapshot.neutralGeometrySettings
+                    let neutral=try engine.render(url,settings:neutralSettings,lut:nil,edge:hdrEdge ?? 2000)
+                    let result=try engine.render(url,settings:snapshot,lut:look,edge:hdrEdge ?? 2000)
+                    if let hdrSource, let hdrEdge, let neutral, neutral.hdr != nil {
+                        self.geometryReferenceCache = (MacNeutralReferenceKey(source: hdrSource, settings: neutralSettings, edge: hdrEdge), neutral)
+                    }
                     DispatchQueue.main.async {
                         guard self.pendingOpenID==opening else { return }
                         self.importing=false
-                        self.activateOpen(url,record:restoredRecord,settings:snapshot,isHDR:info != nil,cameraHDR:cameraHDR,neutral:neutral,result:result)
+                        self.activateOpen(url,record:restoredRecord,settings:snapshot,isHDR:info != nil,cameraHDR:cameraHDR,
+                                          neutral:neutral,result:result,hdrEdge:hdrEdge,hdrSource:hdrSource)
                     }
                 } catch {
                     DispatchQueue.main.async {
@@ -425,7 +433,8 @@ extension EditorModel {
     }
 
     private func activateOpen(_ url: URL,record restoredRecord: VersionedPhotoEdit,settings candidate: Adjustments,
-                              isHDR: Bool,cameraHDR: Bool,neutral stagedNeutral: RenderedImage? = nil,result stagedResult: RenderedImage? = nil) {
+                              isHDR: Bool,cameraHDR: Bool,neutral stagedNeutral: RenderedImage? = nil,result stagedResult: RenderedImage? = nil,
+                              hdrEdge: Int? = nil,hdrSource: MacReferenceSource? = nil) {
         resetAITask()
         cancelViewportResize()
         committedEdit = restoredRecord
@@ -454,6 +463,12 @@ extension EditorModel {
         if let stagedResult {
             scheduler.invalidatePending()
             acceptedOriginalSource=referenceSource(url)
+            if let hdrEdge, let hdrSource, hdrSource == acceptedOriginalSource, let stagedNeutral,
+               stagedResult.hdr != nil {
+                let work = renderWork(file: url, preview: settings, edge: hdrEdge, pass: .exact, verifiedSource: hdrSource)
+                exactPreviewCache.useScope(work.previewScope)
+                exactPreviewCache.store(neutral: stagedNeutral, result: stagedResult, for: work)
+            }
             statusState = .preview(stagedResult.image.width,stagedResult.image.height,original:false)
             pendingImportEvent=false; onUsage(.photoImported)
             if settings.isHDREditing { adjustmentNavigation.selectTool(.exposure) }

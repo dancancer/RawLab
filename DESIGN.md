@@ -1,6 +1,6 @@
 ---
 name: "RawLab iOS / iPadOS design extension"
-description: "Native editor tokens; the macOS body is preserved."
+description: "Native editor design and iOS / iPadOS tokens."
 rounded:
   ios-film-artwork: "4pt"
   ios-film-selection: "6pt"
@@ -25,13 +25,13 @@ components:
     rounded: "{rounded.ios-overlay}"
 ---
 
-Compact adjustment navigation, native slider rendering and crop precision follow [compact controls](docs/design/editor-workspace/compact-controls.md); these rules supersede the older vertical tool-caption layouts below.
+Native slider rendering and crop precision follow [compact controls](docs/design/editor-workspace/compact-controls.md). The macOS workspace layout is described below.
 
 # RawLab Desktop Design
 
 ## Overview
 
-Native macOS RAW and raster photo verification and editing, with a Photos-inspired bottom adjustment dock. The actual photo leads; this is not a marketing page or a catalog database. Preserve source photos and the shared rendering contract. Controls support Simplified Chinese, English, German, French, Japanese and Spanish; film simulation names retain their proper names.
+The native macOS editor uses a left photo browser, a central canvas and a right adjustment inspector. The photo leads. Preserve source photos and the shared rendering contract. Controls support Simplified Chinese, English, German, French, Japanese and Spanish; film simulation names retain their proper names.
 
 Editable proposals are maintained in the [design asset registry](docs/design/README.md). Check each asset's metadata before reusing it: a review prototype does not replace the confirmed native rules in this document or establish implementation evidence.
 
@@ -86,15 +86,15 @@ Film names retain stable two-line slots. Do not shrink text to make a circle, wi
 
 ## Layout
 
-- Minimum content size is 950x620 points; the photo workspace expands with the window.
-- A collapsible 200-300 point file tree spans the full content height on the left. When no folder is loaded and the desktop window is narrower than 1100 logical points, hide it automatically until the user makes a manual choice. Folder rows expand into subfolders and two-column supported-photo thumbnail grids.
-- The photo area contains neutral/result comparison panes sharing zoom and pan. Fit mode uses bounded previews; actual-pixel viewing requests native resolution and accounts for display scale.
-- A collapsible histogram floats at the photo area's upper-right. Below 760 points of canvas width or 400 points of height, use a compact trigger and native popover without overwriting the expansion preference. Optional photo information at the upper-left cycles between file details and capture settings, with a hidden state. Keep its width clear of the histogram and its text non-interactive so zoom and pan remain usable. There is no fixed right-side adjustment inspector.
-- Every edit control is in the bottom of the right-hand workspace, never beneath the file tree. Keep processing context and reset actions discoverable in the header. Single-value tools use a 220-point automatic panel; complex tools retain enough scrollable space. Dragging establishes a manual height that tool changes preserve; provide an explicit return to automatic sizing. Collapse and restore without losing values or the chosen height.
-- Desktop navigation has a row of six adjustment groups and a row of tools in the current group. Film is a peer tool in Looks, alongside recipes, strength and saved presets.
-- Selecting film shows the horizontal artwork chooser with categories, case/accent-insensitive name search, Recent and an import action outside the horizontal list. Keep the applied look unchanged when filtering hides it. Recent stores up to 12 existing identities and updates only after a successful save; missing looks are excluded. Complex mobile panels scroll so the complete card can enter the viewport while group and draft actions remain fixed. Selecting a numeric tool restores its controls without changing other values.
-- Vignette and grain each occupy one tool in that row. Their parameter groups use compact native sliders and numeric inputs below it, with parameter and group reset actions. Vignette highlights are disabled for nonnegative amounts; auxiliary controls retain their values while amount is zero. All settings fit the minimum desktop window without adding a sidebar.
-- The photo canvas has no title strip. Comparison identifiers are small bottom-left overlays only in comparison mode.
+- Minimum content size is 950×620 points. In Edit, the browser defaults to 232 points wide and the inspector to 304. Resize each independently within 200–288 and 280–360 points and remember its width. Below 1180 points, the browser opens as a 264-point overlay and the inspector uses 280 points. Dismiss the overlay with Escape or by opening a photo.
+- The window toolbar switches between Edit, Select and Preview. Use a flat toolbar with a distinct selected tab. The full tab bounds respond to clicks, including the space between the icon and the label. Select replaces the canvas with a contact sheet and keeps folder navigation. Click to mark a photo, Shift-click to mark a range in the current folder, and double-click to edit. Marked photos stay selected across folders. Add them explicitly to the batch selection and retain items that fail to transfer. Preview gives the photo both sidebars' space. Escape restores the previous workspace.
+- The directory tree lists folders only. Its disclosure controls, the selected browse path and the current photo are independent. Keep Collapse All above the tree, the path and Up above the thumbnails, and separate scroll positions for both lists. Remember the thumbnail position per folder and restore it when returning. Directory errors provide a retry and retain the current photo.
+- The photo area shares zoom and pan across comparison views. Fit mode uses bounded previews. Actual pixels request native resolution and account for display scale. Photo information overlays the upper-left corner, and comparison labels stay inside the photo.
+- Keep the RGB or HDR luminance histogram at the top of the inspector. When the inspector is hidden, the histogram remains available in a toolbar popover. The six adjustment groups sit above independently scrolling tools. Processing settings stay at the foot of the inspector. Keep the window's bottom edge for photo and preview status.
+- Show exposure, contrast, highlights, shadows, white point and black point in the Light group. Highlights and shadows each use −100 to +100 with zero at the center. Color Grading exposes one wheel at a time for shadows, midtones or highlights, with numeric hue and saturation and resets for the active zone and all zones.
+- In the adjustment inspector, align the parameter name and numeric field above a full-width slider. The rail ends at the thumb centers for the minimum and maximum values, and the highlighted range follows the thumb. Keep all eight HSL swatches visible with named tooltips, a current-channel label and arrow-key navigation. Give denoise its own switch and a preset menu that fits the sidebar.
+- Keep Look Strength above the scrolling Looks tools and use it for films, imported looks and master recipes. Film uses a three-column artwork chooser with categories, case- and accent-insensitive search, Recent and import. Filtering leaves the applied look selected. Recent keeps up to 12 readable identities and updates after a successful save.
+- Geometry and lens editing keep Cancel and Apply below the scrolling controls. Changes go through the existing draft departure and export guards. Keep numeric fields readable and allow a stacked row where a label, track and value cannot fit side by side.
 
 <!-- BEGIN RAWLAB IOS IPADOS LAYOUT -->
 ### iOS / iPadOS
@@ -112,7 +112,7 @@ The value wheel explicitly uses a sheet on iPhone, including a landscape window 
 
 ## Elevation & Depth
 
-Use continuous surfaces and separators, not floating section cards. The histogram has an 8-point radius, a translucent black surface and a quiet border. Its header uses icons only, with accessible names and tooltips. Film and file selections use restrained yellow outlines.
+Use continuous window surfaces and separators. The histogram uses an inset dark plot with a visible source label. Film and file selections use restrained yellow outlines.
 
 <!-- BEGIN RAWLAB IOS IPADOS ELEVATION -->
 ### iOS / iPadOS
@@ -143,9 +143,9 @@ Film artwork and film selection outlines use the namespaced rounded tokens. Hist
 - The macOS app icon is an abstract flat mark: two offset yellow/cyan photographic frames on a charcoal rounded-square tile. No aperture blades, film perforations, text, metallic bevels or 3D camera illustration. The color overlap represents the source-to-render transformation.
 
 - Use SF Symbols, native sliders, numeric fields, pickers, menus and file dialogs. Film label bitmaps are bundled local resources with generation provenance.
-- The toolbar contains file-tree visibility, open, a comparison toggle, photo information, one zoom menu, adjustment visibility and export. The information action cycles hidden/file/capture; desktop `I` is inactive while entering text. Fit, actual pixels, zoom in and zoom out live inside the zoom menu. Editing sliders do not belong in the toolbar.
-- Directory contents load on demand. Thumbnail decoding uses embedded previews with orientation; no full RAW decode is triggered merely to populate the file tree.
-- Histogram collapse state survives photo changes. Bottom tool selection survives film/numeric editor changes. Changed values retain their signed ring and marker.
+- The toolbar contains workspace modes, browser visibility, open, comparison, photo information, one zoom menu, adjustment visibility and export. The information action cycles hidden/file/capture; desktop `I` is inactive while entering text. Fit, actual pixels, zoom in and zoom out live inside the zoom menu. Editing sliders do not belong in the toolbar.
+- Directory contents and visible thumbnails load on demand. RAW thumbnails use embedded previews with orientation.
+- Histogram collapse state survives photo changes. Switching workspace modes keeps the selected adjustment tools and panel sizes. A slider marks its default and fills from that point to the current value.
 - No-photo, loading, disabled, error/retry and export-complete states are explicit. Export must not overwrite the source file.
 - Photo adjustments and look identities persist locally per original photo; unseen photos start with defaults. Save failures remain visible and retryable. No sidecars or cloud catalog are created.
 - Batch export uses a frozen source adjustment snapshot, including denoise settings, in a separate desktop window or mobile task page. It never changes target photos' saved edits. The confirmed flow is documented in [the batch export design](docs/design/2026-10-09-edit-memory-batch-export/README.md).
@@ -187,9 +187,8 @@ Single-photo JPEG and rendered DNG export are available for both supported RAW a
 
 ## Do's and Don'ts
 
-- Keep all adjustments at the bottom and preserve the shared color-processing semantics.
-- Keep both the file tree and floating histogram collapsible so the photo can occupy the workspace.
-- Do not restore a right adjustment sidebar or a separate film-mode switch.
+- Give the canvas the full height between the window toolbar and status bar. Let the browser and adjustment tools scroll independently.
+- Preserve source-specific controls, per-photo settings and the shared color-processing semantics across workspace modes.
 - RAW white balance starts at the per-photo as-shot calibration estimate. Kelvin increases toward warm; positive tint adds magenta. Use the camera baseline for reset and the signed ring. The slider uses reciprocal Kelvin; numeric input remains Kelvin. Do not claim Lightroom profile parity or that the estimate is a literal EXIF Kelvin tag.
 - Histograms use 256 bins per channel, shared linear pixel-count scaling and RGB/CMY/neutral-gray filled overlaps. The horizontal axis is the current sRGB output, not RAW sensor saturation or Adobe's internal working space. Ordinary and comparison views show after-frame statistics; temporary before view shows the matching neutral frame. Unavailable statistics clear the graph, retain its layout and show a localized status while preserving the photo.
 

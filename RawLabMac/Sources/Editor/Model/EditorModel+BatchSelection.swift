@@ -2,7 +2,8 @@ import AppKit
 import UniformTypeIdentifiers
 
 extension EditorModel {
-    func addCollectionPhotos(_ urls: [URL]) {
+    @discardableResult func addCollectionPhotos(_ urls: [URL], selectExisting: Bool = false) -> [URL] {
+        var accepted: [URL] = []
         var errors = [String]()
         for url in urls {
             do {
@@ -13,9 +14,12 @@ extension EditorModel {
                 let photo = try MacCollectionPhoto(input)
                 if batchSelectionPhotos[photo.id] == nil { batchSelectionPhotos[photo.id] = photo }
                 batchSelection.append([photo.id])
+                if selectExisting { batchSelection.select(photo.id, true) }
+                accepted.append(url)
             } catch { errors.append("\(url.lastPathComponent)：\(error.localizedDescription)") }
         }
         collectionError = errors.isEmpty ? nil : errors.joined(separator: "\n")
+        return accepted
     }
 
     func chooseCollectionPhotos() {

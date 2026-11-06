@@ -64,6 +64,7 @@ final class EditorModel: ObservableObject {
         let pass: RenderPass
         let draftEpoch: UUID
         let editingGeometry: Bool
+        let previewScope: MacExactPreviewCache.Scope?
     }
 
     @Published var adjustmentNavigation = EditorAdjustmentNavigation() { didSet {
@@ -188,6 +189,7 @@ final class EditorModel: ObservableObject {
     @Published var busy = false { didSet { if oldValue && !busy { resumeResetToolIfReady() } } }
     @Published var autoExposing = false
     var editRevision = UUID() { didSet {
+        exactPreviewCache.useScope(nil)
         if quickPresetState.isPreparing { cancelQuickPreset() }
         if collectionExportPreparing { cancelCollectionExportPreparation() }
     } }
@@ -251,6 +253,8 @@ final class EditorModel: ObservableObject {
     var viewportResizeWork: DispatchWorkItem?
     var workerActive = false
     var engine: RenderEngine?
+    // 与请求调度器一样，仅主线程访问。
+    var exactPreviewCache = MacExactPreviewCache()
     // 仅渲染队列读写；主线程使用已发布的来源身份。
     var acceptedOriginalSource: MacReferenceSource?
     var originalCache: (key: MacNeutralReferenceKey, frame: RenderedImage)?

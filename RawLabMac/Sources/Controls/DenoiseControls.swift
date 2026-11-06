@@ -21,12 +21,10 @@ struct DenoiseControls: View {
             if model.settings.hasLegacyDenoise {
                 legacyControls
             } else {
-                VStack(spacing: 0) {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 12) { modeControls; groupActions }
-                        VStack(spacing: 0) { modeControls; groupActions }
-                    }.frame(minHeight: 28).padding(.bottom, 4)
+                VStack(alignment: .leading, spacing: 4) {
+                    modeControls
                     parameterRow(.luma)
+                    groupActions
                     if advanced {
                         parameterRow(.chroma)
                         parameterRow(.coarse)
@@ -44,24 +42,9 @@ struct DenoiseControls: View {
 
     private var aiControls: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 12) {
-                Toggle(L10n.text("AI 降噪（实验）"), isOn: Binding(
-                    get: { model.settings.aiDenoiseEnabled || model.aiManuallyRequested },
-                    set: { model.setAIEnabled($0) }
-                )).toggleStyle(.switch).controlSize(.mini)
-                    .disabled(!model.canStartAI && !model.settings.aiDenoiseEnabled)
-                    .accessibilityIdentifier("denoise.ai.enabled")
-                Spacer(minLength: 8)
-                if model.aiState.isRunning {
-                    Button(L10n.text("取消")) { model.cancelAIDenoise() }
-                        .accessibilityIdentifier("denoise.ai.cancel")
-                } else if case .failed = model.aiState {
-                    Button(L10n.text("重试")) { model.requestAIDenoise() }.disabled(!model.canStartAI)
-                        .accessibilityIdentifier("denoise.ai.retry")
-                } else if case .cancelled = model.aiState {
-                    Button(L10n.text("重试")) { model.requestAIDenoise() }.disabled(!model.canStartAI)
-                        .accessibilityIdentifier("denoise.ai.retry")
-                }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { aiToggle.fixedSize(); Spacer(minLength: 0); aiAction }
+                VStack(alignment: .leading, spacing: 4) { aiToggle; aiAction }
             }.font(.system(size: 12))
             switch model.aiState {
             case .running(_, let done, let total):
@@ -86,8 +69,30 @@ struct DenoiseControls: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private var aiToggle: some View {
+        Toggle(L10n.text("AI 降噪（实验）"), isOn: Binding(
+            get: { model.settings.aiDenoiseEnabled || model.aiManuallyRequested },
+            set: { model.setAIEnabled($0) }
+        )).toggleStyle(.switch).controlSize(.mini)
+            .disabled(!model.canStartAI && !model.settings.aiDenoiseEnabled)
+            .accessibilityIdentifier("denoise.ai.enabled")
+    }
+
+    @ViewBuilder private var aiAction: some View {
+        switch model.aiState {
+        case .running:
+            Button(L10n.text("取消")) { model.cancelAIDenoise() }
+                .accessibilityIdentifier("denoise.ai.cancel")
+        case .failed, .cancelled:
+            Button(L10n.text("重试")) { model.requestAIDenoise() }.disabled(!model.canStartAI)
+                .accessibilityIdentifier("denoise.ai.retry")
+        default:
+            EmptyView()
+        }
+    }
+
     private var modeControls: some View {
-        HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 6) {
             Toggle(L10n.text("降噪"), isOn: Binding(
                 get: { model.settings.waveletSettings.enabled },
                 set: { enabled in
@@ -108,20 +113,24 @@ struct DenoiseControls: View {
                 if model.settings.waveletSettings.preset == .custom {
                     Text(DenoisePreset.custom.title).tag(DenoisePreset.custom).disabled(true)
                 }
-            }.pickerStyle(.segmented).controlSize(.small).fixedSize()
+            }.pickerStyle(.menu).controlSize(.small)
                 .id(localizationLocale.identifier)
                 .accessibilityIdentifier("denoise.preset")
-        }.font(.system(size: 12)).fixedSize()
+        }.font(.system(size: 12)).frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var groupActions: some View {
-        HStack(spacing: 12) {
-            Button(L10n.text(advanced ? "收起精细调整" : "展开精细调整")) {
+        HStack(spacing: 8) {
+            Button {
                 ParameterValueField.cancelPendingInputs()
                 advanced.toggle()
+            } label: {
+                Text(L10n.text(advanced ? "收起精细调整" : "展开精细调整"))
+                    .fixedSize(horizontal: false, vertical: true)
             }
                 .buttonStyle(.borderless).font(.system(size: 11))
                 .accessibilityIdentifier("denoise.advanced")
+            Spacer(minLength: 0)
             Button {
                 ParameterValueField.cancelPendingInputs()
                 onReset()
@@ -131,7 +140,7 @@ struct DenoiseControls: View {
                 .accessibilityLabel(L10n.text("重置降噪"))
                 .accessibilityIdentifier("denoise.reset")
                 .disabled(model.settings.waveletNoiseReduction == nil)
-        }.fixedSize()
+        }
     }
 
     private func parameterRow(_ parameter: DenoiseParameter) -> some View {
@@ -150,11 +159,11 @@ struct DenoiseControls: View {
             if model.settings.denoiseMode == 3 {
                 Picker(L10n.text("旧版 FBDD"), selection: $model.settings.rawNoiseReduction) {
                     ForEach(RawNoiseReductionLevel.allCases) { Text($0.title).tag($0.rawValue) }
-                }.pickerStyle(.segmented).frame(width: 300).id(localizationLocale.identifier)
+                }.pickerStyle(.menu).labelsHidden().id(localizationLocale.identifier)
             } else {
                 Picker(L10n.text("旧版色度降噪"), selection: $model.settings.denoiseMode) {
                     ForEach(ChromaNoiseReductionMode.allCases) { Text($0.title).tag($0.rawValue) }
-                }.pickerStyle(.segmented).frame(width: 340).id(localizationLocale.identifier)
+                }.pickerStyle(.menu).labelsHidden().id(localizationLocale.identifier)
                     .accessibilityIdentifier("chromaNoiseReduction.mode")
             }
             Button(L10n.text("使用可调降噪")) { model.settings.applyDenoisePreset(.detail) }

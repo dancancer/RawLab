@@ -182,6 +182,17 @@ for artwork in "$ROOT"/RawLabMac/Resources/FilmIcons/*; do
         *.png|*.jpg|*.jpeg) cp "$artwork" "$APP/Contents/Resources/FilmIcons/" ;;
     esac
 done
+# 46pt 胶片图标按屏幕像素预缩小，避免界面将大图一次压到很小的纹理。
+FILM_ICONS="$APP/Contents/Resources/FilmIcons"
+mkdir -p "$FILM_ICONS/Thumbnails"
+for artwork in "$FILM_ICONS/"*.png; do
+    name="$(basename "$artwork" .png)"
+    for scale in 1 2; do
+        sips --resampleHeightWidthMax "$((46 * scale))" "$artwork" \
+            --out "$FILM_ICONS/Thumbnails/$name@${scale}x.png" >/dev/null
+    done
+done
+
 # Package dependencies from either Homebrew or the architecture-specific source build.
 # Refresh generated copies: existing files may belong to an older dependency build.
 rm -f "$APP/Contents/Frameworks/"*.dylib

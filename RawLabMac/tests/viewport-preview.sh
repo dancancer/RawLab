@@ -13,8 +13,8 @@ while IFS= read -r -d '' source; do
     SOURCES+=("$source")
 done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)
 swiftc -parse-as-library -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
-    -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT/RawLabMac/tests/ViewportPreviewTests.swift" \
+    -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
+    "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT"/Shared/Native/*.swift "$ROOT/RawLabMac/tests/ViewportPreviewTests.swift" \
     "${CORE_LINK[@]}" \
     $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \

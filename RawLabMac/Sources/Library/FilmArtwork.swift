@@ -20,13 +20,17 @@ enum FilmArtwork {
         }.first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
-    static func image(for name: String, isCustom: Bool = false) -> NSImage? {
-        let key = resourceName(for: name, isCustom: isCustom) as NSString
+    static func image(for name: String, isCustom: Bool = false, displayScale: CGFloat) -> NSImage? {
+        let scale = displayScale > 1 ? 2 : 1
+        let resource = resourceName(for: name, isCustom: isCustom)
+        let key = "\(resource)@\(scale)x" as NSString
         if let image = cache.object(forKey: key) { return image }
-        guard let directory = Bundle.main.resourceURL?.appendingPathComponent("FilmIcons"),
-              let file = url(for: name, isCustom: isCustom, in: directory),
-              let image = NSImage(contentsOf: file) else { return nil }
-        cache.setObject(image, forKey: key)
+        guard let directory = Bundle.main.resourceURL?.appendingPathComponent("FilmIcons") else { return nil }
+        let thumbnail = directory.appendingPathComponent("Thumbnails")
+            .appendingPathComponent("\(key).png")
+        let image = NSImage(contentsOf: thumbnail) ?? url(for: name, isCustom: isCustom, in: directory)
+            .flatMap { NSImage(contentsOf: $0) }
+        if let image { cache.setObject(image, forKey: key) }
         return image
     }
 }

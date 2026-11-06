@@ -7,6 +7,7 @@ struct MacColorGradingControls: View {
     let isCurrent: () -> Bool
     let onEditingChanged: (Bool) -> Void
     let onCancelled: () -> Void
+    var compact = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
@@ -24,6 +25,7 @@ struct MacColorGradingControls: View {
                                 Circle().fill(settings[target].isDefault ? .clear : Color.yellow).frame(width: 3, height: 3)
                             }.padding(.horizontal, 10).frame(minHeight: 30)
                                 .background(zone == target ? Color.yellow.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 4))
+                                .contentShape(Rectangle())
                         }.buttonStyle(.plain).accessibilityIdentifier("grading.zone.\(target.rawValue)")
                             .accessibilityAddTraits(zone == target ? .isSelected : [])
                             .accessibilityValue(L10n.text(settings[target].isDefault ? "未调整" : "已调整"))
@@ -34,7 +36,7 @@ struct MacColorGradingControls: View {
                 if !dynamicTypeSize.isAccessibilitySize {
                     HStack(spacing: 16) { wheel.frame(width: 156, height: 156); rows.frame(minWidth: 300) }
                 }
-                VStack(spacing: 8) { wheel.frame(width: 156, height: 156); rows }
+                VStack(spacing: 8) { wheel.frame(width: compact ? 138 : 156, height: compact ? 138 : 156); rows }
             }
         }.frame(maxWidth: 720)
     }
@@ -52,11 +54,11 @@ struct MacColorGradingControls: View {
             ParameterRow(title: L10n.text("色相"), value: Binding(get: { settings[selected].hue }, set: {
                 if let hue = ColorGradingWheel.inputHue($0) { settings[selected].hue = hue }
             }), range: 0...360, defaultValue: 0, unit: "°", identifier: "grading.value.hue", onEditingChanged: onEditingChanged,
-                accessibilityTitle: selected.title + " · " + L10n.text("色相"), inputScope: selected.rawValue)
+                accessibilityTitle: selected.title + " · " + L10n.text("色相"), inputScope: selected.rawValue, compact: compact)
             ParameterRow(title: L10n.text("饱和度"), value: Binding(get: { settings[selected].saturation }, set: {
                 guard $0.isFinite, (0...100).contains($0) else { return }; settings[selected].saturation = $0
             }), range: 0...100, defaultValue: 0, unit: "%", identifier: "grading.value.saturation", onEditingChanged: onEditingChanged,
-                accessibilityTitle: selected.title + " · " + L10n.text("饱和度"), inputScope: selected.rawValue)
+                accessibilityTitle: selected.title + " · " + L10n.text("饱和度"), inputScope: selected.rawValue, compact: compact)
         }.id("\(source).\(selected.rawValue)")
     }
 }
