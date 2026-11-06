@@ -10,6 +10,10 @@ struct ViewingRenderTests {
     static func check(_ condition: Bool, _ message: String = "contract", line: Int = #line) {
         if !condition { print("FAIL line \(line): \(message)"); exit(1) }
     }
+    static func waitForHistogram(_ model: RawEditorViewModel) {
+        let deadline = Date().addingTimeInterval(4)
+        while model.histogram == nil && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+    }
     static func main() throws {
         setbuf(stdout, nil)
         let out = URL(fileURLWithPath: CommandLine.arguments[1])
@@ -23,10 +27,46 @@ struct ViewingRenderTests {
         let model = RawEditorViewModel(editPersistence: try EditPersistence(directory: out.appendingPathComponent("edits")))
         model.hasImage = true
         model.sourceKind = .raster
-        model.sourceFile = .externallyManaged(url)
         model.updatePreview(settings: .default, includeHistogram: false)
         wait(model)
+        check(model.previewFailed, "preview fails when neither its source nor its buffer is present")
+
+        let viewportURL = out.appendingPathComponent("viewport.png")
+        let viewportImage = UIGraphicsImageRenderer(size: CGSize(width: 1280, height: 960), format: format).image { context in
+            UIColor.red.setFill(); context.fill(CGRect(x: 0, y: 0, width: 640, height: 960))
+            UIColor.blue.setFill(); context.fill(CGRect(x: 640, y: 0, width: 640, height: 960))
+        }
+        try viewportImage.pngData()!.write(to: viewportURL)
+        let cacheModel = RawEditorViewModel(editPersistence: try EditPersistence(directory: out.appendingPathComponent("cache-edits")))
+        cacheModel.hasImage = true
+        cacheModel.sourceKind = .raster
+        cacheModel.sourceFile = .externallyManaged(viewportURL)
+        cacheModel.updatePreviewSize(320, settings: .default)
+        wait(cacheModel)
+        waitForHistogram(cacheModel)
+        let fitImage = cacheModel.previewImage
+        let fitHistogram = cacheModel.histogram
+        let fitNativeSize = cacheModel.nativeImageSize
+        check(fitImage?.cgImage?.width == 320, "initial Fit preview is bounded by its viewport")
+        check(fitHistogram != nil && fitNativeSize != nil, "initial Fit statistics and native size completed")
+        cacheModel.updatePreviewSize(1280, settings: .default)
+        wait(cacheModel)
+        let zoomImage = cacheModel.previewImage
+        check(zoomImage?.cgImage?.width == 1280, "zoom renders a larger viewport preview")
+        cacheModel.updatePreviewSize(320, settings: .default)
+        wait(cacheModel)
+        check(cacheModel.previewImage === fitImage,
+              "returning from 100% to Fit reuses the completed exact preview image")
+        check(cacheModel.histogram == fitHistogram && cacheModel.nativeImageSize == fitNativeSize,
+              "returning to Fit reuses the completed preview statistics and native size")
+        cacheModel.updatePreviewSize(1280, settings: .default)
+        wait(cacheModel)
+        check(cacheModel.previewImage === zoomImage, "zoom also reuses pixels if histogram analysis was interrupted")
+        waitForHistogram(cacheModel)
+        check(cacheModel.histogram?.width == 1280, "reused zoom preview gets its own histogram")
+        print("PASS: completed raster Fit and zoom previews reuse pixels and preserve their own histograms")
         let buffer = try model.processor.loadRasterBuffer(url: url).buffer
+        model.sourceFile = .externallyManaged(url)
         model.draftBuffer = buffer
         model.updatePreview(settings: .default, includeHistogram: false)
         wait(model)
@@ -90,6 +130,8 @@ struct ViewingRenderTests {
         }
         print("PASS: neutral pixels and key follow committed crop/lens/demand, not draft crop or user exposure; empty stats remain empty")
         let accepted = model.previewImage!
+        // A raster can reload from its source even when both in-memory buffers are gone.
+        model.sourceFile = nil
         model.draftBuffer = nil
         model.draftPreviewBuffer = nil
         var failed = committed; failed.exposure = 0.4
@@ -100,6 +142,7 @@ struct ViewingRenderTests {
         var exportRejected = false
         model.exportJPEG(settings: failed) { result in if case .failure = result { exportRejected = true } }
         check(exportRejected, "failed preview is not current/exact for export")
+        model.sourceFile = .externallyManaged(url)
         model.draftBuffer = buffer
         model.retryPreview(settings: failed)
         wait(model)
@@ -131,6 +174,7 @@ struct ViewingRenderTests {
             let deadline = Date().addingTimeInterval(35)
             while rawModel.isBusy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
             check(rawModel.hasImage, "RAW import succeeds: \(rawModel.statusMessage ?? "nil")")
+            let rawZoom = rawModel.previewImage
             rawModel.updatePreviewSize(320, settings: edited)
             wait(rawModel)
             check(!rawModel.previewFailed && rawModel.basePreviewProcessing == .legacy && rawModel.basePreviewLens.distortion,
@@ -146,8 +190,49 @@ struct ViewingRenderTests {
                   "actual RAW neutral uses camera WB/default exposure, no user exposure/WB/HSL, same geometry/lens/processing/demand")
             check(rawModel.baseHistogram == rawModel.processor.computeRGBHistogram(from: expected.buffer),
                   "RAW neutral RGB counts match the shown reference at the requested preview dimensions")
+            let rawFit = rawModel.previewImage
+            rawModel.updatePreviewSize(1280, settings: edited)
+            wait(rawModel)
+            check(rawFit != nil && rawZoom != nil && rawZoom !== rawFit && rawModel.previewImage === rawZoom,
+                  "first RAW zoom reuses a matching exact frame from import")
+            rawModel.updatePreviewSize(320, settings: edited)
+            wait(rawModel)
+            check(rawModel.previewImage === rawFit, "RAW Fit reuses the completed frame")
+            rawModel.updatePreviewSize(1280, settings: edited)
+            wait(rawModel)
+            check(rawModel.previewImage === rawZoom, "RAW zoom reuses the completed frame")
             print("PASS: RAW matched native pixel oracle; lens report=\(rawModel.lensInfo?.message ?? "none")")
         }
-
+        if CommandLine.arguments.count > 3, !CommandLine.arguments[3].isEmpty {
+            let url = URL(fileURLWithPath: CommandLine.arguments[3])
+            let model = RawEditorViewModel(editPersistence: try EditPersistence(directory: out.appendingPathComponent("hdr-edits")))
+            model.hasImage = true
+            model.sourceKind = .raster
+            model.sourceFile = .externallyManaged(url)
+            var settings = RawSettings.default
+            settings.hdr = HDRSettings()
+            model.updatePreviewSize(320, settings: settings)
+            wait(model)
+            let fit = model.hdrPresentation
+            check(fit != nil && max(fit!.width, fit!.height) == 320,
+                  "HDR Fit produced a bounded pair: \(model.statusMessage ?? "none")")
+            model.updatePreviewSize(704, settings: settings)
+            wait(model)
+            let zoom = model.hdrPresentation
+            check(zoom != nil && max(zoom!.width, zoom!.height) == 704, "HDR zoom produced a larger pair")
+            model.updatePreviewSize(320, settings: settings)
+            wait(model)
+            check(model.hdrPresentation === fit, "HDR Fit reuses the completed pair")
+            model.updatePreviewSize(704, settings: settings)
+            wait(model)
+            check(model.hdrPresentation === zoom, "HDR zoom reuses the completed pair")
+            let reference = model.hdrReference
+            settings.hdr?.exposure = 0.5
+            model.updatePreview(settings: settings)
+            wait(model)
+            check(reference != nil && model.hdrReference === reference && model.hdrPresentation !== zoom,
+                  "HDR exposure regenerates edited pixels and reuses the unchanged reference")
+            print("PASS: HDR viewport round trip and comparison reuse")
+        }
     }
 }

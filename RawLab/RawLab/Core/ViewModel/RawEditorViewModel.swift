@@ -83,11 +83,69 @@ final class RawEditorViewModel: ObservableObject {
         let longEdge: Int
     }
 
+    struct PreviewLUTFileIdentity: Equatable {
+        let url: URL
+        let fileNumber: UInt64?
+        let size: UInt64?
+        let modificationDate: Date?
+    }
+
+    struct PreviewCacheKey: Equatable {
+        let sourceRevision: UUID
+        let settings: RawSettings
+        let referenceKey: ComparisonReferenceKey
+        let lut: PreviewLUTFileIdentity?
+        let edge: Int
+        let quality: PreviewQuality
+        let includeHistogram: Bool
+    }
+
+    struct CompletedPreview {
+        let key: PreviewCacheKey
+        let previewImage: UIImage?
+        let basePreviewImage: UIImage?
+        var histogram: Sony2FujiProcessor.RGBHistogram?
+        // CGImage retains the same pixel data; keep its buffer metadata until analysis finishes.
+        var histogramInput: Sony2FujiProcessor.Buffer?
+        let baseHistogram: Sony2FujiProcessor.RGBHistogram?
+        let nativeImageSize: CGSize?
+        let hdrPresentation: HDRPresentation?
+        let hdrReference: HDRPresentation?
+        let basePreviewGeometry: GeometrySettings
+        let basePreviewProcessing: ProcessingIdentity
+        let basePreviewLens: LensCorrectionSettings
+        let comparisonReferenceKey: ComparisonReferenceKey?
+        let rawWhiteBalance: Sony2FujiProcessor.RawWhiteBalance?
+        let lensInfo: LensInfo?
+        let sourceOrientation: CGImagePropertyOrientation?
+
+        var estimatedMemoryBytes: Int {
+            var total = 0
+            func add(_ bytes: Int) {
+                total = bytes > Int.max - total ? Int.max : total + bytes
+            }
+            for image in [previewImage, basePreviewImage] {
+                if let cgImage = image?.cgImage { add(cgImage.bytesPerRow * cgImage.height) }
+            }
+            if let hdrPresentation { add(hdrPresentation.image.byteCount) }
+            if let hdrReference { add(hdrReference.image.byteCount) }
+            return total
+        }
+    }
+
     let processor = Sony2FujiProcessor()
     let renderQueue = DispatchQueue(label: "com.rawlab.preview", qos: .userInitiated)
     let renderStateLock = NSLock()
     @Published var sourceFile: PhotoSourceFile?
-    @Published var sourceRevision = UUID() { didSet { hslSourceRevision &+= 1; acceptedPreviewRequest = nil; closeQuickPresets() } }
+    @Published var sourceRevision = UUID() {
+        didSet {
+            hslSourceRevision &+= 1
+            acceptedPreviewRequest = nil
+            completedPreviewCache.removeAll()
+            completedPreviewCacheBytes = 0
+            closeQuickPresets()
+        }
+    }
     var sourceKind: ImageSourceKind?
     var sourceIsX3f: Bool { sourceKind == .raw && (sourceDisplayName as NSString?)?.pathExtension.lowercased() == "x3f" }
     var sourceIdentity: PhotoIdentity?
@@ -139,6 +197,9 @@ final class RawEditorViewModel: ObservableObject {
     var previewWorkItem: DispatchWorkItem?
     var histogramWorkItem: DispatchWorkItem?
     var lastPreviewRequest: PreviewRequest?
+    var completedPreviewCache: [CompletedPreview] = []
+    let completedPreviewCacheLimit = 3
+    var completedPreviewCacheBytes = 0
     var previewLongEdge = 1280
     var requestedPreviewLongEdge = 1280
     var previewResizeWorkItem: DispatchWorkItem?
