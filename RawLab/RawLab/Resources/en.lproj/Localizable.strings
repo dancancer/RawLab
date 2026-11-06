@@ -239,6 +239,7 @@
 "导出已完成的 DNG 到文件…" = "Export Completed DNGs to Files…";
 "导出渲染型 DNG" = "Export Rendered DNG";
 "导出渲染型 DNG…" = "Export Rendered DNG…";
+"导出错误日志" = "Export Error Log";
 "导出长边像素" = "Export Long Edge (Pixels)";
 "导出长边必须为 1-65535 像素。" = "The long edge must be 1-65535 pixels.";
 "将以下项目转为独立调整，以保留其他分组的当前效果：%@" = "The following will become independent adjustments to preserve the current appearance of other groups: %@";
@@ -381,6 +382,7 @@
 "无法写入成片，请检查输出位置和剩余空间。" = "Unable to write the exported photo. Check the output location and free space.";
 "无法创建新的预设标识，请重试。" = "Could not create a new preset identifier. Try again.";
 "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。" = "Unable to Retrieve the Original RAW. Authorize Access to This Photo in System Settings, Then Try Again.";
+"无法导出错误日志。" = "Could not export the error log.";
 "无法显示处理结果" = "Unable to display processing results";
 "无法生成预览" = "Unable to generate preview";
 "无法生成预览，请检查照片、LUT 和颜色配置。" = "Unable to generate preview. Check the photo, LUT, and color settings.";
@@ -405,6 +407,7 @@
 "明度：从暗到亮。" = "Lightness: from dark to light.";
 "显示图像" = "Display image";
 "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。" = "Raster input requires an opaque 8-bit SDR JPEG, PNG, TIFF, or HEIF image.";
+"暂无可导出的错误日志。" = "There is no error log to export.";
 "暂无编辑历史。" = "No edit history yet.";
 "暖调日系 · 漫射金光" = "Warm Japanese · diffused golden light";
 "暖金光影 · 质感人像" = "Warm golden light · textured portrait";

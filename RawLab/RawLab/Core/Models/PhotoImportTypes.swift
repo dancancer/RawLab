@@ -1,31 +1,21 @@
 import CoreTransferable
 import Foundation
+import ImageIO
 import UniformTypeIdentifiers
 import PhotosUI
 import SwiftUI
 
-enum PhotoImportSource {
-    case raw(URL)
-    case raster(URL)
+struct PhotoImportSource {
+    let url: URL
+    let isRaw: Bool
+    var originalName: String? = nil
 
-    var url: URL {
-        switch self {
-        case .raw(let url), .raster(let url):
-            return url
-        }
-    }
-
-    var isRaw: Bool {
-        switch self {
-        case .raw:
-            return true
-        case .raster:
-            return false
-        }
-    }
+    static func raw(_ url: URL) -> Self { Self(url: url, isRaw: true) }
+    static func raster(_ url: URL) -> Self { Self(url: url, isRaw: false) }
 
     var displayName: String {
-        url.lastPathComponent.isEmpty ? (isRaw ? "RAW" : L10n.text("照片")) : url.lastPathComponent
+        let name = originalName ?? url.lastPathComponent
+        return name.isEmpty ? (isRaw ? "RAW" : L10n.text("照片")) : name
     }
 }
 
@@ -47,56 +37,120 @@ enum PhotoImportError: LocalizedError {
 }
 
 struct RawPhotoFile: Transferable {
-    let url: URL
+    let source: PhotoImportSource
 
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(importedContentType: .rawImage) { file in
-            RawPhotoFile(url: try PhotoImportFile.retain(file.file))
+            RawPhotoFile(source: try PhotoImportFile.retainSource(file.file))
         }
     }
 }
 
 struct ImagePhotoFile: Transferable {
-    let url: URL
+    let source: PhotoImportSource
 
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(importedContentType: .image) { file in
-            ImagePhotoFile(url: try PhotoImportFile.retain(file.file))
+            ImagePhotoFile(source: try PhotoImportFile.retainSource(file.file))
         }
     }
 }
 
 enum PhotoImportFile {
     static var directory: URL { FileManager.default.temporaryDirectory.appendingPathComponent("RawLabImports", isDirectory: true) }
-    static let sigmaRaw = UTType(importedAs: "com.rawlab.x3f", conformingTo: .rawImage)
-    static let supportedContentTypes: [UTType] = [
-        .rawImage, sigmaRaw, .jpeg, .png, .tiff, .heif, .heic
-    ]
+    // Files may advertise an arbitrary type for a renamed photo.
+    static let photoPickerContentTypes: [UTType] = [.data]
     static let supportedLookContentTypes: [UTType] = ["cube", "vlt", "rlook", "dcp"].compactMap {
         UTType(filenameExtension: $0)
     }
 
-    static func sourceKind(for url: URL) -> PhotoImportSource? {
-        if url.pathExtension.lowercased() == "x3f" { return .raw(url) }
-        guard let type = UTType(filenameExtension: url.pathExtension.lowercased()) else { return nil }
-        if type.conforms(to: .rawImage) { return .raw(url) }
-        if type.conforms(to: .image) { return .raster(url) }
-        return nil
+    static func retainSource(_ source: URL) throws -> PhotoImportSource {
+        let retained = try retain(source, filename: "source")
+        return try identifyRetainedSource(retained, originalName: source.lastPathComponent)
     }
 
-    static func retainSource(_ source: URL) throws -> PhotoImportSource {
-        guard let kind = sourceKind(for: source) else { throw PhotoImportError.unsupportedItem }
-        let retained = try retain(source)
-        switch kind {
-        case .raw: return .raw(retained)
-        case .raster: return .raster(retained)
+    private static func identifyRetainedSource(_ url: URL, originalName: String) throws -> PhotoImportSource {
+        do {
+            let format = try detectFormat(at: url)
+            var suffix = format.suffix
+            if suffix == "raw" {
+                // Keep an ImageIO decoder hint for RAW formats whose container alone is ambiguous.
+                let hint = (originalName as NSString).pathExtension.lowercased()
+                if !["arw", "dng", "x3f"].contains(hint),
+                   UTType(filenameExtension: hint)?.conforms(to: .rawImage) == true {
+                    suffix = hint
+                }
+            }
+            let normalized = url.appendingPathExtension(suffix)
+            try FileManager.default.moveItem(at: url, to: normalized)
+            return PhotoImportSource(url: normalized, isRaw: format.isRaw, originalName: originalName)
+        } catch {
+            release(url)
+            throw error
         }
     }
 
-    static func retain(_ source: URL) throws -> URL {
+    private static func detectFormat(at url: URL) throws -> (isRaw: Bool, suffix: String) {
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        let header = try file.read(upToCount: 8) ?? Data()
+        if header.starts(with: "FOVb".utf8) { return (true, "x3f") }
+        if try containsDNGVersion(header, in: file) { return (true, "dng") }
+
+        // The retained input has no extension while ImageIO inspects the container.
+        let type = CGImageSourceCreateWithURL(url as CFURL, nil)
+            .flatMap { CGImageSourceGetType($0) as String? }
+            .flatMap { UTType($0) }
+        if let type, let suffix = type.preferredFilenameExtension {
+            if type.conforms(to: .rawImage) { return (true, suffix) }
+            if [.jpeg, .png, .heic, .heif].contains(type) { return (false, suffix) }
+        }
+
+        #if os(iOS)
+        // TIFF can contain a sensor RAW, and ImageIO can identify a renamed ARW only as TIFF.
+        switch url.path.withCString({ rawlab_probe_raw_file($0) }) {
+        case RAWLAB_FILE_SONY_RAW: return (true, "arw")
+        case RAWLAB_FILE_RAW: return (true, "raw")
+        default: break
+        }
+        #endif
+
+        if type == .tiff { return (false, "tiff") }
+        throw PhotoImportError.unsupportedItem
+    }
+
+    private static func containsDNGVersion(_ header: Data, in file: FileHandle) throws -> Bool {
+        guard header.count == 8 else { return false }
+        let littleEndian = header.starts(with: [0x49, 0x49, 42, 0])
+        guard littleEndian || header.starts(with: [0x4d, 0x4d, 0, 42]) else { return false }
+
+        func number<T: FixedWidthInteger>(_ bytes: Data, at offset: Int, as type: T.Type) -> T {
+            let value = bytes.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: type) }
+            return littleEndian ? T(littleEndian: value) : T(bigEndian: value)
+        }
+
+        // DNGVersion is a four-byte field in the first TIFF directory.
+        let directoryOffset = number(header, at: 4, as: UInt32.self)
+        guard directoryOffset >= 8 else { return false }
+        try file.seek(toOffset: UInt64(directoryOffset))
+        guard let count = try file.read(upToCount: 2), count.count == 2 else { return false }
+        let entrySize = 12
+        let length = Int(number(count, at: 0, as: UInt16.self)) * entrySize
+        guard length > 0, let entries = try file.read(upToCount: length), entries.count == length else { return false }
+        return stride(from: 0, to: length, by: entrySize).contains { offset in
+            number(entries, at: offset, as: UInt16.self) == 50706 &&
+                number(entries, at: offset + 2, as: UInt16.self) == 1 &&
+                number(entries, at: offset + 4, as: UInt32.self) == 4
+        }
+    }
+
+    static func retain(_ source: URL, filename: String? = nil) throws -> URL {
+        guard try source.resourceValues(forKeys: [.isDirectoryKey]).isDirectory != true else {
+            throw PhotoImportError.unsupportedItem
+        }
         let folder = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let destination = folder.appendingPathComponent(source.lastPathComponent)
+        let destination = folder.appendingPathComponent(filename ?? source.lastPathComponent)
         do { try FileManager.default.copyItem(at: source, to: destination); return destination }
         catch { try? FileManager.default.removeItem(at: folder); throw error }
     }
@@ -128,7 +182,7 @@ enum PhotoImportFile {
         var rawError: Error?
         if supportsRaw {
             do {
-                if let raw = try await item.loadTransferable(type: RawPhotoFile.self) { return .raw(raw.url) }
+                if let raw = try await item.loadTransferable(type: RawPhotoFile.self) { return raw.source }
             } catch { rawError = error }
         }
         if let identifier = item.itemIdentifier {
@@ -141,22 +195,21 @@ enum PhotoImportFile {
                 // .photo 是相册保留的原容器；已调整的 fullSizePhoto 可能丢失增益图。
                 let resource=raw ?? (!supportsRaw ? resources.first { $0.type == .photo } : nil)
                 if let resource {
-                let folder = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                let url = folder.appendingPathComponent(resource.originalFilename)
-                let options = PHAssetResourceRequestOptions()
-                options.isNetworkAccessAllowed = true
-                do {
-                    try await PHAssetResourceManager.default().writeData(for: resource, toFile: url, options: options)
-                    try Task.checkCancellation()
-                    return raw != nil ? .raw(url) : .raster(url)
-                } catch { release(url); throw error }
+                    let folder = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                    let url = folder.appendingPathComponent("source")
+                    let options = PHAssetResourceRequestOptions()
+                    options.isNetworkAccessAllowed = true
+                    do {
+                        try await PHAssetResourceManager.default().writeData(for: resource, toFile: url, options: options)
+                        try Task.checkCancellation()
+                    } catch { release(url); throw error }
+                    return try identifyRetainedSource(url, originalName: resource.originalFilename)
                 }
             }
         }
         if supportsRaw { throw rawError ?? PhotoImportError.rawResourceUnavailable }
         guard let image = try await item.loadTransferable(type: ImagePhotoFile.self) else { throw PhotoImportError.loadFailed }
-        if UTType(filenameExtension: image.url.pathExtension)?.conforms(to: .rawImage) == true { return .raw(image.url) }
-        return .raster(image.url)
+        return image.source
     }
 }

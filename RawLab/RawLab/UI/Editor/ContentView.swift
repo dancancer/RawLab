@@ -16,7 +16,7 @@ enum EditorDocumentImportKind {
 
     var contentTypes: [UTType] {
         switch self {
-        case .photo: PhotoImportFile.supportedContentTypes
+        case .photo: PhotoImportFile.photoPickerContentTypes
         case .looks: PhotoImportFile.supportedLookContentTypes
         }
     }
@@ -222,6 +222,10 @@ struct ContentView: View {
                 Button(L10n.text("使用旧版显影重试")) { retry { settings = $0 } }
                     .accessibilityIdentifier("x3f.retryLegacy")
             }
+            if viewModel.statusHasDiagnostics {
+                Button(L10n.text("导出错误日志"), action: exportErrorDiagnostics)
+                    .accessibilityIdentifier("diagnostics.export.alert")
+            }
             Button(L10n.text("关闭"), role: .cancel) {
                 viewModel.statusMessage = nil
                 viewModel.retryLegacyX3fImport = nil
@@ -421,12 +425,13 @@ struct ContentView: View {
         .sheet(item: $fileExportRequest) { request in
             FileExportPicker(urls: request.urls) { exported in
                 fileExportRequest = nil
-                if exported { UsageAnalytics.shared.record(.exportCompleted) }
+                if exported && request.recordsPhotoExport { UsageAnalytics.shared.record(.exportCompleted) }
                 if request.removeAfterExport {
                     for url in request.urls { try? FileManager.default.removeItem(at: url) }
                 }
                 viewModel.statusMessage = exported ? request.successMessage : request.cancelMessage
             }
+            .interactiveDismissDisabled(!request.recordsPhotoExport)
         }
         .alert(L10n.text("保留这次几何或镜头修改？"), isPresented: $draftExitPresented) {
             Button(L10n.text("应用")) { finishDraftNavigation(apply: true) }

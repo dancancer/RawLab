@@ -80,7 +80,7 @@ extension ProcessorExportTests {
         do {
             try body()
             check(false, message)
-        } catch Sony2FujiProcessor.ProcessorError.processFailed(let detail) {
+        } catch Sony2FujiProcessor.ProcessorError.processFailed(let detail, _) {
             check(detail == L10n.text("镜头数据库不可用"), message)
         }
     }

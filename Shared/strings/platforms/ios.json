@@ -1,5 +1,17 @@
 {
   "entries": {
+    "导出错误日志": {
+      "formats": [],
+      "source": "导出错误日志"
+    },
+    "暂无可导出的错误日志。": {
+      "formats": [],
+      "source": "暂无可导出的错误日志。"
+    },
+    "无法导出错误日志。": {
+      "formats": [],
+      "source": "无法导出错误日志。"
+    },
     "此设备暂不支持导出 HDR 模式下的 ProRAW 照片。": {
       "formats": [],
       "source": "此设备暂不支持导出 HDR 模式下的 ProRAW 照片。"
@@ -3316,6 +3328,30 @@
     }
   },
   "unique": {
+    "导出错误日志": {
+      "de": "Fehlerprotokoll exportieren",
+      "en": "Export Error Log",
+      "es": "Exportar registro de errores",
+      "fr": "Exporter le journal des erreurs",
+      "ja": "エラーログを書き出す",
+      "zh-Hans": "导出错误日志"
+    },
+    "暂无可导出的错误日志。": {
+      "de": "Es ist kein Fehlerprotokoll zum Exportieren vorhanden.",
+      "en": "There is no error log to export.",
+      "es": "No hay ningún registro de errores para exportar.",
+      "fr": "Aucun journal des erreurs à exporter.",
+      "ja": "書き出せるエラーログがありません。",
+      "zh-Hans": "暂无可导出的错误日志。"
+    },
+    "无法导出错误日志。": {
+      "de": "Das Fehlerprotokoll konnte nicht exportiert werden.",
+      "en": "Could not export the error log.",
+      "es": "No se pudo exportar el registro de errores.",
+      "fr": "Impossible d’exporter le journal des erreurs.",
+      "ja": "エラーログを書き出せませんでした。",
+      "zh-Hans": "无法导出错误日志。"
+    },
     "此设备暂不支持导出 HDR 模式下的 ProRAW 照片。": {
       "de": "Dieses Gerät unterstützt den Export von ProRAW-Fotos im HDR-Modus noch nicht.",
       "en": "This device does not yet support exporting ProRAW photos in HDR editing mode.",

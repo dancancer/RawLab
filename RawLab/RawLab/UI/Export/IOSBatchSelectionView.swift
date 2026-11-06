@@ -77,7 +77,7 @@ struct IOSBatchSelectionView: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) {
                 Button(L10n.text("关闭")) { dismiss() }.disabled(loading)
             } }
-            .fileImporter(isPresented: $showFiles, allowedContentTypes: PhotoImportFile.supportedContentTypes,
+            .fileImporter(isPresented: $showFiles, allowedContentTypes: PhotoImportFile.photoPickerContentTypes,
                           allowsMultipleSelection: true) { result in
                 switch result {
                 case .success(let urls): loadTask = Task { await addFiles(urls) }

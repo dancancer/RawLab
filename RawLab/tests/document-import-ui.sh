@@ -62,6 +62,12 @@ for target in targets:
     (documents / 'RawLabImportFixture.png').write_bytes(
         b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
         + chunk(b'IDAT', zlib.compress(pixels)) + chunk(b'IEND', b''))
+    for name in ('RawLabRasterAsRaw.arw', 'RawLabPhotoWithoutExtension'):
+        shutil.copyfile(documents / 'RawLabImportFixture.png', documents / name)
+    (documents / 'RawLabTextAsJPEG.jpeg').write_text('This is a text file.')
+    if raw_fixture := os.environ.get('RAWLAB_DOCUMENT_IMPORT_RAW'):
+        shutil.copyfile(raw_fixture, documents / 'RawLabRawAsJPEG.jpeg')
+        target['EnvironmentVariables']['RAWLAB_DOCUMENT_IMPORT_RAW'] = '1'
     values = '\n'.join(f'{i & 1} {(i >> 1) & 1} {(i >> 2) & 1}' for i in range(8)) + '\n'
     (documents / 'RawLabImportFixture.cube').write_text(
         '#Gamma:F-Log2 to Test\n#Gamut:F-Gamut to ITU-R BT.709\nLUT_3D_SIZE 2\n' + values)
@@ -117,6 +123,6 @@ import json, os, sys
 result = json.load(open(sys.argv[1]))
 assert result['failedTests'] == 0 and result['passedTests'] > 0 and result['skippedTests'] == 0, result
 if not os.environ.get('RAWLAB_DOCUMENT_IMPORT_TEST'):
-    assert result['passedTests'] == result['totalTestCount'] == 4, result
+    assert result['passedTests'] == result['totalTestCount'] == 5, result
 PY
 echo "PASS: document import UI; results: $OUT/DocumentImport.xcresult"

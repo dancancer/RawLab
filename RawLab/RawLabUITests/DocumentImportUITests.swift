@@ -32,6 +32,32 @@ final class DocumentImportUITests: XCTestCase {
         cancelPicker(in: app)
     }
 
+    func testFilesImportUsesPhotoContents() {
+        if ProcessInfo.processInfo.environment["RAWLAB_DOCUMENT_IMPORT_RAW"] == "1" {
+            assertPhotoImports("RawLabRawAsJPEG.jpeg")
+        }
+        assertPhotoImports("RawLabRasterAsRaw.arw")
+        assertPhotoImports("RawLabPhotoWithoutExtension")
+
+        let app = launchEditor()
+        app.buttons["editor.import.file"].tap()
+        selectFile("RawLabTextAsJPEG.jpeg", in: app)
+        let unsupported = app.alerts["RawLab"].firstMatch.staticTexts["Selected Item Is Not a Supported Image."].firstMatch
+        XCTAssertTrue(unsupported.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertFalse(app.descendants(matching: .any)["editor.photo"].exists)
+    }
+
+    private func assertPhotoImports(_ name: String, file: StaticString = #filePath, line: UInt = #line) {
+        let app = launchEditor()
+        let photo = app.descendants(matching: .any)["editor.photo"]
+        XCTAssertFalse(photo.exists, file: file, line: line)
+        app.buttons["editor.import.file"].tap()
+        selectFile(name, in: app)
+        let alert = app.alerts["RawLab"].firstMatch
+        waitUntil(timeout: 60, file: file, line: line) { photo.exists || alert.exists }
+        XCTAssertTrue(photo.exists, "\(name) did not reach the editor. \(app.debugDescription)", file: file, line: line)
+    }
+
     func testPhotoAndLookSelectionsReachTheirOwnImports() {
         let app = launchEditor()
         app.buttons["editor.import.file"].tap()
@@ -140,7 +166,10 @@ final class DocumentImportUITests: XCTestCase {
         let url = URL(fileURLWithPath: name)
         let identifiers = ["\(url.deletingPathExtension().lastPathComponent), \(url.pathExtension)",
                            "\(name), \(url.pathExtension)"]
-        let file = app.cells.matching(NSPredicate(format: "identifier IN %@", identifiers)).firstMatch
+        let predicate = url.pathExtension.isEmpty
+            ? NSPredicate(format: "identifier == %@ OR identifier BEGINSWITH %@", name, name + ", ")
+            : NSPredicate(format: "identifier IN %@", identifiers)
+        let file = app.cells.matching(predicate).firstMatch
         XCTAssertTrue(file.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(file.isEnabled, "The selected file type must be accepted by the picker")
         file.tap()

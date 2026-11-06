@@ -58,7 +58,7 @@ struct IOSAdjustmentTransferView: View {
                 Button(L10n.text("关闭")) { dismiss() }.accessibilityIdentifier("adjustment.transfer.close")
             } }
             .photosPicker(isPresented: $showingPhotos, selection: $pickerItems, matching: .images, preferredItemEncoding: .current)
-            .fileImporter(isPresented: $showingFiles, allowedContentTypes: PhotoImportFile.supportedContentTypes,
+            .fileImporter(isPresented: $showingFiles, allowedContentTypes: PhotoImportFile.photoPickerContentTypes,
                           allowsMultipleSelection: true) { result in
                 switch result {
                 case .success(let urls): loadTask = Task { await addFiles(urls) }

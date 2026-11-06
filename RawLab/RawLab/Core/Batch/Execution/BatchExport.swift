@@ -249,6 +249,11 @@ final class BatchExportModel: ObservableObject {
         backgroundInterruption = false
         let failedIDs = failuresOnly ? Set(snapshot.targets.filter { $0.status == .failed }.map(\.id)) : nil
         let succeededBefore = snapshot.targets.filter { $0.status == .succeeded }.count
+        let attemptID = UUID()
+        let diagnosticContext = ["outputFormat": snapshot.outputFormat.rawValue, "targetCount": String(snapshot.targets.count)]
+        let logFailure: (Error, String) -> Void = { error, stage in
+            ErrorDiagnostics.log(error, operation: .batchExport, stage: stage, attemptID: attemptID, context: diagnosticContext)
+        }
         queue.async { [self] in
             var attempted = Set<String>()
             do {
@@ -272,7 +277,7 @@ final class BatchExportModel: ObservableObject {
                             snapshot = updated
                             DispatchQueue.main.async { self.job = updated }
                         },
-                        onlyIDs: failedIDs)
+                        onlyIDs: failedIDs, didFail: logFailure)
                 } else if let jpegWriter {
                     result = try BatchExportRunner.run(job: snapshot, journalStore: journalStore,
                         render: { target, resolvedSettings in
@@ -287,7 +292,7 @@ final class BatchExportModel: ObservableObject {
                             snapshot = updated
                             DispatchQueue.main.async { self.job = updated }
                         },
-                        onlyIDs: failedIDs)
+                        onlyIDs: failedIDs, didFail: logFailure)
                 } else {
                     try PhotoLibraryBatchWriter.authorize()
                     result = try BatchExportRunner.run(job: snapshot, journalStore: journalStore,
@@ -306,7 +311,7 @@ final class BatchExportModel: ObservableObject {
                             snapshot = updated
                             DispatchQueue.main.async { self.job = updated }
                         },
-                        onlyIDs: failedIDs)
+                        onlyIDs: failedIDs, didFail: logFailure)
                 }
                 let failed = result.targets.filter { attempted.contains($0.id) && $0.status == .failed }.count
                 DispatchQueue.main.async {
@@ -327,6 +332,7 @@ final class BatchExportModel: ObservableObject {
                 }
             } catch {
                 let preparationFailed=snapshot.settingsMode == .uniformFrozen && snapshot.source.settings.isHDREditing && attempted.isEmpty
+                logFailure(error, preparationFailed ? "prepare" : "run")
                 let cancelled=error is CancellationError
                 let recovered = snapshot.outputFormat == .renderedDNG
                     ? snapshot.recovered()
