@@ -58,6 +58,55 @@ final class DocumentImportUITests: XCTestCase {
         add(screenshot)
     }
 
+    func testIPadJPEGPreviewResolvesFineDetailAfterZoom() {
+        let app = launchEditor()
+        app.buttons["editor.import.file"].tap()
+        selectFile("RawLabDetailFixture.jpeg", in: app)
+        let photo = app.descendants(matching: .any)["editor.photo"]
+        XCTAssertTrue(photo.waitForExistence(timeout: 60), app.debugDescription)
+        waitUntil { app.buttons["tool.film"].isEnabled }
+        photo.pinch(withScale: 3, velocity: 2)
+
+        // In the center of the JPEG, black and white bars each span three source pixels.
+        // Count the resolved edges on screen; enlarging the 1280 px bitmap aliases the bars.
+        let scanCenter = CGPoint(x: photo.frame.midX, y: photo.frame.midY)
+        let screen = app.frame
+        let deadline = Date().addingTimeInterval(12)
+        var screenshot = app.screenshot()
+        var transitions = resolvedBarEdges(in: screenshot, at: scanCenter, screen: screen)
+        while transitions < 55 && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+            screenshot = app.screenshot()
+            transitions = resolvedBarEdges(in: screenshot, at: scanCenter, screen: screen)
+        }
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = "zoomed-jpeg-detail"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertGreaterThanOrEqual(transitions, 55, "The zoomed preview should resolve the JPEG's fine bars")
+    }
+
+    private func resolvedBarEdges(in screenshot: XCUIScreenshot, at point: CGPoint, screen: CGRect) -> Int {
+        guard let image = screenshot.image.cgImage else { return 0 }
+        let scale = CGFloat(image.width) / screen.width
+        let width = 384
+        let row = CGRect(x: Int((point.x - screen.minX) * scale) - width / 2,
+                         y: Int((point.y - screen.minY) * scale), width: width, height: 1)
+        guard let scan = image.cropping(to: row),
+              let context = CGContext(data: nil, width: width, height: 1, bitsPerComponent: 8,
+                                      bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(), bitmapInfo: 0),
+              let pixels = context.data?.assumingMemoryBound(to: UInt8.self) else { return 0 }
+        context.draw(scan, in: CGRect(x: 0, y: 0, width: width, height: 1))
+        var lastLight: Bool?
+        var transitions = 0
+        for x in 0..<width where pixels[x] <= 96 || pixels[x] >= 160 {
+            let light = pixels[x] >= 160
+            if let lastLight, light != lastLight { transitions += 1 }
+            lastLight = light
+        }
+        return transitions
+    }
+
     func testCompatibilityCancellationAllowsAnotherLookImport() {
         let app = launchEditor()
         openMenuImport("editor.import.look", in: app)
