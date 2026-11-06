@@ -12,10 +12,12 @@ extension ProcessorExportTests {
             (SONY2FUJI_STATUS_PROCESSING_ERROR, "处理失败：processing error")
         ]
         for (status, expected) in cases {
-            check(processor.processingFailure(status).localizedDescription == expected,
+            let error = processor.processingFailure(status)
+            check(error.localizedDescription == expected,
                   "process status \(status) has one accurate localized message and preserves its detail")
+            check(error.diagnosticStatus == status, "process failure keeps native status \(status) for diagnostics")
         }
-        if case .processFailed(let message) = processor.processingFailure(SONY2FUJI_STATUS_PROCESSING_ERROR) {
+        if case .processFailed(let message, _) = processor.processingFailure(SONY2FUJI_STATUS_PROCESSING_ERROR) {
             check(message == "processing error", "generic process failure keeps the native associated value")
         } else { check(false, "generic process failure keeps its existing enum contract") }
         for (status, expected) in [
@@ -24,8 +26,10 @@ extension ProcessorExportTests {
             (SONY2FUJI_STATUS_OUT_OF_MEMORY, "内存不足，无法解码普通图片。"),
             (SONY2FUJI_STATUS_PROCESSING_ERROR, "无法解码普通图片：processing error")
         ] {
-            check(processor.displayImageFailure(status).localizedDescription == expected,
+            let error = processor.displayImageFailure(status)
+            check(error.localizedDescription == expected,
                   "decoder status \(status) distinguishes format, access, memory and processing failures")
+            check(error.diagnosticStatus == status, "decoder failure keeps native status \(status) for diagnostics")
         }
     }
 

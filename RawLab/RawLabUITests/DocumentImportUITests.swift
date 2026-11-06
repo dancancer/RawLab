@@ -32,6 +32,32 @@ final class DocumentImportUITests: XCTestCase {
         cancelPicker(in: app)
     }
 
+    func testFilesImportUsesPhotoContents() {
+        if ProcessInfo.processInfo.environment["RAWLAB_DOCUMENT_IMPORT_RAW"] == "1" {
+            assertPhotoImports("RawLabRawAsJPEG.jpeg")
+        }
+        assertPhotoImports("RawLabRasterAsRaw.arw")
+        assertPhotoImports("RawLabPhotoWithoutExtension")
+
+        let app = launchEditor()
+        app.buttons["editor.import.file"].tap()
+        selectFile("RawLabTextAsJPEG.jpeg", in: app)
+        let unsupported = app.alerts["RawLab"].firstMatch.staticTexts["Selected Item Is Not a Supported Image."].firstMatch
+        XCTAssertTrue(unsupported.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertFalse(app.descendants(matching: .any)["editor.photo"].exists)
+    }
+
+    private func assertPhotoImports(_ name: String, file: StaticString = #filePath, line: UInt = #line) {
+        let app = launchEditor()
+        let photo = app.descendants(matching: .any)["editor.photo"]
+        XCTAssertFalse(photo.exists, file: file, line: line)
+        app.buttons["editor.import.file"].tap()
+        selectFile(name, in: app)
+        let alert = app.alerts["RawLab"].firstMatch
+        waitUntil(timeout: 60, file: file, line: line) { photo.exists || alert.exists }
+        XCTAssertTrue(photo.exists, "\(name) did not reach the editor. \(app.debugDescription)", file: file, line: line)
+    }
+
     func testPhotoAndLookSelectionsReachTheirOwnImports() {
         let app = launchEditor()
         app.buttons["editor.import.file"].tap()
@@ -68,6 +94,41 @@ final class DocumentImportUITests: XCTestCase {
         waitUntil { !confirm.exists }
         openMenuImport("editor.import.look", in: app)
         cancelPicker(in: app)
+    }
+
+    func testTargetSelectionErrorsAreExported() {
+        let app = launchEditor()
+        let rejectedFile = "RawLabTextAsJPEG.jpeg"
+        let unsupported = app.staticTexts["Selected Item Is Not a Supported Image."].firstMatch
+
+        openMenuImport("collection.open", in: app)
+        app.buttons["collection.files"].tap()
+        selectFile(rejectedFile, in: app)
+        XCTAssertTrue(unsupported.waitForExistence(timeout: 15), app.debugDescription)
+        app.buttons["Close"].firstMatch.tap()
+
+        app.buttons["editor.import.file"].firstMatch.tap()
+        selectFile("RawLabImportFixture.png", in: app)
+        XCTAssertTrue(app.descendants(matching: .any)["editor.photo"].waitForExistence(timeout: 60))
+        waitUntil { app.buttons["editor.export"].isEnabled }
+        openMenuImport("adjustment.copy.open", in: app)
+        let copy = app.buttons["adjustment.copy.confirm"]
+        for _ in 0..<6 where !copy.isHittable { app.collectionViews.firstMatch.swipeUp() }
+        XCTAssertTrue(copy.isHittable && copy.isEnabled, app.debugDescription)
+        copy.tap()
+        waitUntil { !copy.exists }
+        openMenuImport("adjustment.paste.open", in: app)
+        app.buttons["adjustment.paste.chooseFiles"].tap()
+        selectFile(rejectedFile, in: app)
+        XCTAssertTrue(unsupported.waitForExistence(timeout: 15), app.debugDescription)
+        app.buttons["adjustment.transfer.close"].tap()
+
+        openMenuImport("diagnostics.export", in: app)
+        let save = app.buttons["Save"].firstMatch
+        XCTAssertTrue(save.waitForExistence(timeout: 12), app.debugDescription)
+        openLocalAppFolder(in: app)
+        save.tap()
+        waitUntil { !save.exists }
     }
 
     private func launchEditor() -> XCUIApplication {
@@ -119,6 +180,23 @@ final class DocumentImportUITests: XCTestCase {
     }
 
     private func selectFile(_ name: String, in app: XCUIApplication) {
+        openLocalAppFolder(in: app)
+        let url = URL(fileURLWithPath: name)
+        let identifiers = ["\(url.deletingPathExtension().lastPathComponent), \(url.pathExtension)",
+                           "\(name), \(url.pathExtension)"]
+        let predicate = url.pathExtension.isEmpty
+            ? NSPredicate(format: "identifier == %@ OR identifier BEGINSWITH %@", name, name + ", ")
+            : NSPredicate(format: "identifier IN %@", identifiers)
+        let file = app.cells.matching(predicate).firstMatch
+        XCTAssertTrue(file.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(file.isEnabled, "The selected file type must be accepted by the picker")
+        file.tap()
+        let open = app.buttons["Open"].firstMatch
+        if open.waitForExistence(timeout: 2) { open.tap() }
+        waitUntil { !file.exists }
+    }
+
+    private func openLocalAppFolder(in app: XCUIApplication) {
         let cancel = app.buttons["Cancel"].firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 12), app.debugDescription)
         let local = app.cells.matching(NSPredicate(format: "identifier BEGINSWITH %@", "DOC.sidebar.item.On My ")).firstMatch
@@ -137,16 +215,6 @@ final class DocumentImportUITests: XCTestCase {
                                                    "RawLab", "RawLab, ")).firstMatch
         XCTAssertTrue(folder.waitForExistence(timeout: 10), app.debugDescription)
         folder.tap()
-        let url = URL(fileURLWithPath: name)
-        let identifiers = ["\(url.deletingPathExtension().lastPathComponent), \(url.pathExtension)",
-                           "\(name), \(url.pathExtension)"]
-        let file = app.cells.matching(NSPredicate(format: "identifier IN %@", identifiers)).firstMatch
-        XCTAssertTrue(file.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(file.isEnabled, "The selected file type must be accepted by the picker")
-        file.tap()
-        let open = app.buttons["Open"].firstMatch
-        if open.waitForExistence(timeout: 2) { open.tap() }
-        waitUntil { !file.exists }
     }
 
     private func waitUntil(timeout: TimeInterval = 30, file: StaticString = #filePath, line: UInt = #line,

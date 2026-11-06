@@ -60,6 +60,7 @@ extension RawEditorViewModel {
             return true
         }
         adjustmentReloadRequired = outcome.status == .conflict
+        if let error = outcome.error { ErrorDiagnostics.log(error, operation: .editPersistence, stage: "saveEdits") }
         editSaveState = .failed(outcome.error?.localizedDescription ?? L10n.text("调整记录已恢复，请重新选择照片载入。"))
         return false
     }
@@ -81,7 +82,10 @@ extension RawEditorViewModel {
                 adjustmentSession = editPersistence.map(IOSAdjustmentTransferSession.init(store:))
                 editSaveState = .idle
                 statusMessage = L10n.text("调整记录已恢复，请重新选择照片载入。")
-            } catch { editSaveState = .failed(error.localizedDescription) }
+            } catch {
+                ErrorDiagnostics.log(error, operation: .editPersistence, stage: "reopenStore")
+                editSaveState = .failed(error.localizedDescription)
+            }
             return
         }
         saveCurrentSettings(settings)

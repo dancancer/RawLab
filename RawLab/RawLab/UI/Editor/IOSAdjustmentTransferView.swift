@@ -29,6 +29,7 @@ struct IOSAdjustmentTransferView: View {
     @State private var initialized = false
 
     private var title: String { L10n.text(synchronization != nil ? "同步调整" : preset != nil ? "应用预设" : kind == .copy ? "复制调整" : kind == .paste ? "粘贴调整" : "本次会话历史") }
+    private var diagnosticWorkflow: String { preset == nil ? "adjustmentPaste" : "presetApply" }
     private var busy: Bool { loading || model.adjustmentPreparing }
     private var ready: Bool {
         !busy && prepared?.targets.contains { !skipped.contains($0.id) } == true &&
@@ -58,11 +59,14 @@ struct IOSAdjustmentTransferView: View {
                 Button(L10n.text("关闭")) { dismiss() }.accessibilityIdentifier("adjustment.transfer.close")
             } }
             .photosPicker(isPresented: $showingPhotos, selection: $pickerItems, matching: .images, preferredItemEncoding: .current)
-            .fileImporter(isPresented: $showingFiles, allowedContentTypes: PhotoImportFile.supportedContentTypes,
+            .fileImporter(isPresented: $showingFiles, allowedContentTypes: PhotoImportFile.photoPickerContentTypes,
                           allowsMultipleSelection: true) { result in
                 switch result {
                 case .success(let urls): loadTask = Task { await addFiles(urls) }
-                case .failure(let error): message = error.localizedDescription
+                case .failure(let error):
+                    ErrorDiagnostics.log(error, operation: .adjustment, stage: "filePicker",
+                                         context: ["workflow": diagnosticWorkflow, "entryPoint": "files"])
+                    message = error.localizedDescription
                 }
             }
             .onChange(of: pickerItems) { _, items in
@@ -267,10 +271,7 @@ struct IOSAdjustmentTransferView: View {
         for item in items {
             guard !Task.isCancelled else { return }
             do {
-                let source = try await PhotoImportFile.load(from: item)
-                defer { PhotoImportFile.release(source.url) }
-                let identity = item.itemIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
-                let photo = try await model.retainAdjustmentPhoto(source, identity: identity)
+                let photo = try await model.loadAdjustmentPhoto(from: item, workflow: diagnosticWorkflow)
                 guard !Task.isCancelled else { return }
                 append(photo)
             } catch { if !Task.isCancelled { appendFailure(L10n.text("选择照片…"), error: error) } }
@@ -281,12 +282,8 @@ struct IOSAdjustmentTransferView: View {
         defer { loading = false; if !Task.isCancelled { prepare() } }
         for url in urls {
             guard !Task.isCancelled else { return }
-            let access = url.startAccessingSecurityScopedResource()
-            defer { if access { url.stopAccessingSecurityScopedResource() } }
             do {
-                let source = try PhotoImportFile.retainSource(url)
-                defer { PhotoImportFile.release(source.url) }
-                let photo = try await model.retainAdjustmentPhoto(source)
+                let photo = try await model.loadAdjustmentPhoto(fromFile: url, workflow: diagnosticWorkflow)
                 guard !Task.isCancelled else { return }
                 append(photo)
             } catch { if !Task.isCancelled { appendFailure(url.lastPathComponent, error: error) } }

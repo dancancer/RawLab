@@ -41,7 +41,13 @@ enum PhotoLibraryBatchWriter {
             didSucceed = success; writeError = error; semaphore.signal()
         }
         semaphore.wait()
-        if !didSucceed { throw BatchExportError.global(writeError?.localizedDescription ?? L10n.format("保存 %@ 失败。", String(describing: target.displayName))) }
-        if checkpointError != nil { throw BatchExportError.uncertain(L10n.text("照片已写入，但任务记录未更新，请先核对保存结果。")) }
+        if !didSucceed {
+            let message = writeError?.localizedDescription ?? L10n.format("保存 %@ 失败。", target.displayName)
+            throw BatchExportError.global(message, underlying: writeError)
+        }
+        if let checkpointError {
+            throw BatchExportError.uncertain(L10n.text("照片已写入，但任务记录未更新，请先核对保存结果。"),
+                                             underlying: checkpointError)
+        }
     }
 }

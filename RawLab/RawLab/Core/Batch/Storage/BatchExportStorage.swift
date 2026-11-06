@@ -147,7 +147,7 @@ enum BatchFileOutputStore {
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         } catch {
-            throw BatchExportError.global(error.localizedDescription)
+            throw BatchExportError.global(error.localizedDescription, underlying: error)
         }
         return directory
     }
@@ -179,12 +179,13 @@ enum BatchFileWriter {
                 try FileManager.default.moveItem(at: file, to: destination)
             }
         } catch {
-            throw BatchExportError.global(error.localizedDescription)
+            throw BatchExportError.global(error.localizedDescription, underlying: error)
         }
         do {
             try checkpoint("file:\(destination.path)")
         } catch {
-            throw BatchExportError.uncertain(L10n.text("DNG 已生成，但任务记录未更新，请先核对保存结果。"))
+            throw BatchExportError.uncertain(L10n.text("DNG 已生成，但任务记录未更新，请先核对保存结果。"),
+                                             underlying: error)
         }
     }
 }

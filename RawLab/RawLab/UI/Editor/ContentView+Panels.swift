@@ -32,6 +32,11 @@ extension ContentView {
                 }
                 .disabled(editorBusy || isEditorDraftChanged || viewModel.isImportingLooks)
                 .accessibilityIdentifier("editor.import.look")
+                Button(action: exportErrorDiagnostics) {
+                    Label(L10n.text("导出错误日志"), systemImage: "doc.text")
+                }
+                .disabled(!canStartFileExport)
+                .accessibilityIdentifier("diagnostics.export")
             } label: {
                 Image(systemName: "gearshape")
             }

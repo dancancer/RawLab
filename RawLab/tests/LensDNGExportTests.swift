@@ -19,13 +19,13 @@ import Foundation
         do {
             try missing.exportDNG(url: raw, settings: .default, lutURL: nil,
                                   outputURL: output.appendingPathComponent("invalid-raw-db.dng"), exportLongEdge: 128)
-        } catch Sony2FujiProcessor.ProcessorError.processFailed(let message) {
+        } catch Sony2FujiProcessor.ProcessorError.processFailed(let message, _) {
             rawRejected = message == "镜头数据库不可用"
         }
         do {
             try missing.exportDNG(buffer: smallBuffer, settings: .default, lutURL: nil,
                                   outputURL: output.appendingPathComponent("invalid-buffer-db.dng"))
-        } catch Sony2FujiProcessor.ProcessorError.processFailed(let message) {
+        } catch Sony2FujiProcessor.ProcessorError.processFailed(let message, _) {
             bufferRejected = message == "镜头数据库不可用"
         }
         try check(rawRejected && bufferRejected,

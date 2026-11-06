@@ -22,7 +22,13 @@ final class RawEditorViewModel: ObservableObject {
     @Published var nativeImageSize: CGSize?
     @Published var basePreviewImage: UIImage?
     @Published var hasImage = false
-    @Published var statusMessage: String?
+    @Published var statusMessage: String? {
+        didSet {
+            statusHasDiagnostics = false
+            retryLegacyX3fImport = nil
+        }
+    }
+    @Published var statusHasDiagnostics = false
     @Published var retryLegacyX3fImport: ((@escaping (RawSettings) -> Void) -> Void)?
     @Published var isBusy = false
     @Published var isExportingHDR = false
@@ -89,7 +95,9 @@ final class RawEditorViewModel: ObservableObject {
     @Published var sourceFile: PhotoSourceFile?
     @Published var sourceRevision = UUID() { didSet { hslSourceRevision &+= 1; acceptedPreviewRequest = nil; closeQuickPresets() } }
     var sourceKind: ImageSourceKind?
-    var sourceIsX3f: Bool { sourceKind == .raw && (sourceDisplayName as NSString?)?.pathExtension.lowercased() == "x3f" }
+    var sourceIsX3f: Bool {
+        sourceKind == .raw && sourceFile?.withReadAccess { $0.pathExtension.lowercased() == "x3f" } == true
+    }
     var sourceIdentity: PhotoIdentity?
     @Published var sourceDisplayName: String?
     var restoredSettings: RawSettings?
@@ -174,7 +182,11 @@ final class RawEditorViewModel: ObservableObject {
             recentLooksURL = store.directory.appendingPathComponent("recent-looks.json")
             recentLooks = RecentLooks.load(from: recentLooksURL!)
         }
-        catch { self.editPersistence = nil; editSaveState = .failed(error.localizedDescription) }
+        catch {
+            self.editPersistence = nil
+            ErrorDiagnostics.log(error, operation: .editPersistence, stage: "openStore")
+            editSaveState = .failed(error.localizedDescription)
+        }
     }
 
 }

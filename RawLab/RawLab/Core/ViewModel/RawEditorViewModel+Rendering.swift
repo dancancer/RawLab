@@ -112,6 +112,9 @@ extension RawEditorViewModel {
         let existingOrientation = sourceOrientation
         let usesRaw = sourceKind == .raw
         let sourceFile = self.sourceFile
+        let diagnosticContext = ["sourceKind": usesRaw ? "raw" : "raster",
+                                 "mode": settings.isHDREditing ? "hdr" : "sdr",
+                                 "longEdge": String(maxDimension), "quality": String(describing: quality)]
 
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
@@ -147,7 +150,9 @@ extension RawEditorViewModel {
                     } catch {
                         self.resultDelivery {
                             guard self.sourceRevision==sourceRevision,self.isLatestRenderID(renderID) else { return }
-                            self.previewFailed=true; self.statusMessage=error.localizedDescription
+                            self.previewFailed = true
+                            self.reportError(error, operation: .preview, stage: "renderHDR",
+                                             attemptID: renderID, context: diagnosticContext)
                         }
                     }
                 }
@@ -215,7 +220,8 @@ extension RawEditorViewModel {
                                 return
                             }
                             self.previewFailed = true
-                            self.statusMessage = error.localizedDescription
+                            self.reportError(error, operation: .preview, stage: "renderRAW",
+                                             attemptID: renderID, context: diagnosticContext)
                         }
                     }
                 }
@@ -234,7 +240,9 @@ extension RawEditorViewModel {
                 catch {
                     self.resultDelivery {
                         guard self.sourceRevision==sourceRevision,self.isLatestRenderID(renderID) else { return }
-                        self.previewFailed=true; self.statusMessage=error.localizedDescription
+                        self.previewFailed = true
+                        self.reportError(error, operation: .preview, stage: "decodeRaster",
+                                         attemptID: renderID, context: diagnosticContext)
                     }
                     return
                 }
@@ -267,7 +275,8 @@ extension RawEditorViewModel {
                         return
                     }
                     self.previewFailed = true
-                    self.statusMessage = error.localizedDescription
+                    self.reportError(error, operation: .preview, stage: "renderRaster",
+                                     attemptID: renderID, context: diagnosticContext)
                 }
                 return
             }

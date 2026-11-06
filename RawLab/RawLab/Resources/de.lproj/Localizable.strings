@@ -239,6 +239,7 @@
 "导出已完成的 DNG 到文件…" = "Fertige DNGs in Dateien exportieren…";
 "导出渲染型 DNG" = "Entwickeltes DNG exportieren";
 "导出渲染型 DNG…" = "Entwickeltes DNG exportieren…";
+"导出错误日志" = "Fehlerprotokoll exportieren";
 "导出长边像素" = "Lange Seite beim Export (Pixel)";
 "导出长边必须为 1-65535 像素。" = "Die lange Seite muss 1-65535 Pixel betragen.";
 "将以下项目转为独立调整，以保留其他分组的当前效果：%@" = "Die folgenden Werte werden in unabhängige Anpassungen umgewandelt, damit die aktuelle Wirkung anderer Gruppen erhalten bleibt: %@";
@@ -381,6 +382,7 @@
 "无法写入成片，请检查输出位置和剩余空间。" = "Das exportierte Foto kann nicht geschrieben werden. Überprüfen Sie den Ausgabeort und den freien Speicherplatz.";
 "无法创建新的预设标识，请重试。" = "Es konnte keine neue Vorgabenkennung erstellt werden. Versuchen Sie es erneut.";
 "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。" = "Das originale RAW konnte nicht abgerufen werden. Erlauben Sie in den Systemeinstellungen den Zugriff auf dieses Foto und versuchen Sie es erneut.";
+"无法导出错误日志。" = "Das Fehlerprotokoll konnte nicht exportiert werden.";
 "无法显示处理结果" = "Verarbeitungsergebnisse können nicht angezeigt werden";
 "无法生成预览" = "Vorschau kann nicht generiert werden";
 "无法生成预览，请检查照片、LUT 和颜色配置。" = "Vorschau konnte nicht erstellt werden. Prüfen Sie Foto, LUT und Farbeinstellungen.";
@@ -405,6 +407,7 @@
 "明度：从暗到亮。" = "Helligkeit: von dunkel zu hell.";
 "显示图像" = "Anzeigebild";
 "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。" = "Rasterbilder müssen undurchsichtige 8-Bit-SDR-Bilder im Format JPEG, PNG, TIFF oder HEIF sein.";
+"暂无可导出的错误日志。" = "Es ist kein Fehlerprotokoll zum Exportieren vorhanden.";
 "暂无编辑历史。" = "Noch kein Bearbeitungsverlauf.";
 "暖调日系 · 漫射金光" = "Warmer Japan-Look · diffuses goldenes Licht";
 "暖金光影 · 质感人像" = "Warmgoldenes Licht · charaktervolles Porträt";
