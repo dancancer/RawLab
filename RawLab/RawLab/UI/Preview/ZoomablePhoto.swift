@@ -15,6 +15,8 @@ struct ZoomablePhoto: UIViewRepresentable {
     var overlayAvoidanceRect = CGRect.zero
     var interactionEnabled = true
     var onPreviewSizeChange: ((Int) -> Void)? = nil
+    private let nativePixelSize: CGSize?
+    private let previewLongEdgeLimit: Int
     var hdr: HDRDisplayImage? = nil
     var referenceHDR: HDRDisplayImage? = nil
     var hdrDisplay: HDRDisplayState? = nil
@@ -23,6 +25,7 @@ struct ZoomablePhoto: UIViewRepresentable {
          viewing: Binding<PhotoViewingState>, viewport: Binding<PhotoViewport>,
          isDraft: Bool = false, interactionEnabled: Bool = true, overlayAvoidanceRect: CGRect = .zero,
          onPreviewSizeChange: ((Int) -> Void)? = nil, hslTarget: HSLTargetCanvasInput? = nil, hslTargetPoint: CGPoint? = nil,
+         nativePixelSize: CGSize? = nil, previewLongEdgeLimit: Int = PhotoZoomGeometry.defaultPreviewLongEdge,
          hdr: HDRDisplayImage? = nil, referenceHDR: HDRDisplayImage? = nil,hdrDisplay: HDRDisplayState? = nil) {
         self.image = image
         self.referenceImage = referenceImage
@@ -33,6 +36,8 @@ struct ZoomablePhoto: UIViewRepresentable {
         self.interactionEnabled = interactionEnabled
         self.overlayAvoidanceRect = overlayAvoidanceRect
         self.onPreviewSizeChange = onPreviewSizeChange
+        self.nativePixelSize = nativePixelSize
+        self.previewLongEdgeLimit = previewLongEdgeLimit
         self.hslTarget = hslTarget; self.hslTargetPoint = hslTargetPoint
         self.hdr=hdr; self.referenceHDR=referenceHDR; self.hdrDisplay=hdrDisplay
     }
@@ -55,6 +60,7 @@ struct ZoomablePhoto: UIViewRepresentable {
         view.configure(image: image, reference: referenceImage, label: label, state: viewing,
                        viewport: viewport, displayScale: displayScale, overlayAvoidanceRect: overlayAvoidanceRect,
                        isDraft: isDraft, interactionEnabled: interactionEnabled, hslTarget: hslTarget, hslTargetPoint: hslTargetPoint,
+                       nativePixelSize: nativePixelSize, previewLongEdgeLimit: previewLongEdgeLimit,
                        hdr:hdr,referenceHDR:referenceHDR,hdrDisplay:hdrDisplay)
     }
 }
@@ -146,8 +152,8 @@ final class PhotoCanvasView: UIView {
                 else { self.state.endTemporaryViewing() }
                 self.onViewingChange?(self.state)
             }
-            scroll.onPreviewSizeChange = { [weak self] edge in self?.onPreviewSizeChange?(edge) }
         }
+        result.onPreviewSizeChange = { [weak self] edge in self?.onPreviewSizeChange?(edge) }
         NotificationCenter.default.addObserver(self, selector: #selector(cancelTemporaryViewing),
                                                name: UIApplication.willResignActiveNotification, object: nil)
     }
@@ -158,7 +164,8 @@ final class PhotoCanvasView: UIView {
     func configure(image: UIImage, reference imageBefore: UIImage?, label: String,
                    state: PhotoViewingState, viewport: PhotoViewport, displayScale: CGFloat, overlayAvoidanceRect: CGRect = .zero,
                    isDraft: Bool, interactionEnabled: Bool, hslTarget: HSLTargetCanvasInput? = nil,
-                   hslTargetPoint: CGPoint? = nil,hdr: HDRDisplayImage? = nil,
+                   hslTargetPoint: CGPoint? = nil, nativePixelSize: CGSize? = nil,
+                   previewLongEdgeLimit: Int = PhotoZoomGeometry.defaultPreviewLongEdge, hdr: HDRDisplayImage? = nil,
                    referenceHDR: HDRDisplayImage? = nil,hdrDisplay: HDRDisplayState? = nil) {
         if self.hslTarget?.scope != hslTarget?.scope || !interactionEnabled || isDraft || self.viewport != viewport {
             cancelTargetInput()
@@ -177,8 +184,9 @@ final class PhotoCanvasView: UIView {
         self.viewport = viewport
         self.isDraft = isDraft
         self.interactionEnabled = interactionEnabled
-        let pixels = CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
+        let pixels = nativePixelSize ?? CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
         let sideBySide = displayState.enabled && displayState.preferredMode == .sideBySide && !isDraft
+        result.previewLongEdgeLimit = previewLongEdgeLimit
         for scroll in [result, reference] {
             scroll.pixels = pixels
             scroll.displayScale = displayScale
@@ -444,6 +452,7 @@ final class PhotoScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecogn
     var comparisonImage: UIImage? { didSet { beforeImageView.image = comparisonImage; updateWipe() } }
     var wipePosition: CGFloat = 0.5 { didSet { updateWipe() } }
     var pixels = CGSize.zero
+    var previewLongEdgeLimit = PhotoZoomGeometry.defaultPreviewLongEdge
     var displayScale: CGFloat = 1
     var photoMargin = true
     var canvasActionsEnabled = true
@@ -581,8 +590,8 @@ final class PhotoScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecogn
         beforeImageView.layer.mask = mask
     }
     private func reportPreviewSize() {
-        guard !updatingGeometry, let geometry else { return }
-        let edge = geometry.previewLongEdge(scale: zoomScale)
+        guard !updatingGeometry, onPreviewSizeChange != nil, let geometry else { return }
+        let edge = geometry.previewLongEdge(scale: zoomScale, limit: previewLongEdgeLimit)
         guard reportedEdge != edge else { return }
         reportedEdge = edge
         DispatchQueue.main.async { [weak self] in self?.onPreviewSizeChange?(edge) }

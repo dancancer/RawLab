@@ -37,13 +37,27 @@ extension RawEditorViewModel {
         }
     }
 
-    func updatePreviewSize(_ edge: Int, settings: RawSettings) {
+    var viewportPreviewLimit: Int {
+        // Keep the larger working image bounded on iPad, including at extreme zoom.
+        if UIDevice.current.userInterfaceIdiom == .pad, sourceKind == .raster, !sourceIsHDR {
+            return 4096
+        }
+        return Int(previewMaxDimension)
+    }
+
+    var viewportNativeSize: CGSize? {
+        viewportPreviewLimit > Int(previewMaxDimension) ? nativeImageSize : nil
+    }
+
+    func updatePreviewSize(_ requestedEdge: Int, settings: RawSettings) {
+        let edge = min(viewportPreviewLimit, requestedEdge)
         guard activeImportRevision == nil, hasImage, edge > 0,
               edge != requestedPreviewLongEdge || (edge != previewLongEdge && previewResizeWorkItem == nil) else { return }
         currentPreviewSettings = settings
-        requestedPreviewLongEdge = min(Int(previewMaxDimension), edge)
+        requestedPreviewLongEdge = edge
         guard !isBusy else { return }
         previewResizeWorkItem?.cancel()
+        previewResizeWorkItem = nil
         previewResizePending = false
         guard requestedPreviewLongEdge != previewLongEdge else { return }
         let sourceRevision = self.sourceRevision
@@ -56,7 +70,7 @@ extension RawEditorViewModel {
             self.updatePreview(settings: self.currentPreviewSettings)
         }
         previewResizeWorkItem = commit
-        if settings.denoise.enabled {
+        if edge > Int(previewMaxDimension) || settings.denoise.enabled {
             previewResizePending = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: commit)
         } else {
@@ -78,9 +92,11 @@ extension RawEditorViewModel {
             previewResizePending = false
             previewLongEdge = requestedPreviewLongEdge
         }
-        let maxDimension = previewLongEdge
+        let isInteractiveDetail = quality == .interactive && previewLongEdge > Int(previewMaxDimension)
+        let maxDimension = isInteractiveDetail ? Int(previewMaxDimension) : previewLongEdge
         let referenceSettings = committedPreviewSettings ?? settings
-        let referenceKey = comparisonKey(settings: referenceSettings, longEdge: maxDimension)
+        let referenceEdge = isInteractiveDetail ? comparisonReferenceKey?.longEdge ?? maxDimension : maxDimension
+        let referenceKey = comparisonKey(settings: referenceSettings, longEdge: referenceEdge)
         let comparisonChanged = comparisonReferenceKey != referenceKey
         let request = PreviewRequest(settings: settings, quality: quality,
                                      includeHistogram: includeHistogram, longEdge: maxDimension)
@@ -252,7 +268,7 @@ extension RawEditorViewModel {
             do {
                 comparison = comparisonChanged ? try self.renderComparison(
                     url: nil, buffer: inputBuffer, geometry: referenceSettings.geometrySettings, processing: referenceSettings.processing,
-                            x3fMode: referenceSettings.x3fMode, lens: referenceSettings.lensSettings, longEdge: maxDimension) : nil
+                            x3fMode: referenceSettings.x3fMode, lens: referenceSettings.lensSettings, longEdge: referenceEdge) : nil
                 outputBuffer = try self.processor.processBuffer(
                     buffer: inputBuffer,
                     settings: settings,

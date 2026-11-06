@@ -2,6 +2,7 @@ import Foundation
 
 struct PhotoZoomGeometry {
     static let defaultMargin: CGFloat = 16
+    static let defaultPreviewLongEdge = 1280
 
     static func marginInset(viewport: CGSize, margin: CGFloat) -> CGFloat {
         max(0, min(margin, min(viewport.width, viewport.height) / 4))
@@ -19,7 +20,7 @@ struct PhotoZoomGeometry {
         pixelEdge = max(pixels.width, pixels.height)
     }
 
-    func previewLongEdge(scale: CGFloat, limit: Int = 1280) -> Int {
+    func previewLongEdge(scale: CGFloat, limit: Int = PhotoZoomGeometry.defaultPreviewLongEdge) -> Int {
         guard scale.isFinite, scale > 0, pixelEdge.isFinite, pixelEdge > 0 else { return limit }
         return min(limit, Int(pixelEdge), max(64, Int(ceil(pixelEdge * scale / 64)) * 64))
     }
