@@ -69,6 +69,16 @@ enum PhotoImportFile {
         return try identifyRetainedSource(retained, originalName: source.lastPathComponent)
     }
 
+    static func load(fromFile url: URL) async throws -> PhotoImportSource {
+        try await loadSource {
+            try await Task.detached(priority: .userInitiated) {
+                let accessing = url.startAccessingSecurityScopedResource()
+                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                return try retainSource(url)
+            }.value
+        }
+    }
+
     private static func identifyRetainedSource(_ url: URL, originalName: String) throws -> PhotoImportSource {
         do {
             let format = try detectFormat(at: url)

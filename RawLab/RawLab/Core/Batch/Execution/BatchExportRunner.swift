@@ -74,7 +74,7 @@ struct BatchExportRunner {
             } catch let error as BatchExportError {
                 didFail(error, job.targets[index].status == .publishing ? "publish" : "render")
                 switch error {
-                case .uncertain(let message):
+                case .uncertain(let message, _):
                     job.targets[index].status = .needsConfirmation
                     job.targets[index].errorMessage = message
                     job.globalError = message
@@ -85,7 +85,7 @@ struct BatchExportRunner {
                 case .target(let message):
                     job.targets[index].status = .failed
                     job.targets[index].errorMessage = message
-                case .global(let message):
+                case .global(let message, _):
                     job.targets[index].status = .failed
                     job.targets[index].errorMessage = message
                     job.globalError = message

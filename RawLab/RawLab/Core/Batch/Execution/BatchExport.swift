@@ -154,17 +154,27 @@ final class BatchExportModel: ObservableObject {
         var targets: [BatchTarget] = []
         var failures: [String] = []
         for item in items {
+            let attemptID = UUID()
+            var stage = "readPhotoLibrary"
+            var context = ["entryPoint": "photos"]
             do {
                 let file = try await PhotoImportFile.load(from: item)
                 defer { PhotoImportFile.release(file.url) }
+                context["sourceKind"] = file.isRaw ? "raw" : "raster"
+                context["extension"] = ErrorDiagnostics.fileNameExtension(file.url)
+                stage = "readIdentity"
                 let itemIdentity = item.itemIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
                 let identity = try await perform {
                     try itemIdentity ?? PhotoIdentity.fallback(for: file.url)
                 }
+                stage = "prepareTarget"
                 let target = try await prepareTarget(file, identity: identity, jobID: jobID,
                                                      journalStore: journalStore)
                 targets.append(target)
-            } catch { failures.append(L10n.format("所选照片：%@", String(describing: error.localizedDescription))) }
+            } catch {
+                ErrorDiagnostics.log(error, operation: .batchExport, stage: stage, attemptID: attemptID, context: context)
+                failures.append(L10n.format("所选照片：%@", error.localizedDescription))
+            }
         }
         let loaded = targets, errors = failures
         await MainActor.run {
@@ -183,14 +193,22 @@ final class BatchExportModel: ObservableObject {
         for url in urls {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            let attemptID = UUID()
+            var stage = "retainPickerSource"
+            var context = ["entryPoint": "files", "securityScope": String(accessing)]
+            context["extension"] = ErrorDiagnostics.fileNameExtension(url)
             do {
                 let source = try await perform { try PhotoImportFile.retainSource(url) }
                 defer { PhotoImportFile.release(source.url) }
+                context["sourceKind"] = source.isRaw ? "raw" : "raster"
+                stage = "readIdentity"
                 let identity = try await perform { try PhotoIdentity.fallback(for: source.url) }
+                stage = "prepareTarget"
                 targets.append(try await prepareTarget(source, identity: identity, jobID: jobID,
                                                        journalStore: journalStore))
             } catch {
-                failures.append(L10n.format("所选照片：%@", String(describing: error.localizedDescription)))
+                ErrorDiagnostics.log(error, operation: .batchExport, stage: stage, attemptID: attemptID, context: context)
+                failures.append(L10n.format("所选照片：%@", error.localizedDescription))
             }
         }
         let loaded = targets, errors = failures

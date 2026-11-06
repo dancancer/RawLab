@@ -45,6 +45,37 @@ struct ErrorDiagnosticsTests {
         let bounded = try JSONSerialization.jsonObject(with: reopened.reportData()!) as! [String: Any]
         let latest = (bounded["events"] as! [[String: Any]]).compactMap { ($0["error"] as? [String: Any])?["code"] as? Int }
         precondition(latest == [4, 5, 6], "Keep only the newest events in order")
+        try checkPrivateFileExtensions(in: directory, environment: environment)
         print("PASS: error details, import recovery, privacy, restart and bounded diagnostic history")
+    }
+
+    private static func checkPrivateFileExtensions(in directory: URL, environment: DiagnosticEnvironment) throws {
+        let folder = directory.appendingPathComponent("extensions")
+        let log = ErrorDiagnostics(directory: folder, environment: environment)
+        let error = NSError(domain: "RawLab.Test", code: 1)
+        let privateContext = ["extension": "clientalice", "declaredType": "dyn.declared-example",
+                              "providerType": "dyn.provider-example", "entryPoint": "files"]
+        log.record(error, operation: .photoImport, stage: "retainPickerSource", context: privateContext)
+        log.record(error, operation: .photoImport, stage: "renderPreview",
+                   context: ["extension": "cr3", "declaredType": "com.canon.cr3-raw-image"])
+
+        let data = try log.reportData()!
+        let report = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let events = report["events"] as! [[String: Any]]
+        precondition((events[0]["context"] as? [String: String]) == ["extension": "unknown", "entryPoint": "files"],
+                     "Unknown extensions and their dynamic type identifiers must stay out of the log")
+        precondition((events[1]["context"] as? [String: String])?["extension"] == "cr3",
+                     "A known RAW extension remains useful for diagnostics")
+
+        var oldReport = report
+        var oldEvents = events
+        oldEvents[0]["context"] = privateContext
+        oldReport["events"] = oldEvents
+        let journal = folder.appendingPathComponent("errors.json")
+        try JSONSerialization.data(withJSONObject: oldReport).write(to: journal)
+        let reopened = ErrorDiagnostics(directory: folder, environment: environment)
+        let exported = String(decoding: try reopened.reportData()!, as: UTF8.self)
+        precondition(!exported.contains("clientalice") && !exported.contains("dyn."),
+                     "Exporting a v1 journal created by an older build must also mask private extensions")
     }
 }

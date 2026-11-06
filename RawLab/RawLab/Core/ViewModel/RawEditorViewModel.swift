@@ -22,7 +22,12 @@ final class RawEditorViewModel: ObservableObject {
     @Published var nativeImageSize: CGSize?
     @Published var basePreviewImage: UIImage?
     @Published var hasImage = false
-    @Published var statusMessage: String? { didSet { statusHasDiagnostics = false } }
+    @Published var statusMessage: String? {
+        didSet {
+            statusHasDiagnostics = false
+            retryLegacyX3fImport = nil
+        }
+    }
     @Published var statusHasDiagnostics = false
     @Published var retryLegacyX3fImport: ((@escaping (RawSettings) -> Void) -> Void)?
     @Published var isBusy = false

@@ -33,6 +33,7 @@ struct IOSBatchSelectionView: View {
                             Spacer()
                             Button(L10n.text("从文件导入")) { showFiles = true }.accessibilityIdentifier("collection.files")
                         }
+                        .buttonStyle(.borderless)
                         HStack {
                             Button(L10n.text("全选")) { collection.selection.selectAll(true) }
                             Spacer()
@@ -142,10 +143,8 @@ struct IOSBatchSelectionView: View {
         defer { loading = false }
         for url in urls {
             guard !Task.isCancelled else { return }
-            let access = url.startAccessingSecurityScopedResource()
-            defer { if access { url.stopAccessingSecurityScopedResource() } }
             do {
-                let source = try PhotoImportFile.retainSource(url)
+                let source = try await PhotoImportFile.load(fromFile: url)
                 defer { PhotoImportFile.release(source.url) }
                 let photo = try await model.retainAdjustmentPhoto(source)
                 guard !Task.isCancelled else { return }

@@ -19,6 +19,34 @@ final class ErrorDiagnostics {
         case photoImport, preview, photoExport, lookImport, batchExport, editPersistence, adjustment
     }
 
+    private static let photoExtensions: Set<String> = [
+        "3fr", "arq", "arw", "cr2", "cr3", "crw", "dcr", "dng", "erf", "fff", "heic", "heif",
+        "iiq", "jpeg", "jpg", "kdc", "mos", "mrw", "nef", "nrw", "orf", "pef", "png", "raf", "raw",
+        "rw2", "rwl", "sr2", "srf", "srw", "tif", "tiff", "x3f"
+    ]
+
+    static func fileNameExtension(_ url: URL) -> String? {
+        let suffix = url.pathExtension.lowercased()
+        return suffix.isEmpty ? nil : allowedExtension(suffix)
+    }
+
+    private static func allowedExtension(_ suffix: String) -> String {
+        photoExtensions.contains(suffix) ? suffix : "unknown"
+    }
+
+    private static func redactedContext(_ values: [String: String]) -> [String: String] {
+        var context = values
+        if let suffix = context["extension"] {
+            let allowed = allowedExtension(suffix)
+            context["extension"] = allowed
+            if allowed == "unknown" { context["declaredType"] = nil }
+        }
+        for key in ["declaredType", "providerType", "detectedType"] where context[key]?.hasPrefix("dyn.") == true {
+            context[key] = nil
+        }
+        return context
+    }
+
     private struct ErrorCode: Codable {
         let domain: String
         let code: Int
@@ -60,7 +88,7 @@ final class ErrorDiagnostics {
         let stage: String
         let attemptID: UUID?
         let outcome: String
-        let context: [String: String]
+        var context: [String: String]
         let error: Failure?
     }
 
@@ -147,7 +175,12 @@ final class ErrorDiagnostics {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return try encoder.encode(Report(events: entries))
+        let redacted = entries.map { event in
+            var event = event
+            event.context = Self.redactedContext(event.context)
+            return event
+        }
+        return try encoder.encode(Report(events: redacted))
     }
 }
 
@@ -182,10 +215,11 @@ extension ErrorDiagnostics {
         let nsError = error as NSError
         guard !(nsError.domain == NSCocoaErrorDomain && nsError.code == NSUserCancelledError),
               !(nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled) else { return false }
+        let diagnosticSource = (error as? BatchExportError)?.underlyingError ?? error
         let native: DiagnosticNativeError?
-        if let error = error as? HDRNativeError {
+        if let error = diagnosticSource as? HDRNativeError {
             native = .init(status: Int(error.status.rawValue), reason: Int(error.reason), field: Int(error.field))
-        } else if let error = error as? Sony2FujiProcessor.ProcessorError, let status = error.diagnosticStatus {
+        } else if let error = diagnosticSource as? Sony2FujiProcessor.ProcessorError, let status = error.diagnosticStatus {
             native = .init(status: Int(status.rawValue))
         } else {
             native = nil
@@ -196,11 +230,9 @@ extension ErrorDiagnostics {
 
     static func fileContext(_ url: URL, inspectContent: Bool = false) -> [String: String] {
         var values: [String: String] = [:]
-        let suffix = url.pathExtension.lowercased()
-        if !suffix.isEmpty, suffix.utf8.count <= 12,
-           suffix.utf8.allSatisfy({ (48...57).contains($0) || (97...122).contains($0) }) {
+        if let suffix = fileNameExtension(url) {
             values["extension"] = suffix
-            values["declaredType"] = UTType(filenameExtension: suffix)?.identifier
+            if suffix != "unknown" { values["declaredType"] = UTType(filenameExtension: suffix)?.identifier }
         }
         if let resource = try? url.resourceValues(forKeys: [.fileSizeKey, .contentTypeKey, .isUbiquitousItemKey]) {
             if let size = resource.fileSize { values["bytes"] = String(size) }
@@ -214,16 +246,18 @@ extension ErrorDiagnostics {
                 if let height = properties[kCGImagePropertyPixelHeight] as? Int { values["height"] = String(height) }
             }
         }
-        return values
+        return redactedContext(values)
     }
 }
 
 extension RawEditorViewModel {
+    @discardableResult
     func reportError(_ error: Error, operation: ErrorDiagnostics.Operation, stage: String,
-                     attemptID: UUID? = nil, context: [String: String] = [:], message: String? = nil) {
-        guard ErrorDiagnostics.log(error, operation: operation, stage: stage, attemptID: attemptID, context: context) else { return }
+                     attemptID: UUID? = nil, context: [String: String] = [:], message: String? = nil) -> Bool {
+        guard ErrorDiagnostics.log(error, operation: operation, stage: stage, attemptID: attemptID, context: context) else { return false }
         statusMessage = message ?? error.localizedDescription
         statusHasDiagnostics = true
+        return true
     }
 }
 #endif

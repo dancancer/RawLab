@@ -228,7 +228,6 @@ struct ContentView: View {
             }
             Button(L10n.text("关闭"), role: .cancel) {
                 viewModel.statusMessage = nil
-                viewModel.retryLegacyX3fImport = nil
             }
         } message: {
             ScrollView {

@@ -129,7 +129,6 @@ extension RawEditorViewModel {
         onSettingsRestored: ((RawSettings) -> Void)? = nil
     ) -> UUID {
         cancelQueuedSettingsSave()
-        retryLegacyX3fImport = nil
         adjustmentInteraction = nil
         adjustmentInteractionRejected = false
         statusMessage = nil
@@ -359,12 +358,12 @@ extension RawEditorViewModel {
                         guard self.activeImportRevision == importRevision else { return }
                         self.invalidatePreviewRequests()
                         self.activeImportRevision = nil
-                        self.reportError(error, operation: .photoImport, stage: failureStage,
-                                         attemptID: importRevision, context: failureContext)
+                        let presented = self.reportError(error, operation: .photoImport, stage: failureStage,
+                                                         attemptID: importRevision, context: failureContext)
                         self.isBusy = false
                         if let previous=self.importPreviousRevision { self.sourceRevision=previous }
                         self.importPreviousRevision=nil
-                        if source.isRaw, source.url.pathExtension.lowercased() == "x3f",
+                        if presented, source.isRaw, source.url.pathExtension.lowercased() == "x3f",
                            attemptedX3fMode == .normal, let failedSource {
                             self.retryLegacyX3fImport = { [weak self] restored in
                                 self?.importImage(from: source, identity: importIdentity, settings: settings,
