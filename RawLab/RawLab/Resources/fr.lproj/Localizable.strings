@@ -406,7 +406,6 @@
 "明度" = "Luminosité";
 "明度：从暗到亮。" = "Luminosité : du sombre au clair.";
 "显示图像" = "Image affichée";
-"普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。" = "L’image doit être opaque, SDR 8 bits, au format JPEG, PNG, TIFF ou HEIF.";
 "暂无可导出的错误日志。" = "Aucun journal des erreurs à exporter.";
 "暂无编辑历史。" = "Aucun historique de modification.";
 "暖调日系 · 漫射金光" = "Style japonais chaud · lumière dorée diffuse";
@@ -642,6 +641,7 @@
 "请输入不同的预设名称。" = "Saisissez un autre nom pour le préréglage.";
 "请输入预设名称。" = "Saisissez un nom pour le préréglage.";
 "请选择" = "Choisir…";
+"请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。" = "Choisissez une image SDR opaque : JPEG, PNG, TIFF ou HEIF 8 bits, ou TIFF RVB 16 bits.";
 "调整" = "Réglages";
 "调整内容无法读取，请重新复制。" = "Les réglages ne peuvent pas être lus. Copiez-les à nouveau.";
 "调整前" = "Avant";

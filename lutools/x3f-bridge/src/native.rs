@@ -1,5 +1,6 @@
 //! Own the native reader so cancellation reaches decode and processing, without
 //! changing or depending on the private layout of x3f_core::Reader.
+use crate::native_settings::MerrillSettings;
 use std::{ffi::CString, path::Path, ptr, sync::atomic::AtomicBool};
 use x3f_sys::{self as sys, Control};
 
@@ -65,10 +66,14 @@ fn open(path: &Path, control: Control<'_>) -> Result<Reader, sys::Error> {
 
 pub fn render(
     path: &Path,
-    spp: bool,
+    merrill: Option<&MerrillSettings>,
     cancel: &AtomicBool,
 ) -> Result<(Vec<f32>, u32, u32), sys::Error> {
     let control = Control::new(cancel).with_denoise_backend(sys::DenoiseBackend::Cpu);
+    let control = match merrill {
+        Some(settings) => control.with_merrill_adjustments(&settings.adjustments),
+        None => control,
+    };
     let reader = open(path, control)?;
     unsafe {
         for entry in [
@@ -96,9 +101,9 @@ pub fn render(
             i32::from((*reader.raw).header.version < 0x40000),
             ptr::null_mut(),
             sys::ProcessingOptions {
-                color_mode: Some(sys::ColorMode::AsShot),
-                spp_denoise: spp,
-                rgb_chroma_lut: Some(!spp),
+                color_mode: Some(merrill.map_or(sys::ColorMode::AsShot, |s| s.color_mode)),
+                spp_denoise: merrill.is_some(),
+                rgb_chroma_lut: Some(merrill.is_none()),
                 ..Default::default()
             },
             control,

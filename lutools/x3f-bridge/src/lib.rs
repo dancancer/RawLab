@@ -105,9 +105,12 @@ fn decode(
     if &header[..4] != b"FOVb" {
         return Err("Invalid X3F signature".into());
     }
-    if pipeline == 2 {
-        native_settings::validate_merrill(&settings::parse(&header)?)?;
-    }
+    let merrill = if pipeline == 2 {
+        let settings = settings::parse_merrill(&header)?;
+        Some(native_settings::merrill(&settings)?)
+    } else {
+        None
+    };
     if pipeline == 1 {
         native_settings::validate_quattro(path)?;
     }
@@ -144,7 +147,7 @@ fn decode(
         return Ok((pixels, scene.width, scene.height, orientation));
     }
     let (pixels, width, height) =
-        native::render(path, pipeline == 2, cancel).map_err(|e| e.to_string())?;
+        native::render(path, merrill.as_ref(), cancel).map_err(|e| e.to_string())?;
     Ok((pixels, width, height, orientation))
 }
 

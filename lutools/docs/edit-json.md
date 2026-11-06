@@ -269,11 +269,12 @@ successful file encoding alone is not evidence of applied lens correction.
 
 ### Raster input boundary
 
-`input.type: "raster"` is a macOS capability for one opaque 8-bit SDR JPEG,
-PNG, TIFF or HEIF frame. The supported input is single-frame, sRGB display
-data; 16-bit, alpha, floating-point, HDR, CMYK and other image variants are
-rejected before processing. Other platforms must advertise raster only when
-their capability response provides the same contract.
+`input.type: "raster"` accepts one opaque 8-bit SDR JPEG, PNG, TIFF or HEIF
+frame on macOS. The capability response also advertises
+`tiff_bits_per_component: [8,16]` for integer RGB TIFF. The adapter converts
+tagged RGB to sRGB and preserves TIFF precision through processing. Alpha,
+floating-point, HDR, CMYK and other high-bit-depth formats are rejected.
+Check the capability response for other platforms' supported inputs.
 
 Raster recipes use `edits.exposure.mode: "sensor"` and
 `edits.white_balance.mode: "none"`; omitting white balance has the same

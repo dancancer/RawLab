@@ -61,15 +61,22 @@ for this display-referred path without implementing its separate tone contract.
 | Camera family | Renderer | Saved-setting boundary |
 | --- | --- | --- |
 | DP1S | CAMF scene calibration and a frozen empirical response | EV [-8,8], positive RGB color-wheel gains, contrast/highlights/shadows/saturation [-0.5,0.5], Fill Light [-0.5,0.6]; zero sharpness, supported color rendering; unknown nonzero controls rejected |
-| Merrill | Pinned native SPP-style renderer | Neutral color mode, verified neutral seven controls, identity color wheel and matching neutral extension profile |
+| Merrill | Pinned native SPP-style renderer | Supported as-shot CAMF modes (Standard, Vivid, Neutral, Portrait, Landscape, FOV Classic Blue); saved exposure, contrast, shadows, highlights and saturation in [-2,2] within the native tone extent. Zero sharpness and Fill Light, identity color wheel. |
 | Quattro | Pinned native AsShot renderer | Camera AsShot when SPPA is absent, or the exact verified neutral SPPA parameter profile |
 | Other Classic cameras | Unavailable in normal-v1 | Explicit error; legacy remains selectable |
 
 Family dispatch does not establish calibration for every camera body. In particular,
 the DP1S response must never be applied to SD14, SD15, DP1 or DP2 merely because
 they share a sensor generation. Merrill/Quattro coverage is limited by the
-available reference photographs. Non-neutral SPPA controls, unsupported color
-modes and unknown extension settings fail explicitly rather than being ignored.
+available reference photographs. Non-neutral Quattro SPPA controls and
+unsupported named settings still fail explicitly.
+
+Merrill uses the saved exposure and tone controls in the native tone curve,
+with contrast added to the camera mode's CAMF compensation. Saved saturation
+scales chroma around linear sRGB luminance before output clipping. This is
+RawLab's rendering of the saved saturation value; it does not imply a pixel
+match with Sigma Photo Pro. Unrecognized Merrill header extension types are
+skipped as directed by the [Foveon X3F specification](https://libopenraw.freedesktop.org/formats/x3f/x3f-raw-format.pdf).
 
 The DP1S response approximates SPP from measured photographs. Exact Classic
 ColorDQ/Retinex research kernels remain separate experiments: their real sensor

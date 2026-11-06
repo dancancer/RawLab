@@ -1823,13 +1823,13 @@
     "ja": "出力のハイライトと黒レベルのクリッピングを表示",
     "zh-Hans": "显示输出高光与黑位裁切"
   },
-  "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。": {
-    "de": "Rasterbilder müssen undurchsichtige 8-Bit-SDR-Bilder im Format JPEG, PNG, TIFF oder HEIF sein.",
-    "en": "Raster input requires an opaque 8-bit SDR JPEG, PNG, TIFF, or HEIF image.",
-    "es": "La imagen debe ser opaca, SDR de 8 bits, en formato JPEG, PNG, TIFF o HEIF.",
-    "fr": "L’image doit être opaque, SDR 8 bits, au format JPEG, PNG, TIFF ou HEIF.",
-    "ja": "通常画像は、不透明な8ビットSDRのJPEG、PNG、TIFF、HEIFに対応しています。",
-    "zh-Hans": "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。"
+  "请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。": {
+    "de": "Wähle ein undurchsichtiges SDR-Bild: JPEG, PNG, TIFF oder HEIF mit 8 Bit oder RGB-TIFF mit 16 Bit.",
+    "en": "Choose an opaque SDR image: 8-bit JPEG, PNG, TIFF, or HEIF, or 16-bit RGB TIFF.",
+    "es": "Elige una imagen SDR opaca: JPEG, PNG, TIFF o HEIF de 8 bits, o TIFF RGB de 16 bits.",
+    "fr": "Choisissez une image SDR opaque : JPEG, PNG, TIFF ou HEIF 8 bits, ou TIFF RVB 16 bits.",
+    "ja": "不透明なSDR画像を選択してください。8ビットのJPEG、PNG、TIFF、HEIF、または16ビットのRGB TIFFに対応しています。",
+    "zh-Hans": "请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。"
   },
   "暖调日系 · 漫射金光": {
     "de": "Warmer Japan-Look · diffuses goldenes Licht",

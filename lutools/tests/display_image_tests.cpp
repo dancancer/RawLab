@@ -146,7 +146,8 @@ FixtureImage hdrImage(CGColorSpaceRef colorSpace) {
 }
 
 bool writeImage(const std::filesystem::path& path, CFStringRef type, CGImageRef image,
-                CFDictionaryRef properties = nullptr, size_t frameCount = 1) {
+                CFDictionaryRef properties = nullptr, size_t frameCount = 1,
+                CGImageRef lastFrame = nullptr) {
     const auto pathString = path.u8string();
     auto* url = CFURLCreateFromFileSystemRepresentation(
         kCFAllocatorDefault, reinterpret_cast<const UInt8*>(pathString.data()), pathString.size(), false);
@@ -155,8 +156,10 @@ bool writeImage(const std::filesystem::path& path, CFStringRef type, CGImageRef 
         url, type, frameCount, nullptr);
     CFRelease(url);
     if (!destination) return false;
-    for (size_t index = 0; index < frameCount; ++index)
-        CGImageDestinationAddImage(destination, image, properties);
+    for (size_t index = 0; index < frameCount; ++index) {
+        if (lastFrame && index == frameCount - 1) CGImageDestinationAddImage(destination, lastFrame, nullptr);
+        else CGImageDestinationAddImage(destination, image, properties);
+    }
     const bool finalized = CGImageDestinationFinalize(destination);
     CFRelease(destination);
     return finalized;
@@ -262,6 +265,140 @@ void expectEmptyPathClearsBuffer() {
     sony2fuji_release_buffer(&buffer);
 }
 
+enum class TIFFPageMarker : uint16_t { NewSubfileType = 254, OldSubfileType = 255, PageNumber = 297 };
+
+bool writeTIFFWithMarkedSecondPage(const std::filesystem::path& source,
+                                  const std::filesystem::path& destination, TIFFPageMarker marker) {
+    // Append a copy of ImageIO's second IFD with a page tag. All other offsets stay valid.
+    std::ifstream input(source, std::ios::binary);
+    const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>());
+    if (bytes.size() < 8 || bytes.size() >= UINT32_MAX || bytes[0] != bytes[1] ||
+        (bytes[0] != 'I' && bytes[0] != 'M')) return false;
+    const bool littleEndian = bytes[0] == 'I';
+    const auto read = [&](size_t offset, size_t size) {
+        uint32_t value = 0;
+        for (size_t i = 0; i < size; ++i)
+            value = (value << 8) | bytes.at(offset + (littleEndian ? size - 1 - i : i));
+        return value;
+    };
+    if (read(2, 2) != 42) return false;
+    const size_t first = read(4, 4);
+    const size_t nextOffset = first + 2 + read(first, 2) * 12;
+    const size_t second = read(nextOffset, 4);
+    const uint32_t entryCount = read(second, 2);
+    const size_t entries = second + 2;
+    const size_t end = entries + entryCount * 12;
+    if (second == 0 || entryCount == 0 || entryCount == UINT16_MAX || read(end, 4) != 0)
+        return false;
+    const auto tag = static_cast<uint16_t>(marker);
+    size_t insert = entries;
+    while (insert < end && read(insert, 2) < tag) insert += 12;
+    const bool replaceTag = insert < end && read(insert, 2) == tag;
+
+    std::ofstream output(destination, std::ios::binary);
+    const auto put = [&](uint32_t value, size_t size) {
+        for (size_t i = 0; i < size; ++i)
+            output.put(static_cast<char>(value >> (8 * (littleEndian ? i : size - 1 - i))));
+    };
+    output.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    if (bytes.size() % 2) output.put(0);
+    const auto markedIFD = static_cast<uint32_t>(output.tellp());
+    put(entryCount + (replaceTag ? 0 : 1), 2);
+    output.write(reinterpret_cast<const char*>(bytes.data() + entries), insert - entries);
+    put(tag, 2);
+    if (marker == TIFFPageMarker::NewSubfileType) {
+        put(4, 2); // LONG
+        put(1, 4);
+        put(2, 4); // Page bit
+    } else {
+        put(3, 2); // SHORT
+        if (marker == TIFFPageMarker::OldSubfileType) {
+            put(1, 4);
+            put(3, 2); // Page enumeration value
+            put(0, 2); // Padding
+        } else {
+            put(2, 4);
+            put(1, 2); // Second page, using a zero-based index
+            put(2, 2); // Two pages
+        }
+    }
+    const size_t remaining = insert + (replaceTag ? 12 : 0);
+    output.write(reinterpret_cast<const char*>(bytes.data() + remaining), end - remaining);
+    put(0, 4); // No next IFD
+    output.seekp(nextOffset);
+    put(markedIFD, 4);
+    return output.good();
+}
+
+void checkTiff16(const std::filesystem::path& root, CGColorSpaceRef sRGB) {
+    auto fixture = rgb16Image(2, 3, sRGB);
+    constexpr size_t order[8][6] = {
+        {0, 1, 2, 3, 4, 5}, {1, 0, 3, 2, 5, 4}, {5, 4, 3, 2, 1, 0}, {4, 5, 2, 3, 0, 1},
+        {0, 2, 4, 1, 3, 5}, {4, 2, 0, 5, 3, 1}, {5, 3, 1, 4, 2, 0}, {1, 3, 5, 0, 2, 4}
+    };
+    for (uint32_t orientation = 1; orientation <= 8; ++orientation) {
+        const auto path = root / ("rgb16-orientation-" + std::to_string(orientation) + ".tif");
+        auto* properties = orientationProperties(orientation);
+        check(fixture.image && properties && writeImage(path, CFSTR("public.tiff"), fixture.image, properties),
+              "Generate oriented 16-bit TIFF " + std::to_string(orientation));
+        if (properties) CFRelease(properties);
+        sony2fuji_buffer buffer{};
+        const auto status = sony2fuji_load_display_image(path.u8string().c_str(), &buffer);
+        const uint32_t width = orientation >= 5 ? 3 : 2;
+        const uint32_t height = orientation >= 5 ? 2 : 3;
+        bool matches = status == SONY2FUJI_STATUS_OK && buffer.width == width &&
+            buffer.height == height && buffer.pixel_format == SONY2FUJI_PIXEL_RGBA16 &&
+            buffer.stride_bytes == width * 8 && buffer.size_bytes == width * height * 8;
+        for (size_t i = 0; matches && i < 6; ++i) {
+            const auto* pixel = static_cast<const uint8_t*>(buffer.data) + i * 8;
+            const auto* expected = fixture.bytes.data() + order[orientation - 1][i] * 6;
+            matches = pixel[6] == 255 && pixel[7] == 255;
+            for (size_t c = 0; matches && c < 3; ++c)
+                matches = pixel[2 * c] == expected[2 * c + 1] && pixel[2 * c + 1] == expected[2 * c];
+        }
+        check(matches, "16-bit TIFF retains all channel bits and applies orientation " + std::to_string(orientation));
+        sony2fuji_release_buffer(&buffer);
+    }
+
+    auto mainImage = rgb16Image(300, 200, sRGB);
+    auto preview = rgbImage(160, 106, sRGB, std::vector<uint8_t>(160 * 106 * 3, 127));
+    const auto path = root / "sigma-photo-pro.tif";
+    const void* softwareKeys[] = {kCGImagePropertyTIFFSoftware};
+    const void* softwareValues[] = {CFSTR("SIGMA Photo Pro 6.9.0")};
+    auto* tiff = CFDictionaryCreate(kCFAllocatorDefault, softwareKeys, softwareValues, 1,
+        &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    const void* keys[] = {kCGImagePropertyTIFFDictionary};
+    const void* values[] = {tiff};
+    auto* properties = CFDictionaryCreate(kCFAllocatorDefault, keys, values, 1,
+        &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    check(mainImage.image && preview.image && writeImage(path, CFSTR("public.tiff"), mainImage.image,
+          properties, 2, preview.image), "Generate Sigma TIFF with a separate preview IFD");
+    CFRelease(properties);
+    CFRelease(tiff);
+    sony2fuji_buffer buffer{};
+    const auto status = sony2fuji_load_display_image(path.u8string().c_str(), &buffer);
+    check(status == SONY2FUJI_STATUS_OK && buffer.width == 300 && buffer.height == 200 &&
+          buffer.pixel_format == SONY2FUJI_PIXEL_RGBA16, "Sigma TIFF imports the main image");
+    sony2fuji_release_buffer(&buffer);
+
+    for (const auto marker : {TIFFPageMarker::NewSubfileType, TIFFPageMarker::OldSubfileType,
+                              TIFFPageMarker::PageNumber}) {
+        const auto tag = std::to_string(static_cast<uint16_t>(marker));
+        const auto markedPage = root / ("sigma-with-page-tag-" + tag + ".tif");
+        if (writeTIFFWithMarkedSecondPage(path, markedPage, marker)) {
+            expectUnsupported(markedPage, "Sigma TIFF with second-IFD page tag " + tag, true);
+        } else {
+            check(false, "Generate a Sigma TIFF with page tag " + tag);
+        }
+    }
+
+    const auto multipage = root / "rgb16-multipage.tif";
+    check(mainImage.image && preview.image && writeImage(multipage, CFSTR("public.tiff"), mainImage.image,
+          nullptr, 2, preview.image), "Generate two-page TIFF without Sigma writer metadata");
+    expectUnsupported(multipage, "TIFF16 with another page");
+}
+
 void runAppleTests() {
     const auto root = std::filesystem::temp_directory_path() /
         ("rawlab-display-image-" + std::to_string(getpid()));
@@ -361,6 +498,7 @@ void runAppleTests() {
     const auto tiffStatus = sony2fuji_load_display_image(tiff.u8string().c_str(), &tiffBuffer);
     check(tiffStatus == SONY2FUJI_STATUS_OK, "TIFF decodes when the system encoder is available");
     sony2fuji_release_buffer(&tiffBuffer);
+    checkTiff16(root, sRGB);
 
     const auto heif = root / "photo.heic";
     bool heifWritten = fixture.image && writeImage(heif, CFSTR("public.heic"), fixture.image);

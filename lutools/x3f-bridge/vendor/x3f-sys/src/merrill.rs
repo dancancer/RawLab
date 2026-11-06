@@ -185,6 +185,42 @@ pub(crate) struct ToneSettings {
     pub alternate: bool,
 }
 
+/// Creative controls from a Merrill X3F header, separate from CAMF calibration.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct MerrillAdjustments {
+    exposure: f64,
+    contrast: f64,
+    shadows: f64,
+    highlights: f64,
+    saturation: f64,
+}
+
+impl MerrillAdjustments {
+    pub fn new(
+        exposure: f64,
+        contrast: f64,
+        shadows: f64,
+        highlights: f64,
+        saturation: f64,
+    ) -> Result<Self> {
+        if [exposure, contrast, shadows, highlights, saturation]
+            .iter()
+            .any(|v| !(-2.0..=2.0).contains(v))
+        {
+            return Err(Error::InvalidData(
+                "saved Merrill tone or saturation is outside the supported range",
+            ));
+        }
+        Ok(Self {
+            exposure,
+            contrast,
+            shadows,
+            highlights,
+            saturation,
+        })
+    }
+}
+
 fn invalid_tone() -> Error {
     Error::InvalidData("unsupported or degenerate Merrill tone parameters")
 }
@@ -381,18 +417,21 @@ fn color_mode_curve(
     control: Control<'_>,
 ) -> Result<(Vec<f32>, f64)> {
     match params.sensor {
-        crate::ColorModeSensor::Merrill => generate_merrill_tone_curve(
-            params.tone,
-            ToneSettings {
-                pixel_saturation: params.pixel_saturation,
-                exposure,
-                shadows: 0.0,
-                contrast: params.contrast,
-                highlights: 0.0,
-                alternate: false,
-            },
-            control,
-        ),
+        crate::ColorModeSensor::Merrill => {
+            let saved = control.merrill_adjustments.copied().unwrap_or_default();
+            generate_merrill_tone_curve(
+                params.tone,
+                ToneSettings {
+                    pixel_saturation: params.pixel_saturation,
+                    exposure: exposure + saved.exposure,
+                    shadows: saved.shadows,
+                    contrast: params.contrast + saved.contrast,
+                    highlights: saved.highlights,
+                    alternate: false,
+                },
+                control,
+            )
+        }
         crate::ColorModeSensor::Quattro => generate_quattro_tone_curve(params, exposure, control),
     }
 }
@@ -555,6 +594,7 @@ pub struct RenderLuts {
     tone: Vec<u16>,
     gamma: Vec<u16>,
     fixed: [i32; 9],
+    saturation_scale: f64,
 }
 
 impl RenderLuts {
@@ -569,6 +609,13 @@ impl RenderLuts {
         if !matches!(native_target, 2 | 3 | 11) {
             return Err(Error::InvalidData("unsupported color mode output target"));
         }
+        let saturation_scale = match control.merrill_adjustments {
+            Some(saved) if params.sensor == crate::ColorModeSensor::Merrill && native_target == 2 => {
+                saved.saturation.exp2()
+            }
+            Some(_) => return Err(Error::InvalidData("saved Merrill adjustments require sRGB")),
+            None => 1.0,
+        };
         let mut fixed = [0; 9];
         for (dest, value) in fixed.iter_mut().zip(output_matrix) {
             let scaled = value.mul_add(4096.0, 0.5);
@@ -581,6 +628,7 @@ impl RenderLuts {
             tone: generate_color_mode_tone_lut(params, exposure, control)?,
             gamma: generate_gamma_lut(native_target),
             fixed,
+            saturation_scale,
         })
     }
 
@@ -603,6 +651,7 @@ impl RenderLuts {
             tone: generate_tone_lut(params, settings, control)?,
             gamma: generate_gamma_lut(native_target),
             fixed,
+            saturation_scale: 1.0,
         })
     }
 
@@ -627,13 +676,22 @@ impl RenderLuts {
     /// Each index must be in 0..65536. Results use the 0..65535 linear range.
     pub fn render_linear_indices(&self, indices: [usize; 3]) -> [u16; 3] {
         let tone = indices.map(|i| self.tone[i] as i32);
-        std::array::from_fn(|r| {
+        let rgb: [i32; 3] = std::array::from_fn(|r| {
             // MUL/MADD W in output48row wrap at 32 bits before signed shift.
             let mut sum = 2048_i32;
             for (c, sample) in tone.iter().enumerate() {
                 sum = sum.wrapping_add(self.fixed[3 * r + c].wrapping_mul(*sample));
             }
-            (sum >> 12).clamp(0, 65535) as u16
+            sum >> 12
+        });
+        if self.saturation_scale == 1.0 {
+            return rgb.map(|v| v.clamp(0, 65535) as u16);
+        }
+        // Scale chroma around linear sRGB luminance before output clipping.
+        let [r, g, b] = rgb.map(f64::from);
+        let luma = r + 0.7152 * (g - r) + 0.0722 * (b - r);
+        [r, g, b].map(|v| {
+            (luma + self.saturation_scale * (v - luma)).round().clamp(0.0, 65535.0) as u16
         })
     }
 }
@@ -866,6 +924,45 @@ mod tests {
         }
     }
 
+    #[test]
+    fn saved_merrill_contrast_changes_tone_and_saturation_preserves_gray() {
+        let mode = crate::ColorModeParameters {
+            mode: crate::ColorMode::Vivid,
+            sensor: crate::ColorModeSensor::Merrill,
+            as_shot_fallback: false,
+            creative_matrix: None,
+            contrast: 0.1,
+            tone: params(),
+            inverse_gamma: 1.0 / 2.2,
+            pixel_saturation: 4095.0,
+        };
+        let matrix = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        let render = |saved| {
+            RenderLuts::from_color_mode(
+                &mode,
+                0.0,
+                matrix,
+                2,
+                Control::none().with_merrill_adjustments(&saved),
+            )
+            .unwrap()
+        };
+        let neutral = render(MerrillAdjustments::default());
+        let contrast = render(MerrillAdjustments::new(0.0, 0.2, 0.0, 0.0, 0.0).unwrap());
+        assert_ne!(
+            contrast.render_indices([1600; 3]),
+            neutral.render_indices([1600; 3])
+        );
+        let saturation = render(MerrillAdjustments::new(0.0, 0.0, 0.0, 0.0, 0.2).unwrap());
+        assert_eq!(
+            saturation.render_linear_indices([1600; 3]),
+            neutral.render_linear_indices([1600; 3])
+        );
+        let [r, g, _] = neutral.render_linear_indices([1600, 1200, 900]);
+        let [adjusted_r, adjusted_g, _] = saturation.render_linear_indices([1600, 1200, 900]);
+        assert!(adjusted_r - adjusted_g > r - g);
+    }
+
     fn hash(values: &[u16]) -> u64 {
         values.iter().fold(0xcbf29ce484222325_u64, |h, value| {
             value
@@ -992,6 +1089,7 @@ mod tests {
             tone: identity.clone(),
             gamma: identity,
             fixed: [-4095, 8192, 0, 0, 4096, 0, 0, 0, 4096],
+            saturation_scale: 1.0,
         };
         assert_eq!(luts.render([100.0, 30.0, 500.0]), [0, 30, 500]);
     }

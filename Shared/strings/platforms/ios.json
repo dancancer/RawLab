@@ -993,9 +993,9 @@
       "formats": [],
       "source": "明度"
     },
-    "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。": {
+    "请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。": {
       "formats": [],
-      "source": "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。"
+      "source": "请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。"
     },
     "暖调日系 · 漫射金光": {
       "formats": [],
