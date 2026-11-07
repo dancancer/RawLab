@@ -226,6 +226,11 @@ extension EditorModel {
                     pendingImportEvent = false
                     onUsage(.photoImported)
                 }
+                if pendingSDRFallbackNotice {
+                    pendingSDRFallbackNotice = false
+                    saveStatusKey = "此照片的 HDR 需 macOS 15 才能编辑，已按 SDR 打开。"
+                    clearSaveStatusLater()
+                }
                 if !request.value.settings.isHDREditing {
                     updatingMetadata = true
                     settings.resolveWhiteBalance(result.asShotWhiteBalance)

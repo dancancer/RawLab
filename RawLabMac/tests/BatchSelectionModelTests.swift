@@ -7,6 +7,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
 
 @main struct BatchSelectionModelTests {
     static func main() throws {
+        setbuf(stdout, nil)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -22,6 +23,20 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             CGImageDestinationAddImage(destination, image, nil)
             guard CGImageDestinationFinalize(destination) else { fatalError("fixture") }
         }
+        switch ProcessInfo.processInfo.environment["RAWLAB_ENTRY_CASE"] {
+        case "A": try HDRSourceProbeTests.run(); try BatchFlowModelTests.unsupportedHDRSystem(root: root, fixture: first); return
+        case "A-collection": try BatchFlowModelTests.unsupportedHDRSystem(root: root, fixture: first, exerciseOpening: false); return
+        case "B": try BatchFlowModelTests.uniformAI(root: root, fixture: first); return
+        case "D": try BatchFlowModelTests.adaptiveJPEG(root: root, fixture: first); return
+        case "E": try BatchFlowModelTests.presetWithoutPhoto(root: root, fixture: first); return
+        case "E-no-photo": try BatchFlowModelTests.presetWithoutPhoto(root: root, fixture: first, exerciseOpenPhoto: false); return
+        default: break
+        }
+        try HDRSourceProbeTests.run()
+        try BatchFlowModelTests.unsupportedHDRSystem(root: root, fixture: first)
+        try BatchFlowModelTests.adaptiveJPEG(root: root, fixture: first)
+        try BatchFlowModelTests.presetWithoutPhoto(root: root, fixture: first)
+        try BatchFlowModelTests.uniformAI(root: root, fixture: second)
         try BatchFlowModelTests.preparedSourceChange(root: root, fixture: first)
         try BatchFlowModelTests.automaticLaunch(root: root, fixture: first)
         try BatchFlowModelTests.pendingLaunches(root: root, fixture: first)

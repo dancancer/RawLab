@@ -79,15 +79,32 @@ struct HDRSourceInfo {
     }
     var fingerprint: Data { withUnsafeBytes(of:native.source_sha256) { Data($0) } }
 
-    static func probe(_ url: URL) throws -> HDRSourceInfo? {
+    typealias NativeProbe = (UnsafePointer<CChar>?, UnsafeMutablePointer<sony2fuji_hdr_source_info_v1>?,
+                            UnsafeMutablePointer<sony2fuji_hdr_diagnostic_v1>?) -> sony2fuji_status
+    typealias Probe = (URL, () -> Void) throws -> HDRSourceInfo?
+    static var systemSupportsHDR: Bool {
+        if #available(macOS 15, iOS 18, *) { return true }
+        return false
+    }
+
+    static func probe(_ url: URL, onSDRFallback: () -> Void = {}, supportsHDR: Bool = systemSupportsHDR,
+                      nativeProbe: NativeProbe = sony2fuji_hdr_probe) throws -> HDRSourceInfo? {
         guard ["jpg","jpeg","heic","heif"].contains(url.pathExtension.lowercased()) else { return nil }
         var info=sony2fuji_hdr_source_info_v1()
         info.version=1; info.struct_size=UInt32(MemoryLayout.size(ofValue:info))
         var diagnostic=sony2fuji_hdr_diagnostic_v1()
         diagnostic.version=1; diagnostic.struct_size=UInt32(MemoryLayout.size(ofValue:diagnostic))
-        let status=url.path.withCString { sony2fuji_hdr_probe($0,&info,&diagnostic) }
+        let status=url.path.withCString { nativeProbe($0,&info,&diagnostic) }
         if status==SONY2FUJI_STATUS_OK { return HDRSourceInfo(native:info) }
         if status==SONY2FUJI_STATUS_UNSUPPORTED && diagnostic.reason==UInt32(SONY2FUJI_HDR_REASON_NOT_HDR) { return nil }
+        #if os(macOS)
+        if !supportsHDR && status == SONY2FUJI_STATUS_UNSUPPORTED &&
+            diagnostic.reason == UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM) {
+            // 这里只放行 SDR 探测；基图能否读取仍由 SDR 加载器判定。
+            onSDRFallback()
+            return nil
+        }
+        #endif
         throw HDRNativeError(status:status,reason:diagnostic.reason,field:diagnostic.field)
     }
 }

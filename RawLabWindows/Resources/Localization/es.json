@@ -482,6 +482,7 @@
     "显示色彩降噪模式必须为 0、1 或 2。": "El modo de reducción de ruido cromático de pantalla debe ser 0, 1 o 2.",
     "显示裁切提示": "Mostrar alertas de clipping",
     "显示输出高光与黑位裁切": "Mostrar el clipping de las altas luces y del nivel de negros de salida",
+    "普通图片未使用 AI 降噪": "No se usó la reducción de ruido con IA en las imágenes normales",
     "普通显影使用 CPU；AI 降噪仍使用硬件 GPU。": "El revelado usa la CPU; la reducción de ruido con IA sigue usando la GPU.",
     "普通降噪参数已保留，关闭 AI 降噪即可恢复。": "Los ajustes normales de reducción de ruido se conservan. Desactiva la IA para restaurarlos.",
     "暂无可导出的 AI 诊断。": "No hay diagnósticos de IA para exportar.",

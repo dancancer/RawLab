@@ -27,7 +27,9 @@ import SwiftUI
     var body: some Scene {
         WindowGroup {
             EditorView(model: model).onAppear {
-                if model.file == nil { model.open(fixture); model.showQuickPresets() }
+                if model.file == nil && ProcessInfo.processInfo.environment["RAWLAB_QUICK_TEST_START_EMPTY"] != "1" {
+                    model.open(fixture); model.showQuickPresets()
+                }
             }
         }.defaultSize(width: 950, height: 620)
     }

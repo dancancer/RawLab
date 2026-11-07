@@ -82,6 +82,11 @@ internal static class PhotoInput
 
     internal static Adjustments PrepareBatchSettings(string source,string target,Adjustments value)
     {
+        if (IsRaster(target) && !value.IsHDREditing) {
+            var raster = PrepareInputSettings(target, value);
+            raster.AIDenoiseEnabled = false;
+            return raster;
+        }
         if(!IsRaster(source) || !IsRaw(target))return value;
         var recipeTint=value.MasterRecipeID == null ? (double?)null : value[Parameter.Tint];
         var prepared=PrepareInputSettings(source,value);

@@ -556,8 +556,8 @@ final class RenderEngine {
         }
         if let output {
             if ExportFormat.forOutput(output) != .renderedDNG {
-                // 核心已成功解码；ImageIO 不识别的 X3F 仍写入输出尺寸和方向，不捏造拍摄 EXIF。
-                let fallback: [CFString: Any]? = url.pathExtension.lowercased() == "x3f" ? [:] : nil
+                // 核心已成功解码；ImageIO 不识别的 RAW 仍写入输出尺寸和方向，不捏造拍摄 EXIF。
+                let fallback: [CFString: Any]? = Self.isRasterInput(url) ? nil : [:]
                 try ExportMetadata.preserve(from: url, in: output, fallbackSourceProperties: fallback)
             }
             return nil
