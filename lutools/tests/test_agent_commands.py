@@ -97,10 +97,12 @@ class AgentCommands(unittest.TestCase):
 
     def test_capabilities_and_flag_order(self):
         hdr=sys.platform!="darwin" or tuple(map(int,platform.mac_ver()[0].split(".")[:2]))>=(15,0)
+        declared = self.envelope(self.run_cli("--capabilities", "--json"), "capabilities")["result"]
+        proraw = "proraw" in declared["input_types"]
         expected = {
-            "recipe_versions": [1, 2, 3, 4, 5] + ([6] if hdr else []) + [7] + ([8, 9, 10, 11, 12, 13] if hdr else []),
+            "recipe_versions": [1, 2, 3, 4, 5] + ([6] if hdr else []) + [7] + ([8, 9, 10, 11, 12, 13, 14] if hdr else []),
             "commands": ["capabilities", "validate_recipe", "info", "preview", "export"],
-            "input_types": (["raw", "raster"] if sys.platform in ("darwin", "win32") else ["raw"])+(["hdr_raster"] if hdr else []),
+            "input_types": (["raw", "raster"] if sys.platform in ("darwin", "win32") else ["raw"])+(["hdr_raster"] if hdr else [])+(["proraw"] if proraw else []),
             "output_formats": ["jpeg", "png", "dng"]+(["hdr_jpeg"] if hdr else []),
             "exposure_modes": ["scene", "preview", "sensor"],
             "geometry_operations": ["crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten", "perspective"],
@@ -112,6 +114,9 @@ class AgentCommands(unittest.TestCase):
                     self.assertEqual(result["result"][key], value)
                 if hdr:
                     capabilities = result["result"]["hdr"]
+                    self.assertEqual(capabilities["source_recipe_version"], 14)
+                    self.assertEqual(capabilities["input_types"], ["hdr_raster", "raw"]+(["proraw"] if proraw else []))
+                    self.assertEqual(capabilities["output_formats"], ["hdr_jpeg", "jpeg", "png", "dng"])
                     self.assertEqual(capabilities["processing_version"], 1)
                     self.assertEqual(capabilities["processing_versions"], [1, 2, 3, 4, 5, 6, 7])
                     self.assertEqual(capabilities["tone_recipe_version"], 8)
@@ -169,6 +174,42 @@ class AgentCommands(unittest.TestCase):
                 self.assertEqual(result["output"]["jpeg_quality"], 95)
                 self.assertEqual(result["output"]["size"], {"mode": "native"})
         self.assertFalse((self.root / "edited.jpg").exists())
+
+    @unittest.skipUnless(sys.platform in ("darwin", "win32"), "display image loader requires Mac or Windows")
+    def test_info_recognizes_jpeg_content_without_known_extension(self):
+        self.document["input"]["path"] = str(pathlib.Path(__file__).parent / "fixtures/linear-uncompressed.dng")
+        self.document["output"]["path"] = str(self.root / "source.jpg")
+        self.write_recipe()
+        self.envelope(self.run_cli("--recipe", self.recipe, "--json"), "export")
+        data = (self.root / "source.jpg").read_bytes()
+        for name in ("source.jfif", "source.jpe", "source"):
+            with self.subTest(name=name):
+                alias = self.root / name
+                alias.write_bytes(data)
+                result = self.envelope(self.run_cli("--info", alias, "--json"), "info")["result"]
+                self.assertEqual(result["input_type"], "raster")
+                self.assertGreater(result["identified_size"]["width"], 0)
+
+    def test_info_recognizes_gain_map_content_without_known_extension(self):
+        capabilities = self.envelope(self.run_cli("--capabilities", "--json"), "capabilities")["result"]
+        if 14 not in capabilities["recipe_versions"]:
+            self.skipTest("CLI runtime has no HDR v14 capability")
+        self.document = {
+            "schema_version": 14,
+            "processing": {"family": "rawlab_hdr", "version": 7, "quality": "standard"},
+            "input": {"path": str(pathlib.Path(__file__).parent / "fixtures/bayer-demosaic.dng"), "type": "raw"},
+            "edits": {"exposure": {"ev": .5}, "white_balance": {"mode": "relative"}},
+            "output": {"path": "hdr.jpg", "format": "hdr_jpeg", "base_color": "srgb"},
+        }
+        self.write_recipe()
+        self.envelope(self.run_cli("--recipe", self.recipe, "--json"), "export")
+        data = (self.root / "hdr.jpg").read_bytes()
+        for name in ("hdr.jfif", "hdr.jpe", "hdr"):
+            with self.subTest(name=name):
+                alias = self.root / name
+                alias.write_bytes(data)
+                result = self.envelope(self.run_cli("--info", alias, "--json"), "info")["result"]
+                self.assertEqual(result["input_type"], "hdr_raster")
 
     def test_lens_database_validation_flag_order(self):
         self.write_recipe()

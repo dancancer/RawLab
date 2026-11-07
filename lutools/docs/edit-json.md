@@ -539,3 +539,55 @@ defaults to 1. The asset must declare the HDR profile in the
 [HDR color contract](hdr-color-contract.md). The CLI verifies the fingerprint
 before publishing preview or export output. The capabilities response
 advertises `hdr.look_recipe_version` and `hdr.look_profile`.
+
+## V14 HDR sources and SDR exports
+
+[Schema 14](edit-json-v14.schema.json) retains the v13 HDR edits and
+`rawlab_hdr` processing version 7. It adds `input.type="raw"` for ordinary
+camera RAW and `input.type="proraw"` for Apple ProRAW DNG, alongside
+`hdr_raster` for gain-map JPEG/HEIF. The explicitly selected decoder validates
+the actual source; changing a suffix does not convert between these types.
+V6 and v8–v13 keep their `hdr_raster` / `hdr_jpeg` restrictions.
+
+Only `raw` accepts an optional `input.camera_development` object. Its fields
+follow the Mac camera HDR development settings, before the separate relative
+`edits.white_balance` stage:
+
+| Field | Values and default |
+| --- | --- |
+| `version` | `1` |
+| `white_balance_mode` | `as_shot` (default) or `temperature` |
+| `temperature`, `tint` | Both `0` for as-shot; temperature mode uses 2000–50000 K (default 6500), tint -150–150 (default 0) |
+| `exposure_reference` | `metadata` (default) or `sensor`; no ordinary RAW scene/preview boost |
+| `fbdd_level` | Integer 0–2, default 0 |
+| `lens_distortion`, `lens_tca` | Booleans, default false |
+| `lens_auto_crop` | Boolean, default true; active only with lens correction |
+| `lens_profile` | Optional nonempty profile id, at most 1024 UTF-8 bytes, requiring active lens correction |
+| `camera_profile` | Optional `{ "path": "camera.dcp", "sha256": "<64 lowercase hex digits>" }` for a D65 camera-matrix DCP or RLOOKHDR |
+
+Camera profile paths resolve relative to the recipe, like look paths. The
+decoder checks the profile fingerprint before export. `--lens-database`
+selects the session's Lensfun file/directory for both ordinary and HDR camera
+RAW recipes; missing calibration remains an explicit failure. Omitted camera
+development normalizes to the Mac defaults. These fields do not request AI
+denoising.
+
+`output.format` accepts `hdr_jpeg`, `jpeg`, `png` and `dng`. HDR JPEG still
+requires `base_color="srgb"|"display_p3"`. For the other formats `base_color`
+is optional and has no effect: the core exports the edited SDR rendition in
+sRGB, including rendered RGB DNG rather than a RAW sensor copy. JPEG quality,
+geometry and the no-upscale long-edge limit retain their existing semantics.
+Preview always renders the same FINAL request to SDR PNG. ProRAW HDR JPEG
+export uses the core's streaming path with the system temporary directory;
+SDR exports use the common HDR SDR writer.
+
+The CLI advertises 14 in `recipe_versions`, adds `proraw` to `input_types`, and
+publishes `hdr.source_recipe_version=14`, `hdr.input_types` and
+`hdr.output_formats`. This changes the JSON schema only; the result protocol,
+HDR processing version and shared C ABI remain unchanged.
+`proraw` is advertised only in builds with the DNG SDK enabled; other builds
+return `unsupported` for that explicitly selected source type.
+
+For `--info`, an unrecognized extension triggers content-based HDR probing,
+then SDR image loading, then LibRaw inspection. Recognized invalid HDR
+containers are rejected instead of silently opening their SDR base.

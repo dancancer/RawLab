@@ -14,7 +14,7 @@ from .config import ServerConfig
 
 
 COMMANDS = {"capabilities", "validate_recipe", "info", "preview", "export"}
-RECIPE_VERSIONS = {1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13}
+RECIPE_VERSIONS = {1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14}
 MAX_JSON_BYTES = 4 * 1024 * 1024
 IO_ERROR_STATUS = 3
 logger = logging.getLogger(__name__)
@@ -286,6 +286,12 @@ class CliAdapter:
                 protected.add(look_path.canonical)
                 if not validating:
                     look["path"] = str(look_path.lexical)
+            profile = recipe["input"].get("camera_development", {}).get("camera_profile")
+            if profile:
+                profile_path = self._read_path(reference(profile["path"]), require_file=not validating)
+                protected.add(profile_path.canonical)
+                if not validating:
+                    profile["path"] = str(profile_path.lexical)
             output = self._output_path(preview_output if preview_output is not None else reference(recipe["output"]["path"]),
                                        require_parent=not validating)
             if not validating and output.canonical in protected:
@@ -338,6 +344,11 @@ class CliAdapter:
             private_recipe = folder / "recipe.json"
             private_recipe.write_text(json.dumps(recipe, ensure_ascii=False, allow_nan=False), encoding="utf-8")
             args = ["--recipe", private_recipe]
+            if self.config.lens_database is not None:
+                database = self._read_path(self.config.lens_database, require_file=False)
+                if not (database.canonical.is_file() or database.canonical.is_dir()):
+                    raise AdapterError("Lens database no longer exists within an allowed read root")
+                args += ["--lens-database", database.canonical]
             if command == "preview":
                 args += ["--preview", staged, "--long-edge", str(long_edge)]
             result = await self._run(command, [*args, "--json"])
