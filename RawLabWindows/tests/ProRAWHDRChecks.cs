@@ -7,7 +7,6 @@ using RawLab.Windows;
 
 internal static class ProRAWHDRChecks
 {
-    private static readonly BindingFlags Instance = BindingFlags.Instance | BindingFlags.Public;
     private static readonly BindingFlags Static = BindingFlags.Static | BindingFlags.NonPublic;
 
     internal static void Run(Action<bool, string> check)
@@ -32,15 +31,10 @@ internal static class ProRAWHDRChecks
 
     private static void ProRAWDecoderVersion(Action<bool, string> check)
     {
-        var method = typeof(Adjustments).GetMethod("SetHDRMode", Instance, null,
-            [typeof(bool), typeof(bool), typeof(IEnumerable<string>), typeof(bool), typeof(bool)], null);
-        check(method != null, "HDR mode exposes an explicit ProRAW capability argument");
-        if (method == null) return;
-
         var settings = new Adjustments();
-        method.Invoke(settings, [true, true, null, true, true]);
-        var version = typeof(Adjustments).GetProperty("ProRAWDecodeVersion")?.GetValue(settings);
-        check(version is int value && value == 2, "Enabling ProRAW HDR persists decoder revision 2");
+        settings.SetHDRMode(true, sourceIsHDR: true, cameraRaw: true, proRAW: true);
+        check(settings.IsHDREditing && settings.ProRAWDecodeVersion == 2,
+            "Enabling ProRAW HDR persists decoder revision 2");
 
         var json = JsonNode.Parse(JsonSerializer.Serialize(settings.Capture()))!.AsObject();
         json["ProRAWDecodeVersion"] = 99;
