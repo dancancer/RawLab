@@ -542,14 +542,16 @@ struct Sony2FujiProcessor {
         from buffer: Buffer,
         sourceURL: URL,
         orientation: CGImagePropertyOrientation?,
-        quality: CGFloat
+        quality: CGFloat,
+        sourceIsRaw: Bool = false
     ) throws -> Data {
         guard let cgImage = makeCGImage(from: buffer) else {
             throw ProcessorError.rasterDecodeFailed
         }
+        // RAW 已由核心成功解码，ImageIO 不支持其原容器时仍可写出像素。
         return try ExportMetadata.jpegData(image: cgImage, sourceURL: sourceURL,
                                           orientation: orientation ?? .up, quality: quality,
-                                          fallbackSourceProperties: sourceURL.pathExtension.lowercased() == "x3f" ? [:] : nil)
+                                          fallbackSourceProperties: sourceIsRaw || sourceURL.pathExtension.lowercased() == "x3f" ? [:] : nil)
     }
 
     func computeRGBHistogram(from buffer: Buffer) -> RGBHistogram? {

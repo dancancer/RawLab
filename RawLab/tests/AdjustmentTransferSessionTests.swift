@@ -78,12 +78,36 @@ import Foundation
         try saveFailure(root.appendingPathComponent("failures"))
         try synchronization(root.appendingPathComponent("collection-sync"))
         try presetApplication(root.appendingPathComponent("presets"))
+        try fallbackHistory(root.appendingPathComponent("fallback-history"))
         var invalid = context; invalid.hasUncommittedDraft = true
         do { _ = try session.copy(scope: .all, snapshot: state(2), context: invalid) } catch {}
         try check(session.clipboard == copy, "Failed copy preserves the frozen clipboard")
         let empty = try session.prepare(payload: copy, targets: [])
         try check(session.apply(empty).isEmpty, "Empty target operation reports no successes")
     }
+    static func fallbackHistory(_ root: URL) throws {
+        let store = try EditPersistence(directory: root), session = IOSAdjustmentTransferSession(store: store)
+        let content = PhotoIdentity(contentIdentifier: "original-content")
+        let photo = PhotoIdentity(resourceIdentifier: "library-photo", contentIdentifier: "original-content")
+        let legacy = state(0.5)
+        try store.save(content, state: legacy)
+        let payload = try session.copy(scope: .custom([.exposure]), snapshot: state(1.5), context: context)
+        let target = IOSAdjustmentTransferTarget(identity: photo, displayName: "Photo", defaultState: state(0), context: context)
+        let operation = try session.prepare(payload: payload, targets: [target])
+        try check(operation.targets.first?.original?.state == legacy,
+                  "Paste preflight starts from the fallback edit receipt")
+        try check(session.apply(operation).first?.status == .applied && store.state(for: photo)?.settings.exposure == 1.5,
+                  "Paste writes a new photo record from the fallback receipt")
+        try check(session.undoPhoto(photo).first?.status == .applied && store.state(for: photo)?.settings.exposure == 0.5,
+                  "Undo restores the prior fallback adjustments")
+        try check(session.redoPhoto(photo).first?.status == .applied && store.state(for: photo)?.settings.exposure == 1.5 &&
+                  store.state(for: content) == legacy,
+                  "Redo restores photo edits while leaving the old content record untouched")
+        try store.reset(photo)
+        try check(session.undoPhoto(photo).first?.status == .conflict && store.state(for: photo) == nil,
+                  "External photo reset blocks stale fallback history without resurrecting old edits")
+    }
+
     static func synchronization(_ root: URL) throws {
         let store = try EditPersistence(directory: root), session = IOSAdjustmentTransferSession(store: store)
         let source = PhotoIdentity(resourceIdentifier: "sync-source"), other = PhotoIdentity(resourceIdentifier: "sync-other")
