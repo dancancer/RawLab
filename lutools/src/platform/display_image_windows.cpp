@@ -266,6 +266,7 @@ struct MetadataInfo {
     bool colorProfileMarker = false;
     bool explicitSrgb = false;
     uint32_t jpegImageCount = 1;
+    bool sigmaTIFFPreview = false;
 };
 
 void mergeOrientation(MetadataInfo& info, const std::optional<uint32_t>& value) {
@@ -650,6 +651,45 @@ std::vector<uint32_t> readTiffUnsignedValues(TiffReader& reader, const TiffEntry
     return result;
 }
 
+bool tiffEntryHasNoPageMarker(TiffReader& reader, const TiffEntry& entry, bool littleEndian) {
+    if (entry.tag == 297) return false;
+    if (entry.tag != 254 && entry.tag != 255) return true;
+    if (entry.count != 1 || entry.type != (entry.tag == 254 ? 4 : 3)) return false;
+    const auto values = readTiffUnsignedValues(reader, entry, littleEndian);
+    return entry.tag == 254 ? (values[0] & 2u) == 0 : values[0] != 3;
+}
+
+bool hasSigmaTIFFPreview(TiffReader& reader, uint64_t offset, bool littleEndian,
+                         uint64_t primaryWidth, uint64_t primaryHeight) {
+    reader.ensure(offset, 2);
+    const auto count = reader.read16(offset, littleEndian);
+    if (count == 0 || count > 4096) return false;
+    reader.ensure(offset + 2u, static_cast<uint64_t>(count) * 12u + 4u);
+    if (reader.read32(offset + 2u + static_cast<uint64_t>(count) * 12u, littleEndian) != 0) return false;
+    uint64_t width = 0, height = 0;
+    bool depth8 = false;
+    for (uint16_t index = 0; index < count; ++index) {
+        const auto entry = readTiffEntry(reader, offset + 2u + static_cast<uint64_t>(index) * 12u, littleEndian);
+        if (!tiffEntryHasNoPageMarker(reader, entry, littleEndian)) return false;
+        if (entry.tag == 256 || entry.tag == 257) {
+            const auto values = readTiffUnsignedValues(reader, entry, littleEndian);
+            if (values.size() != 1) return false;
+            if (entry.tag == 256) width = values[0];
+            else height = values[0];
+        } else if (entry.tag == 258) {
+            const auto values = readTiffUnsignedValues(reader, entry, littleEndian);
+            if (values.empty() || std::any_of(values.begin(), values.end(), [](uint32_t value) { return value != 8; }))
+                return false;
+            depth8 = true;
+        }
+    }
+    // 与 Apple 一致：只识别 160 像素、同比例、无分页标记的第二 IFD。
+    const auto aspectDifference = static_cast<int64_t>(primaryWidth * height) -
+        static_cast<int64_t>(primaryHeight * width);
+    return depth8 && width > 0 && height > 0 && width < primaryWidth && height < primaryHeight &&
+        std::max(width, height) == 160 && std::abs(aspectDifference) <= static_cast<int64_t>(std::max(primaryWidth, primaryHeight));
+}
+
 void scanTiff(const std::wstring& path, MetadataInfo& info) {
     TiffReader reader(path);
     if (reader.size() < 8) fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
@@ -672,11 +712,23 @@ void scanTiff(const std::wstring& path, MetadataInfo& info) {
     bool hasPhotometric = false;
     uint64_t width = 0;
     uint64_t height = 0;
+    uint32_t depth = 0;
+    bool sigmaWriter = false;
+    bool noPageMarker = true;
     bool nonIccColorMetadata = false;
     size_t metadataBytes = 0;
     for (uint16_t index = 0; index < count; ++index) {
         const auto entryOffset = ifdOffset + 2u + static_cast<uint64_t>(index) * 12u;
         const auto entry = readTiffEntry(reader, entryOffset, littleEndian);
+        noPageMarker &= tiffEntryHasNoPageMarker(reader, entry, littleEndian);
+        if (entry.tag == 305) {
+            if (entry.type != 2 || entry.dataBytes > kMetadataChunkLimit - metadataBytes)
+                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            metadataBytes += static_cast<size_t>(entry.dataBytes);
+            const auto software = readTiffData(reader, entry, kMetadataChunkLimit);
+            sigmaWriter = equalBytes(software.data(), software.size(), "SIGMA Photo Pro ");
+            continue;
+        }
         if (entry.tag == 34675) {
             if (entry.dataBytes > kMetadataChunkLimit - metadataBytes)
                 fail(SONY2FUJI_STATUS_UNSUPPORTED);
@@ -721,9 +773,10 @@ void scanTiff(const std::wstring& path, MetadataInfo& info) {
         }
         if (entry.tag == 258) {
             const auto values = readTiffUnsignedValues(reader, entry, littleEndian);
-            if (values.empty()) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            if (values.empty() || (values[0] != 8 && values[0] != 16)) fail(SONY2FUJI_STATUS_UNSUPPORTED);
             for (const auto value : values)
-                if (value != 8) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                if (value != values[0]) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            depth = values[0];
             continue;
         }
         if (entry.tag == 262) {
@@ -758,6 +811,13 @@ void scanTiff(const std::wstring& path, MetadataInfo& info) {
         fail(SONY2FUJI_STATUS_UNSUPPORTED);
     if (nonIccColorMetadata && !info.colorProfileMarker)
         fail(SONY2FUJI_STATUS_UNSUPPORTED);
+    const auto next = reader.read32(ifdOffset + 2u + static_cast<uint64_t>(count) * 12u, littleEndian);
+    if (next != 0) {
+        if (depth != 16 || !sigmaWriter || !noPageMarker || next == ifdOffset ||
+            !hasSigmaTIFFPreview(reader, next, littleEndian, width, height))
+            fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        info.sigmaTIFFPreview = true;
+    }
 }
 
 enum class ContainerKind { Jpeg, Png, Tiff };
@@ -1003,12 +1063,13 @@ ColorSource getColorSource(IWICImagingFactory* factory, IWICBitmapFrameDecode* f
     return result;
 }
 
-enum class SourceFormat { Rgb24, Rgb32, Rgba32 };
+enum class SourceFormat { Rgb24, Rgb32, Rgba32, Rgb48, Rgb64, Rgba64 };
 
 struct SourceDescription {
     SourceFormat format = SourceFormat::Rgb24;
     UINT width = 0;
     UINT height = 0;
+    bool sixteenBit = false;
 };
 
 SourceDescription describeSource(IWICBitmapFrameDecode* frame) {
@@ -1024,23 +1085,34 @@ SourceDescription describeSource(IWICBitmapFrameDecode* frame) {
     } else if (IsEqualGUID(format, GUID_WICPixelFormat32bppBGRA) ||
                IsEqualGUID(format, GUID_WICPixelFormat32bppRGBA)) {
         result.format = SourceFormat::Rgba32;
+    } else if (IsEqualGUID(format, GUID_WICPixelFormat48bppRGB) ||
+               IsEqualGUID(format, GUID_WICPixelFormat48bppBGR)) {
+        result.format = SourceFormat::Rgb48;
+        result.sixteenBit = true;
+    } else if (IsEqualGUID(format, GUID_WICPixelFormat64bppRGB)) {
+        result.format = SourceFormat::Rgb64;
+        result.sixteenBit = true;
+    } else if (IsEqualGUID(format, GUID_WICPixelFormat64bppRGBA) ||
+               IsEqualGUID(format, GUID_WICPixelFormat64bppBGRA)) {
+        result.format = SourceFormat::Rgba64;
+        result.sixteenBit = true;
     } else {
         fail(SONY2FUJI_STATUS_UNSUPPORTED);
     }
     checkHr(frame->GetSize(&result.width, &result.height));
     if (result.width == 0 || result.height == 0 ||
         static_cast<uint64_t>(result.width) > kMaxDisplayPixels / result.height ||
-        result.width > UINT32_MAX / 4u) {
+        result.width > UINT32_MAX / (result.sixteenBit ? 8u : 4u)) {
         fail(SONY2FUJI_STATUS_UNSUPPORTED);
     }
     return result;
 }
 
 void validateAlpha(IWICBitmapFrameDecode* frame, const SourceDescription& description) {
-    if (description.format != SourceFormat::Rgba32) return;
+    if (description.format != SourceFormat::Rgba32 && description.format != SourceFormat::Rgba64) return;
     constexpr UINT kTileWidth = 4096;
     const UINT tileWidth = std::min<UINT>(description.width, kTileWidth);
-    const UINT bytesPerPixel = 4;
+    const UINT bytesPerPixel = description.sixteenBit ? 8 : 4;
     const UINT stride = tileWidth * bytesPerPixel;
     const UINT tileRows = std::max<UINT>(1, static_cast<UINT>(kAlphaTileBytes / stride));
     std::vector<uint8_t> pixels(static_cast<size_t>(stride) * tileRows);
@@ -1057,7 +1129,8 @@ void validateAlpha(IWICBitmapFrameDecode* frame, const SourceDescription& descri
             for (UINT row = 0; row < rows; ++row) {
                 const auto* line = pixels.data() + static_cast<size_t>(row) * tileStride;
                 for (UINT column = 0; column < columns; ++column) {
-                    if (line[column * bytesPerPixel + 3] != 255)
+                    const auto* alpha = line + (column + 1) * bytesPerPixel - (description.sixteenBit ? 2 : 1);
+                    if (alpha[0] != 255 || (description.sixteenBit && alpha[1] != 255))
                         fail(SONY2FUJI_STATUS_UNSUPPORTED);
                 }
             }
@@ -1085,6 +1158,7 @@ struct PreparedImage {
     ComPtr<IWICBitmapSource> oriented;
     UINT orientedWidth = 0;
     UINT orientedHeight = 0;
+    bool sixteenBit = false;
 };
 
 PreparedImage prepareImage(IWICImagingFactory* factory, const std::wstring& path,
@@ -1108,21 +1182,26 @@ PreparedImage prepareImage(IWICImagingFactory* factory, const std::wstring& path
     if (containerKind(container) != kind) fail(SONY2FUJI_STATUS_UNSUPPORTED);
     UINT frameCount = 0;
     checkHr(decoder->GetFrameCount(&frameCount));
-    if (frameCount != 1 && frameCount != metadata.jpegImageCount) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+    if (frameCount != 1 && frameCount != metadata.jpegImageCount &&
+        !(kind == ContainerKind::Tiff && frameCount == 2 && metadata.sigmaTIFFPreview))
+        fail(SONY2FUJI_STATUS_UNSUPPORTED);
 
     ComPtr<IWICBitmapFrameDecode> frame;
     checkHr(decoder->GetFrame(0, &frame));
     const auto description = describeSource(frame.Get());
+    if (description.sixteenBit && kind != ContainerKind::Png && kind != ContainerKind::Tiff)
+        fail(SONY2FUJI_STATUS_UNSUPPORTED);
     if (kind != ContainerKind::Png)
         mergeOrientation(metadata, metadataOrientation(frame.Get(), kind));
     const auto colors = getColorSource(factory, frame.Get(), metadata.colorProfileMarker);
     validateAlpha(frame.Get(), description);
 
+    const auto& targetFormat = description.sixteenBit ? GUID_WICPixelFormat64bppRGBA : GUID_WICPixelFormat32bppRGBA;
     ComPtr<IWICBitmapSource> colorSource;
-    if (!colors.transformToSrgb) {
+    if (!colors.transformToSrgb || description.sixteenBit) {
         ComPtr<IWICFormatConverter> converter;
         checkHr(factory->CreateFormatConverter(&converter));
-        checkHr(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppRGBA,
+        checkHr(converter->Initialize(frame.Get(), targetFormat,
             WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeCustom));
         checkHr(converter.As(&colorSource));
     }
@@ -1133,8 +1212,9 @@ PreparedImage prepareImage(IWICImagingFactory* factory, const std::wstring& path
         checkHr(destination->InitializeFromExifColorSpace(1));
         ComPtr<IWICColorTransform> transform;
         checkHr(factory->CreateColorTransformer(&transform));
-        checkHr(transform->Initialize(frame.Get(), colors.context.Get(), destination.Get(),
-            GUID_WICPixelFormat32bppRGBA));
+        // WIC 色彩转换支持 RGBA64，却不保证支持解码器的 RGB48；先无损统一格式。
+        checkHr(transform->Initialize(description.sixteenBit ? colorSource.Get() : frame.Get(),
+            colors.context.Get(), destination.Get(), targetFormat));
         checkHr(transform.As(&colorSource));
     }
 
@@ -1142,10 +1222,11 @@ PreparedImage prepareImage(IWICImagingFactory* factory, const std::wstring& path
     checkHr(factory->CreateBitmapFlipRotator(&rotator));
     checkHr(rotator->Initialize(colorSource.Get(), transformForOrientation(metadata.orientation)));
     PreparedImage result;
+    result.sixteenBit = description.sixteenBit;
     checkHr(rotator->GetSize(&result.orientedWidth, &result.orientedHeight));
     if (result.orientedWidth == 0 || result.orientedHeight == 0 ||
         static_cast<uint64_t>(result.orientedWidth) > kMaxDisplayPixels / result.orientedHeight ||
-        result.orientedWidth > UINT32_MAX / 4u) {
+        result.orientedWidth > UINT32_MAX / (result.sixteenBit ? 8u : 4u)) {
         fail(SONY2FUJI_STATUS_UNSUPPORTED);
     }
     checkHr(rotator.As(&result.oriented));
@@ -1173,26 +1254,32 @@ void targetSize(const PreparedImage& image, uint32_t edge, UINT* width, UINT* he
 }
 
 void copyOutput(IWICImagingFactory* factory, const PreparedImage& image, uint32_t edge,
-                sony2fuji_buffer* output) {
+                bool preserveDepth, sony2fuji_buffer* output) {
     UINT width = 0, height = 0;
     targetSize(image, edge, &width, &height);
+    const bool sixteenBit = preserveDepth && image.sixteenBit;
+    const UINT pixelBytes = sixteenBit ? 8 : 4;
+    const auto& targetFormat = sixteenBit ? GUID_WICPixelFormat64bppRGBA : GUID_WICPixelFormat32bppRGBA;
     ComPtr<IWICBitmapSource> source = image.oriented;
     if (width != image.orientedWidth || height != image.orientedHeight) {
         ComPtr<IWICBitmapScaler> scaler;
         checkHr(factory->CreateBitmapScaler(&scaler));
         checkHr(scaler->Initialize(image.oriented.Get(), width, height,
             WICBitmapInterpolationModeFant));
+        checkHr(scaler.As(&source));
+    }
+    if (width != image.orientedWidth || height != image.orientedHeight || image.sixteenBit != sixteenBit) {
         // WIC 缩放可能改为 BGRA；输出字节必须符合 C ABI 的 RGBA 约定。
         ComPtr<IWICFormatConverter> converter;
         checkHr(factory->CreateFormatConverter(&converter));
-        checkHr(converter->Initialize(scaler.Get(), GUID_WICPixelFormat32bppRGBA,
+        checkHr(converter->Initialize(source.Get(), targetFormat,
             WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeCustom));
         checkHr(converter.As(&source));
     }
-    if (width == 0 || height == 0 || width > UINT32_MAX / 4u ||
+    if (width == 0 || height == 0 || width > UINT32_MAX / pixelBytes ||
         static_cast<uint64_t>(width) > kMaxDisplayPixels / height)
         fail(SONY2FUJI_STATUS_UNSUPPORTED);
-    const auto stride = static_cast<size_t>(width) * 4u;
+    const auto stride = static_cast<size_t>(width) * pixelBytes;
     const auto total = stride * static_cast<size_t>(height);
     if (total / stride != height || total > std::numeric_limits<UINT>::max())
         fail(SONY2FUJI_STATUS_UNSUPPORTED);
@@ -1201,8 +1288,8 @@ void copyOutput(IWICImagingFactory* factory, const PreparedImage& image, uint32_
     try {
         checkHr(source->CopyPixels(nullptr, static_cast<UINT>(stride),
             static_cast<UINT>(total), pixels));
-        for (size_t offset = 3; offset < total; offset += 4) {
-            if (pixels[offset] != 255) {
+        for (size_t offset = pixelBytes - 1; offset < total; offset += pixelBytes) {
+            if (pixels[offset] != 255 || (sixteenBit && pixels[offset - 1] != 255)) {
                 fail(SONY2FUJI_STATUS_UNSUPPORTED);
             }
         }
@@ -1215,7 +1302,7 @@ void copyOutput(IWICImagingFactory* factory, const PreparedImage& image, uint32_
     output->width = width;
     output->height = height;
     output->stride_bytes = static_cast<uint32_t>(stride);
-    output->pixel_format = SONY2FUJI_PIXEL_RGBA8;
+    output->pixel_format = sixteenBit ? SONY2FUJI_PIXEL_RGBA16 : SONY2FUJI_PIXEL_RGBA8;
 }
 
 sony2fuji_status loadDisplayImageWindows(const char* path, sony2fuji_buffer* output) {
@@ -1229,7 +1316,7 @@ sony2fuji_status loadDisplayImageWindows(const char* path, sony2fuji_buffer* out
         checkHr(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
             IID_PPV_ARGS(&factory)));
         const auto image = prepareImage(factory.Get(), widePath, path);
-        copyOutput(factory.Get(), image, 0, output);
+        copyOutput(factory.Get(), image, 0, true, output);
         return SONY2FUJI_STATUS_OK;
     } catch (const StatusError& error) {
         clearBuffer(output);
@@ -1261,7 +1348,8 @@ sony2fuji_status displayPreviewWindows(const char* path, uint32_t edge,
             IID_PPV_ARGS(&factory)));
         const auto image = prepareImage(factory.Get(), widePath, path);
         sony2fuji_buffer local{};
-        copyOutput(factory.Get(), image, edge, &local);
+        // 托管缩略图按四字节读取像素，即使不缩放也必须保持 RGBA8。
+        copyOutput(factory.Get(), image, edge, false, &local);
         if (orientedSourceWidth) *orientedSourceWidth = image.orientedWidth;
         if (orientedSourceHeight) *orientedSourceHeight = image.orientedHeight;
         *output = local;
