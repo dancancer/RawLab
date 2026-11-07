@@ -18,12 +18,14 @@ final class EditorModel: ObservableObject {
     }
     struct AIWorkIdentity: Equatable {
         let source: RawWhiteBalanceCacheKey
+        let isHDR: Bool
         let processing: ProcessingIdentity
         let x3fMode: X3fMode
         let whiteBalance: [Float]
         let lens: LensCorrectionSettings
         init(_ file: URL, settings: Adjustments) throws {
             source = try RawWhiteBalanceCacheKey(file)
+            isHDR = settings.isHDREditing
             processing = settings.processing
             x3fMode = settings.x3fMode
             whiteBalance = settings.aiWhiteBalanceSignature
@@ -181,7 +183,9 @@ final class EditorModel: ObservableObject {
     } }
     @Published var file: URL?
     @Published var sourceIsHDR=false
-    @Published var sourceSupportsCameraHDR=false
+    @Published var rawHDRSource: HDRSourceInfo?
+    var sourceSupportsCameraHDR: Bool { rawHDRSource != nil }
+    var sourceIsBayerHDR: Bool { rawHDRSource?.isCameraRAW == true }
     @Published var importing=false
     var pendingOpenID=UUID()
     @Published var neutral: RenderedImage?
@@ -206,9 +210,20 @@ final class EditorModel: ObservableObject {
     var prepareAIOperation: (URL, Adjustments, AIPreparation) throws -> Void = {
         try RenderEngine().prepareAI($0, settings: $1, progress: $2)
     }
-    var aiControlsVisible: Bool { RenderEngine.aiAvailable || settings.aiDenoiseEnabled }
+    var aiControlsVisible: Bool {
+        if settings.isHDREditing {
+            return settings.hdrCameraAIEnabled || (RenderEngine.hdrCameraAIAvailable && RenderEngine.bundledAIModel != nil &&
+                RenderEngine.isHDRCameraAICandidate(file, info: rawHDRSource, settings: settings))
+        }
+        return RenderEngine.aiAvailable || settings.aiDenoiseEnabled
+    }
     var canStartAI: Bool {
-        file != nil && !RenderEngine.isRasterInput(file) && RenderEngine.aiAvailable &&
+        if settings.isHDREditing {
+            return RenderEngine.hdrCameraAIAvailable && RenderEngine.bundledAIModel != nil &&
+                RenderEngine.isHDRCameraAICandidate(file, info: rawHDRSource, settings: settings) &&
+                !exporting && geometryDraft == nil
+        }
+        return file != nil && !RenderEngine.isRasterInput(file) && RenderEngine.aiAvailable &&
             !(RenderEngine.isX3fInput(file) && settings.x3fMode == .normal) &&
             RenderEngine.bundledAIModel != nil && !exporting && geometryDraft == nil
     }
@@ -311,7 +326,14 @@ final class EditorModel: ObservableObject {
         guard !settings.isHDREditing,let recipe = selectedMasterRecipe else { return false }
         return recipe.lutURL() == nil
     }
-    var canApplySettings: Bool { file != nil && result != nil && !busy && !importing && !previewOutdated && !exporting && !aiState.isRunning && !lookLibraryBusy && !missingFilm && !missingMasterRecipe && geometryDraft == nil }
+    private var canChangePhotoSettings: Bool {
+        file != nil && !busy && !importing && !exporting && !aiState.isRunning && !lookLibraryBusy &&
+            !missingFilm && !missingMasterRecipe && geometryDraft == nil
+    }
+    var canApplySettings: Bool { canChangePhotoSettings && result != nil && !previewOutdated }
+    var canApplyHDRCameraDevelopment: Bool {
+        canApplySettings || (canChangePhotoSettings && settings.hdr?.cameraDevelopmentSettings.cameraProfile != nil)
+    }
     var canExport: Bool { canApplySettings }
 
 
@@ -353,7 +375,7 @@ final class EditorModel: ObservableObject {
 
 extension EditorModel {
     func handleAIFailure(_ failure: Error) {
-        guard settings.aiDenoiseEnabled else { return }
+        guard settings.activeAIDenoise else { return }
         if case RenderError.aiNotReady = failure {
             aiResultUnavailable()
         } else if case RenderError.aiFailed(let message) = failure {
@@ -382,8 +404,8 @@ extension EditorModel {
     func setAIEnabled(_ enabled: Bool) {
         if enabled { requestAIDenoise() }
         else {
-            let wasEnabled = settings.aiDenoiseEnabled
-            resetAITask(); settings.aiDenoiseEnabled = false
+            let wasEnabled = settings.activeAIDenoise
+            resetAITask(); settings.activeAIDenoise = false
             if !wasEnabled { schedule() }
         }
     }
@@ -398,14 +420,14 @@ extension EditorModel {
     }
 
     private func resumeOrdinaryPreviewAfterAI() {
-        guard !settings.aiDenoiseEnabled else { return }
+        guard !settings.activeAIDenoise else { return }
         // 首次准备尚未改变外观；重绘当前普通参数，同时保留失败或取消提示。
         aiIdentity = nil
         schedule()
     }
 
     func requestAIDenoise() {
-        aiManuallyRequested = !settings.aiDenoiseEnabled
+        aiManuallyRequested = !settings.activeAIDenoise
         aiRequiresExplicitRetry = false
         aiIdentity = nil
         // 旧预览不能在重试或取消后覆盖新的 AI 状态。
@@ -416,13 +438,12 @@ extension EditorModel {
     }
 
     func synchronizeAI(delay: Double = 0.6) {
-        if settings.isHDREditing { if aiIdentity != nil || aiPreparation != nil { resetAITask() }; return }
-        guard settings.aiDenoiseEnabled || aiManuallyRequested else {
+        guard settings.activeAIDenoise || aiManuallyRequested else {
             if aiIdentity != nil || aiPreparation != nil || aiDebounce != nil { resetAITask() }
             return
         }
         guard !aiRequiresExplicitRetry, let file else { return }
-        if RenderEngine.isX3fInput(file) && settings.x3fMode == .normal {
+        if !settings.isHDREditing && RenderEngine.isX3fInput(file) && settings.x3fMode == .normal {
             resetAITask()
             aiState = .failed(L10n.text("此 X3F 显影模式不支持 AI 降噪。"))
             return
@@ -465,7 +486,7 @@ extension EditorModel {
                         switch outcome {
                         case .success:
                             self.aiState = .ready
-                            if !self.settings.aiDenoiseEnabled { self.settings.aiDenoiseEnabled = true }
+                            if !self.settings.activeAIDenoise { self.settings.activeAIDenoise = true }
                             self.schedule()
                         case .failure(let failure):
                             self.aiState = progress.isCancelled ? .cancelled : .failed(failure.localizedDescription)

@@ -15,6 +15,12 @@ struct HDRNativeError: LocalizedError {
         case SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU: return L10n.text("HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。")
         case SONY2FUJI_HDR_REASON_PREVIEW_SOURCE: return L10n.text("预览不能用于导出，请从原始照片重新生成。")
         case SONY2FUJI_HDR_REASON_MALFORMED_AUX: return L10n.text("HDR 增益图损坏，无法还原此照片。")
+        case SONY2FUJI_HDR_REASON_LOOK_RESOURCE: return L10n.text("无法读取外观文件。")
+        case SONY2FUJI_HDR_REASON_CAMERA_DEVELOPMENT: return L10n.text("无效或不可用的镜头校正设置")
+        case SONY2FUJI_HDR_REASON_CAMERA_AI: return L10n.text("此照片或构建尚不能使用 AI 降噪。")
+        case SONY2FUJI_HDR_REASON_CAMERA_PROFILE:
+            return status == SONY2FUJI_STATUS_IO_ERROR ? L10n.text("找不到 HDR 相机配置，请重新导入。") :
+                L10n.text("无法读取 HDR 相机配置，或配置与当前相机不匹配。")
         case SONY2FUJI_HDR_REASON_UNSUPPORTED_PROTOCOL,SONY2FUJI_HDR_REASON_UNSUPPORTED_COLOR:
             return L10n.text("不支持此 HDR 格式或颜色描述。")
         default: return L10n.format("HDR 处理失败（%@）。",String(reason))
@@ -28,6 +34,16 @@ struct HDRSourceInfo {
     var proRAW: ProRAWSource? = nil
     var isDevelopedRAW: Bool { isCameraRAW || proRAW != nil }
     var isCameraRAW: Bool { native.container == UInt32(SONY2FUJI_HDR_CONTAINER_CAMERA_RAW) }
+
+    func validateEditDecodeVersion(_ saved: Int?) throws {
+        if proRAW != nil { try ProRAWSource.validatedDecodeVersion(saved) }
+        else if saved != nil { throw HDRSettings.ModeError.invalidSettings }
+    }
+
+    static func validateEditingSource(_ url: URL, proRAWDecodeVersion: Int?) throws {
+        guard let info = try probe(url) ?? probeRAW(url) else { throw HDRSettings.ModeError.unsupportedSource }
+        try info.validateEditDecodeVersion(proRAWDecodeVersion)
+    }
 
     struct CameraStamp: Hashable {
         let modified: Date?

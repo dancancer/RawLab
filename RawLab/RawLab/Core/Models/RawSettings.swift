@@ -197,7 +197,33 @@ enum PhotoEffectParameter: String, CaseIterable, Identifiable {
         case .grainRoughness: return PhotoEffectsSettings.grainRoughnessRange
         }
     }
+    var hdrKeyPath: WritableKeyPath<HDRPhotoEffectsSettings, Double> {
+        switch self {
+        case .vignetteAmount: return \.vignetteAmount
+        case .vignetteMidpoint: return \.vignetteMidpoint
+        case .vignetteRoundness: return \.vignetteRoundness
+        case .vignetteFeather: return \.vignetteFeather
+        case .vignetteHighlights: return \.vignetteHighlights
+        case .grainAmount: return \.grainAmount
+        case .grainSize: return \.grainSize
+        case .grainRoughness: return \.grainRoughness
+        }
+    }
     var defaultValue: Double { PhotoEffectsSettings()[keyPath: keyPath] }
+}
+
+extension RawSettings {
+    func editingEffectValue(_ parameter: PhotoEffectParameter) -> Double {
+        if isHDREditing, let hdr { return hdr.effectsSettings[keyPath: parameter.hdrKeyPath] }
+        return photoEffects[keyPath: parameter.keyPath]
+    }
+
+    mutating func setEditingEffect(_ parameter: PhotoEffectParameter, to value: Double) {
+        guard value.isFinite else { return }
+        let amount = min(parameter.range.upperBound, max(parameter.range.lowerBound, value.rounded()))
+        if isHDREditing { hdr?.effectsSettings[keyPath: parameter.hdrKeyPath] = amount }
+        else { photoEffects[keyPath: parameter.keyPath] = amount }
+    }
 }
 
 struct RawDenoiseSettings: Codable, Equatable {
@@ -266,10 +292,26 @@ struct RawSettings: Codable, Equatable {
         get { toneCurveConfig ?? ToneCurveSettings() }
         set { toneCurveConfig = newValue.isDefault ? nil : newValue }
     }
+    var editingCurveSettings: ToneCurveSettings {
+        get { isHDREditing ? hdr!.toneSettings.curve : curveSettings }
+        set {
+            guard newValue.isValid else { return }
+            if isHDREditing { hdr?.toneSettings.curve = newValue }
+            else { curveSettings = newValue }
+        }
+    }
     var colorGrading: ColorGradingSettings?
     var gradingSettings: ColorGradingSettings {
         get { colorGrading ?? ColorGradingSettings() }
         set { colorGrading = newValue.isDefault ? nil : newValue }
+    }
+    var editingGradingSettings: ColorGradingSettings {
+        get { isHDREditing ? hdr!.colorSettings.grading : gradingSettings }
+        set {
+            guard newValue.isValid else { return }
+            if isHDREditing { hdr?.colorSettings.grading = newValue }
+            else { gradingSettings = newValue }
+        }
     }
     var atmosphere: AtmosphereSettings?
     var atmosphereSettings: AtmosphereSettings { atmosphere ?? AtmosphereSettings() }
@@ -321,6 +363,14 @@ struct RawSettings: Codable, Equatable {
     }
     var photoEffects = PhotoEffectsSettings()
     var hsl = HSLSettings()
+    var editingHSLSettings: HSLSettings {
+        get { isHDREditing ? hdr!.colorSettings.hsl : hsl }
+        set {
+            guard newValue.isValid else { return }
+            if isHDREditing { hdr?.colorSettings.hsl = newValue }
+            else { hsl = newValue }
+        }
+    }
     var exposureMode = RawExposureMode.preview
     var displayChromaDenoise = 0 {
         didSet { displayChromaDenoise = Self.clampedDisplayChromaDenoise(displayChromaDenoise) }

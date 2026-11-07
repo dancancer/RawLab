@@ -48,17 +48,6 @@ internal static class PhotoInput
         catch (EntryPointNotFoundException) { info = null; return HDRProbeState.NotHDR; }
     }
 
-    internal static bool SupportsProRAWHDR(string path)
-    {
-        if (!IsCameraRaw(path)) return false;
-        try { return ProbeCameraRaw(path, out var info) == HDRProbeState.Supported && info?.IsProRAW == true; }
-        catch (IOException) { return false; }
-        catch (UnauthorizedAccessException) { return false; }
-        catch (EntryPointNotFoundException) { return false; }
-        catch (DllNotFoundException) { return false; }
-        catch (BadImageFormatException) { return false; }
-    }
-
     internal static Adjustments PrepareInputSettings(string path,Adjustments value)
     {
         if(!IsRaster(path))return value;
@@ -70,6 +59,9 @@ internal static class PhotoInput
         prepared.Lens=new(false,false,false);
         return prepared;
     }
+
+    internal static bool IsHDRCameraAICandidate(string path, HDRSourceInfo? info) =>
+        Path.GetExtension(path).Equals(".arw",StringComparison.OrdinalIgnoreCase) && info is { IsCameraRaw:true, IsProRAW:false };
 
     internal static Adjustments PrepareHDRInputSettings(string path, Adjustments value)
     {

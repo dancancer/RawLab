@@ -109,7 +109,23 @@ extension RawEditorViewModel {
 
     func exportJPEG(settings: RawSettings, longEdge: Int? = nil, keepHDR: Bool = true,
                     completion: @escaping (Result<Data, Error>) -> Void) {
+        exportPhoto(settings: settings, longEdge: longEdge, format: settings.isHDREditing && keepHDR ? .hdrJPEG : .jpeg,
+                    completion: completion)
+    }
+
+    func exportPhoto(settings: RawSettings, longEdge: Int?, format: BatchOutputFormat,
+                     completion: @escaping (Result<Data, Error>) -> Void) {
         dispatchPrecondition(condition: .onQueue(.main))
+        guard let hdrFormat = format.hdrPhotoFormat else {
+            completion(.failure(CocoaError(.fileWriteUnsupportedScheme)))
+            return
+        }
+        if format.requiresHDR && !settings.isHDREditing {
+            completion(.failure(BatchExportError.target(format.hdrRequiredMessage)))
+            return
+        }
+        do { try format.validateHDRHEIF(proRAW: sourceProRAW) }
+        catch { completion(.failure(error)); return }
         guard !previewRendering, !previewResizePending, !previewFailed, !isBusy else {
             completion(.failure(BatchExportError.global(L10n.text("请等待预览完成后导出。"))))
             return
@@ -140,10 +156,11 @@ extension RawEditorViewModel {
                     let data: Data
 
                     if let hdr=settings.hdr,settings.isHDREditing {
-                        let output=FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-\(UUID().uuidString).jpg")
+                        let output=FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-\(UUID().uuidString).\(format.suffix)")
                         defer { try? FileManager.default.removeItem(at:output) }
                         try self.processor.exportHDR(url: sourceURL, settings: hdr, output: output, longEdge: longEdge,
-                            keepHDR: keepHDR, cancelled: { cancellation.isCancelled })
+                            proRAWDecodeVersion: settings.proRAWDecodeVersion, format: hdrFormat,
+                            cancelled: { cancellation.isCancelled })
                         data=try Data(contentsOf:output)
                     } else if sourceKind == .raw {
                         let result = try self.processor.processRaw(

@@ -74,10 +74,24 @@ enum class AdjustmentField(val id: String) {
     LENS_DISTORTION("geometry.lens.distortion"),
     LENS_TCA("geometry.lens.tca"),
     LENS_AUTO_CROP("geometry.lens.auto_crop"),
-    LENS_PROFILE("geometry.lens.profile_id");
+    LENS_PROFILE("geometry.lens.profile_id"),
+    HDR_PEAK_LIMIT("hdr.peak_limit_ev"),
+    HDR_SDR_EXPOSURE("hdr.sdr_exposure_ev"),
+    HDR_SDR_CONTRAST("hdr.sdr_contrast"),
+    HDR_SDR_SATURATION("hdr.sdr_saturation"),
+    HDR_LOOK("hdr.look"),
+    HDR_CAMERA_DEVELOPMENT("hdr.camera_development");
 
     val isHDRRelative get() = this == HDR_TEMPERATURE || this == HDR_TINT
-    val group get() = if (isHDRRelative) "color" else if (this == BLACK_POINT || this == WHITE_POINT) "light" else id.substringBefore('.')
+    val isHDRRendition get() = this in HDR_PEAK_LIMIT..HDR_SDR_SATURATION
+    val isHDROnly get() = isHDRRelative || isHDRRendition || this == HDR_LOOK || this == HDR_CAMERA_DEVELOPMENT
+    val group get() = when {
+        this == HDR_LOOK -> "looks"
+        this == HDR_CAMERA_DEVELOPMENT -> "detail"
+        isHDRRelative -> "color"
+        this == BLACK_POINT || this == WHITE_POINT || isHDRRendition -> "light"
+        else -> id.substringBefore('.')
+    }
     val gradingZone: ColorGradingZone? get() = when (this) {
         GRADING_SHADOWS -> ColorGradingZone.SHADOWS; GRADING_MIDTONES -> ColorGradingZone.MIDTONES
         GRADING_HIGHLIGHTS -> ColorGradingZone.HIGHLIGHTS; else -> null
@@ -94,6 +108,9 @@ enum class AdjustmentField(val id: String) {
             STRENGTH, CONTRAST, SATURATION, SHARPENING -> 0.0..2.0
             HDR_TEMPERATURE -> 2000.0..50000.0
             HDR_TINT -> -150.0..150.0
+            HDR_PEAK_LIMIT -> 0.0..6.0
+            HDR_SDR_EXPOSURE -> -4.0..4.0
+            HDR_SDR_CONTRAST, HDR_SDR_SATURATION -> -100.0..100.0
             EXPOSURE -> -20.0..20.0
             HIGHLIGHTS, SHADOWS, S_CURVE, PERSPECTIVE_HORIZONTAL, PERSPECTIVE_VERTICAL -> -1.0..1.0
             VIGNETTE_AMOUNT, VIGNETTE_ROUNDNESS, BLACK_POINT, WHITE_POINT, VIBRANCE, CLARITY, DEHAZE -> -100.0..100.0
@@ -106,11 +123,34 @@ enum class AdjustmentField(val id: String) {
     }
 
     companion object {
-        val COMMON = entries.filterTo(linkedSetOf()) { it.group != "geometry" && !it.isHDRRelative }
+        val COMMON = entries.filterTo(linkedSetOf()) { it.group != "geometry" && !it.isHDROnly }
         val HDR_COMMON = setOf(EXPOSURE, CONTRAST, HIGHLIGHTS, SHADOWS, SATURATION, HDR_TEMPERATURE, HDR_TINT)
         val HDR_GEOMETRY = setOf(CROP_X, CROP_Y, CROP_WIDTH, CROP_HEIGHT, QUARTER_TURNS,
             FLIP_HORIZONTAL, FLIP_VERTICAL, STRAIGHTEN, PERSPECTIVE_HORIZONTAL, PERSPECTIVE_VERTICAL)
-        val HDR_SUPPORTED = HDR_COMMON + HDR_GEOMETRY
+        val HDR_TONE = setOf(BLACK_POINT, WHITE_POINT, S_CURVE, CURVE)
+        val HDR_COLOR = entries.filterTo(linkedSetOf()) { it == VIBRANCE || it.hslLocation != null || it.gradingZone != null }
+        val HDR_V1_SUPPORTED = HDR_COMMON + HDR_GEOMETRY
+        val HDR_V2_SUPPORTED = HDR_V1_SUPPORTED + HDR_TONE
+        val HDR_RENDITION = entries.filterTo(linkedSetOf()) { it.isHDRRendition }
+        val HDR_V3_SUPPORTED = HDR_V2_SUPPORTED + HDR_COLOR
+        val HDR_EFFECTS = setOf(VIGNETTE_AMOUNT, VIGNETTE_MIDPOINT, VIGNETTE_ROUNDNESS, VIGNETTE_FEATHER,
+            VIGNETTE_HIGHLIGHTS, GRAIN_AMOUNT, GRAIN_SIZE, GRAIN_ROUGHNESS)
+        val HDR_DETAIL = setOf(SHARPENING, CLARITY, DEHAZE, POST_RGB_DENOISE)
+        val HDR_V4_SUPPORTED = HDR_V3_SUPPORTED + HDR_RENDITION
+        val HDR_V5_SUPPORTED = HDR_V4_SUPPORTED + HDR_EFFECTS
+        val HDR_V6_SUPPORTED = HDR_V5_SUPPORTED + HDR_DETAIL
+        val HDR_SUPPORTED = HDR_V6_SUPPORTED + HDR_LOOK
+        fun hdrTransferFields(cameraRAW: Boolean) = if (cameraRAW) HDR_SUPPORTED + HDR_CAMERA_DEVELOPMENT else HDR_SUPPORTED
+        fun hdrSupported(version: Int) = when (version) {
+            1 -> HDR_V1_SUPPORTED
+            2 -> HDR_V2_SUPPORTED
+            3 -> HDR_V3_SUPPORTED
+            4 -> HDR_V4_SUPPORTED
+            5 -> HDR_V5_SUPPORTED
+            6 -> HDR_V6_SUPPORTED
+            7 -> HDR_SUPPORTED
+            else -> error("Unsupported HDR processing version")
+        }
         val WHITE_BALANCE = setOf(WHITE_BALANCE_MODE, TEMPERATURE, TINT)
         val LENS = setOf(LENS_DISTORTION, LENS_TCA, LENS_AUTO_CROP, LENS_PROFILE)
         val DENOISE = setOf(RAW_DENOISE, POST_RGB_DENOISE, CHROMA_DENOISE, WAVELET_DENOISE)

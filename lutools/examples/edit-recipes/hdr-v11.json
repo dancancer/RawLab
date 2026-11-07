@@ -1,0 +1,112 @@
+{
+  "schema_version": 11,
+  "processing": {
+    "family": "rawlab_hdr",
+    "version": 5,
+    "quality": "standard"
+  },
+  "input": {
+    "path": "phone.heic",
+    "type": "hdr_raster"
+  },
+  "edits": {
+    "exposure": {
+      "ev": 1
+    },
+    "white_balance": {
+      "mode": "relative",
+      "relative_temperature": 6500,
+      "relative_tint": 0
+    },
+    "tone": {
+      "contrast": 1,
+      "saturation": 1,
+      "highlights": 0,
+      "shadows": 0,
+      "black_point": -0.25,
+      "white_point": 0.5,
+      "curve": {
+        "mode": "custom",
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            0.5,
+            0.625
+          ],
+          [
+            1,
+            1
+          ]
+        ]
+      }
+    },
+    "color": {
+      "vibrance": 0.35
+    },
+    "hsl": {
+      "hue": [
+        12,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "saturation": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        -18,
+        0,
+        0
+      ],
+      "lightness": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "color_grading": {
+      "shadows": {
+        "hue": 210,
+        "saturation": 12
+      },
+      "highlights": {
+        "hue": 35,
+        "saturation": 20
+      }
+    },
+    "rendition": {
+      "peak_limit_ev": 2,
+      "sdr_exposure_ev": -0.5,
+      "sdr_contrast": 0.25,
+      "sdr_saturation": -0.15
+    },
+    "effects": {
+      "vignette_amount": -60,
+      "vignette_highlights": 50,
+      "grain_amount": 55
+    }
+  },
+  "output": {
+    "path": "edited-hdr.jpg",
+    "format": "hdr_jpeg",
+    "base_color": "display_p3",
+    "jpeg_quality": 95,
+    "size": {
+      "mode": "native"
+    }
+  }
+}

@@ -104,6 +104,12 @@ extension ContentView {
                         Button(L10n.text("保存 SDR JPEG")) {
                             singleExportFormat = .jpeg; exportLongEdge=nil; showingExportSize=true
                         }.disabled(restricted || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewFailed)
+                        if HDRImage.heifExportAvailable {
+                            Button(BatchOutputFormat.hdrHEIF.title) {
+                                singleExportFormat = .hdrHEIF; exportLongEdge = nil; showingExportSize = true
+                            }
+                            .disabled(viewModel.proRAWFullPairExportRestricted || !viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
+                        }
                     }
                     Button(L10n.text("导出渲染型 DNG…")) {
                         singleExportFormat = .renderedDNG
@@ -304,8 +310,17 @@ extension ContentView {
     @ViewBuilder var adjustmentPanel: some View {
         Group {
             if viewModel.quickPresetsVisible {
-                IOSQuickPresetView(model: viewModel, requestAction: requestAdjustmentAction,
-                    manage: { adjustmentSheet = .presets }, undo: undoQuickPreset, libraryRevision: presetLibraryRevision)
+                VStack(alignment: .leading, spacing: 6) {
+                    if settings.isHDREditing {
+                        let revision = viewModel.sourceRevision
+                        HDRLookControls(settings: Binding(get: { settings.hdr ?? HDRSettings() },
+                            set: { if viewModel.sourceRevision == revision && settings.isHDREditing { settings.hdr = $0 } }
+                        ), onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
+                            .padding(.horizontal, 16).id(revision).disabled(editorBusy || editingLocked)
+                    }
+                    IOSQuickPresetView(model: viewModel, requestAction: requestAdjustmentAction,
+                        manage: { adjustmentSheet = .presets }, undo: undoQuickPreset, libraryRevision: presetLibraryRevision)
+                }
             } else { valuePanel }
         }.disabled(resetDraftSuspended || (settings.isHDREditing && !viewModel.quickPresetsVisible && !supportsHDR(currentEditorTool)))
             .environment(\.adjustmentFine, adjustmentFine)
@@ -387,7 +402,19 @@ extension ContentView {
                             .disabled(isEditorDraftActive || editorBusy || viewModel.previewRendering)
                             .accessibilityIdentifier("hdr.editMode")
                     }
-                    if settings.isHDREditing { HDRMonitoringControls(state:hdrDisplay) }
+                    if settings.isHDREditing {
+                        HDRMonitoringControls(state:hdrDisplay)
+                        HDRRenditionControls(settings: Binding(
+                            get: { settings.hdr?.renditionSettings ?? HDRRenditionSettings() },
+                            set: { if settings.isHDREditing { settings.hdr?.renditionSettings = $0 } }
+                        ), onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
+                            .id(viewModel.sourceRevision)
+                            .disabled(isEditorDraftActive || editorBusy)
+                        if viewModel.sourceSupportsCameraHDR, viewModel.sourceProRAW == nil, let hdr = settings.hdr {
+                            HDRCameraDevelopmentControls(settings: hdr.cameraDevelopmentSettings, apply: applyHDRCameraDevelopment)
+                                .id(viewModel.sourceRevision).disabled(isEditorDraftActive || editorBusy)
+                        }
+                    }
                     if viewModel.sourceIsX3f {
                         Picker(L10n.text("X3F 显影"), selection: Binding(get: { settings.x3fMode }, set: { mode in
                             var next = settings
@@ -420,13 +447,14 @@ extension ContentView {
         let channel = hslChannel
         let grading = gradingZone
         let perspective = geometryPerspective
-        return AdjustmentInputContext(id: "\(source).\(tool.stableID).\(channel).\(grading.rawValue).\(perspective)", isCurrent: {
-            viewModel.sourceRevision == source && currentEditorTool == tool && adjustmentsExpanded &&
+        let hdr = settings.isHDREditing
+        return AdjustmentInputContext(id: "\(source).\(tool.stableID).\(channel).\(grading.rawValue).\(perspective).\(hdr)", isCurrent: {
+            viewModel.sourceRevision == source && currentEditorTool == tool && adjustmentsExpanded && settings.isHDREditing == hdr &&
                 (tool != .adjustment(.hsl) || hslChannel == channel) &&
                 (tool != .adjustment(.colorGrading) || gradingZone == grading) &&
                 (tool != .geometry || geometryPerspective == perspective)
         }, canChange: { !viewModel.adjustmentInteractionRejected }, onInteractionCancelled: {
-            if viewModel.sourceRevision == source && currentEditorTool == tool &&
+            if viewModel.sourceRevision == source && currentEditorTool == tool && settings.isHDREditing == hdr &&
                 (tool != .adjustment(.hsl) || hslChannel == channel) &&
                 (tool != .adjustment(.colorGrading) || gradingZone == grading) &&
                 (tool != .geometry || geometryPerspective == perspective) {
@@ -524,8 +552,8 @@ extension ContentView {
         switch tool {
         case .film: return selectedFilmName
         case .recipe: return settings.masterRecipe?.title ?? L10n.text("无配方")
-        case .adjustment(.toneCurve) where settings.curveSettings.mode == .custom:
-            return L10n.format("多点曲线（%d 个控制点）", settings.curveSettings.points.count)
+        case .adjustment(.toneCurve) where settings.editingCurveSettings.mode == .custom:
+            return L10n.format("多点曲线（%d 个控制点）", settings.editingCurveSettings.points.count)
         case .adjustment(let adjustment): return adjustment.valueLabel(for: adjustment.value(from: settings))
         default: return resetModified(.tool(tool)) ? L10n.text("已调整") : ""
         }
@@ -540,7 +568,7 @@ extension ContentView {
                         ForEach(EditorAdjustmentRules.tools(selectedGroup), id: \.self) { tool in
                             Button { if tool == .geometry { geometryPerspective = false }; selectEditorTool(tool) } label: {
                                 AdjustmentToolLabel(title: tool == .geometry ? L10n.text("裁切") : tool.title, symbol: tool.symbol, selected: !viewModel.quickPresetsVisible && currentEditorTool == tool && !(tool == .geometry && geometryPerspective),
-                                    progress: tool == .adjustment(.toneCurve) && settings.curveSettings.mode == .custom ? 1 :
+                                    progress: tool == .adjustment(.toneCurve) && settings.editingCurveSettings.mode == .custom ? 1 :
                                         tool.scalar.map(adjustmentProgress) ?? (resetModified(.tool(tool)) ? 1 : 0), width: toolWidth, height: rowHeight,
                                     maximumWidth: accessibility ? max(44, width - 24) : nil)
                             }

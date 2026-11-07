@@ -137,6 +137,8 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     val openLook = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         model.importLooks(uris)
     }
+    val openHDRLook = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), model::finishHDRLookImport)
+    val openHDRCameraProfile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), model::finishHDRCameraProfileImport)
     val saveJpeg = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/jpeg")) {
         if (it == null) exportDialog = true else model.export(it, format, pendingExportLongEdgeText.toIntOrNull())
     }
@@ -210,7 +212,11 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             },
             onMessageDismiss = model::dismissMessage, onLicenses = { licenses = true }, onGpuChange = model::setGpuEnabled,
             onHDRChange = model::setHDRMode,
+            onHDRCameraDevelopment = model::applyHDRCameraDevelopment,
+            onImportHDRCameraProfile = { if (model.beginHDRCameraProfileImport()) openHDRCameraProfile.launch(arrayOf("*/*")) },
             onImportLook = { openLook.launch(arrayOf("*/*")) }, onRenameLook = model::renameLook,
+            onImportHDRLook = { if (model.beginHDRLookImport()) openHDRLook.launch(arrayOf("*/*")) },
+            onApplyHDRSilver = model::applyHDRSilver,
             onDeleteLook = model::deleteLook, onLookImportReportDismiss = model::dismissLookImportReport,
             onAbout = { about = true }, updateVersion = updateState.available?.version,
             onPreviewSizeChange = model::updatePreviewSize,

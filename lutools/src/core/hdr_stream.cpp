@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <unordered_map>
 
 namespace sony2fuji::hdr {
@@ -55,30 +56,71 @@ class RenderedRows {
     uint32_t width_, height_, first_ = std::numeric_limits<uint32_t>::max();
     std::vector<RGB> rows_;
     float* headroom_;
+    std::optional<PhotoEffectSampler> effects_;
+    std::optional<HDRDetailPlan> detail_;
+    double peak_ = 0;
+
+    GeometryPixelReader transformedReader() {
+        const GeometryPixelReader read = [this](int x, int y) { return source_.read(x, y); };
+        return [this, read](int x, int y) { return geometry_(x, y, read); };
+    }
+
+    template<class Write> void sampleBand(uint32_t first, uint32_t end, const Write& write) {
+        const auto transformed = transformedReader();
+        // 输出按小块访问，90° 旋转时不让每行反复淘汰整列源块。
+        for (uint32_t left = 0; left < width_; left += tileEdge) for (uint32_t row = first; row < end; ++row) {
+            checkProcessingCancellation();
+            for (uint32_t x = left; x < std::min(left + tileEdge, width_); ++x)
+                write(x, row, sampleHDRResize(x, row, nativeSize_.first, nativeSize_.second, width_, height_, transformed));
+        }
+    }
+
+    RGB finishPixel(RGB p, int x, int y) {
+        if (effects_) p = effects_->applyExtendedLinear(p, x, y, peak_);
+        const float luminance = .2126f * p.r + .7152f * p.g + .0722f * p.b;
+        if (!std::isfinite(p.r) || !std::isfinite(p.g) || !std::isfinite(p.b) || !std::isfinite(luminance))
+            throw std::overflow_error("HDR streamed canvas exceeded finite float range");
+        if (headroom_) *headroom_ = std::max(*headroom_, luminance);
+        return p;
+    }
 public:
     RenderedRows(const fs::path& path, const HDRRowSource& source, const HDRRenderOptions& options,
         uint32_t width, uint32_t height, float* headroom) : source_(path, source.width, source.height),
         geometry_(makeGeometrySampler(source.width, source.height, options.geometry)),
         nativeSize_(geometryOutputSize(source.width, source.height, options.geometry)),
-        width_(width), height_(height), rows_(size_t(width) * std::min(tileEdge, height)), headroom_(headroom) {}
+        width_(width), height_(height), rows_(size_t(width) * std::min(tileEdge, height)), headroom_(headroom) {
+        if (headroom_ && options.rendition.peakLimitEV > 0) peak_ = std::exp2(double(options.rendition.peakLimitEV));
+        if (options.hasPhotoEffects()) effects_.emplace(options.effects, width, height);
+        if (options.hasDetail()) {
+            const auto transformed = transformedReader();
+            detail_ = planHDRDetail(width, height, options.detail, peak_, [&](int x, int y) {
+                return sampleHDRResize(x, y, nativeSize_.first, nativeSize_.second, width_, height_, transformed);
+            });
+        }
+    }
 
     const RGB* row(uint32_t y) {
         const uint32_t first = y / tileEdge * tileEdge;
         if (first != first_) {
-            const GeometryPixelReader read = [&](int x, int row) { return source_.read(x, row); };
-            const GeometryPixelReader transformed = [&](int x, int row) { return geometry_(x, row, read); };
             const uint32_t end = std::min(first + tileEdge, height_);
-            // 输出也按小块访问，90° 旋转时不让每一行反复淘汰整列源块。
-            for (uint32_t left = 0; left < width_; left += tileEdge) for (uint32_t row = first; row < end; ++row) {
-                checkProcessingCancellation();
-                for (uint32_t x = left; x < std::min(left + tileEdge, width_); ++x) {
-                    const auto p = sampleHDRResize(x, row, nativeSize_.first, nativeSize_.second, width_, height_, transformed);
-                    const float luminance = .2126f * p.r + .7152f * p.g + .0722f * p.b;
-                    if (!std::isfinite(p.r) || !std::isfinite(p.g) || !std::isfinite(p.b) || !std::isfinite(luminance))
-                        throw std::overflow_error("HDR streamed geometry exceeded finite float range");
-                    rows_[size_t(row - first) * width_ + x] = p;
-                    if (headroom_) *headroom_ = std::max(*headroom_, luminance);
+            if (detail_) {
+                const uint32_t halo = detail_->halo;
+                const uint32_t top = first > halo ? first - halo : 0;
+                const uint32_t bottom = std::min(height_, end + halo);
+                std::vector<RGB> input(size_t(width_) * (bottom - top));
+                sampleBand(top, bottom, [&](uint32_t x, uint32_t y, RGB p) { input[size_t(y - top) * width_ + x] = p; });
+                renderHDRDetailBand(*detail_, input.data(), top, bottom - top, rows_.data(), first, end - first);
+                for (uint32_t row = first; row < end; ++row) {
+                    checkProcessingCancellation();
+                    for (uint32_t x = 0; x < width_; ++x) {
+                        auto& p = rows_[size_t(row - first) * width_ + x];
+                        p = finishPixel(p, x, row);
+                    }
                 }
+            } else {
+                sampleBand(first, end, [&](uint32_t x, uint32_t y, RGB p) {
+                    rows_[size_t(y - first) * width_ + x] = finishPixel(p, x, y);
+                });
             }
             first_ = first;
         }
@@ -136,7 +178,12 @@ HDRStreamResult encodeStream(const HDRRowSource& source, const HDRRenderOptions&
         }
     }
     source.finish(); checkProcessingCancellation();
-    admitMemory(uint64_t(result.width) * tileEdge * 20 + (32ull << 20));
+    uint64_t extra = 0;
+    if (options.hasDetail()) {
+        const uint32_t halo = options.detail.halo(result.width, result.height);
+        extra = uint64_t(result.width) * std::min(result.height, tileEdge + 2 * halo) * (sizeof(RGB) + sizeof(float));
+    }
+    admitMemory(uint64_t(result.width) * tileEdge * 20 + (32ull << 20) + extra);
     if (!highDynamicRange) {
         RenderedRows rows(low, source, options, result.width, result.height, nullptr);
         result.jpeg = encodeSDRJPEGRows(result.width, result.height, quality, [&](uint32_t y) { return rows.row(y); });

@@ -24,20 +24,64 @@ import Foundation
         check(reset.isHDREditing && reset.hdr?.isIdentity == true && reset.exposure == 1, "reset changed mode or dormant SDR edit")
         var cameraSDR = sdr
         cameraSDR.sharpening = 25
+        cameraSDR.blackPoint = -8; cameraSDR.whitePoint = 9; cameraSDR.toneCurve = 12
+        cameraSDR.curveSettings = .identity
         var cameraHDR = try cameraSDR.withHDRMode(true, sourceIsHDR: false, hasLook: true, cameraRAW: true)
         check(cameraHDR.hdr == HDRSettings() && cameraHDR.sharpening == 25 && cameraHDR.exposure == 1,
               "camera RAW HDR must start with an independent snapshot")
         cameraHDR.set(.exposure, to: 3)
+        check(cameraHDR.hdr?.processingVersion == 1, "ordinary HDR edit upgraded the tone version")
+        cameraHDR.set(.blackPoint, to: -25); cameraHDR.set(.whitePoint, to: 50); cameraHDR.set(.toneCurve, to: 30)
+        check(AdjustmentParameter.blackPoint.value(from: cameraHDR) == -25 &&
+              AdjustmentParameter.whitePoint.value(from: cameraHDR) == 50 &&
+              AdjustmentParameter.toneCurve.value(from: cameraHDR) == 30 &&
+              cameraHDR.hdr?.processingVersion == 2, "HDR tone controls did not update the active record")
+        check(cameraHDR.blackPoint == -8 && cameraHDR.whitePoint == 9 && cameraHDR.toneCurve == 12 &&
+              cameraHDR.curveSettings == .identity, "HDR tone controls changed the dormant SDR record")
+        cameraHDR.editingCurveSettings = .identity.inserting(x: 0.5, y: 0.6)
+        check(cameraHDR.hdr?.toneSettings.curve == cameraHDR.editingCurveSettings && cameraHDR.curveSettings == .identity,
+              "HDR custom curve did not stay separate from the SDR curve")
         let savedCamera = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(cameraHDR))
+        check(savedCamera == cameraHDR, "HDR tone settings did not survive serialization")
         let cameraOff = try savedCamera.withHDRMode(false, sourceIsHDR: false, hasLook: true, cameraRAW: true)
         let cameraOn = try cameraOff.withHDRMode(true, sourceIsHDR: false, hasLook: true, cameraRAW: true)
         check(!cameraOff.isHDREditing && cameraOff.exposure == 1 && cameraOn.hdr?.exposure == 3,
               "camera RAW mode switch or persisted edit lost either snapshot")
+        var ai = cameraOn
+        ai.activeAIDenoise = true
+        check(ai.hdrCameraAIEnabled && !ai.aiDenoiseEnabled && !ai.neutralSettings.activeAIDenoise,
+              "HDR Bayer AI changed the SDR flag or neutral reference")
+        let restoredAI = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(ai))
+        check(restoredAI == ai, "HDR Bayer AI selection did not survive serialization")
+        var aiSDR = try restoredAI.withHDRMode(false, sourceIsHDR: false, hasLook: false, cameraRAW: true)
+        check(aiSDR.hdrCameraAIEnabled && !aiSDR.activeAIDenoise, "SDR mode used the saved HDR Bayer AI selection")
+        aiSDR.resetAll()
+        check(aiSDR.hdrCameraAIEnabled && !aiSDR.activeAIDenoise, "SDR reset cleared the dormant HDR Bayer AI selection")
+        ai.resetAll()
+        check(!ai.activeAIDenoise && ai.isHDREditing, "HDR reset kept the active AI selection")
         var conflict = sdr; conflict.sharpening = 10
         do { _ = try conflict.withHDRMode(true, sourceIsHDR: true, hasLook: false); fatalError("unsupported control accepted") }
         catch HDRSettings.ModeError.conflicts(let fields) { check(fields.contains("sharpening"), "conflict field missing") }
         check(conflict.hdr == nil && conflict.sharpening == 10, "failed conversion changed state")
         let context=EditorAdjustmentContext(isRaw:false,defaultExposureMode:.sensor,neutralFilmID:"")
+        let editedTone = PhotoEditState(settings: cameraHDR, filmID: "")
+        if case .candidate(let candidate) = EditorAdjustmentRules.prepareReset(scope: .group(.light), snapshot: editedTone, context: context) {
+            check(candidate.settings.hdr?.toneSettings.isDefault == true && candidate.settings.hdr?.processingVersion == 2 &&
+                  candidate.settings.blackPoint == -8 && candidate.settings.curveSettings == .identity,
+                  "HDR group reset lost its version or changed dormant tone")
+        } else { fatalError("HDR tone group reset was not prepared") }
+        var hdrColor = cameraHDR
+        hdrColor.set(.vibrance, to: 35)
+        hdrColor.editingHSLSettings.set(.hue, channel: 2, value: 18)
+        hdrColor.editingGradingSettings.midtones = .init(hue: 180, saturation: 21)
+        let colorSnapshot = PhotoEditState(settings: hdrColor, filmID: "")
+        check(hdrColor.hdr?.processingVersion == 3 && hdrColor.vibrance == 0 &&
+              hdrColor.hslSettings.isIdentity && hdrColor.gradingSettings.isDefault,
+              "HDR color controls changed dormant SDR state")
+        if case .candidate(let candidate) = EditorAdjustmentRules.prepareReset(scope: .group(.color), snapshot: colorSnapshot, context: context) {
+            check(candidate.settings.hdr?.colorSettings.isDefault == true && candidate.settings.hdr?.processingVersion == 3 &&
+                  candidate.settings.hdr?.toneSettings == cameraHDR.hdr?.toneSettings, "HDR color reset changed tone or processing version")
+        } else { fatalError("HDR color group reset was not prepared") }
         var photograph=PhotoEditState(settings:active,filmID:"dormant-look")
         check(EditorAdjustmentRules.isModified(scope:.tool(.whiteBalance),snapshot:photograph,context:context),"HDR relative WB is not marked modified")
         if case .candidate(let candidate)=EditorAdjustmentRules.prepareReset(scope:.tool(.exposure),snapshot:photograph,context:context) {

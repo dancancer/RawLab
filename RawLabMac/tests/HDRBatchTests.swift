@@ -54,6 +54,8 @@ import ImageIO
             editedSource.hdr?.geometry.quarterTurns = 1
             editedSource.hdr?.geometry.straightenDegrees = 7
             editedSource.hdr?.geometry.cropWidth = 0.5
+            editedSource.hdr?.effectsSettings.vignetteAmount = -55
+            editedSource.hdr?.effectsSettings.grainAmount = 40
             let streamPreparation = MacHDRBatchPreparation(source: input, settings: editedSource, store: store, films: [])
             for format in [ExportFormat.hdrJPEG, .jpeg] {
                 var streamJob = BatchExportJob(source: input, settings: editedSource, look: nil, lookName: "HDR")
@@ -80,6 +82,58 @@ import ImageIO
             print("PASS ProRAW batch capability, frozen target modes and record isolation")
             print("PASS Mac ProRAW stream Engine routing and HDR/SDR batch file publication")
         }
+        let camera = directory.appendingPathComponent("camera.dng")
+        let cameraFixture = URL(fileURLWithPath: ProcessInfo.processInfo.environment["RAWLAB_TEST_CAMERA_RAW"]!)
+        try FileManager.default.copyItem(at: cameraFixture, to: camera)
+        var cameraItem = try BatchExportItem(url: camera); cameraItem.selected = true
+        let freshCamera = try preparer.prepare(cameraItem, ordinal: 0, format: .jpeg, longEdge: 64)
+        check(!freshCamera.settings.isHDREditing && freshCamera.settings.exposure == 1,
+              "New camera RAW should remain in SDR editing")
+        var cameraEdit = Adjustments(); cameraEdit.exposure = -2; cameraEdit.hdr = HDRSettings()
+        cameraEdit.proRAWDecodeVersion = ProRAWSource.decodeVersion
+        try store.save(camera, state: PhotoEditState(settings: cameraEdit, filmID: ""))
+        do {
+            _ = try preparer.prepare(cameraItem, ordinal: 0, format: .hdrJPEG, longEdge: 64)
+            fatalError("Camera RAW accepted a ProRAW decode version")
+        } catch HDRSettings.ModeError.invalidSettings {}
+        cameraEdit.proRAWDecodeVersion = nil
+        try store.save(camera, state: PhotoEditState(settings: cameraEdit, filmID: ""))
+        let savedCamera = try store.versionedState(for: camera)
+        var cameraSource = source; cameraSource.hdr?.renditionSettings.sdrExposureEV = -0.75
+        let cameraPreparation = MacHDRBatchPreparation(source: input, settings: cameraSource, store: store, films: [])
+        let cameraFrozen = try cameraPreparation.prepare(cameraItem, ordinal: 0, format: .hdrJPEG, longEdge: 64)
+        check(cameraFrozen.settings.hdr == cameraSource.hdr && cameraFrozen.settings.exposure == -2,
+              "Camera RAW batch lost the HDR edits or its dormant SDR snapshot")
+        var cameraJob = BatchExportJob(source: input, settings: cameraSource, look: nil, lookName: "HDR")
+        cameraJob.items = [cameraItem]; cameraJob.outputDirectory = directory
+        cameraJob.longEdge = 64; cameraJob.format = .hdrJPEG
+        let cameraModel = BatchExportModel(job: cameraJob,
+            journal: BatchJournal(directory: directory.appendingPathComponent("camera-job")), hdrPreparation: cameraPreparation)
+        cameraModel.start()
+        let cameraDeadline = Date().addingTimeInterval(30)
+        while cameraModel.running && Date() < cameraDeadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+        let cameraOutput = try cameraModel.job.items[0].output.flatMap { try HDRSourceInfo.probe($0) }
+        let afterCamera = try store.versionedState(for: camera)
+        check(cameraModel.job.succeededCount == 1 && cameraOutput != nil && afterCamera == savedCamera,
+              "Camera RAW batch failed gain-map readback or wrote the target record")
+        print("PASS Mac camera RAW HDR batch preflight, v4 export and record isolation")
+        if HDRImage.heifExportAvailable {
+            var heifJob = BatchExportJob(source: input, settings: cameraSource, look: nil, lookName: "HDR")
+            heifJob.items = [cameraItem]; heifJob.outputDirectory = directory
+            heifJob.longEdge = 64; heifJob.format = .hdrHEIF
+            let heifModel = BatchExportModel(job: heifJob,
+                journal: BatchJournal(directory: directory.appendingPathComponent("camera-heif-job")), hdrPreparation: cameraPreparation)
+            heifModel.start()
+            let deadline = Date().addingTimeInterval(30)
+            while heifModel.running && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+            let output = heifModel.job.items[0].output
+            let info = try output.flatMap { try HDRSourceInfo.probe($0) }
+            check(heifModel.job.succeededCount == 1 && output?.pathExtension == "heic" &&
+                  info?.native.protocol == UInt32(SONY2FUJI_HDR_PROTOCOL_ISO) && info?.native.width == 64,
+                  "Mac batch HEIF lost its suffix, size or ISO gain map: \(heifModel.error ?? "")")
+            print("PASS Mac camera RAW HDR HEIF batch file publication and readback")
+        }
+
         var first=try BatchExportItem(url:input),second=try BatchExportItem(url:legacy)
         first.selected=true; second.selected=true
         let a=try preparer.prepare(first,ordinal:0,format:.jpeg,longEdge:32)

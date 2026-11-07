@@ -99,6 +99,9 @@
         <MenuItem x:Name="HDRPreviewMenu" Header="{DynamicResource '自动 HDR'}" IsCheckable="True" IsChecked="True" Click="HDRPreviewClicked" AutomationProperties.AutomationId="hdr.preview.auto"/>
         <MenuItem x:Name="HDRSdrPreviewMenu" Header="{DynamicResource 'SDR 兼容预览'}" IsCheckable="True" Click="HDRSdrPreviewClicked" AutomationProperties.AutomationId="hdr.preview.sdr"/>
         <MenuItem x:Name="HDRFalseColorMenu" Header="{DynamicResource 'HDR 假色'}" IsCheckable="True" Click="HDRFalseColorClicked" AutomationProperties.AutomationId="hdr.false-color"/>
+        <MenuItem x:Name="HDRRenditionMenu" Header="{DynamicResource 'HDR 输出与 SDR 底图'}" Click="HDRRenditionClicked" AutomationProperties.AutomationId="hdr.rendition.open"/>
+        <MenuItem x:Name="HDRLookMenu" Header="HDR LUT…" Click="HDRLookClicked" AutomationProperties.AutomationId="hdr.look.open"/>
+        <MenuItem x:Name="HDRCameraMenu" Header="HDR RAW…" Click="HDRCameraClicked" AutomationProperties.AutomationId="hdr.camera.open"/>
         <Separator/>
         <MenuItem Header="{DynamicResource '文件树'}" Click="LibraryToggle"/>
         <MenuItem Header="{DynamicResource '调整栏'}" Click="DockToggle"/>

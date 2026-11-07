@@ -20,7 +20,15 @@ extension RawEditorViewModel {
             guard let self else { return }
             var sample = unavailable(.failed)
             do {
-                if raw, let file {
+                if request.settings.isHDREditing {
+                    if let file, let hdr = request.settings.hdr {
+                        try file.withReadAccess { url in
+                            sample = try self.processor.sampleHDRHSL(url: url, settings: hdr,
+                                proRAWDecodeVersion: request.settings.proRAWDecodeVersion,
+                                previewLongEdge: request.longEdge, revision: revision, point: point)
+                        }
+                    }
+                } else if raw, let file {
                     try file.withReadAccess { url in
                         sample = try self.processor.sampleHSL(url: url, buffer: nil, settings: request.settings,
                             previewLongEdge: CGFloat(request.longEdge), lutURL: look, interactive: request.quality == .interactive,

@@ -401,8 +401,8 @@ typedef struct sony2fuji_hsl_probe_result {
     uint32_t width, height;
     sony2fuji_hsl_probe_availability availability;
     sony2fuji_hsl_probe_quality quality;
-    float rgb[3]; // Display-encoded working sRGB, possibly outside [0,1].
-    float hsl[3]; // Hue degrees [0,360), saturation/lightness [0,1].
+    float rgb[3]; // Working sRGB outside [0,1] is allowed. HDR probes use linear values.
+    float hsl[3]; // Hue degrees [0,360), saturation and lightness coordinate [0,1].
     float weights[8]; // Same channel order as hsl_config; available samples sum to 1.
 } sony2fuji_hsl_probe_result;
 

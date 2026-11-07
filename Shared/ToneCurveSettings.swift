@@ -20,6 +20,7 @@ struct ToneCurvePoint: Equatable, Hashable, Codable {
 }
 
 struct ToneCurveSettings: Equatable, Hashable, Codable {
+    static let hdrExposureRange = -8.0...8.0
     var mode: ToneCurveMode = .legacy
     var points: [ToneCurvePoint] = []
     static let identity = Self(mode: .custom, points: [.init(x: 0, y: 0), .init(x: 1, y: 1)])

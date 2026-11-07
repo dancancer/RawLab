@@ -61,9 +61,11 @@ extension EditorModel {
         guard let entry = interactionEntry else { return }
         saveWork?.cancel()
         scheduler.setInteracting(false)
-        let aiEnabled = settings.aiDenoiseEnabled
-        let aiChanged = aiEnabled != entry.settings.aiDenoiseEnabled
-        var restored = entry; restored.settings.aiDenoiseEnabled = aiEnabled
+        let aiChanged = settings.aiDenoiseEnabled != entry.settings.aiDenoiseEnabled ||
+            settings.hdrCameraAIEnabled != entry.settings.hdrCameraAIEnabled
+        var restored = entry
+        restored.settings.aiDenoiseEnabled = settings.aiDenoiseEnabled
+        restored.settings.hdrCameraAIEnabled = settings.hdrCameraAIEnabled
         restoreAdjustmentState(restored)
         dirty = interactionWasDirty || aiChanged
         interactionEntry = nil

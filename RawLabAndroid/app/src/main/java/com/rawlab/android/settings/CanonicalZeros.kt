@@ -25,7 +25,15 @@ internal fun EditSettings.canonicalZeros(): EditSettings = copy(
     hdr = hdr?.copy(exposure = hdr.exposure.canonicalZero(), temperature = hdr.temperature.canonicalZero(),
         tint = hdr.tint.canonicalZero(), contrast = hdr.contrast.canonicalZero(),
         highlights = hdr.highlights.canonicalZero(), shadows = hdr.shadows.canonicalZero(),
-        saturation = hdr.saturation.canonicalZero(), geometry = with(hdr.geometry) {
+        saturation = hdr.saturation.canonicalZero(), tone = hdr.tone?.let {
+            it.copy(blackPoint = it.blackPoint.canonicalZero(), whitePoint = it.whitePoint.canonicalZero(),
+                curveStrength = it.curveStrength.canonicalZero())
+        }, detail = hdr.detail?.let {
+            it.copy(sharpening = it.sharpening.canonicalZero(), clarity = it.clarity.canonicalZero(),
+                dehaze = it.dehaze.canonicalZero(), denoise = it.denoise.canonicalZero())
+        }, look = hdr.look?.let { it.copy(strength = it.strength.canonicalZero()) },
+        cameraDevelopment = hdr.cameraDevelopment?.let { it.copy(temperature = it.temperature.canonicalZero(), tint = it.tint.canonicalZero()) },
+        geometry = with(hdr.geometry) {
             copy(cropX = cropX.canonicalZero(), cropY = cropY.canonicalZero(),
                 cropWidth = cropWidth.canonicalZero(), cropHeight = cropHeight.canonicalZero(),
                 straightenDegrees = straightenDegrees.canonicalZero(),

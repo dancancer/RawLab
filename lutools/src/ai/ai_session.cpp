@@ -1,6 +1,7 @@
 #include "ai_session.h"
 #include "dualdn_bridge.h"
 #include "core/photo_rendering.h"
+#include "core/processing_cancellation.h"
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -14,6 +15,11 @@ void notify(const JobProgress& progress, Phase phase, size_t done, size_t total)
 std::string producers(const std::string& raw, const std::string& rgb) {
     return "RAW=" + (raw.empty() ? "unknown" : raw) + "; RGB=" + (rgb.empty() ? "unknown" : rgb);
 }
+#ifdef _WIN32
+constexpr const char* hdrBayerProducer = "DirectML";
+#else
+constexpr const char* hdrBayerProducer = "CoreML";
+#endif
 }
 
 void AISession::configure(std::string modelDirectory, std::string cacheDirectory, Backend backend) {
@@ -269,5 +275,78 @@ PrepareReport AISession::prepare(const std::string& path, const RAWProcessOption
     loadedKey_.clear(); loaded_ = {}; lastError.clear();
     lastBackend = producers(report.raw.backend, report.rgb.backend);
     return report;
+}
+
+std::string AISession::hdrBayerKey(const std::string& path, const std::string& sourceIdentity) {
+#ifdef _WIN32
+    const bool supported = backend_ == Backend::Auto || backend_ == Backend::DirectML;
+#else
+    const bool supported = (backend_ == Backend::Auto || backend_ == Backend::CoreML) && CoreMLGraph::gpuPlanAvailable();
+#endif
+    if (!supported) throw Unsupported("HDR Bayer AI requires the platform hardware GPU");
+    ensurePackage();
+    const auto rawKey = rawCacheKeyFromIdentity(sourceIdentity.empty() ? sourceIdentityKey(path, checkProcessingCancellation) : sourceIdentity,
+                                                runtimeDigest_, static_cast<int>(backend_));
+    const auto hdrKey = "rawlab-hdr-bayer-v1:" + rawKey;
+    return sha256Bytes(hdrKey.data(), hdrKey.size());
+}
+
+void AISession::prepareHDRBayer(const std::string& path, const std::string& identity,
+                                const RAWBayerSource& source, const JobProgress& callback) {
+    lastBackend.clear();
+    selectedDevice_.reset();
+    runtimeDigest_.clear();
+    beginOperation("prepare-hdr-bayer");
+    const JobProgress progress = [&](Phase phase, size_t done, size_t total) {
+        diagnostics_.progress(static_cast<int>(phase), done, total);
+        return !callback || callback(phase, done, total);
+    };
+    const auto noise = calibratedNoiseProfile(source);
+    if (!noise) throw Unsupported("This Bayer RAW has no validated HDR AI noise calibration");
+    const auto key = hdrBayerKey(path, identity);
+    const auto modelStamp = stamp_;
+    auto validateIdentity = [&] {
+        if (sourceIdentityKey(path, checkProcessingCancellation) != identity || packageStamp() != modelStamp)
+            throw std::runtime_error("RAW or model changed during HDR AI processing");
+    };
+    DenoiseCache cache(cacheDirectory_);
+    std::string producer;
+    if (cache.load(key, CacheKind::Raw, source.width, source.height, {}, &producer) && producer == hdrBayerProducer) {
+        notify(progress, Phase::Raw, 1, 1);
+        validateIdentity();
+        notify(progress, Phase::Saving, 1, 1);
+    } else {
+#ifdef __APPLE__
+        CoreMLGraph::verifyRawGPUPlacement(package_->coreMLPaths[0]);
+#endif
+        const AIExecution execution{selectedDevice_ ? &*selectedDevice_ : nullptr, &diagnostics_};
+        RuntimeReport report;
+        const auto denoised = denoiseRaw(source, *package_, *noise, backend_, report,
+            [&](size_t done, size_t total) { return progress(Phase::Raw, done, total); }, execution);
+        if (report.backend != hdrBayerProducer)
+            throw Unsupported("HDR Bayer AI did not run on the platform GPU");
+        validateIdentity();
+        notify(progress, Phase::Saving, 0, 1);
+        cache.store(key, CacheKind::Raw, source.width, source.height, denoised.normalizedMosaic.data(),
+                    denoised.normalizedMosaic.size(), {}, report.backend, [&] {
+            notify(progress, Phase::Saving, 1, 1);
+            validateIdentity();
+            checkProcessingCancellation();
+        });
+    }
+    try { cache.prune(uint64_t(8) * 1024 * 1024 * 1024, {key}); }
+    catch (const std::filesystem::filesystem_error&) {}
+    lastBackend = hdrBayerProducer;
+}
+
+RAWBayerOverride AISession::loadHDRBayer(const std::string& key, const RAWBayerSource& metadata) {
+    if (!calibratedNoiseProfile(metadata))
+        throw Unsupported("This Bayer RAW has no validated HDR AI noise calibration");
+    std::string producer;
+    auto raw = DenoiseCache(cacheDirectory_).load(key, CacheKind::Raw, metadata.width, metadata.height, {}, &producer);
+    if (!raw || producer != hdrBayerProducer)
+        throw NotReady("The HDR Bayer AI result is missing or invalid; prepare this photo before rendering or exporting");
+    lastBackend = producer;
+    return {metadata.width, metadata.height, std::move(raw->values), {}, true};
 }
 } // namespace sony2fuji::ai

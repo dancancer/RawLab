@@ -38,6 +38,15 @@ struct AdjustmentDock: View {
                 if model.geometryDraft != nil && !model.quickPresetsVisible {
                     MacGeometryWorkspace(model: model)
                 } else if model.quickPresetsVisible {
+                    if model.settings.isHDREditing {
+                        let revision = model.sourceRevision
+                        HDRLookControls(settings: Binding(
+                            get: { model.settings.hdr ?? HDRSettings() },
+                            set: { if model.sourceRevision == revision && model.settings.isHDREditing { model.settings.hdr = $0 } }
+                        ), onEditingChanged: model.setInteracting, onCancelled: model.cancelAdjustmentInteraction)
+                            .padding(.horizontal, 10).padding(.vertical, 6).id(revision).disabled(model.busy)
+                        Divider()
+                    }
                     QuickPresetView(model: model)
                 } else {
                     ScrollViewReader { proxy in
@@ -95,10 +104,8 @@ struct AdjustmentDock: View {
                 toggle: { showsTones.toggle() }) {
             parameterRow(.highlights, showsTicks: true)
             parameterRow(.shadows)
-            parameterRow(.whitePoint).disabled(model.settings.isHDREditing)
-                .accessibilityHint(model.settings.isHDREditing ? L10n.text("HDR 模式暂不支持此工具。") : "")
-            parameterRow(.blackPoint).disabled(model.settings.isHDREditing)
-                .accessibilityHint(model.settings.isHDREditing ? L10n.text("HDR 模式暂不支持此工具。") : "")
+            parameterRow(.whitePoint)
+            parameterRow(.blackPoint)
         }
         toolSection(.toneCurve)
     }
@@ -185,15 +192,21 @@ struct AdjustmentDock: View {
     @ViewBuilder private func editorContent(_ tool: EditorAdjustmentTool) -> some View {
         if tool == .toneCurve {
             let source = model.sourceRevision
-            MacToneCurveControls(settings: Binding(get: { model.settings.curveSettings }, set: { model.settings.curveSettings = $0 }),
-                legacy: $model.settings.toneCurve, source: String(describing: source),
-                isCurrent: { model.sourceRevision == source && model.adjustmentNavigation.tool == .toneCurve && model.adjustmentNavigation.expandedGroup != nil },
+            let hdr = model.settings.isHDREditing
+            MacToneCurveControls(settings: Binding(get: { model.settings.editingCurveSettings }, set: { model.settings.editingCurveSettings = $0 }),
+                legacy: Binding(get: { AdjustmentParameter.toneCurve.value(from: model.settings) },
+                                set: { model.settings.set(.toneCurve, to: $0) }),
+                usesExposureStops: hdr, source: "\(source).\(hdr)",
+                isCurrent: { model.sourceRevision == source && model.settings.isHDREditing == hdr &&
+                    model.adjustmentNavigation.tool == .toneCurve && model.adjustmentNavigation.expandedGroup != nil },
                 onEditingChanged: model.setInteracting, onCancelled: model.cancelAdjustmentInteraction)
         } else if tool == .colorGrading {
             let source = model.sourceRevision
-            MacColorGradingControls(settings: Binding(get: { model.settings.gradingSettings }, set: { model.settings.gradingSettings = $0 }),
-                zone: $model.adjustmentNavigation.selectedGradingZone, source: String(describing: source),
-                isCurrent: { model.sourceRevision == source && model.adjustmentNavigation.tool == .colorGrading && model.adjustmentNavigation.expandedGroup != nil },
+            let hdr = model.settings.isHDREditing
+            MacColorGradingControls(settings: Binding(get: { model.settings.editingGradingSettings }, set: { model.settings.editingGradingSettings = $0 }),
+                zone: $model.adjustmentNavigation.selectedGradingZone, source: "\(source).\(hdr)",
+                isCurrent: { model.sourceRevision == source && model.settings.isHDREditing == hdr &&
+                    model.adjustmentNavigation.tool == .colorGrading && model.adjustmentNavigation.expandedGroup != nil },
                 onEditingChanged: model.setInteracting, onCancelled: model.cancelAdjustmentInteraction, compact: true)
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 6) { gradingResets }
@@ -204,7 +217,7 @@ struct AdjustmentDock: View {
                 HSLTargetControls(enabled: $model.hslTargetEnabled, axis: $model.hslTargetAxis,
                     sample: model.hslTargetInteraction.selection, waiting: model.hslTargetInteraction.isWaiting,
                     notice: model.hslTargetNotice, onCancel: model.cancelHSLTarget)
-                MacHSLMixer(settings: Binding(get: { model.settings.hslSettings }, set: { model.settings.hsl = $0.isIdentity ? nil : $0 }),
+                MacHSLMixer(settings: Binding(get: { model.settings.editingHSLSettings }, set: { model.settings.editingHSLSettings = $0 }),
                     channel: $model.adjustmentNavigation.selectedHSLChannel,
                     onEditingChanged: { editing in
                         if editing { model.cancelHSLTarget() }
@@ -212,7 +225,12 @@ struct AdjustmentDock: View {
                     }, onCancelTarget: model.cancelHSLTarget)
             }
         } else if tool == .denoise {
-            DenoiseControls(model: model, onReset: { model.requestAdjustmentReset(.tool(.denoise)) }).id(resetVersion)
+            if model.settings.isHDREditing {
+                VStack(spacing: 8) {
+                    parameterRow(.denoiseMode)
+                    if model.aiControlsVisible { MacAIDenoiseControls(model: model) }
+                }
+            } else { DenoiseControls(model: model, onReset: { model.requestAdjustmentReset(.tool(.denoise)) }).id(resetVersion) }
         } else if let parameter = tool.parameter, parameter.isPhotoEffect {
             PhotoEffectsControls(model: model, tool: parameter, onReset: { model.requestAdjustmentReset(.tool(tool)) })
                 .id("\(parameter.rawValue).\(resetVersion)")
@@ -262,13 +280,14 @@ struct AdjustmentDock: View {
             get: { parameter.value(from: model.settings) },
             set: { model.settings.set(parameter, to: $0) }
         ), showsTicks: showsTicks, specOverride: parameter.spec(for: model.settings), onEditingChanged: model.setInteracting,
-        onAuto: parameter == .exposure && !model.settings.isHDREditing ? model.autoExposure : nil,
+        onAuto: parameter == .exposure ? model.autoExposure : nil,
         autoBusy: model.autoExposing, compact: true, titleOverride: title)
         .id("\(parameter.rawValue).\(resetVersion)")
         .disabled(model.result == nil)
     }
 
     private func supportsHDR(_ tool: EditorAdjustmentTool) -> Bool {
-        tool == .geometry || tool == .whiteBalance || tool.parameter?.hdrKeyPath != nil
+        tool == .geometry || tool == .whiteBalance || tool == .hsl || tool == .colorGrading ||
+            tool == .vignette || tool == .grain || tool.parameter?.hdrKeyPath != nil
     }
 }

@@ -4,6 +4,7 @@
  xmlns:local="clr-namespace:RawLab.Windows" MaxWidth="720">
  <UserControl.Resources><BooleanToVisibilityConverter x:Key="DenoiseExpanded"/><DataTemplate x:Key="DenoisePresetLabel"><TextBlock Text="{Binding}" TextWrapping="Wrap"/></DataTemplate></UserControl.Resources>
  <StackPanel Margin="4">
+  <local:ParameterRow x:Name="HDRAmount" Visibility="Collapsed"/>
   <StackPanel x:Name="OrdinaryDenoise">
    <CheckBox x:Name="EnabledBox" Content="{DynamicResource '降噪'}" Checked="EnabledChanged" Unchecked="EnabledChanged" AutomationProperties.Name="{DynamicResource '降噪'}" AutomationProperties.AutomationId="denoise.enabled"/>
    <TextBlock Text="{DynamicResource '降噪预设'}" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,8,0,3"/>

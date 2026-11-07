@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PRODUCTS="${1:?Pass build-for-testing Build/Products directory}"
 OUT="${2:?Pass a new task-owned output directory}"
 mkdir -p "$OUT"
-python3 - "$PRODUCTS" "$OUT" <<'PY'
+python3 - "$PRODUCTS" "$OUT" "$ROOT/lutools/tests/fixtures/hdr-look-linear.cube" <<'PY'
 from pathlib import Path
 import os,plistlib,shutil,subprocess,sys
 products=Path(sys.argv[1]).resolve();out=Path(sys.argv[2]).resolve()
@@ -44,6 +44,7 @@ for target in targets:
     documents=data/'Documents';documents.mkdir(exist_ok=True)
     fixture=documents/'HDRCompatibilityUnknown.cube'
     fixture.write_text('TITLE "HDRCompatibilityUnknown"\nLUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n')
+    shutil.copyfile(Path(sys.argv[3]), documents/'HDRLookFixture.cube')
     if camera:
         shutil.copyfile(Path(os.environ['RAWLAB_CAMERA_HDR_FIXTURE']), documents/'CameraHDRFixture.dng')
     if proraw:
@@ -65,7 +66,7 @@ import json,os,sys
 v=json.load(open(sys.argv[1]))
 assert v['failedTests']==0 and v['expectedFailures']==0 and v['passedTests']>0,v
 if not os.environ.get('RAWLAB_HDR_UI_TEST'):
-    assert (v['passedTests'],v['skippedTests'],v['totalTestCount'])==(5,7,12),v
+    assert (v['passedTests'],v['skippedTests'],v['totalTestCount'])==(11,8,19),v
 assert not any('Publishing changes from within view updates' in w['message'] for w in v['runtimeWarnings']),v['runtimeWarnings']
 PY
 echo "PASS executed HDR UI test; results: $OUT/HDRUI.xcresult"

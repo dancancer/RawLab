@@ -1,4 +1,5 @@
 #include "photo_color_grading.h"
+#include "photo_color.h"
 #include "processing_cancellation.h"
 #include <algorithm>
 #include <cmath>
@@ -17,18 +18,6 @@ float linear(float value) {
 }
 float encoded(float value) {
     return value<=.0031308f ? 12.92f*value : 1.055f*std::pow(value,1/2.4f)-.055f;
-}
-RGB hueDirection(float hue) {
-    const float sector=hue/60;
-    const float x=1-std::abs(std::fmod(sector,2)-1);
-    switch (static_cast<int>(sector)) {
-        case 0:return RGB(1,x,0);
-        case 1:return RGB(x,1,0);
-        case 2:return RGB(0,1,x);
-        case 3:return RGB(0,x,1);
-        case 4:return RGB(x,0,1);
-        default:return RGB(1,0,x);
-    }
 }
 RGB applyCoefficients(const RGB& pixel, const std::array<RGB,3>& coefficients) {
     const RGB p(linear(pixel.r),linear(pixel.g),linear(pixel.b));
@@ -74,7 +63,7 @@ std::array<RGB,3> colorGradingCoefficients(const ColorGradingOptions& options) {
     for (int zone=0;zone<3;++zone) {
         const auto& wheel=options.wheels[zone];
         if (wheel.saturation==0) continue;
-        const RGB direction=hueDirection(wheel.hue);
+        const RGB direction=hueUnitRGB(wheel.hue);
         const float y=luminance(direction),strength=wheel.saturation/100;
         result[zone]=RGB((direction.r-y)*strength,(direction.g-y)*strength,(direction.b-y)*strength);
     }

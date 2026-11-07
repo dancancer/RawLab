@@ -22,6 +22,7 @@ import com.rawlab.android.adjustments.AdjustmentPayload
 import com.rawlab.android.adjustments.AdjustmentTransferException
 import com.rawlab.android.editor.EditorViewModel
 import com.rawlab.android.editor.adjustmentErrorMessage
+import com.rawlab.android.editor.adjustmentTransferFields
 import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.presets.*
 import com.rawlab.android.settings.EditPersistenceConflict
@@ -81,8 +82,7 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
                         keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }))
                     val validName = AdjustmentPreset.normalizedName(name).isNotEmpty()
                     if (creating) AdjustmentScopeEditor(stringResource(R.string.preset_save), "preset-save", validName && editor.controlsEnabled,
-                        allowed = if (editor.edits.isHDREditing) com.rawlab.android.adjustments.AdjustmentField.HDR_SUPPORTED
-                            else com.rawlab.android.adjustments.AdjustmentField.entries.filterNot { it.isHDRRelative }.toSet(),
+                        allowed = editor.adjustmentTransferFields,
                         previewCapture = model::previewAdjustmentPayload, lookName = model::adjustmentSummaryLookName) { scope ->
                         val savedName = name
                         val generation = ++captureGeneration

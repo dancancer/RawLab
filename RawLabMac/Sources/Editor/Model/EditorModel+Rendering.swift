@@ -52,7 +52,7 @@ extension EditorModel {
     func schedule(forceExact: Bool) {
         guard let file else { return }
         synchronizeAI()
-        if !settings.isHDREditing && settings.aiDenoiseEnabled && (aiState.isRunning || aiRequiresExplicitRetry) {
+        if settings.activeAIDenoise && (aiState.isRunning || aiRequiresExplicitRetry) {
             scheduler.invalidatePending()
             previewOutdated = true
             refreshBusy()
@@ -88,7 +88,7 @@ extension EditorModel {
         let source = verifiedSource ?? referenceSource(file)
         let lookIdentity = effectiveLUT.flatMap { try? OriginalFileIdentity($0) }
         // AI 降噪仍需由原生层校验模型和磁盘缓存。
-        let scope: MacExactPreviewCache.Scope? = geometryDraft == nil && !scheduler.interacting && !preview.aiDenoiseEnabled &&
+        let scope: MacExactPreviewCache.Scope? = geometryDraft == nil && !scheduler.interacting && !preview.activeAIDenoise &&
             source.modified != nil && source.size != nil && (effectiveLUT == nil || lookIdentity != nil)
             ? .init(source: source, editRevision: editRevision, look: lookIdentity) : nil
         return RenderWork(file: file, settings: preview, source: source, lut: effectiveLUT,
@@ -206,7 +206,7 @@ extension EditorModel {
                 self.neutral = neutral
                 self.result = result
                 if completion == .publishExact { previewOutdated = false }
-                if !request.value.settings.isHDREditing && request.value.settings.aiDenoiseEnabled && !self.aiState.isRunning {
+                if request.value.settings.activeAIDenoise && !self.aiState.isRunning {
                     self.aiState = .ready
                     self.aiIdentity = try? AIWorkIdentity(request.value.file, settings: request.value.settings)
                 }

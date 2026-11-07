@@ -132,7 +132,7 @@ struct AdjustmentPresetView: View {
         VStack(alignment: .leading, spacing: 12) {
             TextField(L10n.text("预设名称"), text: $name).textFieldStyle(.roundedBorder)
                 .focused($nameFocused).accessibilityIdentifier("preset.name")
-            if renaming == nil { AdjustmentScopeEditor(scope:$scope,fields:$fields,preview:scopePreview,lookName:model.adjustmentSummaryLookName,errorMessage: { model.adjustmentErrorMessage($0) },identifier:"preset.save",titleKey:"调整范围",allowed:model.settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields) }
+            if renaming == nil { AdjustmentScopeEditor(scope:$scope,fields:$fields,preview:scopePreview,lookName:model.adjustmentSummaryLookName,errorMessage: { model.adjustmentErrorMessage($0) },identifier:"preset.save",titleKey:"调整范围",allowed:model.adjustmentTransferFields) }
             HStack {
                 Spacer()
                 Button(L10n.text("保存"), action: save).buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)

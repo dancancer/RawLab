@@ -4,7 +4,8 @@ struct IOSAdjustmentTransferContext {
     var identifier: String
     var isRaw: Bool
     var sourceIsHDR = false
-    var sourceSupportsProRAWHDR = false
+    var sourceSupportsCameraHDR = false
+    var sourceIsBayerHDR = false
     var availableLookIDs: Set<String> = []
     var builtinLookIDs: [String: String] = [:]
     var cameraTemperature: Double? = nil
@@ -12,6 +13,7 @@ struct IOSAdjustmentTransferContext {
     var defaultExposureMode = RawExposureMode.preview
     var hasUncommittedDraft = false
     var validateLensRequest: ((LensCorrectionSettings) throws -> Void)? = nil
+    var validateHDRCameraRequest: ((RawSettings) throws -> Void)? = nil
 }
 
 enum IOSAdjustmentTransfer {
@@ -30,7 +32,7 @@ enum IOSAdjustmentTransfer {
         if snapshot.settings.isHDREditing {
             guard supportsHDRTransfer(context) else { throw AdjustmentTransferError.incompatible("hdr.source") }
             return try HDRAdjustmentTransfer.capture(settings: snapshot.settings.hdr!, identifier: context.identifier,
-                processingVersion: snapshot.settings.processing.version, scope: scope)
+                processingVersion: snapshot.settings.processing.version, scope: scope, cameraRAW: context.sourceIsBayerHDR)
         }
         try validate(snapshot.settings)
         var defaults = RawSettings.default
@@ -58,7 +60,13 @@ enum IOSAdjustmentTransfer {
         if target.settings.isHDREditing {
             guard supportsHDRTransfer(context) else { throw AdjustmentTransferError.incompatible("hdr.source") }
             var settings = target.settings
-            settings.hdr = try HDRAdjustmentTransfer.prepare(payload: payload, target: target.settings.hdr!)
+            let hdr = try HDRAdjustmentTransfer.prepare(payload: payload, target: target.settings.hdr!, cameraRAW: context.sourceIsBayerHDR)
+            guard hdr.lookSettings.assetIsAvailable() else { throw AdjustmentTransferError.missingLook(hdr.lookSettings.name ?? "HDR LUT") }
+            settings.hdr = hdr
+            if payload.fields.contains(.hdrCameraDevelopment) {
+                guard let validate = context.validateHDRCameraRequest else { throw AdjustmentTransferError.incompatible("hdr.camera_development") }
+                try validate(settings)
+            }
             return target.replacing(settings: settings, preservingFilmID: target.filmID)
         }
         if payload.source.isHDR {
@@ -170,7 +178,7 @@ enum IOSAdjustmentTransfer {
     }
 
     private static func supportsHDRTransfer(_ context: IOSAdjustmentTransferContext) -> Bool {
-        (!context.isRaw && context.sourceIsHDR) || (context.isRaw && context.sourceSupportsProRAWHDR)
+        (!context.isRaw && context.sourceIsHDR) || (context.isRaw && context.sourceSupportsCameraHDR)
     }
     static func isRecipeScaled(_ field: Field, version: Int = 3) -> Bool {
         [.exposure, .contrast, .highlights, .shadows, .saturation].contains(field) || version >= 4 && Field.refinementScalars.contains(field)

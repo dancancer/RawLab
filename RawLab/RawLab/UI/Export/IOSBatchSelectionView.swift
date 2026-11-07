@@ -186,7 +186,7 @@ private struct IOSCollectionSyncView: View {
                         IOSAdjustmentScopeEditor(scope: $scope, fields: $fields,
                             preview: Result { try model.previewAdjustmentPayload(scope: scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields), settings: sourceSettings) },
                             lookName: model.adjustmentSummaryLookName, errorMessage: { model.adjustmentErrorMessage($0) }, titleKey: "同步范围", sourceName: model.sourceDisplayName,
-                                                 allowed: sourceSettings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
+                                                 allowed: model.adjustmentTransferFields(for: sourceSettings))
                         Section {
                             Text(L10n.format("目标：%@ 张照片", String(collection.selection.targets(excluding: model.sourceIdentity?.key).count)))
                             Text(L10n.text("来源照片不参与同步。"))
@@ -241,6 +241,9 @@ private struct IOSCollectionExportView: View {
                     Text(L10n.text("将按每张照片已保存的调整导出。跳过只影响本次导出。"))
                     Picker(L10n.text("格式"), selection: $format) {
                         ForEach([BatchOutputFormat.jpeg, .renderedDNG], id: \.self) { Text($0.title).tag($0) }
+                        if HDRImage.heifExportAvailable {
+                            Text(BatchOutputFormat.hdrHEIF.title).tag(BatchOutputFormat.hdrHEIF)
+                        }
                     }
                     ExportSizePicker(longEdge: $longEdge, onValidityChanged: { sizeValid = $0 })
                 }

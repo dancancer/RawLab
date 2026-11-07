@@ -77,13 +77,19 @@ enum BatchJobStatus: String, Codable, Equatable {
 enum BatchOutputFormat: String, Codable, Equatable, Hashable {
     case jpeg
     case hdrJPEG = "hdr_jpeg"
+    case hdrHEIF = "hdr_heif"
     case renderedDNG = "dng"
 
     var publishesToPhotos: Bool { self != .renderedDNG }
+    var requiresHDR: Bool { self == .hdrJPEG || self == .hdrHEIF }
+    var hdrRequiredMessage: String {
+        self == .hdrHEIF ? L10n.text("HDR HEIF 需要启用 HDR 编辑。") : L10n.text("HDR JPEG 需要启用 HDR 编辑。")
+    }
 
     var title: String {
         switch self {
         case .hdrJPEG: return L10n.text("HDR JPEG")
+        case .hdrHEIF: return "HDR HEIF"
         case .jpeg: return "JPEG"
         case .renderedDNG: return L10n.text("DNG · 渲染型")
         }
@@ -92,6 +98,7 @@ enum BatchOutputFormat: String, Codable, Equatable, Hashable {
     var suffix: String {
         switch self {
         case .jpeg,.hdrJPEG: return "jpg"
+        case .hdrHEIF: return "heic"
         case .renderedDNG: return "dng"
         }
     }

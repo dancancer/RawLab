@@ -230,9 +230,6 @@ final class BatchExportModel: ObservableObject {
         for index in result.targets.indices {
             if isCancellationRequested { throw CancellationError() }
             let prepared=try hdrPreparation.prepare(result.targets[index],ordinal:index,format:draft.outputFormat,longEdge:draft.longEdge)
-            guard draft.outputFormat != .hdrJPEG || prepared.settings.isHDREditing else {
-                throw BatchExportError.target(L10n.text("HDR JPEG 需要启用 HDR 编辑。")+" "+result.targets[index].displayName)
-            }
             var frozen=prepared
             if let original=prepared.lookURL {
                 let folder=try BatchInputStore.directory(for:draft.id,root:journal.directory).deletingLastPathComponent()

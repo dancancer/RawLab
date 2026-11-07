@@ -48,7 +48,11 @@ static class Program
             if(args.Length==3 && args[0]=="--curve-ui") { ToneCurveUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} curve UI checks");return 0; }
             if(args.Length==3 && args[0]=="--hsl-target-render") { HslTargetRenderChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HSL target render checks");return 0; }
             if(args.Length==3 && args[0]=="--hsl-target") { HslTargetUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HSL target UI checks");return 0; }
+            if(args.Length==3 && args[0]=="--hdr-color-ui") { HslTargetUiChecks.RunHDR(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HDR color UI checks");return 0; }
+            if(args.Length==3 && args[0]=="--hdr-rendition-ui") { HDRWorkflowChecks.RunRendition(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HDR rendition UI checks");return 0; }
+            if(args.Length==3 && args[0]=="--hdr-effects-ui") { HDRWorkflowChecks.RunEffects(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HDR effects UI checks");return 0; }
             if(args.Length==2 && args[0]=="--ai-gpu") { AIGpuWindowChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} AI GPU UI checks");return 0; }
+            if(args.Length==5 && args[0]=="--hdr-ai-real-window") { Loc.Initialize("zh-Hans");AIDenoiseRealWindowChecks.RunHDR(args[1],args[2],args[3],args[4],Check);Console.WriteLine($"PASS {checks} HDR AI window checks");return 0; }
             if(args.Length==4 && args[0]=="--x3f") {Loc.Initialize("zh-Hans");X3fRenderingChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} X3F workflow checks");return 0;}
             TestWindowState.PreserveExistingBatch(journalDirectory);
             Loc.Initialize("zh-Hans");

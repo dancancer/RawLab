@@ -186,10 +186,9 @@ public partial class BatchExportWindow : Window
             var prepared=BatchHDRPreparation.Required(snapshot) ? RequireHDRPreparation().Prepare(snapshot,item) : null;
             var effective=prepared?.Settings.Restore() ??
                 RenderEngine.PrepareBatchSettings(snapshot.Source,item.Input,snapshot.Settings.Restore());
-            if (effective.IsHDREditing && effective.ProRAWDecodeVersion == HDRNative.ProRAWDecodeVersion &&
-                !PhotoInput.SupportsProRAWHDR(item.Input))
-                throw new InvalidOperationException(Loc.Text("不支持此相机 RAW 的 HDR 显影。"));
-            if (!effective.IsHDREditing && effective.AIDenoiseEnabled)
+            if (prepared == null && effective.IsHDREditing)
+                BatchSelectionExport.ValidateHDRFormat(item.Input,effective.Capture(),ExportFormat.SdrJpeg);
+            if (effective.ActiveAIDenoise)
                 RenderEngine.ValidateAIInput(item.Input,snapshot.AIDeviceID,effective.X3fMode);
             else
                 validator.Render(item.Input,effective,prepared == null ? snapshot.Look : prepared.Look,64,statistics:false,clipping:false,viewportPreview:true);
@@ -396,7 +395,7 @@ public partial class BatchExportWindow : Window
                         Dispatcher.BeginInvoke(new Action(() => SetRunJob(updated)));
                     },
                     (input, settings, look, destination, longEdge) => {
-                        if(!settings.IsHDREditing && settings.AIDenoiseEnabled) {
+                        if(settings.ActiveAIDenoise) {
                             using var progress=new AIPreparation((phase,done,total)=>
                                 Dispatcher.BeginInvoke(new Action(()=>{aiProgress=new(AIDenoiseStatus.Running,phase,done,total);Refresh();})));
                             using var registration=cancellation.Token.Register(progress.Cancel);
@@ -412,7 +411,7 @@ public partial class BatchExportWindow : Window
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { work.Cancelled=true; }
         catch (Exception error)
         {
-            if(work.Settings.AIDenoiseEnabled || work.Items.Any(item=>item.Selected && item.Frozen?.Settings.AIDenoiseEnabled==true))
+            if(work.Settings.ActiveAIDenoise || work.Items.Any(item=>item.Selected && item.Frozen?.Settings.ActiveAIDenoise==true))
                 aiDiagnostics.Capture(error,new("batch",work.AIDeviceID,work.AIBackend,Devices:RenderEngine.GetAIDevices().JSON));
             work.Error = error.Message; work.Interrupted = true;
             try { journal.Save(work); } catch (IOException) { } catch (UnauthorizedAccessException) { }

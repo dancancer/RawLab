@@ -78,12 +78,30 @@
       "formats": [],
       "source": "正在检查预设…"
     },
-    "使用旧版显影重试": {"formats":[],"source":"使用旧版显影重试"},
-    "X3F 显影": {"formats":[],"source":"X3F 显影"},
-    "正常显影": {"formats":[],"source":"正常显影"},
-    "伪红外（旧版）": {"formats":[],"source":"伪红外（旧版）"},
-    "以文件保存的显影为基准，白平衡作相对调整。": {"formats":[],"source":"以文件保存的显影为基准，白平衡作相对调整。"},
-    "保留旧版的特殊色彩。": {"formats":[],"source":"保留旧版的特殊色彩。"},
+    "使用旧版显影重试": {
+      "formats": [],
+      "source": "使用旧版显影重试"
+    },
+    "X3F 显影": {
+      "formats": [],
+      "source": "X3F 显影"
+    },
+    "正常显影": {
+      "formats": [],
+      "source": "正常显影"
+    },
+    "伪红外（旧版）": {
+      "formats": [],
+      "source": "伪红外（旧版）"
+    },
+    "以文件保存的显影为基准，白平衡作相对调整。": {
+      "formats": [],
+      "source": "以文件保存的显影为基准，白平衡作相对调整。"
+    },
+    "保留旧版的特殊色彩。": {
+      "formats": [],
+      "source": "保留旧版的特殊色彩。"
+    },
     "将覆盖以下 %@ 项调整；其他调整保留目标原值。": {
       "formats": [
         "%@"
@@ -2807,6 +2825,10 @@
       "source": "拖动照片调整颜色；退出目标模式后可平移。",
       "formats": []
     },
+    "HDR HEIF 需要启用 HDR 编辑。": {
+      "formats": [],
+      "source": "HDR HEIF 需要启用 HDR 编辑。"
+    },
     "HDR JPEG": {
       "formats": [],
       "source": "HDR JPEG"
@@ -2841,6 +2863,30 @@
       "formats": [],
       "source": "HDR 照片需要 macOS 15 或 iOS 18 及以上版本。"
     },
+    "HDR 输出与 SDR 底图": {
+      "source": "HDR 输出与 SDR 底图",
+      "formats": []
+    },
+    "HDR 亮度上限": {
+      "source": "HDR 亮度上限",
+      "formats": []
+    },
+    "SDR 底图曝光": {
+      "source": "SDR 底图曝光",
+      "formats": []
+    },
+    "SDR 底图对比度": {
+      "source": "SDR 底图对比度",
+      "formats": []
+    },
+    "SDR 底图饱和度": {
+      "source": "SDR 底图饱和度",
+      "formats": []
+    },
+    "不限": {
+      "source": "不限",
+      "formats": []
+    },
     "HDR 编辑": {
       "formats": [],
       "source": "HDR 编辑"
@@ -2874,6 +2920,10 @@
     "原始照片已变化，请重新导入。": {
       "formats": [],
       "source": "原始照片已变化，请重新导入。"
+    },
+    "参考白": {
+      "formats": [],
+      "source": "参考白"
     },
     "参考白以上 %@": {
       "formats": [
@@ -3312,6 +3362,26 @@
     "请将白平衡模式、色温和色调一起保存，再应用此预设。": {
       "formats": [],
       "source": "请将白平衡模式、色温和色调一起保存，再应用此预设。"
+    },
+    "HDR 相机配置": {
+      "formats": [],
+      "source": "HDR 相机配置"
+    },
+    "导入相机配置…": {
+      "formats": [],
+      "source": "导入相机配置…"
+    },
+    "清除相机配置": {
+      "formats": [],
+      "source": "清除相机配置"
+    },
+    "找不到 HDR 相机配置，请重新导入。": {
+      "formats": [],
+      "source": "找不到 HDR 相机配置，请重新导入。"
+    },
+    "无法读取 HDR 相机配置，或配置与当前相机不匹配。": {
+      "formats": [],
+      "source": "无法读取 HDR 相机配置，或配置与当前相机不匹配。"
     }
   },
   "overrides": {

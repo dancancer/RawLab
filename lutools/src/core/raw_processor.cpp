@@ -1,5 +1,6 @@
 #include "sony2fuji/raw_processor.h"
 #include "sony2fuji/color_converter.h"
+#include "sony2fuji/dcp_compiler.h"
 #include "preview_exposure.h"
 #include "photo_rendering.h"
 #include "white_balance.h"
@@ -77,8 +78,17 @@ public:
             std::copy_n(original_ + (size_t(y) + top_) * pitch_ + left_, width_, backup_.data() + size_t(y) * width_);
         for (int y = 0; y < height_; ++y) for (int x = 0; x < width_; ++x) {
             const float black = source.black[source.pattern[(y % 2) * 2 + x % 2]];
-            const float value = std::clamp(replacement->normalizedMosaic[size_t(y) * width_ + x], 0.f, 1.f);
-            original_[(size_t(y) + top_) * pitch_ + left_ + x] = uint16_t(std::lround(value * (source.white - black) + black));
+            const float range = source.white - black;
+            auto& pixel = original_[(size_t(y) + top_) * pitch_ + left_ + x];
+            float value = std::clamp(replacement->normalizedMosaic[size_t(y) * width_ + x], 0.f, 1.f);
+            if (replacement->protectSensorHighlights) {
+                // 在白平衡和 LibRaw 高光混合前渐退，保留接近饱和的原始传感器值。
+                const float signal = (pixel - black) / range;
+                if (signal >= .9f) continue;
+                const float t = std::clamp((signal - .6f) / .3f, 0.f, 1.f);
+                value += t * t * (3.f - 2.f * t) * (signal - value);
+            }
+            pixel = uint16_t(std::lround(value * range + black));
         }
     }
     ~BayerOverrideScope() {
@@ -178,6 +188,33 @@ public:
         return ErrorCode::Success;
     }
 
+    bool supportsHDRCameraProfile(const HDRCameraProfile& profile) const {
+        if (!cameraHDRInspected_) return false;
+        const auto& data = rawProcessor_->imgdata;
+        if (data.idata.dng_version) {
+            // LibRaw exposes two individual calibrations. DNG 1.6 can carry a third.
+            if (data.idata.dng_version >= 0x01060000) return false;
+            const auto& levels = data.color.dng_levels;
+            // LibRaw copies these values from the IFD without its parsedfields bits.
+            if (!std::all_of(levels.analogbalance, levels.analogbalance + 3, [](float value) { return value == 1; }))
+                return false;
+            for (const auto& color : data.color.dng_color) {
+                bool empty = true, identity = true;
+                for (int row = 0; row < 3; ++row) for (int col = 0; col < 3; ++col) {
+                    const float coefficient = color.calibration[row][col];
+                    empty &= coefficient == 0;
+                    identity &= coefficient == (row == col ? 1 : 0);
+                }
+                if (!empty && !identity) return false;
+            }
+        }
+        const std::string model = data.idata.dng_version ? data.color.UniqueCameraModel
+            : std::string(data.idata.normalized_make) + ' ' + data.idata.normalized_model;
+        const auto lower = [](char c) { return c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c; };
+        return std::equal(model.begin(), model.end(), profile.cameraModel.begin(), profile.cameraModel.end(),
+                          [&](char a, char b) { return lower(a) == lower(b); });
+    }
+
     ErrorCode unpackInspectedCameraHDR() {
         if (!cameraHDRInspected_ || sourceUnpacked_) return ErrorCode::InvalidFormat;
         RawCancellationScope cancellation(*rawProcessor_);
@@ -206,6 +243,9 @@ public:
         if (!std::isfinite(options.exposure) || !std::isfinite(options.brightness) ||
             options.brightness <= 0 || std::abs(options.exposure) > 20) return ErrorCode::InvalidFormat;
         if (options.x3fMode != X3fMode::Legacy && options.x3fMode != X3fMode::Normal) return ErrorCode::InvalidFormat;
+        const auto* cameraProfile = options.hdrCameraProfile;
+        if (cameraProfile && (!options.outputLinear || !supportsHDRCameraProfile(*cameraProfile)))
+            return ErrorCode::InvalidFormat;
         displayReferred_ = false;
         lastError_.clear();
         const bool x3fSignature = options.x3fMode == X3fMode::Normal && hasX3fSignature(filepath_);
@@ -238,7 +278,8 @@ public:
         float multipliers[4];
         std::copy_n(options.customWhiteBalance,4,multipliers);
         if (options.useTemperatureWhiteBalance &&
-            (!whiteBalance_ || !whiteBalance_->multipliers(options.temperature, options.tint, multipliers)))
+            (!whiteBalance_ || !whiteBalance_->multipliers(options.temperature, options.tint, multipliers,
+                cameraProfile ? &cameraProfile->xyzToCamera : nullptr)))
             return ErrorCode::InvalidFormat;
         // 非 Bayer 必须重置，避免复用处理器时把 X-Trans 误送入 VNG。
         params.user_qual = bayerSource_ && options.bayerDemosaic != BayerDemosaicMethod::Legacy ?
@@ -284,7 +325,7 @@ public:
         }
         auto& data = rawProcessor_->imgdata;
         const int channels = data.idata.colors;
-        if (channels != 3 && channels != 4) {
+        if (channels != 3 && (channels != 4 || cameraProfile)) {
             rawProcessor_->free_image();
             return ErrorCode::InvalidFormat;
         }
@@ -318,6 +359,13 @@ public:
         // (highlight=2). Undo that common attenuation in float, not in uint16.
         const float scale=1.0f/(65535.0f*green);
 
+        float profileMatrix[3][4]{};
+        const float (*cameraMatrix)[4] = data.color.rgb_cam;
+        if (cameraProfile) {
+            for (int row = 0; row < 3; ++row)
+                std::copy(cameraProfile->balancedToSrgb[row].begin(), cameraProfile->balancedToSrgb[row].end(), profileMatrix[row]);
+            cameraMatrix = profileMatrix;
+        }
         LensCorrectionTransform correction(options.lensDatabase, lensMetadata(*rawProcessor_, sdkStage3_),
             options.lensCorrection, width, height, channels);
         lensReport_ = correction.report();
@@ -331,13 +379,13 @@ public:
                     coordinates[mapped*2], coordinates[mapped*2+1]) : raw[c];
             }
             for (int dst=0;dst<3;++dst) for (int c=0;c<channels;++c)
-                rgb[dst]+=data.color.rgb_cam[dst][c]*camera[c]*scale;
+                rgb[dst]+=cameraMatrix[dst][c]*camera[c]*scale;
             if (replacement && !replacement->cameraCorrection.empty()) {
                 const auto& value = replacement->cameraCorrection[size_t(row) * width + col];
                 for (int c = 0; c < 3; ++c) {
                     const float delta = coordinates ? sampleCameraCorrection(replacement->cameraCorrection, width, height, c,
                         coordinates[c*2], coordinates[c*2+1]) : c == 0 ? value.r : c == 1 ? value.g : value.b;
-                    if (delta != 0) for (int dst = 0; dst < 3; ++dst) rgb[dst] += data.color.rgb_cam[dst][c] * delta;
+                    if (delta != 0) for (int dst = 0; dst < 3; ++dst) rgb[dst] += cameraMatrix[dst][c] * delta;
                 }
             }
             return RGB(rgb[0],rgb[1],rgb[2]);
@@ -710,6 +758,10 @@ ErrorCode RAWProcessor::loadFile(const std::string& filepath, X3fMode mode) {
 
 ErrorCode RAWProcessor::inspectCameraHDR(const std::string& filepath, int& width, int& height, uint64_t& sensorPixels) {
     return pImpl_->inspectCameraHDR(filepath, width, height, sensorPixels);
+}
+
+bool RAWProcessor::supportsHDRCameraProfile(const HDRCameraProfile& profile) const {
+    return pImpl_->supportsHDRCameraProfile(profile);
 }
 
 ErrorCode RAWProcessor::unpackInspectedCameraHDR() {

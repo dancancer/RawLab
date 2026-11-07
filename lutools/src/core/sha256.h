@@ -73,7 +73,7 @@ inline std::string sha256Bytes(const void* data, size_t size) {
     return detail::finishDigest(state, input + offset, size - offset, size);
 }
 
-inline std::string sha256File(const std::string& path) {
+inline std::string sha256File(const std::string& path, void (*checkpoint)() = nullptr) {
     std::ifstream input(std::filesystem::u8path(path), std::ios::binary);
     if (!input) throw std::runtime_error("Cannot read file");
     auto state = detail::initialState;
@@ -81,6 +81,7 @@ inline std::string sha256File(const std::string& path) {
     uint64_t bytes = 0;
     size_t remaining = 0;
     while (input) {
+        if (checkpoint) checkpoint();
         input.read(reinterpret_cast<char*>(buffer.data()), buffer.size());
         const size_t count = static_cast<size_t>(input.gcount());
         bytes += count;

@@ -70,9 +70,46 @@ public sealed class Adjustments
     public HslSettings Hsl { get; set; } = new();
     public DenoiseSettings Denoise { get; set; } = new();
     public bool AIDenoiseEnabled { get; set; }
+    internal bool HDRCameraAIEnabled { get; set; }
+    internal bool ActiveAIDenoise
+    {
+        get => IsHDREditing ? HDRCameraAIEnabled : AIDenoiseEnabled;
+        set
+        {
+            if (IsHDREditing) HDRCameraAIEnabled = value;
+            else AIDenoiseEnabled = value;
+        }
+    }
     public PhotoEffectsSettings Effects { get; set; } = new();
     public ColorGradingSettings ColorGrading { get; set; } = new();
+    internal HslSettings EditingHsl
+    {
+        get => IsHDREditing ? HDR!.ColorSettings.Hsl : Hsl;
+        set
+        {
+            if (IsHDREditing) HDR = HDR!.WithColor(HDR.ColorSettings with { Hsl = value });
+            else Hsl = value;
+        }
+    }
+    internal ColorGradingSettings EditingGrading
+    {
+        get => IsHDREditing ? HDR!.ColorSettings.Grading : ColorGrading;
+        set
+        {
+            if (IsHDREditing) HDR = HDR!.WithColor(HDR.ColorSettings with { Grading = value });
+            else ColorGrading = value;
+        }
+    }
     public ToneCurveSettings Curve { get; set; } = new();
+    internal ToneCurveSettings EditingCurve
+    {
+        get => IsHDREditing ? HDR!.ToneSettings.Curve : Curve;
+        set
+        {
+            if (IsHDREditing) HDR = HDR!.WithTone(HDR.ToneSettings with { Curve = value });
+            else Curve = value;
+        }
+    }
     public AtmosphereSettings Atmosphere { get; set; } = new();
     public ToneControlsSettings ToneControls { get; set; } = new();
     public string? MasterRecipeID { get; private set; }
@@ -152,8 +189,7 @@ public sealed class Adjustments
     }
     public bool CameraWhiteBalance { get; private set; } = true;
     public (double Temperature, double Tint)? AsShot { get; private set; }
-    public double this[Parameter id] => IsHDREditing && (id is Parameter.Exposure or Parameter.Temperature or Parameter.Tint or
-        Parameter.Contrast or Parameter.Highlights or Parameter.Shadows or Parameter.Saturation)
+    public double this[Parameter id] => IsHDREditing && HDRSettings.Supports(id)
         ? HDR!.Get(id) : values[(int)id];
     public Adjustments Clone() { var copy = (Adjustments)MemberwiseClone(); copy.values = (double[])values.Clone(); return copy; }
     public AdjustmentSnapshot Capture()
@@ -163,7 +199,7 @@ public sealed class Adjustments
         Denoise, Effects, DisplayChromaDenoise, Hsl, MasterRecipeID, Lens, geometry) {
         Processing = ProcessingIdentity.Require(Processing), X3fMode = X3fMode, AIDenoiseEnabled = AIDenoiseEnabled,
         MasterRecipeSettingsVersion = MasterRecipeSettingsVersion,
-        HDR = HDR,
+        HDR = HDR, HDRCameraAIEnabled = HDRCameraAIEnabled,
         ProRAWDecodeVersion = ProRAWDecodeVersion,
         Atmosphere = Atmosphere.IsIdentity ? null : Atmosphere,
         ToneControls = ToneControls.IsIdentity ? null : ToneControls,
@@ -184,6 +220,8 @@ public sealed class Adjustments
         var geometry = snapshot.Geometry ?? new GeometrySettings();
         if (snapshot.HDR is { } hdr && !hdr.IsValid)
             throw new System.IO.InvalidDataException(Loc.Text("HDR 调整记录无效，原有文件未被覆盖。"));
+        if (snapshot.HDRCameraAIEnabled && (snapshot.HDR?.CameraSettings.AllowsAI != true || snapshot.ProRAWDecodeVersion != null))
+            throw new System.IO.InvalidDataException(Loc.Text("HDR 调整记录无效，原有文件未被覆盖。"));
         if (snapshot.ProRAWDecodeVersion is { } proRAWVersion && proRAWVersion != CurrentProRAWDecodeVersion)
             throw new System.IO.InvalidDataException(Loc.Text("不支持此处理版本，原有记录未被覆盖。"));
         var atmosphere = snapshot.Atmosphere ?? new AtmosphereSettings();
@@ -202,6 +240,7 @@ public sealed class Adjustments
             X3fMode = snapshot.X3fMode,
             Denoise = denoise,
             AIDenoiseEnabled = snapshot.AIDenoiseEnabled,
+            HDRCameraAIEnabled = snapshot.HDRCameraAIEnabled,
             Effects = effects,
             ToneControls = tone,
             Atmosphere = atmosphere,
@@ -226,8 +265,7 @@ public sealed class Adjustments
     public void Set(Parameter id, double value)
     {
         if (!double.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
-        if (IsHDREditing && (id is Parameter.Exposure or Parameter.Temperature or Parameter.Tint or Parameter.Contrast or
-            Parameter.Highlights or Parameter.Shadows or Parameter.Saturation))
+        if (IsHDREditing && HDRSettings.Supports(id))
         {
             HDR = HDR!.Set(id, value);
             return;
@@ -255,29 +293,64 @@ public sealed class Adjustments
     public void SetAtmosphere(AtmosphereParameter id, double value)
     {
         if (!double.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
-        Atmosphere = Atmosphere.With(id, Math.Clamp(value, -100, 100));
+        var percent = Math.Clamp(value, -100, 100);
+        if (IsHDREditing && HDR is { } hdr) {
+            var detail = hdr.DetailSettings;
+            HDR = hdr.WithDetail(id switch {
+                AtmosphereParameter.Clarity => detail with { Clarity = percent / 100 },
+                AtmosphereParameter.Dehaze => detail with { Dehaze = percent / 100 },
+                _ => throw new ArgumentOutOfRangeException(nameof(id))
+            });
+        } else Atmosphere = Atmosphere.With(id, percent);
     }
+    internal double EditingAtmosphereValue(AtmosphereParameter id) => IsHDREditing && HDR is { } hdr ? id switch {
+        AtmosphereParameter.Clarity => hdr.DetailSettings.Clarity * 100,
+        AtmosphereParameter.Dehaze => hdr.DetailSettings.Dehaze * 100,
+        _ => throw new ArgumentOutOfRangeException(nameof(id))
+    } : Atmosphere[id];
     public void SetTone(ToneControlParameter id, double value)
     {
         if (!double.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
-        ToneControls = ToneControls.With(id, Math.Clamp(Math.Round(value, 1, MidpointRounding.AwayFromZero), -100, 100));
+        var bounded = Math.Clamp(Math.Round(value, 1, MidpointRounding.AwayFromZero), -100, 100);
+        if (IsHDREditing && HDRSettings.Supports(id)) {
+            var hdr = HDR!;
+            HDR = id switch {
+                ToneControlParameter.BlackPoint => hdr.WithTone(hdr.ToneSettings with { BlackPoint = bounded }),
+                ToneControlParameter.WhitePoint => hdr.WithTone(hdr.ToneSettings with { WhitePoint = bounded }),
+                _ => hdr.WithColor(hdr.ColorSettings with { Vibrance = bounded })
+            };
+        } else ToneControls = ToneControls.With(id, bounded);
     }
+    internal double EditingToneValue(ToneControlParameter id) => IsHDREditing ? id switch {
+        ToneControlParameter.BlackPoint => HDR!.ToneSettings.BlackPoint,
+        ToneControlParameter.WhitePoint => HDR!.ToneSettings.WhitePoint,
+        ToneControlParameter.Vibrance => HDR!.ColorSettings.Vibrance,
+        _ => ToneControls[id]
+    } : ToneControls[id];
     public void Reset(Parameter id) => Set(id, Default(id));
     public double EffectDefault(PhotoEffectParameter id) => PhotoEffectSpec.For(id).DefaultValue;
+    internal PhotoEffectsSettings EditingEffects {
+        get => IsHDREditing ? HDR!.EffectSettings : Effects;
+        set {
+            if (IsHDREditing) HDR=HDR!.WithEffects(value);
+            else Effects=value;
+        }
+    }
     public void SetEffect(PhotoEffectParameter id, double value)
     {
         if (!double.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
         var spec = PhotoEffectSpec.For(id);
         value = Math.Clamp(Math.Round(value, 1, MidpointRounding.AwayFromZero), spec.Min, spec.Max);
-        Effects = id switch {
-            PhotoEffectParameter.VignetteAmount => Effects with { VignetteAmount = value },
-            PhotoEffectParameter.VignetteMidpoint => Effects with { VignetteMidpoint = value },
-            PhotoEffectParameter.VignetteRoundness => Effects with { VignetteRoundness = value },
-            PhotoEffectParameter.VignetteFeather => Effects with { VignetteFeather = value },
-            PhotoEffectParameter.VignetteHighlights => Effects with { VignetteHighlights = value },
-            PhotoEffectParameter.GrainAmount => Effects with { GrainAmount = value },
-            PhotoEffectParameter.GrainSize => Effects with { GrainSize = value },
-            PhotoEffectParameter.GrainRoughness => Effects with { GrainRoughness = value },
+        var effects = EditingEffects;
+        EditingEffects = id switch {
+            PhotoEffectParameter.VignetteAmount => effects with { VignetteAmount = value },
+            PhotoEffectParameter.VignetteMidpoint => effects with { VignetteMidpoint = value },
+            PhotoEffectParameter.VignetteRoundness => effects with { VignetteRoundness = value },
+            PhotoEffectParameter.VignetteFeather => effects with { VignetteFeather = value },
+            PhotoEffectParameter.VignetteHighlights => effects with { VignetteHighlights = value },
+            PhotoEffectParameter.GrainAmount => effects with { GrainAmount = value },
+            PhotoEffectParameter.GrainSize => effects with { GrainSize = value },
+            PhotoEffectParameter.GrainRoughness => effects with { GrainRoughness = value },
             _ => throw new ArgumentOutOfRangeException(nameof(id))
         };
     }
@@ -286,19 +359,19 @@ public sealed class Adjustments
         foreach (var spec in PhotoEffectSpec.All.Where(x => x.IsVignette == vignette)) ResetEffect(spec.Id);
     }
     public bool IsEffectDefault(bool vignette) => PhotoEffectSpec.All.Where(x => x.IsVignette == vignette)
-        .All(spec => this.Effects[spec.Id] == spec.DefaultValue);
+        .All(spec => EditingEffects[spec.Id] == spec.DefaultValue);
     public void ResetGroup(string group)
     {
         foreach (var spec in ParameterSpec.All.Where(p => p.Group == group)) Reset(spec.Id);
         if (group == "输入") { ExposureMode = 1; ResetWhiteBalance(); }
         if (group == "色彩") { ColorGrading = new(); Hsl = new(); ToneControls = ToneControls with { Vibrance = 0 }; }
         if (group == "明暗") { Curve = new(); ToneControls = ToneControls with { BlackPoint = 0, WhitePoint = 0 }; }
-        if (group == "细节") { AIDenoiseEnabled = false; Denoise = new(); DisplayChromaDenoise = 0; }
+        if (group == "细节") { ActiveAIDenoise = false; Denoise = new(); DisplayChromaDenoise = 0; }
         if (group == "效果") { Effects = new(); Atmosphere = new(); }
         if (group == "镜头") Lens = new();
         if (group == "几何") Geometry = new();
     }
-    public void ResetAll() { Atmosphere = new(); Curve = new(); ColorGrading = new(); ToneControls = new(); AIDenoiseEnabled = false; MasterRecipeID = null; MasterRecipeSettingsVersion = 3; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); if (HDR is { } hdr) HDR = hdr.Reset() with { Mode = hdr.Mode }; }
+    public void ResetAll() { Atmosphere = new(); Curve = new(); ColorGrading = new(); ToneControls = new(); AIDenoiseEnabled = HDRCameraAIEnabled = false; MasterRecipeID = null; MasterRecipeSettingsVersion = 3; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); if (HDR is { } hdr) HDR = hdr.Reset() with { Mode = hdr.Mode }; }
 
     public void SetHDRMode(bool enabled, bool sourceIsHDR, IEnumerable<string>? conflicts = null, bool cameraRaw = false,
         bool proRAW = false)

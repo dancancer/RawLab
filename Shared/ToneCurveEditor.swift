@@ -4,6 +4,7 @@ struct ToneCurveEditor<Coordinates: View, Legacy: View>: View {
     @Binding var value: ToneCurveSettings
     let scope: String
     var fine = false
+    var usesExposureStops = false
     var isCurrent: () -> Bool = { true }
     var canChange: () -> Bool = { true }
     var prepareEditing: () -> Bool = { true }
@@ -24,9 +25,9 @@ struct ToneCurveEditor<Coordinates: View, Legacy: View>: View {
             if value.mode == .custom {
                 ViewThatFits(in: .horizontal) {
                     if !dynamicTypeSize.isAccessibilitySize {
-                        HStack(spacing: 16) { canvas.frame(width: 232, height: 164); pointControls.frame(minWidth: 180) }
+                        HStack(spacing: 16) { plot.frame(width: 232); pointControls.frame(minWidth: 180) }
                     }
-                    VStack(spacing: 8) { canvas.frame(maxWidth: 320).frame(height: 164); pointControls }
+                    VStack(spacing: 8) { plot.frame(maxWidth: 320); pointControls }
                 }
                 Text(L10n.text("点击曲线区域添加控制点，拖动中间点调整。"))
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
@@ -60,6 +61,22 @@ struct ToneCurveEditor<Coordinates: View, Legacy: View>: View {
         ToneCurveCanvas(value: $value, selected: $selected, scope: scope, fine: fine,
             isCurrent: isCurrent, canChange: canChange, prepareEditing: prepareEditing,
             onEditingChanged: onEditingChanged, onCancelled: onCancelled)
+    }
+    private var plot: some View {
+        VStack(spacing: 0) {
+            canvas.frame(height: 164)
+            if usesExposureStops {
+                HStack(alignment: .top, spacing: 6) {
+                    Text(verbatim: "−8 EV")
+                    VStack(spacing: 0) {
+                        Text(verbatim: "0 EV")
+                        Text(L10n.text("参考白"))
+                    }.multilineTextAlignment(.center).frame(maxWidth: .infinity)
+                    Text(verbatim: "+8 EV")
+                }.font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 12)
+                    .accessibilityElement(children: .combine).accessibilityIdentifier("curve.hdr.ev-axis")
+            }
+        }
     }
     private var pointControls: some View {
         VStack(alignment: .leading, spacing: 4) {

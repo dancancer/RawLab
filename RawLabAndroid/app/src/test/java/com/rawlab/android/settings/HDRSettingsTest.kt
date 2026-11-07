@@ -9,6 +9,90 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HDRSettingsTest {
+    @Test fun cameraDevelopmentUsesIndependentRecordVersion() {
+        val settings = EditSettings().withHDRMode(true,false,cameraRaw = true)
+        val camera = HDRCameraDevelopmentSettings(true,8400f,24f,true,2)
+        val edited = settings.copy(hdr = settings.hdr!!.withCameraDevelopment(camera))
+        val restored = StructuredSettingsCodec.decode(StructuredSettingsCodec.encode(edited,"photo_edit"),"photo_edit")
+        assertEquals(edited, restored)
+        assertEquals(8, restored.hdr!!.recordVersion)
+        assertEquals(1, restored.hdr.processingVersion)
+        assertEquals(camera, restored.hdr.cameraSettings)
+        assertEquals(8, restored.reset().hdr!!.recordVersion)
+        assertTrue(restored.reset().hdr!!.cameraSettings.isDefault)
+    }
+
+    @Test fun hdrDetailRoundTripsAndPreservesOrdinarySettings() {
+        val ordinary = EditSettings(sharpening = .25f, clarity = -20f, denoise = DenoiseSettings(enabled = true, luma = 20f))
+        val neutral = ordinary.withHDRMode(true, false, cameraRaw = true)
+        assertEquals(1, neutral.withHDRDenoise(0f).hdr!!.processingVersion)
+        val edited = neutral.withEditingSharpening(1.25f).withEditingClarity(50f).withEditingDehaze(-40f).withHDRDenoise(.65f)
+        val encoded = StructuredSettingsCodec.encode(edited, "photo_edit")
+        val restored = StructuredSettingsCodec.decode(encoded, "photo_edit")
+        assertEquals(edited, restored)
+        assertEquals(6, restored.hdr!!.processingVersion)
+        assertEquals(HDRDetailSettings(1.25f, .5f, -.4f, .65f), restored.hdr.detailSettings)
+        val dormant = restored.withHDRMode(false, false, cameraRaw = true)
+        assertEquals(ordinary.sharpening, dormant.sharpening)
+        assertEquals(ordinary.clarity, dormant.clarity)
+        assertEquals(ordinary.denoise, dormant.denoise)
+        val reset = restored.reset()
+        assertEquals(6, reset.hdr!!.processingVersion)
+        assertTrue(reset.hdr.detailSettings.isDefault)
+        assertEquals(restored.sdrSnapshot, reset.sdrSnapshot)
+        val invalid = encoded.replace("\"hdr_processing_version\":6", "\"hdr_processing_version\":5")
+        assertThrows(IllegalArgumentException::class.java) { StructuredSettingsCodec.decode(invalid, "photo_edit") }
+    }
+
+    @Test fun hdrColorRoundTripsWithoutOverwritingSdrColors() {
+        val sdr = EditSettings(vibrance = -17f, hsl = HslSettings().withValue(0, 1, 4f))
+        val hdr = sdr.withHDRMode(true, false, cameraRaw = true)
+            .withEditingVibrance(35f).withEditingHsl(HslSettings().withValue(1, 5, -21.5f))
+            .withEditingGrading(ColorGradingSettings(highlights = ColorGradingWheel(210f, 30f)))
+        val encoded = StructuredSettingsCodec.encode(hdr, "photo_edit")
+        val restored = StructuredSettingsCodec.decode(encoded, "photo_edit")
+        assertEquals(hdr, restored)
+        assertEquals(3, restored.hdr!!.processingVersion)
+        assertTrue(restored.hdr.toneSettings.isDefault)
+        val inactive = restored.withHDRMode(false, false, cameraRaw = true)
+        assertEquals(sdr.hsl, inactive.editingHsl)
+        assertEquals(sdr.vibrance, inactive.editingVibrance)
+        assertEquals(sdr.colorGrading, inactive.editingGrading)
+        val reset = restored.reset()
+        assertEquals(3, reset.hdr!!.processingVersion)
+        assertTrue(reset.hdr.colorSettings.isDefault)
+        val mismatched = encoded.replace("\"hdr_processing_version\":3", "\"hdr_processing_version\":2")
+        assertThrows(IllegalArgumentException::class.java) { StructuredSettingsCodec.decode(mismatched, "photo_edit") }
+    }
+
+    @Test fun hdrToneUpgradesAndRestoresBothIndependentRecords() {
+        val sdr = EditSettings(blackPoint = -8f, whitePoint = 9f, toneCurve = .12f, curve = ToneCurveSettings.identity)
+        val baseline = sdr.withHDRMode(true, false, cameraRaw = true)
+        assertEquals(1, baseline.withEditingBlackPoint(0f).hdr!!.processingVersion)
+        val curve = ToneCurveSettings.identity.inserting(.5, .625)
+        val edited = baseline.withEditingBlackPoint(-25f).withEditingWhitePoint(50f)
+            .withEditingCurveStrength(.3f).withEditingCurve(curve)
+        assertEquals(2, edited.hdr!!.processingVersion)
+        assertEquals(-25f, edited.editingBlackPoint)
+        assertEquals(50f, edited.editingWhitePoint)
+        assertEquals(.3f, edited.editingCurveStrength)
+        assertEquals(curve, edited.editingCurve)
+        val encoded = StructuredSettingsCodec.encode(edited, "photo_edit")
+        val reopened = StructuredSettingsCodec.decode(encoded, "photo_edit")
+        assertEquals(edited, reopened)
+        val dormant = reopened.withHDRMode(false, false, cameraRaw = true)
+        assertEquals(-8f, dormant.editingBlackPoint)
+        assertEquals(9f, dormant.editingWhitePoint)
+        assertEquals(.12f, dormant.editingCurveStrength)
+        assertEquals(sdr.curve, dormant.editingCurve)
+        val reset = reopened.reset()
+        assertEquals(2, reset.hdr!!.processingVersion)
+        assertTrue(reset.hdr.toneSettings.isDefault)
+        assertEquals(edited.sdrSnapshot, reset.sdrSnapshot)
+        val mismatched = encoded.replace("\"hdr_processing_version\":2", "\"hdr_processing_version\":1")
+        assertThrows(IllegalArgumentException::class.java) { StructuredSettingsCodec.decode(mismatched, "photo_edit") }
+    }
+
     @Test fun proRawHdrPinsItsDecoderWhilePreservingBothModeRecords() {
         val sdr = EditSettings(film = "velvia", exposure = -.5f)
         val hdr = sdr.withHDRMode(true, false, cameraRaw = true, proRAW = true)
