@@ -34,9 +34,15 @@ import Combine
         check(batch.job.items.first(where: { $0.input == raw })?.selected == true &&
               batch.job.items.first(where: { $0.input == raw })?.validationError == nil,
               "RAW is accepted without preparing AI during preflight")
-        check(batch.job.items.first(where: { $0.input == raster })?.selected == false &&
-              batch.job.items.first(where: { $0.input == raster })?.validationError != nil,
-              "AI raster target is excluded during preflight")
+        check(batch.job.items.first(where: { $0.input == raster })?.selected == true &&
+              batch.job.items.first(where: { $0.input == raster })?.validationError == nil,
+              "Raster target remains selected without RAW AI")
+        let rasterItem = batch.job.items.first(where: { $0.input == raster })!
+        let rasterSettings = try batch.job.snapshot(for: rasterItem).settings
+        check(!rasterSettings.aiDenoiseEnabled,
+              "Raster batch snapshot disables AI")
+        check(batch.notice(for: rasterItem) == L10n.text("普通图片未使用 AI 降噪"),
+              "Raster batch item explains AI omission")
         let preflightSeconds = Date().timeIntervalSince(started)
         print("AI_PREFLIGHT_SECONDS=\(preflightSeconds)")
         check(preflightSeconds < 5, "AI preflight performs only input and capability checks")
@@ -72,9 +78,11 @@ import Combine
               "Cancelling AI preparation keeps the RAW item retryable")
         let exportStarted = Date(); batch.start()
         wait("AI batch export completed") { !batch.running }
-        check(batch.job.succeededCount == 1 && batch.job.failedCount == 0, "Preflight and real AI batch export agree")
+        check(batch.job.succeededCount == 2 && batch.job.failedCount == 0, "Real AI batch exports both RAW and raster targets")
         let result = batch.job.items.first(where: { $0.input == raw })!.output!
         check(FileManager.default.fileExists(atPath: result.path), "AI batch publishes its rendered output")
+        check(batch.job.items.first(where: { $0.input == raster })?.output != nil,
+              "Raster target publishes its output without AI preparation")
         print("AI_BATCH_SECONDS=\(Date().timeIntervalSince(exportStarted))")
         let cached = try RenderEngine()
         var inference = false

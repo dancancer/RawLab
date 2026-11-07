@@ -93,6 +93,9 @@ public partial class BatchExportWindow : Window
         Heading.Text = preflighting ? Loc.Text("正在检查照片…") : Running ? cancellation.IsCancellationRequested ? Loc.Text("正在停止…") : Loc.Text("正在导出") :
             job.Interrupted ? Loc.Text("导出已中断") : job.Cancelled ? Loc.Text("导出已取消") : job.Started ? Loc.Text("导出完成") : Loc.Text("批量导出");
         Summary.Text = job.Started ? Loc.Format("成功 {0} 张 · 失败 {1} 张 · 未处理 {2} 张", job.SucceededCount, job.FailedCount, job.RemainingCount) : Loc.Format("已选 {0} 张", job.SelectedCount);
+        if (!Frozen && job.Settings.HDR?.Mode != HDRMode.Hdr && job.Settings.AIDenoiseEnabled &&
+            job.Items.Any(item => item.Selected && PhotoInput.IsRaster(item.Input)))
+            Summary.Text += "\n" + Loc.Text("普通图片未使用 AI 降噪");
         ErrorText.Text = job.Error ?? ""; ErrorText.Visibility = string.IsNullOrEmpty(job.Error) ? Visibility.Collapsed : Visibility.Visible;
         Progress.Visibility = job.Started || preflighting ? Visibility.Visible : Visibility.Collapsed;Progress.IsIndeterminate=preflighting;
         Progress.Maximum = Math.Max(1, job.SelectedCount); Progress.Value = job.SucceededCount + job.FailedCount;

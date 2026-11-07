@@ -10,7 +10,7 @@ case "${1:-}" in
         python3 RawLabMac/tests/test_photo_copy.py
         python3 RawLabMac/tests/test_build_environment.py
         python3 lutools/tests/test_lens_dependencies.py
-        suites=(Shared/tests/hdr-settings.sh Shared/tests/hdr-native-request.sh Shared/tests/hdr-display.sh RawLabMac/tests/hdr-model.sh
+        suites=(Shared/tests/hdr-settings.sh Shared/tests/hdr-native-request.sh Shared/tests/hdr-source-probe.sh Shared/tests/hdr-display.sh RawLabMac/tests/hdr-model.sh
             RawLabMac/tests/horizontal-picker.sh RawLabMac/tests/mac-viewing.sh
             RawLabMac/tests/control-groups.sh RawLabMac/tests/adjustment-transfer.sh
             RawLabMac/tests/adjustment-transfer-session.sh Shared/tests/adjustment-presets.sh Shared/tests/adjustment-summary.sh

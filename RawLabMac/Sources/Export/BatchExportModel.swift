@@ -84,12 +84,16 @@ final class BatchExportModel: ObservableObject {
     private var previewRevision = UUID()
     private let onUsage: (UsageEvent) -> Void
     private let hdrPreparation: MacHDRBatchPreparation?
+    private let probeHDRSource: HDRSourceInfo.Probe
 
-    init(job: BatchExportJob, journal: BatchJournal,hdrPreparation: MacHDRBatchPreparation? = nil,onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
+    init(job: BatchExportJob, journal: BatchJournal,hdrPreparation: MacHDRBatchPreparation? = nil,
+         probeHDRSource: @escaping HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) },
+         onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
         self.job = job
         self.journal = journal
         self.onUsage = onUsage
         self.hdrPreparation=hdrPreparation
+        self.probeHDRSource = probeHDRSource
         error = job.failure
     }
 
@@ -104,6 +108,15 @@ final class BatchExportModel: ObservableObject {
     var summary: String {
         if !job.started { return L10n.format("已选 %@ 张", String(describing: job.selectedCount)) }
         return L10n.format("成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张", String(describing: job.succeededCount), String(describing: job.failedCount), String(describing: job.remainingCount))
+    }
+
+    func notice(for item: BatchExportItem) -> String? {
+        var messages = item.noticeKey.map { [L10n.text($0)] } ?? []
+        if job.mode == .uniformFrozen, !job.settings.isHDREditing, job.settings.aiDenoiseEnabled,
+           RenderEngine.isRasterInput(item.input) {
+            messages.append(L10n.text("普通图片未使用 AI 降噪"))
+        }
+        return messages.isEmpty ? nil : messages.joined(separator: "\n")
     }
 
     func addFiles() {
@@ -142,7 +155,9 @@ final class BatchExportModel: ObservableObject {
         queue.async { [self] in
             for item in candidates {
                 var failure: String?
+                var sdrFallback = false
                 do {
+                    _ = try probeHDRSource(item.input, { sdrFallback = true })
                     let snapshot = try hdrPreparation?.prepare(item,ordinal:0,format:validationJob.format,longEdge:validationJob.longEdge) ?? validationJob.snapshot(for:item)
                     if !snapshot.settings.isHDREditing && snapshot.settings.aiDenoiseEnabled {
                         try RenderEngine.validateAIInput(item.input, settings: snapshot.settings)
@@ -152,10 +167,14 @@ final class BatchExportModel: ObservableObject {
                     }
                 } catch { failure = error.localizedDescription }
                 let message = failure
+                let noticeKey = failure == nil && sdrFallback ? "此照片的 HDR 需 macOS 15 才能编辑，已按 SDR 打开。" : nil
                 DispatchQueue.main.async {
-                    if let message, let index = self.job.items.firstIndex(where: { $0.input == item.input }) {
-                        self.job.items[index].validationError = message
-                        self.job.items[index].selected = false
+                    if let index = self.job.items.firstIndex(where: { $0.input == item.input }) {
+                        self.job.items[index].noticeKey = noticeKey
+                        if let message {
+                            self.job.items[index].validationError = message
+                            self.job.items[index].selected = false
+                        }
                     }
                 }
             }

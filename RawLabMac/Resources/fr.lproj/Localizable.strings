@@ -52,6 +52,7 @@
 "HDR 处理失败（%@）。" = "Échec du traitement HDR (%@).";
 "HDR 显示不可用，当前显示 SDR。" = "Affichage HDR indisponible. Affichage en SDR.";
 "HDR 模式暂不支持此工具。" = "Cet outil n’est pas encore disponible en mode HDR.";
+"HDR 照片用 HDR JPEG，其余用 JPEG" = "HDR JPEG pour les photos HDR, JPEG pour les autres";
 "HDR 照片需要 macOS 15 或 iOS 18 及以上版本。" = "Les photos HDR nécessitent macOS 15 ou iOS 18 ou ultérieur.";
 "HDR 编辑" = "Édition HDR";
 "HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。" = "L’édition HDR utilise actuellement le CPU. Réglez le GPU sur Auto ou Désactivé.";
@@ -529,6 +530,7 @@
 "显示裁切提示" = "Afficher les alertes d'écrêtage";
 "显示裁剪三分网格" = "Afficher la grille des tiers du recadrage";
 "显示输出高光与黑位裁切" = "Afficher l'écrêtage des hautes lumières et du niveau de noir de la sortie";
+"普通图片未使用 AI 降噪" = "La réduction du bruit par IA n’a pas été utilisée pour les images ordinaires";
 "普通降噪参数已保留，关闭 AI 降噪即可恢复。" = "Les réglages habituels de débruitage sont conservés. Désactivez le débruitage IA pour les rétablir.";
 "暂无编辑历史。" = "Aucun historique de modification.";
 "暖调日系 · 漫射金光" = "Style japonais chaud · lumière dorée diffuse";
@@ -647,6 +649,8 @@
 "此照片有未应用的几何或镜头草稿。" = "Cette photo a un brouillon de géométrie ou d’objectif non appliqué.";
 "此照片没有可用的相机白平衡校准。" = "Cette photo ne possède pas d’étalonnage exploitable de la balance des blancs de l’appareil.";
 "此照片没有可编辑的 HDR 增益图。" = "Cette photo ne contient pas de carte de gain HDR modifiable.";
+"此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。" = "La retouche HDR de cette photo nécessite macOS 15. Elle sera exportée en SDR.";
+"此照片的 HDR 需 macOS 15 才能编辑，已按 SDR 打开。" = "La retouche HDR de cette photo nécessite macOS 15. Elle a été ouverte en SDR.";
 "此目录没有 RAW 照片。" = "Ce dossier ne contient aucune photo RAW.";
 "此目录没有照片。" = "Ce dossier ne contient aucune photo.";
 "此输入不支持镜头校正" = "Correction optique non prise en charge pour cette image";

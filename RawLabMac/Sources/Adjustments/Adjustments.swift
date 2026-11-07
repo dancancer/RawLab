@@ -421,6 +421,7 @@ struct Adjustments: Equatable, Codable {
         state.temperature = 6500
         state.tint = 0
         state.rawNoiseReduction = 0
+        state.aiDenoiseEnabled = false
         state.lensCorrection = nil
         return state
     }

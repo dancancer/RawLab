@@ -137,6 +137,11 @@ struct ExportMetadataTests {
         let output = URL(fileURLWithPath: CommandLine.arguments[2])
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         try syntheticChecks(in: output)
+        if let fixture = ProcessInfo.processInfo.environment["RAWLAB_TEST_METADATA_RAW"] {
+            try unreadableRAWChecks(URL(fileURLWithPath: fixture), output: output)
+        } else {
+            print("SKIP: set RAWLAB_TEST_METADATA_RAW to verify an extensionless RAW with unreadable ImageIO metadata")
+        }
         let raw = ProcessInfo.processInfo.environment["RAWLAB_TEST_RAW"].map { URL(fileURLWithPath: $0) } ??
             root.appendingPathComponent("lutools/examples/DSC06251.ARW")
         let original = properties(raw)
@@ -160,5 +165,30 @@ struct ExportMetadataTests {
               pngEXIF?[kCGImagePropertyExifDateTimeOriginal] as? String == originalEXIF[kCGImagePropertyExifDateTimeOriginal] as? String,
               "Mac PNG exports preserve sixteen-bit pixels and RAW capture EXIF")
         check(try hasPNGEXIF(png), "Core-generated PNG contains actual eXIf, not only XMP projection")
+    }
+
+    static func unreadableRAWChecks(_ fixture: URL, output: URL) throws {
+        let input = output.appendingPathComponent("raw-without-extension")
+        try FileManager.default.createSymbolicLink(at: input, withDestinationURL: fixture)
+        let original = try Data(contentsOf: fixture)
+        let source = CGImageSourceCreateWithURL(input as CFURL, nil)
+        check(source.flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) } == nil,
+              "Extensionless RAW reproduces unavailable ImageIO source properties")
+        let engine = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
+        for suffix in ["jpg", "png"] {
+            let destination = output.appendingPathComponent("raw-fallback.\(suffix)")
+            _ = try engine.render(input, settings: Adjustments(), lut: nil, edge: nil, output: destination, exportLongEdge: 400)
+            let values = properties(destination)
+            let exif = values[kCGImagePropertyExifDictionary] as? [CFString: Any]
+            let rendered = decoded(destination)
+            if suffix == "png" { check(rendered.bitsPerComponent == 16, "RAW metadata fallback retains sixteen-bit PNG output") }
+            check(max(rendered.width, rendered.height) == 400 && values[kCGImagePropertyOrientation] as? Int == 1,
+                  "\(suffix) exports decoded RAW with output dimensions and upright orientation")
+            check(exif?[kCGImagePropertyExifPixelXDimension] as? Int == rendered.width &&
+                  exif?[kCGImagePropertyExifPixelYDimension] as? Int == rendered.height &&
+                  exif?[kCGImagePropertyExifDateTimeOriginal] == nil && exif?[kCGImagePropertyExifISOSpeedRatings] == nil,
+                  "\(suffix) fallback writes output EXIF without invented capture data")
+        }
+        check(try Data(contentsOf: fixture) == original, "Metadata fallback never modifies the RAW fixture")
     }
 }

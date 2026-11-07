@@ -233,6 +233,8 @@ final class EditorModel: ObservableObject {
         }
     }
     @Published var saveStatusKey = ""
+    var pendingSDRFallbackNotice = false
+    var probeHDRSource: HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) }
     var saveStatus: String { L10n.text(saveStatusKey) }
     @Published var saveError: String?
     @Published var batch: BatchExportModel?
