@@ -170,7 +170,7 @@ extension RawEditorViewModel {
         try await withCheckedThrowingContinuation { continuation in
             adjustmentQueue.async {
                 do {
-                    let resolved = try identity ?? PhotoIdentity.fallback(for: source.url)
+                    let resolved = try PhotoIdentity.fallback(for: source.url, resourceIdentifier: identity?.resourceIdentifier)
                     let file = try PhotoSourceFile.copy(source.url)
                     continuation.resume(returning: .init(identity: resolved, displayName: source.displayName, file: file, isRaw: source.isRaw))
                 } catch { continuation.resume(throwing: error) }

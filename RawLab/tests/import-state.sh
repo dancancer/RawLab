@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 APP="${1:?Pass the built arm64-simulator RawLab.app path}"
 DEVICE="${2:?Pass the task simulator UUID}"
-OUT="$(mktemp -d /tmp/rawlab-ios-import-state.XXXXXX)"
+OUT="${RAWLAB_IMPORT_STATE_OUT:-$(mktemp -d /tmp/rawlab-ios-import-state.XXXXXX)}"
 HARNESS="$OUT/ImportStateTests.app"
 mkdir -p "$HARNESS/Frameworks"
 cp "$APP/Info.plist" "$HARNESS/Info.plist"

@@ -58,7 +58,7 @@ struct IOSAdjustmentTransferView: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) {
                 Button(L10n.text("关闭")) { dismiss() }.accessibilityIdentifier("adjustment.transfer.close")
             } }
-            .photosPicker(isPresented: $showingPhotos, selection: $pickerItems, matching: .images, preferredItemEncoding: .current)
+            .photosPicker(isPresented: $showingPhotos, selection: $pickerItems, matching: .images, preferredItemEncoding: .current, photoLibrary: .shared())
             .fileImporter(isPresented: $showingFiles, allowedContentTypes: PhotoImportFile.photoPickerContentTypes,
                           allowsMultipleSelection: true) { result in
                 switch result {
