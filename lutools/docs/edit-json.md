@@ -276,6 +276,13 @@ tagged RGB to sRGB and preserves TIFF precision through processing. Alpha,
 floating-point, HDR, CMYK and other high-bit-depth formats are rejected.
 Check the capability response for other platforms' supported inputs.
 
+The Android client additionally accepts opaque integer RGB/RGBA16 PNG through
+its client-side raster decoder and the existing RGBA16 display-buffer API.
+It retains 16-bit samples, applies orientation once, converts supported tagged
+RGB to sRGB and treats untagged RGB as sRGB, matching its 8-bit color handling.
+This client-side support does not enable the Android native file-loader or
+change the macOS CLI capability response.
+
 Raster recipes use `edits.exposure.mode: "sensor"` and
 `edits.white_balance.mode: "none"`; omitting white balance has the same
 default. `raw_level` must be zero, and lens `distortion`, `tca` and

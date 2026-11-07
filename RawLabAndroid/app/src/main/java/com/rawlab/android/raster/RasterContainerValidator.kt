@@ -14,6 +14,7 @@ internal data class RasterContainerInfo(
     val height: Int,
     val mayContainAlpha: Boolean,
     val hasColorProfile: Boolean = false,
+    val bitDepth: Int = 8,
 )
 
 internal data class RasterValidation(val info: RasterContainerInfo?, val error: String? = null) {
@@ -63,7 +64,7 @@ internal object RasterContainerValidator {
         val depth = header[8].toInt() and 0xFF
         val colorType = header[9].toInt() and 0xFF
         if (width <= 0 || height <= 0 || width.toLong() * height > MAX_PIXELS) return invalid("Image is too large")
-        if (depth != 8 || colorType !in setOf(2, 6)) return invalid("PNG must be opaque 8-bit RGB")
+        if (depth !in setOf(8, 16) || colorType !in setOf(2, 6)) return invalid("PNG must be opaque 8-bit or 16-bit RGB")
         var sawIend = false
         var hasTransparencyChunk = false
         var hasSrgbProfile = false
@@ -121,7 +122,7 @@ internal object RasterContainerValidator {
         if (hasSrgbProfile && hasIccProfile) return invalid("PNG has conflicting color profiles")
         if (hasUnresolvedColorMetadata && !hasSrgbProfile && !hasIccProfile)
             return invalid("PNG color metadata is not supported")
-        return RasterValidation(RasterContainerInfo("PNG", width, height, colorType == 6, hasIccProfile))
+        return RasterValidation(RasterContainerInfo("PNG", width, height, colorType == 6, hasIccProfile, depth))
     }
 
     private fun inspectJpeg(stream: RasterStream): RasterValidation {
@@ -131,9 +132,11 @@ internal object RasterContainerValidator {
         val iccChunks = mutableMapOf<Int, ByteArray>()
         var sawScan = false
         var mpf: List<JpegRange>? = null
+        val c2pa = C2paJpegMetadata()
         while (marker != null) {
             if (marker == 0xD9) {
-                if (!sawScan || (mpf?.let { !MpfThumbnails.validateTail(stream, it) } ?: (stream.read() >= 0)))
+                if (!sawScan || !c2pa.isComplete ||
+                    (mpf?.let { !MpfThumbnails.validateTail(stream, it) } ?: hasTrailingJpeg(stream)))
                     return invalid("Invalid JPEG frame")
                 if (iccTotal != null && !IccProfiles.validateJpegChunks(iccChunks, iccTotal))
                     return invalid("Invalid JPEG ICC profile")
@@ -162,7 +165,12 @@ internal object RasterContainerValidator {
             val body = if (isFrame || marker in 0xE0..0xEF) ByteArray(bodyLength) else null
             if (body != null && !readFully(stream, body, 0, bodyLength)) return invalid("Truncated JPEG")
             else if (body == null && !skipFully(stream, bodyLength)) return invalid("Truncated JPEG")
-            if (body != null && containsGainMapMarker(body)) return invalid("HDR gain maps are not supported")
+            if (marker == 0xEB) {
+                if (body == null || !c2pa.accept(body)) return invalid("Unsupported JPEG metadata")
+            } else {
+                if (!c2pa.isComplete) return invalid("Truncated JPEG metadata")
+                if (body != null && containsGainMapMarker(body)) return invalid("HDR gain maps are not supported")
+            }
             if (marker == 0xE2 && body != null && body.size >= 4 && body.copyOfRange(0, 4).contentEquals("MPF\u0000".toByteArray())) {
                 if (mpf != null) return invalid("Multiple MPF indexes are not supported")
                 mpf = MpfThumbnails.parse(body, stream.position - body.size + 4)
@@ -180,7 +188,6 @@ internal object RasterContainerValidator {
                 if (iccChunks.values.sumOf { it.size.toLong() } > IccProfiles.MAX_PROFILE_BYTES)
                     return invalid("JPEG ICC profile is too large")
             }
-            if (marker == 0xEB) return invalid("Unsupported JPEG metadata")
             if (isFrame) {
                 if (frame != null || body == null || body.size < 6) return invalid("Multiple JPEG frames are not supported")
                 val depth = body[0].toInt() and 0xFF
@@ -195,6 +202,9 @@ internal object RasterContainerValidator {
         }
         return invalid("Truncated JPEG")
     }
+
+    internal fun hasTrailingJpeg(stream: InputStream): Boolean =
+        stream.read() == 0xFF && stream.read() == 0xD8
 
     private fun nextJpegScanMarker(stream: InputStream): Int? {
         while (true) {

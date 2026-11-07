@@ -54,7 +54,15 @@ class MpfThumbnailTest {
         val duplicate = valid.copyOfRange(0, 2) + app2 + valid.copyOfRange(2, valid.size)
         assertFalse(RasterContainerValidator.inspect(duplicate).isValid)
         assertFalse(RasterContainerValidator.inspect(jpeg(13, 7) + jpeg(4, 3)).isValid)
-        assertFalse(RasterContainerValidator.inspect(valid + byteArrayOf(0)).isValid)
+        assertFalse(RasterContainerValidator.inspect(valid + jpeg(4, 3)).isValid)
+    }
+
+    @Test fun registeredThumbnailsAllowNonJpegMotionPhotoTails() {
+        val valid = fixture().bytes
+        for (tail in listOf(byteArrayOf(0), byteArrayOf(-1),
+            byteArrayOf(0, 0, 0, 24) + "ftypmp42".toByteArray(), "SEFT".toByteArray())) {
+            assertTrue(RasterContainerValidator.inspect(valid + tail).isValid)
+        }
     }
 
     @Test fun aSingleDependentThumbnailMustUseTheFirstDependencyField() {

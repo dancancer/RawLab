@@ -133,10 +133,21 @@ MPF gain maps, stereo/multi-angle images, unknown auxiliary types and invalid
 image ranges; this does not enable general multi-frame input.
 Unknown non-sRGB PNG color metadata
 without a supported ICC profile is rejected instead of guessed. Android uses a
-separate API-26-compatible platform decoder for validated JPEG/PNG files and
-passes their oriented opaque display-sRGB pixels through the same explicit
-display-buffer C API. Android does not enable TIFF or HEIF; its native file-loader
-entry point remains unsupported rather than pretending to decode those files.
+separate API-26-compatible platform decoder for validated 8-bit JPEG/PNG files.
+Opaque integer RGB/RGBA16 PNG uses the bundled PNG decoder to retain all 16 bits,
+applies EXIF orientation once and uses the same platform color-space validation
+and tagged RGB-to-sRGB conversion as the 8-bit path. The platform's
+RGBA_F16/scRGB-nl bounds description of integer-sRGB PNG16 is normalized to
+bounded sRGB before validation. Its owned native RGBA16
+buffer reaches the display-buffer C API without an 8-bit or half-float intermediate;
+untagged RGB assumes sRGB. Actual transparency remains unsupported at either depth.
+After a JPEG's EOI (or its last registered MPF thumbnail), Android ignores
+non-JPEG trailing data such as Motion Photo video or SEFT, checking only the
+start of the tail for an unregistered JPEG signature. C2PA-labelled JUMBF APP11
+metadata is accepted, including matching continuations; other APP11 data such
+as JPEG XT remains unsupported.
+Android also supports validated SDR HEIF through the platform decoder on API 28+.
+TIFF and the native file-loader entry point remain unsupported on Android.
 The native clients resolve camera-only settings separately for every mixed-batch
 target and retain the original frozen recipe. A raster source's dormant camera
 WB, lens and exposure-baseline values do not become active on a RAW target:
