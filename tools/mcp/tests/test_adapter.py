@@ -1,4 +1,5 @@
 import asyncio
+import errno
 import json
 import os
 import stat
@@ -15,6 +16,7 @@ from subprocess_support import python_cli_patch
 SRC = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(SRC))
 
+import rawlab_mcp.adapter as adapter_module  # noqa: E402
 from rawlab_mcp.adapter import AdapterError, CliAdapter  # noqa: E402
 from rawlab_mcp.config import ServerConfig  # noqa: E402
 
@@ -153,14 +155,41 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         merged.update(env)
         return CliAdapter(self.config, environment=merged)
 
-    async def test_capabilities_negotiate_v6_and_hide_future_cli_versions(self):
-        adapter = self.adapter(FAKE_VERSIONS="1,2,3,4,5,6,7")
+    async def test_capabilities_negotiate_v7_and_hide_future_cli_versions(self):
+        adapter = self.adapter(FAKE_VERSIONS="1,2,3,4,5,6,7,8")
         capabilities = await adapter.start()
-        self.assertEqual(capabilities.recipe_versions, (1, 2, 3, 4, 5, 6))
-        self.assertNotIn(7, capabilities.result["recipe_versions"])
+        self.assertEqual(capabilities.recipe_versions, (1, 2, 3, 4, 5, 6, 7))
+        self.assertNotIn(8, capabilities.result["recipe_versions"])
         self.assertEqual(capabilities.result["commands"], [
             "capabilities", "validate_recipe", "info", "preview", "export",
         ])
+
+    async def test_v7_x3f_identity_survives_staging_and_requires_capability(self):
+        document = json.loads(self.recipe_path.read_text(encoding="utf-8"))
+        document.update({
+            "schema_version": 7,
+            "x3f_mode": "normal-v1",
+            "processing": {"family": "rawlab", "version": 1, "quality": "standard"},
+            "input": {"path": self.input_path.name, "type": "raw"},
+        })
+        document["output"]["path"] = str(self.write_root / "x3f.jpg")
+        self.recipe_path.write_text(json.dumps(document), encoding="utf-8")
+
+        old = self.adapter(FAKE_VERSIONS="1,2,3,4,5,6")
+        await old.start()
+        refused = await old.export_photo(self.recipe_path)
+        self.assertFalse(refused.ok)
+        self.assertEqual(refused.error.code, "invalid_argument")
+        self.assertFalse((self.write_root / "x3f.jpg").exists())
+
+        adapter = self.adapter(FAKE_VERSIONS="1,2,3,4,5,6,7")
+        await adapter.start()
+        self.assertTrue((await adapter.validate_recipe(self.recipe_path)).ok)
+        self.assertTrue((await adapter.export_photo(self.recipe_path)).ok)
+        staged = json.loads(self.recipe_log.read_text(encoding="utf-8"))
+        for key in ("schema_version", "x3f_mode", "processing"):
+            self.assertEqual(staged[key], document[key])
+        self.assertEqual(staged["input"]["type"], document["input"]["type"])
 
     async def test_v6_hdr_identity_survives_staging_and_requires_capability(self):
         document={"schema_version":6,
@@ -401,12 +430,36 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
     async def test_publish_failure_cleans_private_files(self):
         adapter = self.adapter()
         await adapter.start()
-        with patch("rawlab_mcp.adapter.os.link", side_effect=PermissionError("permission denied")):
+        with patch.object(adapter_module, "_publish", side_effect=PermissionError("permission denied")):
             result = await adapter.export_photo(self.recipe_path)
         self.assertFalse(result.ok)
         self.assertEqual(result.error.code, "output_io_error")
         self.assertFalse((self.write_root / "export.jpg").exists())
         self.assertEqual(list(self.write_root.glob(".rawlab-mcp-*")), [])
+
+    def test_windows_publish_uses_no_clobber_rename_without_hardlink(self):
+        staged = self.root / "staged.jpg"
+        destination = self.write_root / "export.jpg"
+        staged.write_bytes(b"fake-pixels")
+        with patch.object(adapter_module.os, "name", "nt"), \
+                patch.object(adapter_module.os, "rename") as rename, \
+                patch.object(adapter_module.os, "link") as link:
+            adapter_module._publish(staged, destination)
+        rename.assert_called_once_with(staged, destination)
+        link.assert_not_called()
+
+    def test_publish_on_volume_without_hard_links(self):
+        staged = self.root / "staged.jpg"
+        destination = self.write_root / "export.jpg"
+        staged.write_bytes(b"fake-pixels")
+        unsupported = OSError(errno.ENOTSUP, "operation unsupported")
+        with patch.object(adapter_module.os, "name", "posix"), \
+                patch.object(adapter_module.os, "link", side_effect=unsupported):
+            adapter_module._publish(staged, destination)
+            staged.write_bytes(b"second-render")
+            with self.assertRaises(FileExistsError):
+                adapter_module._publish(staged, destination)
+        self.assertEqual(destination.read_bytes(), b"fake-pixels")
 
     async def test_cleanup_failure_preserves_success_and_logs_private_directory(self):
         adapter = self.adapter()

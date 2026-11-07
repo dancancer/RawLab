@@ -35,7 +35,7 @@ class LookFailureTest {
         val failure = DcpCompilationException(DcpFailureReason.INVALID_CALIBRATION)
         try {
             val error = assertThrows(DcpCompilationException::class.java) {
-                LookLibrary(root, dcpCompiler = DcpCompiler { _, _ -> throw failure })
+                LookLibrary(root, dcpCompiler = DcpCompiler { _, _, _, _ -> throw failure })
                     .importLook("dcp".byteInputStream(), "camera.dcp")
             }
             assertSame(failure, error)

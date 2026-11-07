@@ -10,6 +10,12 @@ struct LookCompatibilityPresentation: Identifiable {
     let draft: LUTCompatibility
 }
 
+struct DCPImportOptionsPresentation: Identifiable {
+    let id = UUID()
+    let source: URL
+    let reason: DCPCompilerError
+}
+
 enum EditorDocumentImportKind {
     case photo
     case looks
@@ -107,6 +113,9 @@ struct ContentView: View {
     @State var pendingLookCompatibility: LookCompatibilityPresentation?
     @State var lookCompatibilityCompletion: ((LUTCompatibility?) -> Void)?
     @State var confirmedLookCompatibility: LUTCompatibility?
+    @State var pendingDCPImportOptions: DCPImportOptionsPresentation?
+    @State var dcpImportOptionsCompletion: ((DCPImportOptions?) -> Void)?
+    @State var confirmedDCPImportOptions: DCPImportOptions?
     @State var renamingLUT: LUTOption?
     @State var renamedLUTName = ""
     @State var showingLookRename = false
@@ -203,6 +212,18 @@ struct ContentView: View {
                 }) { result in
                 confirmedLookCompatibility = result
                 pendingLookCompatibility = nil
+            }
+        }
+        .sheet(item: $pendingDCPImportOptions, onDismiss: {
+            let completion = dcpImportOptionsCompletion
+            let options = confirmedDCPImportOptions
+            dcpImportOptionsCompletion = nil
+            confirmedDCPImportOptions = nil
+            completion?(options)
+        }) { pending in
+            IOSDCPImportOptionsView(source: pending.source, reason: pending.reason) { options in
+                confirmedDCPImportOptions = options
+                pendingDCPImportOptions = nil
             }
         }
         .alert(L10n.text("重命名外观"), isPresented: $showingLookRename) {

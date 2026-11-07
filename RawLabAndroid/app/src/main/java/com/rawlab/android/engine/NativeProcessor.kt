@@ -22,6 +22,7 @@ import com.rawlab.android.settings.HslTargetSample
 import com.rawlab.android.settings.HslTargetAvailability
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.LensSettings
+import com.rawlab.android.settings.X3fMode
 
 // 原生层对外观文件的识别结果：格式与 RLOOK 版本
 enum class LookFormat(val extension: String) {
@@ -317,10 +318,17 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
 
     companion object {
         @JvmStatic external fun nativeX3fAvailable(): Boolean
+        @JvmStatic external fun nativeX3fDefaultMode(input: String): Int
         const val CPU = 0
         const val AUTO = 1
         const val FORCE = 2
         init { System.loadLibrary("rawlab-jni") }
+
+        fun x3fDefaultMode(input: File): X3fMode = when (nativeX3fDefaultMode(input.path)) {
+            X3fMode.LEGACY.nativeValue -> X3fMode.LEGACY
+            X3fMode.NORMAL.nativeValue -> X3fMode.NORMAL
+            else -> error("Invalid native X3F default mode")
+        }
 
         fun validateLook(file: File): LookValidation {
             val result = try { NativeLookBridge.validate(file.path) }
@@ -348,11 +356,11 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             NativeLookBridge.compare(candidate.pixels, candidate.width, candidate.height,
                 reference.pixels, reference.width, reference.height, conditions).toString(Charsets.UTF_8)
 
-        fun compileDcp(source: ByteArray, sourceName: String): ByteArray {
+        fun compileDcp(source: ByteArray, sourceName: String, toneCurve: ByteArray? = null, omitAutomaticBlack: Boolean = false): ByteArray {
             if (source.size.toLong() > MAX_DCP_SOURCE_BYTES)
                 throw DcpCompilationException(DcpFailureReason.TOO_LARGE)
             require(sourceName.isNotBlank()) { "Missing DCP source filename" }
-            return NativeDcpBridge.compile(source, sourceName.toByteArray(Charsets.UTF_8)).also {
+            return NativeDcpBridge.compile(source, sourceName.toByteArray(Charsets.UTF_8), toneCurve, omitAutomaticBlack).also {
                 if (it.size.toLong() > MAX_DCP_OUTPUT_BYTES)
                     throw DcpCompilationException(DcpFailureReason.TOO_LARGE)
             }
@@ -371,5 +379,5 @@ private object NativeLookBridge {
 }
 
 private object NativeDcpBridge {
-    @JvmStatic external fun compile(source: ByteArray, sourceNameUtf8: ByteArray): ByteArray
+    @JvmStatic external fun compile(source: ByteArray, sourceNameUtf8: ByteArray, toneCurve: ByteArray?, omitAutomaticBlack: Boolean): ByteArray
 }
