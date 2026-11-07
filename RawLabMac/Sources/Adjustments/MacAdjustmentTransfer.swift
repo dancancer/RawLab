@@ -146,10 +146,8 @@ enum MacAdjustmentTransfer {
         try applyWhiteBalance(payload, target: target.settings, to: &result.settings, context: context,
             fullRecipe: fullRecipe, contextChanged: contextChanged)
         if let mode = payload[.exposureMode]?.string {
-            if !context.isRaw && payload.source.isRaw && mode != "sensor" {
-                throw AdjustmentTransferError.incompatible(Field.exposureMode.rawValue)
-            }
-            result.settings.exposureMode = mode == "scene" ? .scene : mode == "sensor" ? .sensor : .preview
+            // 普通图片没有 RAW 曝光基准，选中任何来源模式均保持 sensor。
+            result.settings.exposureMode = !context.isRaw || mode == "sensor" ? .sensor : mode == "scene" ? .scene : .preview
         }
         for (field, key) in effectKeys {
             if let value = payload[field]?.number, result.settings.effectSettings[keyPath: key] != value {

@@ -243,6 +243,7 @@ import Foundation
     }
 
     static func main() throws {
+        try neutralRawRequestsOnRaster()
         try refinedRecipeTransfers()
         try toneCurve()
         try colorGrading()
@@ -399,6 +400,59 @@ import Foundation
             _ = try IOSAdjustmentTransfer.prepare(payload: partial, target: state(), context: missing)
         }
     }
+    static func neutralRawRequestsOnRaster() throws {
+        var raster = raw; raster.identifier = "target.jpg"; raster.isRaw = false
+        var rasterSettings = RawSettings.default; rasterSettings.exposureMode = .sensor
+        let target = state(rasterSettings)
+        var source = RawSettings.default
+        for mode in [RawExposureMode.scene, .preview, .sensor] {
+            source.exposureMode = mode; source.exposure = 1.25
+            let standard = try IOSAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
+            let applied = try IOSAdjustmentTransfer.prepare(payload: standard, target: target, context: raster)
+            check(applied != target && applied.settings.exposure == 1.25,
+                "RAW standard paste keeps other changes on JPEG")
+            check(IOSAdjustmentTransfer.values(applied.settings, context: raster)[AdjustmentTransferField.whiteBalanceMode.rawValue] == .string("none")
+                && applied.settings.whiteBalanceMode == .camera && applied.settings.temperature == 6500
+                && applied.settings.tint == 0 && applied.settings.exposureMode == .sensor,
+                "JPEG keeps native neutral white balance and sensor exposure for every RAW exposure mode")
+            check(try IOSAdjustmentTransfer.prepare(payload: standard, target: applied, context: raster) == applied,
+                "Repeating RAW standard paste on JPEG is unchanged")
+            source.exposure = 0
+            let neutral = try IOSAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
+            check(try IOSAdjustmentTransfer.prepare(payload: neutral, target: target, context: raster) == target,
+                "Neutral RAW standard paste does not create a JPEG change")
+            let exposureMode = try IOSAdjustmentTransfer.capture(scope: .custom([.exposureMode]), snapshot: state(source), context: raw)
+            check(try IOSAdjustmentTransfer.prepare(payload: exposureMode, target: target, context: raster) == target,
+                "RAW exposure mode alone does not create a JPEG change")
+        }
+        for field in AdjustmentTransferField.whiteBalanceFields {
+            let partial = try IOSAdjustmentTransfer.capture(scope: .custom([field]), snapshot: state(source), context: raw)
+            check(try IOSAdjustmentTransfer.prepare(payload: partial, target: target, context: raster) == target,
+                "Selected neutral RAW white balance component is unchanged on JPEG")
+        }
+        source.applyMasterRecipe(legacyRecipe); source.whiteBalanceMode = .camera; source.tint = 0
+        let recipeWB = try IOSAdjustmentTransfer.capture(scope: .custom(AdjustmentTransferField.whiteBalanceFields), snapshot: state(source), context: raw)
+        check(try IOSAdjustmentTransfer.prepare(payload: recipeWB, target: target, context: raster) == target,
+            "Zero recipe-relative tint is neutral on JPEG")
+        for strength in [0.0, 1.0] {
+            source.lutStrength = strength; source.tint = 5
+            let relative = try IOSAdjustmentTransfer.capture(scope: .custom([.tint]), snapshot: state(source), context: raw)
+            rejects("Nonzero recipe-relative tint is incompatible with JPEG even at zero strength") {
+                _ = try IOSAdjustmentTransfer.prepare(payload: relative, target: target, context: raster)
+            }
+        }
+        source = .default; source.whiteBalanceMode = .custom; source.temperature = 5400; source.tint = 3.5
+        for fields in [AdjustmentTransferField.whiteBalanceFields, [.temperature], [.tint]] {
+            let fixed = try IOSAdjustmentTransfer.capture(scope: .custom(fields), snapshot: state(source), context: raw)
+            rejects("Fixed RAW white balance is still incompatible with JPEG") {
+                _ = try IOSAdjustmentTransfer.prepare(payload: fixed, target: target, context: raster)
+            }
+        }
+        rejects("Nonzero RAW FBDD is still incompatible with JPEG") {
+            _ = try IOSAdjustmentTransfer.prepare(payload: payload(["detail.denoise.raw_level": .number(1)]), target: target, context: raster)
+        }
+    }
+
     static func whiteBalance() throws {
         let relative = try payload(["color.white_balance.mode": .string("camera"),
             "color.white_balance.temperature_kelvin": .null, "color.white_balance.tint": .number(8)],

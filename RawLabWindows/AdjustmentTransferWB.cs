@@ -73,7 +73,16 @@ internal static class AdjustmentTransferWB
             }
             return s;
         }
-        if(!context.IsRaw && p.Source.IsRaw)throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"color.white_balance");
+        if(!context.IsRaw && p.Source.IsRaw) {
+            // 拍摄时请求和零配方偏移对普通图片无效果，保留目标固有的 WB。
+            var neutral=new Dictionary<F,System.Text.Json.JsonElement> {
+                [F.WhiteBalanceMode]=Value("camera"),[F.Temperature]=Value<object?>(null),
+                [F.Tint]=p.Source.Recipe==null ? Value<object?>(null) : Value(0)
+            };
+            if(!neutral.All(pair=>p[pair.Key]==null || Same(p[pair.Key],pair.Value)))
+                throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"color.white_balance");
+            return s;
+        }
         var previousValues=AdjustmentTransferValues.Values(new(new("",0,0,0),target,null),context);
         if(!changed && context.IsRaw==p.Source.IsRaw && AdjustmentTransfer.Recipe(target)==p.Source.Recipe && selected.All(f=>Same(p[f],previousValues[f])))return s;
         var mode=Text(p[F.WhiteBalanceMode]);var temperature=p[F.Temperature];var tint=p[F.Tint];
