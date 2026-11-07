@@ -56,6 +56,10 @@ public sealed record AdjustmentSnapshot(
     public ProcessingIdentity Processing { get; init; } = ProcessingIdentity.Legacy;
     public X3fMode X3fMode { get; init; } = X3fMode.Legacy;
     public bool AIDenoiseEnabled { get; init; }
+    [JsonPropertyName("hdrCameraAI")]
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingDefault)]
+    public bool HDRCameraAIEnabled { get; init; }
+    internal bool ActiveAIDenoise => HDR is { Mode: HDRMode.Hdr } ? HDRCameraAIEnabled : AIDenoiseEnabled;
     public int MasterRecipeSettingsVersion { get; init; } = 3;
     [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
     public ToneControlsSettings? ToneControls { get; init; }
@@ -77,7 +81,7 @@ public sealed record AdjustmentSnapshot(
         (Geometry ?? new()) == (other.Geometry ?? new()) && (ToneControls ?? new()) == (other.ToneControls ?? new()) &&
         (Atmosphere ?? new()) == (other.Atmosphere ?? new()) &&
         (ColorGrading ?? new()) == (other.ColorGrading ?? new()) && (Curve ?? new()) == (other.Curve ?? new()) &&
-        HDR == other.HDR && ProRAWDecodeVersion == other.ProRAWDecodeVersion;
+        HDR == other.HDR && HDRCameraAIEnabled == other.HDRCameraAIEnabled && ProRAWDecodeVersion == other.ProRAWDecodeVersion;
     public AdjustmentSnapshot Copy() => this with { Values = (double[])Values.Clone() };
 }
 

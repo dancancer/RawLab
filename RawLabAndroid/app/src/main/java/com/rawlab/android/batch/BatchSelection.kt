@@ -57,6 +57,7 @@ class BatchSelectionExport(private val directory: File,
     private val readRecord: (PhotoIdentity) -> VersionedPhotoEdit,
     private val resolveLook: (EditSettings) -> File?,
     private val validateSource: (BatchTarget) -> Unit = {},
+    private val validateHDRSource: (BatchTarget, EditSettings) -> Unit = { _, settings -> settings.requireProRAWDecoder() },
 ) {
     fun prepare(selection: BatchSelectionState, skipping: Set<String>, format: ExportFormat, longEdge: Int?,
         destination: String?, validateActive: (String) -> Unit): CollectionExportReview {
@@ -69,7 +70,7 @@ class BatchSelectionExport(private val directory: File,
                 val settings = record.settings ?: com.rawlab.android.settings.sourceDefaultSettings(photo.sourceIsHDR, cameraRaw = photo.inputKind == com.rawlab.android.format.PhotoInputKind.RAW)
                 if (settings.isHDREditing && !photo.sourceIsHDR)
                     throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.source")
-                if (settings.isHDREditing) settings.requireProRAWDecoder()
+                if (settings.isHDREditing) validateHDRSource(photo, settings)
                 require(format != ExportFormat.HDR_JPEG || settings.isHDREditing) { "HDR JPEG requires HDR editing" }
                 val look = if (settings.isHDREditing) null else resolveLook(settings)
                 check(settings.isHDREditing || (settings.film == "neutral" && settings.recipeID == null) || look != null) { "Photo look is unavailable" }

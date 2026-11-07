@@ -14,7 +14,7 @@ from .config import ServerConfig
 
 
 COMMANDS = {"capabilities", "validate_recipe", "info", "preview", "export"}
-RECIPE_VERSIONS = {1, 2, 3, 4, 5, 6}
+RECIPE_VERSIONS = {1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13}
 MAX_JSON_BYTES = 4 * 1024 * 1024
 IO_ERROR_STATUS = 3
 logger = logging.getLogger(__name__)

@@ -5,13 +5,14 @@ import com.rawlab.android.adjustments.*
 import com.rawlab.android.i18n.AppStrings
 
 internal val AdjustmentField.title: String get() {
+    if (this == AdjustmentField.HDR_CAMERA_DEVELOPMENT) return "HDR RAW"
     gradingZone?.let { return AppStrings.text(R.string.color_grading) + " · " + AppStrings.text(gradingZoneTitle(it)) }
     hslLocation?.let { (axis, channel) ->
         return AppStrings.text(listOf(R.string.transfer_channel_0,R.string.transfer_channel_1,R.string.transfer_channel_2,R.string.transfer_channel_3,R.string.transfer_channel_4,R.string.transfer_channel_5,R.string.transfer_channel_6,R.string.transfer_channel_7)[channel]) + " · " +
             AppStrings.text(listOf(R.string.transfer_axis_0,R.string.transfer_axis_1,R.string.transfer_axis_2)[axis])
     }
     return AppStrings.text(when (this) {
-        AdjustmentField.LOOK -> R.string.transfer_field_look
+        AdjustmentField.LOOK, AdjustmentField.HDR_LOOK -> R.string.transfer_field_look
         AdjustmentField.STRENGTH -> R.string.transfer_field_strength
         AdjustmentField.EXPOSURE -> R.string.transfer_field_exposure
         AdjustmentField.EXPOSURE_MODE -> R.string.transfer_field_exposure_mode
@@ -23,6 +24,10 @@ internal val AdjustmentField.title: String get() {
         AdjustmentField.WHITE_BALANCE_MODE -> R.string.transfer_field_white_balance_mode
         AdjustmentField.TEMPERATURE, AdjustmentField.HDR_TEMPERATURE -> R.string.transfer_field_temperature
         AdjustmentField.TINT, AdjustmentField.HDR_TINT -> R.string.transfer_field_tint
+        AdjustmentField.HDR_PEAK_LIMIT -> R.string.hdr_peak_limit
+        AdjustmentField.HDR_SDR_EXPOSURE -> R.string.hdr_sdr_exposure
+        AdjustmentField.HDR_SDR_CONTRAST -> R.string.hdr_sdr_contrast
+        AdjustmentField.HDR_SDR_SATURATION -> R.string.hdr_sdr_saturation
         AdjustmentField.BLACK_POINT -> R.string.black_point
         AdjustmentField.WHITE_POINT -> R.string.white_point
         AdjustmentField.VIBRANCE -> R.string.vibrance

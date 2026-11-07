@@ -301,9 +301,23 @@ enum EditorAdjustmentRules {
         guard result.isHDREditing else { return result }
         switch scope {
         case .all: result.hdr?.reset()
+        case .group(.looks), .tool(.film): result.hdr?.lookSettings = HDRLookSettings()
         case .group(let group):
             for tool in tools(group) { result=resettingHDR(.tool(tool),settings:result) }
         case .tool(.geometry): result.setGeometrySettings(GeometrySettings())
+        case .tool(.adjustment(.toneCurve)):
+            AdjustmentKind.toneCurve.setValue(0, in: &result)
+            result.editingCurveSettings = ToneCurveSettings()
+        case .tool(.adjustment(.colorGrading)), .allGrading:
+            result.editingGradingSettings = ColorGradingSettings()
+        case .gradingZone(let zone):
+            result.editingGradingSettings[zone] = ColorGradingWheel()
+        case .tool(.adjustment(.hsl)), .allHSL:
+            result.editingHSLSettings = HSLSettings()
+        case .hslChannel(let channel):
+            result.editingHSLSettings.reset(channel: channel)
+        case .tool(.adjustment(.vignette)): result.hdr?.effectsSettings.reset(vignette: true)
+        case .tool(.adjustment(.grain)): result.hdr?.effectsSettings.reset(vignette: false)
         case .tool(.adjustment(let kind)):
             if kind == .temperature || kind == .tint { result.hdr?.temperature=6500; result.hdr?.tint=0 }
             else if let key=kind.hdrKeyPath { result.hdr?[keyPath:key]=HDRSettings()[keyPath:key] }

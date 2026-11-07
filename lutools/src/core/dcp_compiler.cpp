@@ -25,11 +25,18 @@ using Json = nlohmann::json;
 using Matrix = std::array<double, 9>;
 using Vector = std::array<double, 3>;
 
-constexpr std::size_t maxSourceBytes = 128u * 1024u * 1024u;
 constexpr uint64_t maxCells = 4'000'000;
 constexpr std::size_t toneCount = 4097;
 constexpr std::size_t maxMetadataBytes = 65536;
 constexpr double floatMagnitude = static_cast<double>(std::numeric_limits<float>::max());
+constexpr Matrix srgb = {0.4124564, 0.3575761, 0.1804375,
+                         0.2126729, 0.7151522, 0.0721750,
+                         0.0193339, 0.1191920, 0.9503041};
+constexpr Matrix bradford = {0.8951, 0.2664, -0.1614,
+                             -0.7502, 1.7135, 0.0367,
+                             0.0389, -0.0685, 1.0296};
+constexpr Vector d50{0.96422, 1, 0.82521};
+constexpr Vector d65{0.95047, 1, 1.08883};
 
 struct CompileFailure : std::exception {
     explicit CompileFailure(DcpCompilerError value) : reason(value) {}
@@ -64,7 +71,7 @@ struct Reader {
 
     Reader(const void* source, std::size_t sourceSize) :
         bytes(static_cast<const uint8_t*>(source)), size(sourceSize) {
-        if (size > maxSourceBytes) fail(DcpCompilerError::TooLarge);
+        if (size > maxDcpSourceBytes) fail(DcpCompilerError::TooLarge);
         if (!bytes || size < 8) fail(DcpCompilerError::Malformed);
         if ((bytes[0] != 'I' && bytes[0] != 'M') || bytes[0] != bytes[1]) fail(DcpCompilerError::Malformed);
         bigEndian = bytes[0] == 'M';
@@ -426,22 +433,115 @@ Json dimensions(const Table* table) {
     return Json::array({table->hues, table->saturations, table->valuesCount});
 }
 
+std::array<uint16_t, 3> d65CalibrationTags(const Reader& reader) {
+    constexpr std::array<std::array<uint16_t, 3>, 3> pairs = {{
+        {{50778, 50721, 50964}}, {{50779, 50722, 50965}}, {{52529, 52531, 52532}}}};
+    std::array<uint16_t, 3> selected{};
+    int matches = 0;
+    for (const auto& pair : pairs) {
+        if (reader.scalar(pair[0], 3, 0) == 21) {
+            selected = pair;
+            ++matches;
+        }
+    }
+    if (matches != 1) fail(DcpCompilerError::InvalidCalibration);
+    return selected;
+}
+
+struct CameraMatrices {
+    std::string model;
+    Matrix color, forward;
+};
+
+constexpr char hdrCameraMagic[8] = {'R', 'L', 'O', 'O', 'K', 'H', 'D', 'R'};
+constexpr size_t hdrCameraHeaderBytes = 16;
+constexpr size_t hdrCameraMatrixBytes = 18 * 8;
+
+CameraMatrices readCameraDcp(const void* data, std::size_t size) {
+    const Reader reader(data, size);
+    const auto model = reader.tags.find(50708);
+    if (reader.integer(2, 2) != 0x4352 || model == reader.tags.end() || model->second.count > 64)
+        fail(DcpCompilerError::InvalidCalibration);
+    const auto tags = d65CalibrationTags(reader);
+    return {reader.text(50708), reader.calibration(tags[1]), reader.calibration(tags[2])};
+}
+
+uint64_t littleEndian(const uint8_t* bytes, size_t width) {
+    uint64_t value = 0;
+    for (size_t i = 0; i < width; ++i) value |= uint64_t(bytes[i]) << (8 * i);
+    return value;
+}
+
+CameraMatrices readCameraRlook(const uint8_t* bytes, std::size_t size) {
+    constexpr size_t fixedBytes = hdrCameraHeaderBytes + hdrCameraMatrixBytes;
+    if (size < fixedBytes || littleEndian(bytes + 8, 4) != 1 ||
+        littleEndian(bytes + 12, 4) != size - fixedBytes)
+        fail(DcpCompilerError::Malformed);
+    if (size - fixedBytes > 63) fail(DcpCompilerError::InvalidCalibration);
+    CameraMatrices matrices;
+    const uint8_t* cursor = bytes + hdrCameraHeaderBytes;
+    for (auto* matrix : {&matrices.color, &matrices.forward}) {
+        for (double& coefficient : *matrix) {
+            const uint64_t bits = littleEndian(cursor, 8);
+            std::memcpy(&coefficient, &bits, sizeof(bits));
+            cursor += 8;
+        }
+    }
+    matrices.model.assign(reinterpret_cast<const char*>(cursor), size - fixedBytes);
+    return matrices;
+}
+
+HDRCameraProfile cameraProfile(const CameraMatrices& matrices) {
+    if (matrices.model.empty() || matrices.model.size() > 63 ||
+        matrices.model.find_first_not_of(' ') == std::string::npos ||
+        !std::all_of(matrices.model.begin(), matrices.model.end(), [](unsigned char c) {
+            return c >= 0x20 && c <= 0x7e;
+        }) || !finiteMatrix(matrices.color) || !fullRank(matrices.color) ||
+        !finiteMatrix(matrices.forward) || !fullRank(matrices.forward))
+        fail(DcpCompilerError::InvalidCalibration);
+
+    const Vector cameraWhite = multiply(matrices.color, d65);
+    const Vector forwardWhite = multiply(matrices.forward, Vector{1, 1, 1});
+    Vector normalize{};
+    for (int i = 0; i < 3; ++i) {
+        if (cameraWhite[i] <= 0 || std::abs(forwardWhite[i] - d50[i]) > 0.01)
+            fail(DcpCompilerError::InvalidCalibration);
+        normalize[i] = d50[i] / forwardWhite[i];
+    }
+    // The decoder supplies white-balanced camera channels with one common
+    // exposure scale. The ForwardMatrix therefore maps directly to XYZ D50.
+    Matrix xyzToSrgb{}, inverseBradford{};
+    if (!inverse(srgb, xyzToSrgb) || !inverse(bradford, inverseBradford))
+        fail(DcpCompilerError::InvalidCalibration);
+    const Vector sourceWhite = multiply(bradford, d50);
+    const Vector targetWhite = multiply(bradford, multiply(srgb, Vector{1, 1, 1}));
+    const Matrix d50ToD65 = multiply(multiply(inverseBradford, diagonal({
+        targetWhite[0] / sourceWhite[0], targetWhite[1] / sourceWhite[1], targetWhite[2] / sourceWhite[2]})), bradford);
+    const auto transform = multiply(multiply(xyzToSrgb, d50ToD65),
+                                    multiply(diagonal(normalize), matrices.forward));
+    // Extremely large, cancelling coefficients cannot preserve a stable
+    // neutral axis after conversion to the float RAW pixel pipeline.
+    if (!std::all_of(transform.begin(), transform.end(), [](double value) {
+        return std::isfinite(value) && std::abs(value) <= 16;
+    })) fail(DcpCompilerError::InvalidCalibration);
+    HDRCameraProfile profile{};
+    profile.cameraModel = matrices.model;
+    for (int row = 0; row < 3; ++row) for (int column = 0; column < 3; ++column) {
+        profile.xyzToCamera[row][column] = matrices.color[row * 3 + column];
+        profile.balancedToSrgb[row][column] = static_cast<float>(transform[row * 3 + column]);
+    }
+    return profile;
+}
+
 std::vector<uint8_t> compileImpl(const void* data, std::size_t size, const std::string& sourceName) {
     Reader reader(data, size);
     for (uint16_t key : {uint16_t(52525), uint16_t(52539), uint16_t(52543), uint16_t(52544), uint16_t(52551)})
         if (reader.tags.find(key) != reader.tags.end()) fail(DcpCompilerError::UnsupportedStages);
 
-    constexpr std::array<std::array<uint16_t, 3>, 3> pairs = {{
-        {{50778, 50721, 50964}}, {{50779, 50722, 50965}}, {{52529, 52531, 52532}}}};
-    std::vector<std::array<uint16_t, 3>> matches;
-    for (const auto& pair : pairs)
-        if (reader.scalar(pair[0], 3, 0) == 21) matches.push_back(pair);
-    if (matches.size() != 1) fail(DcpCompilerError::InvalidCalibration);
-    const auto pair = matches.front();
+    const auto pair = d65CalibrationTags(reader);
     const Matrix color = reader.calibration(pair[1]);
     Matrix forward = reader.calibration(pair[2]);
     if (!fullRank(color)) fail(DcpCompilerError::InvalidCalibration);
-    const Vector d65{0.95047, 1, 1.08883};
     const Vector white = multiply(color, d65);
     const Vector forwardWhite = multiply(forward, Vector{1, 1, 1});
     if (!std::all_of(white.begin(), white.end(), [](double value) { return std::isfinite(value) && value > 0; }) ||
@@ -451,16 +551,9 @@ std::vector<uint8_t> compileImpl(const void* data, std::size_t size, const std::
     const Matrix prophoto = {0.7976749, 0.1351917, 0.0313534,
                              0.2880402, 0.7118741, 0.0000857,
                              0, 0, 0.8252100};
-    const Matrix srgb = {0.4124564, 0.3575761, 0.1804375,
-                         0.2126729, 0.7151522, 0.0721750,
-                         0.0193339, 0.1191920, 0.9503041};
-    const Matrix bradford = {0.8951, 0.2664, -0.1614,
-                             -0.7502, 1.7135, 0.0367,
-                             0.0389, -0.0685, 1.0296};
     Matrix prophotoInverse, bradfordInverse;
     if (!inverse(prophoto, prophotoInverse) || !inverse(bradford, bradfordInverse))
         fail(DcpCompilerError::InvalidCalibration);
-    const Vector d50{0.96422, 1, 0.82521};
     const Vector bradfordD65 = multiply(bradford, d65), bradfordD50 = multiply(bradford, d50);
     Vector adaptationScale{};
     for (int index = 0; index < 3; ++index) adaptationScale[index] = bradfordD50[index] / bradfordD65[index];
@@ -603,6 +696,35 @@ std::vector<uint8_t> compileDcp(const void* data, std::size_t size, const std::s
     } catch (const std::exception&) {
         error = DcpCompilerError::Malformed;
         return {};
+    }
+}
+
+std::vector<uint8_t> compileHDRCameraDcp(const void* data, std::size_t size, DcpCompilerError& error) {
+    error = DcpCompilerError::None;
+    try {
+        const auto matrices = readCameraDcp(data, size);
+        cameraProfile(matrices);
+        std::vector<uint8_t> bytes(hdrCameraMagic, hdrCameraMagic + sizeof(hdrCameraMagic));
+        appendU32(bytes, 1);
+        appendU32(bytes, static_cast<uint32_t>(matrices.model.size()));
+        for (const auto* matrix : {&matrices.color, &matrices.forward})
+            for (double coefficient : *matrix) appendDouble(bytes, coefficient);
+        bytes.insert(bytes.end(), matrices.model.begin(), matrices.model.end());
+        return bytes;
+    } catch (const CompileFailure& failure) {
+        error = failure.reason;
+        return {};
+    }
+}
+
+std::optional<HDRCameraProfile> readHDRCameraProfile(const void* data, std::size_t size) {
+    try {
+        const auto* bytes = static_cast<const uint8_t*>(data);
+        if (bytes && size >= sizeof(hdrCameraMagic) && std::memcmp(bytes, hdrCameraMagic, sizeof(hdrCameraMagic)) == 0)
+            return cameraProfile(readCameraRlook(bytes, size));
+        return cameraProfile(readCameraDcp(data, size));
+    } catch (const CompileFailure&) {
+        return std::nullopt;
     }
 }
 

@@ -6,11 +6,16 @@
 
 namespace sony2fuji::ai {
 NoiseParameters selectNoiseProfile(const RAWBayerSource& source) {
+    if (auto calibrated = calibratedNoiseProfile(source)) return *calibrated;
+    return estimateRawNoise(source);
+}
+
+std::optional<NoiseParameters> calibratedNoiseProfile(const RAWBayerSource& source) {
     if (source.cameraModel == "ILCE-7CM2" && std::isfinite(source.iso) && source.iso >= 100 && source.iso <= 12800 &&
         source.rawBits == 14 && source.sonyRawType == 4 && source.width == 7008 && source.height == 4672 &&
         source.white == 16383 && std::all_of(source.black.begin(), source.black.end(), [](float value) { return value == 512; }))
         return selectNoiseProfile(source.cameraModel, source.iso);
-    return estimateRawNoise(source);
+    return std::nullopt;
 }
 
 NoiseParameters selectNoiseProfile(const std::string& cameraModel, float iso) {

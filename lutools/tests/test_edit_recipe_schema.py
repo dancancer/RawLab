@@ -66,6 +66,94 @@ class EditRecipeSchema(unittest.TestCase):
             if jsonschema:
                 self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(invalid))
 
+    def test_v8_hdr_tone_schema(self):
+        schema = json.loads((ROOT / "docs/edit-json-v8.schema.json").read_text())
+        document = json.loads((ROOT / "examples/edit-recipes/hdr-v8.json").read_text())
+        normalized = self.normalize(document)
+        self.assertEqual(normalized["processing"]["version"], 2)
+        self.assertEqual(normalized["edits"]["tone"]["curve"], document["edits"]["tone"]["curve"])
+        self.assertEqual(self.normalize(normalized), normalized)
+        if jsonschema:
+            jsonschema.Draft202012Validator.check_schema(schema)
+            validator = jsonschema.Draft202012Validator(schema)
+            validator.validate(document)
+            validator.validate(normalized)
+        for field, value in (("black_point", -1.01), ("s_curve", 0.25), ("curve", {"mode": "legacy", "points": [[0, 0]]})):
+            invalid = copy.deepcopy(document)
+            invalid["edits"]["tone"][field] = value
+            self.reject(invalid, field)
+            if jsonschema:
+                self.assertFalse(validator.is_valid(invalid))
+        document["processing"]["version"] = 1
+        self.reject(document, "processing.version")
+        if jsonschema:
+            self.assertFalse(validator.is_valid(document))
+
+    def test_v9_hdr_color_schema(self):
+        schema = json.loads((ROOT / "docs/edit-json-v9.schema.json").read_text())
+        document = json.loads((ROOT / "examples/edit-recipes/hdr-v9.json").read_text())
+        normalized = self.normalize(document)
+        self.assertEqual(normalized["processing"]["version"], 3)
+        self.assertAlmostEqual(normalized["edits"]["color"]["vibrance"], 0.35)
+        self.assertEqual(normalized["edits"]["hsl"], document["edits"]["hsl"])
+        self.assertEqual(normalized["edits"]["color_grading"]["shadows"], {"hue": 210, "saturation": 12})
+        self.assertEqual(self.normalize(normalized), normalized)
+        if jsonschema:
+            jsonschema.Draft202012Validator.check_schema(schema)
+            validator = jsonschema.Draft202012Validator(schema)
+            validator.validate(document)
+            validator.validate(normalized)
+        for group, field, value in (("color", "vibrance", 1.1), ("hsl", "hue", [0]),
+                                    ("color_grading", "shadows", {"hue": 360, "saturation": 0})):
+            invalid = copy.deepcopy(document)
+            invalid["edits"][group][field] = value
+            self.reject(invalid, f"edits.{group}.{field}")
+            if jsonschema:
+                self.assertFalse(validator.is_valid(invalid))
+
+    def test_v10_hdr_rendition_schema(self):
+        schema = json.loads((ROOT / "docs/edit-json-v10.schema.json").read_text())
+        document = json.loads((ROOT / "examples/edit-recipes/hdr-v10.json").read_text())
+        normalized = self.normalize(document)
+        self.assertEqual(normalized["processing"]["version"], 4)
+        for field, value in document["edits"]["rendition"].items():
+            self.assertAlmostEqual(normalized["edits"]["rendition"][field], value)
+        self.assertEqual(self.normalize(normalized), normalized)
+        if jsonschema:
+            jsonschema.Draft202012Validator.check_schema(schema)
+            validator = jsonschema.Draft202012Validator(schema)
+            validator.validate(document)
+            validator.validate(normalized)
+        for field, value in (("peak_limit_ev", -0.1), ("sdr_exposure_ev", 4.1),
+                             ("sdr_contrast", 1.1), ("sdr_saturation", "0"), ("screen_headroom", 4)):
+            invalid = copy.deepcopy(document)
+            invalid["edits"]["rendition"][field] = value
+            self.reject(invalid, f"edits.rendition.{field}")
+            if jsonschema:
+                self.assertFalse(validator.is_valid(invalid))
+        del document["edits"]["rendition"]
+        self.assertTrue(all(value == 0 for value in self.normalize(document)["edits"]["rendition"].values()))
+
+    def test_v11_hdr_effects_schema(self):
+        schema = json.loads((ROOT / "docs/edit-json-v11.schema.json").read_text())
+        document = json.loads((ROOT / "examples/edit-recipes/hdr-v11.json").read_text())
+        normalized = self.normalize(document)
+        self.assertEqual(normalized["processing"]["version"], 5)
+        self.assertEqual(normalized["edits"]["effects"]["vignette_amount"], -60)
+        self.assertEqual(normalized["edits"]["effects"]["grain_amount"], 55)
+        self.assertEqual(self.normalize(normalized), normalized)
+        if jsonschema:
+            jsonschema.Draft202012Validator.check_schema(schema)
+            validator = jsonschema.Draft202012Validator(schema)
+            validator.validate(document)
+            validator.validate(normalized)
+        for field, value in (("vignette_amount", -101), ("grain_amount", -1), ("dehaze", .1)):
+            invalid = copy.deepcopy(document)
+            invalid["edits"]["effects"][field] = value
+            self.reject(invalid, f"edits.effects.{field}")
+            if jsonschema:
+                self.assertFalse(validator.is_valid(invalid))
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="rawlab-edit-v4-schema-")
         self.addCleanup(temporary.cleanup)

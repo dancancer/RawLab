@@ -8,7 +8,9 @@ import UniformTypeIdentifiers
 extension ContentView {
     func supportsHDR(_ tool: EditorToolSelection) -> Bool {
         if tool == .geometry { return true }
-        if case .adjustment(let kind)=tool { return kind.hdrKeyPath != nil }
+        if case .adjustment(let kind)=tool {
+            return kind.hdrKeyPath != nil || kind == .hsl || kind == .colorGrading || kind == .vignette || kind == .grain
+        }
         return false
     }
 
@@ -28,7 +30,6 @@ extension ContentView {
               let source=viewModel.editorEditSource else { return }
         do {
             var candidate=try settings.withHDRMode(enabled,sourceIsHDR:viewModel.sourceIsHDR,
-                                                   hasLook:settings.hasLook,
                                                    cameraRAW:viewModel.sourceSupportsCameraHDR)
             if enabled, viewModel.sourceProRAW != nil {
                 candidate.proRAWDecodeVersion = try ProRAWSource.validatedDecodeVersion(settings.proRAWDecodeVersion)
@@ -47,9 +48,25 @@ extension ContentView {
             } else {
                 activateHDRMode(candidate, source: source)
             }
-        } catch HDRSettings.ModeError.conflicts {
-            viewModel.statusMessage=L10n.text("当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。")
         } catch { viewModel.reportError(error, operation: .preview, stage: "changeHDRMode") }
+    }
+
+    func applyHDRCameraDevelopment(_ development: HDRCameraDevelopmentSettings) {
+        guard !editorBusy, !isEditorDraftActive, settings.isHDREditing, viewModel.sourceSupportsCameraHDR,
+              viewModel.sourceProRAW == nil, let source = viewModel.editorEditSource,
+              development.isValid, development != settings.hdr?.cameraDevelopmentSettings,
+              viewModel.saveCurrentSettings(settings) else { return }
+        let before = settings
+        let revision = viewModel.sourceRevision
+        var candidate = settings
+        candidate.hdr?.cameraDevelopmentSettings = development
+        viewModel.preflightCameraHDR(settings: candidate) { result in
+            guard viewModel.sourceRevision == revision, settings == before else { return }
+            switch result {
+            case .success: activateHDRMode(candidate, source: source)
+            case .failure(let error): viewModel.reportError(error, operation: .preview, stage: "cameraHDRDevelopment")
+            }
+        }
     }
 
     private func activateHDRMode(_ candidate: RawSettings, source: EditorEditSource) {
@@ -116,20 +133,20 @@ extension ContentView {
         return settings.customWhiteBalance(cameraTemperature: camera.temperature, cameraTint: camera.tint)
     }
 
-    func exportJPEG(longEdge: Int? = nil, keepHDR: Bool = true) {
+    func exportPhoto(longEdge: Int?, format: BatchOutputFormat) {
         guard !isEditorDraftActive else { return }
         isSaving = true
-        viewModel.exportJPEG(settings: settings, longEdge: longEdge,keepHDR:keepHDR) { result in
+        viewModel.exportPhoto(settings: settings, longEdge: longEdge, format: format) { result in
             switch result {
             case .success(let data):
-                saveToPhotoLibrary(data)
+                saveToPhotoLibrary(data, format: format)
             case .failure(let error):
                 isSaving = false
                 if error is CancellationError {
                     viewModel.statusMessage = L10n.text("导出已取消")
                 } else {
-                    viewModel.reportError(error, operation: .photoExport, stage: "renderJPEG",
-                                          context: ["mode": settings.isHDREditing && keepHDR ? "hdr" : "sdr"])
+                    viewModel.reportError(error, operation: .photoExport, stage: "renderPhoto",
+                                          context: ["outputFormat": format.rawValue])
                 }
             }
         }
@@ -533,7 +550,7 @@ extension ContentView {
         try await PhotoImportFile.loadSource { try await PhotoImportFile.load(from: item) }
     }
 
-    func saveToPhotoLibrary(_ data: Data) {
+    func saveToPhotoLibrary(_ data: Data, format: BatchOutputFormat) {
         PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
             guard status == .authorized || status == .limited else {
                 DispatchQueue.main.async {
@@ -547,7 +564,9 @@ extension ContentView {
 
             PHPhotoLibrary.shared().performChanges({
                 let request = PHAssetCreationRequest.forAsset()
-                request.addResource(with: .photo, data: data, options: nil)
+                let options = PHAssetResourceCreationOptions()
+                options.uniformTypeIdentifier = (format == .hdrHEIF ? UTType.heic : .jpeg).identifier
+                request.addResource(with: .photo, data: data, options: options)
             }, completionHandler: { success, error in
                 DispatchQueue.main.async {
                     isSaving = false

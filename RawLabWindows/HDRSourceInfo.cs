@@ -32,6 +32,7 @@ public sealed record HDRSourceInfo(
     public bool IsHDR => State == HDRProbeState.Supported;
     public bool IsProRAW => Container == HDRNative.ContainerProRAW;
     public bool IsCameraRaw => Container is HDRNative.ContainerCameraRaw or HDRNative.ContainerProRAW;
+    internal bool SupportsBayerDevelopment { get; init; }
 
     // Camera RAW and ProRAW probes do not hash or unpack the source. Keep the
     // file stamp in the preview cache key until decode returns the SHA-256.
@@ -54,6 +55,10 @@ public sealed class HDRSourceException(int status, uint reason, uint field) : IO
         13 => Loc.Text("HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。"),
         10 => Loc.Text("内存不足，无法完整处理此 HDR 照片。请关闭其他照片后重试。"),
         11 => Loc.Text("无法写入 HDR 导出文件，请检查可用空间和目标权限。"),
+        18 => Loc.Text("无法读取外观文件。"),
+        19 => Loc.Text("无效或不可用的镜头校正设置"),
+        21 when status == 3 => Loc.Text("找不到 HDR 相机配置，请重新导入。"),
+        21 => Loc.Text("无法读取 HDR 相机配置，或配置与当前相机不匹配。"),
         _ => Loc.Format("HDR 处理失败（{0}）。", reason)
     };
 }

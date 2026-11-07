@@ -143,14 +143,70 @@
     "ja": "プリセットを確認中…",
     "zh-Hans": "正在检查预设…"
   },
-  "此 X3F 显影模式不支持 AI 降噪。": {"de":"Dieser X3F-Entwicklungsmodus unterstützt keine KI-Entrauschung.","en":"AI denoising is not supported in this X3F rendering mode.","es":"Este modo de revelado X3F no admite reducción de ruido por IA.","fr":"La réduction du bruit par IA n’est pas prise en charge dans ce mode de développement X3F.","ja":"この X3F 現像モードでは AI ノイズ除去を使用できません。","zh-Hans":"此 X3F 显影模式不支持 AI 降噪。"},
-  "无法正常显影 X3F：{0}": {"de":"X3F konnte nicht normal entwickelt werden: {0}","en":"Unable to render X3F normally: {0}","es":"No se pudo revelar X3F con normalidad: {0}","fr":"Impossible de développer normalement le fichier X3F : {0}","ja":"X3F を通常現像できません：{0}","zh-Hans":"无法正常显影 X3F：{0}"},
-  "使用旧版显影重试": {"de":"Mit bisheriger Entwicklung erneut versuchen","en":"Retry with legacy rendering","es":"Reintentar con el revelado anterior","fr":"Réessayer avec l’ancien développement","ja":"旧版の現像で再試行","zh-Hans":"使用旧版显影重试"},
-  "X3F 显影": {"de":"X3F-Entwicklung","en":"X3F rendering","es":"Revelado X3F","fr":"Développement X3F","ja":"X3F 現像","zh-Hans":"X3F 显影"},
-  "正常显影": {"de":"Normale Entwicklung","en":"Normal rendering","es":"Revelado normal","fr":"Développement normal","ja":"通常現像","zh-Hans":"正常显影"},
-  "伪红外（旧版）": {"de":"Falsch-Infrarot (alt)","en":"False infrared (legacy)","es":"Falso infrarrojo (anterior)","fr":"Faux infrarouge (ancien)","ja":"擬似赤外線（従来）","zh-Hans":"伪红外（旧版）"},
-  "以文件保存的显影为基准，白平衡作相对调整。": {"de":"Die gespeicherte Entwicklung ist die Basis; der Weißabgleich wird relativ angepasst.","en":"Uses the saved rendering as the baseline, with relative white-balance adjustments.","es":"Usa el revelado guardado como base, con ajustes relativos del balance de blancos.","fr":"Utilise le développement enregistré comme référence, avec des ajustements relatifs de la balance des blancs.","ja":"保存済みの現像を基準に、ホワイトバランスを相対調整します。","zh-Hans":"以文件保存的显影为基准，白平衡作相对调整。"},
-  "保留旧版的特殊色彩。": {"de":"Behält die besonderen Farben der früheren Entwicklung bei.","en":"Preserves the distinctive colors of the legacy renderer.","es":"Conserva los colores particulares del revelado anterior.","fr":"Conserve les couleurs particulières de l’ancien développement.","ja":"従来の現像による独特な色を保持します。","zh-Hans":"保留旧版的特殊色彩。"},
+  "此 X3F 显影模式不支持 AI 降噪。": {
+    "de": "Dieser X3F-Entwicklungsmodus unterstützt keine KI-Entrauschung.",
+    "en": "AI denoising is not supported in this X3F rendering mode.",
+    "es": "Este modo de revelado X3F no admite reducción de ruido por IA.",
+    "fr": "La réduction du bruit par IA n’est pas prise en charge dans ce mode de développement X3F.",
+    "ja": "この X3F 現像モードでは AI ノイズ除去を使用できません。",
+    "zh-Hans": "此 X3F 显影模式不支持 AI 降噪。"
+  },
+  "无法正常显影 X3F：{0}": {
+    "de": "X3F konnte nicht normal entwickelt werden: {0}",
+    "en": "Unable to render X3F normally: {0}",
+    "es": "No se pudo revelar X3F con normalidad: {0}",
+    "fr": "Impossible de développer normalement le fichier X3F : {0}",
+    "ja": "X3F を通常現像できません：{0}",
+    "zh-Hans": "无法正常显影 X3F：{0}"
+  },
+  "使用旧版显影重试": {
+    "de": "Mit bisheriger Entwicklung erneut versuchen",
+    "en": "Retry with legacy rendering",
+    "es": "Reintentar con el revelado anterior",
+    "fr": "Réessayer avec l’ancien développement",
+    "ja": "旧版の現像で再試行",
+    "zh-Hans": "使用旧版显影重试"
+  },
+  "X3F 显影": {
+    "de": "X3F-Entwicklung",
+    "en": "X3F rendering",
+    "es": "Revelado X3F",
+    "fr": "Développement X3F",
+    "ja": "X3F 現像",
+    "zh-Hans": "X3F 显影"
+  },
+  "正常显影": {
+    "de": "Normale Entwicklung",
+    "en": "Normal rendering",
+    "es": "Revelado normal",
+    "fr": "Développement normal",
+    "ja": "通常現像",
+    "zh-Hans": "正常显影"
+  },
+  "伪红外（旧版）": {
+    "de": "Falsch-Infrarot (alt)",
+    "en": "False infrared (legacy)",
+    "es": "Falso infrarrojo (anterior)",
+    "fr": "Faux infrarouge (ancien)",
+    "ja": "擬似赤外線（従来）",
+    "zh-Hans": "伪红外（旧版）"
+  },
+  "以文件保存的显影为基准，白平衡作相对调整。": {
+    "de": "Die gespeicherte Entwicklung ist die Basis; der Weißabgleich wird relativ angepasst.",
+    "en": "Uses the saved rendering as the baseline, with relative white-balance adjustments.",
+    "es": "Usa el revelado guardado como base, con ajustes relativos del balance de blancos.",
+    "fr": "Utilise le développement enregistré comme référence, avec des ajustements relatifs de la balance des blancs.",
+    "ja": "保存済みの現像を基準に、ホワイトバランスを相対調整します。",
+    "zh-Hans": "以文件保存的显影为基准，白平衡作相对调整。"
+  },
+  "保留旧版的特殊色彩。": {
+    "de": "Behält die besonderen Farben der früheren Entwicklung bei.",
+    "en": "Preserves the distinctive colors of the legacy renderer.",
+    "es": "Conserva los colores particulares del revelado anterior.",
+    "fr": "Conserve les couleurs particulières de l’ancien développement.",
+    "ja": "従来の現像による独特な色を保持します。",
+    "zh-Hans": "保留旧版的特殊色彩。"
+  },
   "16-bit PNG": {
     "de": "16-Bit-PNG",
     "en": "16-bit PNG",
@@ -5975,6 +6031,14 @@
     "ja": "SDR JPEG を保存",
     "zh-Hans": "保存 SDR JPEG"
   },
+  "HDR HEIF 需要启用 HDR 编辑。": {
+    "de": "Für HDR-HEIF muss die HDR-Bearbeitung aktiviert sein.",
+    "en": "Enable HDR Editing to export HDR HEIF.",
+    "es": "Activa la edición HDR para exportar HEIF HDR.",
+    "fr": "Activez l’édition HDR pour exporter en HEIF HDR.",
+    "ja": "HDR HEIF の書き出しには HDR 編集を有効にしてください。",
+    "zh-Hans": "HDR HEIF 需要启用 HDR 编辑。"
+  },
   "HDR JPEG": {
     "de": "HDR-JPEG",
     "en": "HDR JPEG",
@@ -6039,6 +6103,54 @@
     "ja": "HDR 写真には macOS 15 または iOS 18 以降が必要です。",
     "zh-Hans": "HDR 照片需要 macOS 15 或 iOS 18 及以上版本。"
   },
+  "HDR 输出与 SDR 底图": {
+    "en": "HDR Output and SDR Base",
+    "de": "HDR-Ausgabe und SDR-Basis",
+    "fr": "Sortie HDR et base SDR",
+    "es": "Salida HDR y base SDR",
+    "ja": "HDR 出力と SDR ベース",
+    "zh-Hans": "HDR 输出与 SDR 底图"
+  },
+  "HDR 亮度上限": {
+    "en": "HDR Luminance Limit",
+    "de": "HDR-Helligkeitsgrenze",
+    "fr": "Limite de luminance HDR",
+    "es": "Límite de luminancia HDR",
+    "ja": "HDR 輝度の上限",
+    "zh-Hans": "HDR 亮度上限"
+  },
+  "SDR 底图曝光": {
+    "en": "SDR Base Exposure",
+    "de": "Belichtung der SDR-Basis",
+    "fr": "Exposition de la base SDR",
+    "es": "Exposición de la base SDR",
+    "ja": "SDR ベースの露出",
+    "zh-Hans": "SDR 底图曝光"
+  },
+  "SDR 底图对比度": {
+    "en": "SDR Base Contrast",
+    "de": "Kontrast der SDR-Basis",
+    "fr": "Contraste de la base SDR",
+    "es": "Contraste de la base SDR",
+    "ja": "SDR ベースのコントラスト",
+    "zh-Hans": "SDR 底图对比度"
+  },
+  "SDR 底图饱和度": {
+    "en": "SDR Base Saturation",
+    "de": "Sättigung der SDR-Basis",
+    "fr": "Saturation de la base SDR",
+    "es": "Saturación de la base SDR",
+    "ja": "SDR ベースの彩度",
+    "zh-Hans": "SDR 底图饱和度"
+  },
+  "不限": {
+    "en": "Unlimited",
+    "de": "Unbegrenzt",
+    "fr": "Sans limite",
+    "es": "Sin límite",
+    "ja": "制限なし",
+    "zh-Hans": "不限"
+  },
   "HDR 编辑": {
     "de": "HDR-Bearbeitung",
     "en": "HDR Editing",
@@ -6094,6 +6206,14 @@
     "fr": "La photo d’origine a changé. Importez-la à nouveau.",
     "ja": "元の写真が変更されています。再度読み込んでください。",
     "zh-Hans": "原始照片已变化，请重新导入。"
+  },
+  "参考白": {
+    "de": "Referenzweiß",
+    "en": "Reference White",
+    "es": "Blanco de referencia",
+    "fr": "Blanc de référence",
+    "ja": "基準白",
+    "zh-Hans": "参考白"
   },
   "参考白以上 {0}": {
     "de": "Über Referenzweiß {0}",
@@ -7198,5 +7318,45 @@
     "fr": "Sélection",
     "ja": "選択",
     "zh-Hans": "选片"
+  },
+  "HDR 相机配置": {
+    "en": "HDR camera profile",
+    "de": "HDR-Kameraprofil",
+    "fr": "Profil de caméra HDR",
+    "es": "Perfil de cámara HDR",
+    "ja": "HDR カメラプロファイル",
+    "zh-Hans": "HDR 相机配置"
+  },
+  "导入相机配置…": {
+    "en": "Import camera profile…",
+    "de": "Kameraprofil importieren…",
+    "fr": "Importer un profil de caméra…",
+    "es": "Importar perfil de cámara…",
+    "ja": "カメラプロファイルを読み込む…",
+    "zh-Hans": "导入相机配置…"
+  },
+  "清除相机配置": {
+    "en": "Clear camera profile",
+    "de": "Kameraprofil entfernen",
+    "fr": "Retirer le profil de caméra",
+    "es": "Quitar perfil de cámara",
+    "ja": "カメラプロファイルを解除",
+    "zh-Hans": "清除相机配置"
+  },
+  "找不到 HDR 相机配置，请重新导入。": {
+    "en": "The HDR camera profile is missing. Import it again.",
+    "de": "Das HDR-Kameraprofil fehlt. Importieren Sie es erneut.",
+    "fr": "Le profil de caméra HDR est introuvable. Importez-le à nouveau.",
+    "es": "Falta el perfil de cámara HDR. Impórtalo de nuevo.",
+    "ja": "HDR カメラプロファイルが見つかりません。再度読み込んでください。",
+    "zh-Hans": "找不到 HDR 相机配置，请重新导入。"
+  },
+  "无法读取 HDR 相机配置，或配置与当前相机不匹配。": {
+    "en": "The HDR camera profile could not be read or does not match this camera.",
+    "de": "Das HDR-Kameraprofil ist nicht lesbar oder passt nicht zu dieser Kamera.",
+    "fr": "Le profil de caméra HDR est illisible ou ne correspond pas à cet appareil.",
+    "es": "No se puede leer el perfil de cámara HDR o no coincide con esta cámara.",
+    "ja": "HDR カメラプロファイルを読み込めないか、このカメラに対応していません。",
+    "zh-Hans": "无法读取 HDR 相机配置，或配置与当前相机不匹配。"
   }
 }

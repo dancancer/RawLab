@@ -47,6 +47,7 @@ extension RenderEngine {
         let format: String
         switch ExportFormat.forOutput(output) {
         case .jpeg, .hdrJPEG: format = "jpeg"
+        case .hdrHEIF: throw RenderError.failed(L10n.text("不支持此 HDR 格式或颜色描述。"))
         case .png: format = "png"
         case .renderedDNG: format = "dng"
         }

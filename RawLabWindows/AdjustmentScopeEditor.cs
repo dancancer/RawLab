@@ -24,7 +24,8 @@ internal sealed class AdjustmentScopeEditor : Grid
         _ => AdjustmentScope.Custom(fields.Where(pair => pair.Value.IsChecked == true).Select(pair => pair.Key))
     };
 
-    internal AdjustmentScopeEditor(string prefix,bool hdr=false, Func<AdjustmentScope, AdjustmentPayload>? capture=null, Func<string, string, string?>? lookName=null)
+    internal AdjustmentScopeEditor(string prefix,bool hdr=false, Func<AdjustmentScope, AdjustmentPayload>? capture=null,
+        Func<string, string, string?>? lookName=null,bool cameraRaw=false)
     {
         this.hdr=hdr; this.capture=capture; this.lookName=lookName; this.prefix=prefix;
         RowDefinitions.Add(new() { Height = GridLength.Auto }); RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) });
@@ -35,7 +36,7 @@ internal sealed class AdjustmentScopeEditor : Grid
         var content = new StackPanel();
         var clear = AdjustmentDialogLayout.Button("清空选择", prefix + ".clear", () => { foreach (var check in fields.Values) check.IsChecked = false; });
         clear.HorizontalAlignment = HorizontalAlignment.Left; content.Children.Add(clear);
-        var allowed=hdr ? AdjustmentFields.HDRSupported : AdjustmentFields.All.ToHashSet();
+        var allowed=hdr ? AdjustmentFields.HDRTransferFields(cameraRaw) : AdjustmentFields.All.ToHashSet();
         var defaults=hdr ? AdjustmentFields.HDRCommon : AdjustmentFields.Common;
         foreach (var group in allowed.OrderBy(field=>(int)field).GroupBy(field => field.IsHDRRelative() ? "color" : field.Group())) {
             var title = AdjustmentDialogLayout.Text(AdjustmentTransferPresentation.Group(group.Key));

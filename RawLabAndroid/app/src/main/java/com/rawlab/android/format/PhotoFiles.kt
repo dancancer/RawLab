@@ -35,7 +35,7 @@ internal object RasterFiles {
 }
 
 object RawFiles {
-    private val extensions = setOf("dng", "arw", "arq", "srf", "sr2", "cr2", "cr3", "crw", "nef", "nrw", "raf", "orf", "rw2", "pef", "srw", "3fr", "iiq", "rwl", "mos", "mrw", "raw", "kdc", "dcr", "erf", "x3f")
+    private val extensions = setOf("dng", "arw", "arq", "srf", "sr2", "cr2", "cr3", "crw", "nef", "nrw", "raf", "orf", "rw2", "pef", "srw", "3fr", "fff", "iiq", "rwl", "mos", "mrw", "raw", "kdc", "dcr", "erf", "x3f")
     private val mimes = setOf("image/x-adobe-dng", "image/x-sony-arw", "image/x-canon-cr2", "image/x-canon-cr3", "image/x-nikon-nef", "image/x-fuji-raf", "image/x-panasonic-rw2", "image/x-olympus-orf", "image/x-pentax-pef")
     fun accepts(name: String, mime: String?) = name.substringAfterLast('.', "").lowercase() in extensions || mime?.lowercase() in mimes
 }

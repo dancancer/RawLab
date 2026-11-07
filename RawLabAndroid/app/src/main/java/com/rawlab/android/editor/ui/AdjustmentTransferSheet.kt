@@ -26,6 +26,7 @@ import com.rawlab.android.presets.AdjustmentPreset
 import com.rawlab.android.editor.CollectionSynchronization
 import com.rawlab.android.editor.EditorViewModel
 import com.rawlab.android.editor.adjustmentErrorMessage
+import com.rawlab.android.editor.adjustmentTransferFields
 import com.rawlab.android.ui.EditorSheetSystemBars
 
 internal enum class AdjustmentSheet { COPY, PASTE, HISTORY }
@@ -81,7 +82,7 @@ internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentShe
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 when (kind) {
-                    AdjustmentSheet.COPY -> CopyAdjustmentContent(editor.photo?.name.orEmpty(), editor.edits.isHDREditing, model::previewAdjustmentPayload, model::adjustmentSummaryLookName) { scope ->
+                    AdjustmentSheet.COPY -> CopyAdjustmentContent(editor.photo?.name.orEmpty(), editor.adjustmentTransferFields, model::previewAdjustmentPayload, model::adjustmentSummaryLookName) { scope ->
                         if (model.copyAdjustments(scope) != null) onClose()
                     }
                     AdjustmentSheet.PASTE -> if (payload == null) Text(stringResource(R.string.transfer_no_clipboard)) else {
@@ -169,17 +170,17 @@ internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentShe
 }
 
 @Composable
-private fun CopyAdjustmentContent(source: String, hdr: Boolean, preview: (AdjustmentScope) -> Result<AdjustmentPayload>,
+private fun CopyAdjustmentContent(source: String, allowed: Set<AdjustmentField>, preview: (AdjustmentScope) -> Result<AdjustmentPayload>,
     lookName: (String, String) -> String?, onCopy: (AdjustmentScope) -> Unit) {
     Text(source, style = MaterialTheme.typography.titleMedium)
     AdjustmentScopeEditor(stringResource(R.string.transfer_copy), "adjustment-copy-confirm",
-        allowed = if (hdr) AdjustmentField.HDR_SUPPORTED else AdjustmentField.entries.filterNot { it.isHDRRelative }.toSet(),
+        allowed = allowed,
         previewCapture = preview, lookName = lookName, onConfirm = onCopy)
 }
 
 @Composable
 internal fun AdjustmentScopeEditor(confirmTitle: String, confirmTag: String, enabled: Boolean = true,
-    allowed: Set<AdjustmentField> = AdjustmentField.entries.filterNot { it.isHDRRelative }.toSet(),
+    allowed: Set<AdjustmentField> = AdjustmentField.entries.filterNot { it.isHDROnly }.toSet(),
     previewCapture: (AdjustmentScope) -> Result<AdjustmentPayload>, lookName: (String, String) -> String?,
     onConfirm: (AdjustmentScope) -> Unit) {
     var scope by remember(allowed) { mutableIntStateOf(2) }

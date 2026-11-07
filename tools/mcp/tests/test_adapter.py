@@ -153,38 +153,73 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         merged.update(env)
         return CliAdapter(self.config, environment=merged)
 
-    async def test_capabilities_negotiate_v6_and_hide_future_cli_versions(self):
-        adapter = self.adapter(FAKE_VERSIONS="1,2,3,4,5,6,7")
+    async def test_capabilities_negotiate_hdr_recipe_versions(self):
+        adapter = self.adapter(FAKE_VERSIONS="1,2,3,4,5,6,7,8,9,10")
         capabilities = await adapter.start()
-        self.assertEqual(capabilities.recipe_versions, (1, 2, 3, 4, 5, 6))
-        self.assertNotIn(7, capabilities.result["recipe_versions"])
+        self.assertEqual(capabilities.recipe_versions, (1, 2, 3, 4, 5, 6, 8, 9, 10))
+        self.assertEqual(capabilities.result["recipe_versions"], [1, 2, 3, 4, 5, 6, 8, 9, 10])
         self.assertEqual(capabilities.result["commands"], [
             "capabilities", "validate_recipe", "info", "preview", "export",
         ])
 
-    async def test_v6_hdr_identity_survives_staging_and_requires_capability(self):
+    async def test_hdr_identity_survives_staging_and_requires_capability(self):
         document={"schema_version":6,
             "processing":{"family":"rawlab_hdr","version":1,"quality":"standard"},
             "input":{"path":self.input_path.name,"type":"hdr_raster"},
             "edits":{"exposure":{"ev":1},"white_balance":{"mode":"relative",
                 "relative_temperature":7200,"relative_tint":-12},"tone":{"highlights":-.25}},
             "output":{"path":str(self.write_root / "hdr.jpg"),"format":"hdr_jpeg","base_color":"display_p3"}}
-        self.recipe_path.write_text(json.dumps(document),encoding="utf-8")
-        old=self.adapter(FAKE_VERSIONS="1,2,3,4,5")
-        await old.start()
-        refused=await old.export_photo(self.recipe_path)
-        self.assertFalse(refused.ok)
-        self.assertFalse((self.write_root / "hdr.jpg").exists())
-        adapter=self.adapter(FAKE_VERSIONS="1,2,3,4,5,6")
-        await adapter.start()
-        self.assertTrue((await adapter.validate_recipe(self.recipe_path)).ok)
-        self.assertTrue((await adapter.export_photo(self.recipe_path)).ok)
-        staged=json.loads(self.recipe_log.read_text(encoding="utf-8"))
-        for key in ("schema_version","processing","edits"):
-            self.assertEqual(staged[key],document[key])
-        self.assertEqual(staged["input"]["type"],"hdr_raster")
-        self.assertEqual(staged["output"]["format"],"hdr_jpeg")
-        self.assertEqual(staged["output"]["base_color"],"display_p3")
+        for version, legacy, current in (
+            (6, "1,2,3,4,5", "1,2,3,4,5,6"),
+            (8, "1,2,3,4,5,6", "1,2,3,4,5,6,8"),
+            (9, "1,2,3,4,5,6,8", "1,2,3,4,5,6,8,9"),
+            (10, "1,2,3,4,5,6,8,9", "1,2,3,4,5,6,8,9,10"),
+            (11, "1,2,3,4,5,6,8,9,10", "1,2,3,4,5,6,8,9,10,11"),
+            (12, "1,2,3,4,5,6,8,9,10,11", "1,2,3,4,5,6,8,9,10,11,12"),
+            (13, "1,2,3,4,5,6,8,9,10,11,12", "1,2,3,4,5,6,8,9,10,11,12,13"),
+        ):
+            with self.subTest(version=version):
+                destination = self.write_root / f"hdr-{version}.jpg"
+                document["schema_version"] = version
+                document["output"]["path"] = str(destination)
+                if version == 8:
+                    document["processing"]["version"] = 2
+                    document["edits"]["tone"].update(white_point=.25, curve={"mode": "custom", "points": [[0, 0], [.5, .6], [1, 1]]})
+                if version == 9:
+                    document["processing"]["version"] = 3
+                    document["edits"]["color"] = {"vibrance": -.3}
+                    document["edits"]["hsl"] = {"saturation": [10] * 8}
+                    document["edits"]["color_grading"] = {"shadows": {"hue": 220, "saturation": 35}}
+                if version == 10:
+                    document["processing"]["version"] = 4
+                    document["edits"]["rendition"] = {"peak_limit_ev": 2, "sdr_exposure_ev": -.75}
+                if version == 11:
+                    document["processing"]["version"] = 5
+                    document["edits"]["effects"] = {"vignette_amount": -60, "grain_amount": 55}
+                if version == 12:
+                    document["processing"]["version"] = 6
+                    document["edits"]["detail"] = {"sharpening": 1.2, "clarity": .7, "dehaze": -.5, "denoise": .6}
+                if version == 13:
+                    document["processing"]["version"] = 7
+                    look = self.input_path.with_suffix(".cube")
+                    look.write_text("declared HDR fixture", encoding="utf-8")
+                    document["edits"]["look"] = {"path": str(look), "sha256": "a" * 64, "strength": .8}
+                self.recipe_path.write_text(json.dumps(document), encoding="utf-8")
+                old = self.adapter(FAKE_VERSIONS=legacy)
+                await old.start()
+                self.assertFalse((await old.export_photo(self.recipe_path)).ok)
+                self.assertFalse(destination.exists())
+                adapter = self.adapter(FAKE_VERSIONS=current)
+                await adapter.start()
+                self.assertTrue((await adapter.validate_recipe(self.recipe_path)).ok)
+                exported = await adapter.export_photo(self.recipe_path)
+                self.assertTrue(exported.ok, exported.error)
+                staged = json.loads(self.recipe_log.read_text(encoding="utf-8"))
+                for key in ("schema_version", "processing", "edits"):
+                    self.assertEqual(staged[key], document[key])
+                self.assertEqual(staged["input"]["type"], "hdr_raster")
+                self.assertEqual(staged["output"]["format"], "hdr_jpeg")
+                self.assertEqual(staged["output"]["base_color"], "display_p3")
 
     async def test_capabilities_reject_cli_without_v4(self):
         adapter = self.adapter(FAKE_VERSIONS="1,2,3")

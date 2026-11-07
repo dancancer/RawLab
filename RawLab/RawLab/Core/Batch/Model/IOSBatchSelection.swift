@@ -116,7 +116,9 @@ struct IOSCollectionExportInput {
                        probeHDR: (URL) throws -> Bool,
                        validateActive: (String) throws -> Void,
                        resolveLook: (RawSettings) throws -> (URL?, String?),
-                       validateHDRVersion: (URL, Int) throws -> Void = { _, _ in }) -> IOSCollectionExportReview {
+                       validateHDRSource: (URL, Int?) throws -> Void = { _, _ in
+                           throw HDRSettings.ModeError.unsupportedSource
+                       }) -> IOSCollectionExportReview {
         let selected = selection
         let rows = selected.filter { !skipping.contains($0) }.compactMap { id -> IOSCollectionExportReview.Row? in
             guard let photo = photos[id] else { return nil }
@@ -127,10 +129,18 @@ struct IOSCollectionExportInput {
                 let record = try store.versionedState(for: photo.photo.identity)
                 var settings = record.state?.settings ?? .default
                 if record.state==nil,let file=photo.photo.file,try file.withReadAccess(probeHDR) { settings.hdr=HDRSettings() }
-                if settings.isHDREditing, let version = settings.proRAWDecodeVersion, let file = photo.photo.file {
-                    try file.withReadAccess { try validateHDRVersion($0, version) }
+                if format.requiresHDR && !settings.isHDREditing { throw BatchExportError.target(format.hdrRequiredMessage) }
+                if settings.isHDREditing {
+                    guard let file = photo.photo.file else { throw CocoaError(.fileReadNoSuchFile) }
+                    try file.withReadAccess { try validateHDRSource($0, settings.proRAWDecodeVersion) }
+                    if let profile = settings.hdr?.cameraDevelopmentSettings.cameraProfile {
+                        try HDRCameraProfileAssetStore.url(for: profile)
+                    }
+                    let look = settings.hdr!.lookSettings
+                    guard look.assetIsAvailable() else {
+                        throw BatchExportError.target(L10n.text("目标所需的外观不可用，请先导入外观。"))
+                    }
                 }
-                if format == .hdrJPEG && !settings.isHDREditing { throw BatchExportError.target(L10n.text("HDR JPEG 需要启用 HDR 编辑。")) }
                 let (look, name) = try settings.isHDREditing ? (nil,nil) : resolveLook(settings)
                 if settings.hasLook && look == nil {
                     throw BatchExportError.target(L10n.text("目标所需的外观不可用，请先导入外观。"))

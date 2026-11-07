@@ -37,18 +37,18 @@ extension EditorModel {
         return ids
     }
 
+    var adjustmentTransferFields: Set<AdjustmentTransferField> {
+        settings.isHDREditing ? AdjustmentTransferField.hdrTransferFields(cameraRAW: sourceIsBayerHDR) : AdjustmentTransferField.legacyFields
+    }
+
     func adjustmentTransferContext(for url: URL) -> MacAdjustmentTransferContext {
-        MacAdjustmentTransferContext(identifier: url.resolvingSymlinksInPath().standardizedFileURL.path, isRaw: !RenderEngine.isRasterInput(url),
+        let raw = file == url ? rawHDRSource : try? HDRSourceInfo.probeRAW(url)
+        return MacAdjustmentTransferContext(identifier: url.resolvingSymlinksInPath().standardizedFileURL.path, isRaw: !RenderEngine.isRasterInput(url),
             sourceIsHDR: file == url ? sourceIsHDR : ((try? HDRSourceInfo.probe(url)) != nil),
-            sourceSupportsProRAWHDR: supportsProRAWHDR(url),
+            sourceSupportsCameraHDR: raw != nil, sourceIsBayerHDR: raw?.isCameraRAW == true,
             availableLookIDs: availableAdjustmentLooks,
             defaultExposureMode: RenderEngine.isRasterInput(url) ? .sensor : .preview,
             hasUncommittedDraft: file == url && (geometryDraft != nil || dirty))
-    }
-
-    private func supportsProRAWHDR(_ url: URL) -> Bool {
-        do { return try HDRSourceInfo.probeRAW(url)?.proRAW != nil }
-        catch { return false }
     }
 
     @discardableResult func copyAdjustments(scope: AdjustmentTransferScope) throws -> AdjustmentTransferPayload {
@@ -82,6 +82,14 @@ extension EditorModel {
             defaults.exposureMode = RenderEngine.isRasterInput(url) ? .sensor : .preview
             var context = adjustmentTransferContext(for: url)
             if context.sourceIsHDR { defaults.hdr=HDRSettings() }
+            if context.sourceIsBayerHDR {
+                context.validateHDRCameraRequest = { candidate in
+                    guard try HDRSourceInfo.probeRAW(url)?.isCameraRAW == true else {
+                        throw AdjustmentTransferError.incompatible("hdr.camera_development")
+                    }
+                    _ = try RenderEngine().render(url, settings: candidate, lut: nil, edge: 256)
+                }
+            }
             // 校验实际 native 请求；自动匹配结果只用于目标预检，不进入 payload。
             context.validateLensRequest = { lens in
                 var request = Adjustments(); request.lensCorrection = lens
@@ -104,6 +112,10 @@ extension EditorModel {
                     }
                     return Thread.isMainThread ? check() : DispatchQueue.main.sync(execute: check)
                 }, resolveMetadata: { state in
+                    if state.settings.isHDREditing {
+                        try HDRSourceInfo.validateEditingSource(url, proRAWDecodeVersion: state.settings.proRAWDecodeVersion)
+                        return state
+                    }
                     guard !RenderEngine.isRasterInput(url) else { return state }
                     guard payload.source.recipe != nil || state.settings.masterRecipeID != nil ||
                           (payload[.rawDenoise]?.number ?? 0) > 0 else { return state }

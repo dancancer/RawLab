@@ -59,6 +59,75 @@ import UIKit
             check(afterRaw == beforeRaw, "ProRAW batch preparation wrote target records")
             print("PASS ProRAW batch capability, frozen target modes and record isolation")
         }
+        let camera = root.appendingPathComponent("camera.dng")
+        let cameraFixture = URL(fileURLWithPath: ProcessInfo.processInfo.environment["RAWLAB_TEST_CAMERA_RAW"]!)
+        try FileManager.default.copyItem(at: cameraFixture, to: camera)
+        let cameraID = PhotoIdentity(resourceIdentifier: "camera")
+        let cameraTarget = BatchTarget(identity: cameraID, sourceURL: camera, displayName: "camera.dng", sourceKind: .raw)
+        let freshCamera = try preparation.prepare(cameraTarget, ordinal: 2, format: .jpeg, longEdge: 64)
+        check(!freshCamera.settings.isHDREditing && freshCamera.settings.exposure == 1,
+              "New camera RAW should remain in SDR editing")
+        var cameraEdit = RawSettings.default; cameraEdit.exposure = -2; cameraEdit.hdr = HDRSettings()
+        cameraEdit.hdr?.renditionSettings.sdrExposureEV = -0.75
+        cameraEdit.proRAWDecodeVersion = ProRAWSource.decodeVersion
+        try store.save(cameraID, state: PhotoEditState(settings: cameraEdit))
+        do {
+            _ = try preparation.prepare(cameraTarget, ordinal: 2, format: .hdrJPEG, longEdge: 64)
+            fatalError("Camera RAW accepted a ProRAW decode version")
+        } catch HDRSettings.ModeError.invalidSettings {}
+        cameraEdit.proRAWDecodeVersion = nil
+        try store.save(cameraID, state: PhotoEditState(settings: cameraEdit))
+        let savedCamera = try store.versionedState(for: cameraID)
+        let cameraFrozen = try preparation.prepare(cameraTarget, ordinal: 2, format: .hdrJPEG, longEdge: 64)
+        check(cameraFrozen.settings.isHDREditing && cameraFrozen.settings.hdr?.exposure == 1 &&
+              cameraFrozen.settings.exposure == -2, "Camera RAW batch lost its saved mode or dormant SDR")
+        let collection = IOSBatchSelection()
+        collection.append(.init(identity: cameraID, displayName: "camera.dng", file: .externallyManaged(camera), isRaw: true))
+        collection.append(.init(identity: bID, displayName: "legacy.jpg", file: .externallyManaged(legacy), isRaw: false))
+        collection.append(.init(identity: aID, displayName: "new-hdr.jpg", file: .externallyManaged(input), isRaw: false))
+        if let path = ProcessInfo.processInfo.environment["RAWLAB_TEST_PRORAW"] {
+            let raw = URL(fileURLWithPath: path)
+            collection.append(.init(identity: PhotoIdentity(resourceIdentifier: "proraw"), displayName: raw.lastPathComponent,
+                file: .externallyManaged(raw), isRaw: true))
+        }
+        func cameraReview(_ format: BatchOutputFormat) -> IOSCollectionExportReview {
+            collection.exportInput.prepareExport(store: store, skipping: [], format: format, longEdge: 64,
+                probeHDR: { try HDRSourceInfo.probe($0) != nil }, validateActive: { _ in }, resolveLook: { _ in (nil, nil) },
+                validateHDRSource: { try HDRSourceInfo.validateEditingSource($0, proRAWDecodeVersion: $1) })
+        }
+        let hdrCameraReview = cameraReview(.hdrJPEG)
+        check(!hdrCameraReview.ready && hdrCameraReview.rows.enumerated().filter { $0.element.error != nil }.map(\.offset) == [1],
+              "Mixed HDR JPEG collection failed to identify the SDR row")
+        let cameraJob = try collection.freeze(cameraReview(.jpeg), store: store, journal: journal, validateActive: { _ in })
+        check(cameraJob.targets[0].frozen?.settings == cameraEdit && cameraJob.targets[1].frozen?.settings == old &&
+              cameraJob.targets.dropFirst(2).allSatisfy { $0.frozen?.settings.isHDREditing == true },
+              "Collection freeze did not keep each photo's own adjustments")
+        let cameraRenderer = BatchExportModel(job: cameraJob, journalStore: journal)
+        let outputFile = root.appendingPathComponent("camera-export.jpg")
+        let cameraJPEG = try cameraRenderer.render(target: cameraTarget, settings: cameraEdit, look: nil, longEdge: 64, format: .hdrJPEG)
+        try cameraJPEG.write(to: outputFile)
+        let cameraOutput = try HDRSourceInfo.probe(outputFile)
+        let afterCamera = try store.versionedState(for: cameraID)
+        check(cameraOutput != nil && afterCamera == savedCamera, "Camera RAW gain-map readback or record isolation failed")
+        print("PASS iOS camera RAW HDR batch preflight, collection freeze and v4 export")
+        if HDRImage.heifExportAvailable {
+            let frozen = try preparation.prepare(cameraTarget, ordinal: 0, format: .hdrHEIF, longEdge: 64)
+            let heif = try cameraRenderer.render(target: cameraTarget, settings: frozen.settings, look: nil,
+                                                longEdge: 64, format: frozen.outputFormat)
+            let output = root.appendingPathComponent("camera-export.\(frozen.outputFormat.suffix)")
+            try heif.write(to: output)
+            let info = try HDRSourceInfo.probe(output)
+            check(output.pathExtension == "heic" && info?.native.protocol == UInt32(SONY2FUJI_HDR_PROTOCOL_ISO)
+                  && info?.native.width == 64, "iOS batch HEIF lost its suffix, size or ISO gain map")
+            print("PASS iOS camera RAW HDR HEIF batch rendition")
+        } else {
+            do {
+                _ = try preparation.prepare(cameraTarget, ordinal: 0, format: .hdrHEIF, longEdge: 64)
+                fatalError("An unsupported runtime accepted an HDR HEIF batch")
+            } catch BatchExportError.target { }
+            print("PASS iOS batch preflight rejects unavailable HDR HEIF encoder")
+        }
+
         let first=try preparation.prepare(a,ordinal:0,format:.jpeg,longEdge:32)
         let second=try preparation.prepare(b,ordinal:1,format:.jpeg,longEdge:32)
         check(first.settings.isHDREditing && first.settings.hdr?.exposure==1,"new HDR target missing HDR defaults")

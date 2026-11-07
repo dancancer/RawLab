@@ -86,7 +86,7 @@ struct AdjustmentTransferView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(model.file?.lastPathComponent ?? "").font(.headline)
             Text(model.file?.deletingLastPathComponent().path ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(2)
-            AdjustmentScopeEditor(scope:$scope,fields:$fields,preview:scopePreview,lookName:model.adjustmentSummaryLookName,errorMessage: { model.adjustmentErrorMessage($0) },allowed:model.settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
+            AdjustmentScopeEditor(scope:$scope,fields:$fields,preview:scopePreview,lookName:model.adjustmentSummaryLookName,errorMessage: { model.adjustmentErrorMessage($0) },allowed:model.adjustmentTransferFields)
             HStack {
                 Spacer()
                 Button(L10n.text("复制调整")) {

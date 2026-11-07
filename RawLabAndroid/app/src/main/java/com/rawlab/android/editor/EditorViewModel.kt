@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import com.rawlab.android.R
 import com.rawlab.android.analytics.UsageEvent
@@ -43,6 +45,8 @@ import com.rawlab.android.settings.canonicalZeros
 import com.rawlab.android.settings.synchronizeHDR
 import com.rawlab.android.settings.withHDRMode
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.editingHsl
+import com.rawlab.android.settings.withEditingHsl
 import com.rawlab.android.editor.storage.EditorEditStore
 import com.rawlab.android.editor.storage.EditSaveResult
 import com.rawlab.android.settings.PhotoIdentity
@@ -113,6 +117,8 @@ class EditorViewModel @JvmOverloads constructor(
     private var currentRevision = 0L
     private var cameraHDRPreflightPending = false
     @Volatile private var sourceRevision = 0L
+    private var pendingHDRLookImport: Pair<Long, Long>? = null
+    private var pendingHDRCameraProfileImport: Pair<Long, Long>? = null
     private var editRevision = 0L
     private var draftRevision = 0L
     private var durablePreview: EditorDurablePreview? = null
@@ -194,7 +200,7 @@ class EditorViewModel @JvmOverloads constructor(
             current.photo?.identity != preview.photo.identity || current.photo?.file != preview.photo.file) {
             mutableHslTarget.value = target.copy(notice = HslTargetAvailability.STALE); return
         }
-        val token = hslInteraction.begin(current.edits.hsl, target.axis, revision)
+        val token = hslInteraction.begin(current.edits.editingHsl, target.axis, revision)
         mutableHslTarget.value = target.copy(x = x, y = y, sample = null, waiting = true, notice = null)
         if (keyDelta != null) { hslInteraction.move(keyDelta); hslInteraction.end() }
         currentRevision = submitRender(Work.HslProbe(preview, current.edits, revision, token, target.axis, x, y))
@@ -212,7 +218,7 @@ class EditorViewModel @JvmOverloads constructor(
             notice = if (next == null) hslInteraction.selection?.availability ?: HslTargetAvailability.STALE else null)
         if (next == null) return
         applyingHslTarget = true
-        try { edit(current.edits.copy(hsl = next), true) } finally { applyingHslTarget = false }
+        try { edit(current.edits.withEditingHsl(next), true) } finally { applyingHslTarget = false }
         hslHistoryActive = adjustmentHistory.interacting
         if (!hslHistoryActive) { clearHslTarget(); mutableHslTarget.value = target.copy(notice = HslTargetAvailability.FAILED); return }
         if (!hslInteraction.dragging) endHslTarget()
@@ -221,7 +227,7 @@ class EditorViewModel @JvmOverloads constructor(
         val next = hslInteraction.move(delta) ?: return
         if (!hslHistoryActive) return
         applyingHslTarget = true
-        try { edit(mutable.value.edits.copy(hsl = next), true) } finally { applyingHslTarget = false }
+        try { edit(mutable.value.edits.withEditingHsl(next), true) } finally { applyingHslTarget = false }
     }
     fun endHslTarget() {
         hslInteraction.end()
@@ -336,7 +342,9 @@ class EditorViewModel @JvmOverloads constructor(
                 is WorkResult.AutoExposure -> {
                     val current = mutable.value
                     if (current.photo?.identity == value.request.photo.identity && current.edits == value.request.edits) {
-                        edit(current.edits.copy(exposure = value.exposure))
+                        if (current.edits.isHDREditing && current.edits.exposure == value.exposure)
+                            mutable.value = EditorStateReducer.renderFinished(current)
+                        else edit(current.edits.copy(exposure = value.exposure))
                     }
                 }
             }
@@ -496,6 +504,54 @@ class EditorViewModel @JvmOverloads constructor(
         if (uris.isEmpty() || mutable.value.operation != Operation.NONE || mutable.value.draft != null) return
         mutable.value = mutable.value.copy(operation = Operation.IMPORT_LOOK, error = null, lookImportReport = null)
         lookRevision = lookQueue.submit(LookWork.Import(uris.toList()))
+    }
+
+    fun beginHDRLookImport(): Boolean {
+        val current = mutable.value
+        if (!current.controlsEnabled || !current.edits.isHDREditing || current.draft != null) return false
+        pendingHDRLookImport = sourceRevision to editRevision
+        return true
+    }
+
+    fun finishHDRLookImport(uri: Uri?) {
+        val expected = pendingHDRLookImport
+        pendingHDRLookImport = null
+        if (uri == null || expected != (sourceRevision to editRevision)) return
+        applyHDRLook { _, target -> target.copy(hdr = target.hdr!!.withLook(storage.importHDRLook(uri))) }
+    }
+
+    fun applyHDRSilver(master: Boolean) = applyHDRLook { photo, target ->
+        val look = storage.installHDRSilver()
+        if (master) {
+            val payload = storage.hdrSilverMaster()
+            require(payload[AdjustmentField.HDR_LOOK]?.hdrLook() == look)
+            AdjustmentTransfer.prepare(payload, target, AdjustmentTransferContext(photo.identity.value,
+                photo.inputKind == PhotoInputKind.RAW, sourceSupportsCameraHDR = photo.isCameraRawHDR,
+                sourceIsProRAW = photo.hdrSource?.isProRAW == true, hdrLookDirectory = storage.hdrLookDirectory))
+        } else target.copy(hdr = target.hdr!!.withLook(look))
+    }
+
+    private fun applyHDRLook(prepare: (ImportedPhoto, EditSettings) -> EditSettings) {
+        val current = mutable.value
+        val photo = current.photo ?: return
+        if (!current.controlsEnabled || !current.edits.isHDREditing || current.draft != null) return
+        val expected = sourceRevision to editRevision
+        mutable.value = current.copy(operation = Operation.IMPORT_LOOK, error = null)
+        viewModelScope.launch {
+            val imported = try {
+                Result.success(kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { prepare(photo,current.edits) })
+            }
+                catch (error: kotlinx.coroutines.CancellationException) { throw error }
+                catch (error: Exception) { Result.failure(error) }
+            if (disposed || expected != (sourceRevision to editRevision) || mutable.value.operation != Operation.IMPORT_LOOK) return@launch
+            val ready = mutable.value.copy(operation = Operation.NONE)
+            mutable.value = ready
+            imported.onSuccess { settings ->
+                edit(settings)
+            }.onFailure {
+                mutable.value = ready.copy(error = text(R.string.collection_look_unavailable))
+            }
+        }
     }
 
     fun dismissLookImportReport() { mutable.value = mutable.value.copy(lookImportReport = null) }
@@ -731,8 +787,8 @@ class EditorViewModel @JvmOverloads constructor(
     fun autoExposure() {
         val current = mutable.value
         if (!current.controlsEnabled || current.preview == null || current.rendering || current.draft != null) return
-        mutable.value = current.copy(rendering = true, exact = false, error = null)
-        currentRevision = submitRender(Work.AutoExposure(current.photo!!, current.edits))
+        mutable.value = current.copy(rendering = true, exact = current.edits.isHDREditing && current.exact, error = null)
+        currentRevision = submitRender(Work.AutoExposure(current.photo!!, current.edits, gpuMode()))
     }
     fun retrySave(completed: (Boolean) -> Unit = {}) {
         if (mutable.value.committingAdjustments) return completed(false)
@@ -944,7 +1000,8 @@ class EditorViewModel @JvmOverloads constructor(
             val captured = adjustmentHistory.session!!.copy(scope, current.edits,
                 AdjustmentTransferContext(photo.identity.value, photo.inputKind == PhotoInputKind.RAW,
                     builtinLookIDs = storage.builtinLookIDs(), cameraTemperature = current.preview?.temperature,
-                    cameraTint = current.preview?.tint, sourceSupportsProRAWHDR = photo.hdrSource?.isProRAW == true))
+                    cameraTint = current.preview?.tint, sourceSupportsCameraHDR = photo.isCameraRawHDR,
+                    sourceIsProRAW = photo.hdrSource?.isProRAW == true))
             adjustmentClipboardSourceName = photo.name
             mutable.value = current.copy(adjustmentRevision = current.adjustmentRevision + 1)
             captured
@@ -963,7 +1020,8 @@ class EditorViewModel @JvmOverloads constructor(
         val expected = adjustmentHistory.loaded
         val context = AdjustmentTransferContext(photo.identity.value, photo.inputKind == PhotoInputKind.RAW,
             builtinLookIDs = storage.builtinLookIDs(), cameraTemperature = current.preview?.temperature,
-            cameraTint = current.preview?.tint, sourceSupportsProRAWHDR = photo.hdrSource?.isProRAW == true)
+            cameraTint = current.preview?.tint, sourceSupportsCameraHDR = photo.isCameraRawHDR,
+            sourceIsProRAW = photo.hdrSource?.isProRAW == true)
         commitAdjustments({
             val record = editStore.versionedState(photo.identity)
             if (record != expected || !AdjustmentTransfer.sameAdjustments(record.settings ?:
@@ -988,7 +1046,8 @@ class EditorViewModel @JvmOverloads constructor(
             record.settings ?: photo.defaultEditSettings(),
             AdjustmentTransferContext(photo.identity.value, photo.inputKind == PhotoInputKind.RAW,
                 builtinLookIDs = storage.builtinLookIDs(), cameraTemperature = current.preview?.temperature,
-                cameraTint = current.preview?.tint, sourceSupportsProRAWHDR = photo.hdrSource?.isProRAW == true))
+                cameraTint = current.preview?.tint, sourceSupportsCameraHDR = photo.isCameraRawHDR,
+                sourceIsProRAW = photo.hdrSource?.isProRAW == true))
     }
 
     fun adjustmentSummaryLookName(kind: String, id: String): String? {
@@ -1162,18 +1221,49 @@ class EditorViewModel @JvmOverloads constructor(
         val photo = current.photo ?: return
         if (!photo.isHDRSource || !current.controlsEnabled || current.draft != null) return
         val candidate = runCatching { current.edits.withHDRMode(enabled, sourceIsHDR = !photo.isCameraRawHDR,
-            hasLook = current.edits.film != "neutral" || current.edits.recipeID != null,
             cameraRaw = photo.isCameraRawHDR, proRAW = photo.hdrSource?.isProRAW == true) }
-            .getOrElse { error -> mutable.value = current.copy(error = text(if(error is com.rawlab.android.settings.HDRModeError.Conflicts)
-                R.string.hdr_conflicts else R.string.hdr_unsupported)); return }
-        if (enabled && photo.isCameraRawHDR) {
-            // Keep the last committed SDR frame/export readiness while the bounded
-            // camera decode validates the new HDR mode. A failed preflight must not
-            // turn a still-valid SDR preview into an unusable editor state.
-            mutable.value = current.copy(rendering = true, error = null)
-            currentRevision = submitRender(Work.CameraHDRPreflight(photo, current.edits, candidate, gpuMode(), sourceRevision,
-                previewLongEdge))
-        } else edit(candidate)
+            .getOrElse { mutable.value = current.copy(error = text(R.string.hdr_unsupported)); return }
+        if (enabled && photo.isCameraRawHDR) preflightHDRCamera(photo,current,candidate) else edit(candidate)
+    }
+
+    fun applyHDRCameraDevelopment(development: com.rawlab.android.settings.HDRCameraDevelopmentSettings) {
+        val current = mutable.value
+        val photo = current.photo ?: return
+        val hdr = current.edits.hdr ?: return
+        if (!current.edits.isHDREditing || !photo.isCameraRawHDR || photo.hdrSource?.isProRAW == true ||
+            !current.controlsEnabled || current.draft != null || cameraHDRPreflightPending || development == hdr.cameraSettings) return
+        preflightHDRCamera(photo,current,current.edits.copy(hdr = hdr.withCameraDevelopment(development)))
+    }
+
+    fun beginHDRCameraProfileImport(): Boolean {
+        val current = mutable.value
+        if (!current.controlsEnabled || !current.edits.isHDREditing || current.draft != null ||
+            current.photo?.isCameraRawHDR != true || current.photo.hdrSource?.isProRAW == true) return false
+        pendingHDRCameraProfileImport = sourceRevision to editRevision
+        return true
+    }
+
+    fun finishHDRCameraProfileImport(uri: Uri?) {
+        val revision = pendingHDRCameraProfileImport
+        pendingHDRCameraProfileImport = null
+        if (uri == null || revision != (sourceRevision to editRevision)) return
+        viewModelScope.launch {
+            val imported = runCatching { withContext(Dispatchers.IO) { storage.importHDRCameraProfile(uri) } }
+            if (revision != (sourceRevision to editRevision)) return@launch
+            imported.onSuccess { profile ->
+                val camera = mutable.value.edits.hdr?.cameraSettings ?: return@onSuccess
+                applyHDRCameraDevelopment(camera.copy(cameraProfile = profile))
+            }.onFailure {
+                mutable.value = mutable.value.copy(error = AppStrings.text(R.string.hdr_camera_profile_invalid))
+            }
+        }
+    }
+
+    private fun preflightHDRCamera(photo: ImportedPhoto, current: EditorState, candidate: EditSettings) {
+        // Preserve the committed frame and saved settings until decoding succeeds.
+        mutable.value = current.copy(rendering = true, error = null)
+        currentRevision = submitRender(Work.CameraHDRPreflight(photo, current.edits, candidate, gpuMode(), sourceRevision,
+            previewLongEdge))
     }
 
     fun beginExport(completed: (Boolean) -> Unit = {}) {

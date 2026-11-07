@@ -73,6 +73,7 @@ private fun summaryText(key: String) = AppStrings.text(when (key) {
     "自定义" -> R.string.transfer_custom
     "不适用" -> R.string.adjustment_summary_not_applicable
     "色相" -> R.string.hsl_hue
+    "不限" -> R.string.hdr_peak_unlimited
     "饱和度" -> R.string.saturation
     "停用" -> R.string.disabled
     "细节优先" -> R.string.denoise_detail

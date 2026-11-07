@@ -24,6 +24,7 @@ import com.rawlab.android.R
 import com.rawlab.android.album.AlbumScreen
 import com.rawlab.android.batch.CollectionExportReview
 import com.rawlab.android.editor.collectionMessage
+import com.rawlab.android.editor.adjustmentTransferFields
 import com.rawlab.android.editor.CollectionSynchronization
 import com.rawlab.android.editor.EditorViewModel
 import com.rawlab.android.editor.ui.AdjustmentScopeEditor
@@ -135,8 +136,7 @@ internal fun BatchSelectionScreen(model: EditorViewModel, onBack: () -> Unit, on
                 TextButton(onClick = { model.resolveCollectionDraft(false) }) { Text(stringResource(R.string.collection_discard_draft)) }
             }
             AdjustmentScopeEditor(stringResource(R.string.collection_check_targets), "collection-sync-preflight", enabled = draft == null && !editor.committingAdjustments,
-                allowed = if (editor.edits.isHDREditing) com.rawlab.android.adjustments.AdjustmentField.HDR_SUPPORTED
-                    else com.rawlab.android.adjustments.AdjustmentField.entries.filterNot { it.isHDRRelative }.toSet(),
+                allowed = editor.adjustmentTransferFields,
                 previewCapture = model::previewAdjustmentPayload, lookName = model::adjustmentSummaryLookName) { selected ->
                 val generation = ++captureGeneration
                 model.captureCollectionSynchronization(selected) { captured ->

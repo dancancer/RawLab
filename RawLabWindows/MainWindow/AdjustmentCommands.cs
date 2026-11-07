@@ -16,7 +16,7 @@ public partial class MainWindow
         .Concat(MasterRecipe.All.Where(r=>File.Exists(r.LutPath)).Select(r=>"recipe:"+r.Id)).ToHashSet(StringComparer.Ordinal);
     private AdjustmentTransferContext CurrentTransferContext()=>new(file!,PhotoInput.IsRaw(file!),AvailableTransferLooks(),
         HasUncommittedDraft:transform.Active || editGesture!=null,CameraWhiteBalance:settings.AsShot,
-        IsProRAW:hdrSource?.IsProRAW == true);
+        IsProRAW:hdrSource?.IsProRAW == true, SupportsCameraHDR:hdrSource?.IsCameraRaw == true);
     private void CopyAdjustmentsClicked(object sender,RoutedEventArgs e)
     {
         if(!PrepareAdjustmentCommand())return;
@@ -24,7 +24,8 @@ public partial class MainWindow
             var dialog=new AdjustmentScopeDialog(this,file!,scope=>{
                 try {CopyCurrentAdjustments(scope);return null;}
                 catch(Exception error){return AdjustmentTransferPresentation.Error(error);}
-            },hdr:settings.IsHDREditing,preview:PreviewAdjustmentPayload,lookName:AdjustmentSummaryLookName);
+            },hdr:settings.IsHDREditing,preview:PreviewAdjustmentPayload,lookName:AdjustmentSummaryLookName,
+                cameraRaw:CurrentTransferContext().SupportsHDRCameraDevelopment);
             if(dialog.ShowDialog()==true)SetStatus(()=>Loc.Text("调整已复制。"),false);
         }catch(Exception error){ShowAdjustmentError(error);}
     }
@@ -60,9 +61,10 @@ public partial class MainWindow
                     if(!IsCurrent())return null;
                     try {
                         collectionTargets?.GetValueOrDefault(path)?.Validate();
-                        var identity=OriginalIdentity.Read(path);var raw=PhotoInput.IsRaw(path);var proRAW=false;
+                        var identity=OriginalIdentity.Read(path);var raw=PhotoInput.IsRaw(path);
+                        HDRSourceInfo? cameraHDR = null;
                         if(raw && PhotoInput.ProbeCameraRaw(path,out var probed) == HDRProbeState.Supported)
-                            proRAW=probed?.IsProRAW == true;
+                            cameraHDR = probed;
                         var defaults=PhotoInput.PrepareHDRInputSettings(path,new Adjustments());
                         (double Temperature,double Tint)? calibration=null;
                         if(raw) {
@@ -70,7 +72,17 @@ public partial class MainWindow
                             calibration=native.Render(path,defaults,null,32,statistics:false,clipping:false)?.WhiteBalance;
                         }
                         if(!OriginalIdentity.Read(path).SameFile(identity))throw new EditPersistenceConflict();
-                        var context=new AdjustmentTransferContext(path,raw,looks,CameraWhiteBalance:calibration,IsProRAW:proRAW,ValidateLens:lens=>{
+                        var context=new AdjustmentTransferContext(path,raw,looks,CameraWhiteBalance:calibration,
+                            IsProRAW:cameraHDR?.IsProRAW == true,SupportsCameraHDR:cameraHDR?.IsCameraRaw == true,
+                            ValidateHDRCamera:candidate=>{
+                                if (PhotoInput.ProbeCameraRaw(path,out var source) != HDRProbeState.Supported ||
+                                    source is not { IsCameraRaw: true, IsProRAW: false })
+                                    throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.camera_development");
+                                using var native = new RenderEngine(1);
+                                var preflight=candidate.Clone();
+                                preflight.HDRCameraAIEnabled=false;
+                                _ = native.Render(path,preflight,null,128,statistics:false,clipping:false);
+                            },ValidateLens:lens=>{
                             using var native=new RenderEngine(1);var probe=new Adjustments{Lens=lens};
                             var report=native.Render(path,probe,null,32,statistics:false,clipping:false)?.Lens;
                             if(report==null || lens.Distortion && !report.AppliedDistortion || lens.Tca && !report.AppliedTca)

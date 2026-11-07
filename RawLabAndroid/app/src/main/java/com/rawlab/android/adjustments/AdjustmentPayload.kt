@@ -3,7 +3,10 @@ package com.rawlab.android.adjustments
 import org.json.JSONObject
 import org.json.JSONArray
 import com.rawlab.android.settings.ColorGradingWheel
+import com.rawlab.android.settings.HDRCameraDevelopmentSettings
+import com.rawlab.android.settings.HDRLookSettings
 import com.rawlab.android.settings.ToneCurveSettings
+import com.rawlab.android.settings.canonicalZero
 import com.rawlab.android.json.validateStrictJSON
 
 enum class AdjustmentFailure { INVALID_PAYLOAD, UNSUPPORTED_VERSION, EMPTY_SCOPE, DRAFT, INCOMPATIBLE, MISSING_LOOK, UNREPRESENTABLE }
@@ -47,9 +50,12 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
                 (payloadVersion == 2 && scopeVersion == 2 && source.isHDR)))
             throw AdjustmentTransferException(AdjustmentFailure.UNSUPPORTED_VERSION)
         if (source.isHDR) {
-            valid(!source.isRaw && source.recipe == null && source.hdrProcessingVersion == 1 && fields.all { it in AdjustmentField.HDR_SUPPORTED }, "hdr context")
+            val version = source.hdrProcessingVersion?.takeIf { it in 1..7 }
+                ?: throw AdjustmentTransferException(AdjustmentFailure.UNSUPPORTED_VERSION)
+            val supported = AdjustmentField.hdrSupported(version) + AdjustmentField.HDR_CAMERA_DEVELOPMENT
+            valid(!source.isRaw && source.recipe == null && supported.containsAll(fields), "hdr context")
         } else {
-            valid(fields.none { it.isHDRRelative }, "hdr context")
+            valid(fields.none { it.isHDROnly }, "hdr context")
         }
         if (values.isEmpty()) throw AdjustmentTransferException(AdjustmentFailure.EMPTY_SCOPE)
         valid(source.identifier.isNotEmpty() && source.processingVersion in 1..2, "source")
@@ -68,7 +74,7 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
             valid(temperature?.number == null && (source.recipe != null || tint?.number == null), "raster.white_balance")
             valid(this[AdjustmentField.EXPOSURE_MODE].let { it == null || it == AdjustmentValue.Text("sensor") } &&
                 this[AdjustmentField.RAW_DENOISE].let { it == null || it == AdjustmentValue.Number(0.0) } &&
-                this[AdjustmentField.POST_RGB_DENOISE].let { it == null || it == AdjustmentValue.Number(0.0) } &&
+                (source.isHDR || this[AdjustmentField.POST_RGB_DENOISE].let { it == null || it == AdjustmentValue.Number(0.0) }) &&
                 this[AdjustmentField.LENS_DISTORTION]?.boolean != true && this[AdjustmentField.LENS_TCA]?.boolean != true, "raster request")
         }
         if (source.recipe != null) valid(tint != AdjustmentValue.Null, "recipe.white_balance.tint")
@@ -146,6 +152,8 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
 
         private fun validValue(field: AdjustmentField, value: AdjustmentValue): Boolean {
             if (field == AdjustmentField.CURVE) return runCatching { curve(value) }.isSuccess
+            if (field == AdjustmentField.HDR_LOOK) return value.hdrLook() != null
+            if (field == AdjustmentField.HDR_CAMERA_DEVELOPMENT) return value.hdrCameraDevelopment() != null
             if (field.gradingZone != null) {
                 val wheel = value.objectValue ?: return false
                 if (wheel.keys != setOf("hue", "saturation")) return false
@@ -188,4 +196,30 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
         internal fun curve(value: AdjustmentValue): ToneCurveSettings = ToneCurveSettings.decode(jsonValue(value) as JSONObject)
         internal fun curveValue(curve: ToneCurveSettings): AdjustmentValue = decodeValue(curve.json())
     }
+}
+
+internal fun AdjustmentValue.hdrCameraDevelopment(): HDRCameraDevelopmentSettings? {
+    val camera = objectValue ?: return null
+    if (camera.keys != setOf("version", "white_balance_mode", "temperature", "tint", "exposure_reference", "fbdd_level") ||
+        camera["version"]?.number != 1.0) return null
+    val mode = camera["white_balance_mode"]?.text
+    val exposure = camera["exposure_reference"]?.text
+    val temperature = camera["temperature"]?.number ?: return null
+    val tint = camera["tint"]?.number ?: return null
+    val fbdd = camera["fbdd_level"]?.number ?: return null
+    if (mode !in setOf("as_shot", "temperature") || exposure !in setOf("metadata", "sensor") || fbdd !in setOf(0.0, 1.0, 2.0)) return null
+    if (mode == "as_shot" && (temperature != 0.0 || tint != 0.0) ||
+        mode == "temperature" && (temperature !in 2000.0..50000.0 || tint !in -150.0..150.0)) return null
+    return HDRCameraDevelopmentSettings(mode == "temperature", temperature.toFloat().canonicalZero(), tint.toFloat().canonicalZero(),
+        exposure == "sensor", fbdd.toInt())
+}
+
+internal fun AdjustmentValue.hdrLook(): HDRLookSettings? {
+    if (this == AdjustmentValue.Null) return HDRLookSettings()
+    val look = objectValue ?: return null
+    if (look.keys != setOf("name", "sha256", "strength")) return null
+    val name = look["name"]?.text ?: return null
+    val sha256 = look["sha256"]?.text ?: return null
+    val strength = look["strength"]?.number?.takeIf { it in 0.0..2.0 } ?: return null
+    return runCatching { HDRLookSettings(sha256, name, strength.toFloat()) }.getOrNull()
 }

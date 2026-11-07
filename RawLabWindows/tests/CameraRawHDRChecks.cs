@@ -19,9 +19,9 @@ internal static class CameraRawHDRChecks
 
     private static void CapabilityIsSeparateFromGainMapContainers()
     {
-        Check(PhotoInput.IsCameraRaw("photo.ARW") && PhotoInput.IsCameraRaw("photo.dng") &&
-            !PhotoInput.IsCameraRaw("photo.nef") && !PhotoInput.IsCameraRaw("photo.proRAW"),
-            "camera RAW routing recognizes the explicit camera extensions");
+        Check(PhotoInput.IsRaw("photo.ARW") && PhotoInput.IsRaw("photo.dng") &&
+            PhotoInput.IsRaw("photo.nef") && PhotoInput.IsRaw("photo.cr3"),
+            "camera HDR uses the regular RAW routing");
         Check(!PhotoInput.IsHDRContainer("photo.ARW") && PhotoInput.IsHDRContainer("photo.heic"),
             "camera RAW capability stays separate from raster gain-map defaults");
     }
@@ -50,12 +50,20 @@ internal static class CameraRawHDRChecks
         catch (AdjustmentTransferException error)
         {
             Check(error.Failure == AdjustmentFailure.Incompatible && error.Detail == "hdr.camera_raw",
-                "camera HDR preset transfer remains gated");
+                "a RAW source without HDR capability cannot capture a preset");
         }
+        var context = new AdjustmentTransferContext("photo.arw",true,SupportsCameraHDR:true);
+        var payload = AdjustmentTransfer.Capture(AdjustmentScope.All,cameraEdit,context);
+        var prepared = AdjustmentTransfer.Prepare(payload,cameraEdit,context);
+        Check(prepared.Settings.HDR == state.HDR && prepared.Settings.ProRAWDecodeVersion == null,
+            "a capable camera RAW transfers its HDR snapshot independently of ProRAW");
 
         var batch = BatchJob.Create("photo.arw", state.Capture(), null, "HDR");
         try { batch.Validate(); throw new Exception("camera HDR batch was not gated"); }
         catch (InvalidDataException) { }
+        batch.SourceSupportsCameraHDR = true;
+        batch.Validate();
+        Check(BatchHDRPreparation.Required(batch.Copy()),"capable camera RAW batch freezes each target");
 
         var reopened = JsonSerializer.Deserialize<AdjustmentSnapshot>(
             JsonSerializer.Serialize(state.Capture()))!.Restore();

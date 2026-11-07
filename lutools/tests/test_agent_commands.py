@@ -98,7 +98,7 @@ class AgentCommands(unittest.TestCase):
     def test_capabilities_and_flag_order(self):
         hdr=sys.platform!="darwin" or tuple(map(int,platform.mac_ver()[0].split(".")[:2]))>=(15,0)
         expected = {
-            "recipe_versions": [1, 2, 3, 4, 5]+([6] if hdr else [])+[7],
+            "recipe_versions": [1, 2, 3, 4, 5] + ([6] if hdr else []) + [7] + ([8, 9, 10, 11, 12, 13] if hdr else []),
             "commands": ["capabilities", "validate_recipe", "info", "preview", "export"],
             "input_types": (["raw", "raster"] if sys.platform in ("darwin", "win32") else ["raw"])+(["hdr_raster"] if hdr else []),
             "output_formats": ["jpeg", "png", "dng"]+(["hdr_jpeg"] if hdr else []),
@@ -110,6 +110,21 @@ class AgentCommands(unittest.TestCase):
                 result = self.envelope(self.run_cli(*arguments), "capabilities")
                 for key, value in expected.items():
                     self.assertEqual(result["result"][key], value)
+                if hdr:
+                    capabilities = result["result"]["hdr"]
+                    self.assertEqual(capabilities["processing_version"], 1)
+                    self.assertEqual(capabilities["processing_versions"], [1, 2, 3, 4, 5, 6, 7])
+                    self.assertEqual(capabilities["tone_recipe_version"], 8)
+                    self.assertEqual(capabilities["tone_adjustments"], ["black_point", "white_point", "s_curve", "curve"])
+                    self.assertEqual(capabilities["color_recipe_version"], 9)
+                    self.assertEqual(capabilities["color_adjustments"], ["vibrance", "hsl", "color_grading"])
+                    self.assertEqual(capabilities["rendition_recipe_version"], 10)
+                    self.assertEqual(capabilities["effects_recipe_version"], 11)
+                    self.assertEqual(capabilities["effects_adjustments"], ["vignette", "grain"])
+                    self.assertEqual(capabilities["detail_recipe_version"], 12)
+                    self.assertEqual(capabilities["detail_adjustments"], ["sharpening", "clarity", "dehaze", "denoise"])
+                    self.assertEqual(capabilities["look_recipe_version"], 13)
+                    self.assertEqual(capabilities["look_profile"], "display-linear-srgb-v1")
                 x3f = result["result"]["x3f"]
                 self.assertIs(type(x3f["normal_available"]), bool)
                 self.assertEqual(x3f["recipe_min_version"], 7)

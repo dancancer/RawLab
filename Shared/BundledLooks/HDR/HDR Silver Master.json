@@ -1,0 +1,27 @@
+{
+  "payload_version": 2,
+  "scope_version": 2,
+  "source": {
+    "identifier": "builtin:hdr-silver-master",
+    "is_raw": false,
+    "processing_version": 2,
+    "hdr_processing_version": 7
+  },
+  "values": {
+    "hdr.look": {
+      "name": "HDR Silver",
+      "sha256": "ecb5bbdcfd1a551079c846ab34db72a765e0851ae2a606bac34e105029eff3c3",
+      "strength": 1
+    },
+    "tone.black_point": -8,
+    "tone.white_point": 8,
+    "light.curve": {
+      "mode": "legacy",
+      "points": []
+    },
+    "light.s_curve": 0.14,
+    "effects.grain.amount": 14,
+    "effects.grain.size": 24,
+    "effects.grain.roughness": 42
+  }
+}

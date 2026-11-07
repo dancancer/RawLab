@@ -30,6 +30,7 @@
     <Compile Include="../../ToneCurveSettings.cs" />
     <Compile Include="../../PhotoEffectsSettings.cs" Link="PhotoEffectsSettings.cs" />
     <Compile Include="../../Native.cs" Link="Native.cs" />
+    <Compile Include="../../AIDenoiseNative.cs" Link="AIDenoiseNative.cs" />
     <Compile Include="../../ExportSize.cs" Link="ExportSize.cs" />
     <Compile Include="../../ExportFormat.cs" Link="ExportFormat.cs" />
     <Compile Include="../../WindowsFileIdentity.cs" Link="WindowsFileIdentity.cs" />

@@ -202,8 +202,7 @@ extension RawEditorViewModel {
                                 self.invalidatePreviewRequests(); self.activeImportRevision=nil; self.importPreviousRevision=nil
                                 self.sourceFile=sourceFile; self.sourceKind=sourceKind; self.sourceIdentity=resolvedIdentity
                                 self.sourceDisplayName=source.displayName; self.sourceIsHDR=rasterHDR
-                                self.sourceSupportsCameraHDR=cameraHDR
-                                self.sourceProRAW = proRAW
+                                self.rawHDRSource = cameraHDR ? hdrInfo : nil
                                 self.restoredSettings=restoredSettings; self.currentPreviewSettings=restoredSettings; self.pendingSettings=nil
                                 self.sourceOrientation = .up; self.draftBuffer=nil; self.draftPreviewBuffer=nil
                                 self.hdrPresentation=presentation; self.hdrReference=reference
@@ -242,8 +241,7 @@ extension RawEditorViewModel {
                                 self.activeImportRevision = nil
                                 self.importPreviousRevision=nil
                                 self.hdrPresentation=nil; self.hdrReference=nil; self.sourceIsHDR=rasterHDR
-                                self.sourceSupportsCameraHDR=cameraHDR
-                                self.sourceProRAW = proRAW
+                                self.rawHDRSource = cameraHDR ? hdrInfo : nil
                                 self.sourceFile = sourceFile
                                 self.sourceKind = sourceKind
                                 self.sourceIdentity = resolvedIdentity
@@ -305,8 +303,7 @@ extension RawEditorViewModel {
                                 self.activeImportRevision = nil
                                 self.importPreviousRevision=nil
                                 self.hdrPresentation=nil; self.hdrReference=nil; self.sourceIsHDR=rasterHDR
-                                self.sourceSupportsCameraHDR=cameraHDR
-                                self.sourceProRAW = proRAW
+                                self.rawHDRSource = cameraHDR ? hdrInfo : nil
                                 self.sourceFile = sourceFile
                                 self.sourceKind = sourceKind
                                 self.sourceIdentity = resolvedIdentity

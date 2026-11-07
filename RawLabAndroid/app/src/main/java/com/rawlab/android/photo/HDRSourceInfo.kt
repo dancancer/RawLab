@@ -15,6 +15,7 @@ data class HDRSourceInfo(
     val headroomKind: Int,
     val fingerprint: ByteArray,
     val cameraStamp: CameraStamp? = null,
+    val supportsBayerDevelopment: Boolean = false,
 ) {
     init {
         require(width > 0 && height > 0)
@@ -34,16 +35,19 @@ data class HDRSourceInfo(
         const val CONTAINER_PRORAW = 4
         const val PRORAW_DECODE_VERSION = 2
         private const val BYTES = 64
+        private const val CAMERA_BYTES = 68
+        private const val CAMERA_SOURCE_BAYER = 1
         private const val FINGERPRINT_BYTES = 32
         private val extensions = setOf("jpg", "jpeg", "heic", "heif")
         private val mimes = setOf("image/jpeg", "image/heic", "image/heif", "image/heif-sequence")
 
         fun decode(bytes: ByteArray): HDRSourceInfo {
-            require(bytes.size == BYTES) { "Invalid HDR source metadata" }
+            require(bytes.size == BYTES || bytes.size == CAMERA_BYTES) { "Invalid HDR source metadata" }
             val input = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
             val fingerprint = ByteArray(FINGERPRINT_BYTES)
             return HDRSourceInfo(input.int, input.int, input.int, input.int, input.int, input.int,
-                input.float, input.int, fingerprint.also(input::get))
+                input.float, input.int, fingerprint.also(input::get),
+                supportsBayerDevelopment = bytes.size == CAMERA_BYTES && (input.int and CAMERA_SOURCE_BAYER) != 0)
         }
 
         fun mayContainGainMap(name: String, mime: String?): Boolean =

@@ -170,6 +170,8 @@ for lut in "$ROOT"/lutools/flog-2-new/*.cube; do
     cp "$lut" "$APP/Contents/Resources/LUTs/"
 done
 cp "$ROOT"/Shared/BundledLooks/*.cube "$APP/Contents/Resources/LUTs/"
+mkdir -p "$APP/Contents/Resources/BundledLooks/HDR"
+cp "$ROOT"/Shared/BundledLooks/HDR/* "$APP/Contents/Resources/BundledLooks/HDR/"
 cp "$ROOT/Shared/BundledLooks/catalog.json" "$APP/Contents/Resources/bundled-looks.json"
 cp "$ROOT"/Shared/BundledLooks/Artwork/*.png "$APP/Contents/Resources/FilmIcons/"
 cp "$ROOT/Shared/BundledLooks/NOTICE.md" "$APP/Contents/Resources/Licenses/Bundled-Looks.md"

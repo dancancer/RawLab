@@ -1,10 +1,12 @@
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
@@ -42,6 +44,220 @@ struct Source {
         pair.source_headroom = 8; pair.source_headroom_kind = SONY2FUJI_HDR_HEADROOM_DECLARED;
     }
 };
+
+void autoExposure() {
+    Source source;
+    source.hdr.assign(256 * 3, .09225f);
+    source.sdr.assign(256 * 3, .6f);
+    for (auto* buffer : {&source.pair.hdr, &source.pair.sdr}) {
+        buffer->width = buffer->height = 16;
+        buffer->stride_bytes = 16 * 12;
+        buffer->size_bytes = 256 * 12;
+    }
+    source.pair.hdr.data = source.hdr.data();
+    source.pair.sdr.data = source.sdr.data();
+    source.pair.native_width = source.pair.native_height = 64;
+    source.pair.source_intent = source.pair.render_intent = SONY2FUJI_INTENT_PREVIEW;
+    source.pair.is_proxy = 1;
+    auto diagnostic = init<sony2fuji_hdr_diagnostic_v1>();
+    float exposure = 9;
+    auto meter = [&](float temperature = 6500, float tint = 0) {
+        return sony2fuji_hdr_estimate_auto_exposure(&source.pair, temperature, tint, &exposure, &diagnostic);
+    };
+    check(meter() == SONY2FUJI_STATUS_OK && std::abs(exposure - 1) < 1e-5f,
+        "HDR auto exposure did not lift the dark HDR midtones by one stop");
+    std::fill(source.hdr.end() - 9, source.hdr.end(), 8);
+    check(meter() == SONY2FUJI_STATUS_OK && std::abs(exposure) < 1e-5f,
+        "HDR auto exposure darkened a dark image just because it already contains bright highlights");
+    std::fill(source.hdr.begin(), source.hdr.end(), .1845f);
+    check(meter() == SONY2FUJI_STATUS_OK && exposure == 0,
+        "HDR auto exposure changed reference mid-gray");
+    std::fill(source.hdr.begin(), source.hdr.end(), .369f);
+    check(meter() == SONY2FUJI_STATUS_OK && std::abs(exposure + 1) < 1e-5f,
+        "HDR auto exposure did not lower bright midtones by one stop");
+    std::fill(source.hdr.begin(), source.hdr.end(), 0);
+    check(meter() == SONY2FUJI_STATUS_UNSUPPORTED && std::abs(exposure + 1) < 1e-5f,
+        "HDR auto exposure changed the edit when no measurable light exists");
+    check(meter(std::numeric_limits<float>::quiet_NaN()) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
+        std::abs(exposure + 1) < 1e-5f, "HDR auto exposure accepted invalid white balance");
+    check(sony2fuji_hdr_estimate_auto_exposure(nullptr, 6500, 0, &exposure, &diagnostic) ==
+        SONY2FUJI_STATUS_INVALID_ARGUMENT && std::abs(exposure + 1) < 1e-5f,
+        "HDR auto exposure accepted a missing source");
+}
+
+void toneV2(sony2fuji_session* session) {
+    constexpr uint32_t width = 1025;
+    Source source;
+    source.hdr.resize(width * 3);
+    source.sdr.resize(width * 3);
+    for (uint32_t i = 0; i < width; ++i) {
+        const float hdr = std::exp2(-8.f + i / 64.f);
+        const float sdr = std::exp2(-8.f + i / 128.f);
+        std::fill_n(source.hdr.data() + i * 3, 3, hdr);
+        std::fill_n(source.sdr.data() + i * 3, 3, sdr);
+    }
+    for (auto* buffer : {&source.pair.hdr, &source.pair.sdr}) {
+        buffer->width = width;
+        buffer->stride_bytes = buffer->size_bytes = width * 12;
+    }
+    source.pair.hdr.data = source.hdr.data(); source.pair.sdr.data = source.sdr.data();
+    source.pair.native_width = width;
+    source.pair.source_headroom = 256;
+    sony2fuji_hdr_request_v2 settings{};
+    settings.base = request();
+    settings.base.struct_size = sizeof(settings);
+    settings.base.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_TONE_VERSION;
+    settings.curve = init<sony2fuji_tone_curve_config>();
+    auto diagnostic = init<sony2fuji_hdr_diagnostic_v1>();
+    auto render = [&](sony2fuji_status expected, const auto& verify) {
+        auto result = init<sony2fuji_hdr_image_pair_v1>();
+        auto status = sony2fuji_hdr_render(session, &source.pair, &settings.base, &result, &diagnostic);
+        check(status == expected, "unexpected HDR tone request status");
+        if (status == SONY2FUJI_STATUS_OK) {
+            verify(static_cast<const float*>(result.hdr.data), static_cast<const float*>(result.sdr.data));
+            sony2fuji_hdr_release_pair(&result);
+        } else check(!result.owner_token && !result.hdr.data, "invalid HDR tone request produced an image");
+    };
+    const auto unchanged = [&](const float* hdr, const float* sdr) {
+        check(std::memcmp(hdr, source.hdr.data(), width * 12) == 0 &&
+            std::memcmp(sdr, source.sdr.data(), width * 12) == 0, "neutral HDR tone changed float pixels");
+    };
+    render(SONY2FUJI_STATUS_OK, unchanged);
+    settings.black_point = 100;
+    settings.base.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_VERSION;
+    render(SONY2FUJI_STATUS_OK, unchanged);
+    settings.base.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_TONE_VERSION;
+    for (float black : {-100.f, 100.f}) for (float white : {-100.f, 100.f}) {
+        settings.black_point = black; settings.white_point = white;
+        render(SONY2FUJI_STATUS_OK, [&](const float* hdr, const float* sdr) {
+            for (uint32_t i = 1; i < width; ++i) {
+                check(hdr[i * 3] > hdr[(i - 1) * 3], "black/white points reversed HDR grayscale levels");
+                check(sdr[i * 3] > sdr[(i - 1) * 3], "black/white points reversed SDR grayscale levels");
+            }
+            check(std::abs(hdr[0] - source.hdr[0] * std::exp2(black / 50)) < 1e-7f,
+                "black point did not change the darkest sample by two stops");
+            check(std::abs(hdr[(width - 1) * 3] - 256 * std::exp2(white / 50)) < 1e-3f,
+                "white point did not change the brightest sample by two stops");
+        });
+    }
+    settings.black_point = settings.white_point = 0;
+    settings.curve_strength = 100;
+    render(SONY2FUJI_STATUS_OK, [](const float* hdr, const float* sdr) {
+        check(std::abs(hdr[768 * 3] - 32) < 1e-4f && std::abs(sdr[512 * 3] - .03125f) < 1e-6f,
+            "HDR S curve did not act above reference white and on the independent SDR base");
+    });
+    settings.curve_strength = 0;
+    settings.curve.mode = SONY2FUJI_CURVE_CUSTOM; settings.curve.count = 3;
+    settings.curve.points[0] = {0, 0}; settings.curve.points[1] = {.5, .4375}; settings.curve.points[2] = {1, 1};
+    render(SONY2FUJI_STATUS_OK, [](const float* hdr, const float* sdr) {
+        check(std::abs(hdr[512 * 3] - .5f) < 1e-6f && std::abs(sdr[1024 * 3] - .5f) < 1e-6f,
+            "custom curve did not map reference white to its control point");
+        check(hdr[0] == std::exp2(-8.f) && hdr[1024 * 3] == 256, "custom curve changed its endpoints");
+        check(hdr[511 * 3] < hdr[512 * 3] && hdr[513 * 3] > hdr[512 * 3] &&
+            hdr[513 * 3] - hdr[511 * 3] < .02f, "custom curve jumped at reference white");
+    });
+    settings.curve.count = 4;
+    settings.curve.points[1] = {.25, .5}; settings.curve.points[2] = {.5, .4375};
+    settings.curve.points[3] = {1, 1};
+    render(SONY2FUJI_STATUS_INVALID_ARGUMENT, unchanged);
+    settings.curve.points[1].y = .4;
+    settings.white_point = std::numeric_limits<float>::quiet_NaN();
+    render(SONY2FUJI_STATUS_INVALID_ARGUMENT, unchanged);
+    settings.white_point = 0;
+    settings.base.struct_size = sizeof(settings.base);
+    render(SONY2FUJI_STATUS_INVALID_ARGUMENT, unchanged);
+    settings.base.struct_size = sizeof(settings);
+    settings.base.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_LOOK_VERSION + 1;
+    render(SONY2FUJI_STATUS_UNSUPPORTED, unchanged);
+}
+
+void colorV3(sony2fuji_session* session) {
+    Source source;
+    std::copy_n(std::array<float, 6>{4, 1.5f, -.2f, .18f, .18f, .18f}.begin(), 6, source.hdr.begin());
+    sony2fuji_hdr_request_v3 settings{};
+    auto& base = settings.base.base;
+    base = request();
+    base.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_COLOR_VERSION;
+    base.struct_size = sizeof(settings);
+    base.quarter_turns = 1;
+    settings.base.curve = init<sony2fuji_tone_curve_config>();
+    settings.vibrance = 60;
+    settings.hsl = init<sony2fuji_hsl_config>();
+    settings.grading = init<sony2fuji_color_grading_config>();
+    std::fill_n(settings.hsl.hue, SONY2FUJI_HSL_CHANNELS, 80);
+    settings.grading.highlights_hue = 210;
+    settings.grading.highlights_saturation = 65;
+    auto diagnostic = init<sony2fuji_hdr_diagnostic_v1>();
+    auto result = init<sony2fuji_hdr_image_pair_v1>();
+    check(sony2fuji_hdr_render(session, &source.pair, &base, &result, &diagnostic) == SONY2FUJI_STATUS_OK,
+        "HDR v3 typed render failed");
+    float after[3];
+    std::memcpy(after, result.hdr.data, sizeof(after));
+    sony2fuji_hdr_release_pair(&result);
+
+    sony2fuji_hsl_probe* probe = nullptr;
+    check(sony2fuji_hdr_create_hsl_probe(session, &source.pair, &base, 42, 5, &probe, &diagnostic) == SONY2FUJI_STATUS_OK,
+        "HDR probe creation failed");
+    const std::unique_ptr<sony2fuji_hsl_probe, decltype(&sony2fuji_hsl_probe_destroy)> guard(probe, sony2fuji_hsl_probe_destroy);
+    auto query = init<sony2fuji_hsl_probe_query>();
+    query.source_revision = 42; query.request_revision = 5;
+    auto sample = init<sony2fuji_hsl_probe_result>();
+    check(sony2fuji_hsl_probe_sample(probe, &query, &sample) == SONY2FUJI_STATUS_OK &&
+        sample.availability == SONY2FUJI_HSL_PROBE_AVAILABLE && sample.width == 1 && sample.height == 2 &&
+        sample.rgb[0] > 4 && sample.rgb[2] < -.2f && std::memcmp(sample.rgb, after, sizeof(after)) != 0,
+        "HDR probe lost signed super-white RGB or sampled after HSL");
+    auto beforeColor = settings;
+    std::fill_n(beforeColor.hsl.hue, SONY2FUJI_HSL_CHANNELS, 0);
+    beforeColor.grading.highlights_saturation = 0;
+    result = init<sony2fuji_hdr_image_pair_v1>();
+    check(sony2fuji_hdr_render(session, &source.pair, &beforeColor.base.base, &result, &diagnostic) == SONY2FUJI_STATUS_OK,
+        "HDR pre-HSL reference render failed");
+    check(std::memcmp(sample.rgb, result.hdr.data, sizeof(after)) == 0,
+        "HDR probe differs from the rendered pre-HSL stage");
+    sony2fuji_hdr_release_pair(&result);
+    query.y = 1;
+    check(sony2fuji_hsl_probe_sample(probe, &query, &sample) == SONY2FUJI_STATUS_OK &&
+        sample.availability == SONY2FUJI_HSL_PROBE_NEAR_GRAY, "HDR probe selected a hue for neutral gray");
+    query.request_revision++;
+    check(sony2fuji_hsl_probe_sample(probe, &query, &sample) == SONY2FUJI_STATUS_OK &&
+        sample.availability == SONY2FUJI_HSL_PROBE_STALE, "HDR probe accepted a stale revision");
+    query.request_revision--; query.y = -1;
+    check(sony2fuji_hsl_probe_sample(probe, &query, &sample) == SONY2FUJI_STATUS_OK &&
+        sample.availability == SONY2FUJI_HSL_PROBE_OUTSIDE, "HDR probe admitted an outside coordinate");
+
+    base.long_edge = 1;
+    sony2fuji_hsl_probe* resized = nullptr;
+    check(sony2fuji_hdr_create_hsl_probe(session, &source.pair, &base, 42, 6, &resized, &diagnostic) == SONY2FUJI_STATUS_OK,
+        "Resized HDR probe creation failed");
+    const std::unique_ptr<sony2fuji_hsl_probe, decltype(&sony2fuji_hsl_probe_destroy)> resizeGuard(resized, sony2fuji_hsl_probe_destroy);
+    query.request_revision = 6; query.x = .5f; query.y = .5f;
+    check(sony2fuji_hsl_probe_sample(resized, &query, &sample) == SONY2FUJI_STATUS_OK &&
+        sample.width == 1 && sample.height == 1 && sample.availability == SONY2FUJI_HSL_PROBE_AVAILABLE,
+        "HDR probe ignored preview size");
+    beforeColor.base.base.long_edge = 1;
+    result = init<sony2fuji_hdr_image_pair_v1>();
+    check(sony2fuji_hdr_render(session, &source.pair, &beforeColor.base.base, &result, &diagnostic) == SONY2FUJI_STATUS_OK,
+        "Resized HDR pre-HSL reference render failed");
+    check(std::memcmp(sample.rgb, result.hdr.data, sizeof(after)) == 0,
+        "HDR probe and render disagree after resizing");
+    sony2fuji_hdr_release_pair(&result);
+
+    base.crop_y = .5f; base.crop_height = .5f;
+    sony2fuji_hsl_probe* cropped = nullptr;
+    check(sony2fuji_hdr_create_hsl_probe(session, &source.pair, &base, 42, 7, &cropped, &diagnostic) == SONY2FUJI_STATUS_OK,
+        "Cropped HDR probe creation failed");
+    const std::unique_ptr<sony2fuji_hsl_probe, decltype(&sony2fuji_hsl_probe_destroy)> cropGuard(cropped, sony2fuji_hsl_probe_destroy);
+    query.request_revision = 7;
+    check(sony2fuji_hsl_probe_sample(cropped, &query, &sample) == SONY2FUJI_STATUS_OK &&
+        sample.width == 1 && sample.height == 1 && sample.availability == SONY2FUJI_HSL_PROBE_NEAR_GRAY &&
+        sample.rgb[0] == .18f && sample.rgb[1] == .18f && sample.rgb[2] == .18f,
+        "HDR probe sampled outside the cropped canvas");
+
+    base.struct_size = sizeof(sony2fuji_hdr_request_v2);
+    sony2fuji_hsl_probe* rejected = probe;
+    check(sony2fuji_hdr_create_hsl_probe(session, &source.pair, &base, 42, 6, &rejected, &diagnostic) ==
+        SONY2FUJI_STATUS_INVALID_ARGUMENT && rejected == nullptr, "Truncated HDR color request published a probe");
+}
 }
 
 int main() {
@@ -50,8 +266,11 @@ int main() {
         static_assert(SONY2FUJI_REQUEST_VERSION == 2);
         static_assert(SONY2FUJI_PIXEL_RGB8 == 0 && SONY2FUJI_INPUT_DISPLAY_BUFFER == 2);
         static_assert(SONY2FUJI_HDR_RGB32F_LINEAR == 1 && SONY2FUJI_HDR_RGB8_SRGB == 2);
+        autoExposure();
         sony2fuji_session* session = nullptr;
         check(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK && session, "session creation failed");
+        toneV2(session);
+        colorV3(session);
         Source source;
         auto output = init<sony2fuji_hdr_image_pair_v1>();
         auto settings = request();

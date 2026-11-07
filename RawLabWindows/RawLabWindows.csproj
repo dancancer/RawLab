@@ -27,6 +27,7 @@
     <Content Include="../lutools/flog-2-new/*.cube" Exclude="../lutools/flog-2-new/*FLog2-709*;../lutools/flog-2-new/*WDR*" Link="LUTs/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../RawLabMac/Resources/FilmIcons/*.png" Link="FilmIcons/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../Shared/BundledLooks/*.cube" Link="LUTs/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Shared/BundledLooks/HDR/*" Link="BundledLooks/HDR/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../Shared/BundledLooks/catalog.json" Link="bundled-looks.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../Shared/BundledLooks/Artwork/*.png" Link="FilmIcons/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../Shared/BundledLooks/NOTICE.md" Link="Licenses/Bundled-Looks.md" CopyToOutputDirectory="PreserveNewest" />

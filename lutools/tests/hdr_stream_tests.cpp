@@ -1,4 +1,5 @@
 #include "core/hdr_stream.h"
+#include "core/hdr_look.h"
 #include "core/hdr_jpeg.h"
 #include "core/processing_cancellation.h"
 #include "platform/hdr_image.h"
@@ -71,12 +72,14 @@ void interruptSDRJPEGAfterGrowth() {
 }
 }
 
-int main() {
+int main(int argc, char* argv[]) {
+    if (argc != 2) return 2;
     auto root = fs::temp_directory_path() / ("rawlab-stream-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     try {
         interruptSDRJPEGAfterGrowth();
         fs::create_directory(root);
         auto pair = fixture();
+        const auto look = HDRLook::load(argv[1]);
         int reads = 0, finishes = 0, failAfter = -1;
         bool cancel = false;
         HDRRowSource source;
@@ -92,16 +95,30 @@ int main() {
         options.exposureEV = .25f; options.temperature = 7200; options.tint = 5;
         options.contrast = 12; options.highlights = -17; options.shadows = 7;
         int passed = 0;
-        for (int transform = 0; transform < 3; ++transform) for (bool hdr : {true, false}) {
+        for (int transform = 0; transform < 6; ++transform) for (bool hdr : {true, false}) {
             options.geometry = {};
             if (transform) {
                 options.geometry.quarter_turns = 1; options.geometry.flip_horizontal = true;
                 options.geometry.crop_x = .13f; options.geometry.crop_width = .69f;
                 options.geometry.crop_y = .07f; options.geometry.crop_height = .81f;
             }
-            if (transform == 2) {
+            if (transform >= 2) {
                 options.geometry.straighten_degrees = -13.5f;
                 options.geometry.perspective_horizontal = .31f; options.geometry.perspective_vertical = -.22f;
+            }
+            if (transform >= 3) {
+                options.processingVersion = SONY2FUJI_HDR_PROCESSING_EFFECTS_VERSION;
+                options.effects = {-65, 35, 20, 60, 45, 70, 30, 65};
+                options.rendition.peakLimitEV = 1.5f;
+            }
+            if (transform >= 4) {
+                options.processingVersion = SONY2FUJI_HDR_PROCESSING_DETAIL_VERSION;
+                options.detail = {1.3f, .65f, -.4f, .72f};
+            }
+            if (transform == 5) {
+                options.processingVersion = SONY2FUJI_HDR_PROCESSING_LOOK_VERSION;
+                options.look = look;
+                options.lookStrength = 1.1f;
             }
             for (uint32_t edge : {0u, 151u}) {
                 options.longEdge = edge;

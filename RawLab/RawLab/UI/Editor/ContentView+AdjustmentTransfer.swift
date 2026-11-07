@@ -55,6 +55,7 @@ extension ContentView {
     func requestAdjustmentAction(_ action: IOSAdjustmentAction) {
         guard !editorBusy, viewModel.hasImage else { return }
         if viewModel.quickPresetState.isPreparing { return }
+        cancelHSLTarget()
         cancelSliderInteraction()
         pendingAdjustmentAction = action
         if isEditorDraftChanged { draftExitPresented = true; return }
