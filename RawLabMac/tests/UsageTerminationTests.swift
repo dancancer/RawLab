@@ -41,6 +41,29 @@ struct UsageTerminationTests {
     static func main() {
         let application = RecordingApplication()
         let delegate = RawLabMacDelegate()
+        check(delegate.responds(to: #selector(NSApplicationDelegate.application(_:open:))),
+              "system Open With events have an application delegate handler")
+        let first = URL(fileURLWithPath: "/tmp/one photo.dng")
+        let second = URL(fileURLWithPath: "/tmp/second.jpg")
+        let systemDelegate: NSApplicationDelegate = delegate
+        systemDelegate.application?(application, open: [first, second])
+        systemDelegate.application?(application, open: [second])
+        var requests: [[URL]] = []
+        var finishes: [(Bool) -> Void] = []
+        delegate.openPhotos = { urls, finish in requests.append(urls); finishes.append(finish) }
+        check(requests == [[first, second]], "a pending draft confirmation prevents dispatching the next cold-start request")
+        finishes[0](true); drain()
+        check(requests == [[first, second], [second]], "completed requests release the next group in original order")
+        finishes[1](false); drain()
+        check(requests.count == 2, "a blocked update or failed save retains the request without a busy retry loop")
+        delegate.retryOpenPhotos()
+        check(requests == [[first, second], [second], [second]], "a ready-state transition retries the retained request")
+        finishes[2](true); drain()
+        systemDelegate.application?(application, open: [first])
+        check(requests == [[first, second], [second], [second], [first]], "warm requests reach the ready editor immediately")
+        finishes[3](true); drain()
+        delegate.openPhotos = { urls, finish in requests.append(urls); finish(true) }
+        check(requests.count == 4, "reattaching the editor does not replay consumed requests")
         let model = EditorModel()
         delegate.model = model
 

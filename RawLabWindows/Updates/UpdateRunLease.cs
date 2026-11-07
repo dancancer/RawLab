@@ -17,7 +17,12 @@ public sealed class UpdateRunLease : IDisposable
                     throw new IOException("other_instance");
         }
         Directory.CreateDirectory(directory);
-        file = new FileStream(Path.Combine(directory, "run.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        try { file = new FileStream(Path.Combine(directory, "run.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+        catch (IOException error) when ((error.HResult & 0xffff) is 32 or 33)
+        {
+            // 进程检查后仍可能有并发启动，以文件锁的结果转交给最终持锁实例。
+            throw new IOException("other_instance", error);
+        }
     }
     public void Dispose() => file.Dispose();
 }

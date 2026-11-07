@@ -348,6 +348,7 @@
     <string name="reset_all_title">"すべての調整をリセットしますか？"</string>
     <string name="reset_effect">"%1$sをリセット"</string>
     <string name="select_photo">"写真を選択"</string>
+    <string name="system_open_unsupported_photo">"対応していない画像ファイル"</string>
     <string name="tool_raw_lens_only">"レンズ補正はRAW写真でのみ使用できます。"</string>
     <string name="tool_select_look_first">"先にルックまたはレシピを選択してください。"</string>
     <string name="tool_unavailable_hdr">"このツールはHDRモードではまだ使用できません。"</string>

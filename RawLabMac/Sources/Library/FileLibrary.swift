@@ -10,6 +10,15 @@ struct DirectoryContents {
         "rw2", "rwl", "orf", "pef", "srw", "raw", "3fr", "fff", "iiq", "mos", "x3f"]
     static let supportedExtensions = rawExtensions.union(["jpg", "jpeg", "png", "tif", "tiff", "heif", "heic"])
 
+    static func photoURLs(from urls: [URL]) -> [URL] {
+        var seen = Set<URL>()
+        return urls.filter { url in
+            url.isFileURL && supportedExtensions.contains(url.pathExtension.lowercased()) &&
+                (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true &&
+                seen.insert(url.standardizedFileURL.resolvingSymlinksInPath()).inserted
+        }
+    }
+
     static func read(_ url: URL) throws -> Self {
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .isPackageKey]
         let entries = try FileManager.default.contentsOfDirectory(at: url,

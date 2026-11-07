@@ -47,7 +47,8 @@ data class ImportedPhoto(val uri: Uri, val name: String, val file: File,
     val hdrSource: HDRSourceInfo? = null) {
     val isHDRSource get() = hdrSource != null
     val isCameraRawHDR get() = hdrSource?.isCameraRaw == true
-    val isX3f get() = inputKind == PhotoInputKind.RAW && name.substringAfterLast('.', "").equals("x3f", ignoreCase = true)
+    val isX3f get() = inputKind == PhotoInputKind.RAW &&
+        (name.substringAfterLast('.', "").equals("x3f", ignoreCase = true) || file.extension.equals("x3f", ignoreCase = true))
     fun defaultEditSettings(): EditSettings = sourceDefaultSettings(isHDRSource, cameraRaw = isCameraRawHDR)
 }
 
@@ -64,6 +65,7 @@ class PhotoStorage(
 ) : AutoCloseable {
     private val resolver = context.contentResolver
     private val directory = File(context.cacheDir, "rawlab-${UUID.randomUUID()}")
+    private val systemPhotos = File(context.filesDir, "system-photos")
     private val lookLibrary = LookLibrary(looksDirectory, lookValidator, dcpCompiler)
     private val films = Film.all + BundledLooks.load(context)
     private var lensDirectory: File? = null
@@ -120,18 +122,35 @@ class PhotoStorage(
         }
     } catch (_: Exception) { null }
 
+    fun retainSystemPhoto(uri: Uri): Uri {
+        val name = runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
+            if (it.moveToFirst()) it.getString(0) else null
+        } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "RAW"
+        val mime = resolver.getType(uri)
+        val input = resolver.openInputStream(uri) ?: throw IOException(AppStrings.text(R.string.message_unable_to_read_file))
+        val file = try { input.use { SystemPhotoStore.retain(systemPhotos, it, name, mime) } }
+        catch (_: UnsupportedSystemPhoto) { throw IOException(AppStrings.text(R.string.system_open_unsupported_photo)) }
+        catch (_: ChangedSystemPhoto) { throw IOException(AppStrings.text(R.string.collection_source_changed)) }
+        return Uri.fromFile(file)
+    }
+
     fun import(uri: Uri): ImportedPhoto {
         runCatching {
             resolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        val name = runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
+        val retained = uri.takeIf { it.scheme == "file" }?.path?.let(::File)?.takeIf {
+            it.parentFile?.canonicalFile == systemPhotos.canonicalFile
+        }
+        try { retained?.let(SystemPhotoStore::validate) }
+        catch (_: ChangedSystemPhoto) { throw IOException(AppStrings.text(R.string.collection_source_changed)) }
+        val name = retained?.let(SystemPhotoStore::originalName) ?: runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
             if (it.moveToFirst()) it.getString(0) else null
         } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "RAW"
-        val inputKind = PhotoFiles.kind(name, resolver.getType(uri))
+        val inputKind = PhotoFiles.kind(retained?.name ?: name, resolver.getType(uri))
             ?: throw IOException("Selected item is not a supported photo")
         val validate = OriginalPhotoSource.capture(resolver, uri)
         val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot open input")
-        val file = WorkingCopy.import(directory, stream, name)
+        val file = WorkingCopy.import(directory, stream, retained?.name ?: name)
         try {
             validate()
             val hdrSource = when (inputKind) {

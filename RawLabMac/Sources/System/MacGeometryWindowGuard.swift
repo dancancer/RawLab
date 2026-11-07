@@ -83,6 +83,35 @@ struct MacGeometryWindowGuard: NSViewRepresentable {
     weak var model: EditorModel?
     weak var updates: DesktopUpdateController?
     private var updateQuitPending = false
+    private var pendingOpenRequests: [[URL]] = []
+    private var openingPhotos = false
+    // 用户选择留在当前照片也算已处理；只有暂时阻塞或保存失败才保留请求。
+    var openPhotos: (([URL], @escaping (Bool) -> Void) -> Void)? {
+        didSet { retryOpenPhotos() }
+    }
+
+    func retryOpenPhotos() {
+        guard !openingPhotos, let openPhotos, let urls = pendingOpenRequests.first else { return }
+        openingPhotos = true
+        var replied = false
+        openPhotos(urls) { [weak self] consumed in
+            guard let self, !replied else { return }
+            replied = true
+            self.openingPhotos = false
+            if consumed {
+                self.pendingOpenRequests.removeFirst()
+                DispatchQueue.main.async { [weak self] in self?.retryOpenPhotos() }
+            }
+        }
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        // 冷启动的文件事件可能早于更新检查和编辑器初始化，保留每次请求的多选边界。
+        guard !urls.isEmpty else { return }
+        pendingOpenRequests.append(urls)
+        retryOpenPhotos()
+        application.activate(ignoringOtherApps: true)
+    }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !updateQuitPending else { return .terminateCancel }

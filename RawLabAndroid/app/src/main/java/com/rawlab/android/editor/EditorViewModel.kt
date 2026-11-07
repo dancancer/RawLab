@@ -56,6 +56,12 @@ import com.rawlab.android.settings.EditPersistenceConflict
 import com.rawlab.android.settings.LookChoice
 import com.rawlab.android.format.PhotoInputKind
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
+data class SystemPhotoOpenRequest(val uris: List<Uri>, val id: UUID = UUID.randomUUID())
 
 class EditorViewModel @JvmOverloads constructor(
     application: Application,
@@ -97,6 +103,26 @@ class EditorViewModel @JvmOverloads constructor(
                 mutable.value.operation != Operation.IMPORT && adjustmentPreparations == 0 && !mutable.value.committingAdjustments
         })
     val collection = collections.state
+    private val systemPhotoImportLock = Mutex()
+    private val mutableSystemPhotoRequests = MutableStateFlow<List<SystemPhotoOpenRequest>>(emptyList())
+    val systemPhotoRequests = mutableSystemPhotoRequests.asStateFlow()
+
+    fun receiveSystemPhotos(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch { systemPhotoImportLock.withLock {
+            val (retained, errors) = withContext(Dispatchers.IO) {
+                val results = uris.distinct().map { runCatching { storage.retainSystemPhoto(it) } }
+                results.mapNotNull { it.getOrNull() }.distinct() to results.mapNotNull { it.exceptionOrNull() }
+            }
+            if (retained.isNotEmpty()) mutableSystemPhotoRequests.value += SystemPhotoOpenRequest(retained)
+            if (errors.isNotEmpty()) mutable.value = mutable.value.copy(error = failure(errors.first()))
+        } }
+    }
+
+    fun consumeSystemPhotoRequest(request: SystemPhotoOpenRequest) {
+        mutableSystemPhotoRequests.value = mutableSystemPhotoRequests.value.filterNot { it.id == request.id }
+    }
+
     val batch = batches.active
     val pendingBatch = batches.pending
     private val mutableCollectionExport = MutableStateFlow(CollectionExportFlow())
@@ -446,7 +472,7 @@ class EditorViewModel @JvmOverloads constructor(
     })
 
     fun importPhoto(uri: Uri?) = importPhoto(uri) {}
-    private fun importPhoto(uri: Uri?, completed: (Boolean) -> Unit) {
+    fun importPhoto(uri: Uri?, completed: (Boolean) -> Unit) {
         if (mutable.value.committingAdjustments) return completed(false)
         if (uri == null) {
             pendingPhotoImport.clear()

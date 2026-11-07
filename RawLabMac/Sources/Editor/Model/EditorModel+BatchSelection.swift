@@ -90,15 +90,17 @@ extension EditorModel {
         return true
     }
 
-    func prepareCollectionSource(completion: @escaping () -> Void) {
-        guard !exporting, ParameterValueField.resolvePendingInputs() else { return }
+    func prepareCollectionSource(onStay: @escaping () -> Void = {}, onFailure: @escaping () -> Void = {},
+                                 completion: @escaping () -> Void) {
+        guard !exporting else { onFailure(); return }
+        guard ParameterValueField.resolvePendingInputs() else { onStay(); return }
         let ready = { [weak self] in
             guard let self else { return }
             if self.scheduler.interacting { self.setInteracting(false) }
-            guard self.saveEdits() else { return }
+            guard self.saveEdits() else { onFailure(); return }
             completion()
         }
-        if geometryDraft != nil { requestLeavingGeometryDraft(ready) } else { ready() }
+        if geometryDraft != nil { requestLeavingGeometryDraft(ready, onStay: onStay) } else { ready() }
     }
 
     func captureCollectionSynchronization(scope: AdjustmentTransferScope) throws -> MacCollectionSynchronization {

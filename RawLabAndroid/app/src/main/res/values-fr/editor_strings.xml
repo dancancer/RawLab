@@ -348,6 +348,7 @@
     <string name="reset_all_title">"Réinitialiser tous les réglages ?"</string>
     <string name="reset_effect">"Réinitialiser %1$s"</string>
     <string name="select_photo">"Choisir une photo"</string>
+    <string name="system_open_unsupported_photo">"Fichier image non pris en charge"</string>
     <string name="tool_raw_lens_only">"La correction de l’objectif est réservée aux photos RAW."</string>
     <string name="tool_select_look_first">"Sélectionnez d’abord un look ou une recette."</string>
     <string name="tool_unavailable_hdr">"Cet outil n’est pas encore disponible en mode HDR."</string>

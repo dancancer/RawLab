@@ -97,7 +97,10 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onPrepareReset: (EditorResetScope) -> EditorResetPreparation = {
         EditorResetPreparation(EditorResetResult.Blocked("The current preview is not ready"))
     },
-    onCommitReset: (PreparedEditorReset) -> Boolean = { false }) {
+    onCommitReset: (PreparedEditorReset) -> Boolean = { false },
+    systemPhotoRequest: SystemPhotoOpenRequest? = null,
+    onSystemPhotoConsumed: (SystemPhotoOpenRequest) -> Unit = {},
+    onSystemPhotoReady: (SystemPhotoOpenRequest, (Boolean) -> Unit) -> Unit = { _, finish -> finish(false) }) {
     var view by rememberSaveable(stateSaver = listSaver<PhotoViewOptions, Any>(save = {
         listOf(it.comparisonEnabled, it.preferredMode.ordinal, it.margins, it.infoMode, it.purePreview)
     }, restore = { PhotoViewOptions(it[0] as Boolean, ComparisonMode.entries[it[1] as Int], it[2] as Boolean, it[3] as Int, it[4] as Boolean) })) { mutableStateOf(PhotoViewOptions()) }
@@ -114,6 +117,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     var blockedScope by remember { mutableStateOf<EditorResetScope?>(null) }
     var resetError by remember { mutableStateOf<Int?>(null) }
     var pendingLeave by remember(state.photo?.identity, state.photo?.file?.absolutePath) { mutableStateOf<(() -> Unit)?>(null) }
+    var pendingSystemPhoto by remember { mutableStateOf<SystemPhotoOpenRequest?>(null) }
     var settings by rememberSaveable { mutableStateOf(false) }
     var adjusting by remember { mutableStateOf(false) }
     LaunchedEffect(tool) { if (tool == 9) tool = 8 }
@@ -134,6 +138,23 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                 val destination = pendingLeave
                 pendingLeave = null
                 if (destination != null) destination() else tool = 2
+            }
+        }
+    }
+    fun cancelLeave() {
+        pendingSystemPhoto?.let(onSystemPhotoConsumed)
+        pendingSystemPhoto = null
+        pendingLeave = null
+        pendingAll = false; prepareAllWhenReady = false
+    }
+    LaunchedEffect(systemPhotoRequest?.id, state.operation, state.committingAdjustments, state.saveState, pendingAll, pendingLeave != null) {
+        val request = systemPhotoRequest
+        if (request != null && state.operation == Operation.NONE && !state.committingAdjustments &&
+            state.saveState != EditSaveState.FAILED && !pendingAll && pendingLeave == null) {
+            pendingSystemPhoto = request
+            leave {
+                pendingSystemPhoto = null
+                onSystemPhotoReady(request) { accepted -> if (accepted) onSystemPhotoConsumed(request) }
             }
         }
     }
@@ -214,14 +235,14 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         }
     }
     BackHandler(enabled = state.draft != null) { leave { tool = 2 } }
-    if (pendingLeave != null) AlertDialog(onDismissRequest = { pendingLeave = null; finishAll() },
+    if (pendingLeave != null) AlertDialog(onDismissRequest = { cancelLeave() },
         title = { Text(stringResource(R.string.adjustment_leave)) },
         confirmButton = { TextButton(onClick = { applyAndLeave() },
             enabled = state.canApplyDraft) { Text(stringResource(R.string.adjustment_apply)) } },
         dismissButton = {
             Column {
                 TextButton(onClick = { onDiscardDraft(); pendingLeave?.invoke(); pendingLeave = null }) { Text(stringResource(R.string.adjustment_discard)) }
-                TextButton(onClick = { pendingLeave = null; finishAll() }) { Text(stringResource(R.string.adjustment_continue)) }
+                TextButton(onClick = { cancelLeave() }) { Text(stringResource(R.string.adjustment_continue)) }
             }
         })
     preparedReset?.let { prepared ->

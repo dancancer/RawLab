@@ -348,6 +348,7 @@
     <string name="reset_all_title">"¿Restablecer todos los ajustes?"</string>
     <string name="reset_effect">"Restablecer %1$s"</string>
     <string name="select_photo">"Elegir foto"</string>
+    <string name="system_open_unsupported_photo">"Archivo de imagen no compatible"</string>
     <string name="tool_raw_lens_only">"La corrección de lente solo está disponible para fotos RAW."</string>
     <string name="tool_select_look_first">"Selecciona primero un look o una receta."</string>
     <string name="tool_unavailable_hdr">"Esta herramienta aún no está disponible en modo HDR."</string>

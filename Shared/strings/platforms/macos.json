@@ -4340,14 +4340,6 @@
       "ja": "サポートされている RAW ファイルではありません",
       "zh-Hans": "不是支持的 RAW 文件"
     },
-    "不是支持的图像文件": {
-      "de": "Nicht unterstützte Bilddatei",
-      "en": "Unsupported image file",
-      "es": "Archivo de imagen no compatible",
-      "fr": "Fichier image non pris en charge",
-      "ja": "対応していない画像ファイル",
-      "zh-Hans": "不是支持的图像文件"
-    },
     "交互预览… {0} × {1} · sRGB": {
       "de": "Interaktive Vorschau… {0} × {1} · sRGB",
       "en": "Interactive preview… {0} × {1} · sRGB",
