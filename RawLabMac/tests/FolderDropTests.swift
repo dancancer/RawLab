@@ -35,6 +35,18 @@ import Foundation
         }
         let photo = first.appendingPathComponent("private.DNG")
         try Data([1, 2, 3]).write(to: photo)
+        let jpeg = first.appendingPathComponent("second.JPG")
+        try Data([4, 5, 6]).write(to: jpeg)
+        let unsupported = first.appendingPathComponent("not-a-photo.gif")
+        try Data([7]).write(to: unsupported)
+        try check(DirectoryContents.photoURLs(from: [photo]) == [photo],
+                  "A single supported file reaches the editor route")
+        try check(DirectoryContents.photoURLs(from: [photo, jpeg, photo]) == [photo, jpeg],
+                  "A multi-photo request retains every unique supported file in input order")
+        try check(DirectoryContents.photoURLs(from: [first, unsupported, URL(string: "https://example.com/a.jpg")!,
+                                                    first.appendingPathComponent("missing.dng")]).isEmpty,
+                  "Directories, unsupported formats, remote URLs and missing paths cannot enter photo routes")
+        try fm.removeItem(at: jpeg)
         let alias = temporary.appendingPathComponent("first-link")
         try fm.createSymbolicLink(at: alias, withDestinationURL: first)
         let library = PhotoLibrary(defaults: defaults)

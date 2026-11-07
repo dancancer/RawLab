@@ -1,5 +1,11 @@
 {
   "entries": {
+    "system_open_unsupported_photo": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "不是支持的图像文件",
+      "types": []
+    },
     "collection_cancel_check": {
       "file": "editor_strings.xml",
       "formats": [],

@@ -348,6 +348,7 @@
     <string name="reset_all_title">"重置所有调整？"</string>
     <string name="reset_effect">"重置%1$s"</string>
     <string name="select_photo">"选择照片"</string>
+    <string name="system_open_unsupported_photo">"不是支持的图像文件"</string>
     <string name="tool_raw_lens_only">"仅 RAW 照片支持镜头校正。"</string>
     <string name="tool_select_look_first">"请先选择外观或配方。"</string>
     <string name="tool_unavailable_hdr">"HDR 模式暂不支持此工具。"</string>

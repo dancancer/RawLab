@@ -64,6 +64,14 @@ enum PhotoImportFile {
         UTType(filenameExtension: $0)
     }
 
+    static func fileURLs(from urls: [URL]) -> [URL] {
+        var seen = Set<URL>()
+        return urls.filter {
+            $0.isFileURL && (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) != true &&
+                seen.insert($0.standardizedFileURL).inserted
+        }
+    }
+
     static func retainSource(_ source: URL) throws -> PhotoImportSource {
         let retained = try retain(source, filename: "source")
         return try identifyRetainedSource(retained, originalName: source.lastPathComponent)

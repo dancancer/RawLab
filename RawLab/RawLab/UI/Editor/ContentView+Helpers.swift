@@ -341,6 +341,23 @@ extension ContentView {
         continueEditorImport()
     }
 
+    func requestSystemPhotoImport(_ urls: [URL]) {
+        pendingSystemPhotoURLs = PhotoImportFile.fileURLs(from: pendingSystemPhotoURLs + urls)
+        continueSystemPhotoImport()
+    }
+
+    func continueSystemPhotoImport() {
+        guard !pendingSystemPhotoURLs.isEmpty, !editorBusy else { return }
+        photoViewing.endTemporaryViewing()
+        cancelSliderInteraction()
+        if isEditorDraftChanged { draftExitPresented = true; return }
+        if isEditorDraftActive { activateEditorTool(.adjustment(.exposure)) }
+        guard viewModel.saveCurrentSettings(settings) else { return }
+        let urls = pendingSystemPhotoURLs
+        pendingSystemPhotoURLs = []
+        importFromFile(.success(urls))
+    }
+
     func continueEditorImport() {
         guard pendingFileImport || pendingPhotoImport else { return }
         guard viewModel.saveCurrentSettings(settings) else { return }
@@ -450,13 +467,35 @@ extension ContentView {
     @MainActor
     func importFromFile(_ result: Result<[URL], Error>) {
         guard !editorBusy, !isEditorDraftChanged else { return }
-        guard let url = try? result.get().first else {
+        let urls = PhotoImportFile.fileURLs(from: (try? result.get()) ?? [])
+        guard let url = urls.first else {
             if case .failure(let error) = result, !(error is CancellationError) {
                 viewModel.reportError(error, operation: .photoImport, stage: "filePicker", context: ["entryPoint": "files"])
             }
             return
         }
         guard viewModel.saveCurrentSettings(settings) else { return }
+        if urls.count > 1 {
+            isImporting = true
+            photoImportTask = Task { @MainActor in
+                defer { photoImportTask = nil; isImporting = false }
+                for url in urls {
+                    guard !Task.isCancelled else { return }
+                    do {
+                        let photo = try await viewModel.loadAdjustmentPhoto(fromFile: url, workflow: "batchSelection")
+                        guard !Task.isCancelled else { return }
+                        viewModel.batchSelection.append(photo)
+                    } catch {
+                        guard !Task.isCancelled else { return }
+                        viewModel.batchSelection.append(.init(identity: .init(resourceIdentifier: "unreadable:\(UUID())"),
+                            displayName: url.lastPathComponent, file: nil, isRaw: false, error: error))
+                    }
+                }
+                viewModel.batchSelection.selection.returnToCollection()
+                showingBatchSelection = true
+            }
+            return
+        }
         photoImportTask?.cancel()
         let requestID = UUID()
         photoImportRequestID = requestID
@@ -471,7 +510,7 @@ extension ContentView {
                 context["entryPoint"] = "files"
                 context["securityScope"] = String(accessing)
                 do {
-                    let source = try PhotoImportFile.retainSource(url)
+                    let source = try await PhotoImportFile.load(fromFile: url)
                     return (Result.success((source, try? PhotoIdentity.fallback(for: source.url))), context)
                 } catch {
                     return (Result.failure(error), context)
