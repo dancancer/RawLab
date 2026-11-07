@@ -124,7 +124,7 @@ extension RawEditorViewModel {
             completion(.failure(BatchExportError.target(format.hdrRequiredMessage)))
             return
         }
-        do { try format.validateHDRHEIF(proRAW: sourceProRAW) }
+        do { try format.validateHDRHEIF() }
         catch { completion(.failure(error)); return }
         guard !previewRendering, !previewResizePending, !previewFailed, !isBusy else {
             completion(.failure(BatchExportError.global(L10n.text("请等待预览完成后导出。"))))
@@ -310,8 +310,7 @@ extension RawEditorViewModel {
                         self.sourceFile = sourceFile
                         self.sourceKind = .raw
                         self.sourceIsHDR = false
-                        self.sourceSupportsCameraHDR = false
-                        self.sourceProRAW = nil
+                        self.rawHDRSource = nil
                         self.sourceDisplayName = url.lastPathComponent
                         self.sourceOrientation = previewResult.orientation ?? rawPreview.orientation
                         self.draftBuffer = rawPreview.buffer
@@ -347,8 +346,7 @@ extension RawEditorViewModel {
                         self.sourceFile = nil
                         self.sourceKind = nil
                         self.sourceIsHDR = false
-                        self.sourceSupportsCameraHDR = false
-                        self.sourceProRAW = nil
+                        self.rawHDRSource = nil
                         self.sourceDisplayName = nil
                         self.sourceOrientation = nil
                         self.rawLUTID = nil

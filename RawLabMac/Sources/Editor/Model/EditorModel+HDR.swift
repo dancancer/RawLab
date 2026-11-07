@@ -9,7 +9,6 @@ extension EditorModel {
         guard sourceIsHDR || sourceSupportsCameraHDR, enabled != settings.isHDREditing, canExport, let file else { return }
         do {
             var candidate=try settings.withHDRMode(enabled,sourceIsHDR:sourceIsHDR,
-                hasLook:!selectedFilmID.isEmpty || settings.masterRecipeID != nil,
                 cameraRAW:sourceSupportsCameraHDR)
             if enabled, sourceSupportsCameraHDR, try HDRSourceInfo.probeRAW(file)?.proRAW != nil {
                 candidate.proRAWDecodeVersion = try ProRAWSource.validatedDecodeVersion(settings.proRAWDecodeVersion)
@@ -21,8 +20,6 @@ extension EditorModel {
             } else {
                 activateHDRMode(snapshot)
             }
-        } catch HDRSettings.ModeError.conflicts {
-            error=L10n.text("当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。")
         } catch { self.error=error.localizedDescription }
     }
 

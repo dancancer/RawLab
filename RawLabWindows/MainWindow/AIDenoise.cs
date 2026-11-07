@@ -13,7 +13,7 @@ public partial class MainWindow
     private const int MaxAIReprepareAttempts=3;
     private int RequestedAIBackend=>GpuMode.SelectedIndex==2 ? 3 : 2;
     private Adjustments AIWorkSettings { get { var snapshot=settings.Clone();snapshot.Lens=PreviewLens;return snapshot; } }
-    private bool HDRCameraAICandidate=>file!=null && PhotoInput.IsHDRCameraAICandidate(file,hdrSource);
+    private bool HDRCameraAICandidate=>file!=null && PhotoInput.IsHDRCameraAICandidate(hdrSource);
     private bool CanStartAI=>file!=null && (settings.IsHDREditing
         ? HDRCameraAICandidate && settings.HDR!.CameraSettings.AllowsAI && RequestedGpuMode!=2
         : !PhotoInput.IsNormalX3f(file,settings) && PhotoInput.IsRaw(file)) && RenderEngine.AIAvailable && RenderEngine.AIHardwareAvailable &&

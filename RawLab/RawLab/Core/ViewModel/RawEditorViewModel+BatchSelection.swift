@@ -63,7 +63,7 @@ extension RawEditorViewModel {
                         throw HDRSettings.ModeError.unsupportedSource
                     }
                     try info.validateEditDecodeVersion(version)
-                    try format.validateHDRHEIF(proRAW: info.proRAW)
+                    try format.validateHDRHEIF()
                 })
             self.resultDelivery { completion(.success(review)) }
         }

@@ -301,8 +301,6 @@ void AISession::prepareHDRBayer(const std::string& path, const std::string& iden
         diagnostics_.progress(static_cast<int>(phase), done, total);
         return !callback || callback(phase, done, total);
     };
-    const auto noise = calibratedNoiseProfile(source);
-    if (!noise) throw Unsupported("This Bayer RAW has no validated HDR AI noise calibration");
     const auto key = hdrBayerKey(path, identity);
     const auto modelStamp = stamp_;
     auto validateIdentity = [&] {
@@ -316,12 +314,13 @@ void AISession::prepareHDRBayer(const std::string& path, const std::string& iden
         validateIdentity();
         notify(progress, Phase::Saving, 1, 1);
     } else {
+        const auto noise = selectNoiseProfile(source);
 #ifdef __APPLE__
         CoreMLGraph::verifyRawGPUPlacement(package_->coreMLPaths[0]);
 #endif
         const AIExecution execution{selectedDevice_ ? &*selectedDevice_ : nullptr, &diagnostics_};
         RuntimeReport report;
-        const auto denoised = denoiseRaw(source, *package_, *noise, backend_, report,
+        const auto denoised = denoiseRaw(source, *package_, noise, backend_, report,
             [&](size_t done, size_t total) { return progress(Phase::Raw, done, total); }, execution);
         if (report.backend != hdrBayerProducer)
             throw Unsupported("HDR Bayer AI did not run on the platform GPU");
@@ -340,8 +339,6 @@ void AISession::prepareHDRBayer(const std::string& path, const std::string& iden
 }
 
 RAWBayerOverride AISession::loadHDRBayer(const std::string& key, const RAWBayerSource& metadata) {
-    if (!calibratedNoiseProfile(metadata))
-        throw Unsupported("This Bayer RAW has no validated HDR AI noise calibration");
     std::string producer;
     auto raw = DenoiseCache(cacheDirectory_).load(key, CacheKind::Raw, metadata.width, metadata.height, {}, &producer);
     if (!raw || producer != hdrBayerProducer)

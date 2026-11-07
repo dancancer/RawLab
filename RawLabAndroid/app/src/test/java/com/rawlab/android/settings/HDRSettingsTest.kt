@@ -143,7 +143,7 @@ class HDRSettingsTest {
             denoise = DenoiseSettings(enabled = true, luma = 10f, chroma = 72f, coarse = 100f),
         )
 
-        val hdr = sdr.withHDRMode(true, sourceIsHDR = false, hasLook = true, cameraRaw = true)
+        val hdr = sdr.withHDRMode(true, sourceIsHDR = false, cameraRaw = true)
 
         assertTrue(hdr.isHDREditing)
         assertEquals(0f, hdr.exposure)
@@ -153,7 +153,7 @@ class HDRSettingsTest {
         assertEquals(sdr.temperature, hdr.sdrSnapshotSettings()!!.temperature)
         assertEquals(sdr.denoise, hdr.sdrSnapshotSettings()!!.denoise)
 
-        val restored = hdr.withHDRMode(false, sourceIsHDR = false, hasLook = true, cameraRaw = true)
+        val restored = hdr.withHDRMode(false, sourceIsHDR = false, cameraRaw = true)
         assertFalse(restored.isHDREditing)
         assertEquals(sdr.exposure, restored.exposure)
         assertEquals(sdr.film, restored.film)
@@ -163,7 +163,7 @@ class HDRSettingsTest {
 
     @Test fun cameraRawHdrModeAndBothSnapshotsRoundTripThroughTheEditRecord() {
         val camera = EditSettings(film = "velvia", exposure = 1f, temperature = 7200f)
-            .withHDRMode(true, sourceIsHDR = false, hasLook = true, cameraRaw = true)
+            .withHDRMode(true, sourceIsHDR = false, cameraRaw = true)
             .copy(exposure = 1.5f, highlights = -.4f).synchronizeHDR()
 
         val restored = StructuredSettingsCodec.decode(StructuredSettingsCodec.encode(camera, "photo_edit"), "photo_edit")
@@ -178,7 +178,7 @@ class HDRSettingsTest {
     fun enablingAnHdrSourceKeepsIndependentSdrSnapshot() {
         val sdr = EditSettings(exposure = -1.25f, contrast = .2f, geometry = GeometrySettings(quarterTurns = 1))
 
-        val hdr = sdr.withHDRMode(enabled = true, sourceIsHDR = true, hasLook = false)
+        val hdr = sdr.withHDRMode(enabled = true, sourceIsHDR = true)
 
         assertEquals(HDRMode.HDR, hdr.hdr?.mode)
         assertEquals(-1.25f, hdr.exposure)
@@ -189,10 +189,10 @@ class HDRSettingsTest {
     @Test
     fun disablingHdrRestoresTheSdrSnapshotAndRetainsHdrEdits() {
         val original = EditSettings(exposure = -1.25f)
-        val enabled = original.withHDRMode(true, sourceIsHDR = true, hasLook = false)
+        val enabled = original.withHDRMode(true, sourceIsHDR = true)
         val edited = enabled.copy(exposure = 1.5f).synchronizeHDR()
 
-        val restored = edited.withHDRMode(false, sourceIsHDR = true, hasLook = false)
+        val restored = edited.withHDRMode(false, sourceIsHDR = true)
 
         assertNull(restored.sdrSnapshot)
         assertEquals(-1.25f, restored.exposure)
@@ -211,24 +211,15 @@ class HDRSettingsTest {
     }
 
     @Test
-    fun enablingRejectsUnsupportedSdrStateWithoutMutatingIt() {
-        val source = EditSettings(film = "velvia", sharpening = .5f)
+    fun enablingKeepsLegacyEditsInTheSdrSnapshot() {
+        val source = EditSettings(film = "velvia", sharpening = .5f, temperature = 7200f,
+            denoise = DenoiseSettings(enabled = true))
 
-        assertThrows(HDRModeError.Conflicts::class.java) {
-            source.withHDRMode(true, sourceIsHDR = true, hasLook = true)
-        }
-        assertEquals("velvia", source.film)
-        assertEquals(.5f, source.sharpening)
-    }
-
-    @Test
-    fun enablingRejectsNonNeutralWhiteBalanceAndAnyDenoiseState() {
-        assertThrows(HDRModeError.Conflicts::class.java) {
-            EditSettings(temperature = 7200f).withHDRMode(true, true)
-        }
-        assertThrows(HDRModeError.Conflicts::class.java) {
-            EditSettings(denoise = DenoiseSettings(enabled = true)).withHDRMode(true, true)
-        }
+        val hdr = source.withHDRMode(true, sourceIsHDR = true)
+        assertEquals(true, hdr.isHDREditing)
+        assertEquals(6500f, hdr.hdr?.temperature)
+        assertEquals(0f, hdr.hdr?.detailSettings?.sharpening)
+        assertEquals(source, hdr.withHDRMode(false, sourceIsHDR = true).copy(hdr = null))
     }
 
     @Test

@@ -675,33 +675,16 @@ extension RawSettings {
         else { geometry = state }
     }
 
-    func withHDRMode(_ enabled: Bool, sourceIsHDR: Bool, hasLook: Bool,
-                     cameraRAW: Bool = false) throws -> RawSettings {
+    func withHDRMode(_ enabled: Bool, sourceIsHDR: Bool, cameraRAW: Bool = false) throws -> RawSettings {
         var result = self
         guard enabled else { result.hdr?.mode = .sdr; return result }
         var initial = HDRSettings()
-        if cameraRAW {
-            result.hdr = try HDRSettings.enabling(stored: hdr, initial: initial,
-                                                  sourceIsHDR: true, conflicts: [])
-            return result
+        if !cameraRAW {
+            initial.exposure = exposure; initial.contrast = (contrast - 1) * 100
+            initial.highlights = -highlights * 100; initial.shadows = shadows * 100
+            initial.saturation = (saturation - 1) * 100; initial.geometry = geometry
         }
-        initial.exposure = exposure; initial.contrast = (contrast - 1) * 100
-        initial.highlights = -highlights * 100; initial.shadows = shadows * 100
-        initial.saturation = (saturation - 1) * 100; initial.geometry = geometry
-        var conflicts: [String] = []
-        if temperature != 6500 || tint != 0 { conflicts.append("white_balance") }
-        if hasLook || self.hasLook { conflicts.append("look") }
-        if !toneSettings.isIdentity { conflicts.append("tone_controls") }
-        if toneCurve != 0 || !curveSettings.isIdentity { conflicts.append("tone_curve") }
-        if !hsl.isIdentity { conflicts.append("hsl") }
-        if !gradingSettings.isIdentity { conflicts.append("color_grading") }
-        if clarity != 0 { conflicts.append("clarity") }
-        if dehaze != 0 { conflicts.append("dehaze") }
-        if sharpening != 0 { conflicts.append("sharpening") }
-        if noiseReduction != 0 || denoise.enabled || displayChromaDenoise != 0 { conflicts.append("denoise") }
-        if photoEffects != PhotoEffectsSettings() { conflicts.append("effects") }
-        if lensSettings != LensCorrectionSettings() { conflicts.append("lens_correction") }
-        result.hdr = try HDRSettings.enabling(stored: hdr, initial: initial, sourceIsHDR: sourceIsHDR, conflicts: conflicts)
+        result.hdr = try HDRSettings.enabling(stored: hdr, initial: initial, sourceIsHDR: sourceIsHDR || cameraRAW)
         return result
     }
 }

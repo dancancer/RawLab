@@ -13,12 +13,11 @@ extension BatchOutputFormat {
         }
     }
 
-    func validateHDRHEIF(proRAW: ProRAWSource?) throws {
+    func validateHDRHEIF() throws {
         guard self == .hdrHEIF else { return }
         guard HDRImage.heifExportAvailable else {
             throw BatchExportError.target(L10n.text("不支持此 HDR 格式或颜色描述。"))
         }
-        if proRAW?.permitsFullSizeExport == false { throw Sony2FujiProcessor.ProcessorError.proRAWExportUnavailable }
     }
 }
 
@@ -52,7 +51,7 @@ final class IOSHDRBatchPreparation {
         if format.requiresHDR && !settings.isHDREditing {
             throw BatchExportError.target(format.hdrRequiredMessage)
         }
-        try format.validateHDRHEIF(proRAW: rawInfo?.proRAW)
+        try format.validateHDRHEIF()
         let look: URL?
         if settings.isHDREditing { look=nil }
         else if let recipe=settings.masterRecipeID { look=MasterRecipe.recipe(for:recipe)?.lutURL() }

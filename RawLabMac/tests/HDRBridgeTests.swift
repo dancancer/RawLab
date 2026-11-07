@@ -124,7 +124,7 @@ import ImageIO
             let camera = directory.appendingPathComponent("camera.dng")
             try FileManager.default.copyItem(at: URL(fileURLWithPath: CommandLine.arguments[2]), to: camera)
             let cameraInfo = try HDRSourceInfo.probeCameraRAW(camera)!
-            require(cameraInfo.isCameraRAW && (try? HDRSourceInfo.probe(camera)) == nil,
+            require(cameraInfo.isCameraRAW && cameraInfo.supportsBayerDevelopment && (try? HDRSourceInfo.probe(camera)) == nil,
                     "camera RAW changed ordinary raster HDR detection")
             let cameraPreview = try cache.preview(camera, info: cameraInfo, longEdge: 32)
             require(cameraPreview.isProxy && cameraPreview.width == 32 && cameraPreview.nativeWidth == 128,

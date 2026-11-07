@@ -86,40 +86,6 @@ struct ProRAWSource: Hashable {
         }
     }
 
-    var permitsFullSizeExport: Bool {
-        #if os(iOS) && !targetEnvironment(simulator)
-        // The 12 MP tier passed the full export on iPhone 14 Pro Max with iOS 27.
-        return max(width, height) <= 4032 && width * height <= 4032 * 3024 && isValidatedExportDevice
-        #elseif os(iOS)
-        return false
-        #else
-        return true
-        #endif
-    }
-
-    var permitsStreamedJPEGExport: Bool {
-        #if os(iOS) && !targetEnvironment(simulator)
-        // 48 MP 已通过此设备的编辑器、批量、取消恢复和 Photos 回读验证。
-        return max(width, height) <= 8064 && width * height <= 8064 * 6048 && isValidatedExportDevice
-        #else
-        return permitsFullSizeExport
-        #endif
-    }
-
-    private var isValidatedExportDevice: Bool {
-        #if os(iOS) && !targetEnvironment(simulator)
-        guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 27 else { return false }
-        var platform = utsname()
-        guard uname(&platform) == 0 else { return false }
-        let model = withUnsafeBytes(of: platform.machine) {
-            String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self)
-        }
-        return model == "iPhone15,3"
-        #else
-        return false
-        #endif
-    }
-
     static func checkMemory(pixels: Int, final: Bool) throws {
         try checkMemory(requiredBytes: UInt64(pixels) * (final ? 88 : 56) + (64 << 20))
     }

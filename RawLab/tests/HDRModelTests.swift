@@ -6,7 +6,7 @@ import Foundation
         let legacy = try JSONDecoder().decode(RawSettings.self, from: Data("{}".utf8))
         check(legacy.hdr == nil && !legacy.isHDREditing && legacy.processing == .legacy, "legacy record changed mode or processing")
         var sdr = RawSettings.default; sdr.exposure = 1; sdr.contrast = 0.75; sdr.highlights = -0.5
-        var active = try sdr.withHDRMode(true, sourceIsHDR: true, hasLook: false)
+        var active = try sdr.withHDRMode(true, sourceIsHDR: true)
         check(active.hdr?.exposure == 1 && active.hdr?.contrast == -25 && active.hdr?.highlights == 50, "conversion lost UI scale/direction")
         AdjustmentKind.exposure.setValue(2, in: &active)
         AdjustmentKind.temperature.setValue(10000, in: &active)
@@ -15,9 +15,9 @@ import Foundation
         let data = try JSONEncoder().encode(active)
         let restored = try JSONDecoder().decode(RawSettings.self, from: data)
         check(restored == active, "HDR record did not round-trip")
-        let disabled = try restored.withHDRMode(false, sourceIsHDR: true, hasLook: false)
+        let disabled = try restored.withHDRMode(false, sourceIsHDR: true)
         check(!disabled.isHDREditing && disabled.exposure == 1 && disabled.hdr?.exposure == 2, "SDR restore lost either snapshot")
-        let reenabled = try disabled.withHDRMode(true, sourceIsHDR: true, hasLook: true)
+        let reenabled = try disabled.withHDRMode(true, sourceIsHDR: true)
         check(reenabled.hdr?.exposure == 2, "existing HDR snapshot was rebuilt")
         let reset = reenabled.resettingAdjustments()
         check(reset.isHDREditing && reset.hdr?.isIdentity == true && reset.exposure == 1, "reset changed mode or dormant SDR edit")
@@ -25,7 +25,7 @@ import Foundation
         cameraSDR.sharpening = 0.1
         cameraSDR.blackPoint = -8; cameraSDR.whitePoint = 9; cameraSDR.toneCurve = 0.12
         cameraSDR.curveSettings = .identity
-        var cameraHDR = try cameraSDR.withHDRMode(true, sourceIsHDR: false, hasLook: true, cameraRAW: true)
+        var cameraHDR = try cameraSDR.withHDRMode(true, sourceIsHDR: false, cameraRAW: true)
         check(cameraHDR.hdr == HDRSettings() && cameraHDR.sharpening == 0.1 && cameraHDR.exposure == 1,
               "camera RAW HDR must start with an independent snapshot")
         AdjustmentKind.exposure.setValue(3, in: &cameraHDR)
@@ -58,18 +58,21 @@ import Foundation
         let resetColor = hdrColor.resettingAdjustments()
         check(resetColor.hdr?.colorSettings.isDefault == true && resetColor.hdr?.processingVersion == 3,
               "HDR reset retained color or changed processing version")
-        let cameraOff = try savedCamera.withHDRMode(false, sourceIsHDR: false, hasLook: true, cameraRAW: true)
-        let cameraOn = try cameraOff.withHDRMode(true, sourceIsHDR: false, hasLook: true, cameraRAW: true)
+        let cameraOff = try savedCamera.withHDRMode(false, sourceIsHDR: false, cameraRAW: true)
+        let cameraOn = try cameraOff.withHDRMode(true, sourceIsHDR: false, cameraRAW: true)
         check(!cameraOff.isHDREditing && cameraOff.exposure == 1 && cameraOn.hdr?.exposure == 3,
               "camera RAW mode switch or persisted edit lost either snapshot")
-        var conflict = sdr; conflict.sharpening = 0.1
-        do { _ = try conflict.withHDRMode(true, sourceIsHDR: true, hasLook: false); fatalError("unsupported control accepted") }
-        catch HDRSettings.ModeError.conflicts(let fields) { check(fields.contains("sharpening"), "conflict field missing") }
-        check(conflict.hdr == nil && conflict.sharpening == 0.1, "failed conversion changed state")
+        var sharpened = sdr; sharpened.sharpening = 0.1
+        let hdrFromSharpened = try sharpened.withHDRMode(true, sourceIsHDR: true)
+        let restoredSharpened = try hdrFromSharpened.withHDRMode(false, sourceIsHDR: true)
+        check(hdrFromSharpened.isHDREditing && hdrFromSharpened.hdr?.detailSettings.sharpening == 0 &&
+              restoredSharpened.sharpening == 0.1, "HDR switch did not preserve the SDR sharpening")
         check(AdjustmentKind.temperature.progress(in:active) != 0,"HDR WB progress used inactive SDR values")
         var effect=RawSettings.default; effect.photoEffects.vignetteMidpoint=60
-        do { _ = try effect.withHDRMode(true,sourceIsHDR:true,hasLook:false); fatalError("nonidentity effect settings converted") }
-        catch HDRSettings.ModeError.conflicts(let fields) { check(fields.contains("effects"),"effect conflict missing") }
+        let hdrFromEffect = try effect.withHDRMode(true, sourceIsHDR: true)
+        let restoredEffect = try hdrFromEffect.withHDRMode(false, sourceIsHDR: true)
+        check(hdrFromEffect.isHDREditing && restoredEffect.photoEffects.vignetteMidpoint == 60,
+              "HDR switch did not preserve the SDR effect")
         print("PASS iOS HDR legacy, record, conversion, control routing and reset")
     }
 }

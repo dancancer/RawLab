@@ -19,9 +19,9 @@ internal static class CameraRawHDRChecks
 
     private static void CapabilityIsSeparateFromGainMapContainers()
     {
-        Check(PhotoInput.IsCameraRaw("photo.ARW") && PhotoInput.IsCameraRaw("photo.dng") &&
-            !PhotoInput.IsCameraRaw("photo.nef") && !PhotoInput.IsCameraRaw("photo.proRAW"),
-            "camera RAW routing recognizes the explicit camera extensions");
+        Check(PhotoInput.IsRaw("photo.ARW") && PhotoInput.IsRaw("photo.dng") &&
+            PhotoInput.IsRaw("photo.nef") && PhotoInput.IsRaw("photo.cr3"),
+            "camera HDR uses the regular RAW routing");
         Check(!PhotoInput.IsHDRContainer("photo.ARW") && PhotoInput.IsHDRContainer("photo.heic"),
             "camera RAW capability stays separate from raster gain-map defaults");
     }

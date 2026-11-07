@@ -112,8 +112,6 @@ public partial class MainWindow
         var cameraRaw = hdrSource.IsCameraRaw;
         try
         {
-            if (enabled && !cameraRaw && lut != null && candidate.HDR == null)
-                throw new HDRModeException(HDRModeFailure.Conflicts, ["look"]);
             candidate.SetHDRMode(enabled, hdrSource.IsHDR, cameraRaw: cameraRaw, proRAW: hdrSource.IsProRAW);
         }
         catch (Exception error) { RefreshControls(); Report(error); return; }
@@ -280,7 +278,7 @@ public partial class MainWindow
         AddRow("白平衡模式",custom,"wb");
         panel.Children.Add(temperature); panel.Children.Add(tint);
         AddRow("曝光基准",exposure,"exposure");
-        AddRow("RAW 降噪",fbdd,"fbdd");
+        if (hdrSource?.SupportsBayerDevelopment == true) AddRow("RAW 降噪",fbdd,"fbdd");
         panel.Children.Add(LensToggle("畸变校正",draft.LensDistortion,value => draft=draft with { LensDistortion=value }));
         panel.Children.Add(LensToggle("横向色差",draft.LensTca,value => draft=draft with { LensTca=value }));
         panel.Children.Add(crop);

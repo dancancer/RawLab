@@ -13,10 +13,9 @@ final class RawEditorViewModel: ObservableObject {
     @Published var hdrPresentation: HDRPresentation?
     @Published var hdrReference: HDRPresentation?
     @Published var sourceIsHDR=false
-    @Published var sourceSupportsCameraHDR=false
-    @Published var sourceProRAW: ProRAWSource?
-    var proRAWExportRestricted: Bool { sourceProRAW?.permitsStreamedJPEGExport == false }
-    var proRAWFullPairExportRestricted: Bool { sourceProRAW?.permitsFullSizeExport == false }
+    @Published var rawHDRSource: HDRSourceInfo?
+    var sourceSupportsCameraHDR: Bool { rawHDRSource != nil }
+    var sourceProRAW: ProRAWSource? { rawHDRSource?.proRAW }
     @Published var cameraHDRPreflight=false
     var importPreviousRevision: UUID?
     @Published var nativeImageSize: CGSize?

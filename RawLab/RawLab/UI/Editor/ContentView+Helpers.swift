@@ -30,7 +30,6 @@ extension ContentView {
               let source=viewModel.editorEditSource else { return }
         do {
             var candidate=try settings.withHDRMode(enabled,sourceIsHDR:viewModel.sourceIsHDR,
-                                                   hasLook:settings.hasLook,
                                                    cameraRAW:viewModel.sourceSupportsCameraHDR)
             if enabled, viewModel.sourceProRAW != nil {
                 candidate.proRAWDecodeVersion = try ProRAWSource.validatedDecodeVersion(settings.proRAWDecodeVersion)
@@ -49,8 +48,6 @@ extension ContentView {
             } else {
                 activateHDRMode(candidate, source: source)
             }
-        } catch HDRSettings.ModeError.conflicts {
-            viewModel.statusMessage=L10n.text("当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。")
         } catch { viewModel.reportError(error, operation: .preview, stage: "changeHDRMode") }
     }
 

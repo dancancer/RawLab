@@ -6,7 +6,7 @@ import Foundation
         let legacy = try JSONDecoder().decode(Adjustments.self, from: Data("{}".utf8))
         check(legacy.hdr == nil && !legacy.isHDREditing && legacy.processing == .legacy, "legacy record changed mode or processing")
         var sdr = Adjustments(); sdr.exposure = 1; sdr.contrast = -25; sdr.highlights = 50
-        var active = try sdr.withHDRMode(true, sourceIsHDR: true, hasLook: false)
+        var active = try sdr.withHDRMode(true, sourceIsHDR: true)
         check(active.hdr?.exposure == 1 && active.hdr?.contrast == -25 && active.hdr?.highlights == 50, "conversion lost logical values")
         active.set(.exposure, to: 2); active.set(.temperature, to: 10000)
         active.rotateGeometry(clockwise: true)
@@ -16,9 +16,9 @@ import Foundation
         let data = try JSONEncoder().encode(active)
         let restored = try JSONDecoder().decode(Adjustments.self, from: data)
         check(restored == active, "HDR record did not round-trip")
-        let disabled = try restored.withHDRMode(false, sourceIsHDR: true, hasLook: false)
+        let disabled = try restored.withHDRMode(false, sourceIsHDR: true)
         check(!disabled.isHDREditing && disabled.exposure == 1 && disabled.hdr?.exposure == 2, "SDR restore lost either snapshot")
-        let reenabled = try disabled.withHDRMode(true, sourceIsHDR: true, hasLook: true)
+        let reenabled = try disabled.withHDRMode(true, sourceIsHDR: true)
         check(reenabled.hdr?.exposure == 2, "existing HDR snapshot was rebuilt")
         var reset = reenabled; reset.resetAll()
         check(reset.isHDREditing && reset.hdr?.isIdentity == true && reset.exposure == 1, "reset changed mode or dormant SDR edit")
@@ -26,7 +26,7 @@ import Foundation
         cameraSDR.sharpening = 25
         cameraSDR.blackPoint = -8; cameraSDR.whitePoint = 9; cameraSDR.toneCurve = 12
         cameraSDR.curveSettings = .identity
-        var cameraHDR = try cameraSDR.withHDRMode(true, sourceIsHDR: false, hasLook: true, cameraRAW: true)
+        var cameraHDR = try cameraSDR.withHDRMode(true, sourceIsHDR: false, cameraRAW: true)
         check(cameraHDR.hdr == HDRSettings() && cameraHDR.sharpening == 25 && cameraHDR.exposure == 1,
               "camera RAW HDR must start with an independent snapshot")
         cameraHDR.set(.exposure, to: 3)
@@ -43,8 +43,8 @@ import Foundation
               "HDR custom curve did not stay separate from the SDR curve")
         let savedCamera = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(cameraHDR))
         check(savedCamera == cameraHDR, "HDR tone settings did not survive serialization")
-        let cameraOff = try savedCamera.withHDRMode(false, sourceIsHDR: false, hasLook: true, cameraRAW: true)
-        let cameraOn = try cameraOff.withHDRMode(true, sourceIsHDR: false, hasLook: true, cameraRAW: true)
+        let cameraOff = try savedCamera.withHDRMode(false, sourceIsHDR: false, cameraRAW: true)
+        let cameraOn = try cameraOff.withHDRMode(true, sourceIsHDR: false, cameraRAW: true)
         check(!cameraOff.isHDREditing && cameraOff.exposure == 1 && cameraOn.hdr?.exposure == 3,
               "camera RAW mode switch or persisted edit lost either snapshot")
         var ai = cameraOn
@@ -53,16 +53,17 @@ import Foundation
               "HDR Bayer AI changed the SDR flag or neutral reference")
         let restoredAI = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(ai))
         check(restoredAI == ai, "HDR Bayer AI selection did not survive serialization")
-        var aiSDR = try restoredAI.withHDRMode(false, sourceIsHDR: false, hasLook: false, cameraRAW: true)
+        var aiSDR = try restoredAI.withHDRMode(false, sourceIsHDR: false, cameraRAW: true)
         check(aiSDR.hdrCameraAIEnabled && !aiSDR.activeAIDenoise, "SDR mode used the saved HDR Bayer AI selection")
         aiSDR.resetAll()
         check(aiSDR.hdrCameraAIEnabled && !aiSDR.activeAIDenoise, "SDR reset cleared the dormant HDR Bayer AI selection")
         ai.resetAll()
         check(!ai.activeAIDenoise && ai.isHDREditing, "HDR reset kept the active AI selection")
-        var conflict = sdr; conflict.sharpening = 10
-        do { _ = try conflict.withHDRMode(true, sourceIsHDR: true, hasLook: false); fatalError("unsupported control accepted") }
-        catch HDRSettings.ModeError.conflicts(let fields) { check(fields.contains("sharpening"), "conflict field missing") }
-        check(conflict.hdr == nil && conflict.sharpening == 10, "failed conversion changed state")
+        var sharpened = sdr; sharpened.sharpening = 10
+        let hdrFromSharpened = try sharpened.withHDRMode(true, sourceIsHDR: true)
+        let restoredSharpened = try hdrFromSharpened.withHDRMode(false, sourceIsHDR: true)
+        check(hdrFromSharpened.isHDREditing && hdrFromSharpened.hdr?.detailSettings.sharpening == 0 &&
+              restoredSharpened.sharpening == 10, "HDR switch did not preserve the SDR sharpening")
         let context=EditorAdjustmentContext(isRaw:false,defaultExposureMode:.sensor,neutralFilmID:"")
         let editedTone = PhotoEditState(settings: cameraHDR, filmID: "")
         if case .candidate(let candidate) = EditorAdjustmentRules.prepareReset(scope: .group(.light), snapshot: editedTone, context: context) {
@@ -93,8 +94,10 @@ import Foundation
                   candidate.settings.exposure==active.exposure,"all reset lost mode or dormant SDR snapshot")
         } else { fatalError("HDR all reset was not prepared") }
         var effect=Adjustments(); effect.photoEffects=PhotoEffectsSettings(); effect.photoEffects?.vignetteMidpoint=60
-        do { _ = try effect.withHDRMode(true,sourceIsHDR:true,hasLook:false); fatalError("nonidentity effect settings converted") }
-        catch HDRSettings.ModeError.conflicts(let fields) { check(fields.contains("effects"),"effect conflict missing") }
+        let hdrFromEffect = try effect.withHDRMode(true, sourceIsHDR: true)
+        let restoredEffect = try hdrFromEffect.withHDRMode(false, sourceIsHDR: true)
+        check(hdrFromEffect.isHDREditing && restoredEffect.photoEffects?.vignetteMidpoint == 60,
+              "HDR switch did not preserve the SDR effect")
         print("PASS Mac HDR legacy, record, conversion, control routing and reset")
     }
 }

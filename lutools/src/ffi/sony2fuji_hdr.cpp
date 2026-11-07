@@ -677,6 +677,11 @@ sony2fuji_status sony2fuji_hdr_probe_camera_raw(const char* file, sony2fuji_hdr_
         info->width = width;
         info->height = height;
         info->orientation = 1;
+        if (info->struct_size >= sizeof(sony2fuji_hdr_camera_source_info_v1)) {
+            const uint32_t capabilities = processor.supportsNoiseReduction() ? SONY2FUJI_HDR_CAMERA_SOURCE_BAYER : 0;
+            std::memcpy(reinterpret_cast<unsigned char*>(info) + offsetof(sony2fuji_hdr_camera_source_info_v1, capabilities),
+                &capabilities, sizeof(capabilities));
+        }
     });
 }
 
@@ -806,18 +811,17 @@ static sony2fuji_status decodeCameraRaw(sony2fuji_session* session, const char* 
             // The mosaic still unpacks at sensor size. LibRaw's working RGBA16
             // and the float RGB development are smaller in half-size mode.
             // HDR AI also holds the reference development, mosaic and sensor backup.
-            hdr::admitMemory(before.size + sensorPixels * 4 + developedPixels * (ai ? 42 : 24));
+            const uint64_t xTransSourceCopy = !raw.halfSize && !processor.supportsNoiseReduction() ? developedPixels * 8 : 0;
+            hdr::admitMemory(before.size + sensorPixels * 4 + developedPixels * (ai ? 42 : 24) + xTransSourceCopy);
             cameraRawStatus(processor.unpackInspectedCameraHDR());
-            RAWBayerSource bayer;
-            if (!processor.getBayerMetadata(bayer)) cameraRawStatus(ErrorCode::InvalidFormat);
-            pair.nativeWidth = (bayer.flip & 4) ? bayer.height : bayer.width;
-            pair.nativeHeight = (bayer.flip & 4) ? bayer.width : bayer.height;
-            if (pair.nativeWidth != uint32_t(width) || pair.nativeHeight != uint32_t(height))
-                cameraRawStatus(ErrorCode::InvalidFormat);
+            pair.nativeWidth = width;
+            pair.nativeHeight = height;
             // Camera RAW HDR v1 anchors reference white at one quarter of the
             // baseline-adjusted scene scale, with two stops above diffuse white.
             raw.exposure = (useMetadataExposure ? processor.getMetadataExposureEV() : 0) + 2.0f;
             if (ai) {
+                RAWBayerSource bayer;
+                if (!processor.getBayerMetadata(bayer)) cameraRawStatus(ErrorCode::InvalidFormat);
                 const auto replacement = hdrSessionLoadCameraAI(session, aiKey, bayer);
                 ImageData reference;
                 cameraRawStatus(processor.process(raw, reference));

@@ -127,7 +127,7 @@ public static class AdjustmentTransfer
 
     private static void ValidateHDRContext(SavedEdit edit, AdjustmentTransferContext context, string field)
     {
-        if ((context.IsRaw || PhotoInput.IsCameraRaw(edit.Identity.Path)) && !context.SupportsCameraHDR && !context.IsProRAW)
+        if ((context.IsRaw || PhotoInput.IsRaw(edit.Identity.Path)) && !context.SupportsCameraHDR && !context.IsProRAW)
             throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,field);
         var expectedVersion = context.IsProRAW ? HDRNative.ProRAWDecodeVersion : (int?)null;
         if (edit.Settings.ProRAWDecodeVersion != expectedVersion)

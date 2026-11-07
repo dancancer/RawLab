@@ -32,6 +32,7 @@ public sealed record HDRSourceInfo(
     public bool IsHDR => State == HDRProbeState.Supported;
     public bool IsProRAW => Container == HDRNative.ContainerProRAW;
     public bool IsCameraRaw => Container is HDRNative.ContainerCameraRaw or HDRNative.ContainerProRAW;
+    internal bool SupportsBayerDevelopment { get; init; }
 
     // Camera RAW and ProRAW probes do not hash or unpack the source. Keep the
     // file stamp in the preview cache key until decode returns the SHA-256.

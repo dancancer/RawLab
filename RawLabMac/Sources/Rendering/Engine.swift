@@ -302,7 +302,7 @@ final class RenderEngine {
     static func validateAIInput(_ url: URL, settings: Adjustments) throws {
         if settings.isHDREditing {
             guard hdrCameraAIAvailable, bundledAIModel != nil,
-                  isHDRCameraAICandidate(url, info: try HDRSourceInfo.probeRAW(url), settings: settings) else {
+                  isHDRCameraAICandidate(info: try HDRSourceInfo.probeRAW(url), settings: settings) else {
                 throw RenderError.aiFailed(L10n.text("此照片或构建尚不能使用 AI 降噪。"))
             }
             return
@@ -314,8 +314,8 @@ final class RenderEngine {
         guard aiAvailable, bundledAIModel != nil else { throw RenderError.aiFailed(L10n.text("此构建未安装 AI 降噪模型。")) }
     }
 
-    static func isHDRCameraAICandidate(_ url: URL?, info: HDRSourceInfo?, settings: Adjustments) -> Bool {
-        url?.pathExtension.lowercased() == "arw" && info?.isCameraRAW == true &&
+    static func isHDRCameraAICandidate(info: HDRSourceInfo?, settings: Adjustments) -> Bool {
+        info?.supportsBayerDevelopment == true &&
             settings.hdr?.cameraDevelopmentSettings.fbddLevel == 0 && settings.hdr?.cameraDevelopmentSettings.cameraProfile == nil
     }
 
@@ -350,7 +350,7 @@ final class RenderEngine {
     private func withHDRCameraAI<T>(_ url: URL, settings: Adjustments, info: HDRSourceInfo?,
                                    operation: (String?) throws -> T) throws -> T {
         guard settings.hdrCameraAIEnabled else { return try operation(nil) }
-        guard Self.hdrCameraAIAvailable, Self.isHDRCameraAICandidate(url, info: info, settings: settings) else {
+        guard Self.hdrCameraAIAvailable, Self.isHDRCameraAICandidate(info: info, settings: settings) else {
             throw RenderError.aiFailed(L10n.text("此照片或构建尚不能使用 AI 降噪。"))
         }
         try configureAI(enabled: true)
@@ -364,7 +364,7 @@ final class RenderEngine {
         guard !progress.isCancelled else { throw RenderError.aiCancelled }
         if settings.isHDREditing {
             guard Self.hdrCameraAIAvailable,
-                  Self.isHDRCameraAICandidate(url, info: try HDRSourceInfo.probeRAW(url), settings: settings) else {
+                  Self.isHDRCameraAICandidate(info: try HDRSourceInfo.probeRAW(url), settings: settings) else {
                 throw RenderError.aiFailed(L10n.text("此照片或构建尚不能使用 AI 降噪。"))
             }
             try configureAI(enabled: true)

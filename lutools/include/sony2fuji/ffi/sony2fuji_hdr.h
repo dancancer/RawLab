@@ -68,6 +68,13 @@ typedef struct sony2fuji_hdr_source_info_v1 {
     uint8_t source_sha256[32];
 } sony2fuji_hdr_source_info_v1;
 
+enum { SONY2FUJI_HDR_CAMERA_SOURCE_BAYER = 1 };
+// Optional camera probe result tail. Set base.struct_size to sizeof this struct.
+typedef struct sony2fuji_hdr_camera_source_info_v1 {
+    sony2fuji_hdr_source_info_v1 base;
+    uint32_t capabilities;
+} sony2fuji_hdr_camera_source_info_v1;
+
 typedef struct sony2fuji_hdr_decode_options_v1 {
     uint32_t version, struct_size;
     uint32_t intent, long_edge;
@@ -80,7 +87,7 @@ enum {
     SONY2FUJI_HDR_CAMERA_LENS_AUTO_CROP = 4
 };
 
-// Applies only to the ordinary Bayer camera RAW decoder. A zero tail keeps the
+// Applies only to the ordinary camera RAW decoder. A zero tail keeps the
 // established as-shot WB and metadata-adjusted exposure. Custom WB is evaluated
 // in camera channels before demosaic; lens correction uses the session database.
 typedef struct sony2fuji_hdr_camera_development_v1 {
@@ -254,6 +261,7 @@ sony2fuji_status sony2fuji_hdr_decode(const char* path, const sony2fuji_hdr_deco
     sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic);
 // Explicit camera RAW development. Probe inspects the header only and does not hash
 // or unpack the file. Decode returns the oriented canvas and the source digest.
+// Pass the base of sony2fuji_hdr_camera_source_info_v1 to also get sensor capabilities.
 sony2fuji_status sony2fuji_hdr_probe_camera_raw(const char* path, sony2fuji_hdr_source_info_v1* info,
     sony2fuji_hdr_diagnostic_v1* diagnostic);
 // Compile only the D65 camera matrices and model identity. The caller owns the

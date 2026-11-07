@@ -249,8 +249,7 @@ public sealed record HDRSettings
         PerspectiveVertical = (float)Geometry.PerspectiveVertical, LongEdge = longEdge
     };
 
-    public static HDRSettings Enabling(HDRSettings? stored, HDRSettings initial, bool sourceIsHDR,
-        IEnumerable<string>? conflicts = null, bool cameraRaw = false)
+    public static HDRSettings Enabling(HDRSettings? stored, HDRSettings initial, bool sourceIsHDR)
     {
         if (!sourceIsHDR) throw new HDRModeException(HDRModeFailure.UnsupportedSource);
         if (stored is { } existing)
@@ -258,14 +257,7 @@ public sealed record HDRSettings
             if (!existing.IsValid) throw new HDRModeException(HDRModeFailure.InvalidSettings);
             return existing with { Mode = HDRMode.Hdr };
         }
-        var blocked = conflicts?.Where(value => !string.IsNullOrEmpty(value)).ToArray() ?? Array.Empty<string>();
-        if (blocked.Length != 0) throw new HDRModeException(HDRModeFailure.Conflicts, blocked);
-        // Camera RAW keeps the existing SDR record (including LUT, as-shot WB
-        // and RAW denoise) but starts its separate HDR record from a neutral
-        // scene snapshot. Geometry is the only shared edit copied here.
-        var result = cameraRaw
-            ? new HDRSettings { Mode = HDRMode.Hdr, Geometry = initial.Geometry }
-            : initial with { Mode = HDRMode.Hdr, Temperature = 6500, Tint = 0 };
+        var result = initial with { Mode = HDRMode.Hdr, Temperature = 6500, Tint = 0 };
         if (!result.IsValid) throw new HDRModeException(HDRModeFailure.InvalidSettings);
         return result;
     }
@@ -280,14 +272,12 @@ public sealed record HDRSettings
 }
 
 public enum HDRIntent { Preview = 0, Final = 1 }
-public enum HDRModeFailure { UnsupportedSource, Conflicts, InvalidSettings }
-public sealed class HDRModeException(HDRModeFailure failure, IReadOnlyList<string>? conflicts = null) : IOException(LocalizedMessage(failure))
+public enum HDRModeFailure { UnsupportedSource, InvalidSettings }
+public sealed class HDRModeException(HDRModeFailure failure) : IOException(LocalizedMessage(failure))
 {
     public HDRModeFailure Failure { get; } = failure;
-    public IReadOnlyList<string> Conflicts { get; } = conflicts ?? [];
     private static string LocalizedMessage(HDRModeFailure failure) => failure switch {
         HDRModeFailure.UnsupportedSource => Loc.Text("此照片没有可编辑的 HDR 增益图。"),
-        HDRModeFailure.Conflicts => Loc.Text("当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。"),
         _ => Loc.Text("HDR 调整记录无效，原有文件未被覆盖。")
     };
 }

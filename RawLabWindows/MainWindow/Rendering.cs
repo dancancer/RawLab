@@ -26,7 +26,7 @@ public partial class MainWindow
             if(!LibraryEntry.IsImage(path))throw new InvalidOperationException(Loc.Text("请选择支持的照片文件。"));
             HDRSourceInfo? openedHDR = null;
             if (PhotoInput.IsHDRContainer(path)) PhotoInput.ProbeHDR(path, out openedHDR);
-            else if (PhotoInput.IsCameraRaw(path)) PhotoInput.ProbeCameraRaw(path, out openedHDR);
+            else if (PhotoInput.IsRaw(path)) PhotoInput.ProbeCameraRaw(path, out openedHDR);
             CancelViewingInput();
             if(!ResolveTransformDraft() || !SaveEdits())return;
             ResetAITask();RestoreEdits(path); hdrSource = openedHDR;

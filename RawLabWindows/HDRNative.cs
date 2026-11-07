@@ -29,6 +29,7 @@ internal static class HDRNative
     internal const uint LinearSRGB = 1;
     internal const uint ContainerCameraRaw = 3;
     internal const uint ContainerProRAW = 4;
+    private const uint CameraSourceBayer = 1;
     internal const uint ColorSrgb = 1;
     internal const uint HeadroomUnknown = 0;
     internal const uint ReasonUnsupportedRaw = 17;
@@ -87,7 +88,9 @@ internal static class HDRNative
         {
             info = new(HDRProbeState.Supported, native.Width, native.Height, native.Orientation, native.Container,
                 native.Protocol, native.ColorDescription, native.ContentHeadroom, native.HeadroomKind,
-                native.SourceSha256?.ToArray() ?? []) { CameraStamp = HDRFileStamp.Read(path) };
+                native.SourceSha256?.ToArray() ?? []) {
+                CameraStamp = HDRFileStamp.Read(path), SupportsBayerDevelopment = (native.CameraCapabilities & CameraSourceBayer) != 0
+            };
             return HDRProbeState.Supported;
         }
         if (status == StatusUnsupported && diagnostic.Reason == ReasonUnsupportedRaw)
@@ -129,7 +132,7 @@ internal static class HDRNative
         Native.Session? session = null, HDRCameraDevelopmentSettings? development = null, bool cameraAI = false)
     {
         if (expected == null) {
-            var state = PhotoInput.IsCameraRaw(path)
+            var state = PhotoInput.IsRaw(path)
                 ? PhotoInput.ProbeCameraRaw(path, out expected)
                 : Probe(path, out expected);
             if (state != HDRProbeState.Supported || expected == null)

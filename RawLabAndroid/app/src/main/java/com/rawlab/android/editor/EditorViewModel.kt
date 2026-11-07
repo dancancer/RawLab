@@ -1221,10 +1221,8 @@ class EditorViewModel @JvmOverloads constructor(
         val photo = current.photo ?: return
         if (!photo.isHDRSource || !current.controlsEnabled || current.draft != null) return
         val candidate = runCatching { current.edits.withHDRMode(enabled, sourceIsHDR = !photo.isCameraRawHDR,
-            hasLook = current.edits.film != "neutral" || current.edits.recipeID != null,
             cameraRaw = photo.isCameraRawHDR, proRAW = photo.hdrSource?.isProRAW == true) }
-            .getOrElse { error -> mutable.value = current.copy(error = text(if(error is com.rawlab.android.settings.HDRModeError.Conflicts)
-                R.string.hdr_conflicts else R.string.hdr_unsupported)); return }
+            .getOrElse { mutable.value = current.copy(error = text(R.string.hdr_unsupported)); return }
         if (enabled && photo.isCameraRawHDR) preflightHDRCamera(photo,current,candidate) else edit(candidate)
     }
 

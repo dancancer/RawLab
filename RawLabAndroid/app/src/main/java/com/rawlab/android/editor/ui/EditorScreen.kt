@@ -278,7 +278,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     var cameraOpen by remember(sourceKey) { mutableStateOf(false) }
                     TextButton(onClick = { cameraOpen = !cameraOpen }, modifier = Modifier.testTag("hdr-camera")) { Text("HDR RAW") }
                     if (cameraOpen) HDRCameraDevelopmentRows(hdr.cameraSettings, state.controlsEnabled && state.draft == null && !state.rendering,
-                        onHDRCameraDevelopment, onImportHDRCameraProfile)
+                        state.photo.hdrSource?.supportsBayerDevelopment == true, onHDRCameraDevelopment, onImportHDRCameraProfile)
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -495,7 +495,7 @@ private fun HDRRenditionRows(settings: HDRRenditionSettings, enabled: Boolean,
 }
 
 @Composable
-private fun HDRCameraDevelopmentRows(settings: HDRCameraDevelopmentSettings, enabled: Boolean,
+private fun HDRCameraDevelopmentRows(settings: HDRCameraDevelopmentSettings, enabled: Boolean, supportsBayerDevelopment: Boolean,
     apply: (HDRCameraDevelopmentSettings) -> Unit, importProfile: () -> Unit) {
     var draft by remember(settings) { mutableStateOf(settings) }
     @Composable fun switch(label: Int, value: Boolean, tag: String, update: (Boolean) -> Unit, allowed: Boolean = enabled) {
@@ -520,12 +520,14 @@ private fun HDRCameraDevelopmentRows(settings: HDRCameraDevelopmentSettings, ena
         FilterChip(draft.sensorExposure, { draft = draft.copy(sensorExposure = true) }, { Text(stringResource(R.string.exposure_sensor)) },
             enabled = enabled, modifier = Modifier.testTag("hdr-camera-sensor"))
     }
-    Text(stringResource(R.string.transfer_field_raw_denoise))
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        for (level in 0..2) {
-            FilterChip(draft.fbddLevel == level, { draft = draft.copy(fbddLevel = level) },
-                { Text(if (level == 0) stringResource(R.string.disabled) else "FBDD $level") },
-                enabled = enabled, modifier = Modifier.testTag("hdr-camera-fbdd-$level"))
+    if (supportsBayerDevelopment) {
+        Text(stringResource(R.string.transfer_field_raw_denoise))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            for (level in 0..2) {
+                FilterChip(draft.fbddLevel == level, { draft = draft.copy(fbddLevel = level) },
+                    { Text(if (level == 0) stringResource(R.string.disabled) else "FBDD $level") },
+                    enabled = enabled, modifier = Modifier.testTag("hdr-camera-fbdd-$level"))
+            }
         }
     }
     switch(R.string.transfer_field_lens_distortion, draft.lensDistortion, "hdr-camera-distortion", {

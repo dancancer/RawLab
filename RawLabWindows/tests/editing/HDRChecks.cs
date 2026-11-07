@@ -12,7 +12,7 @@ internal static class HDRChecks
     {
         SettingsUseSwiftKeysAndRejectUnknownFields();
         SnapshotKeepsInactiveHDRIndependent();
-        EnablingRejectsUnsupportedLegacyState();
+        EnablingPreservesLegacyState();
         ResetOnlyTouchesHDRRecord();
         TransferUsesHDRPayloadV2AndFloatMappings();
         ToneKeepsHDRAndSDRIndependent();
@@ -79,14 +79,15 @@ internal static class HDRChecks
             "HDR reset leaves the independent SDR scalar untouched");
     }
 
-    private static void EnablingRejectsUnsupportedLegacyState()
+    private static void EnablingPreservesLegacyState()
     {
-        var denoise = new Adjustments { Denoise = DenoiseSettings.Clean };
-        try { denoise.SetHDRMode(true, true); throw new Exception("non-default denoise enabled HDR"); }
-        catch (HDRModeException error) { Check(error.Failure == HDRModeFailure.Conflicts && error.Conflicts.Contains("denoise"), "denoise conflict is explicit"); }
-        var whiteBalance = new Adjustments(); whiteBalance.Set(Parameter.Tint, 4);
-        try { whiteBalance.SetHDRMode(true, true); throw new Exception("non-neutral WB enabled HDR"); }
-        catch (HDRModeException error) { Check(error.Conflicts.Contains("white_balance"), "legacy WB conflict is explicit"); }
+        var settings = new Adjustments { Denoise = DenoiseSettings.Clean };
+        settings.Set(Parameter.Tint, 4);
+        settings.SetHDRMode(true, true);
+        Check(settings.IsHDREditing && settings.HDR!.Tint == 0, "HDR opens with neutral relative white balance");
+        settings.SetHDRMode(false, true);
+        Check(settings.Denoise == DenoiseSettings.Clean && settings[Parameter.Tint] == 4,
+            "HDR switch preserved the original SDR denoise and white balance");
         Check(PhotoInput.IsHDRContainer("photo.heic") && PhotoInput.IsHDRContainer("photo.jpg") &&
               !PhotoInput.IsHDRContainer("photo.png"), "HDR source probe is restricted to supported containers");
     }
@@ -199,8 +200,9 @@ internal static class HDRChecks
             "HDR v7 preserves the detail prefix and look probe layout");
         Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRCameraDevelopment>() == 40,
             "Camera development has a stable ABI");
-        Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRSourceInfo>() == 72,
-            "HDR source info layout is stable");
+        Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRSourceInfo>() == 76 &&
+              System.Runtime.InteropServices.Marshal.OffsetOf<Native.HDRSourceInfo>(nameof(Native.HDRSourceInfo.CameraCapabilities)).ToInt32() == 72,
+            "HDR camera source capabilities follow the stable source info prefix");
         Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRBuffer>() == 56,
             "HDR buffer layout is stable");
         Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRImagePair>() == 208,

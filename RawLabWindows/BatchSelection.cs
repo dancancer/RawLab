@@ -93,7 +93,7 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
         if (!hdr.CameraSettings.IsDefault && (!info.IsCameraRaw || info.IsProRAW))
             throw new HDRModeException(HDRModeFailure.UnsupportedSource);
         hdr.CameraSettings.CameraProfile?.RequireAsset();
-        if (settings.HDRCameraAIEnabled && !PhotoInput.IsHDRCameraAICandidate(path,info))
+        if (settings.HDRCameraAIEnabled && !PhotoInput.IsHDRCameraAICandidate(info))
             throw new InvalidOperationException(Loc.Text("此照片或构建尚不能使用 AI 降噪。"));
         if (!hdr.LookSettings.AssetIsAvailable())
             throw new AdjustmentTransferException(AdjustmentFailure.MissingLook, hdr.LookSettings.Name ?? "HDR LUT");
@@ -173,7 +173,7 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
             var job=new BatchJob{Version=3,AIBackend=aiBackend,AIDeviceID=aiDeviceID,SettingsMode=BatchJob.PerTargetFrozen,Source=items[0].Input,
                 SourceIsProRAW=items[0].Frozen!.Settings.HDR is { Mode: HDRMode.Hdr } &&
                     items[0].Frozen!.Settings.ProRAWDecodeVersion == HDRNative.ProRAWDecodeVersion,
-                SourceSupportsCameraHDR=items[0].Frozen!.Settings.HDR is { Mode: HDRMode.Hdr } && PhotoInput.IsCameraRaw(items[0].Input),
+                SourceSupportsCameraHDR=items[0].Frozen!.Settings.HDR is { Mode: HDRMode.Hdr } && PhotoInput.IsRaw(items[0].Input),
                 Settings=items[0].Frozen!.Settings,Items=items,OutputFormat=review.Format,Png=review.Format==ExportFormat.Png,
                 LongEdge=review.LongEdge,OutputDirectory=review.OutputDirectory};
             journal.Save(job);owned.Clear();

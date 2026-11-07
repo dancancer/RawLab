@@ -32,6 +32,7 @@ struct HDRSourceInfo {
     let native: sony2fuji_hdr_source_info_v1
     var cameraStamp: CameraStamp? = nil
     var proRAW: ProRAWSource? = nil
+    var supportsBayerDevelopment = false
     var isDevelopedRAW: Bool { isCameraRAW || proRAW != nil }
     var isCameraRAW: Bool { native.container == UInt32(SONY2FUJI_HDR_CONTAINER_CAMERA_RAW) }
 
@@ -78,17 +79,25 @@ struct HDRSourceInfo {
     }
 
     static func probeCameraRAW(_ url: URL) throws -> HDRSourceInfo? {
-        guard #available(macOS 15, iOS 18, *),
-              ["arw", "dng"].contains(url.pathExtension.lowercased()) else { return nil }
+        guard #available(macOS 15, iOS 18, *) else { return nil }
         let stamp = try CameraStamp(url)
-        var info = sony2fuji_hdr_source_info_v1()
-        info.version = 1
-        info.struct_size = UInt32(MemoryLayout.size(ofValue: info))
+        var camera = sony2fuji_hdr_camera_source_info_v1()
+        camera.base.version = 1
+        camera.base.struct_size = UInt32(MemoryLayout.size(ofValue: camera))
         var diagnostic = sony2fuji_hdr_diagnostic_v1()
         diagnostic.version = 1
         diagnostic.struct_size = UInt32(MemoryLayout.size(ofValue: diagnostic))
-        let status = url.path.withCString { sony2fuji_hdr_probe_camera_raw($0, &info, &diagnostic) }
-        if status == SONY2FUJI_STATUS_OK { return HDRSourceInfo(native: info, cameraStamp: stamp) }
+        let status = url.path.withCString { path in
+            withUnsafeMutablePointer(to: &camera) { pointer in
+                pointer.withMemoryRebound(to: sony2fuji_hdr_source_info_v1.self, capacity: 1) {
+                    sony2fuji_hdr_probe_camera_raw(path, $0, &diagnostic)
+                }
+            }
+        }
+        if status == SONY2FUJI_STATUS_OK {
+            return HDRSourceInfo(native: camera.base, cameraStamp: stamp,
+                supportsBayerDevelopment: camera.capabilities & UInt32(SONY2FUJI_HDR_CAMERA_SOURCE_BAYER) != 0)
+        }
         if status == SONY2FUJI_STATUS_UNSUPPORTED &&
             diagnostic.reason == UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW) { return nil }
         throw HDRNativeError(status: status, reason: diagnostic.reason, field: diagnostic.field)

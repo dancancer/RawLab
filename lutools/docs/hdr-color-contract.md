@@ -239,7 +239,7 @@ input and output contracts.
 ## Camera RAW development
 
 The separate `sony2fuji_hdr_camera_development_v1` decode request applies to
-supported Bayer sources. The default uses as-shot white balance, metadata
+supported Bayer and X-Trans sources. The default uses as-shot white balance, metadata
 exposure and no optional denoising or lens corrections. Explicit camera-space
 white balance accepts 2000–50000 K and tint in [-150,150]. Metadata exposure
 maps scene RGB by `2^(2 + BaselineExposure)`. The sensor setting uses `2^2`.

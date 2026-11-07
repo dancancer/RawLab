@@ -373,7 +373,7 @@ public sealed class Adjustments
     }
     public void ResetAll() { Atmosphere = new(); Curve = new(); ColorGrading = new(); ToneControls = new(); AIDenoiseEnabled = HDRCameraAIEnabled = false; MasterRecipeID = null; MasterRecipeSettingsVersion = 3; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); if (HDR is { } hdr) HDR = hdr.Reset() with { Mode = hdr.Mode }; }
 
-    public void SetHDRMode(bool enabled, bool sourceIsHDR, IEnumerable<string>? conflicts = null, bool cameraRaw = false,
+    public void SetHDRMode(bool enabled, bool sourceIsHDR, bool cameraRaw = false,
         bool proRAW = false)
     {
         if (ProRAWDecodeVersion is { } storedVersion && storedVersion != CurrentProRAWDecodeVersion)
@@ -382,31 +382,13 @@ public sealed class Adjustments
         {
             if (proRAW && !cameraRaw) throw new HDRModeException(HDRModeFailure.UnsupportedSource);
             if (proRAW) ProRAWDecodeVersion = CurrentProRAWDecodeVersion;
-            // Camera RAW's existing SDR tools remain dormant while HDR is
-            // active. They must survive the mode switch instead of becoming a
-            // conversion conflict or being silently reset.
-            var blocked = conflicts?.ToArray() ?? (cameraRaw ? Array.Empty<string>() : HDRConflicts());
             var initial = cameraRaw ? new HDRSettings { Geometry = Geometry } : HDRSettings.FromSdr(this);
-            HDR = HDRSettings.Enabling(HDR, initial, sourceIsHDR, blocked, cameraRaw);
+            HDR = HDRSettings.Enabling(HDR, initial, sourceIsHDR);
             return;
         }
         if (HDR is { } hdr) HDR = hdr with { Mode = HDRMode.Sdr };
     }
 
-    private IEnumerable<string> HDRConflicts()
-    {
-        if (this[Parameter.Temperature] != 6500 || this[Parameter.Tint] != 0) yield return "white_balance";
-        if (MasterRecipeID != null) yield return "look";
-        if (!ToneControls.IsIdentity) yield return "tone_controls";
-        if (!Curve.IsIdentity || this[Parameter.ToneCurve] != 0) yield return "tone_curve";
-        if (!Hsl.IsIdentity) yield return "hsl";
-        if (!ColorGrading.IsDefault) yield return "color_grading";
-        if (!Atmosphere.IsIdentity) { yield return "clarity"; yield return "dehaze"; }
-        if (this[Parameter.Sharpening] != 0) yield return "sharpening";
-        if (AIDenoiseEnabled || Denoise != new DenoiseSettings() || DisplayChromaDenoise != 0) yield return "denoise";
-        if (Effects != new PhotoEffectsSettings()) yield return "effects";
-        if (Lens != new LensSettings()) yield return "lens_correction";
-    }
     internal Native.Request Request(string path, string? lut, int edge, string? output, int? longEdge = null)
     {
         if (longEdge is { } requested && !ExportSize.IsValid(requested))

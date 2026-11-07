@@ -351,7 +351,7 @@ struct HDRCameraDevelopmentSettings: Codable, Hashable {
 
 struct HDRSettings: Equatable, Codable {
     enum Mode: String, Codable { case sdr, hdr }
-    enum ModeError: Error, Equatable { case unsupportedSource, conflicts([String]), invalidSettings }
+    enum ModeError: Error, Equatable { case unsupportedSource, invalidSettings }
 
     var recordVersion: Int { cameraDevelopment == nil ? processingVersion : 8 }
     var processingVersion: Int {
@@ -473,15 +473,13 @@ struct HDRSettings: Equatable, Codable {
         if hasCameraDevelopment { cameraDevelopment = HDRCameraDevelopmentSettings() }
     }
 
-    static func enabling(stored: HDRSettings?, initial: HDRSettings, sourceIsHDR: Bool,
-                         conflicts: [String]) throws -> HDRSettings {
+    static func enabling(stored: HDRSettings?, initial: HDRSettings, sourceIsHDR: Bool) throws -> HDRSettings {
         guard sourceIsHDR else { throw ModeError.unsupportedSource }
         if var existing = stored {
             guard existing.isValid else { throw ModeError.invalidSettings }
             existing.mode = .hdr
             return existing
         }
-        guard conflicts.isEmpty else { throw ModeError.conflicts(conflicts) }
         var result = initial
         result.mode = .hdr; result.temperature = 6500; result.tint = 0
         guard result.isValid else { throw ModeError.invalidSettings }

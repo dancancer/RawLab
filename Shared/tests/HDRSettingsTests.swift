@@ -41,20 +41,16 @@ import Foundation
         require(!invalid.isValid, "HDR exposure range was not checked")
         var initial = HDRSettings(); initial.exposure = 2; initial.contrast = -25
         initial.highlights = 50; initial.geometry.quarterTurns = 2
-        let enabled = try HDRSettings.enabling(stored: nil, initial: initial, sourceIsHDR: true, conflicts: [])
+        let enabled = try HDRSettings.enabling(stored: nil, initial: initial, sourceIsHDR: true)
         require(enabled.exposure == 2 && enabled.contrast == -25 && enabled.highlights == 50 &&
             enabled.geometry.quarterTurns == 2 && enabled.temperature == 6500 && enabled.tint == 0,
             "first HDR conversion did not copy common UI values")
         do {
-            _ = try HDRSettings.enabling(stored: nil, initial: initial, sourceIsHDR: true, conflicts: ["white_balance", "look"])
-            fatalError("conflicting conversion was partially accepted")
-        } catch HDRSettings.ModeError.conflicts(let fields) { require(fields == ["white_balance", "look"], "conflict fields were lost") }
-        do {
-            _ = try HDRSettings.enabling(stored: nil, initial: initial, sourceIsHDR: false, conflicts: [])
+            _ = try HDRSettings.enabling(stored: nil, initial: initial, sourceIsHDR: false)
             fatalError("SDR source was elevated into HDR")
         } catch HDRSettings.ModeError.unsupportedSource {}
         settings.mode = .sdr
-        let restored = try HDRSettings.enabling(stored: settings, initial: initial, sourceIsHDR: true, conflicts: ["look"])
+        let restored = try HDRSettings.enabling(stored: settings, initial: initial, sourceIsHDR: true)
         require(restored.mode == .hdr && restored.exposure == settings.exposure && restored.tint == 42,
             "existing HDR snapshot was rebuilt from dormant SDR values")
         var reset = restored; reset.reset()

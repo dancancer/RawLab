@@ -155,14 +155,17 @@ struct HDRLookControls: View {
 
 struct HDRCameraDevelopmentControls: View {
     let settings: HDRCameraDevelopmentSettings
+    let supportsBayerDevelopment: Bool
     let apply: (HDRCameraDevelopmentSettings) -> Void
     @State private var draft: HDRCameraDevelopmentSettings
     @State private var choosingProfile = false
     @State private var importingProfile = false
     @State private var profileError: String?
 
-    init(settings: HDRCameraDevelopmentSettings, apply: @escaping (HDRCameraDevelopmentSettings) -> Void) {
+    init(settings: HDRCameraDevelopmentSettings, supportsBayerDevelopment: Bool,
+         apply: @escaping (HDRCameraDevelopmentSettings) -> Void) {
         self.settings = settings
+        self.supportsBayerDevelopment = supportsBayerDevelopment
         self.apply = apply
         _draft = State(initialValue: settings)
     }
@@ -187,11 +190,13 @@ struct HDRCameraDevelopmentControls: View {
                 Text(L10n.text("场景")).tag(HDRCameraDevelopmentSettings.ExposureReference.metadata)
                 Text(L10n.text("传感器基准")).tag(HDRCameraDevelopmentSettings.ExposureReference.sensor)
             }.accessibilityIdentifier("hdr.camera.exposure")
-            Picker(L10n.text("RAW 降噪"), selection: $draft.fbddLevel) {
-                Text(L10n.text("关闭")).tag(0)
-                Text("FBDD 1").tag(1)
-                Text("FBDD 2").tag(2)
-            }.accessibilityIdentifier("hdr.camera.fbdd")
+            if supportsBayerDevelopment {
+                Picker(L10n.text("RAW 降噪"), selection: $draft.fbddLevel) {
+                    Text(L10n.text("关闭")).tag(0)
+                    Text("FBDD 1").tag(1)
+                    Text("FBDD 2").tag(2)
+                }.accessibilityIdentifier("hdr.camera.fbdd")
+            }
             Toggle(L10n.text("畸变校正"), isOn: $draft.lensDistortion).accessibilityIdentifier("hdr.camera.distortion")
             Toggle(L10n.text("横向色差"), isOn: $draft.lensTCA).accessibilityIdentifier("hdr.camera.tca")
             Toggle(L10n.text("自动裁切"), isOn: $draft.lensAutoCrop).disabled(!draft.lensActive)

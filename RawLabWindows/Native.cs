@@ -31,6 +31,7 @@ internal static partial class Native
         public float ContentHeadroom;
         public uint HeadroomKind;
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32, ArraySubType = UnmanagedType.U1)] public byte[] SourceSha256;
+        public uint CameraCapabilities;
     }
     [StructLayout(LayoutKind.Sequential)]
     internal struct HDRDecodeOptions { public uint Version, StructSize, Intent, LongEdge; }

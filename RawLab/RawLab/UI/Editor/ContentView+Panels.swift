@@ -90,25 +90,21 @@ extension ContentView {
                     .accessibilityIdentifier("editor.cancelExport")
             } else {
                 Menu {
-                    let restricted = settings.isHDREditing && viewModel.proRAWExportRestricted
-                    if restricted {
-                        Text(L10n.text("此设备暂不支持导出 HDR 模式下的 ProRAW 照片。"))
-                    }
                     Button(L10n.text("保存当前照片")) {
                         singleExportFormat = settings.isHDREditing ? .hdrJPEG : .jpeg
                         exportLongEdge = nil
                         showingExportSize = true
                     }
-                    .disabled(restricted || !viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
+                    .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
                     if settings.isHDREditing {
                         Button(L10n.text("保存 SDR JPEG")) {
                             singleExportFormat = .jpeg; exportLongEdge=nil; showingExportSize=true
-                        }.disabled(restricted || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewFailed)
+                        }.disabled(editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewFailed)
                         if HDRImage.heifExportAvailable {
                             Button(BatchOutputFormat.hdrHEIF.title) {
                                 singleExportFormat = .hdrHEIF; exportLongEdge = nil; showingExportSize = true
                             }
-                            .disabled(viewModel.proRAWFullPairExportRestricted || !viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
+                            .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
                         }
                     }
                     Button(L10n.text("导出渲染型 DNG…")) {
@@ -116,11 +112,11 @@ extension ContentView {
                         exportLongEdge = nil
                         showingExportSize = true
                     }
-                    .disabled((settings.isHDREditing && viewModel.proRAWFullPairExportRestricted) || !viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
+                    .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
                     // 同时只有一个批量任务：已有任务时只给"查看"，不再并列一个同样打开旧任务的新建入口
                     if batchModel == nil {
                         Button(L10n.text("使用当前调整批量导出…"), action: openBatchExport)
-                            .disabled(restricted || !viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
+                            .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
                             .accessibilityIdentifier("editor.batchExport")
                     } else {
                         Button(L10n.text("查看批量任务…")) { showingBatchExport = true }
@@ -411,7 +407,9 @@ extension ContentView {
                             .id(viewModel.sourceRevision)
                             .disabled(isEditorDraftActive || editorBusy)
                         if viewModel.sourceSupportsCameraHDR, viewModel.sourceProRAW == nil, let hdr = settings.hdr {
-                            HDRCameraDevelopmentControls(settings: hdr.cameraDevelopmentSettings, apply: applyHDRCameraDevelopment)
+                            HDRCameraDevelopmentControls(settings: hdr.cameraDevelopmentSettings,
+                                supportsBayerDevelopment: viewModel.rawHDRSource?.supportsBayerDevelopment == true,
+                                apply: applyHDRCameraDevelopment)
                                 .id(viewModel.sourceRevision).disabled(isEditorDraftActive || editorBusy)
                         }
                     }

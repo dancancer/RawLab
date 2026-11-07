@@ -882,30 +882,15 @@ struct PhotoEditSession {
 
 
 extension Adjustments {
-    func withHDRMode(_ enabled: Bool, sourceIsHDR: Bool, hasLook: Bool, cameraRAW: Bool = false) throws -> Adjustments {
+    func withHDRMode(_ enabled: Bool, sourceIsHDR: Bool, cameraRAW: Bool = false) throws -> Adjustments {
         var result = self
         guard enabled else { result.hdr?.mode = .sdr; return result }
         var initial = HDRSettings()
-        if cameraRAW {
-            result.hdr = try HDRSettings.enabling(stored: hdr, initial: initial, sourceIsHDR: true, conflicts: [])
-            return result
+        if !cameraRAW {
+            initial.exposure = exposure; initial.contrast = contrast; initial.highlights = highlights
+            initial.shadows = shadows; initial.saturation = saturation; initial.geometry = geometry ?? GeometrySettings()
         }
-        initial.exposure = exposure; initial.contrast = contrast; initial.highlights = highlights
-        initial.shadows = shadows; initial.saturation = saturation; initial.geometry = geometry ?? GeometrySettings()
-        var conflicts: [String] = []
-        if temperature != 6500 || tint != 0 { conflicts.append("white_balance") }
-        if hasLook || masterRecipeID != nil { conflicts.append("look") }
-        if !toneSettings.isIdentity { conflicts.append("tone_controls") }
-        if toneCurve != 0 || !curveSettings.isIdentity { conflicts.append("tone_curve") }
-        if !hslSettings.isIdentity { conflicts.append("hsl") }
-        if !gradingSettings.isIdentity { conflicts.append("color_grading") }
-        if clarity != 0 { conflicts.append("clarity") }
-        if dehaze != 0 { conflicts.append("dehaze") }
-        if sharpening != 0 { conflicts.append("sharpening") }
-        if isDenoiseEnabled { conflicts.append("denoise") }
-        if effectSettings != PhotoEffectsSettings() { conflicts.append("effects") }
-        if lensSettings != LensCorrectionSettings() { conflicts.append("lens_correction") }
-        result.hdr = try HDRSettings.enabling(stored: hdr, initial: initial, sourceIsHDR: sourceIsHDR, conflicts: conflicts)
+        result.hdr = try HDRSettings.enabling(stored: hdr, initial: initial, sourceIsHDR: sourceIsHDR || cameraRAW)
         return result
     }
 }

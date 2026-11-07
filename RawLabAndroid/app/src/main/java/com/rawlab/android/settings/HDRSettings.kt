@@ -12,7 +12,6 @@ fun sourceDefaultSettings(isHDRSource: Boolean, cameraRaw: Boolean = false): Edi
 
 sealed class HDRModeError(message: String) : IllegalArgumentException(message) {
     data object UnsupportedSource : HDRModeError("HDR source is unavailable")
-    data class Conflicts(val fields: List<String>) : HDRModeError("Unsupported HDR fields: ${fields.joinToString(",")}")
     data object InvalidSettings : HDRModeError("Invalid HDR settings")
 }
 
@@ -200,8 +199,6 @@ data class HDRSettings(
     companion object {
         fun from(settings: EditSettings) = HDRSettings(
             exposure = settings.exposure,
-            temperature = settings.temperature,
-            tint = settings.tint,
             contrast = settings.contrast * 100f,
             highlights = settings.highlights * 100f,
             shadows = settings.shadows * 100f,
@@ -265,43 +262,18 @@ fun EditSettings.hdrDefaults(): EditSettings = applyHDRValues(
     requireNotNull(hdr).reset(), HDRMode.HDR, sdrSnapshot)
 
 /** Enable/disable HDR without changing the inactive mode's edit snapshot. */
-fun EditSettings.withHDRMode(enabled: Boolean, sourceIsHDR: Boolean, hasLook: Boolean = false,
+fun EditSettings.withHDRMode(enabled: Boolean, sourceIsHDR: Boolean,
     cameraRaw: Boolean = false, proRAW: Boolean = false): EditSettings {
     if (!sourceIsHDR && !cameraRaw) throw HDRModeError.UnsupportedSource
     if (enabled && proRAW) requireProRAWDecoder()
     val synchronized = synchronizeHDR()
     if (enabled == synchronized.isHDREditing) return synchronized
     if (enabled) {
-        val stored = synchronized.hdr
-        if (cameraRaw) {
-            // Camera RAW HDR is a separate post-demosaic path. Keep every SDR-only
-            // edit in the inactive snapshot and start the HDR request from neutral
-            // values (or the previously saved HDR snapshot).
-            val base = synchronized.copy(hdr = null, sdrSnapshot = null)
-            return base.applyHDRValues(stored ?: HDRSettings(), HDRMode.HDR, SettingsCodec.encode(base)).let {
-                if (proRAW) it.copy(proRAWDecodeVersion = com.rawlab.android.photo.HDRSourceInfo.PRORAW_DECODE_VERSION) else it
-            }
-        }
-        if (stored == null) {
-            val conflicts = buildList {
-                if (synchronized.temperature != 6500f || synchronized.tint != 0f) add("white_balance")
-                if (hasLook || synchronized.film != "neutral" || synchronized.recipeID != null || synchronized.strength != 1f) add("look")
-                if (synchronized.denoise != DenoiseSettings()) add("denoise")
-                if (synchronized.sharpening != 0f) add("sharpening")
-                if (synchronized.effects != PhotoEffectsSettings()) add("effects")
-                if (synchronized.displayChromaDenoise != 0) add("chroma_denoise")
-                if (!synchronized.hsl.isIdentity) add("hsl")
-                if (!synchronized.colorGrading.isDefault) add("color_grading")
-                if (!synchronized.curve.isDefault || synchronized.toneCurve != 0f) add("tone_curve")
-                if (synchronized.blackPoint != 0f || synchronized.whitePoint != 0f || synchronized.vibrance != 0f ||
-                    synchronized.clarity != 0f || synchronized.dehaze != 0f) add("refinement")
-                if (synchronized.lens.enabled) add("lens")
-            }
-            if (conflicts.isNotEmpty()) throw HDRModeError.Conflicts(conflicts)
-        }
         val base = synchronized.copy(hdr = null, sdrSnapshot = null)
-        val snapshot = SettingsCodec.encode(base)
-        return base.applyHDRValues(stored ?: HDRSettings.from(base), HDRMode.HDR, snapshot)
+        val initial = if (cameraRaw) HDRSettings() else HDRSettings.from(base)
+        val snapshot = base.applyHDRValues(synchronized.hdr ?: initial, HDRMode.HDR, SettingsCodec.encode(base))
+        return if (proRAW) snapshot.copy(proRAWDecodeVersion = com.rawlab.android.photo.HDRSourceInfo.PRORAW_DECODE_VERSION)
+        else snapshot
     }
     val stored = synchronized.hdr ?: return synchronized.copy(sdrSnapshot = null)
     val restored = synchronized.sdrSnapshotSettings() ?: synchronized.copy(hdr = null, sdrSnapshot = null)

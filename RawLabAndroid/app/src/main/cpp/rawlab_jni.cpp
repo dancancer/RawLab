@@ -782,9 +782,10 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeProbeCameraRaw(JNIEnv* env,
     try {
         UtfChars source(env, path);
         if (!source.chars || !*source.chars) throw std::invalid_argument("Missing camera RAW source path");
-        sony2fuji_hdr_source_info_v1 info{};
+        sony2fuji_hdr_camera_source_info_v1 camera{};
+        auto& info = camera.base;
         info.version = SONY2FUJI_HDR_VERSION;
-        info.struct_size = sizeof(info);
+        info.struct_size = sizeof(camera);
         sony2fuji_hdr_diagnostic_v1 diagnostic{};
         diagnostic.version = SONY2FUJI_HDR_VERSION;
         diagnostic.struct_size = sizeof(diagnostic);
@@ -794,7 +795,7 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeProbeCameraRaw(JNIEnv* env,
         if (status == SONY2FUJI_STATUS_UNSUPPORTED &&
             diagnostic.reason == SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW) return nullptr;
         if (status != SONY2FUJI_STATUS_OK) throw HDRStatusError(status, diagnostic);
-        std::array<uint8_t, 64> encoded{};
+        std::array<uint8_t, 68> encoded{};
         size_t offset = 0;
         auto append = [&](const void* value, size_t size) {
             if (offset + size > encoded.size()) throw std::runtime_error("HDR metadata overflow");
@@ -805,6 +806,7 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeProbeCameraRaw(JNIEnv* env,
         append(&info.protocol, sizeof(info.protocol)); append(&info.color_description, sizeof(info.color_description));
         append(&info.content_headroom, sizeof(info.content_headroom)); append(&info.headroom_kind, sizeof(info.headroom_kind));
         append(info.source_sha256, sizeof(info.source_sha256));
+        append(&camera.capabilities, sizeof(camera.capabilities));
         auto result = env->NewByteArray(static_cast<jsize>(encoded.size()));
         if (!result) return nullptr;
         env->SetByteArrayRegion(result, 0, static_cast<jsize>(encoded.size()), reinterpret_cast<const jbyte*>(encoded.data()));

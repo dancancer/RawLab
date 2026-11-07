@@ -27,9 +27,9 @@ struct Sony2FujiProcessor {
             throw HDRNativeError(status: SONY2FUJI_STATUS_UNSUPPORTED,
                 reason: UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU), field: UInt32(SONY2FUJI_HDR_FIELD_SESSION))
         }
-        if format != .hdrHEIF, let info = try HDRSourceInfo.probeRAW(url), let source = info.proRAW {
+        if format != .hdrHEIF, url.pathExtension.lowercased() == "dng",
+           let info = try HDRSourceInfo.probeRAW(url), info.proRAW != nil {
             try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion)
-            guard source.permitsStreamedJPEGExport else { throw ProcessorError.proRAWExportUnavailable }
             hdrSources.clear()
             try withRawSession(reuse: false, inputType: SONY2FUJI_INPUT_DISPLAY_BUFFER) { session in
                 _ = try ProRAWExporter.export(url: url, info: info, settings: settings, output: output,
@@ -58,9 +58,6 @@ struct Sony2FujiProcessor {
             throw HDRSettings.ModeError.unsupportedSource
         }
         if info.proRAW != nil { try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion) }
-        if previewLongEdge == nil, let proRAW = info.proRAW, !proRAW.permitsFullSizeExport {
-            throw ProcessorError.proRAWExportUnavailable
-        }
         if previewLongEdge == nil, info.proRAW != nil { hdrSources.clear() }
         let inputType = info.isCameraRAW ? SONY2FUJI_INPUT_RAW : SONY2FUJI_INPUT_DISPLAY_BUFFER
         return try withRawSession(reuse:false,inputType:inputType) { session in

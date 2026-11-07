@@ -213,14 +213,14 @@ final class EditorModel: ObservableObject {
     var aiControlsVisible: Bool {
         if settings.isHDREditing {
             return settings.hdrCameraAIEnabled || (RenderEngine.hdrCameraAIAvailable && RenderEngine.bundledAIModel != nil &&
-                RenderEngine.isHDRCameraAICandidate(file, info: rawHDRSource, settings: settings))
+                RenderEngine.isHDRCameraAICandidate(info: rawHDRSource, settings: settings))
         }
         return RenderEngine.aiAvailable || settings.aiDenoiseEnabled
     }
     var canStartAI: Bool {
         if settings.isHDREditing {
             return RenderEngine.hdrCameraAIAvailable && RenderEngine.bundledAIModel != nil &&
-                RenderEngine.isHDRCameraAICandidate(file, info: rawHDRSource, settings: settings) &&
+                RenderEngine.isHDRCameraAICandidate(info: rawHDRSource, settings: settings) &&
                 !exporting && geometryDraft == nil
         }
         return file != nil && !RenderEngine.isRasterInput(file) && RenderEngine.aiAvailable &&

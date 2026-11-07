@@ -128,7 +128,7 @@ internal sealed partial class RenderEngine
         var camera = settings.IsHDREditing ? settings.HDR!.CameraDevelopment : null;
         if (!settings.IsHDREditing || !settings.HDRCameraAIEnabled)
             return HDRSourceCache.Acquire(path,info,final,edge,session,camera,lensDatabase);
-        if (!PhotoInput.IsHDRCameraAICandidate(path,info))
+        if (!PhotoInput.IsHDRCameraAICandidate(info))
             throw new AIDenoiseException(Loc.Text("此照片或构建尚不能使用 AI 降噪。"));
         ConfigureAI(true);
         aiNativeOperationStarted=true;

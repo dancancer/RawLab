@@ -168,15 +168,11 @@ public:
         const auto cropped = data.sizes;
         data.sizes = headerSizes;
         data.rawdata.sizes = rawSizes;
-        const bool bayerDNG = data.idata.dng_version && cameraMake_ != "Apple" &&
-            data.idata.maker_index != LIBRAW_CAMERAMAKER_Apple;
-        const bool validatedSony = !data.idata.dng_version &&
-            data.idata.maker_index == LIBRAW_CAMERAMAKER_Sony &&
-            std::strcmp(data.idata.normalized_model, "ILCE-7CM2") == 0;
+        const bool xTrans = data.idata.colors == 3 && data.idata.filters == 9;
         const auto* decoder = rawProcessor_->unpack_function_name();
         sensorPixels = uint64_t(data.sizes.raw_width) * data.sizes.raw_height;
-        if (!bayerSource_ || (!validatedSony && !bayerDNG) || !decoder ||
-            std::strcmp(decoder, "jxl_dng_load_raw_placeholder()") == 0 || !whiteBalance_->available() ||
+        if ((!bayerSource_ && !xTrans) || !decoder ||
+            std::strcmp(decoder, "jxl_dng_load_raw_placeholder()") == 0 ||
             fujiRotate_ || !std::isfinite(data.sizes.pixel_aspect) || std::abs(data.sizes.pixel_aspect - 1) > .005 ||
             cropped.width < 2 || cropped.height < 2 || !sensorPixels || sensorPixels > 128000000 ||
             uint64_t(cropped.width) * cropped.height > sensorPixels)
@@ -225,7 +221,7 @@ public:
             return decodeError(result);
         }
         snapshotCalibration();
-        return bayerMetadataReady_ ? ErrorCode::Success : ErrorCode::InvalidFormat;
+        return ErrorCode::Success;
     }
 
     ErrorCode process(const RAWProcessOptions& options, ImageData& output) {
