@@ -23,12 +23,48 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.rawlab.android.R
+import com.rawlab.android.editor.PendingDcpImport
 import com.rawlab.android.editor.PendingLookCompatibility
 import com.rawlab.android.looks.*
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.album.AlbumScreen
 import java.util.Locale
+
+@Composable
+internal fun DcpImportDialog(pending: PendingDcpImport, finish: (DcpImportChoices?) -> Unit) {
+    var curve by rememberSaveable(pending.uri.toString()) { mutableStateOf(pending.choices?.toneCurve) }
+    var omitBlack by rememberSaveable(pending.uri.toString()) { mutableStateOf(pending.choices?.omitAutomaticBlack ?: false) }
+    val chooseCurve = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) curve = uri
+    }
+    AlertDialog(
+        onDismissRequest = { finish(null) },
+        title = { Text(stringResource(R.string.dcp_import_options)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(pending.name)
+                if (pending.needsCurve) {
+                    Text(stringResource(R.string.dcp_tone_curve))
+                    TextButton(onClick = { chooseCurve.launch(arrayOf("*/*")) }) {
+                        Text(curve?.lastPathSegment?.substringAfterLast('/') ?: stringResource(R.string.dcp_choose_curve))
+                    }
+                }
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Checkbox(checked = omitBlack, onCheckedChange = { omitBlack = it })
+                    Text(stringResource(R.string.dcp_omit_auto_black))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { finish(DcpImportChoices(curve, omitBlack)) },
+                enabled = (!pending.needsCurve || curve != null) && (!pending.needsBlackChoice || omitBlack)
+            ) { Text(stringResource(R.string.import_look)) }
+        },
+        dismissButton = { TextButton(onClick = { finish(null) }) { Text(stringResource(R.string.cancel)) } }
+    )
+}
 
 @Composable
 internal fun LUTCompatibilityDialog(pending: PendingLookCompatibility, photo: ImportedPhoto?, storage: PhotoStorage,

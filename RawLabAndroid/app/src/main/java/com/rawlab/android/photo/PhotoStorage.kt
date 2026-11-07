@@ -20,6 +20,10 @@ import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.looks.BundledLooks
 import com.rawlab.android.looks.DcpCompiler
+import com.rawlab.android.looks.DcpCompilationException
+import com.rawlab.android.looks.DcpFailureReason
+import com.rawlab.android.looks.DcpImportChoices
+import com.rawlab.android.looks.readDcpInput
 import com.rawlab.android.looks.LookLibrary
 import com.rawlab.android.looks.LookValidator
 import com.rawlab.android.looks.ManagedLook
@@ -148,15 +152,21 @@ class PhotoStorage(
     }
     fun builtinLookIDs(): Map<String, String> = films.mapNotNull { film -> film.fileName?.let { it to film.id } }.toMap()
 
-    private fun lookSourceName(uri: Uri): String = runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
+    internal fun lookSourceName(uri: Uri): String = runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
             if (it.moveToFirst()) it.getString(0) else null
         } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Look"
 
-    fun importLook(uri: Uri, compatibility: LUTCompatibility? = null): ManagedLook {
+    fun importLook(uri: Uri, compatibility: LUTCompatibility? = null, dcp: DcpImportChoices? = null): ManagedLook {
         val name = lookSourceName(uri)
         try {
+            val curve = dcp?.toneCurve?.let { curveUri ->
+                val input = resolver.openInputStream(curveUri) ?: throw IOException("Cannot open tone curve")
+                input.use { readDcpInput(it, 1024 * 1024) }.also {
+                    if (it.isEmpty()) throw DcpCompilationException(DcpFailureReason.INVALID_TONE_CURVE)
+                }
+            }
             val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot open look")
-            return stream.use { lookLibrary.importLook(it, name, compatibility) }
+            return stream.use { lookLibrary.importLook(it, name, compatibility, curve, dcp?.omitAutomaticBlack == true) }
         } catch (error: Exception) {
             throw IOException("${name}: ${error.message ?: error.javaClass.simpleName}", error)
         }

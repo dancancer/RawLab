@@ -122,10 +122,11 @@ This display-referred path reuses the reference CPU stages. GPU Auto explicitly
 falls back to CPU and Force returns unsupported until the scene-view GPU
 shaders have a matching display-input mode. Rendered DNG output preserves the
 result as output-referred float RGB; it does not turn an 8-bit source into RAW/HDR.
-The Apple adapter uses ImageIO. Windows has a separate WIC adapter for JPEG/PNG
-and classic single-page RGB8 TIFF, verified on Windows rather than inferred from
-Mac results; HEIF and BigTIFF are not enabled.
-Windows chooses JPEG/PNG/TIFF validation from the file signature, so a misleading
+The Apple adapter uses ImageIO. Windows uses WIC for JPEG/PNG and classic
+single-page RGB8 TIFF and its bundled libheif for opaque 8-bit SDR HEIF. It
+converts tagged RGB to sRGB and treats untagged RGB as sRGB. BigTIFF remains
+unsupported.
+Windows chooses JPEG/PNG/TIFF/HEIF validation from the file signature, so a misleading
 supported extension does not select the wrong metadata parser. Windows and
 Android accept a validated MPF baseline primary image with only VGA/Full HD large
 thumbnails, decoding the primary image at full resolution. Both continue to reject
@@ -557,7 +558,7 @@ default to Auto black require an explicit omission policy. Triple-illuminant HSM
 HDR/spatial/RGB stages and full Adobe rendering remain unsupported.
 
 Application DCP import uses one portable C++ compiler through
-`sony2fuji_compile_dcp`, separate from rendering. The additive C ABI accepts
+`sony2fuji_compile_dcp` and `sony2fuji_compile_dcp_with_options`, separate from rendering. The C ABI accepts
 bounded input bytes and a source filename and returns an owned RLOOK blob plus
 a stable, localized-by-client rejection reason. Release blobs with
 `sony2fuji_release_blob`; existing request and image-buffer layouts are unchanged.
@@ -568,8 +569,10 @@ rejection returns `UNSUPPORTED` with a typed reason; invalid API arguments and
 allocation failures use `INVALID_ARGUMENT` and `OUT_OF_MEMORY`. `source_name` is
 a UTF-8 filename for metadata, not a path used to read or write files. Input
 bytes are read-only and limited to 128 MiB; output is limited to 64 MiB.
-Automatic import is deliberately stricter than the legacy preparation CLI:
-it requires an embedded tone curve and explicit `DefaultBlackRender=None`.
+Automatic import requires an embedded tone curve and explicit
+`DefaultBlackRender=None`. The options entry point also accepts a JSON curve
+of up to 1 MiB when the embedded curve is missing. An explicit flag can omit
+`DefaultBlackRender=Auto`.
 Import never substitutes the donor profile for the target RAW calibration/WB,
 and it does not enable a new GPU backend or change rendering results.
 

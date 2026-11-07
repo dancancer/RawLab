@@ -87,6 +87,24 @@ internal static class LookImportChecks
             Check(identity == "managed:" + imported.Id && library.ResolveIdentity(identity) == imported.Path,
                 "managed DCP edits persist a stable look identity instead of the source path");
 
+            var optionsSource = Path.Combine(root, "Camera options.dcp");
+            File.WriteAllBytes(optionsSource, [11, 12, 13]);
+            DcpImportOptions? observedOptions = null;
+            var optionsCurve = Encoding.UTF8.GetBytes("[[0,0],[0.5,0.35],[1,1]]");
+            var optionsLibrary = new LookLibrary(
+                Path.Combine(root, "options-library"),
+                compileDcpWithOptions: (_, options) =>
+                {
+                    observedOptions = options;
+                    return rlook;
+                },
+                validateLook: _ => new LookValidation(LookFormat.Rlook, 1));
+            _ = optionsLibrary.ImportLook(optionsSource,
+                dcpOptions: new DcpImportOptions(optionsCurve, OmitAutomaticBlack: true));
+            Check(observedOptions is { OmitAutomaticBlack: true, ToneCurveJson: not null } &&
+                  observedOptions.Value.ToneCurveJson!.SequenceEqual(optionsCurve),
+                "DCP import forwards the explicit curve and automatic-black choice to compilation");
+
             var snapshotRoot = Path.Combine(root, "snapshot");
             var snapshotSource = Path.Combine(snapshotRoot, "snapshot.dcp");
             Directory.CreateDirectory(snapshotRoot);

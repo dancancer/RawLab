@@ -67,17 +67,26 @@ std::vector<uint8_t> color(View profile) {
     unsupported();
 }
 }
-std::vector<uint8_t> heifRGBProfile(const heif_image_handle* image) {
+std::vector<uint8_t> heifRGBProfile(const heif_image_handle* image,bool allowMissing) {
     const auto size=heif_image_handle_get_raw_color_profile_size(image);
     if(size) {
         if(size>1024*1024)malformed();std::vector<uint8_t> result(size);
         if(heif_image_handle_get_raw_color_profile(image,result.data()).code!=heif_error_Ok)malformed();return result;
     }
     heif_color_profile_nclx* description=nullptr;
-    if(heif_image_handle_get_nclx_color_profile(image,&description).code!=heif_error_Ok || !description)unsupported();
-    const auto primaries=description->color_primaries;
-    const auto transfer=description->transfer_characteristics;
-    heif_nclx_color_profile_free(description);return nclx(uint16_t(primaries),uint16_t(transfer));
+    const auto profileError=heif_image_handle_get_nclx_color_profile(image,&description);
+    if(profileError.code!=heif_error_Ok || !description) {
+        if(allowMissing && profileError.code==heif_error_Color_profile_does_not_exist) return {};
+        unsupported();
+    }
+    auto primaries=description->color_primaries;
+    auto transfer=description->transfer_characteristics;
+    heif_nclx_color_profile_free(description);
+    if (allowMissing) {
+        if (primaries==heif_color_primaries_unspecified) primaries=heif_color_primaries_ITU_R_BT_709_5;
+        if (transfer==heif_transfer_characteristic_unspecified) transfer=heif_transfer_characteristic_IEC_61966_2_1;
+    }
+    return nclx(uint16_t(primaries),uint16_t(transfer));
 }
 std::vector<uint8_t> heifItemRGBProfile(const void* data,size_t size,uint32_t item) {
     // 稳定 libheif API 不暴露 tmap 的 colr 内容；只解析其有界 ipco/ipma 关联。

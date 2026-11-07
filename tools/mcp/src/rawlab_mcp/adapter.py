@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import asdict, dataclass
+import errno
 import json
 import logging
 import os
@@ -14,10 +15,35 @@ from .config import ServerConfig
 
 
 COMMANDS = {"capabilities", "validate_recipe", "info", "preview", "export"}
-RECIPE_VERSIONS = {1, 2, 3, 4, 5, 6}
+RECIPE_VERSIONS = {1, 2, 3, 4, 5, 6, 7}
 MAX_JSON_BYTES = 4 * 1024 * 1024
 IO_ERROR_STATUS = 3
 logger = logging.getLogger(__name__)
+
+
+def _publish(staged, destination):
+    """Publish a completed stage without replacing an existing destination."""
+    if os.name == "nt":
+        # Windows rename fails with FileExistsError instead of replacing the target.
+        # Staging is created below the destination's canonical parent, so this is
+        # an atomic same-volume move and also works on volumes without hard links.
+        os.rename(staged, destination)
+        return
+    try:
+        os.link(staged, destination)
+        return
+    except OSError as error:
+        if error.errno not in (errno.ENOTSUP, errno.EOPNOTSUPP, errno.EPERM):
+            raise
+    # FAT volumes may lack hard links. Reserve the filename before copying.
+    with staged.open("rb") as source:
+        output = destination.open("xb")
+        try:
+            with output:
+                shutil.copyfileobj(source, output)
+        except OSError:
+            destination.unlink(missing_ok=True)
+            raise
 
 
 class AdapterError(Exception):
@@ -351,8 +377,7 @@ class CliAdapter:
                 raise AdapterError("Output directory changed during rendering", "output_io_error") from e
             if current_output.canonical != output.canonical:
                 raise AdapterError("Output directory changed during rendering", "output_io_error")
-            # 同卷 hard link 是无覆盖的原子发布；目标已存在时不会替换任何文件。
-            os.link(staged, output.lexical)
+            _publish(staged, output.lexical)
             return Envelope(command, True, {**result.result, "output_path": str(output.lexical)})
         except AdapterError as e:
             return failure(command, e)

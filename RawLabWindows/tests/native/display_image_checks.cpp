@@ -307,6 +307,32 @@ void rejectPreviewZeroEdge(const fs::path& path) {
     check(clean, "Display preview rejects a zero edge before decoding");
 }
 
+void checkSdrHeifFromEnvironment() {
+    const char* value = std::getenv("RAWLAB_TEST_SDR_HEIF");
+    if (!value || !*value) return;
+    const auto path = fs::u8path(value);
+    const char* sizeValue = std::getenv("RAWLAB_TEST_SDR_HEIF_SIZE");
+    if (!sizeValue || !*sizeValue)
+        throw std::runtime_error("RAWLAB_TEST_SDR_HEIF_SIZE must be WxH");
+    const std::string dimensions(sizeValue);
+    const auto separator = dimensions.find('x');
+    if (separator == std::string::npos)
+        throw std::runtime_error("RAWLAB_TEST_SDR_HEIF_SIZE must be WxH");
+    const auto width = std::stoul(dimensions.substr(0, separator));
+    const auto height = std::stoul(dimensions.substr(separator + 1));
+    if (width == 0 || height == 0)
+        throw std::runtime_error("RAWLAB_TEST_SDR_HEIF_SIZE must be WxH");
+    const auto pixels = decode(path, width, height);
+    const auto edge = std::min(width, height);
+    const auto shortEdge = std::max<unsigned long>(1,
+        (std::min(width, height) * edge + std::max(width, height) / 2) /
+            std::max(width, height));
+    checkPreview(path, edge, width, height,
+        width >= height ? edge : shortEdge,
+        width >= height ? shortEdge : edge);
+    check(!pixels.empty(), "Bundled libheif imports an ordinary SDR HEIF as display-sRGB");
+}
+
 unsigned orientedWidth(unsigned orientation) {
     return orientation >= 5 ? 8 : 12;
 }
@@ -479,6 +505,7 @@ int main(int argc, char** argv) {
         }
         check(true, "Untagged RGB values assume sRGB without an extra transfer function");
         checkPreview(png, 6, 12, 8, 6, 4);
+        checkSdrHeifFromEnvironment();
         chunk(png, root / "orientation-6.png", {'e','X','I','f'}, {
             'I','I',42,0,8,0,0,0,1,0,
             0x12,0x01,3,0,1,0,0,0,6,0,0,0,

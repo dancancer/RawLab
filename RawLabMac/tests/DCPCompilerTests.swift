@@ -40,6 +40,21 @@ struct DCPCompilerTests {
         }
         rejects(DCPTestFixtures.make(missing: [50940]), reason: .missingToneCurve, "missing tone is not inferred as identity")
         rejects(DCPTestFixtures.make(missing: [51110]), reason: .automaticBlack, "missing black policy is Adobe Auto, not None")
+        let externalTone = DCPImportOptions(toneCurveJSON: Data("[[0,0],[1,1]]".utf8))
+        let compiledWithExternalTone = try DCPCompiler.compile(
+            data: DCPTestFixtures.make(missing: [50940]), sourceName: "external-tone.dcp", options: externalTone)
+        check(compiledWithExternalTone.starts(with: Data("RLOOKDCP".utf8)),
+              "missing embedded tone accepts an explicit JSON x/y-pairs curve")
+        let compiledWithoutAutomaticBlack = try DCPCompiler.compile(
+            data: DCPTestFixtures.make(missing: [51110]), sourceName: "omit-black.dcp",
+            options: DCPImportOptions(omitAutomaticBlack: true))
+        check(compiledWithoutAutomaticBlack.starts(with: Data("RLOOKDCP".utf8)),
+              "automatic black can be explicitly omitted")
+        let compiledWithBothOptions = try DCPCompiler.compile(
+            data: DCPTestFixtures.make(missing: [50940, 51110]), sourceName: "external-tone-omit-black.dcp",
+            options: DCPImportOptions(toneCurveJSON: Data("[[0,0],[1,1]]".utf8), omitAutomaticBlack: true))
+        check(compiledWithBothOptions.starts(with: Data("RLOOKDCP".utf8)),
+              "missing tone and automatic black accept both explicit DCP options")
         rejects(DCPTestFixtures.make(override: [51110: DCPTestFixtures.uint32(0)]), reason: .automaticBlack, "explicit automatic black is unsupported")
         rejects(DCPTestFixtures.make(missing: [50965]), reason: .invalidCalibration, "missing ForwardMatrix is explained")
         rejects(DCPTestFixtures.make(missing: [50779]), reason: .invalidCalibration, "D65 must be explicit")

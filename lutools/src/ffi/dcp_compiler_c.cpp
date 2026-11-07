@@ -45,17 +45,28 @@ sony2fuji_dcp_error toCError(sony2fuji::DcpCompilerError error) {
 extern "C" sony2fuji_status sony2fuji_compile_dcp(
     const void* data, size_t size_bytes, const char* source_name,
     sony2fuji_blob* out_blob, sony2fuji_dcp_error* out_reason) {
+    return sony2fuji_compile_dcp_with_options(data, size_bytes, source_name, nullptr, 0, 0, out_blob, out_reason);
+}
+
+extern "C" sony2fuji_status sony2fuji_compile_dcp_with_options(
+    const void* data, size_t size_bytes, const char* source_name,
+    const void* tone_curve_json, size_t tone_curve_size, uint32_t omit_automatic_black,
+    sony2fuji_blob* out_blob, sony2fuji_dcp_error* out_reason) {
     if (out_blob) {
         std::free(out_blob->data);
         out_blob->data = nullptr;
         out_blob->size_bytes = 0;
     }
     if (out_reason) *out_reason = SONY2FUJI_DCP_ERROR_NONE;
-    if (!out_blob || !out_reason || !validUtf8Filename(source_name) || (size_bytes > 0 && !data))
+    if (!out_blob || !out_reason || !validUtf8Filename(source_name) ||
+        (size_bytes > 0 && !data) || (tone_curve_size > 0 && !tone_curve_json))
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     try {
         sony2fuji::DcpCompilerError error = sony2fuji::DcpCompilerError::None;
-        std::vector<uint8_t> result = sony2fuji::compileDcp(data, size_bytes, source_name, error);
+        const auto curve = tone_curve_size
+            ? std::string_view(static_cast<const char*>(tone_curve_json), tone_curve_size)
+            : std::string_view{};
+        std::vector<uint8_t> result = sony2fuji::compileDcp(data, size_bytes, source_name, error, curve, omit_automatic_black != 0);
         if (result.empty()) {
             *out_reason = toCError(error == sony2fuji::DcpCompilerError::None ?
                                    sony2fuji::DcpCompilerError::Malformed : error);

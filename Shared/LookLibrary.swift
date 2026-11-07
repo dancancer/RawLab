@@ -244,7 +244,8 @@ final class LookLibrary {
 
     func url(for look: UserLook) -> URL { directory.appendingPathComponent(look.fileName) }
 
-    func importLook(from source: URL, compatibility: LUTCompatibility? = nil) throws -> UserLook {
+    func importLook(from source: URL, compatibility: LUTCompatibility? = nil,
+                    dcpOptions: DCPImportOptions? = nil) throws -> UserLook {
         let access = source.startAccessingSecurityScopedResource()
         defer { if access { source.stopAccessingSecurityScopedResource() } }
         let suffix = source.pathExtension.lowercased()
@@ -261,7 +262,8 @@ final class LookLibrary {
             guard ["cube", "vlt"].contains(suffix) else { throw LookLibraryError.invalidLook }
             try compatibility.prepare(source).write(to: staging, options: .withoutOverwriting)
         } else if suffix == "dcp" {
-            try DCPCompiler.compile(source: source).write(to: staging, options: .withoutOverwriting)
+            try DCPCompiler.compile(source: source, options: dcpOptions ?? .init())
+                .write(to: staging, options: .withoutOverwriting)
         } else {
             try manager.copyItem(at: source, to: staging)
         }

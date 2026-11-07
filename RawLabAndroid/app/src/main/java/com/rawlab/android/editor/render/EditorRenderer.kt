@@ -93,6 +93,11 @@ internal class EditorRenderer(
                 val record = restore(photo.identity)
                 var restored = record?.settings ?: if (photo.hdrSource != null)
                     photo.defaultEditSettings() else null
+                if (record == null && work.x3fModeOverride == null && photo.isX3f) {
+                    val mode = NativeProcessor.x3fDefaultMode(photo.file)
+                    if (mode == com.rawlab.android.settings.X3fMode.LEGACY)
+                        restored = (restored ?: EditSettings()).copy(x3fMode = mode)
+                }
                 if (work.x3fModeOverride != null) restored = (restored ?: EditSettings()).copy(x3fMode = work.x3fModeOverride)
                 canRetryLegacy = photo.isX3f && (restored ?: EditSettings()).x3fMode == com.rawlab.android.settings.X3fMode.NORMAL
                 if (restored != null && !restored.isHDREditing && runCatching { storage.lookPath(restored) }.isFailure) {

@@ -1433,6 +1433,24 @@ sony2fuji_status sony2fuji_session_set_processing_version(
 
 int32_t sony2fuji_x3f_available(void) { return sony2fuji::x3fRenderingAvailable() ? 1 : 0; }
 
+sony2fuji_status sony2fuji_x3f_default_mode(const char* input_path, sony2fuji_x3f_mode* mode) {
+    if (!input_path || !*input_path || !mode) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    try {
+        sony2fuji::RAWProcessor processor;
+        const auto loaded = processor.loadFile(input_path, sony2fuji::X3fMode::Normal);
+        if (loaded != sony2fuji::ErrorCode::Success) return mapError(loaded);
+        if (!sony2fuji::hasX3fSignature(input_path)) return SONY2FUJI_STATUS_UNSUPPORTED;
+        *mode = sony2fuji::x3fModelSupported(processor.getCameraModel()) ? SONY2FUJI_X3F_NORMAL : SONY2FUJI_X3F_LEGACY;
+        return SONY2FUJI_STATUS_OK;
+    } catch (const sony2fuji::ProcessingCancelled&) {
+        return SONY2FUJI_STATUS_CANCELLED;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (const std::exception&) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
+}
+
 sony2fuji_status sony2fuji_session_set_x3f_mode(sony2fuji_session* session, sony2fuji_x3f_mode mode) {
     if (!session || (mode != SONY2FUJI_X3F_LEGACY && mode != SONY2FUJI_X3F_NORMAL))
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;

@@ -135,7 +135,7 @@ class AgentCommands(unittest.TestCase):
                 if sys.platform in ("darwin", "win32"):
                     self.assertEqual(result["result"]["raster_input"]["max_pixels"], 128_000_000)
                 if sys.platform == "win32":
-                    self.assertEqual(result["result"]["raster_input"]["formats"], ["jpeg", "png", "tiff"])
+                    self.assertEqual(result["result"]["raster_input"]["formats"], ["jpeg", "png", "tiff", "heif"])
                 self.assertEqual(set(features), {"wavelet_denoise", "chroma_denoise", "lens_correction"})
                 self.assertTrue(all(isinstance(value, bool) for value in features.values()))
         self.assertFalse((self.root / "edited.jpg").exists())

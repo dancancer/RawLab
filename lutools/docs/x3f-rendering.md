@@ -4,8 +4,9 @@
 
 `legacy` uses the released LibRaw path, including its false-color appearance.
 `normal-v1` uses the separate pinned X3F renderer. C/C++ sessions default to
-legacy. Fresh edits on all four clients select normal; persisted records missing `x3fMode` decode
-as legacy. Unknown identities are rejected. Reset preserves the selected mode;
+legacy. For a new edit, all four clients select normal when that renderer handles
+the camera family and legacy for other X3F sources. Persisted records missing
+`x3fMode` decode as legacy. Unknown identities are rejected. Reset preserves the selected mode;
 preview, final export, batch snapshots and CLI recipes carry it explicitly.
 Changing mode keeps ordinary edits and look selection. Explicitly switching to
 normal mode disables incompatible AI RAW replacement in the same edit transaction. Decoder revision and mode
@@ -63,7 +64,7 @@ for this display-referred path without implementing its separate tone contract.
 | DP1S | CAMF scene calibration and a frozen empirical response | EV [-8,8], positive RGB color-wheel gains, contrast/highlights/shadows/saturation [-0.5,0.5], Fill Light [-0.5,0.6]; zero sharpness, supported color rendering; unknown nonzero controls rejected |
 | Merrill | Pinned native SPP-style renderer | Supported as-shot CAMF modes (Standard, Vivid, Neutral, Portrait, Landscape, FOV Classic Blue); saved exposure, contrast, shadows, highlights and saturation in [-2,2] within the native tone extent. Zero sharpness and Fill Light, identity color wheel. |
 | Quattro | Pinned native AsShot renderer | Camera AsShot when SPPA is absent, or the exact verified neutral SPPA parameter profile |
-| Other Classic cameras | Unavailable in normal-v1 | Explicit error; legacy remains selectable |
+| Other Classic cameras | LibRaw legacy by default | Explicit normal requests report an error |
 
 Family dispatch does not establish calibration for every camera body. In particular,
 the DP1S response must never be applied to SD14, SD15, DP1 or DP2 merely because

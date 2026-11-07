@@ -41,10 +41,14 @@ struct LookImportTests {
         let cube = root.appendingPathComponent("Warm custom.cube")
         let dcp = root.appendingPathComponent("Camera custom.dcp")
         let unsupportedDCP = root.appendingPathComponent("Missing curve.dcp")
+        let automaticBlackDCP = root.appendingPathComponent("Automatic black.dcp")
+        let bothOptionsDCP = root.appendingPathComponent("Missing curve and black.dcp")
         try writeCube(to: cube)
         let dcpBytes = DCPTestFixtures.make()
         try dcpBytes.write(to: dcp)
         try DCPTestFixtures.make(missing: [50940]).write(to: unsupportedDCP)
+        try DCPTestFixtures.make(missing: [51110]).write(to: automaticBlackDCP)
+        try DCPTestFixtures.make(missing: [50940, 51110]).write(to: bothOptionsDCP)
 
         let coordinator = LookImportCoordinator(
             directory: root.appendingPathComponent("library", isDirectory: true),
@@ -82,6 +86,54 @@ struct LookImportTests {
         try check(LookImportSelection.decision(previousID: previousSelection, imported: []) == .preserve(previousSelection),
                   "cancelled batch preserves the previous selection")
 
+        let curvePrompted = try awaitResult { completion in
+            coordinator.importLooks(from: [unsupportedDCP], dcpOptionsPrompt: { _, reason, reply in
+                try? check(reason == .missingToneCurve, "missing embedded tone opens the DCP options prompt")
+                reply(DCPImportOptions(toneCurveJSON: Data("[[0,0],[1,1]]".utf8)))
+            }, completion: completion)
+        }
+        try check(curvePrompted.imported.count == 1 && curvePrompted.failures.isEmpty,
+                  "a supplied JSON x/y-pairs curve resumes DCP import")
+        let blackPrompted = try awaitResult { completion in
+            coordinator.importLooks(from: [automaticBlackDCP], dcpOptionsPrompt: { _, reason, reply in
+                try? check(reason == .automaticBlack, "automatic black opens the DCP options prompt")
+                reply(DCPImportOptions(omitAutomaticBlack: true))
+            }, completion: completion)
+        }
+        try check(blackPrompted.imported.count == 1 && blackPrompted.failures.isEmpty,
+                  "explicitly omitting automatic black resumes DCP import")
+        let bothOptionsPrompted = try awaitResult { completion in
+            coordinator.importLooks(from: [bothOptionsDCP], dcpOptionsPrompt: { _, reason, reply in
+                try? check(reason == .missingToneCurve, "combined DCP options start at the missing-tone prompt")
+                reply(DCPImportOptions(toneCurveJSON: Data("[[0,0],[1,1]]".utf8), omitAutomaticBlack: true))
+            }, completion: completion)
+        }
+        try check(bothOptionsPrompted.imported.count == 1 && bothOptionsPrompted.failures.isEmpty,
+                  "one DCP options prompt can provide both the curve and black policy")
+        var retryPromptCount = 0
+        let retriedBothOptions = try awaitResult { completion in
+            coordinator.importLooks(from: [bothOptionsDCP], dcpOptionsPrompt: { _, reason, reply in
+                retryPromptCount += 1
+                if retryPromptCount == 1 {
+                    try? check(reason == .missingToneCurve, "combined DCP retry starts with the missing-tone prompt")
+                    reply(DCPImportOptions(toneCurveJSON: Data("[[0,0],[1,1]]".utf8)))
+                } else {
+                    try? check(reason == .automaticBlack, "combined DCP retry asks for the remaining black policy")
+                    reply(DCPImportOptions(omitAutomaticBlack: true))
+                }
+            }, completion: completion)
+        }
+        try check(retryPromptCount == 2 && retriedBothOptions.imported.count == 1 && retriedBothOptions.failures.isEmpty,
+                  "a second DCP options prompt preserves the selected curve")
+        let cancelledDCP = try awaitResult { completion in
+            coordinator.importLooks(from: [automaticBlackDCP], dcpOptionsPrompt: { _, _, reply in
+                reply(nil)
+            }, completion: completion)
+        }
+        try check(cancelledDCP.imported.isEmpty && cancelledDCP.failures.isEmpty &&
+                  LookImportSelection.decision(previousID: previousSelection, imported: cancelledDCP.imported) == .preserve(previousSelection),
+                  "cancelling DCP options keeps the current look selected")
+
         let restored = LookImportCoordinator(
             directory: root.appendingPathComponent("library", isDirectory: true),
             delivery: { $0() })
@@ -89,7 +141,8 @@ struct LookImportTests {
         guard case .success(let snapshot) = loaded else {
             throw LookImportTestError.message("managed look startup snapshot failed")
         }
-        try check(snapshot.map { $0.record.id } == result.imported.map { $0.record.id } &&
+        let expectedManagedIDs = (result.imported + curvePrompted.imported + blackPrompted.imported + bothOptionsPrompted.imported + retriedBothOptions.imported).map { $0.record.id }
+        try check(snapshot.map { $0.record.id } == expectedManagedIDs &&
                   snapshot.allSatisfy { manager.fileExists(atPath: $0.url.path) },
                   "managed look IDs and files survive a fresh startup snapshot")
         let unknown = root.appendingPathComponent("Unknown.cube")

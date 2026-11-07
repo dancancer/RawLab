@@ -1,4 +1,5 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "platform/hdr_heif.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -97,8 +98,7 @@ std::string lowerExtension(const char* path) {
 
 bool knownUnsupportedExtension(const std::string& extension) {
     return extension == "dng" || extension == "bmp" || extension == "gif" ||
-        extension == "webp" || extension == "heic" || extension == "heif" ||
-        extension == "avif" || extension == "jxl";
+        extension == "webp" || extension == "avif" || extension == "jxl";
 }
 
 void requireRegularFile(const std::wstring& path) {
@@ -760,11 +760,11 @@ void scanTiff(const std::wstring& path, MetadataInfo& info) {
         fail(SONY2FUJI_STATUS_UNSUPPORTED);
 }
 
-enum class ContainerKind { Jpeg, Png, Tiff };
+enum class ContainerKind { Jpeg, Png, Tiff, Heif };
 
 ContainerKind containerKind(const std::wstring& path) {
     BinaryReader reader(path);
-    std::array<uint8_t, 8> header{};
+    std::array<uint8_t, 12> header{};
     reader.readExact(header.data(), header.size());
     static constexpr uint8_t png[] = {137, 80, 78, 71, 13, 10, 26, 10};
     if (std::memcmp(header.data(), png, sizeof(png)) == 0) return ContainerKind::Png;
@@ -772,6 +772,13 @@ ContainerKind containerKind(const std::wstring& path) {
     if ((header[0] == 'I' && header[1] == 'I' && (header[2] == 42 || header[2] == 43) && header[3] == 0) ||
         (header[0] == 'M' && header[1] == 'M' && header[2] == 0 && (header[3] == 42 || header[3] == 43)))
         return ContainerKind::Tiff;
+    if (std::memcmp(header.data() + 4, "ftyp", 4) == 0) {
+        const auto* brand = header.data() + 8;
+        if (std::memcmp(brand, "heic", 4) == 0 || std::memcmp(brand, "heix", 4) == 0 ||
+            std::memcmp(brand, "hevc", 4) == 0 || std::memcmp(brand, "hevx", 4) == 0 ||
+            std::memcmp(brand, "mif1", 4) == 0 || std::memcmp(brand, "msf1", 4) == 0)
+            return ContainerKind::Heif;
+    }
     fail(SONY2FUJI_STATUS_UNSUPPORTED);
 }
 
@@ -1082,10 +1089,34 @@ WICBitmapTransformOptions transformForOrientation(uint32_t orientation) {
 }
 
 struct PreparedImage {
+    std::vector<uint8_t> ownedPixels;
     ComPtr<IWICBitmapSource> oriented;
     UINT orientedWidth = 0;
     UINT orientedHeight = 0;
 };
+
+PreparedImage prepareHeifImage(IWICImagingFactory* factory, const char* originalPath) {
+    auto decoded = sony2fuji::hdr::decodeSDRHEIFFile(originalPath);
+    if (!decoded.width || !decoded.height ||
+        decoded.width > UINT32_MAX / 4u ||
+        static_cast<uint64_t>(decoded.width) > kMaxDisplayPixels / decoded.height)
+        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+    const auto stride = static_cast<size_t>(decoded.width) * 4u;
+    const auto total = stride * static_cast<size_t>(decoded.height);
+    if (total / stride != decoded.height || decoded.pixels.size() != total ||
+        total > std::numeric_limits<UINT>::max())
+        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+    ComPtr<IWICBitmap> bitmap;
+    checkHr(factory->CreateBitmapFromMemory(decoded.width, decoded.height,
+        GUID_WICPixelFormat32bppRGBA, static_cast<UINT>(stride), static_cast<UINT>(total),
+        decoded.pixels.data(), &bitmap));
+    PreparedImage result;
+    result.ownedPixels = std::move(decoded.pixels);
+    result.orientedWidth = decoded.width;
+    result.orientedHeight = decoded.height;
+    checkHr(bitmap.As(&result.oriented));
+    return result;
+}
 
 PreparedImage prepareImage(IWICImagingFactory* factory, const std::wstring& path,
                            const char* originalPath) {
@@ -1095,6 +1126,8 @@ PreparedImage prepareImage(IWICImagingFactory* factory, const std::wstring& path
         fail(SONY2FUJI_STATUS_UNSUPPORTED);
 
     const auto kind = containerKind(path);
+    if (kind == ContainerKind::Heif)
+        return prepareHeifImage(factory, originalPath);
     MetadataInfo metadata;
     if (kind == ContainerKind::Png) scanPng(path, metadata);
     if (kind == ContainerKind::Jpeg) scanJpeg(path, metadata);
@@ -1234,6 +1267,9 @@ sony2fuji_status loadDisplayImageWindows(const char* path, sony2fuji_buffer* out
     } catch (const StatusError& error) {
         clearBuffer(output);
         return error.status();
+    } catch (const sony2fuji::hdr::Error& error) {
+        clearBuffer(output);
+        return error.status;
     } catch (const std::bad_alloc&) {
         clearBuffer(output);
         return SONY2FUJI_STATUS_OUT_OF_MEMORY;
@@ -1269,6 +1305,9 @@ sony2fuji_status displayPreviewWindows(const char* path, uint32_t edge,
     } catch (const StatusError& error) {
         clearBuffer(output);
         return error.status();
+    } catch (const sony2fuji::hdr::Error& error) {
+        clearBuffer(output);
+        return error.status;
     } catch (const std::bad_alloc&) {
         clearBuffer(output);
         return SONY2FUJI_STATUS_OUT_OF_MEMORY;
