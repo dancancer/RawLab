@@ -10,6 +10,7 @@ class ServerConfig:
     read_roots: tuple[Path, ...]
     write_roots: tuple[Path, ...]
     timeout: float = 120.0
+    lens_database: Path | None = None
 
     def __post_init__(self):
         if not Path(self.cli).is_absolute() or any(
@@ -27,3 +28,12 @@ class ServerConfig:
             if not roots or any(not p.is_dir() for p in roots):
                 raise ValueError(f"{name} must contain existing directories")
             object.__setattr__(self, name, roots)
+        if self.lens_database is not None:
+            path = Path(self.lens_database)
+            if not path.is_absolute():
+                raise ValueError("Lens database must be an absolute path")
+            path = path.resolve(strict=True)
+            if (not any(path == root or root in path.parents for root in self.read_roots)
+                    or not (path.is_file() or path.is_dir())):
+                raise ValueError("Lens database must be a file or directory within an allowed read root")
+            object.__setattr__(self, "lens_database", path)

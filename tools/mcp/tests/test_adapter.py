@@ -154,13 +154,64 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         return CliAdapter(self.config, environment=merged)
 
     async def test_capabilities_negotiate_hdr_recipe_versions(self):
-        adapter = self.adapter(FAKE_VERSIONS="1,2,3,4,5,6,7,8,9,10")
+        adapter = self.adapter(FAKE_VERSIONS="1,2,3,4,5,6,7,8,9,10,14")
         capabilities = await adapter.start()
-        self.assertEqual(capabilities.recipe_versions, (1, 2, 3, 4, 5, 6, 8, 9, 10))
-        self.assertEqual(capabilities.result["recipe_versions"], [1, 2, 3, 4, 5, 6, 8, 9, 10])
+        self.assertEqual(capabilities.recipe_versions, (1, 2, 3, 4, 5, 6, 8, 9, 10, 14))
+        self.assertEqual(capabilities.result["recipe_versions"], [1, 2, 3, 4, 5, 6, 8, 9, 10, 14])
         self.assertEqual(capabilities.result["commands"], [
             "capabilities", "validate_recipe", "info", "preview", "export",
         ])
+
+    async def test_lens_database_is_read_root_scoped_and_forwarded(self):
+        database = self.read_root / "镜头 database"
+        database.mkdir()
+        for path in (database, self.look_path):
+            self.config = ServerConfig(self.cli, (self.read_root,), (self.write_root,), 2.0,
+                                       lens_database=path)
+            adapter = self.adapter()
+            await adapter.start()
+            self.addAsyncCleanup(adapter.close)
+            for command in ("preview", "export"):
+                destination = self.write_root / f"{path.name}-{command}.png"
+                if command == "preview":
+                    result = await adapter.render_preview(self.recipe_path, destination)
+                else:
+                    document = json.loads(self.recipe_path.read_text())
+                    document["output"]["path"] = str(destination)
+                    self.recipe_path.write_text(json.dumps(document))
+                    result = await adapter.export_photo(self.recipe_path)
+                self.assertTrue(result.ok, result.error)
+                argv = json.loads(self.argv_log.read_text())
+                self.assertEqual(argv[argv.index("--lens-database") + 1], str(path.resolve()))
+        outside = self.root / "outside"
+        outside.mkdir()
+        link = self.read_root / "escape"
+        link.symlink_to(outside, target_is_directory=True)
+        for path in (outside, link, Path("relative.xml"), self.read_root / "missing.xml"):
+            with self.subTest(path=path), self.assertRaises((ValueError, OSError)):
+                ServerConfig(self.cli, (self.read_root,), (self.write_root,), lens_database=path)
+
+    async def test_v14_camera_profile_is_checked_and_resolved_before_staging(self):
+        document = json.loads(self.recipe_path.read_text())
+        document.update(schema_version=14, processing={"family": "rawlab_hdr", "version": 7, "quality": "standard"})
+        profile = self.recipe_dir / "camera.dcp"
+        profile.write_bytes(b"profile fixture")
+        document["input"]["camera_development"] = {"camera_profile": {"path": "camera.dcp", "sha256": "a" * 64}}
+        self.recipe_path.write_text(json.dumps(document))
+        adapter = self.adapter(FAKE_VERSIONS="4,14")
+        await adapter.start()
+        self.addAsyncCleanup(adapter.close)
+        result = await adapter.export_photo(self.recipe_path)
+        self.assertTrue(result.ok, result.error)
+        staged = json.loads(self.recipe_log.read_text())
+        self.assertEqual(staged["input"]["camera_development"]["camera_profile"]["path"], str(profile))
+        outside = self.root / "outside.dcp"
+        outside.write_bytes(b"outside")
+        profile.unlink()
+        profile.symlink_to(outside)
+        result = await adapter.validate_recipe(self.recipe_path)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error.code, "invalid_argument")
 
     async def test_hdr_identity_survives_staging_and_requires_capability(self):
         document={"schema_version":6,

@@ -8,6 +8,14 @@
 namespace sony2fuji {
 
 struct HDRRecipeSettings {
+    std::string inputType = "hdr_raster";
+    bool hdrOutput = true;
+    sony2fuji_hdr_camera_development_v1 cameraDevelopment{1,
+        sizeof(sony2fuji_hdr_camera_development_v1), 0, 0, 0, 0, 0, 0, nullptr};
+    std::string lensProfile;
+    std::string cameraProfilePath;
+    std::string cameraProfileSHA256;
+    bool lensAutoCrop = true;
     uint32_t processingVersion = SONY2FUJI_HDR_PROCESSING_VERSION;
     float relativeTemperature = 6500;
     float relativeTint = 0;

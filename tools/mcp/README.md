@@ -19,6 +19,8 @@ uv sync --project tools/mcp --frozen
   --cli '/absolute/RawLab CLI/bin/sony2fuji' \
   --read-root /absolute/photos \
   --read-root /absolute/looks \
+  --read-root /absolute/lensfun \
+  --lens-database /absolute/lensfun \
   --write-root /absolute/exports \
   --timeout 120
 ```
@@ -26,6 +28,8 @@ uv sync --project tools/mcp --frozen
 `--cli` 和所有根目录必须是绝对路径；根目录必须已存在。`--read-root` 与 `--write-root` 可重复。CLI 必须是自己信任的本地程序。默认单次工具调用超时 120 秒，包含配方校验与渲染；`--timeout` 接受有限正数，启动时的能力协商也使用该限制。终止进程的清理宽限可能额外占用最多 2 秒。
 
 配置格式示例见 [macOS](examples/macos.json) 和 [Windows](examples/windows.json)，请替换占位路径后手动加入支持 `mcpServers` 的客户端。其他客户端按其配置格式填写相同 command/args。Windows 的 Python 位于 `.venv\Scripts\python.exe`，CLI 通常为 `sony2fuji.exe`。
+
+可选 `--lens-database` 指定已有的 Lensfun XML 文件或数据库目录，必须是绝对路径，解析符号链接后的目标必须位于已配置的 `--read-root` 内。服务启动时检查该路径，preview 和 export 会将其透传给 CLI；capabilities、image_info 和 validate_recipe 不附加此参数。未指定时沿用 CLI 的系统数据库查找。数据库路径只用于读取，不能用 `--write-root` 授权。
 
 ## 工具
 
@@ -45,7 +49,7 @@ preview/export 要求源图和外观文件存在，输出父目录存在。每�
 
 工具返回 JSON text 和同内容的 `structuredContent`，保持 CLI 的 `protocol_version/command/ok/result/error` envelope，失败标记 `isError=true`。MCP 的 `image_info/render_preview/export_photo` 对应 envelope command `info/preview/export`。CLI 错误保留 code/status；MCP 路径/参数限制使用 `invalid_argument`，超时或协议错误使用 `processing_error`。recipe、source 和 image 在适配层预检缺失时映射为 `io_error`、`status=3`（C ABI `IO_ERROR`）；recipe 中的 look 只做 allowed-root canonical 校验，缺失 look 由已调用的 native export 原样返回其 backend error（例如 `unsupported,status=2`）。output parent 缺失属于 MCP 安全发布策略，返回 `invalid_argument`、`status=null`，不会创建 stage；这不模拟 native 各输出格式可能返回的错误（例如 PNG 的 `processing_error,status=4`）。source/look 的 recipe 结构仍会先由 native `validate_recipe` 读取，适配层不会把适配层预检伪称为 native render/export 已运行或返回的 backend status。允许根、leaf symlink、NUL/不可编码路径等限制仍为 `invalid_argument`、`status=null`。日志和诊断只使用 stderr。
 
-服务按 CLI 能力协商 recipe v1～v6 和 v8～v13。v5 使用 `rawlab` 处理系列，版本 2 采用 C5，v1～v4 继续采用旧处理语义。HDR v6 和 v8～v13 使用 `rawlab_hdr`、`hdr_raster` 来源及 `hdr_jpeg` 输出。v8 增加黑白场、S 曲线和自定义曲线，v9 增加鲜艳度、八色域 HSL 和颜色分级，v10 增加 HDR 亮度上限和独立 SDR 底图调整，v11 增加暗角和颗粒，v12 增加锐化、清晰度、去朦胧和图像级降噪，v13 增加显式声明扩展线性 sRGB 的 HDR CUBE，并校验资源的 SHA-256。各版本须由 CLI 宣告才可使用。HDR `preview` 返回编辑后的 SDR PNG，能力字段 `hdr.display` 为 false。路径限制定义本地工具的授权范围，操作系统层面的隔离需要独立配置。
+服务按 CLI 能力协商 recipe v1～v6 和 v8～v14。v5 使用 `rawlab` 处理系列，版本 2 采用 C5，v1～v4 继续采用旧处理语义。HDR v6 和 v8～v13 使用 `rawlab_hdr`、`hdr_raster` 来源及 `hdr_jpeg` 输出。v8 增加黑白场、S 曲线和自定义曲线，v9 增加鲜艳度、八色域 HSL 和颜色分级，v10 增加 HDR 亮度上限和独立 SDR 底图调整，v11 增加暗角和颗粒，v12 增加锐化、清晰度、去朦胧和图像级降噪，v13 增加显式声明扩展线性 sRGB 的 HDR CUBE，并校验资源的 SHA-256。v14 沿用 v13 的处理版本 7，新增相机 RAW（`raw`）、ProRAW（`proraw`）和 JPEG、PNG、渲染型 DNG SDR 导出。相机 RAW 的可选 `input.camera_development` 沿用 Mac 的绝对白平衡、曝光参考、FBDD、镜头和相机配置语义；相机配置的 `camera_profile.path` 与 look 路径一样，必须在只读根内并按配方目录解析。ProRAW HDR JPEG 使用核心流式路径和系统临时目录；CLI 仅在启用 DNG SDK 的构建中宣告 ProRAW 输入能力。完整字段见 [edit-json v14](../../lutools/docs/edit-json.md#v14-hdr-sources-and-sdr-exports)。各版本须由 CLI 宣告才可使用。HDR `preview` 返回编辑后的 SDR PNG，能力字段 `hdr.display` 为 false。路径限制定义本地工具的授权范围，操作系统层面的隔离需要独立配置。
 
 ## 验证
 
