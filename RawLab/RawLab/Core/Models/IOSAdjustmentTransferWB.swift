@@ -37,7 +37,15 @@ extension IOSAdjustmentTransfer {
             }
             return
         }
-        guard context.isRaw || !payload.source.isRaw else { throw AdjustmentTransferError.incompatible("color.white_balance") }
+        if !context.isRaw && payload.source.isRaw {
+            // 拍摄时请求和零配方偏移对普通图片无效果，保留目标固有的 WB。
+            let neutral: [Field: Value] = [.whiteBalanceMode: .string("camera"), .temperature: .null,
+                .tint: payload.source.recipe == nil ? .null : .number(0)]
+            guard neutral.allSatisfy({ payload[$0.key] == nil || payload[$0.key] == $0.value }) else {
+                throw AdjustmentTransferError.incompatible("color.white_balance")
+            }
+            return
+        }
         let previousValues = values(target, context: context)
         let previousRecipe = target.masterRecipeID.map { AdjustmentRecipeContext(id: $0, strength: target.recipeScale, settingsVersion: target.masterRecipeSettingsVersion) }
         if !contextChanged && context.isRaw == payload.source.isRaw && previousRecipe == payload.source.recipe

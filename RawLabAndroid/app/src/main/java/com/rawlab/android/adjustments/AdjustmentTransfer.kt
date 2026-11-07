@@ -108,8 +108,8 @@ object AdjustmentTransfer {
         }
         result = AdjustmentTransferWB.apply(payload, target, result, context, fullRecipe, contextChanged)
         payload[AdjustmentField.EXPOSURE_MODE]?.text?.let { mode ->
-            if (!context.isRaw && payload.source.isRaw && mode != "sensor") throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, AdjustmentField.EXPOSURE_MODE.id)
-            result = result.copy(exposureMode = listOf("scene", "preview", "sensor").indexOf(mode))
+            // 普通图片没有 RAW 曝光基准，选中任何来源模式均保持 sensor。
+            result = result.copy(exposureMode = if (!context.isRaw) 2 else listOf("scene", "preview", "sensor").indexOf(mode))
         }
         result = AdjustmentTransferValues.applyObjects(payload, result, context)
         result = AdjustmentTransferRefinement.apply(payload, target, result, fullRecipe)

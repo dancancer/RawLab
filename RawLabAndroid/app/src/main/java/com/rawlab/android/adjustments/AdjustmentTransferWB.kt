@@ -60,7 +60,17 @@ internal object AdjustmentTransferWB {
                 result = applyResolved(render(target, context), result, context)
             return result
         }
-        if (!context.isRaw && payload.source.isRaw) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "color.white_balance")
+        if (!context.isRaw && payload.source.isRaw) {
+            // 拍摄时请求和零配方偏移对普通图片无效果，保留目标固有的 WB。
+            val neutral = selected.all { field -> when (field) {
+                AdjustmentField.WHITE_BALANCE_MODE -> payload[field]?.text == "camera"
+                AdjustmentField.TEMPERATURE -> payload[field] == AdjustmentValue.Null
+                AdjustmentField.TINT -> if (payload.source.recipe == null) payload[field] == AdjustmentValue.Null else payload[field]?.number == 0.0
+                else -> false
+            } }
+            if (!neutral) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "color.white_balance")
+            return result
+        }
         val previousValues = AdjustmentTransferValues.values(target, context)
         if (!contextChanged && context.isRaw == payload.source.isRaw && AdjustmentTransfer.recipe(target) == payload.source.recipe &&
             selected.all { payload[it] == previousValues[it] }) return result

@@ -185,7 +185,13 @@ recipe 拒绝新键。能力响应声明 CPU 和完整源图预览策略，不�
 ### 4.2 自动值和 RAW/raster
 
 - 相机 WB、自动曝光基准、镜头自动匹配保存模式/请求配置，不保存来源照片的自动派生结果。
-- RAW-only 字段在 raster 目标上必须显示不兼容原因；raster recipe 使用 `sensor` exposure、`none` WB，并禁用 raw denoise/lens correction：
+- RAW-only 字段按选中请求的实际语义判断兼容性。RAW 来源的拍摄时 WB（`camera`、
+  Kelvin/tint 为 null，或配方相对 tint 为 0）在 raster 上无效果，应放行并保留目标 `none`
+  WB；部分选择也只接受对应中性值。`scene/preview/sensor` 曝光基准在 raster 上均无意义，
+  应放行并保留 `sensor`。这些中性项本身不产生修改，也不能掩盖其他字段的实际修改。
+  固定 Kelvin/tint、非零配方相对 tint（包括来源强度为 0 时保留的偏移）及非零 raw denoise
+  等不可表达请求仍必须显示不兼容原因，不可静默丢弃。raster recipe 使用 `sensor` exposure、
+  `none` WB，并禁用 raw denoise/lens correction：
   [edit-json.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/lutools/docs/edit-json.md?plain=1#L266-L281)。
 - 不同平台当前默认并不完全相同。iOS 缺失 `exposureMode` 解码为 `.scene`：
   [RawSettings.swift](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/RawLab/RawLab/Core/Models/RawSettings.swift#L333)；Android 缺失旧 CSV mode 为 `0`：
