@@ -108,6 +108,7 @@
     <string name="dehaze">"かすみの除去"</string>
     <string name="dng_description">"最終的なルックを焼き込んで保存します。センサー RAW ではありません。編集履歴と撮影 EXIF は含まず、ファイルのみに保存します。"</string>
     <string name="edit_read_error">"調整レコードを読み取れません: %1$s"</string>
+    <string name="edit_store_unavailable">"調整記録は一時的に利用できません。後でもう一度お試しください。"</string>
     <string name="edit_unsaved_detail">"調整が保存されませんでした: %1$s"</string>
     <string name="editor_adjusted">"調整済み"</string>
     <string name="editor_collapse_histogram">"ヒストグラムを折りたたむ"</string>

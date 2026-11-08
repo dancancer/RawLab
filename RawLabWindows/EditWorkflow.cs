@@ -31,9 +31,9 @@ public partial class MainWindow
             CancelEditGesture();SaveEdits();
         };
         try { editStore = new EditStore(EditStore.DefaultDirectory); }
-        catch (Exception error) { SetSaveNotice("无法读取调整记录", error.Message, true); }
+        catch (Exception error) { SetSaveNotice("无法读取调整记录", AdjustmentTransferPresentation.Detail(error), true); }
         try { previousBatch = batchJournal.Load(); }
-        catch (Exception error) { updateJournalLoadFailed=true;Report(new IOException(Loc.Format("无法读取上次批量任务：{0}", error.Message), error)); }
+        catch (Exception error) { updateJournalLoadFailed=true;Report(new IOException(Loc.Format("无法读取上次批量任务：{0}", AdjustmentTransferPresentation.Detail(error)), error)); }
         RefreshBatchNotice(); UpdateBusy();
         InitializeAdjustmentHistory();
     }
@@ -61,7 +61,7 @@ public partial class MainWindow
             return true;
         }
         catch (Exception error) {
-            SetSaveNotice("调整未保存 · 重试", error.Message, true);return false;
+            SetSaveNotice("调整未保存 · 重试", AdjustmentTransferPresentation.Detail(error), true);return false;
         }
     }
 
@@ -171,7 +171,7 @@ public partial class MainWindow
         if(transformSaveFailed && transform.Active) { ApplyTransformDraft(); return; }
         if (editDirty) { SaveEdits(); return; }
         try { editStore = new EditStore(EditStore.DefaultDirectory); SetSaveNotice("调整记录可用", "", false); }
-        catch (Exception error) { SetSaveNotice("无法读取调整记录", error.Message, true); }
+        catch (Exception error) { SetSaveNotice("无法读取调整记录", AdjustmentTransferPresentation.Detail(error), true); }
     }
 
     private void BatchExportClicked(object sender, RoutedEventArgs e)

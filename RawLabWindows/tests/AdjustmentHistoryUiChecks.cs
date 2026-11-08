@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Automation;
@@ -15,6 +16,10 @@ using RawLab.Windows;
 internal static class AdjustmentHistoryUiChecks
 {
     private const BindingFlags Private=BindingFlags.Instance|BindingFlags.NonPublic;
+    [DllImport("user32.dll")] private static extern IntPtr GetLastActivePopup(IntPtr owner);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window,out uint process);
+    [DllImport("user32.dll")] private static extern IntPtr GetDlgItem(IntPtr dialog,int item);
+    [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr window,uint message,IntPtr wParam,IntPtr lParam);
     internal static void Run(string repo,string raw,Action<bool,string> check)
     {
         repo=Path.GetFullPath(repo);raw=Path.GetFullPath(raw);
@@ -104,6 +109,7 @@ internal static class AdjustmentHistoryUiChecks
             check(adoptedResult.Single().Status==AdjustmentStatus.Applied && adoptedResult.Single().Error==null && window.AdjustmentPanel.IsEnabled &&
                 session.IsCurrentSave(adoptedResult.Single().Saved!),"A successful saved receipt keeps the editor usable and current");
             PartialResultsDialog(window,photo,output,check);
+            ReplacedSourceRetry(window,photo,raw,output,check);
             Console.WriteLine("Native adjustment artifacts: "+output);
         }catch(Exception error){Console.Error.WriteLine("History check failed before teardown: "+error);throw;}finally{window.Close();app.Shutdown();}
     }
@@ -217,6 +223,44 @@ internal static class AdjustmentHistoryUiChecks
         check(outer?.IsVisible==false && Application.Current.Windows.OfType<Window>().All(w=>AutomationProperties.GetAutomationId(w)!="adjustment.results") &&
             Get<Adjustments>(window,"settings")[Parameter.Exposure]==0,
             "Closing batch results leaves the undone current photo unchanged");
+    }
+    private static void ReplacedSourceRetry(MainWindow window,string photo,string raw,string output,Action<bool,string> check)
+    {
+        var store=Get<EditStore>(window,"editStore");
+        var blocked=Path.Combine(output,"retry-blocked");File.WriteAllText(blocked,"not a directory");
+        Set(window,"editStore",new EditStore(blocked));
+        var settings=Get<Adjustments>(window,"settings");settings.Set(Parameter.Exposure,.4);Invoke(window,"MarkEdited");
+        check(window.RetrySave.IsVisible && Get<bool>(window,"editDirty"),
+            "Replacement retry starts with a visible failed-save action and retained edits");
+
+        Set(window,"editStore",store);
+        var replacement=photo+".replacement"+Path.GetExtension(raw);File.Copy(raw,replacement,true);File.Move(replacement,photo,true);
+        Invoke(window,"SaveEdits");
+        check(Equals(window.SaveState.ToolTip,Loc.Text("原始文件已被替换，请重新选择照片。")),
+            "A replaced original uses the localized save-failure tooltip");
+        var before=Get<Adjustments>(window,"settings").Capture();
+        ChooseRetryConfirmation(window,7); // IDNO
+        check(Get<Adjustments>(window,"settings").Capture().SameAs(before) && Get<bool>(window,"editDirty") && window.RetrySave.IsVisible,
+            "Retry confirmation No keeps the in-memory edits and failed-save state");
+
+        var opened=Get<long>(window,"openRevision");ChooseRetryConfirmation(window,6); // IDYES
+        Ready(window);
+        var defaults=PhotoInput.PrepareDefaultSettings(photo);
+        check(Get<long>(window,"openRevision")>opened && !Get<bool>(window,"editDirty") && !window.RetrySave.IsVisible &&
+            Get<Adjustments>(window,"settings")[Parameter.Exposure]==defaults[Parameter.Exposure],
+            "Retry confirmation Yes discards the stale edits and reopens the replaced photo");
+    }
+    private static void ChooseRetryConfirmation(MainWindow window,int buttonID)
+    {
+        var owner=new System.Windows.Interop.WindowInteropHelper(window).Handle;var clicked=0;
+        using var timer=new System.Threading.Timer(_=>{
+            var dialog=GetLastActivePopup(owner);if(dialog==IntPtr.Zero || dialog==owner)return;
+            GetWindowThreadProcessId(dialog,out var process);if(process!=Environment.ProcessId)return;
+            var button=GetDlgItem(dialog,buttonID);if(button==IntPtr.Zero)return;
+            if(Interlocked.Exchange(ref clicked,1)==0)SendMessage(button,0x00F5,IntPtr.Zero,IntPtr.Zero);
+        },null,30,30);
+        Invoke(window,"RetrySaveClicked",window.RetrySave,new RoutedEventArgs(Button.ClickEvent));
+        if(Volatile.Read(ref clicked)!=1)throw new InvalidOperationException("Replacement retry confirmation did not respond");
     }
     private static T Find<T>(DependencyObject root,string id) where T:DependencyObject
     {

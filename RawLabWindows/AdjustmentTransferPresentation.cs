@@ -66,6 +66,8 @@ internal static class AdjustmentTransferPresentation
         AdjustmentStatus.Applied=>"已保存",AdjustmentStatus.Unchanged=>"未变化",AdjustmentStatus.Skipped=>"已跳过",
         AdjustmentStatus.Conflict=>"操作已失效",AdjustmentStatus.Failed=>"保存失败",_=>"待处理"
     });
+    internal static string Detail(Exception error) => error is PhotoChangedException or AdjustmentOperationExpiredException or AdjustmentHistoryOrderException
+        ? Error(error) : error.Message;
     internal static string Error(Exception? error)=>Loc.Text(error switch {
         PhotoChangedException=>"原始文件已被替换，请重新选择照片。",
         AdjustmentOperationExpiredException=>"此操作已过期，请重新操作。",

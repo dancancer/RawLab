@@ -74,6 +74,7 @@ import Foundation
             && store.state(for: a)?.settings.exposure == 1 && store.state(for: b) == nil,
             "Batch undo excludes the component invalidated by a new independent edit")
         try preflightAndExternal(root.appendingPathComponent("preflight"))
+        try preparedLocalEdit(root.appendingPathComponent("prepared-local-edit"))
         try historyOrder(root.appendingPathComponent("lineage"))
         try saveFailure(root.appendingPathComponent("failures"))
         try synchronization(root.appendingPathComponent("collection-sync"))
@@ -218,6 +219,20 @@ import Foundation
             && store.state(for: b) == nil,
             "History undo processes the remaining target without rereading an old disk receipt")
     }
+    static func preparedLocalEdit(_ root: URL) throws {
+        let store = try EditPersistence(directory: root), session = IOSAdjustmentTransferSession(store: store)
+        let identity = PhotoIdentity(resourceIdentifier: "prepared-local-edit")
+        let copy = try session.copy(scope: .custom([.exposure]), snapshot: state(1), context: context)
+        let operation = try session.prepare(payload: copy, targets: [
+            .init(identity: identity, displayName: "A", defaultState: state(0), context: context)])
+        let edited = session.commitEdit(expected: try store.readState(for: identity), state: state(2))
+        try check(edited.status == .applied, "A local edit succeeds after the paste preflight")
+        let result = session.apply(operation).first!
+        try check(result.status == .conflict && result.error as? AdjustmentCommitError == .expired &&
+                  store.state(for: identity)?.settings.exposure == 2 && session.transactions.count == 1,
+                  "The old prepared operation expires without overwriting the local edit or adding history")
+    }
+
     static func historyOrder(_ root: URL) throws {
         let store = try EditPersistence(directory: root), session = IOSAdjustmentTransferSession(store: store)
         let id = PhotoIdentity(resourceIdentifier: "ordered")

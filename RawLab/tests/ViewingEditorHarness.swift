@@ -88,6 +88,10 @@ final class ViewingEditorProbe {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         return String(data: try! encoder.encode(settings), encoding: .utf8)!
     }
+    func storedStateText(_ state: PhotoEditState?) -> String {
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        return String(data: try! encoder.encode(state), encoding: .utf8)!
+    }
     func recordPreview(_ request: RawEditorViewModel.PreviewRequest, source: UUID) {
         previews.append(["source": source.uuidString, "exposure": request.settings.exposure,
                          "crop": request.settings.geometry.cropWidth,
@@ -303,10 +307,10 @@ extension ContentView {
              "pendingAdjustmentAction": String(describing: pendingAdjustmentAction),
              "queuedPresetAction": String(describing: queuedPresetAction),
              "sourceStoredExposure": store.state(for: identity)?.settings.exposure as Any? ?? NSNull(),
-             "sourceStoredRevision": "",
+             "sourceStoredSnapshot": probe.storedStateText(store.state(for: identity)),
              "targetStoredExposure": probe.transferTarget.flatMap { store.state(for: $0)?.settings.exposure } as Any? ?? NSNull(),
              "targetStoredCrop": probe.transferTarget.flatMap { store.state(for: $0)?.settings.geometry.cropWidth } as Any? ?? NSNull(),
-             "targetStoredRevision": "",
+             "targetStoredSnapshot": probe.storedStateText(probe.transferTarget.flatMap { store.state(for: $0) }),
              "failingTarget": probe.failIdentity ?? "",
              "gestureActive": viewModel.adjustmentInteraction != nil,
              "pendingSettings": viewModel.pendingSettings != nil, "modelDraftActive": viewModel.hasAdjustmentDraft,

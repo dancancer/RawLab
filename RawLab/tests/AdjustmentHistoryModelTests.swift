@@ -95,6 +95,8 @@ struct AdjustmentHistoryModelTests {
         try check(model.adjustmentSession?.clipboard?[.exposure]?.number == external.exposure &&
                   model.adjustmentSession?.clipboard?.fields == [.exposure, .hslHueRed],
                   "native editor captures exactly the requested exposure and HSL fields")
+        try storageRecovery(directory: directory)
+        try discardPendingSave(directory: directory)
         try preflight(model, store: store, directory: directory)
         try cancelledImportMetadata(directory: directory)
         try presetCapture(directory: directory)
@@ -104,6 +106,72 @@ struct AdjustmentHistoryModelTests {
         try IOSBatchFlowModelChecks.launchRequests(directory: directory)
         try recentLookHistory(directory: directory)
         print("PASS: native adjustment history model (\(checks) assertions)")
+    }
+
+    private static func storageRecovery(directory: URL) throws {
+        let store = try EditPersistence(directory: directory.appendingPathComponent("recovered-store"))
+        let identity = PhotoIdentity(resourceIdentifier: "recovered-photo")
+        var saved = RawSettings.default; saved.exposure = 0.7; saved.contrast = 12
+        try store.save(identity, state: PhotoEditState(settings: saved))
+        let model = RawEditorViewModel(editPersistence: store)
+        model.sourceFile = .externallyManaged(directory.appendingPathComponent("source.png"))
+        model.sourceIdentity = identity; model.sourceKind = .raster; model.hasImage = true
+        model.editPersistence = nil; model.adjustmentSession = nil
+        model.openEditPersistence = { store }
+        model.acceptImportedEditRecord(nil, settings: .default)
+        model.retrySave(settings: .default)
+        try check(model.adjustmentRestoredSettings == saved && model.loadedEditRecord?.state?.settings == saved,
+                  "recovering an unread store restores saved settings before the next edit")
+        var next = model.adjustmentRestoredSettings!; next.exposure = 0.9
+        model.queueSettingsSave(next)
+        try check(model.saveCurrentSettings(next) && store.state(for: identity)?.settings.contrast == 12,
+                  "the first edit after recovery preserves other saved adjustments")
+        try check(model.performAdjustmentHistory(undo: true).first?.status == .applied &&
+                  store.state(for: identity)?.settings == saved,
+                  "recovered history retains the real saved before state")
+
+        model.editPersistence = nil; model.adjustmentSession = nil
+        model.acceptImportedEditRecord(nil, settings: .default)
+        var pending = RawSettings.default; pending.exposure = 1.1
+        model.queueSettingsSave(pending)
+        model.openEditPersistence = { throw CocoaError(.fileReadNoPermission) }
+        model.retrySave(settings: pending)
+        try check(model.pendingSettings == pending && store.state(for: identity)?.settings == saved,
+                  "failed store recovery preserves pending edits and the existing disk record")
+        model.openEditPersistence = { store }
+        model.retrySave(settings: pending)
+        try check(model.pendingSettings == nil && store.state(for: identity)?.settings == pending,
+                  "retry reopens the unavailable store even with pending edits")
+        try check(model.performAdjustmentHistory(undo: true).first?.status == .applied &&
+                  store.state(for: identity)?.settings == saved,
+                  "retrying unread edits preserves the original saved adjustments in undo")
+    }
+
+    private static func discardPendingSave(directory: URL) throws {
+        let store = try EditPersistence(directory: directory.appendingPathComponent("discard-store"))
+        let identity = PhotoIdentity(resourceIdentifier: "discard-photo")
+        var saved = RawSettings.default; saved.exposure = 0.4
+        try store.save(identity, state: PhotoEditState(settings: saved))
+        let record = try store.readState(for: identity)
+        let model = RawEditorViewModel(editPersistence: store)
+        model.sourceFile = .externallyManaged(directory.appendingPathComponent("source.png"))
+        model.sourceIdentity = identity; model.sourceKind = .raster; model.hasImage = true
+        model.acceptImportedEditRecord(record, settings: saved)
+        var pending = saved; pending.exposure = 1.2
+        model.queueSettingsSave(pending)
+        model.failedDraftSource = model.editorEditSource
+        model.hasAdjustmentDraft = true
+        model.editSaveState = .failed("injected draft failure")
+        // 放弃失败草稿会重新排入普通保存；恢复已保存参数必须取消它。
+        model.discardDraftSaveFailure(settings: pending)
+        let restored = try model.restoreCommittedSettings()
+        try check(restored == saved && model.pendingSettings == nil && model.editSaveWork == nil &&
+                  !model.hasFailedDraftSave && model.adjustmentTargetIsCurrent(identity.key),
+                  "discard clears queued, pending and failed state for collection operations")
+        try check(model.consumePersistedEditorSettings(restored), "discard consumes the UI settings echo")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        try check(store.readState(for: identity) == record && model.adjustmentSession?.transactions.isEmpty == true,
+                  "discarded values cannot be saved later by the debounce callback")
     }
 
     private static func recentLookHistory(directory: URL) throws {

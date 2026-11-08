@@ -14,6 +14,7 @@ import com.rawlab.android.adjustments.AdjustmentScope
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.settings.EditStore
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.AdjustmentOperationExpiredException
 import com.rawlab.android.settings.PhotoIdentity
 import org.junit.Assert.*
 import org.junit.Test
@@ -387,6 +388,29 @@ class AdjustmentHistoryInstrumentedTest {
         assertEquals(current, edits.readState(identity))
         assertEquals(history, model.adjustmentTransactions)
         await(model) { it.canExport && it.edits.exposure == .9f }
+        main { model.edit(model.state.value.edits.copy(exposure = .75f)) }
+        await(model) { it.canExport && it.edits.exposure == .75f }
+        assertEquals(.75f, edits.readState(identity).settings!!.exposure)
+    }
+
+    @Test fun preparedPasteExpiresAfterSuccessfulEditWithoutOverwritingCurrentState() = withModel { model, edits, identity ->
+        main { model.edit(model.state.value.edits.copy(exposure = .5f)) }; await(model) { it.canExport }
+        main { model.copyAdjustments(AdjustmentScope.Custom(setOf(AdjustmentField.EXPOSURE))) }
+        main { model.edit(model.state.value.edits.copy(exposure = .9f)) }; await(model) { it.canExport }
+        main { model.prepareAdjustmentPaste(model.adjustmentClipboard!!, listOf(model.state.value.photo!!.uri)) }
+        val deadline = SystemClock.uptimeMillis() + 30_000
+        while (model.adjustmentTransfer.value.preparing && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(30)
+        val operation = requireNotNull(model.adjustmentTransfer.value.prepared)
+        main { model.edit(model.state.value.edits.copy(exposure = 1.1f)) }
+        await(model) { it.canExport && it.edits.exposure == 1.1f }
+        val current = edits.readState(identity)
+        val history = model.adjustmentTransactions
+        val result = paste(model, operation).single()
+        assertEquals(AdjustmentStatus.CONFLICT, result.status)
+        assertTrue(result.error is AdjustmentOperationExpiredException)
+        assertEquals(current, edits.readState(identity))
+        assertEquals(history, model.adjustmentTransactions)
+        assertEquals(1.1f, model.state.value.edits.exposure)
         main { model.edit(model.state.value.edits.copy(exposure = .75f)) }
         await(model) { it.canExport && it.edits.exposure == .75f }
         assertEquals(.75f, edits.readState(identity).settings!!.exposure)

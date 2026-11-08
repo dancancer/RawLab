@@ -44,6 +44,7 @@ internal static class AdjustmentHistoryChecks
 
             ExpiredOperation(root);
             PartialFailure(root);
+            ConcurrentIndependentWrites(root);
             LegacyAndReplacement(root);
             Console.WriteLine("PASS: Windows in-memory edit generations, ordered history, retry, legacy registry and photo identity");
         } finally {Directory.Delete(root,true);}
@@ -108,6 +109,21 @@ internal static class AdjustmentHistoryChecks
         Check(session.Apply(blocked,new HashSet<string>{second}).Any(o=>o.Status==AdjustmentStatus.Skipped),
             "Explicit skip excludes the blocked target");
         var empty=session.Prepare(payload,[]);Check(session.Apply(empty).Count==0,"Empty target operation does not report success");
+    }
+
+    private static void ConcurrentIndependentWrites(string root)
+    {
+        var directory=Path.Combine(root,"concurrent-independent");var photos=Enumerable.Range(0,8)
+            .Select(index=>Path.Combine(root,$"concurrent-{index}.ARW")).ToArray();
+        foreach(var photo in photos)File.WriteAllText(photo,"independent");
+        Parallel.For(0,photos.Length,index=>{
+            var writer=new EditStore(directory);var settings=new Adjustments();settings.Set(Parameter.Exposure,(index+1)/10.0);
+            writer.Save(photos[index],settings.Capture(),null);
+        });
+        var reader=new EditStore(directory);
+        Check(photos.Select((photo,index)=>reader.Find(photo) is {} saved &&
+            Math.Abs(saved.Settings.Values[1]-(index+1)/10.0)<1e-9).All(value=>value),
+            "Independent store writers preserve every photo record without conditional-save winners");
     }
 
     private static void LegacyAndReplacement(string root)

@@ -60,7 +60,7 @@ public partial class BatchExportWindow : Window
         };
         Closing += (_, args) => {
             if(Running || preflighting){args.Cancel=true;closeRequested=true;if(Running)CancelExecution();return;}
-            if(!PreserveOnUpdateExit && !Frozen && !job.Started && !Discarded)try{journal.Discard(job);Discarded=true;CloseFailed=false;}catch(Exception error){args.Cancel=true;CloseFailed=true;closeRequested=false;job.Error=error.Message;Refresh();_=LoadThumbnails();}
+            if(!PreserveOnUpdateExit && !Frozen && !job.Started && !Discarded)try{journal.Discard(job);Discarded=true;CloseFailed=false;}catch(Exception error){args.Cancel=true;CloseFailed=true;closeRequested=false;job.Error=AdjustmentTransferPresentation.Detail(error);Refresh();_=LoadThumbnails();}
         };
         ready = true;
         RefreshLanguage();
@@ -135,7 +135,7 @@ public partial class BatchExportWindow : Window
     private void SaveDraft()
     {
         try { journal.Save(job); job.Error = null; UpdateJournalFailed=false; }
-        catch (Exception error) { UpdateJournalFailed=true;job.Error = Loc.Format("任务未保存：{0}", error.Message); }
+        catch (Exception error) { UpdateJournalFailed=true;job.Error = Loc.Format("任务未保存：{0}", AdjustmentTransferPresentation.Detail(error)); }
         Refresh();
     }
     public bool PrepareForUpdate()
@@ -170,7 +170,7 @@ public partial class BatchExportWindow : Window
                 {
                     if(closeRequested)break;
                     try { accepted.Add(ValidateInput(snapshot,BatchItem.Create(input) with {Selected=true},validator)); }
-                    catch(Exception error){errors.Add(Path.GetFileName(input)+": "+error.Message);}
+                    catch(Exception error){errors.Add(Path.GetFileName(input)+": "+AdjustmentTransferPresentation.Detail(error));}
                 }
                 return accepted;
             });
@@ -179,7 +179,7 @@ public partial class BatchExportWindow : Window
             SaveDraft();if(errors.Count>0)job.Error=string.Join("\n",errors);
             await LoadThumbnails();
         }
-        catch(Exception error){if(!closed)job.Error=error.Message;}
+        catch(Exception error){if(!closed)job.Error=AdjustmentTransferPresentation.Detail(error);}
         finally{preflighting=false;if(!closed){Refresh();if(closeRequested)Close();}BusyChanged?.Invoke(false);}
     }
     private BatchItem ValidateInput(BatchJob snapshot, BatchItem item, RenderEngine validator)
@@ -197,7 +197,7 @@ public partial class BatchExportWindow : Window
                 validator.Render(item.Input,effective,prepared == null ? snapshot.Look : prepared.Look,64,statistics:false,clipping:false,viewportPreview:true);
             return ApplyFormatValidation(item with {ValidationError=null,HDRJpegIncompatible=!effective.IsHDREditing},snapshot.Format);
         } catch (Exception error) {
-            return item with {ValidationError=error.Message,HDRJpegIncompatible=false,Selected=false};
+            return item with {ValidationError=AdjustmentTransferPresentation.Detail(error),HDRJpegIncompatible=false,Selected=false};
         }
     }
     private static BatchItem ApplyFormatValidation(BatchItem item, ExportFormat format)
@@ -284,7 +284,7 @@ public partial class BatchExportWindow : Window
                     ExportFormat.Png => Png, ExportFormat.RenderedDng => Dng, _ => Jpeg
                 };
                 previous.IsChecked=true;
-                job.Error=error.Message;
+                job.Error=AdjustmentTransferPresentation.Detail(error);
             }
         } finally {
             preflighting=false;
@@ -348,7 +348,7 @@ public partial class BatchExportWindow : Window
     {
         if(Running || preflighting)return;
         if(MessageBox.Show(this,Loc.Text("结束此任务并保留已导出的照片？"),Loc.Text("结束导出任务"),MessageBoxButton.YesNo,MessageBoxImage.Question)!=MessageBoxResult.Yes)return;
-        try{journal.Discard(job);Discarded=true;Close();}catch(Exception error){job.Error=error.Message;Refresh();}
+        try{journal.Discard(job);Discarded=true;Close();}catch(Exception error){job.Error=AdjustmentTransferPresentation.Detail(error);Refresh();}
     }
     private void CloseClicked(object sender, RoutedEventArgs e)
     {
@@ -416,7 +416,7 @@ public partial class BatchExportWindow : Window
         {
             if(work.Settings.ActiveAIDenoise || work.Items.Any(item=>item.Selected && item.Frozen?.Settings.ActiveAIDenoise==true))
                 aiDiagnostics.Capture(error,new("batch",work.AIDeviceID,work.AIBackend,Devices:RenderEngine.GetAIDevices().JSON));
-            work.Error = error.Message; work.Interrupted = true;
+            work.Error = AdjustmentTransferPresentation.Detail(error); work.Interrupted = true;
             try { journal.Save(work); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
         finally
@@ -461,7 +461,7 @@ public partial class BatchExportWindow : Window
             });
             if (preview.IsVisible) { image.Source = frame?.Image; title.Text = Loc.Format("{0} · 本次导出效果", lookName); }
         }
-        catch (Exception error) { if (preview.IsVisible) title.Text = error.Message; }
+        catch (Exception error) { if (preview.IsVisible) title.Text = AdjustmentTransferPresentation.Detail(error); }
     }
 }
 

@@ -7406,5 +7406,13 @@
     "fr": "Annulez ou rétablissez les réglages dans l’ordre de l’historique.",
     "ja": "履歴の順序に従って取り消しまたはやり直しを行ってください。",
     "es": "Deshaz o rehace los ajustes en el orden del historial."
+  },
+  "调整记录暂不可用，请稍后重试。": {
+    "en": "Adjustment records are temporarily unavailable. Try again later.",
+    "de": "Die Anpassungsdaten sind vorübergehend nicht verfügbar. Versuchen Sie es später erneut.",
+    "es": "Los ajustes guardados no están disponibles temporalmente. Inténtalo de nuevo más tarde.",
+    "fr": "Les réglages enregistrés sont temporairement indisponibles. Réessayez plus tard.",
+    "ja": "調整記録は一時的に利用できません。後でもう一度お試しください。",
+    "zh-Hans": "调整记录暂不可用，请稍后重试。"
   }
 }

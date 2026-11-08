@@ -412,8 +412,12 @@ enum BatchFlowModelTests {
             case "edit": model.settings.exposure = 0.3; try require(model.saveEdits(), "ordinary edits still save during a cancelled check")
             case "selection": model.batchSelection.selectAll(false)
             case "conflict":
-                model.settings.exposure = 0.6
-                try require(model.saveEdits(), "a later local edit commits during export preparation")
+                let expected = try model.editStore!.readState(for: second)
+                var state = try expected.state ?? PhotoEditState(
+                    settings: RenderEngine.defaultSettings(for: second, sourceIsHDR: false), filmID: "")
+                state.settings.exposure = 0.6
+                try require(model.adjustmentSession!.commitEdit(expected: expected, state: state).status == .applied,
+                    "a later session commit expires collection export without changing the active photo")
             case "restart":
                 model.cancelCollectionExportPreparation()
                 model.prepareCollectionExportOperation = prepare

@@ -57,6 +57,7 @@ import com.rawlab.android.looks.localizedName
 import com.rawlab.android.adjustments.*
 import com.rawlab.android.presets.AdjustmentPresetStore
 import com.rawlab.android.settings.EditStore
+import com.rawlab.android.settings.AdjustmentNotReadyException
 import com.rawlab.android.settings.AdjustmentOperationExpiredException
 import com.rawlab.android.settings.LookChoice
 import com.rawlab.android.format.PhotoInputKind
@@ -901,14 +902,29 @@ class EditorViewModel @JvmOverloads constructor(
     }
     fun retrySave(completed: (Boolean) -> Unit = {}) {
         if (mutable.value.committingAdjustments) return completed(false)
-        if (failedDraftSave && mutable.value.draft != null) { applyDraft(completed); return }
         val photo = mutable.value.photo
         fun accept(saved: EditSaveResult) {
             mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
             fadeSaveNotice(); completed(saved.state != EditSaveState.FAILED)
         }
-        if (photo != null) persist(photo, mutable.value.edits, ::accept)
-        else commitAdjustments(editStore::reopen) { accept(it.getOrElse { error -> EditSaveResult(EditSaveState.FAILED, error) }) }
+        if (photo != null && adjustmentHistory.loaded == null) {
+            val edits = mutable.value.edits
+            commitAdjustments({ adjustmentHistory.recoverSource(photo) }) { result ->
+                result.fold({ record ->
+                    if (failedDraftSave && mutable.value.draft != null) { applyDraft(completed); return@fold }
+                    if (AdjustmentTransfer.sameAdjustments(edits, photo.defaultEditSettings(), photo.inputKind == PhotoInputKind.RAW)) {
+                        val restored = record.settings ?: photo.defaultEditSettings()
+                        if (restored != edits) editRevision += 1
+                        mutable.value = mutable.value.copy(edits = restored)
+                        includeIndependentRecipeLook(restored)
+                        renderCommittedForNavigation()
+                        accept(EditSaveResult(if (record.settings == null) EditSaveState.NONE else EditSaveState.RESTORED))
+                    } else persist(photo, edits, ::accept)
+                }, { accept(EditSaveResult(EditSaveState.FAILED, it, reading = true)) })
+            }
+        } else if (failedDraftSave && mutable.value.draft != null) applyDraft(completed)
+        else if (photo != null) persist(photo, mutable.value.edits, ::accept)
+        else commitAdjustments(editStore::reopen) { accept(it.getOrElse { error -> EditSaveResult(EditSaveState.FAILED, error, reading = true) }) }
     }
     fun prepareReset(scope: EditorResetScope): EditorResetPreparation {
         val current = mutable.value
@@ -1431,6 +1447,12 @@ class EditorViewModel @JvmOverloads constructor(
             }
             retrySave(completed)
         } else {
+            if (mutable.value.photo != null && adjustmentHistory.loaded == null) {
+                val unavailable = EditSaveResult(EditSaveState.FAILED, AdjustmentNotReadyException(), reading = true)
+                mutable.value = mutable.value.copy(saveState = unavailable.state, saveError = unavailable.message)
+                completed(false)
+                return
+            }
             cancelAdjustmentInteraction()
             mutable.value.draft?.let { discardDraft() }
             val current = mutable.value

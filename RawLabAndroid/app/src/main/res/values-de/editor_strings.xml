@@ -108,6 +108,7 @@
     <string name="dehaze">"Dunst entfernen"</string>
     <string name="dng_description">"Fest eingerechneter Look, keine Sensor-RAW-Datei. Kein Bearbeitungsverlauf und keine Aufnahme-EXIF. Nur Dateien."</string>
     <string name="edit_read_error">"Anpassungsdatensatz konnte nicht gelesen werden: %1$s"</string>
+    <string name="edit_store_unavailable">"Die Anpassungsdaten sind vorübergehend nicht verfügbar. Versuchen Sie es später erneut."</string>
     <string name="edit_unsaved_detail">"Anpassungen nicht gespeichert: %1$s"</string>
     <string name="editor_adjusted">"Bearbeitet"</string>
     <string name="editor_collapse_histogram">"Histogramm ausblenden"</string>

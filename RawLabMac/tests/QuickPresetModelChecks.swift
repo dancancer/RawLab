@@ -112,8 +112,11 @@ enum QuickPresetModelChecks {
             case "edit": model.settings.exposure = 1.1; try check(model.saveEdits(), "edit during prepare commits independently")
             case "photo": model.open(first); try rendered(model)
             case "conflict":
-                model.settings.exposure = 1.8
-                try check(model.saveEdits(), "a later local edit commits during quick preparation")
+                let expected = try model.editStore!.readState(for: second)
+                var state = expected.state!
+                state.settings.exposure = 1.8
+                try check(model.adjustmentSession!.commitEdit(expected: expected, state: state).status == .applied,
+                    "a later session commit expires quick preparation before UI adoption")
             default: model.cancelQuickPreset()
             }
             let expected = try model.editStore!.readState(for: second)

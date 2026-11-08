@@ -108,6 +108,7 @@
     <string name="dehaze">"Borrar neblina"</string>
     <string name="dng_description">"Look final integrado, no RAW del sensor. Sin historial editable ni EXIF de captura. Solo archivos."</string>
     <string name="edit_read_error">"No se puede leer el registro de ajuste: %1$s"</string>
+    <string name="edit_store_unavailable">"Los ajustes guardados no están disponibles temporalmente. Inténtalo de nuevo más tarde."</string>
     <string name="edit_unsaved_detail">"Ajustes no guardados: %1$s"</string>
     <string name="editor_adjusted">"Ajustado"</string>
     <string name="editor_collapse_histogram">"Contraer histograma"</string>

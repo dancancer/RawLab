@@ -39,7 +39,7 @@ public sealed class BatchSelectionSession
                 if(current?.ID==photo.ID)photo=current;
             }catch(Exception error) {
                 var full=System.IO.Path.GetFullPath(path);var id=full.ToUpperInvariant();
-                photo=new(id,full,new(full,0,0,0));failures[id]=error.Message;
+                photo=new(id,full,new(full,0,0,0));failures[id]=AdjustmentTransferPresentation.Detail(error);
             }
             if(photos.Any(existing=>existing.ID==photo.ID))continue;
             photos.Add(photo);selected.Add(photo.ID);
@@ -63,7 +63,7 @@ public sealed class BatchSelectionSession
     }
     public void RefreshFailures()
     {
-        foreach(var photo in photos)try{photo.Validate();failures.Remove(photo.ID);}catch(Exception error){failures[photo.ID]=error.Message;}
+        foreach(var photo in photos)try{photo.Validate();failures.Remove(photo.ID);}catch(Exception error){failures[photo.ID]=AdjustmentTransferPresentation.Detail(error);}
     }
 }
 
@@ -127,7 +127,7 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                 if(!hdr && (record.Edit?.Look!=null || settings.MasterRecipeID!=null) && look==null)throw new FileNotFoundException(Loc.Text("外观不可用。"));
                 var hash=look==null ? null : BatchFrozenSettings.Checksum(look);
                 rows.Add(new(photo,record.Copy(),settings.Copy(),look,hash,look==null ? Loc.Text("中性") : System.IO.Path.GetFileNameWithoutExtension(look),EditGeneration:generation));
-            }catch(Exception error){rows.Add(new(photo,Error:error.Message));}
+            }catch(Exception error){rows.Add(new(photo,Error:AdjustmentTransferPresentation.Detail(error)));}
         }
         return new(photos.Select(photo=>photo.ID).ToArray(),rows,format,longEdge,System.IO.Path.GetFullPath(outputDirectory));
     }
@@ -249,7 +249,7 @@ internal sealed class BatchHDRPreparation(EditStore store, Func<SavedEdit,string
                 } catch (Exception error) when (work.Started &&
                     error is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception) {
                     // 保存逐行失败，恢复后重试时再读取目标的调整。
-                    work.Items[index] = item with { Status=BatchStatus.Failed,Error=error.Message,AwaitingTargetSettings=true };
+                    work.Items[index] = item with { Status=BatchStatus.Failed,Error=AdjustmentTransferPresentation.Detail(error),AwaitingTargetSettings=true };
                     continue;
                 }
                 if (frozen.Look is {} look) {

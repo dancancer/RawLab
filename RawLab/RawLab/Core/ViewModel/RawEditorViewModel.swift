@@ -222,6 +222,7 @@ final class RawEditorViewModel: ObservableObject {
     var rawLUTApplied = false
 
     var editPersistence: EditPersistence?
+    var openEditPersistence: () throws -> EditPersistence = EditPersistence.appStore
     let presetStore: AdjustmentPresetStore
 
     init(editPersistence: EditPersistence? = nil,

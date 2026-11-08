@@ -55,8 +55,9 @@ internal class EditorAdjustmentHistory(private val store: EditorEditStore) {
     fun begin(photo: ImportedPhoto, settings: EditSettings, revision: Long): EditSaveResult {
         if (interacting) return EditSaveResult(EditSaveState.SAVED)
         val expected = loaded
-        if (expected == null || expected.identity != photo.identity || sourcePath != photo.file.absolutePath)
-            return EditSaveResult(EditSaveState.FAILED, AdjustmentNotReadyException())
+        if (expected == null) return EditSaveResult(EditSaveState.FAILED, AdjustmentNotReadyException(), reading = true)
+        if (expected.identity != photo.identity || sourcePath != photo.file.absolutePath)
+            return EditSaveResult(EditSaveState.FAILED, PhotoChangedException())
         interaction = Interaction(photo.identity, photo.file.absolutePath, revision, settings)
         return EditSaveResult(EditSaveState.SAVED)
     }
@@ -72,12 +73,24 @@ internal class EditorAdjustmentHistory(private val store: EditorEditStore) {
         if (photo == null) return null
         return previous?.takeIf { it.identity == photo.identity && it.path == photo.file.absolutePath && it.revision == revision }?.before
     }
+    fun recoverSource(photo: ImportedPhoto): PhotoEditState {
+        validator?.invoke()
+        if (!store.available) {
+            val opened = store.reopen()
+            if (opened.state == EditSaveState.FAILED) throw opened.error ?: IOException("Edit store is unavailable")
+        }
+        val record = store.readState(photo.identity)
+        acceptSource(photo, record)
+        return record
+    }
     fun commit(photo: ImportedPhoto, settings: EditSettings): EditSaveResult {
         if (interacting) return EditSaveResult(EditSaveState.FAILED, IOException("Finish or cancel the active adjustment"))
         val expected = loaded
         val currentSession = session
-        if (expected == null || currentSession == null || expected.identity != photo.identity || sourcePath != photo.file.absolutePath)
-            return EditSaveResult(EditSaveState.FAILED, AdjustmentNotReadyException())
+        if (expected == null || currentSession == null)
+            return EditSaveResult(EditSaveState.FAILED, AdjustmentNotReadyException(), reading = true)
+        if (expected.identity != photo.identity || sourcePath != photo.file.absolutePath)
+            return EditSaveResult(EditSaveState.FAILED, PhotoChangedException())
         val raw = photo.inputKind == PhotoInputKind.RAW
         val candidate = expected.settings?.takeIf { AdjustmentTransfer.sameAdjustments(it, settings, raw) } ?: settings
         val sourceDefault = sourceDefaults(photo, expected)

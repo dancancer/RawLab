@@ -87,7 +87,7 @@ extension ViewingEditorUITests {
         let cancel = app.buttons["preset.quick.cancel"]; revealFormControl(cancel, app: app); cancel.tap()
         notify("com.rawlab.quick-preset.release")
         wait(app) { $0["quickPreparationHeld"] as? Bool == false && $0["quickPreparing"] as? Bool == false }
-        XCTAssertEqual(receipt(app)["sourceStoredRevision"] as? String, before["sourceStoredRevision"] as? String)
+        XCTAssertEqual(receipt(app)["sourceStoredSnapshot"] as! String, before["sourceStoredSnapshot"] as! String)
         XCTAssertEqual(receipt(app)["historyCount"] as? Int, before["historyCount"] as? Int)
         capture(app, "quick-preset-cancel")
         notify("com.rawlab.s3.fail-next-save")
@@ -95,7 +95,7 @@ extension ViewingEditorUITests {
         revealFormControl(apply, app: app); apply.tap()
         let retry = app.buttons["preset.quick.retry"]
         revealFormControl(retry, app: app); XCTAssertTrue(retry.waitForExistence(timeout: 15))
-        XCTAssertEqual(receipt(app)["sourceStoredRevision"] as? String, before["sourceStoredRevision"] as? String)
+        XCTAssertEqual(receipt(app)["sourceStoredSnapshot"] as! String, before["sourceStoredSnapshot"] as! String)
         retry.tap()
         wait(app) { $0["sourceStoredExposure"] as? Double == 0.5 && $0["exposure"] as? Double == 0.5 }
         XCTAssertEqual(receipt(app)["historyCount"] as? Int, (before["historyCount"] as! Int) + 1)
@@ -117,7 +117,7 @@ extension ViewingEditorUITests {
         let saved = receipt(app)
         revealFormControl(apply, app: app); apply.tap()
         wait(app) { $0["quickPreparing"] as? Bool == false }
-        XCTAssertEqual(receipt(app)["sourceStoredRevision"] as? String, saved["sourceStoredRevision"] as? String)
+        XCTAssertEqual(receipt(app)["sourceStoredSnapshot"] as! String, saved["sourceStoredSnapshot"] as! String)
         XCTAssertEqual(receipt(app)["historyCount"] as? Int, saved["historyCount"] as? Int)
         let status = app.staticTexts["preset.quick.status"]; revealFormControl(status, app: app)
         XCTAssertTrue(status.label.contains("Unchanged"), status.label)
@@ -146,7 +146,7 @@ extension ViewingEditorUITests {
         revealFormControl(exposure, app: app)
         XCTAssertTrue(exposure.label.contains("+0.50 EV"), app.debugDescription)
         XCTAssertEqual(receipt(app)["historyCount"] as? Int, initial["historyCount"] as? Int)
-        XCTAssertEqual(receipt(app)["sourceStoredRevision"] as? String, initial["sourceStoredRevision"] as? String)
+        XCTAssertEqual(receipt(app)["sourceStoredSnapshot"] as! String, initial["sourceStoredSnapshot"] as! String)
         XCTAssertTrue(receipt(app)["clipboard"] is NSNull)
         capture(app, "scope-summary-modified")
         chooseScope("Custom")

@@ -403,10 +403,10 @@ final class ViewingEditorUITests: XCTestCase {
         let undo = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "adjustment.transaction.undo.")).firstMatch
         revealFormControl(undo, app: app); undo.tap()
         wait(app) { abs(($0["sourceStoredExposure"] as? Double ?? -99) - 0.9) < 1e-9 }
-        let revisionAfterUndo = receipt(app)["sourceStoredRevision"] as! String
+        let snapshotAfterUndo = receipt(app)["sourceStoredSnapshot"] as! String
         revealFormControl(apply, app: app); apply.tap()
         wait(app) { $0["targetStoredExposure"] as? Double == 0.5 }
-        XCTAssertEqual(receipt(app)["sourceStoredRevision"] as? String, revisionAfterUndo,
+        XCTAssertEqual(receipt(app)["sourceStoredSnapshot"] as? String, snapshotAfterUndo,
                        "retrying B does not replay the cached successful A receipt after A was undone")
         XCTAssertEqual(receipt(app)["sourceStoredExposure"] as! Double, 0.9, accuracy: 1e-9)
         XCTAssertEqual(receipt(app)["targetStoredCrop"] as? Double, 0.6)
@@ -419,21 +419,16 @@ final class ViewingEditorUITests: XCTestCase {
         capture(app, "adjustment-multiple-target-redo")
     }
 
-    func testAdjustmentConflictReloadAndDraftCopyGuard() {
+    func testAdjustmentSaveStaysEditableAndDraftCopyGuard() {
         let app = launch(language: "en")
         app.buttons["editor.group.light"].tap()
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName("com.rawlab.iter03.external-edit" as CFString), nil, nil, true)
         wait(app) { $0["sourceStoredExposure"] as? Double == 1.3 }
         setExposure("+0.75", app: app)
-        wait(app) { ($0["saveState"] as? String ?? "").contains("failed") }
-        XCTAssertEqual(receipt(app)["sourceStoredExposure"] as? Double, 1.3)
-        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 0)
-        let retry = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "not saved")).firstMatch
-        XCTAssertTrue(retry.waitForExistence(timeout: 5)); retry.tap()
-        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
-        app.alerts.buttons["Reload Saved Adjustments"].tap()
-        wait(app) { $0["ready"] as? Bool == true && $0["exposure"] as? Double == 1.3 }
-        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 0, "reload is navigation, not an editing transaction")
+        wait(app) { $0["ready"] as? Bool == true && $0["sourceStoredExposure"] as? Double == 0.75 }
+        XCTAssertFalse((receipt(app)["saveState"] as? String ?? "").contains("failed"))
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 1)
+        XCTAssertFalse(app.buttons["Reload Saved Adjustments"].exists)
         selectGeometry(app)
         let corner = app.descendants(matching: .any).matching(identifier: "geometry.crop.bottomRight").firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         corner.press(forDuration: 0.05, thenDragTo: corner.withOffset(CGVector(dx: -16, dy: -12)))
@@ -442,17 +437,17 @@ final class ViewingEditorUITests: XCTestCase {
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
         app.alerts.buttons["Keep Editing"].tap()
         XCTAssertTrue(receipt(app)["draftChanged"] as! Bool)
-        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 0)
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 1)
         openAdjustmentAction("adjustment.copy.open", app: app)
         app.alerts.buttons["Apply"].tap()
         XCTAssertTrue(app.buttons["adjustment.copy.clear"].waitForExistence(timeout: 10))
         app.buttons["adjustment.transfer.close"].tap()
         wait(app) { $0["ready"] as? Bool == true && $0["draftActive"] as? Bool == false }
-        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 1)
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 2)
         XCTAssertLessThan(receipt(app)["crop"] as! Double, 0.8)
         openAdjustmentAction("adjustment.history.undo", app: app)
         wait(app) { $0["ready"] as? Bool == true && $0["crop"] as? Double == 0.8 }
-        capture(app, "adjustment-conflict-reload-draft-copy-guard")
+        capture(app, "adjustment-editable-save-draft-copy-guard")
     }
 
     func testAdjustmentCopyGermanLargeText() {

@@ -109,7 +109,7 @@ internal sealed class AdjustmentResultDialog : Window
             row.Children.Add(AdjustmentDialogLayout.Text(status));
             if(outcome.Error!=null) {
                 var error=AdjustmentDialogLayout.Text(outcome.Status==AdjustmentStatus.Applied ? Loc.Text("调整已保存，界面未更新。") : AdjustmentTransferPresentation.Error(outcome.Error));
-                error.ToolTip=outcome.Error.Message;row.Children.Add(error);
+                error.ToolTip=AdjustmentTransferPresentation.Detail(outcome.Error);row.Children.Add(error);
                 if(outcome.Status==AdjustmentStatus.Applied)continue;
                 var skip=new CheckBox{Content=Loc.Text("跳过"),IsChecked=skipping.Contains(outcome.TargetID)};
                 AutomationProperties.SetAutomationId(skip,"adjustment.skip."+Path.GetFileName(outcome.TargetID));

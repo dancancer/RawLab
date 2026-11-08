@@ -5143,6 +5143,12 @@
       "formats": [],
       "source": "请按历史顺序撤销或重做。",
       "types": []
+    },
+    "edit_store_unavailable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "调整记录暂不可用，请稍后重试。",
+      "types": []
     }
   },
   "overrides": {

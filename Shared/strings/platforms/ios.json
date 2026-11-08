@@ -4238,14 +4238,6 @@
       "ja": "写真を選んで調整を同期できます。1枚ずつ微調整した後、同じ一覧に戻ることもできます。",
       "zh-Hans": "选择照片后同步所需调整，也可进入单张微调，再返回原集合。"
     },
-    "调整记录暂不可用，请稍后重试。": {
-      "en": "Adjustment records are temporarily unavailable. Try again later.",
-      "de": "Die Anpassungsdaten sind vorübergehend nicht verfügbar. Versuchen Sie es später erneut.",
-      "es": "Los ajustes guardados no están disponibles temporalmente. Inténtalo de nuevo más tarde.",
-      "fr": "Les réglages enregistrés sont temporairement indisponibles. Réessayez plus tard.",
-      "ja": "調整記録は一時的に利用できません。後でもう一度お試しください。",
-      "zh-Hans": "调整记录暂不可用，请稍后重试。"
-    },
     "调整未保存，请重试。": {
       "en": "Adjustments were not saved. Try again.",
       "de": "Die Anpassungen wurden nicht gespeichert. Versuchen Sie es erneut.",

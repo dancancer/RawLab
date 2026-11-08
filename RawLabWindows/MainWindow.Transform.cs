@@ -23,7 +23,7 @@ public partial class MainWindow
         if(!ResolveTransformDraft() || !SaveEdits())return;
         try { transformSource=new(file,openRevision,editRevision,CaptureCurrentEdit(),lut); }
         catch(Exception error) when(error is System.IO.IOException or UnauthorizedAccessException)
-        { SetSaveNotice("调整未保存 · 重试",error.Message,true);return; }
+        { SetSaveNotice("调整未保存 · 重试",AdjustmentTransferPresentation.Detail(error),true);return; }
         transformSaveFailed=false;
         savedTransformCompare=compare;
         transform.Begin(settings.Geometry,settings.Lens,tool);++transformGeneration;transformPreviewReady=false;
@@ -68,7 +68,7 @@ public partial class MainWindow
         }
         catch(Exception error)
         {
-            transformSaveFailed=true;SetSaveNotice("调整未保存 · 重试",error.Message,true);return false;
+            transformSaveFailed=true;SetSaveNotice("调整未保存 · 重试",AdjustmentTransferPresentation.Detail(error),true);return false;
         }
         // 只有候选已落盘，才能提升草稿；不再排队保存旧 committed。
         (settings.Geometry,settings.Lens)=transform.Apply();++editRevision;editDirty=false;

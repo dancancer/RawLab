@@ -171,7 +171,7 @@ internal fun collectionMessage(message: String): String {
         "Photo look is unavailable" -> com.rawlab.android.R.string.collection_look_unavailable
         "Photo look changed" -> com.rawlab.android.R.string.collection_look_changed
         "Review the selected photos again" -> com.rawlab.android.R.string.collection_selection_changed
-        "Photo source changed" -> com.rawlab.android.R.string.collection_source_changed
+        "Photo source changed", "The original photo changed. Select it again." -> com.rawlab.android.R.string.collection_source_changed
         "Photo source unavailable", "Photo source is unavailable", "Photo left the collection" -> com.rawlab.android.R.string.collection_source_unavailable
         "Cannot create batch inputs" -> com.rawlab.android.R.string.collection_storage_error
         "Apply, discard or skip this photo's draft" -> com.rawlab.android.R.string.collection_draft_error

@@ -108,6 +108,7 @@
     <string name="dehaze">"Dehaze"</string>
     <string name="dng_description">"Baked-in look, not sensor RAW. No editable history or capture EXIF. Files only."</string>
     <string name="edit_read_error">"Unable to read adjustment record: %1$s"</string>
+    <string name="edit_store_unavailable">"Adjustment records are temporarily unavailable. Try again later."</string>
     <string name="edit_unsaved_detail">"Adjustments not saved: %1$s"</string>
     <string name="editor_adjusted">"Adjusted"</string>
     <string name="editor_collapse_histogram">"Collapse histogram"</string>

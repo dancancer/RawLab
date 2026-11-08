@@ -22,7 +22,7 @@ internal data class EditSaveResult(val state: EditSaveState, val error: Throwabl
             is PhotoChangedException -> R.string.collection_source_changed
             is AdjustmentOperationExpiredException -> R.string.transfer_conflict_message
             is AdjustmentHistoryOrderException -> R.string.transfer_history_order_message
-            is AdjustmentNotReadyException -> R.string.transfer_draft_message
+            is AdjustmentNotReadyException -> if (reading) R.string.edit_store_unavailable else R.string.transfer_draft_message
             else -> null
         }
         dedicated?.let(AppStrings::text) ?: AppStrings.format(if (reading) R.string.edit_read_error else R.string.edit_unsaved_detail,
