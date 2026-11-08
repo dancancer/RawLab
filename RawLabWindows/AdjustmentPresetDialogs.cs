@@ -27,14 +27,15 @@ internal sealed class AdjustmentPresetNameDialog : Window
 {
     private readonly TextBox name = new() { Margin = new Thickness(0, 4, 0, 12) };
     internal AdjustmentPresetNameDialog(Window owner, string title, string initialName, bool includeScope,
-        Func<string, AdjustmentScope, string?> save,bool hdr=false, Func<AdjustmentScope, AdjustmentPayload>? preview=null, Func<string, string, string?>? lookName=null)
+        Func<string, AdjustmentScope, string?> save,bool hdr=false, Func<AdjustmentScope, AdjustmentPayload>? preview=null,
+        Func<string, string, string?>? lookName=null,bool cameraRaw=false)
     {
         var root = AdjustmentDialogLayout.Configure(this, owner, title, "preset.name-dialog");
         var heading = new StackPanel(); root.Children.Add(heading);
         heading.Children.Add(AdjustmentDialogLayout.Text(Loc.Text("预设名称")));
         name.Text = initialName; AutomationProperties.SetAutomationId(name, "preset.name");
         AutomationProperties.SetName(name, Loc.Text("预设名称")); heading.Children.Add(name);
-        var scope = new AdjustmentScopeEditor("preset.save",hdr,preview,lookName); Grid.SetRow(scope, 1); root.Children.Add(scope);
+        var scope = new AdjustmentScopeEditor("preset.save",hdr,preview,lookName,cameraRaw); Grid.SetRow(scope, 1); root.Children.Add(scope);
         scope.Visibility = includeScope ? Visibility.Visible : Visibility.Collapsed;
         var footer = new StackPanel { Margin = new Thickness(0, 12, 0, 0) }; Grid.SetRow(footer, 2); root.Children.Add(footer);
         var error = AdjustmentDialogLayout.Text(""); error.SetResourceReference(TextBlock.ForegroundProperty, "ErrorForeground");

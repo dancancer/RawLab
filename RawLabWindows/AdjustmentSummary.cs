@@ -32,6 +32,9 @@ internal sealed class AdjustmentSummary
         var number = Number(value) ?? 0;
         return field switch {
             F.Look => LookText(value, lookName),
+            F.HdrLook => HDRLookValue(value) is { Name: { } name } look
+                ? name + " · " + Percent(look.Strength, false) : text("中性"),
+            F.HdrCameraDevelopment => HDRCameraValue(value) is { } camera ? CameraText(camera) : "",
             F.Strength => NumberText(number * 100) + "%",
             F.Exposure => NumberText(number, 2, true) + " EV",
             F.ExposureMode => text(Text(value) switch { "scene" => "场景", "preview" => "预览", _ => "传感器基准" }),
@@ -40,6 +43,9 @@ internal sealed class AdjustmentSummary
             F.Shadows or F.SCurve => Percent(number, true),
             F.BlackPoint or F.WhitePoint or F.Vibrance or F.Clarity or F.Dehaze => NumberText(number, signed: true) + "%",
             F.HdrTemperature => NumberText(number) + " K（" + text("相对白平衡") + "）",
+            F.HdrPeakLimit => number == 0 ? text("不限") : NumberText(number, signed: true) + " EV",
+            F.HdrSDRExposure => NumberText(number, signed: true, minimum: 2) + " EV",
+            F.HdrSDRContrast or F.HdrSDRSaturation => NumberText(number, signed: true) + "%",
             F.HdrTint => NumberText(number, signed: true) + "（" + text("相对白平衡") + "）",
             F.WhiteBalanceMode => text(Text(value) switch { "camera" => "相机白平衡（按目标照片）", "temperature" => "自定义", _ => "不适用" }),
             F.Temperature or F.Tint => Null(value)
@@ -61,6 +67,15 @@ internal sealed class AdjustmentSummary
             F.LensProfile => Null(value) ? text("自动（按目标照片）") : Text(value) == "__rawlab_manual_selection_required__" ? text("待选择的镜头配置") : Text(value) ?? "",
             _ => NumberText(number, signed: true)
         };
+    }
+
+    private string CameraText(HDRCameraDevelopmentSettings camera)
+    {
+        var whiteBalance = camera.CustomWhiteBalance ? NumberText(camera.Temperature) + " K · " + text("色调") + " " +
+            NumberText(camera.Tint,signed:true) : text("相机白平衡（按目标照片）");
+        var exposure = text(camera.SensorExposure ? "传感器基准" : "场景");
+        var denoise = camera.FbddLevel == 0 ? text("关闭") : $"FBDD {camera.FbddLevel}";
+        return string.Join(" · ",whiteBalance,exposure,denoise);
     }
 
     private string LookText(JsonElement value, Func<string, string, string?>? lookName)

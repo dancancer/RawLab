@@ -163,9 +163,9 @@ final class BatchExportModel: ObservableObject {
                 context["sourceKind"] = file.isRaw ? "raw" : "raster"
                 context["extension"] = ErrorDiagnostics.fileNameExtension(file.url)
                 stage = "readIdentity"
-                let itemIdentity = item.itemIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
+                let resourceIdentifier = item.itemIdentifier
                 let identity = try await perform {
-                    try itemIdentity ?? PhotoIdentity.fallback(for: file.url)
+                    try PhotoIdentity.fallback(for: file.url, resourceIdentifier: resourceIdentifier)
                 }
                 stage = "prepareTarget"
                 let target = try await prepareTarget(file, identity: identity, jobID: jobID,
@@ -230,9 +230,6 @@ final class BatchExportModel: ObservableObject {
         for index in result.targets.indices {
             if isCancellationRequested { throw CancellationError() }
             let prepared=try hdrPreparation.prepare(result.targets[index],ordinal:index,format:draft.outputFormat,longEdge:draft.longEdge)
-            guard draft.outputFormat != .hdrJPEG || prepared.settings.isHDREditing else {
-                throw BatchExportError.target(L10n.text("HDR JPEG 需要启用 HDR 编辑。")+" "+result.targets[index].displayName)
-            }
             var frozen=prepared
             if let original=prepared.lookURL {
                 let folder=try BatchInputStore.directory(for:draft.id,root:journal.directory).deletingLastPathComponent()

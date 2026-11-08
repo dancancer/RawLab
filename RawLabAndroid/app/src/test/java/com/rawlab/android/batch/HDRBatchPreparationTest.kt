@@ -5,6 +5,7 @@ import com.rawlab.android.batch.journal.BatchJournal
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
+import com.rawlab.android.photo.HDRSourceInfo
 import com.rawlab.android.settings.*
 import org.junit.Assert.*
 import org.junit.Test
@@ -26,7 +27,9 @@ class HDRBatchPreparationTest {
         }
         init {store.save(targets.last().identity,EditSettings(exposure=-1f,film="custom"))}
         fun preparation(settings: EditSettings=sourceSettings)=BatchHDRPreparation(source.copy(settings=settings),store::versionedState,
-            { if(it.film=="custom")look else null },{it.name.startsWith("hdr")})
+            { if(it.film=="custom")look else null },{ file, _ ->
+                if(file == source.sourceFile || file.name.startsWith("hdr")) hdrInfo(1) else null
+            })
         fun job(settings: EditSettings=sourceSettings,format: ExportFormat=ExportFormat.JPEG)=BatchJob(source.copy(settings=settings),targets,outputFormat=format,outputLongEdge=128)
     }
     private fun test(action: (Fixture)->Unit) {val fixture=Fixture();try {action(fixture)}finally {fixture.root.deleteRecursively()}}
@@ -64,15 +67,25 @@ class HDRBatchPreparationTest {
 
     @Test fun capableCameraRawKeepsDefaultSdrAndRestoresItsHdrRecord() = test { f ->
         val target = f.targets[2]
-        val preparation = BatchHDRPreparation(f.source, f.store::versionedState, { null }, { true }, { it == target.sourceFile })
-        assertFalse(preparation.prepare(target, 0, ExportFormat.JPEG, 128).settings.isHDREditing)
-        val edits = EditSettings().withHDRMode(true, false, cameraRaw = true, proRAW = true)
-        f.store.save(target.identity, edits)
-        val result = preparation.prepare(target, 0, ExportFormat.HDR_JPEG, 128).settings
-        assertTrue(result.isHDREditing)
-        assertEquals(2, result.proRAWDecodeVersion)
-        assertEquals(.5f, result.exposure)
-        assertEquals(edits, f.store.versionedState(target.identity).settings)
+        for (proRAW in listOf(false, true)) {
+            val preparation = BatchHDRPreparation(f.source, f.store::versionedState, { null }, { file, raw ->
+                when {
+                    file == f.source.sourceFile -> hdrInfo(1)
+                    file == target.sourceFile && raw -> hdrInfo(if (proRAW) HDRSourceInfo.CONTAINER_PRORAW else HDRSourceInfo.CONTAINER_CAMERA_RAW)
+                    else -> null
+                }
+            })
+            f.store.save(target.identity, EditSettings())
+            assertFalse(preparation.prepare(target, 0, ExportFormat.JPEG, 128).settings.isHDREditing)
+            val edits = EditSettings(exposure = -2f).withHDRMode(true, false, cameraRaw = true, proRAW = proRAW)
+            f.store.save(target.identity, edits)
+            val result = preparation.prepare(target, 0, ExportFormat.HDR_JPEG, 128).settings
+            assertTrue(result.isHDREditing)
+            assertEquals(if (proRAW) HDRSourceInfo.PRORAW_DECODE_VERSION else null, result.proRAWDecodeVersion)
+            assertEquals(.5f, result.exposure)
+            assertEquals(-2f, result.sdrSnapshotSettings()!!.exposure)
+            assertEquals(edits, f.store.versionedState(target.identity).settings)
+        }
     }
 
     @Test fun nonneutralRelativeWhiteBalanceRejectsTheWholeMixedBatch() = test { f ->
@@ -100,5 +113,9 @@ class HDRBatchPreparationTest {
         assertThrows(java.io.IOException::class.java) {f.preparation().freeze(draft,f.directory){false}}
         assertEquals(listOf(sentinel),folder.listFiles()!!.toList())
         assertEquals("original look",f.look.readText())
+    }
+
+    private companion object {
+        fun hdrInfo(container: Int) = HDRSourceInfo(128, 96, 1, container, 1, 1, 0f, 0, ByteArray(32))
     }
 }

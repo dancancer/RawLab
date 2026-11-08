@@ -17,11 +17,13 @@ extension ContentView {
         } else if choosingMasterRecipe {
             masterRecipePanel
         } else if selectedAdjustment == .toneCurve {
-            IOSToneCurveControls(settings: Binding(get: { settings.curveSettings }, set: { settings.curveSettings = $0 }),
-                legacy: $settings.toneCurve, onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
+            IOSToneCurveControls(settings: Binding(get: { settings.editingCurveSettings }, set: { settings.editingCurveSettings = $0 }),
+                legacy: Binding(get: { AdjustmentKind.toneCurve.value(from: settings) },
+                                set: { AdjustmentKind.toneCurve.setValue($0, in: &settings) }),
+                usesExposureStops: settings.isHDREditing, onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
                 .disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .colorGrading {
-            IOSColorGradingControls(settings: Binding(get: { settings.gradingSettings }, set: { settings.gradingSettings = $0 }),
+            IOSColorGradingControls(settings: Binding(get: { settings.editingGradingSettings }, set: { settings.editingGradingSettings = $0 }),
                 zone: $gradingZone, onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
                 .disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .hsl {
@@ -29,21 +31,21 @@ extension ContentView {
                 HSLTargetControls(enabled: $hslTargetEnabled, axis: $hslTargetAxis,
                     sample: hslTargetInteraction.selection, waiting: hslTargetInteraction.isWaiting,
                     notice: hslTargetNotice, onCancel: cancelHSLTarget).padding(.horizontal, 16)
-                IOSHSLMixer(settings: Binding(get: { settings.hsl }, set: { settings.hsl = $0 }),
+                IOSHSLMixer(settings: Binding(get: { settings.editingHSLSettings }, set: { settings.editingHSLSettings = $0 }),
                     onEditingChanged: { editing in
                         if editing { cancelHSLTarget() }
                         setSliderEditing(editing)
                     }, channel: $hslChannel)
             }.disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .vignette || selectedAdjustment == .grain {
-            IOSPhotoEffectsControls(effect: selectedAdjustment ?? .vignette, settings: Binding(
-                get: { settings.photoEffects }, set: { settings.photoEffects = $0 }
-            ), onEditingChanged: setSliderEditing,
+            IOSPhotoEffectsControls(effect: selectedAdjustment ?? .vignette, value: { parameter in
+                Binding(get: { settings.editingEffectValue(parameter) }, set: { settings.setEditingEffect(parameter, to: $0) })
+            }, onEditingChanged: setSliderEditing,
                 onReset: { requestEditorReset(.tool(currentEditorTool)) },
                 resetEnabled: resetModified(.tool(currentEditorTool)))
                 .padding(.horizontal, 16)
                 .disabled(!viewModel.hasImage || editingLocked)
-        } else if selectedAdjustment == .noiseReduction {
+        } else if selectedAdjustment == .noiseReduction && !settings.isHDREditing {
             IOSDenoiseControls(settings: Binding(
                 get: { settings.denoise },
                 set: { settings.denoise = $0; settings.noiseReduction = 0 }
@@ -96,13 +98,18 @@ extension ContentView {
     }
 
     func scalarAdjustmentPanel(_ adjustment: AdjustmentKind) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let hdrDenoise = adjustment == .noiseReduction
+        let formatter: (Double) -> String = hdrDenoise
+            ? { String(format: "%.0f", locale: L10n.locale, $0 * 100) }
+            : adjustment.formatted
+        return VStack(alignment: .leading, spacing: 8) {
             AdjustmentControl(title: adjustment.title, value: adjustmentBinding(adjustment),
                               range: adjustment.range, step: adjustment.step,
                               defaultValue: adjustment.value(from: .default),
-                              unit: adjustment.unit,
-                              formatter: adjustment.formatted,
-                              reciprocal: adjustment == .temperature, displayScale: adjustment == .strength ? 100 : 1,
+                              unit: hdrDenoise ? "%" : adjustment.unit,
+                              formatter: formatter,
+                              reciprocal: adjustment == .temperature,
+                              displayScale: adjustment == .strength || hdrDenoise ? 100 : 1,
                               identifier: "adjustment", onEditingChanged: setSliderEditing)
                 .id(adjustment.rawValue)
             if adjustment == .exposure {
@@ -149,7 +156,7 @@ extension ContentView {
                     .fixedSize()
             }
             .buttonStyle(EditorCompactActionStyle())
-            .disabled(autoExposing || viewModel.isBusy || settings.isHDREditing)
+            .disabled(autoExposing || viewModel.isBusy)
             .accessibilityIdentifier("exposure.auto")
         }
     }

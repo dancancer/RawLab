@@ -34,6 +34,13 @@ target_link_libraries(hdr_codec_probe PRIVATE
 
 set(HDR_ULTRAHDR_SOURCE "" CACHE PATH "Verified libultrahdr 2.0.2 source directory")
 set(HDR_JPEG_PREFIX "" CACHE PATH "Target-specific libjpeg-turbo 3.1.3 static install")
+set(production_sources
+    ../../src/core/hdr_rendering.cpp ../../src/core/photo_geometry.cpp
+    ../../src/core/photo_tone_curve.cpp ../../src/core/photo_color.cpp
+    ../../src/core/photo_color_grading.cpp ../../src/core/color_converter.cpp
+    ../../src/core/photo_effects.cpp ../../src/core/hdr_detail.cpp
+    ../../src/core/hdr_look.cpp ../../src/core/lut_parser.cpp ../../src/core/lut_applicator.cpp
+    ../../src/core/hdr_jpeg.cpp ../../src/platform/hdr_image_apple.mm)
 if(HDR_ULTRAHDR_SOURCE)
     if(NOT EXISTS "${HDR_JPEG_PREFIX}/lib/libjpeg.a" OR NOT EXISTS "${HDR_JPEG_PREFIX}/include/jpeglib.h")
         message(FATAL_ERROR "Ultra HDR probe requires an explicit target-specific static JPEG prefix")
@@ -58,12 +65,12 @@ if(HDR_ULTRAHDR_SOURCE)
         target_sources(uhdr PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/hdr_codec_anchor.cpp")
     endif()
     target_sources(hdr_codec_probe PRIVATE ultrahdr_probe.mm)
-    target_include_directories(hdr_codec_probe PRIVATE "${HDR_ULTRAHDR_SOURCE}")
+    target_include_directories(hdr_codec_probe PRIVATE "${HDR_ULTRAHDR_SOURCE}"
+        "${HDR_ULTRAHDR_SOURCE}/lib/include" "${HDR_ULTRAHDR_SOURCE}/third_party/image_io/includes"
+        "${HDR_JPEG_PREFIX}/include")
     target_compile_definitions(hdr_codec_probe PRIVATE RAWLAB_HDR_ULTRAHDR=1)
     target_link_libraries(hdr_codec_probe PRIVATE uhdr)
-    target_sources(hdr_codec_probe PRIVATE hdr_native_probe.mm
-        ../../src/core/hdr_rendering.cpp ../../src/core/photo_geometry.cpp
-        ../../src/core/hdr_jpeg.cpp ../../src/platform/hdr_image_apple.mm)
+    target_sources(hdr_codec_probe PRIVATE hdr_native_probe.mm ${production_sources})
     target_include_directories(hdr_codec_probe PRIVATE ../../include ../../src)
     target_compile_definitions(hdr_codec_probe PRIVATE RAWLAB_HDR_PRODUCTION=1)
     foreach(case IN ITEMS iso rgb_map heic orientation ultrahdr)
@@ -79,9 +86,12 @@ endif()
 set(HDR_FINAL_FIXTURE "" CACHE FILEPATH "Read-only fixture for full-resolution production core verification")
 get_filename_component(HDR_FINAL_FIXTURE_NAME "${HDR_FINAL_FIXTURE}" NAME)
 set(provenance_sources hdr_codec_probe.mm hdr_device_main.mm hdr_native_probe.mm ultrahdr_probe.mm
-    ../../src/core/hdr_rendering.cpp ../../src/core/photo_geometry.cpp ../../src/core/hdr_jpeg.cpp
+    ${production_sources}
     ../../src/core/hdr_rendering.h ../../src/core/hdr_jpeg.h ../../src/platform/hdr_image.h
-    ../../src/platform/hdr_image_apple.mm ../../include/sony2fuji/ffi/sony2fuji_hdr.h
+    ../../src/core/photo_geometry.h ../../src/core/photo_tone_curve.h ../../src/core/photo_color.h
+    ../../src/core/photo_color_grading.h ../../src/core/photo_effects.h ../../src/core/hdr_detail.h
+    ../../src/core/hdr_look.h ../../include/sony2fuji/lut_parser.h ../../include/sony2fuji/lut_applicator.h
+    ../../include/sony2fuji/color_converter.h ../../include/sony2fuji/ffi/sony2fuji_hdr.h
     ../../cmake/hdr-codec-dependencies.json CMakeLists.txt DeviceInfo.plist.in)
 set(provenance "")
 foreach(source IN LISTS provenance_sources)

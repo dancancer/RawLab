@@ -30,9 +30,11 @@ internal sealed class AdjustmentScopeDialog : Window
 {
     private readonly AdjustmentScopeEditor editor;
     internal AdjustmentScope SelectedScope => editor.SelectedScope;
-    internal AdjustmentScopeDialog(Window owner, string source, Func<AdjustmentScope, string?> copy, string title = "复制调整", string confirmTitle = "复制调整",bool hdr=false, Func<AdjustmentScope, AdjustmentPayload>? preview=null, Func<string, string, string?>? lookName=null)
+    internal AdjustmentScopeDialog(Window owner, string source, Func<AdjustmentScope, string?> copy, string title = "复制调整",
+        string confirmTitle = "复制调整",bool hdr=false, Func<AdjustmentScope, AdjustmentPayload>? preview=null,
+        Func<string, string, string?>? lookName=null,bool cameraRaw=false)
     {
-        editor=new("adjustment.copy",hdr,preview,lookName);
+        editor=new("adjustment.copy",hdr,preview,lookName,cameraRaw);
         var root = AdjustmentDialogLayout.Configure(this, owner, title, "adjustment.copy");
         root.Children.Add(AdjustmentDialogLayout.Text(Path.GetFileName(source)));
         Grid.SetRow(editor, 1); root.Children.Add(editor);

@@ -180,8 +180,8 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             return settings.toneCurve * 100
         case .saturation:
             return (settings.saturation - 1) * 100
-        case .colorGrading: return settings.gradingSettings.progress * 100
-        case .hsl: return settings.hsl.progress * 100
+        case .colorGrading: return settings.editingGradingSettings.progress * 100
+        case .hsl: return settings.editingHSLSettings.progress * 100
         case .temperature:
             return settings.temperature
         case .tint:
@@ -191,9 +191,9 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
         case .sharpening:
             return settings.sharpening * 100
         case .vignette:
-            return settings.photoEffects.vignetteAmount
+            return settings.editingEffectValue(.vignetteAmount)
         case .grain:
-            return settings.photoEffects.grainAmount
+            return settings.editingEffectValue(.grainAmount)
         }
     }
 
@@ -239,9 +239,9 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
         case .sharpening:
             settings.sharpening = value / 100
         case .vignette:
-            settings.photoEffects.vignetteAmount = value
+            settings.setEditingEffect(.vignetteAmount, to: value)
         case .grain:
-            settings.photoEffects.grainAmount = value
+            settings.setEditingEffect(.grainAmount, to: value)
         }
     }
 
@@ -253,7 +253,15 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
         case .contrast: return \.contrast
         case .highlights: return \.highlights
         case .shadows: return \.shadows
+        case .blackPoint: return \.toneSettings.blackPoint
+        case .whitePoint: return \.toneSettings.whitePoint
+        case .toneCurve: return \.toneSettings.curveStrength
         case .saturation: return \.saturation
+        case .vibrance: return \.colorSettings.vibrance
+        case .sharpening: return \.detailSettings.sharpeningPercent
+        case .clarity: return \.detailSettings.clarityPercent
+        case .dehaze: return \.detailSettings.dehazePercent
+        case .noiseReduction: return \.detailSettings.denoise
         default: return nil
         }
     }
@@ -328,7 +336,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
             let deltas = PhotoEffectParameter.allCases
                 .filter { $0.isVignette == (self == .vignette) }
                 .map { parameter -> Double in
-                    let value = settings.photoEffects[keyPath: parameter.keyPath]
+                    let value = settings.editingEffectValue(parameter)
                     let baseline = parameter.defaultValue
                     let delta = value - baseline
                     let span = delta >= 0 ? parameter.range.upperBound - baseline : baseline - parameter.range.lowerBound

@@ -5,7 +5,7 @@ extension RenderEngine {
     func agentRecipe(_ url: URL, settings: Adjustments, lut: URL?, output: URL,
                      exportLongEdge: Int? = nil) throws -> Data {
         if let hdr=settings.hdr, hdr.mode == .hdr {
-            guard try HDRSourceInfo.probe(url) != nil else {
+            guard try HDRSourceInfo.probe(url, allowSDRFallback: false) != nil else {
                 throw RenderError.failed(L10n.text("此照片不包含受支持的 HDR 增益图。"))
             }
             guard ExportFormat.forOutput(output) == .jpeg else {
@@ -13,7 +13,7 @@ extension RenderEngine {
             }
             return try HDRRecipe.document(settings:hdr,input:url,output:output,baseColor:.displayP3,longEdge:exportLongEdge)
         }
-        guard try HDRSourceInfo.probe(url)==nil else {
+        guard try HDRSourceInfo.probe(url, allowSDRFallback: false)==nil else {
             throw RenderError.failed(L10n.text("HDR 原片的 Agent 配方需要启用 HDR 编辑。"))
         }
         guard !settings.aiDenoiseEnabled else {
@@ -47,6 +47,7 @@ extension RenderEngine {
         let format: String
         switch ExportFormat.forOutput(output) {
         case .jpeg, .hdrJPEG: format = "jpeg"
+        case .hdrHEIF: throw RenderError.failed(L10n.text("不支持此 HDR 格式或颜色描述。"))
         case .png: format = "png"
         case .renderedDNG: format = "dng"
         }

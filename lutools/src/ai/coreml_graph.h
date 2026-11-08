@@ -11,6 +11,8 @@ public:
     CoreMLGraph& operator=(const CoreMLGraph&) = delete;
     std::vector<float> run(const std::vector<std::vector<float>>& inputs);
     static bool available();
+    static bool gpuPlanAvailable();
+    static void verifyRawGPUPlacement(const std::string& compiledPath);
     static std::string runtimeVersion();
 private:
     struct Impl;

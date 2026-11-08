@@ -19,7 +19,7 @@ internal static class QuickPresetHDRChecks
         try {
             window.Show(); window.OpenFile(source); Ready(window);
             var settings = Get<Adjustments>(window, "settings");
-            if (!settings.IsHDREditing && PhotoInput.IsCameraRaw(source) &&
+            if (!settings.IsHDREditing && PhotoInput.IsRaw(source) &&
                 PhotoInput.ProbeCameraRaw(source, out var sourceInfo) == HDRProbeState.Supported && sourceInfo?.IsProRAW == true)
             {
                 window.HDREditMenu.IsChecked = true;

@@ -8,6 +8,20 @@ import java.io.File
 import java.util.Locale
 
 class AdjustmentSummaryTest {
+    @Test fun everySummaryTextKeyHasAnAndroidResourceMapping() {
+        val summarySource = File("src/main/java/com/rawlab/android/adjustments/AdjustmentSummary.kt").readText()
+        val uiSource = File("src/main/java/com/rawlab/android/editor/ui/AdjustmentSummaryContent.kt").readText()
+        // 摘要的所有中文常量都是文案 key，连同条件分支一起检查，避免只覆盖默认参数。
+        val keys = Regex("\"([^\"\\n]*[\\u4e00-\\u9fff][^\"\\n]*)\"")
+            .findAll(summarySource).map { it.groupValues[1] }.toSet()
+        val mappings = Regex("\"([^\"]+)\"\\s*->\\s*R\\.string\\.([a-z0-9_]+)")
+            .findAll(uiSource).associate { it.groupValues[1] to it.groupValues[2] }
+        assertTrue(keys.isNotEmpty())
+        assertEquals("Unmapped adjustment summary keys", emptySet<String>(), keys - mappings.keys)
+        assertEquals("tint", mappings["色调"])
+        assertEquals("disabled", mappings["关闭"])
+    }
+
     @Test fun summaryMatchesSharedPayloadVectors() {
         val cases = JSONObject(File("../../Shared/fixtures/adjustment-summary-v1.json").readText()).getJSONArray("cases")
         for (index in 0 until cases.length()) {

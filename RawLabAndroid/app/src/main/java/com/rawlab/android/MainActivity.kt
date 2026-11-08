@@ -42,7 +42,11 @@ import com.rawlab.android.batch.ui.BatchSelectionScreen
 import com.rawlab.android.batch.ui.BatchExportScreen
 import com.rawlab.android.editor.EditorViewModel
 import com.rawlab.android.photo.SystemPhotoIntent
+import com.rawlab.android.editor.PendingDcpImport
+import com.rawlab.android.editor.PendingLookCompatibility
+import com.rawlab.android.editor.ui.DcpImportDialog
 import com.rawlab.android.editor.ui.EditorScreen
+import com.rawlab.android.editor.ui.LUTCompatibilityDialog
 import com.rawlab.android.editor.ui.AdjustmentSheet
 import com.rawlab.android.editor.ui.AdjustmentTransferSheet
 import com.rawlab.android.editor.ui.AdjustmentPresetSheet
@@ -166,6 +170,8 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     val openLook = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         model.importLooks(uris)
     }
+    val openHDRLook = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), model::finishHDRLookImport)
+    val openHDRCameraProfile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), model::finishHDRCameraProfileImport)
     val saveJpeg = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/jpeg")) {
         if (it == null) exportDialog = true else model.export(it, format, pendingExportLongEdgeText.toIntOrNull())
     }
@@ -248,7 +254,12 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             },
             onMessageDismiss = model::dismissMessage, onLicenses = { licenses = true }, onGpuChange = model::setGpuEnabled,
             onHDRChange = model::setHDRMode,
+            onHDRCameraDevelopment = model::applyHDRCameraDevelopment,
+            onHDRCameraDraftChange = model::changeHDRCameraDraft,
+            onImportHDRCameraProfile = { if (model.beginHDRCameraProfileImport()) openHDRCameraProfile.launch(arrayOf("*/*")) },
             onImportLook = { openLook.launch(arrayOf("*/*")) }, onRenameLook = model::renameLook,
+            onImportHDRLook = { if (model.beginHDRLookImport()) openHDRLook.launch(arrayOf("*/*")) },
+            onApplyHDRSilver = model::applyHDRSilver,
             onDeleteLook = model::deleteLook, onLookImportReportDismiss = model::dismissLookImportReport,
             onAbout = { about = true }, updateVersion = updateState.available?.version,
             onPreviewSizeChange = model::updatePreviewSize,
@@ -256,8 +267,13 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             onApplyDraft = model::applyDraft, onDiscardDraft = model::discardDraft,
             onGeometryRatio = model::chooseGeometryRatio, onGeometryLock = model::toggleGeometryLock,
             onGeometrySwap = model::swapGeometryRatio, onGeometryGrid = model::toggleGeometryGrid)
-        if (!state.lookCompatibilityPreparing) state.pendingLookCompatibility.firstOrNull()?.let { pending ->
-            com.rawlab.android.editor.ui.LUTCompatibilityDialog(pending, state.photo, model.storage, model::resolveLookCompatibility)
+        if (!state.lookImportPreparing) {
+            when (val pending = state.pendingLookImports.firstOrNull()) {
+                is PendingLookCompatibility ->
+                    LUTCompatibilityDialog(pending, state.photo, model.storage, model::resolveLookCompatibility)
+                is PendingDcpImport -> DcpImportDialog(pending, model::resolveDcpImport)
+                null -> Unit
+            }
         }
         }
         }

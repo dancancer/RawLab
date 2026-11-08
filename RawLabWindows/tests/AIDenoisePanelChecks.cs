@@ -29,6 +29,18 @@ internal static class AIDenoisePanelChecks
             Loc.Initialize(language);foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
             var localized=new DenoisePanel {FontSize=14};localized.Refresh(DenoiseSettings.Clean);
             check(((CheckBox)localized.FindName("AIEnabledBox")).Content?.ToString()==Loc.Text("AI 降噪（实验）"),"AI toggle uses selected language: "+language);
+            foreach (var (camera, gpu, message) in new[] {
+                (new HDRCameraDevelopmentSettings(FbddLevel: 1), 0, "请先关闭 FBDD，再使用 HDR AI 降噪。"),
+                (new HDRCameraDevelopmentSettings(FbddLevel: 2), 0, "请先关闭 FBDD，再使用 HDR AI 降噪。"),
+                (new HDRCameraDevelopmentSettings(CameraProfile: new(new string('a',64), "D65")), 0, "请先清除 HDR 相机配置，再使用 AI 降噪。"),
+                (new HDRCameraDevelopmentSettings(), 2, "HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。")
+            }) {
+                var hint=PhotoInput.HDRCameraAIUnavailableHint(new HDRSettings {CameraDevelopment=camera},gpu);
+                localized.RefreshAI(true,false,false,new(AIDenoiseStatus.Idle),hint);
+                check(((TextBlock)localized.FindName("AIStatus")).Text==Loc.Text(message) &&
+                    !((CheckBox)localized.FindName("AIEnabledBox")).IsEnabled,
+                    "Disabled HDR AI explains its camera/GPU restriction: "+language+" / "+message);
+            }
             var surface=new Border {Background=(Brush)app.FindResource("Surface"),Padding=new Thickness(12),Child=localized};
             foreach(var state in new[]{new AIDenoiseState(AIDenoiseStatus.Running,3,90,140),
                 new AIDenoiseState(AIDenoiseStatus.Failed,Error:"Fixture failure detail"),new AIDenoiseState(AIDenoiseStatus.Ready)}) {

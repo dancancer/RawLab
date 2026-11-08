@@ -52,7 +52,7 @@ extension EditorModel {
     func schedule(forceExact: Bool) {
         guard let file else { return }
         synchronizeAI()
-        if !settings.isHDREditing && settings.aiDenoiseEnabled && (aiState.isRunning || aiRequiresExplicitRetry) {
+        if settings.activeAIDenoise && (aiState.isRunning || aiRequiresExplicitRetry) {
             scheduler.invalidatePending()
             previewOutdated = true
             refreshBusy()
@@ -88,7 +88,8 @@ extension EditorModel {
         let source = verifiedSource ?? referenceSource(file)
         let lookIdentity = effectiveLUT.flatMap { try? OriginalFileIdentity($0) }
         // AI 降噪仍需由原生层校验模型和磁盘缓存。
-        let scope: MacExactPreviewCache.Scope? = geometryDraft == nil && !scheduler.interacting && !preview.aiDenoiseEnabled &&
+        let scope: MacExactPreviewCache.Scope? = geometryDraft == nil && !scheduler.interacting && !preview.activeAIDenoise &&
+            (!preview.isHDREditing || preview.hdr?.missingResourceMessage == nil) &&
             source.modified != nil && source.size != nil && (effectiveLUT == nil || lookIdentity != nil)
             ? .init(source: source, editRevision: editRevision, look: lookIdentity) : nil
         return RenderWork(file: file, settings: preview, source: source, lut: effectiveLUT,
@@ -129,7 +130,9 @@ extension EditorModel {
                         neutral = try self.engine!.render(work.file, settings: neutralSettings, lut: nil, edge: neutralEdge)
                         self.geometryReferenceCache = neutral.map { (key, $0) }
                     }
-                    let result=try self.engine!.render(work.file,settings:work.settings,lut:nil,edge:work.edge,
+                    var preview = work.settings
+                    preview.hdr = work.settings.hdr?.previewSettings()
+                    let result=try self.engine!.render(work.file,settings:preview,lut:nil,edge:work.edge,
                         interactive:work.pass == .interactive)
                     DispatchQueue.main.async { self.finish(request,neutral:neutral,result:result,failure:nil) }
                     return
@@ -205,8 +208,9 @@ extension EditorModel {
                 if !request.value.editingGeometry { pendingGeometryPresentation = nil }
                 self.neutral = neutral
                 self.result = result
+                if request.value.settings.isHDREditing { self.error = request.value.settings.hdr?.missingResourceMessage }
                 if completion == .publishExact { previewOutdated = false }
-                if !request.value.settings.isHDREditing && request.value.settings.aiDenoiseEnabled && !self.aiState.isRunning {
+                if request.value.settings.activeAIDenoise && !self.aiState.isRunning {
                     self.aiState = .ready
                     self.aiIdentity = try? AIWorkIdentity(request.value.file, settings: request.value.settings)
                 }
@@ -225,6 +229,11 @@ extension EditorModel {
                 if pendingImportEvent {
                     pendingImportEvent = false
                     onUsage(.photoImported)
+                }
+                if pendingSDRFallbackNotice {
+                    pendingSDRFallbackNotice = false
+                    saveStatusKey = "此照片的 HDR 需 macOS 15 才能编辑，已按 SDR 打开。"
+                    clearSaveStatusLater()
                 }
                 if !request.value.settings.isHDREditing {
                     updatingMetadata = true

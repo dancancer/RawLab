@@ -20,12 +20,19 @@ import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.looks.BundledLooks
 import com.rawlab.android.looks.DcpCompiler
+import com.rawlab.android.looks.DcpCompilationException
+import com.rawlab.android.looks.DcpFailureReason
+import com.rawlab.android.looks.DcpImportChoices
+import com.rawlab.android.looks.readDcpInput
 import com.rawlab.android.looks.LookLibrary
 import com.rawlab.android.looks.LookValidator
 import com.rawlab.android.looks.ManagedLook
 import com.rawlab.android.looks.LUTCompatibility
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.engine.NativeHDRBridge
+import com.rawlab.android.engine.HDRProcessingException
+import com.rawlab.android.settings.HDRLookSettings
+import com.rawlab.android.settings.HDRCameraProfile
 import com.rawlab.android.editor.PendingLookCompatibility
 import com.rawlab.android.looks.MasterRecipe
 import com.rawlab.android.looks.NativeDcpCompiler
@@ -35,6 +42,14 @@ import com.rawlab.android.settings.Film
 import com.rawlab.android.settings.LookChoice
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.sourceDefaultSettings
+
+internal fun defaultEditSettingsFor(file: File, inputKind: PhotoInputKind, isHDRSource: Boolean,
+    cameraRaw: Boolean, x3fModeOverride: com.rawlab.android.settings.X3fMode? = null,
+    x3fDefaultMode: (File) -> com.rawlab.android.settings.X3fMode = { NativeProcessor.x3fDefaultMode(it) }): EditSettings {
+    val defaults = sourceDefaultSettings(isHDRSource, cameraRaw, inputKind)
+    return if (inputKind == PhotoInputKind.RAW && file.extension.equals("x3f", ignoreCase = true))
+        defaults.copy(x3fMode = x3fModeOverride ?: x3fDefaultMode(file)) else defaults
+}
 
 data class AlbumPhoto(val uri: Uri, val name: String, val album: String,
     val width: Int = 0, val height: Int = 0, val orientation: Int = 0) {
@@ -49,7 +64,8 @@ data class ImportedPhoto(val uri: Uri, val name: String, val file: File,
     val isCameraRawHDR get() = hdrSource?.isCameraRaw == true
     val isX3f get() = inputKind == PhotoInputKind.RAW &&
         (name.substringAfterLast('.', "").equals("x3f", ignoreCase = true) || file.extension.equals("x3f", ignoreCase = true))
-    fun defaultEditSettings(): EditSettings = sourceDefaultSettings(isHDRSource, cameraRaw = isCameraRawHDR)
+    fun defaultEditSettings(x3fModeOverride: com.rawlab.android.settings.X3fMode? = null): EditSettings =
+        defaultEditSettingsFor(file, inputKind, isHDRSource, isCameraRawHDR, x3fModeOverride)
 }
 
 internal fun albumAspectRatio(width: Int, height: Int, orientation: Int): Float? {
@@ -67,6 +83,8 @@ class PhotoStorage(
     private val directory = File(context.cacheDir, "rawlab-${UUID.randomUUID()}")
     private val systemPhotos = File(context.filesDir, "system-photos")
     private val lookLibrary = LookLibrary(looksDirectory, lookValidator, dcpCompiler)
+    internal val hdrLookDirectory = File(looksDirectory, "HDR")
+    internal val hdrCameraProfileDirectory = File(context.filesDir, "HDRCameraProfiles")
     private val films = Film.all + BundledLooks.load(context)
     private var lensDirectory: File? = null
 
@@ -189,15 +207,87 @@ class PhotoStorage(
     }
     fun builtinLookIDs(): Map<String, String> = films.mapNotNull { film -> film.fileName?.let { it to film.id } }.toMap()
 
-    private fun lookSourceName(uri: Uri): String = runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
+    internal fun lookSourceName(uri: Uri): String = runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
             if (it.moveToFirst()) it.getString(0) else null
         } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Look"
 
-    fun importLook(uri: Uri, compatibility: LUTCompatibility? = null): ManagedLook {
+    @Synchronized
+    internal fun importHDRLook(uri: Uri): HDRLookSettings {
+        val originalName = lookSourceName(uri)
+        return (resolver.openInputStream(uri) ?: throw HDRProcessingException(1, 18, 10)).use { installHDRLook(it, originalName) }
+    }
+
+    @Synchronized
+    internal fun importHDRCameraProfile(uri: Uri): HDRCameraProfile {
+        val name = lookSourceName(uri)
+        if (name.substringAfterLast('.', "").lowercase() !in setOf("dcp", "rlook"))
+            throw HDRProcessingException(1, 21, 11)
+        val size = runCatching {
+            resolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use {
+                if (it.moveToFirst() && !it.isNull(0)) it.getLong(0).takeIf { value -> value >= 0 } else null
+            }
+        }.getOrNull()
+        checkHDRCameraProfileSize(size)
+        val directory = hdrCameraProfileDirectory
+        if (!directory.isDirectory && !directory.mkdirs()) throw HDRProcessingException(1, 21, 11)
+        val staging = File.createTempFile("import-", ".profile", directory)
+        try {
+            val input = resolver.openInputStream(uri) ?: throw HDRProcessingException(1, 21, 11)
+            input.use { source -> staging.outputStream().use { copyHDRCameraProfileSource(source, it) } }
+            val profile = HDRCameraProfile(NativeHDRBridge.probeCameraProfile(staging), name.substringBeforeLast('.'))
+            java.nio.file.Files.move(staging.toPath(), profile.asset(directory).toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+            return profile
+        } finally { staging.delete() }
+    }
+
+    @Synchronized
+    internal fun installHDRSilver(): HDRLookSettings =
+        context.assets.open("BundledLooks/HDR/HDR Silver.cube").use { installHDRLook(it, "HDR Silver.cube") }
+
+    internal fun hdrSilverMaster(): com.rawlab.android.adjustments.AdjustmentPayload =
+        context.assets.open("BundledLooks/HDR/HDR Silver Master.json").bufferedReader().use {
+            com.rawlab.android.adjustments.AdjustmentPayload.decode(it.readText())
+        }
+
+    private fun installHDRLook(input: java.io.InputStream, originalName: String): HDRLookSettings {
+        if (!originalName.endsWith(".cube", ignoreCase = true)) throw HDRProcessingException(1, 18, 10)
+        if (!hdrLookDirectory.isDirectory && !hdrLookDirectory.mkdirs()) throw HDRProcessingException(1, 18, 10)
+        val temporary = File.createTempFile("import-", ".cube", hdrLookDirectory)
+        try {
+            temporary.outputStream().use { output ->
+                val buffer = ByteArray(65536)
+                var size = 0L
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    size += count
+                    if (size > HDRLookSettings.maximumBytes) throw HDRProcessingException(1, 18, 10)
+                    output.write(buffer, 0, count)
+                }
+            }
+            val look = HDRLookSettings(NativeHDRBridge.probeLook(temporary), originalName.dropLast(5), 1f)
+            val target = requireNotNull(look.asset(hdrLookDirectory))
+            try {
+                java.nio.file.Files.move(temporary.toPath(), target.toPath())
+            } catch (error: IOException) {
+                if (!look.assetIsAvailable(hdrLookDirectory)) throw error
+            }
+            return look
+        } finally { temporary.delete() }
+    }
+
+    fun importLook(uri: Uri, compatibility: LUTCompatibility? = null, dcp: DcpImportChoices? = null): ManagedLook {
         val name = lookSourceName(uri)
         try {
+            val curve = dcp?.toneCurve?.let { curveUri ->
+                val input = resolver.openInputStream(curveUri) ?: throw IOException("Cannot open tone curve")
+                input.use { readDcpInput(it, 1024 * 1024) }.also {
+                    if (it.isEmpty()) throw DcpCompilationException(DcpFailureReason.INVALID_TONE_CURVE)
+                }
+            }
             val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot open look")
-            return stream.use { lookLibrary.importLook(it, name, compatibility) }
+            return stream.use { lookLibrary.importLook(it, name, compatibility, curve, dcp?.omitAutomaticBlack == true) }
         } catch (error: Exception) {
             throw IOException("${name}: ${error.message ?: error.javaClass.simpleName}", error)
         }

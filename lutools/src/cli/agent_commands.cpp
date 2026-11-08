@@ -97,9 +97,9 @@ HDRCommandResult renderHDR(const EditRecipe& recipe,bool preview) {
     sony2fuji_session* pointer=nullptr;
     if (result.status==SONY2FUJI_STATUS_OK) result.status=sony2fuji_session_create(&pointer);
     const std::unique_ptr<sony2fuji_session,decltype(&sony2fuji_session_destroy)> session(pointer,sony2fuji_session_destroy);
-    const auto request=recipe.toHDRRequest();
+    const auto request=recipe.toHDRRenderRequest();
     if (result.status==SONY2FUJI_STATUS_OK)
-        result.status=sony2fuji_hdr_render(session.get(),&source.value,&request,&edited.value,&result.diagnostic);
+        result.status=sony2fuji_hdr_render(session.get(),&source.value,&request.base.base.base.base.base.base,&edited.value,&result.diagnostic);
     if (result.status!=SONY2FUJI_STATUS_OK) return result;
     result.sourceHeadroom=edited.value.source_headroom; result.editedHeadroom=edited.value.hdr.content_headroom;
     if (preview) {
@@ -180,26 +180,36 @@ int runAgentCommands(int argc, char* argv[]) {
             if (hdrAvailable()) {
                 versions.push_back(6); formats.push_back("hdr_jpeg");
                 hdr={{"processing_version",1},{"recipe_min_version",6},{"probe",true},{"decode",true},
+                    {"processing_versions",{1,2,3,4,5,6,7}},{"tone_recipe_version",8},{"color_recipe_version",9},{"rendition_recipe_version",10},
+                    {"effects_recipe_version",11},
+                    {"detail_recipe_version",12},
+                    {"look_recipe_version",13},{"look_profile","display-linear-srgb-v1"},
                     {"minimum_system",{{"macos","15.0"},{"ios","18.0"},{"android","26"},{"windows","10"}}},
                     {"protocols",{"apple_gain_map","iso_21496","ultra_hdr"}},
                     {"working_format","rgb32f_extended_linear_srgb"},{"backend","cpu"},{"gpu_force","unsupported"},
                     {"adjustments",{"exposure","relative_white_balance","contrast","highlights","shadows","saturation","geometry"}},
+                    {"tone_adjustments",{"black_point","white_point","s_curve","curve"}},
+                    {"color_adjustments",{"vibrance","hsl","color_grading"}},
+                    {"detail_adjustments",{"sharpening","clarity","dehaze","denoise"}},
+                    {"rendition_adjustments",{"peak_limit_ev","sdr_exposure_ev","sdr_contrast","sdr_saturation"}},
+                    {"effects_adjustments",{"vignette","grain"}},
                     {"jpeg_export",{{"metadata",{"iso","xmp"}},{"base_colors",{"srgb","display_p3"}}}},
                     {"display",false},{"preview_rendition","sdr"}};
             }
 #if defined(__APPLE__) || defined(_WIN32)
             inputs.push_back("raster");
 #if defined(_WIN32)
-            raster = {{"formats", {"jpeg", "png", "tiff"}}, {"bits_per_component", 8},
+            raster = {{"formats", {"jpeg", "png", "tiff", "heif"}}, {"bits_per_component", {8, 16}},
 #else
-            raster = {{"formats", {"jpeg", "png", "tiff", "heif"}}, {"bits_per_component", 8},
-                {"tiff_bits_per_component", {8, 16}},
+            raster = {{"formats", {"jpeg", "png", "tiff", "heif"}}, {"bits_per_component", {8, 16}},
 #endif
+                {"tiff_bits_per_component", {8, 16}},
                 {"alpha", "opaque_only"}, {"dynamic_range", "sdr"}, {"color_space", "srgb"},
                 {"backend", "cpu"}, {"max_pixels", 128000000}};
 #endif
             if (hdrAvailable()) inputs.push_back("hdr_raster");
             versions.push_back(7);
+            if (hdrAvailable()) for (int version : {8, 9, 10, 11, 12, 13}) versions.push_back(version);
             std::cout << machineJson(envelope(command, {{"recipe_versions", versions},
                 {"commands", {"capabilities", "validate_recipe", "info", "preview", "export"}}, {"input_types", inputs},
                 {"raster_input", raster},

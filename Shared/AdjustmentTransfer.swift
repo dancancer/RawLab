@@ -20,6 +20,10 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     case whiteBalanceMode = "color.white_balance.mode", temperature = "color.white_balance.temperature_kelvin"
     case tint = "color.white_balance.tint", saturation = "color.saturation"
     case hdrTemperature = "hdr.relative_temperature", hdrTint = "hdr.relative_tint"
+    case hdrPeakLimit = "hdr.peak_limit_ev", hdrSDRExposure = "hdr.sdr_exposure_ev"
+    case hdrSDRContrast = "hdr.sdr_contrast", hdrSDRSaturation = "hdr.sdr_saturation"
+    case hdrLook = "hdr.look"
+    case hdrCameraDevelopment = "hdr.camera_development"
     case hslHueRed = "color.hsl.hue.red", hslHueOrange = "color.hsl.hue.orange", hslHueYellow = "color.hsl.hue.yellow"
     case hslHueGreen = "color.hsl.hue.green", hslHueAqua = "color.hsl.hue.aqua", hslHueBlue = "color.hsl.hue.blue"
     case hslHuePurple = "color.hsl.hue.purple", hslHueMagenta = "color.hsl.hue.magenta"
@@ -48,8 +52,12 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     case lensAutoCrop = "geometry.lens.auto_crop", lensProfile = "geometry.lens.profile_id"
 
     var isHDRRelative: Bool { self == .hdrTemperature || self == .hdrTint }
+    var isHDROnly: Bool { self == .hdrLook || self == .hdrCameraDevelopment || isHDRRelative || Self.hdrRendition.contains(self) }
     var group: String {
         if isHDRRelative { return "color" }
+        if self == .hdrLook { return "looks" }
+        if self == .hdrCameraDevelopment { return "detail" }
+        if Self.hdrRendition.contains(self) { return "light" }
         return self == .blackPoint || self == .whitePoint ? "light" : String(rawValue.split(separator: ".")[0])
     }
     var gradingZone: ColorGradingZone? {
@@ -60,12 +68,35 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
         default: return nil
         }
     }
-    static var legacyFields: Set<Self> { Set(allCases.filter { !$0.isHDRRelative }) }
+    static var legacyFields: Set<Self> { Set(allCases.filter { !$0.isHDROnly }) }
     static var common: Set<Self> { Set(legacyFields.filter { $0.group != "geometry" }) }
     static let hdrCommon: Set<Self> = [.exposure, .contrast, .highlights, .shadows, .saturation, .hdrTemperature, .hdrTint]
     static let hdrGeometry: Set<Self> = [.cropX, .cropY, .cropWidth, .cropHeight, .quarterTurns,
         .flipHorizontal, .flipVertical, .straighten, .perspectiveHorizontal, .perspectiveVertical]
-    static var hdrSupported: Set<Self> { hdrCommon.union(hdrGeometry) }
+    static let hdrTone: Set<Self> = [.blackPoint, .whitePoint, .sCurve, .curve]
+    static let hdrColor = Set(allCases.filter { $0 == .vibrance || $0.gradingZone != nil || $0.hslLocation != nil })
+    static let hdrRendition: Set<Self> = [.hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation]
+    static let hdrEffects: Set<Self> = [.vignetteAmount, .vignetteMidpoint, .vignetteRoundness,
+        .vignetteFeather, .vignetteHighlights, .grainAmount, .grainSize, .grainRoughness]
+    static let hdrDetail: Set<Self> = [.sharpening, .clarity, .dehaze, .postRGBDenoise]
+    static let hdrV1Supported = hdrCommon.union(hdrGeometry)
+    static let hdrV2Supported = hdrV1Supported.union(hdrTone)
+    static let hdrV3Supported = hdrV2Supported.union(hdrColor)
+    static let hdrV4Supported = hdrV3Supported.union(hdrRendition)
+    static let hdrV5Supported = hdrV4Supported.union(hdrEffects)
+    static let hdrV6Supported = hdrV5Supported.union(hdrDetail)
+    static let hdrSupported = hdrV6Supported.union([.hdrLook])
+    static func hdrTransferFields(cameraRAW: Bool) -> Set<Self> {
+        cameraRAW ? hdrSupported.union([.hdrCameraDevelopment]) : hdrSupported
+    }
+    static func hdrSupported(version: Int) -> Set<Self> {
+        if version == 1 { return hdrV1Supported }
+        if version == 2 { return hdrV2Supported }
+        if version == 3 { return hdrV3Supported }
+        if version == 4 { return hdrV4Supported }
+        if version == 5 { return hdrV5Supported }
+        return version == 6 ? hdrV6Supported : hdrSupported
+    }
     static let whiteBalanceFields: Set<Self> = [.whiteBalanceMode, .temperature, .tint]
     static let lensFields: Set<Self> = [.lensDistortion, .lensTCA, .lensAutoCrop, .lensProfile]
     static let denoiseFields: Set<Self> = [.rawDenoise, .postRGBDenoise, .chromaDenoise, .waveletDenoise]
@@ -89,6 +120,9 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
         switch self {
         case .hdrTemperature: return 2000...50000
         case .hdrTint: return -150...150
+        case .hdrPeakLimit: return 0...6
+        case .hdrSDRExposure: return -4...4
+        case .hdrSDRContrast, .hdrSDRSaturation: return -100...100
         case .strength, .contrast, .saturation, .sharpening: return 0...2
         case .exposure: return -20...20
         case .highlights, .shadows, .sCurve, .perspectiveHorizontal, .perspectiveVertical: return -1...1
@@ -114,6 +148,26 @@ enum AdjustmentTransferValue: Codable, Equatable {
     case number(Double), string(String), boolean(Bool), object([String: Self]), array([Self]), null
 
     var number: Double? { if case .number(let value) = self { return value }; return nil }
+    var hdrLookSettings: HDRLookSettings? {
+        if self == .null { return HDRLookSettings() }
+        guard let object, Set(object.keys) == ["sha256", "name", "strength"],
+              let sha256 = object["sha256"]?.string, let name = object["name"]?.string,
+              let strength = object["strength"]?.number else { return nil }
+        let value = HDRLookSettings(sha256: sha256, name: name, strength: strength)
+        return value.isValid ? value : nil
+    }
+    var hdrCameraDevelopment: HDRCameraDevelopmentSettings? {
+        guard let object, Set(object.keys) == ["version", "white_balance_mode", "temperature", "tint", "exposure_reference", "fbdd_level"],
+              object["version"] == .number(1),
+              let mode = object["white_balance_mode"]?.string.flatMap(HDRCameraDevelopmentSettings.WhiteBalance.init(rawValue:)),
+              let temperature = object["temperature"]?.number, let tint = object["tint"]?.number,
+              let exposure = object["exposure_reference"]?.string.flatMap(HDRCameraDevelopmentSettings.ExposureReference.init(rawValue:)),
+              let level = object["fbdd_level"]?.number, (0...2).contains(level), level == level.rounded() else { return nil }
+        var value = HDRCameraDevelopmentSettings()
+        value.whiteBalance = mode; value.temperature = temperature; value.tint = tint
+        value.exposureReference = exposure; value.fbddLevel = Int(level)
+        return value.isValid ? value : nil
+    }
     var string: String? { if case .string(let value) = self { return value }; return nil }
     var boolean: Bool? { if case .boolean(let value) = self { return value }; return nil }
     var object: [String: Self]? { if case .object(let value) = self { return value }; return nil }
@@ -318,11 +372,14 @@ struct AdjustmentTransferPayload: Codable, Equatable {
         guard (payloadVersion == 1 && scopeVersion == 1 && !source.isHDR) ||
             (payloadVersion == 2 && scopeVersion == 2 && source.isHDR) else { throw AdjustmentTransferError.unsupportedVersion }
         if source.isHDR {
-            guard source.hdrProcessingVersion == 1 else { throw AdjustmentTransferError.unsupportedVersion }
-            guard !source.isRaw, source.recipe == nil, fields.isSubset(of: AdjustmentTransferField.hdrSupported) else {
+            guard let version = source.hdrProcessingVersion, (1...7).contains(version) else {
+                throw AdjustmentTransferError.unsupportedVersion
+            }
+            let supported = AdjustmentTransferField.hdrSupported(version: version).union([.hdrCameraDevelopment])
+            guard !source.isRaw, source.recipe == nil, fields.isSubset(of: supported) else {
                 throw AdjustmentTransferError.invalidPayload("hdr context")
             }
-        } else if fields.contains(where: \.isHDRRelative) {
+        } else if fields.contains(where: \.isHDROnly) {
             throw AdjustmentTransferError.invalidPayload("hdr context")
         }
         guard !values.isEmpty else { throw AdjustmentTransferError.emptyScope }
@@ -348,7 +405,7 @@ struct AdjustmentTransferPayload: Codable, Equatable {
         if !source.isRaw {
             guard self[.exposureMode] == nil || self[.exposureMode] == .string("sensor"),
                   self[.rawDenoise] == nil || self[.rawDenoise] == .number(0),
-                  self[.postRGBDenoise] == nil || self[.postRGBDenoise] == .number(0),
+                  source.isHDR || self[.postRGBDenoise] == nil || self[.postRGBDenoise] == .number(0),
                   self[.lensDistortion] != .boolean(true), self[.lensTCA] != .boolean(true) else {
                 throw AdjustmentTransferError.invalidPayload("raster request")
             }
@@ -385,6 +442,8 @@ struct AdjustmentTransferPayload: Codable, Equatable {
             return ![.cropWidth, .cropHeight].contains(field) || number > 0
         }
         switch field {
+        case .hdrLook: return value.hdrLookSettings != nil
+        case .hdrCameraDevelopment: return value.hdrCameraDevelopment != nil
         case .flipHorizontal, .flipVertical, .lensDistortion, .lensTCA, .lensAutoCrop: return value.boolean != nil
         case .exposureMode: return value.string.map { ["scene", "preview", "sensor"].contains($0) } ?? false
         case .whiteBalanceMode: return value.string.map { ["camera", "temperature", "none"].contains($0) } ?? false

@@ -4,13 +4,9 @@ namespace RawLab.Windows;
 
 internal static class PhotoInput
 {
-    internal static readonly HashSet<string> RawExtensions = new("arw arq dng nef nrw cr2 cr3 crw raf rw2 rwl orf pef srw raw 3fr fff iiq mos x3f".Split(' '),StringComparer.OrdinalIgnoreCase);
-    // Camera HDR remains opt-in. DNG is strictly probed for ProRAW first;
-    // ordinary Bayer DNG and ARW retain the existing camera-RAW route.
-    internal static readonly HashSet<string> CameraRawExtensions = new("arw dng".Split(' '),StringComparer.OrdinalIgnoreCase);
+    internal static readonly HashSet<string> RawExtensions = new("arw arq dng nef nrw cr2 cr3 crw raf rw2 rwl orf pef srw raw 3fr fff iiq mos srf sr2 mrw kdc dcr erf x3f".Split(' '),StringComparer.OrdinalIgnoreCase);
     internal static readonly HashSet<string> RasterExtensions = new("jpg jpeg png tif tiff heic heif".Split(' '),StringComparer.OrdinalIgnoreCase);
     internal static bool IsRaw(string path) => RawExtensions.Contains(Path.GetExtension(path).TrimStart('.'));
-    internal static bool IsCameraRaw(string path) => CameraRawExtensions.Contains(Path.GetExtension(path).TrimStart('.'));
     internal static bool IsX3f(string? path) => string.Equals(Path.GetExtension(path), ".x3f", StringComparison.OrdinalIgnoreCase);
     internal static bool IsNormalX3f(string? path, Adjustments settings) => IsX3f(path) && settings.X3fMode == X3fMode.Normal;
     internal static bool IsRaster(string path) => RasterExtensions.Contains(Path.GetExtension(path).TrimStart('.'));
@@ -29,7 +25,7 @@ internal static class PhotoInput
 
     internal static HDRProbeState ProbeCameraRaw(string path, out HDRSourceInfo? info)
     {
-        if (!IsCameraRaw(path)) { info = null; return HDRProbeState.NotHDR; }
+        if (!IsRaw(path)) { info = null; return HDRProbeState.NotHDR; }
         // DNG may be Apple ProRAW or an ordinary Bayer/linear RAW. Probe the
         // strict ProRAW identity first; a normal DNG then follows the existing
         // camera-RAW HDR path without being promoted by its extension.
@@ -48,17 +44,6 @@ internal static class PhotoInput
         catch (EntryPointNotFoundException) { info = null; return HDRProbeState.NotHDR; }
     }
 
-    internal static bool SupportsProRAWHDR(string path)
-    {
-        if (!IsCameraRaw(path)) return false;
-        try { return ProbeCameraRaw(path, out var info) == HDRProbeState.Supported && info?.IsProRAW == true; }
-        catch (IOException) { return false; }
-        catch (UnauthorizedAccessException) { return false; }
-        catch (EntryPointNotFoundException) { return false; }
-        catch (DllNotFoundException) { return false; }
-        catch (BadImageFormatException) { return false; }
-    }
-
     internal static Adjustments PrepareInputSettings(string path,Adjustments value)
     {
         if(!IsRaster(path))return value;
@@ -71,6 +56,17 @@ internal static class PhotoInput
         return prepared;
     }
 
+    internal static bool IsHDRCameraAICandidate(HDRSourceInfo? info) =>
+        info?.SupportsBayerDevelopment == true;
+
+    internal static string? HDRCameraAIUnavailableHint(HDRSettings? settings, int gpuMode)
+    {
+        if (settings?.Mode != HDRMode.Hdr) return null;
+        if (settings.CameraSettings.CameraProfile != null) return Loc.Text("请先清除 HDR 相机配置，再使用 AI 降噪。");
+        if (settings.CameraSettings.FbddLevel != 0) return Loc.Text("请先关闭 FBDD，再使用 HDR AI 降噪。");
+        return gpuMode == 2 ? Loc.Text("HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。") : null;
+    }
+
     internal static Adjustments PrepareHDRInputSettings(string path, Adjustments value)
     {
         if (ProbeHDR(path, out var info) != HDRProbeState.Supported) return value;
@@ -80,8 +76,28 @@ internal static class PhotoInput
         return prepared;
     }
 
+    internal static X3fMode X3fDefaultMode(string path)
+    {
+        var status = Native.sony2fuji_x3f_default_mode(path, out var mode);
+        Native.Check(status);
+        return mode;
+    }
+
+    internal static Adjustments PrepareDefaultSettings(string path)
+    {
+        var prepared = PrepareInputSettings(path, new Adjustments());
+        if (IsX3f(path)) prepared.X3fMode = X3fDefaultMode(path);
+        return PrepareHDRInputSettings(path, prepared);
+    }
+
     internal static Adjustments PrepareBatchSettings(string source,string target,Adjustments value)
     {
+        if (IsRaster(target) && value.AIDenoiseEnabled && !value.IsHDREditing) {
+            // 普通图片目标只关闭 AI 降噪；曝光、白平衡和镜头仍由渲染时的输入归一化处理，快照保持原样。
+            var raster = value.Clone();
+            raster.AIDenoiseEnabled = false;
+            return raster;
+        }
         if(!IsRaster(source) || !IsRaw(target))return value;
         var recipeTint=value.MasterRecipeID == null ? (double?)null : value[Parameter.Tint];
         var prepared=PrepareInputSettings(source,value);

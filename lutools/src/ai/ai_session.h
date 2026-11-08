@@ -41,6 +41,10 @@ public:
     std::string renderKey(const std::string& path, const RAWProcessOptions& options, const std::string& sourceIdentity = {});
     const PreparedDenoise& result(const std::string& path, const RAWProcessOptions& options, const RAWBayerSource* metadata, const std::string& sourceIdentity = {});
     PrepareReport prepare(const std::string& path, const RAWProcessOptions& options, const JobProgress& progress);
+    std::string hdrBayerKey(const std::string& path, const std::string& sourceIdentity = {});
+    void prepareHDRBayer(const std::string& path, const std::string& sourceIdentity,
+                         const RAWBayerSource& source, const JobProgress& progress);
+    RAWBayerOverride loadHDRBayer(const std::string& key, const RAWBayerSource& metadata);
 private:
     void ensurePackage();
     std::string runtimeVersion(bool refreshDevice = false);

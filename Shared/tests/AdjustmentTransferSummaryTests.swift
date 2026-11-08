@@ -46,7 +46,7 @@ import Foundation
 
     static func allFieldsPayload() throws -> AdjustmentTransferPayload {
         var values: [AdjustmentTransferField: AdjustmentTransferValue] = [:]
-        for field in AdjustmentTransferField.allCases where !field.isHDRRelative {
+        for field in AdjustmentTransferField.legacyFields {
             switch field {
             case .look: values[field] = .object(["kind": .string("neutral"), "id": .null])
             case .exposureMode: values[field] = .string("scene")
@@ -107,7 +107,7 @@ import Foundation
         }
 
         let allFields = AdjustmentTransferSummary(payload: try allFieldsPayload(), locale: locale, text: identityText)
-        check(allFields.count == AdjustmentTransferField.allCases.count - 2, "All legal legacy fields are represented")
+        check(allFields.count == AdjustmentTransferField.legacyFields.count, "All legal legacy fields are represented")
         for field in allFields.payload.fields {
             let value = allFields.valueText(for: field, lookName: { _, _ in nil })
             check(!value.contains("object") && !value.contains("[") && !value.contains("{"),

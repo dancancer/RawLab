@@ -34,7 +34,8 @@ import com.rawlab.android.settings.*
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ToneCurveControls(settings: ToneCurveSettings, legacy: Float, enabled: Boolean,
-    onEdit: (ToneCurveSettings, Boolean) -> Unit, onLegacyEdit: (Float, Boolean) -> Unit) {
+    onEdit: (ToneCurveSettings, Boolean) -> Unit, onLegacyEdit: (Float, Boolean) -> Unit,
+    usesExposureStops: Boolean = false) {
     val scope = LocalAdjustmentSession.current
     var selected by remember(scope) { mutableIntStateOf(0) }
     var switching by remember(scope, settings.mode) { mutableStateOf(false) }
@@ -66,24 +67,42 @@ internal fun ToneCurveControls(settings: ToneCurveSettings, legacy: Float, enabl
                     }
                     CompositionLocalProvider(LocalAdjustmentSession provides (scope to selectedIndex)) {
                         val point = settings.points[selectedIndex]
-                        CurveCoordinate(R.string.curve_input, point.x, enabled && settings.isInterior(selectedIndex), "curve-x") { x ->
+                        CurveCoordinate(R.string.curve_input, point.x, enabled && settings.isInterior(selectedIndex), "curve-x", usesExposureStops) { x ->
                             update(current.moving(selectedIndex, x, current.points[selectedIndex].y), false)
                         }
-                        CurveCoordinate(R.string.curve_output, point.y, enabled && settings.isInterior(selectedIndex), "curve-y") { y ->
+                        CurveCoordinate(R.string.curve_output, point.y, enabled && settings.isInterior(selectedIndex), "curve-y", usesExposureStops) { y ->
                             update(current.moving(selectedIndex, current.points[selectedIndex].x, y), false)
                         }
                     }
                     if (!settings.isInterior(selectedIndex)) Text(stringResource(R.string.curve_fixed_endpoint), style = MaterialTheme.typography.bodySmall)
                 }
             }
+            @Composable fun plot(modifier: Modifier) {
+                Column(modifier) {
+                    CurveCanvas(settings, selectedIndex, { selected = it }, enabled, Modifier.fillMaxWidth().height(164.dp), onEdit)
+                    if (usesExposureStops) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp).testTag("curve-hdr-ev-axis"),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            val style = MaterialTheme.typography.labelSmall
+                            Text("−8 EV", style = style)
+                            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("0 EV", style = style)
+                                Text(stringResource(R.string.hdr_reference_white), style = style,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                            }
+                            Text("+8 EV", style = style)
+                        }
+                    }
+                }
+            }
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 if (maxWidth >= 460.dp && LocalDensity.current.fontScale <= 1.3f) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        CurveCanvas(settings, selectedIndex, { selected = it }, enabled, Modifier.size(232.dp, 164.dp), onEdit)
+                        plot(Modifier.width(232.dp))
                         rows(Modifier.weight(1f))
                     }
                 } else Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CurveCanvas(settings, selectedIndex, { selected = it }, enabled, Modifier.widthIn(max = 320.dp).fillMaxWidth().height(164.dp), onEdit)
+                    plot(Modifier.widthIn(max = 320.dp).fillMaxWidth())
                     rows(Modifier.fillMaxWidth())
                 }
             }
@@ -112,7 +131,7 @@ internal fun ToneCurveControls(settings: ToneCurveSettings, legacy: Float, enabl
 }
 
 @Composable
-private fun CurveCoordinate(label: Int, value: Double, enabled: Boolean, tag: String, onValue: (Double) -> Unit) {
+private fun CurveCoordinate(label: Int, value: Double, enabled: Boolean, tag: String, usesExposureStops: Boolean, onValue: (Double) -> Unit) {
     val scope = LocalAdjustmentSession.current
     val session = remember(scope, value, enabled) { Any() }
     val liveSession by rememberUpdatedState(session)
@@ -120,19 +139,23 @@ private fun CurveCoordinate(label: Int, value: Double, enabled: Boolean, tag: St
     var editing by remember(session) { mutableStateOf(false) }
     var input by remember(session) { mutableStateOf("") }
     val locale = LocalConfiguration.current.locales[0]
-    val formatted = formatAdjustmentNumber(value, locale)
-    val parsed = parseAdjustmentNumber(input, locale)?.takeIf { it in 0.0..1.0 }?.let {
-        if (it == parseAdjustmentNumber(formatted, locale)) value else it
+    val formatted = formatAdjustmentNumber(if (usesExposureStops) value * 16 - 8 else value, locale)
+    val range = if (usesExposureStops) -8.0..8.0 else 0.0..1.0
+    val parsed = parseAdjustmentNumber(input, locale)?.takeIf { it in range }?.let {
+        if (it == parseAdjustmentNumber(formatted, locale)) value else if (usesExposureStops) (it + 8) / 16 else it
     }
     val title = stringResource(label)
+    val displayed = if (usesExposureStops) "$formatted EV" else formatted
     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(title, Modifier.heightIn(min = 48.dp).wrapContentHeight(), style = MaterialTheme.typography.labelMedium)
         TextButton(onClick = { input = formatted; editing = true }, enabled = enabled,
-            modifier = Modifier.testTag(tag).semantics { contentDescription = title; stateDescription = formatted }) { Text(formatted) }
+            modifier = Modifier.testTag(tag).semantics { contentDescription = title; stateDescription = displayed }) { Text(displayed) }
     }
     if (editing) AlertDialog(onDismissRequest = { editing = false }, title = { Text(title) },
         text = { OutlinedTextField(input, { input = it }, singleLine = true, isError = parsed == null,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.testTag("curve-coordinate-input"),
+            keyboardOptions = KeyboardOptions(keyboardType = if (usesExposureStops) KeyboardType.Text else KeyboardType.Decimal),
+            modifier = Modifier.testTag("curve-coordinate-input"),
+            suffix = if (usesExposureStops) ({ Text("EV") }) else null,
             supportingText = { if (parsed == null) Text(stringResource(R.string.invalid_value)) }) },
         confirmButton = { TextButton(onClick = {
             if (liveSession === session && parsed != null) { editing = false; if (parsed != value) update(parsed) }

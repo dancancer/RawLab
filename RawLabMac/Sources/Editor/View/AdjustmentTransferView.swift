@@ -86,7 +86,7 @@ struct AdjustmentTransferView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(model.file?.lastPathComponent ?? "").font(.headline)
             Text(model.file?.deletingLastPathComponent().path ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(2)
-            AdjustmentScopeEditor(scope:$scope,fields:$fields,preview:scopePreview,lookName:model.adjustmentSummaryLookName,errorMessage: { model.adjustmentErrorMessage($0) },allowed:model.settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
+            AdjustmentScopeEditor(scope:$scope,fields:$fields,preview:scopePreview,lookName:model.adjustmentSummaryLookName,errorMessage: { model.adjustmentErrorMessage($0) },allowed:model.adjustmentTransferFields)
             HStack {
                 Spacer()
                 Button(L10n.text("复制调整")) {
@@ -317,13 +317,13 @@ struct AdjustmentTransferView: View {
         let session: AdjustmentTransferSession
         do { session = try model.requireAdjustmentSession() }
         catch { message = model.adjustmentErrorMessage(error); return }
-        let descriptors = model.adjustmentTransferTargets(targets, payload: payload, excludingSource: excludedSource,
+        let prepareTargets = model.adjustmentTransferTargetPreparation(targets, payload: payload, excludingSource: excludedSource,
             excludingIdentity: kind == .synchronize ? model.adjustmentSheetExcludedIdentity : nil, collection: kind == .synchronize)
         preparing = true
         let generation = UUID(), source = model.sourceRevision
         operationGeneration = generation
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = Result { try session.prepare(payload: payload, targets: descriptors, action: kind == .synchronize ? .synchronize : preset == nil ? .paste : .preset) }
+            let result = Result { try session.prepare(payload: payload, targets: prepareTargets(), action: kind == .synchronize ? .synchronize : preset == nil ? .paste : .preset) }
             DispatchQueue.main.async {
                 guard generation == operationGeneration, source == model.sourceRevision else { return }
                 preparing = false

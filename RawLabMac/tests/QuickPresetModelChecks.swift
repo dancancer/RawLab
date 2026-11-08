@@ -35,6 +35,23 @@ enum QuickPresetModelChecks {
         try check(model.saveEdits(), "quick preset source saves")
         let preset = try model.presetStore.create(name: "Quick exposure", payload: model.capturePresetAdjustments(scope: .custom([.exposure])))
         let clipboard = try model.copyAdjustments(scope: .custom([.contrast]))
+        let mixed = try model.prepareAdjustmentPaste(payload: preset.payload,
+            targets: [directory.appendingPathComponent("missing.X3F"), second])
+        try check(mixed.targets.count == 2 && mixed.targets[0].error != nil && mixed.targets[1].error == nil,
+                  "default probing failures stay attached to their target while other targets are prepared")
+        let unedited = directory.appendingPathComponent("unedited.X3F")
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("lutools/tests/fixtures/linear-uncompressed.dng")
+        try FileManager.default.copyItem(at: fixture, to: unedited)
+        model.open(unedited); try rendered(model)
+        try check(try model.editStore!.state(for: unedited) == nil, "opening a Legacy-default source does not save an edit")
+        model.showQuickPresets(); model.applyPresetToCurrentPhoto(preset)
+        try wait { !model.quickPresetState.isPreparing }; try rendered(model)
+        try check(model.settings.x3fMode == .legacy && model.settings.exposure == 0.7 && !model.dirty,
+                  "a preset on an unedited Legacy-default source retains its native mode")
+        try check(try model.editStore!.state(for: unedited)?.settings.x3fMode == .legacy,
+                  "preset persistence retains the source default")
+        model.closeQuickPresets()
         model.open(second); try rendered(model)
         model.settings.exposure = -0.2; model.settings.saturation = 14
         try check(model.saveEdits(), "quick preset target saves")

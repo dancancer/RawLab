@@ -3,14 +3,30 @@ import Foundation
 extension HSLTargetSample {
     static func capture(session: OpaquePointer, request: inout sony2fuji_request,
                         revision: HSLTargetRevision, x: Double, y: Double) -> HSLTargetSample {
+        capture(revision: revision, x: x, y: y) { probe in
+            sony2fuji_session_create_hsl_probe(session, &request, revision.source, revision.request, &probe)
+        }
+    }
+
+    static func capture(session: OpaquePointer, pair: UnsafePointer<sony2fuji_hdr_image_pair_v1>,
+                        request: HDRRenderRequest, revision: HSLTargetRevision,
+                        x: Double, y: Double) -> HSLTargetSample {
+        capture(revision: revision, x: x, y: y) { probe in
+            withHDRRequestPrefix(request) { prefix in
+                sony2fuji_hdr_create_hsl_probe(session, pair, prefix, revision.source, revision.request, &probe, nil)
+            }
+        }
+    }
+
+    private static func capture(revision: HSLTargetRevision, x: Double, y: Double,
+                                makeProbe: (inout OpaquePointer?) -> sony2fuji_status) -> HSLTargetSample {
         func unavailable(_ reason: HSLTargetAvailability) -> HSLTargetSample {
             HSLTargetSample(revision: revision, availability: reason, rgb: [], weights: [], preview: true)
         }
         guard x.isFinite, y.isFinite else { return unavailable(.nonfinite) }
         guard (0...1).contains(x), (0...1).contains(y) else { return unavailable(.outside) }
         var probe: OpaquePointer?
-        guard sony2fuji_session_create_hsl_probe(session, &request, revision.source, revision.request, &probe) == SONY2FUJI_STATUS_OK,
-              let probe else { return unavailable(.failed) }
+        guard makeProbe(&probe) == SONY2FUJI_STATUS_OK, let probe else { return unavailable(.failed) }
         defer { sony2fuji_hsl_probe_destroy(probe) }
         var query = sony2fuji_hsl_probe_query()
         query.version = UInt32(SONY2FUJI_HSL_PROBE_VERSION)

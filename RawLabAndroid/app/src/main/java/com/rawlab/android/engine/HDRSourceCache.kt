@@ -1,6 +1,7 @@
 package com.rawlab.android.engine
 
 import com.rawlab.android.photo.HDRSourceInfo
+import com.rawlab.android.settings.HDRCameraDevelopmentSettings
 import java.io.File
 import java.util.LinkedList
 import java.util.concurrent.atomic.AtomicBoolean
@@ -18,7 +19,7 @@ internal class HDRSourceLease(val image: NativeHDRImage, private val release: ()
 internal object HDRSourceCache {
     private const val BUDGET=128L*1024*1024
     private class Entry(val path: String, val fingerprint: ByteArray, val cameraStamp: HDRSourceInfo.CameraStamp?,
-        val edge: Int, val image: NativeHDRImage) {
+        val edge: Int, val camera: HDRCameraDevelopmentSettings?, val lensDatabase: File?, val image: NativeHDRImage) {
         val bytes=image.width.toLong()*image.height*24
         var users=0
         var retained=false
@@ -27,6 +28,7 @@ internal object HDRSourceCache {
     private var bytes=0L
     private val cleanup=CoroutineScope(SupervisorJob()+Dispatchers.Default)
     @Synchronized fun acquire(file: File, info: HDRSourceInfo, edge: Int,
+        camera: HDRCameraDevelopmentSettings? = null, lensDatabase: File? = null,
         decoder: (() -> NativeHDRImage)? = null): HDRSourceLease {
         require(edge>0)
         info.cameraStamp?.let { expected ->
@@ -40,10 +42,10 @@ internal object HDRSourceCache {
             val sameSource = if (info.isCameraRaw && info.cameraStamp != null)
                 entry.cameraStamp == info.cameraStamp else entry.fingerprint.contentEquals(info.fingerprint)
             if(!sameSource) {iterator.remove();detach(entry);continue}
-            if(entry.edge<edge)continue
+            if(entry.edge<edge || entry.camera!=camera || entry.lensDatabase!=lensDatabase)continue
             iterator.remove();entries.addFirst(entry);return lease(entry)
         }
-        val entry=Entry(path, info.fingerprint.copyOf(), info.cameraStamp, edge,
+        val entry=Entry(path, info.fingerprint.copyOf(), info.cameraStamp, edge, camera, lensDatabase,
             decoder?.invoke() ?: NativeHDRBridge.decode(file,info,edge))
         if(entry.bytes<=BUDGET) {
             while(bytes+entry.bytes>BUDGET && entries.isNotEmpty())detach(entries.removeLast())

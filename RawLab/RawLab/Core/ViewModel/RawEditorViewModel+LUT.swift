@@ -75,13 +75,15 @@ extension RawEditorViewModel {
     }
 
     func importLooks(from sources: [URL], compatibilityPrompt: LookImportCoordinator.CompatibilityPrompt? = nil,
+                     dcpOptionsPrompt: LookImportCoordinator.DCPOptionsPrompt? = nil,
                      completion: @escaping (LookImportBatchResult) -> Void) {
         guard !sources.isEmpty else {
             completion(LookImportBatchResult(imported: [], failures: []))
             return
         }
         isImportingLooks = true
-        lookImportCoordinator.importLooks(from: sources, compatibilityPrompt: compatibilityPrompt) { [weak self] result in
+        lookImportCoordinator.importLooks(from: sources, compatibilityPrompt: compatibilityPrompt,
+                                          dcpOptionsPrompt: dcpOptionsPrompt) { [weak self] result in
             guard let self else { return }
             self.resultDelivery {
                 let custom = self.customLUTs(from: result.imported)
@@ -133,7 +135,7 @@ extension RawEditorViewModel {
     }
 
     func isLookAvailable(for settings: RawSettings) -> Bool {
-        if settings.isHDREditing { return true }
+        if settings.isHDREditing { return settings.hdr?.missingResourceMessage == nil }
         guard settings.hasLook else { return true }
         guard let url = lutURL(for: settings) else { return false }
         return FileManager.default.isReadableFile(atPath: url.path)

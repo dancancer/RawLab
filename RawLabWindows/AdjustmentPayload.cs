@@ -73,7 +73,8 @@ public enum AdjustmentField
     WhitePoint,
     Vibrance,
     GradingShadows, GradingMidtones, GradingHighlights,
-    Curve, Clarity, Dehaze, HdrTemperature, HdrTint
+    Curve, Clarity, Dehaze, HdrTemperature, HdrTint,
+    HdrPeakLimit, HdrSDRExposure, HdrSDRContrast, HdrSDRSaturation, HdrLook, HdrCameraDevelopment
 }
 
 public static class AdjustmentFields
@@ -81,7 +82,7 @@ public static class AdjustmentFields
     // Keep the legacy catalog/index contract stable; HDR-only fields are
     // addressable through HDRSupported but are not legacy "common" fields.
     public static readonly IReadOnlyList<AdjustmentField> All = Array.AsReadOnly(
-        Enum.GetValues<AdjustmentField>().Where(field => !field.IsHDRRelative()).ToArray());
+        Enum.GetValues<AdjustmentField>().Where(field => !field.IsHDROnly()).ToArray());
     private static readonly string[] ids = [
         "looks.reference",
         "looks.strength",
@@ -150,10 +151,16 @@ public static class AdjustmentFields
         "tone.white_point",
         "color.vibrance",
         "color.grading.shadows", "color.grading.midtones", "color.grading.highlights",
-        "light.curve", "effects.clarity", "effects.dehaze", "hdr.relative_temperature", "hdr.relative_tint"
+        "light.curve", "effects.clarity", "effects.dehaze", "hdr.relative_temperature", "hdr.relative_tint",
+        "hdr.peak_limit_ev", "hdr.sdr_exposure_ev", "hdr.sdr_contrast", "hdr.sdr_saturation", "hdr.look", "hdr.camera_development"
     ];
     public static string ID(this AdjustmentField field) => ids[(int)field];
-    public static string Group(this AdjustmentField field) => field is AdjustmentField.BlackPoint or AdjustmentField.WhitePoint ? "light" : field.ID().Split('.')[0];
+    public static string Group(this AdjustmentField field) => field switch {
+        AdjustmentField.HdrLook => "looks", AdjustmentField.HdrCameraDevelopment => "detail",
+        AdjustmentField.BlackPoint or AdjustmentField.WhitePoint => "light",
+        _ when field.IsHDRRendition() => "light",
+        _ => field.ID().Split('.')[0]
+    };
     public static ColorGradingZone? GradingZone(this AdjustmentField field) => field switch {
         AdjustmentField.GradingShadows => ColorGradingZone.Shadows, AdjustmentField.GradingMidtones => ColorGradingZone.Midtones,
         AdjustmentField.GradingHighlights => ColorGradingZone.Highlights, _ => null
@@ -163,7 +170,10 @@ public static class AdjustmentFields
     public static AdjustmentField Parse(string id) => Array.IndexOf(ids, id) is var index && index >= 0
         ? (AdjustmentField)index : throw new AdjustmentTransferException(AdjustmentFailure.InvalidPayload, id);
     public static bool IsHDRRelative(this AdjustmentField field) => field is AdjustmentField.HdrTemperature or AdjustmentField.HdrTint;
-    public static readonly IReadOnlySet<AdjustmentField> Common = All.Where(f => f.Group() != "geometry" && !f.IsHDRRelative()).ToHashSet();
+    public static bool IsHDRRendition(this AdjustmentField field) => field is >= AdjustmentField.HdrPeakLimit and <= AdjustmentField.HdrSDRSaturation;
+    public static bool IsHDROnly(this AdjustmentField field) => field is AdjustmentField.HdrLook or AdjustmentField.HdrCameraDevelopment ||
+        field.IsHDRRelative() || field.IsHDRRendition();
+    public static readonly IReadOnlySet<AdjustmentField> Common = All.Where(f => f.Group() != "geometry").ToHashSet();
     public static readonly IReadOnlySet<AdjustmentField> HDRCommon = new HashSet<AdjustmentField> {
         AdjustmentField.Exposure, AdjustmentField.Contrast, AdjustmentField.Highlights, AdjustmentField.Shadows,
         AdjustmentField.Saturation, AdjustmentField.HdrTemperature, AdjustmentField.HdrTint
@@ -173,7 +183,32 @@ public static class AdjustmentFields
         AdjustmentField.QuarterTurns, AdjustmentField.FlipHorizontal, AdjustmentField.FlipVertical,
         AdjustmentField.Straighten, AdjustmentField.PerspectiveHorizontal, AdjustmentField.PerspectiveVertical
     };
-    public static IReadOnlySet<AdjustmentField> HDRSupported => HDRCommon.Concat(HDRGeometry).ToHashSet();
+    public static readonly IReadOnlySet<AdjustmentField> HDRTone = new HashSet<AdjustmentField> {
+        AdjustmentField.BlackPoint, AdjustmentField.WhitePoint, AdjustmentField.SCurve, AdjustmentField.Curve
+    };
+    public static readonly IReadOnlySet<AdjustmentField> HDRV1Supported = HDRCommon.Concat(HDRGeometry).ToHashSet();
+    public static readonly IReadOnlySet<AdjustmentField> HDRV2Supported = HDRV1Supported.Concat(HDRTone).ToHashSet();
+    public static readonly IReadOnlySet<AdjustmentField> HDRColor = All.Where(field =>
+        field == AdjustmentField.Vibrance || field.HslIndex() != null || field.GradingZone() != null).ToHashSet();
+    public static readonly IReadOnlySet<AdjustmentField> HDRV3Supported = HDRV2Supported.Concat(HDRColor).ToHashSet();
+    public static readonly IReadOnlySet<AdjustmentField> HDRRendition = Enum.GetValues<AdjustmentField>()
+        .Where(field => field.IsHDRRendition()).ToHashSet();
+    public static readonly IReadOnlySet<AdjustmentField> HDREffects = All
+        .Where(field => field is >= AdjustmentField.VignetteAmount and <= AdjustmentField.GrainRoughness).ToHashSet();
+    public static readonly IReadOnlySet<AdjustmentField> HDRDetail = new HashSet<AdjustmentField> {
+        AdjustmentField.Sharpening, AdjustmentField.Clarity, AdjustmentField.Dehaze, AdjustmentField.PostRGBDenoise
+    };
+    public static readonly IReadOnlySet<AdjustmentField> HDRV4Supported = HDRV3Supported.Concat(HDRRendition).ToHashSet();
+    public static readonly IReadOnlySet<AdjustmentField> HDRV5Supported = HDRV4Supported.Concat(HDREffects).ToHashSet();
+    public static readonly IReadOnlySet<AdjustmentField> HDRV6Supported = HDRV5Supported.Concat(HDRDetail).ToHashSet();
+    public static readonly IReadOnlySet<AdjustmentField> HDRSupported = HDRV6Supported.Append(AdjustmentField.HdrLook).ToHashSet();
+    internal static IReadOnlySet<AdjustmentField> HDRTransferFields(bool cameraRaw) =>
+        cameraRaw ? HDRSupported.Append(AdjustmentField.HdrCameraDevelopment).ToHashSet() : HDRSupported;
+    public static IReadOnlySet<AdjustmentField> HDRSupportedFor(int version) => version switch {
+        1 => HDRV1Supported, 2 => HDRV2Supported, 3 => HDRV3Supported, 4 => HDRV4Supported,
+        5 => HDRV5Supported, 6 => HDRV6Supported, 7 => HDRSupported,
+        _ => throw new ArgumentOutOfRangeException(nameof(version))
+    };
     public static readonly IReadOnlySet<AdjustmentField> WhiteBalance = new HashSet<AdjustmentField> { AdjustmentField.WhiteBalanceMode, AdjustmentField.Temperature, AdjustmentField.Tint };
     public static readonly IReadOnlySet<AdjustmentField> Lens = new HashSet<AdjustmentField> { AdjustmentField.LensDistortion, AdjustmentField.LensTCA, AdjustmentField.LensAutoCrop, AdjustmentField.LensProfile };
     public static readonly IReadOnlySet<AdjustmentField> Denoise = new HashSet<AdjustmentField> { AdjustmentField.RawDenoise, AdjustmentField.PostRGBDenoise, AdjustmentField.ChromaDenoise, AdjustmentField.WaveletDenoise };
@@ -191,6 +226,8 @@ public static class AdjustmentFields
         AdjustmentField.Exposure => (-20,20),
         AdjustmentField.Highlights or AdjustmentField.Shadows or AdjustmentField.SCurve or AdjustmentField.PerspectiveHorizontal or AdjustmentField.PerspectiveVertical => (-1,1),
         AdjustmentField.HdrTemperature => (2000,50000), AdjustmentField.HdrTint => (-150,150),
+        AdjustmentField.HdrPeakLimit => (0,6), AdjustmentField.HdrSDRExposure => (-4,4),
+        AdjustmentField.HdrSDRContrast or AdjustmentField.HdrSDRSaturation => (-100,100),
         AdjustmentField.VignetteAmount or AdjustmentField.VignetteRoundness or AdjustmentField.BlackPoint or AdjustmentField.WhitePoint or AdjustmentField.Vibrance or AdjustmentField.Clarity or AdjustmentField.Dehaze => (-100,100),
         AdjustmentField.VignetteMidpoint or AdjustmentField.VignetteFeather or AdjustmentField.VignetteHighlights or AdjustmentField.GrainAmount or AdjustmentField.GrainSize or AdjustmentField.GrainRoughness => (0,100),
         AdjustmentField.QuarterTurns => (0,3),
@@ -236,6 +273,27 @@ public sealed class AdjustmentPayload
     public static string? Text(JsonElement? value) => value is { ValueKind: JsonValueKind.String } v ? v.GetString() : null;
     public static bool? Boolean(JsonElement? value) => value is { ValueKind: JsonValueKind.True } ? true : value is { ValueKind: JsonValueKind.False } ? false : null;
     public static bool Null(JsonElement? value) => value is { ValueKind: JsonValueKind.Null };
+    internal static HDRLookSettings? HDRLookValue(JsonElement? value)
+    {
+        if (Null(value)) return new();
+        if (value is not { } obj || !ObjectKeys(obj, "name", "sha256", "strength") ||
+            Text(obj.GetProperty("name")) is not { } name || Text(obj.GetProperty("sha256")) is not { } sha ||
+            Number(obj.GetProperty("strength")) is not { } strength) return null;
+        var look = new HDRLookSettings(sha, name, strength);
+        return look.IsValid ? look : null;
+    }
+    internal static HDRCameraDevelopmentSettings? HDRCameraValue(JsonElement? value)
+    {
+        if (value is not { } obj || !ObjectKeys(obj,"version","white_balance_mode","temperature","tint","exposure_reference","fbdd_level") ||
+            Number(obj.GetProperty("version")) != 1) return null;
+        var mode = Text(obj.GetProperty("white_balance_mode"));
+        var exposure = Text(obj.GetProperty("exposure_reference"));
+        if (mode is not ("as_shot" or "temperature") || exposure is not ("metadata" or "sensor") ||
+            Number(obj.GetProperty("temperature")) is not { } temperature || Number(obj.GetProperty("tint")) is not { } tint ||
+            Number(obj.GetProperty("fbdd_level")) is not { } fbdd || fbdd is not (0 or 1 or 2)) return null;
+        var camera = new HDRCameraDevelopmentSettings(mode == "temperature",temperature,tint,exposure == "sensor",(int)fbdd);
+        return camera.IsValid ? camera : null;
+    }
     public static bool Same(JsonElement? a, JsonElement? b) => a == null || b == null ? a == null && b == null : SameValue(a.Value,b.Value);
     private static bool SameValue(JsonElement a, JsonElement b)
     {
@@ -287,13 +345,17 @@ public sealed class AdjustmentPayload
     }
     public void Validate()
     {
-        if (Source.IsHDR ? PayloadVersion != 2 || ScopeVersion != 2 || Source.HdrProcessingVersion != 1 : PayloadVersion != 1 || ScopeVersion != 1)
+        if (Source.IsHDR ? PayloadVersion != 2 || ScopeVersion != 2 || Source.HdrProcessingVersion is not (>= 1 and <= 7)
+            : PayloadVersion != 1 || ScopeVersion != 1)
             throw new AdjustmentTransferException(AdjustmentFailure.UnsupportedVersion);
         if (Values.Count==0) throw new AdjustmentTransferException(AdjustmentFailure.EmptyScope);
         if (string.IsNullOrEmpty(Source.Identifier) || Source.ProcessingVersion is not (1 or 2) ||
-            Source.IsHDR && (Source.IsRaw || Source.Recipe != null || Source.HdrProcessingVersion != 1)) throw Invalid("source");
-        if (!Source.IsHDR && Values.Keys.Any(field => field.IsHDRRelative())) throw Invalid("hdr context");
-        if (Source.IsHDR && Values.Keys.Any(field => !AdjustmentFields.HDRSupported.Contains(field))) throw Invalid("hdr context");
+            Source.IsHDR && (Source.IsRaw || Source.Recipe != null)) throw Invalid("source");
+        if (!Source.IsHDR && Values.Keys.Any(field => field.IsHDROnly())) throw Invalid("hdr context");
+        if (Source.HdrProcessingVersion is { } hdrVersion) {
+            var supported = AdjustmentFields.HDRSupportedFor(hdrVersion);
+            if (Values.Keys.Any(field => field != AdjustmentField.HdrCameraDevelopment && !supported.Contains(field))) throw Invalid("hdr context");
+        }
         if (Source.Recipe is {} recipe) {
             if (string.IsNullOrEmpty(recipe.ID) || !double.IsFinite(recipe.Strength) || recipe.Strength is <0 or >2 || recipe.SettingsVersion is not (2 or 3 or 4)) throw Invalid("recipe");
             if (Number(this[AdjustmentField.Strength]) is {} strength && strength!=recipe.Strength) throw Invalid("recipe.strength");
@@ -307,13 +369,16 @@ public sealed class AdjustmentPayload
         if (Source.Recipe!=null && Null(tint)) throw Invalid("recipe.white_balance.tint");
         if (mode=="camera" && (Number(temperature)!=null || Source.Recipe==null && Number(tint)!=null) ||
             mode=="temperature" && (Null(temperature) || Null(tint))) throw Invalid("white_balance values conflict with mode");
-        if (!Source.IsRaw && (modeValueInvalid(AdjustmentField.ExposureMode,"sensor") || numberInvalid(AdjustmentField.RawDenoise) || numberInvalid(AdjustmentField.PostRGBDenoise) ||
+        if (!Source.IsRaw && (modeValueInvalid(AdjustmentField.ExposureMode,"sensor") || numberInvalid(AdjustmentField.RawDenoise) ||
+            !Source.IsHDR && numberInvalid(AdjustmentField.PostRGBDenoise) ||
             Boolean(this[AdjustmentField.LensDistortion])==true || Boolean(this[AdjustmentField.LensTCA])==true)) throw Invalid("raster request");
         bool modeValueInvalid(AdjustmentField f,string expected) => this[f]!=null && Text(this[f])!=expected;
         bool numberInvalid(AdjustmentField f) => this[f]!=null && Number(this[f])!=0;
     }
     private static bool Valid(AdjustmentField field, JsonElement value)
     {
+        if (field == AdjustmentField.HdrLook) return HDRLookValue(value) != null;
+        if (field == AdjustmentField.HdrCameraDevelopment) return HDRCameraValue(value) != null;
         if (field == AdjustmentField.Curve) {
             try { _ = ToneCurveSettings.Parse(value); return true; } catch (JsonException) { return false; }
         }

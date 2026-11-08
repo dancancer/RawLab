@@ -24,6 +24,7 @@ import com.rawlab.android.R
 import com.rawlab.android.album.AlbumScreen
 import com.rawlab.android.batch.CollectionExportReview
 import com.rawlab.android.editor.collectionMessage
+import com.rawlab.android.editor.adjustmentTransferFields
 import com.rawlab.android.editor.CollectionSynchronization
 import com.rawlab.android.editor.EditorViewModel
 import com.rawlab.android.editor.ui.AdjustmentScopeEditor
@@ -32,6 +33,8 @@ import com.rawlab.android.editor.ui.AdjustmentTransferSheet
 import com.rawlab.android.format.*
 import com.rawlab.android.ui.ExportFormatControls
 import com.rawlab.android.ui.ExportSizeControls
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -135,8 +138,7 @@ internal fun BatchSelectionScreen(model: EditorViewModel, onBack: () -> Unit, on
                 TextButton(onClick = { model.resolveCollectionDraft(false) }) { Text(stringResource(R.string.collection_discard_draft)) }
             }
             AdjustmentScopeEditor(stringResource(R.string.collection_check_targets), "collection-sync-preflight", enabled = draft == null && !editor.committingAdjustments,
-                allowed = if (editor.edits.isHDREditing) com.rawlab.android.adjustments.AdjustmentField.HDR_SUPPORTED
-                    else com.rawlab.android.adjustments.AdjustmentField.entries.filterNot { it.isHDRRelative }.toSet(),
+                allowed = editor.adjustmentTransferFields,
                 previewCapture = model::previewAdjustmentPayload, lookName = model::adjustmentSummaryLookName) { selected ->
                 val generation = ++captureGeneration
                 model.captureCollectionSynchronization(selected) { captured ->
@@ -167,6 +169,13 @@ private fun CollectionExportSheet(model: EditorViewModel, onClose: () -> Unit) {
     var destination by remember { mutableStateOf<Uri?>(null) }
     val review = flow.review
     val busy = collection.busy || flow.preparing || flow.freezing
+    var supportsHDR by remember { mutableStateOf(false) }
+    LaunchedEffect(collection.selectedPhotos, collection.lastSynchronization, editor.adjustmentRevision, skipped) {
+        supportsHDR = withContext(Dispatchers.IO) { model.collectionSupportsHDRExport(skipped) }
+    }
+    LaunchedEffect(supportsHDR) {
+        if (!supportsHDR && format == ExportFormat.HDR_JPEG) format = ExportFormat.JPEG
+    }
     val directory = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             runCatching { context.contentResolver.takePersistableUriPermission(uri,
@@ -185,7 +194,7 @@ private fun CollectionExportSheet(model: EditorViewModel, onClose: () -> Unit) {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (!busy) {
                     ExportFormatControls(format, { format = it },
-                        hdrEditing = collection.selectedPhotos.isNotEmpty() && collection.selectedPhotos.all { it.sourceIsHDR })
+                        hdrEditing = supportsHDR)
                     ExportSizeControls(size, custom, { size = it }, { custom = it })
                     TextButton(onClick = { directory.launch(destination) }) { Text(destination?.toString() ?: stringResource(R.string.collection_output_directory)) }
                     if (Build.VERSION.SDK_INT >= 29 && format.allowsGallery) TextButton(onClick = { destination = null }) { Text(stringResource(R.string.save_album)) }

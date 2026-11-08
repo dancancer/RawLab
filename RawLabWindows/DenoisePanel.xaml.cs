@@ -11,12 +11,17 @@ public partial class DenoisePanel : UserControl
     private static readonly string[] titles=["亮度降噪","色彩降噪","粗色斑抑制"];
     public event Action? ResetRequested;
     public event Action<DenoiseSettings,bool>? Changed;
+    internal event Action<double,bool>? HDRChanged;
     public event Action<bool>? AIChanged;
     public event Action? AICancelRequested,AIRetryRequested;
     public event Action? AIDiagnosticsRequested;
     public DenoisePanel()
     {
         InitializeComponent();
+        System.Windows.Automation.AutomationProperties.SetAutomationId(HDRAmount.Number,"hdr.denoise.value");
+        HDRAmount.Changed += (number, dragging) => {
+            if (!syncing && IsEnabled && HDRAmount.IsVisible) HDRChanged?.Invoke(number / 100, dragging);
+        };
         for (var i = 0; i < rows.Length; i++) {
             var axis = i;
             (i == 0 ? LumaParameter : Parameters).Children.Add(rows[i]);
@@ -24,9 +29,17 @@ public partial class DenoisePanel : UserControl
         }
         Refresh(value);
     }
-    public void Refresh(DenoiseSettings settings)
+    public void Refresh(DenoiseSettings settings, double? hdrStrength = null)
     {
         syncing=true;value=settings;
+        HDRAmount.Visibility=hdrStrength.HasValue ? Visibility.Visible : Visibility.Collapsed;
+        OrdinaryDenoise.Visibility=hdrStrength.HasValue ? Visibility.Collapsed : Visibility.Visible;
+        if (hdrStrength is { } strength) {
+            AISurface.Visibility=Visibility.Collapsed;
+            HDRAmount.Refresh(Loc.Text("降噪"),new(0,100),strength*100,0,"%",true);
+            syncing=false;
+            return;
+        }
         EnabledBox.IsChecked=value.Enabled;PresetBox.SelectedIndex=value.Preset;
         var numbers=new[]{value.Luma,value.Chroma,value.Coarse};var defaults=new[]{0.0,46,50};
         for(var i=0;i<rows.Length;++i)rows[i].Refresh(Loc.Text(titles[i]),new(0,100),numbers[i],defaults[i],"%",value.Enabled);
@@ -34,7 +47,7 @@ public partial class DenoisePanel : UserControl
     }
     private void Publish(DenoiseSettings next,bool interactive=false)
     {
-        if(syncing || !IsEnabled || !OrdinaryDenoise.IsEnabled)return;
+        if(syncing || !IsEnabled || OrdinaryDenoise.Visibility!=Visibility.Visible || !OrdinaryDenoise.IsEnabled)return;
         Refresh(next);Changed?.Invoke(value,interactive);
     }
     private void EnabledChanged(object sender,RoutedEventArgs e)=>Publish(value with {Enabled=EnabledBox.IsChecked==true});
@@ -68,7 +81,8 @@ public partial class DenoisePanel : UserControl
         };
         if(cpuPreview)AIStatus.Text+="\n"+Loc.Text("普通显影使用 CPU；AI 降噪仍使用硬件 GPU。");
         if(state.Status==AIDenoiseStatus.Failed && state.DiagnosticSaveFailed)AIStatus.Text+="\n"+Loc.Text("无法保存诊断包，请检查磁盘空间和写入权限。");
-        if(enabled)AIStatus.Text+="\n"+Loc.Text("普通降噪参数已保留，关闭 AI 降噪即可恢复。");
+        if(enabled && OrdinaryDenoise.Visibility==Visibility.Visible)
+            AIStatus.Text+="\n"+Loc.Text("普通降噪参数已保留，关闭 AI 降噪即可恢复。");
         syncing=false;
     }
     private void AIEnabledChanged(object sender,RoutedEventArgs e) { if(!syncing)AIChanged?.Invoke(AIEnabledBox.IsChecked==true); }

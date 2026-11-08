@@ -7,6 +7,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
 
 @main struct BatchSelectionModelTests {
     static func main() throws {
+        setbuf(stdout, nil)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -21,6 +22,55 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
             CGImageDestinationAddImage(destination, image, nil)
             guard CGImageDestinationFinalize(destination) else { fatalError("fixture") }
+        }
+        switch ProcessInfo.processInfo.environment["RAWLAB_ENTRY_CASE"] {
+        case "A": try HDRSourceProbeTests.run(); try BatchFlowModelTests.unsupportedHDRSystem(root: root, fixture: first); return
+        case "A-regressions":
+            try HDRSourceProbeTests.run()
+            try BatchFlowModelTests.uneditedFallbackCollection(root: root, fixture: first)
+            try BatchFlowModelTests.fallbackPersistence(root: root, fixture: first)
+            try BatchFlowModelTests.appleFallbackAdmission(root: root, fixture: first)
+            return
+        case "A-apple": try BatchFlowModelTests.appleFallbackAdmission(root: root, fixture: first); return
+        case "A-storage": try BatchFlowModelTests.fallbackPersistence(root: root, fixture: first); return
+        case "A-collection": try BatchFlowModelTests.unsupportedHDRSystem(root: root, fixture: first, exerciseOpening: false); return
+        case "B": try BatchFlowModelTests.uniformAI(root: root, fixture: first); return
+        case "D": try BatchFlowModelTests.adaptiveJPEG(root: root, fixture: first); return
+        case "E": try BatchFlowModelTests.presetWithoutPhoto(root: root, fixture: first); return
+        case "E-no-photo": try BatchFlowModelTests.presetWithoutPhoto(root: root, fixture: first, exerciseOpenPhoto: false); return
+        default: break
+        }
+        try HDRSourceProbeTests.run()
+        try BatchFlowModelTests.uneditedFallbackCollection(root: root, fixture: first)
+        try BatchFlowModelTests.fallbackPersistence(root: root, fixture: first)
+        try BatchFlowModelTests.appleFallbackAdmission(root: root, fixture: first)
+        try BatchFlowModelTests.unsupportedHDRSystem(root: root, fixture: first)
+        try BatchFlowModelTests.adaptiveJPEG(root: root, fixture: first)
+        try BatchFlowModelTests.presetWithoutPhoto(root: root, fixture: first)
+        try BatchFlowModelTests.uniformAI(root: root, fixture: second)
+        do {
+            let model = EditorModel(lookDirectory: root.appendingPathComponent("deferred-looks"),
+                editDirectory: root.appendingPathComponent("deferred-edits"), batchDirectory: root.appendingPathComponent("deferred-batch"),
+                presetDirectory: root.appendingPathComponent("deferred-presets"))
+            var probedOnMain: Bool?
+            let deferredTargets = model.adjustmentTransferTargetPreparation([second],
+                payload: try MacAdjustmentTransfer.capture(scope: .custom([.exposure]),
+                    snapshot: PhotoEditState(settings: Adjustments(), filmID: ""),
+                    context: MacAdjustmentTransferContext(identifier: first.path, isRaw: false)),
+                probeRAW: { _ in probedOnMain = Thread.isMainThread; return nil })
+            try check(probedOnMain == nil, "Capturing paste/sync inputs defers RAW probing")
+            let targetsReady = DispatchSemaphore(value: 0)
+            var preparedTargets: [AdjustmentTransferTarget] = []
+            DispatchQueue.global(qos: .userInitiated).async {
+                preparedTargets = deferredTargets()
+                targetsReady.signal()
+            }
+            while targetsReady.wait(timeout: .now()) != .success { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+            try check(probedOnMain == false, "Deferred paste/sync RAW probing runs off the main thread")
+            try check(preparedTargets.first?.isCurrent?() == true, "Prepared targets accept the captured source revision")
+            model.sourceRevision = UUID()
+            try check(preparedTargets.first?.isCurrent?() == false, "Changing source revision invalidates prepared targets")
+            fflush(stdout)
         }
         try BatchFlowModelTests.preparedSourceChange(root: root, fixture: first)
         try BatchFlowModelTests.automaticLaunch(root: root, fixture: first)

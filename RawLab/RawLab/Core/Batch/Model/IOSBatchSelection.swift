@@ -89,10 +89,10 @@ final class IOSBatchSelection: ObservableObject {
     }
 
     func prepareExport(store: EditPersistence, skipping: Set<String>, format: BatchOutputFormat, longEdge: Int?,
-                       probeHDR: (URL) throws -> Bool, validateActive: (String) throws -> Void,
+                       x3fDefaultMode: (URL) throws -> X3fMode, probeHDR: (URL) throws -> Bool, validateActive: (String) throws -> Void,
                        resolveLook: (RawSettings) throws -> (URL?, String?)) -> IOSCollectionExportReview {
         exportInput.prepareExport(store: store, skipping: skipping, format: format, longEdge: longEdge,
-            probeHDR: probeHDR, validateActive: validateActive, resolveLook: resolveLook)
+            x3fDefaultMode: x3fDefaultMode, probeHDR: probeHDR, validateActive: validateActive, resolveLook: resolveLook)
     }
 
     func freeze(_ review: IOSCollectionExportReview, store: EditPersistence, journal: BatchJournalStore,
@@ -113,10 +113,12 @@ struct IOSCollectionExportInput {
     let photos: [String: IOSCollectionPhoto]
 
     func prepareExport(store: EditPersistence, skipping: Set<String>, format: BatchOutputFormat, longEdge: Int?,
-                       probeHDR: (URL) throws -> Bool,
+                       x3fDefaultMode: (URL) throws -> X3fMode, probeHDR: (URL) throws -> Bool,
                        validateActive: (String) throws -> Void,
                        resolveLook: (RawSettings) throws -> (URL?, String?),
-                       validateHDRVersion: (URL, Int) throws -> Void = { _, _ in }) -> IOSCollectionExportReview {
+                       validateHDRSource: (URL, Int?) throws -> Void = { _, _ in
+                           throw HDRSettings.ModeError.unsupportedSource
+                       }) -> IOSCollectionExportReview {
         let selected = selection
         let rows = selected.filter { !skipping.contains($0) }.compactMap { id -> IOSCollectionExportReview.Row? in
             guard let photo = photos[id] else { return nil }
@@ -125,12 +127,27 @@ struct IOSCollectionExportInput {
                 try validateActive(id)
                 guard ExportSize.isValid(longEdge) else { throw BatchExportError.global(L10n.text("导出尺寸无效。")) }
                 let record = try store.versionedState(for: photo.photo.identity)
-                var settings = record.state?.settings ?? .default
-                if record.state==nil,let file=photo.photo.file,try file.withReadAccess(probeHDR) { settings.hdr=HDRSettings() }
-                if settings.isHDREditing, let version = settings.proRAWDecodeVersion, let file = photo.photo.file {
-                    try file.withReadAccess { try validateHDRVersion($0, version) }
+                let settings: RawSettings
+                if let saved = record.state { settings = saved.settings }
+                else {
+                    guard let file = photo.photo.file else { throw CocoaError(.fileReadNoSuchFile) }
+                    settings = try file.withReadAccess { url in
+                        try RawSettings.sourceDefaults(for: url, isRaw: photo.photo.isRaw,
+                            sourceIsHDR: probeHDR(url), x3fDefaultMode: x3fDefaultMode)
+                    }
                 }
-                if format == .hdrJPEG && !settings.isHDREditing { throw BatchExportError.target(L10n.text("HDR JPEG 需要启用 HDR 编辑。")) }
+                if format.requiresHDR && !settings.isHDREditing { throw BatchExportError.target(format.hdrRequiredMessage) }
+                if settings.isHDREditing {
+                    guard let file = photo.photo.file else { throw CocoaError(.fileReadNoSuchFile) }
+                    try file.withReadAccess { try validateHDRSource($0, settings.proRAWDecodeVersion) }
+                    if let profile = settings.hdr?.cameraDevelopmentSettings.cameraProfile {
+                        try HDRCameraProfileAssetStore.url(for: profile)
+                    }
+                    let look = settings.hdr!.lookSettings
+                    guard look.assetIsAvailable() else {
+                        throw BatchExportError.target(L10n.text("目标所需的外观不可用，请先导入外观。"))
+                    }
+                }
                 let (look, name) = try settings.isHDREditing ? (nil,nil) : resolveLook(settings)
                 if settings.hasLook && look == nil {
                     throw BatchExportError.target(L10n.text("目标所需的外观不可用，请先导入外观。"))

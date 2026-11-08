@@ -15,7 +15,7 @@ extension EditorModel {
               work.source == file.map({ MacReferenceSource($0, raster: RenderEngine.isRasterInput($0)) }) else { hslTargetNotice = .stale; return }
         cancelHSLTarget()
         let before = settings, source = sourceRevision, axis = hslTargetAxis
-        let token = hslTargetInteraction.begin(before: before.hslSettings, axis: axis, revision: revision)
+        let token = hslTargetInteraction.begin(before: before.editingHSLSettings, axis: axis, revision: revision)
         hslTargetPoint = point; hslTargetNotice = nil
         if let keyDelta { hslTargetInteraction.move(delta: keyDelta); hslTargetInteraction.end() }
         queue.async { [weak self] in
@@ -39,14 +39,14 @@ extension EditorModel {
                 }
                 self.setInteracting(true)
                 self.hslTargetHistoryActive = true
-                self.settings.hsl = next.isIdentity ? nil : next
+                self.settings.editingHSLSettings = next
                 if !self.hslTargetInteraction.isDragging { self.endHSLTarget() }
             }
         }
     }
     func moveHSLTarget(_ delta: Double) {
         guard hslTargetActive, let next = hslTargetInteraction.move(delta: delta), hslTargetHistoryActive else { return }
-        settings.hsl = next.isIdentity ? nil : next
+        settings.editingHSLSettings = next
     }
     func endHSLTarget() {
         hslTargetInteraction.end()

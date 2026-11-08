@@ -43,8 +43,20 @@ struct AdjustmentTransferSummary {
 
         switch field {
         case .look: return lookText(value, lookName: lookName)
+        case .hdrLook:
+            guard let look = value.hdrLookSettings, let name = look.name else { return text("中性") }
+            return name + " · " + percent(look.strength, signed: false)
+        case .hdrCameraDevelopment:
+            guard let camera = value.hdrCameraDevelopment else { return "" }
+            let whiteBalance = camera.whiteBalance == .asShot ? text("相机白平衡（按目标照片）")
+                : number(camera.temperature) + " K · " + text("色调") + " " + number(camera.tint, signed: true)
+            let exposure = text(camera.exposureReference == .metadata ? "场景" : "传感器基准")
+            let denoise = camera.fbddLevel == 0 ? text("关闭") : "FBDD \(camera.fbddLevel)"
+            return [whiteBalance, exposure, denoise].joined(separator: " · ")
         case .strength: return number((value.number ?? 0) * 100) + "%"
-        case .exposure: return number(value.number ?? 0, minimumFractionDigits: 2, signed: true) + " EV"
+        case .exposure, .hdrSDRExposure: return number(value.number ?? 0, minimumFractionDigits: 2, signed: true) + " EV"
+        case .hdrPeakLimit:
+            return value.number == 0 ? text("不限") : number(value.number ?? 0, signed: true) + " EV"
         case .exposureMode:
             switch value.string {
             case "scene": return text("场景")
@@ -55,7 +67,7 @@ struct AdjustmentTransferSummary {
         case .contrast: return percent((value.number ?? 1) - 1, signed: true)
         case .highlights: return percent(-(value.number ?? 0), signed: true)
         case .shadows, .sCurve: return percent(value.number ?? 0, signed: true)
-        case .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze:
+        case .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze, .hdrSDRContrast, .hdrSDRSaturation:
             return number(value.number ?? 0, signed: true) + "%"
         case .saturation: return percent((value.number ?? 1) - 1, signed: true)
         case .hdrTemperature:

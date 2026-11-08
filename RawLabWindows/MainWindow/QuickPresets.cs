@@ -99,7 +99,7 @@ public partial class MainWindow
     }
 
     private static string QuickPresetError(Exception error) => error switch {
-        AdjustmentTransferException { Failure: AdjustmentFailure.Incompatible, Detail: "hdr.camera_raw" } => Loc.Text("相机 RAW HDR 暂不支持预设或批量传递。"),
+        AdjustmentTransferException { Failure: AdjustmentFailure.Incompatible, Detail: "hdr.camera_raw" } => Loc.Text("不支持此相机 RAW 的 HDR 显影。"),
         AdjustmentTransferException { Failure: AdjustmentFailure.Incompatible, Detail: "hdr.relative_white_balance" } => Loc.Text("此预设包含 HDR 相对白平衡，当前编辑模式不支持。"),
         AdjustmentTransferException { Failure: AdjustmentFailure.Incompatible, Detail: var detail } when detail?.StartsWith("select white balance mode",StringComparison.Ordinal)==true => Loc.Text("请将白平衡模式、色温和色调一起保存，再应用此预设。"),
         AdjustmentTransferException { Failure: AdjustmentFailure.Incompatible, Detail: "target camera white balance unavailable" } => Loc.Text("此照片没有可用的相机白平衡校准。"),

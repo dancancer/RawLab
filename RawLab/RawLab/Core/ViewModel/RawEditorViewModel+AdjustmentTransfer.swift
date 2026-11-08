@@ -3,6 +3,11 @@ import PhotosUI
 import SwiftUI
 
 extension RawEditorViewModel {
+    func adjustmentTransferFields(for settings: RawSettings) -> Set<AdjustmentTransferField> {
+        settings.isHDREditing ? AdjustmentTransferField.hdrTransferFields(cameraRAW: sourceSupportsCameraHDR && sourceProRAW == nil)
+            : AdjustmentTransferField.legacyFields
+    }
+
     func adjustmentContext(identifier: String, isRaw: Bool,
                            whiteBalance: Sony2FujiProcessor.RawWhiteBalance? = nil) -> IOSAdjustmentTransferContext {
         let available = lutMap.values.filter { FileManager.default.isReadableFile(atPath: $0.sourceURL.path) }
@@ -13,7 +18,8 @@ extension RawEditorViewModel {
             .union(recipes.map { "recipe:\($0.id)" })
         return IOSAdjustmentTransferContext(identifier: identifier, isRaw: isRaw,
             sourceIsHDR:identifier==sourceIdentity?.key && sourceIsHDR,
-            sourceSupportsProRAWHDR: identifier == sourceIdentity?.key && sourceProRAW != nil,
+            sourceSupportsCameraHDR: identifier == sourceIdentity?.key && sourceSupportsCameraHDR,
+            sourceIsBayerHDR: identifier == sourceIdentity?.key && sourceSupportsCameraHDR && sourceProRAW == nil,
             availableLookIDs: lookIDs,
             builtinLookIDs: builtins,
             cameraTemperature: whiteBalance?.isCalibrated == true ? whiteBalance?.temperature : nil,
@@ -57,21 +63,35 @@ extension RawEditorViewModel {
             let targets = zip(photos, contexts).map { photo, initial -> IOSAdjustmentTransferTarget in
                 var context = initial
                 var validation: (() throws -> Void)?
+                var defaults = RawSettings.default
                 do {
                     if let error = photo.error { throw error }
                     guard let file = photo.file else { throw CocoaError(.fileReadNoSuchFile) }
                     let original = try Self.adjustmentSourceValidation(file)
                     validation = { try photo.validateSource?(); try original() }
                     try validation?()
+                    defaults = try self.editPersistence?.versionedState(for: photo.identity).state?.settings ??
+                        file.withReadAccess { try Sony2FujiProcessor().defaultSettings(for: $0, isRaw: photo.isRaw) }
                     if photo.isRaw {
-                        let saved = try self.editPersistence?.versionedState(for: photo.identity).state?.settings ?? .default
+                        let saved = defaults
                         var neutral = RawSettings.default
                         neutral.processing = saved.processing
                         neutral.x3fMode = saved.x3fMode
-                        context.sourceSupportsProRAWHDR = try file.withReadAccess {
-                            try HDRSourceInfo.probeRAW($0)?.proRAW != nil
-                        }
-                        if !(saved.isHDREditing && context.sourceSupportsProRAWHDR) {
+                        let rawHDR = try file.withReadAccess(HDRSourceInfo.probeRAW)
+                        context.sourceSupportsCameraHDR = rawHDR != nil
+                        context.sourceIsBayerHDR = rawHDR?.isCameraRAW == true
+                        if saved.isHDREditing {
+                            guard let rawHDR else { throw HDRSettings.ModeError.unsupportedSource }
+                            try rawHDR.validateEditDecodeVersion(saved.proRAWDecodeVersion)
+                            if rawHDR.isCameraRAW {
+                                context.validateHDRCameraRequest = { candidate in
+                                    guard let hdr = candidate.hdr else { throw HDRRequestError.invalidSettings }
+                                    _ = try file.withReadAccess {
+                                        try Sony2FujiProcessor().processHDR(url: $0, settings: hdr, previewLongEdge: 128)
+                                    }
+                                }
+                            }
+                        } else {
                             let processor = Sony2FujiProcessor()
                             let result = try file.withReadAccess {
                                 try processor.processRaw(url: $0, settings: neutral, previewLongEdge: 128, lutURL: nil)
@@ -100,8 +120,6 @@ extension RawEditorViewModel {
                         } else { _ = try file.withReadAccess { try Sony2FujiProcessor().loadRasterBuffer(url:$0) } }
                     }
                 } catch { validation = { throw error } }
-                var defaults=RawSettings.default
-                if context.sourceIsHDR { defaults.hdr=HDRSettings() }
                 return IOSAdjustmentTransferTarget(identity: photo.identity, displayName: photo.displayName,
                     defaultState: PhotoEditState(settings:defaults), context: context,
                     isCurrent: { validateCurrent(photo.id) }, validateSource: validation)
@@ -129,11 +147,28 @@ extension RawEditorViewModel {
         return results
     }
 
+    func photoIdentity(for source: PhotoImportSource, from item: PhotosPickerItem) async throws -> PhotoIdentity {
+        let identity = try PhotoIdentity.fallback(for: source.url, resourceIdentifier: item.itemIdentifier)
+        guard !source.isRaw, let store = editPersistence else { return identity }
+        return await store.resolvingLegacyContent(for: identity) {
+            // 旧入口使用 .current 的 ImagePhotoFile，字节可能与 PhotoKit 原容器不同。
+            guard let legacy = try? await PhotoImportFile.loadSource(using: {
+                guard let image = try await item.loadTransferable(type: ImagePhotoFile.self) else {
+                    throw PhotoImportError.loadFailed
+                }
+                return image.source
+            }) else { return nil }
+            defer { PhotoImportFile.release(legacy.url) }
+            return try? PhotoIdentity.fallback(for: legacy.url).contentIdentifier
+        }
+    }
+
     func loadAdjustmentPhoto(from item: PhotosPickerItem, workflow: String) async throws -> IOSAdjustmentPhoto {
-        let identity = item.itemIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
         return try await loadAdjustmentPhoto(stage: "readPhotoLibrary",
                                              context: ["workflow": workflow, "entryPoint": "photos"],
-                                             identity: identity) {
+                                             resolveIdentity: { source in
+            try await self.photoIdentity(for: source, from: item)
+        }) {
             try await PhotoImportFile.load(from: item)
         }
     }
@@ -147,7 +182,7 @@ extension RawEditorViewModel {
     }
 
     private func loadAdjustmentPhoto(stage sourceStage: String, context sourceContext: [String: String],
-                                     identity: PhotoIdentity? = nil,
+                                     resolveIdentity: ((PhotoImportSource) async throws -> PhotoIdentity)? = nil,
                                      loadSource: () async throws -> PhotoImportSource) async throws -> IOSAdjustmentPhoto {
         var stage = sourceStage
         var context = sourceContext
@@ -157,6 +192,7 @@ extension RawEditorViewModel {
             context["sourceKind"] = source.isRaw ? "raw" : "raster"
             context["extension"] = context["extension"] ?? ErrorDiagnostics.fileNameExtension(source.url)
             stage = "prepareTarget"
+            let identity = try await resolveIdentity?(source)
             return try await retainAdjustmentPhoto(source, identity: identity)
         } catch {
             if !Task.isCancelled {

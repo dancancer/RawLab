@@ -2,8 +2,10 @@ package com.rawlab.android.batch
 
 import com.rawlab.android.adjustments.*
 import com.rawlab.android.batch.journal.BatchJournal
+import com.rawlab.android.engine.requireAsset
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.PhotoInputKind
+import com.rawlab.android.photo.HDRSourceInfo
 import com.rawlab.android.settings.*
 import java.io.File
 import java.util.UUID
@@ -14,23 +16,31 @@ internal class BatchHDRPreparation(
     private val source: BatchSourceSnapshot,
     private val readRecord: (PhotoIdentity) -> VersionedPhotoEdit,
     private val resolveLook: (EditSettings) -> File?,
-    private val probeSource: (File) -> Boolean,
-    private val probeProRAW: (File) -> Boolean = { false },
+    private val probeSource: (File, Boolean) -> HDRSourceInfo?,
+    private val hdrLookDirectory: File? = null,
+    private val hdrCameraProfileDirectory: File? = null,
 ) {
     private data class Candidate(val record: VersionedPhotoEdit,val frozen: BatchFrozenSettings)
+    private val sourceContext by lazy {
+        val raw = source.inputKind == PhotoInputKind.RAW
+        val info = probeSource(source.sourceFile, raw)
+            ?: throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.source")
+        AdjustmentTransferContext(source.identity.value, raw,
+            sourceSupportsCameraHDR = info.isCameraRaw, sourceIsProRAW = info.isProRAW)
+    }
 
     private fun candidate(target: BatchTarget, ordinal: Int, format: ExportFormat, longEdge: Int?): Candidate {
         val hash=BatchFrozenSettings.checksum(target.sourceFile)
-        val isHDR=probeSource(target.sourceFile)
+        val raw = target.inputKind == PhotoInputKind.RAW
+        val info = probeSource(target.sourceFile, raw)
         val record=readRecord(target.identity)
-        val previous=record.settings ?: sourceDefaultSettings(isHDR, cameraRaw = target.inputKind == PhotoInputKind.RAW)
-        if(previous.isHDREditing && !isHDR) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.source")
-        val payload=AdjustmentTransfer.captureHDRBatch(source.settings,
-            AdjustmentTransferContext(source.identity.value,source.inputKind==PhotoInputKind.RAW,
-                sourceSupportsProRAWHDR = probeProRAW(source.sourceFile)),previous.isHDREditing)
+        val previous=record.settings ?: com.rawlab.android.photo.defaultEditSettingsFor(target.sourceFile, target.inputKind, info != null, cameraRaw = raw)
+        if(previous.isHDREditing && info == null) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.source")
+        val payload=AdjustmentTransfer.captureHDRBatch(source.settings,sourceContext,previous.isHDREditing)
         val settings=AdjustmentTransfer.prepare(payload,previous,
-            AdjustmentTransferContext(target.id,target.inputKind==PhotoInputKind.RAW,
-                sourceSupportsProRAWHDR = probeProRAW(target.sourceFile)))
+            AdjustmentTransferContext(target.id,raw,sourceSupportsCameraHDR = info?.isCameraRaw == true,
+                sourceIsProRAW = info?.isProRAW == true, hdrLookDirectory = hdrLookDirectory))
+        if (settings.isHDREditing) settings.hdr?.cameraSettings?.cameraProfile?.requireAsset(hdrCameraProfileDirectory)
         if(format==ExportFormat.HDR_JPEG && !settings.isHDREditing)
             throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.output")
         val look=if(settings.isHDREditing) null else resolveLook(settings)

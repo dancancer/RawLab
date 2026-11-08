@@ -10,6 +10,12 @@ struct LookCompatibilityPresentation: Identifiable {
     let draft: LUTCompatibility
 }
 
+struct DCPImportOptionsPresentation: Identifiable {
+    let id = UUID()
+    let source: URL
+    let reason: DCPCompilerError
+}
+
 enum EditorDocumentImportKind {
     case photo
     case looks
@@ -108,6 +114,9 @@ struct ContentView: View {
     @State var pendingLookCompatibility: LookCompatibilityPresentation?
     @State var lookCompatibilityCompletion: ((LUTCompatibility?) -> Void)?
     @State var confirmedLookCompatibility: LUTCompatibility?
+    @State var pendingDCPImportOptions: DCPImportOptionsPresentation?
+    @State var dcpImportOptionsCompletion: ((DCPImportOptions?) -> Void)?
+    @State var confirmedDCPImportOptions: DCPImportOptions?
     @State var renamingLUT: LUTOption?
     @State var renamedLUTName = ""
     @State var showingLookRename = false
@@ -189,7 +198,7 @@ struct ContentView: View {
         .preferredColorScheme(.dark)
         .tint(.yellow)
         .photosPicker(isPresented: $showingPhotoImporter, selection: $selectedPhotoItem,
-                      matching: .images, preferredItemEncoding: .current)
+                      matching: .images, preferredItemEncoding: .current, photoLibrary: .shared())
         .sheet(isPresented: $showingPrivacy) { UsagePrivacyView() }
         .fileImporter(isPresented: $showingDocumentImporter,
                       allowedContentTypes: importKind.contentTypes,
@@ -214,6 +223,18 @@ struct ContentView: View {
                 }) { result in
                 confirmedLookCompatibility = result
                 pendingLookCompatibility = nil
+            }
+        }
+        .sheet(item: $pendingDCPImportOptions, onDismiss: {
+            let completion = dcpImportOptionsCompletion
+            let options = confirmedDCPImportOptions
+            dcpImportOptionsCompletion = nil
+            confirmedDCPImportOptions = nil
+            completion?(options)
+        }) { pending in
+            IOSDCPImportOptionsView(source: pending.source, reason: pending.reason) { options in
+                confirmedDCPImportOptions = options
+                pendingDCPImportOptions = nil
             }
         }
         .alert(L10n.text("重命名外观"), isPresented: $showingLookRename) {
@@ -424,12 +445,13 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingExportSize) {
             ExportSizeSheet(longEdge: $exportLongEdge,
-                            title: singleExportFormat == .renderedDNG ? "导出渲染型 DNG" : "保存当前照片") {
+                            title: singleExportFormat == .renderedDNG ? "导出渲染型 DNG" :
+                                singleExportFormat == .hdrHEIF ? singleExportFormat.title : "保存当前照片") {
                 showingExportSize = false
                 if singleExportFormat == .renderedDNG {
                     exportDNG(longEdge: exportLongEdge)
                 } else {
-                    exportJPEG(longEdge: exportLongEdge,keepHDR:singleExportFormat == .hdrJPEG)
+                    exportPhoto(longEdge: exportLongEdge, format: singleExportFormat)
                 }
             }
         }

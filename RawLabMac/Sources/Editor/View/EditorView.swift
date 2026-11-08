@@ -343,6 +343,19 @@ struct EditorView: View {
             }
             if model.settings.isHDREditing {
                 HDRMonitoringControls(state:hdrDisplay)
+                HDRRenditionControls(settings: Binding(
+                    get: { model.settings.hdr?.renditionSettings ?? HDRRenditionSettings() },
+                    set: { if model.settings.isHDREditing { model.settings.hdr?.renditionSettings = $0 } }
+                ), onEditingChanged: model.setInteracting, onCancelled: model.cancelAdjustmentInteraction)
+                    .id(model.sourceRevision)
+                    .disabled(model.geometryDraft != nil || model.exporting)
+                if model.sourceIsBayerHDR, let hdr = model.settings.hdr {
+                    HDRCameraDevelopmentControls(settings: hdr.cameraDevelopmentSettings,
+                        supportsBayerDevelopment: model.rawHDRSource?.supportsBayerDevelopment == true,
+                        apply: model.applyHDRCameraDevelopment,
+                        onResourceRestored: { model.schedule(forceExact: true) })
+                        .id(model.sourceRevision).disabled(!model.canApplyHDRCameraDevelopment)
+                }
             } else {
             Text(activeLookName)
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -692,9 +705,9 @@ struct EditorView: View {
     private var canHoldBefore: Bool { showsPhotoWorkspace && !model.hslTargetActive && model.result != nil && model.neutral != nil && model.canComparePreview && !viewing.enabled }
 
     private var hslTargetInput: HSLTargetCanvasInput {
-        let source = model.sourceRevision, axis = model.hslTargetAxis
-        func current() -> Bool { model.sourceRevision == source && model.hslTargetAxis == axis }
-        return HSLTargetCanvasInput(scope: "\(source)-\(axis.rawValue)",
+        let source = model.sourceRevision, axis = model.hslTargetAxis, hdr = model.settings.isHDREditing
+        func current() -> Bool { model.sourceRevision == source && model.hslTargetAxis == axis && model.settings.isHDREditing == hdr }
+        return HSLTargetCanvasInput(scope: "\(source)-\(axis.rawValue)-\(hdr)",
             begin: { if current() { model.beginHSLTarget($0) } },
             change: { if current() { model.moveHSLTarget($0) } },
             end: { if current() { model.endHSLTarget() } }, cancel: { if current() { model.cancelHSLTarget() } },

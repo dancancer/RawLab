@@ -3,6 +3,7 @@
 #include "model_package.h"
 #include "noise_profile.h"
 #include "scene_rgb_adapter.h"
+#include "core/sha256.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <chrono>
@@ -89,7 +90,7 @@ std::string sourceMetadataKey(const std::string& path) {
     return metadata.cacheable ? metadata.stamp() : digestJson({metadata.stamp(), sha256File(path)});
 }
 
-std::string sourceIdentityKey(const std::string& path) {
+std::string sourceIdentityKey(const std::string& path, void (*checkpoint)()) {
     struct Entry { std::string stamp, key; uint64_t used; };
     static std::mutex mutex;
     static std::map<std::string, Entry> cache;
@@ -103,7 +104,8 @@ std::string sourceIdentityKey(const std::string& path) {
         found->second.used = ++access;
         return found->second.key;
     }
-    const auto content = sha256File(file.u8string());
+    const auto canonicalPath = file.u8string();
+    const auto content = checkpoint ? hash::sha256File(canonicalPath, checkpoint) : sha256File(canonicalPath);
     const auto after = sourceMetadata(file);
     if (after.identity != metadata.identity || after.changed != metadata.changed ||
         (metadata.cacheable && (after.sequence != metadata.sequence || !after.cacheable)))
@@ -203,7 +205,8 @@ std::optional<Tensor> DenoiseCache::load(const std::string& key, CacheKind kind,
 }
 
 void DenoiseCache::store(const std::string& key, CacheKind kind, int width, int height, const float* values, size_t count,
-                         const std::string& dependency, const std::string& producer) const {
+                         const std::string& dependency, const std::string& producer,
+                         const std::function<void()>& beforePublish) const {
     if (!validKey(key) || (!dependency.empty() && !validKey(dependency)) || !values || count != countFor(kind, width, height) ||
         producer.size() > 128 || !std::all_of(values, values + count, [](float x) { return std::isfinite(x); }))
         throw std::invalid_argument("invalid AI cache payload");
@@ -223,6 +226,7 @@ void DenoiseCache::store(const std::string& key, CacheKind kind, int width, int 
         output.write(text.data(), text.size());
         output.write(reinterpret_cast<const char*>(values), count * 4); output.close();
         if (!output) throw std::runtime_error("Cannot write AI cache");
+        if (beforePublish) beforePublish();
 #ifdef _WIN32
         // 原子替换整个文件，确保相同张量的新 producer 和依赖信息也一起更新。
         // Windows 即使允许共享删除，也可能在旧读者关闭前拒绝替换；保留原子发布，有限等待短暂读取。
@@ -233,6 +237,7 @@ void DenoiseCache::store(const std::string& key, CacheKind kind, int width, int 
                 std::chrono::steady_clock::now() >= deadline)
                 throw std::system_error(error, std::system_category(), "Cannot replace AI cache");
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            if (beforePublish) beforePublish();
         }
 #else
         std::filesystem::rename(temporary, target);

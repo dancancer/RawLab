@@ -9,6 +9,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WorkingCopyTest {
+    @Test fun fileDefaultsUseLegacyCapabilityAndExplicitRetrySkipsProbe() {
+        val mode = com.rawlab.android.settings.X3fMode.LEGACY
+        val kind = com.rawlab.android.format.PhotoInputKind.RAW
+        val file = java.io.File("camera.X3F")
+        assertEquals(mode, defaultEditSettingsFor(file, kind, false, false, x3fDefaultMode = { mode }).x3fMode)
+        assertEquals(mode, defaultEditSettingsFor(file, kind, false, false, mode,
+            x3fDefaultMode = { error("explicit Legacy retry must not probe again") }).x3fMode)
+    }
+
     @Test fun preservesBytesAndDoesNotUseUntrustedFilename() {
         val directory = Files.createTempDirectory("rawlab-copy").toFile()
         try {

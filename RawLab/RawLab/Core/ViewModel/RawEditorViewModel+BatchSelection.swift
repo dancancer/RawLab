@@ -25,7 +25,7 @@ extension RawEditorViewModel {
     func captureCollectionSynchronization(scope: AdjustmentTransferScope, settings: RawSettings) throws -> IOSCollectionSynchronization {
         guard let identity = sourceIdentity, let record = loadedEditRecord else { throw EditPersistenceError.corruptStore }
         try validateCollectionActive(identity.key)
-        let state = record.state ?? PhotoEditState(settings: sourceDefaultSettings)
+        let state = try record.state ?? PhotoEditState(settings: sourceDefaultSettings)
         guard currentEditState(settings: settings).hasSameAdjustments(as: state) else { throw EditPersistenceConflict.changed }
         let context = adjustmentContext(identifier: identity.key, isRaw: sourceKind == .raw, whiteBalance: rawWhiteBalance)
         let payload = try IOSAdjustmentTransfer.capture(scope: scope, snapshot: state, context: context)
@@ -46,6 +46,7 @@ extension RawEditorViewModel {
         let active = collectionActiveValidator()
         adjustmentQueue.async {
             let review = collection.prepareExport(store: store, skipping: skipping, format: format, longEdge: longEdge,
+                x3fDefaultMode: { try Sony2FujiProcessor().x3fDefaultMode(for: $0) },
                 probeHDR: { try HDRSourceInfo.probe($0) != nil },
                 validateActive: active, resolveLook: { settings in
                     if let id = settings.masterRecipeID {
@@ -58,10 +59,12 @@ extension RawEditorViewModel {
                         return (recipe?.lutURL(), recipe?.name)
                     }
                     return (looks[id]?.sourceURL, looks[id]?.name)
-                }, validateHDRVersion: { url, version in
-                    if version != ProRAWSource.decodeVersion, try HDRSourceInfo.probeRAW(url)?.proRAW != nil {
-                        try ProRAWSource.validatedDecodeVersion(version)
+                }, validateHDRSource: { url, version in
+                    guard let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url) else {
+                        throw HDRSettings.ModeError.unsupportedSource
                     }
+                    try info.validateEditDecodeVersion(version)
+                    try format.validateHDRHEIF()
                 })
             self.resultDelivery { completion(.success(review)) }
         }

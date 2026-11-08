@@ -7,6 +7,9 @@ internal static class AdjustmentTransferChecks
 {
     internal static void Run()
     {
+        NeutralRawRequestsOnRaster();
+        FullNeutralRecipeOnRaster();
+        BuiltinRawRecipesOnRaster();
         var context = new AdjustmentTransferContext("source", true);
         var identity = new OriginalIdentity("photo.arw", 1, 2, 3);
         var settings = new Adjustments(); settings.Set(Parameter.Exposure, 1.25);
@@ -47,6 +50,82 @@ internal static class AdjustmentTransferChecks
         }
         Check(AdjustmentFields.All.Count==72,"stable field catalog");
         Console.WriteLine($"PASS: {count} shared payload vectors and native request equality");
+    }
+    private static void FullNeutralRecipeOnRaster()
+    {
+        var recipe=MasterRecipe.All[0];
+        var raster=Context with {IsRaw=false,AvailableLookIDs=new HashSet<string>{"recipe:"+recipe.Id}};
+        var target=new Adjustments {ExposureMode=2};target.ApplyMasterRecipe(recipe);
+        var source=target.Capture().Restore();source.Set(Parameter.Tint,0);
+        var complete=AdjustmentTransfer.Capture(AdjustmentScope.Standard,Edit(source),Context);
+        var applied=AdjustmentTransfer.Prepare(complete,Edit(target),raster);
+        Check(!applied.Settings.SameAs(target.Capture()) && applied.Settings.Values[(int)Parameter.Tint]==0,
+            "Full neutral RAW recipe clears previous raster tint and counts as changed");
+        Check(Number(AdjustmentTransferValues.Values(applied,raster)[F.Tint])==0,"Full neutral recipe exposes zero logical tint");
+        Check(AdjustmentTransfer.Prepare(complete,applied,raster).Settings.SameAs(applied.Settings),"Repeated full neutral recipe is unchanged");
+    }
+    private static void BuiltinRawRecipesOnRaster()
+    {
+        var raster=Context with {IsRaw=false,AvailableLookIDs=MasterRecipe.All.Select(r=>"recipe:"+r.Id).ToHashSet()};
+        foreach(var recipe in MasterRecipe.All) foreach(var strength in new[]{0.0,.5,1.0,2.0}) {
+            var source=new Adjustments();source.ApplyMasterRecipe(recipe);source.Set(Parameter.Strength,strength*100);
+            var direct=new Adjustments {ExposureMode=2};direct.ApplyMasterRecipe(recipe);direct.Set(Parameter.Strength,strength*100);
+            var previous=new Adjustments {ExposureMode=2};previous.ApplyMasterRecipe(MasterRecipe.All[0]);
+            foreach(var scope in new[]{AdjustmentScope.Standard,AdjustmentScope.All}) {
+                var frozen=AdjustmentPayload.Parse(AdjustmentTransfer.Capture(scope,Edit(source),Context).ToJson());
+                var applied=AdjustmentTransfer.Prepare(frozen,Edit(previous),raster);
+                var actual=AdjustmentTransferValues.Values(applied,raster);var expected=AdjustmentTransferValues.Values(Edit(direct),raster);
+                // Windows 百分比渲染中途转 Float；对比度/饱和度回算有既有舍入，WB 等其他逻辑值仍精确比较。
+                Check(actual.All(pair=>pair.Key is F.Contrast or F.Saturation
+                    ? Math.Abs(Number(pair.Value)!.Value-Number(expected[pair.Key])!.Value)<1e-6
+                    : Same(pair.Value,expected[pair.Key])),"Builtin RAW recipe matches direct raster application: "+recipe.Id);
+                Check(AdjustmentTransfer.Prepare(frozen,applied,raster).Settings.SameAs(applied.Settings),"Repeated builtin RAW recipe is unchanged");
+            }
+            source.Set(Parameter.Tint,recipe.TintDelta+1);
+            var edited=AdjustmentTransfer.Capture(AdjustmentScope.Standard,Edit(source),Context);
+            Reject(()=>AdjustmentTransfer.Prepare(edited,Edit(previous),raster),"Manually edited full recipe tint blocks raster");
+            source.Set(Parameter.Tint,recipe.TintDelta);source.Set(Parameter.Temperature,5400);
+            var fixedWB=AdjustmentTransfer.Capture(AdjustmentScope.Standard,Edit(source),Context);
+            Reject(()=>AdjustmentTransfer.Prepare(fixedWB,Edit(previous),raster),"Full recipe with fixed WB blocks raster");
+        }
+        Console.WriteLine("PASS: All builtin RAW recipes match direct raster application at four strengths; edited WB stays blocked");
+    }
+    private static void NeutralRawRequestsOnRaster()
+    {
+        var raster=Context with {Identifier="target.jpg",IsRaw=false};
+        var target=Edit(new Adjustments {ExposureMode=2});
+        var source=new Adjustments();source.ResolveWhiteBalance((5123,17));
+        foreach(var mode in new[]{0,1,2}) {
+            source.ExposureMode=mode;source.Set(Parameter.Exposure,1.25);
+            var standard=AdjustmentTransfer.Capture(AdjustmentScope.Standard,Edit(source),Context);
+            var applied=AdjustmentTransfer.Prepare(standard,target,raster);
+            Check(!applied.Settings.SameAs(target.Settings) && applied.Settings.Values[1]==1.25,"RAW standard paste keeps other changes on JPEG");
+            var values=AdjustmentTransferValues.Values(applied,raster);
+            Check(Text(values[F.WhiteBalanceMode])=="none" && applied.Settings.CameraWhiteBalance
+                && applied.Settings.Values[2]==6500 && applied.Settings.Values[3]==0 && applied.Settings.ExposureMode==2,
+                "JPEG keeps neutral WB and sensor exposure for every RAW exposure mode");
+            Check(AdjustmentTransfer.Prepare(standard,applied,raster).Settings.SameAs(applied.Settings),"Repeated RAW standard paste is unchanged");
+            source.Set(Parameter.Exposure,0);
+            var neutral=AdjustmentTransfer.Capture(AdjustmentScope.Standard,Edit(source),Context);
+            Check(AdjustmentTransfer.Prepare(neutral,target,raster).Settings.SameAs(target.Settings),"Neutral RAW standard paste is unchanged on JPEG");
+            Check(AdjustmentTransfer.Prepare(Copy(source,F.ExposureMode),target,raster).Settings.SameAs(target.Settings),"RAW exposure mode alone is unchanged on JPEG");
+        }
+        foreach(var field in AdjustmentFields.WhiteBalance)
+            Check(AdjustmentTransfer.Prepare(Copy(source,field),target,raster).Settings.SameAs(target.Settings),"Neutral partial WB is unchanged on JPEG");
+        var camera=Payload((F.WhiteBalanceMode,"camera"),(F.Temperature,null),(F.Tint,null));
+        var recipe=MasterRecipe.All[0];
+        foreach(var strength in new[]{0.0,1.0}) {
+            var values=camera.Values.ToDictionary(p=>p.Key,p=>p.Value);values[F.Tint]=Value(0);
+            var zero=new AdjustmentPayload(camera.Source with {Recipe=new(recipe.Id,strength,3)},values);
+            Check(AdjustmentTransfer.Prepare(zero,target,raster).Settings.SameAs(target.Settings),"Zero recipe tint is neutral on JPEG");
+            var nonzero=new AdjustmentPayload(zero.Source,new Dictionary<F,JsonElement>{{F.Tint,Value(5)}});
+            Reject(()=>AdjustmentTransfer.Prepare(nonzero,target,raster),"Nonzero recipe tint blocks JPEG even at zero strength");
+        }
+        foreach(var fixedWB in new[]{Payload((F.WhiteBalanceMode,"temperature"),(F.Temperature,5400),(F.Tint,3.5)),
+            Payload((F.Temperature,5400)),Payload((F.Tint,3.5))})
+            Reject(()=>AdjustmentTransfer.Prepare(fixedWB,target,raster),"Fixed RAW WB is incompatible with JPEG");
+        Reject(()=>AdjustmentTransfer.Prepare(Payload((F.RawDenoise,1)),target,raster),"Nonzero RAW FBDD is incompatible with JPEG");
+        Console.WriteLine("PASS: Windows neutral RAW default/partial paste on JPEG, unchanged detection and incompatible effective requests");
     }
     private static void AdapterChecks()
     {
@@ -111,7 +190,7 @@ internal static class AdjustmentTransferChecks
         Check(!wb.Settings.CameraWhiteBalance && wb.Settings.AsShotTemperature==5100 && wb.Settings.Values[2]==5500 && wb.Settings.Values[3]==15,"fixed WB keeps target calibration");
         var fractionalWB=Prepare(Payload((F.WhiteBalanceMode,"temperature"),(F.Temperature,5500.5),(F.Tint,1.2)),defaults);
         Check(fractionalWB.Settings.Values[2]==5500.5 && fractionalWB.Settings.Values[3]==1.2,"Fixed WB preserves exact selected decimal values when native requests match");
-        Reject(()=>Prepare(Payload((F.WhiteBalanceMode,"camera"),(F.Temperature,null),(F.Tint,null)),context:Context with {IsRaw=false}),"RAW WB on raster blocked");
+        Reject(()=>Prepare(Payload((F.WhiteBalanceMode,"temperature"),(F.Temperature,5500),(F.Tint,15)),context:Context with {IsRaw=false}),"Fixed RAW WB on raster blocked");
         var ai=new Adjustments{AIDenoiseEnabled=true,Denoise=DenoiseSettings.Clean};
         Reject(()=>AdjustmentTransfer.Capture(AdjustmentScope.All,Edit(ai),Context),"AI all capture blocked");
         Reject(()=>AdjustmentTransfer.Capture(AdjustmentScope.Modified,Edit(ai),Context),"AI modified capture blocked");

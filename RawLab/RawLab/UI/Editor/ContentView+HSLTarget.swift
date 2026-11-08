@@ -6,9 +6,9 @@ extension ContentView {
         !editorBusy && adjustmentSheet == nil && !draftExitPresented && !resetConfirmationPresented
     }
     var hslTargetInput: HSLTargetCanvasInput {
-        let source = viewModel.sourceRevision, axis = hslTargetAxis
-        func current() -> Bool { viewModel.sourceRevision == source && hslTargetAxis == axis }
-        return HSLTargetCanvasInput(scope: "\(source)-\(axis.rawValue)",
+        let source = viewModel.sourceRevision, axis = hslTargetAxis, hdr = settings.isHDREditing
+        func current() -> Bool { viewModel.sourceRevision == source && hslTargetAxis == axis && settings.isHDREditing == hdr }
+        return HSLTargetCanvasInput(scope: "\(source)-\(axis.rawValue)-\(hdr)",
             begin: { if current() { beginHSLTarget($0) } }, change: { if current() { moveHSLTarget($0) } },
             end: { if current() { endHSLTarget() } }, cancel: { if current() { cancelHSLTarget() } },
             key: { if current() { keyHSLTarget($0) } }, reject: { if current() { cancelHSLTarget(); hslTargetNotice = .outside } })
@@ -17,7 +17,7 @@ extension ContentView {
         cancelHSLTarget()
         guard hslTargetActive, let revision = viewModel.hslTargetRevision else { hslTargetNotice = .stale; return }
         let before = settings, source = viewModel.sourceRevision, axis = hslTargetAxis
-        let token = hslTargetInteraction.begin(before: before.hsl, axis: axis, revision: revision)
+        let token = hslTargetInteraction.begin(before: before.editingHSLSettings, axis: axis, revision: revision)
         hslTargetPoint = point
         if let keyDelta { hslTargetInteraction.move(delta: keyDelta); hslTargetInteraction.end() }
         viewModel.sampleHSL(point: point, settings: before, revision: revision) { sample in
@@ -33,19 +33,21 @@ extension ContentView {
                 cancelHSLTarget(); hslTargetNotice = .failed; return
             }
             hslTargetHistoryActive = true
-            settings.hsl = next
+            settings.editingHSLSettings = next
             if !hslTargetInteraction.isDragging { endHSLTarget() }
         }
     }
     func moveHSLTarget(_ delta: Double) {
         guard hslTargetActive, let next = hslTargetInteraction.move(delta: delta), hslTargetHistoryActive else { return }
-        settings.hsl = next
+        settings.editingHSLSettings = next
     }
     func endHSLTarget() {
         hslTargetInteraction.end()
         if hslTargetHistoryActive { hslTargetHistoryActive = false; setSliderEditing(false) }
     }
     func cancelHSLTarget() {
+        guard hslTargetPoint != nil || hslTargetNotice != nil || hslTargetInteraction.isWaiting ||
+              hslTargetInteraction.isDragging || hslTargetInteraction.selection != nil || hslTargetHistoryActive else { return }
         hslTargetInteraction.cancel(); hslTargetPoint = nil; hslTargetNotice = nil
         if hslTargetHistoryActive { hslTargetHistoryActive = false; cancelSliderInteraction() }
     }

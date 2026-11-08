@@ -159,9 +159,14 @@ public partial class MainWindow : Window
             if(!ready || syncing || exporting || transform.Active)return;
             settings.Denoise=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
         };
+        DenoiseEditor.HDRChanged+=(value,dragging)=>{
+            if(!ready || syncing || exporting || transform.Active || settings.HDR is not { Mode: HDRMode.Hdr } hdr)return;
+            settings.HDR=hdr.WithDetail(hdr.DetailSettings with { Denoise=value });
+            interacting=dragging;RefreshControls();MarkEdited();Schedule();
+        };
         PhotoEffectsEditor.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
-            settings.Effects=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
+            settings.EditingEffects=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
         };
         WhiteBalanceEditor.Changed+=(parameter,value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
@@ -174,7 +179,7 @@ public partial class MainWindow : Window
         GradingEditor.ResetRequested+=RequestReset;
         CurveEditor.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
-            settings.Curve=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
+            settings.EditingCurve=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
         };
         CurveEditor.LegacyChanged+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
@@ -182,14 +187,14 @@ public partial class MainWindow : Window
         };
         GradingEditor.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
-            settings.ColorGrading=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
+            settings.EditingGrading=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
         };
         InitializeHslTarget();
         HslEditor.ResetRequested+=RequestReset;
         PhotoEffectsEditor.ResetRequested+=()=>RequestReset(new(EditorResetKind.Tool,Tool:CurrentTool));
         HslEditor.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
-            settings.Hsl=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
+            settings.EditingHsl=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
         };
         DenoiseEditor.ResetRequested+=()=>RequestReset(new(EditorResetKind.Tool,Tool:EditorAdjustmentTool.Denoise));
         GeometryEditor.ResetRequested+=()=>RequestReset(new(EditorResetKind.Tool,Tool:EditorAdjustmentTool.Geometry));
