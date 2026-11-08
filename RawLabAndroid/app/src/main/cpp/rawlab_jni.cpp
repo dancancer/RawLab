@@ -17,6 +17,7 @@
 #include <array>
 #include <fstream>
 #include "png16_decoder.h"
+#include "png16_color.h"
 
 static_assert(sizeof(sony2fuji_photo_effects_config) == 40,
     "Photo effects config ABI must remain a versioned 40-byte struct");
@@ -327,6 +328,26 @@ Java_com_rawlab_android_raster_NativePng16_nativeDecode(JNIEnv* env, jobject, js
     } catch (const std::bad_alloc&) { throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory for PNG");
     } catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
     return nullptr;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_rawlab_android_raster_NativePng16_nativeConvert(JNIEnv* env, jobject, jobject pixels,
+    jfloatArray eotf, jfloatArray matrix, jfloatArray oetf) {
+    try {
+        auto* data = static_cast<uint16_t*>(env->GetDirectBufferAddress(pixels));
+        const auto bytes = env->GetDirectBufferCapacity(pixels);
+        if (!data || bytes < 0 || bytes % 8 != 0 || env->GetArrayLength(eotf) != 65536 ||
+            env->GetArrayLength(oetf) != 65536 || env->GetArrayLength(matrix) != 9)
+            throw std::invalid_argument("Invalid PNG color conversion buffer");
+        std::vector<float> decode(65536), encode(65536);
+        std::array<float, 9> transform{};
+        env->GetFloatArrayRegion(eotf, 0, 65536, decode.data());
+        env->GetFloatArrayRegion(oetf, 0, 65536, encode.data());
+        env->GetFloatArrayRegion(matrix, 0, 9, transform.data());
+        if (env->ExceptionCheck()) return;
+        rawlab::convertPng16ToSrgb(data, static_cast<size_t>(bytes / 8), decode.data(), transform.data(), encode.data());
+    } catch (const std::bad_alloc&) { throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory for PNG");
+    } catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
 }
 
 extern "C" JNIEXPORT void JNICALL

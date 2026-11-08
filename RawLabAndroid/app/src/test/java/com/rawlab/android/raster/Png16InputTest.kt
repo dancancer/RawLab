@@ -16,9 +16,17 @@ class Png16InputTest {
         assertEquals(16, result.info?.bitDepth)
     }
 
-    private fun rgb16Png(): ByteArray {
-        val header = ByteBuffer.allocate(13).putInt(2).putInt(1)
-            .put(16).put(2).put(0).put(0).put(0).array()
+    @Test fun oversized16BitPngIsRejectedBeforePixelDecode() {
+        val result = RasterContainerValidator.inspect(rgb16Png(width = 8001, height = 4000))
+        assertFalse(result.isValid)
+        assertEquals("16-bit PNG exceeds the 32 MP decode limit", result.error)
+        assertTrue(RasterContainerValidator.inspect(rgb16Png(width = 8000, height = 4000)).isValid)
+        assertTrue(RasterContainerValidator.inspect(rgb16Png(width = 16000, height = 8000, depth = 8)).isValid)
+    }
+
+    private fun rgb16Png(width: Int = 2, height: Int = 1, depth: Int = 16): ByteArray {
+        val header = ByteBuffer.allocate(13).putInt(width).putInt(height)
+            .put(depth.toByte()).put(2).put(0).put(0).put(0).array()
         val pixels = byteArrayOf(0, 0x12, 0x34, 0x56, 0x78, 0x7a, 0x01,
             0x12, 0x35, 0x56, 0x79, 0x7a, 0x02)
         val compressed = ByteArrayOutputStream().also { bytes ->

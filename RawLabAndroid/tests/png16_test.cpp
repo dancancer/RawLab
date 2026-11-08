@@ -34,7 +34,7 @@ static Bytes fixture(bool rgba = false, uint16_t alpha = 65535, bool interlaced 
         for (int y = startY; y < 3; y += interlaced ? dy[pass] : 1) {
             raw.push_back(0);
             for (int x = startX; x < 2; x += interlaced ? dx[pass] : 1) {
-                for (uint16_t value : {uint16_t(0x1234 + (y * 2 + x) * 16), uint16_t(0x5678), uint16_t(0x7a01)}) {
+                for (uint16_t value : {uint16_t(0x1234 + (y * 2 + x) * 16), uint16_t(0x5678 + y * 2 + x), uint16_t(0x7a01 + (y * 2 + x) * 3)}) {
                     raw.push_back(value >> 8); raw.push_back(value & 255);
                 }
                 if (rgba) { raw.push_back(alpha >> 8); raw.push_back(alpha & 255); }
@@ -69,8 +69,8 @@ int main(int argc, char** argv) {
             auto pixels = rawlab::decodePng16(path.c_str(), 2, 3, orientation);
             for (int i = 0; i < 6; ++i) {
                 assert(pixels.get()[i * 4] == 0x1234 + positions[orientation - 1][i] * 16);
-                assert(pixels.get()[i * 4 + 1] == 0x5678);
-                assert(pixels.get()[i * 4 + 2] == 0x7a01);
+                assert(pixels.get()[i * 4 + 1] == 0x5678 + positions[orientation - 1][i]);
+                assert(pixels.get()[i * 4 + 2] == 0x7a01 + positions[orientation - 1][i] * 3);
                 assert(pixels.get()[i * 4 + 3] == 65535);
             }
         }
@@ -81,6 +81,12 @@ int main(int argc, char** argv) {
     rejects([&] { rawlab::decodePng16(path.c_str(), 3, 2, 1); });
     rejects([&] { rawlab::decodePng16(path.c_str(), 2, 3, 9); });
     rejects([&] { rawlab::decodePng16(path.c_str(), 16001, 8000, 1); });
+    try {
+        rawlab::decodePng16(path.c_str(), 8001, 4000, 1);
+        assert(false);
+    } catch (const std::exception& error) {
+        assert(std::string(error.what()) == "16-bit PNG exceeds the 32 MP decode limit");
+    }
     auto eightBit = fixture(); eightBit[24] = 8; write(eightBit);
     rejects([&] { rawlab::decodePng16(path.c_str(), 2, 3, 1); });
     auto truncated = fixture(); truncated.resize(50); write(truncated);

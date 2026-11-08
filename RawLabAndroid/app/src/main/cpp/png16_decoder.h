@@ -23,11 +23,13 @@ inline Png16Pixels decodePng16(const char* path, int width, int height, int orie
     if (!path || width <= 0 || height <= 0 || uint64_t(width) * height > 128000000 ||
         orientation < 1 || orientation > 8)
         throw std::invalid_argument("Invalid PNG dimensions or orientation");
+    if (uint64_t(width) * height > 32000000)
+        throw std::invalid_argument("16-bit PNG exceeds the 32 MP decode limit");
     int actualWidth = 0, actualHeight = 0, channels = 0;
     if (!stbi_info(path, &actualWidth, &actualHeight, &channels) || !stbi_is_16_bit(path) ||
         actualWidth != width || actualHeight != height || (channels != 3 && channels != 4))
         throw std::runtime_error("PNG must be opaque 16-bit RGB");
-    Png16Pixels pixels(stbi_load_16(path, &actualWidth, &actualHeight, &channels, 4));
+    Png16Pixels pixels(stbi_load_16(path, &actualWidth, &actualHeight, &channels, 0));
     if (!pixels) {
         if (stbi_failure_reason() && std::strstr(stbi_failure_reason(), "outofmem")) throw std::bad_alloc();
         throw std::runtime_error("Unable to decode 16-bit PNG");
@@ -35,10 +37,12 @@ inline Png16Pixels decodePng16(const char* path, int width, int height, int orie
     if (actualWidth != width || actualHeight != height)
         throw std::runtime_error("Image dimensions changed during decode");
     const size_t count = size_t(width) * height;
-    for (size_t i = 0; i < count; ++i) {
-        if (pixels.get()[i * 4 + 3] != 65535) throw std::runtime_error("Transparent PNG is not supported");
+    if (channels == 4) {
+        for (size_t i = 0; i < count; ++i) {
+            if (pixels.get()[i * 4 + 3] != 65535) throw std::runtime_error("Transparent PNG is not supported");
+        }
+        if (orientation == 1) return pixels;
     }
-    if (orientation == 1) return pixels;
     Png16Pixels oriented(static_cast<uint16_t*>(std::malloc(count * 8)));
     if (!oriented) throw std::bad_alloc();
     const int outputWidth = orientation >= 5 ? height : width;
@@ -53,9 +57,10 @@ inline Png16Pixels decodePng16(const char* path, int width, int height, int orie
             case 7: dx = height - 1 - y; dy = width - 1 - x; break;
             case 8: dx = y; dy = width - 1 - x; break;
         }
-        // 整个 RGBA16 像素移动，方向变换不经过 8 位或半精度浮点中间图。
-        std::memcpy(oriented.get() + (size_t(dy) * outputWidth + dx) * 4,
-            pixels.get() + (size_t(y) * width + x) * 4, 8);
+        // 扩展通道与方向变换共用一次写入，避免额外保留整幅 RGBA16 中间图。
+        auto* destination = oriented.get() + (size_t(dy) * outputWidth + dx) * 4;
+        std::memcpy(destination, pixels.get() + (size_t(y) * width + x) * channels, 6);
+        destination[3] = 65535;
     }
     return oriented;
 }

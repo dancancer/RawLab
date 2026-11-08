@@ -3,6 +3,7 @@ package com.rawlab.android.raster
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.ColorSpace
+import android.util.Log
 import androidx.exifinterface.media.ExifInterface
 import androidx.test.platform.app.InstrumentationRegistry
 import com.rawlab.android.engine.NativeProcessor
@@ -13,10 +14,12 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.zip.DeflaterOutputStream
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 class Png16NativeInstrumentedTest {
@@ -127,6 +130,68 @@ class Png16NativeInstrumentedTest {
                 }
             } finally { reference.recycle() }
         }
+    }
+
+    @Test fun nativeColorConversionMatchesConnectorToOne16BitCodeValue() {
+        val srgb = ColorSpace.get(ColorSpace.Named.SRGB)
+        val count = 65536
+        val pixels = ByteBuffer.allocateDirect(count * 8).order(ByteOrder.LITTLE_ENDIAN)
+        val spaces = listOf(ColorSpace.Named.DISPLAY_P3, ColorSpace.Named.ADOBE_RGB,
+            ColorSpace.Named.DCI_P3, ColorSpace.Named.BT709, ColorSpace.Named.SMPTE_C,
+            ColorSpace.Named.NTSC_1953, ColorSpace.Named.PRO_PHOTO_RGB)
+        for (named in spaces) for (neutral in listOf(true, false)) {
+            val source = ColorSpace.get(named)
+            val connector = ColorSpace.connect(source, srgb)
+            val expected = IntArray(count * 3)
+            for (i in 0 until count) {
+                val rgb = intArrayOf(i, if (neutral) i else (i * 251 + 17) and 65535,
+                    if (neutral) i else (i * 97 + 127) and 65535)
+                for (c in 0..2) pixels.putShort(i * 8 + c * 2, rgb[c].toShort())
+                pixels.putShort(i * 8 + 6, 65535.toShort())
+                val converted = connector.transform(FloatArray(3) { rgb[it] / 65535f })
+                for (c in 0..2) expected[i * 3 + c] = (converted[c].coerceIn(0f, 1f) * 65535).roundToInt()
+            }
+            NativePng16.convertToSrgb(pixels, source)
+            for (i in 0 until count) {
+                for (c in 0..2) assertTrue("$named neutral=$neutral sample=$i channel=$c",
+                    abs(expected[i * 3 + c] - (pixels.getShort(i * 8 + c * 2).toInt() and 65535)) <= 1)
+                assertEquals(65535, pixels.getShort(i * 8 + 6).toInt() and 65535)
+            }
+        }
+    }
+
+    @Test fun optional24MpColorConversionTiming() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("png16Performance") == "true")
+        val count = 24_000_000
+        val pixels = ByteBuffer.allocateDirect(count * 8).order(ByteOrder.LITTLE_ENDIAN)
+        val source = ColorSpace.get(ColorSpace.Named.DISPLAY_P3)
+        val connector = ColorSpace.connect(source, ColorSpace.get(ColorSpace.Named.SRGB))
+        fun fill() {
+            for (i in 0 until count) {
+                pixels.putShort(i * 8, 0x1234.toShort())
+                pixels.putShort(i * 8 + 2, 0x5678.toShort())
+                pixels.putShort(i * 8 + 4, 0x7a01.toShort())
+                pixels.putShort(i * 8 + 6, 65535.toShort())
+            }
+        }
+        fill()
+        val rgb = FloatArray(3)
+        val oldStart = System.nanoTime()
+        for (i in 0 until count) {
+            for (c in 0..2) rgb[c] = (pixels.getShort(i * 8 + c * 2).toInt() and 65535) / 65535f
+            connector.transform(rgb)
+            for (c in 0..2) pixels.putShort(i * 8 + c * 2,
+                (rgb[c].coerceIn(0f, 1f) * 65535).roundToInt().toShort())
+        }
+        val oldMillis = (System.nanoTime() - oldStart) / 1_000_000
+        val expected = IntArray(3) { pixels.getShort(it * 2).toInt() and 65535 }
+        fill()
+        val newStart = System.nanoTime()
+        NativePng16.convertToSrgb(pixels, source)
+        val newMillis = (System.nanoTime() - newStart) / 1_000_000
+        for (i in listOf(0, count / 2, count - 1)) for (c in 0..2)
+            assertTrue(abs(expected[c] - (pixels.getShort(i * 8 + c * 2).toInt() and 65535)) <= 1)
+        Log.i("RawLabPng16", "24 MP Display P3: Connector=${oldMillis}ms native=${newMillis}ms")
     }
 
     private fun write16(file: File, rgb: IntArray, height: Int = 1, alpha: Int? = null,

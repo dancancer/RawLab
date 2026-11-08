@@ -7,6 +7,8 @@ import android.graphics.Matrix
 import android.graphics.ImageDecoder
 import android.os.Build
 import androidx.exifinterface.media.ExifInterface
+import com.rawlab.android.R
+import com.rawlab.android.i18n.AppStrings
 import java.io.File
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -37,7 +39,10 @@ internal object RasterImageDecoder {
         }
         if (heif) return decodeHEIF(file)
         val validation = file.inputStream().use(RasterContainerValidator::inspect)
-        val info = validation.info ?: throw IOException(validation.error ?: "Unsupported raster image")
+        val info = validation.info ?: throw IOException(
+            if (validation.error == RasterContainerValidator.PNG16_TOO_LARGE)
+                AppStrings.text(R.string.message_png16_decode_limit)
+            else validation.error ?: "Unsupported raster image")
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         // decodeFile returns null for a bounds-only request on some API levels; out* is the contract.
         BitmapFactory.decodeFile(file.path, bounds)

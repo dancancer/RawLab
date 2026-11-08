@@ -24,6 +24,8 @@ internal data class RasterValidation(val info: RasterContainerInfo?, val error: 
 /** Container checks happen before BitmapFactory is allowed to normalize the source. */
 internal object RasterContainerValidator {
     const val MAX_PIXELS = 128_000_000L
+    const val MAX_PNG16_PIXELS = 32_000_000L
+    const val PNG16_TOO_LARGE = "16-bit PNG exceeds the 32 MP decode limit"
     private val gainMapMarkers = listOf("gainmap", "hdrgm", "hdr-gain-map", "android:gainmap",
         "urn:iso:std:iso:ts:21496", "iso:ts:21496")
 
@@ -65,6 +67,7 @@ internal object RasterContainerValidator {
         val colorType = header[9].toInt() and 0xFF
         if (width <= 0 || height <= 0 || width.toLong() * height > MAX_PIXELS) return invalid("Image is too large")
         if (depth !in setOf(8, 16) || colorType !in setOf(2, 6)) return invalid("PNG must be opaque 8-bit or 16-bit RGB")
+        if (depth == 16 && width.toLong() * height > MAX_PNG16_PIXELS) return invalid(PNG16_TOO_LARGE)
         var sawIend = false
         var hasTransparencyChunk = false
         var hasSrgbProfile = false
@@ -101,7 +104,7 @@ internal object RasterContainerValidator {
                     hasSrgbProfile = true
                 }
                 type.contentEquals("iCCP".toByteArray()) -> {
-                    if (hasIccProfile || data == null || !IccProfiles.validatePngChunk(data))
+                    if (hasIccProfile || data == null || !IccProfiles.validatePngChunk(data, requireParametric = depth == 16))
                         return invalid("Invalid PNG ICC profile")
                     hasIccProfile = true
                 }
