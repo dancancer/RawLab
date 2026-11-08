@@ -16,6 +16,8 @@
 #include <atomic>
 #include <array>
 #include <fstream>
+#include "png16_decoder.h"
+#include "png16_color.h"
 
 static_assert(sizeof(sony2fuji_photo_effects_config) == 40,
     "Photo effects config ABI must remain a versioned 40-byte struct");
@@ -177,6 +179,16 @@ struct BitmapPixels {
             if (width != 0 || height != 0 || format != 0) throw std::invalid_argument("Invalid RAW image buffer");
             return;
         }
+        if (format == SONY2FUJI_PIXEL_RGBA16) {
+            if (width <= 0 || height <= 0 || uint64_t(width) * height > 128000000)
+                throw std::invalid_argument("Invalid display buffer dimensions");
+            const auto capacity = env->GetDirectBufferCapacity(bitmap);
+            bytes = env->GetDirectBufferAddress(bitmap);
+            if (!bytes || capacity != int64_t(width) * height * 8)
+                throw std::invalid_argument("Invalid RGBA16 display buffer");
+            stride = static_cast<uint32_t>(width) * 8;
+            return;
+        }
         AndroidBitmapInfo info{};
         if (width <= 0 || height <= 0 || format != SONY2FUJI_PIXEL_RGBA8 ||
             AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS ||
@@ -302,6 +314,45 @@ jobjectArray strings(JNIEnv* env, const std::vector<std::string>& values) {
     }
     return env->ExceptionCheck() ? nullptr : result;
 }
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_rawlab_android_raster_NativePng16_nativeDecode(JNIEnv* env, jobject, jstring path,
+    jint width, jint height, jint orientation) {
+    try {
+        UtfChars source(env, path);
+        auto pixels = rawlab::decodePng16(source.chars, width, height, orientation);
+        auto buffer = env->NewDirectByteBuffer(pixels.get(), int64_t(width) * height * 8);
+        if (buffer) pixels.release();
+        return buffer;
+    } catch (const std::bad_alloc&) { throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory for PNG");
+    } catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
+    return nullptr;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_rawlab_android_raster_NativePng16_nativeConvert(JNIEnv* env, jobject, jobject pixels,
+    jfloatArray eotf, jfloatArray matrix, jfloatArray oetf) {
+    try {
+        auto* data = static_cast<uint16_t*>(env->GetDirectBufferAddress(pixels));
+        const auto bytes = env->GetDirectBufferCapacity(pixels);
+        if (!data || bytes < 0 || bytes % 8 != 0 || env->GetArrayLength(eotf) != 65536 ||
+            env->GetArrayLength(oetf) != 65536 || env->GetArrayLength(matrix) != 9)
+            throw std::invalid_argument("Invalid PNG color conversion buffer");
+        std::vector<float> decode(65536), encode(65536);
+        std::array<float, 9> transform{};
+        env->GetFloatArrayRegion(eotf, 0, 65536, decode.data());
+        env->GetFloatArrayRegion(oetf, 0, 65536, encode.data());
+        env->GetFloatArrayRegion(matrix, 0, 9, transform.data());
+        if (env->ExceptionCheck()) return;
+        rawlab::convertPng16ToSrgb(data, static_cast<size_t>(bytes / 8), decode.data(), transform.data(), encode.data());
+    } catch (const std::bad_alloc&) { throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory for PNG");
+    } catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_rawlab_android_raster_NativePng16_nativeRelease(JNIEnv* env, jobject, jobject pixels) {
+    stbi_image_free(env->GetDirectBufferAddress(pixels));
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -1069,20 +1120,21 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportSdr(JNIEnv* env, jcla
 
 extern "C" JNIEXPORT jobject JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeCompatibilityPreview(JNIEnv* env,jobject,jlong id,
-    jstring input,jobject bitmap,jint width,jint height,jstring lut,jstring configuration) {
+    jstring input,jobject bitmap,jint width,jint height,jint pixelFormat,jstring lut,jstring configuration) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         const auto found=sessions.find(id);
         if(found==sessions.end()) throw std::invalid_argument("Processor is closed");
         auto* session=found->second.get();
         UtfChars source(env,input),look(env,lut),contract(env,configuration);
-        BitmapPixels pixels(env,bitmap,width,height,bitmap?SONY2FUJI_PIXEL_RGBA8:0);
+        BitmapPixels pixels(env,bitmap,width,height,pixelFormat);
         check(sony2fuji_session_set_processing_version(session,SONY2FUJI_PROCESSING_C5_V2));
         check(sony2fuji_session_set_raw_exposure_mode(session,SONY2FUJI_EXPOSURE_SCENE));
         auto request=rawlab::makeRequest(source.chars,look.chars,nullptr,look.chars?1:0,0,false,6500,0,512,rawlab::ExportFormat::JPEG);
         if(bitmap) {
             request.input_type=SONY2FUJI_INPUT_DISPLAY_BUFFER;request.input_pixels=pixels.bytes;
-            request.input_width=width;request.input_height=height;request.input_pixel_format=SONY2FUJI_PIXEL_RGBA8;
+            request.input_width=width;request.input_height=height;
+            request.input_pixel_format=static_cast<sony2fuji_pixel_format>(pixelFormat);
             request.input_color_space=SONY2FUJI_COLOR_SRGB;request.input_is_linear=0;
         }
         Buffer result;

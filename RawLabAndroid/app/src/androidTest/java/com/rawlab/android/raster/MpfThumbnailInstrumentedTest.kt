@@ -10,6 +10,7 @@ import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.settings.EditSettings
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.junit.Assert.*
@@ -18,6 +19,27 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class MpfThumbnailInstrumentedTest {
+    @Test fun motionPhotoTailsAfterRegisteredThumbnailsKeepThePrimaryPixels() {
+        val root = testRoot(InstrumentationRegistry.getInstrumentation().targetContext, "mpf-tail")
+        try {
+            val primary = jpeg(48, 32, 0xff336699.toInt())
+            val registered = withThumbnail(primary, jpeg(12, 8, 0xffcc3300.toInt()))
+            val source = File(root, "primary.jpg").apply { writeBytes(primary) }
+            NativeProcessor(NativeProcessor.CPU).use { processor ->
+                val expected = processor.preview(source, null, EditSettings(), 1600, false, PhotoInputKind.RASTER)
+                for ((index, tail) in listOf(byteArrayOf(0, 0, 0, 24) + "ftypmp42".toByteArray(), "SEFT".toByteArray()).withIndex()) {
+                    val input = File(root, "tail-$index.jpg").apply { writeBytes(registered + tail) }
+                    val frame = processor.preview(input, null, EditSettings(), 1600, false, PhotoInputKind.RASTER)
+                    assertArrayEquals(expected.pixels, frame.pixels)
+                }
+                val extra = File(root, "extra.jpg").apply { writeBytes(registered + jpeg(4, 3, 0xff000000.toInt())) }
+                assertThrows(IOException::class.java) {
+                    processor.preview(extra, null, EditSettings(), 1600, false, PhotoInputKind.RASTER)
+                }
+            }
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun cameraThumbnailDoesNotReplaceThePrimaryImageInPreviewOrExport() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val root = testRoot(context, "mpf-thumbnail")
