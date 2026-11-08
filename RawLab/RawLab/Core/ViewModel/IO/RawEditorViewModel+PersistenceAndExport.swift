@@ -157,7 +157,8 @@ extension RawEditorViewModel {
                             from: result.buffer,
                             sourceURL: sourceURL,
                             orientation: result.orientation,
-                            quality: 0.92
+                            quality: 0.92,
+                            sourceIsRaw: true
                         )
                         data = output
                     } else {
@@ -286,7 +287,8 @@ extension RawEditorViewModel {
                         from: fullResult.buffer,
                         sourceURL: url,
                         orientation: fullResult.orientation,
-                        quality: 0.92
+                        quality: 0.92,
+                        sourceIsRaw: true
                     )
 
                     DispatchQueue.main.async {

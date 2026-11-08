@@ -163,9 +163,9 @@ final class BatchExportModel: ObservableObject {
                 context["sourceKind"] = file.isRaw ? "raw" : "raster"
                 context["extension"] = ErrorDiagnostics.fileNameExtension(file.url)
                 stage = "readIdentity"
-                let itemIdentity = item.itemIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
+                let resourceIdentifier = item.itemIdentifier
                 let identity = try await perform {
-                    try itemIdentity ?? PhotoIdentity.fallback(for: file.url)
+                    try PhotoIdentity.fallback(for: file.url, resourceIdentifier: resourceIdentifier)
                 }
                 stage = "prepareTarget"
                 let target = try await prepareTarget(file, identity: identity, jobID: jobID,
