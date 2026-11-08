@@ -9,6 +9,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HDRSettingsTest {
+    @Test fun rasterSourceDefaultsUseSensorExposure() {
+        for (hdr in listOf(false, true)) {
+            val defaults = sourceDefaultSettings(hdr, inputKind = com.rawlab.android.format.PhotoInputKind.RASTER)
+            assertEquals(2, defaults.exposureMode)
+            assertEquals(hdr, defaults.isHDREditing)
+            if (hdr) assertEquals(2, defaults.withHDRMode(false, true).exposureMode)
+        }
+    }
+
     @Test fun proRawHdrPinsItsDecoderWhilePreservingBothModeRecords() {
         val sdr = EditSettings(film = "velvia", exposure = -.5f)
         val hdr = sdr.withHDRMode(true, false, cameraRaw = true, proRAW = true)

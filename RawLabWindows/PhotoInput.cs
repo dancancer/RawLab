@@ -80,6 +80,20 @@ internal static class PhotoInput
         return prepared;
     }
 
+    internal static X3fMode X3fDefaultMode(string path)
+    {
+        var status = Native.sony2fuji_x3f_default_mode(path, out var mode);
+        Native.Check(status);
+        return mode;
+    }
+
+    internal static Adjustments PrepareDefaultSettings(string path)
+    {
+        var prepared = PrepareInputSettings(path, new Adjustments());
+        if (IsX3f(path)) prepared.X3fMode = X3fDefaultMode(path);
+        return PrepareHDRInputSettings(path, prepared);
+    }
+
     internal static Adjustments PrepareBatchSettings(string source,string target,Adjustments value)
     {
         if (IsRaster(target) && value.AIDenoiseEnabled && !value.IsHDREditing) {

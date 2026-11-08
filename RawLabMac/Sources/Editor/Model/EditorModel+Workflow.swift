@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+typealias MacDCPOptionsPrompt = (URL, DCPCompilerError, @escaping (DCPImportOptions?) -> Void) -> Void
+
 extension EditorModel {
     func editState(settings: Adjustments) -> PhotoEditState {
         let filmID = selectedFilm.map { $0.managedID ?? "builtin:\($0.url.lastPathComponent)" } ?? selectedFilmID
@@ -344,8 +346,8 @@ extension EditorModel {
     }
 
     func attachBatch(_ job: BatchExportJob) {
-        let preparer=job.settings.isHDREditing ? editStore.map { MacHDRBatchPreparation(source:job.source,settings:job.settings,store:$0,films:filmChoices) } : nil
-        let model = BatchExportModel(job: job, journal: batchJournal,hdrPreparation:preparer,onUsage: onUsage)
+        let preparer=job.settings.isHDREditing ? editStore.map { MacHDRBatchPreparation(source:job.source,settings:job.settings,store:$0,films:filmChoices,probeHDRSource:probeHDRSource) } : nil
+        let model = BatchExportModel(job: job, journal: batchJournal,hdrPreparation:preparer,probeHDRSource:probeHDRSource,onUsage: onUsage)
         model.sourceEditingGeometry = geometryDraft != nil
         model.onActivity = { [weak self] active in self?.exporting = active }
         model.onDiscard = { [weak self] in self?.batch = nil }
@@ -387,10 +389,10 @@ extension EditorModel {
         var sdrFallback = false
         do { info=try probeHDRSource(url, { sdrFallback = true }) }
         catch { self.error=error.localizedDescription; return }
-        var candidate=restoredRecord.state?.settings ?? Adjustments()
+        var candidate: Adjustments
+        do { candidate = try restoredRecord.state?.settings ?? RenderEngine.defaultSettings(for: url, sourceIsHDR: info != nil) }
+        catch { self.error=error.localizedDescription; return }
         if sdrFallback { candidate.hdr?.mode = .sdr }
-        if restoredRecord.state==nil && RenderEngine.isRasterInput(url) { candidate.exposureMode = .sensor }
-        if info != nil && restoredRecord.state==nil { candidate.hdr=HDRSettings() }
         let cameraHDR = info == nil && (try? HDRSourceInfo.probeRAW(url)) != nil
         guard !candidate.isHDREditing || info != nil || cameraHDR else {
             self.error=L10n.text("此照片没有可编辑的 HDR 增益图。")
@@ -504,41 +506,69 @@ extension EditorModel {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
         if panel.runModal() == .OK {
-            importLooks(panel.urls)
+            importLooks(panel.urls, dcpOptionsPrompt: dcpOptionsPrompt())
         }
     }
 
     func importLook(_ url: URL) {
-        importLooks([url])
+        importLooks([url], dcpOptionsPrompt: dcpOptionsPrompt())
     }
 
-    func importLooks(_ urls: [URL]) {
+    func importLooks(_ urls: [URL], dcpOptionsPrompt: MacDCPOptionsPrompt? = nil) {
         guard !urls.isEmpty else { return }
         let previewPhoto = file.map { LUTPreviewSource(url: $0) }
         changeLookLibrary { library in
             var selectedID: String?
             var imported = 0
             var failures: [String] = []
-            for url in urls {
+            lookURL: for url in urls {
                 do {
                     let access = url.startAccessingSecurityScopedResource()
                     defer { if access { url.stopAccessingSecurityScopedResource() } }
                     do {
                         selectedID = try library.importLook(from: url).id
                     } catch {
-                        guard (error as? LookLibraryError)?.needsCompatibility == true else { throw error }
-                        guard let draft = try LUTCompatibility.inspect(url) else { throw error }
-                        let completion = DispatchSemaphore(value: 0)
-                        var confirmed: LUTCompatibility?
-                        DispatchQueue.main.async {
-                            LUTCompatibilityDialog.present(source: url, draft: draft, photo: previewPhoto) { value in
-                                confirmed = value
-                                completion.signal()
+                        if let dcpError = error as? DCPCompilerError,
+                           [.missingToneCurve, .automaticBlack].contains(dcpError),
+                           let dcpOptionsPrompt {
+                            var currentError = dcpError
+                            var previousOptions: DCPImportOptions?
+                            while true {
+                                let completion = DispatchSemaphore(value: 0)
+                                var chosen: DCPImportOptions?
+                                dcpOptionsPrompt(url, currentError) { value in
+                                    chosen = value
+                                    completion.signal()
+                                }
+                                completion.wait()
+                                guard let chosen else { continue lookURL }
+                                let options = DCPImportOptions(
+                                    toneCurveJSON: chosen.toneCurveJSON ?? previousOptions?.toneCurveJSON,
+                                    omitAutomaticBlack: chosen.omitAutomaticBlack || previousOptions?.omitAutomaticBlack == true)
+                                do {
+                                    selectedID = try library.importLook(from: url, dcpOptions: options).id
+                                    break
+                                } catch let nextError as DCPCompilerError
+                                            where [.missingToneCurve, .automaticBlack].contains(nextError) && nextError != currentError {
+                                    currentError = nextError
+                                    previousOptions = options
+                                }
                             }
+                        } else {
+                            guard (error as? LookLibraryError)?.needsCompatibility == true else { throw error }
+                            guard let draft = try LUTCompatibility.inspect(url) else { throw error }
+                            let completion = DispatchSemaphore(value: 0)
+                            var confirmed: LUTCompatibility?
+                            DispatchQueue.main.async {
+                                LUTCompatibilityDialog.present(source: url, draft: draft, photo: previewPhoto) { value in
+                                    confirmed = value
+                                    completion.signal()
+                                }
+                            }
+                            completion.wait()
+                            guard let confirmed else { continue }
+                            selectedID = try library.importLook(from: url, compatibility: confirmed).id
                         }
-                        completion.wait()
-                        guard let confirmed else { continue }
-                        selectedID = try library.importLook(from: url, compatibility: confirmed).id
                     }
                     imported += 1
                 } catch {
@@ -548,6 +578,14 @@ extension EditorModel {
             let report = failures.isEmpty ? nil :
                 L10n.format("已导入 %@ 个外观，%@ 个文件导入失败：\n", String(describing: imported), String(describing: failures.count)) + failures.joined(separator: "\n")
             return (selectedID, report)
+        }
+    }
+
+    private func dcpOptionsPrompt() -> MacDCPOptionsPrompt {
+        { source, reason, finish in
+            DispatchQueue.main.async {
+                DCPImportOptionsDialog.present(source: source, reason: reason, finish: finish)
+            }
         }
     }
 

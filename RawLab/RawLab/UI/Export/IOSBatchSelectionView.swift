@@ -167,22 +167,29 @@ private struct IOSCollectionSyncView: View {
     @State private var fields: Set<AdjustmentTransferField>
     @State private var synchronization: IOSCollectionSynchronization?
     @State private var message: String?
-    private var sourceSettings: RawSettings {
-        model.loadedEditRecord?.state?.settings ?? model.sourceDefaultSettings
+    private var sourceSettings: Result<RawSettings, Error> {
+        Result { try model.loadedEditRecord?.state?.settings ?? model.sourceDefaultSettings }
     }
     init(model: RawEditorViewModel, collection: IOSBatchSelection, settings: RawSettings,
          resolveDraft: @escaping (String, Bool) -> Bool) {
         self.model=model; self.collection=collection; self.settings=settings; self.resolveDraft=resolveDraft
-        let source=model.loadedEditRecord?.state?.settings ?? model.sourceDefaultSettings
-        _fields=State(initialValue:source.isHDREditing ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common)
+        let source = Result { try model.loadedEditRecord?.state?.settings ?? model.sourceDefaultSettings }
+        switch source {
+        case .success(let source):
+            _fields=State(initialValue:source.isHDREditing ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common)
+        case .failure:
+            _fields=State(initialValue:[])
+        }
     }
     var body: some View {
-        Group {
+        let source = sourceSettings
+        return Group {
             if let synchronization {
                 IOSAdjustmentTransferView(model: model, kind: .paste, settings: settings, synchronization: synchronization)
             } else {
                 NavigationStack {
                     Form {
+                        if case .success(let sourceSettings) = source {
                         IOSAdjustmentScopeEditor(scope: $scope, fields: $fields,
                             preview: Result { try model.previewAdjustmentPayload(scope: scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields), settings: sourceSettings) },
                             lookName: model.adjustmentSummaryLookName, errorMessage: { model.adjustmentErrorMessage($0) }, titleKey: "同步范围", sourceName: model.sourceDisplayName,
@@ -205,12 +212,16 @@ private struct IOSCollectionSyncView: View {
                                 .accessibilityIdentifier("collection.sync.prepare")
                         }
                         if let message { Section { Text(message) } }
+                        } else if case .failure(let error) = source {
+                            Section { Text(model.adjustmentErrorMessage(error)) }
+                        }
                     }
                     .navigationTitle(L10n.text("同步调整")).navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("取消")) { dismiss() } } }
                 }
             }
-        }.onChange(of:sourceSettings.isHDREditing) { _, isHDR in
+        }.onChange(of:(try? source.get())?.isHDREditing) { _, isHDR in
+            guard let isHDR else { return }
             fields=isHDR ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common
         }
     }

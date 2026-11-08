@@ -19,24 +19,26 @@ final class MacHDRBatchPreparation {
     private let settings: Adjustments
     private let store: EditPersistence
     private let films: [Film]
-    init(source: URL,settings: Adjustments,store: EditPersistence,films: [Film]) {
+    private let probeHDRSource: HDRSourceInfo.Probe
+    init(source: URL,settings: Adjustments,store: EditPersistence,films: [Film],
+         probeHDRSource: @escaping HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) }) {
         self.source=source; self.settings=settings; self.store=store; self.films=films
+        self.probeHDRSource=probeHDRSource
     }
-    func prepare(_ item: BatchExportItem,ordinal: Int,format: ExportFormat,longEdge: Int?) throws -> BatchFrozenSettings {
+    func prepare(_ item: BatchExportItem,ordinal: Int,format: ExportFormat,longEdge: Int?,sourceIsHDR: Bool? = nil) throws -> BatchFrozenSettings {
         guard try OriginalFileIdentity(item.input)==item.identity else { throw BatchExportFailure.changedInput }
         let record=try store.versionedState(for:item.input)
-        let raster=RenderEngine.isRasterInput(item.input),info=try HDRSourceInfo.probe(item.input)
+        let raster=RenderEngine.isRasterInput(item.input)
+        let sourceIsHDR=try sourceIsHDR ?? (probeHDRSource(item.input,{}) != nil)
         let supportsProRAWHDR = try HDRSourceInfo.probeRAW(item.input)?.proRAW != nil
-        var defaults=Adjustments(); defaults.exposureMode=raster ? .sensor : .preview
-        if info != nil { defaults.hdr=HDRSettings() }
-        let target=record.state ?? PhotoEditState(settings:defaults,filmID:"")
+        let target=try record.state ?? PhotoEditState(settings:RenderEngine.defaultSettings(for:item.input,sourceIsHDR:sourceIsHDR),filmID:"")
         if supportsProRAWHDR, target.settings.isHDREditing {
             try ProRAWSource.validatedDecodeVersion(target.settings.proRAWDecodeVersion)
         }
         let payload=try HDRAdjustmentTransfer.batchPayload(settings:settings.hdr!,identifier:source.path,
             processingVersion:settings.processing.version,targetIsHDR:target.settings.isHDREditing)
         let context=MacAdjustmentTransferContext(identifier:item.identity.path,isRaw:!raster,
-            sourceIsHDR:info != nil, sourceSupportsProRAWHDR: supportsProRAWHDR)
+            sourceIsHDR:sourceIsHDR, sourceSupportsProRAWHDR: supportsProRAWHDR)
         let prepared=try MacAdjustmentTransfer.prepare(payload:payload,target:target,context:context)
         let look: URL?,name: String
         if prepared.settings.isHDREditing { look=nil; name="HDR" }
@@ -157,8 +159,8 @@ final class BatchExportModel: ObservableObject {
                 var failure: String?
                 var sdrFallback = false
                 do {
-                    _ = try probeHDRSource(item.input, { sdrFallback = true })
-                    let snapshot = try hdrPreparation?.prepare(item,ordinal:0,format:validationJob.format,longEdge:validationJob.longEdge) ?? validationJob.snapshot(for:item)
+                    let info = try probeHDRSource(item.input, { sdrFallback = true })
+                    let snapshot = try hdrPreparation?.prepare(item,ordinal:0,format:validationJob.format,longEdge:validationJob.longEdge,sourceIsHDR:info != nil) ?? validationJob.snapshot(for:item)
                     if !snapshot.settings.isHDREditing && snapshot.settings.aiDenoiseEnabled {
                         try RenderEngine.validateAIInput(item.input, settings: snapshot.settings)
                     } else {

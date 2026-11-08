@@ -46,8 +46,11 @@ extension RawEditorViewModel {
             editSaveState = .failed(L10n.text("调整记录已恢复，请重新选择照片载入。"))
             return false
         }
+        let defaults: PhotoEditState?
+        do { defaults = try expected.state == nil ? PhotoEditState(settings:sourceDefaultSettings) : nil }
+        catch { editSaveState = .failed(adjustmentErrorMessage(error)); return false }
         let outcome = session.commitEdit(expected: expected, state: candidate, displayName: sourceDisplayName,
-            defaultState:PhotoEditState(settings:sourceDefaultSettings),isCurrent:{ self.editorEditSource==source },
+            defaultState:defaults,isCurrent:{ self.editorEditSource==source },
             validateSource: adjustmentSourceValidator)
         if let saved = outcome.saved {
             adjustmentReloadRequired = false

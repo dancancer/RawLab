@@ -566,7 +566,8 @@ Java_com_rawlab_android_engine_NativeLookBridge_compatibility(JNIEnv* env, jclas
 }
 
 extern "C" JNIEXPORT jbyteArray JNICALL
-Java_com_rawlab_android_engine_NativeDcpBridge_compile(JNIEnv* env, jclass, jbyteArray source, jbyteArray sourceNameUtf8) {
+Java_com_rawlab_android_engine_NativeDcpBridge_compile(JNIEnv* env, jclass, jbyteArray source,
+    jbyteArray sourceNameUtf8, jbyteArray toneCurve, jboolean omitAutomaticBlack) {
     DcpBlob blob;
     try {
         if (!source || !sourceNameUtf8) throw std::invalid_argument("Missing DCP source");
@@ -577,8 +578,11 @@ Java_com_rawlab_android_engine_NativeDcpBridge_compile(JNIEnv* env, jclass, jbyt
         const std::string name(reinterpret_cast<const char*>(sourceName.bytes),
             static_cast<size_t>(sourceNameLength));
         sony2fuji_dcp_error reason = SONY2FUJI_DCP_ERROR_NONE;
-        const auto status = sony2fuji_compile_dcp(bytes.bytes,
-            static_cast<size_t>(env->GetArrayLength(source)), name.c_str(), &blob.value, &reason);
+        ByteArrayElements curve(env, toneCurve);
+        const auto curveSize = toneCurve ? static_cast<size_t>(env->GetArrayLength(toneCurve)) : 0;
+        const auto status = sony2fuji_compile_dcp_with_options(bytes.bytes,
+            static_cast<size_t>(env->GetArrayLength(source)), name.c_str(), curve.bytes, curveSize,
+            omitAutomaticBlack ? 1 : 0, &blob.value, &reason);
         if (status != SONY2FUJI_STATUS_OK) {
             if (status == SONY2FUJI_STATUS_OUT_OF_MEMORY) {
                 throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory to compile DCP");
@@ -1182,6 +1186,25 @@ Java_com_rawlab_android_engine_NativeLookBridge_compare(JNIEnv* env,jclass,jbyte
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeX3fAvailable(JNIEnv*, jobject) {
     return sony2fuji_x3f_available() != 0;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_rawlab_android_engine_NativeProcessor_nativeX3fDefaultMode(JNIEnv* env, jclass, jstring input) {
+    try {
+        UtfChars path(env, input);
+        sony2fuji_x3f_mode mode = SONY2FUJI_X3F_NORMAL;
+        check(sony2fuji_x3f_default_mode(path.chars, &mode));
+        return static_cast<jint>(mode);
+    } catch (const NativeStatusError& error) {
+        throwNativeStatus(env, error);
+    } catch (const std::bad_alloc&) {
+        throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory to inspect X3F");
+    } catch (const std::invalid_argument& error) {
+        throwJava(env, "java/lang/IllegalArgumentException", error.what());
+    } catch (const std::exception& error) {
+        throwJava(env, "java/io/IOException", error.what());
+    }
+    return SONY2FUJI_X3F_NORMAL;
 }
 
 extern "C" JNIEXPORT jobject JNICALL

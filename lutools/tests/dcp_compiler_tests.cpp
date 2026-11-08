@@ -153,7 +153,33 @@ void expect(bool condition, const char* message) {
     }
 }
 
+void explicitImportOptions() {
+    auto tags = validTags();
+    tags.erase(std::remove_if(tags.begin(), tags.end(), [](const auto& entry) {
+        return entry.first == 50940 || entry.first == 51110;
+    }), tags.end());
+    const auto source = makeDcp(tags);
+    constexpr char curve[] = "[[0,0],[0.5,0.35],[1,1]]";
+    sony2fuji_blob blob{};
+    sony2fuji_dcp_error reason = SONY2FUJI_DCP_ERROR_NONE;
+    expect(!compile(source, "custom.dcp", blob, reason) && reason == SONY2FUJI_DCP_ERROR_MISSING_TONE_CURVE,
+           "automatic import requires an explicit curve when the DCP has none");
+    expect(sony2fuji_compile_dcp_with_options(source.data(), source.size(), "custom.dcp",
+               curve, sizeof(curve) - 1, 0, &blob, &reason) == SONY2FUJI_STATUS_UNSUPPORTED &&
+               reason == SONY2FUJI_DCP_ERROR_AUTOMATIC_BLACK,
+           "supplying a curve alone does not omit automatic black");
+    expect(sony2fuji_compile_dcp_with_options(source.data(), source.size(), "custom.dcp",
+               curve, sizeof(curve) - 1, 1, &blob, &reason) == SONY2FUJI_STATUS_OK,
+           "an explicit curve and black policy allow import");
+    const std::string output(static_cast<const char*>(blob.data), blob.size_bytes);
+    expect(output.find("\"tone_source\":\"external\"") != std::string::npos &&
+               output.find("\"black_render_policy\":\"omitted-explicitly\"") != std::string::npos,
+           "RLOOK records both choices");
+    sony2fuji_release_blob(&blob);
+}
+
 void unitTests() {
+    explicitImportOptions();
     for (bool bigEndian : {false, true}) {
         sony2fuji_blob blob{};
         sony2fuji_dcp_error reason = SONY2FUJI_DCP_ERROR_MALFORMED;

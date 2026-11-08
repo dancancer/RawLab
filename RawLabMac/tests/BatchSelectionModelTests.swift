@@ -27,6 +27,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         case "A": try HDRSourceProbeTests.run(); try BatchFlowModelTests.unsupportedHDRSystem(root: root, fixture: first); return
         case "A-regressions":
             try HDRSourceProbeTests.run()
+            try BatchFlowModelTests.uneditedFallbackCollection(root: root, fixture: first)
             try BatchFlowModelTests.fallbackPersistence(root: root, fixture: first)
             try BatchFlowModelTests.appleFallbackAdmission(root: root, fixture: first)
             return
@@ -40,6 +41,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         default: break
         }
         try HDRSourceProbeTests.run()
+        try BatchFlowModelTests.uneditedFallbackCollection(root: root, fixture: first)
         try BatchFlowModelTests.fallbackPersistence(root: root, fixture: first)
         try BatchFlowModelTests.appleFallbackAdmission(root: root, fixture: first)
         try BatchFlowModelTests.unsupportedHDRSystem(root: root, fixture: first)

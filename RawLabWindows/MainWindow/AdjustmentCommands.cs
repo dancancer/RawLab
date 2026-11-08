@@ -63,7 +63,9 @@ public partial class MainWindow
                         var identity=OriginalIdentity.Read(path);var raw=PhotoInput.IsRaw(path);var proRAW=false;
                         if(raw && PhotoInput.ProbeCameraRaw(path,out var probed) == HDRProbeState.Supported)
                             proRAW=probed?.IsProRAW == true;
-                        var defaults=PhotoInput.PrepareHDRInputSettings(path,new Adjustments());
+                        var record=editStore!.VersionedState(path);
+                        if(!record.Identity.SameFile(identity))throw new EditPersistenceConflict();
+                        var defaults=record.Edit?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(path);
                         (double Temperature,double Tint)? calibration=null;
                         if(raw) {
                             using var native=new RenderEngine(1);

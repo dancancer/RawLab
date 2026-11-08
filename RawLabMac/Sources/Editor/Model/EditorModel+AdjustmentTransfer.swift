@@ -37,9 +37,9 @@ extension EditorModel {
         return ids
     }
 
-    func adjustmentTransferContext(for url: URL) -> MacAdjustmentTransferContext {
+    func adjustmentTransferContext(for url: URL, sourceIsHDR: Bool? = nil) -> MacAdjustmentTransferContext {
         MacAdjustmentTransferContext(identifier: url.resolvingSymlinksInPath().standardizedFileURL.path, isRaw: !RenderEngine.isRasterInput(url),
-            sourceIsHDR: file == url ? sourceIsHDR : ((try? HDRSourceInfo.probe(url)) != nil),
+            sourceIsHDR: sourceIsHDR ?? (file == url ? self.sourceIsHDR : ((try? probeHDRSource(url, {})) != nil)),
             sourceSupportsProRAWHDR: supportsProRAWHDR(url),
             availableLookIDs: availableAdjustmentLooks,
             defaultExposureMode: RenderEngine.isRasterInput(url) ? .sensor : .preview,
@@ -78,19 +78,19 @@ extension EditorModel {
             (excludingIdentity == nil || (try? BatchExportItem.resourceKey($0)) != excludingIdentity) }.map { url in
             let path = url.resolvingSymlinksInPath().standardizedFileURL.path
             let collectionPhoto = collection ? batchSelectionPhotos.values.first { $0.url.path == path } : nil
-            var defaults = Adjustments()
-            defaults.exposureMode = RenderEngine.isRasterInput(url) ? .sensor : .preview
-            var context = adjustmentTransferContext(for: url)
-            if context.sourceIsHDR { defaults.hdr=HDRSettings() }
+            let store = editStore
+            let sourceIsHDR = Result { path == activePath ? self.sourceIsHDR : try probeHDRSource(url, {}) != nil }
+            var context = adjustmentTransferContext(for: url, sourceIsHDR: (try? sourceIsHDR.get()) ?? false)
             // 校验实际 native 请求；自动匹配结果只用于目标预检，不进入 payload。
             context.validateLensRequest = { lens in
-                var request = Adjustments(); request.lensCorrection = lens
+                var request = try store?.state(for: url)?.settings ?? RenderEngine.defaultSettings(for: url, sourceIsHDR: sourceIsHDR.get())
+                request.lensCorrection = lens
                 let frame = try RenderEngine().render(url, settings: request, lut: nil, edge: 256)
                 guard let info = frame?.lensInfo,
                       !lens.distortion || info.appliedDistortion,
                       !lens.tca || info.appliedTCA else { throw AdjustmentTransferError.incompatible("lens calibration") }
             }
-            return AdjustmentTransferTarget(url: url, defaultState: PhotoEditState(settings: defaults, filmID: ""), context: context, expectedIdentity: collectionPhoto?.original,
+            return AdjustmentTransferTarget(url: url, defaultState: PhotoEditState(settings: Adjustments(), filmID: ""), context: context, expectedIdentity: collectionPhoto?.original,
                 isCurrent: { [weak self] in
                     let check = {
                         guard let self, self.sourceRevision == source else { return false }
@@ -113,6 +113,8 @@ extension EditorModel {
                     hydrated.settings.resolveWhiteBalance(frame.asShotWhiteBalance)
                     hydrated.settings.resolveRawNoiseReductionSupport(frame.supportsRawNoiseReduction)
                     return hydrated
+                }, resolveDefaultState: {
+                    try PhotoEditState(settings: RenderEngine.defaultSettings(for: url, sourceIsHDR: sourceIsHDR.get()), filmID: "")
                 })
         }
     }

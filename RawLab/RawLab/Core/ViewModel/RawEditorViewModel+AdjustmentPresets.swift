@@ -22,7 +22,7 @@ extension RawEditorViewModel {
             guard saveCurrentSettings(settings), !hasAdjustmentDraft, !adjustmentReloadRequired,
                   adjustmentTargetIsCurrent(photo.id), let session = adjustmentSession,
                   let expected = loadedEditRecord, expected.identity == source.identity,
-                  currentEditState(settings: settings).hasSameAdjustments(as: expected.state ?? PhotoEditState(settings: sourceDefaultSettings)) else {
+                  try currentEditState(settings: settings).hasSameAdjustments(as: expected.state ?? PhotoEditState(settings: sourceDefaultSettings)) else {
                 throw AdjustmentTransferError.draftRequiresPreflight
             }
             guard try editPersistence?.versionedState(for: source.identity) == expected else { throw EditPersistenceConflict.changed }
@@ -85,7 +85,7 @@ extension RawEditorViewModel {
         guard let source = editorEditSource, let record = loadedEditRecord,
               record.identity == source.identity, !adjustmentReloadRequired,
               adjustmentTargetIsCurrent(source.identity.key) else { throw AdjustmentTransferError.draftRequiresPreflight }
-        let committed = record.state ?? PhotoEditState(settings: sourceDefaultSettings)
+        let committed = try record.state ?? PhotoEditState(settings: sourceDefaultSettings)
         return try IOSAdjustmentTransfer.previewCapture(scope: scope, snapshot: currentEditState(settings: settings),
             committed: committed, context: adjustmentContext(identifier: source.identity.key,
                 isRaw: sourceKind == .raw, whiteBalance: rawWhiteBalance))
@@ -113,7 +113,7 @@ extension RawEditorViewModel {
             throw EditPersistenceConflict.changed
         }
         let snapshot = currentEditState(settings: settings)
-        guard snapshot.hasSameAdjustments(as: expected.state ?? PhotoEditState(settings: sourceDefaultSettings)) else {
+        guard try snapshot.hasSameAdjustments(as: expected.state ?? PhotoEditState(settings: sourceDefaultSettings)) else {
             throw AdjustmentTransferError.draftRequiresPreflight
         }
         let context = adjustmentContext(identifier: source.identity.key, isRaw: sourceKind == .raw, whiteBalance: rawWhiteBalance)

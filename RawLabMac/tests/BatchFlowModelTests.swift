@@ -1,6 +1,41 @@
 import AppKit
 
 enum BatchFlowModelTests {
+    static func uneditedFallbackCollection(root: URL, fixture: URL) throws {
+        let directory = root.appendingPathComponent("unedited-fallback-collection")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let photo = directory.appendingPathComponent("gain-map.jpg")
+        let source = CGImageSourceCreateWithURL(fixture as CFURL, nil)!
+        let destination = CGImageDestinationCreateWithURL(photo as CFURL, "public.jpeg" as CFString, 1, nil)!
+        CGImageDestinationAddImageFromSource(destination, source, 0, nil)
+        try require(CGImageDestinationFinalize(destination), "unedited fallback fixture is generated")
+        var data = try Data(contentsOf: photo)
+        // 旧系统探测由注入模拟；ISO 声明使再次调用系统探测无法悄悄当作普通 JPEG 通过。
+        data.append(Data("urn:iso:std:iso:ts:21496:-1".utf8))
+        try data.write(to: photo)
+        let model = EditorModel(lookDirectory: directory.appendingPathComponent("looks"),
+            editDirectory: directory.appendingPathComponent("edits"), batchDirectory: directory.appendingPathComponent("batch"),
+            presetDirectory: directory.appendingPathComponent("presets"))
+        var probes = 0
+        model.probeHDRSource = { url, onSDRFallback in
+            probes += 1
+            return try HDRSourceProbeTests.unsupportedSystem(url, onSDRFallback: onSDRFallback)
+        }
+        model.addCollectionPhotos([photo])
+        let review = try model.prepareCollectionExport(skipping: [], format: .png, longEdge: nil, directory: directory)
+        try require(review.ready && review.snapshots.count == 1,
+                    "unedited macOS 14 gain maps prepare for SDR export without a strict re-probe")
+        let snapshot = review.snapshots[0]
+        try require(snapshot.record.state == nil && snapshot.settings.hdr == nil,
+                    "unedited fallback defaults leave HDR disabled without an edit record")
+        try require(snapshot.noticeKey == "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。" && probes == 1,
+                    "unedited fallback collection reuses one probe and reports SDR export (probes: \(probes))")
+        try require(try model.editStore!.state(for: photo) == nil,
+                    "fallback collection preparation does not create an edit record")
+        try require(snapshot.settings.exposureMode == .sensor,
+                    "unedited fallback defaults retain sensor exposure")
+    }
+
     static func unsupportedHDRSystem(root: URL, fixture: URL, exerciseOpening: Bool = true) throws {
         let directory = root.appendingPathComponent("unsupported-hdr-system")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -235,6 +270,13 @@ enum BatchFlowModelTests {
     static func x3fSnapshots(root: URL) throws {
         let directory = root.appendingPathComponent("x3f-snapshots")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        do {
+            _ = try RenderEngine.x3fDefaultMode(for: directory.appendingPathComponent("missing.X3F"))
+            try require(false, "missing X3F must fail with an IO diagnostic")
+        } catch {
+            try require(error.localizedDescription == L10n.text("无法读取或写入文件，请检查路径和访问权限。"),
+                        "X3F IO errors retain the file-access diagnostic")
+        }
         let normal = directory.appendingPathComponent("normal.X3F")
         let legacy = directory.appendingPathComponent("legacy.X3F")
         // 预检只验证文件身份和已保存设置；这里不触发 RAW 解码。
@@ -260,6 +302,15 @@ enum BatchFlowModelTests {
         let job = try model.freezeCollectionExport(review)
         try require(job.items.map { $0.frozen!.settings.x3fMode } == [.normal, .legacy],
                     "collection freeze retains mixed normal and legacy X3F identities")
+        let unedited = directory.appendingPathComponent("unedited.X3F")
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("lutools/tests/fixtures/linear-uncompressed.dng")
+        try FileManager.default.copyItem(at: fixture, to: unedited)
+        model.addCollectionPhotos([unedited])
+        let uneditedReview = try model.prepareCollectionExport(skipping: [], format: .png, longEdge: nil, directory: root)
+        let snapshot = uneditedReview.snapshots.first { $0.photo.url == unedited }
+        try require(snapshot?.record.state == nil && snapshot?.settings.x3fMode == .legacy,
+                    "no-record collection export uses the source's Legacy default without creating an edit")
     }
 
     static func automaticLaunch(root: URL, fixture: URL) throws {

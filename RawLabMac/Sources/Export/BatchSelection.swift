@@ -102,12 +102,9 @@ struct MacCollectionExportPreparation {
         if activeFile == photo.url {
             guard activeRecord == record, !activeAIBusy else { throw EditPersistenceConflict.changed }
         }
-        var defaults = Adjustments()
-        defaults.exposureMode = RenderEngine.isRasterInput(photo.url) ? .sensor : .preview
         var sdrFallback = false
         let info = try probeHDRSource(photo.url, { sdrFallback = true })
-        if record.state == nil, info != nil { defaults.hdr = HDRSettings() }
-        var state = record.state ?? PhotoEditState(settings: defaults, filmID: "")
+        var state = try record.state ?? PhotoEditState(settings: RenderEngine.defaultSettings(for: photo.url, sourceIsHDR: info != nil), filmID: "")
         if sdrFallback { state.settings.hdr?.mode = .sdr }
         if state.settings.isHDREditing, let version = state.settings.proRAWDecodeVersion,
            version != ProRAWSource.decodeVersion, try HDRSourceInfo.probeRAW(photo.url)?.proRAW != nil {

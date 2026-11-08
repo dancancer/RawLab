@@ -368,6 +368,10 @@ extension ContentView {
                 lookCompatibilityCompletion = finish
                 confirmedLookCompatibility = nil
                 pendingLookCompatibility = .init(source: source, draft: draft)
+            }, dcpOptionsPrompt: { source, reason, finish in
+                dcpImportOptionsCompletion = finish
+                confirmedDCPImportOptions = nil
+                pendingDCPImportOptions = .init(source: source, reason: reason)
             }) { report in
                 if case .select(let selectedID) = LookImportSelection.decision(previousID: settings.lutID,
                                                                                 imported: report.imported) {

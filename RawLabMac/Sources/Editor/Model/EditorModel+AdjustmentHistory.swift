@@ -100,10 +100,10 @@ extension EditorModel {
             if !quickPresetState.isPreparing { cancelQuickPreset() }
             if let state = saved.state { recordSavedLookChange(from: committedEdit?.state, to: state) }
             committedEdit = saved
-            var defaults = Adjustments()
-            defaults.exposureMode = RenderEngine.isRasterInput(file) ? .sensor : .preview
-            if sourceIsHDR { defaults.hdr=HDRSettings() }
-            restoreAdjustmentState(saved.state ?? PhotoEditState(settings: defaults, filmID: ""))
+            do {
+                let restored = try saved.state ?? PhotoEditState(settings: RenderEngine.defaultSettings(for: file, sourceIsHDR: sourceIsHDR), filmID: "")
+                restoreAdjustmentState(restored)
+            } catch { saveError = error.localizedDescription; return }
             dirty = false; saveError = nil
             saveWork?.cancel()
             editRevision = UUID()

@@ -1,4 +1,36 @@
 {
+  "DCP 导入选项": {
+    "en": "DCP import options",
+    "de": "DCP-Importoptionen",
+    "fr": "Options d’importation DCP",
+    "es": "Opciones de importación de DCP",
+    "ja": "DCPの読み込みオプション",
+    "zh-Hans": "DCP 导入选项"
+  },
+  "色调曲线（JSON）": {
+    "en": "Tone curve (JSON)",
+    "de": "Tonwertkurve (JSON)",
+    "fr": "Courbe de tonalité (JSON)",
+    "es": "Curva de tonos (JSON)",
+    "ja": "トーンカーブ（JSON）",
+    "zh-Hans": "色调曲线（JSON）"
+  },
+  "选择曲线文件…": {
+    "en": "Choose curve file…",
+    "de": "Kurvendatei auswählen…",
+    "fr": "Choisir le fichier de courbe…",
+    "es": "Seleccionar archivo de curva…",
+    "ja": "カーブファイルを選択…",
+    "zh-Hans": "选择曲线文件…"
+  },
+  "省略自动黑位": {
+    "en": "Omit automatic black rendering",
+    "de": "Automatische Schwarzwertkorrektur auslassen",
+    "fr": "Ignorer le rendu automatique du noir",
+    "es": "Omitir el ajuste automático del negro",
+    "ja": "自動ブラック処理を省略",
+    "zh-Hans": "省略自动黑位"
+  },
   "全部外观": {
     "en": "All looks",
     "de": "Alle Looks",
@@ -215,22 +247,22 @@
     "ja": "DCP に一意で有効な D65 ColorMatrix/ForwardMatrix がないため、変換できません。",
     "zh-Hans": "DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。"
   },
-  "DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。": {
-    "de": "Dem DCP fehlt ProfileToneCurve; die Adobe-Standardkurve kann nicht automatisch abgeleitet werden. Geben Sie zuerst mit dem Vorbereitungswerkzeug eine Kurve an.",
-    "en": "The DCP is missing ProfileToneCurve; Adobe's default curve cannot be inferred automatically. Specify a curve explicitly with the preparation tool first.",
-    "es": "Al DCP le falta ProfileToneCurve; no se puede inferir automáticamente la curva predeterminada de Adobe. Especifique primero una curva con la herramienta de preparación.",
-    "fr": "Le DCP ne contient pas ProfileToneCurve ; la courbe Adobe par défaut ne peut pas être déduite automatiquement. Spécifiez d’abord une courbe avec l’outil de préparation.",
-    "ja": "DCP に ProfileToneCurve がないため、Adobe のデフォルト曲線を自動推定できません。準備ツールで曲線を明示的に指定してください。",
-    "zh-Hans": "DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。"
-  },
-  "DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。": {
-    "de": "Das DCP erfordert eine automatische Schwarzwertverarbeitung, die von dieser Konvertierung noch nicht unterstützt wird. Wählen Sie zuerst mit dem Vorbereitungswerkzeug ausdrücklich eine Schwarzwertstrategie.",
-    "en": "The DCP requires automatic black-level processing, which is not yet supported by this conversion. Select a black-level policy explicitly with the preparation tool first.",
-    "es": "El DCP requiere un procesamiento automático del nivel de negros, que esta conversión aún no admite. Seleccione primero una estrategia de negros explícita con la herramienta de preparación.",
-    "fr": "Le DCP nécessite un traitement automatique du niveau de noir, que cette conversion ne prend pas encore en charge. Sélectionnez d’abord explicitement une stratégie de niveau de noir avec l’outil de préparation.",
-    "ja": "DCP には自動ブラックレベル処理が必要ですが、この変換はまだ対応していません。準備ツールでブラックレベルの方針を明示的に選択してください。",
-    "zh-Hans": "DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。"
-  },
+    "DCP 没有内嵌色调曲线。": {
+      "de": "Das DCP enthält keine eingebettete Tonwertkurve.",
+      "en": "The DCP has no embedded tone curve.",
+      "es": "El DCP no contiene una curva tonal integrada.",
+      "fr": "Le DCP ne contient pas de courbe tonale intégrée.",
+      "ja": "DCP にトーンカーブが埋め込まれていません。",
+      "zh-Hans": "DCP 没有内嵌色调曲线。"
+    },
+    "DCP 要求自动黑位处理。": {
+      "de": "Das DCP fordert eine automatische Schwarzwertverarbeitung an.",
+      "en": "The DCP requests automatic black-level processing.",
+      "es": "El DCP solicita un ajuste automático del nivel de negros.",
+      "fr": "Le DCP demande un réglage automatique du niveau de noir.",
+      "ja": "DCP が自動ブラックレベル処理を指定しています。",
+      "zh-Hans": "DCP 要求自动黑位处理。"
+    },
   "DCP 使用三光源 HueSatMap，暂不支持转换。": {
     "de": "Das DCP verwendet eine HueSatMap mit drei Lichtquellen, die für die Konvertierung noch nicht unterstützt wird.",
     "en": "The DCP uses a three-illuminant HueSatMap, which is not supported for conversion yet.",

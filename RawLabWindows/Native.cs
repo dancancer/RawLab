@@ -220,6 +220,8 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_raw_exposure_mode(Session session,int mode);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_processing_version(Session session,int version);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_x3f_available();
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_x3f_default_mode(
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string input, out X3fMode mode);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_x3f_mode(Session session,X3fMode mode);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern IntPtr sony2fuji_session_x3f_error(Session session);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_lens_database(Session session,[MarshalAs(UnmanagedType.LPUTF8Str)] string path);

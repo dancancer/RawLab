@@ -23,6 +23,8 @@ if (args.Contains("--camera-raw-hdr")) {
     return;
 }
 X3fPersistenceChecks();
+Check(PhotoInput.PrepareDefaultSettings("fixture.png").ExposureMode == 2,
+    "No-record raster defaults retain sensor exposure");
 AIGpuDiagnosticsChecks.Run();
 if(args.Contains("--ai-support"))return;
 

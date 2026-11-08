@@ -87,6 +87,24 @@ internal static class LookImportChecks
             Check(identity == "managed:" + imported.Id && library.ResolveIdentity(identity) == imported.Path,
                 "managed DCP edits persist a stable look identity instead of the source path");
 
+            var optionsSource = Path.Combine(root, "Camera options.dcp");
+            File.WriteAllBytes(optionsSource, [11, 12, 13]);
+            DcpImportOptions? observedOptions = null;
+            var optionsCurve = Encoding.UTF8.GetBytes("[[0,0],[0.5,0.35],[1,1]]");
+            var optionsLibrary = new LookLibrary(
+                Path.Combine(root, "options-library"),
+                compileDcpWithOptions: (_, options) =>
+                {
+                    observedOptions = options;
+                    return rlook;
+                },
+                validateLook: _ => new LookValidation(LookFormat.Rlook, 1));
+            _ = optionsLibrary.ImportLook(optionsSource,
+                dcpOptions: new DcpImportOptions(optionsCurve, OmitAutomaticBlack: true));
+            Check(observedOptions is { OmitAutomaticBlack: true, ToneCurveJson: not null } &&
+                  observedOptions.Value.ToneCurveJson!.SequenceEqual(optionsCurve),
+                "DCP import forwards the explicit curve and automatic-black choice to compilation");
+
             var snapshotRoot = Path.Combine(root, "snapshot");
             var snapshotSource = Path.Combine(snapshotRoot, "snapshot.dcp");
             Directory.CreateDirectory(snapshotRoot);
@@ -162,6 +180,29 @@ internal static class LookImportChecks
             {
                 Check(error.Reason == DcpErrorReason.TooLarge,
                     "DCP source bound is enforced before native compilation");
+            }
+
+            var emptyCurve = Path.Combine(root, "empty-curve.json");
+            File.WriteAllBytes(emptyCurve, []);
+            try
+            {
+                _ = DcpCompiler.ReadToneCurveJson(emptyCurve);
+                throw new Exception("empty external tone curve was accepted");
+            }
+            catch (DcpCompileException error)
+            {
+                Check(error.Reason == DcpErrorReason.InvalidTone,
+                    "an empty curve file reports the shared invalid-curve error instead of silently disabling import");
+            }
+            try
+            {
+                _ = DcpCompiler.Compile(snapshotSource, new DcpImportOptions([], false));
+                throw new Exception("empty external tone curve options were accepted");
+            }
+            catch (DcpCompileException error)
+            {
+                Check(error.Reason == DcpErrorReason.InvalidTone,
+                    "an explicitly empty curve is rejected before invoking native compilation");
             }
 
             RunRealNativeRegression(root);

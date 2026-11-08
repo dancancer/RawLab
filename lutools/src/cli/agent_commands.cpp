@@ -190,7 +190,7 @@ int runAgentCommands(int argc, char* argv[]) {
 #if defined(__APPLE__) || defined(_WIN32)
             inputs.push_back("raster");
 #if defined(_WIN32)
-            raster = {{"formats", {"jpeg", "png", "tiff"}}, {"bits_per_component", {8, 16}},
+            raster = {{"formats", {"jpeg", "png", "tiff", "heif"}}, {"bits_per_component", {8, 16}},
 #else
             raster = {{"formats", {"jpeg", "png", "tiff", "heif"}}, {"bits_per_component", {8, 16}},
 #endif

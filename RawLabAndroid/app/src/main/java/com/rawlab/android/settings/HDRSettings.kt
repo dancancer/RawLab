@@ -4,8 +4,11 @@ import com.rawlab.android.geometry.GeometrySettings
 
 enum class HDRMode { SDR, HDR }
 
-fun sourceDefaultSettings(isHDRSource: Boolean, cameraRaw: Boolean = false): EditSettings =
-    if (isHDRSource && !cameraRaw) EditSettings().withHDRMode(true, true) else EditSettings()
+fun sourceDefaultSettings(isHDRSource: Boolean, cameraRaw: Boolean = false,
+    inputKind: com.rawlab.android.format.PhotoInputKind = com.rawlab.android.format.PhotoInputKind.RAW): EditSettings {
+    val defaults = EditSettings(exposureMode = if (inputKind == com.rawlab.android.format.PhotoInputKind.RASTER) 2 else 1)
+    return if (isHDRSource && !cameraRaw) defaults.withHDRMode(true, true) else defaults
+}
 
 sealed class HDRModeError(message: String) : IllegalArgumentException(message) {
     data object UnsupportedSource : HDRModeError("HDR source is unavailable")
