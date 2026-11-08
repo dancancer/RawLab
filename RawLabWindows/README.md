@@ -8,7 +8,7 @@
 0.8 编辑器与 Agent 已合入集成源码。统一参数行、原生菜单、几何/镜头草稿及各轮验证边界见 [Windows 0.8 验证记录](VERIFICATION-v08.md)。实际发布状态、包版本和校验和以 GitHub Release 及随包 provenance 为准。
 
 Agent v08 接入了共享 v4 JSON/CLI、普通 JPEG/PNG/经典 TIFF 和默认单张预览。
-Windows 也可用随包 libheif 导入普通 SDR HEIF/HEIC。普通图像输入接受不透明的 8 位 SDR RGB，
+Windows 也可用随包 libheif 导入普通 SDR HEIF/HEIC。普通图像输入接受不透明的 8 位 SDR RGB 和 16 位整数 RGB PNG/经典 TIFF，
 源图上限为 1.28 亿像素。导入应用图像方向，并将带色彩标记的图像转为 sRGB。
 带增益图的 HDR HEIF 使用下述 HDR 入口。
 新窗口、重新打开及历史恢复默认关闭对比；同图手动选择的并排/滑动会保留到切图。
@@ -34,13 +34,13 @@ SDR rendition 和 SDR/HDR JPEG 使用共享 DNG profile/增益表后端及有界
 decoder revision 在恢复或进入 HDR 前拒绝。预设、同步和批量 HDR 仅对实际探测为 ProRAW 的
 RAW 放行，不能因 `.dng` 扩展名把普通 Bayer RAW 提升到该路径。
 
-## 下载 v0.9.3 Windows 包
+## 下载 v0.10.0 Windows 包
 
-[Windows x64 安装程序](https://github.com/dancancer/RawLab/releases/download/v0.9.3/RawLab.Desktop-stable-Setup.exe) · [手动安装 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.9.3/RawLab-Windows-0.9.3-x64.zip) · [发布说明](../docs/releases/v0.9/v0.9.3.md) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.9.3/SHA256SUMS.txt)
+[Windows x64 安装程序](https://github.com/dancancer/RawLab/releases/download/v0.10.0/RawLab.Desktop-stable-Setup.exe) · [手动安装 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.10.0/RawLab-Windows-0.10.0-x64.zip) · [发布说明](../docs/releases/v0.10/v0.10.0.md) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.10.0/SHA256SUMS.txt)
 
-版本 `0.9.3` / build `18`，self-contained .NET 8，包含原生核心、运行库、LUT、Lens DB、ExifTool、GPU AI 模型和许可文件。安装程序按当前用户安装，支持签名描述文件校验的自动更新；ZIP 解压后运行 `RawLab.exe`，必须保留完整目录并手动更新。程序没有 Authenticode 签名，首次安装可能需要在 SmartScreen 选择“更多信息 → 仍要运行”。
+版本 `0.10.0` / build `19`，self-contained .NET 8，包含原生核心、运行库、LUT、Lens DB、ExifTool、GPU AI 模型和许可文件。安装程序按当前用户安装，支持签名描述文件校验的自动更新；ZIP 解压后运行 `RawLab.exe`，必须保留完整目录并手动更新。程序没有 Authenticode 签名，首次安装可能需要在 SmartScreen 选择“更多信息 → 仍要运行”。
 
-本次为受支持的相机 RAW 和 Apple ProRAW 新增 HDR 显影，并修复旧批量任务恢复时单张原片缺失阻断整批、切换为 SDR JPEG 后目标无法重新勾选的问题。正式包带阿里云 RUM SDK，默认开启使用统计，可在关于页关闭。构建、原生/WPF 检查、实际设备与更新覆盖见发布附件 `BUILD-PROVENANCE.json`。
+本次扩展 HDR 曲线、色彩、细节、效果和外观，增加 Edit、Select、Preview 桌面工作区；从系统打开的文件会转交已运行的应用。新增 16 位整数 RGB PNG/TIFF 和普通 SDR HEIF 输入，并修复普通图像批量目标因来源启用 AI 降噪而无法导出的问题。正式包带阿里云 RUM SDK，默认开启使用统计，可在关于页关闭。构建、原生/WPF 检查、实际设备与更新覆盖见发布附件 `BUILD-PROVENANCE.json`。
 
 ## 构建
 
