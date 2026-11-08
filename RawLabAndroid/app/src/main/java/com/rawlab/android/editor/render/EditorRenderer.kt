@@ -288,11 +288,11 @@ internal class EditorRenderer(
         native.setGpuMode(NativeProcessor.CPU)
         val geometry = work.edits.geometry
         val edge = hdrPreviewEdge(work)
-        val neutralSettings = HDRSettings(mode = work.edits.hdr?.mode ?: com.rawlab.android.settings.HDRMode.SDR, geometry = geometry)
         val resultSettings = (work.edits.hdr ?: HDRSettings(mode = com.rawlab.android.settings.HDRMode.SDR)).copy(geometry = geometry)
+        val neutralSettings = resultSettings.neutralGeometrySettings
         val referenceKey = stamp?.let { HDRReferenceKey(it, work.photo, neutralSettings, edge, work.edits.proRAWDecodeVersion) }
         val reference = hdrReference?.takeIf { it.first == referenceKey }?.second ?: run {
-            val source = cachedHDRSource(work.photo, generation)
+            val source = cachedHDRSource(work.photo, generation, neutralSettings.cameraSettings)
             native.renderHDR(source, neutralSettings, edge, generation).use { neutral ->
                 val frame = neutral.snapshot()
                 HDRReference(frame, sdrBitmap(frame)).also { hdrReference = referenceKey?.let { key -> key to it } }

@@ -182,6 +182,7 @@
     <string name="grading_reset_message">"恢复阴影、中间调和高光的颜色分级默认值？"</string>
     <string name="grading_reset_zone">"重置当前分区"</string>
     <string name="hdr_above_white">"参考白以上 %1$s"</string>
+    <string name="hdr_camera_development_unavailable">"无效或不可用的相机显影设置（白平衡或镜头校正）。"</string>
     <string name="hdr_camera_profile">"HDR 相机配置"</string>
     <string name="hdr_camera_profile_changed">"照片或调整已更改，未应用导入的相机配置。请重试。"</string>
     <string name="hdr_camera_profile_clear">"清除相机配置"</string>

@@ -182,6 +182,7 @@
     <string name="grading_reset_message">"シャドウ、中間調、ハイライトのカラーグレーディングを初期値に戻しますか？"</string>
     <string name="grading_reset_zone">"現在の階調範囲をリセット"</string>
     <string name="hdr_above_white">"基準白を超える割合 %1$s"</string>
+    <string name="hdr_camera_development_unavailable">"カメラ現像設定（ホワイトバランスまたはレンズ補正）が無効か、利用できません。"</string>
     <string name="hdr_camera_profile">"HDR カメラプロファイル"</string>
     <string name="hdr_camera_profile_changed">"写真または調整が変更されたため、読み込んだカメラプロファイルは適用されませんでした。もう一度お試しください。"</string>
     <string name="hdr_camera_profile_clear">"カメラプロファイルを解除"</string>

@@ -7358,5 +7358,13 @@
     "es": "No se puede leer el perfil de cámara HDR o no coincide con esta cámara.",
     "ja": "HDR カメラプロファイルを読み込めないか、このカメラに対応していません。",
     "zh-Hans": "无法读取 HDR 相机配置，或配置与当前相机不匹配。"
+  },
+  "无效或不可用的相机显影设置（白平衡或镜头校正）。": {
+    "en": "Camera development settings (white balance or lens correction) are invalid or unavailable.",
+    "de": "Die Kameraentwicklungseinstellungen (Weißabgleich oder Objektivkorrektur) sind ungültig oder nicht verfügbar.",
+    "fr": "Les réglages de développement de l’appareil (balance des blancs ou correction d’objectif) sont invalides ou indisponibles.",
+    "es": "Los ajustes de revelado de la cámara (balance de blancos o corrección de lente) no son válidos o no están disponibles.",
+    "ja": "カメラ現像設定（ホワイトバランスまたはレンズ補正）が無効か、利用できません。",
+    "zh-Hans": "无效或不可用的相机显影设置（白平衡或镜头校正）。"
   }
 }

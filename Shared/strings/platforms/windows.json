@@ -5883,14 +5883,6 @@
       "es": "Quita el perfil de cámara HDR antes de usar la reducción de ruido con IA.",
       "ja": "AI ノイズ除去を使用する前に HDR カメラプロファイルを解除してください。",
       "zh-Hans": "请先清除 HDR 相机配置，再使用 AI 降噪。"
-    },
-    "无效或不可用的相机显影设置（白平衡或镜头校正）。": {
-      "en": "Camera development settings (white balance or lens correction) are invalid or unavailable.",
-      "de": "Die Kameraentwicklungseinstellungen (Weißabgleich oder Objektivkorrektur) sind ungültig oder nicht verfügbar.",
-      "fr": "Les réglages de développement de l’appareil (balance des blancs ou correction d’objectif) sont invalides ou indisponibles.",
-      "es": "Los ajustes de revelado de la cámara (balance de blancos o corrección de lente) no son válidos o no están disponibles.",
-      "ja": "カメラ現像設定（ホワイトバランスまたはレンズ補正）が無効か、利用できません。",
-      "zh-Hans": "无效或不可用的相机显影设置（白平衡或镜头校正）。"
     }
   }
 }

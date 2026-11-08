@@ -87,6 +87,33 @@ def android_catalogs():
 
 
 class GeneratorSourceTests(unittest.TestCase):
+    def test_hdr_camera_development_diagnostic_uses_shared_wording(self):
+        key = "无效或不可用的相机显影设置（白平衡或镜头校正）。"
+        shared = json.loads((ROOT / "Shared/strings/common/catalog.json").read_text())
+        self.assertTrue(key in shared, "HDR camera development wording must be shared")
+        self.assertEqual(set(shared[key]), set(LANGUAGES))
+        for client in ("macos", "ios", "windows", "android"):
+            platform = json.loads((ROOT / f"Shared/strings/platforms/{client}.json").read_text())
+            native_key = "hdr_camera_development_unavailable" if client == "android" else key
+            with self.subTest(client=client):
+                self.assertEqual(platform["entries"][native_key]["source"], key)
+                self.assertNotIn(key, platform["unique"])
+                self.assertNotIn(key, platform["overrides"])
+
+    def test_hdr_camera_development_diagnostic_maps_to_camera_wording(self):
+        key = "无效或不可用的相机显影设置（白平衡或镜头校正）。"
+        mappings = (
+            ("Shared/Native/HDRSource.swift", r'case SONY2FUJI_HDR_REASON_CAMERA_DEVELOPMENT:\s*return L10n\.text\("([^"]+)"\)', key),
+            ("RawLabWindows/HDRSourceInfo.cs", r'19\s*=>\s*Loc\.Text\("([^"]+)"\)', key),
+            ("RawLabAndroid/app/src/main/java/com/rawlab/android/engine/HDRProcessingException.kt",
+             r'19\s*->\s*AppStrings\.text\(R\.string\.([a-z_]+)\)', "hdr_camera_development_unavailable"),
+        )
+        for path, pattern, expected in mappings:
+            with self.subTest(path=path):
+                match = re.search(pattern, (ROOT / path).read_text())
+                self.assertIsNotNone(match)
+                self.assertEqual(match[1], expected)
+
     def test_generated_catalogs_have_no_unowned_entries(self):
         result = subprocess.run(
             [sys.executable, str(ROOT / "scripts/localization/generate.py"), "--check"],

@@ -5095,6 +5095,12 @@
       "formats": [],
       "source": "照片或调整已更改，未应用导入的相机配置。请重试。",
       "types": []
+    },
+    "hdr_camera_development_unavailable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "无效或不可用的相机显影设置（白平衡或镜头校正）。",
+      "types": []
     }
   },
   "overrides": {

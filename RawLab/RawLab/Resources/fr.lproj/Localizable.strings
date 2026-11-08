@@ -376,6 +376,7 @@
 "方向、裁切和构图一致" = "L’orientation, le recadrage et la composition correspondent";
 "方案 %@" = "Option %@";
 "旋转" = "Rotation";
+"无效或不可用的相机显影设置（白平衡或镜头校正）。" = "Les réglages de développement de l’appareil (balance des blancs ou correction d’objectif) sont invalides ou indisponibles.";
 "无效或不可用的镜头校正设置" = "Réglages de correction optique invalides ou indisponibles";
 "无效或不可用的降噪参数" = "Paramètres de réduction du bruit invalides ou indisponibles";
 "无效的 HSL 参数" = "Paramètres HSL invalides";

@@ -16,7 +16,7 @@ struct HDRNativeError: LocalizedError {
         case SONY2FUJI_HDR_REASON_PREVIEW_SOURCE: return L10n.text("预览不能用于导出，请从原始照片重新生成。")
         case SONY2FUJI_HDR_REASON_MALFORMED_AUX: return L10n.text("HDR 增益图损坏，无法还原此照片。")
         case SONY2FUJI_HDR_REASON_LOOK_RESOURCE: return L10n.text("无法读取外观文件。")
-        case SONY2FUJI_HDR_REASON_CAMERA_DEVELOPMENT: return L10n.text("无效或不可用的镜头校正设置")
+        case SONY2FUJI_HDR_REASON_CAMERA_DEVELOPMENT: return L10n.text("无效或不可用的相机显影设置（白平衡或镜头校正）。")
         case SONY2FUJI_HDR_REASON_CAMERA_AI: return L10n.text("此照片或构建尚不能使用 AI 降噪。")
         case SONY2FUJI_HDR_REASON_CAMERA_PROFILE:
             return status == SONY2FUJI_STATUS_IO_ERROR ? L10n.text("找不到 HDR 相机配置，请重新导入。") :

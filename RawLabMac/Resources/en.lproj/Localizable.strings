@@ -481,6 +481,7 @@
 "方案 %@" = "Option %@";
 "旋转" = "Rotation";
 "无 RAW 照片" = "No RAW photos";
+"无效或不可用的相机显影设置（白平衡或镜头校正）。" = "Camera development settings (white balance or lens correction) are invalid or unavailable.";
 "无效或不可用的色度降噪模式" = "Invalid or unavailable chroma noise reduction mode";
 "无效或不可用的镜头校正设置" = "Invalid or Unavailable Lens Correction Settings";
 "无效或不可用的降噪参数" = "Invalid or unavailable noise reduction settings";

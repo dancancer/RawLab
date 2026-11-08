@@ -176,6 +176,12 @@ data class HDRSettings(
         rendition = rendition?.let { HDRRenditionSettings() }, effects = effects?.let { PhotoEffectsSettings() },
         detail = detail?.let { HDRDetailSettings() }, look = look?.let { HDRLookSettings() },
         cameraDevelopment = cameraDevelopment?.let { HDRCameraDevelopmentSettings() })
+    val neutralGeometrySettings: HDRSettings
+        get() = reset().copy(geometry = geometry, cameraDevelopment = cameraDevelopment?.let {
+            // 对比颜色时沿用同一镜头画框，白平衡及其他显影参数仍保持中性。
+            HDRCameraDevelopmentSettings(lensDistortion = it.lensDistortion, lensTca = it.lensTca,
+                lensAutoCrop = it.lensAutoCrop, lensProfile = it.lensProfile)
+        })
     fun withTone(value: HDRToneSettings) = copy(tone = value.takeUnless { tone == null && it.isDefault })
     fun withColor(value: HDRColorSettings): HDRSettings {
         if (color == null && value.isDefault) return this

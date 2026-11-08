@@ -182,6 +182,7 @@
     <string name="grading_reset_message">"Restore default color grading for shadows, midtones, and highlights?"</string>
     <string name="grading_reset_zone">"Reset current range"</string>
     <string name="hdr_above_white">"Above Reference White %1$s"</string>
+    <string name="hdr_camera_development_unavailable">"Camera development settings (white balance or lens correction) are invalid or unavailable."</string>
     <string name="hdr_camera_profile">"HDR camera profile"</string>
     <string name="hdr_camera_profile_changed">"The photo or its adjustments changed. The imported camera profile was not applied. Try again."</string>
     <string name="hdr_camera_profile_clear">"Clear camera profile"</string>

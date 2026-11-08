@@ -15,7 +15,7 @@ class HDRProcessingException(val status: Int, val reason: Int, val field: Int) :
             13 -> AppStrings.text(R.string.hdr_processing_cpu)
             16 -> AppStrings.text(R.string.hdr_not_hdr)
             18 -> AppStrings.text(R.string.collection_look_unavailable)
-            19 -> AppStrings.text(R.string.lens_distortion_unavailable)
+            19 -> AppStrings.text(R.string.hdr_camera_development_unavailable)
             21 -> AppStrings.text(if (status == 3) R.string.hdr_camera_profile_missing else R.string.hdr_camera_profile_invalid)
             else -> AppStrings.format(R.string.hdr_processing_failed,reason)
         }

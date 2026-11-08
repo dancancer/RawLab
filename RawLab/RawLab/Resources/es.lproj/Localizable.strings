@@ -376,6 +376,7 @@
 "方向、裁切和构图一致" = "La orientación, el recorte y la composición coinciden";
 "方案 %@" = "Opción %@";
 "旋转" = "Rotación";
+"无效或不可用的相机显影设置（白平衡或镜头校正）。" = "Los ajustes de revelado de la cámara (balance de blancos o corrección de lente) no son válidos o no están disponibles.";
 "无效或不可用的镜头校正设置" = "Ajustes de corrección de lente no válidos o no disponibles";
 "无效或不可用的降噪参数" = "Ajustes de reducción de ruido no válidos o no disponibles";
 "无效的 HSL 参数" = "Parámetros HSL no válidos";

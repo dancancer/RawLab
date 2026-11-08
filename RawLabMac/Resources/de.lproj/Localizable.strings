@@ -481,6 +481,7 @@
 "方案 %@" = "Option %@";
 "旋转" = "Drehung";
 "无 RAW 照片" = "Keine RAW-Fotos";
+"无效或不可用的相机显影设置（白平衡或镜头校正）。" = "Die Kameraentwicklungseinstellungen (Weißabgleich oder Objektivkorrektur) sind ungültig oder nicht verfügbar.";
 "无效或不可用的色度降噪模式" = "Ungültiger oder nicht verfügbarer Modus zur Reduzierung des Chroma-Rauschens";
 "无效或不可用的镜头校正设置" = "Ungültige oder nicht verfügbare Objektivkorrektureinstellungen";
 "无效或不可用的降噪参数" = "Ungültiger oder nicht verfügbarer Rauschreduzierungsparameter";

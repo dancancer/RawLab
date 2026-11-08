@@ -182,6 +182,7 @@
     <string name="grading_reset_message">"Color-Grading für Schatten, Mitteltöne und Lichter zurücksetzen?"</string>
     <string name="grading_reset_zone">"Aktuellen Tonwertbereich zurücksetzen"</string>
     <string name="hdr_above_white">"Über Referenzweiß %1$s"</string>
+    <string name="hdr_camera_development_unavailable">"Die Kameraentwicklungseinstellungen (Weißabgleich oder Objektivkorrektur) sind ungültig oder nicht verfügbar."</string>
     <string name="hdr_camera_profile">"HDR-Kameraprofil"</string>
     <string name="hdr_camera_profile_changed">"Das Foto oder seine Anpassungen wurden geändert. Das importierte Kameraprofil wurde nicht angewendet. Versuchen Sie es erneut."</string>
     <string name="hdr_camera_profile_clear">"Kameraprofil entfernen"</string>

@@ -182,6 +182,7 @@
     <string name="grading_reset_message">"Rétablir l’étalonnage par défaut des ombres, tons moyens et hautes lumières ?"</string>
     <string name="grading_reset_zone">"Réinitialiser la plage actuelle"</string>
     <string name="hdr_above_white">"Au-dessus du blanc de référence %1$s"</string>
+    <string name="hdr_camera_development_unavailable">"Les réglages de développement de l’appareil (balance des blancs ou correction d’objectif) sont invalides ou indisponibles."</string>
     <string name="hdr_camera_profile">"Profil de caméra HDR"</string>
     <string name="hdr_camera_profile_changed">"La photo ou ses réglages ont changé. Le profil de caméra importé n’a pas été appliqué. Réessayez."</string>
     <string name="hdr_camera_profile_clear">"Retirer le profil de caméra"</string>
