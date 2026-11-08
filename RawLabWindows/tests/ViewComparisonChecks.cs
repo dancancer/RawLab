@@ -72,7 +72,7 @@ internal static class ViewComparisonChecks
             check(window.PhotoArea.ActualHeight>window.PhotoArea.ActualWidth && Grid.GetRow(window.NeutralCanvas)==0 && Grid.GetRow(window.ResultCanvas)==1,"A tall narrow photo area stacks comparison without changing the inspector width");
             CheckLabels(window,check);
             EditorShellChecks.ArrangeLayout(window,new Size(1200,800));Ready(window);
-            Click(window.CompareButton);var area=window.PhotoArea.RenderSize;var dock=window.AdjustmentPanel.ActualWidth;Invoke(window,"Schedule",false);window.UpdateLayout();Capture(window,output,"busy");
+            Click(window.CompareButton);var area=window.PhotoArea.RenderSize;var dock=window.AdjustmentPanel.ActualWidth;Invoke(window,"Schedule",false,false);window.UpdateLayout();Capture(window,output,"busy");
             check(window.BusyIndicator.IsVisible && window.BusyIndicator.ActualHeight==2 && window.PhotoArea.RenderSize==area && window.AdjustmentPanel.ActualWidth==dock,"Latest-preview busy is a two-DIP photo overlay with no canvas or inspector layout jump");Ready(window);
             if(Environment.GetEnvironmentVariable("RAWLAB_TEST_NATIVE_POINTER")=="1")PointerChecks(window,output,check);
             else Console.WriteLine("NOT REACHED: native S3 pointer/keyboard checks require RAWLAB_TEST_NATIVE_POINTER=1 on the interactive input desktop");
@@ -80,7 +80,7 @@ internal static class ViewComparisonChecks
             StatisticsFailureUi(window,output,check);
             check(initial.SameAs(Get<Adjustments>(window,"settings").Capture()) && revision==Get<long>(window,"editRevision") && !Get<bool>(window,"editDirty"),"Comparison, hold, info, margins and layout create no parameter edit or autosave");
             var image=Get<BitmapSource>(window.ResultCanvas,"image");var accepted=Get<RenderedImage>(window,"result");
-            var invalid=Path.Combine(output,"invalid.cube");File.WriteAllText(invalid,"invalid LUT");Set(window,"lut",invalid);Invoke(window,"Schedule",false);
+            var invalid=Path.Combine(output,"invalid.cube");File.WriteAllText(invalid,"invalid LUT");Set(window,"lut",invalid);Invoke(window,"Schedule",false,false);
             InteractionChecks.PumpUntil(()=>Get<bool>(window,"renderFailed") && !(bool)Get<object>(window,"scheduler").GetType().GetProperty("Busy")!.GetValue(Get<object>(window,"scheduler"))!);
             Capture(window,output,"failed-preview");
             check(ReferenceEquals(image,Get<BitmapSource>(window.ResultCanvas,"image")) && ReferenceEquals(accepted,Get<RenderedImage>(window,"result")) && window.RetryButton.IsVisible && !window.ExportPng.IsEnabled,"Failed latest preview keeps the last accepted pixels, marks outdated and offers retry without pretending exact");
@@ -89,7 +89,7 @@ internal static class ViewComparisonChecks
             window.OpenFile(source);Ready(window);
             var store=Get<EditStore>(window,"editStore");var blocked=Path.Combine(output,"blocked-save");Directory.CreateDirectory(Path.Combine(blocked,"edits.json"));Set(window,"editStore",new EditStore(blocked));
             var changed=Get<Adjustments>(window,"settings");changed.Set(Parameter.Exposure,changed[Parameter.Exposure]+.1);Invoke(window,"MarkEdited");Invoke(window,"SaveEdits");
-            Invoke(window,"Schedule",false);Ready(window);Capture(window,output,"save-error-after-preview");
+            Invoke(window,"Schedule",false,false);Ready(window);Capture(window,output,"save-error-after-preview");
             check(window.RetrySave.IsVisible && Get<bool>(window,"editDirty"),"Successful preview does not clear the independent unsaved-adjustment error");Set(window,"editStore",store);Invoke(window,"SaveEdits");
             check(!Get<bool>(window,"editDirty") && store.Find(source)!.Settings.SameAs(changed.Capture()),"Retry durably saves the changed value after storage is restored");
             NeutralChecks(raw,output,check);
@@ -230,13 +230,13 @@ internal static class ViewComparisonChecks
         using var unavailable=new RenderEngine(0,statisticsAnalyzer:Analyze);
         Set(window,"engine",unavailable);
         try {
-            Invoke(window,"Schedule",false);Ready(window);window.UpdateLayout();
+            Invoke(window,"Schedule",false,false);Ready(window);window.UpdateLayout();
             var accepted=Get<RenderedImage>(window,"result");
             check(!ReferenceEquals(previous,accepted) && accepted.Image.PixelWidth>0 && window.Histogram.Bins==null && window.ClipStats.Text==Loc.Text("统计不可用") && !Get<bool>(window,"renderFailed"),"Actual WPF accepts a photo with unavailable statistics without keeping the prior bins or failing the photo");
             Capture(window,output,"statistics-unavailable");
-            fail=false;Invoke(window,"Schedule",false);Ready(window);
+            fail=false;Invoke(window,"Schedule",false,false);Ready(window);
             check(window.Histogram.Bins?.Length==768 && window.HistogramSource.Text==Loc.Text("调整后"),"Same-engine same-settings statistics retry restores current after bins");
-        } finally {Set(window,"engine",engine);Invoke(window,"Schedule",false);Ready(window);}
+        } finally {Set(window,"engine",engine);Invoke(window,"Schedule",false,false);Ready(window);}
     }
     internal static void SourceIdentityChecks(string output,Action<bool,string> check)
     {
@@ -254,7 +254,7 @@ internal static class ViewComparisonChecks
     {
         bool Current()=>(bool)typeof(MainWindow).GetProperty("ReferenceCurrent",Private)!.GetValue(window)!;
         var old=Get<RenderedImage>(window,"neutralResult");
-        File.SetLastWriteTimeUtc(source,File.GetLastWriteTimeUtc(source).AddSeconds(2));Invoke(window,"Schedule",false);Ready(window);
+        File.SetLastWriteTimeUtc(source,File.GetLastWriteTimeUtc(source).AddSeconds(2));Invoke(window,"Schedule",false,false);Ready(window);
         Capture(window,output,"source-replaced-after");
         check(!Current() && Get<RenderedImage?>(window,"neutralResult")==null,"An accepted after from a replaced same-path source releases the old neutral before reopening comparison");
         check(Get<object?>(Get<RenderEngine>(window,"engine"),"original")==null,"The same-source replacement also releases the obsolete engine reference while comparison is closed");

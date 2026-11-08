@@ -54,7 +54,7 @@ internal static class AIDenoiseRealWindowChecks
             check(!((StackPanel)window.DenoiseEditor.FindName("OrdinaryDenoise")).IsEnabled && Settings().Denoise==before,
                 "Real WPF keeps ordinary denoise parameters while AI is active");
             Directory.CreateDirectory(output);Capture(window,Path.Combine(output,"ai-ready.png"));
-            Settings().Set(Parameter.Exposure,1);Call("MarkEdited");Call("Schedule",false);
+            Settings().Set(Parameter.Exposure,1);Call("MarkEdited");Call("Schedule",false,false);
             Pump(()=>window.ExportPng.IsEnabled);
             check(Settings().AIDenoiseEnabled && job.State.Status==AIDenoiseStatus.Ready,"Exposure adjustment retains prepared AI state");
             ((CheckBox)window.DenoiseEditor.FindName("AIEnabledBox")).IsChecked=false;

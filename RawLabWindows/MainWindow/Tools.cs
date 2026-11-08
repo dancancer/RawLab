@@ -260,7 +260,8 @@ public partial class MainWindow
         }
         foreach(var (tool,controls) in workspaceTools) {
             controls.Button.Visibility=tool!=EditorAdjustmentTool.Strength && expandedGroup==EditorAdjustmentRules.GroupFor(tool) ? Visibility.Visible : Visibility.Collapsed;
-            controls.Button.IsEnabled=file!=null && !exporting &&
+            // 导航刷新沿用镜头面板的输入约束，避免重新启用普通图片的 RAW 工具。
+            controls.Button.IsEnabled=file!=null && !exporting && (tool!=EditorAdjustmentTool.Lens || LensEditor.IsEnabled) &&
                 (!settings.IsHDREditing || tool is EditorAdjustmentTool.Exposure or EditorAdjustmentTool.Highlights or EditorAdjustmentTool.Shadows or
                     EditorAdjustmentTool.Contrast or EditorAdjustmentTool.BlackPoint or EditorAdjustmentTool.WhitePoint or EditorAdjustmentTool.ToneCurve or
                     EditorAdjustmentTool.Saturation or EditorAdjustmentTool.WhiteBalance or EditorAdjustmentTool.Geometry or

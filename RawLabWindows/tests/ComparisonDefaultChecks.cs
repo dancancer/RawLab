@@ -68,6 +68,9 @@ internal static class ComparisonDefaultChecks
             check(window.ActiveFilm.Text == Loc.Text("中性") && window.CurrentLookIdentity() == null && initialSettings.MasterRecipeID == null &&
                   initialSettings[Parameter.Exposure] == 0,
                 "An unseen RAW opens with neutral settings and no film or master recipe");
+            if (!PhotoInput.IsNormalX3f(raw, initialSettings))
+                check(window.LensEditor.IsEnabled && window.LensCategory.IsEnabled,
+                    "RAW enables the lens editor and its navigation entry");
 
             window.SetComparisonMode(true, false);
             window.UpdateLayout();
@@ -92,10 +95,11 @@ internal static class ComparisonDefaultChecks
                 "Async exposure publish preserves swipe mode and divider support");
 
             WaitBusyThenReady(window, () => {window.GpuMode.SelectedIndex=2;window.OpenFile(fixtures.Png);});
-            check(IsMode(window, "off") &&
-                  window.LensCategory.IsEnabled == false && window.ExposureMode.IsEnabled == false &&
-                  window.AsShotButton.IsEnabled == false,
-                "Raster switch resets comparison and disables RAW-only controls");
+            check(IsMode(window, "off"), "Raster switch resets comparison to single mode");
+            check(!window.LensEditor.IsEnabled, "Raster disables the RAW-only lens editor");
+            check(!window.LensCategory.IsEnabled, "Raster disables the RAW-only lens navigation entry");
+            check(!window.ExposureMode.IsEnabled, "Raster disables RAW exposure baseline selection");
+            check(!window.AsShotButton.IsEnabled, "Raster disables as-shot white balance");
             var rasterSettings = (Adjustments)typeof(MainWindow).GetField("settings", Private)!.GetValue(window)!;
             check(window.ActiveFilm.Text == Loc.Text("中性") && window.CurrentLookIdentity() == null &&
                   rasterSettings.MasterRecipeID == null && rasterSettings[Parameter.Exposure] == 0,
@@ -140,6 +144,9 @@ internal static class ComparisonDefaultChecks
             });
             check(IsMode(window, "off") && Math.Abs(window.ValueSlider.Value - .75) < .001,
                 "Returning to RAW restores its saved exposure and single mode");
+            if (!PhotoInput.IsNormalX3f(raw, initialSettings))
+                check(window.LensEditor.IsEnabled && window.LensCategory.IsEnabled,
+                    "Returning to RAW re-enables the lens editor and its navigation entry");
             WaitBusyThenReady(window, () => window.OpenFile(raw));
             check(IsMode(window, "off") && Math.Abs(window.ValueSlider.Value - .75) < .001,
                 "Reopening the same RAW restores history without comparison state");

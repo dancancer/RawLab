@@ -154,7 +154,7 @@ internal static partial class EditorReviewChecks
         {
             var window=Open("close-idle-"+foreground);var journal=Get<BatchJournal>(window,"batchJournal");
             var engine=Get<object>(window,"engine");var held=new HeldContext(SynchronizationContext.Current!);Task? import=null;
-            var adjustment=Get<Adjustments>(window,"settings");adjustment.Denoise=DenoiseSettings.Clean;Invoke(window,"Schedule",false);
+            var adjustment=Get<Adjustments>(window,"settings");adjustment.Denoise=DenoiseSettings.Clean;Invoke(window,"Schedule",false,false);
             InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
             var job=BatchJob.Create(photo,adjustment.Capture(),null,"Neutral");journal.Save(job);Invoke(window,"ShowBatch",job);
             var batch=Get<BatchExportWindow>(window,"batchWindow");var previous=Get<int>(window,"previewLongEdge");
