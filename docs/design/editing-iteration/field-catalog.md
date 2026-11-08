@@ -187,10 +187,15 @@ recipe 拒绝新键。能力响应声明 CPU 和完整源图预览策略，不�
 - 相机 WB、自动曝光基准、镜头自动匹配保存模式/请求配置，不保存来源照片的自动派生结果。
 - RAW-only 字段按选中请求的实际语义判断兼容性。RAW 来源的拍摄时 WB（`camera`、
   Kelvin/tint 为 null，或配方相对 tint 为 0）在 raster 上无效果，应放行并保留目标 `none`
-  WB；部分选择也只接受对应中性值。`scene/preview/sensor` 曝光基准在 raster 上均无意义，
-  应放行并保留 `sensor`。这些中性项本身不产生修改，也不能掩盖其他字段的实际修改。
-  固定 Kelvin/tint、非零配方相对 tint（包括来源强度为 0 时保留的偏移）及非零 raw denoise
-  等不可表达请求仍必须显示不兼容原因，不可静默丢弃。raster recipe 使用 `sensor` exposure、
+  WB；部分选择也只接受对应中性值。完整配方（recipe look 及对应版本全部依赖）允许
+  `camera`、空 Kelvin 和等于当前内置目录 `tintDelta` 的相对 tint，结果与在 raster 上
+  直接套配方一致。完整配方须写入来源逻辑 tint（包括 0），覆盖目标旧值；来源强度为 0
+  时仍保留该上下文。raster 的有效 WB 为 `none`，逻辑相对 tint 可供之后跨 RAW 复用。
+  `scene/preview/sensor` 曝光基准在 raster 上均无意义，应放行并保留 `sensor`。单独中性
+  WB 和曝光基准本身不产生修改；完整配方的逻辑 tint 变化须参与比较。
+  固定 Kelvin/tint、手动改过的非零配方相对 tint、非完整配方的非零相对 tint（包括来源
+  强度为 0 时保留的偏移）及非零 raw denoise 等不可表达请求仍必须显示不兼容原因，
+  不可静默丢弃。raster recipe 使用 `sensor` exposure、
   `none` WB，并禁用 raw denoise/lens correction：
   [edit-json.md](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/lutools/docs/edit-json.md?plain=1#L266-L281)。
 - 不同平台当前默认并不完全相同。iOS 缺失 `exposureMode` 解码为 `.scene`：

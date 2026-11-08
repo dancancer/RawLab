@@ -74,14 +74,16 @@ internal static class AdjustmentTransferWB
             return s;
         }
         if(!context.IsRaw && p.Source.IsRaw) {
-            // 拍摄时请求和零配方偏移对普通图片无效果，保留目标固有的 WB。
+            // 完整配方保留可复用的默认相对 tint；单独 WB 请求仍只接受中性值。
             var neutral=new Dictionary<F,System.Text.Json.JsonElement> {
                 [F.WhiteBalanceMode]=Value("camera"),[F.Temperature]=Value<object?>(null),
                 [F.Tint]=p.Source.Recipe==null ? Value<object?>(null) : Value(0)
             };
-            if(!neutral.All(pair=>p[pair.Key]==null || Same(p[pair.Key],pair.Value)))
+            var recipeTint=MasterRecipe.Find(p.Source.Recipe?.ID)?.TintDelta;
+            var defaultRecipeTint=fullRecipe && recipeTint!=null && Number(p[F.Tint])==recipeTint;
+            if(!neutral.All(pair=>p[pair.Key]==null || Same(p[pair.Key],pair.Value) || pair.Key==F.Tint && defaultRecipeTint))
                 throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"color.white_balance");
-            return s;
+            if(!fullRecipe)return s;
         }
         var previousValues=AdjustmentTransferValues.Values(new(new("",0,0,0),target,null),context);
         if(!changed && context.IsRaw==p.Source.IsRaw && AdjustmentTransfer.Recipe(target)==p.Source.Recipe && selected.All(f=>Same(p[f],previousValues[f])))return s;

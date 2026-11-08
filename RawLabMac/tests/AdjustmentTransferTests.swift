@@ -251,6 +251,8 @@ struct AdjustmentTransferTests {
 
     static func main() throws {
         try neutralRawRequestsOnRaster()
+        try fullNeutralRecipeOnRaster()
+        try builtinRawRecipesOnRaster()
         try refinedRecipeTransfers()
         try toneCurve()
         try colorGrading()
@@ -440,6 +442,55 @@ struct AdjustmentTransferTests {
               changed.renderAtmosphereSettings == target.renderAtmosphereSettings && changed.renderGradingSettings == target.renderGradingSettings &&
               changed.renderCurveSettings == target.renderCurveSettings,
               "Changing recipe strength through partial paste preserves all unselected refinement effects")
+    }
+
+    static func fullNeutralRecipeOnRaster() throws {
+        var raster = raw; raster.isRaw = false
+        var target = Adjustments().resolvedForRaster
+        target.applyMasterRecipe(.hamadaDaylightV2)
+        var source = target; source.whiteBalanceMode = .asShot; source.tint = 0
+        let complete = try MacAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
+        let applied = try MacAdjustmentTransfer.prepare(payload: complete, target: state(target), context: raster)
+        check(applied != state(target) && applied.settings.tint == 0,
+            "Full neutral RAW recipe clears previous raster recipe tint and counts as changed")
+        check(MacAdjustmentTransfer.values(applied, isRaw: false)[AdjustmentTransferField.tint.rawValue] == .number(0),
+            "Full neutral recipe exposes zero logical tint")
+        check(try MacAdjustmentTransfer.prepare(payload: complete, target: applied, context: raster) == applied,
+            "Repeating full neutral recipe is unchanged")
+    }
+
+    static func builtinRawRecipesOnRaster() throws {
+        var raster = raw; raster.isRaw = false
+        raster.availableLookIDs.formUnion(MasterRecipe.allRecipes.map { "recipe:\($0.id)" })
+        for recipe in MasterRecipe.allRecipes {
+            for strength in [0.0, 0.5, 1.0, 2.0] {
+                var source = Adjustments(); source.applyMasterRecipe(recipe)
+                source.strength = strength
+                var direct = Adjustments().resolvedForRaster
+                direct.applyMasterRecipe(recipe); direct.strength = strength
+                var previous = Adjustments().resolvedForRaster
+                previous.applyMasterRecipe(.hamadaDaylightV2)
+                for scope in [AdjustmentTransferScope.standard, .all] {
+                    let captured = try MacAdjustmentTransfer.capture(scope: scope, snapshot: state(source), context: raw)
+                    let frozen = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: JSONEncoder().encode(captured))
+                    let applied = try MacAdjustmentTransfer.prepare(payload: frozen, target: state(previous), context: raster)
+                    check(MacAdjustmentTransfer.values(applied, isRaw: false) == MacAdjustmentTransfer.values(state(direct), isRaw: false),
+                        "Builtin RAW recipe matches direct raster application: \(recipe.id), strength \(strength)")
+                    check(try MacAdjustmentTransfer.prepare(payload: frozen, target: applied, context: raster) == applied,
+                        "Repeating builtin RAW recipe is unchanged")
+                }
+                source.tint = recipe.tintDelta + 1
+                let edited = try MacAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
+                rejects("Manually edited full recipe tint remains incompatible with raster") {
+                    _ = try MacAdjustmentTransfer.prepare(payload: edited, target: state(previous), context: raster)
+                }
+                source.tint = recipe.tintDelta; source.whiteBalanceMode = .custom; source.temperature = 5400
+                let fixed = try MacAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
+                rejects("Full recipe with fixed WB remains incompatible with raster") {
+                    _ = try MacAdjustmentTransfer.prepare(payload: fixed, target: state(previous), context: raster)
+                }
+            }
+        }
     }
 
     static func neutralRawRequestsOnRaster() throws {

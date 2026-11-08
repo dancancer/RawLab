@@ -6,7 +6,7 @@ data class AdjustmentTransferContext(val identifier: String, val isRaw: Boolean,
     val availableLookIDs: Set<String> = emptySet(), val builtinLookIDs: Map<String, String> = emptyMap(),
     val cameraTemperature: Float? = null, val cameraTint: Float? = null, val defaultExposureMode: Int = 1,
     val hasUncommittedDraft: Boolean = false, val validateLens: ((LensSettings) -> Unit)? = null,
-    val sourceSupportsProRAWHDR: Boolean = false)
+    val sourceSupportsProRAWHDR: Boolean = false, val recipeTintDefaults: Map<String, Float> = emptyMap())
 
 object AdjustmentTransfer {
     fun previewCapture(scope: AdjustmentScope, settings: EditSettings, committed: EditSettings,

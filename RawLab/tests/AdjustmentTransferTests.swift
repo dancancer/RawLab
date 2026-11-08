@@ -244,6 +244,8 @@ import Foundation
 
     static func main() throws {
         try neutralRawRequestsOnRaster()
+        try fullNeutralRecipeOnRaster()
+        try builtinRawRecipesOnRaster()
         try refinedRecipeTransfers()
         try toneCurve()
         try colorGrading()
@@ -400,6 +402,58 @@ import Foundation
             _ = try IOSAdjustmentTransfer.prepare(payload: partial, target: state(), context: missing)
         }
     }
+    static func fullNeutralRecipeOnRaster() throws {
+        var raster = raw; raster.isRaw = false
+        var target = RawSettings.default
+        target.exposureMode = .sensor
+        target.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
+        var source = target; source.whiteBalanceMode = .camera; source.tint = 0
+        let complete = try IOSAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
+        let applied = try IOSAdjustmentTransfer.prepare(payload: complete, target: state(target), context: raster)
+        check(applied != state(target) && applied.settings.tint == 0,
+            "Full neutral RAW recipe clears previous raster recipe tint and counts as changed")
+        check(IOSAdjustmentTransfer.values(applied.settings, context: raster)[AdjustmentTransferField.tint.rawValue] == .number(0),
+            "Full neutral recipe exposes zero logical tint")
+        check(try IOSAdjustmentTransfer.prepare(payload: complete, target: applied, context: raster) == applied,
+            "Repeating full neutral recipe is unchanged")
+    }
+
+    static func builtinRawRecipesOnRaster() throws {
+        var raster = raw; raster.isRaw = false
+        raster.availableLookIDs.formUnion(MasterRecipe.allRecipes.map { "recipe:\($0.id)" })
+        for recipe in MasterRecipe.allRecipes {
+            for strength in [0.0, 0.5, 1.0, 2.0] {
+                var source = RawSettings.default; source.applyMasterRecipe(recipe)
+                source.lutStrength = strength
+                var direct = RawSettings.default
+                direct.exposureMode = .sensor
+                direct.applyMasterRecipe(recipe); direct.lutStrength = strength
+                var previous = RawSettings.default
+                previous.exposureMode = .sensor
+                previous.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
+                for scope in [AdjustmentTransferScope.standard, .all] {
+                    let captured = try IOSAdjustmentTransfer.capture(scope: scope, snapshot: state(source), context: raw)
+                    let frozen = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: JSONEncoder().encode(captured))
+                    let applied = try IOSAdjustmentTransfer.prepare(payload: frozen, target: state(previous), context: raster)
+                    check(IOSAdjustmentTransfer.values(applied.settings, context: raster) == IOSAdjustmentTransfer.values(state(direct).settings, context: raster),
+                        "Builtin RAW recipe matches direct raster application: \(recipe.id), strength \(strength)")
+                    check(try IOSAdjustmentTransfer.prepare(payload: frozen, target: applied, context: raster) == applied,
+                        "Repeating builtin RAW recipe is unchanged")
+                }
+                source.tint = recipe.tintDelta + 1
+                let edited = try IOSAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
+                rejects("Manually edited full recipe tint remains incompatible with raster") {
+                    _ = try IOSAdjustmentTransfer.prepare(payload: edited, target: state(previous), context: raster)
+                }
+                source.tint = recipe.tintDelta; source.whiteBalanceMode = .custom; source.temperature = 5400
+                let fixed = try IOSAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
+                rejects("Full recipe with fixed WB remains incompatible with raster") {
+                    _ = try IOSAdjustmentTransfer.prepare(payload: fixed, target: state(previous), context: raster)
+                }
+            }
+        }
+    }
+
     static func neutralRawRequestsOnRaster() throws {
         var raster = raw; raster.identifier = "target.jpg"; raster.isRaw = false
         var rasterSettings = RawSettings.default; rasterSettings.exposureMode = .sensor
