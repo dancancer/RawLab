@@ -69,6 +69,17 @@ for target in targets:
     if raw_fixture := os.environ.get('RAWLAB_DOCUMENT_IMPORT_RAW'):
         shutil.copyfile(raw_fixture, documents / 'RawLabRawAsJPEG.jpeg')
         target['EnvironmentVariables']['RAWLAB_DOCUMENT_IMPORT_RAW'] = '1'
+    if os.environ.get('RAWLAB_DOCUMENT_IMPORT_TEST', '').endswith('/testIPadJPEGPreviewResolvesFineDetailAfterZoom'):
+        width, height = 7008, 4672
+        stripes = (b'\x18' * 9 + b'\xe8' * 9) * (width // 6)
+        encoder = zlib.compressobj()
+        pixels = b''.join(encoder.compress(b'\0' + stripes) for _ in range(height)) + encoder.flush()
+        chart = out / 'detail.png'
+        chart.write_bytes(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+                          + chunk(b'IDAT', pixels) + chunk(b'IEND', b''))
+        subprocess.run(['/usr/bin/sips', '-s', 'format', 'jpeg', '-s', 'formatOptions', 'best', str(chart),
+                        '--out', str(documents / 'RawLabDetailFixture.jpeg')], check=True, stdout=subprocess.DEVNULL)
+        chart.unlink()
     values = '\n'.join(f'{i & 1} {(i >> 1) & 1} {(i >> 2) & 1}' for i in range(8)) + '\n'
     (documents / 'RawLabImportFixture.cube').write_text(
         '#Gamma:F-Log2 to Test\n#Gamut:F-Gamut to ITU-R BT.709\nLUT_3D_SIZE 2\n' + values)
@@ -94,11 +105,16 @@ for target in targets:
 plistlib.dump(config, (out / 'document-import.xctestrun').open('wb'))
 PY
 STATUS=0
+TEST_FILTERS=(-only-testing:"$TEST_FILTER")
+# The large-photo detail check requires an iPad and its own fixture; select it explicitly.
+if [[ "${RAWLAB_DOCUMENT_IMPORT_TEST:-}" != */testIPadJPEGPreviewResolvesFineDetailAfterZoom ]]; then
+    TEST_FILTERS+=(-skip-testing:RawLabUITests/DocumentImportUITests/testIPadJPEGPreviewResolvesFineDetailAfterZoom)
+fi
 xcodebuild test-without-building -xctestrun "$OUT/document-import.xctestrun" \
     -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_UDID" \
     -resultBundlePath "$OUT/DocumentImport.xcresult" -parallel-testing-enabled NO \
     -collect-test-diagnostics never \
-    -only-testing:"$TEST_FILTER" \
+    "${TEST_FILTERS[@]}" \
     > "$OUT/document-import-ui.log" 2>&1 || STATUS=$?
 xcrun xcresulttool get test-results summary --path "$OUT/DocumentImport.xcresult" --compact > "$OUT/summary.json"
 python3 - "$OUT" <<'PY'

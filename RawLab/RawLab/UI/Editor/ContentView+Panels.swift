@@ -145,6 +145,7 @@ extension ContentView {
                                   overlayAvoidanceRect: photoComparisonControlBounds,
                                   onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) },
                                   hslTarget: hslTargetActive ? hslTargetInput : nil, hslTargetPoint: hslTargetPoint,
+                                  nativePixelSize: viewModel.viewportNativeSize, previewLongEdgeLimit: viewModel.viewportPreviewLimit,
                                   hdr:viewModel.hdrPresentation,referenceHDR:viewModel.hdrReference,hdrDisplay:hdrDisplay)
                         .id(viewModel.sourceRevision)
                         .frame(width: geometry.size.width, height: geometry.size.height)
