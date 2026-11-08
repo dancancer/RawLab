@@ -56,7 +56,7 @@ extension Sony2FujiProcessor {
     func displayImageFailure(_ status: sony2fuji_status) -> ProcessorError {
         switch status {
         case SONY2FUJI_STATUS_UNSUPPORTED:
-            return .nativeFailure(status, L10n.text("请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。"))
+            return .nativeFailure(status, L10n.text("请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB PNG、TIFF。"))
         case SONY2FUJI_STATUS_IO_ERROR:
             return .nativeFailure(status, L10n.text("无法读取照片，请检查文件和访问权限。"))
         case SONY2FUJI_STATUS_OUT_OF_MEMORY:

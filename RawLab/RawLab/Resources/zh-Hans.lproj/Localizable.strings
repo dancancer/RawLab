@@ -662,7 +662,7 @@
 "请输入不同的预设名称。" = "请输入不同的预设名称。";
 "请输入预设名称。" = "请输入预设名称。";
 "请选择" = "请选择";
-"请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。" = "请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。";
+"请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB PNG、TIFF。" = "请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB PNG、TIFF。";
 "调整" = "调整";
 "调整内容无法读取，请重新复制。" = "调整内容无法读取，请重新复制。";
 "调整前" = "调整前";

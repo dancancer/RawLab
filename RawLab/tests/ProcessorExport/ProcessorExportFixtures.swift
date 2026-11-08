@@ -21,7 +21,7 @@ extension ProcessorExportTests {
             check(message == "processing error", "generic process failure keeps the native associated value")
         } else { check(false, "generic process failure keeps its existing enum contract") }
         for (status, expected) in [
-            (SONY2FUJI_STATUS_UNSUPPORTED, "请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。"),
+            (SONY2FUJI_STATUS_UNSUPPORTED, "请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB PNG、TIFF。"),
             (SONY2FUJI_STATUS_IO_ERROR, "无法读取照片，请检查文件和访问权限。"),
             (SONY2FUJI_STATUS_OUT_OF_MEMORY, "内存不足，无法解码普通图片。"),
             (SONY2FUJI_STATUS_PROCESSING_ERROR, "无法解码普通图片：processing error")
