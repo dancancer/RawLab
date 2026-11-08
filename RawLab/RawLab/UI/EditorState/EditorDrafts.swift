@@ -280,7 +280,11 @@ extension ContentView {
     }
 
     func cancelDraftNavigation() {
-        pendingSystemPhotoURLs = []
+        let skippedSystemPhoto = !pendingSystemPhotoURLs.isEmpty
+        if skippedSystemPhoto {
+            let skipped = pendingSystemPhotoURLs.removeFirst()
+            for url in skipped { PhotoImportFile.release(url) }
+        }
         pendingCollectionNavigation = nil
         pendingAdjustmentAction = nil
         pendingFileImport = false
@@ -290,6 +294,10 @@ extension ContentView {
         resetRestoreTool = nil
         resetIntentSource = nil
         resetWaitingForReady = false
+        if skippedSystemPhoto {
+            // 让确认框先完成 dismiss，再尝试下一条系统事件，避免同一轮重开确认框。
+            DispatchQueue.main.async { continueSystemPhotoImport() }
+        }
     }
 
     var resetSnapshot: PhotoEditState {

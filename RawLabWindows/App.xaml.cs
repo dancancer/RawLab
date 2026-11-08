@@ -4,20 +4,26 @@ using System.Windows.Threading;
 namespace RawLab.Windows;
 public partial class App : Application
 {
-    private readonly Queue<string[]> systemPhotoRequests = new();
+    private readonly SystemPhotoOpenQueue systemPhotoRequests = new();
     private MainWindow? systemEditor;
     private DispatcherTimer? systemPhotoTimer;
     private bool drainingSystemPhotos;
 
-    internal void EnqueueSystemPhotos(string[] paths)
+    internal bool EnqueueSystemPhotos(string[] paths)
     {
-        if (paths.Length == 0) return;
-        systemPhotoRequests.Enqueue(paths);
-        systemPhotoTimer ??= new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background,
-            (_, _) => DrainSystemPhotos(), Dispatcher);
-        systemPhotoTimer.Start();
-        DrainSystemPhotos();
+        if (Dispatcher.HasShutdownStarted || !systemPhotoRequests.Enqueue(paths, DateTimeOffset.UtcNow)) return false;
+        if (paths.Length > 0)
+        {
+            try
+            {
+                if (Dispatcher.BeginInvoke(new Action(() => systemPhotoTimer?.Start())).Status == DispatcherOperationStatus.Aborted)
+                    return false;
+            }
+            catch (InvalidOperationException) { return false; }
+        }
+        return true;
     }
+    internal void SetSystemPhotoAdmission(bool accepting) => systemPhotoRequests.Accepting = accepting;
 
     private void DrainSystemPhotos()
     {
@@ -25,12 +31,12 @@ public partial class App : Application
         drainingSystemPhotos = true;
         try
         {
-            while (systemPhotoRequests.Count > 0 && systemEditor?.IsLoaded == true)
+            while (systemEditor?.IsLoaded == true && systemPhotoRequests.Peek(DateTimeOffset.UtcNow) is { } paths)
             {
-                if (!systemEditor.TryOpenSystemPhotos(systemPhotoRequests.Peek())) break;
-                systemPhotoRequests.Dequeue();
+                if (!systemEditor.TryOpenSystemPhotos(paths)) break;
+                systemPhotoRequests.RemoveFirst();
             }
-            if (systemPhotoRequests.Count == 0) systemPhotoTimer?.Stop();
+            if (!systemPhotoRequests.HasRequests) systemPhotoTimer?.Stop();
         }
         finally { drainingSystemPhotos = false; }
     }
@@ -57,6 +63,10 @@ public partial class App : Application
         Microsoft.Win32.SystemEvents.UserPreferenceChanged+=preferencesChanged;
         Exit+=(_,_)=>{SystemParameters.StaticPropertyChanged-=parametersChanged;Microsoft.Win32.SystemEvents.UserPreferenceChanged-=preferencesChanged;};
         base.OnStartup(e);
+        systemPhotoTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(100), DispatcherPriority.Background,
+            (_, _) => DrainSystemPhotos(), Dispatcher);
+        systemPhotoTimer.Start();
+        Exit += (_, _) => SetSystemPhotoAdmission(false);
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         var version = typeof(App).Assembly.GetName().Version;
         var current = version?.ToString(3) ?? "unknown";

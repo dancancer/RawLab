@@ -348,6 +348,8 @@
     <string name="reset_all_title">"Reset all adjustments?"</string>
     <string name="reset_effect">"Reset %1$s"</string>
     <string name="select_photo">"Choose photo"</string>
+    <string name="system_open_photo_too_large">"The photo file exceeds 1 GiB and cannot be imported."</string>
+    <string name="system_open_storage_full">"There is not enough storage space to import the photo."</string>
     <string name="system_open_unsupported_photo">"Unsupported image file"</string>
     <string name="tool_raw_lens_only">"Lens correction is available only for RAW photos."</string>
     <string name="tool_select_look_first">"Select a look or recipe first."</string>

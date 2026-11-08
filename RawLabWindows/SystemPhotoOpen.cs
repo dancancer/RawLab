@@ -1,6 +1,8 @@
 using System.Buffers.Binary;
 using System.IO;
 using System.IO.Pipes;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -58,6 +60,29 @@ internal static class SystemPhotoOpen
         return paths;
     }
 
+    [DllImport("user32.dll")]
+    private static extern bool AllowSetForegroundWindow(uint processId);
+
+    internal static async Task<UpdateRunLease?> AcquireOrForwardAsync(string directory, string name, string[] paths,
+        int timeoutMilliseconds = 5000)
+    {
+        var elapsed = Stopwatch.StartNew();
+        while (true)
+        {
+            try { return new UpdateRunLease(directory); }
+            catch (IOException error) when (error.Message == "other_instance")
+            {
+                if (paths.Length > 0)
+                {
+                    if (OperatingSystem.IsWindows()) AllowSetForegroundWindow(uint.MaxValue);
+                    if (await ForwardAsync(name, paths, 200)) return null;
+                }
+                if (elapsed.ElapsedMilliseconds >= timeoutMilliseconds) throw;
+                await Task.Delay(100);
+            }
+        }
+    }
+
     internal static async Task<bool> ForwardAsync(string name, string[] paths, int timeoutMilliseconds = 5000)
     {
         try
@@ -80,9 +105,9 @@ internal sealed class SystemPhotoOpenServer : IDisposable
     internal string Name { get; }
     private readonly CancellationTokenSource stop = new();
     private readonly Task listening;
-    private readonly Action<string[]> received;
+    private readonly Func<string[], bool> received;
 
-    internal SystemPhotoOpenServer(string name, Action<string[]> received)
+    internal SystemPhotoOpenServer(string name, Func<string[], bool> received)
     {
         Name = name; this.received = received;
         listening = Task.Run(ListenAsync);
@@ -101,13 +126,18 @@ internal sealed class SystemPhotoOpenServer : IDisposable
                 using var request = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
                 request.CancelAfter(TimeSpan.FromSeconds(5));
                 var paths = await SystemPhotoOpen.ReadAsync(pipe, request.Token);
-                received(paths);
-                await pipe.WriteAsync(new byte[] { 1 }, request.Token);
+                var accepted = !stop.IsCancellationRequested && received(paths);
+                await pipe.WriteAsync(new byte[] { accepted ? (byte)1 : (byte)0 }, request.Token);
                 await pipe.FlushAsync(request.Token);
             }
             catch (OperationCanceledException) when (stop.IsCancellationRequested) { break; }
+            catch (UnauthorizedAccessException) { break; }
+            catch (ArgumentException) { break; }
             catch (Exception error) when (error is IOException or JsonException or OperationCanceledException)
-            { }
+            {
+                try { await Task.Delay(100, stop.Token); }
+                catch (OperationCanceledException) { break; }
+            }
         }
     }
 
@@ -115,7 +145,48 @@ internal sealed class SystemPhotoOpenServer : IDisposable
     {
         stop.Cancel();
         try { listening.GetAwaiter().GetResult(); }
-        catch (OperationCanceledException) { }
+        // 监听异常不能在主窗口已经关闭后变成用户可见的启动错误。
+        catch (Exception) { }
         stop.Dispose();
     }
+}
+
+internal sealed class SystemPhotoOpenQueue
+{
+    private sealed class Request(string[] paths, DateTimeOffset started)
+    {
+        internal string[] Paths = paths;
+        internal DateTimeOffset Started = started;
+        internal bool Sealed;
+    }
+    private readonly List<Request> requests = [];
+    private bool accepting = true;
+    internal bool Accepting { get { lock (requests) return accepting; } set { lock (requests) accepting = value; } }
+    internal bool HasRequests { get { lock (requests) return requests.Count > 0; } }
+
+    internal bool Enqueue(string[] paths, DateTimeOffset now)
+    {
+        lock (requests)
+        {
+            if (!accepting) return false;
+            if (paths.Length == 0) return true;
+            var last = requests.LastOrDefault();
+            if (last != null && !last.Sealed && now - last.Started < TimeSpan.FromMilliseconds(400) &&
+                last.Paths.Length + paths.Length <= 1024)
+                last.Paths = SystemPhotoOpen.Paths(last.Paths.Concat(paths));
+            else requests.Add(new(paths, now));
+            return true;
+        }
+    }
+    internal string[]? Peek(DateTimeOffset now)
+    {
+        lock (requests)
+        {
+            if (requests.Count == 0 || now - requests[0].Started < TimeSpan.FromMilliseconds(400)) return null;
+            // 首次交给 UI 后固定边界，保存失败或模态等待期间不能再合并后续请求。
+            requests[0].Sealed = true;
+            return requests[0].Paths;
+        }
+    }
+    internal void RemoveFirst() { lock (requests) requests.RemoveAt(0); }
 }

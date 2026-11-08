@@ -146,6 +146,13 @@ struct EditorView: View {
             .dropDestination(for: URL.self) { urls, _ in
                 guard !model.exporting else { return false }
                 let directoriesAdded = library.addDirectories(urls)
+                if urls.count == 1, let url = urls.first?.standardizedFileURL.resolvingSymlinksInPath(),
+                   url.isFileURL, !directoriesAdded,
+                   (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+                    // 单文件沿用显影入口，让不支持或损坏的文件显示原有错误。
+                    openWorkspacePhoto(url)
+                    return true
+                }
                 let photos = DirectoryContents.photoURLs(from: urls)
                 guard let first = photos.first else { return directoriesAdded }
                 if photos.count == 1 { openWorkspacePhoto(first) }

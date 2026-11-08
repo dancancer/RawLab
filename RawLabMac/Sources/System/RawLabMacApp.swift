@@ -58,6 +58,7 @@ struct RawLabMacApp: App {
         NSApplication.shared.setActivationPolicy(.regular)
     }
     var body: some Scene {
+        let _ = bindSystemOpenWindow()
         Window("RawLab Mac", id: "editor") {
             Group {
                 if let model = runtime.model, let updates = runtime.controller {
@@ -139,6 +140,10 @@ struct RawLabMacApp: App {
     }
 
     private var installationActive: Bool { runtime.controller?.blocksEditing ?? false }
+
+    private func bindSystemOpenWindow() {
+        appDelegate.openEditorWindow = { openWindow(id: "editor") }
+    }
 
     private func retrySystemOpen() {
         DispatchQueue.main.async { appDelegate.retryOpenPhotos() }

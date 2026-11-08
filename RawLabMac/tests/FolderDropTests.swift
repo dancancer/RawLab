@@ -46,6 +46,12 @@ import Foundation
         try check(DirectoryContents.photoURLs(from: [first, unsupported, URL(string: "https://example.com/a.jpg")!,
                                                     first.appendingPathComponent("missing.dng")]).isEmpty,
                   "Directories, unsupported formats, remote URLs and missing paths cannot enter photo routes")
+        let photoAlias = temporary.appendingPathComponent("linked.DNG")
+        try fm.createSymbolicLink(at: photoAlias, withDestinationURL: photo)
+        try check(DirectoryContents.photoURLs(from: [photoAlias]) == [photo],
+                  "A photo symlink is resolved before regular-file validation")
+        try check(DirectoryContents.photoURLs(from: [photoAlias, photo]) == [photo],
+                  "Symlink and source share one canonical collection entry")
         try fm.removeItem(at: jpeg)
         let alias = temporary.appendingPathComponent("first-link")
         try fm.createSymbolicLink(at: alias, withDestinationURL: first)

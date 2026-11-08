@@ -63,6 +63,7 @@ internal static class UiDetailChecks
                     AboutFooter(window,output,check);
                     ToolCaptions(window,language,check);
                     WholeText(window,language,check);
+                    SystemOpenModal(window,output,check);
                 }
                 finally
                 {
@@ -73,6 +74,19 @@ internal static class UiDetailChecks
             }
         }
         finally { Loc.Initialize(previous);app.Shutdown(); }
+    }
+
+    private static void SystemOpenModal(MainWindow window,string output,Action<bool,string> check)
+    {
+        var input=Path.Combine(output,"unsupported-system-open.txt");File.WriteAllText(input,"not a photo");
+        var source=window.CollectionSourcePath;
+        window.IsEnabled=false;
+        try {check(!window.TryOpenSystemPhotos([input]) && window.CollectionSourcePath==source,"A disabled editor retains system requests");}
+        finally {window.IsEnabled=true;}
+        System.Windows.Interop.ComponentDispatcher.PushModal();
+        try {check(!window.TryOpenSystemPhotos([input]) && window.CollectionSourcePath==source,"A nested modal loop retains system requests");}
+        finally {System.Windows.Interop.ComponentDispatcher.PopModal();}
+        check(window.TryOpenSystemPhotos([input]),"After the modal loop an unsupported request reports its error and is consumed");
     }
 
     // 工具栏、工具条与“自动”按钮：每个功能一个图标，不能两个按钮长得一样

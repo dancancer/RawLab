@@ -8,6 +8,7 @@ class SystemPhotoIntentTest {
         assertEquals(listOf("content://photos/one"), SystemPhotoIntent.uris("android.intent.action.VIEW",
             data = "content://photos/one", streams = listOf("content://photos/two")))
         assertEquals(emptyList<String>(), SystemPhotoIntent.uris("android.intent.action.VIEW", data = "https://example.com/a.jpg"))
+        assertEquals(emptyList<String>(), SystemPhotoIntent.uris("android.intent.action.VIEW", data = "file:///sdcard/photo.jpg"))
     }
     @Test fun sendUsesStreamOrClipFallback() {
         assertEquals(listOf("content://photos/one"), SystemPhotoIntent.uris("android.intent.action.SEND",
@@ -16,7 +17,7 @@ class SystemPhotoIntentTest {
             clip = listOf("content://photos/two", "content://photos/three")))
     }
     @Test fun sendMultiplePreservesEveryUniqueGrantedUri() {
-        assertEquals(listOf("content://photos/one", "content://photos/two", "file:///sdcard/three.x3f"),
+        assertEquals(listOf("content://photos/one", "content://photos/two"),
             SystemPhotoIntent.uris("android.intent.action.SEND_MULTIPLE",
                 streams = listOf("content://photos/one", "content://photos/two"),
                 clip = listOf("content://photos/two", "file:///sdcard/three.x3f", "https://example.com/no.jpg")))

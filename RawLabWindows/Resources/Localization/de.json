@@ -94,6 +94,7 @@
     "不支持此处理版本，原有记录未被覆盖。": "Diese Verarbeitungsversion wird nicht unterstützt. Die gespeicherten Bearbeitungen wurden nicht überschrieben.",
     "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。": "Dieses Foto, dieser Look oder diese Verarbeitungsart wird nicht unterstützt. Prüfen Sie die Dateikompatibilität und Verarbeitungseinstellungen.",
     "不支持此相机 RAW 的 HDR 显影。": "Die HDR-Entwicklung wird für dieses Kamera-RAW nicht unterstützt.",
+    "不是支持的图像文件": "Nicht unterstützte Bilddatei",
     "不能覆盖原始文件。": "Die Originaldatei kann nicht überschrieben werden.",
     "不适用": "Nicht anwendbar",
     "丢弃当前未保存修改并重新载入调整？": "Ungespeicherte Änderungen verwerfen und Anpassungen neu laden?",

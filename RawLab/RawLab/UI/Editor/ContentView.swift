@@ -41,7 +41,7 @@ struct ContentView: View {
     @State var photoComparisonControlBounds = CGRect.zero
     @State var pendingPhotoImport = false
     @State var pendingFileImport = false
-    @State var pendingSystemPhotoURLs: [URL] = []
+    @State var pendingSystemPhotoURLs: [[URL]] = []
     var showingBefore: Bool {
         get { photoViewing.holdingBefore }
         nonmutating set {
@@ -153,10 +153,10 @@ struct ContentView: View {
         NavigationStack {
             GeometryReader { geometry in
                 editorWorkspace(size: geometry.size, accessibility: dynamicTypeSize.isAccessibilitySize)
-                    .dropDestination(for: URL.self) { urls, _ in
-                        let files = PhotoImportFile.fileURLs(from: urls)
-                        guard !files.isEmpty else { return false }
-                        requestSystemPhotoImport(files)
+                    .dropDestination(for: PhotoImportFile.self) { files, _ in
+                        let urls = stageSystemPhotoImport(files)
+                        guard !urls.isEmpty else { return false }
+                        requestSystemPhotoImport(urls)
                         return true
                     }
             }

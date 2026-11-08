@@ -47,6 +47,10 @@ class SystemPhotoStorageTest {
             override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?) = 0
             override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?) = 0
             override fun openAssetFile(uri: Uri, mode: String): AssetFileDescriptor {
+                // wrap 会把 file URI 也交给 provider；私有副本应按真实 resolver 的本地文件规则打开。
+                if (uri.scheme == ContentResolver.SCHEME_FILE) {
+                    return requireNotNull(base.contentResolver.openAssetFileDescriptor(uri, mode))
+                }
                 if (revoked) throw SecurityException("grant revoked")
                 return AssetFileDescriptor(ParcelFileDescriptor.open(source, ParcelFileDescriptor.MODE_READ_ONLY), 0, source.length())
             }
@@ -62,9 +66,11 @@ class SystemPhotoStorageTest {
         try {
             val bytes = source.readBytes()
             val stable = PhotoStorage(context).use { it.retainSystemPhoto(external) }
+            assertEquals(ContentResolver.SCHEME_FILE, stable.scheme)
             revoked = true
-            source.delete()
+            assertTrue(source.delete())
             assertThrows(SecurityException::class.java) { resolver.openInputStream(external) }
+            assertThrows(SecurityException::class.java) { resolver.openAssetFileDescriptor(external, "r") }
             val edits = EditStore(File(root, "edits"))
             val identity = PhotoStorage(context).use { storage ->
                 val photo = storage.import(stable)

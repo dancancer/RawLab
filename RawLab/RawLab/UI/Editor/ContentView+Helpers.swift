@@ -342,8 +342,31 @@ extension ContentView {
     }
 
     func requestSystemPhotoImport(_ urls: [URL]) {
-        pendingSystemPhotoURLs = PhotoImportFile.fileURLs(from: pendingSystemPhotoURLs + urls)
+        pendingSystemPhotoURLs = PhotoImportFile.appendSystemPhotoEvent(urls, to: pendingSystemPhotoURLs)
         continueSystemPhotoImport()
+    }
+
+    func stageSystemPhotoImport(_ files: [PhotoImportFile]) -> [URL] {
+        var seen = Set<URL>()
+        var transferred = Set<URL>()
+        return files.compactMap { file in
+            let sourceURL = file.source.url.standardizedFileURL
+            guard seen.insert(sourceURL).inserted else {
+                if !transferred.contains(sourceURL) { PhotoImportFile.release(file.source.url) }
+                return nil
+            }
+            do {
+                let staged = try PhotoImportFile.renameRetainedSource(file.source.url,
+                                                                       filename: file.source.displayName)
+                transferred.insert(sourceURL)
+                return staged
+            } catch {
+                PhotoImportFile.release(file.source.url)
+                viewModel.reportError(error, operation: .photoImport, stage: "stageDrop",
+                                      context: ["entryPoint": "drop"])
+                return nil
+            }
+        }
     }
 
     func continueSystemPhotoImport() {
@@ -353,9 +376,9 @@ extension ContentView {
         if isEditorDraftChanged { draftExitPresented = true; return }
         if isEditorDraftActive { activateEditorTool(.adjustment(.exposure)) }
         guard viewModel.saveCurrentSettings(settings) else { return }
-        let urls = pendingSystemPhotoURLs
-        pendingSystemPhotoURLs = []
-        importFromFile(.success(urls))
+        guard let event = PhotoImportFile.consumeSystemPhotoEvent(from: pendingSystemPhotoURLs) else { return }
+        guard importFromFile(.success(event.current)) else { return }
+        pendingSystemPhotoURLs = event.remaining
     }
 
     func continueEditorImport() {
@@ -465,20 +488,25 @@ extension ContentView {
     }
 
     @MainActor
-    func importFromFile(_ result: Result<[URL], Error>) {
-        guard !editorBusy, !isEditorDraftChanged else { return }
+    @discardableResult
+    func importFromFile(_ result: Result<[URL], Error>) -> Bool {
+        guard !editorBusy, !isEditorDraftChanged else { return false }
         let urls = PhotoImportFile.fileURLs(from: (try? result.get()) ?? [])
         guard let url = urls.first else {
             if case .failure(let error) = result, !(error is CancellationError) {
                 viewModel.reportError(error, operation: .photoImport, stage: "filePicker", context: ["entryPoint": "files"])
             }
-            return
+            return false
         }
-        guard viewModel.saveCurrentSettings(settings) else { return }
+        guard viewModel.saveCurrentSettings(settings) else { return false }
         if urls.count > 1 {
             isImporting = true
             photoImportTask = Task { @MainActor in
-                defer { photoImportTask = nil; isImporting = false }
+                defer {
+                    for url in urls { PhotoImportFile.release(url) }
+                    photoImportTask = nil
+                    isImporting = false
+                }
                 for url in urls {
                     guard !Task.isCancelled else { return }
                     do {
@@ -494,7 +522,7 @@ extension ContentView {
                 viewModel.batchSelection.selection.returnToCollection()
                 showingBatchSelection = true
             }
-            return
+            return true
         }
         photoImportTask?.cancel()
         let requestID = UUID()
@@ -503,6 +531,7 @@ extension ContentView {
         isImporting = true
         showingBefore = false
         photoImportTask = Task {
+            defer { PhotoImportFile.release(url) }
             let (prepared, context): (Result<(PhotoImportSource, PhotoIdentity?), Error>, [String: String]) = await Task.detached(priority: .userInitiated) {
                 let accessing = url.startAccessingSecurityScopedResource()
                 defer { if accessing { url.stopAccessingSecurityScopedResource() } }
@@ -539,6 +568,7 @@ extension ContentView {
                 }
             }
         }
+        return true
     }
 
     func openBatchExport() {

@@ -50,9 +50,22 @@ class SystemOpenDocumentTests(unittest.TestCase):
         manifest = ET.parse(ROOT / "RawLabAndroid/app/src/main/AndroidManifest.xml").getroot()
         activity = next(value for value in manifest.findall("application/activity")
                         if value.get(namespace + "name") == ".MainActivity")
-        self.assertEqual(activity.get(namespace + "launchMode"), "singleTask")
+        self.assertNotEqual(activity.get(namespace + "launchMode"), "singleTask")
+        receivers = [value for value in manifest.findall("application/activity")
+                     if any("android.intent.action.VIEW" in
+                            [item.get(namespace + "name") for item in entry.findall("action")]
+                            for entry in value.findall("intent-filter"))]
+        self.assertEqual(len(receivers), 1)
+        receiver = receivers[0]
+        self.assertIsNot(receiver, activity)
+        self.assertEqual(receiver.get(namespace + "exported"), "true")
+        self.assertEqual(receiver.get(namespace + "noHistory"), "true")
+        self.assertEqual(receiver.get(namespace + "excludeFromRecents"), "true")
+        self.assertEqual(receiver.get(namespace + "theme"), "@android:style/Theme.NoDisplay")
+        self.assertNotIn("file", [item.get(namespace + "scheme")
+                                  for item in receiver.findall("intent-filter/data")])
         for action in ("VIEW", "SEND", "SEND_MULTIPLE"):
-            matches = [value for value in activity.findall("intent-filter")
+            matches = [value for value in receiver.findall("intent-filter")
                        if "android.intent.action." + action in
                        [item.get(namespace + "name") for item in value.findall("action")]]
             self.assertTrue(matches, action)

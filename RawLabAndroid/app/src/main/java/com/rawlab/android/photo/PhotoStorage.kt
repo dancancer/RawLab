@@ -123,15 +123,37 @@ class PhotoStorage(
     } catch (_: Exception) { null }
 
     fun retainSystemPhoto(uri: Uri): Uri {
+        runCatching {
+            resolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
         val name = runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
             if (it.moveToFirst()) it.getString(0) else null
         } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "RAW"
         val mime = resolver.getType(uri)
+        val expectedSize = runCatching {
+            resolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
+                descriptor.declaredLength.takeIf { it >= 0L }
+            }
+        }.getOrNull() ?: -1L
         val input = resolver.openInputStream(uri) ?: throw IOException(AppStrings.text(R.string.message_unable_to_read_file))
-        val file = try { input.use { SystemPhotoStore.retain(systemPhotos, it, name, mime) } }
+        val temporary = File(context.cacheDir, "system-photo-imports")
+        val file = try { input.use {
+            SystemPhotoStore.retain(systemPhotos, it, name, mime, temporaryDirectory = temporary, expectedBytes = expectedSize)
+        } }
         catch (_: UnsupportedSystemPhoto) { throw IOException(AppStrings.text(R.string.system_open_unsupported_photo)) }
         catch (_: ChangedSystemPhoto) { throw IOException(AppStrings.text(R.string.collection_source_changed)) }
+        catch (_: SystemPhotoTooLarge) { throw IOException(AppStrings.text(R.string.system_open_photo_too_large)) }
+        catch (_: SystemPhotoStorageFull) { throw IOException(AppStrings.text(R.string.system_open_storage_full)) }
         return Uri.fromFile(file)
+    }
+
+    internal fun isRetainedSystemPhoto(uri: Uri): Boolean {
+        if (uri.scheme != "file") return false
+        val file = uri.path?.let(::File) ?: return false
+        return runCatching {
+            file.isFile && file.parentFile?.canonicalFile == systemPhotos.canonicalFile &&
+                file.nameWithoutExtension.matches(Regex("[0-9a-fA-F]{64}"))
+        }.getOrDefault(false)
     }
 
     fun import(uri: Uri): ImportedPhoto {

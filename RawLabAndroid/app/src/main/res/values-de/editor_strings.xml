@@ -348,6 +348,8 @@
     <string name="reset_all_title">"Alle Anpassungen zurücksetzen?"</string>
     <string name="reset_effect">"%1$s zurücksetzen"</string>
     <string name="select_photo">"Foto auswählen"</string>
+    <string name="system_open_photo_too_large">"Die Fotodatei ist größer als 1 GiB und kann nicht importiert werden."</string>
+    <string name="system_open_storage_full">"Es ist nicht genügend Speicherplatz vorhanden, um das Foto zu importieren."</string>
     <string name="system_open_unsupported_photo">"Nicht unterstützte Bilddatei"</string>
     <string name="tool_raw_lens_only">"Die Objektivkorrektur ist nur für RAW-Fotos verfügbar."</string>
     <string name="tool_select_look_first">"Wähle zuerst einen Look oder ein Rezept."</string>

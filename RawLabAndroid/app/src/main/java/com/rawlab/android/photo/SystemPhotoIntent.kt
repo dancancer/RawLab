@@ -9,6 +9,6 @@ internal object SystemPhotoIntent {
             "android.intent.action.SEND_MULTIPLE" -> streams + clip
             else -> emptyList()
         }
-        return candidates.filter { it.startsWith("content://") || it.startsWith("file:///") }.distinct()
+        return candidates.filter { it.startsWith("content://") }.distinct()
     }
 }

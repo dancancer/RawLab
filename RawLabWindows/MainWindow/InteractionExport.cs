@@ -192,6 +192,7 @@ public partial class MainWindow
         updateQuitApproved=false;
         CancelParameterInputs();CancelViewingInput();
         if(!ResolveTransformDraft() || !SaveEdits()){e.Cancel=true;return;}
+        if(Application.Current is App app)app.SetSystemPhotoAdmission(false);
         closing=true;
         ResetAITask();
         previewResize.Stop();

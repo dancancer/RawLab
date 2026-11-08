@@ -46,8 +46,13 @@ struct UsageTerminationTests {
         let first = URL(fileURLWithPath: "/tmp/one photo.dng")
         let second = URL(fileURLWithPath: "/tmp/second.jpg")
         let systemDelegate: NSApplicationDelegate = delegate
+        var requestedWindows = 0
+        delegate.openEditorWindow = { requestedWindows += 1 }
         systemDelegate.application?(application, open: [first, second])
         systemDelegate.application?(application, open: [second])
+        delegate.openEditorWindow = { requestedWindows += 1 }
+        drain()
+        check(requestedWindows == 1, "cold events and Scene rebinding request the singleton editor once before its runtime exists")
         var requests: [[URL]] = []
         var finishes: [(Bool) -> Void] = []
         delegate.openPhotos = { urls, finish in requests.append(urls); finishes.append(finish) }
@@ -61,9 +66,17 @@ struct UsageTerminationTests {
         finishes[2](true); drain()
         systemDelegate.application?(application, open: [first])
         check(requests == [[first, second], [second], [second], [first]], "warm requests reach the ready editor immediately")
+        drain()
+        check(requestedWindows == 2, "a warm event also reopens the singleton editor after its window was closed")
         finishes[3](true); drain()
         delegate.openPhotos = { urls, finish in requests.append(urls); finish(true) }
         check(requests.count == 4, "reattaching the editor does not replay consumed requests")
+        let earlyDelegate = RawLabMacDelegate()
+        earlyDelegate.application(application, open: [first])
+        var earlyWindows = 0
+        earlyDelegate.openEditorWindow = { earlyWindows += 1 }
+        drain()
+        check(earlyWindows == 1, "a document event arriving before Scene binding requests a window once binding is ready")
         let model = EditorModel()
         delegate.model = model
 

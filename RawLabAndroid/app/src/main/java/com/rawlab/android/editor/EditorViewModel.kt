@@ -61,7 +61,29 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-data class SystemPhotoOpenRequest(val uris: List<Uri>, val id: UUID = UUID.randomUUID())
+data class SystemPhotoOpenRequest(val uris: List<Uri>, val id: UUID = UUID.randomUUID(),
+    val externalRequestID: String? = null)
+
+private fun loadSystemPhotoRequestQueue(preferences: android.content.SharedPreferences): SystemPhotoRequestQueue {
+    val pending = mutableListOf<DurableSystemPhotoRequest>()
+    val processed = linkedSetOf<String>()
+    runCatching {
+        val values = org.json.JSONArray(preferences.getString("pending_requests", "[]"))
+        for (index in 0 until values.length()) {
+            val value = values.optJSONObject(index) ?: continue
+            val id = value.optString("id").takeIf { it.isNotBlank() } ?: continue
+            val uris = value.optJSONArray("uris")?.let { array ->
+                List(array.length()) { array.getString(it) }.distinct()
+            }.orEmpty()
+            if (uris.isNotEmpty()) pending += DurableSystemPhotoRequest(id, uris)
+        }
+    }
+    runCatching {
+        val values = org.json.JSONArray(preferences.getString("processed_requests", "[]"))
+        for (index in 0 until values.length()) processed += values.getString(index)
+    }
+    return SystemPhotoRequestQueue(pending, processed)
+}
 
 class EditorViewModel @JvmOverloads constructor(
     application: Application,
@@ -106,21 +128,71 @@ class EditorViewModel @JvmOverloads constructor(
     private val systemPhotoImportLock = Mutex()
     private val mutableSystemPhotoRequests = MutableStateFlow<List<SystemPhotoOpenRequest>>(emptyList())
     val systemPhotoRequests = mutableSystemPhotoRequests.asStateFlow()
+    private val systemPhotoQueueLock = Any()
+    private val systemPhotoQueuePreferences = application.getSharedPreferences("system-photo-requests", android.content.Context.MODE_PRIVATE)
+    private val systemPhotoRequestQueue = loadSystemPhotoRequestQueue(systemPhotoQueuePreferences)
 
-    fun receiveSystemPhotos(uris: List<Uri>) {
+    fun receiveSystemPhotos(uris: List<Uri>, requestID: String = UUID.randomUUID().toString()) {
         if (uris.isEmpty()) return
+        val durableID = requestID.ifBlank { UUID.randomUUID().toString() }
+        val accepted = synchronized(systemPhotoQueueLock) {
+            if (systemPhotoRequestQueue.isProcessed(durableID) || !systemPhotoRequestQueue.enqueue(durableID, uris.map(Uri::toString))) false
+            else {
+                saveSystemPhotoQueueLocked()
+                true
+            }
+        }
+        if (accepted) importSystemPhotos(durableID)
+    }
+
+    private fun restoreSystemPhotos() {
+        val pending = synchronized(systemPhotoQueueLock) { systemPhotoRequestQueue.ids() }
+        pending.forEach(::importSystemPhotos)
+    }
+
+    private fun importSystemPhotos(requestID: String) {
         viewModelScope.launch { systemPhotoImportLock.withLock {
+            val uris = synchronized(systemPhotoQueueLock) {
+                systemPhotoRequestQueue.uris(requestID).map(Uri::parse)
+            }
+            if (uris.isEmpty()) return@withLock
             val (retained, errors) = withContext(Dispatchers.IO) {
-                val results = uris.distinct().map { runCatching { storage.retainSystemPhoto(it) } }
+                val results = uris.distinct().map { uri -> runCatching {
+                    if (storage.isRetainedSystemPhoto(uri)) uri else storage.retainSystemPhoto(uri)
+                } }
                 results.mapNotNull { it.getOrNull() }.distinct() to results.mapNotNull { it.exceptionOrNull() }
             }
-            if (retained.isNotEmpty()) mutableSystemPhotoRequests.value += SystemPhotoOpenRequest(retained)
+            synchronized(systemPhotoQueueLock) {
+                systemPhotoRequestQueue.replace(requestID, retained.map(Uri::toString))
+                saveSystemPhotoQueueLocked()
+            }
+            if (retained.isNotEmpty()) mutableSystemPhotoRequests.value += SystemPhotoOpenRequest(retained,
+                externalRequestID = requestID)
             if (errors.isNotEmpty()) mutable.value = mutable.value.copy(error = failure(errors.first()))
         } }
     }
 
     fun consumeSystemPhotoRequest(request: SystemPhotoOpenRequest) {
         mutableSystemPhotoRequests.value = mutableSystemPhotoRequests.value.filterNot { it.id == request.id }
+        request.externalRequestID?.let { requestID -> synchronized(systemPhotoQueueLock) {
+            systemPhotoRequestQueue.consume(requestID)
+            saveSystemPhotoQueueLocked()
+        } }
+    }
+
+    private fun saveSystemPhotoQueueLocked() {
+        val pending = org.json.JSONArray().apply {
+            systemPhotoRequestQueue.pending().forEach { request ->
+                val uris = org.json.JSONArray().apply { request.uris.forEach(::put) }
+                put(org.json.JSONObject().put("id", request.id).put("uris", uris))
+            }
+        }
+        val processed = org.json.JSONArray().apply { systemPhotoRequestQueue.processed().forEach(::put) }
+        // 消费动作返回前同步落盘，进程若随后被杀也不会再次打开已消费输入。
+        systemPhotoQueuePreferences.edit()
+            .putString("pending_requests", pending.toString())
+            .putString("processed_requests", processed.toString())
+            .commit()
     }
 
     val batch = batches.active
@@ -194,6 +266,7 @@ class EditorViewModel @JvmOverloads constructor(
         editStore.initialResult.let { mutable.value = mutable.value.copy(saveState = it.state, saveError = it.message) }
         lookRevision = lookQueue.submit(LookWork.Load)
         batches.refreshPending()
+        restoreSystemPhotos()
     }
 
 

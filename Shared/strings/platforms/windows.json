@@ -1,5 +1,9 @@
 {
   "entries": {
+    "不是支持的图像文件": {
+      "formats": [],
+      "source": "不是支持的图像文件"
+    },
     "不支持此相机 RAW 的 HDR 显影。": {
       "formats": [],
       "source": "不支持此相机 RAW 的 HDR 显影。"

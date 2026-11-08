@@ -12,10 +12,13 @@ struct DirectoryContents {
 
     static func photoURLs(from urls: [URL]) -> [URL] {
         var seen = Set<URL>()
-        return urls.filter { url in
-            url.isFileURL && supportedExtensions.contains(url.pathExtension.lowercased()) &&
-                (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true &&
-                seen.insert(url.standardizedFileURL.resolvingSymlinksInPath()).inserted
+        return urls.compactMap { candidate in
+            guard candidate.isFileURL else { return nil }
+            let url = candidate.standardizedFileURL.resolvingSymlinksInPath()
+            guard supportedExtensions.contains(url.pathExtension.lowercased()),
+                  (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
+                  seen.insert(url).inserted else { return nil }
+            return url
         }
     }
 

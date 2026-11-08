@@ -4993,6 +4993,18 @@
       "source": "请将白平衡模式、色温和色调一起保存，再应用此预设。",
       "file": "editor_strings.xml",
       "types": []
+    },
+    "system_open_photo_too_large": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "照片文件超过 1 GiB，无法导入。",
+      "types": []
+    },
+    "system_open_storage_full": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "存储空间不足，无法导入照片。",
+      "types": []
     }
   },
   "overrides": {
@@ -5902,6 +5914,22 @@
       "es": "Base SDR Display P3 + mapa de ganancia HDR · ISO / XMP",
       "fr": "Base SDR Display P3 + carte de gain HDR · ISO / XMP",
       "ja": "Display P3 SDR ベース + HDR ゲインマップ · ISO / XMP"
+    },
+    "照片文件超过 1 GiB，无法导入。": {
+      "de": "Die Fotodatei ist größer als 1 GiB und kann nicht importiert werden.",
+      "en": "The photo file exceeds 1 GiB and cannot be imported.",
+      "es": "El archivo de foto supera 1 GiB y no se puede importar.",
+      "fr": "Le fichier photo dépasse 1 Gio et ne peut pas être importé.",
+      "ja": "写真ファイルが 1 GiB を超えているため、読み込めません。",
+      "zh-Hans": "照片文件超过 1 GiB，无法导入。"
+    },
+    "存储空间不足，无法导入照片。": {
+      "de": "Es ist nicht genügend Speicherplatz vorhanden, um das Foto zu importieren.",
+      "en": "There is not enough storage space to import the photo.",
+      "es": "No hay suficiente espacio de almacenamiento para importar la foto.",
+      "fr": "L’espace de stockage est insuffisant pour importer la photo.",
+      "ja": "空き容量が不足しているため、写真を読み込めません。",
+      "zh-Hans": "存储空间不足，无法导入照片。"
     }
   }
 }

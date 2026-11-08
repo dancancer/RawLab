@@ -90,7 +90,8 @@ class MainActivity : ComponentActivity() {
         }.getOrDefault(emptyList())
         val clip = intent.clipData?.let { data -> (0 until data.itemCount).mapNotNull { data.getItemAt(it).uri?.toString() } }.orEmpty()
         val uris = SystemPhotoIntent.uris(intent.action, intent.dataString, streams.map { it.toString() }, clip)
-        model.receiveSystemPhotos(uris.map(Uri::parse))
+        val requestID = intent.getStringExtra(SystemPhotoForwarding.EXTRA_REQUEST_ID)
+        model.receiveSystemPhotos(uris.map(Uri::parse), requestID ?: java.util.UUID.randomUUID().toString())
     }
 }
 
@@ -138,8 +139,8 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     val systemPhotoRequests by model.systemPhotoRequests.collectAsStateWithLifecycle()
     val batch by model.batch.collectAsStateWithLifecycle()
     val pendingBatch by model.pendingBatch.collectAsStateWithLifecycle()
-    LaunchedEffect(systemPhotoRequests.firstOrNull()?.id, batch) {
-        if (systemPhotoRequests.isNotEmpty() && batch == null) { album = false; collectionOpen = false }
+    LaunchedEffect(systemPhotoRequests.firstOrNull()?.id, batch, collection.busy) {
+        if (systemPhotoRequests.isNotEmpty() && batch == null && !collection.busy) { album = false; collectionOpen = false }
     }
     val owner = LocalLifecycleOwner.current
     val context = LocalContext.current

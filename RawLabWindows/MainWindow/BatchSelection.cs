@@ -41,9 +41,9 @@ public partial class MainWindow
     // 用户拒绝导航时消费请求；只有暂时阻塞或保存失败才交给定时器重试。
     internal bool TryOpenSystemPhotos(IEnumerable<string> paths)
     {
-        if(CollectionBusy || editGesture!=null || adjustmentReloadRequired || RetrySave.Visibility==Visibility.Visible)return false;
+        if(System.Windows.Interop.ComponentDispatcher.IsThreadModal || !IsEnabled || CollectionBusy || editGesture!=null || adjustmentReloadRequired || RetrySave.Visibility==Visibility.Visible)return false;
         var photos=SystemPhotoOpen.Paths(paths).Where(path=>File.Exists(path) && LibraryEntry.IsImage(path)).ToArray();
-        if(photos.Length==0)return true;
+        if(photos.Length==0){SetStatus(() => Loc.Text("不是支持的图像文件"),true);return true;}
         if(WindowState==WindowState.Minimized)WindowState=WindowState.Normal;
         Show();Activate();
         if(photos.Length==1) {

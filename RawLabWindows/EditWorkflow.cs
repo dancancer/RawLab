@@ -229,6 +229,7 @@ public partial class MainWindow
     private void RecoverFailedClose(BatchExportWindow window)
     {
         closing=false;IsEnabled=true;
+        if(Application.Current is App app)app.SetSystemPhotoAdmission(true);
         ResumePreview();QueueThumbnailRefresh();
         RefreshControls();RefreshBatchNotice();
         SetStatus(window.Job.Error ?? Loc.Text("任务未保存。"),true);
