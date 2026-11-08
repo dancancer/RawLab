@@ -63,8 +63,12 @@ struct AdjustmentHistoryModelTests {
                   "cancel restores the exact gesture start and consumes the observer echo")
         try check(store.readState(for: identity).hasSameAdjustments(as: revision), "cancel does not write or record history")
         let undo = model.performAdjustmentHistory(undo: true)
-        try check(undo.count == 1 && undo[0].status == .applied && model.adjustmentRestoredSettings == .default,
-                  "undo restores the absent original and publishes default editor settings")
+        try check(undo.count == 1, "undo returns exactly one photo outcome")
+        try check(undo[0].status == .applied, "undo applies the original gesture transaction")
+        var rasterDefaults = RawSettings.default
+        rasterDefaults.exposureMode = .sensor
+        try check(model.adjustmentRestoredSettings == rasterDefaults,
+                  "undo publishes the complete raster defaults with sensor exposure")
         try check(store.state(for: identity) == nil, "undo restores record absence")
         _ = model.performAdjustmentHistory(undo: false)
         try check(store.state(for: identity)?.settings.exposure == 0.3,
