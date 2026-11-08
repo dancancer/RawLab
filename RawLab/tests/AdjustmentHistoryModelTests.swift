@@ -34,7 +34,7 @@ struct AdjustmentHistoryModelTests {
         model.sourceKind = .raster
         model.sourceDisplayName = "A"
         model.hasImage = true
-        model.acceptImportedEditRecord(try store.versionedState(for: identity), settings: .default)
+        model.acceptImportedEditRecord(try store.readState(for: identity), settings: .default)
         var settings = RawSettings.default
         try check(model.beginAdjustmentInteraction(settings: settings), "gesture begins with an accepted storage revision")
         for step in 1...30 {
@@ -48,11 +48,11 @@ struct AdjustmentHistoryModelTests {
         try check(model.endAdjustmentInteraction(settings: settings), "gesture ending saves its final value")
         try check(model.adjustmentSession?.transactions.count == 1 && store.state(for: identity)?.settings == settings,
                   "one gesture creates exactly one transaction")
-        let revision = try store.versionedState(for: identity)
+        let revision = try store.readState(for: identity)
         model.queueSettingsSave(settings)
         try check(model.saveCurrentSettings(settings) && model.adjustmentSession?.transactions.count == 1,
                   "late SwiftUI value echo does not create a duplicate history entry")
-        try check(try store.versionedState(for: identity) == revision, "unchanged echo preserves timestamp and revision")
+        try check(store.readState(for: identity).hasSameAdjustments(as: revision), "unchanged echo preserves the committed record")
         try check(model.beginAdjustmentInteraction(settings: settings), "second gesture begins")
         settings.exposure = 0.9
         settings.gradingSettings[.shadows] = ColorGradingWheel(hue: 80, saturation: 75)
@@ -61,7 +61,7 @@ struct AdjustmentHistoryModelTests {
         settings = restored
         try check(settings.exposure == 0.3 && settings.gradingSettings.shadows == ColorGradingWheel(hue: 231.25, saturation: 0) && model.pendingSettings == nil && model.consumePersistedEditorSettings(settings),
                   "cancel restores the exact gesture start and consumes the observer echo")
-        try check(try store.versionedState(for: identity) == revision, "cancel does not write or record history")
+        try check(store.readState(for: identity).hasSameAdjustments(as: revision), "cancel does not write or record history")
         let undo = model.performAdjustmentHistory(undo: true)
         try check(undo.count == 1 && undo[0].status == .applied && model.adjustmentRestoredSettings == .default,
                   "undo restores the absent original and publishes default editor settings")
@@ -85,13 +85,10 @@ struct AdjustmentHistoryModelTests {
         try store.save(identity, state: PhotoEditState(settings: external))
         settings.exposure = 1.0
         model.queueSettingsSave(settings)
-        try check(!model.saveCurrentSettings(settings) && store.state(for: identity)?.settings.exposure == 0.8,
-                  "ordinary edits retain their original CAS receipt and cannot overwrite an external edit")
-        try check(model.adjustmentSession?.transactions.count == 2, "CAS rejection creates no transaction")
-        try check(model.reloadSavedAdjustments() && model.pendingSettings == nil && model.adjustmentRestoredSettings == external,
-                  "explicit reload abandons stale pending edits and restores the external saved record")
-        try check(try model.loadedEditRecord == store.versionedState(for: identity), "explicit reload accepts the fresh CAS receipt")
-        try check(model.beginAdjustmentInteraction(settings: external), "new source context can start a gesture")
+        try check(model.saveCurrentSettings(settings) && store.state(for: identity)?.settings.exposure == 1.0,
+                  "ordinary edits remain usable and replace an external saved value")
+        try check(model.adjustmentSession?.transactions.count == 3, "ordinary replacement records one new transaction")
+        try check(model.beginAdjustmentInteraction(settings: settings), "new source context can start a gesture")
         model.sourceRevision = UUID()
         try check(model.cancelAdjustmentInteraction() == nil, "stale gesture cancellation cannot restore another source context")
         try model.copyAdjustments(scope: .custom([.exposure, .hslHueRed]), settings: external)
@@ -119,7 +116,7 @@ struct AdjustmentHistoryModelTests {
         let identity = PhotoIdentity(resourceIdentifier: "look-browser")
         model.sourceFile = .externallyManaged(directory.appendingPathComponent("source.png"))
         model.sourceIdentity = identity; model.sourceKind = .raster; model.hasImage = true
-        model.acceptImportedEditRecord(try store.versionedState(for: identity), settings: .default)
+        model.acceptImportedEditRecord(try store.readState(for: identity), settings: .default)
         model.availableLUTs = [LUTOption(id: "first", name: "Été"), LUTOption(id: "second", name: "Winter")]
         let firstURL = directory.appendingPathComponent("first.cube"), secondURL = directory.appendingPathComponent("second.cube")
         try Data("fixture".utf8).write(to: firstURL); try Data("fixture".utf8).write(to: secondURL)
@@ -155,7 +152,7 @@ struct AdjustmentHistoryModelTests {
         let b = PhotoIdentity(resourceIdentifier: "native-collection-target")
         model.sourceFile = .externallyManaged(file); model.sourceIdentity = a; model.sourceKind = .raster
         model.sourceDisplayName = "same.png"; model.hasImage = true
-        model.acceptImportedEditRecord(try store.versionedState(for: a), settings: .default)
+        model.acceptImportedEditRecord(try store.readState(for: a), settings: .default)
         var settings = RawSettings.default; settings.exposure = 0.75
         model.queueSettingsSave(settings)
         try check(model.saveCurrentSettings(settings), "collection source saves before synchronization capture")
@@ -181,7 +178,7 @@ struct AdjustmentHistoryModelTests {
         try check(results.map(\.status) == [.applied] && model.batchSelection.selection.lastSynchronization == operation.id,
                   "native synchronization saves target and retains its transaction entry")
         model.sourceIdentity = b; model.sourceRevision = UUID()
-        model.acceptImportedEditRecord(try store.versionedState(for: b), settings: settings)
+        model.acceptImportedEditRecord(try store.readState(for: b), settings: settings)
         _ = model.batchSelection.selection.beginEditing(b.key)
         settings.contrast = 0.4; model.queueSettingsSave(settings)
         try check(model.saveCurrentSettings(settings), "native micro-edit commits only the current collection photo")
@@ -222,20 +219,20 @@ struct AdjustmentHistoryModelTests {
         let identity = PhotoIdentity(resourceIdentifier: "preset-capture")
         model.sourceFile = .externallyManaged(source); model.sourceIdentity = identity
         model.sourceKind = .raster; model.hasImage = true
-        model.acceptImportedEditRecord(try store.versionedState(for: identity), settings: .default)
+        model.acceptImportedEditRecord(try store.readState(for: identity), settings: .default)
         var settings = RawSettings.default; settings.exposure = 0.75
         model.queueSettingsSave(settings)
         try check(model.saveCurrentSettings(settings), "preset source edit commits before capture")
         try model.copyAdjustments(scope: .custom([.contrast]), settings: settings)
         let clipboard = model.adjustmentSession?.clipboard
-        let revision = try store.versionedState(for: identity)
+        let revision = try store.readState(for: identity)
         let historyCount = model.adjustmentSession?.transactions.count
         let captured = try model.capturePresetAdjustments(scope: .custom([.exposure]), settings: settings)
         _ = try library.create(name: "Native iOS", payload: captured)
         try check(captured.fields == [.exposure] && captured[.exposure]?.number == 0.75,
                   "preset capture uses the exact selected committed values")
         try check(try model.adjustmentSession?.clipboard == clipboard && model.adjustmentSession?.transactions.count == historyCount
-                  && store.versionedState(for: identity) == revision,
+                  && store.readState(for: identity).hasSameAdjustments(as: revision),
                   "preset capture and library save leave clipboard, photo receipt and history unchanged")
         model.hasAdjustmentDraft = true
         var rejected = false
@@ -253,13 +250,13 @@ struct AdjustmentHistoryModelTests {
         let historyBeforeExternal = model.adjustmentSession?.transactions.map(\.id)
         var external = settings; external.exposure = 1.4
         try store.save(identity, state: PhotoEditState(settings: external))
-        let externalReceipt = try store.versionedState(for: identity)
+        let externalReceipt = try store.readState(for: identity)
+        var capturedExternal: AdjustmentTransferPayload?
         rejected = false
-        do { _ = try model.capturePresetAdjustments(scope: .custom([.exposure]), settings: settings) } catch { rejected = true }
-        try check(try rejected && store.versionedState(for: identity) == externalReceipt && library.list().count == 1 &&
+        do { capturedExternal = try model.capturePresetAdjustments(scope: .custom([.exposure]), settings: settings) } catch { rejected = true }
+        try check(!rejected && capturedExternal?[.exposure]?.number == settings.exposure && store.readState(for: identity).state?.settings.exposure == 1.4 && library.list().count == 1 &&
                   model.adjustmentSession?.clipboard == clipboard && model.adjustmentSession?.transactions.map(\.id) == historyBeforeExternal,
-                  "external photo revision blocks preset capture without changing library or history")
-        try check(model.adjustmentReloadRequired, "stale preset capture offers explicit saved-adjustment reload")
+                  "external disk edits do not block preset capture from the session's committed snapshot")
         model.acceptImportedEditRecord(externalReceipt, settings: external)
         settings = external
         var uncommitted = settings; uncommitted.exposure = 1.8
@@ -279,7 +276,7 @@ struct AdjustmentHistoryModelTests {
         var settings = RawSettings.default; settings.lutID = "retained-unavailable-look"
         let state = PhotoEditState(settings: settings).replacing(settings: settings, preservingFilmID: nil)
         try store.save(identity, state: state)
-        let before = try store.versionedState(for: identity)
+        let before = try store.readState(for: identity)
         let queue = DispatchQueue(label: "cancelled-import-metadata")
         var deliveries: [() -> Void] = []
         let model = RawEditorViewModel(editPersistence: store, importQueue: queue, resultDelivery: { deliveries.append($0) })
@@ -295,7 +292,7 @@ struct AdjustmentHistoryModelTests {
         deliveries.forEach { $0() }
         model.queueSettingsSave(settings)
         try check(model.saveCurrentSettings(settings), "retained photo remains editable after cancelling a new import")
-        try check(try store.versionedState(for: identity) == before && model.adjustmentSession?.transactions.isEmpty == true,
+        try check(store.readState(for: identity).hasSameAdjustments(as: before) && model.adjustmentSession?.transactions.isEmpty == true,
                   "cancelled import retains explicit nil metadata without a false edit transaction")
         settings.exposure = 0.2
         model.queueSettingsSave(settings)
@@ -332,9 +329,9 @@ struct AdjustmentHistoryModelTests {
         let applied = model.applyAdjustmentPaste(operation, skipping: [badID.key])
         try check(applied.first { $0.targetID == goodID.key }?.status == .applied && store.state(for: badID) == nil,
                   "explicit skip applies only the compatible target")
-        let saved = try store.versionedState(for: goodID)
+        let saved = try store.readState(for: goodID)
         _ = model.applyAdjustmentPaste(operation, skipping: [badID.key])
-        try check(try store.versionedState(for: goodID) == saved, "successful target is not rewritten on retry")
+        try check(store.readState(for: goodID).hasSameAdjustments(as: saved), "successful target is not rewritten on retry")
         let lens = try AdjustmentTransferPayload(source: .init(identifier: "raw-source", isRaw: true, processingVersion: 2, recipe: nil),
             values: ["geometry.lens.profile_id": .string("fixture-profile")])
         var pendingLens: Result<IOSPreparedAdjustmentTransfer, Error>?
@@ -345,8 +342,8 @@ struct AdjustmentHistoryModelTests {
         let lensOperation = try lensResult.get()
         try check(lensOperation.targets.first?.error != nil, "actual raster target blocks an inactive explicit lens profile")
         let lensOutcome = model.applyAdjustmentPaste(lensOperation, skipping: [])
-        let afterLens = try store.versionedState(for: goodID)
-        try check(lensOutcome.first?.status == .blocked && afterLens == saved,
+        let afterLens = try store.readState(for: goodID)
+        try check(lensOutcome.first?.status == .blocked && afterLens.hasSameAdjustments(as: saved),
                   "blocked inactive lens request preserves the raster receipt")
 
     }

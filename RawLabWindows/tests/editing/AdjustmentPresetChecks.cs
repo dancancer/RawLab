@@ -120,9 +120,9 @@ internal static class AdjustmentPresetChecks
         Check(store.Find(target)!.Settings.Restore().ToneControls == settings.ToneControls, "preset redo restores all independent tone fields");
         var missingLook = new AdjustmentPayload(new("preset:fixture", true, 2), new Dictionary<AdjustmentField, JsonElement> {
             [AdjustmentField.Look] = AdjustmentPayload.Value(new { kind = "managed", id = "missing" }) });
-        var prior = store.VersionedState(target);
+        var prior = store.ReadState(target);
         Check(session.Apply(session.Prepare(missingLook, [destination], AdjustmentHistoryAction.Preset)).Single().Status == AdjustmentStatus.Blocked &&
-            store.VersionedState(target).SameAs(prior), "missing preset look blocks before any write");
+            store.ReadState(target).SameAs(prior), "missing preset look blocks before any write");
     }
 
     private static void Vectors(string directory)

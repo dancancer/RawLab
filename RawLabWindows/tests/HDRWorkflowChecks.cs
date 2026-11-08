@@ -269,7 +269,7 @@ internal static class HDRWorkflowChecks
         sdr.Set(Parameter.Temperature,5200); sdr.Set(Parameter.Tint,9);
         var savedHDR=hdr.Clone(); savedHDR.Set(Parameter.Exposure,-.5);
         store.Save(low,sdr.Capture(),null); store.Save(high,savedHDR.Capture(),"builtin:missing-dormant-look.cube");
-        var sdrRecord=store.VersionedState(low); var hdrRecord=store.VersionedState(high);
+        var sdrRecord=store.ReadState(low); var hdrRecord=store.ReadState(high);
 
         var selection=new BatchSelectionSession(); selection.Add([high,low]);
         var collectionJournal=new BatchJournal(Path.Combine(root,"collection-journal"));
@@ -402,7 +402,7 @@ internal static class HDRWorkflowChecks
             check(!lowSettings.IsHDREditing && lowSettings[Parameter.Exposure]==.75 && lowSettings[Parameter.Temperature]==5200 &&
                 lowSettings[Parameter.Tint]==9 && lowSettings.HDR==sdr.HDR,"Frozen SDR preserves mode, camera WB and dormant HDR settings");
             check(highSettings.IsHDREditing && highSettings[Parameter.Exposure]==.75,"Frozen HDR target keeps HDR mode");
-            check(store.VersionedState(low).SameAs(sdrRecord) && store.VersionedState(high).SameAs(hdrRecord),"Batch leaves both edit records unchanged");
+            check(store.ReadState(low).SameAs(sdrRecord) && store.ReadState(high).SameAs(hdrRecord),"Batch leaves both edit records unchanged");
             store.Save(low,new Adjustments().Capture(),null);
             var resumed=journal.Load()!;
             check(resumed.SnapshotFor(resumed.Items.Single(item=>item.Input==low)).Settings.SameAs(lowSettings.Capture()),
@@ -622,7 +622,7 @@ internal static class HDRWorkflowChecks
         var saved = hdr.Clone(); saved.Set(Parameter.Exposure,-.5);
         saved.HDR = saved.HDR!.WithRendition(new() { SdrExposureEV=-.75 });
         store.Save(high,saved.Capture(),null);
-        var before = store.VersionedState(high);
+        var before = store.ReadState(high);
         var job = BatchJob.Create(source,hdr.Capture(),null,"HDR");
         job.SourceSupportsCameraHDR=true; job.OutputDirectory=root; job.Format=ExportFormat.SdrJpeg; job.LongEdge=64;
         var journal = new BatchJournal(Path.Combine(root,"camera-uniform"));
@@ -637,7 +637,7 @@ internal static class HDRWorkflowChecks
             check(completed.Mode==BatchJob.PerTargetFrozen && completed.SucceededCount==2 &&
                   completed.Items[0].Frozen!.Settings.HDR?.Mode==HDRMode.Hdr &&
                   completed.Items[1].Frozen!.Settings.HDR?.Mode!=HDRMode.Hdr,"Unified camera RAW batch exports both frozen modes");
-            check(store.VersionedState(high).SameAs(before) && store.VersionedState(low).Edit==null,
+            check(store.ReadState(high).SameAs(before) && store.ReadState(low).Edit==null,
                 "Uniform output keeps saved target records");
         } finally { batch.Close(); }
         var selection = new BatchSelectionSession(); selection.Add([high,low]);

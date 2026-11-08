@@ -18,7 +18,7 @@ import com.rawlab.android.settings.HDRCameraProfile
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.withHDRMode
 import com.rawlab.android.settings.PhotoIdentity
-import com.rawlab.android.settings.VersionedPhotoEdit
+import com.rawlab.android.settings.PhotoEditState
 import com.rawlab.android.batch.BatchSelectionState
 import com.rawlab.android.batch.BatchTarget
 import com.rawlab.android.format.ExportFormat
@@ -82,7 +82,7 @@ class HDRReviewRegressionTest {
         compose.setContent {
             MaterialTheme {
                 ExportFormatControls(ExportFormat.JPEG, {}, hdrEditing = selection.supportsHDRExport(
-                    { VersionedPhotoEdit(it, saved, "revision") }))
+                    { PhotoEditState(it, saved) }))
             }
         }
         compose.onNodeWithTag("export-format-HDR_JPEG").assertDoesNotExist()

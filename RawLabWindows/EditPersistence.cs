@@ -96,6 +96,10 @@ public sealed record OriginalIdentity(string Path, long Length, long Modified, l
         if (!file.Exists) throw new FileNotFoundException(Loc.Text("无法访问原始照片。"), path);
         return new(file.FullName, file.Length, file.LastWriteTimeUtc.Ticks, file.CreationTimeUtc.Ticks);
     }
+    public void RequireCurrent()
+    {
+        if(!SameFile(Read(Path)))throw new PhotoChangedException();
+    }
     [JsonIgnore] public string StableKey => FileID ?? System.IO.Path.GetFullPath(Path).ToUpperInvariant();
     public bool SameFile(OriginalIdentity other) => StringComparer.OrdinalIgnoreCase.Equals(Path, other.Path) && SameContent(other);
     public bool SameContent(OriginalIdentity other) => Length == other.Length && Modified == other.Modified && Created == other.Created &&
@@ -130,16 +134,18 @@ public sealed record SavedEdit(OriginalIdentity Identity, AdjustmentSnapshot Set
     public static bool Same(SavedEdit? a,SavedEdit? b) => a==null ? b==null : a.SameAs(b);
 }
 
-public sealed record VersionedPhotoEdit(OriginalIdentity Identity,SavedEdit? Edit,string? Revision)
+public sealed record PhotoEditState(OriginalIdentity Identity,SavedEdit? Edit)
 {
-    public bool SameAs(VersionedPhotoEdit? other) => other!=null && Identity.SameFile(other.Identity) && Revision==other.Revision && SavedEdit.Same(Edit,other.Edit);
-    public VersionedPhotoEdit Copy() => this with {Edit=Edit?.Copy()};
+    public bool SameAs(PhotoEditState? other) => other!=null && Identity.SameFile(other.Identity) && SavedEdit.Same(Edit,other.Edit);
+    public PhotoEditState Copy() => this with {Edit=Edit?.Copy()};
 }
-public sealed class EditPersistenceConflict() : IOException("The photo or saved adjustments changed. Reload before retrying.");
+public sealed class PhotoChangedException() : IOException("The original photo changed. Select it again.");
+public sealed class AdjustmentOperationExpiredException() : InvalidOperationException("This adjustment operation is no longer current.");
+public sealed class AdjustmentHistoryOrderException() : InvalidOperationException("Undo or redo the photo's edits in history order.");
 
 public sealed class EditStore
 {
-    private sealed record Registry(int Version, Dictionary<string, SavedEdit> Records, Dictionary<string,string>? Revisions = null);
+    private sealed record Registry(int Version, Dictionary<string, SavedEdit> Records);
     public static string DefaultDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "Edits");
     private readonly string path;
     private readonly Action<string,object> write;
@@ -153,33 +159,32 @@ public sealed class EditStore
 
     private Registry ReadRegistry()
     {
-        if (!File.Exists(path)) return new(1,new(StringComparer.OrdinalIgnoreCase),new(StringComparer.OrdinalIgnoreCase));
+        if (!File.Exists(path)) return new(1,new(StringComparer.OrdinalIgnoreCase));
         var registry = AtomicJson.Read<Registry>(path);
         if (registry.Version != 1) throw new InvalidDataException(Loc.Text("无法读取此版本的调整记录。"));
         foreach (var entry in registry.Records.Values) _ = entry.Settings.Restore();
-        return new(1,new(registry.Records,StringComparer.OrdinalIgnoreCase),new(registry.Revisions ?? [],StringComparer.OrdinalIgnoreCase));
+        return new(1,new(registry.Records,StringComparer.OrdinalIgnoreCase));
     }
 
     public SavedEdit? Find(string input)
     {
-        return VersionedState(input).Edit;
+        return ReadState(input).Edit;
     }
 
-    public VersionedPhotoEdit VersionedState(string input) => ReadVersioned(ReadRegistry(),OriginalIdentity.Read(input));
-    private static VersionedPhotoEdit ReadVersioned(Registry registry,OriginalIdentity identity) => new(identity,
-        registry.Records.TryGetValue(identity.Path,out var edit) && edit.Identity.SameFile(identity) ? edit.Copy() : null,
-        registry.Revisions!.GetValueOrDefault(identity.Path));
+    public PhotoEditState ReadState(string input) => ReadRecord(ReadRegistry(),OriginalIdentity.Read(input));
+    private static PhotoEditState ReadRecord(Registry registry,OriginalIdentity identity) => new(identity,
+        registry.Records.TryGetValue(identity.Path,out var edit) && edit.Identity.SameFile(identity) ? edit.Copy() : null);
 
-    public VersionedPhotoEdit CompareAndSave(VersionedPhotoEdit expected,SavedEdit? edit)
+    public PhotoEditState SaveState(OriginalIdentity identity,SavedEdit? edit)
     {
-        if(edit!=null) {_=edit.Settings.Restore();if(!edit.Identity.SameFile(expected.Identity))throw new EditPersistenceConflict();}
-        using var held=AcquireLock();var registry=ReadRegistry();var current=ReadVersioned(registry,OriginalIdentity.Read(expected.Identity.Path));
-        if(!current.SameAs(expected))throw new EditPersistenceConflict();
+        if(edit!=null) {_=edit.Settings.Restore();if(!edit.Identity.SameFile(identity))throw new PhotoChangedException();}
+        using var held=AcquireLock();var registry=ReadRegistry();
+        identity.RequireCurrent();
+        var current=ReadRecord(registry,identity);
         if(SavedEdit.Same(current.Edit,edit))return current;
-        if(edit==null)registry.Records.Remove(current.Identity.Path);else registry.Records[current.Identity.Path]=edit.Copy();
-        var revision=Guid.NewGuid().ToString();registry.Revisions![current.Identity.Path]=revision;
+        if(edit==null)registry.Records.Remove(identity.Path);else registry.Records[identity.Path]=edit.Copy();
         write(path,registry);
-        return new(current.Identity,edit?.Copy(),revision);
+        return new(identity,edit?.Copy());
     }
 
     private FileStream AcquireLock()
@@ -208,7 +213,7 @@ public sealed class EditStore
             var identity = OriginalIdentity.Read(input);
             var edit=new SavedEdit(identity, settings.Copy(), look);
             if(updated.Records.TryGetValue(identity.Path,out var previous) && previous.SameAs(edit))continue;
-            updated.Records[identity.Path]=edit;updated.Revisions![identity.Path]=Guid.NewGuid().ToString();changed=true;
+            updated.Records[identity.Path]=edit;changed=true;
         }
         if(changed)write(path,updated);
     }

@@ -69,7 +69,7 @@ import SwiftUI
             editorWindow.makeFirstResponder(field)
             field.stringValue = draft; field.currentEditor()?.string = draft
             coordinator.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
-            let saved = try model.editStore!.versionedState(for: photo), count = model.adjustmentSession!.transactions.count
+            let saved = try model.editStore!.readState(for: photo), count = model.adjustmentSession!.transactions.count
             let original = model.settings
             ParameterValueField.preserveInputsForUpdateNavigation()
             let (updateWindow, _) = window(SoftwareUpdateView(updates: updates, legacy: legacy), width: 560, height: 600)
@@ -77,7 +77,7 @@ import SwiftUI
             updates.check(manual: true); adapter.send(.found(adapter.release)); updates.download()
             try await Task.sleep(for: .milliseconds(100)); editor.layoutSubtreeIfNeeded()
             try check(coordinator.dirty && field.stringValue == draft && model.settings == original &&
-                model.editStore!.versionedState(for: photo) == saved && model.adjustmentSession!.transactions.count == count,
+                model.editStore!.readState(for: photo) == saved && model.adjustmentSession!.transactions.count == count,
                 "Actual editor field survives opening, checking and downloading: \(draft)")
             try check(gate.blockers().contains("draft"), "Production install gate sees suspended native input")
             updates.cancel(); updateWindow.contentView = nil; updateWindow.close(); editorWindow.makeFirstResponder(field)
@@ -86,12 +86,12 @@ import SwiftUI
         }
         try check(model.beginGeometryDraft(tab: .perspective), "Real geometry draft is active")
         model.updateGeometryDraft { $0.perspectiveHorizontal = 0.2 }; try await settle(model)
-        let draft = model.geometryDraft, saved = try model.editStore!.versionedState(for: photo)
+        let draft = model.geometryDraft, saved = try model.editStore!.readState(for: photo)
         let history = model.adjustmentSession!.transactions.count
         updates.check(manual: true); adapter.send(.found(adapter.release)); updates.download(); adapter.send(.preparing); adapter.send(.verified)
         updates.choose(.onQuit)
         try check(updates.state.phase == .waitingForTasks && updates.state.blockers.contains("draft") && adapter.installs == 0 &&
-            model.geometryDraft == draft && model.editStore!.versionedState(for: photo) == saved && model.adjustmentSession!.transactions.count == history,
+            model.geometryDraft == draft && model.editStore!.readState(for: photo) == saved && model.adjustmentSession!.transactions.count == history,
             "Production geometry draft blocks an explicit install without applying, discarding or saving it")
         updates.cancel(); model.cancelGeometryDraft(); try await settle(model)
         for language in ["zh-Hans", "en", "de", "fr", "ja", "es"] {
@@ -106,13 +106,13 @@ import SwiftUI
             dialog.contentView = nil; dialog.close()
         }
         UserDefaults.standard.setVolatileDomain([L10n.preferenceKey: "en"], forName: UserDefaults.argumentDomain)
-        let beforeFailure = try model.editStore!.versionedState(for: photo)
+        let beforeFailure = try model.editStore!.readState(for: photo)
         updates.check(manual: true); adapter.send(.found(adapter.release)); updates.download(); adapter.send(.preparing); adapter.send(.verified)
         adapter.rejectInstall = true; updates.choose(.restartNow)
         for _ in 0..<400 where updates.state.phase != .failed || updates.preparingInstallation { try await Task.sleep(for: .milliseconds(10)) }
         try await Task.sleep(for: .milliseconds(100)); editor.layoutSubtreeIfNeeded()
         try check(updates.state.failure?.stage == .installing && !fields(editor).contains(where: { $0.isEnabled }) &&
-            model.editStore!.versionedState(for: photo) == beforeFailure,
+            model.editStore!.readState(for: photo) == beforeFailure,
             "A failed installer dispatch disables real editor fields and preserves saved edits")
         let recoveryRoot = output.appendingPathComponent("recovery"), recoveryStore = UpdateStore(directory: output.appendingPathComponent("recovery/Updates"))
         let original = recoveryRoot.appendingPathComponent("Edits/photo.json")

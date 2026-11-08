@@ -1,13 +1,14 @@
+using System.Collections.Concurrent;
 using System.IO;
 
 namespace RawLab.Windows;
 
 public sealed record AdjustmentTransferTarget(string Path,SavedEdit DefaultEdit,AdjustmentTransferContext Context,Func<bool>? IsCurrent=null);
 public enum AdjustmentStatus { Applied, Unchanged, Skipped, Blocked, Conflict, Failed }
-public sealed record AdjustmentOutcome(string TargetID,AdjustmentStatus Status,VersionedPhotoEdit? Saved=null,Exception? Error=null,bool RequiresHistoryDecision=false);
+public sealed record AdjustmentOutcome(string TargetID,AdjustmentStatus Status,PhotoEditState? Saved=null,Exception? Error=null,bool RequiresHistoryDecision=false);
 public sealed record PreparedAdjustmentTransfer(Guid ID,AdjustmentPayload Payload,IReadOnlyList<PreparedAdjustmentTarget> Targets,
     AdjustmentHistoryAction Action = AdjustmentHistoryAction.Paste, OriginalIdentity? FrozenSource = null);
-public sealed record PreparedAdjustmentTarget(string ID,string DisplayName,VersionedPhotoEdit? Original,SavedEdit? Candidate,bool Unchanged,Func<bool>? IsCurrent,Exception? Error);
+public sealed record PreparedAdjustmentTarget(string ID,string DisplayName,PhotoEditState? Original,SavedEdit? Candidate,bool Unchanged,Func<bool>? IsCurrent,Exception? Error,long EditGeneration=0);
 public enum AdjustmentHistoryAction { Paste, Edit, Preset, Synchronize }
 public enum AdjustmentHistoryState { Applied, Undone, RedoInvalidated }
 public sealed record AdjustmentHistoryPart(Guid ID,Guid? PriorHead,OriginalIdentity Identity,string DisplayName,SavedEdit? Before,SavedEdit? After,AdjustmentHistoryState State);
@@ -17,12 +18,16 @@ public sealed record AdjustmentHistoryTransaction(Guid ID,AdjustmentHistoryActio
 public sealed class AdjustmentTransferSession(EditStore store)
 {
     private readonly Dictionary<Guid,Dictionary<string,AdjustmentOutcome>> outcomes=[];
-    private readonly Dictionary<string,VersionedPhotoEdit> knownRecords=new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string,PhotoEditState> knownRecords=new(StringComparer.OrdinalIgnoreCase);
+    // 预检可在后台读取；代次只标记本会话的编辑，不写入磁盘。
+    private readonly ConcurrentDictionary<string,long> editGenerations=new(StringComparer.OrdinalIgnoreCase);
+    public long EditGeneration(string path)=>editGenerations.GetValueOrDefault(Path.GetFullPath(path));
     private readonly Dictionary<string,Guid?> heads=new(StringComparer.OrdinalIgnoreCase);
     private readonly List<AdjustmentHistoryTransaction> history=[];
     public IReadOnlyList<AdjustmentHistoryTransaction> Transactions => history.Select(t=>t with {
         Fields=t.Fields.ToHashSet(),Parts=t.Parts.Select(p=>p with {Before=p.Before?.Copy(),After=p.After?.Copy()}).ToArray()}).ToArray();
     public AdjustmentPayload? Clipboard {get;private set;}
+    public bool IsCurrentSave(PhotoEditState saved)=>saved.SameAs(knownRecords.GetValueOrDefault(saved.Identity.Path));
     public AdjustmentPayload Copy(AdjustmentScope scope,SavedEdit source,AdjustmentTransferContext context)
     {var payload=AdjustmentTransfer.Capture(scope,source,context);Clipboard=payload;return payload;}
     public PreparedAdjustmentTransfer Prepare(AdjustmentPayload payload,IEnumerable<AdjustmentTransferTarget> targets,
@@ -38,10 +43,11 @@ public sealed class AdjustmentTransferSession(EditStore store)
                 (target.DefaultEdit.Identity.StableKey==frozenSource!.StableKey || !physical.Add(target.DefaultEdit.Identity.StableKey)))continue;
             try {
                 if(target.IsCurrent?.Invoke()==false)throw Draft();
-                var original=store.VersionedState(id);var before=original.Edit ?? target.DefaultEdit;
-                if(!target.DefaultEdit.Identity.SameFile(original.Identity) || !before.Identity.SameFile(original.Identity))throw new EditPersistenceConflict();
+                var generation=EditGeneration(id);
+                var original=store.ReadState(id);var before=original.Edit ?? target.DefaultEdit;
+                if(!target.DefaultEdit.Identity.SameFile(original.Identity) || !before.Identity.SameFile(original.Identity))throw new PhotoChangedException();
                 var candidate=AdjustmentTransfer.Prepare(payload,before,target.Context);
-                prepared.Add(new(id,Path.GetFileName(id),original,candidate.Copy(),candidate.SameAs(before),target.IsCurrent,null));
+                prepared.Add(new(id,Path.GetFileName(id),original,candidate.Copy(),candidate.SameAs(before),target.IsCurrent,null,generation));
             }catch(Exception error) {prepared.Add(new(id,Path.GetFileName(id),null,null,false,target.IsCurrent,error));}
         }
         return new(Guid.NewGuid(),payload,prepared.AsReadOnly(),action,frozenSource);
@@ -63,38 +69,34 @@ public sealed class AdjustmentTransferSession(EditStore store)
             else if(target.IsCurrent?.Invoke()==false)result=new(target.ID,AdjustmentStatus.Blocked,Error:Draft());
             else if(target.Original is {} original && target.Candidate is {} candidate) {
                 try {
-                    var current=store.VersionedState(target.ID);
-                    if(operation.Action==AdjustmentHistoryAction.Synchronize && current.Identity.StableKey==operation.FrozenSource!.StableKey)
-                        throw new EditPersistenceConflict();
-                    if(!current.SameAs(original))throw new EditPersistenceConflict();
+                    original.Identity.RequireCurrent();
+                    if(EditGeneration(target.ID)!=target.EditGeneration)throw new AdjustmentOperationExpiredException();
                     if(target.Unchanged)result=new(target.ID,AdjustmentStatus.Unchanged,original);
                     else {
-                        var saved=store.CompareAndSave(original,candidate);
+                        var saved=store.SaveState(original.Identity,candidate);
                         Record(operation.ID,operation.Action,operation.Payload.Fields,target.DisplayName,original,saved);
                         result=new(target.ID,AdjustmentStatus.Applied,saved);
                     }
-                }catch(EditPersistenceConflict error){result=new(target.ID,AdjustmentStatus.Conflict,Error:error);}
+                }catch(Exception error) when(error is PhotoChangedException or AdjustmentOperationExpiredException){result=new(target.ID,AdjustmentStatus.Conflict,Error:error);}
                  catch(Exception error){result=new(target.ID,AdjustmentStatus.Failed,Error:error);}
             }else result=new(target.ID,AdjustmentStatus.Blocked,Error:target.Error);
             cache[target.ID]=result;results.Add(result);
         }
         return results;
     }
-    public AdjustmentOutcome CommitEdit(VersionedPhotoEdit expected,SavedEdit edit,SavedEdit? defaultEdit=null,Func<bool>? isCurrent=null)
+    public AdjustmentOutcome CommitEdit(PhotoEditState before,SavedEdit edit,SavedEdit? defaultEdit=null,Func<bool>? isCurrent=null)
     {
-        var id=expected.Identity.Path;
+        var id=before.Identity.Path;
         if(isCurrent?.Invoke()==false)return new(id,AdjustmentStatus.Blocked,Error:Draft());
         try {
-            if(expected.Edit==null && edit.SameAs(defaultEdit)) {
-                if(!store.VersionedState(id).SameAs(expected))throw new EditPersistenceConflict();
-                return new(id,AdjustmentStatus.Unchanged,expected);
-            }
-            var saved=store.CompareAndSave(expected,edit);
-            if(saved.SameAs(expected))return new(id,AdjustmentStatus.Unchanged,saved);
-            Record(Guid.NewGuid(),AdjustmentHistoryAction.Edit,new HashSet<AdjustmentField>(),Path.GetFileName(id),expected,saved);
+            if(!edit.Identity.SameFile(before.Identity))throw new PhotoChangedException();
+            if(knownRecords.TryGetValue(id,out var committed) && committed.Identity.SameFile(before.Identity))before=committed;
+            var desired=before.Edit==null && edit.SameAs(defaultEdit) ? null : edit;
+            var saved=store.SaveState(before.Identity,desired);
+            if(SavedEdit.Same(before.Edit,saved.Edit))return new(id,AdjustmentStatus.Unchanged,saved);
+            Record(Guid.NewGuid(),AdjustmentHistoryAction.Edit,new HashSet<AdjustmentField>(),Path.GetFileName(id),before,saved);
             return new(id,AdjustmentStatus.Applied,saved);
-        }catch(EditPersistenceConflict error){return new(id,AdjustmentStatus.Conflict,Error:error);}
-         catch(Exception error){return new(id,AdjustmentStatus.Failed,Error:error);}
+        }catch(Exception error){return new(id,AdjustmentStatus.Failed,Error:error);}
     }
     public Guid? PhotoHistoryID(string path,bool undo)
     {
@@ -116,16 +118,17 @@ public sealed class AdjustmentTransferSession(EditStore store)
         var transaction=history.FindIndex(t=>t.ID==id);if(transaction<0)return [];
         var desired=undo ? AdjustmentHistoryState.Applied : AdjustmentHistoryState.Undone;
         var selected=history[transaction].Parts.Select((p,i)=>(Part:p,Index:i)).Where(p=>p.Part.State==desired && (photo==null || SamePath(p.Part.Identity.Path,photo))).ToArray();
-        var prepared=new Dictionary<int,VersionedPhotoEdit>();var rejected=new Dictionary<int,AdjustmentOutcome>();
+        var prepared=new Dictionary<int,PhotoEditState>();var rejected=new Dictionary<int,AdjustmentOutcome>();
         foreach(var (part,index) in selected) {
             var key=part.Identity.Path;if(skipping.Contains(key))continue;
             try {
                 if(isCurrent?.Invoke(key)==false)throw Draft();
-                var current=store.VersionedState(key);
-                if(!current.Identity.SameFile(part.Identity) || !current.SameAs(knownRecords.GetValueOrDefault(key)) ||
-                    heads.GetValueOrDefault(key)!=(undo ? part.ID : part.PriorHead) || !SavedEdit.Same(current.Edit,undo ? part.After : part.Before))throw new EditPersistenceConflict();
+                part.Identity.RequireCurrent();
+                if(!knownRecords.TryGetValue(key,out var current) || !current.Identity.SameFile(part.Identity))throw new PhotoChangedException();
+                if(heads.GetValueOrDefault(key)!=(undo ? part.ID : part.PriorHead) || !SavedEdit.Same(current.Edit,undo ? part.After : part.Before))
+                    throw new AdjustmentHistoryOrderException();
                 prepared[index]=current;
-            }catch(Exception error){rejected[index]=new(key,error is EditPersistenceConflict ? AdjustmentStatus.Conflict : AdjustmentStatus.Blocked,Error:error,RequiresHistoryDecision:true);}
+            }catch(Exception error){rejected[index]=new(key,error is PhotoChangedException or AdjustmentHistoryOrderException ? AdjustmentStatus.Conflict : AdjustmentStatus.Blocked,Error:error,RequiresHistoryDecision:true);}
         }
         if(rejected.Count>0)return selected.Select(p=>rejected.GetValueOrDefault(p.Index) ?? new(p.Part.Identity.Path,
             skipping.Contains(p.Part.Identity.Path) ? AdjustmentStatus.Skipped : AdjustmentStatus.Blocked,Error:Unresolved("history conflict"))).ToArray();
@@ -135,25 +138,31 @@ public sealed class AdjustmentTransferSession(EditStore store)
             if(!prepared.TryGetValue(index,out var current)){results.Add(new(key,AdjustmentStatus.Skipped));continue;}
             if(isCurrent?.Invoke(key)==false){results.Add(new(key,AdjustmentStatus.Blocked,Error:Draft(),RequiresHistoryDecision:true));continue;}
             try {
-                var saved=store.CompareAndSave(current,undo ? part.Before : part.After);
-                knownRecords[key]=saved;heads[key]=undo ? part.PriorHead : part.ID;
+                var saved=store.SaveState(current.Identity,undo ? part.Before : part.After);
+                Remember(saved);heads[key]=undo ? part.PriorHead : part.ID;
                 var parts=history[transaction].Parts.ToArray();parts[index]=part with {State=undo ? AdjustmentHistoryState.Undone : AdjustmentHistoryState.Applied};
                 history[transaction]=history[transaction] with {Parts=parts};results.Add(new(key,AdjustmentStatus.Applied,saved));
-            }catch(EditPersistenceConflict error){results.Add(new(key,AdjustmentStatus.Conflict,Error:error,RequiresHistoryDecision:true));}
+            }catch(PhotoChangedException error){results.Add(new(key,AdjustmentStatus.Conflict,Error:error,RequiresHistoryDecision:true));}
              catch(Exception error){results.Add(new(key,AdjustmentStatus.Failed,Error:error));}
         }
         return results;
     }
-    private void Record(Guid id,AdjustmentHistoryAction action,IReadOnlySet<AdjustmentField> fields,string name,VersionedPhotoEdit before,VersionedPhotoEdit after)
+    private void Record(Guid id,AdjustmentHistoryAction action,IReadOnlySet<AdjustmentField> fields,string name,PhotoEditState before,PhotoEditState after)
     {
         var key=after.Identity.Path;var priorHead=before.SameAs(knownRecords.GetValueOrDefault(key)) ? heads.GetValueOrDefault(key) : null;
-        knownRecords[key]=after.Copy();
+        Remember(after);
         for(var i=0;i<history.Count;i++)history[i]=history[i] with {Parts=history[i].Parts.Select(p=>SamePath(p.Identity.Path,key) && p.State==AdjustmentHistoryState.Undone
             ? p with {State=AdjustmentHistoryState.RedoInvalidated} : p).ToArray()};
         var part=new AdjustmentHistoryPart(Guid.NewGuid(),priorHead,after.Identity,name,before.Edit?.Copy(),after.Edit?.Copy(),AdjustmentHistoryState.Applied);
         heads[key]=part.ID;var index=history.FindIndex(t=>t.ID==id);
         if(index<0)history.Add(new(id,action,fields.ToHashSet(),new[]{part}));
         else history[index]=history[index] with {Parts=history[index].Parts.Append(part).ToArray()};
+    }
+    private void Remember(PhotoEditState saved)
+    {
+        var key=saved.Identity.Path;
+        knownRecords[key]=saved.Copy();
+        editGenerations.AddOrUpdate(key,1,(_,generation)=>generation+1);
     }
     private static bool SamePath(string a,string b)=>StringComparer.OrdinalIgnoreCase.Equals(a,b);
     private static AdjustmentTransferException Draft()=>new(AdjustmentFailure.Draft);

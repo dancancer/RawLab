@@ -127,7 +127,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try check(review.ready && review.snapshots.count == 3, "final confirmation includes all committed snapshots")
         model.settings.exposure = 2.6; try check(model.saveEdits(), "late edit saved")
         do { _ = try model.freezeCollectionExport(review); throw NSError(domain: "accepted stale review", code: 1) }
-        catch is EditPersistenceConflict { print("PASS: late edits invalidate final confirmation") }
+        catch AdjustmentCommitError.expired { print("PASS: late edits invalidate final confirmation") }
         let final = try model.prepareCollectionExport(skipping: [], format: .jpeg, longEdge: 1024, directory: root)
         let job = try model.freezeCollectionExport(final)
         try check(model.collectionExportBlockedByTask, "an unstarted frozen task still blocks another collection export")
@@ -184,11 +184,11 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try model.editStore!.save(photo, state: PhotoEditState(settings: settings, filmID: ""))
         model.open(photo); try rendered(model)
         try check(model.sourceSupportsCameraHDR && !model.settings.isHDREditing, "incompatible ProRAW record still opens in SDR")
-        let before = try model.editStore!.versionedState(for: photo)
+        let before = try model.editStore!.readState(for: photo)
         model.setHDREditing(true)
         try check(model.error == HDRSettings.ModeError.invalidSettings.localizedDescription && !model.settings.isHDREditing,
                   "enabling HDR rejects the saved incompatible decoder")
-        try check(try model.editStore!.versionedState(for: photo) == before, "rejected HDR toggle leaves the edit record unchanged")
+        try check(try model.editStore!.readState(for: photo) == before, "rejected HDR toggle leaves the edit record unchanged")
     }
 
     static func draftAndLookChecks(root: URL, fixture: URL) throws {
@@ -249,7 +249,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         let stale = try model.prepareCollectionExport(skipping: [], format: .png, longEdge: nil, directory: root)
         try (data + Data("# changed\n".utf8)).write(to: cube)
         do { _ = try model.freezeCollectionExport(stale); throw NSError(domain: "accepted changed look", code: 1) }
-        catch is EditPersistenceConflict { print("PASS: changed look invalidates confirmation before copying") }
+        catch is BatchExportFailure { print("PASS: changed look invalidates confirmation before copying") }
         let review = try model.prepareCollectionExport(skipping: [], format: .png, longEdge: nil, directory: root)
         let job = try model.freezeCollectionExport(review)
         try check(job.items[0].frozen!.settings.geometrySettings.cropWidth == 0.75 && job.items[1].frozen!.settings.geometrySettings.isIdentity,

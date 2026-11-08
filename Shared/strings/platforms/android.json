@@ -3261,7 +3261,7 @@
     "transfer_conflict": {
       "file": "editor_strings.xml",
       "formats": [],
-      "source": "调整已变化",
+      "source": "操作已失效",
       "types": []
     },
     "transfer_failed": {
@@ -3279,7 +3279,7 @@
     "transfer_conflict_message": {
       "file": "editor_strings.xml",
       "formats": [],
-      "source": "照片或调整已变化，请重新检查目标。",
+      "source": "此操作已过期，请重新操作。",
       "types": []
     },
     "transfer_empty_scope": {
@@ -3322,18 +3322,6 @@
       "file": "editor_strings.xml",
       "formats": [],
       "source": "操作未完成，请重试。",
-      "types": []
-    },
-    "transfer_reload": {
-      "file": "editor_strings.xml",
-      "formats": [],
-      "source": "重新载入已保存调整",
-      "types": []
-    },
-    "transfer_reload_body": {
-      "file": "editor_strings.xml",
-      "formats": [],
-      "source": "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。",
       "types": []
     },
     "transfer_summary": {
@@ -5148,6 +5136,12 @@
       "file": "editor_strings.xml",
       "formats": [],
       "source": "不是支持的图像文件",
+      "types": []
+    },
+    "transfer_history_order_message": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "请按历史顺序撤销或重做。",
       "types": []
     }
   },

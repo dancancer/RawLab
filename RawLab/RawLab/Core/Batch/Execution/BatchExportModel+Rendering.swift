@@ -31,7 +31,7 @@ final class IOSHDRBatchPreparation {
     }
     func prepare(_ target: BatchTarget,ordinal: Int,format: BatchOutputFormat,longEdge: Int?) throws -> BatchFrozenSettings {
         guard let store else { throw EditPersistenceError.corruptStore }
-        let record=try store.versionedState(for:target.identity)
+        let record=try store.readState(for:target.identity)
         let info=try HDRSourceInfo.probe(target.sourceURL)
         let previous=try record.state ?? PhotoEditState(settings:RawSettings.sourceDefaults(
             for:target.sourceURL,isRaw:target.sourceKind == .raw,sourceIsHDR:info != nil,

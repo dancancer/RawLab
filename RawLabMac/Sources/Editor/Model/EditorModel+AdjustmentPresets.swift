@@ -55,8 +55,8 @@ extension EditorModel {
                   self.sourceRevision == source, self.file == file else { return }
             do {
                 let session = try self.requireAdjustmentSession()
-                guard let expected = self.committedEdit, try self.editStore!.versionedState(for: file) == expected else {
-                    throw EditPersistenceConflict.changed
+                guard let expected = self.committedEdit, try OriginalFileIdentity(file) == expected.identity else {
+                    throw AdjustmentCommitError.photoChanged
                 }
                 let revision = self.editRevision
                 let targets = self.adjustmentTransferTargets([file], payload: preset.payload)
@@ -74,17 +74,16 @@ extension EditorModel {
                         do {
                             let operation = try result.get()
                             if let error = operation.targets.first?.error { throw error }
-                            guard operation.targets.count == 1, operation.targets.first?.original == expected,
-                                  self.committedEdit == expected else { throw EditPersistenceConflict.changed }
+                            guard operation.targets.count == 1 else { throw AdjustmentCommitError.expired }
                             self.applyAdjustmentPaste(operation)
                             guard let outcome = self.adjustmentOutcomes.first, let saved = outcome.saved,
                                   self.committedEdit == saved else {
-                                throw self.adjustmentOutcomes.first?.error ?? EditPersistenceConflict.changed
+                                throw self.adjustmentOutcomes.first?.error ?? AdjustmentCommitError.expired
                             }
                             switch outcome.status {
                             case .applied: self.quickPresetState = .saved(preset, operation.id)
                             case .unchanged: self.quickPresetState = .unchanged(preset)
-                            default: throw outcome.error ?? EditPersistenceConflict.changed
+                            default: throw outcome.error ?? AdjustmentCommitError.expired
                             }
                         } catch { self.quickPresetState = .failed(preset, self.quickPresetErrorMessage(error)) }
                     }
@@ -130,8 +129,8 @@ extension EditorModel {
         guard canUsePresetPhoto, let file, geometryDraft == nil else { throw AdjustmentTransferError.draftRequiresPreflight }
         if scheduler.interacting { setInteracting(false) }
         guard saveEdits() else { throw AdjustmentTransferError.draftRequiresPreflight }
-        guard let committedEdit, let editStore, try editStore.versionedState(for: file) == committedEdit else {
-            throw EditPersistenceConflict.changed
+        guard let committedEdit, try OriginalFileIdentity(file) == committedEdit.identity else {
+            throw AdjustmentCommitError.photoChanged
         }
         // 预设保存不能借用 session.copy；剪贴板与库是两个独立用户动作。
         return try MacAdjustmentTransfer.capture(scope: scope, snapshot: editState(settings: settings),
@@ -168,7 +167,7 @@ extension EditorModel {
         case .unsupportedVersion: return L10n.text("此预设库来自更新版本，请更新应用后重试。")
         case .identityCollision: return L10n.text("无法创建新的预设标识，请重试。")
         case nil:
-            if error is AdjustmentTransferError || error is EditPersistenceConflict { return adjustmentErrorMessage(error) }
+            if error is AdjustmentTransferError || error is AdjustmentCommitError { return adjustmentErrorMessage(error) }
             return L10n.format("预设操作未完成：%@", error.localizedDescription)
         }
     }

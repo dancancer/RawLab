@@ -451,6 +451,7 @@
 "撤销" = "Rückgängig";
 "撤销 %@ 张" = "Fotos rückgängig machen: %@";
 "操作失败" = "Der Vorgang ist fehlgeschlagen";
+"操作已失效" = "Vorgang nicht mehr gültig";
 "操作未完成，请重试。" = "Der Vorgang ist nicht abgeschlossen. Versuchen Sie es erneut.";
 "支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。" = "Unterstützt verschiedene RAW-Formate. Die erste Verarbeitung hängt vom Gerät ab; fertige Ergebnisse können wiederverwendet werden.";
 "收起%@组" = "Gruppe „%@“ zuklappen";
@@ -656,6 +657,7 @@
 "此外观已不在外观库中。" = "Dieser Look ist nicht mehr in der Look-Bibliothek enthalten.";
 "此安装暂不支持自动安装更新" = "Diese Installation unterstützt automatische Updates noch nicht";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Nur Anpassungen in der Gruppe „%@“ werden zurückgesetzt. Andere Gruppen bleiben unverändert.";
+"此操作已过期，请重新操作。" = "Dieser Vorgang ist nicht mehr aktuell. Starten Sie ihn erneut.";
 "此构建未安装 AI 降噪模型。" = "Dieses Build enthält kein KI-Entrauschungsmodell.";
 "此照片不包含受支持的 HDR 增益图。" = "Dieses Foto hat keine unterstützte HDR-Gain-Map.";
 "此照片或构建尚不能使用 AI 降噪。" = "KI-Entrauschen ist für dieses Foto oder Build nicht verfügbar.";
@@ -710,7 +712,6 @@
 "照片处理设置" = "Fotoverarbeitung";
 "照片库为空，请先在主窗口添加照片目录。" = "Die Fotobibliothek ist leer. Fügen Sie zuerst im Hauptfenster einen Fotoordner hinzu.";
 "照片或白平衡已变化，请重新准备 AI 降噪。" = "Foto oder Weißabgleich haben sich geändert. Bereite die KI-Entrauschung erneut vor.";
-"照片或调整已变化，请重新检查目标。" = "Das Foto oder seine Anpassungen wurden geändert. Prüfen Sie das Ziel erneut.";
 "照片或调整已变化，请重新确认重置。" = "Das Foto oder seine Anpassungen haben sich geändert. Bestätigen Sie das Zurücksetzen erneut.";
 "照片编辑保存失败，请先重试保存" = "Fotobearbeitungen konnten nicht gespeichert werden; versuchen Sie zuerst erneut zu speichern";
 "照片编辑尚未保存" = "Fotobearbeitungen wurden noch nicht gespeichert";
@@ -856,6 +857,7 @@
 "请先选择外观或配方。" = "Wähle zuerst einen Look oder ein Rezept.";
 "请在调整后的照片区域取色。" = "Wählen Sie eine Farbe im bearbeiteten Foto.";
 "请将白平衡模式、色温和色调一起保存，再应用此预设。" = "Speichere Weißabgleichmodus, Temperatur und Tönung zusammen, bevor du diese Vorgabe anwendest.";
+"请按历史顺序撤销或重做。" = "Machen Sie die Änderungen in der Reihenfolge des Verlaufs rückgängig oder wiederholen Sie sie.";
 "请等待预览完成后导出。" = "Warten Sie vor dem Export, bis die Vorschau fertig ist.";
 "请至少选择一张 RAW 照片。" = "Bitte wählen Sie mindestens ein RAW-Foto aus.";
 "请至少选择一张照片。" = "Bitte wählen Sie mindestens ein Foto aus.";
@@ -874,7 +876,6 @@
 "调整后" = "Nachher";
 "调整工具" = "Anpassungswerkzeuge";
 "调整已保存" = "Anpassungen gespeichert";
-"调整已变化" = "Anpassungen geändert";
 "调整未保存 · 重试" = "Anpassungen nicht gespeichert · Erneut versuchen";
 "调整未保存：%@" = "Anpassungen nicht gespeichert: %@";
 "调整来源" = "Anpassungsquelle";

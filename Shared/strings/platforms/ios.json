@@ -1561,10 +1561,6 @@
       "formats": [],
       "source": "调整触觉反馈"
     },
-    "调整记录已恢复，请重新选择照片载入。": {
-      "formats": [],
-      "source": "调整记录已恢复，请重新选择照片载入。"
-    },
     "赛博朋克 · 极致反差": {
       "formats": [],
       "source": "赛博朋克 · 极致反差"
@@ -2327,10 +2323,6 @@
       "formats": [],
       "source": "清空选择"
     },
-    "照片或调整已变化，请重新检查目标。": {
-      "formats": [],
-      "source": "照片或调整已变化，请重新检查目标。"
-    },
     "畸变校正": {
       "formats": [],
       "source": "畸变校正"
@@ -2377,10 +2369,6 @@
       "formats": [],
       "source": "调整内容无法读取，请重新复制。"
     },
-    "调整已变化": {
-      "formats": [],
-      "source": "调整已变化"
-    },
     "调整照片": {
       "formats": [],
       "source": "调整照片"
@@ -2410,14 +2398,6 @@
         "%@"
       ],
       "source": "重做 {0} 张"
-    },
-    "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。": {
-      "formats": [],
-      "source": "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。"
-    },
-    "重新载入已保存调整": {
-      "formats": [],
-      "source": "重新载入已保存调整"
     },
     "重试未完成项": {
       "formats": [],
@@ -2642,8 +2622,8 @@
       "source": "单张微调"
     },
     "原始文件已被替换，请重新选择照片。": {
-      "formats": [],
-      "source": "原始文件已被替换，请重新选择照片。"
+      "source": "原始文件已被替换，请重新选择照片。",
+      "formats": []
     },
     "同步范围": {
       "formats": [],
@@ -3410,6 +3390,30 @@
     "无效或不可用的相机显影设置（白平衡或镜头校正）。": {
       "formats": [],
       "source": "无效或不可用的相机显影设置（白平衡或镜头校正）。"
+    },
+    "操作已失效": {
+      "source": "操作已失效",
+      "formats": []
+    },
+    "此操作已过期，请重新操作。": {
+      "source": "此操作已过期，请重新操作。",
+      "formats": []
+    },
+    "请按历史顺序撤销或重做。": {
+      "source": "请按历史顺序撤销或重做。",
+      "formats": []
+    },
+    "调整记录暂不可用，请稍后重试。": {
+      "source": "调整记录暂不可用，请稍后重试。",
+      "formats": []
+    },
+    "调整未保存，请重试。": {
+      "source": "调整未保存，请重试。",
+      "formats": []
+    },
+    "调整记录已恢复，请重试保存。": {
+      "source": "调整记录已恢复，请重试保存。",
+      "formats": []
     }
   },
   "overrides": {
@@ -4034,14 +4038,6 @@
       "ja": "調整",
       "zh-Hans": "调整"
     },
-    "调整记录已恢复，请重新选择照片载入。": {
-      "de": "Anpassungsdatensatz wiederhergestellt. Wählen Sie das Foto erneut aus, um es zu laden.",
-      "en": "Adjustment Record Restored. Select the Photo Again to Load It.",
-      "es": "Registro de ajustes restaurado. Selecciona la foto de nuevo para cargarla.",
-      "fr": "Enregistrement des réglages restauré. Sélectionnez à nouveau la photo pour la charger.",
-      "ja": "調整記録を復元しました。写真をもう一度選択して読み込んでください。",
-      "zh-Hans": "调整记录已恢复，请重新选择照片载入。"
-    },
     "选择": {
       "de": "Auswählen",
       "en": "Select",
@@ -4241,6 +4237,30 @@
       "fr": "Sélectionnez des photos pour synchroniser les réglages, ou affinez une photo avant de revenir à la collection.",
       "ja": "写真を選んで調整を同期できます。1枚ずつ微調整した後、同じ一覧に戻ることもできます。",
       "zh-Hans": "选择照片后同步所需调整，也可进入单张微调，再返回原集合。"
+    },
+    "调整记录暂不可用，请稍后重试。": {
+      "en": "Adjustment records are temporarily unavailable. Try again later.",
+      "de": "Die Anpassungsdaten sind vorübergehend nicht verfügbar. Versuchen Sie es später erneut.",
+      "es": "Los ajustes guardados no están disponibles temporalmente. Inténtalo de nuevo más tarde.",
+      "fr": "Les réglages enregistrés sont temporairement indisponibles. Réessayez plus tard.",
+      "ja": "調整記録は一時的に利用できません。後でもう一度お試しください。",
+      "zh-Hans": "调整记录暂不可用，请稍后重试。"
+    },
+    "调整未保存，请重试。": {
+      "en": "Adjustments were not saved. Try again.",
+      "de": "Die Anpassungen wurden nicht gespeichert. Versuchen Sie es erneut.",
+      "es": "Los ajustes no se han guardado. Vuelve a intentarlo.",
+      "fr": "Les réglages n’ont pas été enregistrés. Réessayez.",
+      "ja": "調整は保存されませんでした。もう一度お試しください。",
+      "zh-Hans": "调整未保存，请重试。"
+    },
+    "调整记录已恢复，请重试保存。": {
+      "en": "Adjustment records are available again. Retry saving.",
+      "de": "Die Anpassungsdaten sind wieder verfügbar. Versuchen Sie erneut zu speichern.",
+      "es": "Los ajustes guardados vuelven a estar disponibles. Vuelve a intentar guardar.",
+      "fr": "Les réglages enregistrés sont à nouveau disponibles. Réessayez d’enregistrer.",
+      "ja": "調整記録が再び利用できるようになりました。保存をもう一度お試しください。",
+      "zh-Hans": "调整记录已恢复，请重试保存。"
     }
   }
 }

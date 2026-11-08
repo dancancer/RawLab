@@ -390,8 +390,8 @@
     <string name="transfer_channel_7">"Magenta"</string>
     <string name="transfer_choose_files">"Importer depuis des fichiers"</string>
     <string name="transfer_clear">"Effacer la sélection"</string>
-    <string name="transfer_conflict">"Réglages modifiés"</string>
-    <string name="transfer_conflict_message">"La photo ou ses réglages ont changé. Vérifiez à nouveau la cible."</string>
+    <string name="transfer_conflict">"Opération devenue invalide"</string>
+    <string name="transfer_conflict_message">"Cette opération n’est plus à jour. Relancez-la."</string>
     <string name="transfer_copy">"Copier les réglages"</string>
     <string name="transfer_custom">"Personnalisé"</string>
     <string name="transfer_draft_message">"Appliquez ou abandonnez d’abord les saisies et les brouillons de géométrie en cours."</string>
@@ -450,6 +450,7 @@
     <string name="transfer_history">"Historique de la session"</string>
     <string name="transfer_history_failed">"L’opération d’historique est incomplète pour ces photos. Vérifiez la cause et réessayez."</string>
     <string name="transfer_history_hint">"L’historique est limité à cette session. Les réglages enregistrés sont restaurés à la réouverture."</string>
+    <string name="transfer_history_order_message">"Annulez ou rétablissez les réglages dans l’ordre de l’historique."</string>
     <string name="transfer_history_skip">"Ignorer les photos ci-dessus et réessayer"</string>
     <string name="transfer_incompatible">"Ces réglages sont incompatibles avec cette photo. Modifiez la sélection ou ignorez-la."</string>
     <string name="transfer_invalid_payload">"Les réglages ne peuvent pas être lus. Copiez-les à nouveau."</string>
@@ -464,8 +465,6 @@
     <string name="transfer_recheck">"Vérifier à nouveau"</string>
     <string name="transfer_redo">"Rétablir"</string>
     <string name="transfer_redo_count">"Rétablir les photos : %1$s"</string>
-    <string name="transfer_reload">"Recharger les réglages enregistrés"</string>
-    <string name="transfer_reload_body">"Le rechargement abandonne les réglages non enregistrés et lit les réglages actuellement enregistrés pour cette photo."</string>
     <string name="transfer_retry">"Réessayer les inachevées"</string>
     <string name="transfer_scope">"Éléments à copier"</string>
     <string name="transfer_select_group">"Sélectionner ce groupe"</string>

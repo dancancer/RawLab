@@ -451,6 +451,7 @@
 "撤销" = "Undo";
 "撤销 %@ 张" = "Undo photos: %@";
 "操作失败" = "Operation failed";
+"操作已失效" = "Operation no longer valid";
 "操作未完成，请重试。" = "The operation is incomplete. Try again.";
 "支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。" = "Supports multiple RAW formats. Initial processing time depends on your device; completed results can be reused.";
 "收起%@组" = "Collapse %@ group";
@@ -656,6 +657,7 @@
 "此外观已不在外观库中。" = "This look is no longer in the look library.";
 "此安装暂不支持自动安装更新" = "This installation does not support automatic updates yet";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Only adjustments in the %@ group will be reset. Other groups will stay unchanged.";
+"此操作已过期，请重新操作。" = "This operation is out of date. Start it again.";
 "此构建未安装 AI 降噪模型。" = "This build does not include the AI denoise model.";
 "此照片不包含受支持的 HDR 增益图。" = "This photo has no supported HDR gain map.";
 "此照片或构建尚不能使用 AI 降噪。" = "AI denoising is unavailable for this photo or build.";
@@ -710,7 +712,6 @@
 "照片处理设置" = "Photo processing settings";
 "照片库为空，请先在主窗口添加照片目录。" = "Your photo library is empty. Add a photo folder in the main window first.";
 "照片或白平衡已变化，请重新准备 AI 降噪。" = "The photo or white balance changed. Prepare AI denoising again.";
-"照片或调整已变化，请重新检查目标。" = "The photo or its adjustments have changed. Check the target again.";
 "照片或调整已变化，请重新确认重置。" = "The photo or its adjustments have changed. Confirm the reset again.";
 "照片编辑保存失败，请先重试保存" = "Could not save photo edits; try saving again first";
 "照片编辑尚未保存" = "Photo edits have not been saved";
@@ -856,6 +857,7 @@
 "请先选择外观或配方。" = "Select a look or recipe first.";
 "请在调整后的照片区域取色。" = "Sample within the edited photo.";
 "请将白平衡模式、色温和色调一起保存，再应用此预设。" = "Save white balance mode, temperature, and tint together before applying this preset.";
+"请按历史顺序撤销或重做。" = "Undo or redo the edits in history order.";
 "请等待预览完成后导出。" = "Wait for the Preview to Finish Before Exporting.";
 "请至少选择一张 RAW 照片。" = "Please select at least one RAW photo.";
 "请至少选择一张照片。" = "Please select at least one photo.";
@@ -874,7 +876,6 @@
 "调整后" = "After";
 "调整工具" = "Adjustment Tools";
 "调整已保存" = "Adjustments Saved";
-"调整已变化" = "Adjustments changed";
 "调整未保存 · 重试" = "Adjustments not saved · Try again";
 "调整未保存：%@" = "Adjustments not saved: %@";
 "调整来源" = "Adjustment Source";

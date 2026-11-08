@@ -68,8 +68,7 @@ public partial class MainWindow
         }
         catch(Exception error)
         {
-            if(error is EditPersistenceConflict){adjustmentReloadRequired=true;RefreshControls();}
-            transformSaveFailed=true;SetSaveNotice(adjustmentReloadRequired ? "照片或调整已变化，请重新打开后重试。" : "调整未保存 · 重试",error.Message,true);return false;
+            transformSaveFailed=true;SetSaveNotice("调整未保存 · 重试",error.Message,true);return false;
         }
         // 只有候选已落盘，才能提升草稿；不再排队保存旧 committed。
         (settings.Geometry,settings.Lens)=transform.Apply();++editRevision;editDirty=false;

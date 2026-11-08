@@ -19,13 +19,12 @@ extension RawEditorViewModel {
         guard quickPresetsVisible, hasImage, !isBusy, !adjustmentPreparing, !quickPresetState.isPreparing,
               let source = editorEditSource, let photo = currentAdjustmentPhoto else { return }
         do {
-            guard saveCurrentSettings(settings), !hasAdjustmentDraft, !adjustmentReloadRequired,
+            guard saveCurrentSettings(settings), !hasAdjustmentDraft,
                   adjustmentTargetIsCurrent(photo.id), let session = adjustmentSession,
                   let expected = loadedEditRecord, expected.identity == source.identity,
                   try currentEditState(settings: settings).hasSameAdjustments(as: expected.state ?? PhotoEditState(settings: sourceDefaultSettings)) else {
                 throw AdjustmentTransferError.draftRequiresPreflight
             }
-            guard try editPersistence?.versionedState(for: source.identity) == expected else { throw EditPersistenceConflict.changed }
             let generation = UUID(), revision = settingsSaveRevision
             quickPresetGeneration = generation
             quickPresetState = .preparing(preset)
@@ -38,16 +37,15 @@ extension RawEditorViewModel {
                 do {
                     let operation = try result.get()
                     if let error = operation.targets.first?.error { throw error }
-                    guard operation.targets.count == 1, operation.targets.first?.original == expected,
-                          self.loadedEditRecord == expected else { throw EditPersistenceConflict.changed }
+                    guard operation.targets.count == 1 else { throw AdjustmentCommitError.expired }
                     let outcomes = self.applyAdjustmentPaste(operation, skipping: [])
-                    guard let outcome = outcomes.first, let saved = outcome.saved, self.loadedEditRecord == saved else {
-                        throw outcomes.first?.error ?? EditPersistenceConflict.changed
+                    guard let outcome = outcomes.first, outcome.saved != nil else {
+                        throw outcomes.first?.error ?? AdjustmentCommitError.expired
                     }
                     switch outcome.status {
                     case .applied: self.quickPresetState = .saved(preset, operation.id)
                     case .unchanged: self.quickPresetState = .unchanged(preset)
-                    default: throw outcome.error ?? EditPersistenceConflict.changed
+                    default: throw outcome.error ?? AdjustmentCommitError.expired
                     }
                 } catch { self.quickPresetState = .failed(preset, self.quickPresetErrorMessage(error)) }
             }
@@ -62,7 +60,8 @@ extension RawEditorViewModel {
         }
         guard quickPresetsVisible, !isBusy, !hasAdjustmentDraft, saveCurrentSettings(settings) else { return }
         let results = performAdjustmentHistory(undo: true, transactionID: transaction)
-        if let outcome = results.first, outcome.status == .applied, outcome.saved == loadedEditRecord {
+        if let outcome = results.first, outcome.status == .applied,
+           outcome.saved?.hasSameAdjustments(as: loadedEditRecord) == true {
             quickPresetState = .undone(preset)
         } else { quickPresetState = .undoFailed(preset, transaction, adjustmentErrorMessage(results.first?.error)) }
     }
@@ -83,7 +82,7 @@ extension RawEditorViewModel {
 
     func previewAdjustmentPayload(scope: AdjustmentTransferScope, settings: RawSettings) throws -> AdjustmentTransferPayload {
         guard let source = editorEditSource, let record = loadedEditRecord,
-              record.identity == source.identity, !adjustmentReloadRequired,
+              record.identity == source.identity,
               adjustmentTargetIsCurrent(source.identity.key) else { throw AdjustmentTransferError.draftRequiresPreflight }
         let committed = try record.state ?? PhotoEditState(settings: sourceDefaultSettings)
         return try IOSAdjustmentTransfer.previewCapture(scope: scope, snapshot: currentEditState(settings: settings),
@@ -106,11 +105,8 @@ extension RawEditorViewModel {
     func capturePresetAdjustments(scope: AdjustmentTransferScope, settings: RawSettings) throws -> AdjustmentTransferPayload {
         guard let source = editorEditSource, adjustmentSession != nil,
               adjustmentTargetIsCurrent(source.identity.key) else { throw AdjustmentTransferError.draftRequiresPreflight }
-        guard let expected = loadedEditRecord, expected.identity == source.identity,
-              let persistence = editPersistence, try persistence.versionedState(for: source.identity) == expected else {
-            adjustmentReloadRequired = true
-            editSaveState = .failed(adjustmentErrorMessage(EditPersistenceConflict.changed))
-            throw EditPersistenceConflict.changed
+        guard let expected = loadedEditRecord, expected.identity == source.identity else {
+            throw AdjustmentTransferError.draftRequiresPreflight
         }
         let snapshot = currentEditState(settings: settings)
         guard try snapshot.hasSameAdjustments(as: expected.state ?? PhotoEditState(settings: sourceDefaultSettings)) else {
@@ -131,7 +127,7 @@ extension RawEditorViewModel {
         case .unsupportedVersion: return L10n.text("此预设库来自更新版本，请更新应用后重试。")
         case .identityCollision: return L10n.text("无法创建新的预设标识，请重试。")
         case nil:
-            if error is EditPersistenceConflict { return adjustmentErrorMessage(error) }
+            if error is AdjustmentCommitError { return adjustmentErrorMessage(error) }
             if error is AdjustmentTransferError { return adjustmentErrorMessage(error) }
             return L10n.format("预设操作未完成：%@", error.localizedDescription)
         }

@@ -356,6 +356,7 @@
 "搜索镜头" = "Objektive suchen";
 "撤销" = "Rückgängig";
 "撤销 %@ 张" = "Fotos rückgängig machen: %@";
+"操作已失效" = "Vorgang nicht mehr gültig";
 "操作未完成，请重试。" = "Der Vorgang ist nicht abgeschlossen. Versuchen Sie es erneut.";
 "收起%@组" = "Gruppe „%@“ zuklappen";
 "收起其他方案" = "Weitere Optionen ausblenden";
@@ -503,6 +504,7 @@
 "此像素不可取样。" = "Dieses Pixel kann nicht erfasst werden.";
 "此外观已不在外观库中。" = "Dieser Look ist nicht mehr in der Look-Bibliothek enthalten.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Nur Anpassungen in der Gruppe „%@“ werden zurückgesetzt. Andere Gruppen bleiben unverändert.";
+"此操作已过期，请重新操作。" = "Dieser Vorgang ist nicht mehr aktuell. Starten Sie ihn erneut.";
 "此照片或构建尚不能使用 AI 降噪。" = "KI-Entrauschen ist für dieses Foto oder Build nicht verfügbar.";
 "此照片没有可用的相机白平衡校准。" = "Dieses Foto enthält keine nutzbare Kamera-Weißabgleichkalibrierung.";
 "此照片没有可编辑的 HDR 增益图。" = "Dieses Foto hat keine bearbeitbare HDR-Gain-Map.";
@@ -542,7 +544,6 @@
 "照片图库" = "Fotos";
 "照片处理设置" = "Fotoverarbeitung";
 "照片已写入，但任务记录未更新，请先核对保存结果。" = "Das Foto wurde geschrieben, aber der Auftragsdatensatz wurde nicht aktualisiert. Prüfen Sie zuerst das Ergebnis.";
-"照片或调整已变化，请重新检查目标。" = "Das Foto oder seine Anpassungen wurden geändert. Prüfen Sie das Ziel erneut.";
 "照片或调整已变化，请重新确认重置。" = "Das Foto oder seine Anpassungen haben sich geändert. Bestätigen Sie das Zurücksetzen erneut.";
 "照片缺少有效焦距，未应用校正" = "Keine gültige Brennweite; Korrektur nicht angewendet";
 "现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。" = "Die verfügbaren Parameterbereiche können die Wirkung des Rezepts nicht vollständig erhalten. Brechen Sie ab oder bestätigen Sie separat das Zurücksetzen aller Anpassungen.";
@@ -654,6 +655,7 @@
 "请先选择外观或配方。" = "Wähle zuerst einen Look oder ein Rezept.";
 "请在调整后的照片区域取色。" = "Wählen Sie eine Farbe im bearbeiteten Foto.";
 "请将白平衡模式、色温和色调一起保存，再应用此预设。" = "Speichere Weißabgleichmodus, Temperatur und Tönung zusammen, bevor du diese Vorgabe anwendest.";
+"请按历史顺序撤销或重做。" = "Machen Sie die Änderungen in der Reihenfolge des Verlaufs rückgängig oder wiederholen Sie sie.";
 "请等待当前任务完成。" = "Warten Sie, bis der aktuelle Auftrag abgeschlossen ist.";
 "请等待预览完成后导出。" = "Warten Sie vor dem Export, bis die Vorschau fertig ist.";
 "请输入 1–65535 之间的像素数" = "Geben Sie eine Pixelzahl zwischen 1 und 65.535 ein";
@@ -666,14 +668,15 @@
 "调整前" = "Vorher";
 "调整后" = "Nachher";
 "调整已保存" = "Anpassungen gespeichert";
-"调整已变化" = "Anpassungen geändert";
 "调整未保存 · 重试" = "Anpassungen nicht gespeichert · Erneut versuchen";
+"调整未保存，请重试。" = "Die Anpassungen wurden nicht gespeichert. Versuchen Sie es erneut.";
 "调整来源" = "Anpassungsquelle";
 "调整照片" = "Fotoanpassung";
 "调整范围" = "Anpassungsumfang";
 "调整裁切边角" = "Zuschnittecke anpassen";
 "调整触觉反馈" = "Haptisches Feedback bei Anpassungen";
-"调整记录已恢复，请重新选择照片载入。" = "Anpassungsdatensatz wiederhergestellt. Wählen Sie das Foto erneut aus, um es zu laden.";
+"调整记录已恢复，请重试保存。" = "Die Anpassungsdaten sind wieder verfügbar. Versuchen Sie erneut zu speichern.";
+"调整记录暂不可用，请稍后重试。" = "Die Anpassungsdaten sind vorübergehend nicht verfügbar. Versuchen Sie es später erneut.";
 "调整轴" = "Anpassungsachse";
 "赛博朋克 · 极致反差" = "Cyberpunk · extremer Kontrast";
 "跟随系统" = "Systemsprache verwenden";
@@ -723,8 +726,6 @@
 "重命名预设" = "Vorgabe umbenennen";
 "重新检查" = "Erneut prüfen";
 "重新载入" = "Neu laden";
-"重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。" = "Beim Neuladen werden ungespeicherte Anpassungen verworfen und der aktuell gespeicherte Stand dieses Fotos geladen.";
-"重新载入已保存调整" = "Gespeicherte Anpassungen neu laden";
 "重置" = "Zurücksetzen";
 "重置 HSL" = "HSL zurücksetzen";
 "重置%@" = "%@ zurücksetzen";

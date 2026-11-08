@@ -8,7 +8,6 @@ namespace RawLab.Windows;
 public partial class MainWindow
 {
     private bool transferPreparing;
-    private bool adjustmentReloadRequired;
     private int transferGeneration;
     private IReadOnlySet<string> AvailableTransferLooks()=>films.Where(f=>f.Path!=null && File.Exists(f.Path)).Select(f=>
         StringComparer.OrdinalIgnoreCase.Equals(Path.GetDirectoryName(f.Path),Path.Combine(AppContext.BaseDirectory,"LUTs"))
@@ -49,6 +48,7 @@ public partial class MainWindow
         IReadOnlyDictionary<string,CollectionPhoto>? collectionTargets=null)
     {
         var generation=++transferGeneration;var revision=editRevision;var opened=openRevision;var current=file;
+        var activeIdentity=currentEditRecord?.Identity;
         var session=TransferSession;var looks=AvailableTransferLooks();var selected=paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         transferPreparing=true;
         try {
@@ -61,19 +61,22 @@ public partial class MainWindow
                     if(!IsCurrent())return null;
                     try {
                         collectionTargets?.GetValueOrDefault(path)?.Validate();
-                        var identity=OriginalIdentity.Read(path);var raw=PhotoInput.IsRaw(path);
+                        var identity=OriginalIdentity.Read(path);
+                        if(StringComparer.OrdinalIgnoreCase.Equals(path,current) &&
+                            (activeIdentity==null || !activeIdentity.SameFile(identity)))throw new PhotoChangedException();
+                        var raw=PhotoInput.IsRaw(path);
                         HDRSourceInfo? cameraHDR = null;
                         if(raw && PhotoInput.ProbeCameraRaw(path,out var probed) == HDRProbeState.Supported)
                             cameraHDR = probed;
-                        var record=editStore!.VersionedState(path);
-                        if(!record.Identity.SameFile(identity))throw new EditPersistenceConflict();
+                        var record=editStore!.ReadState(path);
+                        if(!record.Identity.SameFile(identity))throw new PhotoChangedException();
                         var defaults=record.Edit?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(path);
                         (double Temperature,double Tint)? calibration=null;
                         if(raw) {
                             using var native=new RenderEngine(1);
                             calibration=native.Render(path,defaults,null,32,statistics:false,clipping:false)?.WhiteBalance;
                         }
-                        if(!OriginalIdentity.Read(path).SameFile(identity))throw new EditPersistenceConflict();
+                        if(!OriginalIdentity.Read(path).SameFile(identity))throw new PhotoChangedException();
                         var context=new AdjustmentTransferContext(path,raw,looks,CameraWhiteBalance:calibration,
                             IsProRAW:cameraHDR?.IsProRAW == true,SupportsCameraHDR:cameraHDR?.IsCameraRaw == true,
                             ValidateHDRCamera:candidate=>{
@@ -116,7 +119,7 @@ public partial class MainWindow
             var adopted=new Dictionary<string,Exception?>();
             var session=TransferSession;AdjustmentResultDialog? dialog=null;
             dialog=new AdjustmentResultDialog(this,action==AdjustmentHistoryAction.Preset ? "应用预设" : "粘贴调整",initial,true,skipping=>AdoptAdjustmentOutcomes(session.Apply(operation,skipping),adopted),
-                ()=>ReloadEditsClicked(this,new()),Loc.Format("来源：{0} · {1} 项调整",sourceName ?? Path.GetFileName(payload.Source.Identifier),payload.Fields.Count),
+                Loc.Format("来源：{0} · {1} 项调整",sourceName ?? Path.GetFileName(payload.Source.Identifier),payload.Fields.Count),
                 ()=>session.Transactions.FirstOrDefault(t=>t.ID==operation.ID)?.Parts ?? [],undo=>RunAdjustmentHistory(operation.ID,null,undo,dialog!),payload,AdjustmentSummaryLookName);
             dialog.ShowDialog();
         }catch(Exception error){ShowAdjustmentError(error);}
@@ -126,14 +129,14 @@ public partial class MainWindow
         return outcomes.Select(outcome=>{
             if(outcome.Status!=AdjustmentStatus.Applied || outcome.Saved is not {} saved ||
                 !StringComparer.OrdinalIgnoreCase.Equals(saved.Identity.Path,file))return outcome;
-            var key=saved.Identity.Path+"\n"+saved.Revision;
+            var key=saved.Identity.Path;
             if(adopted.TryGetValue(key,out var previousError))return previousError==null ? outcome : outcome with {Error=previousError,RequiresHistoryDecision=false};
             try{
                 AdoptSavedEdit(saved);
                 if(quickPresetsVisible && quickPreset.Phase!=QuickPresetPhase.Preparing)CancelQuickPreset();
                 adopted[key]=null;return outcome;
             }
-            catch(Exception error){adopted[key]=error;adjustmentReloadRequired=true;RefreshControls();return outcome with {Error=error,RequiresHistoryDecision=false};}
+            catch(Exception error){adopted[key]=error;return outcome with {Error=error,RequiresHistoryDecision=false};}
         }).ToArray();
     }
     private void UndoAdjustmentClicked(object sender,RoutedEventArgs e)=>RunPhotoHistory(true);
@@ -159,16 +162,13 @@ public partial class MainWindow
             return AdoptAdjustmentOutcomes(results,adopted);
         }
         var initial=Run(new HashSet<string>(StringComparer.OrdinalIgnoreCase));
-        if(initial.Any(o=>o.Error!=null))new AdjustmentResultDialog(owner,undo ? "撤销" : "重做",initial,false,Run,()=>{
-            if(owner!=this)owner.Close();
-            ReloadEditsClicked(this,new());
-        }).ShowDialog();
+        if(initial.Any(o=>o.Error!=null))new AdjustmentResultDialog(owner,undo ? "撤销" : "重做",initial,false,Run).ShowDialog();
     }
     private void ShowAdjustmentError(Exception error)=>MessageBox.Show(this,AdjustmentTransferPresentation.Error(error),Loc.Text("调整未应用"),MessageBoxButton.OK,MessageBoxImage.Information);
     private void EditMenuOpened(object sender,RoutedEventArgs e)
     {
         PresetsAdjustmentMenu.IsEnabled=!exporting && !closing && !transferPreparing;
-        var enabled=file!=null && !exporting && !closing && !aiJob.State.IsRunning && !adjustmentReloadRequired;
+        var enabled=file!=null && !exporting && !closing && !aiJob.State.IsRunning;
         UndoAdjustmentMenu.IsEnabled=enabled && adjustmentSession?.PhotoHistoryID(file!,true)!=null;
         RedoAdjustmentMenu.IsEnabled=enabled && adjustmentSession?.PhotoHistoryID(file!,false)!=null;
         CopyAdjustmentMenu.IsEnabled=HistoryAdjustmentMenu.IsEnabled=enabled;

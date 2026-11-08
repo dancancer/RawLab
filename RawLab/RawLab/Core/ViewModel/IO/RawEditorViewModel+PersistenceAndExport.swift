@@ -41,11 +41,12 @@ extension RawEditorViewModel {
 
     func persistEditCandidate(_ candidate: PhotoEditState, source: EditorEditSource) -> Bool {
         guard editorEditSource == source else { return false }
-        guard let expected = loadedEditRecord, expected.identity == source.identity, let session = adjustmentSession else {
-            adjustmentReloadRequired = true
-            editSaveState = .failed(L10n.text("调整记录已恢复，请重新选择照片载入。"))
+        guard let session = adjustmentSession else {
+            editSaveState = .failed(L10n.text("调整记录暂不可用，请稍后重试。"))
             return false
         }
+        let expected = loadedEditRecord ?? PhotoEditRecord(identity: source.identity, state: nil)
+        guard expected.identity == source.identity else { return false }
         let defaults: PhotoEditState?
         do { defaults = try expected.state == nil ? PhotoEditState(settings:sourceDefaultSettings) : nil }
         catch { editSaveState = .failed(adjustmentErrorMessage(error)); return false }
@@ -53,7 +54,6 @@ extension RawEditorViewModel {
             defaultState:defaults,isCurrent:{ self.editorEditSource==source },
             validateSource: adjustmentSourceValidator)
         if let saved = outcome.saved {
-            adjustmentReloadRequired = false
             if let state = saved.state { recordSavedLookChange(from: expected.state, to: state) }
             loadedEditRecord = saved
             retainEditMetadata(saved.state ?? candidate)
@@ -62,9 +62,8 @@ extension RawEditorViewModel {
             if outcome.status == .applied { setEditNotice(.saved) }
             return true
         }
-        adjustmentReloadRequired = outcome.status == .conflict
         if let error = outcome.error { ErrorDiagnostics.log(error, operation: .editPersistence, stage: "saveEdits") }
-        editSaveState = .failed(outcome.error?.localizedDescription ?? L10n.text("调整记录已恢复，请重新选择照片载入。"))
+        editSaveState = .failed(outcome.error.map(adjustmentErrorMessage) ?? L10n.text("调整未保存，请重试。"))
         return false
     }
 
@@ -84,7 +83,7 @@ extension RawEditorViewModel {
                 editPersistence = try EditPersistence.appStore()
                 adjustmentSession = editPersistence.map(IOSAdjustmentTransferSession.init(store:))
                 editSaveState = .idle
-                statusMessage = L10n.text("调整记录已恢复，请重新选择照片载入。")
+                statusMessage = L10n.text("调整记录已恢复，请重试保存。")
             } catch {
                 ErrorDiagnostics.log(error, operation: .editPersistence, stage: "reopenStore")
                 editSaveState = .failed(error.localizedDescription)

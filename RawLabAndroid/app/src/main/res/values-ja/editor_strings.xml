@@ -390,8 +390,8 @@
     <string name="transfer_channel_7">"マゼンタ"</string>
     <string name="transfer_choose_files">"ファイルから読み込む"</string>
     <string name="transfer_clear">"選択を解除"</string>
-    <string name="transfer_conflict">"調整が変更されました"</string>
-    <string name="transfer_conflict_message">"写真または調整が変更されました。対象を再確認してください。"</string>
+    <string name="transfer_conflict">"操作は無効になりました"</string>
+    <string name="transfer_conflict_message">"この操作は古くなっています。もう一度操作してください。"</string>
     <string name="transfer_copy">"調整をコピー"</string>
     <string name="transfer_custom">"カスタム"</string>
     <string name="transfer_draft_message">"未完了の入力とジオメトリの下書きを先に適用または破棄してください。"</string>
@@ -450,6 +450,7 @@
     <string name="transfer_history">"セッション履歴"</string>
     <string name="transfer_history_failed">"次の写真では履歴操作が完了していません。原因を確認して再試行してください。"</string>
     <string name="transfer_history_hint">"履歴はこのセッション中のみ保持されます。保存済みの調整は写真を再度開くと復元されます。"</string>
+    <string name="transfer_history_order_message">"履歴の順序に従って取り消しまたはやり直しを行ってください。"</string>
     <string name="transfer_history_skip">"上記の写真をスキップして再試行"</string>
     <string name="transfer_incompatible">"選択した調整はこの写真に対応していません。範囲を変更するか、スキップしてください。"</string>
     <string name="transfer_invalid_payload">"調整内容を読み取れません。もう一度コピーしてください。"</string>
@@ -464,8 +465,6 @@
     <string name="transfer_recheck">"再確認"</string>
     <string name="transfer_redo">"やり直す"</string>
     <string name="transfer_redo_count">"%1$s 枚をやり直す"</string>
-    <string name="transfer_reload">"保存済みの調整を読み直す"</string>
-    <string name="transfer_reload_body">"読み直すと未保存の調整を破棄し、この写真に現在保存されている設定を読み込みます。"</string>
     <string name="transfer_retry">"未完了の項目を再試行"</string>
     <string name="transfer_scope">"コピーする範囲"</string>
     <string name="transfer_select_group">"このグループを選択"</string>

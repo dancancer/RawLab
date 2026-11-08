@@ -165,7 +165,7 @@ final class RawEditorViewModel: ObservableObject {
     var editRecordMetadata: EditorRecordMetadata?
     var persistedEditorSettings: PersistedEditorSettings?
     var failedDraftSource: EditorEditSource?
-    var loadedEditRecord: VersionedPhotoEdit?
+    var loadedEditRecord: PhotoEditRecord?
     let batchSelection = IOSBatchSelection()
     @Published var collectionExportPreparing = false
     @Published var collectionExportFreezing = false
@@ -178,7 +178,6 @@ final class RawEditorViewModel: ObservableObject {
     var adjustmentSourceValidator: (() throws -> Void)?
     var hasAdjustmentDraft = false { didSet { if hasAdjustmentDraft && quickPresetState.isPreparing { cancelQuickPreset() } } }
     @Published var adjustmentInteractionRejected = false
-    @Published var adjustmentReloadRequired = false
     @Published var adjustmentHistoryRevision = UUID()
     @Published var adjustmentRestoredSettings: RawSettings?
     @Published var adjustmentHistoryResults: [IOSAdjustmentTransferOutcome] = []

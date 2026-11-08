@@ -390,8 +390,8 @@
     <string name="transfer_channel_7">"Magenta"</string>
     <string name="transfer_choose_files">"Aus Dateien importieren"</string>
     <string name="transfer_clear">"Auswahl aufheben"</string>
-    <string name="transfer_conflict">"Anpassungen geändert"</string>
-    <string name="transfer_conflict_message">"Das Foto oder seine Anpassungen wurden geändert. Prüfen Sie das Ziel erneut."</string>
+    <string name="transfer_conflict">"Vorgang nicht mehr gültig"</string>
+    <string name="transfer_conflict_message">"Dieser Vorgang ist nicht mehr aktuell. Starten Sie ihn erneut."</string>
     <string name="transfer_copy">"Anpassungen kopieren"</string>
     <string name="transfer_custom">"Benutzerdefiniert"</string>
     <string name="transfer_draft_message">"Wenden Sie offene Eingaben und Geometrieentwürfe zuerst an oder verwerfen Sie sie."</string>
@@ -450,6 +450,7 @@
     <string name="transfer_history">"Sitzungsverlauf"</string>
     <string name="transfer_history_failed">"Der Verlaufsschritt ist für diese Fotos unvollständig. Prüfe den Grund und versuche es erneut."</string>
     <string name="transfer_history_hint">"Der Verlauf gilt für diese Sitzung. Gespeicherte Anpassungen werden beim erneuten Öffnen wiederhergestellt."</string>
+    <string name="transfer_history_order_message">"Machen Sie die Änderungen in der Reihenfolge des Verlaufs rückgängig oder wiederholen Sie sie."</string>
     <string name="transfer_history_skip">"Aufgeführte Fotos überspringen und erneut versuchen"</string>
     <string name="transfer_incompatible">"Diese Anpassungen sind mit dem Foto nicht kompatibel. Ändern Sie den Umfang oder überspringen Sie es."</string>
     <string name="transfer_invalid_payload">"Die Anpassungen können nicht gelesen werden. Kopieren Sie sie erneut."</string>
@@ -464,8 +465,6 @@
     <string name="transfer_recheck">"Erneut prüfen"</string>
     <string name="transfer_redo">"Wiederholen"</string>
     <string name="transfer_redo_count">"Fotos wiederherstellen: %1$s"</string>
-    <string name="transfer_reload">"Gespeicherte Anpassungen neu laden"</string>
-    <string name="transfer_reload_body">"Beim Neuladen werden ungespeicherte Anpassungen verworfen und der aktuell gespeicherte Stand dieses Fotos geladen."</string>
     <string name="transfer_retry">"Offene erneut versuchen"</string>
     <string name="transfer_scope">"Kopierumfang"</string>
     <string name="transfer_select_group">"Gruppe auswählen"</string>

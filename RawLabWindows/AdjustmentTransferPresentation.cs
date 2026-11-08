@@ -64,10 +64,12 @@ internal static class AdjustmentTransferPresentation
     }
     internal static string Status(AdjustmentStatus status)=>Loc.Text(status switch {
         AdjustmentStatus.Applied=>"已保存",AdjustmentStatus.Unchanged=>"未变化",AdjustmentStatus.Skipped=>"已跳过",
-        AdjustmentStatus.Conflict=>"调整已变化",AdjustmentStatus.Failed=>"保存失败",_=>"待处理"
+        AdjustmentStatus.Conflict=>"操作已失效",AdjustmentStatus.Failed=>"保存失败",_=>"待处理"
     });
     internal static string Error(Exception? error)=>Loc.Text(error switch {
-        EditPersistenceConflict=>"照片或调整已变化，请重新打开后重试。",
+        PhotoChangedException=>"原始文件已被替换，请重新选择照片。",
+        AdjustmentOperationExpiredException=>"此操作已过期，请重新操作。",
+        AdjustmentHistoryOrderException=>"请按历史顺序撤销或重做。",
         AdjustmentTransferException {Failure:AdjustmentFailure.EmptyScope}=>"请选择至少一项调整。",
         AdjustmentTransferException {Failure:AdjustmentFailure.Draft}=>"请先应用或放弃当前草稿。",
         AdjustmentTransferException {Failure:AdjustmentFailure.MissingLook}=>"目标缺少所选外观，请先导入外观。",

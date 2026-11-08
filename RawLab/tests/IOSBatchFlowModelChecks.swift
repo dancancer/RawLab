@@ -107,7 +107,7 @@ enum IOSBatchFlowModelChecks {
         })
         model.sourceFile = .externallyManaged(files[0]); model.sourceIdentity = identities[0]
         model.sourceKind = .raster; model.hasImage = true
-        model.acceptImportedEditRecord(try store.versionedState(for: identities[0]), settings: .default)
+        model.acceptImportedEditRecord(try store.readState(for: identities[0]), settings: .default)
         let payload = try AdjustmentTransferPayload(source: .init(identifier: "independent-copy", isRaw: false,
             processingVersion: 2, recipe: nil), values: ["light.exposure": .number(0.7)])
         let target = IOSAdjustmentPhoto(identity: identities[1], displayName: "target", file: .externallyManaged(files[1]), isRaw: false)
@@ -116,13 +116,13 @@ enum IOSBatchFlowModelChecks {
         try wait { !deliveries.isEmpty }
         deliveries.removeFirst()()
         try require(prepared?.targets.first?.error == nil, "the transfer is ready before switching source")
-        let before = try store.versionedState(for: identities[1])
+        let before = try store.readState(for: identities[1])
         let history = model.adjustmentSession!.transactions.count
         model.sourceRevision = UUID()
         model.sourceFile = .externallyManaged(files[2]); model.sourceIdentity = identities[2]
-        model.acceptImportedEditRecord(try store.versionedState(for: identities[2]), settings: .default)
+        model.acceptImportedEditRecord(try store.readState(for: identities[2]), settings: .default)
         _ = model.applyAdjustmentPaste(prepared!, skipping: [])
-        try require(try store.versionedState(for: identities[1]) == before,
+        try require(store.readState(for: identities[1]).hasSameAdjustments(as: before),
             "a source switch rejects an old prepared write to another target")
         try require(model.adjustmentSession!.transactions.count == history, "an expired transfer adds no history")
 

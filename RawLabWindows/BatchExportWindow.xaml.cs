@@ -185,7 +185,7 @@ public partial class BatchExportWindow : Window
     private BatchItem ValidateInput(BatchJob snapshot, BatchItem item, RenderEngine validator)
     {
         try {
-            if (!item.Identity.SameFile(OriginalIdentity.Read(item.Input))) throw new EditPersistenceConflict();
+            if (!item.Identity.SameFile(OriginalIdentity.Read(item.Input))) throw new PhotoChangedException();
             var prepared=BatchHDRPreparation.Required(snapshot) ? RequireHDRPreparation().Prepare(snapshot,item) : null;
             var effective=prepared?.Settings.Restore() ??
                 RenderEngine.PrepareBatchSettings(snapshot.Source,item.Input,snapshot.Settings.Restore());

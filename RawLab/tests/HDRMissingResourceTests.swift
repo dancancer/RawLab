@@ -28,7 +28,7 @@ import UIKit
             try store.save(identity, state: PhotoEditState(settings: saved))
             let gateModel = RawEditorViewModel(editPersistence: store)
             check(!gateModel.isLookAvailable(for: saved), "Missing HDR resources must block export")
-            let before = try store.versionedState(for: identity)
+            let before = try store.readState(for: identity)
             let model = RawEditorViewModel(editPersistence: store)
             let source: PhotoImportSource = profile
                 ? .raw(URL(fileURLWithPath: ProcessInfo.processInfo.environment["RAWLAB_TEST_CAMERA_RAW"]!)) : .raster(input)
@@ -37,7 +37,7 @@ import UIKit
             check(model.hasImage && model.hdrPresentation != nil && model.currentPreviewSettings == saved,
                   "Missing HDR resource blocked import or rewrote saved settings")
             check(model.statusMessage != nil && !model.previewFailed, "Missing HDR resource was not explained")
-            let after = try store.versionedState(for: identity)
+            let after = try store.readState(for: identity)
             check(before == after, "Preview recovery changed the saved edit record")
             var cleared = saved
             cleared.hdr?.lookSettings = HDRLookSettings()

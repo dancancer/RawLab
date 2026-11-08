@@ -21,27 +21,29 @@ import Foundation
         try check(reopened.state(for: a)?.settings.exposure == 1 && reopened.state(for: b)?.settings.exposure == 2,
             "Independent store instances preserve both photos")
         try check(first.state(for: b)?.settings.exposure == 2, "Existing readers observe another instance's save")
-        let saved = try first.versionedState(for: a)
-        try check(saved.revision != nil, "A successful edit creates a per-photo revision")
+        let saved = try first.readState(for: a)
+        try check(saved.state?.settings.exposure == 1, "A successful edit creates a readable photo record")
         let metadataOnly = PhotoEditState(settings: saved.state!.settings, updatedAt: Date(timeIntervalSince1970: 999))
-        let unchanged = try first.compareAndSave(expected: saved, state: metadataOnly)
-        try check(unchanged == saved, "Timestamp-only changes keep the complete stored receipt")
+        let unchanged = try first.saveState(identity: saved.identity, state: metadataOnly)
+        try check(unchanged.hasSameAdjustments(as: saved), "Timestamp-only changes do not rewrite the stored adjustments")
         settings.exposure = 3
-        let changed = try first.compareAndSave(expected: saved, state: .init(settings: settings))
-        try check(changed.revision != saved.revision && changed.state?.settings.exposure == 3, "CAS saves a new revision atomically")
-        try rejects("Stale CAS cannot overwrite a later save") { _ = try second.compareAndSave(expected: saved, state: metadataOnly) }
+        let changed = try first.saveState(identity: saved.identity, state: .init(settings: settings))
+        try check(changed.state?.settings.exposure == 3, "SaveState writes the requested adjustment atomically")
+        let later = try second.saveState(identity: saved.identity, state: metadataOnly)
+        try check(later.state?.settings.exposure == 1, "Independent writers use the current session intent instead of a disk revision")
         let missing = PhotoIdentity(resourceIdentifier: "missing")
-        let absent = try first.versionedState(for: missing)
-        _ = try first.compareAndSave(expected: absent, state: metadataOnly)
+        let absent = try first.readState(for: missing)
+        _ = try first.saveState(identity: absent.identity, state: metadataOnly)
         try first.reset(missing)
-        let deleted = try first.versionedState(for: missing)
-        try check(deleted.state == nil && deleted.revision != nil, "Deletion retains a revision tombstone")
-        try rejects("Delete and recreate cannot bypass a prepared absence") { _ = try first.compareAndSave(expected: absent, state: metadataOnly) }
+        let deleted = try first.readState(for: missing)
+        try check(deleted.state == nil, "Deletion removes the current record without a revision tombstone")
+        _ = try first.saveState(identity: absent.identity, state: metadataOnly)
+        try check(first.state(for: missing)?.settings == metadataOnly.settings, "A later ordinary save can recreate a deleted record")
         let file = root.appendingPathComponent("edits.json"), bytes = try Data(contentsOf: file)
         let failing = try EditPersistence(directory: root, writeData: { _, _ in throw NSError(domain: "injected write", code: 1) })
         settings.exposure = -1
-        try rejects("Injected atomic write failure is reported") { _ = try failing.compareAndSave(expected: changed, state: .init(settings: settings)) }
-        try check(try Data(contentsOf: file) == bytes && first.versionedState(for: a) == changed, "Write failure preserves bytes and revision")
+        try rejects("Injected atomic write failure is reported") { _ = try failing.saveState(identity: changed.identity, state: .init(settings: settings)) }
+        try check(try Data(contentsOf: file) == bytes && first.readState(for: a).state?.settings.exposure == 1, "Write failure preserves the registry")
         var invalid = settings; invalid.exposure = .nan
         try rejects("Invalid JSON cannot replace the old registry") { try first.save(a, state: .init(settings: invalid)) }
         try check(try Data(contentsOf: file) == bytes, "Encoding failure preserves the registry")
@@ -52,6 +54,7 @@ import Foundation
         try unavailable(root.appendingPathComponent("unavailable"))
         try photoLibraryFallback(root.appendingPathComponent("photo-library-fallback"))
         try transferableFallback(root.appendingPathComponent("transferable-fallback"))
+        try legacyDeletionFallback(root.appendingPathComponent("legacy-deletion-fallback"))
         try await lazyTransferableFallback(root.appendingPathComponent("lazy-transferable-fallback"))
     }
 
@@ -119,7 +122,7 @@ import Foundation
         try store.save(legacyID, state: legacy)
         let file = directory.appendingPathComponent("edits.json")
         let before = try Data(contentsOf: file)
-        let receipt = try store.versionedState(for: photo)
+        let receipt = try store.readState(for: photo)
         try check(receipt.state == legacy && receipt.identity.key == "photo:edited-asset",
                   "Different transferable bytes restore the old content edit under the library identity")
         try check(try Data(contentsOf: file) == before,
@@ -129,9 +132,6 @@ import Foundation
                   "A journal round-trip retains the transferable fallback")
         settings.exposure = 2
         try store.save(legacyID, state: .init(settings: settings))
-        try rejects("A changed transferable record invalidates its prepared receipt") {
-            _ = try store.compareAndSave(expected: receipt, state: legacy)
-        }
         settings.exposure = -0.5
         try store.save(originalID, state: .init(settings: settings))
         try check(store.state(for: photo)?.settings.exposure == -0.5,
@@ -163,7 +163,7 @@ import Foundation
         try store.save(content, state: legacy)
         let file = directory.appendingPathComponent("edits.json")
         let before = try Data(contentsOf: file)
-        let restored = try store.versionedState(for: photo)
+        let restored = try store.readState(for: photo)
         try check(photo.key == "photo:asset-id" && restored.identity == photo && restored.state == legacy,
                   "Photo library identity reads an existing content edit without changing its key")
         try check(store.state(for: photo) == legacy && Data(contentsOf: file) == before,
@@ -173,25 +173,23 @@ import Foundation
         try check(store.state(for: resetFallback) == nil && store.state(for: content) == legacy,
                   "Resetting a fallback-only photo preserves the old record without restoring it")
         let afterReset = try Data(contentsOf: file)
-        let unchanged = try store.compareAndSave(expected: restored, state: legacy)
-        try check(unchanged == restored && Data(contentsOf: file) == afterReset,
+        let unchanged = try store.saveState(identity: restored.identity, state: legacy)
+        try check(unchanged.hasSameAdjustments(as: restored) && Data(contentsOf: file) == afterReset,
                   "Unchanged fallback adjustments do not create a photo record")
         settings.exposure = 2
         try store.save(content, state: .init(settings: settings))
-        try rejects("Changing the legacy record invalidates a prepared fallback receipt") {
-            _ = try store.compareAndSave(expected: restored, state: legacy)
-        }
-        let refreshed = try store.versionedState(for: photo)
+        _ = try store.saveState(identity: restored.identity, state: legacy)
+        let refreshed = try store.readState(for: photo)
         let legacyState = store.state(for: content)
         settings.exposure = -0.5
-        let saved = try store.compareAndSave(expected: refreshed, state: .init(settings: settings))
+        let saved = try store.saveState(identity: refreshed.identity, state: .init(settings: settings))
         try check(saved.state?.settings.exposure == -0.5 && store.state(for: photo)?.settings.exposure == -0.5,
                   "Explicit edits write a preferred photo record")
         try check(store.state(for: content) == legacyState,
                   "Saving photo edits preserves the old content record")
         try store.reset(photo)
-        let deleted = try store.versionedState(for: photo)
-        try check(deleted.state == nil && deleted.revision != nil && store.state(for: content) != nil,
+        let deleted = try store.readState(for: photo)
+        try check(deleted.state == nil && store.state(for: content) != nil,
                   "Photo deletion tombstone prevents old content edits from reappearing")
         try Data("corrupt".utf8).write(to: file)
         try check(store.state(for: photo) == nil,
@@ -203,13 +201,13 @@ import Foundation
         let oldBytes = try JSONEncoder().encode(["records": [content.key: legacy]])
         try oldBytes.write(to: oldFile)
         let oldStore = try EditPersistence(directory: oldDirectory)
-        let oldRecord = try oldStore.versionedState(for: photo)
-        try check(oldRecord.state == legacy && oldRecord.revision == nil && Data(contentsOf: oldFile) == oldBytes,
-                  "Unversioned content edits remain readable without adding revisions")
+        let oldRecord = try oldStore.readState(for: photo)
+        try check(oldRecord.state == legacy && Data(contentsOf: oldFile) == oldBytes,
+                  "Unversioned content edits remain readable without adding a revision map")
         try Data("corrupt".utf8).write(to: oldFile)
         try check(oldStore.state(for: photo) == legacy,
                   "Storage failure retains the last readable fallback edit")
-        try rejects("Strict fallback reads still report corrupt storage") { _ = try oldStore.versionedState(for: photo) }
+        try rejects("Strict fallback reads still report corrupt storage") { _ = try oldStore.readState(for: photo) }
     }
 
     static func refinedRecipe() throws {
@@ -254,16 +252,16 @@ import Foundation
         let store = try EditPersistence(directory: directory), identity = PhotoIdentity(resourceIdentifier: "loaded")
         var settings = RawSettings.default; settings.exposure = 0.4
         try store.save(identity, state: .init(settings: settings))
-        let receipt = try store.versionedState(for: identity)
+        let receipt = try store.readState(for: identity)
         let backup = directory.appendingPathExtension("backup")
         try FileManager.default.moveItem(at: directory, to: backup)
         try Data([1]).write(to: directory)
         try check(store.state(for: identity)?.settings == settings, "Legacy read retains the last accepted record during storage failure")
-        try rejects("Strict transaction read never falls back to cached records") { _ = try store.versionedState(for: identity) }
-        try rejects("Unavailable store cannot commit using the cache") { _ = try store.compareAndSave(expected: receipt, state: nil) }
+        try rejects("Strict transaction read never falls back to cached records") { _ = try store.readState(for: identity) }
+        try rejects("Unavailable store cannot commit using the cache") { _ = try store.saveState(identity: receipt.identity, state: nil) }
         try FileManager.default.removeItem(at: directory)
         try FileManager.default.moveItem(at: backup, to: directory)
-        try check(try store.versionedState(for: identity) == receipt, "Restored storage reads the original receipt")
+        try check(try store.readState(for: identity).hasSameAdjustments(as: receipt), "Restored storage reads the original record")
     }
 
     static func legacy(_ directory: URL) throws {
@@ -274,20 +272,44 @@ import Foundation
         let file = directory.appendingPathComponent("edits.json")
         let bytes = try JSONEncoder().encode(["records": [identity.key: state]])
         try bytes.write(to: file)
-        let store = try EditPersistence(directory: directory), before = try store.versionedState(for: identity)
-        try check(before.state == state && before.revision == nil && Data(contentsOf: file) == bytes,
-            "Legacy records read without rewriting or inventing a revision")
+        let store = try EditPersistence(directory: directory), before = try store.readState(for: identity)
+        try check(before.state == state && Data(contentsOf: file) == bytes,
+            "Legacy records read without rewriting or inventing a revision map")
         settings.exposure = 1
-        let next = try store.compareAndSave(expected: before, state: state.replacing(settings: settings, preservingFilmID: nil))
-        try check(next.state?.filmID == nil && next.revision != nil, "Legacy CAS preserves explicit nil look metadata")
+        let next = try store.saveState(identity: before.identity, state: state.replacing(settings: settings, preservingFilmID: nil))
+        let rewritten = try Data(contentsOf: file)
+        try check(next.state?.filmID == nil && !String(data: rewritten, encoding: .utf8)!.contains("Revisions"),
+                  "Legacy writes preserve explicit nil look metadata without generating revisions")
+    }
+
+    static func legacyDeletionFallback(_ directory: URL) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let content = PhotoIdentity(contentIdentifier: "legacy-content")
+        let deleted = PhotoIdentity(resourceIdentifier: "deleted-photo", contentIdentifier: content.contentIdentifier)
+        var settings = RawSettings.default; settings.exposure = 0.6
+        let record = PhotoEditState(settings: settings)
+        let file = directory.appendingPathComponent("edits.json")
+        let object: [String: Any] = [
+            "version": 1,
+            "records": [content.key: try JSONSerialization.jsonObject(with: JSONEncoder().encode(record))],
+            "revisions": [deleted.key: "legacy-tombstone"]
+        ]
+        try JSONSerialization.data(withJSONObject: object).write(to: file)
+        let store = try EditPersistence(directory: directory)
+        try check(store.state(for: deleted) == nil,
+                  "Legacy revision tombstone blocks an old content fallback")
+        try store.save(.init(resourceIdentifier: "new-photo"), state: .init(settings: .default))
+        let reopened = try EditPersistence(directory: directory)
+        try check(reopened.state(for: deleted) == nil,
+                  "Saving another photo preserves migrated legacy deletion markers")
     }
 
     static func corrupt(_ directory: URL) throws {
         let store = try EditPersistence(directory: directory), identity = PhotoIdentity(resourceIdentifier: "future")
-        let before = try store.versionedState(for: identity), file = directory.appendingPathComponent("edits.json")
+        let before = try store.readState(for: identity), file = directory.appendingPathComponent("edits.json")
         let future = Data("{\"version\":99,\"records\":{}}".utf8)
         try future.write(to: file)
-        try rejects("Future registry version blocks CAS") { _ = try store.compareAndSave(expected: before, state: .init(settings: .default)) }
+        try rejects("Future registry version blocks ordinary writes") { _ = try store.saveState(identity: before.identity, state: .init(settings: .default)) }
         try check(try Data(contentsOf: file) == future, "Future registry bytes are preserved")
         try Data("broken".utf8).write(to: file)
         try rejects("Corrupt registry blocks existing writers") { try store.save(identity, state: .init(settings: .default)) }

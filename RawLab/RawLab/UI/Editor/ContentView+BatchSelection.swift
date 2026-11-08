@@ -82,11 +82,19 @@ extension ContentView {
         discardEditorDraft()
         activateEditorTool(.adjustment(.exposure))
         viewModel.hasAdjustmentDraft = false
-        guard viewModel.reloadSavedAdjustments() else { return false }
-        if let restored = viewModel.adjustmentRestoredSettings {
+        do {
+            let restored = try viewModel.loadedEditRecord?.state?.settings ?? viewModel.sourceDefaultSettings
+            if let source = viewModel.editorEditSource {
+                viewModel.persistedEditorSettings = PersistedEditorSettings(source: source, settings: restored)
+            }
             settings = restored
-            viewModel.adjustmentRestoredSettings = nil
+            viewModel.committedPreviewSettings = restored
+            viewModel.currentPreviewSettings = restored
+            viewModel.updatePreview(settings: restored, includeHistogram: true, quality: .final)
+            return true
+        } catch {
+            viewModel.reportError(error, operation: .editPersistence, stage: "restoreCommittedAdjustments")
+            return false
         }
-        return true
     }
 }

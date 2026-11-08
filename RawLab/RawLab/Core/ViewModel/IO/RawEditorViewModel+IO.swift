@@ -164,13 +164,13 @@ extension RawEditorViewModel {
                 do {
                     let resolvedIdentity = identity ?? (try? PhotoIdentity.fallback(for: inputURL))
                     importIdentity = resolvedIdentity
-                    let versioned = try resolvedIdentity.flatMap { try self.editPersistence?.versionedState(for: $0) }
-                    let record = versioned?.state
-                    var restoredSettings = try record?.settings ?? self.processor.defaultSettings(
+                    let record = try resolvedIdentity.flatMap { try self.editPersistence?.readState(for: $0) }
+                    let state = record?.state
+                    var restoredSettings = try state?.settings ?? self.processor.defaultSettings(
                         for: inputURL, isRaw: source.isRaw, x3fModeOverride: x3fModeOverride)
                     if let x3fModeOverride { restoredSettings.x3fMode = x3fModeOverride }
                     attemptedX3fMode = restoredSettings.x3fMode
-                    context["restoredEdits"] = String(record != nil)
+                    context["restoredEdits"] = String(state != nil)
                     context["mode"] = restoredSettings.isHDREditing ? "hdr" : "sdr"
                     if inputURL.pathExtension.lowercased() == "x3f" { context["x3fMode"] = attemptedX3fMode.rawValue }
                     stage = "cacheSource"
@@ -187,7 +187,7 @@ extension RawEditorViewModel {
                         }
                         let cameraHDR = hdrInfo?.isDevelopedRAW == true
                         let rasterHDR = hdrInfo != nil && !cameraHDR
-                        if rasterHDR && record == nil { restoredSettings.hdr=HDRSettings() }
+                        if rasterHDR && state == nil { restoredSettings.hdr=HDRSettings() }
                         context["mode"] = restoredSettings.isHDREditing ? "hdr" : "sdr"
                         stage = "renderPreview"
                         let importContext = context.merging(ErrorDiagnostics.fileContext(localURL)) { first, _ in first }
@@ -215,9 +215,9 @@ extension RawEditorViewModel {
                                 self.hasImage=true; self.isBusy=false; self.sourceRevision=UUID()
                                 self.statusMessage = hdr.missingResourceMessage
                                 self.recordImportedComparison(settings:restoredSettings)
-                                self.acceptImportedEditRecord(versioned,settings:restoredSettings)
+                                self.acceptImportedEditRecord(record,settings:restoredSettings)
                                 self.persistedEditorSettings=nil; self.failedDraftSource=nil
-                                if self.editPersistence != nil { self.setEditNotice(record==nil ? .idle : .restored) }
+                                if self.editPersistence != nil { self.setEditNotice(state == nil ? .idle : .restored) }
                                 ErrorDiagnostics.app.recordImportSuccess(attemptID: importRevision, context: importContext)
                                 onSettingsRestored?(restoredSettings); onImported?()
                             }
@@ -269,10 +269,10 @@ extension RawEditorViewModel {
                                 self.isBusy = false
                                 self.sourceRevision = UUID()
                                 self.recordImportedComparison(settings: restoredSettings)
-                                self.acceptImportedEditRecord(versioned, settings: restoredSettings)
+                                self.acceptImportedEditRecord(record, settings: restoredSettings)
                                 self.persistedEditorSettings = nil
                                 self.failedDraftSource = nil
-                                if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
+                                if self.editPersistence != nil { self.setEditNotice(state == nil ? .idle : .restored) }
                                 onSettingsRestored?(restoredSettings)
                                 if x3fModeOverride != nil { self.queueSettingsSave(restoredSettings) }
                                 if self.hasImage && adjustedImage != nil {
@@ -331,10 +331,10 @@ extension RawEditorViewModel {
                                 self.isBusy = false
                                 self.sourceRevision = UUID()
                                 self.recordImportedComparison(settings: restoredSettings)
-                                self.acceptImportedEditRecord(versioned, settings: restoredSettings)
+                                self.acceptImportedEditRecord(record, settings: restoredSettings)
                                 self.persistedEditorSettings = nil
                                 self.failedDraftSource = nil
-                                if self.editPersistence != nil { self.setEditNotice(record == nil ? .idle : .restored) }
+                                if self.editPersistence != nil { self.setEditNotice(state == nil ? .idle : .restored) }
                                 onSettingsRestored?(restoredSettings)
                                 if self.hasImage && adjustedImage != nil {
                                     ErrorDiagnostics.app.recordImportSuccess(attemptID: importRevision, context: importContext)

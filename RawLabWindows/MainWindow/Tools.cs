@@ -368,7 +368,6 @@ public partial class MainWindow
     {
         RefreshHDRControls();
         if(!ready)return;
-        ReloadEditsButton.Visibility=adjustmentReloadRequired ? Visibility.Visible : Visibility.Collapsed;
         syncing=true;
         try
         {
@@ -554,7 +553,7 @@ public partial class MainWindow
         CompareButton.IsEnabled=CompareModeButton.IsEnabled=file!=null && !exporting && !transform.Active && ShowsPhotoWorkspace;
         InfoEntryButton.Visibility=file==null ? Visibility.Collapsed : Visibility.Visible;
         InfoEntryButton.IsEnabled=file!=null && !exporting;
-        AdjustmentPanel.IsEnabled=!exporting && !adjustmentReloadRequired;GpuMode.IsEnabled=!exporting && (file==null || !LibraryEntry.IsRaster(file));
+        AdjustmentPanel.IsEnabled=!exporting;GpuMode.IsEnabled=!exporting && (file==null || !LibraryEntry.IsRaster(file));
         var busy=(scheduler.Busy && scheduler.Revision!=quietViewportRevision) || previewResize.IsEnabled || aiJob.State.IsRunning;
         BusyIndicator.Visibility=busy ? Visibility.Visible : Visibility.Collapsed;
         BusyAnimation.Visibility=SystemParameters.ClientAreaAnimation ? Visibility.Visible : Visibility.Collapsed;

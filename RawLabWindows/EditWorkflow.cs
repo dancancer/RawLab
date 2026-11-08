@@ -22,7 +22,7 @@ public partial class MainWindow
     private void InitializeEditWorkflow()
     {
         editSaveTimer.Tick += (_, _) => { editSaveTimer.Stop(); SaveEdits(); };
-        editNoticeTimer.Tick += (_, _) => { editNoticeTimer.Stop(); if (RetrySave.Visibility != Visibility.Visible && !adjustmentReloadRequired) {SaveState.Text = "";saveNoticeKey=null;} };
+        editNoticeTimer.Tick += (_, _) => { editNoticeTimer.Stop(); if (RetrySave.Visibility != Visibility.Visible) {SaveState.Text = "";saveNoticeKey=null;} };
         Deactivated += (_, _) => {
             if (quickPreset.Phase == QuickPresetPhase.Preparing) CancelQuickPreset();
             if(preservingUpdateNavigation)return;
@@ -61,8 +61,7 @@ public partial class MainWindow
             return true;
         }
         catch (Exception error) {
-            if(error is EditPersistenceConflict){adjustmentReloadRequired=true;RefreshControls();}
-            SetSaveNotice(adjustmentReloadRequired ? "照片或调整已变化，请重新打开后重试。" : "调整未保存 · 重试", error.Message, true);return false;
+            SetSaveNotice("调整未保存 · 重试", error.Message, true);return false;
         }
     }
 
@@ -133,12 +132,12 @@ public partial class MainWindow
     private void RestoreEdits(string input)
     {
         editStore ??= new EditStore(EditStore.DefaultDirectory);
-        var nextRecord = editStore.VersionedState(input);
+        var nextRecord = editStore.ReadState(input);
         var saved = nextRecord.Edit;
         // New HDR sources start in HDR mode; an existing snapshot without HDR
         // remains the legacy SDR record by construction.
         var nextSettings = saved?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(input);
-        currentEditRecord=nextRecord;editGesture=null;adjustmentReloadRequired=false;settings=nextSettings;
+        currentEditRecord=nextRecord;editGesture=null;settings=nextSettings;
         lut = saved == null ? null : ResolveLook(saved);
         if (settings.MasterRecipeID == null && lut != null && !films.Any(f => StringComparer.OrdinalIgnoreCase.Equals(f.Path, lut)))
         {
@@ -156,11 +155,19 @@ public partial class MainWindow
     {
         saveNoticeKey=key;SaveState.Text = Loc.Text(key); SaveState.ToolTip = detail;
         SaveState.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty,failed ? "ErrorForeground" : "Muted");
-        RetrySave.Visibility = failed && !adjustmentReloadRequired ? Visibility.Visible : Visibility.Collapsed;
+        RetrySave.Visibility = failed ? Visibility.Visible : Visibility.Collapsed;
         editNoticeTimer.Stop(); if (!failed) editNoticeTimer.Start();
     }
     private void RetrySaveClicked(object sender, RoutedEventArgs e)
     {
+        try {
+            if(file!=null && currentEditRecord is {} record && !OriginalIdentity.Read(file).SameFile(record.Identity)) {
+                if(MessageBox.Show(this,Loc.Text("原始文件已被替换。是否放弃未保存的调整并重新打开照片？"),
+                    "RawLab",MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No)==MessageBoxResult.Yes)
+                    ReloadCurrentAdjustments();
+                return;
+            }
+        }catch(Exception error){ShowAdjustmentError(error);return;}
         if(transformSaveFailed && transform.Active) { ApplyTransformDraft(); return; }
         if (editDirty) { SaveEdits(); return; }
         try { editStore = new EditStore(EditStore.DefaultDirectory); SetSaveNotice("调整记录可用", "", false); }

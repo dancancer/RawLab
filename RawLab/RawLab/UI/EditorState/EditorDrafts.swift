@@ -177,7 +177,6 @@ extension ContentView {
     }
 
     func retryEditorSave() {
-        if viewModel.adjustmentReloadRequired { adjustmentReloadPresented = true; return }
         if isEditorDraftActive && viewModel.hasFailedDraftSave {
             if pendingToolSelection != nil || pendingAdjustmentExpansion != nil || resetRestoreTool != nil || pendingFileImport || pendingPhotoImport || !pendingSystemPhotoURLs.isEmpty || pendingAdjustmentAction != nil || pendingCollectionNavigation != nil { finishDraftNavigation(apply: true) }
             else { applyEditorDraft() }

@@ -107,8 +107,8 @@ internal static class WorkspaceLookChecks
             Invoke(window,"SaveEdits");Ready(window);
             var recent=Get<RecentLooks>(window,"recentLooks");
             check(recent.IDs.SequenceEqual(new[]{"builtin:"+Path.GetFileName(acros)}),"Successful retry records the stable built-in identity once");
-            var saved=store.VersionedState(source);window.LookSearch.Text="no matching look";window.UpdateLayout();
-            check(window.LookEmpty.IsVisible && window.LookImport.IsVisible && window.LookImport.IsEnabled && store.VersionedState(source).SameAs(saved),
+            var saved=store.ReadState(source);window.LookSearch.Text="no matching look";window.UpdateLayout();
+            check(window.LookEmpty.IsVisible && window.LookImport.IsVisible && window.LookImport.IsEnabled && store.ReadState(source).SameAs(saved),
                 "Empty search retains the committed look and fixed import action");
             window.LookEmptyAction.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             window.LookCategory.SelectedIndex=(int)LookBrowserCategory.Recent;window.UpdateLayout();

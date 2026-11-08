@@ -44,11 +44,11 @@ import Foundation
         let partial = session.apply(operation)
         try check(partial.map(\.status) == [.applied, .failed] && session.transactions.count == 1
             && session.transactions[0].parts.count == 1, "Only successfully saved targets enter a partial transaction")
-        let savedA = try store.versionedState(for: a)
+        let savedA = try store.readState(for: a)
         failB = false
         let retry = session.apply(operation)
-        try check(retry.map(\.status) == [.applied, .applied] && store.versionedState(for: a) == savedA,
-            "Retry saves only the failed target and preserves successful revision")
+        try check(retry.map(\.status) == [.applied, .applied] && store.readState(for: a).hasSameAdjustments(as: savedA),
+            "Retry saves only the failed target and preserves the successful target")
         let undoA = session.undoPhoto(a)
         try check(undoA.count == 1 && undoA[0].status == .applied && store.state(for: a) == nil,
             "Single-photo undo restores absence without undoing other successful targets")
@@ -62,13 +62,13 @@ import Foundation
         try check(session.apply(noChange).allSatisfy { $0.status == .unchanged } && session.transactions.count == count,
             "Identical paste creates no history")
         _ = session.undoPhoto(a)
-        let timestampOnly = session.commitEdit(expected: try store.versionedState(for: a), state: state(0), defaultState: state(0))
+        let timestampOnly = session.commitEdit(expected: try store.readState(for: a), state: state(0), defaultState: state(0))
         try check(timestampOnly.status == .unchanged && session.canRedoPhoto(a), "Default absence no-op preserves redo")
-        let newEdit = session.commitEdit(expected: try store.versionedState(for: a), state: state(2))
+        let newEdit = session.commitEdit(expected: try store.readState(for: a), state: state(2))
         try check(newEdit.status == .applied && !session.canRedoPhoto(a), "New edit clears only that photo's redo")
         try check(session.transactions.first!.parts.first(where: { $0.identity == b })?.state == .applied,
             "Other photo history survives a new single-photo edit")
-        _ = session.commitEdit(expected: try store.versionedState(for: a), state: state(1))
+        _ = session.commitEdit(expected: try store.readState(for: a), state: state(1))
         let remaining = session.undoTransaction(operation.id)
         try check(remaining.count == 1 && remaining[0].targetID == b.key && remaining[0].status == .applied
             && store.state(for: a)?.settings.exposure == 1 && store.state(for: b) == nil,
@@ -104,8 +104,8 @@ import Foundation
                   store.state(for: content) == legacy,
                   "Redo restores photo edits while leaving the old content record untouched")
         try store.reset(photo)
-        try check(session.undoPhoto(photo).first?.status == .conflict && store.state(for: photo) == nil,
-                  "External photo reset blocks stale fallback history without resurrecting old edits")
+        try check(session.undoPhoto(photo).first?.status == .applied && store.state(for: photo)?.settings.exposure == 0.5,
+                  "Session history restores its own prior edit after an external photo reset")
     }
 
     static func synchronization(_ root: URL) throws {
@@ -133,7 +133,7 @@ import Foundation
         let rejected = session.apply(injected)
         try check(rejected.map(\.status) == [.blocked] && store.state(for: source)?.settings.exposure == 0.5,
             "Write-time source exclusion rejects a source reintroduced after preparation")
-        let before = try store.versionedState(for: other)
+        let before = try store.readState(for: other)
         var micro = before.state!.settings; micro.contrast = 0.61
         let edit = session.commitEdit(expected: before, state: PhotoEditState(settings: micro))
         try check(edit.status == .applied && store.state(for: other)?.settings.contrast == 0.61,
@@ -172,7 +172,7 @@ import Foundation
             defaultState: state(0), context: context)]
         let operation = try session.prepare(payload: reloaded.payload, targets: targets, action: .preset)
         try check(session.apply(operation).first?.status == .applied && edits.state(for: identity)?.settings.exposure == 1.25,
-            "Persisted preset applies through the existing conditional-save path")
+            "Persisted preset applies through the session-owned save path")
         try check(edits.state(for: identity)?.settings.saturation == 1.2 && session.clipboard == clipboard,
             "Preset application preserves unselected fields and the frozen clipboard")
         try check(session.transactions.count == 1 && session.transactions[0].action == .preset,
@@ -211,19 +211,17 @@ import Foundation
         _ = session.apply(both)
         let external = try EditPersistence(directory: root)
         try external.save(a, state: state(3)); try external.save(a, state: state(2))
-        try check(session.undoPhoto(a).first?.status == .conflict && store.state(for: a)?.settings.exposure == 2,
-            "External ABA cannot bypass history revision guards")
-        let conflict = session.undoTransaction(both.id)
-        try check(conflict.filter(\.requiresHistoryDecision).map(\.targetID) == [a.key] && store.state(for: b)?.settings.exposure == 2,
-            "Unresolved history conflict aborts other targets without marking them as conflicts")
-        let skipped = session.undoTransaction(both.id, skipping: [a.key])
-        try check(skipped.contains { $0.targetID == b.key && $0.status == .applied } && store.state(for: b) == nil,
-            "Explicit history skip processes only nonconflicting components")
+        try check(session.undoPhoto(a).first?.status == .applied && store.state(for: a)?.settings.exposure == 1,
+            "External disk edits do not block a session-owned history operation")
+        let remaining = session.undoTransaction(both.id)
+        try check(remaining.count == 1 && remaining[0].targetID == b.key && remaining[0].status == .applied
+            && store.state(for: b) == nil,
+            "History undo processes the remaining target without rereading an old disk receipt")
     }
     static func historyOrder(_ root: URL) throws {
         let store = try EditPersistence(directory: root), session = IOSAdjustmentTransferSession(store: store)
         let id = PhotoIdentity(resourceIdentifier: "ordered")
-        for value in [1.0, 2, 1] { _ = session.commitEdit(expected: try store.versionedState(for: id), state: state(value)) }
+        for value in [1.0, 2, 1] { _ = session.commitEdit(expected: try store.readState(for: id), state: state(value)) }
         let first = session.transactions[0].id
         try check(session.undoTransaction(first).first?.status == .conflict, "Own ABA cannot undo an older transaction out of order")
         _ = session.undoPhoto(id); try check(store.state(for: id)?.settings.exposure == 2, "Latest undo restores immediate predecessor")
@@ -238,7 +236,7 @@ import Foundation
             if fail { throw NSError(domain: "disk failure", code: 1) }; try bytes.write(to: url, options: .atomic)
         })
         let session = IOSAdjustmentTransferSession(store: store), id = PhotoIdentity(resourceIdentifier: "retry")
-        let before = try store.versionedState(for: id)
+        let before = try store.readState(for: id)
         fail = true
         try check(session.commitEdit(expected: before, state: state(1)).status == .failed && session.transactions.isEmpty,
             "Failed ordinary save creates no history")

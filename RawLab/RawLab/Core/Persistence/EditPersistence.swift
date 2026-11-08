@@ -80,13 +80,25 @@ struct PhotoEditState: Codable, Equatable {
     }
 }
 
-struct VersionedPhotoEdit: Equatable {
+struct PhotoEditRecord: Equatable {
     let identity: PhotoIdentity
     let state: PhotoEditState?
-    let revision: String?
+
+    func hasSameAdjustments(as other: PhotoEditRecord?) -> Bool {
+        guard let other, identity == other.identity else { return false }
+        switch (state, other.state) {
+        case (nil, nil): return true
+        case let (lhs?, rhs?): return lhs.hasSameAdjustments(as: rhs)
+        default: return false
+        }
+    }
 }
 
-enum EditPersistenceConflict: Error { case changed }
+enum AdjustmentCommitError: Error {
+    case photoChanged
+    case expired
+    case historyOrder
+}
 
 enum EditPersistenceError: LocalizedError {
     case invalidIdentity
@@ -106,7 +118,12 @@ final class EditPersistence {
     private struct StoreFile: Codable {
         var version: Int?
         var records: [String: PhotoEditState]
+        // Old registries may contain this field. It is read once to migrate
+        // deletion markers in memory and is not emitted by new writes.
         var revisions: [String: String]?
+        // A deletion marker keeps the PhotoKit content fallback from restoring
+        // an edit after reset without reviving the old revision mechanism.
+        var deleted: Set<String>?
     }
 
     let directory: URL
@@ -133,7 +150,7 @@ final class EditPersistence {
     }
 
     func state(for identity: PhotoIdentity) -> PhotoEditState? {
-        do { return try versionedState(for: identity).state }
+        do { return try readState(for: identity).state }
         catch {
             // 旧读取接口在 I/O 失败时保留已载入值；事务读取始终抛错，不能用缓存提交。
             snapshotLock.lock(); defer { snapshotLock.unlock() }
@@ -170,7 +187,7 @@ final class EditPersistence {
         try reset(try PhotoIdentity.fallback(for: url))
     }
 
-    func versionedState(for identity: PhotoIdentity) throws -> VersionedPhotoEdit {
+    func readState(for identity: PhotoIdentity) throws -> PhotoEditRecord {
         try validate(identity)
         let store = try readStore()
         return record(identity, from: store)
@@ -182,19 +199,23 @@ final class EditPersistence {
               let store = try? readStore() else { return identity }
         let current = record(identity, from: store)
         // 只有可能命中旧入口记录时才额外读取 transferable，删除标记也必须阻止兜底。
-        guard current.state == nil, current.revision == nil,
+        let tombstoned = [identity.contentIdentifier, identity.legacyContentIdentifier]
+            .compactMap { $0 }.map { PhotoIdentity(contentIdentifier: $0).key }
+            .contains { store.deleted?.contains($0) == true }
+        guard current.state == nil, store.deleted?.contains(identity.key) != true,
+              !tombstoned,
               store.records.keys.contains(where: { $0.hasPrefix("content:") }),
               let legacy = await load() else { return identity }
         return PhotoIdentity(resourceIdentifier: identity.resourceIdentifier,
                              contentIdentifier: identity.contentIdentifier, legacyContentIdentifier: legacy)
     }
 
-    func compareAndSave(expected: VersionedPhotoEdit, state: PhotoEditState?) throws -> VersionedPhotoEdit {
-        try validate(expected.identity)
+    @discardableResult
+    func saveState(identity: PhotoIdentity, state: PhotoEditState?) throws -> PhotoEditRecord {
+        try validate(identity)
         return try withWriteLock {
             var store = try readStore()
-            guard record(expected.identity, from: store) == expected else { throw EditPersistenceConflict.changed }
-            return try write(state, identity: expected.identity, store: &store)
+            return try write(state, identity: identity, store: &store)
         }
     }
 
@@ -202,16 +223,16 @@ final class EditPersistence {
         guard identity.resourceIdentifier != nil || identity.contentIdentifier != nil else { throw EditPersistenceError.invalidIdentity }
     }
 
-    private func record(_ identity: PhotoIdentity, from store: StoreFile) -> VersionedPhotoEdit {
+    private func record(_ identity: PhotoIdentity, from store: StoreFile) -> PhotoEditRecord {
         var key = identity.key
         // 删除标记也是主记录，不能在重置后重新载入旧的内容记录。
         if identity.resourceIdentifier != nil {
             for content in [identity.contentIdentifier, identity.legacyContentIdentifier].compactMap({ $0 }) {
-                guard store.records[key] == nil, store.revisions?[key] == nil else { break }
+                guard store.records[key] == nil, store.deleted?.contains(key) != true else { break }
                 key = PhotoIdentity(contentIdentifier: content).key
             }
         }
-        return .init(identity: identity, state: store.records[key], revision: store.revisions?[key])
+        return .init(identity: identity, state: store.records[key])
     }
 
     private func readStore() throws -> StoreFile {
@@ -229,20 +250,33 @@ final class EditPersistence {
             let store = try JSONDecoder().decode(StoreFile.self, from: data)
             guard store.version == nil || store.version == 1,
                   store.revisions?.values.allSatisfy({ !$0.isEmpty }) ?? true else { throw EditPersistenceError.corruptStore }
-            remember(store)
-            return store
+            var normalized = store
+            if let revisions = store.revisions {
+                let tombstones = Set(revisions.keys.filter { store.records[$0] == nil })
+                normalized.deleted = (normalized.deleted ?? []).union(tombstones)
+                normalized.revisions = nil
+            }
+            remember(normalized)
+            return normalized
         } catch { throw EditPersistenceError.corruptStore }
     }
 
-    private func write(_ state: PhotoEditState?, identity: PhotoIdentity, store: inout StoreFile) throws -> VersionedPhotoEdit {
+    private func write(_ state: PhotoEditState?, identity: PhotoIdentity, store: inout StoreFile) throws -> PhotoEditRecord {
         let current = record(identity, from: store)
         if let previous = current.state, let state, previous.hasSameAdjustments(as: state) { return current }
         if current.state == nil && state == nil { return current }
         store.version = 1
-        store.records[identity.key] = state
-        var revisions = store.revisions ?? [:]
-        revisions[identity.key] = UUID().uuidString
-        store.revisions = revisions
+        if let state {
+            store.records[identity.key] = state
+            store.deleted?.remove(identity.key)
+        } else {
+            store.records.removeValue(forKey: identity.key)
+            store.deleted = (store.deleted ?? []).union([identity.key])
+        }
+        // Revisions are a legacy read-only field. The first normal write
+        // rewrites the registry without carrying that map forward.
+        store.revisions = nil
+        if store.deleted?.isEmpty == true { store.deleted = nil }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         try writeData(encoder.encode(store), fileURL)

@@ -451,6 +451,7 @@
 "撤销" = "Deshacer";
 "撤销 %@ 张" = "Deshacer fotos: %@";
 "操作失败" = "Operación fallida";
+"操作已失效" = "Operación no válida";
 "操作未完成，请重试。" = "La operación no se ha completado. Inténtalo de nuevo.";
 "支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。" = "Admite varios formatos RAW. El tiempo de procesamiento inicial depende del dispositivo; los resultados se pueden reutilizar.";
 "收起%@组" = "Contraer el grupo %@";
@@ -656,6 +657,7 @@
 "此外观已不在外观库中。" = "Este look ya no está en la biblioteca de looks.";
 "此安装暂不支持自动安装更新" = "Esta instalación todavía no admite actualizaciones automáticas";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Solo se restablecerán los ajustes del grupo %@. Los demás grupos no cambiarán.";
+"此操作已过期，请重新操作。" = "Esta operación ha quedado desactualizada. Vuelve a iniciarla.";
 "此构建未安装 AI 降噪模型。" = "Esta compilación no incluye el modelo de reducción de ruido con IA.";
 "此照片不包含受支持的 HDR 增益图。" = "Esta foto no contiene un mapa de ganancia HDR compatible.";
 "此照片或构建尚不能使用 AI 降噪。" = "La reducción de ruido con IA no está disponible para esta foto o compilación.";
@@ -710,7 +712,6 @@
 "照片处理设置" = "Ajustes de procesamiento";
 "照片库为空，请先在主窗口添加照片目录。" = "La biblioteca de fotos está vacía. Añade primero una carpeta de fotos en la ventana principal.";
 "照片或白平衡已变化，请重新准备 AI 降噪。" = "La foto o el balance de blancos han cambiado. Prepara de nuevo la reducción de ruido con IA.";
-"照片或调整已变化，请重新检查目标。" = "La foto o sus ajustes han cambiado. Comprueba de nuevo el destino.";
 "照片或调整已变化，请重新确认重置。" = "La foto o sus ajustes han cambiado. Confirma de nuevo el restablecimiento.";
 "照片编辑保存失败，请先重试保存" = "No se pudieron guardar las ediciones de la foto; intenta guardarlas de nuevo";
 "照片编辑尚未保存" = "Las ediciones de la foto aún no se han guardado";
@@ -856,6 +857,7 @@
 "请先选择外观或配方。" = "Selecciona primero un look o una receta.";
 "请在调整后的照片区域取色。" = "Toma una muestra dentro de la foto editada.";
 "请将白平衡模式、色温和色调一起保存，再应用此预设。" = "Guarda juntos el modo de balance de blancos, la temperatura y el matiz antes de aplicar este preset.";
+"请按历史顺序撤销或重做。" = "Deshaz o rehace los ajustes en el orden del historial.";
 "请等待预览完成后导出。" = "Espera a que termine la vista previa antes de exportar.";
 "请至少选择一张 RAW 照片。" = "Selecciona al menos una foto RAW.";
 "请至少选择一张照片。" = "Selecciona al menos una foto.";
@@ -874,7 +876,6 @@
 "调整后" = "Después";
 "调整工具" = "Herramientas de ajuste";
 "调整已保存" = "Ajustes guardados";
-"调整已变化" = "Ajustes modificados";
 "调整未保存 · 重试" = "Ajustes no guardados · Inténtalo de nuevo";
 "调整未保存：%@" = "Ajustes no guardados: %@";
 "调整来源" = "Origen de los ajustes";

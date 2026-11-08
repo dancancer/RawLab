@@ -56,7 +56,6 @@ internal sealed class AdjustmentResultDialog : Window
     private readonly StackPanel rows=new();
     private readonly TextBlock summary=AdjustmentDialogLayout.Text("");
     private readonly Button apply;
-    private readonly Button reload;
     private readonly Button undo;
     private readonly Button redo;
     private readonly Func<IReadOnlyList<AdjustmentHistoryPart>> historyParts;
@@ -67,7 +66,7 @@ internal sealed class AdjustmentResultDialog : Window
     private readonly AdjustmentPayload? payload;
     private readonly Func<string, string, string?>? lookName;
     internal AdjustmentResultDialog(Window owner,string title,IReadOnlyList<AdjustmentOutcome> initial,bool preview,
-        Func<IReadOnlySet<string>,IReadOnlyList<AdjustmentOutcome>> run,Action? reloadSaved=null,string? sourceSummary=null,
+        Func<IReadOnlySet<string>,IReadOnlyList<AdjustmentOutcome>> run,string? sourceSummary=null,
         Func<IReadOnlyList<AdjustmentHistoryPart>>? historyParts=null,Action<bool>? changeHistory=null,
         AdjustmentPayload? payload=null,Func<string,string,string?>? lookName=null)
     {
@@ -80,7 +79,6 @@ internal sealed class AdjustmentResultDialog : Window
         undo=AdjustmentDialogLayout.Button("撤销","adjustment.results.undo",()=>{changeHistory?.Invoke(true);Refresh();});actions.Children.Add(undo);
         redo=AdjustmentDialogLayout.Button("重做","adjustment.results.redo",()=>{changeHistory?.Invoke(false);Refresh();});actions.Children.Add(redo);
         var close=AdjustmentDialogLayout.Button("关闭","adjustment.results.close",()=>Close());close.IsCancel=true;actions.Children.Add(close);
-        reload=AdjustmentDialogLayout.Button("重新载入调整","adjustment.results.reload",()=>{Close();reloadSaved?.Invoke();});actions.Children.Add(reload);
         apply=AdjustmentDialogLayout.Button(preview ? "应用调整" : "重试","adjustment.results.apply",()=>{
             outcomes=run(skipping);this.preview=false;Refresh();
         });apply.IsDefault=true;actions.Children.Add(apply);Grid.SetRow(actions,2);root.Children.Add(actions);Refresh();
@@ -110,7 +108,7 @@ internal sealed class AdjustmentResultDialog : Window
             if(WasUndone(outcome))status=Loc.Text(states[outcome.TargetID]==AdjustmentHistoryState.Undone ? "已撤销" : "重做已失效");
             row.Children.Add(AdjustmentDialogLayout.Text(status));
             if(outcome.Error!=null) {
-                var error=AdjustmentDialogLayout.Text(outcome.Status==AdjustmentStatus.Applied ? Loc.Text("调整已保存，当前照片需要重新载入。") : AdjustmentTransferPresentation.Error(outcome.Error));
+                var error=AdjustmentDialogLayout.Text(outcome.Status==AdjustmentStatus.Applied ? Loc.Text("调整已保存，界面未更新。") : AdjustmentTransferPresentation.Error(outcome.Error));
                 error.ToolTip=outcome.Error.Message;row.Children.Add(error);
                 if(outcome.Status==AdjustmentStatus.Applied)continue;
                 var skip=new CheckBox{Content=Loc.Text("跳过"),IsChecked=skipping.Contains(outcome.TargetID)};
@@ -119,7 +117,6 @@ internal sealed class AdjustmentResultDialog : Window
             }
         }
         apply.Content=Loc.Text(preview ? "应用调整" : "重试");UpdateApply();
-        reload.Visibility=outcomes.Any(o=>o.Status==AdjustmentStatus.Applied && o.Error!=null) ? Visibility.Visible : Visibility.Collapsed;
         undo.Visibility=redo.Visibility=parts.Count>0 ? Visibility.Visible : Visibility.Collapsed;
         var appliedCount=parts.Count(p=>p.State==AdjustmentHistoryState.Applied);var undoneCount=parts.Count(p=>p.State==AdjustmentHistoryState.Undone);
         undo.Content=Loc.Text("撤销")+" · "+appliedCount;redo.Content=Loc.Text("重做")+" · "+undoneCount;

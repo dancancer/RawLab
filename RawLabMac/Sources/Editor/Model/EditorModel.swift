@@ -286,7 +286,7 @@ final class EditorModel: ObservableObject {
         }
     }
     var adjustmentSession: AdjustmentTransferSession?
-    var committedEdit: VersionedPhotoEdit?
+    var committedEdit: PhotoEditRecord?
     var interactionEntry: PhotoEditState?
     var interactionWasDirty = false
     @Published var adjustmentHistoryRevision = 0

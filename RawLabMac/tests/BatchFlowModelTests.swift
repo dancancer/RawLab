@@ -41,13 +41,13 @@ enum BatchFlowModelTests {
                     "fallback preset targets reuse the injected probe and centralized SDR defaults")
         var savedHDR = Adjustments(); savedHDR.hdr = HDRSettings()
         try model.editStore!.save(photo, state: PhotoEditState(settings: savedHDR, filmID: ""))
-        let savedRecord = try model.editStore!.versionedState(for: photo)
+        let savedRecord = try model.editStore!.readState(for: photo)
         var batchSource = savedHDR; batchSource.hdr?.exposure = 0.4
         let preparation = MacHDRBatchPreparation(source: fixture, settings: batchSource, store: model.editStore!, films: [],
             probeHDRSource: HDRSourceProbeTests.unsupportedSystem)
         let frozen = try preparation.prepare(BatchExportItem(url: photo), ordinal: 0, format: .jpeg, longEdge: nil)
         try require(!frozen.settings.isHDREditing && frozen.settings.exposure == 0.4 &&
-                    model.editStore!.versionedState(for: photo) == savedRecord,
+                    model.editStore!.readState(for: photo) == savedRecord,
                     "HDR uniform batch uses fallback SDR settings without rewriting the saved HDR layer")
         try require(snapshot.settings.exposureMode == .sensor,
                     "unedited fallback defaults retain sensor exposure")
@@ -412,9 +412,8 @@ enum BatchFlowModelTests {
             case "edit": model.settings.exposure = 0.3; try require(model.saveEdits(), "ordinary edits still save during a cancelled check")
             case "selection": model.batchSelection.selectAll(false)
             case "conflict":
-                var changed = Adjustments(); changed.exposureMode = .sensor; changed.exposure = 0.6
-                try EditPersistence(directory: directory.appendingPathComponent("edits"))
-                    .save(second, state: PhotoEditState(settings: changed, filmID: ""))
+                model.settings.exposure = 0.6
+                try require(model.saveEdits(), "a later local edit commits during export preparation")
             case "restart":
                 model.cancelCollectionExportPreparation()
                 model.prepareCollectionExportOperation = prepare
@@ -435,7 +434,7 @@ enum BatchFlowModelTests {
                 try require(try FileManager.default.contentsOfDirectory(atPath: output.path).isEmpty,
                     "\(action): a rejected check creates no output")
                 if action == "conflict" {
-                    try require(model.collectionExportError != nil, "external edit conflicts remain visible for a new check")
+                    try require(model.collectionExportError != nil, "a local edit expires the pending export check")
                 }
             }
         }
@@ -458,13 +457,13 @@ enum BatchFlowModelTests {
         try require(model.saveEdits(), "source edit is saved before preparing a transfer")
         let payload = try model.copyAdjustments(scope: .custom([.exposure]))
         let prepared = try model.prepareAdjustmentPaste(payload: payload, targets: [target])
-        let before = try model.editStore!.versionedState(for: target)
+        let before = try model.editStore!.readState(for: target)
         let historyCount = model.adjustmentSession!.transactions.count
 
         model.open(next)
         try BatchSelectionModelTests.rendered(model)
         model.applyAdjustmentPaste(prepared)
-        try require(try model.editStore!.versionedState(for: target) == before,
+        try require(try model.editStore!.readState(for: target) == before,
             "switching the host photo rejects prepared writes to a different target")
         try require(model.adjustmentSession!.transactions.count == historyCount,
             "an expired transfer adds no history")
