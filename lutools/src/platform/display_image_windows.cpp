@@ -816,12 +816,10 @@ void scanTiff(const std::wstring& path, MetadataInfo& info) {
     if (nonIccColorMetadata && !info.colorProfileMarker)
         fail(SONY2FUJI_STATUS_UNSUPPORTED);
     const auto next = reader.read32(ifdOffset + 2u + static_cast<uint64_t>(count) * 12u, littleEndian);
-    if (next != 0) {
-        if (depth != 16 || !sigmaWriter || !noPageMarker || next == ifdOffset ||
-            !hasSigmaTIFFPreview(reader, next, littleEndian, width, height))
-            fail(SONY2FUJI_STATUS_UNSUPPORTED);
+    // 其他后续 IFD 仍交给 WIC 帧数判断：WIC 不把缩略图 IFD 计为一帧，这类 TIFF 改动前就能打开。
+    if (next != 0 && depth == 16 && sigmaWriter && noPageMarker && next != ifdOffset &&
+        hasSigmaTIFFPreview(reader, next, littleEndian, width, height))
         info.sigmaTIFFPreview = true;
-    }
 }
 
 enum class ContainerKind { Jpeg, Png, Tiff };
