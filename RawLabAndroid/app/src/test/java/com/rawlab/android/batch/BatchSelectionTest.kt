@@ -11,6 +11,29 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BatchSelectionTest {
+    @Test fun hdrExportUsesEachSavedModeRatherThanRawDecodeCapability() {
+        val raw = BatchTarget(PhotoIdentity("raw"), File("photo.dng"), "photo.dng", sourceIsHDR = true)
+        val gainMap = BatchTarget(PhotoIdentity("gain-map"), File("photo.jpg"), "photo.jpg",
+            inputKind = PhotoInputKind.RASTER, sourceIsHDR = true)
+        val records = mutableMapOf<PhotoIdentity, EditSettings>()
+        val read = { identity: PhotoIdentity -> VersionedPhotoEdit(identity, records[identity], "revision") }
+        var selection = BatchSelectionState().append(listOf(raw, gainMap))
+        assertFalse("Unedited camera RAW starts in SDR", selection.supportsHDRExport(read))
+        records[raw.identity] = EditSettings().withHDRMode(true, false, cameraRaw = true)
+        assertTrue("Unedited gain maps default to HDR", selection.supportsHDRExport(read))
+        assertFalse(BatchSelectionState().append(listOf(raw.copy(sourceIsHDR = false))).supportsHDRExport(read))
+        records[gainMap.identity] = EditSettings()
+        assertFalse("An explicit saved SDR mode overrides source defaults", selection.supportsHDRExport(read))
+        assertTrue(selection.supportsHDRExport(read, skipping = setOf(gainMap.id)))
+        records[raw.identity] = records.getValue(raw.identity).withHDRMode(false, false, cameraRaw = true)
+        assertFalse(selection.supportsHDRExport(read, skipping = setOf(gainMap.id)))
+        selection = selection.select(raw.id, false)
+        assertFalse(selection.supportsHDRExport(read))
+        assertFalse(selection.supportsHDRExport(read, skipping = setOf(gainMap.id)))
+        assertFalse(BatchSelectionState().supportsHDRExport(read))
+        assertFalse(selection.supportsHDRExport({ throw java.io.IOException("Unreadable saved record") }))
+    }
+
     @Test fun navigationSelectionAndSynchronizationAreIndependent() {
         val first = BatchTarget(PhotoIdentity("first"), File("first"), "same.jpg")
         val second = BatchTarget(PhotoIdentity("second"), File("second"), "same.jpg")

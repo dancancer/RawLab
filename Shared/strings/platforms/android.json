@@ -5089,6 +5089,12 @@
       "formats": [],
       "source": "无法读取 HDR 相机配置，或配置与当前相机不匹配。",
       "types": []
+    },
+    "hdr_camera_profile_changed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "照片或调整已更改，未应用导入的相机配置。请重试。",
+      "types": []
     }
   },
   "overrides": {
@@ -5998,6 +6004,14 @@
       "es": "Base SDR Display P3 + mapa de ganancia HDR · ISO / XMP",
       "fr": "Base SDR Display P3 + carte de gain HDR · ISO / XMP",
       "ja": "Display P3 SDR ベース + HDR ゲインマップ · ISO / XMP"
+    },
+    "照片或调整已更改，未应用导入的相机配置。请重试。": {
+      "en": "The photo or its adjustments changed. The imported camera profile was not applied. Try again.",
+      "de": "Das Foto oder seine Anpassungen wurden geändert. Das importierte Kameraprofil wurde nicht angewendet. Versuchen Sie es erneut.",
+      "fr": "La photo ou ses réglages ont changé. Le profil de caméra importé n’a pas été appliqué. Réessayez.",
+      "es": "La foto o sus ajustes han cambiado. El perfil de cámara importado no se ha aplicado. Inténtalo de nuevo.",
+      "ja": "写真または調整が変更されたため、読み込んだカメラプロファイルは適用されませんでした。もう一度お試しください。",
+      "zh-Hans": "照片或调整已更改，未应用导入的相机配置。请重试。"
     }
   }
 }

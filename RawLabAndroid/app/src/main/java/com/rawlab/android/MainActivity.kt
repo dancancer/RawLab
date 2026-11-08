@@ -213,6 +213,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             onMessageDismiss = model::dismissMessage, onLicenses = { licenses = true }, onGpuChange = model::setGpuEnabled,
             onHDRChange = model::setHDRMode,
             onHDRCameraDevelopment = model::applyHDRCameraDevelopment,
+            onHDRCameraDraftChange = model::changeHDRCameraDraft,
             onImportHDRCameraProfile = { if (model.beginHDRCameraProfileImport()) openHDRCameraProfile.launch(arrayOf("*/*")) },
             onImportLook = { openLook.launch(arrayOf("*/*")) }, onRenameLook = model::renameLook,
             onImportHDRLook = { if (model.beginHDRLookImport()) openHDRLook.launch(arrayOf("*/*")) },

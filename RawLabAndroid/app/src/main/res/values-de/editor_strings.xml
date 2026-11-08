@@ -183,6 +183,7 @@
     <string name="grading_reset_zone">"Aktuellen Tonwertbereich zurücksetzen"</string>
     <string name="hdr_above_white">"Über Referenzweiß %1$s"</string>
     <string name="hdr_camera_profile">"HDR-Kameraprofil"</string>
+    <string name="hdr_camera_profile_changed">"Das Foto oder seine Anpassungen wurden geändert. Das importierte Kameraprofil wurde nicht angewendet. Versuchen Sie es erneut."</string>
     <string name="hdr_camera_profile_clear">"Kameraprofil entfernen"</string>
     <string name="hdr_camera_profile_import">"Kameraprofil importieren…"</string>
     <string name="hdr_camera_profile_invalid">"Das HDR-Kameraprofil ist nicht lesbar oder passt nicht zu dieser Kamera."</string>

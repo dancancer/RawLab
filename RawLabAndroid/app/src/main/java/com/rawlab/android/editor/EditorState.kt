@@ -50,11 +50,16 @@ data class EditorState(
     val lookImportReport: String? = null,
     val pendingLookCompatibility: List<PendingLookCompatibility> = emptyList(),
     val lookCompatibilityPreparing: Boolean = false,
+    val importingHDRCameraProfile: Boolean = false,
+    val hdrCameraDraft: HDRCameraPanelDraft? = null,
     val gpuEnabled: Boolean = true,
     val draft: AdjustmentDraft? = null,
     val adjustmentRevision: Long = 0,
     val committingAdjustments: Boolean = false,
 ) {
+    val hdrCameraDraftSettings get() = edits.hdr?.cameraSettings?.let { baseline ->
+        photo?.let { hdrCameraDraft?.valueFor(it.identity, baseline) } ?: baseline
+    }
     val canExport get() = photo != null && preview != null && exact && !rendering && !previewResizePending &&
         operation == Operation.NONE && !committingAdjustments && draft == null && saveState != EditSaveState.FAILED
     val controlsEnabled get() = photo != null && operation == Operation.NONE && !committingAdjustments

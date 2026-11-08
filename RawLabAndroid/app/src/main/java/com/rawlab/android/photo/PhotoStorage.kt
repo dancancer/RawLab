@@ -168,12 +168,18 @@ class PhotoStorage(
         val name = lookSourceName(uri)
         if (name.substringAfterLast('.', "").lowercase() !in setOf("dcp", "rlook"))
             throw HDRProcessingException(1, 21, 11)
+        val size = runCatching {
+            resolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use {
+                if (it.moveToFirst() && !it.isNull(0)) it.getLong(0).takeIf { value -> value >= 0 } else null
+            }
+        }.getOrNull()
+        checkHDRCameraProfileSize(size)
         val directory = hdrCameraProfileDirectory
         if (!directory.isDirectory && !directory.mkdirs()) throw HDRProcessingException(1, 21, 11)
         val staging = File.createTempFile("import-", ".profile", directory)
         try {
             val input = resolver.openInputStream(uri) ?: throw HDRProcessingException(1, 21, 11)
-            input.use { source -> staging.outputStream().use { source.copyTo(it) } }
+            input.use { source -> staging.outputStream().use { copyHDRCameraProfileSource(source, it) } }
             val profile = HDRCameraProfile(NativeHDRBridge.probeCameraProfile(staging), name.substringBeforeLast('.'))
             java.nio.file.Files.move(staging.toPath(), profile.asset(directory).toPath(),
                 java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)

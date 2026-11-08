@@ -183,6 +183,7 @@
     <string name="grading_reset_zone">"Réinitialiser la plage actuelle"</string>
     <string name="hdr_above_white">"Au-dessus du blanc de référence %1$s"</string>
     <string name="hdr_camera_profile">"Profil de caméra HDR"</string>
+    <string name="hdr_camera_profile_changed">"La photo ou ses réglages ont changé. Le profil de caméra importé n’a pas été appliqué. Réessayez."</string>
     <string name="hdr_camera_profile_clear">"Retirer le profil de caméra"</string>
     <string name="hdr_camera_profile_import">"Importer un profil de caméra…"</string>
     <string name="hdr_camera_profile_invalid">"Le profil de caméra HDR est illisible ou ne correspond pas à cet appareil."</string>

@@ -77,6 +77,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onHDRChange: (Boolean) -> Unit = {},
     onHDRCameraDevelopment: (HDRCameraDevelopmentSettings) -> Unit = {},
     onImportHDRCameraProfile: () -> Unit = {},
+    onHDRCameraDraftChange: (HDRCameraDevelopmentSettings) -> Unit = {},
     onSaveRetry: () -> Unit = {},
     adjustmentReloadRequired: Boolean = false, onReloadAdjustments: ((Boolean) -> Unit) -> Unit = { it(false) },
     onCancelAdjustment: () -> Unit = {},
@@ -276,9 +277,12 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                 }
                 if (state.photo?.isCameraRawHDR == true && state.photo.hdrSource?.isProRAW != true) {
                     var cameraOpen by remember(sourceKey) { mutableStateOf(false) }
-                    TextButton(onClick = { cameraOpen = !cameraOpen }, modifier = Modifier.testTag("hdr-camera")) { Text("HDR RAW") }
-                    if (cameraOpen) HDRCameraDevelopmentRows(hdr.cameraSettings, state.controlsEnabled && state.draft == null && !state.rendering,
-                        state.photo.hdrSource?.supportsBayerDevelopment == true, onHDRCameraDevelopment, onImportHDRCameraProfile)
+                    TextButton(onClick = { cameraOpen = !cameraOpen }, enabled = !state.importingHDRCameraProfile,
+                        modifier = Modifier.testTag("hdr-camera")) { Text("HDR RAW") }
+                    if (cameraOpen) HDRCameraDevelopmentRows(hdr.cameraSettings,
+                        state.controlsEnabled && state.draft == null && !state.rendering && !state.importingHDRCameraProfile,
+                        state.photo.hdrSource?.supportsBayerDevelopment == true, onHDRCameraDevelopment, onImportHDRCameraProfile,
+                        state.hdrCameraDraftSettings ?: hdr.cameraSettings, onHDRCameraDraftChange)
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -495,9 +499,9 @@ private fun HDRRenditionRows(settings: HDRRenditionSettings, enabled: Boolean,
 }
 
 @Composable
-private fun HDRCameraDevelopmentRows(settings: HDRCameraDevelopmentSettings, enabled: Boolean, supportsBayerDevelopment: Boolean,
-    apply: (HDRCameraDevelopmentSettings) -> Unit, importProfile: () -> Unit) {
-    var draft by remember(settings) { mutableStateOf(settings) }
+internal fun HDRCameraDevelopmentRows(settings: HDRCameraDevelopmentSettings, enabled: Boolean, supportsBayerDevelopment: Boolean,
+    apply: (HDRCameraDevelopmentSettings) -> Unit, importProfile: () -> Unit,
+    draft: HDRCameraDevelopmentSettings, changeDraft: (HDRCameraDevelopmentSettings) -> Unit) {
     @Composable fun switch(label: Int, value: Boolean, tag: String, update: (Boolean) -> Unit, allowed: Boolean = enabled) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(label), Modifier.weight(1f))
@@ -505,39 +509,39 @@ private fun HDRCameraDevelopmentRows(settings: HDRCameraDevelopmentSettings, ena
         }
     }
     switch(R.string.transfer_field_white_balance_mode, draft.customWhiteBalance, "hdr-camera-wb", {
-        draft = draft.copy(customWhiteBalance = it, temperature = if (it) 6500f else 0f, tint = 0f)
+        changeDraft(draft.copy(customWhiteBalance = it, temperature = if (it) 6500f else 0f, tint = 0f))
     })
     if (draft.customWhiteBalance) {
         NumericControl(R.string.temperature, draft.temperature, 2000f..50000f, "K", enabled,
-            { value, _ -> draft = draft.copy(temperature = value) }, { draft = draft.copy(temperature = 6500f) }, defaultValue = 6500f)
+            { value, _ -> changeDraft(draft.copy(temperature = value)) }, { changeDraft(draft.copy(temperature = 6500f)) }, defaultValue = 6500f)
         NumericControl(R.string.tint, draft.tint, -150f..150f, "", enabled,
-            { value, _ -> draft = draft.copy(tint = value) }, { draft = draft.copy(tint = 0f) })
+            { value, _ -> changeDraft(draft.copy(tint = value)) }, { changeDraft(draft.copy(tint = 0f)) })
     }
     Text(stringResource(R.string.transfer_field_exposure_mode))
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        FilterChip(!draft.sensorExposure, { draft = draft.copy(sensorExposure = false) }, { Text(stringResource(R.string.adjustment_summary_exposure_scene)) },
+        FilterChip(!draft.sensorExposure, { changeDraft(draft.copy(sensorExposure = false)) }, { Text(stringResource(R.string.adjustment_summary_exposure_scene)) },
             enabled = enabled)
-        FilterChip(draft.sensorExposure, { draft = draft.copy(sensorExposure = true) }, { Text(stringResource(R.string.exposure_sensor)) },
+        FilterChip(draft.sensorExposure, { changeDraft(draft.copy(sensorExposure = true)) }, { Text(stringResource(R.string.exposure_sensor)) },
             enabled = enabled, modifier = Modifier.testTag("hdr-camera-sensor"))
     }
     if (supportsBayerDevelopment) {
         Text(stringResource(R.string.transfer_field_raw_denoise))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             for (level in 0..2) {
-                FilterChip(draft.fbddLevel == level, { draft = draft.copy(fbddLevel = level) },
+                FilterChip(draft.fbddLevel == level, { changeDraft(draft.copy(fbddLevel = level)) },
                     { Text(if (level == 0) stringResource(R.string.disabled) else "FBDD $level") },
                     enabled = enabled, modifier = Modifier.testTag("hdr-camera-fbdd-$level"))
             }
         }
     }
     switch(R.string.transfer_field_lens_distortion, draft.lensDistortion, "hdr-camera-distortion", {
-        draft = draft.copy(lensDistortion = it, lensProfile = draft.lensProfile.takeIf { _ -> it || draft.lensTca })
+        changeDraft(draft.copy(lensDistortion = it, lensProfile = draft.lensProfile.takeIf { _ -> it || draft.lensTca }))
     })
     switch(R.string.transfer_field_lens_tca, draft.lensTca, "hdr-camera-tca", {
-        draft = draft.copy(lensTca = it, lensProfile = draft.lensProfile.takeIf { _ -> it || draft.lensDistortion })
+        changeDraft(draft.copy(lensTca = it, lensProfile = draft.lensProfile.takeIf { _ -> it || draft.lensDistortion }))
     })
     switch(R.string.transfer_field_lens_auto_crop, draft.lensAutoCrop, "hdr-camera-autocrop",
-        { draft = draft.copy(lensAutoCrop = it) }, allowed = enabled && draft.lensActive)
+        { changeDraft(draft.copy(lensAutoCrop = it)) }, allowed = enabled && draft.lensActive)
     draft.cameraProfile?.let { profile ->
         Text(stringResource(R.string.hdr_camera_profile))
         Text(profile.name, modifier = Modifier.testTag("hdr-camera-profile-name"))
@@ -547,7 +551,7 @@ private fun HDRCameraDevelopmentRows(settings: HDRCameraDevelopmentSettings, ena
             Text(stringResource(R.string.hdr_camera_profile_import))
         }
         if (draft.cameraProfile != null) {
-            TextButton(onClick = { draft = draft.copy(cameraProfile = null) }, enabled = enabled) {
+            TextButton(onClick = { changeDraft(draft.copy(cameraProfile = null)) }, enabled = enabled) {
                 Text(stringResource(R.string.hdr_camera_profile_clear))
             }
         }

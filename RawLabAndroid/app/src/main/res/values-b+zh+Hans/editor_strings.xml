@@ -183,6 +183,7 @@
     <string name="grading_reset_zone">"重置当前分区"</string>
     <string name="hdr_above_white">"参考白以上 %1$s"</string>
     <string name="hdr_camera_profile">"HDR 相机配置"</string>
+    <string name="hdr_camera_profile_changed">"照片或调整已更改，未应用导入的相机配置。请重试。"</string>
     <string name="hdr_camera_profile_clear">"清除相机配置"</string>
     <string name="hdr_camera_profile_import">"导入相机配置…"</string>
     <string name="hdr_camera_profile_invalid">"无法读取 HDR 相机配置，或配置与当前相机不匹配。"</string>

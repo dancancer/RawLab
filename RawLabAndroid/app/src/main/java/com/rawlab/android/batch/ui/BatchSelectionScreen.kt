@@ -33,6 +33,8 @@ import com.rawlab.android.editor.ui.AdjustmentTransferSheet
 import com.rawlab.android.format.*
 import com.rawlab.android.ui.ExportFormatControls
 import com.rawlab.android.ui.ExportSizeControls
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -167,6 +169,13 @@ private fun CollectionExportSheet(model: EditorViewModel, onClose: () -> Unit) {
     var destination by remember { mutableStateOf<Uri?>(null) }
     val review = flow.review
     val busy = collection.busy || flow.preparing || flow.freezing
+    var supportsHDR by remember { mutableStateOf(false) }
+    LaunchedEffect(collection.selectedPhotos, collection.lastSynchronization, editor.adjustmentRevision, skipped) {
+        supportsHDR = withContext(Dispatchers.IO) { model.collectionSupportsHDRExport(skipped) }
+    }
+    LaunchedEffect(supportsHDR) {
+        if (!supportsHDR && format == ExportFormat.HDR_JPEG) format = ExportFormat.JPEG
+    }
     val directory = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             runCatching { context.contentResolver.takePersistableUriPermission(uri,
@@ -185,7 +194,7 @@ private fun CollectionExportSheet(model: EditorViewModel, onClose: () -> Unit) {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (!busy) {
                     ExportFormatControls(format, { format = it },
-                        hdrEditing = collection.selectedPhotos.isNotEmpty() && collection.selectedPhotos.all { it.sourceIsHDR })
+                        hdrEditing = supportsHDR)
                     ExportSizeControls(size, custom, { size = it }, { custom = it })
                     TextButton(onClick = { directory.launch(destination) }) { Text(destination?.toString() ?: stringResource(R.string.collection_output_directory)) }
                     if (Build.VERSION.SDK_INT >= 29 && format.allowsGallery) TextButton(onClick = { destination = null }) { Text(stringResource(R.string.save_album)) }
