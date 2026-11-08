@@ -116,8 +116,13 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         aiBatch.add([second])
         let deadline = Date().addingTimeInterval(30)
         while aiBatch.validating && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
-        try check(!aiBatch.validating && aiBatch.job.items.first?.selected == false && aiBatch.job.items.first?.validationError != nil,
-            "AI batch preflight excludes raster targets before export")
+        try check(!aiBatch.validating && aiBatch.job.items.first?.selected == true && aiBatch.job.items.first?.validationError == nil,
+            "AI batch preflight keeps raster targets selected without validation errors")
+        let rasterItem = aiBatch.job.items[0]
+        try check(aiBatch.job.settings.aiDenoiseEnabled && !aiBatch.job.snapshot(for: rasterItem).settings.aiDenoiseEnabled,
+            "AI batch export disables AI for raster targets while retaining the source settings")
+        try check(aiBatch.notice(for: rasterItem) == L10n.text("普通图片未使用 AI 降噪"),
+            "AI batch raster targets explain that AI denoise was not used")
     }
 
     static func curveNavigationChecks(root: URL, photo: URL) throws {

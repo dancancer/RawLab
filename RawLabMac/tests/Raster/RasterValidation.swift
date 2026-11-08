@@ -32,11 +32,14 @@ func runRejectedRasterCases(_ context: RasterContext, engine: RenderEngine) thro
     }
     try expectRasterFailure(context, engine: engine, input: alpha, label: "alpha")
 
-    let highBit = context.root.appendingPathComponent("rejected-16bit.png")
-    guard writeImage(fixture16BitImage(), to: highBit, type: "public.png" as CFString, properties: [:]) else {
-        throw fail("could not create 16-bit fixture")
+    let highBit = context.root.appendingPathComponent("rejected-16bit-gray.png")
+    guard writeImage(fixture16BitGrayImage(), to: highBit, type: "public.png" as CFString, properties: [:]) else {
+        throw fail("could not create 16-bit grayscale fixture")
     }
-    try expectRasterFailure(context, engine: engine, input: highBit, label: "16-bit")
+    let decodedHighBit = try image(highBit)
+    try check(decodedHighBit.bitsPerComponent == 16 && decodedHighBit.colorSpace?.model == .monochrome,
+              "16-bit grayscale fixture preserves depth and color model")
+    try expectRasterFailure(context, engine: engine, input: highBit, label: "16-bit grayscale")
 
     let corrupt = context.root.appendingPathComponent("rejected-corrupt.png")
     try Data("not an image".utf8).write(to: corrupt, options: .atomic)
