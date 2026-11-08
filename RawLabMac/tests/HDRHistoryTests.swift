@@ -79,7 +79,7 @@ import ImageIO
         model.autoExposure()
         model.open(next)
         wait("switching photos did not finish") { !model.autoExposing && !model.importing && model.file==next }
-        let previous=try model.editStore!.versionedState(for:input)
+        let previous=try model.editStore!.readState(for:input)
         check(previous.state?.settings.hdr?.exposure==3 && model.settings.hdr?.exposure==0,
               "a stale automatic exposure changed an edit during photo switching")
         print("PASS Mac HDR automatic exposure, undo/redo and reopening preserve the source default mode")
@@ -101,17 +101,17 @@ import ImageIO
         wait("Bayer target did not open") { model.file == target && model.canExport }
         model.setHDREditing(true)
         wait("Bayer target did not enter HDR") { model.settings.isHDREditing && model.canExport }
-        let before = try model.editStore!.versionedState(for: target)
+        let before = try model.editStore!.readState(for: target)
         let mixed = try model.prepareAdjustmentPaste(payload: payload, targets: [target, next])
         check(mixed.targets.count == 2 && mixed.targets[0].error == nil && mixed.targets[1].error != nil,
               "Camera transfer accepted the gain-map target or rejected the Bayer target")
         model.applyAdjustmentPaste(mixed)
-        let unchanged = try model.editStore!.versionedState(for: target)
+        let unchanged = try model.editStore!.readState(for: target)
         check(unchanged == before, "Failed camera transfer wrote the compatible target before review")
 
         let prepared = try model.prepareAdjustmentPaste(payload: payload, targets: [target])
         model.applyAdjustmentPaste(prepared)
-        let saved = try model.editStore!.versionedState(for: target)
+        let saved = try model.editStore!.readState(for: target)
         check(saved.state?.settings.hdr?.cameraDevelopmentSettings.fbddLevel == 2 &&
               saved.state?.settings.hdr?.processingVersion == 1, "Camera paste did not persist the FBDD edit at rendering version 1")
         print("PASS Mac camera HDR clipboard, Bayer native preflight, incompatible target blocking and persisted FBDD")

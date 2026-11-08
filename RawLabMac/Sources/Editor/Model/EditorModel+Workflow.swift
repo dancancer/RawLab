@@ -377,10 +377,10 @@ extension EditorModel {
         if [.colorGrading, .toneCurve].contains(adjustmentNavigation.tool) { cancelAdjustmentInteraction() }
         if scheduler.interacting { setInteracting(false) }
         guard saveEdits() else { return }
-        let restoredRecord: VersionedPhotoEdit
+        let restoredRecord: PhotoEditRecord
         do {
             _ = try requireAdjustmentSession()
-            restoredRecord = try editStore!.versionedState(for: url)
+            restoredRecord = try editStore!.readState(for: url)
         } catch {
             saveError = L10n.format("无法恢复调整：%@", String(describing: error.localizedDescription))
             return
@@ -442,7 +442,7 @@ extension EditorModel {
         activateOpen(url,record:restoredRecord,settings:candidate,isHDR:false,cameraHDR:cameraHDR,sdrFallback:sdrFallback)
     }
 
-    private func activateOpen(_ url: URL,record restoredRecord: VersionedPhotoEdit,settings candidate: Adjustments,
+    private func activateOpen(_ url: URL,record restoredRecord: PhotoEditRecord,settings candidate: Adjustments,
                               isHDR: Bool,cameraHDR: HDRSourceInfo?,neutral stagedNeutral: RenderedImage? = nil,result stagedResult: RenderedImage? = nil,
                               hdrEdge: Int? = nil,hdrSource: MacReferenceSource? = nil,sdrFallback: Bool = false) {
         resetAITask()

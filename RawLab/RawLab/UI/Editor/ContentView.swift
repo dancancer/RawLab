@@ -79,7 +79,6 @@ struct ContentView: View {
     @State var applyingPreset: AdjustmentPreset?
     @State var returnToPresetLibrary = false
     @State var presetLibraryRevision = UUID()
-    @State var adjustmentReloadPresented = false
     @State var lensDraft: RawSettings?
     @State var draftExitPresented = false
     @State var pendingToolSelection: EditorToolSelection?
@@ -476,16 +475,6 @@ struct ContentView: View {
             Button(L10n.text("重置"), role: .destructive) { confirmEditorReset() }
             Button(L10n.text("取消"), role: .cancel) { cancelEditorReset() }
         } message: { Text(resetConfirmationMessage) }
-        .alert(L10n.text("重新载入已保存调整"), isPresented: $adjustmentReloadPresented) {
-            Button(L10n.text("重新载入已保存调整"), role: .destructive) {
-                guard viewModel.reloadSavedAdjustments() else { return }
-                if let restored = viewModel.adjustmentRestoredSettings { settings = restored }
-                cancelDraftNavigation()
-                discardEditorDraft()
-                activateEditorTool(.adjustment(.exposure))
-            }
-            Button(L10n.text("继续编辑"), role: .cancel) {}
-        } message: { Text(L10n.text("重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。")) }
         .onDisappear {
             cancelSliderInteraction()
             viewModel.saveCurrentSettings(settings)

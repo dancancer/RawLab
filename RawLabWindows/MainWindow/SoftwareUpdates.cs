@@ -41,7 +41,7 @@ public partial class MainWindow
     }
     private UpdateSessionStatus UpdateStatus() => new(
         Draft: transform.Active || ParameterRows(AdjustmentPanel).Any(row=>row.HasPendingInput) || interacting || editGesture != null,
-        Unsaved: editDirty, SaveFailed: editStore==null || RetrySave.Visibility==Visibility.Visible || adjustmentReloadRequired,
+        Unsaved: editDirty, SaveFailed: editStore==null || RetrySave.Visibility==Visibility.Visible,
         TasksRunning: foregroundBusy || autoExposing || transferPreparing || scheduler.Busy || embeddedScheduler.Busy || aiJob.State.IsRunning || batchWindow?.UpdateTasksRunning==true,
         JournalFailed: updateJournalLoadFailed || batchWindow?.UpdateJournalFailed==true);
     private bool PrepareUpdateData()

@@ -108,6 +108,7 @@
     <string name="dehaze">"Dehaze"</string>
     <string name="dng_description">"Baked-in look, not sensor RAW. No editable history or capture EXIF. Files only."</string>
     <string name="edit_read_error">"Unable to read adjustment record: %1$s"</string>
+    <string name="edit_store_unavailable">"Adjustment records are temporarily unavailable. Try again later."</string>
     <string name="edit_unsaved_detail">"Adjustments not saved: %1$s"</string>
     <string name="editor_adjusted">"Adjusted"</string>
     <string name="editor_collapse_histogram">"Collapse histogram"</string>
@@ -390,8 +391,8 @@
     <string name="transfer_channel_7">"Magenta"</string>
     <string name="transfer_choose_files">"Import from files"</string>
     <string name="transfer_clear">"Clear Selection"</string>
-    <string name="transfer_conflict">"Adjustments changed"</string>
-    <string name="transfer_conflict_message">"The photo or its adjustments have changed. Check the target again."</string>
+    <string name="transfer_conflict">"Operation no longer valid"</string>
+    <string name="transfer_conflict_message">"This operation is out of date. Start it again."</string>
     <string name="transfer_copy">"Copy Adjustments"</string>
     <string name="transfer_custom">"Custom"</string>
     <string name="transfer_draft_message">"Apply or discard unfinished input and geometry drafts first."</string>
@@ -450,6 +451,7 @@
     <string name="transfer_history">"Session History"</string>
     <string name="transfer_history_failed">"The history operation is incomplete for these photos. Check the reason and retry."</string>
     <string name="transfer_history_hint">"History lasts for this session. Saved adjustments are restored when you reopen a photo."</string>
+    <string name="transfer_history_order_message">"Undo or redo the edits in history order."</string>
     <string name="transfer_history_skip">"Skip Listed Photos and Retry"</string>
     <string name="transfer_incompatible">"These adjustments are incompatible with this photo. Change the scope or skip it."</string>
     <string name="transfer_invalid_payload">"The adjustments cannot be read. Copy them again."</string>
@@ -464,8 +466,6 @@
     <string name="transfer_recheck">"Check Again"</string>
     <string name="transfer_redo">"Redo"</string>
     <string name="transfer_redo_count">"Redo photos: %1$s"</string>
-    <string name="transfer_reload">"Reload Saved Adjustments"</string>
-    <string name="transfer_reload_body">"Reloading discards unsaved adjustments and reads the current saved record for this photo."</string>
     <string name="transfer_retry">"Retry Incomplete"</string>
     <string name="transfer_scope">"Copy scope"</string>
     <string name="transfer_select_group">"Select Group"</string>

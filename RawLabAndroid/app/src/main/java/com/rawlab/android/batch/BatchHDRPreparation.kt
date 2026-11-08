@@ -14,13 +14,13 @@ import java.util.concurrent.CancellationException
 /** HDR 统一批量只读目标记录，转换结果归任务所有，不改变来源或目标的编辑模式。 */
 internal class BatchHDRPreparation(
     private val source: BatchSourceSnapshot,
-    private val readRecord: (PhotoIdentity) -> VersionedPhotoEdit,
+    private val readRecord: (PhotoIdentity) -> PhotoEditState,
     private val resolveLook: (EditSettings) -> File?,
     private val probeSource: (File, Boolean) -> HDRSourceInfo?,
     private val hdrLookDirectory: File? = null,
     private val hdrCameraProfileDirectory: File? = null,
 ) {
-    private data class Candidate(val record: VersionedPhotoEdit,val frozen: BatchFrozenSettings)
+    private data class Candidate(val frozen: BatchFrozenSettings)
     private val sourceContext by lazy {
         val raw = source.inputKind == PhotoInputKind.RAW
         val info = probeSource(source.sourceFile, raw)
@@ -49,7 +49,7 @@ internal class BatchHDRPreparation(
         val frozen=BatchFrozenSettings(ordinal=ordinal,settings=settings,inputSHA256=hash,lookFile=look,
             lookSHA256=look?.let(BatchFrozenSettings::checksum),outputFormat=format,longEdge=longEdge)
         frozen.validate();frozen.verifyFiles(target.sourceFile)
-        return Candidate(record,frozen)
+        return Candidate(frozen)
     }
 
     fun prepare(target: BatchTarget,ordinal: Int,format: ExportFormat,longEdge: Int?) =
@@ -65,7 +65,6 @@ internal class BatchHDRPreparation(
             candidates.forEachIndexed { index,value ->
                 if(cancelled())throw CancellationException()
                 val target=job.rows[index].target
-                if(readRecord(target.identity)!=value.record)throw EditPersistenceConflict()
                 value.frozen.verifyFiles(target.sourceFile)
             }
         }

@@ -108,6 +108,7 @@
     <string name="dehaze">"Borrar neblina"</string>
     <string name="dng_description">"Look final integrado, no RAW del sensor. Sin historial editable ni EXIF de captura. Solo archivos."</string>
     <string name="edit_read_error">"No se puede leer el registro de ajuste: %1$s"</string>
+    <string name="edit_store_unavailable">"Los ajustes guardados no están disponibles temporalmente. Inténtalo de nuevo más tarde."</string>
     <string name="edit_unsaved_detail">"Ajustes no guardados: %1$s"</string>
     <string name="editor_adjusted">"Ajustado"</string>
     <string name="editor_collapse_histogram">"Contraer histograma"</string>
@@ -390,8 +391,8 @@
     <string name="transfer_channel_7">"Magenta"</string>
     <string name="transfer_choose_files">"Importar desde archivos"</string>
     <string name="transfer_clear">"Borrar selección"</string>
-    <string name="transfer_conflict">"Ajustes modificados"</string>
-    <string name="transfer_conflict_message">"La foto o sus ajustes han cambiado. Comprueba de nuevo el destino."</string>
+    <string name="transfer_conflict">"Operación no válida"</string>
+    <string name="transfer_conflict_message">"Esta operación ha quedado desactualizada. Vuelve a iniciarla."</string>
     <string name="transfer_copy">"Copiar ajustes"</string>
     <string name="transfer_custom">"Personalizado"</string>
     <string name="transfer_draft_message">"Aplica o descarta primero las entradas y los borradores de geometría pendientes."</string>
@@ -450,6 +451,7 @@
     <string name="transfer_history">"Historial de la sesión"</string>
     <string name="transfer_history_failed">"La operación de historial no se ha completado para estas fotos. Comprueba el motivo y vuelve a intentarlo."</string>
     <string name="transfer_history_hint">"El historial dura esta sesión. Los ajustes guardados se restauran al volver a abrir una foto."</string>
+    <string name="transfer_history_order_message">"Deshaz o rehace los ajustes en el orden del historial."</string>
     <string name="transfer_history_skip">"Omitir las fotos indicadas y reintentar"</string>
     <string name="transfer_incompatible">"Estos ajustes no son compatibles con esta foto. Cambia el alcance u omítela."</string>
     <string name="transfer_invalid_payload">"No se pueden leer los ajustes. Vuelve a copiarlos."</string>
@@ -464,8 +466,6 @@
     <string name="transfer_recheck">"Volver a comprobar"</string>
     <string name="transfer_redo">"Rehacer"</string>
     <string name="transfer_redo_count">"Rehacer fotos: %1$s"</string>
-    <string name="transfer_reload">"Recargar ajustes guardados"</string>
-    <string name="transfer_reload_body">"Al recargar se descartan los ajustes sin guardar y se lee el registro guardado actual de esta foto."</string>
     <string name="transfer_retry">"Reintentar pendientes"</string>
     <string name="transfer_scope">"Alcance de la copia"</string>
     <string name="transfer_select_group">"Seleccionar grupo"</string>

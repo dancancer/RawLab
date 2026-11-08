@@ -60,10 +60,10 @@ class AdjustmentTransferSessionTest {
         assertEquals(listOf(AdjustmentStatus.APPLIED, AdjustmentStatus.FAILED), first.map { it.status })
         assertEquals(1, session.transactions.single().parts.size)
         assertEquals(AdjustmentStatus.APPLIED, session.undoPhoto(a).single().status)
-        val aReceipt = store.versionedState(a)
+        val aReceipt = store.readState(a)
         val retried = session.apply(operation)
         assertEquals(listOf(AdjustmentStatus.APPLIED, AdjustmentStatus.APPLIED), retried.map { it.status })
-        assertEquals(aReceipt, store.versionedState(a)); assertEquals(1f, store.load(b)!!.exposure)
+        assertEquals(aReceipt, store.readState(a)); assertEquals(1f, store.load(b)!!.exposure)
         assertEquals(2, session.transactions.single().parts.size)
         assertEquals(listOf(b.value), session.undoTransaction(operation.id).map { it.targetID })
         assertEquals(-.2f, store.load(b)!!.exposure)
@@ -75,36 +75,46 @@ class AdjustmentTransferSessionTest {
         val store = EditStore(directory); val session = AdjustmentTransferSession(store)
         val operation = session.prepare(payload(), listOf(target(a), target(b)))
         session.apply(operation); session.undoTransaction(operation.id)
-        session.commitEdit(store.versionedState(a), EditSettings(exposure = .3f))
+        session.commitEdit(store.readState(a), EditSettings(exposure = .3f))
         assertFalse(session.canRedoPhoto(a)); assertTrue(session.canRedoPhoto(b))
         assertEquals(listOf(b.value), session.redoTransaction(operation.id).map { it.targetID })
         assertEquals(.3f, store.load(a)!!.exposure)
-        val before = store.versionedState(a)
+        val before = store.readState(a)
         assertEquals(AdjustmentStatus.UNCHANGED, session.commitEdit(before, before.settings!!).status)
         assertEquals(2, session.transactions.size)
     }
 
-    @Test fun externalAndOwnABACannotOvertakeNewerHistoryHeads() = inStore { directory ->
+    @Test fun externalAdjustmentChangesDoNotBlockSessionHistory() = inStore { directory ->
         val store = EditStore(directory); val session = AdjustmentTransferSession(store)
         val operation = session.prepare(payload(), listOf(target(a), target(b)))
         session.apply(operation)
-        val afterA = store.versionedState(a)
+        val afterA = store.readState(a)
         EditStore(directory).save(a, EditSettings(exposure = .5f))
         EditStore(directory).save(a, afterA.settings!!)
-        val blocked = session.undoTransaction(operation.id)
-        assertEquals(AdjustmentStatus.CONFLICT, blocked.first().status)
-        assertTrue(blocked.first().requiresHistoryDecision)
-        assertEquals(1f, store.load(b)!!.exposure)
-        assertEquals(listOf(AdjustmentStatus.SKIPPED, AdjustmentStatus.APPLIED),
-            session.undoTransaction(operation.id, skipping = setOf(a.value)).map { it.status })
-        assertNull(store.load(b))
+        val undone = session.undoTransaction(operation.id)
+        assertEquals(listOf(AdjustmentStatus.APPLIED, AdjustmentStatus.APPLIED), undone.map { it.status })
+        assertNull(store.load(a)); assertNull(store.load(b))
+    }
 
-        val current = store.versionedState(a)
-        val first = session.commitEdit(current, EditSettings(exposure = .4f))
-        session.commitEdit(first.saved!!, afterA.settings)
-        assertEquals(AdjustmentStatus.CONFLICT, session.undoTransaction(operation.id).first().status)
-        assertEquals(AdjustmentStatus.APPLIED, session.undoPhoto(a).single().status)
-        assertEquals(.4f, store.load(a)!!.exposure)
+    @Test fun preparedTransferExpiresAfterThisSessionCommitsTheTarget() = inStore { directory ->
+        val store = EditStore(directory); val session = AdjustmentTransferSession(store)
+        val operation = session.prepare(payload(), listOf(target(a)))
+        assertEquals(AdjustmentStatus.APPLIED, session.commitEdit(store.readState(a), EditSettings(exposure = .25f)).status)
+        val result = session.apply(operation).single()
+        assertEquals(AdjustmentStatus.CONFLICT, result.status)
+        assertTrue(result.error is AdjustmentOperationExpiredException)
+        assertEquals(.25f, store.load(a)!!.exposure)
+    }
+
+    @Test fun historyRejectsUndoOutOfOrderWithExplicitHistoryError() = inStore { directory ->
+        val store = EditStore(directory); val session = AdjustmentTransferSession(store)
+        val first = session.commitEdit(store.readState(a), EditSettings(exposure = .25f)).saved!!
+        session.commitEdit(first, EditSettings(exposure = .5f))
+        val firstID = session.transactions.first().id
+        val result = session.undoPhoto(a, firstID).single()
+        assertEquals(AdjustmentStatus.CONFLICT, result.status)
+        assertTrue(result.error is AdjustmentHistoryOrderException)
+        assertEquals(.5f, store.load(a)!!.exposure)
     }
 
     @Test fun allTargetsPreflightBeforeWritesAndExplicitSkipKeepsTheOthers() = inStore { directory ->
@@ -122,7 +132,7 @@ class AdjustmentTransferSessionTest {
 
     @Test fun absentNeutralEditsDoNotCreateRecordsAndUndoRestoresAbsence() = inStore { directory ->
         val store = EditStore(directory); val session = AdjustmentTransferSession(store)
-        val missing = store.versionedState(a)
+        val missing = store.readState(a)
         assertEquals(AdjustmentStatus.UNCHANGED, session.commitEdit(missing, EditSettings(), defaultSettings = EditSettings()).status)
         assertNull(store.load(a)); assertTrue(session.transactions.isEmpty())
         val edit = session.commitEdit(missing, EditSettings(exposure = .5f))
@@ -141,7 +151,7 @@ class AdjustmentTransferSessionTest {
             Files.move(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING)
         }
         val session = AdjustmentTransferSession(store)
-        session.commitEdit(store.versionedState(a), EditSettings(exposure = .5f))
+        session.commitEdit(store.readState(a), EditSettings(exposure = .5f))
         val id = session.photoHistoryID(a, undo = true)!!
         fail = true
         assertEquals(AdjustmentStatus.FAILED, session.undoPhoto(a, transactionID = id).single().status)
@@ -163,19 +173,19 @@ class AdjustmentTransferSessionTest {
         val store = EditStore(directory); val session = AdjustmentTransferSession(store)
         val source = PhotoIdentity("source")
         store.save(source, EditSettings(exposure = 1f)); store.save(a, EditSettings(contrast = .4f))
-        val sourceBefore = store.versionedState(source)
+        val sourceBefore = store.readState(source)
         val clipboard = session.copy(AdjustmentScope.Custom(setOf(AdjustmentField.CONTRAST)), EditSettings(contrast = .2f), target(b).context)
         val operation = session.prepare(payload(), listOf(target(source).copy(displayName = "same.raw"),
             target(a).copy(displayName = "same.raw"), target(a)), AdjustmentHistoryTransaction.Action.SYNCHRONIZE)
         assertEquals(listOf(a.value), operation.targets.map { it.id })
         assertEquals(AdjustmentStatus.APPLIED, session.apply(operation).single().status)
-        assertEquals(sourceBefore, store.versionedState(source))
+        assertEquals(sourceBefore, store.readState(source))
         assertEquals(.4f, store.load(a)!!.contrast)
         assertEquals(clipboard, session.clipboard)
         val forgedTarget = session.prepare(payload(2.0), listOf(target(source))).targets.single()
         val forged = operation.copy(id = java.util.UUID.randomUUID(), targets = listOf(forgedTarget))
         assertEquals(AdjustmentStatus.BLOCKED, session.apply(forged).single().status)
-        assertEquals(sourceBefore, store.versionedState(source))
+        assertEquals(sourceBefore, store.readState(source))
         assertEquals(listOf(a.value), session.undoTransaction(operation.id).map { it.targetID })
         assertEquals(0f, store.load(a)!!.exposure); assertEquals(.4f, store.load(a)!!.contrast)
     }

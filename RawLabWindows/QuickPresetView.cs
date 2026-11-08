@@ -12,7 +12,7 @@ internal static class QuickPresetView
 {
     internal static FrameworkElement Build(IReadOnlyList<AdjustmentPreset> presets, string? libraryError, QuickPresetState state,
         Func<string, string, string?> lookName, Action manage, Action create, Action reload, Action<AdjustmentPreset> apply,
-        Action<AdjustmentPreset> multiple, Action undo, Action cancel, bool needsReload, Action reloadPhoto)
+        Action<AdjustmentPreset> multiple, Action undo, Action cancel)
     {
         var root = new StackPanel { Margin = new Thickness(2, 4, 2, 4) };
         var busy = state.Phase == QuickPresetPhase.Preparing;
@@ -32,7 +32,6 @@ internal static class QuickPresetView
             if (state.Phase == QuickPresetPhase.Preparing) resultActions.Children.Add(Button("取消", "preset.quick.cancel", cancel));
             if (state.Phase == QuickPresetPhase.Saved) resultActions.Children.Add(Button("撤销", "preset.quick.undo", undo));
             if (state.Phase is QuickPresetPhase.Failed or QuickPresetPhase.UndoFailed) {
-                if (needsReload) resultActions.Children.Add(Button("重新载入已保存调整", "preset.quick.reloadPhoto", reloadPhoto));
                 resultActions.Children.Add(Button("重试", "preset.quick.retry", () => { if (state.Phase == QuickPresetPhase.UndoFailed) undo(); else apply(current); }));
                 resultActions.Children.Add(Button("取消", "preset.quick.cancel", cancel));
             }

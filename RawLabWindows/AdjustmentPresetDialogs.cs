@@ -12,7 +12,7 @@ internal static class AdjustmentPresetPresentation
         PresetFailure.CorruptLibrary => "预设库无法读取，原文件保持不变。请从备份恢复后重试。",
         PresetFailure.UnsupportedVersion => "此预设库来自更新版本，请更新应用后重试。",
         _ => "无法创建新的预设标识，请重试。"
-    }) : error is AdjustmentTransferException or EditPersistenceConflict ? AdjustmentTransferPresentation.Error(error)
+    }) : error is AdjustmentTransferException or PhotoChangedException or AdjustmentOperationExpiredException or AdjustmentHistoryOrderException ? AdjustmentTransferPresentation.Error(error)
         : Loc.Format("预设操作未完成：{0}", error.Message);
 
     internal static Button Button(string key, string id, Action action)

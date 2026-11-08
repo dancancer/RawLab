@@ -26,7 +26,7 @@ class HDRBatchPreparationTest {
                 inputKind=if(name.endsWith(".dng"))PhotoInputKind.RAW else PhotoInputKind.RASTER)
         }
         init {store.save(targets.last().identity,EditSettings(exposure=-1f,film="custom"))}
-        fun preparation(settings: EditSettings=sourceSettings)=BatchHDRPreparation(source.copy(settings=settings),store::versionedState,
+        fun preparation(settings: EditSettings=sourceSettings)=BatchHDRPreparation(source.copy(settings=settings),store::readState,
             { if(it.film=="custom")look else null },{ file, _ ->
                 if(file == source.sourceFile || file.name.startsWith("hdr")) hdrInfo(1) else null
             })
@@ -35,7 +35,7 @@ class HDRBatchPreparationTest {
     private fun test(action: (Fixture)->Unit) {val fixture=Fixture();try {action(fixture)}finally {fixture.root.deleteRecursively()}}
 
     @Test fun mixedTargetsKeepTheirModesAndOwnFrozenSettingsWithoutEditingRecords() = test { f ->
-        val before=f.targets.associateWith { f.store.versionedState(it.identity) }
+        val before=f.targets.associateWith { f.store.readState(it.identity) }
         val bytes=f.targets.associateWith { it.sourceFile.readBytes().toList() }
         val draft=f.job();val frozen=f.preparation().freeze(draft,f.directory){false}
         assertEquals(BatchSettingsMode.UNIFORM_FROZEN,draft.settingsMode)
@@ -48,7 +48,7 @@ class HDRBatchPreparationTest {
             row.target.frozen!!.verifyFiles(row.target.sourceFile)
         }
         assertEquals(f.sourceSettings,frozen.source.settings)
-        f.targets.forEach {assertEquals(before[it],f.store.versionedState(it.identity));assertEquals(bytes[it],it.sourceFile.readBytes().toList())}
+        f.targets.forEach {assertEquals(before[it],f.store.readState(it.identity));assertEquals(bytes[it],it.sourceFile.readBytes().toList())}
         val frozenLook=frozen.rows.last().target.frozen!!.lookFile!!
         assertNotEquals(f.look.canonicalFile,frozenLook.canonicalFile)
         f.look.writeText("new look");f.store.save(f.targets.last().identity,EditSettings(exposure=4f))
@@ -58,17 +58,17 @@ class HDRBatchPreparationTest {
     }
 
     @Test fun previewPreparationUsesTheSameCandidateWithoutSavingAJournal() = test { f ->
-        val before=f.store.versionedState(f.targets.last().identity)
+        val before=f.store.readState(f.targets.last().identity)
         val value=f.preparation().prepare(f.targets.last(),0,ExportFormat.JPEG,128)
         assertFalse(value.settings.isHDREditing);assertEquals(.5f,value.settings.exposure)
         assertEquals(f.look,value.lookFile);assertFalse(f.directory.exists())
-        assertEquals(before,f.store.versionedState(f.targets.last().identity))
+        assertEquals(before,f.store.readState(f.targets.last().identity))
     }
 
     @Test fun capableCameraRawKeepsDefaultSdrAndRestoresItsHdrRecord() = test { f ->
         val target = f.targets[2]
         for (proRAW in listOf(false, true)) {
-            val preparation = BatchHDRPreparation(f.source, f.store::versionedState, { null }, { file, raw ->
+            val preparation = BatchHDRPreparation(f.source, f.store::readState, { null }, { file, raw ->
                 when {
                     file == f.source.sourceFile -> hdrInfo(1)
                     file == target.sourceFile && raw -> hdrInfo(if (proRAW) HDRSourceInfo.CONTAINER_PRORAW else HDRSourceInfo.CONTAINER_CAMERA_RAW)
@@ -84,7 +84,7 @@ class HDRBatchPreparationTest {
             assertEquals(if (proRAW) HDRSourceInfo.PRORAW_DECODE_VERSION else null, result.proRAWDecodeVersion)
             assertEquals(.5f, result.exposure)
             assertEquals(-2f, result.sdrSnapshotSettings()!!.exposure)
-            assertEquals(edits, f.store.versionedState(target.identity).settings)
+            assertEquals(edits, f.store.readState(target.identity).settings)
         }
     }
 

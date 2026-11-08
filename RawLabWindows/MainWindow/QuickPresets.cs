@@ -65,21 +65,20 @@ public partial class MainWindow
         var generation = ++quickPresetGeneration; var revision = editRevision;
         try {
             _ = CaptureVerifiedAdjustmentSource();
-            var expected = currentEditRecord!; var session = TransferSession;
+            var session = TransferSession;
             quickPreset = new(QuickPresetPhase.Preparing, preset); RefreshQuickPresets(); RefreshControls();
             var operation = await PrepareAdjustmentTargets(preset.Payload, [source], AdjustmentHistoryAction.Preset);
             if (QuickPresetPrepared is { } prepared) await prepared();
             if (generation != quickPresetGeneration || !quickPresetsVisible) return;
             if (file != source || opened != openRevision || revision != editRevision || operation == null) { CancelQuickPreset(); return; }
             if (operation.Targets.FirstOrDefault()?.Error is { } targetError) throw targetError;
-            if (operation.Targets.Count != 1 || operation.Targets[0].Original?.SameAs(expected) != true || currentEditRecord?.SameAs(expected) != true)
-                throw new EditPersistenceConflict();
+            if (operation.Targets.Count != 1) throw new AdjustmentOperationExpiredException();
             var outcome = AdoptAdjustmentOutcomes(session.Apply(operation), []).Single();
             if (outcome.Status == AdjustmentStatus.Applied && (outcome.Error != null || outcome.Saved?.SameAs(currentEditRecord) != true)) {
-                quickPreset = new(QuickPresetPhase.Failed, preset, Message: Loc.Text("调整已保存，当前照片需要重新载入。"));
+                quickPreset = new(QuickPresetPhase.Failed, preset, Message: Loc.Text("调整已保存，界面未更新。"));
             } else if (outcome.Error == null && outcome.Saved?.SameAs(currentEditRecord) == true && outcome.Status is AdjustmentStatus.Applied or AdjustmentStatus.Unchanged) {
                 quickPreset = new(outcome.Status == AdjustmentStatus.Applied ? QuickPresetPhase.Saved : QuickPresetPhase.Unchanged, preset, operation.ID);
-            } else throw outcome.Error ?? new EditPersistenceConflict();
+            } else throw outcome.Error ?? new AdjustmentOperationExpiredException();
         } catch (Exception error) {
             if (generation == quickPresetGeneration) quickPreset = new(QuickPresetPhase.Failed, preset, Message: QuickPresetError(error));
         } finally {
@@ -118,7 +117,7 @@ public partial class MainWindow
         QuickPresetSurface.Content = QuickPresetView.Build(quickPresetLibrary, quickPresetLibraryError, quickPreset, AdjustmentSummaryLookName,
             () => ShowPresetsClicked(this, new()), () => { if (PrepareQuickPresetCommand()) ShowPresetSaveEditor(); RefreshQuickPresets(true); },
             () => RefreshQuickPresets(true), async preset => await ApplyPresetToCurrentPhoto(preset), async preset => await ApplyPresetToPhotos(preset),
-            UndoQuickPreset, CancelQuickPreset, adjustmentReloadRequired, () => ReloadEditsClicked(this, new()));
+            UndoQuickPreset, CancelQuickPreset);
     }
 
     private async Task ApplyPresetToPhotos(AdjustmentPreset preset)

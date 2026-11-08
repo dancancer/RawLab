@@ -57,7 +57,10 @@ func checkBatchSelection(_ root: URL) throws {
     var changed = store.state(for: identities[1])!.settings
     changed.exposure = 1.2
     try store.save(identities[1], state: PhotoEditState(settings: changed))
-    try check(rejected { _ = try collection.freeze(review, store: store, journal: journal, validateActive: active) }, "late saved edits invalidate a prior confirmation")
+    let confirmed = try collection.freeze(review, store: store, journal: journal, validateActive: active)
+    try check(confirmed.targets[1].frozen?.settings.exposure == 1,
+              "late disk edits do not mutate the confirmed export snapshot")
+    try journal.discard(id: confirmed.id)
     let fresh = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: 2048, x3fDefaultMode: { _ in .legacy }, probeHDR: { _ in false }, validateActive: active, resolveLook: look)
     drafts.insert(identities[2].key)
     try check(rejected { _ = try collection.freeze(fresh, store: store, journal: journal, validateActive: active) }, "late unsaved drafts block freezing")

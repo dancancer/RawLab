@@ -356,6 +356,7 @@
 "搜索镜头" = "Search Lenses";
 "撤销" = "Undo";
 "撤销 %@ 张" = "Undo photos: %@";
+"操作已失效" = "Operation no longer valid";
 "操作未完成，请重试。" = "The operation is incomplete. Try again.";
 "收起%@组" = "Collapse %@ group";
 "收起其他方案" = "Hide other options";
@@ -503,6 +504,7 @@
 "此像素不可取样。" = "This pixel cannot be sampled.";
 "此外观已不在外观库中。" = "This look is no longer in the look library.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Only adjustments in the %@ group will be reset. Other groups will stay unchanged.";
+"此操作已过期，请重新操作。" = "This operation is out of date. Start it again.";
 "此照片或构建尚不能使用 AI 降噪。" = "AI denoising is unavailable for this photo or build.";
 "此照片没有可用的相机白平衡校准。" = "This photo has no usable camera white balance calibration.";
 "此照片没有可编辑的 HDR 增益图。" = "This photo has no editable HDR gain map.";
@@ -542,7 +544,6 @@
 "照片图库" = "Photos";
 "照片处理设置" = "Photo processing settings";
 "照片已写入，但任务记录未更新，请先核对保存结果。" = "The Photo Was Written, but the Task Record Was Not Updated. Check the Save Result First.";
-"照片或调整已变化，请重新检查目标。" = "The photo or its adjustments have changed. Check the target again.";
 "照片或调整已变化，请重新确认重置。" = "The photo or its adjustments have changed. Confirm the reset again.";
 "照片缺少有效焦距，未应用校正" = "No Valid Focal Length; Correction Not Applied";
 "现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。" = "The available parameter ranges cannot preserve the recipe's full appearance. Cancel, or separately confirm resetting all adjustments.";
@@ -654,6 +655,7 @@
 "请先选择外观或配方。" = "Select a look or recipe first.";
 "请在调整后的照片区域取色。" = "Sample within the edited photo.";
 "请将白平衡模式、色温和色调一起保存，再应用此预设。" = "Save white balance mode, temperature, and tint together before applying this preset.";
+"请按历史顺序撤销或重做。" = "Undo or redo the edits in history order.";
 "请等待当前任务完成。" = "Wait for the Current Task to Finish.";
 "请等待预览完成后导出。" = "Wait for the Preview to Finish Before Exporting.";
 "请输入 1–65535 之间的像素数" = "Enter a pixel count from 1 to 65,535";
@@ -666,14 +668,15 @@
 "调整前" = "Before";
 "调整后" = "After";
 "调整已保存" = "Adjustments Saved";
-"调整已变化" = "Adjustments changed";
 "调整未保存 · 重试" = "Adjustments not saved · Try again";
+"调整未保存，请重试。" = "Adjustments were not saved. Try again.";
 "调整来源" = "Adjustment Source";
 "调整照片" = "Photo Adjustment";
 "调整范围" = "Adjustment Scope";
 "调整裁切边角" = "Adjust crop corner";
 "调整触觉反馈" = "Adjustment Haptics";
-"调整记录已恢复，请重新选择照片载入。" = "Adjustment Record Restored. Select the Photo Again to Load It.";
+"调整记录已恢复，请重试保存。" = "Adjustment records are available again. Retry saving.";
+"调整记录暂不可用，请稍后重试。" = "Adjustment records are temporarily unavailable. Try again later.";
 "调整轴" = "Adjustment axis";
 "赛博朋克 · 极致反差" = "Cyberpunk · extreme contrast";
 "跟随系统" = "Follow system";
@@ -723,8 +726,6 @@
 "重命名预设" = "Rename Preset";
 "重新检查" = "Check Again";
 "重新载入" = "Reload";
-"重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。" = "Reloading discards unsaved adjustments and reads the current saved record for this photo.";
-"重新载入已保存调整" = "Reload Saved Adjustments";
 "重置" = "Reset";
 "重置 HSL" = "Reset HSL";
 "重置%@" = "Reset %@";

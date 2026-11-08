@@ -87,7 +87,7 @@ class AdjustmentPresetUITest {
             click("preset-menu")
             val identity = model.state.value.photo!!.identity
             val edits = EditStore(editDirectory)
-            val original = edits.versionedState(identity)
+            val original = edits.readState(identity)
             val history = model.adjustmentTransactions.toList()
             compose.runOnUiThread {
                 model.prepareAdjustmentOperation = { work, cancelled -> originalPrepare(work, cancelled).also {
@@ -100,12 +100,12 @@ class AdjustmentPresetUITest {
             click("preset.quick.cancel"); release.countDown()
             compose.runOnUiThread { model.prepareAdjustmentOperation = originalPrepare }
             compose.waitUntil(10_000) { !model.adjustmentTransfer.value.preparing && !model.quickPreset.value.busy }
-            assertEquals(original, edits.versionedState(identity)); assertEquals(history, model.adjustmentTransactions)
+            assertEquals(original, edits.readState(identity)); assertEquals(history, model.adjustmentTransactions)
             screenshot("quick-cancel", "editor")
             Os.chmod(editDirectory.absolutePath, 320)
             click("preset.quick.apply.${preset.id}")
             compose.waitUntil(30_000) { model.quickPreset.value.phase == QuickPresetPhase.FAILED }
-            assertEquals(original, edits.versionedState(identity)); assertEquals(history, model.adjustmentTransactions)
+            assertEquals(original, edits.readState(identity)); assertEquals(history, model.adjustmentTransactions)
             Os.chmod(editDirectory.absolutePath, 448)
             click("preset.quick.retry")
             compose.waitUntil(60_000) { model.quickPreset.value.phase == QuickPresetPhase.SAVED }; ready()
@@ -138,10 +138,10 @@ class AdjustmentPresetUITest {
             assertEquals(.2f, model.state.value.edits.exposure)
             click("preset.quick.apply.${preset.id}")
             compose.waitUntil(30_000) { model.quickPreset.value.phase == QuickPresetPhase.SAVED }; ready()
-            val saved = edits.versionedState(identity); val savedHistory = model.adjustmentTransactions.toList()
+            val saved = edits.readState(identity); val savedHistory = model.adjustmentTransactions.toList()
             click("preset.quick.apply.${preset.id}")
             compose.waitUntil(30_000) { model.quickPreset.value.phase == QuickPresetPhase.UNCHANGED }
-            assertEquals(saved, edits.versionedState(identity)); assertEquals(savedHistory, model.adjustmentTransactions)
+            assertEquals(saved, edits.readState(identity)); assertEquals(savedHistory, model.adjustmentTransactions)
             screenshot("quick-unchanged", "editor")
             click("editor-group-light")
             compose.onNodeWithTag("editor-tool-2").assertIsDisplayed()
@@ -162,7 +162,7 @@ class AdjustmentPresetUITest {
             compose.runOnUiThread { model.importPhoto(Uri.fromFile(source)) }; ready()
             compose.runOnUiThread { model.edit(model.state.value.edits.copy(exposure = 0.7f)) }; ready()
             val identity = model.state.value.photo!!.identity
-            val stored = EditStore(File(compose.activity.filesDir, "edits")).versionedState(identity)
+            val stored = EditStore(File(compose.activity.filesDir, "edits")).readState(identity)
             val clipboard = model.adjustmentClipboard
             val history = model.adjustmentTransactions.toList()
             library(); click("preset-create"); enterName("Scope summary")
@@ -172,7 +172,7 @@ class AdjustmentPresetUITest {
             val decimal = if (compose.activity.resources.configuration.locales[0].language == "de") "," else "."
             compose.onNodeWithTag("preset-save-summary-value-light.exposure").performScrollTo().assertIsDisplayed()
                 .assertTextEquals("+0${decimal}70 EV")
-            assertEquals(stored, EditStore(File(compose.activity.filesDir, "edits")).versionedState(identity))
+            assertEquals(stored, EditStore(File(compose.activity.filesDir, "edits")).readState(identity))
             assertEquals(clipboard, model.adjustmentClipboard); assertEquals(history, model.adjustmentTransactions)
             screenshot("scope-summary-modified")
             click("adjustment-copy-scope-2"); click("adjustment-copy-clear")
@@ -193,9 +193,13 @@ class AdjustmentPresetUITest {
         try {
             compose.runOnUiThread { model.importPhoto(Uri.fromFile(source)) }; ready()
             compose.runOnUiThread { model.edit(model.state.value.edits.copy(exposure = .7f, temperature = 7200f, tint = -4f)) }; ready()
-            click("editor-group-looks")
+            click("editor-group-looks"); click("preset-dock")
+            compose.waitUntil(10_000) {
+                compose.onAllNodes(hasTestTag("preset.quick.create") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
+            }
             compose.onNodeWithTag("preset.quick.create").assertExists()
-            for (tool in listOf(0, 15, 1)) {
+            compose.onNodeWithTag("editor-tool-0").assertIsEnabled()
+            for (tool in listOf(15, 1)) {
                 compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag("editor-tool-$tool"))
                 compose.onNodeWithTag("editor-tool-$tool").assertIsNotEnabled()
             }
@@ -216,13 +220,13 @@ class AdjustmentPresetUITest {
             assertEquals(0f, model.state.value.edits.hdr!!.exposure)
             compose.runOnUiThread { model.setHDRMode(false) }; ready()
             compose.waitUntil(10_000) { !model.quickPreset.value.visible }
-            click("editor-group-looks"); click("preset-dock")
+            click("preset-dock")
             val edits = EditStore(File(compose.activity.filesDir, "edits"))
-            val identity = model.state.value.photo!!.identity; val saved = edits.versionedState(identity); val history = model.adjustmentTransactions.toList()
+            val identity = model.state.value.photo!!.identity; val saved = edits.readState(identity); val history = model.adjustmentTransactions.toList()
             click("preset.quick.apply.${preset.id}")
             compose.waitUntil(30_000) { model.quickPreset.value.phase == QuickPresetPhase.FAILED }
             compose.onNodeWithTag("preset.quick.status").performScrollTo().assertTextContains(compose.activity.getString(R.string.preset_quick_error_mode), substring = true)
-            assertEquals(saved, edits.versionedState(identity)); assertEquals(history, model.adjustmentTransactions)
+            assertEquals(saved, edits.readState(identity)); assertEquals(history, model.adjustmentTransactions)
             screenshot("quick-hdr-mode-rejected", "editor")
         } finally { cleanup(before); source.delete() }
     }
@@ -236,7 +240,7 @@ class AdjustmentPresetUITest {
             compose.runOnUiThread { model.importPhoto(Uri.fromFile(source)) }; ready()
             assertTrue(model.state.value.edits.isHDREditing)
             val identity = model.state.value.photo!!.identity
-            val stored = EditStore(File(compose.activity.filesDir, "edits")).versionedState(identity)
+            val stored = EditStore(File(compose.activity.filesDir, "edits")).readState(identity)
             library(); click("preset-create"); enterName("HDR summary")
             click("adjustment-copy-scope-0")
             compose.onNodeWithTag("preset-save-summary-count").assertTextContains("17", substring = true)
@@ -245,7 +249,7 @@ class AdjustmentPresetUITest {
             compose.onNodeWithTag("preset-save-summary-value-hdr.relative_temperature").assertTextContains(
                 compose.activity.getString(R.string.adjustment_summary_relative_white_balance), substring = true)
             screenshot("scope-summary-hdr")
-            assertEquals(stored, EditStore(File(compose.activity.filesDir, "edits")).versionedState(identity))
+            assertEquals(stored, EditStore(File(compose.activity.filesDir, "edits")).readState(identity))
             assertNull(model.adjustmentClipboard)
             click("preset-cancel")
         } finally { source.delete() }
@@ -280,12 +284,12 @@ class AdjustmentPresetUITest {
             val clipboard = model.adjustmentClipboard
             val history = model.adjustmentTransactions
             val identity = model.state.value.photo!!.identity
-            val revision = EditStore(File(compose.activity.filesDir, "edits")).versionedState(identity)
+            val revision = EditStore(File(compose.activity.filesDir, "edits")).readState(identity)
             library(); save("晨光 · 1.25")
             val preset = model.presetStore.list().single { it.id !in before }
             assertEquals(setOf(AdjustmentField.EXPOSURE), preset.payload.fields)
             assertEquals(clipboard, model.adjustmentClipboard); assertEquals(history, model.adjustmentTransactions)
-            assertEquals(revision, EditStore(File(compose.activity.filesDir, "edits")).versionedState(identity))
+            assertEquals(revision, EditStore(File(compose.activity.filesDir, "edits")).readState(identity))
             click("preset-manage-${preset.id}"); click("preset-rename")
             val longName = "Morning light · 明るい朝 · Lang benannte Belichtungsvorgabe 1.25"
             enterName(longName); click("preset-rename-save")

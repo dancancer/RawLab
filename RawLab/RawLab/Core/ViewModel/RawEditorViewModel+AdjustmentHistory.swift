@@ -36,16 +36,15 @@ extension RawEditorViewModel {
         let original = try file.withReadAccess { try IOSAdjustmentSourceStamp($0) }
         return {
             guard try file.withReadAccess({ try IOSAdjustmentSourceStamp($0) }) == original else {
-                throw EditPersistenceConflict.changed
+                throw AdjustmentCommitError.photoChanged
             }
         }
     }
 
-    func acceptImportedEditRecord(_ record: VersionedPhotoEdit?, settings: RawSettings) {
+    func acceptImportedEditRecord(_ record: PhotoEditRecord?, settings: RawSettings) {
         loadedEditRecord = record
         adjustmentInteraction = nil
         adjustmentInteractionRejected = false
-        adjustmentReloadRequired = false
         adjustmentRestoredSettings = nil
         includeIndependentRecipeLook(settings)
         retainEditMetadata(record?.state ?? PhotoEditState(settings: settings, updatedAt: Date(timeIntervalSince1970: 0)))
@@ -55,38 +54,6 @@ extension RawEditorViewModel {
             if let validate = adjustmentSourceValidator { adjustmentSession?.refreshSource(source.identity, validate: validate) }
         }
         adjustmentHistoryRevision = UUID()
-    }
-
-    @discardableResult
-    func reloadSavedAdjustments() -> Bool {
-        guard !isBusy, let source = editorEditSource else { return false }
-        do {
-            if editPersistence == nil {
-                let store = try EditPersistence.appStore()
-                editPersistence = store
-                adjustmentSession = IOSAdjustmentTransferSession(store: store)
-            }
-            let record = try editPersistence!.versionedState(for: source.identity)
-            guard source == editorEditSource else { return false }
-            cancelQueuedSettingsSave()
-            pendingSettings = nil
-            failedDraftSource = nil
-            let settings = try record.state?.settings ?? sourceDefaultSettings
-            let validation = adjustmentSourceValidator
-            acceptImportedEditRecord(record, settings: settings)
-            // 重新读取编辑记录不代表认可来源文件被替换。
-            adjustmentSourceValidator = validation
-            if let validation { adjustmentSession?.refreshSource(source.identity, validate: validation) }
-            persistedEditorSettings = PersistedEditorSettings(source: source, settings: settings)
-            committedPreviewSettings = settings
-            currentPreviewSettings = settings
-            adjustmentRestoredSettings = settings
-            setEditNotice(record.state == nil ? .idle : .restored)
-            return true
-        } catch {
-            editSaveState = .failed(error.localizedDescription)
-            return false
-        }
     }
 
     @discardableResult
@@ -165,7 +132,7 @@ extension RawEditorViewModel {
         for result in results where result.status == .applied || result.status == .unchanged {
             guard let saved = result.saved, saved.identity == sourceIdentity,
                   adjustmentTargetIsCurrent(result.targetID),
-                  (try? editPersistence?.versionedState(for: saved.identity)) == saved else { continue }
+                  adjustmentSession?.isCurrentSave(saved) == true else { continue }
             if !quickPresetState.isPreparing { cancelQuickPreset() }
             // 旧操作的缓存回执不能覆盖后来已保存的编辑或尚未保存的界面。
             if let state = saved.state {
@@ -188,7 +155,13 @@ extension RawEditorViewModel {
     }
 
     func adjustmentErrorMessage(_ error: Error?) -> String {
-        if error is EditPersistenceConflict { return L10n.text("照片或调整已变化，请重新检查目标。") }
+        if let error = error as? AdjustmentCommitError {
+            switch error {
+            case .photoChanged: return L10n.text("原始文件已被替换，请重新选择照片。")
+            case .expired: return L10n.text("此操作已过期，请重新操作。")
+            case .historyOrder: return L10n.text("请按历史顺序撤销或重做。")
+            }
+        }
         switch error as? AdjustmentTransferError {
         case .emptyScope: return L10n.text("没有可复制的调整，请选择其他范围。")
         case .draftRequiresPreflight: return L10n.text("请先应用或放弃未完成的输入和几何草稿。")

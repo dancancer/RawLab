@@ -8,7 +8,6 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.Base64
 import java.util.Properties
-import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -21,8 +20,16 @@ value class PhotoIdentity(val value: String) {
     init { require(value.isNotBlank()) }
 }
 
-data class VersionedPhotoEdit(val identity: PhotoIdentity, val settings: EditSettings?, val revision: String?)
-class EditPersistenceConflict : IOException("Photo adjustments changed after they were read")
+/** 当前会话看到的照片调整；磁盘不再为调整记录生成 revision。 */
+data class PhotoEditState(val identity: PhotoIdentity, val settings: EditSettings?) {
+    fun sameAs(other: PhotoEditState?): Boolean = other != null && identity == other.identity && settings == other.settings
+    fun copySettings(): PhotoEditState = copy(settings = settings?.copy())
+}
+
+class PhotoChangedException : IOException("The original photo changed. Select it again.")
+class AdjustmentOperationExpiredException : IllegalStateException("This adjustment operation is no longer current.")
+class AdjustmentHistoryOrderException : IllegalStateException("Undo or redo the photo's edits in history order.")
+class AdjustmentNotReadyException : IllegalStateException("The current adjustments are not committed")
 
 class EditStore(private val directory: File,
     private val replaceFile: (File, File) -> Unit = ::replaceEditFileAtomically,
@@ -30,9 +37,9 @@ class EditStore(private val directory: File,
     private val file = File(directory, "edits.properties")
     private val processLock = locks.getOrPut(directory.canonicalPath) { ReentrantLock() }
     @Volatile private var lastReadableRecords: Map<PhotoIdentity, EditSettings> = emptyMap()
-    private data class Snapshot(val records: Map<PhotoIdentity, EditSettings>, val revisions: Map<PhotoIdentity, String>,
+    private data class Snapshot(val records: Map<PhotoIdentity, EditSettings>,
         val properties: Properties = Properties()) {
-        fun record(identity: PhotoIdentity) = VersionedPhotoEdit(identity, records[identity], revisions[identity])
+        fun record(identity: PhotoIdentity) = PhotoEditState(identity, records[identity])
     }
 
     private var cachedBytes: ByteArray? = null
@@ -44,27 +51,17 @@ class EditStore(private val directory: File,
         withStoreLock { read() }
     }
 
-    // 旧 UI 查询在存储暂不可读时保留最后可读值；提交和导入必须使用严格的 versionedState。
-    fun load(identity: PhotoIdentity): EditSettings? = try { versionedState(identity).settings }
+    // 旧 UI 查询在存储暂不可读时保留最后可读值；提交和导入必须使用严格的 readState。
+    fun load(identity: PhotoIdentity): EditSettings? = try { readState(identity).settings }
         catch (_: Exception) { lastReadableRecords[identity] }
 
-    fun versionedState(identity: PhotoIdentity): VersionedPhotoEdit = withStoreLock { read().record(identity) }
+    fun readState(identity: PhotoIdentity): PhotoEditState = withStoreLock { read().record(identity) }
 
-    fun compareAndSave(expected: VersionedPhotoEdit, settings: EditSettings?): VersionedPhotoEdit = withStoreLock {
-        val current = read()
-        if (current.record(expected.identity) != expected) throw EditPersistenceConflict()
-        commit(current, expected.identity, settings)
-    }
-
-    fun save(identity: PhotoIdentity, settings: EditSettings) = withStoreLock {
+    fun save(identity: PhotoIdentity, settings: EditSettings?): PhotoEditState = withStoreLock {
         commit(read(), identity, settings)
-        Unit
     }
 
-    fun reset(identity: PhotoIdentity) = withStoreLock {
-        commit(read(), identity, null)
-        Unit
-    }
+    fun reset(identity: PhotoIdentity): PhotoEditState = save(identity, null)
 
     private fun <T> withStoreLock(action: () -> T): T = processLock.withLock {
         if (!directory.isDirectory) throw IOException("Edit store path is not a directory")
@@ -73,13 +70,12 @@ class EditStore(private val directory: File,
         }
     }
 
-    private fun commit(current: Snapshot, identity: PhotoIdentity, requested: EditSettings?): VersionedPhotoEdit {
+    private fun commit(current: Snapshot, identity: PhotoIdentity, requested: EditSettings?): PhotoEditState {
         val settings = requested?.canonicalZeros()
         if (current.records[identity] == settings) return current.record(identity)
         val records = current.records.toMutableMap()
         if (settings == null) records.remove(identity) else records[identity] = settings
-        val revisions = current.revisions + (identity to UUID.randomUUID().toString())
-        val updated = Snapshot(records, revisions, current.properties)
+        val updated = Snapshot(records, current.properties)
         write(updated, identity)
         lastReadableRecords = records.toMap()
         return updated.record(identity)
@@ -87,7 +83,7 @@ class EditStore(private val directory: File,
 
     private fun read(): Snapshot {
         if (file.exists() && !file.isFile) throw IOException("Edit record path is not a file")
-        if (!file.exists()) return Snapshot(emptyMap(), emptyMap()).also { lastReadableRecords = it.records }
+        if (!file.exists()) return Snapshot(emptyMap()).also { lastReadableRecords = it.records }
         // 部分文件系统的时间戳精度不足；内容未变时才复用解析结果。
         val bytes = file.readBytes()
         if (cachedBytes?.contentEquals(bytes) == true) cachedSnapshot?.let { return it }
@@ -103,13 +99,6 @@ class EditStore(private val directory: File,
             require(!values.startsWith("v2:") || parts[2] == "values") { "Conflicting structured edit fields" }
         }
         val records = linkedMapOf<PhotoIdentity, EditSettings>()
-        val revisions = linkedMapOf<PhotoIdentity, String>()
-        properties.stringPropertyNames().filter { it.startsWith("revision.") }.forEach { key ->
-            val identity = decodeIdentity(key.removePrefix("revision."))
-            val revision = properties.getProperty(key)
-            require(revision.isNotBlank()) { "Missing record revision" }
-            revisions[identity] = revision
-        }
         properties.stringPropertyNames().filter { it.startsWith("record.") && it.endsWith(".values") }.forEach { key ->
             val encoded = key.removePrefix("record.").removeSuffix(".values")
             val identity = decodeIdentity(encoded)
@@ -125,7 +114,7 @@ class EditStore(private val directory: File,
                 processing = ProcessingIdentity.decode(properties.getProperty("record.$encoded.processing")))).canonicalZeros()
         }
         lastReadableRecords = records.toMap()
-        return Snapshot(records, revisions, properties).also {
+        return Snapshot(records, properties = properties).also {
             cachedSnapshot = it
             cachedBytes = bytes
         }
@@ -139,8 +128,9 @@ class EditStore(private val directory: File,
         val properties = Properties().apply { putAll(updated.properties) }
         properties.setProperty("format.version", "1")
         val encoded = encodeIdentity(identity)
+        // 旧文件中的 revision 只允许被读取，任何新写入都清理 revision 元数据。
+        properties.stringPropertyNames().filter { it.startsWith("revision.") }.forEach(properties::remove)
         properties.stringPropertyNames().filter { it.startsWith("record.$encoded.") }.forEach(properties::remove)
-        properties.setProperty("revision.$encoded", updated.revisions.getValue(identity))
         updated.records[identity]?.let { settings ->
             properties.setProperty("record.$encoded.values", StructuredSettingsCodec.encode(settings, "photo_edit"))
         }

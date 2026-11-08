@@ -15,7 +15,7 @@ import UIKit
         let aID=PhotoIdentity(resourceIdentifier:"new-hdr"),bID=PhotoIdentity(resourceIdentifier:"legacy-sdr")
         var old=RawSettings.default; old.exposure = -0.5
         try store.save(bID,state:PhotoEditState(settings:old))
-        let previous=try store.versionedState(for:bID)
+        let previous=try store.readState(for:bID)
         var settings=RawSettings.default; settings.hdr=HDRSettings(); settings.hdr?.exposure=1
         let source=BatchSourceSnapshot(identity:aID,sourceFile:.externallyManaged(input),displayName:input.lastPathComponent,
             sourceKind:.raster,settings:settings)
@@ -51,11 +51,11 @@ import UIKit
             saved.hdr?.mode = .hdr
             saved.proRAWDecodeVersion = ProRAWSource.decodeVersion
             try store.save(rawID, state: PhotoEditState(settings: saved))
-            let beforeRaw = try store.versionedState(for: rawID)
+            let beforeRaw = try store.readState(for: rawID)
             let hdr = try preparation.prepare(target, ordinal: 2, format: .hdrJPEG, longEdge: nil)
             check(hdr.settings.isHDREditing && hdr.settings.hdr?.exposure == 1 && hdr.settings.exposure == -2,
                   "saved ProRAW HDR batch target lost its mode or dormant SDR state")
-            let afterRaw = try store.versionedState(for: rawID)
+            let afterRaw = try store.readState(for: rawID)
             check(afterRaw == beforeRaw, "ProRAW batch preparation wrote target records")
             print("PASS ProRAW batch capability, frozen target modes and record isolation")
         }
@@ -112,7 +112,7 @@ import UIKit
             sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             name: "target camera profile")
         do {
-            let original = try store.versionedState(for: cameraID).state!
+            let original = try store.readState(for: cameraID).state!
             defer { try? store.save(cameraID, state: original) }
             var targetSettings = original.settings
             targetSettings.hdr?.cameraDevelopmentSettings = targetDevelopment
@@ -128,8 +128,8 @@ import UIKit
                 file: .externallyManaged(camera), isRaw: true)
             cameraOnly.append(cameraPhoto)
             let row = IOSCollectionExportReview.Row(photo: IOSCollectionPhoto(cameraPhoto),
-                record: try store.versionedState(for: cameraID), settings: target.settings,
-                look: nil, lookSHA256: nil, lookName: "HDR", error: nil)
+                record: try store.readState(for: cameraID), settings: target.settings,
+                look: nil, lookSHA256: nil, lookName: "HDR", error: nil, editGeneration: 0)
             let review = IOSCollectionExportReview(selection: [cameraID.key], rows: [row],
                 format: .jpeg, longEdge: 64)
             let freezeJournal = try BatchJournalStore(directory: root.appendingPathComponent("camera-profile-freeze"))
@@ -140,13 +140,13 @@ import UIKit
             check(frozen.targets[0].frozen?.settings.hdr?.cameraDevelopmentSettings == targetDevelopment,
                   "iOS collection freeze copied source camera development over the target")
         }
-        let savedCamera = try store.versionedState(for: cameraID)
+        let savedCamera = try store.readState(for: cameraID)
         let cameraRenderer = BatchExportModel(job: cameraJob, journalStore: journal)
         let outputFile = root.appendingPathComponent("camera-export.jpg")
         let cameraJPEG = try cameraRenderer.render(target: cameraTarget, settings: cameraEdit, look: nil, longEdge: 64, format: .hdrJPEG)
         try cameraJPEG.write(to: outputFile)
         let cameraOutput = try HDRSourceInfo.probe(outputFile)
-        let afterCamera = try store.versionedState(for: cameraID)
+        let afterCamera = try store.readState(for: cameraID)
         check(cameraOutput != nil && afterCamera == savedCamera, "Camera RAW gain-map readback or record isolation failed")
         print("PASS iOS camera RAW HDR batch preflight, collection freeze and v4 export")
         if HDRImage.heifExportAvailable {
@@ -171,7 +171,7 @@ import UIKit
         let second=try preparation.prepare(b,ordinal:1,format:.jpeg,longEdge:32)
         check(first.settings.isHDREditing && first.settings.hdr?.exposure==1,"new HDR target missing HDR defaults")
         check(!second.settings.isHDREditing && second.settings.hdr==nil && second.settings.exposure==1,"legacy SDR target inherited HDR mode")
-        let unchanged=try store.versionedState(for:bID)
+        let unchanged=try store.readState(for:bID)
         check(unchanged==previous,"preparation wrote target editing records")
         var incompatibleSettings=settings; incompatibleSettings.hdr?.temperature=8000
         let incompatible=BatchSourceSnapshot(identity:aID,sourceFile:.externallyManaged(input),displayName:input.lastPathComponent,
@@ -221,7 +221,7 @@ import UIKit
             "frozen editing mode leaked between targets")
         let reopened=try journal.load(id:model.job.id)
         check(reopened?.targets[1].frozen?.settings.hdr==nil,"journal recovery changed legacy editing mode")
-        let after=try store.versionedState(for:bID)
+        let after=try store.readState(for:bID)
         check(after==previous,"batch output wrote target editing records")
         var external=RawSettings.default; external.exposure=3
         try store.save(aID,state:PhotoEditState(settings:external))

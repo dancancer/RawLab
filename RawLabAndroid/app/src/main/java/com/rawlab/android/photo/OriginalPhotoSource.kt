@@ -5,7 +5,7 @@ import android.net.Uri
 import android.os.Build
 import android.system.Os
 import android.system.OsConstants
-import com.rawlab.android.settings.EditPersistenceConflict
+import com.rawlab.android.settings.PhotoChangedException
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.Base64
@@ -18,7 +18,7 @@ internal object OriginalPhotoSource {
     }
     fun capture(resolver: ContentResolver, uri: Uri): () -> Unit {
         val original = stamp(resolver, uri)
-        return { if (stamp(resolver, uri) != original) throw EditPersistenceConflict() }
+        return { if (stamp(resolver, uri) != original) throw PhotoChangedException() }
     }
     private fun stamp(resolver: ContentResolver, uri: Uri): Stamp {
         val descriptor = try { resolver.openAssetFileDescriptor(uri, "r") }

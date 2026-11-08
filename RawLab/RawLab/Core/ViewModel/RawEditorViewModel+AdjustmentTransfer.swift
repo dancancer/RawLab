@@ -70,7 +70,7 @@ extension RawEditorViewModel {
                     let original = try Self.adjustmentSourceValidation(file)
                     validation = { try photo.validateSource?(); try original() }
                     try validation?()
-                    defaults = try self.editPersistence?.versionedState(for: photo.identity).state?.settings ??
+                    defaults = try self.editPersistence?.readState(for: photo.identity).state?.settings ??
                         file.withReadAccess { try Sony2FujiProcessor().defaultSettings(for: $0, isRaw: photo.isRaw) }
                     if photo.isRaw {
                         let saved = defaults

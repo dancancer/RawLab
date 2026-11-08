@@ -163,9 +163,9 @@ internal static class TransformUiChecks
                 Get<string>(window,"lut")==normalLook && !File.ReadAllBytes(Path.Combine(directory,"edits","edits.json")).SequenceEqual(recordBeforeReset) &&
                 store.Find(photo)!.Settings.SameAs(Get<Adjustments>(window,"settings").Capture()) && history.Transactions.Count==historyBeforeReset+1,
                 "Ordinary reset preserves resolved look and commits one durable history component and preview");
-            var resetReceipt=store.VersionedState(photo);
+            var resetReceipt=store.ReadState(photo);
             InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);Invoke(window,"SaveEdits");
-            check(store.VersionedState(photo).SameAs(resetReceipt) && history.Transactions.Count==historyBeforeReset+1,
+            check(store.ReadState(photo).SameAs(resetReceipt) && history.Transactions.Count==historyBeforeReset+1,
                 "Preview completion and the former autosave boundary cannot append another reset save");
             var noChange=window.PrepareReset(new(EditorResetKind.Group,EditorAdjustmentGroup.Light))!;
             normalPreview=PreviewRequests(window);normalRevision=Get<long>(window,"editRevision");

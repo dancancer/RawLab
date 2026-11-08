@@ -87,11 +87,11 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         let missingLook = try AdjustmentTransferPayload(source: captured.source,
             values: ["looks.reference": .object(["kind": .string("managed"), "id": .string("missing-look")])])
         let missing = try presets.create(name: "Missing look", payload: missingLook)
-        let previous = try edits.versionedState(for: target)
+        let previous = try edits.readState(for: target)
         let blocked = try session.prepare(payload: missing.payload, targets: targets, action: .preset)
         try check(blocked.targets.first?.error != nil && session.apply(blocked).first?.status == .blocked,
             "Missing preset look is reported by the existing preflight instead of replaced with neutral")
-        try check(edits.versionedState(for: target) == previous, "Blocked preset application leaves the photo untouched")
+        try check(edits.readState(for: target) == previous, "Blocked preset application leaves the photo untouched")
         print("PASS: preset source independence, clipboard isolation, equality, persistence and shared history")
     }
 }

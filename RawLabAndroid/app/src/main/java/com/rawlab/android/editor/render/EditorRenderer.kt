@@ -21,7 +21,7 @@ import com.rawlab.android.settings.HslTargetAvailability
 import com.rawlab.android.settings.HslTargetSample
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.PhotoIdentity
-import com.rawlab.android.settings.VersionedPhotoEdit
+import com.rawlab.android.settings.PhotoEditState
 import java.io.File
 import java.util.IdentityHashMap
 
@@ -32,7 +32,7 @@ import java.util.IdentityHashMap
 
 internal class EditorRenderer(
     private val storage: PhotoStorage,
-    private val restore: (PhotoIdentity) -> VersionedPhotoEdit?,
+    private val restore: (PhotoIdentity) -> PhotoEditState?,
     private val debuggable: Boolean,
 ) {
     private var processor: NativeProcessor? = null

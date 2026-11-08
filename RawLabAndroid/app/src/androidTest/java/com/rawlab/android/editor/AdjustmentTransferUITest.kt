@@ -77,7 +77,7 @@ class AdjustmentTransferUITest {
             compose.onNodeWithTag("adjustment-transfer-close").performClick()
         } finally { first.delete(); second.delete() }
     }
-    @Test fun draftDecisionAndConflictReloadPreserveExplicitUserChoice() {
+    @Test fun draftDecisionAndExternalSaveKeepsEditorUsable() {
         val source = fixture("draft-reload")
         try {
             compose.runOnUiThread { model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }; ready()
@@ -110,17 +110,11 @@ class AdjustmentTransferUITest {
             store.save(identity, saved)
             compose.runOnUiThread { model.edit(model.state.value.edits.copy(exposure = 1.4f)) }
             compose.waitUntil(30_000) { !model.state.value.rendering }
-            compose.runOnIdle { assertTrue(model.adjustmentReloadRequired); assertEquals(EditSaveState.FAILED, model.state.value.saveState) }
-            compose.onNodeWithTag("edit-save-retry").performClick()
-            compose.onNodeWithText("取消").performClick()
-            compose.runOnIdle { assertEquals(1.4f, model.state.value.edits.exposure) }
-            compose.onNodeWithTag("edit-save-retry").performClick()
-            compose.onNodeWithTag("adjustment-reload-confirm").performClick()
             ready()
             compose.runOnIdle {
-                assertEquals(saved, model.state.value.edits)
-                assertEquals(count, model.adjustmentTransactions.size)
-                assertFalse(model.adjustmentReloadRequired)
+                assertEquals(1.4f, model.state.value.edits.exposure)
+                assertEquals(1.4f, EditStore(File(compose.activity.filesDir, "edits")).load(identity)!!.exposure)
+                assertEquals(count + 1, model.adjustmentTransactions.size)
             }
         } finally { source.delete() }
     }

@@ -21,7 +21,7 @@ data class BatchSelectionState(
     val error: String? = null,
 ) {
     val selectedPhotos get() = photos.filter { it.id in selected }
-    fun supportsHDRExport(readRecord: (PhotoIdentity) -> VersionedPhotoEdit, skipping: Set<String> = emptySet()): Boolean {
+    fun supportsHDRExport(readRecord: (PhotoIdentity) -> PhotoEditState, skipping: Set<String> = emptySet()): Boolean {
         val targets = selectedPhotos.filterNot { it.id in skipping }
         return targets.isNotEmpty() && targets.all { photo ->
             photo.sourceIsHDR && runCatching {
@@ -55,18 +55,20 @@ data class BatchSelectionState(
 
 data class CollectionExportReview(val selectionIDs: List<String>, val rows: List<Row>,
     val format: ExportFormat, val longEdge: Int?, val destination: String?) {
-    data class Row(val target: BatchTarget, val record: VersionedPhotoEdit? = null,
+    data class Row(val target: BatchTarget, val record: PhotoEditState? = null,
         val settings: EditSettings? = null, val inputSHA256: String? = null,
-        val look: File? = null, val lookSHA256: String? = null, val error: String? = null)
+        val look: File? = null, val lookSHA256: String? = null, val error: String? = null,
+        val editGeneration: Long = 0L)
     val ready get() = rows.isNotEmpty() && rows.all { it.error == null && it.record != null && it.settings != null && it.inputSHA256 != null }
 }
 
-/** 预检和最终确认分别读取 revision；任务仅持有自己的输入、外观与参数快照。 */
+/** 预检冻结确认页的输入、外观与参数快照；确认前由本会话代次校验目标是否仍有效。 */
 class BatchSelectionExport(private val directory: File,
-    private val readRecord: (PhotoIdentity) -> VersionedPhotoEdit,
+    private val readRecord: (PhotoIdentity) -> PhotoEditState,
     private val resolveLook: (EditSettings) -> File?,
     private val validateSource: (BatchTarget) -> Unit = {},
     private val validateHDRSource: (BatchTarget, EditSettings) -> Unit = { _, settings -> settings.requireProRAWDecoder() },
+    private val editGeneration: (PhotoIdentity) -> Long = { 0L },
 ) {
     fun prepare(selection: BatchSelectionState, skipping: Set<String>, format: ExportFormat, longEdge: Int?,
         destination: String?, validateActive: (String) -> Unit): CollectionExportReview {
@@ -74,6 +76,7 @@ class BatchSelectionExport(private val directory: File,
         val rows = selection.selectedPhotos.filterNot { it.id in skipping }.map { photo ->
             try {
                 validateActive(photo.id); validateSource(photo)
+                val generation = editGeneration(photo.identity)
                 val inputHash = BatchFrozenSettings.checksum(photo.sourceFile)
                 val record = readRecord(photo.identity)
                 val settings = record.settings ?: com.rawlab.android.photo.defaultEditSettingsFor(photo.sourceFile, photo.inputKind, photo.sourceIsHDR, cameraRaw = photo.inputKind == com.rawlab.android.format.PhotoInputKind.RAW)
@@ -83,7 +86,8 @@ class BatchSelectionExport(private val directory: File,
                 require(format != ExportFormat.HDR_JPEG || settings.isHDREditing) { "HDR JPEG requires HDR editing" }
                 val look = if (settings.isHDREditing) null else resolveLook(settings)
                 check(settings.isHDREditing || (settings.film == "neutral" && settings.recipeID == null) || look != null) { "Photo look is unavailable" }
-                CollectionExportReview.Row(photo, record, settings, inputHash, look, look?.let(BatchFrozenSettings::checksum))
+                CollectionExportReview.Row(photo, record, settings, inputHash, look, look?.let(BatchFrozenSettings::checksum),
+                    editGeneration = generation)
             } catch (error: Exception) { CollectionExportReview.Row(photo, error = error.message ?: error.javaClass.simpleName) }
         }
         return CollectionExportReview(selection.selectedPhotos.map { it.id }, rows, format, longEdge, destination)
@@ -94,7 +98,8 @@ class BatchSelectionExport(private val directory: File,
         fun validate() {
             for (row in review.rows) {
                 validateActive(row.target.id); validateSource(row.target)
-                if (readRecord(row.target.identity) != row.record) throw EditPersistenceConflict()
+                if (editGeneration(row.target.identity) != row.editGeneration)
+                    throw AdjustmentOperationExpiredException()
                 check(BatchFrozenSettings.checksum(row.target.sourceFile) == row.inputSHA256) { "Photo source changed" }
                 check(row.look?.let(BatchFrozenSettings::checksum) == row.lookSHA256) { "Photo look changed" }
             }

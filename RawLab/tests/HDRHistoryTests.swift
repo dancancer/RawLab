@@ -13,8 +13,8 @@ import UIKit
         model.sourceFile = .externallyManaged(input); model.sourceIdentity=identity
         model.sourceKind = .raster; model.sourceIsHDR=true; model.hasImage=true
         var settings=RawSettings.default; settings.hdr=HDRSettings()
-        model.acceptImportedEditRecord(try store.versionedState(for:identity),settings:settings)
-        let absent=try store.versionedState(for:identity)
+        model.acceptImportedEditRecord(try store.readState(for:identity),settings:settings)
+        let absent=try store.readState(for:identity)
         try model.copyAdjustments(scope:.custom([.hdrTemperature]),settings:settings)
         let clipboard=model.adjustmentSession?.clipboard
         let history=model.adjustmentSession?.transactions.map(\.id)
@@ -31,8 +31,8 @@ import UIKit
             "new HDR import cannot capture a preset with relative white balance")
         let library=AdjustmentPresetStore(directory:root.appendingPathComponent("presets"))
         _ = try library.create(name:"Fresh HDR",payload:preset)
-        let receipt=try store.versionedState(for:identity)
-        check(receipt==absent && model.adjustmentSession?.clipboard==clipboard &&
+        let receipt=try store.readState(for:identity)
+        check(receipt.hasSameAdjustments(as: absent) && model.adjustmentSession?.clipboard==clipboard &&
             model.adjustmentSession?.transactions.map(\.id)==history,
             "saving a fresh HDR preset changed its photo, clipboard or history")
         print("PASS fresh HDR preset saves without an edit record or side effects")
@@ -53,8 +53,8 @@ import UIKit
             print("FAIL fresh HDR synchronization capture: \(error)")
             throw error
         }
-        let afterSync=try store.versionedState(for:identity)
-        check(afterSync==absent,"HDR synchronization capture modified the source record")
+        let afterSync=try store.readState(for:identity)
+        check(afterSync.hasSameAdjustments(as: absent),"HDR synchronization capture modified the source record")
         print("PASS fresh HDR collection synchronization freezes common and relative WB fields")
         check(model.beginAdjustmentInteraction(settings:settings),"first HDR gesture rejected")
         settings.hdr?.exposure=1
@@ -66,9 +66,8 @@ import UIKit
         check(model.adjustmentRestoredSettings?.isHDREditing==true && model.adjustmentRestoredSettings?.hdr?.exposure==1,
             "redo lost HDR editing mode")
         try store.reset(identity)
-        model.pendingSettings=nil; model.failedDraftSource=nil
-        check(model.reloadSavedAdjustments() && model.adjustmentRestoredSettings?.isHDREditing==true,
-            "reloading an absent HDR record changed the source default mode")
-        print("PASS iOS first HDR edit undo/redo and absent-record reload preserve HDR defaults")
+        check(model.loadedEditRecord?.state?.settings.isHDREditing == true,
+            "an external reset does not discard the current session's HDR edit state")
+        print("PASS iOS first HDR edit undo/redo and session state preserve HDR defaults")
     }
 }

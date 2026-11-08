@@ -356,6 +356,7 @@
 "搜索镜头" = "Rechercher un objectif";
 "撤销" = "Annuler";
 "撤销 %@ 张" = "Annuler les photos : %@";
+"操作已失效" = "Opération devenue invalide";
 "操作未完成，请重试。" = "L’opération est inachevée. Réessayez.";
 "收起%@组" = "Réduire le groupe %@";
 "收起其他方案" = "Masquer les autres options";
@@ -503,6 +504,7 @@
 "此像素不可取样。" = "Ce pixel ne peut pas être échantillonné.";
 "此外观已不在外观库中。" = "Ce look n'est plus dans la bibliothèque de looks.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Seuls les réglages du groupe %@ seront réinitialisés. Les autres groupes resteront inchangés.";
+"此操作已过期，请重新操作。" = "Cette opération n’est plus à jour. Relancez-la.";
 "此照片或构建尚不能使用 AI 降噪。" = "Le débruitage IA est indisponible pour cette photo ou cette version.";
 "此照片没有可用的相机白平衡校准。" = "Cette photo ne possède pas d’étalonnage exploitable de la balance des blancs de l’appareil.";
 "此照片没有可编辑的 HDR 增益图。" = "Cette photo ne contient pas de carte de gain HDR modifiable.";
@@ -542,7 +544,6 @@
 "照片图库" = "Photos";
 "照片处理设置" = "Réglages de traitement photo";
 "照片已写入，但任务记录未更新，请先核对保存结果。" = "La photo a été écrite, mais l’enregistrement de la tâche n’a pas été mis à jour. Vérifiez d’abord le résultat.";
-"照片或调整已变化，请重新检查目标。" = "La photo ou ses réglages ont changé. Vérifiez à nouveau la cible.";
 "照片或调整已变化，请重新确认重置。" = "La photo ou ses réglages ont changé. Confirmez à nouveau la réinitialisation.";
 "照片缺少有效焦距，未应用校正" = "Distance focale invalide ; correction non appliquée";
 "现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。" = "Les plages de paramètres disponibles ne permettent pas de préserver entièrement le rendu de la recette. Annulez ou confirmez séparément la réinitialisation de tous les réglages.";
@@ -654,6 +655,7 @@
 "请先选择外观或配方。" = "Sélectionnez d’abord un look ou une recette.";
 "请在调整后的照片区域取色。" = "Prélevez une couleur dans la photo retouchée.";
 "请将白平衡模式、色温和色调一起保存，再应用此预设。" = "Enregistrez ensemble le mode de balance des blancs, la température et la teinte avant d’appliquer cette recette.";
+"请按历史顺序撤销或重做。" = "Annulez ou rétablissez les réglages dans l’ordre de l’historique.";
 "请等待当前任务完成。" = "Attendez la fin de la tâche actuelle.";
 "请等待预览完成后导出。" = "Attendez la fin de l’aperçu avant d’exporter.";
 "请输入 1–65535 之间的像素数" = "Entrez un nombre de pixels compris entre 1 et 65 535";
@@ -666,14 +668,15 @@
 "调整前" = "Avant";
 "调整后" = "Après";
 "调整已保存" = "Réglages enregistrés";
-"调整已变化" = "Réglages modifiés";
 "调整未保存 · 重试" = "Ajustements non enregistrés · Réessayez";
+"调整未保存，请重试。" = "Les réglages n’ont pas été enregistrés. Réessayez.";
 "调整来源" = "Source des réglages";
 "调整照片" = "Réglage de photo";
 "调整范围" = "Réglages à inclure";
 "调整裁切边角" = "Ajuster le coin de recadrage";
 "调整触觉反馈" = "Retour haptique lors des réglages";
-"调整记录已恢复，请重新选择照片载入。" = "Enregistrement des réglages restauré. Sélectionnez à nouveau la photo pour la charger.";
+"调整记录已恢复，请重试保存。" = "Les réglages enregistrés sont à nouveau disponibles. Réessayez d’enregistrer.";
+"调整记录暂不可用，请稍后重试。" = "Les réglages enregistrés sont temporairement indisponibles. Réessayez plus tard.";
 "调整轴" = "Axe de réglage";
 "赛博朋克 · 极致反差" = "Cyberpunk · contraste extrême";
 "跟随系统" = "Suivre le système";
@@ -723,8 +726,6 @@
 "重命名预设" = "Renommer le préréglage";
 "重新检查" = "Vérifier à nouveau";
 "重新载入" = "Recharger";
-"重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。" = "Le rechargement abandonne les réglages non enregistrés et lit les réglages actuellement enregistrés pour cette photo.";
-"重新载入已保存调整" = "Recharger les réglages enregistrés";
 "重置" = "Réinitialiser";
 "重置 HSL" = "Réinitialiser HSL";
 "重置%@" = "Réinitialiser %@";

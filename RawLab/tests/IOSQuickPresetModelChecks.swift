@@ -27,7 +27,7 @@ enum IOSQuickPresetModelChecks {
         let identity = PhotoIdentity(resourceIdentifier: "quick-preset-source")
         model.sourceFile = .externallyManaged(file); model.sourceIdentity = identity
         model.sourceKind = .raster; model.hasImage = true
-        model.acceptImportedEditRecord(try store.versionedState(for: identity), settings: .default)
+        model.acceptImportedEditRecord(try store.readState(for: identity), settings: .default)
         let payload = try AdjustmentTransferPayload(source: .init(identifier: "fixture", isRaw: false,
             processingVersion: 2, recipe: nil), values: ["light.exposure": .number(0.7)])
         let presets = AdjustmentPresetStore(directory: directory.appendingPathComponent("quick-presets"))
@@ -43,12 +43,12 @@ enum IOSQuickPresetModelChecks {
         guard case .idle = model.quickPresetState else { throw NSError(domain: "global undo must dismiss the previous quick preset result", code: 1) }
         try check(model.quickPresetsVisible && store.state(for: identity) == nil, "global undo preserves preset browsing and restores the photo")
         _ = model.performAdjustmentHistory(undo: false)
-        let saved = try store.versionedState(for: identity)
+        let saved = try store.readState(for: identity)
         model.applyPresetToCurrentPhoto(preset, settings: saved.state!.settings)
         try wait { !model.quickPresetState.isPreparing }
         guard case .unchanged = model.quickPresetState else { throw NSError(domain: "unchanged not reported", code: 1) }
-        try check(try store.versionedState(for: identity) == saved && model.adjustmentSession?.transactions.count == 1,
-                  "unchanged preserves the receipt and history")
+        try check(store.readState(for: identity).hasSameAdjustments(as: saved) && model.adjustmentSession?.transactions.count == 1,
+                  "unchanged preserves the committed record and history")
         model.quickPresetState = .saved(preset, transaction)
         model.undoQuickPreset(settings: saved.state!.settings)
         guard case .undone = model.quickPresetState else { throw NSError(domain: "undo not reported", code: 1) }
@@ -59,7 +59,7 @@ enum IOSQuickPresetModelChecks {
         try check(model.canRedoAdjustment, "no change preserves existing redo")
 
         func lateRequest(_ invalidate: () throws -> Void, _ message: String) throws {
-            let before = try store.versionedState(for: identity)
+            let before = try store.readState(for: identity)
             let count = model.adjustmentSession!.transactions.count
             model.quickPresetsVisible = true
             model.adjustmentQueue.suspend()
@@ -73,7 +73,7 @@ enum IOSQuickPresetModelChecks {
             var complete = false
             try wait { if !complete { complete = drained.wait(timeout: .now()) == .success }; return complete }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-            try check(try store.versionedState(for: identity) == before && model.adjustmentSession!.transactions.count == count,
+            try check(store.readState(for: identity).hasSameAdjustments(as: before) && model.adjustmentSession!.transactions.count == count,
                       "\(message) discards late preparation without writing")
         }
         try lateRequest({ model.cancelQuickPreset() }, "cancel")
@@ -93,11 +93,11 @@ enum IOSQuickPresetModelChecks {
         guard case .saved(_, let latest) = model.quickPresetState else { throw NSError(domain: "retry did not save", code: 1) }
         var later = store.state(for: identity)!.settings; later.contrast = 0.4
         model.queueSettingsSave(later); try check(model.saveCurrentSettings(later), "ordinary edit after preset saves")
-        let ordinary = try store.versionedState(for: identity)
+        let ordinary = try store.readState(for: identity)
         model.quickPresetState = .saved(preset, latest)
         model.undoQuickPreset(settings: later)
         guard case .undoFailed = model.quickPresetState else { throw NSError(domain: "stale undo not reported", code: 1) }
-        try check(try store.versionedState(for: identity) == ordinary, "stale undo cannot undo unrelated editing")
+        try check(store.readState(for: identity).hasSameAdjustments(as: ordinary), "stale undo cannot undo unrelated editing")
 
         model.adjustmentQueue.suspend()
         model.applyPresetToCurrentPhoto(zero, settings: later)
@@ -105,7 +105,7 @@ enum IOSQuickPresetModelChecks {
         try store.save(identity, state: PhotoEditState(settings: external))
         model.adjustmentQueue.resume()
         try wait { !model.quickPresetState.isPreparing }
-        guard case .failed = model.quickPresetState else { throw NSError(domain: "external edit not rejected", code: 1) }
-        try check(store.state(for: identity)?.settings == external, "external edits cannot be overwritten")
+        guard case .saved = model.quickPresetState else { throw NSError(domain: "external edit did not apply current operation", code: 1) }
+        try check(store.state(for: identity)?.settings.exposure == 0, "current preset operation replaces an external disk value")
     }
 }

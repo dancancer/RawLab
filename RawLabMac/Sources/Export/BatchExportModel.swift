@@ -27,7 +27,7 @@ final class MacHDRBatchPreparation {
     }
     func prepare(_ item: BatchExportItem,ordinal: Int,format: ExportFormat,longEdge: Int?,sourceIsHDR: Bool? = nil,sdrFallback: Bool = false) throws -> BatchFrozenSettings {
         guard try OriginalFileIdentity(item.input)==item.identity else { throw BatchExportFailure.changedInput }
-        let record=try store.versionedState(for:item.input)
+        let record=try store.readState(for:item.input)
         let raster=RenderEngine.isRasterInput(item.input)
         var fallback=sdrFallback
         let sourceIsHDR=try sourceIsHDR ?? (probeHDRSource(item.input,{ fallback=true }) != nil)

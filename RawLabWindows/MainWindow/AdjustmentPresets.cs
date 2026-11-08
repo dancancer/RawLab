@@ -10,7 +10,7 @@ public partial class MainWindow
     internal AdjustmentPayload PreviewAdjustmentPayload(AdjustmentScope scope)
     {
         if (file == null || currentEditRecord == null || !StringComparer.OrdinalIgnoreCase.Equals(currentEditRecord.Identity.Path, Path.GetFullPath(file)) ||
-            editDirty || transform.Active || editGesture != null || exporting || closing || aiJob.State.IsRunning || adjustmentReloadRequired)
+            editDirty || transform.Active || editGesture != null || exporting || closing || aiJob.State.IsRunning)
             throw new AdjustmentTransferException(AdjustmentFailure.Draft);
         var committed = currentEditRecord.Edit ?? new SavedEdit(currentEditRecord.Identity,
             PhotoInput.PrepareDefaultSettings(file).Capture(), null);
@@ -35,21 +35,20 @@ public partial class MainWindow
 
     private SavedEdit CaptureVerifiedAdjustmentSource()
     {
-        if (file == null || editDirty || transform.Active || editGesture != null || exporting || closing || aiJob.State.IsRunning || adjustmentReloadRequired)
+        if (file == null || editDirty || transform.Active || editGesture != null || exporting || closing || aiJob.State.IsRunning)
             throw new AdjustmentTransferException(AdjustmentFailure.Draft);
-        if (currentEditRecord == null || !editStore!.VersionedState(file).SameAs(currentEditRecord)) {
-            adjustmentReloadRequired = true;
-            SetSaveNotice("调整未保存 · 重试", AdjustmentTransferPresentation.Error(new EditPersistenceConflict()), true); RefreshControls();
-            throw new EditPersistenceConflict();
-        }
-        return CaptureCurrentEdit();
+        if(currentEditRecord==null || !StringComparer.OrdinalIgnoreCase.Equals(file,currentEditRecord.Identity.Path))
+            throw new PhotoChangedException();
+        var source=CaptureCurrentEdit();
+        if(!currentEditRecord.Identity.SameFile(source.Identity))throw new PhotoChangedException();
+        return source;
     }
 
     private async void ShowPresetsClicked(object sender, RoutedEventArgs e)
     {
         if (closing || exporting || transferPreparing) return;
         while (!closing) {
-            var library = new AdjustmentPresetLibraryDialog(this, presetStore, file != null && !aiJob.State.IsRunning && !adjustmentReloadRequired, AdjustmentSummaryLookName);
+            var library = new AdjustmentPresetLibraryDialog(this, presetStore, file != null && !aiJob.State.IsRunning, AdjustmentSummaryLookName);
             library.ShowDialog();
             if (library.SaveRequested) {
                 if (!PrepareQuickPresetCommand()) return;

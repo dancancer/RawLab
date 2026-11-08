@@ -27,7 +27,7 @@ internal static class AdjustmentPresetUiChecks
             var settings = Get<Adjustments>(window, "settings"); settings.Set(Parameter.Exposure, 1.25); Invoke(window, "MarkEdited"); Invoke(window, "SaveEdits");
             var session = (AdjustmentTransferSession)typeof(MainWindow).GetProperty("TransferSession", Private)!.GetValue(window)!;
             session.Copy(AdjustmentScope.Custom([AdjustmentField.Contrast]), new(OriginalIdentity.Read(source), settings.Capture(), null), new(source, true));
-            var clipboard = session.Clipboard; var revision = edits.VersionedState(source); var history = session.Transactions.Count;
+            var clipboard = session.Clipboard; var revision = edits.ReadState(source); var history = session.Transactions.Count;
             var summaryDialog = new AdjustmentPresetNameDialog(window, "保存预设", "Summary", true, (_, _) => null,
                 preview: window.PreviewAdjustmentPayload, lookName: window.AdjustmentSummaryLookName);
             summaryDialog.Show(); summaryDialog.UpdateLayout();
@@ -46,21 +46,19 @@ internal static class AdjustmentPresetUiChecks
                 Find<TextBlock>(summaryDialog, "preset.save.summary.empty").Text == Loc.Text("未选择任何调整。"),
                 "Native summary distinguishes empty custom scope and disables Save");
             summaryDialog.Close();
-            check(edits.VersionedState(source).SameAs(revision) && session.Clipboard == clipboard && session.Transactions.Count == history,
+            check(edits.ReadState(source).SameAs(revision) && session.Clipboard == clipboard && session.Transactions.Count == history,
                 "Switching summary scopes and cancelling preserves the receipt, clipboard and history");
             var payload = window.CapturePresetAdjustments(AdjustmentScope.Custom([AdjustmentField.Exposure]));
             var preset = library.Create("Morning", payload);
-            check(payload.Fields.SetEquals([AdjustmentField.Exposure]) && edits.VersionedState(source).SameAs(revision) &&
+            check(payload.Fields.SetEquals([AdjustmentField.Exposure]) && edits.ReadState(source).SameAs(revision) &&
                 session.Clipboard == clipboard && session.Transactions.Count == history, "Native preset capture preserves photo receipt, clipboard and history");
-            var external = settings.Clone(); external.Set(Parameter.Exposure, 1.8); edits.Save(source, external.Capture(), null);
-            var rejected = false;
-            try { window.CapturePresetAdjustments(AdjustmentScope.Standard); } catch (EditPersistenceConflict) { rejected = true; }
-            check(rejected && edits.Find(source)!.Settings.Values[1] == 1.8, "Native preset capture rejects an external photo revision");
-            Set(window, "adjustmentReloadRequired", false);
-            rejected = false;
-            try { window.CopyCurrentAdjustments(AdjustmentScope.Standard); } catch (EditPersistenceConflict) { rejected = true; }
-            check(rejected && session.Clipboard == clipboard, "Copy confirmation revalidates the source and preserves the clipboard on conflict");
-            window.ReloadCurrentAdjustments(); Ready(window);
+            var standard = window.CapturePresetAdjustments(AdjustmentScope.Standard);
+            // Standard 只含常用调整（不含几何），不是全部字段。
+            check(standard.Fields.SetEquals(AdjustmentFields.Common) && window.AdjustmentPanel.IsEnabled,
+                "Preset capture keeps the editor usable without a disk revision gate");
+            var copiedStandard = window.CopyCurrentAdjustments(AdjustmentScope.Standard);
+            check(copiedStandard.Fields.SetEquals(AdjustmentFields.Common) && session.Clipboard == copiedStandard && window.AdjustmentPanel.IsEnabled,
+                "Copy confirmation preserves the current in-memory photo and leaves editing enabled");
             window.OpenFile(target); Ready(window); File.Delete(source);
             var preparation = window.PrepareAdjustmentTargets(preset.Payload, [target], AdjustmentHistoryAction.Preset);
             InteractionChecks.PumpUntil(() => preparation.IsCompleted); var operation = preparation.GetAwaiter().GetResult()!;

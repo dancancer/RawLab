@@ -14,7 +14,7 @@ import ImageIO
         let store=try EditPersistence(directory:directory.appendingPathComponent("edits"))
         var old=Adjustments(); old.exposure = -0.5
         try store.save(legacy,state:PhotoEditState(settings:old,filmID:""))
-        let before=try store.versionedState(for:legacy)
+        let before=try store.readState(for:legacy)
         var source=Adjustments(); source.hdr=HDRSettings(); source.hdr?.exposure=1
         let preparer=MacHDRBatchPreparation(source:input,settings:source,store:store,films:[])
         if let path = ProcessInfo.processInfo.environment["RAWLAB_TEST_PRORAW"] {
@@ -41,14 +41,14 @@ import ImageIO
             saved.proRAWDecodeVersion = nil
             saved.masterRecipeID = "unavailable-dormant-recipe"
             try store.save(raw, state: PhotoEditState(settings: saved, filmID: ""))
-            let beforeRaw = try store.versionedState(for: raw)
+            let beforeRaw = try store.readState(for: raw)
             let hdr = try preparer.prepare(item, ordinal: 2, format: .hdrJPEG, longEdge: nil)
             try hdr.validate()
             check(hdr.look == nil && hdr.settings.masterRecipeID == saved.masterRecipeID,
                   "An inactive SDR recipe must not block an HDR target or be removed")
             check(hdr.settings.isHDREditing && hdr.settings.hdr?.exposure == 1 && hdr.settings.exposure == -2,
                   "saved ProRAW HDR batch target lost its mode or dormant SDR state")
-            let afterRaw = try store.versionedState(for: raw)
+            let afterRaw = try store.readState(for: raw)
             check(afterRaw == beforeRaw, "ProRAW batch preparation wrote target records")
             var editedSource = source
             editedSource.hdr?.geometry.quarterTurns = 1
@@ -113,7 +113,7 @@ import ImageIO
             sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             name: "target camera profile")
         do {
-            let original = try store.versionedState(for: camera).state!
+            let original = try store.readState(for: camera).state!
             defer { try? store.save(camera, state: original) }
             var target = original
             target.settings.hdr?.cameraDevelopmentSettings = targetDevelopment
@@ -123,7 +123,7 @@ import ImageIO
                   prepared.settings.hdr?.cameraDevelopmentSettings == targetDevelopment,
                   "Mac HDR batch preparation copied source camera development over the target")
         }
-        let savedCamera = try store.versionedState(for: camera)
+        let savedCamera = try store.readState(for: camera)
         var cameraJob = BatchExportJob(source: input, settings: cameraSource, look: nil, lookName: "HDR")
         cameraJob.items = [cameraItem]; cameraJob.outputDirectory = directory
         cameraJob.longEdge = 64; cameraJob.format = .hdrJPEG
@@ -133,7 +133,7 @@ import ImageIO
         let cameraDeadline = Date().addingTimeInterval(30)
         while cameraModel.running && Date() < cameraDeadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
         let cameraOutput = try cameraModel.job.items[0].output.flatMap { try HDRSourceInfo.probe($0) }
-        let afterCamera = try store.versionedState(for: camera)
+        let afterCamera = try store.readState(for: camera)
         check(cameraModel.job.succeededCount == 1 && cameraOutput != nil && afterCamera == savedCamera,
               "Camera RAW batch failed gain-map readback or wrote the target record")
         print("PASS Mac camera RAW HDR batch preflight, v4 export and record isolation")
@@ -160,7 +160,7 @@ import ImageIO
         let b=try preparer.prepare(second,ordinal:1,format:.jpeg,longEdge:32)
         check(a.settings.isHDREditing && a.settings.hdr?.exposure==1,"new HDR target did not get its own HDR defaults")
         check(!b.settings.isHDREditing && b.settings.exposure==1 && b.settings.hdr==nil,"legacy SDR target inherited HDR mode")
-        let after=try store.versionedState(for:legacy)
+        let after=try store.readState(for:legacy)
         check(after==before,"batch preparation modified target records")
         var wb=source; wb.hdr?.tint=15
         let incompatible=MacHDRBatchPreparation(source:input,settings:wb,store:store,films:[])

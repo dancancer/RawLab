@@ -91,7 +91,7 @@ public partial class MainWindow
     private void RefreshHDRControls()
     {
         HDREditMenu.IsEnabled = file != null && hdrSource != null && !exporting && !transform.Active &&
-            !adjustmentReloadRequired && !cameraHDRPreflight;
+            !cameraHDRPreflight;
         HDREditMenu.IsChecked = settings.IsHDREditing;
         HDRPreviewMenu.IsEnabled = HDRSdrPreviewMenu.IsEnabled = HDRFalseColorMenu.IsEnabled = settings.IsHDREditing;
         HDRRenditionMenu.IsEnabled = HDREditMenu.IsEnabled && settings.IsHDREditing;

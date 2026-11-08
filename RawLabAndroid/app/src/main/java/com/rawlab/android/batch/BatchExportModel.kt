@@ -307,7 +307,7 @@ class BatchExportModel(
     }
 
     private fun hdrPreparation(source: BatchSourceSnapshot): BatchHDRPreparation = BatchHDRPreparation(source,
-        EditStore(File(context.filesDir,"edits"))::versionedState,storage::lookPath,
+        EditStore(File(context.filesDir,"edits"))::readState,storage::lookPath,
         com.rawlab.android.engine.NativeHDRBridge::probeSource, storage.hdrLookDirectory, storage.hdrCameraProfileDirectory)
 
     private fun inputFile(jobID: String, identity: PhotoIdentity, name: String): File {
