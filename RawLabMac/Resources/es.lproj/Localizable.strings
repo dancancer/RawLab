@@ -867,7 +867,7 @@
 "请返回编辑器完成有效输入后重试。" = "Vuelve al editor, introduce un valor válido e inténtalo de nuevo.";
 "请返回编辑器应用或放弃草稿和未提交输入" = "Vuelve al editor y aplica o descarta el borrador y las entradas no aplicadas.";
 "请选择" = "Seleccionar…";
-"请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。" = "Elige una imagen SDR opaca: JPEG, PNG, TIFF o HEIF de 8 bits, o TIFF RGB de 16 bits.";
+"请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB PNG、TIFF。" = "Elige una imagen SDR opaca: JPEG, PNG, TIFF o HEIF de 8 bits, o PNG o TIFF RGB de 16 bits.";
 "调整亮度、色彩和粗色斑降噪" = "Ajustar la reducción de ruido de luminancia, color y manchas";
 "调整内容无法读取，请重新复制。" = "No se pueden leer los ajustes. Vuelve a copiarlos.";
 "调整前" = "Antes";
