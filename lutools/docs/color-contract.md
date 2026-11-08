@@ -142,8 +142,18 @@ thumbnails, decoding the primary image at full resolution. Both continue to reje
 MPF gain maps, stereo/multi-angle images, unknown auxiliary types and invalid
 image ranges; this does not enable general multi-frame input.
 Unknown non-sRGB PNG color metadata
-without a supported ICC profile is rejected instead of guessed. Android uses a
-separate API-26-compatible platform decoder for validated JPEG/PNG files and
+without a supported ICC profile is rejected instead of guessed. On Apple,
+SDR PNG8/PNG16 cICP `{1,13,0,1}` (sRGB), `{12,13,0,1}` (Display P3), and
+`{1,1,0,1}` (BT.709) are accepted when ImageIO decodes the declared color space,
+then converted to sRGB. This also applies when a matching ICC profile is present.
+The adapter verifies the decoded space rather than assuming every OS version
+understands cICP. Other combinations remain unsupported: ImageIO on macOS
+27.0.1 ignores `{1,6,0,1}` and returns sRGB with unchanged code values, so accepting
+it would lose the declared transfer function. HDR cICP (including PQ/HLG),
+mastering/content-light metadata and malformed cICP lengths remain rejected.
+Windows and Android retain their existing stricter cICP admission rules;
+Apple's additional SDR combinations rely on the verified ImageIO conversion.
+Android uses a separate API-26-compatible platform decoder for validated JPEG/PNG files and
 passes their oriented opaque display-sRGB pixels through the same explicit
 display-buffer C API. Android does not enable TIFF or HEIF; its native file-loader
 entry point remains unsupported rather than pretending to decode those files.

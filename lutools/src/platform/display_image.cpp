@@ -1,11 +1,13 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <memory>
 #include <new>
@@ -88,11 +90,45 @@ bool stringContains(CFStringRef value, CFStringRef needle) {
 
 bool isHDRColorSpace(CGColorSpaceRef colorSpace) {
     if (!colorSpace) return false;
+    // 内嵌 ICC 不一定有名字，须先检查实际传递函数和扩展范围。
+    if (CGColorSpaceUsesITUR_2100TF(colorSpace) || CGColorSpaceUsesExtendedRange(colorSpace)) return true;
     CFUnique<CFStringRef> name(CGColorSpaceCopyName(colorSpace));
     return stringContains(name.get(), CFSTR("extended")) ||
         stringContains(name.get(), CFSTR("hdr")) ||
         stringContains(name.get(), CFSTR("pq")) ||
         stringContains(name.get(), CFSTR("hlg"));
+}
+
+sony2fuji_status pngColorMetadataStatus(const char* path, CFStringRef* colorSpaceName) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) return SONY2FUJI_STATUS_IO_ERROR;
+    file.seekg(8);
+    while (file) {
+        std::array<uint8_t, 8> header{};
+        if (!file.read(reinterpret_cast<char*>(header.data()), header.size()))
+            return SONY2FUJI_STATUS_PROCESSING_ERROR;
+        const uint32_t length = (uint32_t(header[0]) << 24) | (uint32_t(header[1]) << 16) |
+            (uint32_t(header[2]) << 8) | header[3];
+        const auto is = [&](const char* type) { return std::memcmp(header.data() + 4, type, 4) == 0; };
+        // ImageIO 可能忽略这些块；拒绝规则不能只依赖解码后的色彩空间。
+        if (is("mDCv") || is("mDCV") || is("cLLi") || is("cLLI")) return SONY2FUJI_STATUS_UNSUPPORTED;
+        if (is("cICP")) {
+            if (length != 4) return SONY2FUJI_STATUS_UNSUPPORTED;
+            std::array<uint8_t, 4> cicp{};
+            if (!file.read(reinterpret_cast<char*>(cicp.data()), cicp.size()))
+                return SONY2FUJI_STATUS_PROCESSING_ERROR;
+            if (cicp == std::array<uint8_t, 4>{1, 13, 0, 1}) *colorSpaceName = kCGColorSpaceSRGB;
+            else if (cicp == std::array<uint8_t, 4>{12, 13, 0, 1}) *colorSpaceName = kCGColorSpaceDisplayP3;
+            else if (cicp == std::array<uint8_t, 4>{1, 1, 0, 1}) *colorSpaceName = kCGColorSpaceITUR_709;
+            else return SONY2FUJI_STATUS_UNSUPPORTED;
+        } else {
+            file.seekg(static_cast<std::streamoff>(length), std::ios::cur);
+        }
+        std::array<char, 4> crc{};
+        if (!file.read(crc.data(), crc.size())) return SONY2FUJI_STATUS_PROCESSING_ERROR;
+        if (is("IEND")) return length == 0 ? SONY2FUJI_STATUS_OK : SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
+    return SONY2FUJI_STATUS_PROCESSING_ERROR;
 }
 
 bool hasAlpha(CGImageAlphaInfo alpha) {
@@ -236,6 +272,11 @@ sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* outpu
     if (!source) return SONY2FUJI_STATUS_PROCESSING_ERROR;
     const CFStringRef type = CGImageSourceGetType(source.get());
     if (!supportedUTI(type)) return SONY2FUJI_STATUS_UNSUPPORTED;
+    CFStringRef pngColorSpaceName = nullptr;
+    if (equalUTI(type, CFSTR("public.png"))) {
+        const auto status = pngColorMetadataStatus(path, &pngColorSpaceName);
+        if (status != SONY2FUJI_STATUS_OK) return status;
+    }
     const size_t imageCount = CGImageSourceGetCount(source.get());
     if (imageCount != 1 && !(imageCount == 2 && equalUTI(type, CFSTR("public.tiff"))))
         return SONY2FUJI_STATUS_UNSUPPORTED;
@@ -320,9 +361,14 @@ sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* outpu
     CGColorSpaceRef sourceSpace = CGImageGetColorSpace(image.get());
     if (!sourceSpace || CGColorSpaceGetModel(sourceSpace) != kCGColorSpaceModelRGB)
         return SONY2FUJI_STATUS_UNSUPPORTED;
+    if (pngColorSpaceName) {
+        // 旧版 ImageIO 若忽略 cICP，不能把非 sRGB 像素误当作 sRGB 接受。
+        CFUnique<CGColorSpaceRef> expected(CGColorSpaceCreateWithName(pngColorSpaceName));
+        if (!expected || !CFEqual(sourceSpace, expected.get())) return SONY2FUJI_STATUS_UNSUPPORTED;
+    }
     if (isHDRColorSpace(sourceSpace)) return SONY2FUJI_STATUS_UNSUPPORTED;
 
-    if (!hasProfile) {
+    if (!hasProfile && !pngColorSpaceName) {
         CFUnique<CGColorSpaceRef> sRGB(CGColorSpaceCreateWithName(kCGColorSpaceSRGB));
         if (!sRGB) return SONY2FUJI_STATUS_PROCESSING_ERROR;
         CFUnique<CGImageRef> retagged(CGImageCreateCopyWithColorSpace(image.get(), sRGB.get()));

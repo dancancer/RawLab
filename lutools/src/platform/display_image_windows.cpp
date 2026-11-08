@@ -722,7 +722,11 @@ void scanTiff(const std::wstring& path, MetadataInfo& info) {
         const auto entry = readTiffEntry(reader, entryOffset, littleEndian);
         noPageMarker &= tiffEntryHasNoPageMarker(reader, entry, littleEndian);
         if (entry.tag == 305) {
-            if (entry.type != 2 || entry.dataBytes > kMetadataChunkLimit - metadataBytes)
+            if (entry.type != 2) {
+                sigmaWriter = false;
+                continue;
+            }
+            if (entry.dataBytes > kMetadataChunkLimit - metadataBytes)
                 fail(SONY2FUJI_STATUS_UNSUPPORTED);
             metadataBytes += static_cast<size_t>(entry.dataBytes);
             const auto software = readTiffData(reader, entry, kMetadataChunkLimit);

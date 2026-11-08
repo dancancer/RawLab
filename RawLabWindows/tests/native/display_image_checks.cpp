@@ -229,7 +229,12 @@ void checkPreview16(const fs::path& path, uint32_t edge, unsigned sourceWidth, u
         double fullSum = 0, previewSum = 0;
         for (size_t i = channel; i < full.size(); i += 4) fullSum += full[i] / 257.0;
         for (size_t i = channel; i < buffer.size_bytes; i += 4) previewSum += preview[i];
-        colorsMatch &= std::abs(fullSum / (sourceWidth * sourceHeight) - previewSum / (width * height)) <= 1.5;
+        const auto fullMean = fullSum / (sourceWidth * sourceHeight);
+        const auto previewMean = previewSum / (width * height);
+        if (std::abs(fullMean - previewMean) > 1.5)
+            std::cerr << path.filename() << " edge=" << edge << " channel=" << channel
+                << " primary mean=" << fullMean << " preview mean=" << previewMean << '\n';
+        colorsMatch &= std::abs(fullMean - previewMean) <= 1.5;
     }
     for (size_t i = 3; i < buffer.size_bytes; i += 4) colorsMatch &= preview[i] == 255;
     sony2fuji_release_buffer(&buffer);
@@ -238,7 +243,8 @@ void checkPreview16(const fs::path& path, uint32_t edge, unsigned sourceWidth, u
 
 void encodeSigmaTiff(const fs::path& path, uint16_t pageTag = 0, unsigned pageIndex = 1,
                      const char* software = "SIGMA Photo Pro 6.9.0", uint32_t previewWidth = 160,
-                     uint32_t previewHeight = 106, unsigned frames = 2) {
+                     uint32_t previewHeight = 106, unsigned frames = 2, uint16_t primaryDepth = 16,
+                     uint32_t newSubfileType = 2) {
     std::unique_ptr<TIFF, decltype(&TIFFClose)> file(TIFFOpenW(path.c_str(), "w"), TIFFClose);
     if (!file) throw std::runtime_error("Cannot create Sigma TIFF fixture");
     for (unsigned i = 0; i < frames; ++i) {
@@ -246,7 +252,7 @@ void encodeSigmaTiff(const fs::path& path, uint16_t pageTag = 0, unsigned pageIn
         if (!(TIFFSetField(file.get(), TIFFTAG_IMAGEWIDTH, width) &&
               TIFFSetField(file.get(), TIFFTAG_IMAGELENGTH, height) &&
               TIFFSetField(file.get(), TIFFTAG_SAMPLESPERPIXEL, 3) &&
-              TIFFSetField(file.get(), TIFFTAG_BITSPERSAMPLE, i == 0 ? 16 : 8) &&
+              TIFFSetField(file.get(), TIFFTAG_BITSPERSAMPLE, i == 0 ? primaryDepth : 8) &&
               TIFFSetField(file.get(), TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB) &&
               TIFFSetField(file.get(), TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG) &&
               TIFFSetField(file.get(), TIFFTAG_COMPRESSION, COMPRESSION_NONE) &&
@@ -255,7 +261,7 @@ void encodeSigmaTiff(const fs::path& path, uint16_t pageTag = 0, unsigned pageIn
         if (i == 0) TIFFSetField(file.get(), TIFFTAG_SOFTWARE, software);
         if (i == pageIndex) {
             if (pageTag == TIFFTAG_PAGENUMBER) TIFFSetField(file.get(), pageTag, i, frames);
-            else if (pageTag != 0) TIFFSetField(file.get(), TIFFTAG_SUBFILETYPE, 2u);
+            else if (pageTag != 0) TIFFSetField(file.get(), TIFFTAG_SUBFILETYPE, newSubfileType);
         }
         std::vector<uint16_t> row16(width * 3);
         for (uint32_t x = 0; x < width; ++x) {
@@ -263,7 +269,7 @@ void encodeSigmaTiff(const fs::path& path, uint16_t pageTag = 0, unsigned pageIn
         }
         std::vector<uint8_t> row8(width * 3, 127);
         for (uint32_t y = 0; y < height; ++y)
-            if (TIFFWriteScanline(file.get(), i == 0 ? static_cast<void*>(row16.data()) : row8.data(), y, 0) < 0)
+            if (TIFFWriteScanline(file.get(), i == 0 && primaryDepth == 16 ? static_cast<void*>(row16.data()) : row8.data(), y, 0) < 0)
                 throw std::runtime_error("Cannot write Sigma TIFF fixture");
         if (!TIFFWriteDirectory(file.get())) throw std::runtime_error("Cannot finish Sigma TIFF fixture");
     }
@@ -289,6 +295,24 @@ void encodeSigmaTiff(const fs::path& path, uint16_t pageTag = 0, unsigned pageIn
         if (!patched) throw std::runtime_error("Cannot add legacy TIFF page marker");
         write(path, bytes);
     }
+}
+void makeSoftwareNonAscii(const fs::path& path) {
+    auto bytes = read(path);
+    const auto number = [&](size_t at, size_t size) {
+        uint32_t value = 0;
+        for (size_t i = 0; i < size; ++i) value |= uint32_t(bytes.at(at + i)) << (8 * i);
+        return value;
+    };
+    const size_t offset = number(4, 4);
+    for (size_t i = 0, count = number(offset, 2); i < count; ++i) {
+        const size_t at = offset + 2 + i * 12;
+        if (number(at, 2) != TIFFTAG_SOFTWARE) continue;
+        bytes[at + 2] = TIFF_UNDEFINED;
+        bytes[at + 3] = 0;
+        write(path, bytes);
+        return;
+    }
+    throw std::runtime_error("Cannot find TIFF Software fixture tag");
 }
 void reject(const fs::path& path, sony2fuji_status expected,
             const char* message = "Unsupported/damaged input clears a stale output buffer") {
@@ -756,6 +780,34 @@ int main(int argc, char** argv) {
         check(sigmaPixels[0] == 1234 && sigmaPixels[1] == 9153 && sigmaPixels[2] == 17072,
             "Sigma TIFF decodes the full-resolution 16-bit primary, not the 160-pixel preview");
         checkPreview16(sigma, 60, 300, 200, 60, 40);
+        checkPreview16(sigma, 7, 300, 200, 7, 5);
+        checkPreview16(sigma, 512, 300, 200, 300, 200);
+        for (const uint16_t depth : {8, 16}) {
+            const auto path = root / ("non-ascii-software-" + std::to_string(depth) + ".tiff");
+            encodeSigmaTiff(path, 0, 1, "SIGMA Photo Pro 6.9.0", 160, 106, 1, depth);
+            const auto original = depth == 16 ? std::vector<uint8_t>{} : decode(path, 300, 200);
+            const auto original16 = depth == 16 ? decode16(path, 300, 200) : std::vector<uint16_t>{};
+            makeSoftwareNonAscii(path);
+            check(depth == 16 ? decode16(path, 300, 200) == original16 : decode(path, 300, 200) == original,
+                "Non-ASCII Software is ignored for single-frame 8/16-bit TIFF");
+        }
+        const auto nonAsciiSigma = root / "non-ascii-sigma.tiff";
+        encodeSigmaTiff(nonAsciiSigma);
+        makeSoftwareNonAscii(nonAsciiSigma);
+        reject(nonAsciiSigma, SONY2FUJI_STATUS_UNSUPPORTED,
+            "Non-ASCII Software cannot authorize the Sigma preview exception");
+        const auto reduced8 = root / "reduced-ifd-8.tiff";
+        encodeSigmaTiff(reduced8, TIFFTAG_SUBFILETYPE, 1, "Another exporter", 160, 106, 2, 8, 1);
+        ComPtr<IWICBitmapDecoder> reducedDecoder;
+        ok(factory->CreateDecoderFromFilename(reduced8.c_str(), nullptr, GENERIC_READ,
+            WICDecodeMetadataCacheOnDemand, &reducedDecoder));
+        UINT reducedFrames = 0;
+        ok(reducedDecoder->GetFrameCount(&reducedFrames));
+        std::cout << "WIC TIFF8 NewSubfileType=1 top-level IFD frame count: " << reducedFrames << '\n';
+        // 旧版普通 TIFF 只以 WIC 帧数决定是否拒绝；在 Windows 原生运行时核对这项兼容性。
+        if (reducedFrames == 1) decode(reduced8, 300, 200);
+        else reject(reduced8, SONY2FUJI_STATUS_UNSUPPORTED,
+            "Reduced TIFF8 IFD retains the previous WIC multi-frame rejection");
         for (unsigned pageIndex : {0u, 1u}) for (uint16_t tag : {TIFFTAG_SUBFILETYPE, TIFFTAG_OSUBFILETYPE, TIFFTAG_PAGENUMBER}) {
             const auto path = root / ("sigma-page-" + std::to_string(pageIndex) + "-" + std::to_string(tag) + ".tiff");
             encodeSigmaTiff(path, tag, pageIndex);

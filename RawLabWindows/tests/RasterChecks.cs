@@ -83,12 +83,15 @@ internal static class RasterChecks
             tiffPreview.Width==width && tiffPreview.Height==height,"Classic RGB8 TIFF uses the bounded managed thumbnail adapter");
         var png16=Path.Combine(inputs,"rgb16.png");var tiff16=Path.Combine(inputs,"rgb16.tiff");
         var sigma16=Path.Combine(inputs,"sigma16.tiff");
+        var sigmaPrimary=Path.Combine(inputs,"sigma-primary16.tiff");
         Save16(png16,new PngBitmapEncoder(),false);Save16(tiff16,new TiffBitmapEncoder{Compression=TiffCompressOption.None},false);
+        Save16(sigmaPrimary,new TiffBitmapEncoder{Compression=TiffCompressOption.None},true,false);
         Save16(sigma16,new TiffBitmapEncoder{Compression=TiffCompressOption.None},true);
-        foreach(var source in new[]{png16,tiff16,sigma16})
+        foreach(var source in new[]{png16,tiff16,sigmaPrimary,sigma16})
         {
             identities.Add(source,Hash(source));
-            var sourceWidth=source==sigma16?300:width;var sourceHeight=source==sigma16?200:height;
+            var sourceWidth=source==sigma16 || source==sigmaPrimary?300:width;
+            var sourceHeight=source==sigma16 || source==sigmaPrimary?200:height;
             var rendered=engine.Render(source,new(),null,0,statistics:false,clipping:false)!;
             var first=Bytes(rendered.Image);
             check(rendered.Image.PixelWidth==sourceWidth && rendered.Image.PixelHeight==sourceHeight &&
@@ -108,9 +111,15 @@ internal static class RasterChecks
                     double fullSum=0,thumbSum=0;
                     for(var i=c;i<first.Length;i+=4)fullSum+=first[i];
                     for(var i=c;i<thumbBytes.Length;i+=4)thumbSum+=thumbBytes[i];
-                    colorsMatch&=Math.Abs(fullSum/(sourceWidth*sourceHeight)-thumbSum/(thumbnail.Image.PixelWidth*thumbnail.Image.PixelHeight))<=2;
+                    var fullMean=fullSum/(sourceWidth*sourceHeight);
+                    var thumbMean=thumbSum/(thumbnail.Image.PixelWidth*thumbnail.Image.PixelHeight);
+                    Console.WriteLine($"{Path.GetFileName(source)} edge={edge} BGRA channel={c} primary mean={fullMean:F4} thumbnail mean={thumbMean:F4}");
+                    colorsMatch&=Math.Abs(fullMean-thumbMean)<=2;
                 }
                 check(colorsMatch,"Generated TIFF/PNG16 thumbnail remains an 8-bit bitmap with correct channel order");
+                if(source==sigma16)
+                    check(thumbBytes.SequenceEqual(Bytes(RenderEngine.ReadEmbeddedPreview(sigmaPrimary,edge).Image!)),
+                        "Adding the Sigma preview IFD does not change primary-image thumbnail pixels");
             }
         }
         var ownExport=Path.Combine(inputs,"rawlab-export16.png");
@@ -210,7 +219,7 @@ internal static class RasterChecks
         Console.WriteLine("Raster artifacts: "+output);
 
         void Save(string path,BitmapEncoder encoder){encoder.Frames.Add(BitmapFrame.Create(bitmap));using var file=File.Create(path);encoder.Save(file);}
-        void Save16(string path,BitmapEncoder encoder,bool sigma)
+        void Save16(string path,BitmapEncoder encoder,bool sigma,bool addPreview=true)
         {
             var w=sigma?300:width;var h=sigma?200:height;var data=new byte[w*h*6];
             for(var y=0;y<h;y++)for(var x=0;x<w;x++)
@@ -222,7 +231,7 @@ internal static class RasterChecks
             BitmapMetadata? metadata=null;
             if(sigma){metadata=new BitmapMetadata("tiff");metadata.SetQuery("/ifd/{ushort=305}","SIGMA Photo Pro 6.9.0");}
             encoder.Frames.Add(BitmapFrame.Create(image16,null,metadata,null));
-            if(sigma)
+            if(sigma && addPreview)
             {
                 var previewPixels=Enumerable.Repeat((byte)127,160*106*3).ToArray();
                 encoder.Frames.Add(BitmapFrame.Create(BitmapSource.Create(160,106,96,96,PixelFormats.Rgb24,null,previewPixels,160*3)));
