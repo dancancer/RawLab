@@ -7351,6 +7351,14 @@
     "ja": "選択",
     "zh-Hans": "选片"
   },
+  "不是支持的图像文件": {
+    "de": "Nicht unterstützte Bilddatei",
+    "en": "Unsupported image file",
+    "es": "Archivo de imagen no compatible",
+    "fr": "Fichier image non pris en charge",
+    "ja": "対応していない画像ファイル",
+    "zh-Hans": "不是支持的图像文件"
+  },
   "HDR 相机配置": {
     "en": "HDR camera profile",
     "de": "HDR-Kameraprofil",

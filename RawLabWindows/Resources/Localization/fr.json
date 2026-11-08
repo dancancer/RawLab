@@ -101,6 +101,7 @@
     "不支持此处理版本，原有记录未被覆盖。": "Cette version de traitement n'est pas prise en charge. Les réglages enregistrés n'ont pas été écrasés.",
     "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。": "Cette photo, ce look ou ce mode de traitement n’est pas pris en charge. Vérifiez la compatibilité des fichiers et les réglages de traitement.",
     "不支持此相机 RAW 的 HDR 显影。": "Le développement HDR n’est pas pris en charge pour ce fichier RAW.",
+    "不是支持的图像文件": "Fichier image non pris en charge",
     "不能覆盖原始文件。": "Le fichier d’origine ne peut pas être écrasé.",
     "不适用": "Sans objet",
     "不限": "Sans limite",

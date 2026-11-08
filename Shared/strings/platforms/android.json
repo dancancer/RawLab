@@ -5090,6 +5090,18 @@
       "file": "editor_strings.xml",
       "types": []
     },
+    "system_open_photo_too_large": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "照片文件超过 1 GiB，无法导入。",
+      "types": []
+    },
+    "system_open_storage_full": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "存储空间不足，无法导入照片。",
+      "types": []
+    },
     "hdr_camera_profile": {
       "file": "editor_strings.xml",
       "formats": [],
@@ -5130,6 +5142,12 @@
       "file": "editor_strings.xml",
       "formats": [],
       "source": "无效或不可用的相机显影设置（白平衡或镜头校正）。",
+      "types": []
+    },
+    "system_open_unsupported_photo": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "不是支持的图像文件",
       "types": []
     }
   },
@@ -6048,6 +6066,22 @@
       "es": "Base SDR Display P3 + mapa de ganancia HDR · ISO / XMP",
       "fr": "Base SDR Display P3 + carte de gain HDR · ISO / XMP",
       "ja": "Display P3 SDR ベース + HDR ゲインマップ · ISO / XMP"
+    },
+    "照片文件超过 1 GiB，无法导入。": {
+      "de": "Die Fotodatei ist größer als 1 GiB und kann nicht importiert werden.",
+      "en": "The photo file exceeds 1 GiB and cannot be imported.",
+      "es": "El archivo de foto supera 1 GiB y no se puede importar.",
+      "fr": "Le fichier photo dépasse 1 Gio et ne peut pas être importé.",
+      "ja": "写真ファイルが 1 GiB を超えているため、読み込めません。",
+      "zh-Hans": "照片文件超过 1 GiB，无法导入。"
+    },
+    "存储空间不足，无法导入照片。": {
+      "de": "Es ist nicht genügend Speicherplatz vorhanden, um das Foto zu importieren.",
+      "en": "There is not enough storage space to import the photo.",
+      "es": "No hay suficiente espacio de almacenamiento para importar la foto.",
+      "fr": "L’espace de stockage est insuffisant pour importer la photo.",
+      "ja": "空き容量が不足しているため、写真を読み込めません。",
+      "zh-Hans": "存储空间不足，无法导入照片。"
     },
     "照片或调整已更改，未应用导入的相机配置。请重试。": {
       "en": "The photo or its adjustments changed. The imported camera profile was not applied. Try again.",

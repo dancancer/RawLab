@@ -47,6 +47,7 @@ struct ContentView: View {
     @State var photoComparisonControlBounds = CGRect.zero
     @State var pendingPhotoImport = false
     @State var pendingFileImport = false
+    @State var pendingSystemPhotoURLs: [[URL]] = []
     var showingBefore: Bool {
         get { photoViewing.holdingBefore }
         nonmutating set {
@@ -151,12 +152,22 @@ struct ContentView: View {
         let interactionObserved = applyEditorInteractionObservers(to: draftObserved)
         return applyEditorSheets(to: interactionObserved)
             .sheet(isPresented: $showingProcessingContext) { processingContextSheet }
+            .onOpenURL { requestSystemPhotoImport([$0]) }
+            .onChange(of: editorBusy) { _, busy in
+                if !busy { continueSystemPhotoImport() }
+            }
     }
 
     private var editorNavigation: some View {
         NavigationStack {
             GeometryReader { geometry in
                 editorWorkspace(size: geometry.size, accessibility: dynamicTypeSize.isAccessibilitySize)
+                    .dropDestination(for: PhotoImportFile.self) { files, _ in
+                        let urls = stageSystemPhotoImport(files)
+                        guard !urls.isEmpty else { return false }
+                        requestSystemPhotoImport(urls)
+                        return true
+                    }
             }
             .safeAreaInset(edge: .top) {
                 if let batchModel, !showingBatchExport {

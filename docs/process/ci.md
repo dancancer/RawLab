@@ -89,7 +89,7 @@ this is not reuse of an unverified product binary.
 | Select affected platforms | Ubuntu 24.04 | Selects platforms, groups, matrix and cold/warm mode |
 | Contracts and CI policy | Ubuntu 24.04 | Static source/contracts, localization, LUT and MCP protocol checks |
 | macOS | Dedicated arm64 Mac; hosted Intel for heavier groups | Models run once on arm64. `build` runs once per architecture. `native/full` use arm64 all plus Intel core/agent/render shards |
-| Windows | Hosted Server 2022 for models; dedicated Windows 11 for explicit builds and cold gates | Six managed model projects and runner checks / self-contained package, CTest, DCP and RAW/raster CLI parity |
+| Windows | Hosted Server 2022 for models; dedicated Windows 11 for explicit builds and cold gates | Seven managed model projects and runner checks / self-contained package, CTest, DCP and RAW/raster CLI parity |
 | Android | Hosted Ubuntu 24.04 / JDK 17 (dedicated guest paused) | JVM unit tests / lint, app and instrumentation APK builds, both native ABIs and alignment/cache checks |
 | iOS | Apple Silicon / Xcode | Standalone settings/viewing/persistence models / all framework slices, unsigned simulator app and UI-test compilation, simulator look-import integration |
 | CI result | Ubuntu 24.04 | Automatic gate: every selected job succeeds and every unselected job is skipped |

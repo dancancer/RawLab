@@ -228,8 +228,6 @@ public partial class MainWindow : Window
             if (!startupReported) { startupReported = true; this.usageAnalytics.BeginSession(); }
             if (lookLibraryLoadError != null)
                 SetStatus(() => lookLibraryLoadError is LookLibraryException ? lookLibraryLoadError.Message : Loc.Text("本地记录损坏。"), true);
-            var input=Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(LibraryEntry.IsImage);
-            if(input!=null)OpenFile(input);
             if(updates.Automatic!=this.desktopUpdates.Preferences.AutomaticCheck)
                 updates.Automatic=this.desktopUpdates.Preferences.AutomaticCheck;
             if(this.desktopUpdates.UnavailableReason!=null)await updates.CheckAsync(false, updateCancellation.Token);

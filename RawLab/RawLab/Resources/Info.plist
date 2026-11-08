@@ -14,6 +14,25 @@
 	<string>0.9.3</string>
 	<key>CFBundleVersion</key>
 	<string>18</string>
+	<key>LSSupportsOpeningDocumentsInPlace</key><false/>
+<key>CFBundleDocumentTypes</key><array><dict>
+    <key>CFBundleTypeName</key><string>RAW/JPEG/PNG/TIFF/HEIF</string>
+    <key>CFBundleTypeRole</key><string>Viewer</string>
+    <key>LSHandlerRank</key><string>Alternate</string>
+    <key>LSItemContentTypes</key><array>
+        <string>public.camera-raw-image</string><string>com.rawlab.camera-raw</string><string>com.rawlab.x3f</string>
+        <string>public.jpeg</string><string>public.png</string><string>public.tiff</string>
+        <string>public.heif</string><string>public.heic</string>
+    </array>
+    <key>CFBundleTypeExtensions</key><array>
+        <string>arw</string><string>arq</string><string>dng</string><string>nef</string><string>nrw</string>
+        <string>cr2</string><string>cr3</string><string>crw</string><string>raf</string><string>rw2</string>
+        <string>rwl</string><string>orf</string><string>pef</string><string>srw</string><string>raw</string>
+        <string>3fr</string><string>fff</string><string>iiq</string><string>mos</string><string>x3f</string>
+        <string>jpg</string><string>jpeg</string><string>png</string><string>tif</string><string>tiff</string>
+        <string>heif</string><string>heic</string>
+    </array>
+</dict></array>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Allows importing photos from your photo library.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
@@ -22,6 +41,20 @@
 	<dict/>
 	<key>UTImportedTypeDeclarations</key>
 	<array>
+    <dict>
+        <key>UTTypeIdentifier</key><string>com.rawlab.camera-raw</string>
+        <key>UTTypeDescription</key><string>RAW</string>
+        <key>UTTypeConformsTo</key><array><string>public.camera-raw-image</string></array>
+        <key>UTTypeTagSpecification</key><dict>
+            <key>public.filename-extension</key><array>
+                <string>arw</string><string>arq</string><string>dng</string><string>nef</string><string>nrw</string>
+                <string>cr2</string><string>cr3</string><string>crw</string><string>raf</string><string>rw2</string>
+                <string>rwl</string><string>orf</string><string>pef</string><string>srw</string><string>raw</string>
+                <string>3fr</string><string>fff</string><string>iiq</string><string>mos</string>
+            </array>
+        </dict>
+    </dict>
+
 		<dict>
 			<key>UTTypeIdentifier</key>
 			<string>com.rawlab.x3f</string>

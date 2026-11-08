@@ -366,6 +366,9 @@
     <string name="reset_all_title">"Réinitialiser tous les réglages ?"</string>
     <string name="reset_effect">"Réinitialiser %1$s"</string>
     <string name="select_photo">"Choisir une photo"</string>
+    <string name="system_open_photo_too_large">"Le fichier photo dépasse 1 Gio et ne peut pas être importé."</string>
+    <string name="system_open_storage_full">"L’espace de stockage est insuffisant pour importer la photo."</string>
+    <string name="system_open_unsupported_photo">"Fichier image non pris en charge"</string>
     <string name="tool_raw_lens_only">"La correction de l’objectif est réservée aux photos RAW."</string>
     <string name="tool_select_look_first">"Sélectionnez d’abord un look ou une recette."</string>
     <string name="tool_unavailable_hdr">"Cet outil n’est pas encore disponible en mode HDR."</string>

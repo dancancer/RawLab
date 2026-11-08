@@ -144,11 +144,19 @@ struct EditorView: View {
             }
             .overlay { if dropTarget { Rectangle().stroke(Color.accentColor, lineWidth: 3).allowsHitTesting(false) } }
             .dropDestination(for: URL.self) { urls, _ in
-                guard !model.exporting, let url = urls.first, url.isFileURL else { return false }
-                if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-                    return library.addDirectories(urls)
+                guard !model.exporting else { return false }
+                let directoriesAdded = library.addDirectories(urls)
+                if urls.count == 1, let url = urls.first?.standardizedFileURL.resolvingSymlinksInPath(),
+                   url.isFileURL, !directoriesAdded,
+                   (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+                    // 单文件沿用显影入口，让不支持或损坏的文件显示原有错误。
+                    openWorkspacePhoto(url)
+                    return true
                 }
-                openWorkspacePhoto(url)
+                let photos = DirectoryContents.photoURLs(from: urls)
+                guard let first = photos.first else { return directoriesAdded }
+                if photos.count == 1 { openWorkspacePhoto(first) }
+                else { addToCollection(photos) }
                 return true
             } isTargeted: { dropTarget = $0 }
             .accessibilityElement(children: .contain)

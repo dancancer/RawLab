@@ -38,6 +38,29 @@ public partial class MainWindow
         collectionWindow.Refresh(restorePosition:true);collectionWindow.Show();collectionWindow.Activate();RefreshControls();
     }
     internal void AddCollectionPhotos(IEnumerable<string> paths) {Collection.Add(paths,file);Collection.RefreshFailures();}
+    // 用户拒绝导航时消费请求；只有暂时阻塞或保存失败才交给定时器重试。
+    internal bool TryOpenSystemPhotos(IEnumerable<string> paths)
+    {
+        if(System.Windows.Interop.ComponentDispatcher.IsThreadModal || !IsEnabled || CollectionBusy || editGesture!=null || adjustmentReloadRequired || RetrySave.Visibility==Visibility.Visible)return false;
+        var photos=SystemPhotoOpen.Paths(paths).Where(path=>File.Exists(path) && LibraryEntry.IsImage(path)).ToArray();
+        if(photos.Length==0){SetStatus(() => Loc.Text("不是支持的图像文件"),true);return true;}
+        if(WindowState==WindowState.Minimized)WindowState=WindowState.Normal;
+        Show();Activate();
+        if(photos.Length==1) {
+            CancelParameterInputs();
+            if(!ResolveTransformDraft())return true;
+            if(!SaveEdits())return false;
+            OpenFile(photos[0]);
+        }
+        else {
+            CancelHslTarget();
+            if(!CommitCollectionInputs())return true;
+            if(!ResolveTransformDraft())return true;
+            if(!SaveEdits())return false;
+            AddCollectionPhotos(photos);Collection.ReturnToCollection();ShowCollection();
+        }
+        return true;
+    }
     internal bool EditCollectionPhoto(string id)
     {
         if(CollectionBusy || !CommitCollectionInputs())return false;

@@ -56,7 +56,16 @@ struct ImagePhotoFile: Transferable {
     }
 }
 
-enum PhotoImportFile {
+struct PhotoImportFile: Transferable {
+    let source: PhotoImportSource
+
+    // 系统拖放统一走一个 FileRepresentation，避免同一画布注册两个 dropDestination 后互相覆盖。
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(importedContentType: .data) { file in
+            PhotoImportFile(source: try retainSource(file.file))
+        }
+    }
+
     static var directory: URL { FileManager.default.temporaryDirectory.appendingPathComponent("RawLabImports", isDirectory: true) }
     // Files may advertise an arbitrary type for a renamed photo.
     static let photoPickerContentTypes: [UTType] = [.data]
@@ -64,9 +73,64 @@ enum PhotoImportFile {
         UTType(filenameExtension: $0)
     }
 
+    static func fileURLs(from urls: [URL]) -> [URL] {
+        var seen = Set<URL>()
+        return urls.filter {
+            $0.isFileURL && (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) != true &&
+                seen.insert($0.standardizedFileURL).inserted
+        }
+    }
+
+    static func appendSystemPhotoEvent(_ urls: [URL], to pending: [[URL]]) -> [[URL]] {
+        let files = fileURLs(from: urls)
+        return files.isEmpty ? pending : pending + [files]
+    }
+
+    static func consumeSystemPhotoEvent(from pending: [[URL]]) -> (current: [URL], remaining: [[URL]])? {
+        guard let current = pending.first else { return nil }
+        return (current, Array(pending.dropFirst()))
+    }
+
     static func retainSource(_ source: URL) throws -> PhotoImportSource {
+        try retainSource(source, documentsDirectory: applicationDocumentsDirectory)
+    }
+
+    static func retainSource(_ source: URL, documentsDirectory: URL) throws -> PhotoImportSource {
         let retained = try retain(source, filename: "source")
-        return try identifyRetainedSource(retained, originalName: source.lastPathComponent)
+        let originalName = source.lastPathComponent
+        let identified = try identifyRetainedSource(retained, originalName: originalName)
+        if isApplicationInboxFile(source, documentsDirectory: documentsDirectory) {
+            // iOS 在 LSSupportsOpeningDocumentsInPlace=false 时把原文件放进应用 Inbox；确认副本可读后再清理它。
+            try? FileManager.default.removeItem(at: source)
+        }
+        return identified
+    }
+
+    static func isApplicationInboxFile(_ source: URL, documentsDirectory: URL) -> Bool {
+        let expectedInbox = documentsDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent("Inbox", isDirectory: true).standardizedFileURL
+        let inbox = expectedInbox.resolvingSymlinksInPath().standardizedFileURL
+        guard inbox == expectedInbox else { return false }
+        let candidate = source.resolvingSymlinksInPath().standardizedFileURL
+        return candidate.path.hasPrefix(inbox.path + "/")
+    }
+
+    // Transferable 已完成私有副本；队列接管同一临时目录，只改文件名，不再复制整张 RAW。
+    static func renameRetainedSource(_ source: URL, filename: String) throws -> URL {
+        let folder = source.deletingLastPathComponent()
+        guard folder.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL,
+              !filename.isEmpty, filename == URL(fileURLWithPath: filename).lastPathComponent else {
+            throw PhotoImportError.unsupportedItem
+        }
+        let destination = folder.appendingPathComponent(filename)
+        guard destination.standardizedFileURL != source.standardizedFileURL else { return source }
+        try FileManager.default.moveItem(at: source, to: destination)
+        return destination
+    }
+
+    private static var applicationDocumentsDirectory: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ??
+            FileManager.default.temporaryDirectory
     }
 
     static func load(fromFile url: URL) async throws -> PhotoImportSource {
