@@ -68,7 +68,8 @@ extension BatchExportModel {
                                                           rawWhiteBalance: nil)
             }
             return try processor.makeJPEGData(from: result.buffer, sourceURL: target.sourceURL,
-                                              orientation: result.orientation, quality: 0.92)
+                                              orientation: result.orientation, quality: 0.92,
+                                              sourceIsRaw: target.sourceKind == .raw)
         }
     }
 

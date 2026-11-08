@@ -250,6 +250,9 @@ struct AdjustmentTransferTests {
     }
 
     static func main() throws {
+        try neutralRawRequestsOnRaster()
+        try fullNeutralRecipeOnRaster()
+        try builtinRawRecipesOnRaster()
         try refinedRecipeTransfers()
         try toneCurve()
         try colorGrading()
@@ -439,6 +442,111 @@ struct AdjustmentTransferTests {
               changed.renderAtmosphereSettings == target.renderAtmosphereSettings && changed.renderGradingSettings == target.renderGradingSettings &&
               changed.renderCurveSettings == target.renderCurveSettings,
               "Changing recipe strength through partial paste preserves all unselected refinement effects")
+    }
+
+    static func fullNeutralRecipeOnRaster() throws {
+        var raster = raw; raster.isRaw = false
+        var target = Adjustments().resolvedForRaster
+        target.applyMasterRecipe(.hamadaDaylightV2)
+        var source = target; source.whiteBalanceMode = .asShot; source.tint = 0
+        let complete = try MacAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
+        let applied = try MacAdjustmentTransfer.prepare(payload: complete, target: state(target), context: raster)
+        check(applied != state(target) && applied.settings.tint == 0,
+            "Full neutral RAW recipe clears previous raster recipe tint and counts as changed")
+        check(MacAdjustmentTransfer.values(applied, isRaw: false)[AdjustmentTransferField.tint.rawValue] == .number(0),
+            "Full neutral recipe exposes zero logical tint")
+        check(try MacAdjustmentTransfer.prepare(payload: complete, target: applied, context: raster) == applied,
+            "Repeating full neutral recipe is unchanged")
+    }
+
+    static func builtinRawRecipesOnRaster() throws {
+        var raster = raw; raster.isRaw = false
+        raster.availableLookIDs.formUnion(MasterRecipe.allRecipes.map { "recipe:\($0.id)" })
+        for recipe in MasterRecipe.allRecipes {
+            for strength in [0.0, 0.5, 1.0, 2.0] {
+                var source = Adjustments(); source.applyMasterRecipe(recipe)
+                source.strength = strength
+                var direct = Adjustments().resolvedForRaster
+                direct.applyMasterRecipe(recipe); direct.strength = strength
+                var previous = Adjustments().resolvedForRaster
+                previous.applyMasterRecipe(.hamadaDaylightV2)
+                for scope in [AdjustmentTransferScope.standard, .all] {
+                    let captured = try MacAdjustmentTransfer.capture(scope: scope, snapshot: state(source), context: raw)
+                    let frozen = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: JSONEncoder().encode(captured))
+                    let applied = try MacAdjustmentTransfer.prepare(payload: frozen, target: state(previous), context: raster)
+                    check(MacAdjustmentTransfer.values(applied, isRaw: false) == MacAdjustmentTransfer.values(state(direct), isRaw: false),
+                        "Builtin RAW recipe matches direct raster application: \(recipe.id), strength \(strength)")
+                    check(try MacAdjustmentTransfer.prepare(payload: frozen, target: applied, context: raster) == applied,
+                        "Repeating builtin RAW recipe is unchanged")
+                }
+                source.tint = recipe.tintDelta + 1
+                let edited = try MacAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
+                rejects("Manually edited full recipe tint remains incompatible with raster") {
+                    _ = try MacAdjustmentTransfer.prepare(payload: edited, target: state(previous), context: raster)
+                }
+                source.tint = recipe.tintDelta; source.whiteBalanceMode = .custom; source.temperature = 5400
+                let fixed = try MacAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
+                rejects("Full recipe with fixed WB remains incompatible with raster") {
+                    _ = try MacAdjustmentTransfer.prepare(payload: fixed, target: state(previous), context: raster)
+                }
+            }
+        }
+    }
+
+    static func neutralRawRequestsOnRaster() throws {
+        var raster = raw; raster.identifier = "target.jpg"; raster.isRaw = false
+        let target = state(Adjustments().resolvedForRaster)
+        var source = Adjustments()
+        source.resolveWhiteBalance(WhiteBalance(temperature: 5123, tint: 17))
+        for mode in [ExposureMode.scene, .preview, .sensor] {
+            source.exposureMode = mode
+            source.exposure = 1.25
+            let standard = try MacAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
+            let applied = try MacAdjustmentTransfer.prepare(payload: standard, target: target, context: raster)
+            let values = MacAdjustmentTransfer.values(applied, isRaw: false)
+            check(applied != target && applied.settings.exposure == 1.25,
+                "RAW standard paste keeps other changes on JPEG")
+            check(values[AdjustmentTransferField.whiteBalanceMode.rawValue] == .string("none")
+                && applied.settings == applied.settings.resolvedForRaster,
+                "JPEG keeps native neutral white balance and sensor exposure for every RAW exposure mode")
+            check(try MacAdjustmentTransfer.prepare(payload: standard, target: applied, context: raster) == applied,
+                "Repeating RAW standard paste on JPEG is unchanged")
+            source.exposure = 0
+            let neutral = try MacAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
+            check(try MacAdjustmentTransfer.prepare(payload: neutral, target: target, context: raster) == target,
+                "Neutral RAW standard paste does not create a JPEG change")
+            let exposureMode = try MacAdjustmentTransfer.capture(scope: .custom([.exposureMode]), snapshot: state(source), context: raw)
+            check(try MacAdjustmentTransfer.prepare(payload: exposureMode, target: target, context: raster) == target,
+                "RAW exposure mode alone does not create a JPEG change")
+        }
+        for field in AdjustmentTransferField.whiteBalanceFields {
+            let partial = try MacAdjustmentTransfer.capture(scope: .custom([field]), snapshot: state(source), context: raw)
+            check(try MacAdjustmentTransfer.prepare(payload: partial, target: target, context: raster) == target,
+                "Selected neutral RAW white balance component is unchanged on JPEG")
+        }
+        source.applyMasterRecipe(legacyRecipe); source.whiteBalanceMode = .asShot; source.tint = 0
+        let recipeWB = try MacAdjustmentTransfer.capture(scope: .custom(AdjustmentTransferField.whiteBalanceFields), snapshot: state(source), context: raw)
+        check(try MacAdjustmentTransfer.prepare(payload: recipeWB, target: target, context: raster) == target,
+            "Zero recipe-relative tint is neutral on JPEG")
+        for strength in [0.0, 1.0] {
+            source.strength = strength; source.tint = 5
+            let relative = try MacAdjustmentTransfer.capture(scope: .custom([.tint]), snapshot: state(source), context: raw)
+            rejects("Nonzero recipe-relative tint is incompatible with JPEG even at zero strength") {
+                _ = try MacAdjustmentTransfer.prepare(payload: relative, target: target, context: raster)
+            }
+        }
+        source = Adjustments(); source.whiteBalanceMode = .custom; source.temperature = 5400; source.tint = 3.5
+        for fields in [AdjustmentTransferField.whiteBalanceFields, [.temperature], [.tint]] {
+            let fixed = try MacAdjustmentTransfer.capture(scope: .custom(fields), snapshot: state(source), context: raw)
+            rejects("Fixed RAW white balance is still incompatible with JPEG") {
+                _ = try MacAdjustmentTransfer.prepare(payload: fixed, target: target, context: raster)
+            }
+        }
+        source.rawNoiseReduction = 1
+        let denoise = try MacAdjustmentTransfer.capture(scope: .custom([.rawDenoise]), snapshot: state(source), context: raw)
+        rejects("Nonzero RAW FBDD is still incompatible with JPEG") {
+            _ = try MacAdjustmentTransfer.prepare(payload: denoise, target: target, context: raster)
+        }
     }
 
     static func whiteBalanceAndCompatibility() throws {

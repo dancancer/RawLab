@@ -1,6 +1,7 @@
 import Foundation
 
 func checkBatchSelection(_ root: URL) throws {
+    try checkCollectionHDRJPEG(root)
     func check(_ value: Bool, _ message: String) throws { try BatchExportTests.require(value, message) }
     func rejected(_ body: () throws -> Void) -> Bool { do { try body(); return false } catch { return true } }
     let store = try EditPersistence(directory: root.appendingPathComponent("collection-edits"))
@@ -101,4 +102,32 @@ func checkBatchSelection(_ root: URL) throws {
 
     for target in job.targets { try target.frozen!.verifyFiles(input: target.sourceURL) }
     try check(true, "original file deletion does not invalidate task-owned frozen inputs")
+}
+
+private func checkCollectionHDRJPEG(_ root: URL) throws {
+    let store = try EditPersistence(directory: root.appendingPathComponent("collection-hdr-edits"))
+    let journal = try BatchJournalStore(directory: root.appendingPathComponent("collection-hdr-jobs"))
+    let collection = IOSBatchSelection()
+    for (id, isHDR) in [("hdr", true), ("sdr", false)] {
+        let source = root.appendingPathComponent("collection-\(id).jpg")
+        try Data(id.utf8).write(to: source)
+        let identity = PhotoIdentity(resourceIdentifier: id)
+        collection.append(.init(identity: identity, displayName: source.lastPathComponent,
+                                file: .externallyManaged(source), isRaw: false))
+        var settings = RawSettings.default
+        if isHDR { settings.hdr = HDRSettings() }
+        try store.save(identity, state: .init(settings: settings))
+    }
+    let review = collection.prepareExport(store: store, skipping: [], format: .hdrJPEG, longEdge: nil,
+        probeHDR: { _ in false }, validateActive: { _ in }, resolveLook: { _ in (nil, nil) })
+    try BatchExportTests.require(!review.ready && review.rows[0].settings?.isHDREditing == true &&
+                                review.rows[0].error == nil && review.rows[1].error != nil,
+                                "HDR JPEG collection preflight rejects only photos without HDR editing")
+    let skipped = collection.prepareExport(store: store, skipping: ["photo:sdr"], format: .hdrJPEG, longEdge: nil,
+        probeHDR: { _ in false }, validateActive: { _ in }, resolveLook: { _ in (nil, nil) })
+    let job = try collection.freeze(skipped, store: store, journal: journal, validateActive: { _ in })
+    try BatchExportTests.require(skipped.ready && job.outputFormat == .hdrJPEG && job.targets.count == 1 &&
+                                job.targets[0].frozen?.outputFormat == .hdrJPEG &&
+                                job.targets[0].frozen?.settings.isHDREditing == true,
+                                "Skipping SDR photos freezes HDR JPEG without downgrading the saved HDR mode")
 }

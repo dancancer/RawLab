@@ -1,11 +1,13 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <memory>
 #include <new>
@@ -88,11 +90,45 @@ bool stringContains(CFStringRef value, CFStringRef needle) {
 
 bool isHDRColorSpace(CGColorSpaceRef colorSpace) {
     if (!colorSpace) return false;
+    // 内嵌 ICC 不一定有名字，须先检查实际传递函数和扩展范围。
+    if (CGColorSpaceUsesITUR_2100TF(colorSpace) || CGColorSpaceUsesExtendedRange(colorSpace)) return true;
     CFUnique<CFStringRef> name(CGColorSpaceCopyName(colorSpace));
     return stringContains(name.get(), CFSTR("extended")) ||
         stringContains(name.get(), CFSTR("hdr")) ||
         stringContains(name.get(), CFSTR("pq")) ||
         stringContains(name.get(), CFSTR("hlg"));
+}
+
+sony2fuji_status pngColorMetadataStatus(const char* path, CFStringRef* colorSpaceName) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) return SONY2FUJI_STATUS_IO_ERROR;
+    file.seekg(8);
+    while (file) {
+        std::array<uint8_t, 8> header{};
+        if (!file.read(reinterpret_cast<char*>(header.data()), header.size()))
+            return SONY2FUJI_STATUS_PROCESSING_ERROR;
+        const uint32_t length = (uint32_t(header[0]) << 24) | (uint32_t(header[1]) << 16) |
+            (uint32_t(header[2]) << 8) | header[3];
+        const auto is = [&](const char* type) { return std::memcmp(header.data() + 4, type, 4) == 0; };
+        // ImageIO 可能忽略这些块；拒绝规则不能只依赖解码后的色彩空间。
+        if (is("mDCv") || is("mDCV") || is("cLLi") || is("cLLI")) return SONY2FUJI_STATUS_UNSUPPORTED;
+        if (is("cICP")) {
+            if (length != 4) return SONY2FUJI_STATUS_UNSUPPORTED;
+            std::array<uint8_t, 4> cicp{};
+            if (!file.read(reinterpret_cast<char*>(cicp.data()), cicp.size()))
+                return SONY2FUJI_STATUS_PROCESSING_ERROR;
+            if (cicp == std::array<uint8_t, 4>{1, 13, 0, 1}) *colorSpaceName = kCGColorSpaceSRGB;
+            else if (cicp == std::array<uint8_t, 4>{12, 13, 0, 1}) *colorSpaceName = kCGColorSpaceDisplayP3;
+            else if (cicp == std::array<uint8_t, 4>{1, 1, 0, 1}) *colorSpaceName = kCGColorSpaceITUR_709;
+            else return SONY2FUJI_STATUS_UNSUPPORTED;
+        } else {
+            file.seekg(static_cast<std::streamoff>(length), std::ios::cur);
+        }
+        std::array<char, 4> crc{};
+        if (!file.read(crc.data(), crc.size())) return SONY2FUJI_STATUS_PROCESSING_ERROR;
+        if (is("IEND")) return length == 0 ? SONY2FUJI_STATUS_OK : SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
+    return SONY2FUJI_STATUS_PROCESSING_ERROR;
 }
 
 bool hasAlpha(CGImageAlphaInfo alpha) {
@@ -207,7 +243,7 @@ bool hasSigmaTIFFPreview(const char* path, CGImageSourceRef source, CFDictionary
         hasUnpaginatedTIFFPair(path);
 }
 
-CGAffineTransform tiffOrientation(int64_t orientation, CGFloat width, CGFloat height) {
+CGAffineTransform displayOrientation(int64_t orientation, CGFloat width, CGFloat height) {
     // Convert the top-left EXIF mapping to Core Graphics' bottom-left origin.
     switch (orientation) {
         case 2: return CGAffineTransformMake(-1, 0, 0, 1, width, 0);
@@ -236,6 +272,11 @@ sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* outpu
     if (!source) return SONY2FUJI_STATUS_PROCESSING_ERROR;
     const CFStringRef type = CGImageSourceGetType(source.get());
     if (!supportedUTI(type)) return SONY2FUJI_STATUS_UNSUPPORTED;
+    CFStringRef pngColorSpaceName = nullptr;
+    if (equalUTI(type, CFSTR("public.png"))) {
+        const auto status = pngColorMetadataStatus(path, &pngColorSpaceName);
+        if (status != SONY2FUJI_STATUS_OK) return status;
+    }
     const size_t imageCount = CGImageSourceGetCount(source.get());
     if (imageCount != 1 && !(imageCount == 2 && equalUTI(type, CFSTR("public.tiff"))))
         return SONY2FUJI_STATUS_UNSUPPORTED;
@@ -263,7 +304,8 @@ sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* outpu
     int64_t depth = 8;
     numberValue(properties.get(), kCGImagePropertyDepth, &depth);
     const bool tiff16 = depth == 16 && equalUTI(type, CFSTR("public.tiff"));
-    if (depth != 8 && !tiff16) return SONY2FUJI_STATUS_UNSUPPORTED;
+    const bool rgb16 = tiff16 || (depth == 16 && equalUTI(type, CFSTR("public.png")));
+    if (depth != 8 && !rgb16) return SONY2FUJI_STATUS_UNSUPPORTED;
     if (imageCount == 2 && (!tiff16 || !hasSigmaTIFFPreview(path, source.get(), properties.get(), width, height)))
         return SONY2FUJI_STATUS_UNSUPPORTED;
 
@@ -285,15 +327,14 @@ sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* outpu
     if (!decodedSpace || CGColorSpaceGetModel(decodedSpace) != kCGColorSpaceModelRGB)
         return SONY2FUJI_STATUS_UNSUPPORTED;
     const bool hasProfile = CFDictionaryGetValue(properties.get(), kCGImagePropertyProfileName) != nullptr;
-    const size_t bits = tiff16 ? 16 : 8;
+    const size_t bits = rgb16 ? 16 : 8;
     if (isHDRColorSpace(decodedSpace) || CGImageGetBitsPerComponent(decoded.get()) != bits ||
         (CGImageGetBitmapInfo(decoded.get()) & kCGBitmapFloatComponents) != 0)
         return SONY2FUJI_STATUS_UNSUPPORTED;
 
-    // Use the original decode for TIFF16. ImageIO's orientation/thumbnail
-    // path does not guarantee retention of the original component depth.
+    // 16 位输入直接使用原始解码；ImageIO 缩略图路径不保证保留分量精度。
     CFUnique<CGImageRef> image = std::move(decoded);
-    if (!tiff16) {
+    if (!rgb16) {
         image.reset();
         const int maxPixelSize = static_cast<int>(std::max(width, height));
         CFUnique<CFNumberRef> maxSize(CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &maxPixelSize));
@@ -320,9 +361,14 @@ sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* outpu
     CGColorSpaceRef sourceSpace = CGImageGetColorSpace(image.get());
     if (!sourceSpace || CGColorSpaceGetModel(sourceSpace) != kCGColorSpaceModelRGB)
         return SONY2FUJI_STATUS_UNSUPPORTED;
+    if (pngColorSpaceName) {
+        // 旧版 ImageIO 若忽略 cICP，不能把非 sRGB 像素误当作 sRGB 接受。
+        CFUnique<CGColorSpaceRef> expected(CGColorSpaceCreateWithName(pngColorSpaceName));
+        if (!expected || !CFEqual(sourceSpace, expected.get())) return SONY2FUJI_STATUS_UNSUPPORTED;
+    }
     if (isHDRColorSpace(sourceSpace)) return SONY2FUJI_STATUS_UNSUPPORTED;
 
-    if (!hasProfile) {
+    if (!hasProfile && !pngColorSpaceName) {
         CFUnique<CGColorSpaceRef> sRGB(CGColorSpaceCreateWithName(kCGColorSpaceSRGB));
         if (!sRGB) return SONY2FUJI_STATUS_PROCESSING_ERROR;
         CFUnique<CGImageRef> retagged(CGImageCreateCopyWithColorSpace(image.get(), sRGB.get()));
@@ -332,10 +378,10 @@ sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* outpu
 
     const size_t imageWidth = CGImageGetWidth(image.get());
     const size_t imageHeight = CGImageGetHeight(image.get());
-    const bool swapAxes = tiff16 && orientation >= 5;
+    const bool swapAxes = rgb16 && orientation >= 5;
     const size_t outputWidth = swapAxes ? imageHeight : imageWidth;
     const size_t outputHeight = swapAxes ? imageWidth : imageHeight;
-    const size_t pixelBytes = tiff16 ? 8 : 4;
+    const size_t pixelBytes = rgb16 ? 8 : 4;
     if (outputWidth == 0 || outputHeight == 0 || outputWidth > UINT32_MAX / pixelBytes ||
         static_cast<uint64_t>(outputWidth) > kMaxDisplayPixels / outputHeight)
         return SONY2FUJI_STATUS_UNSUPPORTED;
@@ -349,13 +395,13 @@ sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* outpu
     CFUnique<CGColorSpaceRef> sRGB(CGColorSpaceCreateWithName(kCGColorSpaceSRGB));
     if (!sRGB) return SONY2FUJI_STATUS_PROCESSING_ERROR;
     const CGBitmapInfo bitmapInfo = CGBitmapInfo(kCGImageAlphaPremultipliedLast) |
-        CGBitmapInfo(tiff16 ? kCGBitmapByteOrder16Little : kCGBitmapByteOrder32Big);
+        CGBitmapInfo(rgb16 ? kCGBitmapByteOrder16Little : kCGBitmapByteOrder32Big);
     CFUnique<CGContextRef> context(CGBitmapContextCreate(
         pixelsData.get(), outputWidth, outputHeight, bits, stride, sRGB.get(), bitmapInfo));
     if (!context) return SONY2FUJI_STATUS_PROCESSING_ERROR;
-    if (tiff16 && orientation != 1) {
+    if (rgb16 && orientation != 1) {
         CGContextSetInterpolationQuality(context.get(), kCGInterpolationNone);
-        CGContextConcatCTM(context.get(), tiffOrientation(orientation, imageWidth, imageHeight));
+        CGContextConcatCTM(context.get(), displayOrientation(orientation, imageWidth, imageHeight));
     }
     const bool checkAlpha = hasAlpha(CGImageGetAlphaInfo(image.get()));
     CGContextSetBlendMode(context.get(), kCGBlendModeCopy);
@@ -366,7 +412,7 @@ sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* outpu
     const auto* bytes = static_cast<const uint8_t*>(pixelsData.get());
     if (checkAlpha) {
         for (size_t offset = pixelBytes - 1; offset < total; offset += pixelBytes) {
-            if (bytes[offset] != 255 || (tiff16 && bytes[offset - 1] != 255))
+            if (bytes[offset] != 255 || (rgb16 && bytes[offset - 1] != 255))
                 return SONY2FUJI_STATUS_UNSUPPORTED;
         }
     }
@@ -376,7 +422,7 @@ sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* outpu
     output->width = static_cast<uint32_t>(outputWidth);
     output->height = static_cast<uint32_t>(outputHeight);
     output->stride_bytes = static_cast<uint32_t>(stride);
-    output->pixel_format = tiff16 ? SONY2FUJI_PIXEL_RGBA16 : SONY2FUJI_PIXEL_RGBA8;
+    output->pixel_format = rgb16 ? SONY2FUJI_PIXEL_RGBA16 : SONY2FUJI_PIXEL_RGBA8;
     return SONY2FUJI_STATUS_OK;
 }
 

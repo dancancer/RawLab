@@ -33,6 +33,7 @@ struct MacCollectionExportReview {
         let lookSHA256: String?
         let lookName: String
         let editorRevision: UUID?
+        var noticeKey: String? = nil
     }
     struct Row: Identifiable {
         let id: String
@@ -48,6 +49,7 @@ struct MacCollectionExportReview {
     let format: ExportFormat
     let longEdge: Int?
     let directory: URL
+    var adaptiveJPEG = false
     var snapshots: [Snapshot] { rows.compactMap(\.snapshot) }
     var ready: Bool { !snapshots.isEmpty && rows.allSatisfy { $0.skipped || $0.snapshot != nil } }
 }
@@ -67,6 +69,8 @@ struct MacCollectionExportPreparation {
     let format: ExportFormat
     let longEdge: Int?
     let directory: URL
+    var adaptiveJPEG = false
+    var probeHDRSource: HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) }
 
     func prepare() throws -> MacCollectionExportReview {
         guard longEdge == nil || (1...65535).contains(longEdge!) else { throw BatchExportFailure.destination }
@@ -78,7 +82,7 @@ struct MacCollectionExportPreparation {
             }
             do {
                 let value = try snapshot(photo)
-                if format == .hdrJPEG && !value.settings.isHDREditing {
+                if !adaptiveJPEG && format == .hdrJPEG && !value.settings.isHDREditing {
                     throw RenderError.failed(L10n.text("HDR JPEG 需要启用 HDR 编辑。"))
                 }
                 return .init(id: id, url: photo.url, hasDraft: false, skipped: false, snapshot: value, error: nil)
@@ -87,7 +91,7 @@ struct MacCollectionExportPreparation {
             }
         }
         return MacCollectionExportReview(selection: selection, skipped: skipped, rows: rows,
-            format: format, longEdge: longEdge, directory: directory)
+            format: format, longEdge: longEdge, directory: directory, adaptiveJPEG: adaptiveJPEG)
     }
 
     func snapshot(_ photo: MacCollectionPhoto) throws -> MacCollectionExportReview.Snapshot {
@@ -98,7 +102,10 @@ struct MacCollectionExportPreparation {
         if activeFile == photo.url {
             guard activeRecord == record, !activeAIBusy else { throw EditPersistenceConflict.changed }
         }
-        let state = try record.state ?? PhotoEditState(settings: RenderEngine.defaultSettings(for: photo.url), filmID: "")
+        var sdrFallback = false
+        let info = try probeHDRSource(photo.url, { sdrFallback = true })
+        var state = try record.state ?? PhotoEditState(settings: RenderEngine.defaultSettings(for: photo.url, sourceIsHDR: info != nil), filmID: "")
+        if sdrFallback { state.settings.hdr?.mode = .sdr }
         if state.settings.isHDREditing, let version = state.settings.proRAWDecodeVersion,
            version != ProRAWSource.decodeVersion, try HDRSourceInfo.probeRAW(photo.url)?.proRAW != nil {
             throw HDRSettings.ModeError.invalidSettings
@@ -121,6 +128,7 @@ struct MacCollectionExportPreparation {
         } else { look = nil; lookName = "中性" }
         return .init(photo: photo, record: record, settings: state.settings, look: look,
             lookSHA256: try look.map(BatchFrozenSettings.checksum), lookName: lookName,
-            editorRevision: activeFile == photo.url ? activeRevision : nil)
+            editorRevision: activeFile == photo.url ? activeRevision : nil,
+            noticeKey: sdrFallback ? "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。" : nil)
     }
 }

@@ -7230,5 +7230,13 @@
     "fr": "Sélection",
     "ja": "選択",
     "zh-Hans": "选片"
+  },
+  "普通图片未使用 AI 降噪": {
+    "en": "AI denoise was not used for ordinary images",
+    "de": "Für normale Bilder wurde keine KI-Entrauschung verwendet",
+    "fr": "La réduction du bruit par IA n’a pas été utilisée pour les images ordinaires",
+    "es": "No se usó la reducción de ruido con IA en las imágenes normales",
+    "ja": "通常の画像には AI ノイズ除去を使用していません",
+    "zh-Hans": "普通图片未使用 AI 降噪"
   }
 }

@@ -448,7 +448,7 @@ sony2fuji_status sony2fuji_session_set_processing_version(
 
 // File adapters: one opaque SDR RGB image.
 // macOS/iOS ImageIO accepts JPEG/PNG/TIFF/HEIF; Windows WIC accepts JPEG/PNG/TIFF.
-// The Apple adapter also accepts 16-bit integer RGB TIFF and returns RGBA16.
+// Apple 与 Windows 也接受 16 位整数 RGB PNG/TIFF，返回 RGBA16。
 // Applies orientation and ICC -> sRGB once. Untagged RGB assumes sRGB.
 // Rejects transparency, HDR and other unsupported encodings.
 // Pass a zero-initialized or previously returned buffer; release with

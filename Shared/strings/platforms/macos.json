@@ -4247,6 +4247,22 @@
     "请将白平衡模式、色温和色调一起保存，再应用此预设。": {
       "formats": [],
       "source": "请将白平衡模式、色温和色调一起保存，再应用此预设。"
+    },
+    "普通图片未使用 AI 降噪": {
+      "formats": [],
+      "source": "普通图片未使用 AI 降噪"
+    },
+    "此照片的 HDR 需 macOS 15 才能编辑，已按 SDR 打开。": {
+      "formats": [],
+      "source": "此照片的 HDR 需 macOS 15 才能编辑，已按 SDR 打开。"
+    },
+    "HDR 照片用 HDR JPEG，其余用 JPEG": {
+      "formats": [],
+      "source": "HDR 照片用 HDR JPEG，其余用 JPEG"
+    },
+    "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。": {
+      "formats": [],
+      "source": "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。"
     }
   },
   "overrides": {},
@@ -5563,6 +5579,30 @@
       "fr": "Aperçu interactif… {0} × {1} · HDR",
       "ja": "インタラクティブプレビュー… {0} × {1} · HDR",
       "zh-Hans": "交互预览… {0} × {1} · HDR"
+    },
+    "此照片的 HDR 需 macOS 15 才能编辑，已按 SDR 打开。": {
+      "en": "Editing this photo in HDR requires macOS 15. It was opened in SDR.",
+      "de": "Die HDR-Bearbeitung dieses Fotos erfordert macOS 15. Es wurde in SDR geöffnet.",
+      "fr": "La retouche HDR de cette photo nécessite macOS 15. Elle a été ouverte en SDR.",
+      "es": "Editar esta foto en HDR requiere macOS 15. Se ha abierto en SDR.",
+      "ja": "この写真を HDR で編集するには macOS 15 が必要です。SDR で開きました。",
+      "zh-Hans": "此照片的 HDR 需 macOS 15 才能编辑，已按 SDR 打开。"
+    },
+    "HDR 照片用 HDR JPEG，其余用 JPEG": {
+      "en": "HDR JPEG for HDR photos, JPEG for the rest",
+      "de": "HDR JPEG für HDR-Fotos, JPEG für die übrigen",
+      "fr": "HDR JPEG pour les photos HDR, JPEG pour les autres",
+      "es": "HDR JPEG para fotos HDR, JPEG para el resto",
+      "ja": "HDR 写真は HDR JPEG、その他は JPEG",
+      "zh-Hans": "HDR 照片用 HDR JPEG，其余用 JPEG"
+    },
+    "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。": {
+      "en": "Editing this photo in HDR requires macOS 15. It will be exported in SDR.",
+      "de": "Die HDR-Bearbeitung dieses Fotos erfordert macOS 15. Es wird in SDR exportiert.",
+      "fr": "La retouche HDR de cette photo nécessite macOS 15. Elle sera exportée en SDR.",
+      "es": "Editar esta foto en HDR requiere macOS 15. Se exportará en SDR.",
+      "ja": "この写真を HDR で編集するには macOS 15 が必要です。SDR で書き出します。",
+      "zh-Hans": "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。"
     }
   }
 }

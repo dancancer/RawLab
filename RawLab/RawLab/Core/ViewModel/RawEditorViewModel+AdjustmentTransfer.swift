@@ -130,11 +130,28 @@ extension RawEditorViewModel {
         return results
     }
 
+    func photoIdentity(for source: PhotoImportSource, from item: PhotosPickerItem) async throws -> PhotoIdentity {
+        let identity = try PhotoIdentity.fallback(for: source.url, resourceIdentifier: item.itemIdentifier)
+        guard !source.isRaw, let store = editPersistence else { return identity }
+        return await store.resolvingLegacyContent(for: identity) {
+            // 旧入口使用 .current 的 ImagePhotoFile，字节可能与 PhotoKit 原容器不同。
+            guard let legacy = try? await PhotoImportFile.loadSource(using: {
+                guard let image = try await item.loadTransferable(type: ImagePhotoFile.self) else {
+                    throw PhotoImportError.loadFailed
+                }
+                return image.source
+            }) else { return nil }
+            defer { PhotoImportFile.release(legacy.url) }
+            return try? PhotoIdentity.fallback(for: legacy.url).contentIdentifier
+        }
+    }
+
     func loadAdjustmentPhoto(from item: PhotosPickerItem, workflow: String) async throws -> IOSAdjustmentPhoto {
-        let identity = item.itemIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
         return try await loadAdjustmentPhoto(stage: "readPhotoLibrary",
                                              context: ["workflow": workflow, "entryPoint": "photos"],
-                                             identity: identity) {
+                                             resolveIdentity: { source in
+            try await self.photoIdentity(for: source, from: item)
+        }) {
             try await PhotoImportFile.load(from: item)
         }
     }
@@ -148,7 +165,7 @@ extension RawEditorViewModel {
     }
 
     private func loadAdjustmentPhoto(stage sourceStage: String, context sourceContext: [String: String],
-                                     identity: PhotoIdentity? = nil,
+                                     resolveIdentity: ((PhotoImportSource) async throws -> PhotoIdentity)? = nil,
                                      loadSource: () async throws -> PhotoImportSource) async throws -> IOSAdjustmentPhoto {
         var stage = sourceStage
         var context = sourceContext
@@ -158,6 +175,7 @@ extension RawEditorViewModel {
             context["sourceKind"] = source.isRaw ? "raw" : "raster"
             context["extension"] = context["extension"] ?? ErrorDiagnostics.fileNameExtension(source.url)
             stage = "prepareTarget"
+            let identity = try await resolveIdentity?(source)
             return try await retainAdjustmentPhoto(source, identity: identity)
         } catch {
             if !Task.isCancelled {

@@ -162,6 +162,16 @@ void encode(IWICImagingFactory* factory, const fs::path& path, REFGUID container
         std::vector<uint8_t> pixels(stride * 8, 0);
         for (unsigned y = 0; y < 8; ++y) for (unsigned x = 0; x < 12; ++x) {
             const auto offset = y * stride + x * bits / 8;
+            if (bits == 48 || bits == 64) {
+                const uint16_t channels[] = {static_cast<uint16_t>(1234 + x * 791),
+                    static_cast<uint16_t>(9153 + y * 1279), static_cast<uint16_t>(17072 + x * 503 + y * 223),
+                    static_cast<uint16_t>(transparent && x == 3 && y == 5 ? transparentAlpha : 65535)};
+                for (unsigned c = 0; c < bits / 16; ++c) {
+                    pixels[offset + c * 2] = static_cast<uint8_t>(channels[c]);
+                    pixels[offset + c * 2 + 1] = static_cast<uint8_t>(channels[c] >> 8);
+                }
+                continue;
+            }
             pixels[offset] = static_cast<uint8_t>(31 + x * 11 + pixelOffset);
             if (bits >= 24) {
                 pixels[offset + 1] = static_cast<uint8_t>(29 + y * 17);
@@ -188,6 +198,121 @@ std::vector<uint8_t> decode(const fs::path& path, unsigned width, unsigned heigh
     sony2fuji_release_buffer(&buffer);
     check(buffer.data == nullptr && buffer.size_bytes == 0, "Display buffer uses the existing release lifecycle");
     return result;
+}
+std::vector<uint16_t> decode16(const fs::path& path, unsigned width, unsigned height) {
+    sony2fuji_buffer buffer{};
+    const auto status = sony2fuji_load_display_image(path.u8string().c_str(), &buffer);
+    check(status == SONY2FUJI_STATUS_OK && buffer.width == width && buffer.height == height &&
+        buffer.pixel_format == SONY2FUJI_PIXEL_RGBA16 && buffer.stride_bytes == width * 8 &&
+        buffer.size_bytes == static_cast<size_t>(width) * height * 8,
+        "TIFF/PNG16 returns tightly packed little-endian RGBA16");
+    const auto* data = static_cast<const uint8_t*>(buffer.data);
+    std::vector<uint16_t> result(buffer.size_bytes / 2);
+    for (size_t i = 0; i < result.size(); ++i) result[i] = data[i * 2] | (data[i * 2 + 1] << 8);
+    sony2fuji_release_buffer(&buffer);
+    return result;
+}
+
+void checkPreview16(const fs::path& path, uint32_t edge, unsigned sourceWidth, unsigned sourceHeight,
+                    unsigned width, unsigned height) {
+    sony2fuji_buffer buffer{};
+    uint32_t actualWidth = 0, actualHeight = 0;
+    const auto status = rawlab_display_preview(path.u8string().c_str(), edge, &buffer, &actualWidth, &actualHeight);
+    check(status == SONY2FUJI_STATUS_OK && actualWidth == sourceWidth && actualHeight == sourceHeight &&
+        buffer.width == width && buffer.height == height && buffer.pixel_format == SONY2FUJI_PIXEL_RGBA8 &&
+        buffer.stride_bytes == width * 4 && buffer.size_bytes == static_cast<size_t>(width) * height * 4,
+        "PNG/TIFF16 preview always returns RGBA8, including when no scaling is needed");
+    const auto full = decode16(path, sourceWidth, sourceHeight);
+    const auto* preview = static_cast<const uint8_t*>(buffer.data);
+    bool colorsMatch = true;
+    for (size_t channel = 0; channel < 3; ++channel) {
+        double fullSum = 0, previewSum = 0;
+        for (size_t i = channel; i < full.size(); i += 4) fullSum += full[i] / 257.0;
+        for (size_t i = channel; i < buffer.size_bytes; i += 4) previewSum += preview[i];
+        const auto fullMean = fullSum / (sourceWidth * sourceHeight);
+        const auto previewMean = previewSum / (width * height);
+        if (std::abs(fullMean - previewMean) > 1.5)
+            std::cerr << path.filename() << " edge=" << edge << " channel=" << channel
+                << " primary mean=" << fullMean << " preview mean=" << previewMean << '\n';
+        colorsMatch &= std::abs(fullMean - previewMean) <= 1.5;
+    }
+    for (size_t i = 3; i < buffer.size_bytes; i += 4) colorsMatch &= preview[i] == 255;
+    sony2fuji_release_buffer(&buffer);
+    check(colorsMatch, "16-bit source previews preserve sRGB colors with opaque 8-bit alpha");
+}
+
+void encodeSigmaTiff(const fs::path& path, uint16_t pageTag = 0, unsigned pageIndex = 1,
+                     const char* software = "SIGMA Photo Pro 6.9.0", uint32_t previewWidth = 160,
+                     uint32_t previewHeight = 106, unsigned frames = 2, uint16_t primaryDepth = 16,
+                     uint32_t newSubfileType = 2) {
+    std::unique_ptr<TIFF, decltype(&TIFFClose)> file(TIFFOpenW(path.c_str(), "w"), TIFFClose);
+    if (!file) throw std::runtime_error("Cannot create Sigma TIFF fixture");
+    for (unsigned i = 0; i < frames; ++i) {
+        const uint32_t width = i == 0 ? 300 : previewWidth, height = i == 0 ? 200 : previewHeight;
+        if (!(TIFFSetField(file.get(), TIFFTAG_IMAGEWIDTH, width) &&
+              TIFFSetField(file.get(), TIFFTAG_IMAGELENGTH, height) &&
+              TIFFSetField(file.get(), TIFFTAG_SAMPLESPERPIXEL, 3) &&
+              TIFFSetField(file.get(), TIFFTAG_BITSPERSAMPLE, i == 0 ? primaryDepth : 8) &&
+              TIFFSetField(file.get(), TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB) &&
+              TIFFSetField(file.get(), TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG) &&
+              TIFFSetField(file.get(), TIFFTAG_COMPRESSION, COMPRESSION_NONE) &&
+              TIFFSetField(file.get(), TIFFTAG_ROWSPERSTRIP, height)))
+            throw std::runtime_error("Cannot configure Sigma TIFF fixture");
+        if (i == 0) TIFFSetField(file.get(), TIFFTAG_SOFTWARE, software);
+        if (i == pageIndex) {
+            if (pageTag == TIFFTAG_PAGENUMBER) TIFFSetField(file.get(), pageTag, i, frames);
+            else if (pageTag != 0) TIFFSetField(file.get(), TIFFTAG_SUBFILETYPE, newSubfileType);
+        }
+        std::vector<uint16_t> row16(width * 3);
+        for (uint32_t x = 0; x < width; ++x) {
+            row16[x * 3] = 1234; row16[x * 3 + 1] = 9153; row16[x * 3 + 2] = 17072;
+        }
+        std::vector<uint8_t> row8(width * 3, 127);
+        for (uint32_t y = 0; y < height; ++y)
+            if (TIFFWriteScanline(file.get(), i == 0 && primaryDepth == 16 ? static_cast<void*>(row16.data()) : row8.data(), y, 0) < 0)
+                throw std::runtime_error("Cannot write Sigma TIFF fixture");
+        if (!TIFFWriteDirectory(file.get())) throw std::runtime_error("Cannot finish Sigma TIFF fixture");
+    }
+    if (pageTag == TIFFTAG_OSUBFILETYPE) {
+        // libtiff 会丢弃旧页标记；将占位的新页标记改为真实的 SHORT OldSubfileType。
+        file.reset();
+        auto bytes = read(path);
+        const auto number = [&](size_t at, size_t size) {
+            uint32_t value = 0;
+            for (size_t i = 0; i < size; ++i) value |= uint32_t(bytes.at(at + i)) << (8 * i);
+            return value;
+        };
+        size_t offset = number(4, 4);
+        for (unsigned i = 0; i < pageIndex; ++i) offset = number(offset + 2 + number(offset, 2) * 12, 4);
+        bool patched = false;
+        for (size_t i = 0, count = number(offset, 2); i < count; ++i) {
+            const size_t at = offset + 2 + i * 12;
+            if (number(at, 2) != TIFFTAG_SUBFILETYPE) continue;
+            bytes[at] = 255; bytes[at + 1] = 0; bytes[at + 2] = 3; bytes[at + 3] = 0;
+            bytes[at + 8] = 3; bytes[at + 9] = bytes[at + 10] = bytes[at + 11] = 0;
+            patched = true;
+        }
+        if (!patched) throw std::runtime_error("Cannot add legacy TIFF page marker");
+        write(path, bytes);
+    }
+}
+void makeSoftwareNonAscii(const fs::path& path) {
+    auto bytes = read(path);
+    const auto number = [&](size_t at, size_t size) {
+        uint32_t value = 0;
+        for (size_t i = 0; i < size; ++i) value |= uint32_t(bytes.at(at + i)) << (8 * i);
+        return value;
+    };
+    const size_t offset = number(4, 4);
+    for (size_t i = 0, count = number(offset, 2); i < count; ++i) {
+        const size_t at = offset + 2 + i * 12;
+        if (number(at, 2) != TIFFTAG_SOFTWARE) continue;
+        bytes[at + 2] = TIFF_UNDEFINED;
+        bytes[at + 3] = 0;
+        write(path, bytes);
+        return;
+    }
+    throw std::runtime_error("Cannot find TIFF Software fixture tag");
 }
 void reject(const fs::path& path, sony2fuji_status expected,
             const char* message = "Unsupported/damaged input clears a stale output buffer") {
@@ -452,7 +577,7 @@ void writePngHeader(const fs::path& path, uint32_t width, uint32_t height) {
 
 std::vector<uint8_t> wicSrgbReference(IWICImagingFactory* factory, const fs::path& path,
                                       const fs::path& profile, unsigned expectedWidth,
-                                      unsigned expectedHeight) {
+                                      unsigned expectedHeight, bool sixteenBit = false) {
     ComPtr<IWICBitmapDecoder> decoder;
     ok(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ,
         WICDecodeMetadataCacheOnLoad, &decoder));
@@ -463,13 +588,20 @@ std::vector<uint8_t> wicSrgbReference(IWICImagingFactory* factory, const fs::pat
     ok(sourceContext->InitializeFromFilename(profile.c_str()));
     ComPtr<IWICColorContext> destinationContext; ok(factory->CreateColorContext(&destinationContext));
     ok(destinationContext->InitializeFromExifColorSpace(1));
+    ComPtr<IWICBitmapSource> source = frame;
+    if (sixteenBit) {
+        ComPtr<IWICFormatConverter> converter; ok(factory->CreateFormatConverter(&converter));
+        ok(converter->Initialize(frame.Get(), GUID_WICPixelFormat48bppBGR, WICBitmapDitherTypeNone,
+            nullptr, 0, WICBitmapPaletteTypeCustom));
+        ok(converter.As(&source));
+    }
     ComPtr<IWICColorTransform> transform; ok(factory->CreateColorTransformer(&transform));
-    ok(transform->Initialize(frame.Get(), sourceContext.Get(), destinationContext.Get(),
-        GUID_WICPixelFormat32bppRGBA));
+    ok(transform->Initialize(source.Get(), sourceContext.Get(), destinationContext.Get(),
+        sixteenBit ? GUID_WICPixelFormat64bppRGBA : GUID_WICPixelFormat32bppRGBA));
     UINT width = 0, height = 0; ok(transform->GetSize(&width, &height));
     if (width != expectedWidth || height != expectedHeight)
         throw std::runtime_error("WIC ICC reference has an unexpected size");
-    const auto stride = static_cast<size_t>(width) * 4;
+    const auto stride = static_cast<size_t>(width) * (sixteenBit ? 8 : 4);
     std::vector<uint8_t> result(stride * height);
     ok(transform->CopyPixels(nullptr, static_cast<UINT>(stride),
         static_cast<UINT>(result.size()), result.data()));
@@ -637,10 +769,87 @@ int main(int argc, char** argv) {
         encode(factory.Get(), root / "opaque-rgba.png", GUID_ContainerFormatPng, GUID_WICPixelFormat32bppBGRA, 32);
         check(decode(root / "opaque-rgba.png", 12, 8) == expected, "RGBA is accepted only when every source alpha is opaque");
         checkPreview(root / "opaque-rgba.png", 4, 12, 8, 4, 3);
-        encode(factory.Get(), root / "high-bit.png", GUID_ContainerFormatPng, GUID_WICPixelFormat48bppRGB, 48);
-        reject(root / "high-bit.png", SONY2FUJI_STATUS_UNSUPPORTED);
+        for (const auto& container : std::array<std::pair<const char*, const GUID*>, 2>{{
+                 {"png", &GUID_ContainerFormatPng}, {"tiff", &GUID_ContainerFormatTiff}}}) {
+            for (unsigned orientation = 1; orientation <= 8; ++orientation) {
+                const auto path = root / ("rgb16-" + std::to_string(orientation) + "." + container.first);
+                encode(factory.Get(), path, *container.second, GUID_WICPixelFormat48bppRGB, 48,
+                    false, 1, IsEqualGUID(*container.second, GUID_ContainerFormatTiff) ? orientation : 1);
+                if (IsEqualGUID(*container.second, GUID_ContainerFormatPng) && orientation != 1) {
+                    const auto upright = root / "rgb16-1.png";
+                    chunk(upright, path, {'e','X','I','f'}, {'I','I',42,0,8,0,0,0,1,0,
+                        0x12,0x01,3,0,1,0,0,0,static_cast<uint8_t>(orientation),0,0,0,0,0,0,0});
+                }
+                const auto width = orientedWidth(orientation), height = orientedHeight(orientation);
+                const auto pixels = decode16(path, width, height);
+                bool matches = true;
+                for (unsigned y = 0; y < 8; ++y) for (unsigned x = 0; x < 12; ++x) {
+                    const auto [ox, oy] = orientedCoordinate(orientation, x, y);
+                    const auto offset = (oy * width + ox) * 4;
+                    matches &= pixels[offset] == 1234 + x * 791 && pixels[offset + 1] == 9153 + y * 1279 &&
+                        pixels[offset + 2] == 17072 + x * 503 + y * 223 && pixels[offset + 3] == 65535;
+                }
+                check(matches, "16-bit RGB precision and EXIF orientation survive WIC decoding");
+                checkPreview16(path, 6, width, height, orientation >= 5 ? 4 : 6, orientation >= 5 ? 6 : 4);
+                checkPreview16(path, 20, width, height, width, height);
+            }
+        }
+        for (unsigned alpha : {65535u, 65534u, 32768u, 0u}) {
+            const auto path = root / ("rgba16-" + std::to_string(alpha) + ".png");
+            encode(factory.Get(), path, GUID_ContainerFormatPng, GUID_WICPixelFormat64bppRGBA, 64,
+                alpha != 65535, 1, 1, alpha);
+            if (alpha == 65535) check(decode16(path, 12, 8)[0] == 1234, "Opaque RGBA16 PNG is accepted");
+            else { reject(path, SONY2FUJI_STATUS_UNSUPPORTED); rejectPreview(path); }
+        }
+        const auto sigma = root / "sigma.tiff";
+        encodeSigmaTiff(sigma);
+        const auto sigmaPixels = decode16(sigma, 300, 200);
+        check(sigmaPixels[0] == 1234 && sigmaPixels[1] == 9153 && sigmaPixels[2] == 17072,
+            "Sigma TIFF decodes the full-resolution 16-bit primary, not the 160-pixel preview");
+        checkPreview16(sigma, 60, 300, 200, 60, 40);
+        checkPreview16(sigma, 7, 300, 200, 7, 5);
+        checkPreview16(sigma, 512, 300, 200, 300, 200);
+        for (const uint16_t depth : {8, 16}) {
+            const auto path = root / ("non-ascii-software-" + std::to_string(depth) + ".tiff");
+            encodeSigmaTiff(path, 0, 1, "SIGMA Photo Pro 6.9.0", 160, 106, 1, depth);
+            const auto original = depth == 16 ? std::vector<uint8_t>{} : decode(path, 300, 200);
+            const auto original16 = depth == 16 ? decode16(path, 300, 200) : std::vector<uint16_t>{};
+            makeSoftwareNonAscii(path);
+            check(depth == 16 ? decode16(path, 300, 200) == original16 : decode(path, 300, 200) == original,
+                "Non-ASCII Software is ignored for single-frame 8/16-bit TIFF");
+        }
+        const auto nonAsciiSigma = root / "non-ascii-sigma.tiff";
+        encodeSigmaTiff(nonAsciiSigma);
+        makeSoftwareNonAscii(nonAsciiSigma);
+        reject(nonAsciiSigma, SONY2FUJI_STATUS_UNSUPPORTED,
+            "Non-ASCII Software cannot authorize the Sigma preview exception");
+        const auto reduced8 = root / "reduced-ifd-8.tiff";
+        encodeSigmaTiff(reduced8, TIFFTAG_SUBFILETYPE, 1, "Another exporter", 160, 106, 2, 8, 1);
+        ComPtr<IWICBitmapDecoder> reducedDecoder;
+        ok(factory->CreateDecoderFromFilename(reduced8.c_str(), nullptr, GENERIC_READ,
+            WICDecodeMetadataCacheOnDemand, &reducedDecoder));
+        UINT reducedFrames = 0;
+        ok(reducedDecoder->GetFrameCount(&reducedFrames));
+        std::cout << "WIC TIFF8 NewSubfileType=1 top-level IFD frame count: " << reducedFrames << '\n';
+        // 旧版普通 TIFF 只以 WIC 帧数决定是否拒绝；在 Windows 原生运行时核对这项兼容性。
+        if (reducedFrames == 1) decode(reduced8, 300, 200);
+        else reject(reduced8, SONY2FUJI_STATUS_UNSUPPORTED,
+            "Reduced TIFF8 IFD retains the previous WIC multi-frame rejection");
+        for (unsigned pageIndex : {0u, 1u}) for (uint16_t tag : {TIFFTAG_SUBFILETYPE, TIFFTAG_OSUBFILETYPE, TIFFTAG_PAGENUMBER}) {
+            const auto path = root / ("sigma-page-" + std::to_string(pageIndex) + "-" + std::to_string(tag) + ".tiff");
+            encodeSigmaTiff(path, tag, pageIndex);
+            reject(path, SONY2FUJI_STATUS_UNSUPPORTED, "Sigma writer cannot hide a page marker on either IFD");
+        }
+        for (const auto& invalid : {std::string("writer"), std::string("size"), std::string("aspect"), std::string("third-ifd")}) {
+            const auto path = root / ("sigma-invalid-" + invalid + ".tiff");
+            encodeSigmaTiff(path, 0, 1, invalid == "writer" ? "Another exporter" : "SIGMA Photo Pro 6.9.0",
+                invalid == "size" ? 159 : 160, invalid == "aspect" ? 80 : 106, invalid == "third-ifd" ? 3 : 2);
+            reject(path, SONY2FUJI_STATUS_UNSUPPORTED, "Only the recognized Sigma preview pair is admitted");
+        }
         encode(factory.Get(), root / "gray.png", GUID_ContainerFormatPng, GUID_WICPixelFormat8bppGray, 8);
         reject(root / "gray.png", SONY2FUJI_STATUS_UNSUPPORTED);
+        encode(factory.Get(), root / "gray16.png", GUID_ContainerFormatPng, GUID_WICPixelFormat16bppGray, 16);
+        reject(root / "gray16.png", SONY2FUJI_STATUS_UNSUPPORTED);
         encode(factory.Get(), root / "multi.tiff", GUID_ContainerFormatTiff, GUID_WICPixelFormat24bppBGR, 24, false, 2);
         reject(root / "multi.tiff", SONY2FUJI_STATUS_UNSUPPORTED);
         encode(factory.Get(), root / "cmyk.tiff", GUID_ContainerFormatTiff,
@@ -691,6 +900,24 @@ int main(int argc, char** argv) {
             std::error_code profileError;
             if (!fs::is_regular_file(profile, profileError) || profileError)
                 throw std::runtime_error("Supplied Display P3 fixture is not a regular file");
+            for (const auto& fixture : std::array<std::pair<const char*, const GUID*>, 2>{{
+                     {"p3-16.png", &GUID_ContainerFormatPng}, {"p3-16.tiff", &GUID_ContainerFormatTiff}}}) {
+                const auto path = root / fixture.first;
+                encode(factory.Get(), path, *fixture.second, GUID_WICPixelFormat48bppRGB, 48, false, 1, 1, 0, &profile);
+                const auto actual = decode16(path, 12, 8);
+                const auto reference = wicSrgbReference(factory.Get(), path, profile, 12, 8, true);
+                bool close = reference.size() == actual.size() * 2, changed = false, lowBits = false;
+                const auto untagged = decode16(root / "rgb16-1.png", 12, 8);
+                for (size_t i = 0; close && i < actual.size(); ++i) {
+                    const uint16_t expected = reference[i * 2] | (reference[i * 2 + 1] << 8);
+                    close &= std::abs(static_cast<int>(actual[i]) - expected) <= 2;
+                    changed |= actual[i] != untagged[i];
+                    lowBits |= i % 4 != 3 && actual[i] % 257 != 0;
+                }
+                check(close && changed && lowBits, "16-bit ICC converts to sRGB without an 8-bit intermediate");
+                checkPreview16(path, 6, 12, 8, 6, 4);
+                checkPreview16(path, 20, 12, 8, 12, 8);
+            }
             for (const auto& fixture : std::array<std::pair<const char*, const GUID*>,3>{{
                 {"display-p3.png",&GUID_ContainerFormatPng},
                 {"display-p3.jpg",&GUID_ContainerFormatJpeg},

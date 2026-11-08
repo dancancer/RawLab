@@ -5,20 +5,24 @@ import Darwin
 struct PhotoIdentity: Codable, Equatable, Hashable, Sendable {
     let resourceIdentifier: String?
     let contentIdentifier: String?
+    let legacyContentIdentifier: String?
 
     init(resourceIdentifier: String) {
         self.resourceIdentifier = resourceIdentifier.isEmpty ? nil : resourceIdentifier
         self.contentIdentifier = nil
+        self.legacyContentIdentifier = nil
     }
 
     init(contentIdentifier: String) {
         self.resourceIdentifier = nil
         self.contentIdentifier = contentIdentifier.isEmpty ? nil : contentIdentifier
+        self.legacyContentIdentifier = nil
     }
 
-    init(resourceIdentifier: String?, contentIdentifier: String?) {
+    init(resourceIdentifier: String?, contentIdentifier: String?, legacyContentIdentifier: String? = nil) {
         self.resourceIdentifier = resourceIdentifier?.isEmpty == true ? nil : resourceIdentifier
         self.contentIdentifier = contentIdentifier?.isEmpty == true ? nil : contentIdentifier
+        self.legacyContentIdentifier = legacyContentIdentifier?.isEmpty == true ? nil : legacyContentIdentifier
     }
 
     var key: String {
@@ -31,7 +35,7 @@ struct PhotoIdentity: Codable, Equatable, Hashable, Sendable {
         return "content:missing"
     }
 
-    static func fallback(for url: URL) throws -> PhotoIdentity {
+    static func fallback(for url: URL, resourceIdentifier: String? = nil) throws -> PhotoIdentity {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         var hasher = SHA256()
@@ -40,7 +44,8 @@ struct PhotoIdentity: Codable, Equatable, Hashable, Sendable {
             if data.isEmpty { break }
             hasher.update(data: data)
         }
-        return PhotoIdentity(contentIdentifier: hasher.finalize().map { String(format: "%02x", $0) }.joined())
+        return PhotoIdentity(resourceIdentifier: resourceIdentifier,
+                             contentIdentifier: hasher.finalize().map { String(format: "%02x", $0) }.joined())
     }
 }
 
@@ -109,7 +114,7 @@ final class EditPersistence {
     private let lock = NSLock()
     private let writeData: (Data, URL) throws -> Void
     private let snapshotLock = NSLock()
-    private var lastReadableRecords: [String: PhotoEditState] = [:]
+    private var lastReadableStore = StoreFile(records: [:])
 
     init(directory: URL, writeData: @escaping (Data, URL) throws -> Void = { try $0.write(to: $1, options: .atomic) }) throws {
         self.directory = directory
@@ -132,7 +137,7 @@ final class EditPersistence {
         catch {
             // 旧读取接口在 I/O 失败时保留已载入值；事务读取始终抛错，不能用缓存提交。
             snapshotLock.lock(); defer { snapshotLock.unlock() }
-            return lastReadableRecords[identity.key]
+            return record(identity, from: lastReadableStore).state
         }
     }
 
@@ -171,6 +176,19 @@ final class EditPersistence {
         return record(identity, from: store)
     }
 
+    func resolvingLegacyContent(for identity: PhotoIdentity,
+                                load: () async -> String?) async -> PhotoIdentity {
+        guard identity.resourceIdentifier != nil, identity.legacyContentIdentifier == nil,
+              let store = try? readStore() else { return identity }
+        let current = record(identity, from: store)
+        // 只有可能命中旧入口记录时才额外读取 transferable，删除标记也必须阻止兜底。
+        guard current.state == nil, current.revision == nil,
+              store.records.keys.contains(where: { $0.hasPrefix("content:") }),
+              let legacy = await load() else { return identity }
+        return PhotoIdentity(resourceIdentifier: identity.resourceIdentifier,
+                             contentIdentifier: identity.contentIdentifier, legacyContentIdentifier: legacy)
+    }
+
     func compareAndSave(expected: VersionedPhotoEdit, state: PhotoEditState?) throws -> VersionedPhotoEdit {
         try validate(expected.identity)
         return try withWriteLock {
@@ -185,7 +203,15 @@ final class EditPersistence {
     }
 
     private func record(_ identity: PhotoIdentity, from store: StoreFile) -> VersionedPhotoEdit {
-        .init(identity: identity, state: store.records[identity.key], revision: store.revisions?[identity.key])
+        var key = identity.key
+        // 删除标记也是主记录，不能在重置后重新载入旧的内容记录。
+        if identity.resourceIdentifier != nil {
+            for content in [identity.contentIdentifier, identity.legacyContentIdentifier].compactMap({ $0 }) {
+                guard store.records[key] == nil, store.revisions?[key] == nil else { break }
+                key = PhotoIdentity(contentIdentifier: content).key
+            }
+        }
+        return .init(identity: identity, state: store.records[key], revision: store.revisions?[key])
     }
 
     private func readStore() throws -> StoreFile {
@@ -226,7 +252,7 @@ final class EditPersistence {
 
     private func remember(_ store: StoreFile) {
         snapshotLock.lock(); defer { snapshotLock.unlock() }
-        lastReadableRecords = store.records
+        lastReadableStore = store
     }
 
     private func withWriteLock<T>(_ body: () throws -> T) throws -> T {

@@ -53,6 +53,7 @@
 "HDR 处理失败（%@）。" = "HDR processing failed (%@).";
 "HDR 显示不可用，当前显示 SDR。" = "HDR display is unavailable. Showing SDR.";
 "HDR 模式暂不支持此工具。" = "This tool is not available in HDR mode yet.";
+"HDR 照片用 HDR JPEG，其余用 JPEG" = "HDR JPEG for HDR photos, JPEG for the rest";
 "HDR 照片需要 macOS 15 或 iOS 18 及以上版本。" = "HDR photos require macOS 15 or iOS 18 or later.";
 "HDR 编辑" = "HDR Editing";
 "HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。" = "HDR editing currently uses the CPU. Set GPU mode to Auto or Off.";
@@ -530,6 +531,7 @@
 "显示裁切提示" = "Show clipping warnings";
 "显示裁剪三分网格" = "Show Rule of Thirds Crop Grid";
 "显示输出高光与黑位裁切" = "Show output highlight and black-level clipping";
+"普通图片未使用 AI 降噪" = "AI denoise was not used for ordinary images";
 "普通降噪参数已保留，关闭 AI 降噪即可恢复。" = "Standard denoise settings are retained. Turn off AI denoise to restore them.";
 "暂无编辑历史。" = "No edit history yet.";
 "暖调日系 · 漫射金光" = "Warm Japanese · diffused golden light";
@@ -648,6 +650,8 @@
 "此照片有未应用的几何或镜头草稿。" = "This photo has an unapplied geometry or lens draft.";
 "此照片没有可用的相机白平衡校准。" = "This photo has no usable camera white balance calibration.";
 "此照片没有可编辑的 HDR 增益图。" = "This photo has no editable HDR gain map.";
+"此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。" = "Editing this photo in HDR requires macOS 15. It will be exported in SDR.";
+"此照片的 HDR 需 macOS 15 才能编辑，已按 SDR 打开。" = "Editing this photo in HDR requires macOS 15. It was opened in SDR.";
 "此目录没有 RAW 照片。" = "This folder contains no RAW photos.";
 "此目录没有照片。" = "This folder contains no photos.";
 "此输入不支持镜头校正" = "Lens Correction Unsupported for This Input";
