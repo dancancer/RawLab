@@ -384,9 +384,11 @@ extension EditorModel {
             return
         }
         let info: HDRSourceInfo?
-        do { info=try HDRSourceInfo.probe(url) }
+        var sdrFallback = false
+        do { info=try probeHDRSource(url, { sdrFallback = true }) }
         catch { self.error=error.localizedDescription; return }
         var candidate=restoredRecord.state?.settings ?? Adjustments()
+        if sdrFallback { candidate.hdr?.mode = .sdr }
         if restoredRecord.state==nil && RenderEngine.isRasterInput(url) { candidate.exposureMode = .sensor }
         if info != nil && restoredRecord.state==nil { candidate.hdr=HDRSettings() }
         let cameraHDR = info == nil && (try? HDRSourceInfo.probeRAW(url)) != nil
@@ -429,12 +431,12 @@ extension EditorModel {
             return
         }
         importing=false
-        activateOpen(url,record:restoredRecord,settings:candidate,isHDR:false,cameraHDR:cameraHDR)
+        activateOpen(url,record:restoredRecord,settings:candidate,isHDR:false,cameraHDR:cameraHDR,sdrFallback:sdrFallback)
     }
 
     private func activateOpen(_ url: URL,record restoredRecord: VersionedPhotoEdit,settings candidate: Adjustments,
                               isHDR: Bool,cameraHDR: Bool,neutral stagedNeutral: RenderedImage? = nil,result stagedResult: RenderedImage? = nil,
-                              hdrEdge: Int? = nil,hdrSource: MacReferenceSource? = nil) {
+                              hdrEdge: Int? = nil,hdrSource: MacReferenceSource? = nil,sdrFallback: Bool = false) {
         resetAITask()
         cancelViewportResize()
         committedEdit = restoredRecord
@@ -443,6 +445,8 @@ extension EditorModel {
         scheduler.setInteracting(false)
         sourceRevision = UUID()
         file = url; sourceIsHDR=isHDR; sourceSupportsCameraHDR=cameraHDR; neutral=stagedNeutral; result=stagedResult
+        pendingSDRFallbackNotice = sdrFallback
+        sourceUsesSDRFallback = sdrFallback
         error=nil; previewOutdated=false; statusState = .none
         pendingImportEvent = true
         updatingMetadata = true

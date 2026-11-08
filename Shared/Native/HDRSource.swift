@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 
 struct HDRNativeError: LocalizedError {
     let status: sony2fuji_status
@@ -79,15 +80,43 @@ struct HDRSourceInfo {
     }
     var fingerprint: Data { withUnsafeBytes(of:native.source_sha256) { Data($0) } }
 
-    static func probe(_ url: URL) throws -> HDRSourceInfo? {
+    typealias NativeProbe = (UnsafePointer<CChar>?, UnsafeMutablePointer<sony2fuji_hdr_source_info_v1>?,
+                            UnsafeMutablePointer<sony2fuji_hdr_diagnostic_v1>?) -> sony2fuji_status
+    typealias Probe = (URL, () -> Void) throws -> HDRSourceInfo?
+    static var systemSupportsHDR: Bool {
+        if #available(macOS 15, iOS 18, *) { return true }
+        return false
+    }
+
+    static func probe(_ url: URL, onSDRFallback: () -> Void = {}, supportsHDR: Bool = systemSupportsHDR,
+                      allowSDRFallback: Bool = true,
+                      nativeProbe: NativeProbe = sony2fuji_hdr_probe) throws -> HDRSourceInfo? {
         guard ["jpg","jpeg","heic","heif"].contains(url.pathExtension.lowercased()) else { return nil }
         var info=sony2fuji_hdr_source_info_v1()
         info.version=1; info.struct_size=UInt32(MemoryLayout.size(ofValue:info))
         var diagnostic=sony2fuji_hdr_diagnostic_v1()
         diagnostic.version=1; diagnostic.struct_size=UInt32(MemoryLayout.size(ofValue:diagnostic))
-        let status=url.path.withCString { sony2fuji_hdr_probe($0,&info,&diagnostic) }
+        let status=url.path.withCString { nativeProbe($0,&info,&diagnostic) }
         if status==SONY2FUJI_STATUS_OK { return HDRSourceInfo(native:info) }
         if status==SONY2FUJI_STATUS_UNSUPPORTED && diagnostic.reason==UInt32(SONY2FUJI_HDR_REASON_NOT_HDR) { return nil }
+        #if os(macOS)
+        if allowSDRFallback && !supportsHDR && status == SONY2FUJI_STATUS_UNSUPPORTED &&
+            diagnostic.reason == UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM) {
+            let source = CGImageSourceCreateWithURL(url as CFURL, nil)
+            let appleAuxiliary = source.flatMap { CGImageSourceCopyAuxiliaryDataInfoAtIndex($0, 0, kCGImageAuxiliaryDataTypeHDRGainMap) }
+            let data = try? Data(contentsOf: url, options: .mappedIfSafe)
+            let declaresISO = data?.range(of: Data("urn:iso:std:iso:ts:21496:-1".utf8)) != nil
+            let declaresAppleGainMap = !declaresISO && ["urn:com:apple:photo:2020:aux:hdrgainmap", "http://ns.apple.com/HDRGainMap/1.0/"].contains {
+                data?.range(of: Data($0.utf8)) != nil
+            }
+            // SDR 加载器仍拒绝 Apple 辅助增益图，预检不能把它当作可导出的基图。
+            // ImageIO 未返回辅助数据时也保留容器内 Apple 声明的严格诊断。
+            if appleAuxiliary == nil && !declaresAppleGainMap {
+                onSDRFallback()
+                return nil
+            }
+        }
+        #endif
         throw HDRNativeError(status:status,reason:diagnostic.reason,field:diagnostic.field)
     }
 }
