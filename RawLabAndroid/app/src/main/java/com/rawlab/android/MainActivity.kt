@@ -197,7 +197,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             systemPhotoRequest = systemPhotoRequests.firstOrNull()?.takeUnless { collection.busy },
             onSystemPhotoConsumed = model::consumeSystemPhotoRequest,
             onSystemPhotoReady = { request, completed ->
-                if (request.uris.size == 1) model.importPhoto(request.uris.first(), completed)
+                if (!request.openAsCollection) model.importPhoto(request.uris.first(), completed)
                 else model.returnToCollection { accepted ->
                     if (accepted) { model.addCollectionPhotos(request.uris); collectionOpen = true }
                     completed(accepted)

@@ -62,7 +62,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 data class SystemPhotoOpenRequest(val uris: List<Uri>, val id: UUID = UUID.randomUUID(),
-    val externalRequestID: String? = null)
+    val externalRequestID: String? = null, val openAsCollection: Boolean = uris.size > 1)
 
 private fun loadSystemPhotoRequestQueue(preferences: android.content.SharedPreferences): SystemPhotoRequestQueue {
     val pending = mutableListOf<DurableSystemPhotoRequest>()
@@ -167,7 +167,7 @@ class EditorViewModel @JvmOverloads constructor(
                 saveSystemPhotoQueueLocked()
             }
             if (retained.isNotEmpty()) mutableSystemPhotoRequests.value += SystemPhotoOpenRequest(retained,
-                externalRequestID = requestID)
+                externalRequestID = requestID, openAsCollection = uris.size > 1)
             if (errors.isNotEmpty()) mutable.value = mutable.value.copy(error = failure(errors.first()))
         } }
     }

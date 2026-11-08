@@ -13,13 +13,33 @@ import java.util.UUID
 class SystemPhotoForwardActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        startActivity(SystemPhotoForwarding.intent(this, intent))
+        SystemPhotoForwarding.start(SystemPhotoForwarding.intent(this, intent), intent, ::startActivity)
         finish()
     }
 }
 
 internal object SystemPhotoForwarding {
     const val EXTRA_REQUEST_ID = "com.rawlab.android.extra.SYSTEM_PHOTO_REQUEST_ID"
+
+    fun start(intent: Intent, source: Intent, startActivity: (Intent) -> Unit) {
+        try {
+            startActivity(intent)
+        } catch (_: SecurityException) {
+            if (source.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0) {
+                // 只重授来源已经交给本 Activity 的授权；否则 finish 后可读照片的临时授权也会消失。
+                // 没有 ClipData 时用文本占位，避免 EXTRA_STREAM 中未授权 URI 被系统自动提升为授权。
+                intent.clipData = source.clipData ?: ClipData.newPlainText("RawLab", "")
+                try {
+                    startActivity(intent)
+                    return
+                } catch (_: SecurityException) { }
+            }
+            // 保留 ClipData，避免 Android 从 EXTRA_STREAM 重建它并再次添加读取授权标志。
+            // 来源授权也已失效时，让主界面沿现有路径逐张报告读取失败。
+            intent.removeFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            startActivity(intent)
+        }
+    }
 
     @Suppress("DEPRECATION")
     fun intent(context: Context, source: Intent): Intent {
@@ -46,7 +66,8 @@ internal object SystemPhotoForwarding {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
                 Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_GRANT_READ_URI_PERMISSION)
             if (uris.isNotEmpty()) {
-                val forwarded = ClipData.newUri(context.contentResolver, "RawLab", uris.first())
+                // 转发前不查询外部 provider 的类型，未授权 URI 的读取失败交给主界面处理。
+                val forwarded = ClipData.newRawUri("RawLab", uris.first())
                 uris.drop(1).forEach { forwarded.addItem(ClipData.Item(it)) }
                 clipData = forwarded
             }
