@@ -41,19 +41,20 @@ extension RawEditorViewModel {
 
     func persistEditCandidate(_ candidate: PhotoEditState, source: EditorEditSource) -> Bool {
         guard editorEditSource == source else { return false }
-        guard let expected = loadedEditRecord, expected.identity == source.identity, let session = adjustmentSession else {
-            adjustmentReloadRequired = true
-            editSaveState = .failed(L10n.text("调整记录已恢复，请重新选择照片载入。"))
-            return false
-        }
+        let expected: PhotoEditRecord
         let defaults: PhotoEditState?
-        do { defaults = try expected.state == nil ? PhotoEditState(settings:sourceDefaultSettings) : nil }
-        catch { editSaveState = .failed(adjustmentErrorMessage(error)); return false }
+        do {
+            let store = try requireEditPersistence()
+            expected = try loadedEditRecord ?? store.readState(for: source.identity)
+            guard expected.identity == source.identity else { return false }
+            loadedEditRecord = expected
+            defaults = try expected.state == nil ? PhotoEditState(settings:sourceDefaultSettings) : nil
+        } catch { editSaveState = .failed(adjustmentErrorMessage(error)); return false }
+        guard let session = adjustmentSession else { return false }
         let outcome = session.commitEdit(expected: expected, state: candidate, displayName: sourceDisplayName,
             defaultState:defaults,isCurrent:{ self.editorEditSource==source },
             validateSource: adjustmentSourceValidator)
         if let saved = outcome.saved {
-            adjustmentReloadRequired = false
             if let state = saved.state { recordSavedLookChange(from: expected.state, to: state) }
             loadedEditRecord = saved
             retainEditMetadata(saved.state ?? candidate)
@@ -62,9 +63,8 @@ extension RawEditorViewModel {
             if outcome.status == .applied { setEditNotice(.saved) }
             return true
         }
-        adjustmentReloadRequired = outcome.status == .conflict
         if let error = outcome.error { ErrorDiagnostics.log(error, operation: .editPersistence, stage: "saveEdits") }
-        editSaveState = .failed(outcome.error?.localizedDescription ?? L10n.text("调整记录已恢复，请重新选择照片载入。"))
+        editSaveState = .failed(outcome.error.map(adjustmentErrorMessage) ?? L10n.text("调整未保存，请重试。"))
         return false
     }
 
@@ -78,20 +78,50 @@ extension RawEditorViewModel {
         }
     }
 
+    private func requireEditPersistence() throws -> EditPersistence {
+        if editPersistence == nil { editPersistence = try openEditPersistence() }
+        guard let store = editPersistence else { throw EditPersistenceError.corruptStore }
+        if adjustmentSession == nil { adjustmentSession = IOSAdjustmentTransferSession(store: store) }
+        return store
+    }
+
+    func restoreCommittedSettings() throws -> RawSettings {
+        guard let source = editorEditSource else { throw EditPersistenceError.corruptStore }
+        let store = try requireEditPersistence()
+        let record = try loadedEditRecord ?? store.readState(for: source.identity)
+        guard record.identity == source.identity else { throw AdjustmentCommitError.photoChanged }
+        let restored = try record.state?.settings ?? sourceDefaultSettings
+        cancelQueuedSettingsSave()
+        pendingSettings = nil
+        failedDraftSource = nil
+        adjustmentInteraction = nil
+        adjustmentInteractionRejected = false
+        hasAdjustmentDraft = false
+        loadedEditRecord = record
+        retainEditMetadata(record.state ?? PhotoEditState(settings: restored, updatedAt: Date(timeIntervalSince1970: 0)))
+        persistedEditorSettings = PersistedEditorSettings(source: source, settings: restored)
+        committedPreviewSettings = restored
+        currentPreviewSettings = restored
+        setEditNotice(record.state == nil ? .idle : .restored)
+        return restored
+    }
+
     func retrySave(settings: RawSettings) {
-        if editPersistence == nil && pendingSettings == nil {
-            do {
-                editPersistence = try EditPersistence.appStore()
-                adjustmentSession = editPersistence.map(IOSAdjustmentTransferSession.init(store:))
-                editSaveState = .idle
-                statusMessage = L10n.text("调整记录已恢复，请重新选择照片载入。")
-            } catch {
-                ErrorDiagnostics.log(error, operation: .editPersistence, stage: "reopenStore")
-                editSaveState = .failed(error.localizedDescription)
+        do {
+            _ = try requireEditPersistence()
+            if loadedEditRecord == nil, editorEditSource != nil, pendingSettings == nil {
+                adjustmentRestoredSettings = try restoreCommittedSettings()
+                return
             }
-            return
+            if pendingSettings == nil {
+                editSaveState = .idle
+                return
+            }
+            saveCurrentSettings(settings)
+        } catch {
+            ErrorDiagnostics.log(error, operation: .editPersistence, stage: "reopenStore")
+            editSaveState = .failed(adjustmentErrorMessage(error))
         }
-        saveCurrentSettings(settings)
     }
 
     func resetCurrentSettings() throws {

@@ -68,7 +68,7 @@ class HDRBatchWorkflowTest {
             compose.waitUntil(120_000) { model.state.value.canExport && model.state.value.edits.exposure==.5f }
             val sourceSettings=model.state.value.edits
             assertTrue(sourceSettings.isHDREditing)
-            val records=targets.associateWith { store.versionedState(PhotoIdentity(Uri.fromFile(it).toString())) }
+            val records=targets.associateWith { store.readState(PhotoIdentity(Uri.fromFile(it).toString())) }
             compose.onNode(hasContentDescription(compose.activity.getString(R.string.more)) and hasAnyAncestor(hasTestTag("editor-menu"))).performClick()
             compose.waitUntil(60_000) { compose.onAllNodes(hasText(compose.activity.getString(R.string.batch_export)) and isEnabled()).fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText(compose.activity.getString(R.string.batch_export)).performClick()
@@ -107,7 +107,7 @@ class HDRBatchWorkflowTest {
                 assertNull(NativeHDRBridge.probe(output))
             }
             assertEquals(sourceSettings,state.job.source.settings)
-            targets.forEach { assertEquals(originals[it],BatchFrozenSettings.checksum(it));assertEquals(records[it],store.versionedState(PhotoIdentity(Uri.fromFile(it).toString()))) }
+            targets.forEach { assertEquals(originals[it],BatchFrozenSettings.checksum(it));assertEquals(records[it],store.readState(PhotoIdentity(Uri.fromFile(it).toString()))) }
             compose.waitForIdle()
             val screenshot=File(compose.activity.getExternalFilesDir(null),"hdr-tests/mixed-batch.png");screenshot.parentFile!!.mkdirs()
             instrumentation.uiAutomation.takeScreenshot()!!.let { image -> screenshot.outputStream().use { image.compress(Bitmap.CompressFormat.PNG,100,it) };image.recycle() }

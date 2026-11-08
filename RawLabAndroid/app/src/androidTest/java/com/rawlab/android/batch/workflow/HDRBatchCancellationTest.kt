@@ -77,7 +77,7 @@ class HDRBatchCancellationTest {
         val draft = BatchJob(source, listOf(target), id = id)
         val journal = BatchJournal(File(context.filesDir, "RawLab/BatchJobs"))
         val records = EditStore(File(context.filesDir, "edits"))
-        val originalRecord = records.versionedState(targetID)
+        val originalRecord = records.readState(targetID)
         val outcomes = CopyOnWriteArrayList<Triple<Int, Int, UsageBatchOutcome>>()
         val storage = PhotoStorage(context)
         lateinit var batch: BatchExportModel
@@ -110,7 +110,7 @@ class HDRBatchCancellationTest {
             assertEquals(BatchSettingsMode.UNIFORM_FROZEN, result.job.settingsMode)
             assertEquals(listOf(BatchRowStatus.PENDING), result.job.rows.map { it.status })
             assertEquals(persisted, journal.load(id))
-            assertEquals(originalRecord, records.versionedState(targetID))
+            assertEquals(originalRecord, records.readState(targetID))
             assertArrayEquals(originalBytes, targetFile.readBytes())
             compose.onNodeWithText("CancellationException", substring = true).assertDoesNotExist()
             compose.onNodeWithText(AppStrings.format(R.string.message_export_photos, "1"))

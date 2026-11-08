@@ -129,11 +129,11 @@ internal static class HslTargetUiChecks
             window.ResultCanvas.ComparisonEnabled=false;
             Invoke(window,"BeginHslTarget",new Point(.5,.5),null!);Invoke(window,"MoveHslTarget",20.0);Invoke(window,"EndHslTarget");Settled();
             check(session.Transactions.Count==1 && !Get<Adjustments>(window,"settings").Hsl.IsIdentity,"Released pending target creates exactly one saved edit; history="+session.Transactions.Count+", notice="+Get<HslTargetAvailability?>(window,"hslTargetNotice"));
-            var saved=store.VersionedState(input);var before=Get<Adjustments>(window,"settings").Capture();
+            var saved=store.ReadState(input);var before=Get<Adjustments>(window,"settings").Capture();
             Invoke(window,"BeginHslTarget",new Point(.5,.5),null!);
             InteractionChecks.PumpUntil(()=>Get<bool>(window,"hslHistoryActive"));
             Invoke(window,"MoveHslTarget",50.0);Invoke(window,"CancelHslTarget");Invoke(window,"EndHslTarget");Settled();
-            check(store.VersionedState(input).SameAs(saved) && Get<Adjustments>(window,"settings").Capture().SameAs(before) && session.Transactions.Count==1,
+            check(store.ReadState(input).SameAs(saved) && Get<Adjustments>(window,"settings").Capture().SameAs(before) && session.Transactions.Count==1,
                 "Cancelled target restores all settings without saving intermediate values");
             window.UndoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));Settled();
             check(Get<Adjustments>(window,"settings").Hsl.IsIdentity,"Target undo restores the complete HSL snapshot");
@@ -150,7 +150,7 @@ internal static class HslTargetUiChecks
             Invoke(window,"SaveEdits");Settled();
             Invoke(window,"ExitHslTargetClicked",window,new RoutedEventArgs());
             check(!window.ResultCanvas.HslTargetEnabled && !window.HslTargetBanner.IsVisible,"Canvas exit restores ordinary photo gestures");
-            var beforePreview=store.VersionedState(input);
+            var beforePreview=store.ReadState(input);
             var transactionCount=session.Transactions.Count;
             Invoke(window,"SetHslTargetMode",true,1);
             Invoke(window,"BeginHslTarget",new Point(.5,.5),null!);
@@ -160,7 +160,7 @@ internal static class HslTargetUiChecks
             check(window.PhotoArea.IsVisible && !window.ResultCanvas.HslTargetEnabled && !window.HslTargetBanner.IsVisible &&
                 !Get<bool>(window,"hslTargetEnabled"),"Entering Preview exits HSL target mode");
             Invoke(window,"EndHslTarget");Settled();
-            check(store.VersionedState(input).SameAs(beforePreview) && session.Transactions.Count==transactionCount,
+            check(store.ReadState(input).SameAs(beforePreview) && session.Transactions.Count==transactionCount,
                 "A queued HSL sample cannot save edits after entering Preview");
             PhotoFeatureChecks.Click(window.EditingWorkspaceButton);Settled();
             check(!window.ResultCanvas.HslTargetEnabled,"Returning to Edit keeps HSL target mode off");

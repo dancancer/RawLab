@@ -79,7 +79,6 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onImportHDRCameraProfile: () -> Unit = {},
     onHDRCameraDraftChange: (HDRCameraDevelopmentSettings) -> Unit = {},
     onSaveRetry: () -> Unit = {},
-    adjustmentReloadRequired: Boolean = false, onReloadAdjustments: ((Boolean) -> Unit) -> Unit = { it(false) },
     onCancelAdjustment: () -> Unit = {},
     canUndoAdjustment: Boolean = false, canRedoAdjustment: Boolean = false, canPasteAdjustment: Boolean = false,
     onCopyAdjustments: () -> Unit = {}, onPasteAdjustments: () -> Unit = {}, onAdjustmentHistory: () -> Unit = {},
@@ -173,15 +172,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             leave { onPresetActionReady(action) }
         }
     }
-    var confirmReload by remember { mutableStateOf(false) }
-    val retrySave = { if (adjustmentReloadRequired) confirmReload = true else if (state.draft != null) { applyAndLeave(); Unit } else onSaveRetry() }
-    if (confirmReload) AlertDialog(onDismissRequest = { confirmReload = false },
-        title = { Text(stringResource(R.string.transfer_reload)) }, text = { Text(stringResource(R.string.transfer_reload_body)) },
-        confirmButton = { TextButton(onClick = {
-            confirmReload = false
-            onReloadAdjustments { if (it) { pendingLeave = null; pendingAll = false; prepareAllWhenReady = false; tool = 2 } }
-        }, modifier = Modifier.testTag("adjustment-reload-confirm")) { Text(stringResource(R.string.transfer_reload)) } },
-        dismissButton = { TextButton(onClick = { confirmReload = false }) { Text(stringResource(R.string.cancel)) } })
+    val retrySave = { if (state.draft != null) { applyAndLeave(); Unit } else onSaveRetry() }
     val selectTool: (Int) -> Unit = { next ->
         if (quickPresetsVisible) onClosePresets()
         if (next != tool) leave { tool = next; expanded = true }
@@ -432,7 +423,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     DropdownMenuItem(text = { Text(stringResource(R.string.transfer_redo)) }, enabled = canRedoAdjustment && state.controlsEnabled,
                         modifier = Modifier.testTag("adjustment-menu-redo"), leadingIcon = { Icon(Icons.Outlined.Redo, null) },
                         onClick = { menu = false; leave(onRedoAdjustment) })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.transfer_history)) }, enabled = state.controlsEnabled && !adjustmentReloadRequired,
+                    DropdownMenuItem(text = { Text(stringResource(R.string.transfer_history)) }, enabled = state.controlsEnabled,
                         modifier = Modifier.testTag("adjustment-menu-history"), leadingIcon = { Icon(Icons.Outlined.History, null) },
                         onClick = { menu = false; leave(onAdjustmentHistory) })
                     HorizontalDivider()

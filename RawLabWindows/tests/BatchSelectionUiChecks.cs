@@ -67,7 +67,9 @@ internal static class BatchSelectionUiChecks
             check(window.ResolveCollectionDraft(targetID,false),"Explicit discard resolves the active draft");Ready(window);
             var review=window.PrepareCollectionExport([],ExportFormat.Png,256,root);check(review.Ready,"Both committed target snapshots are shown after draft resolution");
             var failureJournal=new BatchJournal(Path.Combine(root,"init-failure"));
-            var failureJob=new BatchSelectionExport(store,failureJournal,_=>null).Freeze(window.Collection,review,_=>null);
+            // 审查结果记录了本会话的编辑代次，冻结时必须用同一会话的代次核对。
+            var failureJob=new BatchSelectionExport(store,failureJournal,_=>null,null,Get<AdjustmentTransferSession>(window,"adjustmentSession").EditGeneration)
+                .Freeze(window.Collection,review,_=>null);
             var failedWindow=new BatchExportWindow(failureJob,failureJournal,_=>throw new IOException("Injected engine initialization failure")){Owner=window};
             Loc.SetPreference("en",Path.Combine(root,"language.txt"));foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
             failedWindow.Show();

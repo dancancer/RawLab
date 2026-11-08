@@ -4583,14 +4583,6 @@
     "ja": "選択を解除",
     "zh-Hans": "清空选择"
   },
-  "照片或调整已变化，请重新检查目标。": {
-    "de": "Das Foto oder seine Anpassungen wurden geändert. Prüfen Sie das Ziel erneut.",
-    "en": "The photo or its adjustments have changed. Check the target again.",
-    "es": "La foto o sus ajustes han cambiado. Comprueba de nuevo el destino.",
-    "fr": "La photo ou ses réglages ont changé. Vérifiez à nouveau la cible.",
-    "ja": "写真または調整が変更されました。対象を再確認してください。",
-    "zh-Hans": "照片或调整已变化，请重新检查目标。"
-  },
   "畸变校正": {
     "de": "Verzeichnungskorrektur",
     "en": "Distortion correction",
@@ -4671,14 +4663,6 @@
     "ja": "調整内容を読み取れません。もう一度コピーしてください。",
     "zh-Hans": "调整内容无法读取，请重新复制。"
   },
-  "调整已变化": {
-    "de": "Anpassungen geändert",
-    "en": "Adjustments changed",
-    "es": "Ajustes modificados",
-    "fr": "Réglages modifiés",
-    "ja": "調整が変更されました",
-    "zh-Hans": "调整已变化"
-  },
   "调整照片": {
     "de": "Fotoanpassung",
     "en": "Photo Adjustment",
@@ -4750,22 +4734,6 @@
     "fr": "Hauteur",
     "ja": "高さ",
     "zh-Hans": "高度"
-  },
-  "重新载入已保存调整": {
-    "de": "Gespeicherte Anpassungen neu laden",
-    "en": "Reload Saved Adjustments",
-    "es": "Recargar ajustes guardados",
-    "fr": "Recharger les réglages enregistrés",
-    "ja": "保存済みの調整を読み直す",
-    "zh-Hans": "重新载入已保存调整"
-  },
-  "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。": {
-    "de": "Beim Neuladen werden ungespeicherte Anpassungen verworfen und der aktuell gespeicherte Stand dieses Fotos geladen.",
-    "en": "Reloading discards unsaved adjustments and reads the current saved record for this photo.",
-    "es": "Al recargar se descartan los ajustes sin guardar y se lee el registro guardado actual de esta foto.",
-    "fr": "Le rechargement abandonne les réglages non enregistrés et lit les réglages actuellement enregistrés pour cette photo.",
-    "ja": "読み直すと未保存の調整を破棄し、この写真に現在保存されている設定を読み込みます。",
-    "zh-Hans": "重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。"
   },
   "复制调整…": {
     "de": "Anpassungen kopieren…",
@@ -7414,5 +7382,37 @@
     "es": "No se usó la reducción de ruido con IA en las imágenes normales",
     "ja": "通常の画像には AI ノイズ除去を使用していません",
     "zh-Hans": "普通图片未使用 AI 降噪"
+  },
+  "操作已失效": {
+    "zh-Hans": "操作已失效",
+    "en": "Operation no longer valid",
+    "de": "Vorgang nicht mehr gültig",
+    "fr": "Opération devenue invalide",
+    "ja": "操作は無効になりました",
+    "es": "Operación no válida"
+  },
+  "此操作已过期，请重新操作。": {
+    "zh-Hans": "此操作已过期，请重新操作。",
+    "en": "This operation is out of date. Start it again.",
+    "de": "Dieser Vorgang ist nicht mehr aktuell. Starten Sie ihn erneut.",
+    "fr": "Cette opération n’est plus à jour. Relancez-la.",
+    "ja": "この操作は古くなっています。もう一度操作してください。",
+    "es": "Esta operación ha quedado desactualizada. Vuelve a iniciarla."
+  },
+  "请按历史顺序撤销或重做。": {
+    "zh-Hans": "请按历史顺序撤销或重做。",
+    "en": "Undo or redo the edits in history order.",
+    "de": "Machen Sie die Änderungen in der Reihenfolge des Verlaufs rückgängig oder wiederholen Sie sie.",
+    "fr": "Annulez ou rétablissez les réglages dans l’ordre de l’historique.",
+    "ja": "履歴の順序に従って取り消しまたはやり直しを行ってください。",
+    "es": "Deshaz o rehace los ajustes en el orden del historial."
+  },
+  "调整记录暂不可用，请稍后重试。": {
+    "en": "Adjustment records are temporarily unavailable. Try again later.",
+    "de": "Die Anpassungsdaten sind vorübergehend nicht verfügbar. Versuchen Sie es später erneut.",
+    "es": "Los ajustes guardados no están disponibles temporalmente. Inténtalo de nuevo más tarde.",
+    "fr": "Les réglages enregistrés sont temporairement indisponibles. Réessayez plus tard.",
+    "ja": "調整記録は一時的に利用できません。後でもう一度お試しください。",
+    "zh-Hans": "调整记录暂不可用，请稍后重试。"
   }
 }

@@ -41,9 +41,9 @@ internal static class QuickPresetUiChecks
             check(window.QuickPresetPhase == QuickPresetPhase.Idle && window.QuickPresetSurface.IsVisible && edits.Find(source)!.Settings.Values[1] == .2,
                 "Global Undo dismisses the previous quick preset result and preserves browsing");
             Invoke(window, "RunPhotoHistory", false); Ready(window);
-            var saved = edits.VersionedState(source);
+            var saved = edits.ReadState(source);
             Done(window.ApplyPresetToCurrentPhoto(preset));
-            check(window.QuickPresetPhase == QuickPresetPhase.Unchanged && edits.VersionedState(source).SameAs(saved) && session.Transactions.Count == count + 1,
+            check(window.QuickPresetPhase == QuickPresetPhase.Unchanged && edits.ReadState(source).SameAs(saved) && session.Transactions.Count == count + 1,
                 "Quick unchanged apply preserves the receipt and history");
             Change(.2); Done(window.ApplyPresetToCurrentPhoto(preset)); window.UndoQuickPreset(); Ready(window);
             check(window.QuickPresetPhase == QuickPresetPhase.Undone && edits.Find(source)!.Settings.Values[1] == .2,
@@ -52,13 +52,13 @@ internal static class QuickPresetUiChecks
             void Late(Action invalidate, string reason) {
                 var reached = false; var release = new TaskCompletionSource();
                 window.QuickPresetPrepared = () => { reached = true; return release.Task; };
-                var expected = edits.VersionedState(source); var history = session.Transactions.Count;
+                var expected = edits.ReadState(source); var history = session.Transactions.Count;
                 window.ShowQuickPresets(); var pending = window.ApplyPresetToCurrentPhoto(preset);
                 InteractionChecks.PumpUntil(() => reached);
-                try { invalidate(); expected = edits.VersionedState(source); history = session.Transactions.Count; }
+                try { invalidate(); expected = edits.ReadState(source); history = session.Transactions.Count; }
                 finally { release.TrySetResult(); window.QuickPresetPrepared = null; }
                 Done(pending);
-                check(edits.VersionedState(source).SameAs(expected) && session.Transactions.Count == history,
+                check(edits.ReadState(source).SameAs(expected) && session.Transactions.Count == history,
                     "Quick " + reason + " rejects a late prepared candidate");
             }
             Late(window.CancelQuickPreset, "Cancel");
@@ -70,24 +70,16 @@ internal static class QuickPresetUiChecks
                 "A late prepared preset cannot leak into the newly opened photo");
             window.OpenFile(source); Ready(window);
             window.ShowQuickPresets();
-            var reachedConflict = false; var conflictRelease = new TaskCompletionSource();
-            window.QuickPresetPrepared = () => { reachedConflict = true; return conflictRelease.Task; };
-            var conflict = window.ApplyPresetToCurrentPhoto(preset);
-            InteractionChecks.PumpUntil(() => reachedConflict);
-            var external = Get<Adjustments>(window, "settings").Clone(); external.Set(Parameter.Exposure, 1.2);
-            edits.Save(source, external.Capture(), null); conflictRelease.SetResult(); Done(conflict); window.QuickPresetPrepared = null;
-            check(window.QuickPresetPhase == QuickPresetPhase.Failed && edits.Find(source)!.Settings.Values[1] == 1.2,
-                "Quick CAS conflict preserves external edits");
-            window.ReloadCurrentAdjustments(); Ready(window); window.ShowQuickPresets();
-            using (var held = new FileStream(Path.Combine(output, "edits", "edits.json"), FileMode.Open, FileAccess.Read, FileShare.Read)) {
-                Done(window.ApplyPresetToCurrentPhoto(preset));
-                check(window.QuickPresetPhase == QuickPresetPhase.Failed && edits.Find(source)!.Settings.Values[1] == 1.2,
-                    "Quick save failure cannot report Saved or replace the original");
-            }
+            var failing = new EditStore(Path.Combine(output, "edits"), (_, _) => throw new IOException("Injected quick preset save failure"));
+            Set(window, "editStore", failing);
+            Done(window.ApplyPresetToCurrentPhoto(preset));
+            check(window.QuickPresetPhase == QuickPresetPhase.Failed,
+                "Quick preset save failure cannot report Saved");
+            Set(window, "editStore", edits);
             Done(window.ApplyPresetToCurrentPhoto(preset)); Ready(window);
             check(window.QuickPresetPhase == QuickPresetPhase.Saved, "Quick retry performs a fresh prepare and saves");
-            Change(.7, 1.3); var ordinary = edits.VersionedState(source); window.UndoQuickPreset();
-            check(window.QuickPresetPhase == QuickPresetPhase.UndoFailed && edits.VersionedState(source).SameAs(ordinary),
+            Change(.7, 1.3); var ordinary = edits.ReadState(source); window.UndoQuickPreset();
+            check(window.QuickPresetPhase == QuickPresetPhase.UndoFailed && edits.ReadState(source).SameAs(ordinary),
                 "Quick Undo cannot undo a later ordinary edit");
             Console.WriteLine("Quick preset artifacts: " + output);
         } finally { window.Close(); app.Shutdown(); }

@@ -84,16 +84,15 @@ enum QuickPresetModelChecks {
         try wait { !model.quickPresetState.isPreparing }; try rendered(model)
         model.settings.saturation = 22
         try check(model.saveEdits(), "later ordinary edit saves after quick apply")
-        let later = try model.editStore!.versionedState(for: second)
+        let later = try model.editStore!.readState(for: second)
         model.undoQuickPreset()
         guard case .undoFailed = model.quickPresetState else { throw NSError(domain: "stale quick undo must report conflict", code: 1) }
-        try check(try model.editStore!.versionedState(for: second) == later && model.settings.saturation == 22,
+        try check(try model.editStore!.readState(for: second) == later && model.settings.saturation == 22,
             "quick undo never substitutes the latest unrelated edit")
 
         for action in ["cancel", "close", "edit", "photo", "conflict", "restart"] {
             model.open(first); try rendered(model); model.open(second); try rendered(model)
             model.showQuickPresets()
-            let before = try model.editStore!.versionedState(for: second)
             let history = model.adjustmentSession!.transactions.count
             let prepare = model.prepareQuickPresetOperation
             let ready = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0), finished = DispatchSemaphore(value: 0)
@@ -113,11 +112,14 @@ enum QuickPresetModelChecks {
             case "edit": model.settings.exposure = 1.1; try check(model.saveEdits(), "edit during prepare commits independently")
             case "photo": model.open(first); try rendered(model)
             case "conflict":
-                var changed = before.state!; changed.settings.exposure = 1.8
-                try EditPersistence(directory: directory.appendingPathComponent("edits")).save(second, state: changed)
+                let expected = try model.editStore!.readState(for: second)
+                var state = expected.state!
+                state.settings.exposure = 1.8
+                try check(model.adjustmentSession!.commitEdit(expected: expected, state: state).status == .applied,
+                    "a later session commit expires quick preparation before UI adoption")
             default: model.cancelQuickPreset()
             }
-            let expected = try model.editStore!.versionedState(for: second)
+            let expected = try model.editStore!.readState(for: second)
             release.signal()
             model.quickPresetQueue.async { finished.signal() }
             try wait(finished)
@@ -127,14 +129,14 @@ enum QuickPresetModelChecks {
                 try check(model.settings.exposure == 0.7 && model.settings.saturation == 22,
                     "a newer quick request alone applies after the older request is cancelled")
             } else {
-                try check(try model.editStore!.versionedState(for: second) == expected,
+                try check(try model.editStore!.readState(for: second) == expected,
                     "\(action) rejects the late quick result without replacing current storage")
             }
-            try check(model.adjustmentSession!.transactions.count == history + (["edit", "restart"].contains(action) ? 1 : 0),
+            try check(model.adjustmentSession!.transactions.count == history + (["edit", "conflict", "restart"].contains(action) ? 1 : 0),
                 "\(action) and duplicate clicks create no quick preset transaction")
             try check(model.adjustmentClipboard == clipboard, "\(action) keeps the clipboard")
             if action == "conflict" {
-                guard case .failed = model.quickPresetState else { throw NSError(domain: "external revision must report failure", code: 1) }
+                guard case .failed = model.quickPresetState else { throw NSError(domain: "expired local operation must report failure", code: 1) }
             } else if action == "restart" {
                 guard case .saved = model.quickPresetState else { throw NSError(domain: "older completion must not dismiss the newer result", code: 1) }
             } else {
@@ -145,14 +147,14 @@ enum QuickPresetModelChecks {
         model.open(first); try rendered(model)
         try check(model.beginGeometryDraft(), "quick preset fixture enters a geometry draft")
         try rendered(model); model.updateGeometryDraft { $0.cropWidth = 0.8 }
-        let draft = model.geometryDraft, beforeDraftAction = try model.editStore!.versionedState(for: first)
+        let draft = model.geometryDraft, beforeDraftAction = try model.editStore!.readState(for: first)
         model.showQuickPresets()
         try check(model.quickPresetsVisible && model.geometryDraft == draft && !model.geometryDraftDeparturePending,
             "browsing quick presets preserves an unfinished geometry draft")
         model.applyPresetToCurrentPhoto(unchanged)
         try check(model.geometryDraftDeparturePending, "quick apply asks for the shared draft decision")
         model.resolveGeometryDraftDeparture(.stay)
-        try check(try model.editStore!.versionedState(for: first) == beforeDraftAction && model.geometryDraft == draft,
+        try check(try model.editStore!.readState(for: first) == beforeDraftAction && model.geometryDraft == draft,
             "Continue Editing cancels quick apply without saving the draft")
         model.closeQuickPresets()
         try check(model.geometryDraft == draft && model.adjustmentNavigation.tool.usesGeometryDraft,
@@ -179,11 +181,11 @@ enum QuickPresetModelChecks {
             try data.write(to: url, options: .atomic)
         })
         model.open(photo); try rendered(model); model.showQuickPresets()
-        let before = try model.editStore!.versionedState(for: photo)
+        let before = try model.editStore!.readState(for: photo)
         model.applyPresetToCurrentPhoto(preset)
         try wait { !model.quickPresetState.isPreparing }
         guard case .failed = model.quickPresetState else { throw NSError(domain: "failed quick save must not report saved", code: 1) }
-        try check(try model.editStore!.versionedState(for: photo) == before && model.adjustmentSession!.transactions.isEmpty,
+        try check(try model.editStore!.readState(for: photo) == before && model.adjustmentSession!.transactions.isEmpty,
             "failed quick persistence preserves the target and creates no history")
         failWrites = false
         model.applyPresetToCurrentPhoto(preset)
@@ -193,12 +195,12 @@ enum QuickPresetModelChecks {
         let missingPayload = try AdjustmentTransferPayload(source: preset.payload.source,
             values: ["looks.reference": .object(["kind": .string("managed"), "id": .string("missing-quick-look")])])
         let missing = try model.presetStore.create(name: "Missing quick look", payload: missingPayload)
-        let saved = try model.editStore!.versionedState(for: photo)
+        let saved = try model.editStore!.readState(for: photo)
         model.applyPresetToCurrentPhoto(missing)
         try wait { !model.quickPresetState.isPreparing }
         guard case .failed(_, let message) = model.quickPresetState else { throw NSError(domain: "missing quick look must be blocked", code: 1) }
         try check(message == model.adjustmentErrorMessage(AdjustmentTransferError.missingLook("missing-quick-look")) &&
-            model.adjustmentSession!.transactions.count == 1 && model.editStore!.versionedState(for: photo) == saved,
+            model.adjustmentSession!.transactions.count == 1 && model.editStore!.readState(for: photo) == saved,
             "missing quick look reports its preflight error before any save")
     }
 }

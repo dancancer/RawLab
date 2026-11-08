@@ -10,7 +10,7 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.filters.SdkSuppress
-import com.rawlab.android.settings.EditPersistenceConflict
+import com.rawlab.android.settings.PhotoChangedException
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
@@ -42,7 +42,7 @@ class OriginalPhotoSourceTest {
             val validate = OriginalPhotoSource.capture(resolver, uri)
             validate() // 每次返回新 fd/inode，但同一个逻辑流仍应可用。
             bytes = byteArrayOf(4, 3, 2, 1)
-            try { validate(); fail("Changed provider content must be rejected") } catch (_: EditPersistenceConflict) { }
+            try { validate(); fail("Changed provider content must be rejected") } catch (_: PhotoChangedException) { }
         } finally { files.forEach(File::delete) }
     }
 }

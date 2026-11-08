@@ -15,10 +15,8 @@ extension RawEditorViewModel {
 
     func validateCollectionActive(_ key: String) throws {
         guard sourceIdentity?.key == key else { return }
-        guard adjustmentTargetIsCurrent(key), !adjustmentReloadRequired else { throw AdjustmentTransferError.draftRequiresPreflight }
-        guard let record = loadedEditRecord, try editPersistence?.versionedState(for: record.identity) == record else {
-            throw EditPersistenceConflict.changed
-        }
+        guard adjustmentTargetIsCurrent(key) else { throw AdjustmentTransferError.draftRequiresPreflight }
+        guard loadedEditRecord?.identity == sourceIdentity else { throw AdjustmentCommitError.expired }
         try adjustmentSourceValidator?()
     }
 
@@ -26,7 +24,7 @@ extension RawEditorViewModel {
         guard let identity = sourceIdentity, let record = loadedEditRecord else { throw EditPersistenceError.corruptStore }
         try validateCollectionActive(identity.key)
         let state = try record.state ?? PhotoEditState(settings: sourceDefaultSettings)
-        guard currentEditState(settings: settings).hasSameAdjustments(as: state) else { throw EditPersistenceConflict.changed }
+        guard currentEditState(settings: settings).hasSameAdjustments(as: state) else { throw AdjustmentCommitError.expired }
         let context = adjustmentContext(identifier: identity.key, isRaw: sourceKind == .raw, whiteBalance: rawWhiteBalance)
         let payload = try IOSAdjustmentTransfer.capture(scope: scope, snapshot: state, context: context)
         let photos = batchSelection.selection.targets(excluding: identity.key).compactMap { key -> IOSAdjustmentPhoto? in
@@ -44,6 +42,7 @@ extension RawEditorViewModel {
         let collection = batchSelection.exportInput
         let looks = lutMap
         let active = collectionActiveValidator()
+        let session = adjustmentSession
         adjustmentQueue.async {
             let review = collection.prepareExport(store: store, skipping: skipping, format: format, longEdge: longEdge,
                 x3fDefaultMode: { try Sony2FujiProcessor().x3fDefaultMode(for: $0) },
@@ -65,7 +64,7 @@ extension RawEditorViewModel {
                     }
                     try info.validateEditDecodeVersion(version)
                     try format.validateHDRHEIF()
-                })
+                }, editGeneration: { session?.editGeneration(forKey: $0) ?? 0 })
             self.resultDelivery { completion(.success(review)) }
         }
     }
@@ -92,7 +91,7 @@ extension RawEditorViewModel {
             guard let self, self.collectionExportGeneration == generation else { return }
             guard isCurrent() else {
                 self.collectionExportPreparing = false
-                self.collectionExportError = self.adjustmentErrorMessage(EditPersistenceConflict.changed)
+                self.collectionExportError = self.adjustmentErrorMessage(AdjustmentCommitError.expired)
                 return
             }
             do {
@@ -126,10 +125,12 @@ extension RawEditorViewModel {
         guard let store = editPersistence else { completion(.failure(EditPersistenceError.corruptStore)); return }
         let collection = batchSelection.exportInput, active = collectionActiveValidator(isCurrent: isCurrent, review: review)
         let makeJournal = makeCollectionJournal
+        let session = adjustmentSession
         adjustmentQueue.async {
             let result = Result {
                 let journal = try makeJournal()
-                return (try collection.freeze(review, store: store, journal: journal, validateActive: active), journal)
+                return (try collection.freeze(review, store: store, journal: journal, validateActive: active,
+                    editGeneration: { session?.editGeneration(forKey: $0) ?? 0 }), journal)
             }
             self.resultDelivery { completion(result) }
         }
@@ -143,7 +144,7 @@ extension RawEditorViewModel {
                 if let review {
                     guard self.batchSelection.selection.targets() == review.selection,
                           self.batchSelection.photos[key]?.photo.file == review.rows.first(where: { $0.id == key })?.photo.photo.file else {
-                        throw EditPersistenceConflict.changed
+                        throw AdjustmentCommitError.expired
                     }
                 }
                 try self.validateCollectionActive(key)

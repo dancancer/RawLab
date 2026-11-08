@@ -23,7 +23,7 @@ import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.HslTargetRevision
 import com.rawlab.android.settings.HslTargetSample
 import com.rawlab.android.settings.EditSettings
-import com.rawlab.android.settings.VersionedPhotoEdit
+import com.rawlab.android.settings.PhotoEditState
 import com.rawlab.android.settings.LensSettings
 import com.rawlab.android.settings.LookChoice
 
@@ -67,7 +67,7 @@ internal sealed interface Work {
         val x3fModeOverride: X3fMode? = null, val ownsRetained: Boolean = false) : Work
     data class Preview(val photo: ImportedPhoto, val edits: EditSettings, val interactive: Boolean,
         val gpuMode: Int, val importing: Boolean = false, val restored: Boolean = false,
-        val edge: Int = 1600, val draft: Boolean = false, val importedRecord: VersionedPhotoEdit? = null,
+        val edge: Int = 1600, val draft: Boolean = false, val importedRecord: PhotoEditState? = null,
         val persistOnImport: Boolean = false, val ownsImportedInput: Boolean = false) : Work
     data class HslProbe(val preview: Preview, val before: EditSettings, val revision: HslTargetRevision,
         val token: Long, val axis: Int, val x: Float, val y: Float) : Work
@@ -80,7 +80,7 @@ internal sealed interface Work {
 internal sealed interface WorkResult {
     data class X3fImportFailure(val retry: Work.Import, val error: Throwable) : WorkResult
     data class Preview(val request: Work.Preview, val pair: PreviewPair) : WorkResult
-    data class MissingLook(val photo: ImportedPhoto, val edits: EditSettings, val importedRecord: VersionedPhotoEdit?,
+    data class MissingLook(val photo: ImportedPhoto, val edits: EditSettings, val importedRecord: PhotoEditState?,
         val persistOnImport: Boolean = false, val ownsImportedInput: Boolean = false) : WorkResult
     data class HslProbe(val request: Work.HslProbe, val sample: HslTargetSample) : WorkResult
     data class CameraHDRPreflight(val request: Work.CameraHDRPreflight) : WorkResult

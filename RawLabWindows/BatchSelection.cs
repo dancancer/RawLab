@@ -12,7 +12,7 @@ public sealed record CollectionPhoto(string ID,string Path,OriginalIdentity Iden
     public void Validate()
     {
         var current=OriginalIdentity.Read(Path);
-        if(Key(current)!=ID || !Identity.SameFile(current))throw new EditPersistenceConflict();
+        if(Key(current)!=ID || !Identity.SameFile(current))throw new PhotoChangedException();
     }
 }
 
@@ -39,7 +39,7 @@ public sealed class BatchSelectionSession
                 if(current?.ID==photo.ID)photo=current;
             }catch(Exception error) {
                 var full=System.IO.Path.GetFullPath(path);var id=full.ToUpperInvariant();
-                photo=new(id,full,new(full,0,0,0));failures[id]=error.Message;
+                photo=new(id,full,new(full,0,0,0));failures[id]=AdjustmentTransferPresentation.Detail(error);
             }
             if(photos.Any(existing=>existing.ID==photo.ID))continue;
             photos.Add(photo);selected.Add(photo.ID);
@@ -63,12 +63,12 @@ public sealed class BatchSelectionSession
     }
     public void RefreshFailures()
     {
-        foreach(var photo in photos)try{photo.Validate();failures.Remove(photo.ID);}catch(Exception error){failures[photo.ID]=error.Message;}
+        foreach(var photo in photos)try{photo.Validate();failures.Remove(photo.ID);}catch(Exception error){failures[photo.ID]=AdjustmentTransferPresentation.Detail(error);}
     }
 }
 
-public sealed record CollectionExportRow(CollectionPhoto Photo,VersionedPhotoEdit? Record=null,
-    AdjustmentSnapshot? Settings=null,string? Look=null,string? LookSHA256=null,string? LookName=null,string? Error=null);
+public sealed record CollectionExportRow(CollectionPhoto Photo,PhotoEditState? Record=null,
+    AdjustmentSnapshot? Settings=null,string? Look=null,string? LookSHA256=null,string? LookName=null,string? Error=null,long EditGeneration=0);
 public sealed record CollectionExportReview(IReadOnlyList<string> SelectionIDs,IReadOnlyList<CollectionExportRow> Rows,
     ExportFormat Format,int? LongEdge,string OutputDirectory)
 {
@@ -76,7 +76,7 @@ public sealed record CollectionExportReview(IReadOnlyList<string> SelectionIDs,I
 }
 
 public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Func<SavedEdit,string?> resolveLook,
-    Action<string>? validateAI=null)
+    Action<string>? validateAI=null,Func<string,long>? editGeneration=null)
 {
     internal static HDRSourceInfo? ValidateHDRFormat(string path, AdjustmentSnapshot settings, ExportFormat format)
     {
@@ -112,8 +112,9 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
         foreach(var photo in photos.Where(photo=>!skipping.Contains(photo.ID))) {
             try {
                 if(activeFailure(photo.ID) is {} draft)throw new InvalidOperationException(draft);
-                photo.Validate();var record=store.VersionedState(photo.Path);
-                if(!record.Identity.SameFile(photo.Identity))throw new EditPersistenceConflict();
+                var generation=editGeneration?.Invoke(photo.Path) ?? 0;
+                photo.Validate();var record=store.ReadState(photo.Path);
+                if(!record.Identity.SameFile(photo.Identity))throw new PhotoChangedException();
                 var settings=(record.Edit?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(photo.Path)).Capture();
                 ValidateHDRFormat(photo.Path,settings,format);
                 var hdr = settings.HDR is { Mode: HDRMode.Hdr };
@@ -125,8 +126,8 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                 var look=!hdr && record.Edit is {} edit ? resolveLook(edit) : null;
                 if(!hdr && (record.Edit?.Look!=null || settings.MasterRecipeID!=null) && look==null)throw new FileNotFoundException(Loc.Text("外观不可用。"));
                 var hash=look==null ? null : BatchFrozenSettings.Checksum(look);
-                rows.Add(new(photo,record.Copy(),settings.Copy(),look,hash,look==null ? Loc.Text("中性") : System.IO.Path.GetFileNameWithoutExtension(look)));
-            }catch(Exception error){rows.Add(new(photo,Error:error.Message));}
+                rows.Add(new(photo,record.Copy(),settings.Copy(),look,hash,look==null ? Loc.Text("中性") : System.IO.Path.GetFileNameWithoutExtension(look),EditGeneration:generation));
+            }catch(Exception error){rows.Add(new(photo,Error:AdjustmentTransferPresentation.Detail(error)));}
         }
         return new(photos.Select(photo=>photo.ID).ToArray(),rows,format,longEdge,System.IO.Path.GetFullPath(outputDirectory));
     }
@@ -141,11 +142,9 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
             foreach(var row in review.Rows) {
                 if(activeFailure(row.Photo.ID) is {} draft)throw new InvalidOperationException(draft);
                 row.Photo.Validate();
-                var current=store.VersionedState(row.Photo.Path);
-                if(!current.SameAs(row.Record))throw new EditPersistenceConflict();
-                var expected=(current.Edit?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(row.Photo.Path)).Capture();
+                if((editGeneration?.Invoke(row.Photo.Path) ?? 0)!=row.EditGeneration)throw new AdjustmentOperationExpiredException();
+                var expected=row.Settings!;
                 ValidateHDRFormat(row.Photo.Path,expected,review.Format);
-                if(!expected.SameAs(row.Settings!))throw new EditPersistenceConflict();
                 if(expected.ActiveAIDenoise) {
                     if(PhotoInput.IsX3f(row.Photo.Path) && expected.X3fMode==X3fMode.Normal)throw new InvalidOperationException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
                     if(!PhotoInput.IsRaw(row.Photo.Path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
@@ -188,10 +187,10 @@ internal sealed class BatchHDRPreparation(EditStore store, Func<SavedEdit,string
     internal static bool Required(BatchJob job) => job.Mode == BatchJob.UniformFrozen &&
         job.HasCameraHDRSource && job.Settings.HDR is { Mode: HDRMode.Hdr };
 
-    private (VersionedPhotoEdit Record, BatchFrozenSettings Frozen) Candidate(BatchJob job, BatchItem item, int ordinal, bool validateFormat)
+    private (PhotoEditState Record, BatchFrozenSettings Frozen) Candidate(BatchJob job, BatchItem item, int ordinal, bool validateFormat)
     {
-        var record = store.VersionedState(item.Input);
-        if (!record.Identity.SameFile(item.Identity)) throw new EditPersistenceConflict();
+        var record = store.ReadState(item.Input);
+        if (!record.Identity.SameFile(item.Identity)) throw new PhotoChangedException();
         var target = record.Edit ?? new SavedEdit(record.Identity,
             PhotoInput.PrepareDefaultSettings(item.Input).Capture(),null);
         var source = new SavedEdit(new OriginalIdentity(job.Source,0,0,0),job.Settings,null);
@@ -245,12 +244,12 @@ internal sealed class BatchHDRPreparation(EditStore store, Func<SavedEdit,string
                 BatchFrozenSettings frozen;
                 try {
                     var candidate = Candidate(work,item,index,true);
-                    if (!store.VersionedState(item.Input).SameAs(candidate.Record)) throw new EditPersistenceConflict();
+                    candidate.Record.Identity.RequireCurrent();
                     frozen = candidate.Frozen;
                 } catch (Exception error) when (work.Started &&
                     error is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception) {
                     // 保存逐行失败，恢复后重试时再读取目标的调整。
-                    work.Items[index] = item with { Status=BatchStatus.Failed,Error=error.Message,AwaitingTargetSettings=true };
+                    work.Items[index] = item with { Status=BatchStatus.Failed,Error=AdjustmentTransferPresentation.Detail(error),AwaitingTargetSettings=true };
                     continue;
                 }
                 if (frozen.Look is {} look) {

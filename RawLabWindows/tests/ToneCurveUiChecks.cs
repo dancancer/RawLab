@@ -65,11 +65,11 @@ internal static class ToneCurveUiChecks
             check(ActiveCurve()==before && StoredCurve()==before,"Curve Undo restores native and persisted points");
             window.RedoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));Ready(window);
             check(ActiveCurve()==changed,"Curve Redo restores all points");
-            var saved=store.VersionedState(photo);baseline=session.Transactions.Count;
+            var saved=store.ReadState(photo);baseline=session.Transactions.Count;
             var point=changed.Points[1];start=canvas.PointToScreen(new Point(12+point.X*(canvas.ActualWidth-24),12+(1-point.Y)*(canvas.ActualHeight-24)));
             SetCursorPos((int)start.X,(int)start.Y);Pump(40);mouse_event(2,0,0,0,UIntPtr.Zero);InteractionChecks.PumpUntil(()=>canvas.IsMouseCaptured);
             SetCursorPos((int)start.X-20,(int)start.Y+15);Pump(80);window.CurveEditor.CancelInputs();mouse_event(4,0,0,0,UIntPtr.Zero);Ready(window);
-            check(ActiveCurve()==changed && store.VersionedState(photo).SameAs(saved) && session.Transactions.Count==baseline,
+            check(ActiveCurve()==changed && store.ReadState(photo).SameAs(saved) && session.Transactions.Count==baseline,
                 "Cancelled native curve drag restores its starting state and ignores late mouse-up");
             var x=Get<ParameterRow>(window.CurveEditor,"x");x.Number.BringIntoView();x.Number.Focus();x.Number.Text=hdr ? "-4" : "0.250000000000001";
             x.Number.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(x.Number),Environment.TickCount,Key.Enter){RoutedEvent=Keyboard.PreviewKeyDownEvent});Ready(window);

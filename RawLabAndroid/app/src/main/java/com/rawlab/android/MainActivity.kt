@@ -215,7 +215,6 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             onEdit = model::edit, onRetry = model::retry, onSelectFilm = model::selectFilm,
             onPrepareReset = model::prepareReset, onCommitReset = model::commitReset,
             onSaveRetry = { model.retrySave() },
-            adjustmentReloadRequired = model.adjustmentReloadRequired, onReloadAdjustments = model::reloadSavedAdjustments,
             onCancelAdjustment = model::cancelAdjustmentInteraction,
             canUndoAdjustment = model.canUndoAdjustment, canRedoAdjustment = model.canRedoAdjustment,
             canPasteAdjustment = model.adjustmentClipboard != null,

@@ -2600,10 +2600,6 @@
       "formats": [],
       "source": "RAW 降噪"
     },
-    "丢弃当前未保存修改并重新载入调整？": {
-      "formats": [],
-      "source": "丢弃当前未保存修改并重新载入调整？"
-    },
     "仅已修改": {
       "formats": [],
       "source": "仅已修改"
@@ -2726,10 +2722,6 @@
       "formats": [],
       "source": "清空选择"
     },
-    "照片或调整已变化，请重新打开后重试。": {
-      "formats": [],
-      "source": "照片或调整已变化，请重新打开后重试。"
-    },
     "畸变校正": {
       "formats": [],
       "source": "畸变校正"
@@ -2770,14 +2762,6 @@
       "formats": [],
       "source": "请选择至少一项调整。"
     },
-    "调整已保存，当前照片需要重新载入。": {
-      "formats": [],
-      "source": "调整已保存，当前照片需要重新载入。"
-    },
-    "调整已变化": {
-      "formats": [],
-      "source": "调整已变化"
-    },
     "调整已复制。": {
       "formats": [],
       "source": "调整已复制。"
@@ -2809,10 +2793,6 @@
     "重做已失效": {
       "formats": [],
       "source": "重做已失效"
-    },
-    "重新载入调整": {
-      "formats": [],
-      "source": "重新载入调整"
     },
     "降噪参数": {
       "formats": [],
@@ -4243,6 +4223,26 @@
     "不是支持的图像文件": {
       "formats": [],
       "source": "不是支持的图像文件"
+    },
+    "操作已失效": {
+      "source": "操作已失效",
+      "formats": []
+    },
+    "此操作已过期，请重新操作。": {
+      "source": "此操作已过期，请重新操作。",
+      "formats": []
+    },
+    "请按历史顺序撤销或重做。": {
+      "source": "请按历史顺序撤销或重做。",
+      "formats": []
+    },
+    "调整已保存，界面未更新。": {
+      "source": "调整已保存，界面未更新。",
+      "formats": []
+    },
+    "原始文件已被替换。是否放弃未保存的调整并重新打开照片？": {
+      "formats": [],
+      "source": "原始文件已被替换。是否放弃未保存的调整并重新打开照片？"
     }
   },
   "overrides": {
@@ -5460,14 +5460,6 @@
       "ja": "{0} · {1}/{2}",
       "zh-Hans": "{0} · {1}/{2}"
     },
-    "丢弃当前未保存修改并重新载入调整？": {
-      "de": "Ungespeicherte Änderungen verwerfen und Anpassungen neu laden?",
-      "en": "Discard unsaved changes and reload adjustments?",
-      "es": "¿Descartar los cambios sin guardar y volver a cargar los ajustes?",
-      "fr": "Abandonner les modifications non enregistrées et recharger les réglages ?",
-      "ja": "未保存の変更を破棄して調整を再読み込みしますか？",
-      "zh-Hans": "丢弃当前未保存修改并重新载入调整？"
-    },
     "保存失败，请检查文件和存储位置后重试。": {
       "de": "Speichern fehlgeschlagen. Prüfen Sie die Datei und den Speicherort und versuchen Sie es erneut.",
       "en": "Could not save. Check the file and storage location, then retry.",
@@ -5532,14 +5524,6 @@
       "ja": "このフォルダには他の写真がありません。",
       "zh-Hans": "此目录没有其他照片。"
     },
-    "照片或调整已变化，请重新打开后重试。": {
-      "de": "Das Foto oder die Anpassungen wurden geändert. Öffnen Sie das Foto erneut und versuchen Sie es noch einmal.",
-      "en": "The photo or adjustments changed. Reopen the photo and retry.",
-      "es": "La foto o los ajustes han cambiado. Abre de nuevo la foto y vuelve a intentarlo.",
-      "fr": "La photo ou les réglages ont changé. Rouvrez la photo, puis réessayez.",
-      "ja": "写真または調整が変更されました。写真を開き直して再試行してください。",
-      "zh-Hans": "照片或调整已变化，请重新打开后重试。"
-    },
     "目标缺少所选外观，请先导入外观。": {
       "de": "Der gewählte Look ist für dieses Ziel nicht verfügbar. Importieren Sie ihn zuerst.",
       "en": "The selected look is unavailable for this target. Import the look first.",
@@ -5572,14 +5556,6 @@
       "ja": "少なくとも1つの調整を選択してください。",
       "zh-Hans": "请选择至少一项调整。"
     },
-    "调整已保存，当前照片需要重新载入。": {
-      "de": "Die Anpassungen wurden gespeichert. Laden Sie das aktuelle Foto neu, um den neuesten Stand anzuzeigen.",
-      "en": "Adjustments were saved. Reload the current photo to display the latest record.",
-      "es": "Los ajustes se han guardado. Vuelve a cargar la foto actual para mostrar la versión más reciente.",
-      "fr": "Les réglages ont été enregistrés. Rechargez la photo actuelle pour afficher la dernière version.",
-      "ja": "調整は保存されました。最新の状態を表示するには現在の写真を再読み込みしてください。",
-      "zh-Hans": "调整已保存，当前照片需要重新载入。"
-    },
     "调整已复制。": {
       "de": "Anpassungen kopiert.",
       "en": "Adjustments copied.",
@@ -5611,14 +5587,6 @@
       "fr": "Rétablissement indisponible",
       "ja": "やり直しは無効になりました",
       "zh-Hans": "重做已失效"
-    },
-    "重新载入调整": {
-      "de": "Anpassungen neu laden",
-      "en": "Reload adjustments",
-      "es": "Volver a cargar ajustes",
-      "fr": "Recharger les réglages",
-      "ja": "調整を再読み込み",
-      "zh-Hans": "重新载入调整"
     },
     "默认不包含几何与镜头。自定义可逐项选择。": {
       "de": "Geometrie und Objektiveinstellungen sind standardmäßig ausgeschlossen. Unter Benutzerdefiniert können Sie einzelne Anpassungen wählen.",
@@ -5907,6 +5875,22 @@
       "es": "Quita el perfil de cámara HDR antes de usar la reducción de ruido con IA.",
       "ja": "AI ノイズ除去を使用する前に HDR カメラプロファイルを解除してください。",
       "zh-Hans": "请先清除 HDR 相机配置，再使用 AI 降噪。"
+    },
+    "调整已保存，界面未更新。": {
+      "zh-Hans": "调整已保存，界面未更新。",
+      "en": "Adjustments saved, but the editor did not update.",
+      "de": "Anpassungen gespeichert, aber die Ansicht wurde nicht aktualisiert.",
+      "fr": "Les réglages sont enregistrés, mais l’éditeur ne s’est pas actualisé.",
+      "ja": "調整は保存されましたが、画面は更新されませんでした。",
+      "es": "Los ajustes se han guardado, pero el editor no se ha actualizado."
+    },
+    "原始文件已被替换。是否放弃未保存的调整并重新打开照片？": {
+      "zh-Hans": "原始文件已被替换。是否放弃未保存的调整并重新打开照片？",
+      "en": "The original file has been replaced. Discard unsaved adjustments and reopen the photo?",
+      "de": "Die Originaldatei wurde ersetzt. Nicht gespeicherte Anpassungen verwerfen und das Foto erneut öffnen?",
+      "fr": "Le fichier original a été remplacé. Abandonner les réglages non enregistrés et rouvrir la photo ?",
+      "ja": "元のファイルが置き換えられました。未保存の調整を破棄して写真を開き直しますか？",
+      "es": "El archivo original se ha reemplazado. ¿Descartar los ajustes sin guardar y volver a abrir la foto?"
     }
   }
 }

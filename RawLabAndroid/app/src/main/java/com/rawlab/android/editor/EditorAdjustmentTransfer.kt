@@ -4,7 +4,10 @@ import android.content.Context
 import android.net.Uri
 import com.rawlab.android.R
 import com.rawlab.android.i18n.AppStrings
-import com.rawlab.android.settings.EditPersistenceConflict
+import com.rawlab.android.settings.AdjustmentOperationExpiredException
+import com.rawlab.android.settings.AdjustmentHistoryOrderException
+import com.rawlab.android.settings.PhotoChangedException
+import com.rawlab.android.settings.AdjustmentNotReadyException
 import com.rawlab.android.adjustments.*
 import com.rawlab.android.editor.storage.EditorEditStore
 import com.rawlab.android.engine.NativeProcessor
@@ -59,7 +62,7 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
                     sourceValidator()
                     checkActive()
                     val validate = sourceValidator
-                    val saved = store.versionedState(identity)
+                    val saved = store.readState(identity)
                     val targetDefaults = saved.settings ?: photo.defaultEditSettings()
                     val neutral = EditSettings(processing = targetDefaults.processing, x3fMode = targetDefaults.x3fMode)
                     val database = storage.lensDatabase()
@@ -123,7 +126,10 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
 }
 
 internal fun adjustmentErrorMessage(error: Throwable?): String = AppStrings.text(when {
-    error is EditPersistenceConflict -> R.string.transfer_conflict_message
+    error is PhotoChangedException -> R.string.collection_source_changed
+    error is AdjustmentHistoryOrderException -> R.string.transfer_history_order_message
+    error is AdjustmentOperationExpiredException -> R.string.transfer_conflict_message
+    error is AdjustmentNotReadyException -> R.string.transfer_draft_message
     error is AdjustmentTransferException -> when (error.reason) {
         AdjustmentFailure.EMPTY_SCOPE -> R.string.transfer_empty_scope
         AdjustmentFailure.DRAFT -> R.string.transfer_draft_message

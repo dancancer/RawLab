@@ -15,7 +15,7 @@ enum AdjustmentTransferStatus { case applied, unchanged, skipped, blocked, confl
 struct AdjustmentTransferOutcome {
     let targetID: String
     let status: AdjustmentTransferStatus
-    let saved: VersionedPhotoEdit?
+    let saved: PhotoEditRecord?
     let error: Error?
     var requiresHistoryDecision = false
 }
@@ -23,11 +23,12 @@ struct AdjustmentTransferOutcome {
 struct PreparedAdjustmentTransfer {
     struct Target {
         let id: String
-        let original: VersionedPhotoEdit?
+        let original: PhotoEditRecord?
         let candidate: PhotoEditState?
         let unchanged: Bool
         let isCurrent: (() -> Bool)?
         let error: Error?
+        var editGeneration: UInt64 = 0
     }
     let id: UUID
     let payload: AdjustmentTransferPayload
@@ -52,16 +53,32 @@ struct AdjustmentHistoryTransaction {
     var parts: [Part]
 }
 
-// 会话层按原生编辑器的串行提交顺序调用；跨实例/进程的条件写入由 EditPersistence 锁保护。
+// 编辑与历史在编辑器线程提交；后台预检只读取会话代次和冻结参数。
 final class AdjustmentTransferSession {
     private let store: EditPersistence
     private var outcomes: [UUID: [String: AdjustmentTransferOutcome]] = [:]
-    private var knownRecords: [String: VersionedPhotoEdit] = [:]
+    private var knownRecords: [String: PhotoEditRecord] = [:]
+    private let generationLock = NSLock()
+    private var editGenerations: [String: UInt64] = [:]
     private var historyHeads: [String: UUID] = [:]
     private(set) var transactions: [AdjustmentHistoryTransaction] = []
     private(set) var clipboard: AdjustmentTransferPayload?
 
     init(store: EditPersistence) { self.store = store }
+
+    func editGeneration(for url: URL) -> UInt64 {
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        generationLock.lock(); defer { generationLock.unlock() }
+        return editGenerations[path, default: 0]
+    }
+
+    func isCurrentSave(_ record: PhotoEditRecord) -> Bool { knownRecords[record.identity.path] == record }
+
+    private func remember(_ record: PhotoEditRecord) {
+        knownRecords[record.identity.path] = record
+        generationLock.lock(); defer { generationLock.unlock() }
+        editGenerations[record.identity.path, default: 0] &+= 1
+    }
 
     @discardableResult func copy(scope: AdjustmentTransferScope, snapshot: PhotoEditState,
                                  context: MacAdjustmentTransferContext) throws -> AdjustmentTransferPayload {
@@ -80,13 +97,14 @@ final class AdjustmentTransferSession {
             guard seen.insert(id).inserted else { continue }
             do {
                 guard target.isCurrent?() != false else { throw AdjustmentTransferError.draftRequiresPreflight }
-                let original = try store.versionedState(for: target.url)
-                if let expected = target.expectedIdentity, original.identity != expected { throw EditPersistenceConflict.changed }
+                let generation = editGeneration(for: target.url)
+                let original = try store.readState(for: target.url)
+                if let expected = target.expectedIdentity, original.identity != expected { throw AdjustmentCommitError.photoChanged }
                 let stored = try original.state ?? target.resolveDefaultState?() ?? target.defaultState
                 let effective = try target.resolveMetadata?(stored) ?? stored
                 let candidate = try MacAdjustmentTransfer.prepare(payload: payload, target: effective, context: target.context)
                 prepared.append(.init(id: id, original: original, candidate: candidate, unchanged: candidate == effective,
-                    isCurrent: target.isCurrent, error: nil))
+                    isCurrent: target.isCurrent, error: nil, editGeneration: generation))
             } catch {
                 prepared.append(.init(id: id, original: nil, candidate: nil, unchanged: false,
                     isCurrent: target.isCurrent, error: error))
@@ -109,15 +127,15 @@ final class AdjustmentTransferSession {
             else if target.isCurrent?() == false { applied = outcome(target.id, .blocked, error: AdjustmentTransferError.draftRequiresPreflight) }
             else if let original = target.original, let candidate = target.candidate {
                 do {
-                    // 无变化也重新读取前态，不能把过期 prepared 误报为当前已一致。
-                    guard try store.versionedState(for: URL(fileURLWithPath: target.id)) == original else { throw EditPersistenceConflict.changed }
+                    try original.identity.requireCurrent()
+                    guard editGeneration(for: URL(fileURLWithPath: target.id)) == target.editGeneration else { throw AdjustmentCommitError.expired }
                     if target.unchanged { applied = outcome(target.id, .unchanged, saved: original) }
                     else {
-                        let saved = try store.compareAndSave(expected: original, state: candidate)
+                        let saved = try store.saveState(identity: original.identity, state: candidate)
                         record(id: operation.id, action: operation.action, fields: operation.payload.fields, before: original, after: saved)
                         applied = outcome(target.id, .applied, saved: saved)
                     }
-                } catch is EditPersistenceConflict { applied = outcome(target.id, .conflict, error: EditPersistenceConflict.changed) }
+                } catch let error as AdjustmentCommitError { applied = outcome(target.id, .conflict, error: error) }
                 catch { applied = outcome(target.id, .failed, error: error) }
             } else { applied = outcome(target.id, .blocked, error: target.error) }
             outcomes[operation.id, default: [:]][target.id] = applied
@@ -126,21 +144,21 @@ final class AdjustmentTransferSession {
         return result
     }
 
-    func commitEdit(expected: VersionedPhotoEdit, state: PhotoEditState,
+    func commitEdit(expected: PhotoEditRecord, state: PhotoEditState,
                     isCurrent: () -> Bool = { true }) -> AdjustmentTransferOutcome {
         let id = expected.identity.path
         guard isCurrent() else { return outcome(id, .blocked, error: AdjustmentTransferError.draftRequiresPreflight) }
         do {
+            let before = knownRecords[id].flatMap { $0.identity == expected.identity ? $0 : nil } ?? expected
             try state.settings.validateResetValues()
             guard state.masterRecipeID == state.settings.masterRecipeID else {
                 throw AdjustmentTransferError.invalidPayload("recipe identity")
             }
-            let saved = try store.compareAndSave(expected: expected, state: state)
-            guard saved != expected else { return outcome(id, .unchanged, saved: saved) }
-            record(id: UUID(), action: .edit, fields: [], before: expected, after: saved)
+            let saved = try store.saveState(identity: before.identity, state: state)
+            guard saved != before else { return outcome(id, .unchanged, saved: saved) }
+            record(id: UUID(), action: .edit, fields: [], before: before, after: saved)
             return outcome(id, .applied, saved: saved)
-        } catch is EditPersistenceConflict { return outcome(id, .conflict, error: EditPersistenceConflict.changed) }
-        catch { return outcome(id, .failed, error: error) }
+        } catch { return outcome(id, .failed, error: error) }
     }
 
     func undoPhoto(_ url: URL, transactionID: UUID? = nil, isCurrent: (String) -> Bool = { _ in true }) -> [AdjustmentTransferOutcome] {
@@ -184,7 +202,7 @@ final class AdjustmentTransferSession {
             let part = transactions[transaction].parts[$0]
             return part.state == desired && (photo == nil || part.identity.path == photo)
         }
-        var prepared: [Int: VersionedPhotoEdit] = [:]
+        var prepared: [Int: PhotoEditRecord] = [:]
         var rejected: [Int: AdjustmentTransferOutcome] = [:]
         for index in selected {
             let part = transactions[transaction].parts[index]
@@ -192,12 +210,12 @@ final class AdjustmentTransferSession {
             if skipping.contains(path) { continue }
             do {
                 guard isCurrent(path) else { throw AdjustmentTransferError.draftRequiresPreflight }
-                let current = try store.versionedState(for: URL(fileURLWithPath: path))
-                guard current.identity == part.identity, current == knownRecords[path],
-                      historyHeads[path] == (undo ? part.id : part.priorHead),
-                      current.state == (undo ? part.after : part.before) else { throw EditPersistenceConflict.changed }
+                try part.identity.requireCurrent()
+                guard let current = knownRecords[path], current.identity == part.identity else { throw AdjustmentCommitError.photoChanged }
+                guard historyHeads[path] == (undo ? part.id : part.priorHead),
+                      current.state == (undo ? part.after : part.before) else { throw AdjustmentCommitError.historyOrder }
                 prepared[index] = current
-            } catch is EditPersistenceConflict { rejected[index] = outcome(path, .conflict, error: EditPersistenceConflict.changed, requiresHistoryDecision: true) }
+            } catch let error as AdjustmentCommitError { rejected[index] = outcome(path, .conflict, error: error, requiresHistoryDecision: true) }
             catch { rejected[index] = outcome(path, .blocked, error: error, requiresHistoryDecision: true) }
         }
         guard rejected.isEmpty else {
@@ -213,22 +231,22 @@ final class AdjustmentTransferSession {
             guard let current = prepared[index] else { return outcome(path, .skipped) }
             guard isCurrent(path) else { return outcome(path, .blocked, error: AdjustmentTransferError.draftRequiresPreflight, requiresHistoryDecision: true) }
             do {
-                let saved = try store.compareAndSave(expected: current, state: undo ? part.before : part.after)
-                knownRecords[path] = saved
+                let saved = try store.saveState(identity: current.identity, state: undo ? part.before : part.after)
+                remember(saved)
                 historyHeads[path] = undo ? part.priorHead : part.id
                 transactions[transaction].parts[index].state = undo ? .undone : .applied
                 return outcome(path, .applied, saved: saved)
-            } catch is EditPersistenceConflict { return outcome(path, .conflict, error: EditPersistenceConflict.changed, requiresHistoryDecision: true) }
+            } catch let error as AdjustmentCommitError { return outcome(path, .conflict, error: error, requiresHistoryDecision: true) }
             catch { return outcome(path, .failed, error: error) }
         }
     }
 
     private func record(id: UUID, action: AdjustmentHistoryTransaction.Action, fields: Set<AdjustmentTransferField>,
-                        before: VersionedPhotoEdit, after: VersionedPhotoEdit) {
+                        before: PhotoEditRecord, after: PhotoEditRecord) {
         guard before.state != after.state else { return }
         let path = after.identity.path
         let priorHead = before == knownRecords[path] ? historyHeads[path] : nil
-        knownRecords[path] = after
+        remember(after)
         for transaction in transactions.indices {
             for part in transactions[transaction].parts.indices where transactions[transaction].parts[part].identity.path == path
                 && transactions[transaction].parts[part].state == .undone {
@@ -242,7 +260,7 @@ final class AdjustmentTransferSession {
         else { transactions.append(.init(id: id, action: action, fields: fields, parts: [part])) }
     }
 
-    private func outcome(_ path: String, _ status: AdjustmentTransferStatus, saved: VersionedPhotoEdit? = nil,
+    private func outcome(_ path: String, _ status: AdjustmentTransferStatus, saved: PhotoEditRecord? = nil,
                          error: Error? = nil, requiresHistoryDecision: Bool = false) -> AdjustmentTransferOutcome {
         AdjustmentTransferOutcome(targetID: path, status: status, saved: saved, error: error,
             requiresHistoryDecision: requiresHistoryDecision)

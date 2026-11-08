@@ -56,6 +56,9 @@ extension EditorModel {
         guard let file, geometryDraft == nil else { throw AdjustmentTransferError.draftRequiresPreflight }
         if scheduler.interacting { setInteracting(false) }
         guard saveEdits() else { throw AdjustmentTransferError.draftRequiresPreflight }
+        guard let committedEdit, try OriginalFileIdentity(file) == committedEdit.identity else {
+            throw AdjustmentCommitError.photoChanged
+        }
         let payload = try requireAdjustmentSession().copy(scope: scope, snapshot: editState(settings: settings),
             context: adjustmentTransferContext(for: file))
         adjustmentClipboard = payload
@@ -79,6 +82,7 @@ extension EditorModel {
                                             excludingIdentity: String? = nil, collection: Bool = false,
                                             probeRAW: @escaping (URL) throws -> HDRSourceInfo? = HDRSourceInfo.probeRAW) -> () -> [AdjustmentTransferTarget] {
         let activeFile = file
+        let activeIdentity = committedEdit?.identity
         let activePath = activeFile?.resolvingSymlinksInPath().standardizedFileURL.path
         let source = sourceRevision
         let revision = editRevision
@@ -116,7 +120,7 @@ extension EditorModel {
                       !lens.distortion || info.appliedDistortion,
                       !lens.tca || info.appliedTCA else { throw AdjustmentTransferError.incompatible("lens calibration") }
             }
-            return AdjustmentTransferTarget(url: url, defaultState: PhotoEditState(settings: Adjustments(), filmID: ""), context: context, expectedIdentity: collectionPhoto?.original,
+            return AdjustmentTransferTarget(url: url, defaultState: PhotoEditState(settings: Adjustments(), filmID: ""), context: context, expectedIdentity: collectionPhoto?.original ?? (path == activePath ? activeIdentity : nil),
                 isCurrent: { [weak self] in
                     let check = {
                         guard let self, self.sourceRevision == source else { return false }

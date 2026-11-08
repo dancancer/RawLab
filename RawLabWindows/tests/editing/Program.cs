@@ -27,6 +27,13 @@ if (args.Contains("--camera-raw-hdr")) {
     CameraRawHDRChecks.Run();
     return;
 }
+if (args.Contains("--history-only")) {
+    AdjustmentTransferChecks.Run();
+    AdjustmentHistoryChecks.Run();
+    AdjustmentPresetChecks.Run();
+    BatchSelectionChecks.Run();
+    return;
+}
 X3fPersistenceChecks();
 Check(PhotoInput.PrepareDefaultSettings("fixture.png").ExposureMode == 2,
     "No-record raster defaults retain sensor exposure");

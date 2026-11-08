@@ -1,6 +1,6 @@
 package com.rawlab.android.editor
 
-import com.rawlab.android.settings.EditPersistenceConflict
+import com.rawlab.android.settings.AdjustmentOperationExpiredException
 import com.rawlab.android.settings.HDRCameraProfile
 import com.rawlab.android.settings.HDRCameraDevelopmentSettings
 import com.rawlab.android.settings.PhotoIdentity
@@ -19,7 +19,7 @@ class HDRCameraProfileImportTest {
     @Test fun aRevisionChangeDuringImportIsReportedAsAConflict() = runBlocking {
         var current = true
         val result = readHDRCameraProfile({ current = false; profile }, { current })
-        assertTrue(result.exceptionOrNull() is EditPersistenceConflict)
+        assertTrue(result.exceptionOrNull() is AdjustmentOperationExpiredException)
     }
 
     @Test fun cancellationIsRethrownInsteadOfBecomingAnImportError() {

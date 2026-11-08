@@ -49,7 +49,7 @@ extension IOSAdjustmentTransferStatus {
         case .unchanged: return L10n.text("未变化")
         case .skipped: return L10n.text("已跳过")
         case .blocked: return L10n.text("待处理")
-        case .conflict: return L10n.text("调整已变化")
+        case .conflict: return L10n.text("操作已失效")
         case .failed: return L10n.text("保存失败")
         }
     }

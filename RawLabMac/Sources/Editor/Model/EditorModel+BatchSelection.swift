@@ -108,8 +108,9 @@ extension EditorModel {
         guard let file, !exporting, !aiState.isRunning, !ParameterValueField.hasPendingInputs,
               geometryDraft == nil else { throw AdjustmentTransferError.draftRequiresPreflight }
         if scheduler.interacting { setInteracting(false) }
-        guard saveEdits(), let committedEdit, try editStore?.versionedState(for: file) == committedEdit else {
-            throw EditPersistenceConflict.changed
+        guard saveEdits() else { throw AdjustmentTransferError.draftRequiresPreflight }
+        guard let committedEdit, try OriginalFileIdentity(file) == committedEdit.identity else {
+            throw AdjustmentCommitError.photoChanged
         }
         let sourceIdentity = try BatchExportItem.resourceKey(file)
         let targets = batchSelection.targets(excluding: sourceIdentity).compactMap { batchSelectionPhotos[$0]?.url }
@@ -135,13 +136,13 @@ extension EditorModel {
 
     private func collectionExportPreparation(skipping: Set<String>, format: ExportFormat, longEdge: Int?,
                                              directory: URL, adaptiveJPEG: Bool = false) throws -> MacCollectionExportPreparation {
-        _ = try requireAdjustmentSession()
+        let session = try requireAdjustmentSession()
         let selection = batchSelection.targets()
         return MacCollectionExportPreparation(selection: selection, photos: batchSelectionPhotos,
             drafts: Set(selection.filter(collectionHasDraft)), activeFile: file, activeRecord: committedEdit,
             activeRevision: editRevision, activeAIBusy: aiState.isRunning, store: editStore!, films: films,
             skipped: skipping, format: format, longEdge: longEdge, directory: directory, adaptiveJPEG: adaptiveJPEG,
-            probeHDRSource: probeHDRSource)
+            probeHDRSource: probeHDRSource, editGeneration: session.editGeneration(for:))
     }
 
     func prepareCollectionExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?,
@@ -172,7 +173,7 @@ extension EditorModel {
                     self.collectionExportPreparing = false
                     guard self.sourceRevision == source, self.editRevision == revision,
                           self.batchSelection.targets() == input.selection else {
-                        self.collectionExportError = self.adjustmentErrorMessage(EditPersistenceConflict.changed)
+                        self.collectionExportError = self.adjustmentErrorMessage(AdjustmentCommitError.expired)
                         return
                     }
                     do {
@@ -198,18 +199,20 @@ extension EditorModel {
     }
 
     func freezeCollectionExport(_ review: MacCollectionExportReview) throws -> BatchExportJob {
-        guard review.ready, !exporting, batchSelection.targets() == review.selection else { throw EditPersistenceConflict.changed }
+        guard review.ready, !exporting, batchSelection.targets() == review.selection else { throw AdjustmentCommitError.expired }
         if collectionExportBlockedByTask {
             throw RenderError.failed(L10n.text("请先完成或关闭现有批量任务。"))
         }
-        let current = try collectionExportPreparation(skipping: review.skipped, format: review.format,
-            longEdge: review.longEdge, directory: review.directory, adaptiveJPEG: review.adaptiveJPEG)
+        let session = try requireAdjustmentSession()
         func validateReview() throws {
             for snapshot in review.snapshots {
-                let fresh = try current.snapshot(snapshot.photo)
-                guard fresh.record == snapshot.record, fresh.settings == snapshot.settings,
-                      fresh.look == snapshot.look, fresh.lookSHA256 == snapshot.lookSHA256,
-                      fresh.editorRevision == snapshot.editorRevision else { throw EditPersistenceConflict.changed }
+                try snapshot.photo.validate()
+                guard !collectionHasDraft(snapshot.photo.id),
+                      session.editGeneration(for: snapshot.photo.url) == snapshot.editGeneration,
+                      snapshot.editorRevision == nil || (file == snapshot.photo.url && editRevision == snapshot.editorRevision) else {
+                    throw AdjustmentCommitError.expired
+                }
+                guard try snapshot.look.map(BatchFrozenSettings.checksum) == snapshot.lookSHA256 else { throw BatchExportFailure.missingLook }
             }
         }
         try validateReview()

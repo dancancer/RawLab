@@ -1,7 +1,7 @@
 package com.rawlab.android.editor
 
 import com.rawlab.android.settings.HDRCameraProfile
-import com.rawlab.android.settings.EditPersistenceConflict
+import com.rawlab.android.settings.AdjustmentOperationExpiredException
 import com.rawlab.android.settings.HDRCameraDevelopmentSettings
 import com.rawlab.android.settings.PhotoIdentity
 import kotlinx.coroutines.CancellationException
@@ -18,7 +18,7 @@ data class HDRCameraPanelDraft(val source: PhotoIdentity, val baseline: HDRCamer
 internal suspend fun readHDRCameraProfile(load: suspend () -> HDRCameraProfile,
     isCurrent: () -> Boolean): Result<HDRCameraProfile> = try {
     val profile = load()
-    if (!isCurrent()) throw EditPersistenceConflict()
+    if (!isCurrent()) throw AdjustmentOperationExpiredException()
     Result.success(profile)
 } catch (error: CancellationException) {
     throw error
