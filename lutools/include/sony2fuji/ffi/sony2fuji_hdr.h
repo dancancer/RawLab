@@ -312,9 +312,9 @@ sony2fuji_status sony2fuji_hdr_geometry_size(uint32_t native_width, uint32_t nat
 sony2fuji_status sony2fuji_hdr_render(sony2fuji_session* session, const sony2fuji_hdr_image_pair_v1* source,
     const sony2fuji_hdr_request_v1* request, sony2fuji_hdr_image_pair_v1* result,
     sony2fuji_hdr_diagnostic_v1* diagnostic);
-// Capture the geometry-adjusted HDR rendition after vibrance and before HSL/grading.
-// Use sony2fuji_hsl_probe_sample/destroy. The sampled RGB is extended linear sRGB,
-// and hsl[2] is a bounded coordinate Y/(1+Y). Source and render stay untouched.
+// 捕获几何调整后的 HDR，在自然饱和度之后、HSL/分级/外观之前取样。
+// 使用 sony2fuji_hsl_probe_sample/destroy；RGB 为扩展线性 sRGB，
+// hsl[2] 为有界坐标 Y/(1+Y)，不修改来源或渲染结果。
 sony2fuji_status sony2fuji_hdr_create_hsl_probe(sony2fuji_session* session, const sony2fuji_hdr_image_pair_v1* source,
     const sony2fuji_hdr_request_v1* request, uint64_t source_revision, uint64_t request_revision,
     sony2fuji_hsl_probe** out_probe, sony2fuji_hdr_diagnostic_v1* diagnostic);

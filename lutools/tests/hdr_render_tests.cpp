@@ -274,6 +274,28 @@ void detail() {
         "Clarity did not use the wider neighborhood");
     options.detail.clarity = -1;
     check(renderHDRPair(source, options).hdr.at(4, 4).r < 5, "Negative clarity did not soften the bump");
+    HDRDetailOptions clarity{0, 1, 0, 0};
+    for (const auto size : {2000, 4000, 8000, 16000})
+        check(clarity.halo(size, 1) == size / 200 && clarity.halo(1, size) == size / 200,
+            "HDR clarity radius lost its relative canvas scale above 4.7k");
+    check(clarity.halo(65535, 1) == 328, "HDR clarity exceeded the supported canvas halo bound");
+    check(clarity.halo(100000, 1) == 500, "HDR buffer clarity lost its relative radius beyond JPEG dimensions");
+    ImageData tall(3, 65535);
+    for (int y = 0; y < tall.height; ++y) for (int x = 0; x < tall.width; ++x) {
+        const float value = .2f * std::exp2(.2f * std::sin(y * .03f));
+        tall.at(x, y) = {value, value * 2, -value};
+    }
+    const auto plan = planHDRDetail(tall.width, tall.height, clarity, 0, [&](int x, int y) { return tall.at(x, y); });
+    ImageData full(tall.width, tall.height), bands(tall.width, tall.height);
+    renderHDRDetailBand(plan, tall.pixels.data(), 0, tall.height, full.pixels.data(), 0, tall.height);
+    for (int first = 0; first < tall.height; first += hdrDetailBandHeight) {
+        const int end = std::min(first + hdrDetailBandHeight, tall.height);
+        const int top = std::max(0, first - plan.halo), bottom = std::min(tall.height, end + plan.halo);
+        renderHDRDetailBand(plan, tall.pixels.data() + top * tall.width, top, bottom - top,
+            bands.pixels.data() + first * tall.width, first, end - first);
+    }
+    check(std::memcmp(full.pixels.data(), bands.pixels.data(), full.pixels.size() * sizeof(RGB)) == 0,
+        "Large-canvas HDR clarity changed at band boundaries");
     options.detail = {0, 0, 0, 1};
     const auto clean = renderHDRPair(source, options);
     check(clean.sdr.at(4, 4).r < .25f && clean.sdr.at(4, 4).r > .2f &&

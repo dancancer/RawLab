@@ -1,6 +1,6 @@
 # Phone HDR color contract
 
-HDR processing versions 1 through 5 have their own versioning, separate from RAW
+HDR processing versions 1 through 7 have their own versioning, separate from RAW
 processing. Version 2 adds a luminance stage after the version 1 adjustments.
 The supported input and state rules are in the
 [HDR design](../../docs/design/hdr-photos/technical-design.md).
@@ -142,8 +142,8 @@ Pass `sony2fuji_hdr_request_v3.base.base` to the existing HDR entry points.
 The request keeps the version 2 prefix and adds vibrance, the existing HSL
 and color grading configs, and reserved padding. The full request is 792
 bytes. Its ABI version remains 1 and its processing version is 3.
-`sony2fuji_hdr_create_hsl_probe` accepts processing versions 1 through 5 and samples the
-HDR plane after tone, vibrance, geometry and resize. HSL and grading are
+`sony2fuji_hdr_create_hsl_probe` accepts processing versions 1 through 7 and samples the
+HDR plane after tone, vibrance, geometry and resize. HSL, grading and the HDR look are
 excluded from the probe so dragging does not feed back into the selected hue
 range. Probe RGB is linear and can contain signed and super-white values.
 Probe lightness is the bounded ratio `Y / (1 + Y)`. The result carries the
@@ -195,7 +195,14 @@ entry points with ABI version 1 and processing version 5.
 Version 6 applies detail after geometry and resize, before vignette and grain.
 Sharpening uses a weighted 3×3 log-luminance neighborhood with a noise
 threshold and limits its gain to ±0.45 EV. Clarity uses the same shape at
-radius `clamp(round(max(width, height) / 200), 2, 24)` and a ±0.8 EV limit.
+radius `max(round(max(width, height) / 200), 2)` and a ±0.8 EV limit.
+The radius scales with the output canvas, including exports above 4.7k. The
+stream/JPEG output edge limit keeps its halo at most 328 pixels. Direct
+buffer rendering retains the same relative rule for larger dimensions. As in SDR
+clarity's proportional analysis grid, preview and export preserve the relative
+neighborhood scale; HDR uses a different log-luminance operator and does not
+promise pixel equivalence with SDR. Rounding and the two-pixel minimum can
+still affect small previews.
 Dehaze estimates a veil from the tenth percentile of a bounded grid of
 output-canvas luminances. Its effect falls off as luminance rises. Rendered
 RGB denoise mixes a weighted 3×3 neighborhood into the center, with less
@@ -203,9 +210,10 @@ weight across differences in log luminance. Each rendition uses its own
 luminance and source samples. Canvas edges repeat the closest pixel.
 
 Streaming reads neighboring rows on both sides of each output band and
-uses the same whole-canvas dehaze grid as a full-frame render. Signed RGB
-channels remain valid. A configured HDR peak limit caps the final positive
-luminance. All four zero controls bypass the stage exactly.
+uses the same whole-canvas dehaze grid as a full-frame render. Both memory
+admission and strip reads include the clarity halo, at most 328 rows per side
+for streamed exports. Signed RGB channels remain valid. A configured HDR peak
+limit caps the final positive luminance. All four zero controls bypass the stage exactly.
 
 The 864-byte `sony2fuji_hdr_request_v6` appends sharpening [0,2], clarity and
 dehaze [-1,1], and rendered RGB denoise [0,1] to the v5 prefix. Pass
@@ -250,6 +258,12 @@ transform before the camera matrix. Auto-crop preserves the output canvas
 size. A missing or inapplicable calibration rejects the request. The decoder
 configuration participates in the source cache identity and stays separate
 from the rendering request and its processing version.
+
+A successful camera RAW probe does not guarantee custom temperature calibration.
+Sources without a usable camera white-balance model can retain as-shot decoding;
+requesting custom temperature without a profile returns `CAMERA_DEVELOPMENT` on
+the camera-development field. A supplied D65 profile uses its own ColorMatrix
+without requiring the source camera's white-balance calibration to be valid.
 
 ### Fixed D65 camera profiles
 

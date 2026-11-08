@@ -2,6 +2,11 @@ using RawLab.Windows;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+if (args.Contains("--hdr-look-import")) {
+    HDRAssetImportChecks.Run();
+    return;
+}
+
 if (args.Contains("--summary-only")) {
     AdjustmentSummaryChecks.Run();
     return;

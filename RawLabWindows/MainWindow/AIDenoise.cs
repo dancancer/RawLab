@@ -43,8 +43,9 @@ public partial class MainWindow
     {
         var visible = settings.ActiveAIDenoise || RenderEngine.AIAvailable && (!settings.IsHDREditing || HDRCameraAICandidate);
         DenoiseEditor.RefreshAI(visible,settings.ActiveAIDenoise,CanStartAI,aiJob.State,
-            !RenderEngine.AIHardwareAvailable ? Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。") :
-                !RenderEngine.GetAIDevices().IsAvailable(aiPreference.DeviceID) ? Loc.Text("所选 AI 显卡不可用，请在设置中重新选择。") : null,GpuMode.SelectedIndex==1);
+            PhotoInput.HDRCameraAIUnavailableHint(settings.HDR,RequestedGpuMode) ??
+                (!RenderEngine.AIHardwareAvailable ? Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。") :
+                !RenderEngine.GetAIDevices().IsAvailable(aiPreference.DeviceID) ? Loc.Text("所选 AI 显卡不可用，请在设置中重新选择。") : null),GpuMode.SelectedIndex==1);
     }
     private void ResetAITask() { aiManuallyRequested=false;aiNotReadyIdentity=null;aiNotReadyAttempts=0;aiJob.Reset(); }
     private bool HasPendingAIReset(EditorResetScope scope)=>EditorAdjustmentRules.ResetsAI(scope) && aiManuallyRequested;

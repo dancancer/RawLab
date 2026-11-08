@@ -258,9 +258,61 @@ void colorV3(sony2fuji_session* session) {
     check(sony2fuji_hdr_create_hsl_probe(session, &source.pair, &base, 42, 6, &rejected, &diagnostic) ==
         SONY2FUJI_STATUS_INVALID_ARGUMENT && rejected == nullptr, "Truncated HDR color request published a probe");
 }
+
+void lookV7Probe(sony2fuji_session* session, const char* path) {
+    Source source;
+    std::copy_n(std::array<float, 6>{2, 1, .25f, .18f, .18f, .18f}.begin(), 6, source.hdr.begin());
+    sony2fuji_hdr_request_v7 settings{};
+    auto& color = settings.base.base.base.base;
+    auto& base = color.base.base;
+    base = request();
+    base.struct_size = sizeof(settings);
+    base.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_LOOK_VERSION;
+    base.quarter_turns = 1;
+    color.base.curve = init<sony2fuji_tone_curve_config>();
+    color.hsl = init<sony2fuji_hsl_config>();
+    color.grading = init<sony2fuji_color_grading_config>();
+    settings.base.base.effects = init<sony2fuji_photo_effects_config>();
+    auto diagnostic = init<sony2fuji_hdr_diagnostic_v1>();
+    auto info = init<sony2fuji_hdr_look_info_v1>();
+    check(sony2fuji_hdr_probe_look(path, &info, &diagnostic) == SONY2FUJI_STATUS_OK,
+        "HDR probe test look is invalid");
+
+    auto sample = [&] {
+        sony2fuji_hsl_probe* probe = nullptr;
+        check(sony2fuji_hdr_create_hsl_probe(session, &source.pair, &base, 42, 7, &probe, &diagnostic) == SONY2FUJI_STATUS_OK,
+            "HDR v7 probe creation failed");
+        const std::unique_ptr<sony2fuji_hsl_probe, decltype(&sony2fuji_hsl_probe_destroy)> guard(probe, sony2fuji_hsl_probe_destroy);
+        auto query = init<sony2fuji_hsl_probe_query>();
+        query.source_revision = 42; query.request_revision = 7;
+        auto result = init<sony2fuji_hsl_probe_result>();
+        check(sony2fuji_hsl_probe_sample(probe, &query, &result) == SONY2FUJI_STATUS_OK,
+            "HDR v7 probe sampling failed");
+        return result;
+    };
+    const auto reference = sample();
+    check(reference.availability == SONY2FUJI_HSL_PROBE_AVAILABLE && reference.width == 1 && reference.height == 2,
+        "HDR v7 reference probe lost the colored sample or geometry");
+    settings.look_path = path;
+    std::copy_n(info.sha256, 65, settings.look_sha256);
+    for (float strength : {.5f, 1.f, 2.f}) {
+        settings.look_strength = strength;
+        const auto actual = sample();
+        check(actual.availability == SONY2FUJI_HSL_PROBE_AVAILABLE &&
+            std::memcmp(actual.rgb, reference.rgb, sizeof(actual.rgb)) == 0 &&
+            std::memcmp(actual.hsl, reference.hsl, sizeof(actual.hsl)) == 0,
+            "HDR v7 HSL probe sampled after the look");
+        auto rendered = init<sony2fuji_hdr_image_pair_v1>();
+        check(sony2fuji_hdr_render(session, &source.pair, &base, &rendered, &diagnostic) == SONY2FUJI_STATUS_OK,
+            "HDR v7 look render failed");
+        const bool changed = std::memcmp(rendered.hdr.data, reference.rgb, sizeof(reference.rgb)) != 0;
+        sony2fuji_hdr_release_pair(&rendered);
+        check(changed, "HDR v7 probe bypass also removed the look from rendering");
+    }
+}
 }
 
-int main() {
+int main(int argc, char** argv) {
     try {
         static_assert(std::is_standard_layout<sony2fuji_hdr_image_pair_v1>::value);
         static_assert(SONY2FUJI_REQUEST_VERSION == 2);
@@ -271,6 +323,7 @@ int main() {
         check(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK && session, "session creation failed");
         toneV2(session);
         colorV3(session);
+        for (int i = 1; i < argc; ++i) lookV7Probe(session, argv[i]);
         Source source;
         auto output = init<sony2fuji_hdr_image_pair_v1>();
         auto settings = request();

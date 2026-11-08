@@ -814,6 +814,12 @@ static sony2fuji_status decodeCameraRaw(sony2fuji_session* session, const char* 
             const uint64_t xTransSourceCopy = !raw.halfSize && !processor.supportsNoiseReduction() ? developedPixels * 8 : 0;
             hdr::admitMemory(before.size + sensorPixels * 4 + developedPixels * (ai ? 42 : 24) + xTransSourceCopy);
             cameraRawStatus(processor.unpackInspectedCameraHDR());
+            if (raw.useTemperatureWhiteBalance && !profile) {
+                float temperature = 0, tint = 0;
+                if (!processor.getAsShotWhiteBalance(temperature, tint))
+                    fail(SONY2FUJI_HDR_REASON_CAMERA_DEVELOPMENT, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT,
+                        "Camera RAW HDR custom white balance calibration is unavailable", SONY2FUJI_STATUS_UNSUPPORTED);
+            }
             pair.nativeWidth = width;
             pair.nativeHeight = height;
             // Camera RAW HDR v1 anchors reference white at one quarter of the

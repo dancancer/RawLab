@@ -1,4 +1,5 @@
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
+#include "sony2fuji/raw_processor.h"
 
 #include <algorithm>
 #include <array>
@@ -44,6 +45,85 @@ struct Pair {
     sony2fuji_hdr_image_pair_v1 value = init<sony2fuji_hdr_image_pair_v1>();
     ~Pair() { sony2fuji_hdr_release_pair(&value); }
 };
+
+void unavailableTemperatureWB(const std::string& fixture) {
+    TemporaryDirectory directory;
+    std::ifstream input(fixture, std::ios::binary);
+    std::vector<uint8_t> bytes{std::istreambuf_iterator<char>(input), {}};
+    const auto integer = [&](size_t offset, int count) {
+        uint32_t value = 0;
+        for (int i = 0; i < count; ++i) value |= uint32_t(bytes.at(offset + i)) << (i * 8);
+        return value;
+    };
+    check(bytes.at(0) == 'I' && bytes.at(1) == 'I', "WB fixture must use little-endian TIFF");
+    const size_t ifd = integer(4, 4);
+    bool changed = false;
+    for (uint32_t i = 0; i < integer(ifd, 2); ++i) {
+        const size_t entry = ifd + 2 + i * 12;
+        if (integer(entry, 2) != 50728) continue;
+        check(integer(entry + 2, 2) == 5 && integer(entry + 4, 4) == 3, "Unexpected AsShotNeutral layout");
+        const size_t offset = integer(entry + 8, 4);
+        // 保留可显影的正增益，但让拍摄中性色落到相机色温模型之外。
+        for (int c = 0; c < 3; ++c) for (int part = 0; part < 2; ++part) {
+            const uint32_t value = c == 0 && part == 0 ? 1000 : 1;
+            for (int byte = 0; byte < 4; ++byte) bytes.at(offset + c * 8 + part * 4 + byte) = uint8_t(value >> (byte * 8));
+        }
+        changed = true;
+    }
+    check(changed, "WB fixture has no AsShotNeutral");
+    const auto path = (directory.path / "uncalibrated-wb.dng").u8string();
+    std::ofstream output(path, std::ios::binary);
+    output.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    output.close();
+    sony2fuji::RAWProcessor processor;
+    int width = 0, height = 0;
+    uint64_t pixels = 0;
+    float temperature = 0, tint = 0;
+    check(processor.inspectCameraHDR(path, width, height, pixels) == sony2fuji::ErrorCode::Success &&
+        !processor.getAsShotWhiteBalance(temperature, tint), "WB fixture did not reproduce unavailable calibration");
+    auto info = init<sony2fuji_hdr_source_info_v1>();
+    auto diagnostic = init<sony2fuji_hdr_diagnostic_v1>();
+    check(sony2fuji_hdr_probe_camera_raw(path.c_str(), &info, &diagnostic) == SONY2FUJI_STATUS_OK,
+        "Unavailable custom WB must not reject a source that supports as-shot development");
+    auto options = init<sony2fuji_hdr_decode_options_v1>();
+    options.intent = SONY2FUJI_INTENT_PREVIEW; options.long_edge = 32;
+    Pair asShot;
+    check(sony2fuji_hdr_decode_camera_raw(nullptr, path.c_str(), &options, &asShot.value, &diagnostic) == SONY2FUJI_STATUS_OK,
+        "Unavailable custom WB disabled as-shot HDR development");
+    auto development = init<sony2fuji_hdr_camera_development_v1>();
+    development.white_balance = SONY2FUJI_HDR_CAMERA_WB_TEMPERATURE; development.temperature = 5000;
+    Pair rejected;
+    check(sony2fuji_hdr_decode_camera_raw_with_development(nullptr, path.c_str(), &options, &development,
+        &rejected.value, &diagnostic) == SONY2FUJI_STATUS_UNSUPPORTED &&
+        diagnostic.reason == SONY2FUJI_HDR_REASON_CAMERA_DEVELOPMENT &&
+        diagnostic.field == SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT && !rejected.value.owner_token,
+        "Unavailable custom WB was reported as an unsupported RAW instead of camera development");
+    const std::string model = "RawLab synthetic Bayer";
+    std::vector<uint8_t> profile{'R','L','O','O','K','H','D','R'};
+    const auto append = [&](uint64_t value, int count) {
+        for (int i = 0; i < count; ++i) profile.push_back(uint8_t(value >> (i * 8)));
+    };
+    append(1, 4); append(model.size(), 4);
+    const double forward[]{.7976749, .1351917, .0313534, .2880402, .7118741, .0000857, 0, 0, .8252100};
+    for (int matrix = 0; matrix < 2; ++matrix) for (int i = 0; i < 9; ++i) {
+        const double value = matrix == 0 ? (i % 4 == 0 ? 1 : 0) : forward[i];
+        uint64_t bits = 0; std::memcpy(&bits, &value, sizeof(bits)); append(bits, 8);
+    }
+    profile.insert(profile.end(), model.begin(), model.end());
+    const auto profilePath = (directory.path / "identity.rlook").u8string();
+    std::ofstream resource(profilePath, std::ios::binary);
+    resource.write(reinterpret_cast<const char*>(profile.data()), profile.size()); resource.close();
+    auto profileInfo = init<sony2fuji_hdr_camera_profile_info_v1>();
+    check(sony2fuji_hdr_probe_camera_profile(profilePath.c_str(), &profileInfo, &diagnostic) == SONY2FUJI_STATUS_OK,
+        "Synthetic D65 profile is invalid");
+    sony2fuji_hdr_camera_development_v2 profiled{};
+    profiled.base = development; profiled.base.version = 2; profiled.base.struct_size = sizeof(profiled);
+    profiled.profile_path = profilePath.c_str(); std::copy_n(profileInfo.sha256, 65, profiled.profile_sha256);
+    Pair calibrated;
+    check(sony2fuji_hdr_decode_camera_raw_with_development(nullptr, path.c_str(), &options, &profiled.base,
+        &calibrated.value, &diagnostic) == SONY2FUJI_STATUS_OK && calibrated.value.owner_token && calibrated.value.hdr.data,
+        "A supplied D65 profile was blocked by the source's unavailable camera white balance");
+}
 
 void verifyHEIFRenditions(const sony2fuji_hdr_image_pair_v1& expected,
                          const sony2fuji_hdr_image_pair_v1& actual) {
@@ -346,6 +426,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         const auto fixture = std::string(TEST_FIXTURE_DIR) + "/bayer-demosaic.dng";
+        unavailableTemperatureWB(fixture);
         const auto* external = std::getenv("RAWLAB_TEST_CAMERA_HDR");
         const auto* input = external ? external : fixture.c_str();
         auto info = init<sony2fuji_hdr_source_info_v1>();

@@ -4207,6 +4207,18 @@
     "无法读取 HDR 相机配置，或配置与当前相机不匹配。": {
       "formats": [],
       "source": "无法读取 HDR 相机配置，或配置与当前相机不匹配。"
+    },
+    "请先关闭 FBDD，再使用 HDR AI 降噪。": {
+      "formats": [],
+      "source": "请先关闭 FBDD，再使用 HDR AI 降噪。"
+    },
+    "请先清除 HDR 相机配置，再使用 AI 降噪。": {
+      "formats": [],
+      "source": "请先清除 HDR 相机配置，再使用 AI 降噪。"
+    },
+    "无效或不可用的相机显影设置（白平衡或镜头校正）。": {
+      "formats": [],
+      "source": "无效或不可用的相机显影设置（白平衡或镜头校正）。"
     }
   },
   "overrides": {
@@ -5855,6 +5867,30 @@
       "fr": "Masquer les dossiers",
       "ja": "フォルダを非表示",
       "zh-Hans": "收起文件树"
+    },
+    "请先关闭 FBDD，再使用 HDR AI 降噪。": {
+      "en": "Turn off FBDD before using HDR AI denoise.",
+      "de": "Deaktivieren Sie FBDD, bevor Sie die HDR-KI-Entrauschung verwenden.",
+      "fr": "Désactivez FBDD avant d’utiliser le débruitage IA HDR.",
+      "es": "Desactiva FBDD antes de usar la reducción de ruido HDR con IA.",
+      "ja": "HDR AI ノイズ除去を使用する前に FBDD をオフにしてください。",
+      "zh-Hans": "请先关闭 FBDD，再使用 HDR AI 降噪。"
+    },
+    "请先清除 HDR 相机配置，再使用 AI 降噪。": {
+      "en": "Remove the HDR camera profile before using AI denoise.",
+      "de": "Entfernen Sie das HDR-Kameraprofil, bevor Sie die KI-Entrauschung verwenden.",
+      "fr": "Retirez le profil de caméra HDR avant d’utiliser le débruitage IA.",
+      "es": "Quita el perfil de cámara HDR antes de usar la reducción de ruido con IA.",
+      "ja": "AI ノイズ除去を使用する前に HDR カメラプロファイルを解除してください。",
+      "zh-Hans": "请先清除 HDR 相机配置，再使用 AI 降噪。"
+    },
+    "无效或不可用的相机显影设置（白平衡或镜头校正）。": {
+      "en": "Camera development settings (white balance or lens correction) are invalid or unavailable.",
+      "de": "Die Kameraentwicklungseinstellungen (Weißabgleich oder Objektivkorrektur) sind ungültig oder nicht verfügbar.",
+      "fr": "Les réglages de développement de l’appareil (balance des blancs ou correction d’objectif) sont invalides ou indisponibles.",
+      "es": "Los ajustes de revelado de la cámara (balance de blancos o corrección de lente) no son válidos o no están disponibles.",
+      "ja": "カメラ現像設定（ホワイトバランスまたはレンズ補正）が無効か、利用できません。",
+      "zh-Hans": "无效或不可用的相机显影设置（白平衡或镜头校正）。"
     }
   }
 }
