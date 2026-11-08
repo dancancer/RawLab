@@ -106,7 +106,8 @@ inline sony2fuji_request makeDisplayRequest(const char* input, const void* pixel
     ExportFormat format, uint32_t longEdge = 0) {
     auto request = makeRequest(input, lut, output, strength, exposure, false, 6500, 0,
         highlights, shadows, contrast, toneCurve, saturation, sharpening, edge, format, longEdge);
-    if (!pixels || width == 0 || height == 0 || pixelFormat != SONY2FUJI_PIXEL_RGBA8)
+    if (!pixels || width == 0 || height == 0 ||
+        (pixelFormat != SONY2FUJI_PIXEL_RGBA8 && pixelFormat != SONY2FUJI_PIXEL_RGBA16))
         throw std::invalid_argument("Invalid display image buffer");
     request.input_type = SONY2FUJI_INPUT_DISPLAY_BUFFER;
     request.input_pixels = pixels;

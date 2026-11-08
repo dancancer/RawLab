@@ -1,12 +1,19 @@
 package com.rawlab.android.editor
 
 import android.net.Uri
+import android.app.Activity
 import android.content.ContentValues
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Build
 import android.provider.MediaStore
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.activity.result.ActivityResultRegistry
+import androidx.activity.result.ActivityResultRegistryOwner
+import androidx.activity.result.contract.ActivityResultContract
+import androidx.core.app.ActivityOptionsCompat
 import com.rawlab.android.RawLabTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
@@ -29,6 +36,86 @@ import org.junit.Test
 
 class LUTCompatibilityDialogTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    @Test fun referenceAndSampleFilePickersExposeSupportedInputs() {
+        val draft = LUTCompatibility.parse("""{"eligible":true,"source_sha256":"test","fixed_contract":false,"photo_style":"std","extreme_values":false,"hints":[],"contract":{"version":1,"input":{"space":"","reference":"display","range":"full"},"output":{"space":"","reference":"display","range":"full"},"interpolation":"linear","base_rendering":"rawlab-neutral-v1"}}""")!!
+        val launched = mutableListOf<Intent>()
+        val registry = object : ActivityResultRegistry() {
+            override fun <I, O> onLaunch(requestCode: Int, contract: ActivityResultContract<I, O>,
+                input: I, options: ActivityOptionsCompat?) {
+                launched += contract.createIntent(compose.activity, input)
+            }
+        }
+        val owner = object : ActivityResultRegistryOwner { override val activityResultRegistry = registry }
+        compose.setContent {
+            val storage = remember { PhotoStorage(compose.activity) }
+            CompositionLocalProvider(LocalActivityResultRegistryOwner provides owner) {
+                RawLabTheme { LUTCompatibilityDialog(PendingLookCompatibility(Uri.parse("content://test/unknown.cube"),
+                    "unknown.cube", draft), null, storage) {} }
+            }
+        }
+        compose.onNodeWithTag("lut-reference-section").performScrollTo().performClick()
+        compose.onNodeWithTag("lut-reference-picker").performScrollTo().performClick()
+        compose.runOnIdle {
+            assertEquals(setOf("image/jpeg", "image/png", "image/heic", "image/heif"),
+                launched.single().getStringArrayExtra(Intent.EXTRA_MIME_TYPES)!!.toSet())
+        }
+        compose.onNodeWithTag("lut-preview-photo").performScrollTo().performClick()
+        compose.onNodeWithContentDescription(compose.activity.getString(R.string.open_file)).performClick()
+        compose.runOnIdle {
+            assertEquals(Intent.ACTION_OPEN_DOCUMENT, launched.last().action)
+            assertEquals(listOf("*/*"), launched.last().getStringArrayExtra(Intent.EXTRA_MIME_TYPES)!!.toList())
+        }
+    }
+
+    @Test fun sampleFileIsLoadedOnlyAfterConfirmation() {
+        val root = File(compose.activity.cacheDir, "lut-file-${UUID.randomUUID()}").apply { mkdirs() }
+        try {
+            val current = File(root, "current.png")
+            val replacement = File(root, "file-${UUID.randomUUID()}.png")
+            Bitmap.createBitmap(8, 4, Bitmap.Config.ARGB_8888).let { bitmap ->
+                bitmap.eraseColor(Color.rgb(60, 90, 120))
+                current.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                bitmap.eraseColor(Color.rgb(120, 90, 60))
+                replacement.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                bitmap.recycle()
+            }
+            val lut = File(root, "unknown.cube").apply { writeText("LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n") }
+            val draft = LUTCompatibility.parse(NativeProcessor.inspectLutCompatibility(lut))!!
+            var fileRequest = -1
+            val registry = object : ActivityResultRegistry() {
+                override fun <I, O> onLaunch(requestCode: Int, contract: ActivityResultContract<I, O>,
+                    input: I, options: ActivityOptionsCompat?) { fileRequest = requestCode }
+            }
+            val owner = object : ActivityResultRegistryOwner { override val activityResultRegistry = registry }
+            compose.setContent {
+                val storage = remember { PhotoStorage(compose.activity, looksDirectory = File(root, "looks")) }
+                CompositionLocalProvider(LocalActivityResultRegistryOwner provides owner) {
+                    RawLabTheme { LUTCompatibilityDialog(PendingLookCompatibility(Uri.fromFile(lut), lut.name, draft),
+                        ImportedPhoto(Uri.fromFile(current), current.name, current, inputKind = PhotoInputKind.RASTER), storage) {} }
+                }
+            }
+            compose.waitUntil(15_000) { compose.onAllNodesWithText(current.name).fetchSemanticsNodes().isNotEmpty() }
+            fun selectFile() {
+                compose.onNodeWithTag("lut-preview-photo").performScrollTo().performClick()
+                compose.onNodeWithText(compose.activity.getString(R.string.lut_use_library_photo)).assertIsNotEnabled()
+                compose.onNodeWithContentDescription(compose.activity.getString(R.string.open_file)).performClick()
+                compose.runOnIdle {
+                    assertTrue(fileRequest != -1)
+                    registry.dispatchResult(fileRequest, Activity.RESULT_OK, Intent().setData(Uri.fromFile(replacement)))
+                }
+                compose.onNodeWithTag("lut-photo-library").assertExists()
+                compose.onNodeWithText(compose.activity.getString(R.string.lut_use_library_photo)).assertIsEnabled()
+            }
+            selectFile()
+            compose.onNodeWithContentDescription(compose.activity.getString(R.string.back)).performClick()
+            compose.onNodeWithText(current.name).assertExists()
+            selectFile()
+            compose.onNodeWithText(compose.activity.getString(R.string.lut_use_library_photo)).performClick()
+            compose.waitUntil(15_000) { compose.onAllNodesWithText(replacement.name).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("lut-photo-library").assertDoesNotExist()
+            compose.onNodeWithText(current.name).assertDoesNotExist()
+        } finally { root.deleteRecursively() }
+    }
     @Test fun advancedFieldsAreFoldedAndCancelDoesNotConfirm() {
         val draft = LUTCompatibility.parse("""{"eligible":true,"source_sha256":"test","fixed_contract":false,"photo_style":"std","extreme_values":false,"hints":[],"contract":{"version":1,"input":{"space":"","reference":"display","range":"full"},"output":{"space":"","reference":"display","range":"full"},"interpolation":"linear","base_rendering":"rawlab-neutral-v1"}}""")!!
         var cancelled = false
@@ -96,7 +183,7 @@ class LUTCompatibilityDialogTest {
                 compose.onNodeWithTag("lut-photo-library").assertExists()
                 compose.waitUntil(10_000) { compose.onAllNodesWithText(replacementName).fetchSemanticsNodes().isNotEmpty() }
                 compose.onNodeWithText(choose).assertIsNotEnabled()
-                compose.onAllNodesWithContentDescription(compose.activity.getString(R.string.open_file)).assertCountEquals(0)
+                compose.onAllNodesWithContentDescription(compose.activity.getString(R.string.open_file)).assertCountEquals(1)
                 compose.onNodeWithText(replacementName).performClick()
                 compose.onNodeWithText(choose).assertIsEnabled()
             }

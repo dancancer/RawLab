@@ -104,7 +104,10 @@ a particular gray transfer function and are rejected.
 
 Raster import adapters accept up to 128,000,000 source pixels, including the
 roughly 102–105 MP dimensions of 100 MP medium-format cameras. Apple, Windows
-and Android use the same budget; the CLI advertises it in `raster_input`.
+and Android's 8-bit adapters use the same budget; the CLI advertises it in `raster_input`.
+Android integer PNG16 has a separate 32,000,000-pixel decode limit: its 8-byte
+output plus decoder/orientation buffers would otherwise exceed 2 GB near 128 MP.
+The check runs before pixel decoding and reports the PNG16-specific limit.
 Overflow checks and format/depth validation still run before allocation. This
 is a decode budget, not a promise that every device has enough free memory.
 The separate embedded-preview exposure-reference budget does not limit RAW
@@ -154,10 +157,29 @@ it would lose the declared transfer function. HDR cICP (including PQ/HLG),
 mastering/content-light metadata and malformed cICP lengths remain rejected.
 Windows and Android retain their existing stricter cICP admission rules;
 Apple's additional SDR combinations rely on the verified ImageIO conversion.
-Android uses a separate API-26-compatible platform decoder for validated JPEG/PNG files and
-passes their oriented opaque display-sRGB pixels through the same explicit
-display-buffer C API. Android does not enable TIFF or HEIF; its native file-loader
-entry point remains unsupported rather than pretending to decode those files.
+Android uses a separate API-26-compatible platform decoder for validated 8-bit
+JPEG/PNG files.
+Opaque integer RGB/RGBA16 PNG uses the bundled PNG decoder to retain all 16 bits,
+applies EXIF orientation once and validates the platform's bounded SDR RGB
+color-space description. Unlike the 8-bit platform decoder, the PNG16 adapter
+converts that RGB description with transfer-function tables and a 3×3 matrix;
+it does not apply the complete embedded ICC through Skia. PNG16 rejects ICC
+profiles with A2B/B2A/D2B/B2D transform tags, including matrix/TRC fallbacks,
+and multi-sample TRC curves that cannot be represented parametrically.
+Accepted matrix/parametric-TRC profiles still depend on Android's color-space
+identification; this is not a claim of arbitrary ICC equivalence to the 8-bit
+decoder or Apple's ColorSync. The platform's
+RGBA_F16/scRGB-nl bounds description of integer-sRGB PNG16 is normalized to
+bounded sRGB before validation. Its owned native RGBA16
+buffer reaches the display-buffer C API without an 8-bit or half-float intermediate;
+untagged RGB assumes sRGB. Actual transparency remains unsupported at either depth.
+After a JPEG's EOI (or its last registered MPF thumbnail), Android ignores
+non-JPEG trailing data such as Motion Photo video or SEFT, checking only the
+start of the tail for an unregistered JPEG signature. C2PA-labelled JUMBF APP11
+metadata is accepted, including matching continuations; other APP11 data such
+as JPEG XT remains unsupported.
+Android also supports validated SDR HEIF through the platform decoder on API 28+.
+TIFF and the native file-loader entry point remain unsupported on Android.
 The native clients resolve camera-only settings separately for every mixed-batch
 target and retain the original frozen recipe. A raster source's dormant camera
 WB, lens and exposure-baseline values do not become active on a RAW target:

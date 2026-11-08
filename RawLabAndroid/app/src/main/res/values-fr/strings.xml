@@ -198,6 +198,7 @@
     <string name="message_output_found">"Sortie trouvée"</string>
     <string name="message_output_storage_failed">"Échec du stockage de la sortie : %1$s"</string>
     <string name="message_photo_gallery">"Galerie photo"</string>
+    <string name="message_png16_decode_limit">"Le PNG 16 bits dépasse la limite de décodage de 32 Mpx."</string>
     <string name="message_preparing">"Préparation"</string>
     <string name="message_processing">"Exportation"</string>
     <string name="message_remove">"Supprimer"</string>

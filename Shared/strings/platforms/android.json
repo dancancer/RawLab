@@ -24,6 +24,12 @@
       "source": "省略自动黑位",
       "types": []
     },
+    "message_png16_decode_limit": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "16 位 PNG 超过 3200 万像素解码上限。",
+      "types": []
+    },
     "collection_cancel_check": {
       "file": "editor_strings.xml",
       "formats": [],
@@ -5049,6 +5055,14 @@
     }
   },
   "unique": {
+    "16 位 PNG 超过 3200 万像素解码上限。": {
+      "de": "16-Bit-PNG überschreitet die Dekodierungsgrenze von 32 Megapixeln.",
+      "en": "16-bit PNG exceeds the 32 MP decode limit.",
+      "es": "El PNG de 16 bits supera el límite de decodificación de 32 MP.",
+      "fr": "Le PNG 16 bits dépasse la limite de décodage de 32 Mpx.",
+      "ja": "16ビットPNGはデコード上限の3200万画素を超えています。",
+      "zh-Hans": "16 位 PNG 超过 3200 万像素解码上限。"
+    },
     "1–65535 像素": {
       "de": "1–65535 Pixel",
       "en": "1–65535 pixels",
