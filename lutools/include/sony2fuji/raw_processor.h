@@ -8,6 +8,8 @@
 
 namespace sony2fuji {
 
+struct HDRCameraProfile;
+
 enum class BayerDemosaicMethod {
     Legacy,
     VNG,
@@ -34,6 +36,7 @@ struct RAWBayerOverride {
     std::vector<float> normalizedMosaic;
     // 未旋转 sensor 坐标；已白平衡并以绿色归一化的相机通道线性修正。
     std::vector<RGB> cameraCorrection;
+    bool protectSensorHighlights = false;
 };
 
 /**
@@ -61,6 +64,7 @@ struct RAWProcessOptions {
     std::shared_ptr<const LensCorrectionDatabase> lensDatabase;
     LensCorrectionOptions lensCorrection;
     const RAWBayerOverride* bayerOverride = nullptr;
+    const HDRCameraProfile* hdrCameraProfile = nullptr;
 
     RAWProcessOptions()
         : useAutoWhiteBalance(false)
@@ -109,6 +113,7 @@ public:
     ErrorCode inspectFile(const std::string& filepath);
     // Inspects a supported camera HDR source without unpacking the mosaic.
     ErrorCode inspectCameraHDR(const std::string& filepath, int& width, int& height, uint64_t& sensorPixels);
+    bool supportsHDRCameraProfile(const HDRCameraProfile& profile) const;
     ErrorCode unpackInspectedCameraHDR();
 
     /**

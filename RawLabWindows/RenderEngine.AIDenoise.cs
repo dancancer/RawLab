@@ -89,21 +89,61 @@ internal sealed partial class RenderEngine
     private void PrepareAICore(string path,Adjustments settings,AIPreparation progress)
     {
         progress.Token.ThrowIfCancellationRequested();
-        if(PhotoInput.IsNormalX3f(path,settings))throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
-        if(!PhotoInput.IsRaw(path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
-        settings=PrepareRecipe(path,settings);SetProcessing(settings.Processing);SetX3f(path,settings);
-        SetTone(settings.RenderToneControls);SetAtmosphere(settings.RenderAtmosphere);
-        SetCurve(settings.RenderCurve);SetGrading(settings.RenderGrading);SetLens(settings.Lens);ConfigureAI(true);
-        var request=settings.Request(path,null,0,null);
+        if (!settings.IsHDREditing)
+        {
+            if(PhotoInput.IsNormalX3f(path,settings))throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
+            if(!PhotoInput.IsRaw(path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
+            settings=PrepareRecipe(path,settings);SetProcessing(settings.Processing);SetX3f(path,settings);
+            SetTone(settings.RenderToneControls);SetAtmosphere(settings.RenderAtmosphere);
+            SetCurve(settings.RenderCurve);SetGrading(settings.RenderGrading);SetLens(settings.Lens);
+        }
+        ConfigureAI(true);
         Exception? callbackError=null;
         Native.AIProgress callback=(_,phase,done,total)=>{
             try { return progress.Report(phase,done,total) ? 1 : 0; }
             catch(Exception error) { callbackError=error;return 0; }
         };
         int status;
-        try { aiNativeOperationStarted=true;status=Native.sony2fuji_session_prepare_ai(session,ref request,callback,IntPtr.Zero); }
+        try
+        {
+            aiNativeOperationStarted=true;
+            if (settings.IsHDREditing)
+            {
+                var diagnostic=HDRNative.Diagnostic();
+                status=Native.sony2fuji_hdr_prepare_camera_raw_ai(session,path,callback,IntPtr.Zero,ref diagnostic);
+            }
+            else
+            {
+                var request=settings.Request(path,null,0,null);
+                status=Native.sony2fuji_session_prepare_ai(session,ref request,callback,IntPtr.Zero);
+            }
+        }
         finally { GC.KeepAlive(callback); }
         if(callbackError!=null)throw callbackError;
         CheckAI(status);progress.Token.ThrowIfCancellationRequested();
+    }
+
+    private HDRSourceLease AcquireHDRSource(string path,HDRSourceInfo info,bool final,uint edge,Adjustments settings)
+    {
+        var camera = settings.IsHDREditing ? settings.HDR!.CameraDevelopment : null;
+        if (!settings.IsHDREditing || !settings.HDRCameraAIEnabled)
+            return HDRSourceCache.Acquire(path,info,final,edge,session,camera,lensDatabase);
+        if (!PhotoInput.IsHDRCameraAICandidate(info))
+            throw new AIDenoiseException(Loc.Text("此照片或构建尚不能使用 AI 降噪。"));
+        ConfigureAI(true);
+        aiNativeOperationStarted=true;
+        var diagnostic=HDRNative.Diagnostic();
+        var key=new byte[65];
+        CheckAI(Native.sony2fuji_hdr_camera_ai_key(session,path,key,(uint)key.Length,ref diagnostic));
+        try
+        {
+            return HDRSourceCache.Acquire(path,info,final,edge,session,camera,lensDatabase,
+                System.Text.Encoding.ASCII.GetString(key,0,64));
+        }
+        catch (HDRSourceException error) when (error.Status==8 || error.Reason==HDRNative.ReasonCameraAI)
+        {
+            CheckAI(error.Status);
+            throw;
+        }
     }
 }

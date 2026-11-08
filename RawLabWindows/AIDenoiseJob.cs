@@ -1,14 +1,17 @@
 namespace RawLab.Windows;
 
-internal sealed record AIDenoiseIdentity(OriginalIdentity Source,ProcessingIdentity Processing,int WhiteBalance,float Temperature,float Tint,int Backend,LensSettings Lens,string DeviceID="")
+internal sealed record AIDenoiseIdentity(OriginalIdentity Source,ProcessingIdentity Processing,int WhiteBalance,float Temperature,float Tint,int Backend,LensSettings Lens,string DeviceID="",bool HDRCamera=false)
 {
     internal static AIDenoiseIdentity Read(string path,Adjustments settings,int backend,string deviceID="")
     {
+        var source = OriginalIdentity.Read(path);
+        // HDR 推理只准备 Bayer 像素，白平衡和镜头校正在后续显影中应用。
+        if (settings.IsHDREditing) return new(source,ProcessingIdentity.Legacy,0,0,0,backend,new(),deviceID,HDRCamera:true);
         var request=settings.Request(path,null,0,null);
         // 相机 WB 由原片确定；配方身份只记录用户偏移，不随首帧解析出的 AsShot 改变。
         var temperature=settings.CameraWhiteBalance ? 0 : request.Temperature;
         var tint=settings.MasterRecipeID==null ? request.Tint : (float)(settings[Parameter.Tint]*settings[Parameter.Strength]/100);
-        return new(OriginalIdentity.Read(path),settings.Processing,request.WbMode,temperature,tint,backend,settings.Lens,deviceID);
+        return new(source,settings.Processing,request.WbMode,temperature,tint,backend,settings.Lens,deviceID);
     }
 }
 internal enum AIDenoiseStatus { Idle,Running,Ready,Failed,Cancelled }

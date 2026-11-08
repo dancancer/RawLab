@@ -128,7 +128,7 @@ struct BatchSelectionView: View {
             AdjustmentScopeEditor(scope: $scope, fields: $fields,
                                   preview: Result { try model.previewAdjustmentPayload(scope: scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields)) },
                                   lookName: model.adjustmentSummaryLookName, errorMessage: { model.adjustmentErrorMessage($0) },
-                                  allowed:model.settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
+                                  allowed:model.adjustmentTransferFields)
             if let file = model.file, let source, model.batchSelectionPhotos[source]?.url == file, model.collectionHasDraft(source) {
                 Text(L10n.text("来源有未完成的调整，请先应用或放弃。"))
                 HStack {
@@ -186,7 +186,7 @@ private struct BatchCollectionExportView: View {
                     get: { adaptiveJPEG ? nil : format },
                     set: { value in adaptiveJPEG = value == nil; format = value ?? .jpeg })) {
                     Text(L10n.text("HDR 照片用 HDR JPEG，其余用 JPEG")).tag(nil as ExportFormat?)
-                    ForEach(ExportFormat.allCases) { Text($0.title).tag(Optional($0)) }
+                    ForEach(ExportFormat.allCases.filter { $0 != .hdrHEIF || HDRImage.heifExportAvailable }) { Text($0.title).tag(Optional($0)) }
                 }.frame(width: 310).accessibilityIdentifier("collection.export.format")
                 ExportSizePicker(longEdge: $longEdge).frame(width: 240)
                 Button(directory?.lastPathComponent ?? L10n.text("选择输出文件夹")) { chooseDirectory() }

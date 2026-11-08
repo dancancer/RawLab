@@ -30,6 +30,9 @@ import com.rawlab.android.looks.ManagedLook
 import com.rawlab.android.looks.LUTCompatibility
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.engine.NativeHDRBridge
+import com.rawlab.android.engine.HDRProcessingException
+import com.rawlab.android.settings.HDRLookSettings
+import com.rawlab.android.settings.HDRCameraProfile
 import com.rawlab.android.editor.PendingLookCompatibility
 import com.rawlab.android.looks.MasterRecipe
 import com.rawlab.android.looks.NativeDcpCompiler
@@ -78,6 +81,8 @@ class PhotoStorage(
     private val resolver = context.contentResolver
     private val directory = File(context.cacheDir, "rawlab-${UUID.randomUUID()}")
     private val lookLibrary = LookLibrary(looksDirectory, lookValidator, dcpCompiler)
+    internal val hdrLookDirectory = File(looksDirectory, "HDR")
+    internal val hdrCameraProfileDirectory = File(context.filesDir, "HDRCameraProfiles")
     private val films = Film.all + BundledLooks.load(context)
     private var lensDirectory: File? = null
 
@@ -164,6 +169,72 @@ class PhotoStorage(
     internal fun lookSourceName(uri: Uri): String = runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
             if (it.moveToFirst()) it.getString(0) else null
         } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Look"
+
+    @Synchronized
+    internal fun importHDRLook(uri: Uri): HDRLookSettings {
+        val originalName = lookSourceName(uri)
+        return (resolver.openInputStream(uri) ?: throw HDRProcessingException(1, 18, 10)).use { installHDRLook(it, originalName) }
+    }
+
+    @Synchronized
+    internal fun importHDRCameraProfile(uri: Uri): HDRCameraProfile {
+        val name = lookSourceName(uri)
+        if (name.substringAfterLast('.', "").lowercase() !in setOf("dcp", "rlook"))
+            throw HDRProcessingException(1, 21, 11)
+        val size = runCatching {
+            resolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use {
+                if (it.moveToFirst() && !it.isNull(0)) it.getLong(0).takeIf { value -> value >= 0 } else null
+            }
+        }.getOrNull()
+        checkHDRCameraProfileSize(size)
+        val directory = hdrCameraProfileDirectory
+        if (!directory.isDirectory && !directory.mkdirs()) throw HDRProcessingException(1, 21, 11)
+        val staging = File.createTempFile("import-", ".profile", directory)
+        try {
+            val input = resolver.openInputStream(uri) ?: throw HDRProcessingException(1, 21, 11)
+            input.use { source -> staging.outputStream().use { copyHDRCameraProfileSource(source, it) } }
+            val profile = HDRCameraProfile(NativeHDRBridge.probeCameraProfile(staging), name.substringBeforeLast('.'))
+            java.nio.file.Files.move(staging.toPath(), profile.asset(directory).toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+            return profile
+        } finally { staging.delete() }
+    }
+
+    @Synchronized
+    internal fun installHDRSilver(): HDRLookSettings =
+        context.assets.open("BundledLooks/HDR/HDR Silver.cube").use { installHDRLook(it, "HDR Silver.cube") }
+
+    internal fun hdrSilverMaster(): com.rawlab.android.adjustments.AdjustmentPayload =
+        context.assets.open("BundledLooks/HDR/HDR Silver Master.json").bufferedReader().use {
+            com.rawlab.android.adjustments.AdjustmentPayload.decode(it.readText())
+        }
+
+    private fun installHDRLook(input: java.io.InputStream, originalName: String): HDRLookSettings {
+        if (!originalName.endsWith(".cube", ignoreCase = true)) throw HDRProcessingException(1, 18, 10)
+        if (!hdrLookDirectory.isDirectory && !hdrLookDirectory.mkdirs()) throw HDRProcessingException(1, 18, 10)
+        val temporary = File.createTempFile("import-", ".cube", hdrLookDirectory)
+        try {
+            temporary.outputStream().use { output ->
+                val buffer = ByteArray(65536)
+                var size = 0L
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    size += count
+                    if (size > HDRLookSettings.maximumBytes) throw HDRProcessingException(1, 18, 10)
+                    output.write(buffer, 0, count)
+                }
+            }
+            val look = HDRLookSettings(NativeHDRBridge.probeLook(temporary), originalName.dropLast(5), 1f)
+            val target = requireNotNull(look.asset(hdrLookDirectory))
+            try {
+                java.nio.file.Files.move(temporary.toPath(), target.toPath())
+            } catch (error: IOException) {
+                if (!look.assetIsAvailable(hdrLookDirectory)) throw error
+            }
+            return look
+        } finally { temporary.delete() }
+    }
 
     fun importLook(uri: Uri, compatibility: LUTCompatibility? = null, dcp: DcpImportChoices? = null): ManagedLook {
         val name = lookSourceName(uri)

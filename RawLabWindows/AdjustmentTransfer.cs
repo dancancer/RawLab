@@ -5,7 +5,11 @@ namespace RawLab.Windows;
 
 public sealed record AdjustmentTransferContext(string Identifier,bool IsRaw,
     IReadOnlySet<string>? AvailableLookIDs=null,int DefaultExposureMode=1,bool HasUncommittedDraft=false,Action<LensSettings>? ValidateLens=null,
-    (double Temperature,double Tint)? CameraWhiteBalance=null, bool IsProRAW=false);
+    (double Temperature,double Tint)? CameraWhiteBalance=null, bool IsProRAW=false, bool SupportsCameraHDR=false,
+    Action<Adjustments>? ValidateHDRCamera=null)
+{
+    internal bool SupportsHDRCameraDevelopment => IsRaw && SupportsCameraHDR && !IsProRAW;
+}
 
 public static class AdjustmentTransfer
 {
@@ -15,6 +19,7 @@ public static class AdjustmentTransfer
         var saved = AdjustmentTransferValues.Values(committed, context);
         if (!snapshot.Identity.SameFile(committed.Identity) || snapshot.Settings.Processing != committed.Settings.Processing ||
             snapshot.Settings.HDR != committed.Settings.HDR || snapshot.Settings.AIDenoiseEnabled != committed.Settings.AIDenoiseEnabled ||
+            snapshot.Settings.HDRCameraAIEnabled != committed.Settings.HDRCameraAIEnabled ||
             snapshot.Settings.MasterRecipeSettingsVersion != committed.Settings.MasterRecipeSettingsVersion ||
             live.Count != saved.Count || live.Any(pair => !saved.TryGetValue(pair.Key, out var value) || !Same(pair.Value, value)))
             throw new AdjustmentTransferException(AdjustmentFailure.Draft);
@@ -27,10 +32,7 @@ public static class AdjustmentTransfer
         if(context.HasUncommittedDraft) throw new AdjustmentTransferException(AdjustmentFailure.Draft);
         if (edit.Settings.HDR is { Mode: HDRMode.Hdr })
         {
-            if ((context.IsRaw || PhotoInput.IsCameraRaw(edit.Identity.Path)) && !context.IsProRAW)
-                throw new AdjustmentTransferException(AdjustmentFailure.Incompatible, "hdr.camera_raw");
-            if (context.IsProRAW && edit.Settings.ProRAWDecodeVersion != HDRNative.ProRAWDecodeVersion)
-                throw new AdjustmentTransferException(AdjustmentFailure.Incompatible, "hdr.proraw_version");
+            ValidateHDRContext(edit,context,"hdr.camera_raw");
             return HDRAdjustmentTransfer.Capture(scope, edit, context);
         }
         if(edit.Settings.AIDenoiseEnabled && scope.Kind is "all" or "modified")
@@ -59,16 +61,25 @@ public static class AdjustmentTransfer
     {
         if(context.HasUncommittedDraft) throw new AdjustmentTransferException(AdjustmentFailure.Draft);
         p.Validate();
-        if (target.Settings.HDR is { Mode: HDRMode.Hdr } &&
-            (context.IsRaw || PhotoInput.IsCameraRaw(target.Identity.Path)) && !context.IsProRAW)
-            throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.target");
-        if (target.Settings.HDR is { Mode: HDRMode.Hdr } && context.IsProRAW &&
-            target.Settings.ProRAWDecodeVersion != HDRNative.ProRAWDecodeVersion)
-            throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.proraw_version");
         if (target.Settings.HDR is { Mode: HDRMode.Hdr })
-            return HDRAdjustmentTransfer.Prepare(p,target);
+        {
+            ValidateHDRContext(target,context,"hdr.target");
+            var candidate = HDRAdjustmentTransfer.Prepare(p,target,context.SupportsHDRCameraDevelopment);
+            if (p.Fields.Contains(F.HdrCameraDevelopment)) {
+                var validate = context.ValidateHDRCamera ?? throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.camera_development");
+                validate(candidate.Settings.Restore());
+            }
+            return candidate;
+        }
         if(p.Source.IsHDR) {
             if(p.Fields.Any(field=>field.IsHDRRelative()))throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.relative_white_balance");
+            if(p.Fields.Overlaps(AdjustmentFields.HDRTone))throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.tone");
+            if(p.Fields.Overlaps(AdjustmentFields.HDRColor))throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.color");
+            if(p.Fields.Overlaps(AdjustmentFields.HDRRendition))throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.rendition");
+            if(p.Fields.Overlaps(AdjustmentFields.HDREffects))throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.effects");
+            if(p.Fields.Overlaps(AdjustmentFields.HDRDetail))throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.detail");
+            if(p.Fields.Contains(F.HdrLook))throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.look");
+            if(p.Fields.Contains(F.HdrCameraDevelopment))throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.camera_development");
             p=new(p.Source with {HdrProcessingVersion=null},p.Values.ToDictionary(pair=>pair.Key,pair=>pair.Value));
         }
         var storedTarget=target;
@@ -112,6 +123,15 @@ public static class AdjustmentTransfer
         var result=new SavedEdit(target.Identity,s,look);
         var actual=AdjustmentTransferValues.Values(result,context);
         return original.All(pair=>Same(pair.Value,actual[pair.Key])) && s.MasterRecipeSettingsVersion==target.Settings.MasterRecipeSettingsVersion ? storedTarget : result;
+    }
+
+    private static void ValidateHDRContext(SavedEdit edit, AdjustmentTransferContext context, string field)
+    {
+        if ((context.IsRaw || PhotoInput.IsRaw(edit.Identity.Path)) && !context.SupportsCameraHDR && !context.IsProRAW)
+            throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,field);
+        var expectedVersion = context.IsProRAW ? HDRNative.ProRAWDecodeVersion : (int?)null;
+        if (edit.Settings.ProRAWDecodeVersion != expectedVersion)
+            throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.proraw_version");
     }
     internal static double Scale(AdjustmentSnapshot s)=>s.MasterRecipeID==null ? 1 : s.Values[(int)Parameter.Strength]/100;
     public static IReadOnlyDictionary<F,float> EffectiveNumbers(AdjustmentSnapshot s)

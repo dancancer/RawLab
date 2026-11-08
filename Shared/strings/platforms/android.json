@@ -124,12 +124,42 @@
       "source": "正在检查预设…",
       "types": []
     },
-    "x3f_retry_legacy": {"formats":[],"source":"使用旧版显影重试","file":"editor_strings.xml","types":[]},
-    "x3f_rendering": {"file":"editor_strings.xml","formats":[],"source":"X3F 显影","types":[]},
-    "x3f_normal": {"file":"editor_strings.xml","formats":[],"source":"正常显影","types":[]},
-    "x3f_legacy": {"file":"editor_strings.xml","formats":[],"source":"伪红外（旧版）","types":[]},
-    "x3f_relative_wb": {"file":"editor_strings.xml","formats":[],"source":"以文件保存的显影为基准，白平衡作相对调整。","types":[]},
-    "x3f_legacy_description": {"file":"editor_strings.xml","formats":[],"source":"保留旧版的特殊色彩。","types":[]},
+    "x3f_retry_legacy": {
+      "formats": [],
+      "source": "使用旧版显影重试",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "x3f_rendering": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "X3F 显影",
+      "types": []
+    },
+    "x3f_normal": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "正常显影",
+      "types": []
+    },
+    "x3f_legacy": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "伪红外（旧版）",
+      "types": []
+    },
+    "x3f_relative_wb": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "以文件保存的显影为基准，白平衡作相对调整。",
+      "types": []
+    },
+    "x3f_legacy_description": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "保留旧版的特殊色彩。",
+      "types": []
+    },
     "adjustment_summary_overwrite": {
       "file": "editor_strings.xml",
       "formats": [
@@ -4812,6 +4842,12 @@
       "source": "使用此照片",
       "types": []
     },
+    "hdr_reference_white": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "参考白",
+      "types": []
+    },
     "hdr_above_white": {
       "file": "editor_strings.xml",
       "formats": [
@@ -4832,6 +4868,42 @@
       "file": "editor_strings.xml",
       "formats": [],
       "source": "HDR 显示不可用，当前显示 SDR。",
+      "types": []
+    },
+    "hdr_rendition": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "HDR 输出与 SDR 底图",
+      "types": []
+    },
+    "hdr_peak_limit": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "HDR 亮度上限",
+      "types": []
+    },
+    "hdr_sdr_exposure": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "SDR 底图曝光",
+      "types": []
+    },
+    "hdr_sdr_contrast": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "SDR 底图对比度",
+      "types": []
+    },
+    "hdr_sdr_saturation": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "SDR 底图饱和度",
+      "types": []
+    },
+    "hdr_peak_unlimited": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "不限",
       "types": []
     },
     "hdr_editing": {
@@ -5016,6 +5088,48 @@
       "formats": [],
       "source": "请将白平衡模式、色温和色调一起保存，再应用此预设。",
       "file": "editor_strings.xml",
+      "types": []
+    },
+    "hdr_camera_profile": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "HDR 相机配置",
+      "types": []
+    },
+    "hdr_camera_profile_import": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "导入相机配置…",
+      "types": []
+    },
+    "hdr_camera_profile_clear": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "清除相机配置",
+      "types": []
+    },
+    "hdr_camera_profile_missing": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "找不到 HDR 相机配置，请重新导入。",
+      "types": []
+    },
+    "hdr_camera_profile_invalid": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "无法读取 HDR 相机配置，或配置与当前相机不匹配。",
+      "types": []
+    },
+    "hdr_camera_profile_changed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "照片或调整已更改，未应用导入的相机配置。请重试。",
+      "types": []
+    },
+    "hdr_camera_development_unavailable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "无效或不可用的相机显影设置（白平衡或镜头校正）。",
       "types": []
     }
   },
@@ -5934,6 +6048,14 @@
       "es": "Base SDR Display P3 + mapa de ganancia HDR · ISO / XMP",
       "fr": "Base SDR Display P3 + carte de gain HDR · ISO / XMP",
       "ja": "Display P3 SDR ベース + HDR ゲインマップ · ISO / XMP"
+    },
+    "照片或调整已更改，未应用导入的相机配置。请重试。": {
+      "en": "The photo or its adjustments changed. The imported camera profile was not applied. Try again.",
+      "de": "Das Foto oder seine Anpassungen wurden geändert. Das importierte Kameraprofil wurde nicht angewendet. Versuchen Sie es erneut.",
+      "fr": "La photo ou ses réglages ont changé. Le profil de caméra importé n’a pas été appliqué. Réessayez.",
+      "es": "La foto o sus ajustes han cambiado. El perfil de cámara importado no se ha aplicado. Inténtalo de nuevo.",
+      "ja": "写真または調整が変更されたため、読み込んだカメラプロファイルは適用されませんでした。もう一度お試しください。",
+      "zh-Hans": "照片或调整已更改，未应用导入的相机配置。请重试。"
     }
   }
 }

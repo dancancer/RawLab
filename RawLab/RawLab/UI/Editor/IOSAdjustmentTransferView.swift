@@ -98,7 +98,7 @@ struct IOSAdjustmentTransferView: View {
     }
 
     @ViewBuilder private var copyContent: some View {
-        IOSAdjustmentScopeEditor(scope:$scope,fields:$fields,preview:scopePreview,lookName:model.adjustmentSummaryLookName,errorMessage: { model.adjustmentErrorMessage($0) },sourceName:model.sourceDisplayName ?? "",allowed:settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
+        IOSAdjustmentScopeEditor(scope:$scope,fields:$fields,preview:scopePreview,lookName:model.adjustmentSummaryLookName,errorMessage: { model.adjustmentErrorMessage($0) },sourceName:model.sourceDisplayName ?? "",allowed:model.adjustmentTransferFields(for: settings))
         Section {
             Button(L10n.text("复制调整")) {
                 do {

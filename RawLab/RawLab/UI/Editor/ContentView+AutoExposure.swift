@@ -2,9 +2,9 @@ import SwiftUI
 
 extension ContentView {
     func autoExposure() {
-        guard viewModel.hasImage, !settings.isHDREditing, !autoExposing, !viewModel.isBusy else { return }
+        guard viewModel.hasImage, !autoExposing, !viewModel.isBusy else { return }
         let snapshot = settings, revision = settingsRevision, sourceRevision = viewModel.sourceRevision
-        let sourceFile = viewModel.sourceKind == .raw ? viewModel.sourceFile : nil
+        let sourceFile = snapshot.isHDREditing || viewModel.sourceKind == .raw ? viewModel.sourceFile : nil
         let buffer = viewModel.draftBuffer
         let processor = viewModel.processor
         autoExposing = true
@@ -21,7 +21,7 @@ extension ContentView {
                 switch result {
                 case .success(let ev):
                     var updated = settings
-                    updated.exposure = ev
+                    AdjustmentKind.exposure.setValue(ev, in: &updated)
                     applySettingsChange(updated)
                 case .failure(let error): viewModel.reportError(error, operation: .adjustment, stage: "autoExposure")
                 }

@@ -48,6 +48,22 @@ int main(int argc,char** argv) {
         "DNG applies AnalogBalance times CameraCalibration times ColorMatrix with reciprocal-K interpolation");
     check(std::abs(synthetic.asShot().temperature-5000)<10 && std::abs(synthetic.asShot().tint)<.1,
           "DNG inverse calibration recovers as-shot white point");
+    const std::array<std::array<double,3>,3> profile={{{1,0,0},{0,1,0},{0,0,1}}};
+    auto invalidCamera=std::make_unique<libraw_data_t>();
+    invalidCamera->idata.colors=3;
+    sony2fuji::CameraWhiteBalance missingMatrix(*invalidCamera);
+    check(!missingMatrix.available() && !missingMatrix.multipliers(5000,0,gains),
+          "Missing camera calibration cannot supply custom white balance");
+    check(missingMatrix.multipliers(5000,0,gains,&profile),
+          "A valid profile supplies custom WB without a camera matrix or as-shot calibration");
+    for (int c=0;c<3;++c) check(std::abs(gains[c]-xyz[1]/xyz[c])<1e-5,
+        "Profile custom WB uses the profile matrix without camera calibration");
+    for (int c=0;c<3;++c) invalidCamera->color.cam_xyz[c][c]=1;
+    sony2fuji::CameraWhiteBalance missingNeutral(*invalidCamera);
+    check(!missingNeutral.available() && missingNeutral.multipliers(5000,0,gains,&profile),
+          "Missing as-shot multipliers do not disable a supplied profile's custom WB");
+    check(!missingNeutral.multipliers(1000,0,gains,&profile),
+          "A supplied profile does not bypass custom WB parameter validation");
     if (argc<2) return failures;
     LibRaw calibration;
     check(calibration.open_file(argv[1])==LIBRAW_SUCCESS,"Read camera matrix fixture");

@@ -15,7 +15,7 @@ class Arguments(BaseModel):
 
 
 class RecipeArguments(Arguments):
-    recipe_path: str = Field(min_length=1, description="Absolute path to an existing v1-v7 recipe JSON file; v6 requires HDR and v7 requires X3F CLI capability")
+    recipe_path: str = Field(min_length=1, description="Absolute path to an existing recipe JSON file in a version advertised by the capabilities tool")
 
 
 class InfoArguments(Arguments):

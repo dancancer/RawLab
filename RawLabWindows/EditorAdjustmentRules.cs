@@ -79,7 +79,7 @@ public static class EditorAdjustmentRules
     public static bool IsModified(EditorResetScope scope, SavedEdit edit)
     {
         Validate(scope, edit);
-        if (edit.Settings.HDR is { Mode: HDRMode.Hdr } hdr) return ResetHDR(scope, hdr) != hdr;
+        if (edit.Settings.HDR is { Mode: HDRMode.Hdr }) return ResetHDR(scope, edit.Settings) != edit.Settings;
         return !SameScope(scope, edit, Defaults(edit));
     }
     public static EditorResetCandidate PrepareReset(EditorResetScope scope, SavedEdit edit)
@@ -90,11 +90,11 @@ public static class EditorAdjustmentRules
         }
         if (edit.Settings.MasterRecipeID is {} recipe && MasterRecipe.Find(recipe) == null)
             return new(EditorResetStatus.Blocked, Reason: "Unknown master recipe.");
-        if (edit.Settings.HDR is { Mode: HDRMode.Hdr } hdr)
+        if (edit.Settings.HDR is { Mode: HDRMode.Hdr })
         {
-            var reset = ResetHDR(scope, hdr);
-            if (reset == hdr) return new(EditorResetStatus.NoChange);
-            return new(EditorResetStatus.Ready, new SavedEdit(edit.Identity, edit.Settings with { HDR = reset }, edit.Look),
+            var reset = ResetHDR(scope, edit.Settings);
+            if (reset == edit.Settings) return new(EditorResetStatus.NoChange);
+            return new(EditorResetStatus.Ready, new SavedEdit(edit.Identity, reset, edit.Look),
                 RequiresConfirmation: false);
         }
         var defaults = Defaults(edit);
@@ -229,7 +229,7 @@ public static class EditorAdjustmentRules
     };
     private static bool SameScope(EditorResetScope scope, SavedEdit value, SavedEdit defaults)
     {
-        if (value.Settings.HDR is { Mode: HDRMode.Hdr } hdr) return ResetHDR(scope, hdr) == hdr;
+        if (value.Settings.HDR is { Mode: HDRMode.Hdr }) return ResetHDR(scope, value.Settings) == value.Settings;
         if (PhotoInput.IsRaster(value.Identity.Path)) {
             // 普通图片的 RAW 专属元数据不参与标记；配方 tint 仍是待用的逻辑贡献。
             var comparable = value.Settings.Copy() with {
@@ -259,25 +259,64 @@ public static class EditorAdjustmentRules
         return value.Settings.SameAs(ResetGroup(scope.Group, value.Settings.Copy(), groupDefaults));
     }
 
+    internal static bool ResetsAI(EditorResetScope scope) => scope.Kind == EditorResetKind.All ||
+        scope.Kind == EditorResetKind.Group && scope.Group == EditorAdjustmentGroup.Detail ||
+        scope.Kind == EditorResetKind.Tool && scope.Tool == EditorAdjustmentTool.Denoise;
+
+    private static AdjustmentSnapshot ResetHDR(EditorResetScope scope, AdjustmentSnapshot settings) =>
+        settings with { HDR = ResetHDR(scope, settings.HDR!), HDRCameraAIEnabled = settings.HDRCameraAIEnabled && !ResetsAI(scope) };
+
     private static HDRSettings ResetHDR(EditorResetScope scope, HDRSettings value)
     {
         if (scope.Kind == EditorResetKind.All) return value.Reset() with { Mode = value.Mode };
         if (scope.Kind == EditorResetKind.Group)
         {
             return scope.Group switch {
-                EditorAdjustmentGroup.Light => value with { Exposure = 0, Contrast = 0, Highlights = 0, Shadows = 0 },
-                EditorAdjustmentGroup.Color => value with { Temperature = 6500, Tint = 0, Saturation = 0 },
+                EditorAdjustmentGroup.Looks => value.WithLook(new()),
+                EditorAdjustmentGroup.Light => value.WithTone(new()) with { Exposure = 0, Contrast = 0, Highlights = 0, Shadows = 0 },
+                EditorAdjustmentGroup.Color => value.WithColor(new()) with { Temperature = 6500, Tint = 0, Saturation = 0 },
+                EditorAdjustmentGroup.Effects => value.WithEffects(new())
+                    .WithDetail(value.DetailSettings with { Clarity = 0, Dehaze = 0 }),
+                EditorAdjustmentGroup.Detail => value.WithDetail(value.DetailSettings with { Sharpening = 0, Denoise = 0 }),
                 EditorAdjustmentGroup.Geometry => value with { Geometry = new() },
                 _ => value
             };
         }
+        var color = value.ColorSettings;
+        if (scope.Kind == EditorResetKind.AllGrading) return value.WithColor(color with { Grading = new() });
+        if (scope.Kind == EditorResetKind.GradingZone)
+            return value.WithColor(color with { Grading = color.Grading.With(scope.Zone, new()) });
+        if (scope.Kind == EditorResetKind.AllHsl) return value.WithColor(color with { Hsl = new() });
+        if (scope.Kind == EditorResetKind.HslChannel)
+        {
+            var hsl = color.Hsl;
+            for (int axis = 0; axis < 3; ++axis) hsl = hsl.WithValue(axis, scope.Channel, 0);
+            return value.WithColor(color with { Hsl = hsl });
+        }
         if (scope.Kind != EditorResetKind.Tool) return value;
+        var effects = value.EffectSettings;
+        var defaults = PhotoEffectsSettings.Default;
         return scope.Tool switch {
+            EditorAdjustmentTool.Film => value.WithLook(new()),
             EditorAdjustmentTool.Exposure => value with { Exposure = 0 },
             EditorAdjustmentTool.Highlights => value with { Highlights = 0 },
             EditorAdjustmentTool.Shadows => value with { Shadows = 0 },
             EditorAdjustmentTool.Contrast => value with { Contrast = 0 },
+            EditorAdjustmentTool.BlackPoint => value.WithTone(value.ToneSettings with { BlackPoint = 0 }),
+            EditorAdjustmentTool.WhitePoint => value.WithTone(value.ToneSettings with { WhitePoint = 0 }),
+            EditorAdjustmentTool.ToneCurve => value.WithTone(value.ToneSettings with { CurveStrength = 0, Curve = new() }),
             EditorAdjustmentTool.Saturation => value with { Saturation = 0 },
+            EditorAdjustmentTool.Vibrance => value.WithColor(color with { Vibrance = 0 }),
+            EditorAdjustmentTool.Hsl => value.WithColor(color with { Hsl = new() }),
+            EditorAdjustmentTool.ColorGrading => value.WithColor(color with { Grading = new() }),
+            EditorAdjustmentTool.Vignette => value.WithEffects(defaults with {
+                GrainAmount=effects.GrainAmount, GrainSize=effects.GrainSize, GrainRoughness=effects.GrainRoughness }),
+            EditorAdjustmentTool.Grain => value.WithEffects(effects with {
+                GrainAmount=defaults.GrainAmount, GrainSize=defaults.GrainSize, GrainRoughness=defaults.GrainRoughness }),
+            EditorAdjustmentTool.Clarity => value.WithDetail(value.DetailSettings with { Clarity = 0 }),
+            EditorAdjustmentTool.Dehaze => value.WithDetail(value.DetailSettings with { Dehaze = 0 }),
+            EditorAdjustmentTool.Sharpening => value.WithDetail(value.DetailSettings with { Sharpening = 0 }),
+            EditorAdjustmentTool.Denoise => value.WithDetail(value.DetailSettings with { Denoise = 0 }),
             EditorAdjustmentTool.WhiteBalance => value with { Temperature = 6500, Tint = 0 },
             EditorAdjustmentTool.Geometry => value with { Geometry = new() },
             _ => value

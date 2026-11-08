@@ -67,7 +67,7 @@ struct IOSDenoiseControls: View {
 
 struct IOSPhotoEffectsControls: View {
     let effect: AdjustmentKind
-    @Binding var settings: PhotoEffectsSettings
+    let value: (PhotoEffectParameter) -> Binding<Double>
     let onEditingChanged: (Bool) -> Void
     let onReset: () -> Void
     var resetEnabled: Bool = true
@@ -99,7 +99,7 @@ struct IOSPhotoEffectsControls: View {
                     ForEach(parameters.dropFirst()) { parameter in
                         parameterControl(parameter)
                     }
-                    if effect == .vignette && settings.vignetteAmount >= 0 {
+                    if effect == .vignette && value(.vignetteAmount).wrappedValue >= 0 {
                         Text(L10n.text("仅在暗角强度为负值时可用。"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -119,23 +119,13 @@ struct IOSPhotoEffectsControls: View {
     }
 
     private func parameterControl(_ parameter: PhotoEffectParameter) -> some View {
-        AdjustmentControl(title: parameter.title, value: binding(for: parameter),
+        AdjustmentControl(title: parameter.title, value: value(parameter),
                           range: parameter.range, step: 1, defaultValue: parameter.defaultValue,
                           formatter: { String(format: $0 == 0 || parameter.range.lowerBound >= 0 ? "%.0f" : "%+.0f", locale: L10n.locale, $0) },
                           identifier: "effects.\(effect.rawValue).\(parameter.rawValue)",
                           onEditingChanged: onEditingChanged)
-            .disabled(parameter == .vignetteHighlights && settings.vignetteAmount >= 0)
+            .disabled(parameter == .vignetteHighlights && value(.vignetteAmount).wrappedValue >= 0)
     }
-
-    private func binding(for parameter: PhotoEffectParameter) -> Binding<Double> {
-        Binding(get: { settings[keyPath: parameter.keyPath] }, set: { value in
-            guard value.isFinite else { return }
-            settings[keyPath: parameter.keyPath] = min(parameter.range.upperBound,
-                                                       max(parameter.range.lowerBound, value.rounded()))
-        })
-    }
-
-
 }
 
 struct IOSHSLMixer: View {

@@ -32,6 +32,23 @@ enum BatchFlowModelTests {
                     "unedited fallback collection reuses one probe and reports SDR export (probes: \(probes))")
         try require(try model.editStore!.state(for: photo) == nil,
                     "fallback collection preparation does not create an edit record")
+        let payload = try AdjustmentTransferPayload(source: .init(identifier: "saved-preset", isRaw: false,
+            processingVersion: 2, recipe: nil), values: ["light.exposure": .number(0.6)])
+        let paste = try model.prepareAdjustmentPaste(payload: payload, targets: [photo])
+        model.applyAdjustmentPaste(paste)
+        try require(model.adjustmentOutcomes.first?.status == .applied &&
+                    model.editStore?.state(for: photo)?.settings.exposure == 0.6,
+                    "fallback preset targets reuse the injected probe and centralized SDR defaults")
+        var savedHDR = Adjustments(); savedHDR.hdr = HDRSettings()
+        try model.editStore!.save(photo, state: PhotoEditState(settings: savedHDR, filmID: ""))
+        let savedRecord = try model.editStore!.versionedState(for: photo)
+        var batchSource = savedHDR; batchSource.hdr?.exposure = 0.4
+        let preparation = MacHDRBatchPreparation(source: fixture, settings: batchSource, store: model.editStore!, films: [],
+            probeHDRSource: HDRSourceProbeTests.unsupportedSystem)
+        let frozen = try preparation.prepare(BatchExportItem(url: photo), ordinal: 0, format: .jpeg, longEdge: nil)
+        try require(!frozen.settings.isHDREditing && frozen.settings.exposure == 0.4 &&
+                    model.editStore!.versionedState(for: photo) == savedRecord,
+                    "HDR uniform batch uses fallback SDR settings without rewriting the saved HDR layer")
         try require(snapshot.settings.exposureMode == .sensor,
                     "unedited fallback defaults retain sensor exposure")
     }
@@ -180,10 +197,15 @@ enum BatchFlowModelTests {
             editDirectory: directory.appendingPathComponent("edits"), batchDirectory: directory.appendingPathComponent("batch"),
             presetDirectory: directory.appendingPathComponent("presets"))
         model.addCollectionPhotos([hdrPhoto, sdrPhoto])
+        model.probeHDRSource = { url, _ in
+            url == hdrPhoto ? HDRSourceInfo(native: sony2fuji_hdr_source_info_v1()) : nil
+        }
         var settings = Adjustments(); settings.hdr = HDRSettings()
         try model.editStore!.save(hdrPhoto, state: PhotoEditState(settings: settings, filmID: ""))
         let strict = try model.prepareCollectionExport(skipping: [], format: .hdrJPEG, longEdge: 512, directory: directory)
         try require(!strict.ready && strict.rows[1].error != nil, "explicit HDR JPEG still rejects SDR targets")
+        let heif = try model.prepareCollectionExport(skipping: [], format: .hdrHEIF, longEdge: 512, directory: directory)
+        try require(!heif.ready && heif.rows[1].error != nil, "explicit HDR HEIF also rejects SDR targets")
         let review = try model.prepareCollectionExport(skipping: [], format: .hdrJPEG, longEdge: 512,
                                                        directory: directory, adaptiveJPEG: true)
         try require(review.ready && review.snapshots.count == 2, "adaptive JPEG accepts mixed saved HDR and SDR edits")

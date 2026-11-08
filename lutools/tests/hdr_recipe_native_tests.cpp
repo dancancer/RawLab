@@ -40,7 +40,7 @@ int main() {
         auto hsl=init<sony2fuji_hsl_config>(); hsl.saturation[0]=80;
         sony2fuji_session_set_hsl(session.get(),&hsl);
         sony2fuji_session_set_raw_exposure_mode(session.get(),SONY2FUJI_EXPOSURE_PREVIEW);
-        for (int variant=0;variant<4;++variant) {
+        for (int variant=0;variant<10;++variant) {
             HDRRenderOptions expected;
             if (variant==1) expected.exposureEV=1.25f;
             if (variant>=2) {
@@ -48,7 +48,45 @@ int main() {
                 expected.highlights=20; expected.shadows=40; expected.saturation=10;
             }
             if (variant==3) { expected.geometry.quarter_turns=1; expected.geometry.flip_horizontal=true; }
-            Json document={{"schema_version",6},{"processing",{{"family","rawlab_hdr"},{"version",1},{"quality","standard"}}},
+            const bool extendedTone=variant>=4;
+            if (extendedTone) {
+                expected.processingVersion=2;
+                expected.tone.blackPoint=-25;
+                expected.tone.whitePoint=50;
+                if (variant==4) expected.tone.curveStrength=25;
+                else {
+                    expected.tone.curve.mode=SONY2FUJI_CURVE_CUSTOM;
+                    expected.tone.curve.count=3;
+                    expected.tone.curve.points[1]={.5,.625};
+                    expected.tone.curve.points[2]={1,1};
+                }
+            }
+            const bool extendedColor=variant>=6;
+            const bool rendition=variant>=7;
+            const bool effects=variant>=8;
+            const bool detail=variant==9;
+            if (extendedColor) {
+                expected.processingVersion=3;
+                expected.color.vibrance=40;
+                expected.color.hsl.saturation[1]=25;
+                expected.color.grading.wheels[2]={180,30};
+            }
+            if (rendition) {
+                expected.processingVersion=4;
+                expected.rendition={1.5f,.5f,20,-30};
+            }
+            if (effects) {
+                expected.processingVersion=5;
+                expected.effects.vignetteAmount=-50;
+                expected.effects.grainAmount=70;
+            }
+            if (detail) {
+                expected.processingVersion=6;
+                expected.detail={1.2f, .7f, -.5f, .6f};
+            }
+            const auto schema=extendedTone ? expected.processingVersion + 6 : 6;
+            Json document={{"schema_version",schema},
+                {"processing",{{"family","rawlab_hdr"},{"version",expected.processingVersion},{"quality","standard"}}},
                 {"input",{{"path","phone.heic"},{"type","hdr_raster"}}},
                 {"edits",{{"exposure",{{"ev",expected.exposureEV}}},
                     {"white_balance",{{"mode","relative"},{"relative_temperature",expected.temperature},{"relative_tint",expected.tint}}},
@@ -56,13 +94,29 @@ int main() {
                         {"highlights",-expected.highlights/100.0},{"shadows",expected.shadows/100.0}}},
                     {"geometry",{{"quarter_turns",expected.geometry.quarter_turns},{"flip_horizontal",expected.geometry.flip_horizontal}}}}},
                 {"output",{{"path","output.jpg"},{"format","hdr_jpeg"},{"base_color","srgb"}}}};
+            if (extendedTone) {
+                auto& tone=document["edits"]["tone"];
+                tone["black_point"]=-.25;
+                tone["white_point"]=.5;
+                if (variant==4) tone["s_curve"]=.25;
+                else tone["curve"]={{"mode","custom"},{"points",{{0,0},{.5,.625},{1,1}}}};
+            }
+            if (extendedColor) {
+                document["edits"]["color"]["vibrance"]=.4;
+                document["edits"]["hsl"]["saturation"]=expected.color.hsl.saturation;
+                document["edits"]["color_grading"]["highlights"]={{"hue",180},{"saturation",30}};
+            }
+            if (rendition) document["edits"]["rendition"]={{"peak_limit_ev",1.5},{"sdr_exposure_ev",.5},
+                {"sdr_contrast",.2},{"sdr_saturation",-.3}};
+            if (effects) document["edits"]["effects"]={{"vignette_amount",-50},{"grain_amount",70}};
+            if (detail) document["edits"]["detail"]={{"sharpening",1.2},{"clarity",.7},{"dehaze",-.5},{"denoise",.6}};
             EditRecipe recipe; std::string error;
             check(parseEditRecipe(document.dump(),recipe,error),error.c_str());
-            auto request=recipe.toHDRRequest();
+            auto request=recipe.toHDRRenderRequest();
             auto result=init<sony2fuji_hdr_image_pair_v1>(); auto diagnostic=init<sony2fuji_hdr_diagnostic_v1>();
             const auto release=[](sony2fuji_hdr_image_pair_v1* value) { sony2fuji_hdr_release_pair(value); };
             const std::unique_ptr<sony2fuji_hdr_image_pair_v1,decltype(release)> guard(&result,release);
-            check(sony2fuji_hdr_render(session.get(),&borrowed,&request,&result,&diagnostic)==SONY2FUJI_STATUS_OK,"recipe native render failed");
+            check(sony2fuji_hdr_render(session.get(),&borrowed,&request.base.base.base.base.base.base,&result,&diagnostic)==SONY2FUJI_STATUS_OK,"recipe native render failed");
             const auto reference=renderHDRPair(source,expected);
             auto compare=[&](const sony2fuji_hdr_buffer_v1& actual,const ImageData& wanted) {
                 check(actual.width==uint32_t(wanted.width) && actual.height==uint32_t(wanted.height),"recipe geometry differs");

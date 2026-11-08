@@ -1,12 +1,16 @@
 package com.rawlab.android.adjustments
 
 import com.rawlab.android.settings.*
+import java.io.File
 
 data class AdjustmentTransferContext(val identifier: String, val isRaw: Boolean,
     val availableLookIDs: Set<String> = emptySet(), val builtinLookIDs: Map<String, String> = emptyMap(),
     val cameraTemperature: Float? = null, val cameraTint: Float? = null, val defaultExposureMode: Int = 1,
     val hasUncommittedDraft: Boolean = false, val validateLens: ((LensSettings) -> Unit)? = null,
-    val sourceSupportsProRAWHDR: Boolean = false, val recipeTintDefaults: Map<String, Float> = emptyMap())
+    val sourceSupportsCameraHDR: Boolean = false, val sourceIsProRAW: Boolean = false, val hdrLookDirectory: File? = null,
+    val validateHDRCamera: ((EditSettings) -> Unit)? = null, val recipeTintDefaults: Map<String, Float> = emptyMap()) {
+    val supportsHDRCameraDevelopment get() = isRaw && sourceSupportsCameraHDR && !sourceIsProRAW
+}
 
 object AdjustmentTransfer {
     fun previewCapture(scope: AdjustmentScope, settings: EditSettings, committed: EditSettings,
@@ -18,9 +22,18 @@ object AdjustmentTransfer {
     fun captureHDRBatch(settings: EditSettings, context: AdjustmentTransferContext, targetIsHDR: Boolean): AdjustmentPayload {
         require(settings.isHDREditing)
         val active=settings.synchronizeHDR()
-        val fields=AdjustmentField.HDR_SUPPORTED.toMutableSet()
-        if(!targetIsHDR && active.hdr!!.temperature==6500f && active.hdr.tint==0f)
-            fields.removeAll(setOf(AdjustmentField.HDR_TEMPERATURE,AdjustmentField.HDR_TINT))
+        val hdr = requireNotNull(active.hdr)
+        val fields = AdjustmentField.hdrSupported(hdr.processingVersion).toMutableSet()
+        if (!targetIsHDR) {
+            if (hdr.temperature == 6500f && hdr.tint == 0f)
+                fields.removeAll(setOf(AdjustmentField.HDR_TEMPERATURE, AdjustmentField.HDR_TINT))
+            if (hdr.toneSettings.isDefault) fields.removeAll(AdjustmentField.HDR_TONE)
+            if (hdr.colorSettings.isDefault) fields.removeAll(AdjustmentField.HDR_COLOR)
+            if (hdr.renditionSettings.isDefault) fields.removeAll(AdjustmentField.HDR_RENDITION)
+            if (hdr.effectSettings == PhotoEffectsSettings()) fields.removeAll(AdjustmentField.HDR_EFFECTS)
+            if (hdr.detailSettings.isDefault) fields.removeAll(AdjustmentField.HDR_DETAIL)
+            if (hdr.lookSettings.isDefault) fields.remove(AdjustmentField.HDR_LOOK)
+        }
         return capture(AdjustmentScope.Custom(fields),active,context)
     }
     fun sameAdjustments(left: EditSettings, right: EditSettings, isRaw: Boolean): Boolean {
@@ -37,7 +50,7 @@ object AdjustmentTransfer {
         val original = AdjustmentTransferValues.values(settings, context)
         val defaults = AdjustmentTransferValues.values(EditSettings(exposureMode = if (context.isRaw) context.defaultExposureMode else 2), context)
         val selected = when (scope) {
-            AdjustmentScope.All -> AdjustmentField.entries.filterTo(linkedSetOf()) { !it.isHDRRelative }
+            AdjustmentScope.All -> AdjustmentField.entries.filterTo(linkedSetOf()) { !it.isHDROnly }
             AdjustmentScope.Modified -> AdjustmentField.COMMON.filterTo(linkedSetOf()) { original[it] != defaults[it] }
             is AdjustmentScope.Custom -> scope.fields
         }
@@ -52,6 +65,14 @@ object AdjustmentTransfer {
                 val legacy=if(payload.source.isHDR) {
                     payload.validate()
                     if(payload.fields.any {it.isHDRRelative})throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.relative_white_balance")
+                    if(payload.fields.any {it in AdjustmentField.HDR_TONE})throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.tone")
+                    if(payload.fields.any {it in AdjustmentField.HDR_COLOR})throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.color")
+                    if(payload.fields.any {it.isHDRRendition})throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.rendition")
+                    if(payload.fields.any {it in AdjustmentField.HDR_EFFECTS})throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.effects")
+                    if(payload.fields.any {it in AdjustmentField.HDR_DETAIL})throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.detail")
+                    if(AdjustmentField.HDR_LOOK in payload.fields)throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.look")
+                    if(AdjustmentField.HDR_CAMERA_DEVELOPMENT in payload.fields)
+                        throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.camera_development")
                     AdjustmentPayload(payload.source.copy(hdrProcessingVersion=null),payload.values)
                 } else payload
                 prepareChecked(legacy, target, context)
@@ -159,27 +180,57 @@ object AdjustmentTransfer {
     }
 
     private fun captureHDR(scope: AdjustmentScope, settings: EditSettings, context: AdjustmentTransferContext): AdjustmentPayload {
-        if (context.isRaw && !context.sourceSupportsProRAWHDR) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.source")
-        settings.requireProRAWDecoder()
-        val values = hdrValues(settings)
-        val defaults = hdrValues(EditSettings().withHDRMode(true, true))
+        if (context.isRaw && !context.sourceSupportsCameraHDR) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.source")
+        settings.requireHDRDecodeVersion(context.sourceIsProRAW)
+        val values = hdrValues(settings).toMutableMap()
+        val defaults = hdrValues(EditSettings().withHDRMode(true, true)).toMutableMap()
+        val hdr = requireNotNull(settings.hdr)
+        val version = hdr.processingVersion
+        val camera = AdjustmentField.HDR_CAMERA_DEVELOPMENT
+        val allowed = AdjustmentField.hdrTransferFields(context.supportsHDRCameraDevelopment)
+        if (context.supportsHDRCameraDevelopment) {
+            values[camera] = cameraValue(hdr.cameraSettings)
+            defaults[camera] = cameraValue(HDRCameraDevelopmentSettings())
+        }
         val selected = when (scope) {
-            AdjustmentScope.All -> AdjustmentField.HDR_SUPPORTED
-            AdjustmentScope.Modified -> AdjustmentField.HDR_COMMON.filterTo(linkedSetOf()) { values[it] != defaults[it] }
+            AdjustmentScope.All -> if (values[camera] != defaults[camera]) AdjustmentField.hdrSupported(version) + camera
+                else AdjustmentField.hdrSupported(version)
+            AdjustmentScope.Modified -> (allowed - AdjustmentField.HDR_GEOMETRY)
+                .filterTo(linkedSetOf()) { values[it] != defaults[it] }
             is AdjustmentScope.Custom -> scope.fields
         }
         if (selected.isEmpty()) throw AdjustmentTransferException(AdjustmentFailure.EMPTY_SCOPE)
+        if (!allowed.containsAll(selected))
+            throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.fields")
+        val requiredVersion = when {
+            AdjustmentField.HDR_LOOK in selected -> 7
+            selected.any { it in AdjustmentField.HDR_DETAIL } -> 6
+            selected.any { it in AdjustmentField.HDR_EFFECTS } -> 5
+            selected.any { it.isHDRRendition } -> 4
+            selected.any { it in AdjustmentField.HDR_COLOR } -> 3
+            selected.any { it in AdjustmentField.HDR_TONE } -> 2
+            else -> 1
+        }
         return AdjustmentPayload(AdjustmentSource(context.identifier, isRaw = false,
-            processingVersion = settings.processing.version, recipe = null, hdrProcessingVersion = 1),
+            processingVersion = settings.processing.version, recipe = null,
+            hdrProcessingVersion = maxOf(version, requiredVersion)),
             values.filterKeys { it in selected })
     }
 
     private fun prepareHDR(payload: AdjustmentPayload, target: EditSettings, context: AdjustmentTransferContext): EditSettings {
-        if (!target.isHDREditing || context.isRaw && !context.sourceSupportsProRAWHDR) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.target")
-        target.requireProRAWDecoder()
+        if (!target.isHDREditing || context.isRaw && !context.sourceSupportsCameraHDR) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.target")
+        target.requireHDRDecodeVersion(context.sourceIsProRAW)
         payload.validate()
-        if(!AdjustmentField.HDR_SUPPORTED.containsAll(payload.fields))
+        if(!AdjustmentField.hdrTransferFields(context.supportsHDRCameraDevelopment).containsAll(payload.fields))
             throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.fields")
+        if(!payload.source.isHDR && payload.fields.any {it in AdjustmentField.HDR_TONE})
+            throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.tone")
+        if(!payload.source.isHDR && payload.fields.any {it in AdjustmentField.HDR_COLOR})
+            throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.color")
+        if(!payload.source.isHDR && payload.fields.any {it in AdjustmentField.HDR_EFFECTS})
+            throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.effects")
+        if(!payload.source.isHDR && payload.fields.any {it in AdjustmentField.HDR_DETAIL})
+            throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.detail")
         var result = target.synchronizeHDR()
         var hdr = result.hdr ?: throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.target")
         fun number(field: AdjustmentField): Double? = payload[field]?.number
@@ -201,13 +252,88 @@ object AdjustmentTransfer {
         number(AdjustmentField.STRAIGHTEN)?.let { geometry = geometry.copy(straightenDegrees = it.toFloat()) }
         number(AdjustmentField.PERSPECTIVE_HORIZONTAL)?.let { geometry = geometry.copy(perspectiveHorizontal = it.toFloat()) }
         number(AdjustmentField.PERSPECTIVE_VERTICAL)?.let { geometry = geometry.copy(perspectiveVertical = it.toFloat()) }
-        result = result.copy(geometry = geometry, hdr = hdr.copy(geometry = geometry)).synchronizeHDR()
+        val tone = hdr.toneSettings
+        val nextTone = tone.copy(blackPoint = number(AdjustmentField.BLACK_POINT)?.toFloat() ?: tone.blackPoint,
+            whitePoint = number(AdjustmentField.WHITE_POINT)?.toFloat() ?: tone.whitePoint,
+            curveStrength = number(AdjustmentField.S_CURVE)?.let { (it * 100).toFloat() } ?: tone.curveStrength,
+            curve = payload[AdjustmentField.CURVE]?.let { AdjustmentPayload.curve(it) } ?: tone.curve)
+        var color = hdr.colorSettings
+        number(AdjustmentField.VIBRANCE)?.let { color = color.copy(vibrance = it.toFloat().canonicalZero()) }
+        for (field in payload.fields) {
+            field.hslLocation?.let { (axis, channel) ->
+                color = color.copy(hsl = color.hsl.withValue(axis, channel, requireNotNull(number(field)).toFloat()))
+            }
+            field.gradingZone?.let { zone ->
+                val wheel = requireNotNull(payload[field]?.objectValue)
+                color = color.copy(grading = color.grading.with(zone, ColorGradingWheel.fromNumbers(
+                    requireNotNull(wheel["hue"]?.number), requireNotNull(wheel["saturation"]?.number))))
+            }
+        }
+        val rendition = hdr.renditionSettings
+        val nextRendition = rendition.copy(
+            peakLimitEV = number(AdjustmentField.HDR_PEAK_LIMIT)?.toFloat()?.canonicalZero() ?: rendition.peakLimitEV,
+            sdrExposureEV = number(AdjustmentField.HDR_SDR_EXPOSURE)?.toFloat()?.canonicalZero() ?: rendition.sdrExposureEV,
+            sdrContrast = number(AdjustmentField.HDR_SDR_CONTRAST)?.toFloat()?.canonicalZero() ?: rendition.sdrContrast,
+            sdrSaturation = number(AdjustmentField.HDR_SDR_SATURATION)?.toFloat()?.canonicalZero() ?: rendition.sdrSaturation)
+        val fx = hdr.effectSettings
+        val effects = fx.copy(
+            vignetteAmount = number(AdjustmentField.VIGNETTE_AMOUNT)?.toFloat()?.canonicalZero() ?: fx.vignetteAmount,
+            vignetteMidpoint = number(AdjustmentField.VIGNETTE_MIDPOINT)?.toFloat()?.canonicalZero() ?: fx.vignetteMidpoint,
+            vignetteRoundness = number(AdjustmentField.VIGNETTE_ROUNDNESS)?.toFloat()?.canonicalZero() ?: fx.vignetteRoundness,
+            vignetteFeather = number(AdjustmentField.VIGNETTE_FEATHER)?.toFloat()?.canonicalZero() ?: fx.vignetteFeather,
+            vignetteHighlights = number(AdjustmentField.VIGNETTE_HIGHLIGHTS)?.toFloat()?.canonicalZero() ?: fx.vignetteHighlights,
+            grainAmount = number(AdjustmentField.GRAIN_AMOUNT)?.toFloat()?.canonicalZero() ?: fx.grainAmount,
+            grainSize = number(AdjustmentField.GRAIN_SIZE)?.toFloat()?.canonicalZero() ?: fx.grainSize,
+            grainRoughness = number(AdjustmentField.GRAIN_ROUGHNESS)?.toFloat()?.canonicalZero() ?: fx.grainRoughness)
+        val detail = hdr.detailSettings
+        val nextDetail = detail.copy(
+            sharpening = number(AdjustmentField.SHARPENING)?.toFloat()?.canonicalZero() ?: detail.sharpening,
+            clarity = number(AdjustmentField.CLARITY)?.let { (it / 100).toFloat().canonicalZero() } ?: detail.clarity,
+            dehaze = number(AdjustmentField.DEHAZE)?.let { (it / 100).toFloat().canonicalZero() } ?: detail.dehaze,
+            denoise = number(AdjustmentField.POST_RGB_DENOISE)?.toFloat()?.canonicalZero() ?: detail.denoise)
+        val look = payload[AdjustmentField.HDR_LOOK]?.hdrLook() ?: hdr.lookSettings
+        if (!look.assetIsAvailable(context.hdrLookDirectory))
+            throw AdjustmentTransferException(AdjustmentFailure.MISSING_LOOK, look.name ?: "HDR LUT")
+        var editedHDR = hdr.withTone(nextTone).withColor(color).withRendition(nextRendition).withEffects(effects)
+            .withDetail(nextDetail).withLook(look).copy(geometry = geometry)
+        val camera = payload[AdjustmentField.HDR_CAMERA_DEVELOPMENT]?.hdrCameraDevelopment()
+        if (camera != null) {
+            val old = hdr.cameraSettings
+            editedHDR = editedHDR.withCameraDevelopment(old.copy(customWhiteBalance = camera.customWhiteBalance,
+                temperature = camera.temperature, tint = camera.tint, sensorExposure = camera.sensorExposure, fbddLevel = camera.fbddLevel))
+        }
+        result = result.copy(geometry = geometry, hdr = editedHDR).synchronizeHDR()
+        if (camera != null) {
+            val validate = context.validateHDRCamera ?: throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.camera_development")
+            validate(result)
+        }
         return result
     }
+
+    private fun cameraValue(camera: HDRCameraDevelopmentSettings) = AdjustmentValue.Object(mapOf(
+        "version" to AdjustmentValue.Number(1.0),
+        "white_balance_mode" to AdjustmentValue.Text(if (camera.customWhiteBalance) "temperature" else "as_shot"),
+        "temperature" to AdjustmentValue.Number(camera.temperature.canonicalZero().toDouble()),
+        "tint" to AdjustmentValue.Number(camera.tint.canonicalZero().toDouble()),
+        "exposure_reference" to AdjustmentValue.Text(if (camera.sensorExposure) "sensor" else "metadata"),
+        "fbdd_level" to AdjustmentValue.Number(camera.fbddLevel.toDouble())))
 
     private fun hdrValues(settings: EditSettings): Map<AdjustmentField, AdjustmentValue> = buildMap {
         put(AdjustmentField.EXPOSURE, AdjustmentValue.Number(settings.exposure.toDouble()))
         val hdr = settings.hdr ?: throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.settings")
+        val look = hdr.lookSettings
+        put(AdjustmentField.HDR_LOOK, if (look.isDefault) AdjustmentValue.Null else AdjustmentValue.Object(mapOf(
+            "name" to AdjustmentValue.Text(look.name!!), "sha256" to AdjustmentValue.Text(look.sha256!!),
+            "strength" to AdjustmentValue.Number(look.strength.toDouble()))))
+        val fx = hdr.effectSettings
+        put(AdjustmentField.VIGNETTE_AMOUNT, AdjustmentValue.Number(fx.vignetteAmount.toDouble()))
+        put(AdjustmentField.VIGNETTE_MIDPOINT, AdjustmentValue.Number(fx.vignetteMidpoint.toDouble()))
+        put(AdjustmentField.VIGNETTE_ROUNDNESS, AdjustmentValue.Number(fx.vignetteRoundness.toDouble()))
+        put(AdjustmentField.VIGNETTE_FEATHER, AdjustmentValue.Number(fx.vignetteFeather.toDouble()))
+        put(AdjustmentField.VIGNETTE_HIGHLIGHTS, AdjustmentValue.Number(fx.vignetteHighlights.toDouble()))
+        put(AdjustmentField.GRAIN_AMOUNT, AdjustmentValue.Number(fx.grainAmount.toDouble()))
+        put(AdjustmentField.GRAIN_SIZE, AdjustmentValue.Number(fx.grainSize.toDouble()))
+        put(AdjustmentField.GRAIN_ROUGHNESS, AdjustmentValue.Number(fx.grainRoughness.toDouble()))
         put(AdjustmentField.CONTRAST, AdjustmentValue.Number(1.0 + hdr.contrast / 100.0))
         put(AdjustmentField.HIGHLIGHTS, AdjustmentValue.Number(-hdr.highlights / 100.0))
         put(AdjustmentField.SHADOWS, AdjustmentValue.Number(hdr.shadows / 100.0))
@@ -225,5 +351,32 @@ object AdjustmentTransfer {
         put(AdjustmentField.STRAIGHTEN, AdjustmentValue.Number(geometry.straightenDegrees.toDouble()))
         put(AdjustmentField.PERSPECTIVE_HORIZONTAL, AdjustmentValue.Number(geometry.perspectiveHorizontal.toDouble()))
         put(AdjustmentField.PERSPECTIVE_VERTICAL, AdjustmentValue.Number(geometry.perspectiveVertical.toDouble()))
+        val tone = hdr.toneSettings
+        put(AdjustmentField.BLACK_POINT, AdjustmentValue.Number(tone.blackPoint.toDouble()))
+        put(AdjustmentField.WHITE_POINT, AdjustmentValue.Number(tone.whitePoint.toDouble()))
+        put(AdjustmentField.S_CURVE, AdjustmentValue.Number(tone.curveStrength / 100.0))
+        put(AdjustmentField.CURVE, AdjustmentPayload.curveValue(tone.curve))
+        val color = hdr.colorSettings
+        put(AdjustmentField.VIBRANCE, AdjustmentValue.Number(color.vibrance.toDouble()))
+        for (field in AdjustmentField.HDR_COLOR) {
+            field.hslLocation?.let { (axis, channel) ->
+                put(field, AdjustmentValue.Number(color.hsl.value(axis, channel).toDouble()))
+            }
+            field.gradingZone?.let { zone ->
+                val wheel = color.grading[zone]
+                put(field, AdjustmentValue.Object(mapOf("hue" to AdjustmentValue.Number(wheel.hue.toDouble()),
+                    "saturation" to AdjustmentValue.Number(wheel.saturation.toDouble()))))
+            }
+        }
+        val rendition = hdr.renditionSettings
+        put(AdjustmentField.HDR_PEAK_LIMIT, AdjustmentValue.Number(rendition.peakLimitEV.toDouble()))
+        put(AdjustmentField.HDR_SDR_EXPOSURE, AdjustmentValue.Number(rendition.sdrExposureEV.toDouble()))
+        put(AdjustmentField.HDR_SDR_CONTRAST, AdjustmentValue.Number(rendition.sdrContrast.toDouble()))
+        put(AdjustmentField.HDR_SDR_SATURATION, AdjustmentValue.Number(rendition.sdrSaturation.toDouble()))
+        val detail = hdr.detailSettings
+        put(AdjustmentField.SHARPENING, AdjustmentValue.Number(detail.sharpening.toDouble()))
+        put(AdjustmentField.CLARITY, AdjustmentValue.Number(detail.clarity * 100.0))
+        put(AdjustmentField.DEHAZE, AdjustmentValue.Number(detail.dehaze * 100.0))
+        put(AdjustmentField.POST_RGB_DENOISE, AdjustmentValue.Number(detail.denoise.toDouble()))
     }
 }

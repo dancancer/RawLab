@@ -434,12 +434,13 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingExportSize) {
             ExportSizeSheet(longEdge: $exportLongEdge,
-                            title: singleExportFormat == .renderedDNG ? "导出渲染型 DNG" : "保存当前照片") {
+                            title: singleExportFormat == .renderedDNG ? "导出渲染型 DNG" :
+                                singleExportFormat == .hdrHEIF ? singleExportFormat.title : "保存当前照片") {
                 showingExportSize = false
                 if singleExportFormat == .renderedDNG {
                     exportDNG(longEdge: exportLongEdge)
                 } else {
-                    exportJPEG(longEdge: exportLongEdge,keepHDR:singleExportFormat == .hdrJPEG)
+                    exportPhoto(longEdge: exportLongEdge, format: singleExportFormat)
                 }
             }
         }

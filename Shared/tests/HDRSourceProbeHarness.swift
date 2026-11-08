@@ -5,6 +5,7 @@ struct ProRAWSource {
     let width: Int
     let height: Int
     static func probe(_ url: URL) throws -> ProRAWSource? { fatalError("unexpected ProRAW probe") }
+    static func validatedDecodeVersion(_ saved: Int?) throws -> Int { fatalError("unexpected ProRAW decode validation") }
 }
 
 @_cdecl("sony2fuji_hdr_probe")

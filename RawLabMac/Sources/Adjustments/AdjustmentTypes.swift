@@ -189,6 +189,18 @@ enum PhotoEffectParameter: String, CaseIterable, Identifiable {
         case .grainRoughness: return \.grainRoughness
         }
     }
+    var hdrKeyPath: WritableKeyPath<HDRPhotoEffectsSettings, Double> {
+        switch self {
+        case .vignetteAmount: return \.vignetteAmount
+        case .vignetteMidpoint: return \.vignetteMidpoint
+        case .vignetteRoundness: return \.vignetteRoundness
+        case .vignetteFeather: return \.vignetteFeather
+        case .vignetteHighlights: return \.vignetteHighlights
+        case .grainAmount: return \.grainAmount
+        case .grainSize: return \.grainSize
+        case .grainRoughness: return \.grainRoughness
+        }
+    }
     var range: ClosedRange<Double> { self == .vignetteAmount || self == .vignetteRoundness ? -100...100 : 0...100 }
     var defaultValue: Double { PhotoEffectsSettings()[keyPath: keyPath] }
 }
@@ -493,7 +505,15 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
         case .contrast: return \.contrast
         case .highlights: return \.highlights
         case .shadows: return \.shadows
+        case .blackPoint: return \.toneSettings.blackPoint
+        case .whitePoint: return \.toneSettings.whitePoint
+        case .toneCurve: return \.toneSettings.curveStrength
         case .saturation: return \.saturation
+        case .vibrance: return \.colorSettings.vibrance
+        case .sharpening: return \.detailSettings.sharpeningPercent
+        case .clarity: return \.detailSettings.clarityPercent
+        case .dehaze: return \.detailSettings.dehazePercent
+        case .denoiseMode: return \.detailSettings.denoise
         default: return nil
         }
     }
@@ -504,6 +524,10 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
     var isPhotoEffect: Bool { self == .vignetteAmount || self == .grainAmount }
     func spec(for settings: Adjustments) -> AdjustmentSpec {
         var value = spec
+        if settings.isHDREditing && self == .denoiseMode {
+            return AdjustmentSpec(title: value.title, keyPath: value.keyPath, range: 0...1,
+                defaultValue: 0, step: 0.01, unit: "%", multiplier: 100)
+        }
         if settings.isHDREditing { return value }
         if self == .temperature { value.defaultValue = settings.asShotWhiteBalance?.temperature ?? 6500 }
         if self == .tint { value.defaultValue = settings.masterRecipe != nil ? 0 : (settings.asShotWhiteBalance?.tint ?? 0) }

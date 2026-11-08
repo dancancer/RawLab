@@ -4,11 +4,13 @@ struct MacAdjustmentTransferContext {
     var identifier: String
     var isRaw: Bool
     var sourceIsHDR = false
-    var sourceSupportsProRAWHDR = false
+    var sourceSupportsCameraHDR = false
+    var sourceIsBayerHDR = false
     var availableLookIDs: Set<String> = []
     var defaultExposureMode = ExposureMode.preview
     var hasUncommittedDraft = false
     var validateLensRequest: ((LensCorrectionSettings) throws -> Void)? = nil
+    var validateHDRCameraRequest: ((Adjustments) throws -> Void)? = nil
 }
 
 enum MacAdjustmentTransfer {
@@ -38,7 +40,7 @@ enum MacAdjustmentTransfer {
         if snapshot.settings.isHDREditing {
             guard supportsHDRTransfer(context) else { throw AdjustmentTransferError.incompatible("hdr.source") }
             return try HDRAdjustmentTransfer.capture(settings: snapshot.settings.hdr!, identifier: context.identifier,
-                processingVersion: snapshot.settings.processing.version, scope: scope)
+                processingVersion: snapshot.settings.processing.version, scope: scope, cameraRAW: context.sourceIsBayerHDR)
         }
         if snapshot.settings.aiDenoiseEnabled {
             switch scope {
@@ -76,7 +78,16 @@ enum MacAdjustmentTransfer {
         if target.settings.isHDREditing {
             guard supportsHDRTransfer(context) else { throw AdjustmentTransferError.incompatible("hdr.source") }
             var result = target
-            result.settings.hdr = try HDRAdjustmentTransfer.prepare(payload: payload, target: target.settings.hdr!)
+            let hdr = try HDRAdjustmentTransfer.prepare(payload: payload, target: target.settings.hdr!, cameraRAW: context.sourceIsBayerHDR)
+            guard hdr.lookSettings.assetIsAvailable() else { throw AdjustmentTransferError.missingLook(hdr.lookSettings.name ?? "HDR LUT") }
+            result.settings.hdr = hdr
+            if payload.fields.contains(.hdrCameraDevelopment) {
+                guard let validate = context.validateHDRCameraRequest else { throw AdjustmentTransferError.incompatible("hdr.camera_development") }
+                if hdr.cameraDevelopmentSettings.fbddLevel != 0 { result.settings.hdrCameraAIEnabled = false }
+                var development = result.settings
+                development.hdrCameraAIEnabled = false
+                try validate(development)
+            }
             return result
         }
         if payload.source.isHDR {
@@ -189,7 +200,7 @@ enum MacAdjustmentTransfer {
     }
 
     private static func supportsHDRTransfer(_ context: MacAdjustmentTransferContext) -> Bool {
-        (!context.isRaw && context.sourceIsHDR) || (context.isRaw && context.sourceSupportsProRAWHDR)
+        (!context.isRaw && context.sourceIsHDR) || (context.isRaw && context.sourceSupportsCameraHDR)
     }
 
     static func sourceEffective(_ value: Double, field: Field, recipe: AdjustmentRecipeContext?) -> Double {

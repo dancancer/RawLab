@@ -82,8 +82,8 @@ struct MacCollectionExportPreparation {
             }
             do {
                 let value = try snapshot(photo)
-                if !adaptiveJPEG && format == .hdrJPEG && !value.settings.isHDREditing {
-                    throw RenderError.failed(L10n.text("HDR JPEG 需要启用 HDR 编辑。"))
+                if !adaptiveJPEG && format.requiresHDR && !value.settings.isHDREditing {
+                    throw RenderError.failed(format.hdrRequiredMessage)
                 }
                 return .init(id: id, url: photo.url, hasDraft: false, skipped: false, snapshot: value, error: nil)
             } catch {
@@ -106,9 +106,14 @@ struct MacCollectionExportPreparation {
         let info = try probeHDRSource(photo.url, { sdrFallback = true })
         var state = try record.state ?? PhotoEditState(settings: RenderEngine.defaultSettings(for: photo.url, sourceIsHDR: info != nil), filmID: "")
         if sdrFallback { state.settings.hdr?.mode = .sdr }
-        if state.settings.isHDREditing, let version = state.settings.proRAWDecodeVersion,
-           version != ProRAWSource.decodeVersion, try HDRSourceInfo.probeRAW(photo.url)?.proRAW != nil {
-            throw HDRSettings.ModeError.invalidSettings
+        if state.settings.isHDREditing {
+            guard let source = try info ?? HDRSourceInfo.probeRAW(photo.url) else { throw HDRSettings.ModeError.unsupportedSource }
+            try source.validateEditDecodeVersion(state.settings.proRAWDecodeVersion)
+            if let profile = state.settings.hdr?.cameraDevelopmentSettings.cameraProfile {
+                try HDRCameraProfileAssetStore.url(for: profile)
+            }
+            let look = state.settings.hdr!.lookSettings
+            guard look.assetIsAvailable() else { throw AdjustmentTransferError.missingLook(look.name ?? "HDR LUT") }
         }
         if !state.settings.isHDREditing && state.settings.aiDenoiseEnabled {
             try RenderEngine.validateAIInput(photo.url, settings: state.settings)

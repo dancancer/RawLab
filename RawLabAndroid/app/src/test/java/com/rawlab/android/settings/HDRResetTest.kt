@@ -6,6 +6,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HDRResetTest {
+    @Test fun lightResetClearsOnlyActiveTone() {
+        val hdr = EditSettings(blackPoint = -8f, whitePoint = 9f, toneCurve = .12f, curve = ToneCurveSettings.identity)
+            .withHDRMode(true, false, cameraRaw = true).withEditingBlackPoint(-25f).withEditingWhitePoint(50f)
+            .withEditingCurveStrength(.3f).withEditingCurve(ToneCurveSettings.identity.inserting(.5, .625))
+        val result = EditorAdjustmentRules.prepareReset(EditorResetScope.Group(EditorAdjustmentGroup.LIGHT), hdr,
+            EditorResetContext(PhotoInputKind.RAW, EditSettings())) as EditorResetResult.Ready
+        assertEquals(2, result.candidate.hdr!!.processingVersion)
+        assertTrue(result.candidate.hdr.toneSettings.isDefault)
+        assertEquals(hdr.blackPoint, result.candidate.blackPoint)
+        assertEquals(hdr.curve, result.candidate.curve)
+        assertEquals(hdr.sdrSnapshot, result.candidate.sdrSnapshot)
+    }
+
     @Test fun fullResetRetainsHdrModeAndInactiveSdrValues() {
         val hdr = EditSettings(exposure = -1f).withHDRMode(true, true)
             .copy(exposure = 2f, temperature = 10000f, tint = 42f).synchronizeHDR()

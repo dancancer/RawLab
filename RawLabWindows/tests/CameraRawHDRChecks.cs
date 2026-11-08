@@ -14,14 +14,39 @@ internal static class CameraRawHDRChecks
         CapabilityIsSeparateFromGainMapContainers();
         CameraModeUsesNeutralHDRSnapshot();
         CameraStampIsUsedWhenProbeHasNoDigest();
+        AIUnavailableHintExplainsCameraSettingsAndGpuMode();
+        Check(new HDRSourceException(2, 19, 11).Message ==
+            Loc.Text("无效或不可用的相机显影设置（白平衡或镜头校正）。"),
+            "Camera development failures do not incorrectly blame lens correction alone");
         Console.WriteLine("PASS: Windows camera RAW HDR model");
+    }
+
+    private static void AIUnavailableHintExplainsCameraSettingsAndGpuMode()
+    {
+        var settings = new HDRSettings();
+        Check(PhotoInput.HDRCameraAIUnavailableHint(settings, 0) == null &&
+            PhotoInput.HDRCameraAIUnavailableHint(settings, 1) == null &&
+            PhotoInput.HDRCameraAIUnavailableHint(null, 2) == null,
+            "Ordinary HDR Auto/CPU and SDR do not receive a camera HDR restriction hint");
+        Check(PhotoInput.HDRCameraAIUnavailableHint(settings, 2) ==
+            Loc.Text("HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。"),
+            "HDR GPU Force explains how to enable AI");
+        foreach (var level in new[] { 1, 2 })
+            Check(PhotoInput.HDRCameraAIUnavailableHint(settings with { CameraDevelopment = new(FbddLevel: level) }, 0) ==
+                Loc.Text("请先关闭 FBDD，再使用 HDR AI 降噪。"), "Both FBDD levels explain the AI restriction");
+        var profile = new HDRCameraProfile(new string('a', 64), "D65");
+        Check(PhotoInput.HDRCameraAIUnavailableHint(settings with { CameraDevelopment = new(CameraProfile: profile) }, 0) ==
+            Loc.Text("请先清除 HDR 相机配置，再使用 AI 降噪。"), "Camera profiles explain the AI restriction");
+        Check(PhotoInput.HDRCameraAIUnavailableHint(settings with { Mode = HDRMode.Sdr,
+            CameraDevelopment = new(CameraProfile: profile) }, 2) == null,
+            "Dormant HDR camera settings do not affect SDR hints");
     }
 
     private static void CapabilityIsSeparateFromGainMapContainers()
     {
-        Check(PhotoInput.IsCameraRaw("photo.ARW") && PhotoInput.IsCameraRaw("photo.dng") &&
-            !PhotoInput.IsCameraRaw("photo.nef") && !PhotoInput.IsCameraRaw("photo.proRAW"),
-            "camera RAW routing recognizes the explicit camera extensions");
+        Check(PhotoInput.IsRaw("photo.ARW") && PhotoInput.IsRaw("photo.dng") &&
+            PhotoInput.IsRaw("photo.nef") && PhotoInput.IsRaw("photo.cr3"),
+            "camera HDR uses the regular RAW routing");
         Check(!PhotoInput.IsHDRContainer("photo.ARW") && PhotoInput.IsHDRContainer("photo.heic"),
             "camera RAW capability stays separate from raster gain-map defaults");
     }
@@ -50,12 +75,20 @@ internal static class CameraRawHDRChecks
         catch (AdjustmentTransferException error)
         {
             Check(error.Failure == AdjustmentFailure.Incompatible && error.Detail == "hdr.camera_raw",
-                "camera HDR preset transfer remains gated");
+                "a RAW source without HDR capability cannot capture a preset");
         }
+        var context = new AdjustmentTransferContext("photo.arw",true,SupportsCameraHDR:true);
+        var payload = AdjustmentTransfer.Capture(AdjustmentScope.All,cameraEdit,context);
+        var prepared = AdjustmentTransfer.Prepare(payload,cameraEdit,context);
+        Check(prepared.Settings.HDR == state.HDR && prepared.Settings.ProRAWDecodeVersion == null,
+            "a capable camera RAW transfers its HDR snapshot independently of ProRAW");
 
         var batch = BatchJob.Create("photo.arw", state.Capture(), null, "HDR");
         try { batch.Validate(); throw new Exception("camera HDR batch was not gated"); }
         catch (InvalidDataException) { }
+        batch.SourceSupportsCameraHDR = true;
+        batch.Validate();
+        Check(BatchHDRPreparation.Required(batch.Copy()),"capable camera RAW batch freezes each target");
 
         var reopened = JsonSerializer.Deserialize<AdjustmentSnapshot>(
             JsonSerializer.Serialize(state.Capture()))!.Restore();

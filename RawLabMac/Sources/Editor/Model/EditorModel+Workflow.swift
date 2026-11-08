@@ -292,7 +292,7 @@ extension EditorModel {
         let targets = Array(Set(urls.map { $0.resolvingSymlinksInPath().standardizedFileURL })).filter { $0.path != sourcePath }
         guard !targets.isEmpty else { return 0 }
         guard saveEdits(), let file else { throw AdjustmentTransferError.draftRequiresPreflight }
-        let payload = try MacAdjustmentTransfer.capture(scope: .standard, snapshot: editState(settings: settings),
+        let payload = try MacAdjustmentTransfer.capture(scope: .standard(isHDR: settings.isHDREditing), snapshot: editState(settings: settings),
             context: adjustmentTransferContext(for: file))
         let operation = try prepareAdjustmentPaste(payload: payload, targets: targets, excludingSource: sourcePath)
         applyAdjustmentPaste(operation)
@@ -312,7 +312,7 @@ extension EditorModel {
                 .filter { $0.resolvingSymlinksInPath().standardizedFileURL.path != sourcePath }
             guard !targets.isEmpty else { throw RenderError.failed(L10n.text("没有可处理目标，请重新选择照片。")) }
             guard ParameterValueField.resolvePendingInputs(), saveEdits() else { return }
-            adjustmentSheetPayload = try MacAdjustmentTransfer.capture(scope: .standard,
+            adjustmentSheetPayload = try MacAdjustmentTransfer.capture(scope: .standard(isHDR: settings.isHDREditing),
                 snapshot: editState(settings: settings), context: adjustmentTransferContext(for: file))
             adjustmentSheetTargets = targets
             adjustmentSheetExcludedSource = sourcePath
@@ -393,12 +393,16 @@ extension EditorModel {
         do { candidate = try restoredRecord.state?.settings ?? RenderEngine.defaultSettings(for: url, sourceIsHDR: info != nil) }
         catch { self.error=error.localizedDescription; return }
         if sdrFallback { candidate.hdr?.mode = .sdr }
-        let cameraHDR = info == nil && (try? HDRSourceInfo.probeRAW(url)) != nil
-        guard !candidate.isHDREditing || info != nil || cameraHDR else {
+        let cameraHDR = info == nil ? try? HDRSourceInfo.probeRAW(url) : nil
+        guard !candidate.isHDREditing || info != nil || cameraHDR != nil else {
             self.error=L10n.text("此照片没有可编辑的 HDR 增益图。")
             return
         }
         let opening=UUID(); pendingOpenID=opening
+        if candidate.isHDREditing && candidate.hdrCameraAIEnabled {
+            activateOpen(url, record: restoredRecord, settings: candidate, isHDR: info != nil, cameraHDR: cameraHDR)
+            return
+        }
         if info != nil || candidate.isHDREditing {
             importing=true
             let snapshot=candidate
@@ -413,7 +417,9 @@ extension EditorModel {
                     let engine=try RenderEngine()
                     let neutralSettings = snapshot.neutralGeometrySettings
                     let neutral=try engine.render(url,settings:neutralSettings,lut:nil,edge:hdrEdge ?? 2000)
-                    let result=try engine.render(url,settings:snapshot,lut:look,edge:hdrEdge ?? 2000)
+                    var preview = snapshot
+                    if snapshot.isHDREditing { preview.hdr = snapshot.hdr?.previewSettings() }
+                    let result=try engine.render(url,settings:preview,lut:look,edge:hdrEdge ?? 2000)
                     if let hdrSource, let hdrEdge, let neutral, neutral.hdr != nil {
                         self.geometryReferenceCache = (MacNeutralReferenceKey(source: hdrSource, settings: neutralSettings, edge: hdrEdge), neutral)
                     }
@@ -437,7 +443,7 @@ extension EditorModel {
     }
 
     private func activateOpen(_ url: URL,record restoredRecord: VersionedPhotoEdit,settings candidate: Adjustments,
-                              isHDR: Bool,cameraHDR: Bool,neutral stagedNeutral: RenderedImage? = nil,result stagedResult: RenderedImage? = nil,
+                              isHDR: Bool,cameraHDR: HDRSourceInfo?,neutral stagedNeutral: RenderedImage? = nil,result stagedResult: RenderedImage? = nil,
                               hdrEdge: Int? = nil,hdrSource: MacReferenceSource? = nil,sdrFallback: Bool = false) {
         resetAITask()
         cancelViewportResize()
@@ -446,7 +452,7 @@ extension EditorModel {
         editRevision = UUID()
         scheduler.setInteracting(false)
         sourceRevision = UUID()
-        file = url; sourceIsHDR=isHDR; sourceSupportsCameraHDR=cameraHDR; neutral=stagedNeutral; result=stagedResult
+        file = url; sourceIsHDR=isHDR; rawHDRSource=cameraHDR; neutral=stagedNeutral; result=stagedResult
         pendingSDRFallbackNotice = sdrFallback
         sourceUsesSDRFallback = sdrFallback
         error=nil; previewOutdated=false; statusState = .none
@@ -479,19 +485,22 @@ extension EditorModel {
             pendingImportEvent=false; onUsage(.photoImported)
             if settings.isHDREditing { adjustmentNavigation.selectTool(.exposure) }
         } else { schedule() }
+        if settings.isHDREditing { error = settings.hdr?.missingResourceMessage }
     }
     func autoExposure() {
-        guard let file, result != nil, !settings.isHDREditing, !autoExposing, !exporting, geometryDraft == nil else { return }
+        guard let file, result != nil, !importing, !autoExposing, !exporting, geometryDraft == nil else { return }
         let snapshot = settings, revision = editRevision
+        let source = sourceRevision, opening = pendingOpenID
         autoExposing = true
         queue.async { [weak self] in
             let result = Result { try RenderEngine().autoExposure(file, settings: snapshot) }
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.autoExposing = false
-                guard self.file == file, self.editRevision == revision, self.settings == snapshot else { return }
+                guard self.file == file, self.sourceRevision == source, self.pendingOpenID == opening,
+                      self.editRevision == revision, self.settings == snapshot else { return }
                 switch result {
-                case .success(let ev): self.settings.exposure = ev
+                case .success(let ev): self.settings.set(.exposure, to: ev)
                 case .failure(let error): self.error = error.localizedDescription
                 }
             }

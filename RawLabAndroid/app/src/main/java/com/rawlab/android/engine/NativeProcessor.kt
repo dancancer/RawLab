@@ -21,6 +21,7 @@ import com.rawlab.android.settings.HslTargetRevision
 import com.rawlab.android.settings.HslTargetSample
 import com.rawlab.android.settings.HslTargetAvailability
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.HDRSettings
 import com.rawlab.android.settings.LensSettings
 import com.rawlab.android.settings.X3fMode
 
@@ -140,12 +141,25 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     fun sampleHsl(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
         inputKind: PhotoInputKind, revision: HslTargetRevision, x: Float, y: Float,
         cancellationGeneration: Long = -1L): HslTargetSample {
-        if (!x.isFinite() || !y.isFinite())
-            return HslTargetSample.unavailable(revision, HslTargetAvailability.NONFINITE)
-        if (x !in 0f..1f || y !in 0f..1f)
-            return HslTargetSample.unavailable(revision, HslTargetAvailability.OUTSIDE)
+        return sampleHsl(revision, x, y) {
+            previewRequest(input, lut, settings, edge, interactive, inputKind, revision, it, cancellationGeneration)
+        }
+    }
+
+    @Synchronized
+    internal fun sampleHDRHsl(source: NativeHDRImage, settings: HDRSettings, edge: Int,
+        revision: HslTargetRevision, x: Float, y: Float, cancellationGeneration: Long, lookDirectory: File? = null): HslTargetSample {
+        check(handle != 0L)
+        return sampleHsl(revision, x, y) {
+            NativeHDRBridge.sampleHsl(handle, source, settings, edge, revision.source, revision.request, it, cancellationGeneration, lookDirectory)
+        }
+    }
+
+    private fun sampleHsl(revision: HslTargetRevision, x: Float, y: Float, sample: (FloatArray) -> Unit): HslTargetSample {
+        if (!x.isFinite() || !y.isFinite()) return HslTargetSample.unavailable(revision, HslTargetAvailability.NONFINITE)
+        if (x !in 0f..1f || y !in 0f..1f) return HslTargetSample.unavailable(revision, HslTargetAvailability.OUTSIDE)
         val probe = FloatArray(13).also { it[0] = x; it[1] = y }
-        previewRequest(input, lut, settings, edge, interactive, inputKind, revision, probe, cancellationGeneration)
+        sample(probe)
         return HslTargetSample(revision, HslTargetAvailability.entries.getOrNull(probe[0].toInt()) ?: HslTargetAvailability.FAILED,
             probe.slice(2..4), probe.slice(5..12), probe[1] == 1f)
     }
@@ -207,25 +221,34 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     }
 
     @Synchronized
+    internal fun estimateHDRExposure(source: NativeHDRImage, settings: com.rawlab.android.settings.HDRSettings,
+        cancellationGeneration: Long): Float {
+        check(handle != 0L) { "Processor is closed" }
+        return NativeHDRBridge.estimateAutoExposure(handle, source, settings, cancellationGeneration)
+    }
+
+    @Synchronized
     internal fun renderHDR(source: NativeHDRImage, settings: com.rawlab.android.settings.HDRSettings, edge: Int,
-        cancellationGeneration: Long = -1L): NativeHDRImage {
+        cancellationGeneration: Long = -1L, lookDirectory: File? = null): NativeHDRImage {
         check(handle != 0L) { "Processor is closed" }
         require(edge in 0..65535)
-        return NativeHDRBridge.render(handle, source, settings, edge, cancellationGeneration)
+        return NativeHDRBridge.render(handle, source, settings, edge, cancellationGeneration, lookDirectory)
     }
 
     internal fun decodeHDRCamera(file: File, info: com.rawlab.android.photo.HDRSourceInfo, edge: Int,
-        cancellationGeneration: Long = -1L): NativeHDRImage {
+        cancellationGeneration: Long = -1L,
+        camera: com.rawlab.android.settings.HDRCameraDevelopmentSettings = com.rawlab.android.settings.HDRCameraDevelopmentSettings(),
+        profileDirectory: File? = null): NativeHDRImage {
         check(handle != 0L) { "Processor is closed" }
-        return NativeHDRBridge.decodeCameraRaw(handle, file, info, edge, cancellationGeneration)
+        return NativeHDRBridge.decodeCameraRaw(handle, file, info, edge, cancellationGeneration, camera, profileDirectory)
     }
 
     internal fun exportProRAW(file: File, info: com.rawlab.android.photo.HDRSourceInfo,
-        edits: EditSettings, output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long = -1L) {
+        edits: EditSettings, output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long = -1L, lookDirectory: File? = null) {
         check(handle != 0L) { "Processor is closed" }
         edits.requireProRAWDecoder()
         NativeHDRBridge.exportProRAW(handle, file, info, requireNotNull(edits.hdr).copy(geometry = edits.geometry),
-            output, keepHDR, edge, cancellationGeneration)
+            output, keepHDR, edge, cancellationGeneration, lookDirectory)
     }
 
     // 取消不能等待 preview 的 Java monitor 或 native session 渲染锁。

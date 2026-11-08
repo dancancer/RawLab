@@ -24,8 +24,10 @@
 "Failed to load the selected photo." = "Das ausgewählte Foto konnte nicht geladen werden.";
 "Fit %@" = "Anpassen %@";
 "Fuji" = "Fuji";
+"HDR HEIF 需要启用 HDR 编辑。" = "Für HDR-HEIF muss die HDR-Bearbeitung aktiviert sein.";
 "HDR JPEG" = "HDR-JPEG";
 "HDR JPEG 需要启用 HDR 编辑。" = "Für HDR-JPEG muss die HDR-Bearbeitung aktiviert sein.";
+"HDR 亮度上限" = "HDR-Helligkeitsgrenze";
 "HDR 亮度直方图" = "HDR-Luminanzhistogramm";
 "HDR 假色" = "HDR-Falschfarben";
 "HDR 增益图损坏，无法还原此照片。" = "Die HDR-Gain-Map ist beschädigt. Das Foto kann nicht rekonstruiert werden.";
@@ -33,8 +35,10 @@
 "HDR 显示不可用，当前显示 SDR。" = "HDR-Anzeige nicht verfügbar. SDR wird angezeigt.";
 "HDR 模式暂不支持此工具。" = "Dieses Werkzeug ist im HDR-Modus noch nicht verfügbar.";
 "HDR 照片需要 macOS 15 或 iOS 18 及以上版本。" = "HDR-Fotos erfordern macOS 15 oder iOS 18 oder neuer.";
+"HDR 相机配置" = "HDR-Kameraprofil";
 "HDR 编辑" = "HDR-Bearbeitung";
 "HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。" = "Die HDR-Bearbeitung nutzt derzeit die CPU. Stellen Sie den GPU-Modus auf Automatisch oder Aus.";
+"HDR 输出与 SDR 底图" = "HDR-Ausgabe und SDR-Basis";
 "HSL" = "HSL";
 "Image metadata has invalid dimensions." = "Die Bildmetadaten enthalten ungültige Abmessungen.";
 "Image metadata unavailable." = "Bildmetadaten nicht verfügbar.";
@@ -57,6 +61,9 @@
 "RawLab 文件" = "RawLab-Dateien";
 "S 曲线" = "S-Kurve";
 "SDR 兼容预览" = "SDR-Kompatibilitätsvorschau";
+"SDR 底图对比度" = "Kontrast der SDR-Basis";
+"SDR 底图曝光" = "Belichtung der SDR-Basis";
+"SDR 底图饱和度" = "Sättigung der SDR-Basis";
 "Sample RAW not found." = "Beispiel-RAW nicht gefunden.";
 "Selected item is not a supported image." = "Das ausgewählte Element ist kein unterstütztes Bild.";
 "Sony2Fuji output copy failed." = "Kopieren der Sony2Fuji-Ausgabe fehlgeschlagen.";
@@ -72,6 +79,7 @@
 "不能覆盖原始文件。" = "Die Originaldatei kann nicht überschrieben werden.";
 "不适用" = "Nicht anwendbar";
 "不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。" = "Fotos, Vorschaubilder, Dateinamen, Pfade, EXIF und KI-Inhalte werden nicht erfasst. Das Deaktivieren beendet die neue Erfassung; bereits gesendete Anfragen können nicht zurückgezogen werden.";
+"不限" = "Unbegrenzt";
 "中性" = "Neutral";
 "中性显影" = "Neutrale Entwicklung";
 "中性显影与调整后对比" = "Neutrale Entwicklung mit Bearbeitung vergleichen";
@@ -173,6 +181,7 @@
 "参考图与预览的比例或尺寸不一致，仅可目视比较。" = "Referenz und Vorschau haben unterschiedliche Proportionen oder Abmessungen; nur ein visueller Vergleich ist möglich.";
 "参考图来自同一张原图" = "Referenzbild stammt aus derselben Originalaufnahme";
 "参考来源、软件版本及处理条件" = "Referenzquelle, Softwareversion und Verarbeitungsbedingungen";
+"参考白" = "Referenzweiß";
 "参考白以上 %@" = "Über Referenzweiß %@";
 "参考输出为 sRGB，或已按正确配置转换为 sRGB" = "Die Referenzausgabe ist sRGB oder wurde mit den richtigen Einstellungen in sRGB konvertiert";
 "双击名称或轨道恢复默认值。" = "Doppeltippe auf den Namen oder die Spur, um den Standardwert wiederherzustellen.";
@@ -209,6 +218,7 @@
 "外观分类" = "Look-Kategorie";
 "外观名称" = "Look-Name";
 "外观名称不能为空或包含控制字符。" = "Der Name des Looks darf nicht leer sein und keine Steuerzeichen enthalten.";
+"外观强度" = "Look-Intensität";
 "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。" = "Die Look-Datei ist beschädigt oder inkompatibel; eine kompatible CUBE- oder RLOOK-Datei ist erforderlich.";
 "多点曲线" = "Punktkurve";
 "多点曲线将从直线开始，旧 S 曲线数值会保留。" = "Die Punktkurve beginnt als Gerade. Der S-Kurvenwert bleibt erhalten.";
@@ -225,6 +235,7 @@
 "导入外观" = "Look importieren";
 "导入外观…" = "Look importieren…";
 "导入照片" = "Foto importieren";
+"导入相机配置…" = "Kameraprofil importieren…";
 "导入结果" = "Importergebnis";
 "导出" = "Exportieren";
 "导出 %@ 张" = "Fotos exportieren (%@)";
@@ -324,6 +335,7 @@
 "打开系统设置" = "Systemeinstellungen öffnen";
 "批量导出" = "Stapel-Export";
 "批量编辑" = "Stapelbearbeitung";
+"找不到 HDR 相机配置，请重新导入。" = "Das HDR-Kameraprofil fehlt. Importieren Sie es erneut.";
 "拉直" = "Begradigen";
 "拍摄参数" = "Aufnahmeparameter";
 "拍摄时设置" = "Einstellung wie aufgenommen";
@@ -365,6 +377,7 @@
 "方向、裁切和构图一致" = "Ausrichtung, Zuschnitt und Bildaufbau stimmen überein";
 "方案 %@" = "Option %@";
 "旋转" = "Drehung";
+"无效或不可用的相机显影设置（白平衡或镜头校正）。" = "Die Kameraentwicklungseinstellungen (Weißabgleich oder Objektivkorrektur) sind ungültig oder nicht verfügbar.";
 "无效或不可用的镜头校正设置" = "Ungültige oder nicht verfügbare Objektivkorrektureinstellungen";
 "无效或不可用的降噪参数" = "Ungültiger oder nicht verfügbarer Rauschreduzierungsparameter";
 "无效的 HSL 参数" = "Ungültige HSL-Parameter";
@@ -390,6 +403,7 @@
 "无法自动调整曝光：%@" = "Belichtung konnte nicht automatisch angepasst werden: %@";
 "无法解码普通图片：%@" = "Das Bild kann nicht dekodiert werden: %@";
 "无法识别原始照片，调整尚未保存。" = "Das Originalfoto konnte nicht identifiziert werden; Anpassungen wurden nicht gespeichert.";
+"无法读取 HDR 相机配置，或配置与当前相机不匹配。" = "Das HDR-Kameraprofil ist nicht lesbar oder passt nicht zu dieser Kamera.";
 "无法读取上次批量任务：%@" = "Der letzte Stapel-Export konnte nicht gelesen werden: %@";
 "无法读取外观文件。" = "Die Look-Datei konnte nicht gelesen werden.";
 "无法读取已保存的外观库，原有记录未被覆盖。" = "Die gespeicherte Look-Bibliothek kann nicht gelesen werden; die ursprünglichen Einträge wurden nicht überschrieben.";
@@ -489,6 +503,7 @@
 "此像素不可取样。" = "Dieses Pixel kann nicht erfasst werden.";
 "此外观已不在外观库中。" = "Dieser Look ist nicht mehr in der Look-Bibliothek enthalten.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Nur Anpassungen in der Gruppe „%@“ werden zurückgesetzt. Andere Gruppen bleiben unverändert.";
+"此照片或构建尚不能使用 AI 降噪。" = "KI-Entrauschen ist für dieses Foto oder Build nicht verfügbar.";
 "此照片没有可用的相机白平衡校准。" = "Dieses Foto enthält keine nutzbare Kamera-Weißabgleichkalibrierung.";
 "此照片没有可编辑的 HDR 增益图。" = "Dieses Foto hat keine bearbeitbare HDR-Gain-Map.";
 "此设备暂不支持导出 HDR 模式下的 ProRAW 照片。" = "Dieses Gerät unterstützt den Export von ProRAW-Fotos im HDR-Modus noch nicht.";
@@ -516,6 +531,7 @@
 "清晰度" = "Klarheit";
 "清空选择" = "Auswahl aufheben";
 "清除搜索" = "Suche löschen";
+"清除相机配置" = "Kameraprofil entfernen";
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Warmer, satter Vintage-Stadtfilmlook, ruhige saubere Schatten, warme goldene Lichter und ein Gefühl des Umherschweifens";
 "渲染型 DNG 未生成。" = "Das entwickelte DNG wurde nicht erstellt.";
 "滨田英明" = "Hideaki Hamada";

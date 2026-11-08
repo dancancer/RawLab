@@ -3,6 +3,11 @@ import PhotosUI
 import SwiftUI
 
 extension RawEditorViewModel {
+    func adjustmentTransferFields(for settings: RawSettings) -> Set<AdjustmentTransferField> {
+        settings.isHDREditing ? AdjustmentTransferField.hdrTransferFields(cameraRAW: sourceSupportsCameraHDR && sourceProRAW == nil)
+            : AdjustmentTransferField.legacyFields
+    }
+
     func adjustmentContext(identifier: String, isRaw: Bool,
                            whiteBalance: Sony2FujiProcessor.RawWhiteBalance? = nil) -> IOSAdjustmentTransferContext {
         let available = lutMap.values.filter { FileManager.default.isReadableFile(atPath: $0.sourceURL.path) }
@@ -13,7 +18,8 @@ extension RawEditorViewModel {
             .union(recipes.map { "recipe:\($0.id)" })
         return IOSAdjustmentTransferContext(identifier: identifier, isRaw: isRaw,
             sourceIsHDR:identifier==sourceIdentity?.key && sourceIsHDR,
-            sourceSupportsProRAWHDR: identifier == sourceIdentity?.key && sourceProRAW != nil,
+            sourceSupportsCameraHDR: identifier == sourceIdentity?.key && sourceSupportsCameraHDR,
+            sourceIsBayerHDR: identifier == sourceIdentity?.key && sourceSupportsCameraHDR && sourceProRAW == nil,
             availableLookIDs: lookIDs,
             builtinLookIDs: builtins,
             cameraTemperature: whiteBalance?.isCalibrated == true ? whiteBalance?.temperature : nil,
@@ -71,10 +77,21 @@ extension RawEditorViewModel {
                         var neutral = RawSettings.default
                         neutral.processing = saved.processing
                         neutral.x3fMode = saved.x3fMode
-                        context.sourceSupportsProRAWHDR = try file.withReadAccess {
-                            try HDRSourceInfo.probeRAW($0)?.proRAW != nil
-                        }
-                        if !(saved.isHDREditing && context.sourceSupportsProRAWHDR) {
+                        let rawHDR = try file.withReadAccess(HDRSourceInfo.probeRAW)
+                        context.sourceSupportsCameraHDR = rawHDR != nil
+                        context.sourceIsBayerHDR = rawHDR?.isCameraRAW == true
+                        if saved.isHDREditing {
+                            guard let rawHDR else { throw HDRSettings.ModeError.unsupportedSource }
+                            try rawHDR.validateEditDecodeVersion(saved.proRAWDecodeVersion)
+                            if rawHDR.isCameraRAW {
+                                context.validateHDRCameraRequest = { candidate in
+                                    guard let hdr = candidate.hdr else { throw HDRRequestError.invalidSettings }
+                                    _ = try file.withReadAccess {
+                                        try Sony2FujiProcessor().processHDR(url: $0, settings: hdr, previewLongEdge: 128)
+                                    }
+                                }
+                            }
+                        } else {
                             let processor = Sony2FujiProcessor()
                             let result = try file.withReadAccess {
                                 try processor.processRaw(url: $0, settings: neutral, previewLongEdge: 128, lutURL: nil)

@@ -11,7 +11,7 @@ struct DenoiseControls: View {
     var body: some View {
         let _ = localizationLocale
         VStack(spacing: 8) {
-            if model.aiControlsVisible { aiControls }
+            if model.aiControlsVisible { MacAIDenoiseControls(model: model) }
             ordinaryControls.disabled(model.settings.aiDenoiseEnabled || model.result == nil)
         }.frame(maxWidth: 720)
     }
@@ -37,57 +37,6 @@ struct DenoiseControls: View {
                     }
                 }
             }
-        }
-    }
-
-    private var aiControls: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) { aiToggle.fixedSize(); Spacer(minLength: 0); aiAction }
-                VStack(alignment: .leading, spacing: 4) { aiToggle; aiAction }
-            }.font(.system(size: 12))
-            switch model.aiState {
-            case .running(_, let done, let total):
-                if total > 0 { ProgressView(value: Double(done), total: Double(total)).controlSize(.small) }
-                else { ProgressView().controlSize(.small) }
-                Text(model.aiState.progressTitle + (total > 0 ? " · \(done)/\(total)" : ""))
-                    .accessibilityIdentifier("denoise.ai.progress")
-            case .failed(let message):
-                Text(message).foregroundStyle(.red).textSelection(.enabled)
-                    .accessibilityIdentifier("denoise.ai.error")
-            case .cancelled: Text(L10n.text("AI 降噪已取消。"))
-            case .ready: Text(L10n.text("已应用 AI 降噪；曝光和外观调整复用结果。"))
-            case .idle:
-                Text(L10n.text(model.canStartAI ? "支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。" : "此照片或构建尚不能使用 AI 降噪。"))
-            }
-            if model.settings.aiDenoiseEnabled && model.aiState == .ready {
-                Text(L10n.text("AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。"))
-            } else if model.settings.aiDenoiseEnabled {
-                Text(L10n.text("普通降噪参数已保留，关闭 AI 降噪即可恢复。"))
-            }
-        }.font(.system(size: 11)).foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var aiToggle: some View {
-        Toggle(L10n.text("AI 降噪（实验）"), isOn: Binding(
-            get: { model.settings.aiDenoiseEnabled || model.aiManuallyRequested },
-            set: { model.setAIEnabled($0) }
-        )).toggleStyle(.switch).controlSize(.mini)
-            .disabled(!model.canStartAI && !model.settings.aiDenoiseEnabled)
-            .accessibilityIdentifier("denoise.ai.enabled")
-    }
-
-    @ViewBuilder private var aiAction: some View {
-        switch model.aiState {
-        case .running:
-            Button(L10n.text("取消")) { model.cancelAIDenoise() }
-                .accessibilityIdentifier("denoise.ai.cancel")
-        case .failed, .cancelled:
-            Button(L10n.text("重试")) { model.requestAIDenoise() }.disabled(!model.canStartAI)
-                .accessibilityIdentifier("denoise.ai.retry")
-        default:
-            EmptyView()
         }
     }
 
@@ -168,6 +117,68 @@ struct DenoiseControls: View {
             }
             Button(L10n.text("使用可调降噪")) { model.settings.applyDenoisePreset(.detail) }
                 .buttonStyle(.link).accessibilityIdentifier("denoise.upgrade")
+        }
+    }
+}
+
+struct MacAIDenoiseControls: View {
+    @Environment(\.locale) private var localizationLocale
+    @ObservedObject var model: EditorModel
+
+    var body: some View {
+        let _ = localizationLocale
+        VStack(alignment: .leading, spacing: 6) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { toggle.fixedSize(); Spacer(minLength: 0); action }
+                VStack(alignment: .leading, spacing: 4) { toggle; action }
+            }.font(.system(size: 12))
+            switch model.aiState {
+            case .running(_, let done, let total):
+                if total > 0 { ProgressView(value: Double(done), total: Double(total)).controlSize(.small) }
+                else { ProgressView().controlSize(.small) }
+                Text(model.aiState.progressTitle + (total > 0 ? " · \(done)/\(total)" : ""))
+                    .accessibilityIdentifier("denoise.ai.progress")
+            case .failed(let message):
+                Text(message).foregroundStyle(.red).textSelection(.enabled)
+                    .accessibilityIdentifier("denoise.ai.error")
+            case .cancelled:
+                Text(L10n.text("AI 降噪已取消。"))
+            case .ready:
+                Text(L10n.text("已应用 AI 降噪；曝光和外观调整复用结果。"))
+                    .accessibilityIdentifier("denoise.ai.ready")
+            case .idle:
+                if !model.canStartAI { Text(L10n.text("此照片或构建尚不能使用 AI 降噪。")) }
+                else if !model.settings.isHDREditing {
+                    Text(L10n.text("支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。"))
+                }
+            }
+            if !model.settings.isHDREditing && model.settings.aiDenoiseEnabled {
+                Text(L10n.text(model.aiState == .ready ? "AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。" :
+                    "普通降噪参数已保留，关闭 AI 降噪即可恢复。"))
+            }
+        }.font(.system(size: 11)).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var toggle: some View {
+        Toggle(L10n.text("AI 降噪（实验）"), isOn: Binding(
+            get: { model.settings.activeAIDenoise || model.aiManuallyRequested },
+            set: { model.setAIEnabled($0) }
+        )).toggleStyle(.switch).controlSize(.mini)
+            .disabled(!model.canStartAI && !model.settings.activeAIDenoise)
+            .accessibilityIdentifier("denoise.ai.enabled")
+    }
+
+    @ViewBuilder private var action: some View {
+        switch model.aiState {
+        case .running:
+            Button(L10n.text("取消")) { model.cancelAIDenoise() }
+                .accessibilityIdentifier("denoise.ai.cancel")
+        case .failed, .cancelled:
+            Button(L10n.text("重试")) { model.requestAIDenoise() }.disabled(!model.canStartAI)
+                .accessibilityIdentifier("denoise.ai.retry")
+        default:
+            EmptyView()
         }
     }
 }

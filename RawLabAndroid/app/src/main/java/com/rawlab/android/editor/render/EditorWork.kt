@@ -75,7 +75,7 @@ internal sealed interface Work {
         val gpuMode: Int, val sourceRevision: Long, val edge: Int = 1600) : Work
     data class Export(val photo: ImportedPhoto, val edits: EditSettings, val destination: Uri?, val format: ExportFormat,
         val longEdge: Int?, val gpuMode: Int) : Work
-    data class AutoExposure(val photo: ImportedPhoto, val edits: EditSettings) : Work
+    data class AutoExposure(val photo: ImportedPhoto, val edits: EditSettings, val gpuMode: Int) : Work
 }
 internal sealed interface WorkResult {
     data class X3fImportFailure(val retry: Work.Import, val error: Throwable) : WorkResult

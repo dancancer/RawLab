@@ -262,7 +262,11 @@ public partial class MainWindow
             controls.Button.Visibility=tool!=EditorAdjustmentTool.Strength && expandedGroup==EditorAdjustmentRules.GroupFor(tool) ? Visibility.Visible : Visibility.Collapsed;
             controls.Button.IsEnabled=file!=null && !exporting &&
                 (!settings.IsHDREditing || tool is EditorAdjustmentTool.Exposure or EditorAdjustmentTool.Highlights or EditorAdjustmentTool.Shadows or
-                    EditorAdjustmentTool.Contrast or EditorAdjustmentTool.Saturation or EditorAdjustmentTool.WhiteBalance or EditorAdjustmentTool.Geometry);
+                    EditorAdjustmentTool.Contrast or EditorAdjustmentTool.BlackPoint or EditorAdjustmentTool.WhitePoint or EditorAdjustmentTool.ToneCurve or
+                    EditorAdjustmentTool.Saturation or EditorAdjustmentTool.WhiteBalance or EditorAdjustmentTool.Geometry or
+                    EditorAdjustmentTool.Vibrance or EditorAdjustmentTool.Hsl or EditorAdjustmentTool.ColorGrading or
+                    EditorAdjustmentTool.Vignette or EditorAdjustmentTool.Grain or EditorAdjustmentTool.Clarity or
+                    EditorAdjustmentTool.Dehaze or EditorAdjustmentTool.Sharpening or EditorAdjustmentTool.Denoise);
             var modified=Modified(new(EditorResetKind.Tool,Tool:tool));
             controls.Ring.Progress=modified ? (controls.Ring.Progress==0 ? 1 : controls.Ring.Progress) : 0;controls.Ring.InvalidateVisual();
             AutomationProperties.SetItemStatus(controls.Button,string.Join(" · ",new[]{CurrentTool==tool ? Loc.Text("当前工具") : "",modified ? Loc.Text("已调整") : ""}.Where(value=>value.Length>0)));
@@ -371,8 +375,6 @@ public partial class MainWindow
             foreach(var row in ParameterRows(AdjustmentPanel))row.SourceIdentity=(file,openRevision);
             var raster=file!=null && LibraryEntry.IsRaster(file);
             var hdrEditing=settings.IsHDREditing;
-            var hdrParameter=selectedParameter is Parameter.Exposure or Parameter.Temperature or Parameter.Tint or
-                Parameter.Contrast or Parameter.Highlights or Parameter.Shadows or Parameter.Saturation;
             if(raster)settings=RenderEngine.PrepareInputSettings(file!,settings);
             if(raster)
             {
@@ -385,8 +387,9 @@ public partial class MainWindow
             var toneSpec=selectedToneParameter is {} toneParameter ? ToneControlSpec.For(toneParameter) : null;
             var atmosphereSpec=selectedAtmosphereParameter is {} atmosphereParameter ? AtmosphereSpec.For(atmosphereParameter) : null;
             var extensionControl=toneSpec!=null || atmosphereSpec!=null;
+            var hdrParameter=atmosphereSpec!=null || (toneSpec!=null ? HDRSettings.Supports(toneSpec.Id) : HDRSettings.Supports(selectedParameter));
             var title=atmosphereSpec?.Title ?? toneSpec?.Title ?? spec.Title;var unit=extensionControl ? "%" : spec.Unit;
-            var value=atmosphereSpec!=null ? settings.Atmosphere[atmosphereSpec.Id] : toneSpec!=null ? settings.ToneControls[toneSpec.Id] : settings[selectedParameter];
+            var value=atmosphereSpec!=null ? settings.EditingAtmosphereValue(atmosphereSpec.Id) : toneSpec!=null ? settings.EditingToneValue(toneSpec.Id) : settings[selectedParameter];
             OrdinaryParameter.Refresh(Loc.Text(title),extensionControl ? new NumericRange(-100,100) : NumericRange.For(spec),
                 value,extensionControl ? 0 : settings.Default(selectedParameter),unit,
                 inputScope:(object?)selectedAtmosphereParameter ?? (object?)selectedToneParameter ?? selectedParameter);
@@ -418,15 +421,17 @@ public partial class MainWindow
             GeometryCategoryRing.Selected=choosingGeometry && !GeometryEditor.ShowPerspective;GeometryCategoryRing.Progress=settings.Geometry.IsIdentity ? 0 : 1;GeometryCategoryRing.InvalidateVisual();
             GradingSurface.Visibility=choosingGrading ? Visibility.Visible : Visibility.Collapsed;
             CurveSurface.Visibility=CurrentTool==EditorAdjustmentTool.ToneCurve ? Visibility.Visible : Visibility.Collapsed;
-            CurveEditor.IsEnabled=file!=null && !hdrEditing && !exporting;CurveEditor.Refresh(settings.Curve,settings[Parameter.ToneCurve],(file,openRevision));
-            GradingEditor.IsEnabled=file!=null && !hdrEditing && !exporting;GradingEditor.Refresh(settings.ColorGrading,(file,openRevision));
-            GradingCategory.IsEnabled=HslCategory.IsEnabled=DenoiseCategory.IsEnabled=file!=null && !hdrEditing && !exporting;
+            CurveEditor.IsEnabled=file!=null && !exporting;
+            CurveEditor.Refresh(settings.EditingCurve,settings[Parameter.ToneCurve],(file,openRevision,hdrEditing),hdrEditing);
+            GradingEditor.IsEnabled=file!=null && !exporting;GradingEditor.Refresh(settings.EditingGrading,(file,openRevision,hdrEditing));
+            GradingCategory.IsEnabled=HslCategory.IsEnabled=file!=null && !exporting;
+            DenoiseCategory.IsEnabled=file!=null && !exporting;
             GradingCategory.Tag=choosingGrading ? "selected" : null;
-            GradingCategoryRing.Selected=choosingGrading;GradingCategoryRing.Progress=settings.ColorGrading.IsDefault ? 0 : 1;GradingCategoryRing.InvalidateVisual();
+            GradingCategoryRing.Selected=choosingGrading;GradingCategoryRing.Progress=settings.EditingGrading.IsDefault ? 0 : 1;GradingCategoryRing.InvalidateVisual();
             HslSurface.Visibility=choosingHsl ? Visibility.Visible : Visibility.Collapsed;
-            HslEditor.IsEnabled=file!=null && !hdrEditing && !exporting;HslEditor.Refresh(settings.Hsl);RefreshHslTarget();
+            HslEditor.IsEnabled=file!=null && !exporting;HslEditor.Refresh(settings.EditingHsl);RefreshHslTarget();
             HslCategory.Tag=choosingHsl ? "selected" : null;
-            HslCategoryRing.Selected=choosingHsl;HslCategoryRing.Progress=settings.Hsl.IsIdentity ? 0 : 1;HslCategoryRing.InvalidateVisual();
+            HslCategoryRing.Selected=choosingHsl;HslCategoryRing.Progress=settings.EditingHsl.IsIdentity ? 0 : 1;HslCategoryRing.InvalidateVisual();
             WhiteBalanceSurface.Visibility=choosingWhiteBalance ? Visibility.Visible : Visibility.Collapsed;
             WhiteBalanceEditor.IsEnabled=file!=null && (!raster || hdrEditing) && !exporting;
             WhiteBalanceEditor.Refresh(settings,WhiteBalanceEditor.IsEnabled && (hdrEditing || settings.AsShot!=null));
@@ -444,15 +449,17 @@ public partial class MainWindow
             WhiteBalanceCategoryRing.Progress=Math.Abs(temperatureProgress)>=Math.Abs(tintProgress) ? temperatureProgress : tintProgress;
             WhiteBalanceCategoryRing.InvalidateVisual();
             AutoExposureButton.Visibility=selectedToneParameter==null && selectedAtmosphereParameter==null && selectedParameter==Parameter.Exposure ? Visibility.Visible : Visibility.Collapsed;
-            AutoExposureButton.IsEnabled=!settings.IsHDREditing && file!=null && result!=null && !autoExposing && !exporting && !scheduler.Busy && !transform.Active;
+            AutoExposureButton.IsEnabled=CanAutoExpose;
             DenoiseEditor.Visibility=choosingDenoise ? Visibility.Visible : Visibility.Collapsed;
             DenoiseSurface.Visibility=DenoiseEditor.Visibility;
-            DenoiseEditor.IsEnabled=file!=null && !hdrEditing && !exporting;DenoiseEditor.Refresh(settings.Denoise);RefreshAIControls();
+            DenoiseEditor.IsEnabled=file!=null && !exporting;
+            DenoiseEditor.Refresh(settings.Denoise,hdrEditing ? settings.HDR!.DetailSettings.Denoise : null);RefreshAIControls();
             PhotoEffectsSurface.Visibility=choosingPhotoEffects ? Visibility.Visible : Visibility.Collapsed;
-            PhotoEffectsEditor.IsEnabled=file!=null && !hdrEditing && !exporting;PhotoEffectsEditor.Refresh(settings.Effects,selectedEffect);
+            PhotoEffectsEditor.IsEnabled=file!=null && !exporting;PhotoEffectsEditor.Refresh(settings.EditingEffects,selectedEffect);
             DenoiseCategory.Tag=choosingDenoise ? "selected" : null;
             DenoiseCategoryRing.Selected=choosingDenoise;
-            DenoiseCategoryRing.Progress=settings.Denoise.Enabled ? 1 : 0;DenoiseCategoryRing.InvalidateVisual();
+            DenoiseCategoryRing.Progress=hdrEditing ? settings.HDR!.DetailSettings.Denoise : settings.Denoise.Enabled ? 1 : 0;
+            DenoiseCategoryRing.InvalidateVisual();
             FilmCategory.Tag=choosingFilm ? "selected" : null;
             FilmCategory.IsEnabled=!hdrEditing && !exporting;
             FilmCategoryRing.Selected=choosingFilm;FilmCategoryRing.InvalidateVisual();
@@ -482,25 +489,24 @@ public partial class MainWindow
             ApplyDraftButton.IsEnabled=CanApplyTransform;
             foreach(var (id,controls) in toolButtons)
             {
-                controls.Button.IsEnabled=file!=null && !exporting && (!hdrEditing || id is Parameter.Exposure or Parameter.Temperature or Parameter.Tint or
-                    Parameter.Contrast or Parameter.Highlights or Parameter.Shadows or Parameter.Saturation);
+                controls.Button.IsEnabled=file!=null && !exporting && (!hdrEditing || HDRSettings.Supports(id));
                 var selected=!choosingRecipes && !choosingHsl && !choosingGrading && !choosingFilm && !choosingDenoise && !choosingPhotoEffects && !choosingWhiteBalance && !choosingLens && !choosingGeometry && selectedToneParameter==null && selectedAtmosphereParameter==null && id==selectedParameter;
                 controls.Button.Tag=selected ? "selected" : null;
                 controls.Ring.Selected=selected;
                 var p=ParameterSpec.All[(int)id]; var origin=p.Position(settings.Default(id)); var offset=p.Position(settings[id])-origin;
-                controls.Ring.Progress=id==Parameter.ToneCurve && !settings.Curve.IsDefault ? settings.Curve.Progress : offset==0 ? 0 : offset/(offset<0 ? origin : 1-origin); controls.Ring.InvalidateVisual();
+                controls.Ring.Progress=id==Parameter.ToneCurve && !settings.EditingCurve.IsDefault ? settings.EditingCurve.Progress : offset==0 ? 0 : offset/(offset<0 ? origin : 1-origin); controls.Ring.InvalidateVisual();
             }
             foreach(var (id,controls) in toneToolButtons) {
                 var selected=CurrentTool==EditorAdjustmentRules.ToolFor(id);
-                controls.Button.IsEnabled=file!=null && !hdrEditing && !exporting;
+                controls.Button.IsEnabled=file!=null && !exporting && (!hdrEditing || HDRSettings.Supports(id));
                 controls.Button.Tag=selected ? "selected" : null;controls.Ring.Selected=selected;
-                controls.Ring.Progress=settings.ToneControls[id]/100;controls.Ring.InvalidateVisual();
+                controls.Ring.Progress=settings.EditingToneValue(id)/100;controls.Ring.InvalidateVisual();
             }
             foreach(var (id,controls) in atmosphereToolButtons) {
                 var selected=CurrentTool==EditorAdjustmentRules.ToolFor(id);
-                controls.Button.IsEnabled=file!=null && !hdrEditing && !exporting;
+                controls.Button.IsEnabled=file!=null && !exporting;
                 controls.Button.Tag=selected ? "selected" : null;controls.Ring.Selected=selected;
-                controls.Ring.Progress=settings.Atmosphere[id]/100;controls.Ring.InvalidateVisual();
+                controls.Ring.Progress=settings.EditingAtmosphereValue(id)/100;controls.Ring.InvalidateVisual();
             }
             foreach(var pair in filmButtons) {
                 var selected=pair.Key==(lut ?? "");pair.Value.Tag=selected ? "selected" : null;
@@ -534,7 +540,7 @@ public partial class MainWindow
         ExportHdrJpeg.IsEnabled=exportReady && settings.IsHDREditing;
         ViewBatchMenu.IsEnabled=CurrentBatch!=null;
         MenuViewBatch.IsEnabled=ViewBatchMenu.IsEnabled;
-        AutoExposureButton.IsEnabled=MenuAutoExposure.IsEnabled=!settings.IsHDREditing && file!=null && result!=null && !AIBlocksOutput && !autoExposing && !exporting && !scheduler.Busy && !transform.Active;
+        AutoExposureButton.IsEnabled=MenuAutoExposure.IsEnabled=CanAutoExpose;
         MenuAsShot.IsEnabled=AsShotButton.IsEnabled;
         ExportButton.IsEnabled=ExportJpeg.IsEnabled || ExportHdrJpeg.IsEnabled || ExportSdrJpeg.IsEnabled || ExportPng.IsEnabled || ExportDng.IsEnabled || ViewBatchMenu.IsEnabled;
         MenuExport.IsEnabled=ExportJpeg.IsEnabled;MenuBatch.IsEnabled=BatchExportMenu.IsEnabled;

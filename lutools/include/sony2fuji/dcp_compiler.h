@@ -1,7 +1,9 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -30,5 +32,16 @@ std::vector<uint8_t> compileDcp(const void* data, std::size_t size,
 std::vector<uint8_t> compileDcp(const void* data, std::size_t size,
                                 const std::string& sourceName, DcpCompilerError& error,
                                 std::string_view toneCurveJson, bool omitAutomaticBlack);
+
+struct HDRCameraProfile {
+    std::string cameraModel;
+    std::array<std::array<double, 3>, 3> xyzToCamera;
+    std::array<std::array<float, 3>, 3> balancedToSrgb;
+};
+
+inline constexpr std::size_t maxDcpSourceBytes = 128u * 1024u * 1024u;
+std::vector<uint8_t> compileHDRCameraDcp(const void* data, std::size_t size, DcpCompilerError& error);
+// DCP or matrix-only RLOOKHDR. RLOOKDCP has a separate SDR color contract.
+std::optional<HDRCameraProfile> readHDRCameraProfile(const void* data, std::size_t size);
 
 } // namespace sony2fuji

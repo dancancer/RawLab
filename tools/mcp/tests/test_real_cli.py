@@ -111,7 +111,7 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
                 capabilities = direct("--capabilities")
                 capabilities["recipe_versions"] = [
                     version for version in capabilities["recipe_versions"]
-                    if version in (1, 2, 3, 4, 5, 6, 7)
+                    if version in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)
                 ]
                 capabilities["commands"] = [
                     command for command in capabilities["commands"]

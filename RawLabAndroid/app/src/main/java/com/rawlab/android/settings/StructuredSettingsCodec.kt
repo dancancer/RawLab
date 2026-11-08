@@ -19,10 +19,7 @@ internal object StructuredSettingsCodec {
             .put("recipeID", s.recipeID ?: JSONObject.NULL).put("displayChromaDenoise", s.displayChromaDenoise)
             .put("masterRecipeSettingsVersion", s.masterRecipeSettingsVersion)
             .put("hsl", JSONArray(s.hsl.packed().toList()))
-            .put("colorGrading", JSONObject().also { grading ->
-                ColorGradingZone.entries.forEach { zone -> grading.put(zone.id,
-                    JSONObject().put("hue", s.colorGrading[zone].hue).put("saturation", s.colorGrading[zone].saturation)) }
-            })
+            .put("colorGrading", s.colorGrading.json())
             .put("tone", JSONObject().put("blackPoint", s.blackPoint).put("whitePoint", s.whitePoint).put("vibrance", s.vibrance))
             .put("denoise", JSONObject().put("enabled", s.denoise.enabled).put("luma", s.denoise.luma)
                 .put("chroma", s.denoise.chroma).put("coarse", s.denoise.coarse))
@@ -108,9 +105,109 @@ internal object StructuredSettingsCodec {
             .put("flipHorizontal", flipHorizontal).put("flipVertical", flipVertical)
             .put("straightenDegrees", straightenDegrees).put("perspectiveHorizontal", perspectiveHorizontal)
             .put("perspectiveVertical", perspectiveVertical) })
+        .apply { value.tone?.let { tone ->
+            put("tone", JSONObject().put("black_point", tone.blackPoint).put("white_point", tone.whitePoint)
+                .put("curve_strength", tone.curveStrength).put("curve", tone.curve.json()))
+        } }
+        .apply { value.color?.let { color ->
+            val hsl = color.hsl.packed()
+            put("color", JSONObject().put("vibrance", color.vibrance)
+                .put("hsl", JSONObject().put("hue", JSONArray(hsl.slice(0..7)))
+                    .put("saturation", JSONArray(hsl.slice(8..15))).put("lightness", JSONArray(hsl.slice(16..23))))
+                .put("grading", color.grading.json()))
+        } }
+        .apply { value.rendition?.let { rendition ->
+            put("rendition", JSONObject().put("peak_limit_ev", rendition.peakLimitEV)
+                .put("sdr_exposure_ev", rendition.sdrExposureEV).put("sdr_contrast", rendition.sdrContrast)
+                .put("sdr_saturation", rendition.sdrSaturation))
+        } }
+        .apply { value.effects?.let { fx ->
+            put("effects", JSONObject().put("vignette_amount", fx.vignetteAmount).put("vignette_midpoint", fx.vignetteMidpoint)
+                .put("vignette_roundness", fx.vignetteRoundness).put("vignette_feather", fx.vignetteFeather)
+                .put("vignette_highlights", fx.vignetteHighlights).put("grain_amount", fx.grainAmount)
+                .put("grain_size", fx.grainSize).put("grain_roughness", fx.grainRoughness))
+        } }
+        .apply { value.detail?.let { detail ->
+            put("detail", JSONObject().put("sharpening", detail.sharpening).put("clarity", detail.clarity)
+                .put("dehaze", detail.dehaze).put("denoise", detail.denoise))
+        } }
+        .apply { value.look?.let { look ->
+            put("look", JSONObject().put("sha256", look.sha256 ?: JSONObject.NULL)
+                .put("name", look.name ?: JSONObject.NULL).put("strength", look.strength))
+        } }
+        .apply { value.cameraDevelopment?.let { camera ->
+            put("camera_development", JSONObject().put("version", 1)
+                .put("white_balance_mode", if (camera.customWhiteBalance) "temperature" else "as_shot")
+                .put("temperature", camera.temperature).put("tint", camera.tint)
+                .put("exposure_reference", if (camera.sensorExposure) "sensor" else "metadata")
+                .put("fbdd_level", camera.fbddLevel).put("lens_distortion", camera.lensDistortion)
+                .put("lens_tca", camera.lensTca).put("lens_auto_crop", camera.lensAutoCrop)
+                .put("lens_profile", camera.lensProfile)
+                .put("camera_profile", camera.cameraProfile?.let {
+                    JSONObject().put("sha256", it.sha256).put("name", it.name)
+                }))
+        } }
 
     private fun decodeHDR(value: JSONObject): HDRSettings {
-        value.keysExactly("record_version", "hdr_processing_version", "mode", "exposure_ev", "relative_temperature", "relative_tint", "contrast", "highlights", "shadows", "saturation", "geometry")
+        value.keysWithOptional(setOf("tone", "color", "rendition", "effects", "detail", "look", "camera_development"), "record_version", "hdr_processing_version", "mode", "exposure_ev",
+            "relative_temperature", "relative_tint", "contrast", "highlights", "shadows", "saturation", "geometry")
+        val tone = if (value.has("tone")) {
+            val fields = value.getJSONObject("tone").keysExactly("black_point", "white_point", "curve_strength", "curve")
+            HDRToneSettings(fields.number("black_point", -100.0..100.0), fields.number("white_point", -100.0..100.0),
+                fields.number("curve_strength", -100.0..100.0), ToneCurveSettings.decode(fields.getJSONObject("curve")))
+        } else null
+        val color = if (value.has("color")) {
+            require(tone != null)
+            val fields = value.getJSONObject("color").keysExactly("vibrance", "hsl", "grading")
+            val hsl = fields.getJSONObject("hsl").keysExactly("hue", "saturation", "lightness")
+            val channels = listOf("hue", "saturation", "lightness").flatMap { name ->
+                val axis = hsl.getJSONArray(name)
+                require(axis.length() == 8)
+                List(8) { number(axis.get(it), -100.0..100.0) }
+            }
+            HDRColorSettings(fields.number("vibrance", -100.0..100.0), HslSettings(channels),
+                grading(fields.getJSONObject("grading")))
+        } else null
+        val rendition = if (value.has("rendition")) {
+            require(color != null)
+            val fields = value.getJSONObject("rendition")
+                .keysExactly("peak_limit_ev", "sdr_exposure_ev", "sdr_contrast", "sdr_saturation")
+            HDRRenditionSettings(fields.number("peak_limit_ev", 0.0..6.0), fields.number("sdr_exposure_ev", -4.0..4.0),
+                fields.number("sdr_contrast", -100.0..100.0), fields.number("sdr_saturation", -100.0..100.0))
+        } else null
+        val effects = if (value.has("effects")) {
+            require(rendition != null)
+            val fields = value.getJSONObject("effects").keysExactly("vignette_amount", "vignette_midpoint",
+                "vignette_roundness", "vignette_feather", "vignette_highlights", "grain_amount", "grain_size", "grain_roughness")
+            PhotoEffectsSettings(fields.number("vignette_amount", -100.0..100.0), fields.number("vignette_midpoint", 0.0..100.0),
+                fields.number("vignette_roundness", -100.0..100.0), fields.number("vignette_feather", 0.0..100.0),
+                fields.number("vignette_highlights", 0.0..100.0), fields.number("grain_amount", 0.0..100.0),
+                fields.number("grain_size", 0.0..100.0), fields.number("grain_roughness", 0.0..100.0))
+        } else null
+        val version = when {
+            value.has("look") -> 7
+            value.has("detail") -> 6
+            effects != null -> 5
+            rendition != null -> 4
+            color != null -> 3
+            tone != null -> 2
+            else -> 1
+        }
+        val detail = if (version >= 6) {
+            require(effects != null)
+            val fields = value.getJSONObject("detail").keysExactly("sharpening", "clarity", "dehaze", "denoise")
+            HDRDetailSettings(fields.number("sharpening", 0.0..2.0), fields.number("clarity", -1.0..1.0),
+                fields.number("dehaze", -1.0..1.0), fields.number("denoise", 0.0..1.0))
+        } else null
+        val look = if (version == 7) {
+            val fields = value.getJSONObject("look").keysExactly("sha256", "name", "strength")
+            HDRLookSettings(if (fields.isNull("sha256")) null else fields.string("sha256"),
+                if (fields.isNull("name")) null else fields.string("name"), fields.number("strength", 0.0..2.0))
+        } else null
+        val camera = if (value.has("camera_development")) decodeHDRCamera(value.getJSONObject("camera_development")) else null
+        require(value.integer("record_version") == (if (camera == null) version else 8) && value.integer("hdr_processing_version") == version) {
+            "Unsupported HDR settings version"
+        }
         val geometry = value.getJSONObject("geometry").keysExactly("cropX", "cropY", "cropWidth", "cropHeight", "quarterTurns",
             "flipHorizontal", "flipVertical", "straightenDegrees", "perspectiveHorizontal", "perspectiveVertical")
         val mode = when (value.string("mode")) {
@@ -118,7 +215,8 @@ internal object StructuredSettingsCodec {
             "sdr" -> HDRMode.SDR
             else -> throw IllegalArgumentException("Unsupported HDR mode")
         }
-        return HDRSettings(mode = mode, recordVersion = value.integer("record_version"), processingVersion = value.integer("hdr_processing_version"),
+        return HDRSettings(mode = mode, tone = tone, color = color, rendition = rendition, effects = effects, detail = detail, look = look,
+            cameraDevelopment = camera,
             exposure = value.number("exposure_ev", -4.0..4.0), temperature = value.number("relative_temperature", 2000.0..50000.0),
             tint = value.number("relative_tint", -150.0..150.0), contrast = value.number("contrast", -100.0..100.0),
             highlights = value.number("highlights", -100.0..100.0), shadows = value.number("shadows", -100.0..100.0),
@@ -127,6 +225,36 @@ internal object StructuredSettingsCodec {
                 geometry.number("cropHeight", 0.0..1.0), geometry.integer("quarterTurns"), geometry.boolean("flipHorizontal"),
                 geometry.boolean("flipVertical"), geometry.number("straightenDegrees", -45.0..45.0),
                 geometry.number("perspectiveHorizontal", -1.0..1.0), geometry.number("perspectiveVertical", -1.0..1.0)))
+    }
+
+    private fun decodeHDRCamera(value: JSONObject): HDRCameraDevelopmentSettings {
+        value.keysWithOptional(setOf("lens_profile", "camera_profile"), "version", "white_balance_mode", "temperature", "tint",
+            "exposure_reference", "fbdd_level", "lens_distortion", "lens_tca", "lens_auto_crop")
+        require(value.integer("version") == 1)
+        val custom = when (value.string("white_balance_mode")) {
+            "as_shot" -> false
+            "temperature" -> true
+            else -> error("Unknown camera RAW white balance")
+        }
+        val sensor = when (value.string("exposure_reference")) {
+            "metadata" -> false
+            "sensor" -> true
+            else -> error("Unknown camera RAW exposure reference")
+        }
+        val profile = if (value.has("camera_profile")) value.getJSONObject("camera_profile").let {
+            it.keysExactly("sha256", "name")
+            HDRCameraProfile(it.string("sha256"), it.string("name"))
+        } else null
+        return HDRCameraDevelopmentSettings(custom, value.number("temperature", 0.0..50000.0),
+            value.number("tint", -150.0..150.0), sensor, value.integer("fbdd_level"),
+            value.boolean("lens_distortion"), value.boolean("lens_tca"), value.boolean("lens_auto_crop"),
+            if (value.isNull("lens_profile")) null else value.string("lens_profile"), profile)
+    }
+
+    private fun ColorGradingSettings.json() = JSONObject().also { grading ->
+        ColorGradingZone.entries.forEach { zone ->
+            grading.put(zone.id, JSONObject().put("hue", this[zone].hue).put("saturation", this[zone].saturation))
+        }
     }
 
     private fun grading(json: JSONObject): ColorGradingSettings {

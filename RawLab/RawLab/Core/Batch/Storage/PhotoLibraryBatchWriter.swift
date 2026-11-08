@@ -2,6 +2,7 @@ import Photos
 import PhotosUI
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 enum PhotoLibraryBatchWriter {
     static func authorize() throws {
@@ -33,6 +34,7 @@ enum PhotoLibraryBatchWriter {
             let request = PHAssetCreationRequest.forAsset()
             let options = PHAssetResourceCreationOptions()
             options.originalFilename = outputName
+            if (outputName as NSString).pathExtension == "heic" { options.uniformTypeIdentifier = UTType.heic.identifier }
             request.addResource(with: .photo, data: data, options: options)
             if let identifier = request.placeholderForCreatedAsset?.localIdentifier {
                 do { try checkpoint(identifier) } catch { checkpointError = error }

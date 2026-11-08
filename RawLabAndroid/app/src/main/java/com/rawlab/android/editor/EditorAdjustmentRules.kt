@@ -2,12 +2,36 @@ package com.rawlab.android.editor
 
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.HDRLookSettings
 import com.rawlab.android.settings.hdrDefaults
 import com.rawlab.android.settings.synchronizeHDR
 import com.rawlab.android.settings.HslSettings
 import com.rawlab.android.settings.ColorGradingZone
 import com.rawlab.android.settings.canonicalZeros
 import com.rawlab.android.settings.independentForReset
+import com.rawlab.android.settings.editingBlackPoint
+import com.rawlab.android.settings.editingWhitePoint
+import com.rawlab.android.settings.editingGrading
+import com.rawlab.android.settings.editingHsl
+import com.rawlab.android.settings.editingVibrance
+import com.rawlab.android.settings.withEditingGrading
+import com.rawlab.android.settings.withEditingHsl
+import com.rawlab.android.settings.withEditingVibrance
+import com.rawlab.android.settings.editingCurve
+import com.rawlab.android.settings.editingCurveStrength
+import com.rawlab.android.settings.withEditingBlackPoint
+import com.rawlab.android.settings.withEditingWhitePoint
+import com.rawlab.android.settings.withEditingCurve
+import com.rawlab.android.settings.withEditingCurveStrength
+import com.rawlab.android.settings.editingEffects
+import com.rawlab.android.settings.withEditingEffects
+import com.rawlab.android.settings.editingSharpening
+import com.rawlab.android.settings.editingClarity
+import com.rawlab.android.settings.editingDehaze
+import com.rawlab.android.settings.withEditingSharpening
+import com.rawlab.android.settings.withEditingClarity
+import com.rawlab.android.settings.withEditingDehaze
+import com.rawlab.android.settings.withHDRDenoise
 
 /** 工作区导航 ID 不进入持久化，也不替代几何/镜头草稿的 AdjustmentGroup。 */
 enum class EditorAdjustmentGroup(val id: String) {
@@ -60,17 +84,18 @@ object EditorAdjustmentRules {
     fun tools(group: EditorAdjustmentGroup): List<Int> = toolGroups.getValue(group)
     fun groupFor(tool: Int): EditorAdjustmentGroup? = if (tool == 9) EditorAdjustmentGroup.COLOR
         else toolGroups.entries.firstOrNull { tool in it.value }?.key
+    fun supportsHDR(tool: Int) = tool == 0 || tool in 2..14 || tool in 17..23
 
     fun isModified(scope: EditorResetScope, snapshot: EditSettings, context: EditorResetContext): Boolean =
         valid(scope, snapshot, context) && markerSnapshot(snapshot, context) !=
             markerSnapshot(resetStored(scope, snapshot, defaults(scope, snapshot, context)), context)
 
     fun prepareReset(scope: EditorResetScope, snapshot: EditSettings, context: EditorResetContext): EditorResetResult {
-        if (scope != EditorResetScope.All && snapshot.recipeID != null && snapshot.recipeID !in context.knownRecipeIds)
+        if (!snapshot.isHDREditing && scope != EditorResetScope.All && snapshot.recipeID != null && snapshot.recipeID !in context.knownRecipeIds)
             return EditorResetResult.Blocked("Unknown recipe")
         if (!valid(scope, snapshot, context)) return EditorResetResult.Blocked("Invalid scope, recipe or white balance defaults")
         if (!isModified(scope, snapshot, context)) return EditorResetResult.NoChange
-        val clearsRecipe = snapshot.recipeID != null && (scope == EditorResetScope.Group(EditorAdjustmentGroup.LOOKS) ||
+        val clearsRecipe = !snapshot.isHDREditing && snapshot.recipeID != null && (scope == EditorResetScope.Group(EditorAdjustmentGroup.LOOKS) ||
             scope == EditorResetScope.Tool(15) || scope == EditorResetScope.Tool(0))
         val independent = if (clearsRecipe) snapshot.independentForReset(context.input,
             context.asShot?.temperature, context.asShot?.tint)
@@ -86,8 +111,8 @@ object EditorAdjustmentRules {
     }
 
     private fun valid(scope: EditorResetScope, snapshot: EditSettings, context: EditorResetContext): Boolean =
-        (scope == EditorResetScope.All || snapshot.recipeID == null || snapshot.recipeID in context.knownRecipeIds) &&
-            (context.input != PhotoInputKind.RAW || !includesWhiteBalance(scope) || context.asShot == null ||
+        (snapshot.isHDREditing || scope == EditorResetScope.All || snapshot.recipeID == null || snapshot.recipeID in context.knownRecipeIds) &&
+            (snapshot.isHDREditing || context.input != PhotoInputKind.RAW || !includesWhiteBalance(scope) || context.asShot == null ||
                 (context.asShot.temperature.isFinite() && context.asShot.temperature in 2000f..50000f &&
                     context.asShot.tint.isFinite() && context.asShot.tint in -150f..150f)) &&
             when (scope) {
@@ -122,44 +147,42 @@ object EditorAdjustmentRules {
     }
 
     private fun resetStored(scope: EditorResetScope, s: EditSettings, d: EditSettings): EditSettings = when (scope) {
-        EditorResetScope.All -> d.copy(film = "neutral", recipeID = null, strength = 1f)
-        EditorResetScope.AllGrading -> s.copy(colorGrading = d.colorGrading)
-        is EditorResetScope.GradingZone -> s.copy(colorGrading = s.colorGrading.with(scope.zone, d.colorGrading[scope.zone]))
-        EditorResetScope.AllHsl -> s.copy(hsl = d.hsl)
-        is EditorResetScope.HslChannel -> s.copy(hsl = HslSettings(s.hsl.packed().mapIndexed { index, value ->
-            if (index % 8 == scope.channel) d.hsl.packed()[index] else value
+        EditorResetScope.All -> if (s.isHDREditing) d else d.copy(film = "neutral", recipeID = null, strength = 1f)
+        EditorResetScope.AllGrading -> s.withEditingGrading(d.editingGrading)
+        is EditorResetScope.GradingZone -> s.withEditingGrading(s.editingGrading.with(scope.zone, d.editingGrading[scope.zone]))
+        EditorResetScope.AllHsl -> s.withEditingHsl(d.editingHsl)
+        is EditorResetScope.HslChannel -> s.withEditingHsl(HslSettings(s.editingHsl.packed().mapIndexed { index, value ->
+            if (index % 8 == scope.channel) d.editingHsl.value(index / 8, scope.channel) else value
         }))
         is EditorResetScope.Group -> tools(scope.group).fold(s) { state, id -> resetTool(id, state, d) }
         is EditorResetScope.Tool -> resetTool(scope.id, s, d)
     }
 
-    private fun resetTool(id: Int, s: EditSettings, d: EditSettings): EditSettings = when (id) {
-        0 -> s.copy(film = "neutral")
+    private fun resetTool(id: Int, s: EditSettings, d: EditSettings): EditSettings = if (s.isHDREditing && !supportsHDR(id)) s else when (id) {
+        0 -> if (s.isHDREditing) s.copy(hdr = s.hdr!!.withLook(HDRLookSettings())) else s.copy(film = "neutral")
         15 -> s.copy(recipeID = null)
         1 -> s.copy(strength = d.strength)
         2 -> s.copy(exposure = d.exposure, exposureMode = d.exposureMode)
         3 -> s.copy(highlights = d.highlights)
         4 -> s.copy(shadows = d.shadows)
         5 -> s.copy(contrast = d.contrast)
-        6 -> s.copy(toneCurve = d.toneCurve, curve = d.curve)
+        6 -> s.withEditingCurveStrength(d.editingCurveStrength).withEditingCurve(d.editingCurve)
         7 -> s.copy(saturation = d.saturation)
         8, 9 -> s.copy(customWb = d.customWb, temperature = d.temperature, tint = d.tint)
-        10 -> s.copy(sharpening = d.sharpening)
-        11 -> s.copy(denoise = d.denoise, displayChromaDenoise = d.displayChromaDenoise)
-        12 -> s.copy(effects = s.effects.copy(vignetteAmount = d.effects.vignetteAmount,
-            vignetteMidpoint = d.effects.vignetteMidpoint, vignetteRoundness = d.effects.vignetteRoundness,
-            vignetteFeather = d.effects.vignetteFeather, vignetteHighlights = d.effects.vignetteHighlights))
-        13 -> s.copy(effects = s.effects.copy(grainAmount = d.effects.grainAmount,
-            grainSize = d.effects.grainSize, grainRoughness = d.effects.grainRoughness))
-        14 -> s.copy(hsl = d.hsl)
+        10 -> s.withEditingSharpening(d.editingSharpening)
+        11 -> if (s.isHDREditing) s.withHDRDenoise(0f)
+            else s.copy(denoise = d.denoise, displayChromaDenoise = d.displayChromaDenoise)
+        12 -> s.withEditingEffects(s.editingEffects.resetEffects(vignette = true))
+        13 -> s.withEditingEffects(s.editingEffects.resetEffects(vignette = false))
+        14 -> s.withEditingHsl(d.editingHsl)
         16 -> s.copy(lens = d.lens)
         17 -> s.copy(geometry = d.geometry)
-        18 -> s.copy(blackPoint = d.blackPoint)
-        19 -> s.copy(whitePoint = d.whitePoint)
-        20 -> s.copy(vibrance = d.vibrance)
-        21 -> s.copy(colorGrading = d.colorGrading)
-        22 -> s.copy(clarity = d.clarity)
-        23 -> s.copy(dehaze = d.dehaze)
+        18 -> s.withEditingBlackPoint(d.editingBlackPoint)
+        19 -> s.withEditingWhitePoint(d.editingWhitePoint)
+        20 -> s.withEditingVibrance(d.editingVibrance)
+        21 -> s.withEditingGrading(d.editingGrading)
+        22 -> s.withEditingClarity(d.editingClarity)
+        23 -> s.withEditingDehaze(d.editingDehaze)
         else -> s
     }
 

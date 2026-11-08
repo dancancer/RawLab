@@ -118,13 +118,15 @@ private func checkCollectionHDRJPEG(_ root: URL) throws {
         if isHDR { settings.hdr = HDRSettings() }
         try store.save(identity, state: .init(settings: settings))
     }
-    let review = collection.prepareExport(store: store, skipping: [], format: .hdrJPEG, longEdge: nil,
-        probeHDR: { _ in false }, validateActive: { _ in }, resolveLook: { _ in (nil, nil) })
+    let review = collection.exportInput.prepareExport(store: store, skipping: [], format: .hdrJPEG, longEdge: nil,
+        x3fDefaultMode: { _ in .legacy }, probeHDR: { _ in false }, validateActive: { _ in },
+        resolveLook: { _ in (nil, nil) }, validateHDRSource: { _, _ in })
     try BatchExportTests.require(!review.ready && review.rows[0].settings?.isHDREditing == true &&
                                 review.rows[0].error == nil && review.rows[1].error != nil,
                                 "HDR JPEG collection preflight rejects only photos without HDR editing")
-    let skipped = collection.prepareExport(store: store, skipping: ["photo:sdr"], format: .hdrJPEG, longEdge: nil,
-        probeHDR: { _ in false }, validateActive: { _ in }, resolveLook: { _ in (nil, nil) })
+    let skipped = collection.exportInput.prepareExport(store: store, skipping: ["photo:sdr"], format: .hdrJPEG, longEdge: nil,
+        x3fDefaultMode: { _ in .legacy }, probeHDR: { _ in false }, validateActive: { _ in },
+        resolveLook: { _ in (nil, nil) }, validateHDRSource: { _, _ in })
     let job = try collection.freeze(skipped, store: store, journal: journal, validateActive: { _ in })
     try BatchExportTests.require(skipped.ready && job.outputFormat == .hdrJPEG && job.targets.count == 1 &&
                                 job.targets[0].frozen?.outputFormat == .hdrJPEG &&

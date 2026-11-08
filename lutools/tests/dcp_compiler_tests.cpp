@@ -1,6 +1,10 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "sony2fuji/ffi/sony2fuji_hdr.h"
+#include "sony2fuji/dcp_compiler.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
@@ -245,6 +249,258 @@ void unitTests() {
     sony2fuji_release_blob(&blob);
 }
 
+void hdrCameraCalibrationTests(const char* source, const char* cameraModel, bool syntheticFixture) {
+    auto makeProfile = [&](bool shifted, const std::string& model, bool bigEndian = false, bool shiftedWhite = false) {
+        auto tags = validTags(bigEndian);
+        for (auto& [key, tag] : tags) {
+            if (key == 50708) {
+                tag = {2, Bytes(model.begin(), model.end())};
+                tag.data.push_back(0);
+            }
+            if (key == 50965) {
+                // sRGB-to-XYZ(D50), alone or after R' = 4R - 3G.
+                tag = shifted
+                    ? type10({{17442988,10000000}, {-9231592,10000000}, {1430804,10000000},
+                              {8900180,10000000}, {493651,10000000}, {606169,10000000},
+                              {557288,10000000}, {553079,10000000}, {7141733,10000000}}, bigEndian)
+                    : type10({{4360747,10000000}, {3850649,10000000}, {1430804,10000000},
+                              {2225045,10000000}, {7168786,10000000}, {606169,10000000},
+                              {139322,10000000}, {971045,10000000}, {7141733,10000000}}, bigEndian);
+            }
+            if (shifted && key == 50940) tag = type11({0, 0, .5f, .2f, 1, 1}, bigEndian);
+            if (shiftedWhite && key == 50722)
+                tag = type10({{1,1}, {1,1}, {0,1}, {0,1}, {1,1}, {0,1}, {0,1}, {0,1}, {1,1}}, bigEndian);
+        }
+        return makeDcp(tags, bigEndian);
+    };
+    const auto directory = std::filesystem::temp_directory_path() / ("rawlab-hdr-dcp-" +
+        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    expect(std::filesystem::create_directory(directory), "create HDR profile test directory");
+    struct Cleanup {
+        std::filesystem::path path;
+        ~Cleanup() { std::error_code error; std::filesystem::remove_all(path, error); }
+    } cleanup{directory};
+    auto write = [&](const char* name, const void* data, size_t size) {
+        const auto file = directory / name;
+        std::ofstream out(file, std::ios::binary);
+        expect(bool(out.write(static_cast<const char*>(data), static_cast<std::streamsize>(size))),
+               "write HDR profile fixture");
+        return file.u8string();
+    };
+    const auto unshifted = makeProfile(false, cameraModel);
+    const auto shifted = makeProfile(true, cameraModel, true);
+    const auto wrong = makeProfile(true, "Different camera");
+    auto tiff = unshifted;
+    tiff[2] = 42;
+    tiff[3] = 0;
+    expect(!sony2fuji::readHDRCameraProfile(tiff.data(), tiff.size()), "a TIFF header was treated as a standalone DCP");
+    const auto plainFile = write("linear.dcp", unshifted.data(), unshifted.size());
+    const auto shiftedFile = write("shifted.dcp", shifted.data(), shifted.size());
+    const auto wrongFile = write("mismatched.dcp", wrong.data(), wrong.size());
+
+    auto linear = sony2fuji::readHDRCameraProfile(shifted.data(), shifted.size());
+    expect(linear.has_value(), "read fixed D65 ForwardMatrix");
+    const auto& matrix = linear->balancedToSrgb;
+    for (const float grey : {-.125f, .1845f, .9999f, 1.0f, 1.0001f, 4.0f, 8.0f}) {
+        for (const auto& row : matrix)
+            expect(std::abs((row[0] + row[1] + row[2]) * grey - grey) < 2e-5f,
+                   "DCP linear matrix moved the neutral axis");
+    }
+    expect(std::abs(matrix[0][0] - 4) < 2e-5f && std::abs(matrix[0][1] + 3) < 2e-5f &&
+           std::abs(matrix[1][1] - 1) < 2e-5f, "D50 ForwardMatrix was not converted to D65 linear sRGB");
+
+    sony2fuji_blob blob{};
+    sony2fuji_dcp_error reason{};
+    expect(sony2fuji_compile_hdr_camera_dcp(shifted.data(), shifted.size(), &blob, &reason) == SONY2FUJI_STATUS_OK &&
+           blob.size_bytes > 8 && std::memcmp(blob.data, "RLOOKHDR", 8) == 0, "compile matrix-only HDR resource");
+    const auto compiledFile = write("shifted.rlook", blob.data, blob.size_bytes);
+    const auto truncatedFile = write("truncated.rlook", blob.data, blob.size_bytes - 1);
+    auto* bytes = static_cast<uint8_t*>(blob.data);
+    bytes[8] = 2;
+    const auto futureFile = write("future.rlook", blob.data, blob.size_bytes);
+    sony2fuji_release_blob(&blob);
+    expect(sony2fuji_compile_dcp(shifted.data(), shifted.size(), "shifted.dcp", &blob, &reason) == SONY2FUJI_STATUS_OK,
+           "the same source can still compile its independent SDR stages");
+    const auto legacyFile = write("legacy.rlook", blob.data, blob.size_bytes);
+    sony2fuji_release_blob(&blob);
+
+    auto tags = validTags();
+    for (auto& [key, tag] : tags) {
+        if (key == 50965)
+            tag = type10({{1,1}, {0,1}, {0,1}, {1,1}, {0,1}, {0,1}, {1,1}, {0,1}, {0,1}});
+    }
+    const auto singular = makeDcp(tags);
+    expect(sony2fuji_compile_hdr_camera_dcp(singular.data(), singular.size(), &blob, &reason) ==
+           SONY2FUJI_STATUS_UNSUPPORTED && reason == SONY2FUJI_DCP_ERROR_INVALID_CALIBRATION && !blob.data,
+           "a singular ForwardMatrix was accepted");
+
+    auto info = sony2fuji_hdr_camera_profile_info_v1{1, sizeof(sony2fuji_hdr_camera_profile_info_v1)};
+    auto diagnostic = sony2fuji_hdr_diagnostic_v1{1, sizeof(sony2fuji_hdr_diagnostic_v1)};
+    auto options = sony2fuji_hdr_decode_options_v1{1, sizeof(sony2fuji_hdr_decode_options_v1),
+        SONY2FUJI_INTENT_FINAL, 0};
+    sony2fuji_hdr_camera_development_v2 development{};
+    development.base.version = 2;
+    development.base.struct_size = sizeof(development);
+    auto configure = [&](const std::string& file) {
+        expect(sony2fuji_hdr_probe_camera_profile(file.c_str(), &info, &diagnostic) == SONY2FUJI_STATUS_OK,
+               "probe supported HDR camera profile");
+        development.profile_path = file.c_str();
+        std::copy_n(info.sha256, 65, development.profile_sha256);
+    };
+    struct Pair {
+        sony2fuji_hdr_image_pair_v1 value{1, sizeof(sony2fuji_hdr_image_pair_v1)};
+        ~Pair() { sony2fuji_hdr_release_pair(&value); }
+    };
+    auto decodeFile = [&](const char* file, Pair& pair) {
+        return sony2fuji_hdr_decode_camera_raw_with_development(nullptr, file, &options,
+            &development.base, &pair.value, &diagnostic);
+    };
+    auto decode = [&](Pair& pair) { return decodeFile(source, pair); };
+    for (const auto& invalid : {truncatedFile, futureFile, legacyFile})
+        expect(sony2fuji_hdr_probe_camera_profile(invalid.c_str(), &info, &diagnostic) == SONY2FUJI_STATUS_UNSUPPORTED,
+               "an incompatible RLOOK was accepted");
+    Pair bad;
+    configure(wrongFile);
+    expect(decode(bad) == SONY2FUJI_STATUS_UNSUPPORTED && !bad.value.owner_token,
+           "different camera model was accepted");
+    configure(plainFile);
+    const auto fingerprint = std::string(development.profile_sha256);
+    expect(std::string(info.camera_model) == cameraModel && fingerprint.size() == 64,
+           "profile probe did not publish identity");
+    development.profile_sha256[0] = fingerprint[0] == '0' ? '1' : '0';
+    expect(decode(bad) == SONY2FUJI_STATUS_INVALID_ARGUMENT && !bad.value.owner_token,
+           "incorrect profile hash was accepted");
+    development.profile_sha256[0] = fingerprint[0];
+    development.base.struct_size = sizeof(development.base);
+    expect(decode(bad) == SONY2FUJI_STATUS_INVALID_ARGUMENT && !bad.value.owner_token,
+           "truncated HDR development v2 was accepted");
+    development.base.struct_size = sizeof(development);
+
+    Pair plain, calibrated, compiled;
+    expect(decode(plain) == SONY2FUJI_STATUS_OK, "decode Bayer RAW with linear DCP");
+    configure(shiftedFile);
+    expect(decode(calibrated) == SONY2FUJI_STATUS_OK, "decode Bayer RAW with shifted DCP");
+    configure(compiledFile);
+    expect(decode(compiled) == SONY2FUJI_STATUS_OK, "decode Bayer RAW with compiled HDR RLOOK");
+    const auto& a = plain.value.hdr;
+    const auto& b = calibrated.value.hdr;
+    expect(a.size_bytes == b.size_bytes && b.size_bytes == compiled.value.hdr.size_bytes &&
+           std::memcmp(b.data, compiled.value.hdr.data, b.size_bytes) == 0 &&
+           std::memcmp(calibrated.value.sdr.data, compiled.value.sdr.data, compiled.value.sdr.size_bytes) == 0,
+           "DCP and HDR RLOOK differ across renditions");
+    expect(std::memcmp(plain.value.sdr.data, calibrated.value.sdr.data, plain.value.sdr.size_bytes) != 0,
+           "camera profile did not affect SDR base development");
+    expect(std::memcmp(plain.value.source_sha256, calibrated.value.source_sha256, 32) == 0,
+           "profile must not replace the source photo identity");
+    bool negative = false, aboveWhite = false;
+    for (uint32_t y = 0; y < a.height; ++y) {
+        const auto* original = reinterpret_cast<const float*>(static_cast<const uint8_t*>(a.data) + y * a.stride_bytes);
+        const auto* adjusted = reinterpret_cast<const float*>(static_cast<const uint8_t*>(b.data) + y * b.stride_bytes);
+        for (uint32_t x = 0; x < a.width; ++x, original += 3, adjusted += 3) {
+            expect(std::abs(adjusted[0] - (4 * original[0] - 3 * original[1])) < 2e-5f &&
+                   std::abs(adjusted[1] - original[1]) < 2e-5f && std::abs(adjusted[2] - original[2]) < 2e-5f,
+                   "camera profile stopped being a linear transform");
+            negative |= adjusted[0] < -.01f;
+            aboveWhite |= adjusted[0] > 1.01f;
+        }
+    }
+    expect(negative && aboveWhite, "DCP path clipped signed or super-white values");
+    if (syntheticFixture) {
+        std::ifstream fixture(source, std::ios::binary);
+        const Bytes original((std::istreambuf_iterator<char>(fixture)), std::istreambuf_iterator<char>());
+        expect(original.size() > 8 && original[0] == 'I' && original[1] == 'I', "read Bayer DNG test fixture");
+        auto littleEndian = [&](size_t offset, size_t count) {
+            uint32_t value = 0;
+            for (size_t i = 0; i < count; ++i) value |= uint32_t(original.at(offset + i)) << (8 * i);
+            return value;
+        };
+        const size_t ifd = littleEndian(4, 4);
+        const size_t count = littleEndian(ifd, 2);
+        const size_t begin = ifd + 2, end = begin + count * 12;
+        expect(end + 4 <= original.size() && littleEndian(end, 4) == 0, "Bayer DNG must have a single IFD");
+        size_t insertion = begin;
+        while (insertion < end && littleEndian(insertion, 2) < 50727) insertion += 12;
+        expect(insertion == end || littleEndian(insertion, 2) > 50727, "fixture already contains AnalogBalance");
+        auto altered = original;
+        const size_t analogBalance = altered.size();
+        for (int value : {2, 1, 1}) appendRational(altered, value, 1);
+        const size_t replacementIfd = altered.size();
+        appendInteger(altered, count + 1, 2);
+        altered.insert(altered.end(), original.begin() + begin, original.begin() + insertion);
+        appendInteger(altered, 50727, 2);
+        appendInteger(altered, 5, 2);
+        appendInteger(altered, 3, 4);
+        appendInteger(altered, analogBalance, 4);
+        altered.insert(altered.end(), original.begin() + insertion, original.begin() + end + 4);
+        for (size_t i = 0; i < 4; ++i) altered[4 + i] = static_cast<uint8_t>(replacementIfd >> (8 * i));
+        const auto alteredFile = write("analog-balance.dng", altered.data(), altered.size());
+        sony2fuji_hdr_source_info_v1 sourceInfo{1, sizeof(sony2fuji_hdr_source_info_v1)};
+        expect(sony2fuji_hdr_probe_camera_raw(alteredFile.c_str(), &sourceInfo, &diagnostic) == SONY2FUJI_STATUS_OK,
+               "fixture with DNG AnalogBalance is an ordinary HDR RAW");
+        expect(decodeFile(alteredFile.c_str(), bad) == SONY2FUJI_STATUS_UNSUPPORTED &&
+               diagnostic.reason == SONY2FUJI_HDR_REASON_CAMERA_PROFILE && !bad.value.owner_token,
+               "nonidentity DNG AnalogBalance silently used the reference camera matrix");
+
+        const auto changedWhite = makeProfile(false, cameraModel, false, true);
+        const auto changedWhiteFile = write("changed-white.dcp", changedWhite.data(), changedWhite.size());
+        configure(changedWhiteFile);
+        Pair asShot;
+        expect(decode(asShot) == SONY2FUJI_STATUS_OK && std::memcmp(a.data, asShot.value.hdr.data, a.size_bytes) == 0,
+               "DCP ColorMatrix changed the source as-shot white balance");
+        development.base.white_balance = SONY2FUJI_HDR_CAMERA_WB_TEMPERATURE;
+        development.base.temperature = 6500;
+        options.intent = SONY2FUJI_INTENT_PREVIEW;
+        options.long_edge = 64;
+        Pair custom, changedCustom;
+        expect(decode(changedCustom) == SONY2FUJI_STATUS_OK, "decode custom WB using DCP ColorMatrix");
+        configure(plainFile);
+        expect(decode(custom) == SONY2FUJI_STATUS_OK &&
+               custom.value.hdr.size_bytes == changedCustom.value.hdr.size_bytes,
+               "decode custom WB using the control profile");
+        const auto* control = static_cast<const float*>(custom.value.hdr.data);
+        const auto* mapped = static_cast<const float*>(changedCustom.value.hdr.data);
+        // The non-diagonal ColorMatrix changes only the red response of the
+        // neutral from X to X+Y. At 6500 K, X/(X+Y) is approximately 0.49.
+        for (size_t i = 0; i < custom.value.hdr.size_bytes / sizeof(float); i += 3) {
+            expect(control[i] > 0 && std::abs(mapped[i] / control[i] - .49f) < .012f &&
+                   std::abs(mapped[i + 1] - control[i + 1]) < 4e-4f &&
+                   std::abs(mapped[i + 2] - control[i + 2]) < 4e-4f,
+                   "custom WB used the wrong XYZ-to-camera matrix direction");
+        }
+        options.intent = SONY2FUJI_INTENT_FINAL;
+        options.long_edge = 0;
+
+        sony2fuji_hdr_request_v1 request{1, sizeof(sony2fuji_hdr_request_v1)};
+        request.hdr_processing_version = 1;
+        request.intent = SONY2FUJI_INTENT_FINAL;
+        request.temperature = 6500;
+        request.crop_width = request.crop_height = 1;
+        struct Session {
+            sony2fuji_session* value = nullptr;
+            ~Session() { sony2fuji_session_destroy(value); }
+        } session;
+        expect(sony2fuji_session_create(&session.value) == SONY2FUJI_STATUS_OK, "create HDR render session");
+        Pair rendered;
+        expect(sony2fuji_hdr_render(session.value, &compiled.value, &request, &rendered.value, &diagnostic) == SONY2FUJI_STATUS_OK,
+               "render the full-resolution calibrated pair");
+        sony2fuji_hdr_export_config_v1 config{1, sizeof(sony2fuji_hdr_export_config_v1)};
+        config.jpeg_quality = 95;
+        config.base_color = SONY2FUJI_HDR_COLOR_SRGB;
+        config.metadata_policy = SONY2FUJI_HDR_METADATA_ISO_XMP;
+        expect(sony2fuji_hdr_export_jpeg(&rendered.value, &config, compiledFile.c_str(), &diagnostic) ==
+               SONY2FUJI_STATUS_INVALID_ARGUMENT && diagnostic.reason == SONY2FUJI_HDR_REASON_SAME_FILE,
+               "HDR export replaced its calibration resource");
+        const auto output = (directory / "calibrated.jpg").u8string();
+        expect(sony2fuji_hdr_export_jpeg(&rendered.value, &config, output.c_str(), &diagnostic) == SONY2FUJI_STATUS_OK,
+               "export HDR JPEG with the selected profile");
+        Pair reimported;
+        expect(sony2fuji_hdr_decode(output.c_str(), &options, &reimported.value, &diagnostic) == SONY2FUJI_STATUS_OK &&
+               reimported.value.hdr.width == a.width && reimported.value.hdr.height == a.height,
+               "reimport calibrated HDR JPEG");
+    }
+    std::cout << "PASS HDR matrix DCP and RLOOK parity, grey axis, signed channels and super-white\n";
+}
+
 int commandLine(const std::string& sourcePath, const std::string& outputPath) {
     const auto source = std::filesystem::u8path(sourcePath);
     const auto destination = std::filesystem::u8path(outputPath);
@@ -272,9 +528,14 @@ int commandLine(const std::string& sourcePath, const std::string& outputPath) {
 } // namespace
 
 int runMain(int argc, const std::vector<std::string>& arguments) {
+    if (argc == 4 && arguments[1] == "--hdr-camera") {
+        hdrCameraCalibrationTests(arguments[2].c_str(), arguments[3].c_str(), false);
+        return 0;
+    }
     if (argc == 3) return commandLine(arguments[1], arguments[2]);
     if (argc != 1) return 2;
     unitTests();
+    hdrCameraCalibrationTests(TEST_FIXTURE_DIR "/bayer-demosaic.dng", "RawLab synthetic Bayer", true);
     std::cout << "PASS dcp_compiler" << std::endl;
     return 0;
 }

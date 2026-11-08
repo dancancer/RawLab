@@ -48,61 +48,106 @@ float correlatedNoise(float x, float y, uint32_t seed) {
     return (top * (1 - fy) + bottom * fy) / std::sqrt(variance);
 }
 
-float luminance(const RGB& pixel) {
+float sdrLuminance(const RGB& pixel) {
     return std::clamp(0.2126f * pixel.r + 0.7152f * pixel.g + 0.0722f * pixel.b, 0.f, 1.f);
+}
+
+double linearLuminance(const RGB& pixel) {
+    return .2126 * pixel.r + .7152 * pixel.g + .0722 * pixel.b;
 }
 
 } // namespace
 
-void applyPhotoEffects(ImageData& image, const PhotoEffectsOptions& options) {
-    if (!options.active() || image.width <= 0 || image.height <= 0) return;
+PhotoEffectSampler::PhotoEffectSampler(const PhotoEffectsOptions& options, int width, int height)
+    : options_(options), centerX_(width * .5f), centerY_(height * .5f) {
     const float circle = std::max(0.f, options.vignetteRoundness / 100);
-    const float shortSide = float(std::min(image.width, image.height));
-    const float axisX = (image.width * (1 - circle) + shortSide * circle) * 0.5f;
-    const float axisY = (image.height * (1 - circle) + shortSide * circle) * 0.5f;
-    const float power = 2 + std::max(0.f, -options.vignetteRoundness / 100) * 6;
+    const float shortSide = float(std::min(width, height));
+    axisX_ = (width * (1 - circle) + shortSide * circle) * .5f;
+    axisY_ = (height * (1 - circle) + shortSide * circle) * .5f;
+    power_ = 2 + std::max(0.f, -options.vignetteRoundness / 100) * 6;
     const float radius = 0.35f + options.vignetteMidpoint * 0.01f;
     const float feather = options.vignetteFeather / 100;
-    const float inner = radius * (1 - feather * 0.8f);
+    inner_ = radius * (1 - feather * 0.8f);
     const float outer = radius + feather * 0.4f;
-    const float transition = std::max(outer - inner, 2.f / shortSide);
-    const float grainScale = 0.7f + options.grainSize * 0.055f;
-    const float rough = options.grainRoughness * 0.007f;
-    const float grainNormalization = 1 / std::sqrt((1 - rough) * (1 - rough) + rough * rough);
-    const auto cancellation = processingCancellation;
+    transition_ = std::max(outer - inner_, 2.f / shortSide);
+    grainScale_ = 0.7f + options.grainSize * 0.055f;
+    rough_ = options.grainRoughness * 0.007f;
+    grainNormalization_ = 1 / std::sqrt((1 - rough_) * (1 - rough_) + rough_ * rough_);
+}
 
+float PhotoEffectSampler::vignetteGain(int x, int y, float luminance) const {
+    const float nx = std::abs((x + .5f - centerX_) / axisX_);
+    const float ny = std::abs((y + .5f - centerY_) / axisY_);
+    const float distance = power_ == 2 ? std::sqrt(nx * nx + ny * ny) :
+        std::pow(std::pow(nx, power_) + std::pow(ny, power_), 1 / power_);
+    float mask = smooth((distance - inner_) / transition_);
+    if (options_.vignetteAmount < 0)
+        mask *= 1 - options_.vignetteHighlights / 100 * smooth((luminance - .5f) * 2);
+    return std::exp2(-std::abs(options_.vignetteAmount) * .03f * mask);
+}
+
+float PhotoEffectSampler::grainNoise(int x, int y) const {
+    const float u = (x + .5f) / grainScale_, v = (y + .5f) / grainScale_;
+    const float fine = correlatedNoise(u, v, 0x243f6a88u);
+    const float coarse = correlatedNoise(u * .47f + 17.3f, v * .47f + 31.7f, 0x85a308d3u);
+    return ((1 - rough_) * fine + rough_ * coarse) * grainNormalization_;
+}
+
+RGB PhotoEffectSampler::applySRGB(RGB pixel, int x, int y) const {
+    if (options_.vignetteAmount != 0) {
+        const float gain = vignetteGain(x, y, sdrLuminance(pixel));
+        const auto shade = [&](float value) {
+            return options_.vignetteAmount < 0 ? value * gain : 1 - (1 - value) * gain;
+        };
+        pixel = {shade(pixel.r), shade(pixel.g), shade(pixel.b)};
+    }
+    if (options_.grainAmount > 0) {
+        const float luma = sdrLuminance(pixel);
+        const float delta = grainNoise(x, y) * options_.grainAmount * .0012f * std::sqrt(4 * luma * (1 - luma));
+        pixel = {std::clamp(pixel.r + delta, 0.f, 1.f),
+            std::clamp(pixel.g + delta, 0.f, 1.f), std::clamp(pixel.b + delta, 0.f, 1.f)};
+    }
+    return pixel;
+}
+
+RGB PhotoEffectSampler::applyExtendedLinear(RGB pixel, int x, int y, double peak) const {
+    if (options_.vignetteAmount != 0) {
+        const double luma = linearLuminance(pixel);
+        const float gain = vignetteGain(x, y, float(std::clamp(luma, 0., 1.)));
+        if (options_.vignetteAmount < 0) pixel = {pixel.r * gain, pixel.g * gain, pixel.b * gain};
+        else if (luma < 1) {
+            const float mix = (1 - gain) * (1 - smooth(float((luma - .5) * 2)));
+            pixel = {pixel.r * (1 - mix) + mix, pixel.g * (1 - mix) + mix, pixel.b * (1 - mix) + mix};
+        }
+    }
+    if (options_.grainAmount > 0) {
+        const double luma = linearLuminance(pixel);
+        if (luma > 0) {
+            const double envelope = 2 * std::sqrt(luma) / (1 + luma);
+            const float gain = float(std::exp2(grainNoise(x, y) * options_.grainAmount * .002 * envelope));
+            pixel = {pixel.r * gain, pixel.g * gain, pixel.b * gain};
+        }
+    }
+    if (peak > 0) {
+        const double luma = linearLuminance(pixel);
+        if (luma > peak) {
+            const double gain = peak / luma;
+            pixel = {float(pixel.r * gain), float(pixel.g * gain), float(pixel.b * gain)};
+        }
+    }
+    return pixel;
+}
+
+void applyPhotoEffects(ImageData& image, const PhotoEffectsOptions& options) {
+    if (!options.active() || image.width <= 0 || image.height <= 0) return;
+    const PhotoEffectSampler sampler(options, image.width, image.height);
+    const auto cancellation = processingCancellation;
 #ifdef _OPENMP
 #pragma omp parallel for if (image.pixels.size() >= (1u << 16))
 #endif
     for (int y = 0; y < image.height; ++y) {
         if (cancellation.cancelled()) continue;
-        for (int x = 0; x < image.width; ++x) {
-            auto& pixel = image.pixels[size_t(y) * image.width + x];
-            if (options.vignetteAmount != 0) {
-                const float nx = std::abs((x + 0.5f - image.width * 0.5f) / axisX);
-                const float ny = std::abs((y + 0.5f - image.height * 0.5f) / axisY);
-                const float distance = power == 2 ? std::sqrt(nx * nx + ny * ny) :
-                    std::pow(std::pow(nx, power) + std::pow(ny, power), 1 / power);
-                float mask = smooth((distance - inner) / transition);
-                if (options.vignetteAmount < 0)
-                    mask *= 1 - options.vignetteHighlights / 100 * smooth((luminance(pixel) - 0.5f) * 2);
-                const float gain = std::exp2(-std::abs(options.vignetteAmount) * 0.03f * mask);
-                const auto shade = [&](float value) {
-                    return options.vignetteAmount < 0 ? value * gain : 1 - (1 - value) * gain;
-                };
-                pixel = {shade(pixel.r), shade(pixel.g), shade(pixel.b)};
-            }
-            if (options.grainAmount > 0) {
-                const float u = (x + 0.5f) / grainScale, v = (y + 0.5f) / grainScale;
-                const float fine = correlatedNoise(u, v, 0x243f6a88u);
-                const float coarse = correlatedNoise(u * 0.47f + 17.3f, v * 0.47f + 31.7f, 0x85a308d3u);
-                const float noise = ((1 - rough) * fine + rough * coarse) * grainNormalization;
-                const float luma = luminance(pixel);
-                const float delta = noise * options.grainAmount * 0.0012f * std::sqrt(4 * luma * (1 - luma));
-                pixel = {std::clamp(pixel.r + delta, 0.f, 1.f),
-                         std::clamp(pixel.g + delta, 0.f, 1.f), std::clamp(pixel.b + delta, 0.f, 1.f)};
-            }
-        }
+        for (int x = 0; x < image.width; ++x) image.at(x, y) = sampler.applySRGB(image.at(x, y), x, y);
     }
     cancellation.check();
 }

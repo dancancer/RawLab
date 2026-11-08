@@ -444,9 +444,9 @@ and XMP gain-map descriptions, and defaults to quality 95. Optional long edge is
 Metadata is copied from the SHA-256-verified original and the gain map is generated
 from the edited HDR/SDR pair.
 
-CLI capabilities advertises v6, `hdr_raster` and `hdr_jpeg` only on the supported
-Apple runtime (macOS15+/iOS18+). Windows/Android and macOS14 keep the old capability
-set. CLI `--preview` renders the same FINAL HDR request at the requested size,
+CLI capabilities advertises v6, `hdr_raster` and `hdr_jpeg` when the runtime
+supports HDR. Apple builds require macOS 15 or iOS 18. CLI `--preview` renders
+the same FINAL HDR request at the requested size,
 then publishes the edited **SDR rendition** as PNG with `rendition="sdr"`.
 This is separate from HDR display; the headroom values in results describe
 source/edited content and never the current screen. MCP negotiates v6 with its
@@ -473,3 +473,78 @@ are unsupported. Ordinary display adjustments and compatible looks remain availa
 and mode names. Recipe syntax can be normalized without the renderer, while
 normal rendering returns an explicit error in builds without X3F support. Camera
 and saved-parameter admission are described in the [X3F contract](x3f-rendering.md).
+
+## V8 HDR tone
+
+[Schema 8](edit-json-v8.schema.json) uses `rawlab_hdr` processing version 2
+and the source, geometry and output contracts from schema 6. The optional
+`edits.tone.black_point`, `white_point` and `s_curve` use [-1,1], default
+to zero, and map to percentages in the native request. Custom `curve` mode
+requires zero `s_curve`. Its normalized coordinates represent [-8,+8] EV
+around SDR reference white. See the [color contract](hdr-color-contract.md) and
+the [schema 8 example](../examples/edit-recipes/hdr-v8.json).
+
+An HDR-capable CLI lists 8 in `recipe_versions` and exposes
+`hdr.processing_versions` and `hdr.tone_recipe_version`. Schema 6 still
+uses the version 1 request and renders its original pixels.
+
+## V9 HDR color
+
+[Schema 9](edit-json-v9.schema.json) selects `rawlab_hdr` processing version
+3. It keeps the HDR source, tone, geometry and output fields of schema 8.
+Optional `edits.color.vibrance` uses [-1,1]. The `edits.hsl` arrays contain
+eight values in [-100,100] per axis. `edits.color_grading` accepts shadows,
+midtones and highlights with hue in [0,360) and saturation in [0,100].
+Omitted controls are neutral. See the [example](../examples/edit-recipes/hdr-v9.json)
+and the [HDR color contract](hdr-color-contract.md).
+
+The CLI advertises schema 9 through `recipe_versions` and
+`hdr.color_recipe_version`. Schemas 6 and 8 continue to select their
+original processing versions.
+
+## V10 HDR peak and SDR base
+
+[Schema 10](edit-json-v10.schema.json) selects `rawlab_hdr` processing
+version 4. It adds the optional `edits.rendition` group. `peak_limit_ev`
+accepts [0,6] with zero selecting an unlimited peak. `sdr_exposure_ev`
+accepts [-4,4] and `sdr_contrast` and `sdr_saturation` accept [-1,1].
+These controls affect the edited HDR master and its SDR base as described in
+the [HDR color contract](hdr-color-contract.md). Omitted values are neutral.
+See the [example](../examples/edit-recipes/hdr-v10.json).
+
+The CLI advertises schema 10 through `recipe_versions` and
+`hdr.rendition_recipe_version`. Schemas 6, 8 and 9 continue to select their
+original processing versions.
+
+## V11 HDR vignette and grain
+
+[Schema 11](edit-json-v11.schema.json) selects `rawlab_hdr` processing
+version 5. The optional `edits.effects` group accepts vignette amount and
+roundness in [-100,100]. Vignette midpoint, feather, highlight protection,
+grain amount, size and roughness use [0,100]. Omitted values keep their
+defaults. See the [example](../examples/edit-recipes/hdr-v11.json) and the
+[HDR color contract](hdr-color-contract.md).
+
+The CLI advertises schema 11 through `recipe_versions` and
+`hdr.effects_recipe_version`. Earlier HDR schemas retain their own processing.
+
+## V12 HDR detail
+
+[Schema 12](edit-json-v12.schema.json) selects `rawlab_hdr` processing version 6.
+The optional `edits.detail` group accepts sharpening in [0,2], clarity and
+dehaze in [-1,1], and rendered RGB denoise in [0,1]. Omitted controls are zero.
+See the [example](../examples/edit-recipes/hdr-v12.json) and the
+[HDR color contract](hdr-color-contract.md).
+
+The CLI advertises schema 12 through `recipe_versions` and
+`hdr.detail_recipe_version`.
+
+## V13 declared HDR look
+
+[Schema 13](edit-json-v13.schema.json) selects `rawlab_hdr` processing version 7.
+An optional `edits.look` group contains a CUBE `path` relative to the recipe
+or absolute, its lowercase SHA-256 `sha256`, and `strength` in [0,2]. Strength
+defaults to 1. The asset must declare the HDR profile in the
+[HDR color contract](hdr-color-contract.md). The CLI verifies the fingerprint
+before publishing preview or export output. The capabilities response
+advertises `hdr.look_recipe_version` and `hdr.look_profile`.
