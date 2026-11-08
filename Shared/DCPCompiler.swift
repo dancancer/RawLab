@@ -56,6 +56,7 @@ enum DCPCompiler {
     }
 
     static func compile(data: Data, sourceName: String, options: DCPImportOptions = .init()) throws -> Data {
+        if options.toneCurveJSON?.isEmpty == true { throw DCPCompilerError.invalidToneCurve }
         var blob = sony2fuji_blob()
         defer { sony2fuji_release_blob(&blob) }
         var reason = SONY2FUJI_DCP_ERROR_NONE

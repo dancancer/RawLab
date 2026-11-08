@@ -150,6 +150,10 @@ private struct MacDCPImportOptionsView: View {
                 errorMessage = L10n.text("DCP 文件或外观数据超过安全大小限制。")
                 return
             }
+            guard !data.isEmpty else {
+                errorMessage = DCPCompilerError.invalidToneCurve.localizedDescription
+                return
+            }
             curveData = data
             curveFileName = url.lastPathComponent
         } catch {

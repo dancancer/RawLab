@@ -166,11 +166,8 @@ extension RawEditorViewModel {
                     importIdentity = resolvedIdentity
                     let versioned = try resolvedIdentity.flatMap { try self.editPersistence?.versionedState(for: $0) }
                     let record = versioned?.state
-                    var restoredSettings = record?.settings ?? .default
-                    if record == nil && x3fModeOverride == nil && source.isRaw &&
-                        inputURL.pathExtension.lowercased() == "x3f" {
-                        restoredSettings.x3fMode = try self.processor.x3fDefaultMode(for: inputURL)
-                    }
+                    var restoredSettings = try record?.settings ?? self.processor.defaultSettings(
+                        for: inputURL, isRaw: source.isRaw, x3fModeOverride: x3fModeOverride)
                     if let x3fModeOverride { restoredSettings.x3fMode = x3fModeOverride }
                     attemptedX3fMode = restoredSettings.x3fMode
                     context["restoredEdits"] = String(record != nil)

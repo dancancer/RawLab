@@ -16,9 +16,8 @@ final class IOSHDRBatchPreparation {
         let record=try store.versionedState(for:target.identity)
         let info=try HDRSourceInfo.probe(target.sourceURL)
         let supportsProRAWHDR = try HDRSourceInfo.probeRAW(target.sourceURL)?.proRAW != nil
-        var defaults=RawSettings.default
-        if info != nil { defaults.hdr=HDRSettings() }
-        let previous=record.state ?? PhotoEditState(settings:defaults)
+        let previous=try record.state ?? PhotoEditState(settings:Sony2FujiProcessor().defaultSettings(
+            for:target.sourceURL,isRaw:target.sourceKind == .raw))
         if supportsProRAWHDR, previous.settings.isHDREditing {
             try ProRAWSource.validatedDecodeVersion(previous.settings.proRAWDecodeVersion)
         }

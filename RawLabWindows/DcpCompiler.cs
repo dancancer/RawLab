@@ -70,6 +70,8 @@ internal static class DcpCompiler
 
         var data = ReadBounded(sourceInfo.FullName);
         var toneCurve = options?.ToneCurveJson;
+        if (toneCurve is { Length: 0 })
+            throw new DcpCompileException(DcpErrorReason.InvalidTone);
         if (toneCurve is { LongLength: > MaxToneCurveJsonBytes })
             throw new DcpCompileException(DcpErrorReason.TooLarge);
 
@@ -123,7 +125,9 @@ internal static class DcpCompiler
             throw new IOException(Loc.Text("无法读取或写入文件，请检查路径和访问权限。"));
         if (sourceInfo.Length > MaxToneCurveJsonBytes)
             throw new DcpCompileException(DcpErrorReason.TooLarge);
-        return ReadBounded(sourceInfo.FullName, MaxToneCurveJsonBytes);
+        var data = ReadBounded(sourceInfo.FullName, MaxToneCurveJsonBytes);
+        if (data.Length == 0) throw new DcpCompileException(DcpErrorReason.InvalidTone);
+        return data;
     }
 
     private static byte[] ReadBounded(string source, long limit = MaxSourceBytes)

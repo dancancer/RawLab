@@ -83,9 +83,10 @@ extension EditorModel {
         if geometryDraft != nil { cancelGeometryDraft() }
         saveWork?.cancel(); scheduler.setInteracting(false); interactionEntry = nil
         guard let committedEdit else { return false }
-        var defaults = Adjustments()
-        defaults.exposureMode = RenderEngine.isRasterInput(photo.url) ? .sensor : .preview
-        restoreAdjustmentState(committedEdit.state ?? PhotoEditState(settings: defaults, filmID: ""))
+        do {
+            let restored = try committedEdit.state ?? PhotoEditState(settings: RenderEngine.defaultSettings(for: photo.url), filmID: "")
+            restoreAdjustmentState(restored)
+        } catch { saveError = error.localizedDescription; return false }
         dirty = false; saveError = nil; editRevision = UUID(); schedule(forceExact: true)
         return true
     }

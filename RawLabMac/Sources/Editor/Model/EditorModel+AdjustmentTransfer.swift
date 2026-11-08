@@ -78,19 +78,18 @@ extension EditorModel {
             (excludingIdentity == nil || (try? BatchExportItem.resourceKey($0)) != excludingIdentity) }.map { url in
             let path = url.resolvingSymlinksInPath().standardizedFileURL.path
             let collectionPhoto = collection ? batchSelectionPhotos.values.first { $0.url.path == path } : nil
-            var defaults = Adjustments()
-            defaults.exposureMode = RenderEngine.isRasterInput(url) ? .sensor : .preview
+            let store = editStore
             var context = adjustmentTransferContext(for: url)
-            if context.sourceIsHDR { defaults.hdr=HDRSettings() }
             // 校验实际 native 请求；自动匹配结果只用于目标预检，不进入 payload。
             context.validateLensRequest = { lens in
-                var request = Adjustments(); request.lensCorrection = lens
+                var request = try store?.state(for: url)?.settings ?? RenderEngine.defaultSettings(for: url)
+                request.lensCorrection = lens
                 let frame = try RenderEngine().render(url, settings: request, lut: nil, edge: 256)
                 guard let info = frame?.lensInfo,
                       !lens.distortion || info.appliedDistortion,
                       !lens.tca || info.appliedTCA else { throw AdjustmentTransferError.incompatible("lens calibration") }
             }
-            return AdjustmentTransferTarget(url: url, defaultState: PhotoEditState(settings: defaults, filmID: ""), context: context, expectedIdentity: collectionPhoto?.original,
+            return AdjustmentTransferTarget(url: url, defaultState: PhotoEditState(settings: Adjustments(), filmID: ""), context: context, expectedIdentity: collectionPhoto?.original,
                 isCurrent: { [weak self] in
                     let check = {
                         guard let self, self.sourceRevision == source else { return false }
@@ -113,6 +112,8 @@ extension EditorModel {
                     hydrated.settings.resolveWhiteBalance(frame.asShotWhiteBalance)
                     hydrated.settings.resolveRawNoiseReductionSupport(frame.supportsRawNoiseReduction)
                     return hydrated
+                }, resolveDefaultState: {
+                    try PhotoEditState(settings: RenderEngine.defaultSettings(for: url), filmID: "")
                 })
         }
     }

@@ -47,8 +47,12 @@ public partial class MainWindow
     {
         if(file==null || currentEditRecord==null)throw new EditPersistenceConflict();
         var candidate=new SavedEdit(OriginalIdentity.Read(file),snapshot,CurrentLookIdentity());
-        var defaults=PhotoInput.PrepareHDRInputSettings(file,new Adjustments());defaults.ResolveWhiteBalance(settings.AsShot);
-        var result=TransferSession.CommitEdit(currentEditRecord,candidate,new(candidate.Identity,defaults.Capture(),null));
+        SavedEdit? defaultEdit=null;
+        if(currentEditRecord.Edit==null) {
+            var defaults=PhotoInput.PrepareDefaultSettings(file);defaults.ResolveWhiteBalance(settings.AsShot);
+            defaultEdit=new(candidate.Identity,defaults.Capture(),null);
+        }
+        var result=TransferSession.CommitEdit(currentEditRecord,candidate,defaultEdit);
         if(result.Status is not (AdjustmentStatus.Applied or AdjustmentStatus.Unchanged))throw result.Error ?? new EditPersistenceConflict();
         var previousLook=currentEditRecord.Edit?.Look;
         currentEditRecord=result.Saved;
@@ -71,7 +75,7 @@ public partial class MainWindow
         if(!editStore!.VersionedState(file).SameAs(saved))throw new EditPersistenceConflict();
         var calibration=settings.AsShot;
         var previousLook=currentEditRecord?.Edit?.Look;
-        currentEditRecord=saved;settings=saved.Edit?.Settings.Restore() ?? PhotoInput.PrepareHDRInputSettings(file,new Adjustments());
+        currentEditRecord=saved;settings=saved.Edit?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(file);
         if(calibration!=null)settings.ResolveWhiteBalance(calibration);
         lut=saved.Edit is {} edit ? ResolveLook(edit) : null;
         if(lut!=null && !films.Any(f=>StringComparer.OrdinalIgnoreCase.Equals(f.Path,lut))) {

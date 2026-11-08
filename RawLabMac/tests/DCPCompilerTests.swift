@@ -40,6 +40,15 @@ struct DCPCompilerTests {
         }
         rejects(DCPTestFixtures.make(missing: [50940]), reason: .missingToneCurve, "missing tone is not inferred as identity")
         rejects(DCPTestFixtures.make(missing: [51110]), reason: .automaticBlack, "missing black policy is Adobe Auto, not None")
+        for fixture in [DCPTestFixtures.make(), DCPTestFixtures.make(missing: [50940])] {
+            do {
+                _ = try DCPCompiler.compile(data: fixture, sourceName: "empty-curve.dcp",
+                    options: DCPImportOptions(toneCurveJSON: Data()))
+                check(false, "an explicitly empty external curve is invalid even with an embedded curve")
+            } catch let error as DCPCompilerError {
+                check(error == .invalidToneCurve, "an empty external curve has the shared invalid-curve error")
+            }
+        }
         let externalTone = DCPImportOptions(toneCurveJSON: Data("[[0,0],[1,1]]".utf8))
         let compiledWithExternalTone = try DCPCompiler.compile(
             data: DCPTestFixtures.make(missing: [50940]), sourceName: "external-tone.dcp", options: externalTone)

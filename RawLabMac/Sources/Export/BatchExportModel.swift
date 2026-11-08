@@ -27,9 +27,7 @@ final class MacHDRBatchPreparation {
         let record=try store.versionedState(for:item.input)
         let raster=RenderEngine.isRasterInput(item.input),info=try HDRSourceInfo.probe(item.input)
         let supportsProRAWHDR = try HDRSourceInfo.probeRAW(item.input)?.proRAW != nil
-        var defaults=Adjustments(); defaults.exposureMode=raster ? .sensor : .preview
-        if info != nil { defaults.hdr=HDRSettings() }
-        let target=record.state ?? PhotoEditState(settings:defaults,filmID:"")
+        let target=try record.state ?? PhotoEditState(settings:RenderEngine.defaultSettings(for:item.input),filmID:"")
         if supportsProRAWHDR, target.settings.isHDREditing {
             try ProRAWSource.validatedDecodeVersion(target.settings.proRAWDecodeVersion)
         }

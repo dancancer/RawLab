@@ -103,7 +103,7 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                 if(activeFailure(photo.ID) is {} draft)throw new InvalidOperationException(draft);
                 photo.Validate();var record=store.VersionedState(photo.Path);
                 if(!record.Identity.SameFile(photo.Identity))throw new EditPersistenceConflict();
-                var settings=(record.Edit?.Settings.Restore() ?? PhotoInput.PrepareHDRInputSettings(photo.Path,new Adjustments())).Capture();
+                var settings=(record.Edit?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(photo.Path)).Capture();
                 ValidateHDRFormat(photo.Path,settings,format);
                 var hdr = settings.HDR is { Mode: HDRMode.Hdr };
                 if(!hdr && settings.AIDenoiseEnabled) {
@@ -132,7 +132,7 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                 row.Photo.Validate();
                 var current=store.VersionedState(row.Photo.Path);
                 if(!current.SameAs(row.Record))throw new EditPersistenceConflict();
-                var expected=(current.Edit?.Settings.Restore() ?? PhotoInput.PrepareHDRInputSettings(row.Photo.Path,new Adjustments())).Capture();
+                var expected=(current.Edit?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(row.Photo.Path)).Capture();
                 ValidateHDRFormat(row.Photo.Path,expected,review.Format);
                 if(!expected.SameAs(row.Settings!))throw new EditPersistenceConflict();
                 if(expected.HDR is not { Mode: HDRMode.Hdr } && expected.AIDenoiseEnabled) {
@@ -180,7 +180,7 @@ internal sealed class BatchHDRPreparation(EditStore store, Func<SavedEdit,string
         var record = store.VersionedState(item.Input);
         if (!record.Identity.SameFile(item.Identity)) throw new EditPersistenceConflict();
         var target = record.Edit ?? new SavedEdit(record.Identity,
-            PhotoInput.PrepareHDRInputSettings(item.Input,new Adjustments()).Capture(),null);
+            PhotoInput.PrepareDefaultSettings(item.Input).Capture(),null);
         var source = new SavedEdit(new OriginalIdentity(job.Source,0,0,0),job.Settings,null);
         var hdr = job.Settings.HDR!;
         var fields = AdjustmentFields.HDRSupported;

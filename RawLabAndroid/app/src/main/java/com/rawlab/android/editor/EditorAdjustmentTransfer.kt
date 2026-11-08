@@ -55,8 +55,8 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
                     checkActive()
                     val validate = sourceValidator
                     val saved = store.versionedState(identity)
-                    val neutral = EditSettings(processing = saved.settings?.processing ?: EditSettings().processing,
-                        x3fMode = saved.settings?.x3fMode ?: EditSettings().x3fMode)
+                    val targetDefaults = saved.settings ?: photo.defaultEditSettings()
+                    val neutral = EditSettings(processing = targetDefaults.processing, x3fMode = targetDefaults.x3fMode)
                     val database = storage.lensDatabase()
                     val frame = NativeProcessor(NativeProcessor.CPU, database).use { native ->
                         if (saved.settings?.isHDREditing == true) {
@@ -82,7 +82,7 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
                                 throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "target lens calibration unavailable")
                         })
                     AdjustmentTransferTarget(identity, displayName,
-                        photo.defaultEditSettings(), transferContext,
+                        targetDefaults, transferContext,
                         isCurrent = { work.isCurrent(identity.value) }, validateSource = validate,
                         validateHistorySource = EditorAdjustmentHistory.historySourceValidation(photo))
                 } catch (error: java.util.concurrent.CancellationException) { throw error }

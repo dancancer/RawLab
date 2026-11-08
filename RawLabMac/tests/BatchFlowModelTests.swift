@@ -4,6 +4,13 @@ enum BatchFlowModelTests {
     static func x3fSnapshots(root: URL) throws {
         let directory = root.appendingPathComponent("x3f-snapshots")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        do {
+            _ = try RenderEngine.x3fDefaultMode(for: directory.appendingPathComponent("missing.X3F"))
+            try require(false, "missing X3F must fail with an IO diagnostic")
+        } catch {
+            try require(error.localizedDescription == L10n.text("无法读取或写入文件，请检查路径和访问权限。"),
+                        "X3F IO errors retain the file-access diagnostic")
+        }
         let normal = directory.appendingPathComponent("normal.X3F")
         let legacy = directory.appendingPathComponent("legacy.X3F")
         // 预检只验证文件身份和已保存设置；这里不触发 RAW 解码。
@@ -29,6 +36,15 @@ enum BatchFlowModelTests {
         let job = try model.freezeCollectionExport(review)
         try require(job.items.map { $0.frozen!.settings.x3fMode } == [.normal, .legacy],
                     "collection freeze retains mixed normal and legacy X3F identities")
+        let unedited = directory.appendingPathComponent("unedited.X3F")
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("lutools/tests/fixtures/linear-uncompressed.dng")
+        try FileManager.default.copyItem(at: fixture, to: unedited)
+        model.addCollectionPhotos([unedited])
+        let uneditedReview = try model.prepareCollectionExport(skipping: [], format: .png, longEdge: nil, directory: root)
+        let snapshot = uneditedReview.snapshots.first { $0.photo.url == unedited }
+        try require(snapshot?.record.state == nil && snapshot?.settings.x3fMode == .legacy,
+                    "no-record collection export uses the source's Legacy default without creating an edit")
     }
 
     static func automaticLaunch(root: URL, fixture: URL) throws {

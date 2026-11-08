@@ -40,6 +40,14 @@ import com.rawlab.android.settings.LookChoice
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.sourceDefaultSettings
 
+internal fun defaultEditSettingsFor(file: File, inputKind: PhotoInputKind, isHDRSource: Boolean,
+    cameraRaw: Boolean, x3fModeOverride: com.rawlab.android.settings.X3fMode? = null,
+    x3fDefaultMode: (File) -> com.rawlab.android.settings.X3fMode = { NativeProcessor.x3fDefaultMode(it) }): EditSettings {
+    val defaults = sourceDefaultSettings(isHDRSource, cameraRaw, inputKind)
+    return if (inputKind == PhotoInputKind.RAW && file.extension.equals("x3f", ignoreCase = true))
+        defaults.copy(x3fMode = x3fModeOverride ?: x3fDefaultMode(file)) else defaults
+}
+
 data class AlbumPhoto(val uri: Uri, val name: String, val album: String,
     val width: Int = 0, val height: Int = 0, val orientation: Int = 0) {
     val aspectRatio: Float? get() = albumAspectRatio(width, height, orientation)
@@ -52,7 +60,8 @@ data class ImportedPhoto(val uri: Uri, val name: String, val file: File,
     val isHDRSource get() = hdrSource != null
     val isCameraRawHDR get() = hdrSource?.isCameraRaw == true
     val isX3f get() = inputKind == PhotoInputKind.RAW && name.substringAfterLast('.', "").equals("x3f", ignoreCase = true)
-    fun defaultEditSettings(): EditSettings = sourceDefaultSettings(isHDRSource, cameraRaw = isCameraRawHDR)
+    fun defaultEditSettings(x3fModeOverride: com.rawlab.android.settings.X3fMode? = null): EditSettings =
+        defaultEditSettingsFor(file, inputKind, isHDRSource, isCameraRawHDR, x3fModeOverride)
 }
 
 internal fun albumAspectRatio(width: Int, height: Int, orientation: Int): Float? {

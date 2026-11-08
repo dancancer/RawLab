@@ -182,6 +182,29 @@ internal static class LookImportChecks
                     "DCP source bound is enforced before native compilation");
             }
 
+            var emptyCurve = Path.Combine(root, "empty-curve.json");
+            File.WriteAllBytes(emptyCurve, []);
+            try
+            {
+                _ = DcpCompiler.ReadToneCurveJson(emptyCurve);
+                throw new Exception("empty external tone curve was accepted");
+            }
+            catch (DcpCompileException error)
+            {
+                Check(error.Reason == DcpErrorReason.InvalidTone,
+                    "an empty curve file reports the shared invalid-curve error instead of silently disabling import");
+            }
+            try
+            {
+                _ = DcpCompiler.Compile(snapshotSource, new DcpImportOptions([], false));
+                throw new Exception("empty external tone curve options were accepted");
+            }
+            catch (DcpCompileException error)
+            {
+                Check(error.Reason == DcpErrorReason.InvalidTone,
+                    "an explicitly empty curve is rejected before invoking native compilation");
+            }
+
             RunRealNativeRegression(root);
         }
         finally

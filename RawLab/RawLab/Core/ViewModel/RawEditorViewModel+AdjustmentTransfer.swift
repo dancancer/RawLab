@@ -57,14 +57,17 @@ extension RawEditorViewModel {
             let targets = zip(photos, contexts).map { photo, initial -> IOSAdjustmentTransferTarget in
                 var context = initial
                 var validation: (() throws -> Void)?
+                var defaults = RawSettings.default
                 do {
                     if let error = photo.error { throw error }
                     guard let file = photo.file else { throw CocoaError(.fileReadNoSuchFile) }
                     let original = try Self.adjustmentSourceValidation(file)
                     validation = { try photo.validateSource?(); try original() }
                     try validation?()
+                    defaults = try self.editPersistence?.versionedState(for: photo.identity).state?.settings ??
+                        file.withReadAccess { try Sony2FujiProcessor().defaultSettings(for: $0, isRaw: photo.isRaw) }
                     if photo.isRaw {
-                        let saved = try self.editPersistence?.versionedState(for: photo.identity).state?.settings ?? .default
+                        let saved = defaults
                         var neutral = RawSettings.default
                         neutral.processing = saved.processing
                         neutral.x3fMode = saved.x3fMode
@@ -100,8 +103,6 @@ extension RawEditorViewModel {
                         } else { _ = try file.withReadAccess { try Sony2FujiProcessor().loadRasterBuffer(url:$0) } }
                     }
                 } catch { validation = { throw error } }
-                var defaults=RawSettings.default
-                if context.sourceIsHDR { defaults.hdr=HDRSettings() }
                 return IOSAdjustmentTransferTarget(identity: photo.identity, displayName: photo.displayName,
                     defaultState: PhotoEditState(settings:defaults), context: context,
                     isCurrent: { validateCurrent(photo.id) }, validateSource: validation)

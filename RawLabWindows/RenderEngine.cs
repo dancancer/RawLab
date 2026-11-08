@@ -452,9 +452,7 @@ internal sealed partial class RenderEngine : IDisposable
     internal static bool X3fAvailable => Native.sony2fuji_x3f_available() != 0;
     internal static X3fMode X3fDefaultMode(string path)
     {
-        var status = Native.sony2fuji_x3f_default_mode(path, out var mode);
-        Native.Check(status);
-        return mode;
+        return PhotoInput.X3fDefaultMode(path);
     }
     private void SetX3f(string path, Adjustments settings)
     {

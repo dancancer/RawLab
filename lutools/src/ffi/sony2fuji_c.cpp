@@ -1436,10 +1436,21 @@ int32_t sony2fuji_x3f_available(void) { return sony2fuji::x3fRenderingAvailable(
 sony2fuji_status sony2fuji_x3f_default_mode(const char* input_path, sony2fuji_x3f_mode* mode) {
     if (!input_path || !*input_path || !mode) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     try {
+        sony2fuji::processingCancellation.check();
+        std::ifstream input(std::filesystem::u8path(input_path), std::ios::binary);
+        if (!input) return SONY2FUJI_STATUS_IO_ERROR;
+        char signature[4]{};
+        input.read(signature, sizeof(signature));
+        if (input.bad() || (input.fail() && !input.eof())) return SONY2FUJI_STATUS_IO_ERROR;
+        sony2fuji::processingCancellation.check();
+        if (input.gcount() != sizeof(signature) || std::memcmp(signature, "FOVb", sizeof(signature)) != 0) {
+            *mode = SONY2FUJI_X3F_LEGACY;
+            return SONY2FUJI_STATUS_OK;
+        }
+        // 机型判断只读元数据，即使检查后文件被替换也不能触发像素解包。
         sony2fuji::RAWProcessor processor;
-        const auto loaded = processor.loadFile(input_path, sony2fuji::X3fMode::Normal);
+        const auto loaded = processor.inspectFile(input_path);
         if (loaded != sony2fuji::ErrorCode::Success) return mapError(loaded);
-        if (!sony2fuji::hasX3fSignature(input_path)) return SONY2FUJI_STATUS_UNSUPPORTED;
         *mode = sony2fuji::x3fModelSupported(processor.getCameraModel()) ? SONY2FUJI_X3F_NORMAL : SONY2FUJI_X3F_LEGACY;
         return SONY2FUJI_STATUS_OK;
     } catch (const sony2fuji::ProcessingCancelled&) {

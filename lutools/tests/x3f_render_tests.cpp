@@ -132,6 +132,14 @@ void formatIdentity() {
     TemporaryDirectory temp;
     const auto disguised = temp.path / "incorrect.X3F";
     std::filesystem::copy_file(fixture, disguised);
+    sony2fuji_x3f_mode mode = SONY2FUJI_X3F_NORMAL;
+    require(sony2fuji_x3f_default_mode("", &mode) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+            "empty default-mode path is invalid");
+    const auto missing = temp.path / "missing.X3F";
+    require(sony2fuji_x3f_default_mode(missing.u8string().c_str(), &mode) == SONY2FUJI_STATUS_IO_ERROR,
+            "missing default-mode source retains IO error");
+    require(sony2fuji_x3f_default_mode(disguised.u8string().c_str(), &mode) == SONY2FUJI_STATUS_OK &&
+            mode == SONY2FUJI_X3F_LEGACY, "non-FOVb X3F extension keeps LibRaw legacy compatibility");
     sony2fuji::RAWProcessor processor;
     require(processor.loadFile(disguised.u8string()) == sony2fuji::ErrorCode::Success, "LibRaw recognizes renamed DNG");
     sony2fuji::RAWProcessOptions options; options.x3fMode = sony2fuji::X3fMode::Normal;
@@ -268,9 +276,10 @@ int main(int argc, char** argv) {
             std::cout << "PASS native X3F workflow " << argv[i] << " " << normal.width << "x" << normal.height
                       << " display rounding max=" << maximum << '\n';
         }
-        if (defaults.front() == SONY2FUJI_X3F_NORMAL) {
-            replacedSource(argv[1]);
-            cancellation(argv[1]);
+        for (int i = 1; i < argc; ++i) {
+            if (defaults[static_cast<size_t>(i - 1)] != SONY2FUJI_X3F_NORMAL) continue;
+            replacedSource(argv[i]);
+            cancellation(argv[i]);
         }
         return 0;
     } catch (const std::exception& e) { std::cerr << "FAIL " << e.what() << '\n'; return 1; }

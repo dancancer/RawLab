@@ -21,7 +21,19 @@ IO_ERROR_STATUS = 3
 logger = logging.getLogger(__name__)
 
 
-def _publish(staged, destination):
+def _copy_exclusive(staged, destination):
+    """在保留目标文件名的前提下复制已完成的暂存文件。"""
+    with staged.open("rb") as source:
+        output = destination.open("xb")
+        try:
+            with output:
+                shutil.copyfileobj(source, output)
+        except OSError:
+            destination.unlink(missing_ok=True)
+            raise
+
+
+async def _publish(staged, destination):
     """Publish a completed stage without replacing an existing destination."""
     if os.name == "nt":
         # Windows rename fails with FileExistsError instead of replacing the target.
@@ -36,14 +48,19 @@ def _publish(staged, destination):
         if error.errno not in (errno.ENOTSUP, errno.EOPNOTSUPP, errno.EPERM):
             raise
     # FAT volumes may lack hard links. Reserve the filename before copying.
-    with staged.open("rb") as source:
-        output = destination.open("xb")
-        try:
-            with output:
-                shutil.copyfileobj(source, output)
-        except OSError:
-            destination.unlink(missing_ok=True)
-            raise
+    copy = asyncio.create_task(asyncio.to_thread(_copy_exclusive, staged, destination))
+    try:
+        await asyncio.shield(copy)
+    except asyncio.CancelledError:
+        # 复制线程可能仍在读取暂存文件；屏蔽 AnyIO 重复取消，并等待直接 task.cancel() 后的线程结束。
+        with anyio.CancelScope(shield=True):
+            while True:
+                try:
+                    await asyncio.shield(copy)
+                    break
+                except asyncio.CancelledError:
+                    continue
+        raise
 
 
 class AdapterError(Exception):
@@ -377,7 +394,7 @@ class CliAdapter:
                 raise AdapterError("Output directory changed during rendering", "output_io_error") from e
             if current_output.canonical != output.canonical:
                 raise AdapterError("Output directory changed during rendering", "output_io_error")
-            _publish(staged, output.lexical)
+            await _publish(staged, output.lexical)
             return Envelope(command, True, {**result.result, "output_path": str(output.lexical)})
         except AdapterError as e:
             return failure(command, e)

@@ -388,13 +388,9 @@ extension EditorModel {
         let info: HDRSourceInfo?
         do { info=try HDRSourceInfo.probe(url) }
         catch { self.error=error.localizedDescription; return }
-        var candidate=restoredRecord.state?.settings ?? Adjustments()
-        if restoredRecord.state == nil && RenderEngine.isX3fInput(url) {
-            do { candidate.x3fMode = try RenderEngine.x3fDefaultMode(for: url) }
-            catch { self.error=error.localizedDescription; return }
-        }
-        if restoredRecord.state==nil && RenderEngine.isRasterInput(url) { candidate.exposureMode = .sensor }
-        if info != nil && restoredRecord.state==nil { candidate.hdr=HDRSettings() }
+        let candidate: Adjustments
+        do { candidate = try restoredRecord.state?.settings ?? RenderEngine.defaultSettings(for: url) }
+        catch { self.error=error.localizedDescription; return }
         let cameraHDR = info == nil && (try? HDRSourceInfo.probeRAW(url)) != nil
         guard !candidate.isHDREditing || info != nil || cameraHDR else {
             self.error=L10n.text("此照片没有可编辑的 HDR 增益图。")

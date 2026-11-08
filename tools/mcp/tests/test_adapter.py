@@ -6,7 +6,9 @@ import stat
 import sys
 import tempfile
 import textwrap
+import threading
 import unittest
+import anyio
 from unittest.mock import patch
 from pathlib import Path
 
@@ -437,29 +439,188 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((self.write_root / "export.jpg").exists())
         self.assertEqual(list(self.write_root.glob(".rawlab-mcp-*")), [])
 
-    def test_windows_publish_uses_no_clobber_rename_without_hardlink(self):
+    async def test_windows_publish_uses_no_clobber_rename_without_hardlink(self):
         staged = self.root / "staged.jpg"
         destination = self.write_root / "export.jpg"
         staged.write_bytes(b"fake-pixels")
         with patch.object(adapter_module.os, "name", "nt"), \
                 patch.object(adapter_module.os, "rename") as rename, \
                 patch.object(adapter_module.os, "link") as link:
-            adapter_module._publish(staged, destination)
+            await adapter_module._publish(staged, destination)
         rename.assert_called_once_with(staged, destination)
         link.assert_not_called()
 
-    def test_publish_on_volume_without_hard_links(self):
+    async def test_publish_on_volume_without_hard_links(self):
         staged = self.root / "staged.jpg"
         destination = self.write_root / "export.jpg"
         staged.write_bytes(b"fake-pixels")
         unsupported = OSError(errno.ENOTSUP, "operation unsupported")
         with patch.object(adapter_module.os, "name", "posix"), \
                 patch.object(adapter_module.os, "link", side_effect=unsupported):
-            adapter_module._publish(staged, destination)
+            await adapter_module._publish(staged, destination)
             staged.write_bytes(b"second-render")
             with self.assertRaises(FileExistsError):
-                adapter_module._publish(staged, destination)
+                await adapter_module._publish(staged, destination)
         self.assertEqual(destination.read_bytes(), b"fake-pixels")
+
+    @unittest.skipUnless(os.name == "posix", "hard-link fallback is exercised on POSIX")
+    async def test_fallback_copy_does_not_block_event_loop(self):
+        adapter = self.adapter()
+        await adapter.start()
+        unsupported = OSError(errno.ENOTSUP, "operation unsupported")
+        copy_started = threading.Event()
+        copy_finished = threading.Event()
+        release = threading.Event()
+        monitor_seen = asyncio.Event()
+
+        def slow_copy(source, output):
+            copy_started.set()
+            release.wait(1)
+            output.write(source.read())
+            copy_finished.set()
+
+        async def monitor_copy():
+            await asyncio.to_thread(copy_started.wait)
+            if not copy_finished.is_set():
+                monitor_seen.set()
+
+        monitor = asyncio.create_task(monitor_copy())
+        release_timer = threading.Timer(0.2, release.set)
+        release_timer.start()
+        try:
+            with patch.object(adapter_module.os, "link", side_effect=unsupported), \
+                    patch.object(adapter_module.shutil, "copyfileobj", side_effect=slow_copy):
+                result = await adapter.export_photo(self.recipe_path)
+        finally:
+            release.set()
+            release_timer.cancel()
+            await monitor
+        self.assertTrue(result.ok, str(result.error))
+        self.assertTrue(monitor_seen.is_set(), "fallback copy blocked the event loop")
+
+    @unittest.skipUnless(os.name == "posix", "hard-link fallback is exercised on POSIX")
+    async def test_cancellation_waits_for_fallback_copy_before_cleanup(self):
+        adapter = self.adapter()
+        await adapter.start()
+        unsupported = OSError(errno.ENOTSUP, "operation unsupported")
+        copy_started = threading.Event()
+        copy_finished = threading.Event()
+        release = threading.Event()
+
+        def blocked_copy(source, output):
+            copy_started.set()
+            release.wait(1)
+            output.write(source.read())
+            copy_finished.set()
+
+        release_timer = threading.Timer(0.3, release.set)
+        release_timer.start()
+        try:
+            with patch.object(adapter_module.os, "link", side_effect=unsupported), \
+                    patch.object(adapter_module.shutil, "copyfileobj", side_effect=blocked_copy):
+                task = asyncio.create_task(adapter.export_photo(self.recipe_path))
+                await asyncio.wait_for(asyncio.to_thread(copy_started.wait), 1)
+                task.cancel()
+                await asyncio.sleep(0.05)
+                self.assertFalse(task.done(), "cancellation did not wait for fallback copy")
+                self.assertEqual(len(list(self.write_root.glob(".rawlab-mcp-*"))), 1)
+                release.set()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+        finally:
+            release.set()
+            release_timer.cancel()
+        self.assertTrue(copy_finished.is_set())
+        self.assertEqual(list(self.write_root.glob(".rawlab-mcp-*")), [])
+
+    @unittest.skipUnless(os.name == "posix", "hard-link fallback is exercised on POSIX")
+    async def test_repeated_cancellation_waits_for_fallback_copy_before_cleanup(self):
+        adapter = self.adapter()
+        await adapter.start()
+        unsupported = OSError(errno.ENOTSUP, "operation unsupported")
+        copy_started = threading.Event()
+        copy_finished = threading.Event()
+        release = threading.Event()
+
+        def blocked_copy(source, output):
+            copy_started.set()
+            release.wait(1)
+            output.write(source.read())
+            copy_finished.set()
+
+        release_timer = threading.Timer(0.5, release.set)
+        release_timer.start()
+        try:
+            with patch.object(adapter_module.os, "link", side_effect=unsupported), \
+                    patch.object(adapter_module.shutil, "copyfileobj", side_effect=blocked_copy):
+                task = asyncio.create_task(adapter.export_photo(self.recipe_path))
+                await asyncio.wait_for(asyncio.to_thread(copy_started.wait), 1)
+                task.cancel()
+                await asyncio.sleep(0.05)
+                task.cancel()
+                await asyncio.sleep(0.05)
+                self.assertFalse(task.done(), "repeated cancellation did not wait for fallback copy")
+                self.assertEqual(len(list(self.write_root.glob(".rawlab-mcp-*"))), 1)
+                release.set()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+        finally:
+            release.set()
+            release_timer.cancel()
+        self.assertTrue(copy_finished.is_set())
+        self.assertEqual(list(self.write_root.glob(".rawlab-mcp-*")), [])
+
+    @unittest.skipUnless(os.name == "posix", "hard-link fallback is exercised on POSIX")
+    async def test_anyio_cancellation_waits_without_spinning(self):
+        adapter = self.adapter()
+        await adapter.start()
+        started = threading.Event()
+        finished = threading.Event()
+        release = threading.Event()
+
+        def blocked_copy(source, output):
+            started.set()
+            release.wait(1)
+            output.write(source.read())
+            finished.set()
+
+        timer = threading.Timer(0.3, release.set)
+        timer.start()
+        real_shield = asyncio.shield
+        try:
+            with patch.object(adapter_module.os, "link", side_effect=OSError(errno.ENOTSUP, "unsupported")), \
+                    patch.object(adapter_module.shutil, "copyfileobj", side_effect=blocked_copy), \
+                    patch.object(adapter_module.asyncio, "shield", wraps=real_shield) as shield:
+                async with anyio.create_task_group() as group:
+                    group.start_soon(adapter.export_photo, self.recipe_path)
+                    await anyio.to_thread.run_sync(started.wait)
+                    group.cancel_scope.cancel()
+                self.assertLess(shield.call_count, 20, "level cancellation spun while waiting for the worker")
+        finally:
+            release.set()
+            timer.cancel()
+        self.assertTrue(finished.is_set())
+        self.assertEqual(list(self.write_root.glob(".rawlab-mcp-*")), [])
+
+    async def test_windows_publish_rejects_existing_destination_without_overwrite(self):
+        staged = self.root / "staged.jpg"
+        destination = self.write_root / "export.jpg"
+        staged.write_bytes(b"new-pixels")
+        destination.write_bytes(b"keep-me")
+        real_rename = os.rename
+
+        def windows_rename(source, target):
+            if destination.exists():
+                raise FileExistsError(errno.EEXIST, "destination exists", target)
+            real_rename(source, target)
+
+        with patch.object(adapter_module.os, "name", "nt"), \
+                patch.object(adapter_module.os, "rename", side_effect=windows_rename) as rename:
+            with self.assertRaises(FileExistsError):
+                await adapter_module._publish(staged, destination)
+        rename.assert_called_once_with(staged, destination)
+        self.assertEqual(destination.read_bytes(), b"keep-me")
+        self.assertEqual(staged.read_bytes(), b"new-pixels")
 
     async def test_cleanup_failure_preserves_success_and_logs_private_directory(self):
         adapter = self.adapter()

@@ -1089,7 +1089,6 @@ WICBitmapTransformOptions transformForOrientation(uint32_t orientation) {
 }
 
 struct PreparedImage {
-    std::vector<uint8_t> ownedPixels;
     ComPtr<IWICBitmapSource> oriented;
     UINT orientedWidth = 0;
     UINT orientedHeight = 0;
@@ -1111,7 +1110,8 @@ PreparedImage prepareHeifImage(IWICImagingFactory* factory, const char* original
         GUID_WICPixelFormat32bppRGBA, static_cast<UINT>(stride), static_cast<UINT>(total),
         decoded.pixels.data(), &bitmap));
     PreparedImage result;
-    result.ownedPixels = std::move(decoded.pixels);
+    // WIC 已复制输入像素，后续转换不再需要保留解码缓冲。
+    std::vector<uint8_t>().swap(decoded.pixels);
     result.orientedWidth = decoded.width;
     result.orientedHeight = decoded.height;
     checkHr(bitmap.As(&result.oriented));

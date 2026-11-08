@@ -15,15 +15,21 @@ namespace {
 std::vector<uint8_t> nclx(uint16_t primaries,uint16_t transfer) {
     cmsCIExyYTRIPLE rgb;
     if(primaries==1)rgb={{.64,.33,1},{.3,.6,1},{.15,.06,1}};
+    else if(primaries==5)rgb={{.64,.33,1},{.29,.60,1},{.15,.06,1}};
+    else if(primaries==6 || primaries==7)rgb={{.630,.340,1},{.310,.595,1},{.155,.070,1}};
     else if(primaries==12)rgb={{.68,.32,1},{.265,.69,1},{.15,.06,1}};
     else if(primaries==9)rgb={{.708,.292,1},{.17,.797,1},{.131,.046,1}};
     else unsupported();
-    if(transfer!=13 && transfer!=1 && transfer!=8)unsupported();
+    if(transfer!=13 && transfer!=1 && transfer!=4 && transfer!=5 && transfer!=6 &&
+       transfer!=7 && transfer!=8 && transfer!=14 && transfer!=15)unsupported();
     std::vector<cmsUInt16Number> table(4096);
     for(size_t i=0;i<table.size();++i) {
         const double x=double(i)/(table.size()-1);
         const double y=transfer==13 ? (x<=.04045 ? x/12.92 : std::pow((x+.055)/1.055,2.4)) :
-            transfer==1 ? (x<.081 ? x/4.5 : std::pow((x+.099)/1.099,1/.45)) : x;
+            transfer==8 ? x : transfer==4 ? std::pow(x,2.2) : transfer==5 ? std::pow(x,2.8) :
+            transfer==7 ? (x<.0912 ? x/4 : std::pow((x+.1115)/1.1115,1/.45)) :
+            transfer==15 ? (x<.08145 ? x/4.5 : std::pow((x+.0993)/1.0993,1/.45)) :
+            (x<.081 ? x/4.5 : std::pow((x+.099)/1.099,1/.45));
         table[i]=cmsUInt16Number(std::lround(y*65535));
     }
     auto* curve=cmsBuildTabulatedToneCurve16(nullptr,uint32_t(table.size()),table.data());

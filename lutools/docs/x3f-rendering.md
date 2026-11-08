@@ -19,7 +19,9 @@ correction flags. The normal-mode lens tools cannot activate additional correcti
 
 CLI schema 7 carries the identity independently of the existing processing version
 and binary request v2. Other RAW formats ignore this format-specific mode and keep
-their existing processing. An X3F extension with an invalid signature is rejected.
+their existing processing. The default-mode probe selects legacy for readable
+non-FOVb content; LibRaw determines whether that content can be opened. An explicit
+normal request still rejects an X3F extension with an invalid signature.
 
 ## Input and output domains
 

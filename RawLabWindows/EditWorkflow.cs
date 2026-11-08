@@ -137,9 +137,7 @@ public partial class MainWindow
         var saved = nextRecord.Edit;
         // New HDR sources start in HDR mode; an existing snapshot without HDR
         // remains the legacy SDR record by construction.
-        var nextSettings = saved?.Settings.Restore() ?? PhotoInput.PrepareHDRInputSettings(input, new Adjustments());
-        if (saved == null && PhotoInput.IsX3f(input))
-            nextSettings.X3fMode = RenderEngine.X3fDefaultMode(input);
+        var nextSettings = saved?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(input);
         currentEditRecord=nextRecord;editGesture=null;adjustmentReloadRequired=false;settings=nextSettings;
         lut = saved == null ? null : ResolveLook(saved);
         if (settings.MasterRecipeID == null && lut != null && !films.Any(f => StringComparer.OrdinalIgnoreCase.Equals(f.Path, lut)))

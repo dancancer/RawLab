@@ -86,43 +86,51 @@ struct LookImportTests {
         try check(LookImportSelection.decision(previousID: previousSelection, imported: []) == .preserve(previousSelection),
                   "cancelled batch preserves the previous selection")
 
+        var curveReason: DCPCompilerError?
         let curvePrompted = try awaitResult { completion in
             coordinator.importLooks(from: [unsupportedDCP], dcpOptionsPrompt: { _, reason, reply in
-                try? check(reason == .missingToneCurve, "missing embedded tone opens the DCP options prompt")
+                curveReason = reason
                 reply(DCPImportOptions(toneCurveJSON: Data("[[0,0],[1,1]]".utf8)))
             }, completion: completion)
         }
+        try check(curveReason == .missingToneCurve, "missing embedded tone opens the DCP options prompt")
         try check(curvePrompted.imported.count == 1 && curvePrompted.failures.isEmpty,
                   "a supplied JSON x/y-pairs curve resumes DCP import")
+        var blackReason: DCPCompilerError?
         let blackPrompted = try awaitResult { completion in
             coordinator.importLooks(from: [automaticBlackDCP], dcpOptionsPrompt: { _, reason, reply in
-                try? check(reason == .automaticBlack, "automatic black opens the DCP options prompt")
+                blackReason = reason
                 reply(DCPImportOptions(omitAutomaticBlack: true))
             }, completion: completion)
         }
+        try check(blackReason == .automaticBlack, "automatic black opens the DCP options prompt")
         try check(blackPrompted.imported.count == 1 && blackPrompted.failures.isEmpty,
                   "explicitly omitting automatic black resumes DCP import")
+        var bothOptionsReason: DCPCompilerError?
         let bothOptionsPrompted = try awaitResult { completion in
             coordinator.importLooks(from: [bothOptionsDCP], dcpOptionsPrompt: { _, reason, reply in
-                try? check(reason == .missingToneCurve, "combined DCP options start at the missing-tone prompt")
+                bothOptionsReason = reason
                 reply(DCPImportOptions(toneCurveJSON: Data("[[0,0],[1,1]]".utf8), omitAutomaticBlack: true))
             }, completion: completion)
         }
+        try check(bothOptionsReason == .missingToneCurve, "combined DCP options start at the missing-tone prompt")
         try check(bothOptionsPrompted.imported.count == 1 && bothOptionsPrompted.failures.isEmpty,
                   "one DCP options prompt can provide both the curve and black policy")
         var retryPromptCount = 0
+        var retryReasons: [DCPCompilerError] = []
         let retriedBothOptions = try awaitResult { completion in
             coordinator.importLooks(from: [bothOptionsDCP], dcpOptionsPrompt: { _, reason, reply in
                 retryPromptCount += 1
+                retryReasons.append(reason)
                 if retryPromptCount == 1 {
-                    try? check(reason == .missingToneCurve, "combined DCP retry starts with the missing-tone prompt")
                     reply(DCPImportOptions(toneCurveJSON: Data("[[0,0],[1,1]]".utf8)))
                 } else {
-                    try? check(reason == .automaticBlack, "combined DCP retry asks for the remaining black policy")
                     reply(DCPImportOptions(omitAutomaticBlack: true))
                 }
             }, completion: completion)
         }
+        try check(retryReasons == [.missingToneCurve, .automaticBlack],
+                  "combined DCP retry asks for the missing tone then the remaining black policy")
         try check(retryPromptCount == 2 && retriedBothOptions.imported.count == 1 && retriedBothOptions.failures.isEmpty,
                   "a second DCP options prompt preserves the selected curve")
         let cancelledDCP = try awaitResult { completion in
