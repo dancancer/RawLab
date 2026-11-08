@@ -213,24 +213,23 @@ extension ViewingEditorUITests {
         wait(app) { $0["presetFault"] as? String == fault }
     }
 
-    func testPresetRejectsExternalPhotoRevisionWhileSaveFormIsOpen() {
+    func testPresetSaveUsesSessionStateAfterExternalRecordChange() {
         let app = launch(language: "en", presetFixtures: true)
         openPresets(app)
         app.buttons["preset.create"].tap()
-        presetName("Stale source", app: app)
+        presetName("Session source", app: app)
         let history = receipt(app)["historyCount"] as? Int
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
             CFNotificationName("com.rawlab.iter03.external-edit" as CFString), nil, nil, true)
         wait(app) { $0["sourceStoredExposure"] as? Double == 1.3 }
         let save = app.buttons["preset.save.confirm"]
         revealFormControl(save, app: app); save.tap()
-        wait(app) { ($0["saveState"] as? String ?? "").contains("failed") }
-        let message = app.staticTexts["preset.message"]
-        revealFormControl(message, app: app); XCTAssertTrue(message.exists)
-        XCTAssertTrue(presets(app).isEmpty)
+        // 磁盘记录被外部改写不再阻止保存预设：预设取自本会话已提交的状态，不写照片记录，也不进照片历史。
+        wait(app) { ($0["presets"] as? [[String: Any]])?.contains { $0["name"] as? String == "Session source" } == true }
+        XCTAssertFalse((receipt(app)["saveState"] as? String ?? "").contains("failed"))
         XCTAssertEqual(receipt(app)["historyCount"] as? Int, history)
         XCTAssertEqual(receipt(app)["sourceStoredExposure"] as? Double, 1.3)
-        capture(app, "preset-external-revision-blocked")
+        capture(app, "preset-external-record-session-source")
     }
 
     func testPresetScopeRenameApplyHistoryAndRestart() {
