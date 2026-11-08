@@ -90,13 +90,15 @@ The additive `SONY2FUJI_INPUT_DISPLAY_BUFFER=2` consumes tightly packed opaque
 RGB8/RGBA8 or little-endian RGBA16 display-sRGB. Existing `RAW=0`, scene `BUFFER=1`, request v2 layout and
 their rendering are unchanged. The shared macOS/iOS ImageIO adapter applies EXIF orientation
 once and converts tagged RGB to sRGB; untagged RGB assumes sRGB. It accepts
-single-frame 8-bit SDR JPEG, PNG, TIFF and HEIF, plus 16-bit integer RGB TIFF.
+single-frame 8-bit SDR JPEG, PNG, TIFF and HEIF, plus opaque 16-bit integer RGB
+PNG and TIFF, including RawLab's own PNG exports.
 For Sigma Photo Pro TIFF exports with a separate 160-pixel preview IFD, it
 decodes the full-resolution primary image only. An explicitly paginated IFD
 is never treated as a preview.
-TIFF's 16-bit precision is retained at the sRGB buffer boundary and through
-float processing before output encoding. Transparency, other high-bit-depth
-inputs, floating-point/HDR, multi-frame/page and CMYK inputs are rejected.
+PNG/TIFF 16-bit precision is retained as little-endian RGBA16 at the sRGB buffer
+boundary and through float processing before output encoding. Nonopaque alpha
+(including 65534 at 16 bits), high-bit-depth formats other than integer RGB
+PNG/TIFF, floating-point/HDR, multi-frame/page and CMYK inputs are rejected.
 Untagged grayscale/indexed images are not inferred to use
 a particular gray transfer function and are rejected.
 
@@ -122,9 +124,17 @@ This display-referred path reuses the reference CPU stages. GPU Auto explicitly
 falls back to CPU and Force returns unsupported until the scene-view GPU
 shaders have a matching display-input mode. Rendered DNG output preserves the
 result as output-referred float RGB; it does not turn an 8-bit source into RAW/HDR.
-The Apple adapter uses ImageIO. Windows has a separate WIC adapter for JPEG/PNG
-and classic single-page RGB8 TIFF, verified on Windows rather than inferred from
-Mac results; HEIF and BigTIFF are not enabled.
+The Apple adapter uses ImageIO. Windows has a separate WIC adapter for 8-bit
+JPEG and 8/16-bit integer RGB PNG and classic TIFF; HEIF and BigTIFF are not
+enabled. The same Sigma Photo Pro exception applies on Windows only to a 16-bit
+primary followed by one smaller 8-bit IFD with a 160-pixel long edge and matching
+aspect ratio (within one primary-image pixel of cross-product rounding). Neither
+IFD may carry a page marker (`PageNumber`, the `NewSubfileType` page bit, or
+`OldSubfileType=3`). Windows converts high-bit-depth pixels to 64bpp RGBA before
+ICC-to-sRGB conversion, preserving 16-bit channels. Its bounded display-preview
+entry point always returns RGBA8, including when the source needs no resizing.
+Windows decoding and ICC behavior require native Windows verification rather
+than inference from Mac results.
 Windows chooses JPEG/PNG/TIFF validation from the file signature, so a misleading
 supported extension does not select the wrong metadata parser. Windows and
 Android accept a validated MPF baseline primary image with only VGA/Full HD large
@@ -132,8 +142,18 @@ thumbnails, decoding the primary image at full resolution. Both continue to reje
 MPF gain maps, stereo/multi-angle images, unknown auxiliary types and invalid
 image ranges; this does not enable general multi-frame input.
 Unknown non-sRGB PNG color metadata
-without a supported ICC profile is rejected instead of guessed. Android uses a
-separate API-26-compatible platform decoder for validated JPEG/PNG files and
+without a supported ICC profile is rejected instead of guessed. On Apple,
+SDR PNG8/PNG16 cICP `{1,13,0,1}` (sRGB), `{12,13,0,1}` (Display P3), and
+`{1,1,0,1}` (BT.709) are accepted when ImageIO decodes the declared color space,
+then converted to sRGB. This also applies when a matching ICC profile is present.
+The adapter verifies the decoded space rather than assuming every OS version
+understands cICP. Other combinations remain unsupported: ImageIO on macOS
+27.0.1 ignores `{1,6,0,1}` and returns sRGB with unchanged code values, so accepting
+it would lose the declared transfer function. HDR cICP (including PQ/HLG),
+mastering/content-light metadata and malformed cICP lengths remain rejected.
+Windows and Android retain their existing stricter cICP admission rules;
+Apple's additional SDR combinations rely on the verified ImageIO conversion.
+Android uses a separate API-26-compatible platform decoder for validated JPEG/PNG files and
 passes their oriented opaque display-sRGB pixels through the same explicit
 display-buffer C API. Android does not enable TIFF or HEIF; its native file-loader
 entry point remains unsupported rather than pretending to decode those files.

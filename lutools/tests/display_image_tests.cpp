@@ -21,6 +21,8 @@ extern "C" sony2fuji_status sony2fuji_load_display_image(
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreGraphics/CoreGraphics.h>
 #include <ImageIO/ImageIO.h>
+#include <tiffio.h>
+#include <zlib.h>
 #endif
 
 namespace {
@@ -165,7 +167,7 @@ bool writeImage(const std::filesystem::path& path, CFStringRef type, CGImageRef 
     return finalized;
 }
 
-bool stripPngColorProfile(const std::filesystem::path& path) {
+bool stripPngColorProfile(const std::filesystem::path& path, const char* onlyChunk = nullptr) {
     std::ifstream input(path, std::ios::binary);
     if (!input) return false;
     const std::vector<uint8_t> source((std::istreambuf_iterator<char>(input)),
@@ -187,7 +189,9 @@ bool stripPngColorProfile(const std::filesystem::path& path) {
         if (length > source.size() - offset - 12) return false;
         const size_t chunkSize = static_cast<size_t>(length) + 12;
         const char* type = reinterpret_cast<const char*>(source.data() + offset + 4);
-        const bool colorProfile = std::memcmp(type, "iCCP", 4) == 0 ||
+        const bool colorProfile = onlyChunk ? std::memcmp(type, onlyChunk, 4) == 0 :
+            std::memcmp(type, "iCCP", 4) == 0 ||
+            std::memcmp(type, "cICP", 4) == 0 ||
             std::memcmp(type, "sRGB", 4) == 0 || std::memcmp(type, "cHRM", 4) == 0 ||
             std::memcmp(type, "gAMA", 4) == 0;
         if (!colorProfile)
@@ -205,6 +209,26 @@ bool stripPngColorProfile(const std::filesystem::path& path) {
     return output.good();
 }
 
+bool insertPngChunk(const std::filesystem::path& path, const char* type,
+                    const std::vector<uint8_t>& payload) {
+    std::ifstream input(path, std::ios::binary);
+    std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    if (bytes.size() < 33) return false;
+    std::vector<uint8_t> chunk;
+    const auto put32 = [&](uint32_t value) {
+        for (int shift = 24; shift >= 0; shift -= 8) chunk.push_back(static_cast<uint8_t>(value >> shift));
+    };
+    put32(static_cast<uint32_t>(payload.size()));
+    chunk.insert(chunk.end(), type, type + 4);
+    chunk.insert(chunk.end(), payload.begin(), payload.end());
+    put32(static_cast<uint32_t>(crc32(0, chunk.data() + 4, chunk.size() - 4)));
+    bytes.insert(bytes.begin() + 33, chunk.begin(), chunk.end());
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    output.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    return output.good();
+}
+
+
 CFDictionaryRef orientationProperties(uint32_t orientation) {
     auto* number = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &orientation);
     if (!number) return nullptr;
@@ -216,14 +240,15 @@ CFDictionaryRef orientationProperties(uint32_t orientation) {
     return dictionary;
 }
 
-std::vector<uint8_t> drawSRGB(CGImageRef image) {
+std::vector<uint8_t> drawSRGB(CGImageRef image, size_t bits = 8) {
     const size_t width = CGImageGetWidth(image), height = CGImageGetHeight(image);
-    std::vector<uint8_t> bytes(width * height * 4);
+    const size_t pixelBytes = bits == 16 ? 8 : 4;
+    std::vector<uint8_t> bytes(width * height * pixelBytes);
     auto* space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
     auto* context = CGBitmapContextCreate(
-        bytes.data(), width, height, 8, width * 4, space,
+        bytes.data(), width, height, bits, width * pixelBytes, space,
         static_cast<CGBitmapInfo>(kCGImageAlphaPremultipliedLast) |
-            static_cast<CGBitmapInfo>(kCGBitmapByteOrder32Big));
+            static_cast<CGBitmapInfo>(bits == 16 ? kCGBitmapByteOrder16Little : kCGBitmapByteOrder32Big));
     if (context) {
         CGContextSetBlendMode(context, kCGBlendModeCopy);
         CGContextDrawImage(context, CGRectMake(0, 0, width, height), image);
@@ -252,6 +277,129 @@ void expectUnsupported(const std::filesystem::path& path, const std::string& lab
     sony2fuji_release_buffer(&buffer);
 }
 
+void checkPngColorMetadata(const std::filesystem::path& root, CGColorSpaceRef sRGB) {
+    for (const size_t bits : {8u, 16u}) {
+        auto fixture = bits == 16 ? rgb16Image(2, 3, sRGB) :
+            rgbImage(2, 3, sRGB, {120, 180, 70, 120, 180, 70, 120, 180, 70,
+                                 120, 180, 70, 120, 180, 70, 120, 180, 70});
+        for (const auto& metadata : std::vector<std::pair<std::string, std::vector<uint8_t>>>{
+                 {"cICP", {9, 16, 0, 1}}, {"cICP", {9, 18, 0, 1}},
+                 {"cICP", {1, 6, 0, 1}}, {"cICP", {1, 13, 0}},
+                 {"mDCv", std::vector<uint8_t>(24)}, {"mDCV", std::vector<uint8_t>(24)},
+                 {"cLLi", std::vector<uint8_t>(8)}, {"cLLI", std::vector<uint8_t>(8)}}) {
+            const auto label = "PNG" + std::to_string(bits) + " " + metadata.first + " " +
+                std::to_string(metadata.second.front()) + "-" + std::to_string(metadata.second[1]) +
+                "-" + std::to_string(metadata.second.size());
+            const auto path = root / (label + ".png");
+            check(fixture.image && writeImage(path, CFSTR("public.png"), fixture.image) &&
+                stripPngColorProfile(path) && insertPngChunk(path, metadata.first.c_str(), metadata.second),
+                "Generate " + label);
+            expectUnsupported(path, label, true);
+        }
+        for (const auto& color : std::vector<std::pair<std::vector<uint8_t>, CFStringRef>>{
+                 {{1, 13, 0, 1}, kCGColorSpaceSRGB},
+                 {{12, 13, 0, 1}, kCGColorSpaceDisplayP3},
+                 {{1, 1, 0, 1}, kCGColorSpaceITUR_709}}) {
+            const auto label = "PNG" + std::to_string(bits) + " SDR cICP " +
+                std::to_string(color.first[0]) + "-" + std::to_string(color.first[1]);
+            const auto path = root / (label + ".png");
+            check(fixture.image && writeImage(path, CFSTR("public.png"), fixture.image) &&
+                stripPngColorProfile(path) && insertPngChunk(path, "cICP", color.first),
+                "Generate " + label + " without ICC/gAMA/cHRM/sRGB");
+            auto* space = CGColorSpaceCreateWithName(color.second);
+            auto* reference = CGImageCreateCopyWithColorSpace(fixture.image, space);
+            const auto expected = drawSRGB(reference, bits);
+            const auto unconverted = drawSRGB(fixture.image, bits);
+            CGImageRelease(reference);
+            auto* url = CFURLCreateFromFileSystemRepresentation(nullptr,
+                reinterpret_cast<const UInt8*>(path.c_str()), path.string().size(), false);
+            auto* source = CGImageSourceCreateWithURL(url, nullptr);
+            auto* decoded = source ? CGImageSourceCreateImageAtIndex(source, 0, nullptr) : nullptr;
+            check(decoded && CFEqual(CGImageGetColorSpace(decoded), space),
+                label + " is decoded by ImageIO in the declared color space");
+            if (decoded) CGImageRelease(decoded);
+            if (source) CFRelease(source);
+            CFRelease(url);
+            CGColorSpaceRelease(space);
+            sony2fuji_buffer buffer{};
+            const auto status = sony2fuji_load_display_image(path.u8string().c_str(), &buffer);
+            const auto actual = outputBytes(buffer);
+            bool close = status == SONY2FUJI_STATUS_OK &&
+                buffer.pixel_format == (bits == 16 ? SONY2FUJI_PIXEL_RGBA16 : SONY2FUJI_PIXEL_RGBA8) &&
+                actual.size() == expected.size();
+            for (size_t i = 0; close && i < actual.size(); i += bits / 8) {
+                const int value = bits == 16 ? actual[i] | (actual[i + 1] << 8) : actual[i];
+                const int target = bits == 16 ? expected[i] | (expected[i + 1] << 8) : expected[i];
+                close = std::abs(value - target) <= 2;
+            }
+            check(close && (color.first == std::vector<uint8_t>{1, 13, 0, 1} || expected != unconverted),
+                label + " converts pixels to sRGB using the declared primaries and transfer function");
+            sony2fuji_release_buffer(&buffer);
+        }
+    }
+}
+
+std::vector<uint8_t> unnamedHDRProfile(CFStringRef name) {
+    auto* space = CGColorSpaceCreateWithName(name);
+    auto* data = space ? CGColorSpaceCopyICCData(space) : nullptr;
+    if (space) CGColorSpaceRelease(space);
+    if (!data) return {};
+    std::vector<uint8_t> bytes(CFDataGetBytePtr(data), CFDataGetBytePtr(data) + CFDataGetLength(data));
+    CFRelease(data);
+    const auto read32 = [&](size_t at) {
+        return (uint32_t(bytes.at(at)) << 24) | (uint32_t(bytes.at(at + 1)) << 16) |
+            (uint32_t(bytes.at(at + 2)) << 8) | bytes.at(at + 3);
+    };
+    for (uint32_t i = 0, count = read32(128); i < count; ++i) {
+        const size_t at = 132 + i * 12;
+        const size_t offset = read32(at + 4);
+        if (std::memcmp(bytes.data() + at, "desc", 4) != 0 ||
+            std::memcmp(bytes.data() + offset, "mluc", 4) != 0) continue;
+        // 隐去 ICC 描述中的 PQ/HLG 名字，保留原始传递函数。
+        const size_t length = read32(offset + 20), text = offset + read32(offset + 24);
+        for (size_t j = 0; j < length; j += 2) { bytes.at(text + j) = 0; bytes.at(text + j + 1) = 'x'; }
+    }
+    std::fill(bytes.begin() + 84, bytes.begin() + 100, 0);
+    return bytes;
+}
+
+void checkHDRProfiles(const std::filesystem::path& root, CGColorSpaceRef sRGB) {
+    auto fixture = rgb16Image(2, 3, sRGB);
+    for (const auto& transfer : {std::make_pair("PQ", kCGColorSpaceITUR_2100_PQ),
+                                std::make_pair("HLG", kCGColorSpaceITUR_2100_HLG)}) {
+        const auto profile = unnamedHDRProfile(transfer.second);
+        auto* data = CFDataCreate(nullptr, profile.data(), profile.size());
+        auto* space = CGColorSpaceCreateWithICCData(data);
+        auto* name = space ? CGColorSpaceCopyName(space) : nullptr;
+        check(space && !name && CGColorSpaceUsesITUR_2100TF(space),
+            std::string("Generate unnamed ") + transfer.first + " ICC with an HDR transfer function");
+        if (name) CFRelease(name);
+        if (space) CGColorSpaceRelease(space);
+        CFRelease(data);
+        for (const bool png : {true, false}) {
+            const auto label = std::string("Unnamed ") + transfer.first + (png ? " PNG16" : " TIFF16");
+            const auto path = root / (label + (png ? ".png" : ".tif"));
+            bool written = fixture.image && writeImage(path, png ? CFSTR("public.png") : CFSTR("public.tiff"), fixture.image);
+            if (png) {
+                uLongf length = compressBound(profile.size());
+                std::vector<uint8_t> compressed(length);
+                written &= compress2(compressed.data(), &length, profile.data(), profile.size(), Z_BEST_COMPRESSION) == Z_OK;
+                compressed.resize(length);
+                std::vector<uint8_t> payload{'R','G','B',0,0};
+                payload.insert(payload.end(), compressed.begin(), compressed.end());
+                written &= stripPngColorProfile(path) && insertPngChunk(path, "iCCP", payload);
+            } else {
+                auto* tiff = TIFFOpen(path.u8string().c_str(), "r+");
+                written &= tiff && TIFFSetField(tiff, TIFFTAG_ICCPROFILE, static_cast<uint32_t>(profile.size()), profile.data()) &&
+                    TIFFRewriteDirectory(tiff);
+                if (tiff) TIFFClose(tiff);
+            }
+            check(written, "Generate " + label);
+            expectUnsupported(path, label, true);
+        }
+    }
+}
+
 void expectEmptyPathClearsBuffer() {
     sony2fuji_buffer buffer{
         std::malloc(4), 4, 1, 1, 4, SONY2FUJI_PIXEL_RGBA8
@@ -268,7 +416,8 @@ void expectEmptyPathClearsBuffer() {
 enum class TIFFPageMarker : uint16_t { NewSubfileType = 254, OldSubfileType = 255, PageNumber = 297 };
 
 bool writeTIFFWithMarkedSecondPage(const std::filesystem::path& source,
-                                  const std::filesystem::path& destination, TIFFPageMarker marker) {
+                                  const std::filesystem::path& destination, TIFFPageMarker marker,
+                                  uint32_t newSubfileType = 2) {
     // Append a copy of ImageIO's second IFD with a page tag. All other offsets stay valid.
     std::ifstream input(source, std::ios::binary);
     const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(input)),
@@ -310,7 +459,7 @@ bool writeTIFFWithMarkedSecondPage(const std::filesystem::path& source,
     if (marker == TIFFPageMarker::NewSubfileType) {
         put(4, 2); // LONG
         put(1, 4);
-        put(2, 4); // Page bit
+        put(newSubfileType, 4);
     } else {
         put(3, 2); // SHORT
         if (marker == TIFFPageMarker::OldSubfileType) {
@@ -397,6 +546,137 @@ void checkTiff16(const std::filesystem::path& root, CGColorSpaceRef sRGB) {
     check(mainImage.image && preview.image && writeImage(multipage, CFSTR("public.tiff"), mainImage.image,
           nullptr, 2, preview.image), "Generate two-page TIFF without Sigma writer metadata");
     expectUnsupported(multipage, "TIFF16 with another page");
+
+    auto main8 = rgbImage(300, 200, sRGB, std::vector<uint8_t>(300 * 200 * 3, 127));
+    const auto pair8 = root / "rgb8-with-second-ifd.tif";
+    const auto thumbnail8 = root / "rgb8-with-reduced-ifd.tif";
+    check(main8.image && writeImage(pair8, CFSTR("public.tiff"), main8.image, nullptr, 2, preview.image) &&
+        writeTIFFWithMarkedSecondPage(pair8, thumbnail8, TIFFPageMarker::NewSubfileType, 1),
+        "Generate TIFF8 with a reduced-resolution top-level IFD");
+    sony2fuji_buffer thumbnailBuffer{};
+    check(sony2fuji_load_display_image(thumbnail8.u8string().c_str(), &thumbnailBuffer) == SONY2FUJI_STATUS_OK &&
+        thumbnailBuffer.width == 300 && thumbnailBuffer.height == 200 &&
+        thumbnailBuffer.pixel_format == SONY2FUJI_PIXEL_RGBA8,
+        "ImageIO ignores the reduced TIFF8 IFD and imports the primary image");
+    sony2fuji_release_buffer(&thumbnailBuffer);
+}
+
+void checkPng16(const std::filesystem::path& root, CGColorSpaceRef sRGB) {
+    auto fixture = rgb16Image(2, 3, sRGB);
+    constexpr size_t order[8][6] = {
+        {0, 1, 2, 3, 4, 5}, {1, 0, 3, 2, 5, 4}, {5, 4, 3, 2, 1, 0}, {4, 5, 2, 3, 0, 1},
+        {0, 2, 4, 1, 3, 5}, {4, 2, 0, 5, 3, 1}, {5, 3, 1, 4, 2, 0}, {1, 3, 5, 0, 2, 4}
+    };
+    for (uint32_t orientation = 1; orientation <= 8; ++orientation) {
+        const auto path = root / ("png16-orientation-" + std::to_string(orientation) + ".png");
+        auto* properties = orientationProperties(orientation);
+        check(fixture.image && properties && writeImage(path, CFSTR("public.png"), fixture.image, properties),
+              "Generate oriented 16-bit PNG " + std::to_string(orientation));
+        if (properties) CFRelease(properties);
+        if (orientation == 1) check(stripPngColorProfile(path), "Remove PNG16 profile to test untagged RGB");
+        sony2fuji_buffer buffer{};
+        const auto status = sony2fuji_load_display_image(path.u8string().c_str(), &buffer);
+        const uint32_t width = orientation >= 5 ? 3 : 2, height = orientation >= 5 ? 2 : 3;
+        bool matches = status == SONY2FUJI_STATUS_OK && buffer.pixel_format == SONY2FUJI_PIXEL_RGBA16 &&
+            buffer.width == width && buffer.height == height && buffer.stride_bytes == width * 8 &&
+            buffer.size_bytes == width * height * 8;
+        for (size_t i = 0; matches && i < 6; ++i) {
+            const auto* pixel = static_cast<const uint8_t*>(buffer.data) + i * 8;
+            const auto* expected = fixture.bytes.data() + order[orientation - 1][i] * 6;
+            matches = pixel[6] == 255 && pixel[7] == 255;
+            for (size_t c = 0; matches && c < 3; ++c)
+                matches = pixel[2 * c] == expected[2 * c + 1] && pixel[2 * c + 1] == expected[2 * c];
+        }
+        check(matches, "PNG16 preserves low bits and applies orientation " + std::to_string(orientation));
+        sony2fuji_release_buffer(&buffer);
+    }
+
+    auto* p3 = CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3);
+    auto p3Fixture = rgb16Image(2, 3, p3);
+    const auto p3Path = root / "p3-16.png";
+    check(p3Fixture.image && writeImage(p3Path, CFSTR("public.png"), p3Fixture.image) &&
+        stripPngColorProfile(p3Path, "cICP"), "Generate ICC-only P3 PNG16");
+    sony2fuji_buffer converted{};
+    const auto p3Status = sony2fuji_load_display_image(p3Path.u8string().c_str(), &converted);
+    const auto expected = drawSRGB(p3Fixture.image, 16);
+    const auto actual = outputBytes(converted);
+    bool close = p3Status == SONY2FUJI_STATUS_OK && converted.pixel_format == SONY2FUJI_PIXEL_RGBA16 &&
+        actual.size() == expected.size();
+    for (size_t i = 0; close && i < actual.size(); i += 2) {
+        const int value = actual[i] | (actual[i + 1] << 8);
+        const int reference = expected[i] | (expected[i + 1] << 8);
+        close = std::abs(value - reference) <= 2;
+    }
+    check(close, "PNG16 ICC conversion retains 16-bit sRGB precision");
+    sony2fuji_release_buffer(&converted);
+    check(insertPngChunk(p3Path, "cICP", {12, 13, 0, 1}), "Add non-sRGB cICP alongside P3 ICC in PNG16");
+    check(sony2fuji_load_display_image(p3Path.u8string().c_str(), &converted) == SONY2FUJI_STATUS_OK &&
+        outputBytes(converted) == actual, "Matching P3 ICC and cICP preserve PNG16 sRGB conversion");
+    sony2fuji_release_buffer(&converted);
+    CGColorSpaceRelease(p3);
+
+    for (const uint16_t alpha : {uint16_t(65535), uint16_t(65534), uint16_t(32768)}) {
+        const uint16_t pixel[] = {1234, 9153, 17072, alpha};
+        auto* provider = CGDataProviderCreateWithData(nullptr, pixel, sizeof(pixel), nullptr);
+        auto* image = CGImageCreate(1, 1, 16, 64, 8, sRGB,
+            CGBitmapInfo(kCGImageAlphaLast) | kCGBitmapByteOrder16Little,
+            provider, nullptr, false, kCGRenderingIntentDefault);
+        const auto path = root / ("alpha16-" + std::to_string(alpha) + ".png");
+        check(image && writeImage(path, CFSTR("public.png"), image), "Generate PNG16 alpha fixture");
+        if (image) CGImageRelease(image);
+        CGDataProviderRelease(provider);
+        if (alpha != 65535) expectUnsupported(path, "Transparent PNG16", true);
+        else {
+            sony2fuji_buffer buffer{};
+            const auto status = sony2fuji_load_display_image(path.u8string().c_str(), &buffer);
+            check(status == SONY2FUJI_STATUS_OK && buffer.pixel_format == SONY2FUJI_PIXEL_RGBA16 &&
+                buffer.size_bytes == sizeof(pixel) && std::memcmp(buffer.data, pixel, sizeof(pixel)) == 0,
+                "Opaque RGBA PNG16 preserves all channels");
+            sony2fuji_release_buffer(&buffer);
+        }
+    }
+
+    auto* graySpace = CGColorSpaceCreateDeviceGray();
+    const uint16_t grayValue = 1234;
+    auto* provider = CGDataProviderCreateWithData(nullptr, &grayValue, sizeof(grayValue), nullptr);
+    auto* gray = CGImageCreate(1, 1, 16, 16, 2, graySpace, kCGBitmapByteOrder16Little,
+        provider, nullptr, false, kCGRenderingIntentDefault);
+    const auto grayPath = root / "gray16.png";
+    check(gray && writeImage(grayPath, CFSTR("public.png"), gray), "Generate grayscale PNG16");
+    expectUnsupported(grayPath, "Grayscale PNG16", true);
+    if (gray) CGImageRelease(gray);
+    CGDataProviderRelease(provider);
+    CGColorSpaceRelease(graySpace);
+
+    const auto path = root / "rawlab-export.png";
+    const auto outputPath = path.u8string();
+    const uint16_t pixels[] = {1234, 9153, 17072, 65535, 24991, 32910, 40829, 65535};
+    sony2fuji_request request{};
+    request.version = SONY2FUJI_REQUEST_VERSION;
+    request.struct_size = sizeof(request);
+    request.input_type = SONY2FUJI_INPUT_DISPLAY_BUFFER;
+    request.input_pixels = pixels;
+    request.input_width = 2; request.input_height = 1;
+    request.input_pixel_format = SONY2FUJI_PIXEL_RGBA16;
+    request.input_color_space = SONY2FUJI_COLOR_SRGB;
+    request.temperature = 6500;
+    request.brightness = request.contrast = request.saturation = 1;
+    request.intent = SONY2FUJI_INTENT_FINAL;
+    request.output_target = SONY2FUJI_TARGET_FILE;
+    request.output_format = SONY2FUJI_OUTPUT_PNG;
+    request.output_path = outputPath.c_str();
+    request.size_mode = SONY2FUJI_SIZE_NATIVE;
+    sony2fuji_session* session = nullptr;
+    check(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK &&
+          sony2fuji_process(session, &request, nullptr) == SONY2FUJI_STATUS_OK,
+          "RawLab writes its own PNG16 fixture through the C API");
+    sony2fuji_session_destroy(session);
+    sony2fuji_buffer buffer{};
+    const auto status = sony2fuji_load_display_image(path.u8string().c_str(), &buffer);
+    check(status == SONY2FUJI_STATUS_OK && buffer.pixel_format == SONY2FUJI_PIXEL_RGBA16 &&
+          buffer.size_bytes == sizeof(pixels) && std::memcmp(buffer.data, pixels, sizeof(pixels)) == 0,
+          "RawLab PNG16 export reimports without losing low bits");
+    sony2fuji_release_buffer(&buffer);
 }
 
 void runAppleTests() {
@@ -515,8 +795,8 @@ void runAppleTests() {
     const std::vector<uint8_t> p3Bytes = {204, 51, 26, 255};
     auto p3Fixture = rgbaImage(1, 1, p3, p3Bytes);
     const auto p3Path = root / "display-p3.png";
-    check(p3Fixture.image && writeImage(p3Path, CFSTR("public.png"), p3Fixture.image),
-          "Generate Display P3 PNG fixture");
+    check(p3Fixture.image && writeImage(p3Path, CFSTR("public.png"), p3Fixture.image) &&
+          stripPngColorProfile(p3Path, "cICP"), "Generate ICC-only Display P3 PNG fixture");
     if (p3Fixture.image) {
         sony2fuji_buffer p3Buffer{};
         const auto status = sony2fuji_load_display_image(p3Path.u8string().c_str(), &p3Buffer);
@@ -530,6 +810,10 @@ void runAppleTests() {
                 close = close && std::abs(static_cast<int>(actual[index]) - static_cast<int>(expected[index])) <= 2;
             check(close, "Display P3 conversion matches an independent CGContext sRGB reference");
         }
+        sony2fuji_release_buffer(&p3Buffer);
+        check(insertPngChunk(p3Path, "cICP", {12, 13, 0, 1}), "Add non-sRGB cICP alongside P3 ICC in PNG8");
+        check(sony2fuji_load_display_image(p3Path.u8string().c_str(), &p3Buffer) == SONY2FUJI_STATUS_OK &&
+            outputBytes(p3Buffer) == actual, "Matching P3 ICC and cICP preserve PNG8 sRGB conversion");
         sony2fuji_release_buffer(&p3Buffer);
     }
     CGColorSpaceRelease(p3);
@@ -617,11 +901,9 @@ void runAppleTests() {
           "Generate transparent PNG fixture");
     expectUnsupported(transparent, "Transparent PNG");
 
-    auto rgb16 = rgb16Image(2, 1, sRGB);
-    const auto sixteen = root / "sixteen.png";
-    check(rgb16.image && writeImage(sixteen, CFSTR("public.png"), rgb16.image),
-          "Generate 16-bit PNG fixture");
-    expectUnsupported(sixteen, "16-bit PNG");
+    checkPng16(root, sRGB);
+    checkPngColorMetadata(root, sRGB);
+    checkHDRProfiles(root, sRGB);
 
     const auto multipage = root / "multipage.tiff";
     check(fixture.image && writeImage(multipage, CFSTR("public.tiff"), fixture.image, nullptr, 2),
