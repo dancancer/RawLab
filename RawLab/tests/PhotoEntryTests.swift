@@ -1,6 +1,9 @@
 import Foundation
 import ImageIO
 import UIKit
+import Photos
+import PhotosUI
+import SwiftUI
 
 @main enum PhotoEntryTests {
     enum Failure: Error { case check(String) }
@@ -40,6 +43,11 @@ import UIKit
         let oldJPEG = try processor.makeJPEGData(from: buffer, sourceURL: x3f, orientation: .up, quality: 0.92)
         try checkJPEG(oldJPEG, width: 4, height: 3, orientation: 1)
         try restoredPhotoEdit(root, processor: processor, buffer: buffer)
+        if ProcessInfo.processInfo.environment["RAWLAB_TEST_PHOTO_LIBRARY"] == "1" {
+            try pickerBatchContentFallback(root)
+        } else {
+            print("SKIP: Real Photos batch identity regression requires RAWLAB_TEST_PHOTO_LIBRARY=1 and full Photos access")
+        }
 
         if CommandLine.arguments.count > 2, !CommandLine.arguments[2].isEmpty {
             try rawExports(root, original: URL(fileURLWithPath: CommandLine.arguments[2]))
@@ -103,5 +111,51 @@ import UIKit
         let batch = BatchExportModel(job: .init(source: snapshot, targets: [target]), journalStore: journal)
         let data = try batch.render(target: target, settings: .default, look: nil, longEdge: 64)
         try check(!data.isEmpty, "Batch RAW JPEG export tolerates missing source metadata")
+    }
+
+    static func pickerBatchContentFallback(_ root: URL) throws {
+        try check(PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+                  "The dedicated simulator grants full Photos access to the harness")
+        let input = root.appendingPathComponent("library-original.jpg")
+        var identifier: String?
+        try PHPhotoLibrary.shared().performChangesAndWait {
+            identifier = PHAssetChangeRequest.creationRequestForAssetFromImage(atFileURL: input)?.placeholderForCreatedAsset?.localIdentifier
+        }
+        guard let assetID = identifier else { throw Failure.check("Could not create the generated Photos fixture") }
+        // 不在这里删除相册资源：删除会弹系统确认框，无界面的测试程序会一直等待。专用模拟器由调用脚本整体删除。
+        let item = PhotosPickerItem(itemIdentifier: assetID)
+        let store = try EditPersistence(directory: root.appendingPathComponent("picker-batch-edits"))
+        let journal = try BatchJournalStore(directory: root.appendingPathComponent("picker-batch-journal"))
+        let editor = RawEditorViewModel(editPersistence: store)
+        var sourceSettings = RawSettings.default; sourceSettings.hdr = HDRSettings(); sourceSettings.hdr?.exposure = 1
+        let source = BatchSourceSnapshot(identity: .init(resourceIdentifier: "hdr-source"),
+            sourceFile: .externallyManaged(input), displayName: "source.jpg", sourceKind: .raster, settings: sourceSettings)
+        var result: Result<Void, Error>?
+        Task { @MainActor in
+            do {
+                let imported = try await PhotoImportFile.load(from: item)
+                defer { PhotoImportFile.release(imported.url) }
+                let content = try PhotoIdentity.fallback(for: imported.url)
+                var legacy = RawSettings.default; legacy.sharpening = 0.65
+                try store.save(content, state: .init(settings: legacy))
+                let before = try Data(contentsOf: store.directory.appendingPathComponent("edits.json"))
+                let model = BatchExportModel(job: .init(source: source, targets: []), journalStore: journal, editor: editor)
+                await model.addPickerItems([item])
+                try check(model.job.targets.count == 1 && model.validationMessage == nil,
+                          "The unified batch picker accepts the generated library photo")
+                guard let target = model.job.targets.first else { throw Failure.check("Missing batch target") }
+                try check(target.identity.key == "photo:\(assetID)" && target.identity.contentIdentifier == content.contentIdentifier,
+                          "The unified batch picker keeps both library and content identities")
+                let frozen = try IOSHDRBatchPreparation(source: source, editor: editor)
+                    .prepare(target, ordinal: 0, format: .jpeg, longEdge: nil)
+                try check(frozen.settings.exposure == 1 && frozen.settings.sharpening == 0.65,
+                          "HDR batch preparation merges onto the legacy content edit instead of defaults")
+                try check(try Data(contentsOf: store.directory.appendingPathComponent("edits.json")) == before,
+                          "Unified batch preparation never rewrites legacy adjustments")
+                result = .success(())
+            } catch { result = .failure(error) }
+        }
+        try waitUntil { result != nil }
+        try result!.get()
     }
 }

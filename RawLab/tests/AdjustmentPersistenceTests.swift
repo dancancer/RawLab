@@ -8,7 +8,7 @@ import Foundation
         do { try body() } catch { print("PASS: \(label)"); return }
         throw NSError(domain: label, code: 1)
     }
-    static func main() throws {
+    static func main() async throws {
         try refinedRecipe()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -51,6 +51,103 @@ import Foundation
         try concurrent(root.appendingPathComponent("concurrent"))
         try unavailable(root.appendingPathComponent("unavailable"))
         try photoLibraryFallback(root.appendingPathComponent("photo-library-fallback"))
+        try transferableFallback(root.appendingPathComponent("transferable-fallback"))
+        try await lazyTransferableFallback(root.appendingPathComponent("lazy-transferable-fallback"))
+    }
+
+    static func lazyTransferableFallback(_ directory: URL) async throws {
+        let store = try EditPersistence(directory: directory)
+        let photo = PhotoIdentity(resourceIdentifier: "asset", contentIdentifier: "original")
+        let legacy = PhotoIdentity(contentIdentifier: "transferable")
+        var loads = 0
+        func resolve(_ identity: PhotoIdentity) async -> PhotoIdentity {
+            await store.resolvingLegacyContent(for: identity) {
+                loads += 1
+                return "transferable"
+            }
+        }
+        try check(await resolve(photo) == photo && loads == 0,
+                  "An empty registry does not load extra transferable bytes")
+        try store.save(.init(resourceIdentifier: "other-photo"), state: .init(settings: .default))
+        try check(await resolve(photo) == photo && loads == 0,
+                  "A registry with only photo records does not load transferable bytes")
+        var settings = RawSettings.default; settings.exposure = 0.75
+        try store.save(legacy, state: .init(settings: settings))
+        let resolved = await resolve(photo)
+        try check(loads == 1 && resolved.contentIdentifier == "original" &&
+                  store.state(for: resolved)?.settings.exposure == 0.75,
+                  "Missing photo and original records load the old transferable hash once")
+        try check(await resolve(resolved) == resolved && loads == 1,
+                  "An already resolved identity does not reload its transferable")
+        try check(await resolve(legacy) == legacy && loads == 1,
+                  "A file identity never requests photo picker bytes")
+        try store.save(photo, state: .init(settings: .default))
+        try check(await resolve(photo) == photo && loads == 1,
+                  "An existing photo edit skips transferable loading")
+        try store.reset(photo)
+        try check(await resolve(photo) == photo && loads == 1,
+                  "A photo deletion marker skips transferable loading")
+        let other = PhotoIdentity(resourceIdentifier: "other-asset", contentIdentifier: "original")
+        let original = PhotoIdentity(contentIdentifier: "original")
+        try store.save(original, state: .init(settings: .default))
+        try check(await resolve(other) == other && loads == 1,
+                  "An existing original content edit skips transferable loading")
+        try store.reset(original)
+        try check(await resolve(other) == other && loads == 1,
+                  "An original deletion marker skips transferable loading")
+        try Data("corrupt".utf8).write(to: directory.appendingPathComponent("edits.json"))
+        let absent = PhotoIdentity(resourceIdentifier: "absent", contentIdentifier: "absent-original")
+        try check(await resolve(absent) == absent && loads == 1,
+                  "Unreadable storage does not trigger a speculative transferable load")
+    }
+
+    static func transferableFallback(_ directory: URL) throws {
+        let store = try EditPersistence(directory: directory)
+        let original = directory.appendingPathComponent("original.jpg")
+        let transferable = directory.appendingPathComponent("current.jpg")
+        try Data("original photo container".utf8).write(to: original)
+        try Data("edited or transcoded picker bytes".utf8).write(to: transferable)
+        let originalID = try PhotoIdentity.fallback(for: original)
+        let legacyID = try PhotoIdentity.fallback(for: transferable)
+        // JSON 同时验证旧身份兼容性；旧日志没有 legacyContentIdentifier。
+        let photo = try JSONDecoder().decode(PhotoIdentity.self, from: JSONSerialization.data(withJSONObject: [
+            "resourceIdentifier": "edited-asset", "contentIdentifier": originalID.contentIdentifier!,
+            "legacyContentIdentifier": legacyID.contentIdentifier!
+        ]))
+        var settings = RawSettings.default; settings.exposure = 1.5
+        let legacy = PhotoEditState(settings: settings)
+        try store.save(legacyID, state: legacy)
+        let file = directory.appendingPathComponent("edits.json")
+        let before = try Data(contentsOf: file)
+        let receipt = try store.versionedState(for: photo)
+        try check(receipt.state == legacy && receipt.identity.key == "photo:edited-asset",
+                  "Different transferable bytes restore the old content edit under the library identity")
+        try check(try Data(contentsOf: file) == before,
+                  "Transferable fallback does not migrate or rewrite the old record")
+        let roundTrip = try JSONDecoder().decode(PhotoIdentity.self, from: JSONEncoder().encode(photo))
+        try check(store.state(for: roundTrip) == legacy,
+                  "A journal round-trip retains the transferable fallback")
+        settings.exposure = 2
+        try store.save(legacyID, state: .init(settings: settings))
+        try rejects("A changed transferable record invalidates its prepared receipt") {
+            _ = try store.compareAndSave(expected: receipt, state: legacy)
+        }
+        settings.exposure = -0.5
+        try store.save(originalID, state: .init(settings: settings))
+        try check(store.state(for: photo)?.settings.exposure == -0.5,
+                  "Original content adjustments take priority over transferable adjustments")
+        try store.reset(originalID)
+        try check(store.state(for: photo) == nil,
+                  "An original content tombstone prevents transferable edits from reappearing")
+        try store.save(photo, state: legacy)
+        try check(store.state(for: photo) == legacy && store.state(for: legacyID)?.settings.exposure == 2,
+                  "Saving a resolved photo writes its library key and preserves transferable edits")
+        try store.reset(photo)
+        try check(store.state(for: photo) == nil && store.state(for: legacyID) != nil,
+                  "A library tombstone also blocks the transferable fallback")
+        try Data("corrupt".utf8).write(to: file)
+        try check(store.state(for: photo) == nil,
+                  "Cached reads preserve the library tombstone with a transferable fallback")
     }
 
     static func photoLibraryFallback(_ directory: URL) throws {

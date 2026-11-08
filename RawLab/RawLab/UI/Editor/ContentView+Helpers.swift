@@ -411,11 +411,8 @@ extension ContentView {
         do {
             let source = try await loadPhotoSource(from: item)
             let resourceIdentifier = item.itemIdentifier
-            let sourceURL = source.url
-            let identity = await Task.detached(priority: .userInitiated) {
-                (try? PhotoIdentity.fallback(for: sourceURL, resourceIdentifier: resourceIdentifier))
-                    ?? resourceIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
-            }.value
+            let identity = (try? await viewModel.photoIdentity(for: source, from: item))
+                ?? resourceIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
             guard photoImportRequestID == requestID, !Task.isCancelled else {
                 PhotoImportFile.release(source.url)
                 return

@@ -26,5 +26,11 @@ xcrun --sdk iphonesimulator swiftc -swift-version 5 -O -sdk "$SDK" -target "$TAR
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \
     -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/import-state"
 codesign --force --deep --sign - "$HARNESS" >/dev/null
-xcrun simctl spawn "$DEVICE" "$HARNESS/import-state" "$OUT" "${3:-}"
+if [[ "${RAWLAB_TEST_PHOTO_LIBRARY:-0}" == "1" ]]; then
+    xcrun simctl install "$DEVICE" "$HARNESS"
+    trap 'xcrun simctl uninstall "$DEVICE" com.rawlab.tests.import-state >/dev/null 2>&1 || true' EXIT
+    xcrun simctl privacy "$DEVICE" grant photos com.rawlab.tests.import-state
+fi
+SIMCTL_CHILD_RAWLAB_TEST_PHOTO_LIBRARY="${RAWLAB_TEST_PHOTO_LIBRARY:-0}" \
+    xcrun simctl spawn "$DEVICE" "$HARNESS/import-state" "$OUT" "${3:-}"
 echo "Artifacts: $OUT"
