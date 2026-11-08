@@ -446,6 +446,7 @@ extension EditorModel {
         sourceRevision = UUID()
         file = url; sourceIsHDR=isHDR; sourceSupportsCameraHDR=cameraHDR; neutral=stagedNeutral; result=stagedResult
         pendingSDRFallbackNotice = sdrFallback
+        sourceUsesSDRFallback = sdrFallback
         error=nil; previewOutdated=false; statusState = .none
         pendingImportEvent = true
         updatingMetadata = true

@@ -42,8 +42,9 @@ enum BatchFlowModelTests {
         let batch = BatchExportModel(job: job, journal: BatchJournal(directory: directory.appendingPathComponent("uniform")),
                                     probeHDRSource: HDRSourceProbeTests.unsupportedSystem)
         batch.add([photo]); try wait { !batch.validating }
-        try require(batch.job.selectedCount == 1 && batch.job.items[0].validationError == nil && batch.job.items[0].noticeKey != nil,
-                    "unsupported-system images remain selected for uniform batch export")
+        try require(batch.job.selectedCount == 1 && batch.job.items[0].validationError == nil &&
+                    batch.job.items[0].noticeKey == "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。",
+                    "uniform batch preflight keeps fallback photos selected and describes their upcoming SDR export")
         try require(batch.start(), "SDR fallback batch starts")
         try wait { !batch.running }
         try require(batch.job.succeededCount == 1, "SDR fallback batch exports successfully")
@@ -59,6 +60,80 @@ enum BatchFlowModelTests {
         let restoredReview = try model.prepareCollectionExport(skipping: [], format: .jpeg, longEdge: nil, directory: directory)
         try require(restoredReview.ready && !restoredReview.snapshots[0].settings.isHDREditing,
                     "saved HDR collection targets also use SDR on unsupported systems")
+    }
+
+    static func fallbackPersistence(root: URL, fixture: URL) throws {
+        let directory = root.appendingPathComponent("fallback-persistence")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let photo = directory.appendingPathComponent("gain-map.jpg"), other = directory.appendingPathComponent("other.jpg")
+        let source = CGImageSourceCreateWithURL(fixture as CFURL, nil)!
+        for url in [photo, other] {
+            let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.jpeg" as CFString, 1, nil)!
+            CGImageDestinationAddImageFromSource(destination, source, 0, nil)
+            try require(CGImageDestinationFinalize(destination), "fallback persistence fixture is generated")
+        }
+        let model = EditorModel(lookDirectory: directory.appendingPathComponent("looks"),
+            editDirectory: directory.appendingPathComponent("edits"), batchDirectory: directory.appendingPathComponent("batch"),
+            presetDirectory: directory.appendingPathComponent("presets"))
+        model.probeHDRSource = HDRSourceProbeTests.unsupportedSystem
+        var savedHDR = Adjustments(); savedHDR.hdr = HDRSettings()
+        savedHDR.hdr?.exposure = 1.7
+        savedHDR.hdr?.geometry.quarterTurns = 1
+        try model.editStore!.save(photo, state: PhotoEditState(settings: savedHDR, filmID: ""))
+        model.open(photo)
+        try require(model.file == photo && !model.settings.isHDREditing,
+                    "opening a stored HDR record activates its SDR fallback session")
+        model.setInteracting(true)
+        model.settings.exposure = 0.8
+        model.settings.rotateGeometry(clockwise: false)
+        model.setInteracting(false)
+        try require(model.saveEdits(), "fallback session saves changes to its SDR layer")
+        let savedFallback = try model.editStore!.state(for: photo)!.settings
+        try require(savedFallback.hdr == savedHDR.hdr && savedFallback.exposure == 0.8 &&
+                    savedFallback.geometry?.quarterTurns == 3,
+                    "stored fallback edits preserve the HDR mode and snapshot while updating SDR exposure and geometry")
+        model.settings.contrast = 12
+        try require(model.saveEdits(), "a second fallback save succeeds")
+        try require(try model.editStore!.state(for: photo)!.settings.hdr == savedHDR.hdr,
+                    "repeated fallback saves retain the original HDR snapshot")
+        model.undoAdjustment()
+        try require(!model.settings.isHDREditing && model.settings.exposure == 0.8 && model.settings.contrast == 0,
+                    "fallback undo restores SDR controls without enabling HDR")
+        model.redoAdjustment()
+        try require(!model.settings.isHDREditing && model.settings.contrast == 12,
+                    "fallback redo restores SDR controls without enabling HDR")
+        try require(try model.editStore!.state(for: photo)!.settings.hdr == savedHDR.hdr,
+                    "fallback history retains the stored HDR snapshot")
+        model.open(other)
+        model.open(photo)
+        try require(!model.settings.isHDREditing && model.settings.exposure == 0.8 && model.settings.contrast == 12,
+                    "reopening a fallback edit restores the saved SDR layer")
+    }
+
+    static func appleFallbackAdmission(root: URL, fixture: URL) throws {
+        let directory = root.appendingPathComponent("apple-fallback-admission")
+        let apple = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("lutools/tests/fixtures/hdr/apple-legacy-macos26.jpg")
+        let model = EditorModel(lookDirectory: directory.appendingPathComponent("looks"),
+            editDirectory: directory.appendingPathComponent("edits"), batchDirectory: directory.appendingPathComponent("batch"),
+            presetDirectory: directory.appendingPathComponent("presets"))
+        model.probeHDRSource = HDRSourceProbeTests.unsupportedSystem
+        model.open(fixture)
+        model.open(apple)
+        let diagnostic = L10n.text("HDR 照片需要 macOS 15 或 iOS 18 及以上版本。")
+        try require(model.file == fixture && model.error == diagnostic,
+                    "Apple fallback rejection retains the current photo and the system diagnostic")
+        model.addCollectionPhotos([apple])
+        let review = try model.prepareCollectionExport(skipping: [], format: .jpeg, longEdge: nil, directory: directory)
+        try require(!review.ready && review.rows.first?.error?.localizedDescription == diagnostic,
+                    "Apple gain maps are rejected during collection export preflight")
+        let job = BatchExportJob(source: fixture, settings: Adjustments(), look: nil, lookName: "neutral")
+        let batch = BatchExportModel(job: job, journal: BatchJournal(directory: directory.appendingPathComponent("uniform")),
+                                    probeHDRSource: HDRSourceProbeTests.unsupportedSystem)
+        batch.add([apple]); try wait { !batch.validating }
+        try require(batch.job.selectedCount == 0 && batch.job.items[0].validationError == diagnostic &&
+                    batch.job.items[0].noticeKey == nil,
+                    "Apple gain maps cannot enter uniform batch export as SDR targets")
     }
 
     static func adaptiveJPEG(root: URL, fixture: URL) throws {

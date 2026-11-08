@@ -82,8 +82,9 @@ internal static class PhotoInput
 
     internal static Adjustments PrepareBatchSettings(string source,string target,Adjustments value)
     {
-        if (IsRaster(target) && !value.IsHDREditing) {
-            var raster = PrepareInputSettings(target, value);
+        if (IsRaster(target) && value.AIDenoiseEnabled && !value.IsHDREditing) {
+            // 普通图片目标只关闭 AI 降噪；曝光、白平衡和镜头仍由渲染时的输入归一化处理，快照保持原样。
+            var raster = value.Clone();
             raster.AIDenoiseEnabled = false;
             return raster;
         }

@@ -25,6 +25,13 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         }
         switch ProcessInfo.processInfo.environment["RAWLAB_ENTRY_CASE"] {
         case "A": try HDRSourceProbeTests.run(); try BatchFlowModelTests.unsupportedHDRSystem(root: root, fixture: first); return
+        case "A-regressions":
+            try HDRSourceProbeTests.run()
+            try BatchFlowModelTests.fallbackPersistence(root: root, fixture: first)
+            try BatchFlowModelTests.appleFallbackAdmission(root: root, fixture: first)
+            return
+        case "A-apple": try BatchFlowModelTests.appleFallbackAdmission(root: root, fixture: first); return
+        case "A-storage": try BatchFlowModelTests.fallbackPersistence(root: root, fixture: first); return
         case "A-collection": try BatchFlowModelTests.unsupportedHDRSystem(root: root, fixture: first, exerciseOpening: false); return
         case "B": try BatchFlowModelTests.uniformAI(root: root, fixture: first); return
         case "D": try BatchFlowModelTests.adaptiveJPEG(root: root, fixture: first); return
@@ -33,6 +40,8 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         default: break
         }
         try HDRSourceProbeTests.run()
+        try BatchFlowModelTests.fallbackPersistence(root: root, fixture: first)
+        try BatchFlowModelTests.appleFallbackAdmission(root: root, fixture: first)
         try BatchFlowModelTests.unsupportedHDRSystem(root: root, fixture: first)
         try BatchFlowModelTests.adaptiveJPEG(root: root, fixture: first)
         try BatchFlowModelTests.presetWithoutPhoto(root: root, fixture: first)

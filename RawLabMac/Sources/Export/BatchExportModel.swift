@@ -167,7 +167,7 @@ final class BatchExportModel: ObservableObject {
                     }
                 } catch { failure = error.localizedDescription }
                 let message = failure
-                let noticeKey = failure == nil && sdrFallback ? "此照片的 HDR 需 macOS 15 才能编辑，已按 SDR 打开。" : nil
+                let noticeKey = failure == nil && sdrFallback ? "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。" : nil
                 DispatchQueue.main.async {
                     if let index = self.job.items.firstIndex(where: { $0.input == item.input }) {
                         self.job.items[index].noticeKey = noticeKey
