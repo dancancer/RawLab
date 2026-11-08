@@ -228,6 +228,7 @@ uint32_t hdrProcessingVersionForSchema(uint32_t schema) {
     case 11: return SONY2FUJI_HDR_PROCESSING_EFFECTS_VERSION;
     case 12: return SONY2FUJI_HDR_PROCESSING_DETAIL_VERSION;
     case 13: return SONY2FUJI_HDR_PROCESSING_LOOK_VERSION;
+    case 14: return SONY2FUJI_HDR_PROCESSING_LOOK_VERSION;
     default: return 0;
     }
 }
@@ -257,12 +258,58 @@ EditRecipe parseHDR(const Json& root, uint32_t schema) {
         throw std::invalid_argument("Unsupported processing.quality for HDR");
     parsed.hdr->processingVersion=integer(required(processing,"version","processing"),processingVersion,processingVersion,"processing.version");
     const auto& input=required(root,"input","recipe");
-    fields(input,"input",{"path","type"});
+    if (schema >= 14) fields(input,"input",{"path","type","camera_development"});
+    else fields(input,"input",{"path","type"});
     parsed.inputPath=text(required(input,"path","input"),"input.path");
-    if (text(required(input,"type","input"),"input.type")!="hdr_raster")
-        throw std::invalid_argument("input.type must be hdr_raster for HDR recipes");
+    parsed.hdr->inputType=text(required(input,"type","input"),"input.type");
+    if (parsed.hdr->inputType!="hdr_raster" &&
+        !(schema >= 14 && (parsed.hdr->inputType=="raw" || parsed.hdr->inputType=="proraw")))
+        throw std::invalid_argument(schema >= 14 ? "input.type must be hdr_raster, raw or proraw for HDR recipes" :
+            "input.type must be hdr_raster for HDR recipes");
+    if (input.contains("camera_development")) {
+        const std::string path="input.camera_development";
+        if (parsed.hdr->inputType!="raw") throw std::invalid_argument(path+" requires input.type raw");
+        const auto& camera=input.at("camera_development");
+        fields(camera,path,{"version","white_balance_mode","temperature","tint","exposure_reference","fbdd_level",
+            "lens_distortion","lens_tca","lens_auto_crop","lens_profile","camera_profile"});
+        auto& config=parsed.hdr->cameraDevelopment;
+        if (camera.contains("version")) integer(camera.at("version"),1,1,path+".version");
+        if (camera.contains("white_balance_mode")) {
+            const auto mode=text(camera.at("white_balance_mode"),path+".white_balance_mode");
+            if (mode=="temperature") config.white_balance=SONY2FUJI_HDR_CAMERA_WB_TEMPERATURE;
+            else if (mode!="as_shot") throw std::invalid_argument(path+".white_balance_mode must be as_shot or temperature");
+        }
+        const bool temperature=config.white_balance==SONY2FUJI_HDR_CAMERA_WB_TEMPERATURE;
+        config.temperature=number(camera,"temperature",temperature ? 6500 : 0,temperature ? 2000 : 0,temperature ? 50000 : 0,path);
+        config.tint=number(camera,"tint",0,temperature ? -150 : 0,temperature ? 150 : 0,path);
+        if (camera.contains("exposure_reference")) {
+            const auto reference=text(camera.at("exposure_reference"),path+".exposure_reference");
+            if (reference=="sensor") config.exposure_reference=SONY2FUJI_HDR_CAMERA_EXPOSURE_SENSOR;
+            else if (reference!="metadata") throw std::invalid_argument(path+".exposure_reference must be metadata or sensor");
+        }
+        if (camera.contains("fbdd_level")) config.fbdd_level=integer(camera.at("fbdd_level"),0,2,path+".fbdd_level");
+        config.lens_flags=(boolean(camera,"lens_distortion",path) ? SONY2FUJI_HDR_CAMERA_LENS_DISTORTION : 0) |
+            (boolean(camera,"lens_tca",path) ? SONY2FUJI_HDR_CAMERA_LENS_TCA : 0);
+        parsed.hdr->lensAutoCrop=!camera.contains("lens_auto_crop") || boolean(camera,"lens_auto_crop",path);
+        if (config.lens_flags && parsed.hdr->lensAutoCrop) config.lens_flags|=SONY2FUJI_HDR_CAMERA_LENS_AUTO_CROP;
+        if (camera.contains("lens_profile") && !camera.at("lens_profile").is_null()) {
+            parsed.hdr->lensProfile=text(camera.at("lens_profile"),path+".lens_profile");
+            if (!config.lens_flags || parsed.hdr->lensProfile.size()>1024 ||
+                std::any_of(parsed.hdr->lensProfile.begin(),parsed.hdr->lensProfile.end(),[](unsigned char c) { return c<32 || c==127; }))
+                throw std::invalid_argument(path+".lens_profile requires active lens correction and a valid id");
+        }
+        if (camera.contains("camera_profile") && !camera.at("camera_profile").is_null()) {
+            const auto& profile=camera.at("camera_profile");
+            fields(profile,path+".camera_profile",{"path","sha256"});
+            parsed.hdr->cameraProfilePath=text(required(profile,"path",path+".camera_profile"),path+".camera_profile.path");
+            parsed.hdr->cameraProfileSHA256=text(required(profile,"sha256",path+".camera_profile"),path+".camera_profile.sha256");
+            const auto& sha=parsed.hdr->cameraProfileSHA256;
+            if (sha.size()!=64 || !std::all_of(sha.begin(),sha.end(),[](char c) { return (c>='0' && c<='9') || (c>='a' && c<='f'); }))
+                throw std::invalid_argument(path+".camera_profile.sha256 must be a lowercase SHA-256 digest");
+        }
+    }
     const auto& edits=required(root,"edits","recipe");
-    if (schema == 13) fields(edits,"edits",{"exposure","white_balance","tone","geometry","color","hsl","color_grading","rendition","effects","detail","look"});
+    if (schema >= 13) fields(edits,"edits",{"exposure","white_balance","tone","geometry","color","hsl","color_grading","rendition","effects","detail","look"});
     else if (schema == 12) fields(edits,"edits",{"exposure","white_balance","tone","geometry","color","hsl","color_grading","rendition","effects","detail"});
     else if (schema == 11) fields(edits,"edits",{"exposure","white_balance","tone","geometry","color","hsl","color_grading","rendition","effects"});
     else if (schema == 10) fields(edits,"edits",{"exposure","white_balance","tone","geometry","color","hsl","color_grading","rendition"});
@@ -338,9 +385,17 @@ EditRecipe parseHDR(const Json& root, uint32_t schema) {
     const auto& output=required(root,"output","recipe");
     fields(output,"output",{"path","format","base_color","jpeg_quality","size"});
     parsed.outputPath=text(required(output,"path","output"),"output.path");
-    if (text(required(output,"format","output"),"output.format")!="hdr_jpeg")
+    const auto format=text(required(output,"format","output"),"output.format");
+    parsed.hdr->hdrOutput=format=="hdr_jpeg";
+    if (!parsed.hdr->hdrOutput && schema >= 14) {
+        if (format=="jpeg") parsed.outputFormat=SONY2FUJI_OUTPUT_JPEG;
+        else if (format=="png") parsed.outputFormat=SONY2FUJI_OUTPUT_PNG;
+        else if (format=="dng") parsed.outputFormat=SONY2FUJI_OUTPUT_DNG;
+        else throw std::invalid_argument("output.format must be hdr_jpeg, jpeg, png or dng");
+    } else if (!parsed.hdr->hdrOutput)
         throw std::invalid_argument("output.format must be hdr_jpeg for HDR recipes");
-    const auto color=text(required(output,"base_color","output"),"output.base_color");
+    const auto color=!parsed.hdr->hdrOutput && !output.contains("base_color") ? "srgb" :
+        text(required(output,"base_color","output"),"output.base_color");
     if (color=="srgb") parsed.hdr->baseColor=SONY2FUJI_HDR_COLOR_SRGB;
     else if (color=="display_p3") parsed.hdr->baseColor=SONY2FUJI_HDR_COLOR_DISPLAY_P3;
     else throw std::invalid_argument("output.base_color must be srgb or display_p3");
@@ -368,7 +423,7 @@ std::string serializeHDR(const EditRecipe& recipe) {
     if (recipe.outputLongEdge) size={{"mode","limit_long_edge"},{"long_edge",recipe.outputLongEdge}};
     Json result={{"schema_version",recipe.schemaVersion},
         {"processing",{{"family","rawlab_hdr"},{"version",h.processingVersion},{"quality","standard"}}},
-        {"input",{{"path",recipe.inputPath},{"type","hdr_raster"}}},
+        {"input",{{"path",recipe.inputPath},{"type",h.inputType}}},
         {"edits",{{"exposure",{{"ev",recipe.exposureEv}}},
             {"white_balance",{{"mode","relative"},{"relative_temperature",h.relativeTemperature},{"relative_tint",h.relativeTint}}},
             {"tone",{{"contrast",recipe.contrast},{"saturation",recipe.saturation},{"highlights",recipe.highlights},{"shadows",recipe.shadows}}},
@@ -376,9 +431,21 @@ std::string serializeHDR(const EditRecipe& recipe) {
                 {"quarter_turns",g.quarter_turns},{"flip_horizontal",g.flip_horizontal!=0},{"flip_vertical",g.flip_vertical!=0},
                 {"straighten_degrees",g.straighten_degrees},{"perspective",{{"horizontal",recipe.perspective.horizontal},
                     {"vertical",recipe.perspective.vertical}}}}}}},
-        {"output",{{"path",recipe.outputPath},{"format","hdr_jpeg"},
+        {"output",{{"path",recipe.outputPath},{"format",h.hdrOutput ? "hdr_jpeg" :
+            recipe.outputFormat==SONY2FUJI_OUTPUT_PNG ? "png" : recipe.outputFormat==SONY2FUJI_OUTPUT_DNG ? "dng" : "jpeg"},
             {"base_color",h.baseColor==SONY2FUJI_HDR_COLOR_SRGB ? "srgb" : "display_p3"},
             {"jpeg_quality",recipe.jpegQuality},{"size",size}}}};
+    if (recipe.schemaVersion >= 14 && h.inputType=="raw") {
+        const auto& c=h.cameraDevelopment;
+        Json camera={{"version",1},{"white_balance_mode",c.white_balance==SONY2FUJI_HDR_CAMERA_WB_TEMPERATURE ? "temperature" : "as_shot"},
+            {"temperature",c.temperature},{"tint",c.tint},
+            {"exposure_reference",c.exposure_reference==SONY2FUJI_HDR_CAMERA_EXPOSURE_SENSOR ? "sensor" : "metadata"},
+            {"fbdd_level",c.fbdd_level},{"lens_distortion",(c.lens_flags & SONY2FUJI_HDR_CAMERA_LENS_DISTORTION)!=0},
+            {"lens_tca",(c.lens_flags & SONY2FUJI_HDR_CAMERA_LENS_TCA)!=0},{"lens_auto_crop",h.lensAutoCrop}};
+        if (!h.lensProfile.empty()) camera["lens_profile"]=h.lensProfile;
+        if (!h.cameraProfilePath.empty()) camera["camera_profile"]={{"path",h.cameraProfilePath},{"sha256",h.cameraProfileSHA256}};
+        result["input"]["camera_development"]=camera;
+    }
     if (recipe.schemaVersion >= 8) {
         auto& tone = result["edits"]["tone"];
         tone["black_point"] = recipe.toneControls.black_point;

@@ -13,11 +13,13 @@ def main():
     parser.add_argument("--cli", required=True, type=Path, help="Path to the trusted sony2fuji executable")
     parser.add_argument("--read-root", required=True, action="append", type=Path, help="Allowed input directory (repeatable)")
     parser.add_argument("--write-root", required=True, action="append", type=Path, help="Allowed output directory (repeatable)")
+    parser.add_argument("--lens-database", type=Path, help="Lensfun file or directory within an allowed read root")
     parser.add_argument("--timeout", default=120.0, type=float, help="Per-tool timeout in seconds, including validation")
     args = parser.parse_args()
     logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
     try:
-        config = ServerConfig(args.cli, tuple(args.read_root), tuple(args.write_root), args.timeout)
+        config = ServerConfig(args.cli, tuple(args.read_root), tuple(args.write_root), args.timeout,
+                              lens_database=args.lens_database)
         asyncio.run(serve(config))
     except KeyboardInterrupt:
         pass

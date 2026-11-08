@@ -5,10 +5,12 @@ import itertools
 import json
 import pathlib
 import platform
+import struct
 import subprocess
 import tempfile
 import unittest
 import sys
+import zlib
 
 
 ERROR_CODES = {
@@ -87,7 +89,7 @@ class AgentCommands(unittest.TestCase):
             self.assertIsInstance(value["error"], dict)
             self.assertEqual(set(value["error"]), {"code", "message", "status"})
             self.assertIn(value["error"]["code"], ERROR_CODES)
-            self.assertEqual(value["error"]["code"], error)
+            self.assertIn(value["error"]["code"], {error} if isinstance(error, str) else error)
             self.assertIsInstance(value["error"]["message"], str)
             self.assertTrue(value["error"]["message"])
             if value["error"]["status"] is not None:
@@ -97,10 +99,12 @@ class AgentCommands(unittest.TestCase):
 
     def test_capabilities_and_flag_order(self):
         hdr=sys.platform!="darwin" or tuple(map(int,platform.mac_ver()[0].split(".")[:2]))>=(15,0)
+        declared = self.envelope(self.run_cli("--capabilities", "--json"), "capabilities")["result"]
+        proraw = "proraw" in declared["input_types"]
         expected = {
-            "recipe_versions": [1, 2, 3, 4, 5] + ([6] if hdr else []) + [7] + ([8, 9, 10, 11, 12, 13] if hdr else []),
+            "recipe_versions": [1, 2, 3, 4, 5] + ([6] if hdr else []) + [7] + ([8, 9, 10, 11, 12, 13, 14] if hdr else []),
             "commands": ["capabilities", "validate_recipe", "info", "preview", "export"],
-            "input_types": (["raw", "raster"] if sys.platform in ("darwin", "win32") else ["raw"])+(["hdr_raster"] if hdr else []),
+            "input_types": (["raw", "raster"] if sys.platform in ("darwin", "win32") else ["raw"])+(["hdr_raster"] if hdr else [])+(["proraw"] if proraw else []),
             "output_formats": ["jpeg", "png", "dng"]+(["hdr_jpeg"] if hdr else []),
             "exposure_modes": ["scene", "preview", "sensor"],
             "geometry_operations": ["crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten", "perspective"],
@@ -112,6 +116,9 @@ class AgentCommands(unittest.TestCase):
                     self.assertEqual(result["result"][key], value)
                 if hdr:
                     capabilities = result["result"]["hdr"]
+                    self.assertEqual(capabilities["source_recipe_version"], 14)
+                    self.assertEqual(capabilities["input_types"], ["hdr_raster", "raw"]+(["proraw"] if proraw else []))
+                    self.assertEqual(capabilities["output_formats"], ["hdr_jpeg", "jpeg", "png", "dng"])
                     self.assertEqual(capabilities["processing_version"], 1)
                     self.assertEqual(capabilities["processing_versions"], [1, 2, 3, 4, 5, 6, 7])
                     self.assertEqual(capabilities["tone_recipe_version"], 8)
@@ -171,6 +178,104 @@ class AgentCommands(unittest.TestCase):
                 self.assertEqual(result["output"]["jpeg_quality"], 95)
                 self.assertEqual(result["output"]["size"], {"mode": "native"})
         self.assertFalse((self.root / "edited.jpg").exists())
+
+    def test_info_known_raw_extensions_ignore_rgb_thumbnail(self):
+        source = pathlib.Path(__file__).parent / "fixtures/linear-uncompressed.dng"
+        payload = bytearray(source.read_bytes())
+        raw_ifd = struct.unpack_from("<I", payload, 4)[0]
+        pixels = len(payload)
+        payload.extend(b"\x80" * (4 * 3 * 3))
+        bits = len(payload)
+        payload.extend(struct.pack("<3H", 8, 8, 8))
+        thumbnail_ifd = len(payload)
+        # IFD0 模拟 4x3 RGB 缩略图，原有 32x24 RAW 目录及像素仍通过 SubIFDs 可达。
+        tags = {
+            256: (4, 1, 4), 257: (4, 1, 3), 258: (3, 3, bits),
+            259: (3, 1, 1), 262: (3, 1, 2), 273: (4, 1, pixels),
+            277: (3, 1, 3), 278: (4, 1, 3), 279: (4, 1, 36),
+            284: (3, 1, 1), 330: (4, 1, raw_ifd),
+        }
+        payload.extend(struct.pack("<H", len(tags)))
+        for tag, (kind, count, value) in sorted(tags.items()):
+            payload.extend(struct.pack("<HHII", tag, kind, count, value))
+        payload.extend(b"\0" * 4)
+        struct.pack_into("<I", payload, 4, thumbnail_ifd)
+        if sys.platform in ("darwin", "win32"):
+            alias = self.root / "thumbnail.unknown"
+            alias.write_bytes(payload)
+            result = self.envelope(self.run_cli("--info", alias, "--json"), "info")["result"]
+            self.assertEqual(result["input_type"], "raster")
+            self.assertEqual(result["identified_size"], {"width": 4, "height": 3, "orientation": 1})
+        for extension in ("arw", "arq", "dng", "nef", "nrw", "cr2", "cr3", "crw", "raf",
+                          "rw2", "rwl", "orf", "pef", "srw", "raw", "3fr", "fff", "iiq", "mos",
+                          "srf", "sr2", "mrw", "kdc", "dcr", "erf", "x3f", "NeF"):
+            with self.subTest(extension=extension):
+                alias = self.root / f"thumbnail.{extension}"
+                alias.write_bytes(payload)
+                result = self.envelope(self.run_cli("--info", alias, "--json"), "info")["result"]
+                self.assertEqual(result["camera"], {"make": "RawLab", "model": "Synthetic"})
+                self.assertEqual(result["identified_size"], {"width": 32, "height": 24, "orientation": 6})
+
+    def test_info_known_raw_extension_does_not_probe_hdr(self):
+        alias = self.root / "broken.NEF"
+        alias.write_bytes(b"\xff\xd8http://ns.adobe.com/hdr-gain-map/1.0/\0invalid" + b"\0" * 4096)
+        result = self.envelope(self.run_cli("--info", alias, "--json"), "info", "unsupported")
+        self.assertNotIn("HDR", result["error"]["message"])
+
+    def test_info_unknown_extension_rejects_damaged_hdr(self):
+        alias = self.root / "broken.jpe"
+        alias.write_bytes(b"\xff\xd8http://ns.adobe.com/hdr-gain-map/1.0/\0invalid" + b"\0" * 4096)
+        result = self.envelope(self.run_cli("--info", alias, "--json"), "info", {"unsupported", "processing_error"})
+        self.assertIn("HDR", result["error"]["message"])
+
+    @unittest.skipUnless(sys.platform in ("darwin", "win32"), "display image loader requires Mac or Windows")
+    def test_info_recognizes_png_content_without_known_extension(self):
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+        alias = self.root / "source.unknown"
+        alias.write_bytes(b"\x89PNG\r\n\x1a\n" +
+                          chunk(b"IHDR", struct.pack(">IIBBBBB", 4, 3, 8, 2, 0, 0, 0)) +
+                          chunk(b"IDAT", zlib.compress((b"\0" + b"\x80" * 12) * 3)) + chunk(b"IEND", b""))
+        result = self.envelope(self.run_cli("--info", alias, "--json"), "info")["result"]
+        self.assertEqual(result["input_type"], "raster")
+        self.assertEqual(result["identified_size"], {"width": 4, "height": 3, "orientation": 1})
+
+    @unittest.skipUnless(sys.platform in ("darwin", "win32"), "display image loader requires Mac or Windows")
+    def test_info_recognizes_jpeg_content_without_known_extension(self):
+        self.document["input"]["path"] = str(pathlib.Path(__file__).parent / "fixtures/linear-uncompressed.dng")
+        self.document["output"]["path"] = str(self.root / "source.jpg")
+        self.write_recipe()
+        self.envelope(self.run_cli("--recipe", self.recipe, "--json"), "export")
+        data = (self.root / "source.jpg").read_bytes()
+        for name in ("source.jfif", "source.jpe", "source"):
+            with self.subTest(name=name):
+                alias = self.root / name
+                alias.write_bytes(data)
+                result = self.envelope(self.run_cli("--info", alias, "--json"), "info")["result"]
+                self.assertEqual(result["input_type"], "raster")
+                self.assertGreater(result["identified_size"]["width"], 0)
+
+    def test_info_recognizes_gain_map_content_without_known_extension(self):
+        capabilities = self.envelope(self.run_cli("--capabilities", "--json"), "capabilities")["result"]
+        if 14 not in capabilities["recipe_versions"]:
+            self.skipTest("CLI runtime has no HDR v14 capability")
+        self.document = {
+            "schema_version": 14,
+            "processing": {"family": "rawlab_hdr", "version": 7, "quality": "standard"},
+            "input": {"path": str(pathlib.Path(__file__).parent / "fixtures/bayer-demosaic.dng"), "type": "raw"},
+            "edits": {"exposure": {"ev": .5}, "white_balance": {"mode": "relative"}},
+            "output": {"path": "hdr.jpg", "format": "hdr_jpeg", "base_color": "srgb"},
+        }
+        self.write_recipe()
+        self.envelope(self.run_cli("--recipe", self.recipe, "--json"), "export")
+        data = (self.root / "hdr.jpg").read_bytes()
+        for name in ("hdr.jfif", "hdr.jpe", "hdr"):
+            with self.subTest(name=name):
+                alias = self.root / name
+                alias.write_bytes(data)
+                result = self.envelope(self.run_cli("--info", alias, "--json"), "info")["result"]
+                self.assertEqual(result["input_type"], "hdr_raster")
 
     def test_lens_database_validation_flag_order(self):
         self.write_recipe()

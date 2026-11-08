@@ -11,6 +11,73 @@ import unittest
 
 
 class HDRAgent(unittest.TestCase):
+    def v14_export(self, root, source_type, source, output_format):
+        output = root / f"{source_type}-{output_format}.out"
+        document = {"schema_version": 14,
+            "processing": {"family": "rawlab_hdr", "version": 7, "quality": "standard"},
+            "input": {"path": str(source), "type": source_type},
+            "edits": {"exposure": {"ev": .5}, "white_balance": {"mode": "relative"}},
+            "output": {"path": str(output), "format": output_format, "base_color": "srgb",
+                "size": {"mode": "limit_long_edge", "long_edge": 32}}}
+        recipe = root / "edit.json"
+        recipe.write_text(json.dumps(document), encoding="utf-8")
+        arguments = ["--recipe", recipe, "--json"]
+        _, capabilities = self.run_cli("--capabilities", "--json")
+        if source_type == "raw" and capabilities["result"]["optional_features"]["lens_correction"]:
+            arguments += ["--lens-database", Path(__file__).parent / "fixtures/lenses.xml"]
+        process, result = self.run_cli(*arguments)
+        self.assertEqual(process.returncode, 0, result)
+        self.assertEqual(result["result"]["format"], output_format)
+        data = output.read_bytes()
+        self.assertTrue(data)
+        if output_format == "hdr_jpeg":
+            self.assertIn(b"urn:iso:std:iso:ts:21496:-1", data)
+        elif output_format in ("jpeg", "png"):
+            self.assertNotIn(b"urn:iso:std:iso:ts:21496:-1", data)
+            self.assertTrue(data.startswith(b"\xff\xd8" if output_format == "jpeg" else b"\x89PNG"))
+        else:
+            self.assertIn(data[:4], (b"II*\x00", b"MM\x00*"))
+        return output
+
+    def test_v14_camera_raw_outputs(self):
+        with tempfile.TemporaryDirectory(prefix="rawlab-hdr-camera-") as temporary:
+            root = Path(temporary)
+            source = Path(__file__).parent / "fixtures/bayer-demosaic.dng"
+            for output_format in ("hdr_jpeg", "jpeg", "png", "dng"):
+                with self.subTest(output=output_format):
+                    self.v14_export(root, "raw", source, output_format)
+
+    def test_v14_camera_white_balance_reaches_decode(self):
+        with tempfile.TemporaryDirectory(prefix="rawlab-hdr-camera-wb-") as temporary:
+            root = Path(temporary)
+            source = Path(__file__).parent / "fixtures/bayer-demosaic.dng"
+            baseline = self.v14_export(root, "raw", source, "png").read_bytes()
+            recipe = root / "edit.json"
+            document = json.loads(recipe.read_text())
+            document["input"]["camera_development"] = {
+                "white_balance_mode": "temperature", "temperature": 9000, "tint": 28}
+            recipe.write_text(json.dumps(document), encoding="utf-8")
+            process, result = self.run_cli("--recipe", recipe, "--json")
+            self.assertEqual(process.returncode, 0, result)
+            self.assertNotEqual((root / "raw-png.out").read_bytes(), baseline)
+
+    def test_v14_gain_map_outputs_and_content_info(self):
+        with tempfile.TemporaryDirectory(prefix="rawlab-hdr-gainmap-") as temporary:
+            root = Path(temporary)
+            source = Path(__file__).parent / "fixtures/bayer-demosaic.dng"
+            gainmap = self.v14_export(root, "raw", source, "hdr_jpeg")
+            for output_format in ("hdr_jpeg", "jpeg", "png", "dng"):
+                with self.subTest(output=output_format):
+                    output = self.v14_export(root, "hdr_raster", gainmap, output_format)
+                    if output_format in ("jpeg", "hdr_jpeg"):
+                        for name in ("photo.jfif", "photo.jpe", "no-extension"):
+                            alias = root / name
+                            alias.write_bytes(output.read_bytes())
+                            process, info = self.run_cli("--info", alias, "--json")
+                            self.assertEqual(process.returncode, 0, info)
+                            self.assertEqual(info["result"]["input_type"], "hdr_raster" if output_format == "hdr_jpeg" else "raster")
+                            self.assertEqual(max(info["result"]["identified_size"][axis] for axis in ("width", "height")), 32)
+
     def run_cli(self, *arguments):
         process = subprocess.run([str(CLI), *map(str, arguments)], capture_output=True, text=True, timeout=120)
         return process, json.loads(process.stdout)
