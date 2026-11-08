@@ -1,11 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-: "${IOS_SIMULATOR_UDID:?Pass the explicitly task-owned simulator UUID, seeded with one public HDR original}"
+: "${IOS_SIMULATOR_UDID:?Pass the explicitly task-owned simulator UUID}"
 PRODUCTS="${1:?Pass build-for-testing Build/Products directory}"
 OUT="${2:?Pass a new task-owned output directory}"
+FIXTURE="${3:-${RAWLAB_HDR_UI_FIXTURE:-}}"
 mkdir -p "$OUT"
-python3 - "$PRODUCTS" "$OUT" "$ROOT/lutools/tests/fixtures/hdr-look-linear.cube" <<'PY'
+python3 - "$PRODUCTS" "$OUT" "$ROOT/lutools/tests/fixtures/hdr-look-linear.cube" "$FIXTURE" <<'PY'
 from pathlib import Path
 import os,plistlib,shutil,subprocess,sys
 products=Path(sys.argv[1]).resolve();out=Path(sys.argv[2]).resolve()
@@ -31,6 +32,22 @@ for target in targets:
     if proraw:
         env['RAWLAB_PRORAW_UI']='1'
     if 'UITargetAppPath' not in target:continue
+    if not camera and not proraw:
+        fixture=Path(sys.argv[4])
+        if not fixture.is_file():
+            raise SystemExit('Pass the generated HDR JPEG as argument 3 or RAWLAB_HDR_UI_FIXTURE; each test seeds its own Photos assets')
+        original_host=target['TestHostPath']
+        host=out/'RawLabHDRUITests-Runner.app'
+        shutil.copytree(original_host,host)
+        bundle=host/'PlugIns/RawLabUITests.xctest'
+        shutil.copyfile(fixture,bundle/'HDRUIFixture.jpg')
+        host_info=host/'Info.plist';info=plistlib.loads(host_info.read_bytes())
+        info['NSPhotoLibraryUsageDescription']='Prepare isolated HDR UI test photos and verify only test exports.'
+        host_info.write_bytes(plistlib.dumps(info))
+        subprocess.run(['codesign','--force','--deep','--sign','-',str(host)],check=True)
+        target['TestHostPath']=str(host)
+        target['TestBundlePath']=str(bundle)
+        target['DependentProductPaths']=[p.replace(original_host,str(host)) for p in target.get('DependentProductPaths',[])]
     # 仅测试副本开启文件共享，使真实 Files picker 能访问本地 CUBE；不修改产品源码或构建产物。
     app=out/'RawLabHDRUI.app';original_app=target['UITargetAppPath']
     shutil.copytree(original_app,app)
@@ -55,17 +72,21 @@ for target in targets:
     target['DependentProductPaths']=[str(app) if p==original_app else p for p in target.get('DependentProductPaths',[])]
 plistlib.dump(value,(out/'hdr.xctestrun').open('wb'))
 PY
+STATUS=0
 xcodebuild test-without-building -xctestrun "$OUT/hdr.xctestrun" \
     -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_UDID" \
     -resultBundlePath "$OUT/HDRUI.xcresult" -parallel-testing-enabled NO \
     -collect-test-diagnostics never \
-    -only-testing:"${RAWLAB_HDR_UI_TEST:-RawLabUITests/HDRPhotoUITests}" > "$OUT/HDRUI.log" 2>&1
+    -only-testing:"${RAWLAB_HDR_UI_TEST:-RawLabUITests/HDRPhotoUITests}" > "$OUT/HDRUI.log" 2>&1 || STATUS=$?
 xcrun xcresulttool get test-results summary --path "$OUT/HDRUI.xcresult" --compact > "$OUT/summary.json"
+if [[ "$STATUS" -ne 0 ]]; then exit "$STATUS"; fi
 python3 - "$OUT/summary.json" <<'PY'
 import json,os,sys
 v=json.load(open(sys.argv[1]))
 assert v['failedTests']==0 and v['expectedFailures']==0 and v['passedTests']>0,v
-if not os.environ.get('RAWLAB_HDR_UI_TEST'):
+if os.environ.get('RAWLAB_HDR_UI_TEST'):
+    assert (v['passedTests'],v['skippedTests'],v['totalTestCount'])==(1,0,1),v
+else:
     assert (v['passedTests'],v['skippedTests'],v['totalTestCount'])==(11,8,19),v
 assert not any('Publishing changes from within view updates' in w['message'] for w in v['runtimeWarnings']),v['runtimeWarnings']
 PY
