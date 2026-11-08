@@ -83,11 +83,12 @@ import Combine
             model.schedule()
             try wait("same-source same-settings statistics retry settles") { !model.busy }
             try histogramMatches(model.neutral!, "same-engine recovered neutral geometry=\(geometry)")
-            let reference = model.neutral!.image, attempts = calls
+            try histogramMatches(model.result!, "same-engine recovered after geometry=\(geometry)")
+            let reference = model.neutral!.image, after = model.result!.image, attempts = calls
             model.schedule()
-            try wait("complete neutral statistics return to cache reuse") { !model.busy }
-            try check(model.neutral!.image === reference && calls == attempts + 1,
-                      "healthy neutral is reused while only after is rendered: geometry=\(geometry)")
+            try wait("complete photo statistics return to exact pair cache reuse") { !model.busy }
+            try check(model.neutral!.image === reference && model.result!.image === after && calls == attempts,
+                      "healthy exact pair is reused without rendering either frame: geometry=\(geometry)")
         }
     }
     static func main() throws {
