@@ -84,9 +84,9 @@ internal static class TransformUiChecks
             }
             Click((Button)window.GeometryEditor.FindName("ResetGeometry"));InteractionChecks.PumpUntil(()=>PreviewReady(window));
             var previousLook=Get<string>(window,"lut");Set(window,"lut",Path.Combine(directory,"missing.cube"));
-            typeof(MainWindow).GetMethod("Schedule",Private)!.Invoke(window,[false]);
+            typeof(MainWindow).GetMethod("Schedule",Private)!.Invoke(window,[false,false]);
             check(!window.ApplyDraftButton.IsEnabled && draft.Active,"Failed draft preview invalidates a previously ready Apply gate");
-            Set(window,"lut",previousLook);typeof(MainWindow).GetMethod("Schedule",Private)!.Invoke(window,[false]);InteractionChecks.PumpUntil(()=>PreviewReady(window));
+            Set(window,"lut",previousLook);typeof(MainWindow).GetMethod("Schedule",Private)!.Invoke(window,[false,false]);InteractionChecks.PumpUntil(()=>PreviewReady(window));
             var width=(TextBox)window.GeometryEditor.FindName("CropWidth");Commit(width,"60");
             check(draft.Geometry.CropWidth==.6 && Get<Adjustments>(window,"settings").Capture().SameAs(original) && store.Find(photo)!.Settings.SameAs(original),
                 "Crop preview changes neither committed settings nor saved record");

@@ -91,8 +91,35 @@ internal static class InteractionChecks
             if(!ReferenceEquals(imageField.GetValue(window.ResultCanvas),placeholder) || window.ExportPng.IsEnabled)
                 throw new Exception("Selecting a thumbnail must paint immediately without enabling export");
             Console.WriteLine($"thumbnail-dispatch-ms={timer.Elapsed.TotalMilliseconds:F2}");
-            PumpUntil(()=>window.ExportPng.IsEnabled);
             var output=Path.Combine(repo,"build","interaction-verification");Directory.CreateDirectory(output);
+            var inputs=Path.Combine(output,Guid.NewGuid().ToString("N"));Directory.CreateDirectory(inputs);
+            var other=Path.Combine(inputs,"other"+Path.GetExtension(raw));File.Copy(raw,other);
+            var otherPlaceholder=BitmapSource.Create(2,1,96,96,PixelFormats.Rgb24,null,new byte[]{255,0,0,0,255,0},6);otherPlaceholder.Freeze();
+            window.OpenFile(other,otherPlaceholder);
+            if(imageField.GetValue(window.ResultCanvas)==null || imageField.GetValue(window.NeutralCanvas)==null ||
+               ReferenceEquals(imageField.GetValue(window.ResultCanvas),placeholder) ||
+               ReferenceEquals(imageField.GetValue(window.NeutralCanvas),placeholder) || window.ExportPng.IsEnabled)
+                throw new Exception("Switching photos must replace both placeholder canvases without enabling export");
+            var previousPlaceholder=imageField.GetValue(window.ResultCanvas);var previousNeutral=imageField.GetValue(window.NeutralCanvas);
+            window.OpenFile(raw);
+            // 当前照片的内嵌预览可能已就绪；只排除上一张照片的占位图。
+            if(ReferenceEquals(imageField.GetValue(window.ResultCanvas),previousPlaceholder) ||
+               ReferenceEquals(imageField.GetValue(window.NeutralCanvas),previousNeutral) || window.ExportPng.IsEnabled)
+                throw new Exception("Opening without a thumbnail must not retain the previous photo's placeholder");
+            PumpUntil(()=>window.ExportPng.IsEnabled);
+            if(imageField.GetValue(window.ResultCanvas)==null || ReferenceEquals(imageField.GetValue(window.ResultCanvas),otherPlaceholder))
+                throw new Exception("An exact result must replace the opening placeholder");
+            var invalid=Path.Combine(inputs,"invalid.png");File.WriteAllText(invalid,"invalid image");
+            window.OpenFile(invalid,otherPlaceholder);
+            var failedField=typeof(MainWindow).GetField("renderFailed",BindingFlags.Instance|BindingFlags.NonPublic)!;
+            PumpUntil(()=>(bool)failedField.GetValue(window)!);
+            if(imageField.GetValue(window.ResultCanvas)!=null || imageField.GetValue(window.NeutralCanvas)!=null || window.ExportPng.IsEnabled)
+                throw new Exception("A failed initial render must clear its placeholder without enabling export");
+            window.OpenFile(raw,otherPlaceholder);PumpUntil(()=>window.ExportPng.IsEnabled);
+            if(ReferenceEquals(imageField.GetValue(window.ResultCanvas),otherPlaceholder))
+                throw new Exception("A recovered exact result must replace the opening placeholder");
+            PumpUntil(()=>{try{Directory.Delete(inputs,true);return true;}catch(IOException){return false;}});
+            Console.WriteLine("PASS thumbnail placeholder lifecycle");
             var shot=new RenderTargetBitmap(1440,920,96,96,PixelFormats.Pbgra32);shot.Render(window);
             var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(shot));
             using(var stream=File.Create(Path.Combine(output,"zoom.png")))encoder.Save(stream);
