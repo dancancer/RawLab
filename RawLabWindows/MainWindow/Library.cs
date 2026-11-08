@@ -46,6 +46,11 @@ public partial class MainWindow
                 try
                 {
                     try { accepted.Add(await ImportOne(path,null)); }
+                    catch(DcpCompileException error) when(error.Reason is DcpErrorReason.MissingToneCurve or DcpErrorReason.AutomaticBlack)
+                    {
+                        var imported=await ImportDcpWithOptions(path,error);
+                        if(imported is { } value) accepted.Add(value);
+                    }
                     catch(LookLibraryException error) when(error.Error is LookLibraryError.MissingColor or LookLibraryError.MissingReference)
                     {
                         var draft=await Task.Run(()=>LUTCompatibility.Inspect(path));
@@ -72,12 +77,31 @@ public partial class MainWindow
         finally{foregroundBusy=false;RefreshControls();if(closing)FinishClose();else ResumePreview();}
         return errors;
 
-        Task<(string Path,string Name,bool AppearanceUnverified,int CompatibilityMode)> ImportOne(string path,LUTCompatibility? compatibility) => Task.Run(()=>{
+        async Task<(string Path,string Name,bool AppearanceUnverified,int CompatibilityMode)?> ImportDcpWithOptions(string path, DcpCompileException failure)
+        {
+            DcpImportOptions? options=null;
+            var current=failure;
+            while(!closing)
+            {
+                var dialog=new DcpImportOptionsDialog(this,path,current,options);
+                if(dialog.ShowDialog()!=true)return null;
+                var confirmed=dialog.Options;
+                options=confirmed;
+                try { return await ImportOne(path,null,confirmed); }
+                catch(DcpCompileException error) when(error.Reason == DcpErrorReason.AutomaticBlack && !confirmed.OmitAutomaticBlack)
+                {
+                    current=error;
+                }
+            }
+            return null;
+        }
+
+        Task<(string Path,string Name,bool AppearanceUnverified,int CompatibilityMode)> ImportOne(string path,LUTCompatibility? compatibility,DcpImportOptions? dcpOptions=null) => Task.Run(()=>{
             var suffix=Path.GetExtension(path).ToLowerInvariant();
-            if(compatibility!=null || suffix is ".dcp" or ".vlt" || suffix==".cube" && PInvokeNative.InspectLutColor(path) is 4 or 7 or 8)
+            if(compatibility!=null || dcpOptions!=null || suffix is ".dcp" or ".vlt" || suffix==".cube" && PInvokeNative.InspectLutColor(path) is 4 or 7 or 8)
             {
                 if(library==null) throw libraryLoadError ?? new LookLibraryException(LookLibraryError.InvalidRegistry);
-                var imported=library.ImportLook(path,compatibility);
+                var imported=library.ImportLook(path,compatibility,dcpOptions);
                 return (imported.Path,imported.Name,imported.AppearanceUnverified,imported.CompatibilityMode);
             }
             _=LookLibrary.ValidateExternal(path);

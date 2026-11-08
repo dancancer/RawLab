@@ -189,11 +189,17 @@ public sealed record HDRSettings
         _ => throw new ArgumentOutOfRangeException(nameof(id))
     };
 
-    internal static HDRSettings FromSdr(Adjustments settings) => new() {
-        Exposure = settings[Parameter.Exposure], Contrast = settings[Parameter.Contrast],
-        Highlights = settings[Parameter.Highlights], Shadows = settings[Parameter.Shadows],
-        Saturation = settings[Parameter.Saturation], Geometry = settings.Geometry
-    };
+    internal static HDRSettings FromSdr(Adjustments settings)
+    {
+        var scale = settings.MasterRecipeID == null ? 1 : settings[Parameter.Strength] / 100;
+        return new() {
+            Exposure = Math.Clamp(settings[Parameter.Exposure] * scale, -4, 4),
+            Contrast = Math.Clamp(settings[Parameter.Contrast] * scale, -100, 100),
+            Highlights = Math.Clamp(settings[Parameter.Highlights] * scale, -100, 100),
+            Shadows = Math.Clamp(settings[Parameter.Shadows] * scale, -100, 100),
+            Saturation = Math.Clamp(settings[Parameter.Saturation] * scale, -100, 100), Geometry = settings.Geometry
+        };
+    }
 
     internal Native.HDRRequestV7 NativeRenderRequest(HDRIntent intent, uint longEdge = 0)
     {

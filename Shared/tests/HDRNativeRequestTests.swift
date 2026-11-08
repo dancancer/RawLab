@@ -5,6 +5,10 @@ import Foundation
         if !value() { fatalError(message) }
     }
     static func main() throws {
+        let cameraError = HDRNativeError(status: SONY2FUJI_STATUS_UNSUPPORTED,
+            reason: UInt32(SONY2FUJI_HDR_REASON_CAMERA_DEVELOPMENT), field: UInt32(SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT))
+        require(cameraError.errorDescription == L10n.text("无效或不可用的相机显影设置（白平衡或镜头校正）。"),
+                "HDR camera white-balance failures must not blame lens correction alone")
         var settings=HDRSettings()
         require(MemoryLayout<sony2fuji_hdr_image_pair_v1>.size==208,"Swift HDR pair layout differs from C11 contract")
         settings.exposure=1.25; settings.temperature=7200; settings.tint = -12

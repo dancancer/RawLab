@@ -270,11 +270,20 @@ successful file encoding alone is not evidence of applied lens correction.
 ### Raster input boundary
 
 `input.type: "raster"` accepts one opaque 8-bit SDR JPEG, PNG, TIFF or HEIF
-frame on macOS. The capability response also advertises
-`tiff_bits_per_component: [8,16]` for integer RGB TIFF. The adapter converts
-tagged RGB to sRGB and preserves TIFF precision through processing. Alpha,
-floating-point, HDR, CMYK and other high-bit-depth formats are rejected.
+frame on macOS, plus opaque 16-bit integer RGB PNG/TIFF on macOS and Windows.
+The capability response advertises `bits_per_component: [8,16]` and
+`tiff_bits_per_component: [8,16]`; JPEG and HEIF remain 8-bit inputs. The adapter
+converts tagged RGB to sRGB and preserves PNG/TIFF precision through processing.
+Nonopaque alpha, floating-point, HDR, CMYK and high-bit-depth formats other than
+integer RGB PNG/TIFF are rejected.
 Check the capability response for other platforms' supported inputs.
+
+The Android client additionally accepts opaque integer RGB/RGBA16 PNG through
+its client-side raster decoder and the existing RGBA16 display-buffer API.
+It retains 16-bit samples, applies orientation once, converts supported tagged
+RGB to sRGB and treats untagged RGB as sRGB, matching its 8-bit color handling.
+This client-side support does not enable the Android native file-loader or
+change the macOS CLI capability response.
 
 Raster recipes use `edits.exposure.mode: "sensor"` and
 `edits.white_balance.mode: "none"`; omitting white balance has the same
@@ -294,7 +303,7 @@ camera state from a neighboring RAW photo.
 
 | Group / field | Values / units | Default |
 | --- | --- | --- |
-| `input.type` | `raw` or macOS `raster` | `raw` when omitted |
+| `input.type` | `raw` or macOS/Windows `raster` | `raw` when omitted |
 | `edits.look.strength` | Factor [0,2]; 0 bypasses look loading | 1 |
 | `edits.tone.contrast`, `saturation` | Core multipliers [0,2] | 1 |
 | `edits.tone.highlights`, `shadows`, `s_curve` | Signed core controls [-1,1] | 0 |

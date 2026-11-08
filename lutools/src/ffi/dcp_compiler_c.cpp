@@ -71,8 +71,20 @@ sony2fuji_status compileBlob(bool validArguments, sony2fuji_blob* out_blob, sony
 extern "C" sony2fuji_status sony2fuji_compile_dcp(
     const void* data, size_t size_bytes, const char* source_name,
     sony2fuji_blob* out_blob, sony2fuji_dcp_error* out_reason) {
-    return compileBlob((data || !size_bytes) && validUtf8Filename(source_name), out_blob, out_reason,
-        [&](sony2fuji::DcpCompilerError& error) { return sony2fuji::compileDcp(data, size_bytes, source_name, error); });
+    return sony2fuji_compile_dcp_with_options(data, size_bytes, source_name, nullptr, 0, 0, out_blob, out_reason);
+}
+
+extern "C" sony2fuji_status sony2fuji_compile_dcp_with_options(
+    const void* data, size_t size_bytes, const char* source_name,
+    const void* tone_curve_json, size_t tone_curve_size, uint32_t omit_automatic_black,
+    sony2fuji_blob* out_blob, sony2fuji_dcp_error* out_reason) {
+    return compileBlob((data || !size_bytes) && validUtf8Filename(source_name) &&
+        (tone_curve_json || !tone_curve_size), out_blob, out_reason,
+        [&](sony2fuji::DcpCompilerError& error) {
+            const auto curve = tone_curve_size
+                ? std::string_view(static_cast<const char*>(tone_curve_json), tone_curve_size) : std::string_view{};
+            return sony2fuji::compileDcp(data, size_bytes, source_name, error, curve, omit_automatic_black != 0);
+        });
 }
 
 extern "C" sony2fuji_status sony2fuji_compile_hdr_camera_dcp(

@@ -3,7 +3,7 @@ import Foundation
 extension EditorModel {
     func referenceSource(_ url: URL) -> MacReferenceSource {
         MacReferenceSource(url,raster:RenderEngine.isRasterInput(url),
-            hdrFingerprint:(try? HDRSourceInfo.probe(url))?.fingerprint)
+            hdrFingerprint:(try? probeHDRSource(url, {}))?.fingerprint)
     }
     func setHDREditing(_ enabled: Bool) {
         guard sourceIsHDR || sourceSupportsCameraHDR, enabled != settings.isHDREditing, canExport, let file else { return }

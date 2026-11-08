@@ -6,8 +6,43 @@ import UniformTypeIdentifiers
 final class HDRPhotoUITests: XCTestCase {
     private var selectingDeviceFixture = false
 
+    override func setUpWithError() throws {
+        guard ProcessInfo.processInfo.environment["RAWLAB_HDR_UI"] == "1",
+              ProcessInfo.processInfo.environment["RAWLAB_CAMERA_HDR_UI"] != "1",
+              ProcessInfo.processInfo.environment["RAWLAB_PRORAW_UI"] != "1" else { return }
+        continueAfterFailure = false
+        authorizeDevicePhotoAudit()
+        let url = try XCTUnwrap(Bundle(for: HDRPhotoUITests.self).url(forResource: "HDRUIFixture", withExtension: "jpg"),
+                               "hdr-ui.sh must stage the generated HDR JPEG in the test bundle")
+        let data = try Data(contentsOf: url)
+        let tag = UUID().uuidString
+        let options = PHFetchOptions()
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        options.fetchLimit = 2
+        let latest = PHAsset.fetchAssets(with: .image, options: options).firstObject?.creationDate ?? .distantPast
+        let date = max(Date().addingTimeInterval(3600), latest.addingTimeInterval(1))
+        var identifiers: [String] = []
+        // 每个用例创建独立的来源和目标，避免恢复前一用例的调整或把其 SDR 导出误当作原片。
+        // 同时控制创建顺序和拍摄时间，使 Photos 的最近项目首两张始终是本用例的来源、目标。
+        try PHPhotoLibrary.shared().performChangesAndWait {
+            for (index, role) in ["target", "source"].enumerated() {
+                let request = PHAssetCreationRequest.forAsset()
+                request.creationDate = date.addingTimeInterval(Double(index))
+                let options = PHAssetResourceCreationOptions()
+                options.originalFilename = "HDRUI-\(tag)-\(role).jpg"
+                request.addResource(with: .photo, data: data, options: options)
+                if let identifier = request.placeholderForCreatedAsset?.localIdentifier { identifiers.append(identifier) }
+            }
+        }
+        XCTAssertEqual(identifiers.count, 2)
+        let recent = PHAsset.fetchAssets(with: .image, options: options)
+        XCTAssertEqual((0..<recent.count).map { recent.object(at: $0).localIdentifier }, identifiers.reversed().map { $0 },
+                       "Use a dedicated simulator; the current test must own the two most recent photos")
+    }
+
     override func record(_ issue: XCTIssue) {
-        if ProcessInfo.processInfo.environment["RAWLAB_HDR_DEVICE_UI"] == "1", !selectingDeviceFixture {
+        if (ProcessInfo.processInfo.environment["RAWLAB_HDR_DEVICE_UI"] == "1" ||
+            ProcessInfo.processInfo.environment["RAWLAB_HDR_UI"] == "1"), !selectingDeviceFixture {
             capture("device-failure-screen", XCUIApplication())
             let alert = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.firstMatch
             if alert.exists {
@@ -234,17 +269,7 @@ final class HDRPhotoUITests: XCTestCase {
         continueAfterFailure=false
         XCUIDevice.shared.orientation = .portrait
         let app=XCUIApplication(); app.launchArguments=["-RawLab.language","zh-Hans"]; app.launch()
-        var selected: Int?
-        for index in 0..<3 {
-            let importer=app.buttons["editor.import.empty"].exists ? app.buttons["editor.import.empty"] : app.buttons["editor.import"]
-            XCTAssertTrue(importer.waitForExistence(timeout:15)); importer.tap()
-            let grid=app.images.matching(identifier:"PXGGridLayout-Info")
-            XCTAssertTrue(grid.firstMatch.waitForExistence(timeout:20))
-            grid.element(boundBy:index).coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
-            wait { app.buttons["editor.compare"].isEnabled }
-            if self.showsHDRHistogram(app) { selected=index; break }
-        }
-        let sourceIndex=try XCTUnwrap(selected)
+        openRecentHDROriginal(app)
         XCTAssertTrue(app.buttons["editor.group.looks"].isEnabled)
         app.buttons["editor.group.looks"].tap()
         XCTAssertFalse(app.buttons["tool.film"].isEnabled)
@@ -290,19 +315,27 @@ final class HDRPhotoUITests: XCTestCase {
         XCTAssertEqual(app.buttons["tool.exposure"].value as? String, editedExposure)
         app.buttons["editor.privacy"].tap(); app.buttons["collection.open"].tap()
         XCTAssertTrue(app.buttons["collection.photos"].waitForExistence(timeout:10)); app.buttons["collection.photos"].tap()
-        let grid=app.images.matching(identifier:"PXGGridLayout-Info")
-        XCTAssertTrue(grid.firstMatch.waitForExistence(timeout:20))
-        grid.element(boundBy:(sourceIndex+1)%3).coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
+        let grid = photoGrid(app)
+        XCTAssertGreaterThanOrEqual(grid.count, 2, "The current test must create its own synchronization target")
+        grid.element(boundBy:1).coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
         app.buttons["Add"].tap()
         let synchronize=app.buttons["collection.synchronize"]
         wait { synchronize.isEnabled }; synchronize.tap()
         let count = app.staticTexts["adjustment.copy.summary.count"]
         XCTAssertTrue(count.waitForExistence(timeout:10),app.debugDescription)
         XCTAssertTrue(count.label.contains("7 项调整"),count.label)
-        XCTAssertFalse(app.buttons["adjustment.group.looks"].exists)
+        let looks = app.buttons["adjustment.group.looks"]
+        XCTAssertTrue(looks.exists && looks.label.hasSuffix("0/1"), app.debugDescription)
+        looks.tap()
+        // HDR 外观已支持单独传递；默认七项不能包含它，也不能暴露 SDR 胶片和强度字段。
+        let hdrLook = app.switches["adjustment.field.hdr.look"]
+        XCTAssertTrue(hdrLook.waitForExistence(timeout: 10))
+        XCTAssertEqual(hdrLook.value as? String, "0")
+        XCTAssertFalse(app.switches["adjustment.field.looks.reference"].exists)
+        XCTAssertFalse(app.switches["adjustment.field.looks.strength"].exists)
+        looks.tap()
         app.buttons["adjustment.group.color"].tap()
-        XCTAssertTrue(app.switches["adjustment.field.hdr.relative_temperature"].exists)
-        XCTAssertTrue(app.switches["adjustment.field.hdr.relative_tint"].exists)
+        assertHDRWhiteBalanceScope(app)
         capture("hdr-collection-common-scope",app)
         let prepare=app.buttons["collection.sync.prepare"]
         for _ in 0..<3 where !prepare.isHittable { app.swipeUp() }
@@ -317,24 +350,14 @@ final class HDRPhotoUITests: XCTestCase {
         continueAfterFailure=false
         XCUIDevice.shared.orientation = .portrait
         let app=XCUIApplication(); app.launchArguments=["-RawLab.language","zh-Hans"]; app.launch()
-        var hdrIndex: Int?
-        for index in 0..<3 {
-            let importer=app.buttons["editor.import.empty"].exists ? app.buttons["editor.import.empty"] : app.buttons["editor.import"]
-            XCTAssertTrue(importer.waitForExistence(timeout:15)); importer.tap()
-            let grid=app.images.matching(identifier:"PXGGridLayout-Info")
-            XCTAssertTrue(grid.firstMatch.waitForExistence(timeout:20))
-            grid.element(boundBy:index).coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
-            wait { app.buttons["editor.compare"].isEnabled }
-            if self.showsHDRHistogram(app) { hdrIndex=index; break }
-        }
-        let index=try XCTUnwrap(hdrIndex,"No HDR source in the task-only library")
+        openRecentHDROriginal(app)
         app.buttons["editor.privacy"].tap(); app.buttons["复制调整"].tap()
         let count = app.staticTexts["adjustment.copy.summary.count"]
         XCTAssertTrue(count.waitForExistence(timeout:10),app.debugDescription)
         XCTAssertTrue(count.label.contains("7 项调整"),count.label)
         let color=app.buttons["adjustment.group.color"]
         XCTAssertTrue(color.exists,app.debugDescription); color.tap()
-        XCTAssertTrue(app.switches["adjustment.field.hdr.relative_temperature"].exists,app.debugDescription)
+        assertHDRWhiteBalanceScope(app)
         XCTAssertFalse(app.staticTexts["hdr.relative_temperature"].exists)
         capture("hdr-copy-scope",app)
         app.buttons["adjustment.transfer.close"].tap()
@@ -353,9 +376,8 @@ final class HDRPhotoUITests: XCTestCase {
         app.buttons["使用当前调整批量导出…"].tap()
         XCTAssertTrue(app.buttons["batch.pick"].waitForExistence(timeout:10),app.debugDescription)
         app.buttons["batch.pick"].tap()
-        let grid=app.images.matching(identifier:"PXGGridLayout-Info")
-        XCTAssertTrue(grid.firstMatch.waitForExistence(timeout:20))
-        grid.element(boundBy:index).coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
+        let grid = photoGrid(app)
+        grid.firstMatch.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
         let add=app.buttons["Add"]
         XCTAssertTrue(add.waitForExistence(timeout:5),app.debugDescription); add.tap()
         wait { app.buttons["batch.export"].isEnabled }
@@ -373,17 +395,7 @@ final class HDRPhotoUITests: XCTestCase {
         guard ProcessInfo.processInfo.environment["RAWLAB_HDR_UI"]=="1" else { throw XCTSkip("Dedicated HDR simulator only") }
         continueAfterFailure=false
         let app=XCUIApplication(); app.launchArguments=["-RawLab.language","zh-Hans"]; app.launch()
-        var found=false
-        for index in 0..<3 {
-            let importer=app.buttons["editor.import.empty"].exists ? app.buttons["editor.import.empty"] : app.buttons["editor.import"]
-            XCTAssertTrue(importer.waitForExistence(timeout:15)); importer.tap()
-            let grid=app.images.matching(identifier:"PXGGridLayout-Info")
-            XCTAssertTrue(grid.firstMatch.waitForExistence(timeout:20))
-            grid.element(boundBy:index).coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
-            wait { app.buttons["editor.compare"].isEnabled }
-            if self.showsHDRHistogram(app) { found=true; break }
-        }
-        XCTAssertTrue(found,"No HDR source in the task-only library")
+        openRecentHDROriginal(app)
         XCUIDevice.shared.orientation = .landscapeLeft
         wait { app.frame.width>app.frame.height && app.buttons["editor.histogram"].isHittable }
         app.buttons["editor.histogram"].tap()
@@ -400,22 +412,7 @@ final class HDRPhotoUITests: XCTestCase {
         let app=XCUIApplication()
         app.launchArguments=["-RawLab.language","zh-Hans"]
         app.launch()
-        var foundHDR=false
-        for index in 0..<3 {
-            let importer=app.buttons["editor.import.empty"].exists ? app.buttons["editor.import.empty"] : app.buttons["editor.import"]
-            XCTAssertTrue(importer.waitForExistence(timeout:15),app.debugDescription); importer.tap()
-            let photos=app.images.matching(identifier:"PXGGridLayout-Info")
-            XCTAssertTrue(photos.firstMatch.waitForExistence(timeout:20),"Seed a public HDR original in the dedicated simulator")
-            photos.element(boundBy:index).coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
-            wait {
-                let springboard=XCUIApplication(bundleIdentifier:"com.apple.springboard")
-                let allow=springboard.buttons.matching(NSPredicate(format:"label IN %@",["允许完全访问","允许访问所有照片","Allow Full Access"])).firstMatch
-                if allow.exists { allow.tap() }
-                return app.buttons["editor.compare"].isEnabled
-            }
-            if self.showsHDRHistogram(app) { foundHDR=true; break }
-        }
-        XCTAssertTrue(foundHDR,"No HDR source among the task-only library's recent photos")
+        openRecentHDROriginal(app)
         XCTAssertTrue(app.buttons["tool.exposure"].isSelected,"New HDR import opens an available basic control")
         XCTAssertTrue(app.buttons["editor.group.looks"].isEnabled,"HDR presets remain reachable")
         XCTAssertTrue(app.buttons["exposure.auto"].isEnabled,"HDR mode offers automatic exposure")
@@ -460,16 +457,8 @@ final class HDRPhotoUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         wait { app.frame.height>app.frame.width && app.buttons["editor.export"].isHittable }
         for action in ["保存当前照片","保存 SDR JPEG"] {
-            app.buttons["editor.export"].tap()
-            let item=app.buttons[action]
-            wait { item.isEnabled && item.isHittable }
-            item.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
-            let confirm=app.buttons["editor.export.confirm"]
-            XCTAssertTrue(confirm.waitForExistence(timeout:10))
-            confirm.tap()
-            XCTAssertTrue(app.alerts.staticTexts["已保存到照片。"].waitForExistence(timeout:90),app.debugDescription)
-            capture(action=="保存当前照片" ? "hdr-saved-to-photos" : "sdr-saved-to-photos",app)
-            app.alerts.buttons["关闭"].tap()
+            saveCurrentToPhotos(app, screenshot: action == "保存当前照片" ? "hdr-saved-to-photos" : "sdr-saved-to-photos",
+                                menuItem: action, timeout: 90)
         }
         app.buttons["editor.privacy"].tap(); app.buttons["照片处理设置"].coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
         XCTAssertTrue(app.switches["hdr.editMode"].isEnabled)
@@ -861,14 +850,41 @@ final class HDRPhotoUITests: XCTestCase {
         let importer = app.buttons["editor.import.empty"].exists ? app.buttons["editor.import.empty"] : app.buttons["editor.import"]
         XCTAssertTrue(importer.waitForExistence(timeout: 15))
         importer.tap()
-        let photo = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
-        XCTAssertTrue(photo.waitForExistence(timeout: 20))
+        let photo = photoGrid(app).firstMatch
         photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         wait {
-            let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons.matching(
-                NSPredicate(format: "label IN %@", ["允许完全访问", "允许访问所有照片", "Allow Full Access"])).firstMatch
-            if allow.exists { allow.tap() }
+            self.dismissPhotoPermissionAlert()
             return app.buttons["editor.compare"].isEnabled && self.showsHDRHistogram(app)
+        }
+    }
+
+    private func photoGrid(_ app: XCUIApplication) -> XCUIElementQuery {
+        let photos = app.images.matching(identifier: "PXGGridLayout-Info")
+        wait {
+            self.dismissPhotoPermissionAlert()
+            return photos.firstMatch.exists
+        }
+        return photos
+    }
+
+    private func dismissPhotoPermissionAlert() {
+        let alert = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.firstMatch
+        guard alert.exists, alert.label.localizedCaseInsensitiveContains("photos") || alert.label.contains("照片") else { return }
+        let allow = alert.buttons.matching(NSPredicate(format: "label IN %@",
+            ["允许完全访问", "允许访问所有照片", "Allow Full Access", "Allow Access to All Photos",
+             "允许添加照片", "允许添加", "允许", "Allow Add Photos", "Allow"])).firstMatch
+        if allow.exists { allow.tap() }
+    }
+
+    private func assertHDRWhiteBalanceScope(_ app: XCUIApplication) {
+        // Form 只为可见区域创建行；HDR 白平衡在颜色分级之后，展开组不代表开关已经生成。
+        let form = app.collectionViews.firstMatch
+        XCTAssertTrue(form.exists, app.debugDescription)
+        for field in ["hdr.relative_temperature", "hdr.relative_tint"] {
+            let toggle = app.switches["adjustment.field." + field]
+            for _ in 0..<12 where !toggle.isHittable { form.swipeUp() }
+            XCTAssertTrue(toggle.exists && toggle.isHittable, app.debugDescription)
+            XCTAssertEqual(toggle.value as? String, "1", "HDR common scope must include \(field)")
         }
     }
 
@@ -886,8 +902,8 @@ final class HDRPhotoUITests: XCTestCase {
         for index in 0..<3 {
             let importer=app.buttons["editor.import.empty"].exists ? app.buttons["editor.import.empty"] : app.buttons["editor.import"]
             XCTAssertTrue(importer.waitForExistence(timeout:15)); importer.tap()
-            let photos=app.images.matching(identifier:"PXGGridLayout-Info")
-            XCTAssertTrue(photos.firstMatch.waitForExistence(timeout:20)); XCTAssertGreaterThan(photos.count,index)
+            let photos = photoGrid(app)
+            XCTAssertGreaterThan(photos.count,index)
             photos.element(boundBy:index).coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
             wait {
                 let springboard=XCUIApplication(bundleIdentifier:"com.apple.springboard")
@@ -1183,7 +1199,7 @@ final class HDRPhotoUITests: XCTestCase {
             ["允许完全访问", "允许访问所有照片", "Allow Full Access"])).firstMatch
         if allow.waitForExistence(timeout: 5) { allow.tap() }
         wait(for: [authorization], timeout: 30)
-        XCTAssertEqual(status, .authorized, "Physical audit needs access to the exact assets created by the tested app")
+        XCTAssertEqual(status, .authorized, "Fixture preparation and export audit need access to the exact test assets")
     }
 
     func devicePhotoIDs() -> Set<String> {
@@ -1236,7 +1252,8 @@ final class HDRPhotoUITests: XCTestCase {
         return data
     }
 
-    private func saveCurrentToPhotos(_ app: XCUIApplication, screenshot: String, menuItem: String = "保存当前照片", longEdge: Int? = nil) {
+    private func saveCurrentToPhotos(_ app: XCUIApplication, screenshot: String, menuItem: String = "保存当前照片", longEdge: Int? = nil,
+                                     timeout: TimeInterval = 120) {
         app.buttons["editor.export"].tap()
         let save = app.buttons[menuItem]
         wait { save.isEnabled && save.isHittable }
@@ -1256,7 +1273,7 @@ final class HDRPhotoUITests: XCTestCase {
             if allow.exists { allow.tap() }
             return saved.exists
         }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [completed], timeout: 120), .completed, app.debugDescription)
+        XCTAssertEqual(XCTWaiter.wait(for: [completed], timeout: timeout), .completed, app.debugDescription)
         capture(screenshot, app)
         app.alerts.buttons["关闭"].tap()
         wait { !saved.exists }

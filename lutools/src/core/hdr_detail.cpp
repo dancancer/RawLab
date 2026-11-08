@@ -36,7 +36,7 @@ bool HDRDetailOptions::valid() const {
 }
 
 int HDRDetailOptions::halo(int width, int height) const {
-    if (clarity != 0) return std::clamp((std::max(width, height) + 100) / 200, 2, 24);
+    if (clarity != 0) return std::max((std::max(width, height) + 100) / 200, 2);
     return sharpening != 0 || denoise != 0 ? 1 : 0;
 }
 

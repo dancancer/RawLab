@@ -17,6 +17,29 @@ import Foundation
         camera.cameraDevelopmentSettings.tint = 24
         camera.cameraDevelopmentSettings.exposureReference = .sensor
         camera.cameraDevelopmentSettings.fbddLevel = 1
+        var draft = HDRCameraDevelopmentSettings()
+        draft.selectWhiteBalance(.temperature)
+        require(draft.temperature == 6500 && draft.tint == 0, "User WB selection did not initialize temperature")
+        draft.temperature = 5000; draft.tint = 17
+        let external = draft
+        draft = HDRCameraDevelopmentSettings()
+        draft = external
+        require(draft == external, "External WB synchronization changed the saved temperature")
+        draft.selectWhiteBalance(.temperature)
+        require(draft == external, "Selecting the active WB mode reset the custom value")
+        draft.selectWhiteBalance(.asShot)
+        require(draft.whiteBalance == .asShot && draft.temperature == 0 && draft.tint == 0, "As-shot WB was not reset")
+        camera.geometry.cropWidth = 0.75
+        camera.cameraDevelopmentSettings.lensDistortion = true
+        camera.cameraDevelopmentSettings.lensTCA = true
+        camera.cameraDevelopmentSettings.lensAutoCrop = false
+        camera.cameraDevelopmentSettings.lensProfile = "test-lens"
+        let reference = camera.neutralGeometrySettings
+        require(reference.geometry == camera.geometry && reference.cameraDevelopmentSettings.lensDistortion &&
+                reference.cameraDevelopmentSettings.lensTCA && !reference.cameraDevelopmentSettings.lensAutoCrop &&
+                reference.cameraDevelopmentSettings.lensProfile == "test-lens", "Neutral HDR reference lost lens geometry")
+        require(reference.cameraDevelopmentSettings.whiteBalance == .asShot && reference.cameraDevelopmentSettings.fbddLevel == 0 &&
+                reference.cameraDevelopmentSettings.exposureReference == .metadata, "Neutral HDR reference retained color development")
         let cameraJSON = try encoder.encode(camera)
         let decodedCamera = try JSONDecoder().decode(HDRSettings.self,from: cameraJSON)
         require(decodedCamera == camera && decodedCamera.recordVersion == 8 && decodedCamera.processingVersion == 1 &&

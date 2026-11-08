@@ -39,6 +39,7 @@ import com.rawlab.android.format.ExportSize
 import com.rawlab.android.geometry.GeometryRatio
 import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.looks.DcpFailureReason
+import com.rawlab.android.looks.DcpImportChoices
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.canonicalZeros
@@ -367,8 +368,8 @@ class EditorViewModel @JvmOverloads constructor(
             return
         }
         result.fold(::acceptLookValue, { error ->
-            mutable.value = mutable.value.copy(operation = if (mutable.value.pendingLookCompatibility.isEmpty()) Operation.NONE else Operation.IMPORT_LOOK,
-                lookCompatibilityPreparing = false,
+            mutable.value = mutable.value.copy(operation = if (mutable.value.pendingLookImports.isEmpty()) Operation.NONE else Operation.IMPORT_LOOK,
+                lookImportPreparing = false,
                 error = text(R.string.look_storage_error) + "\n" + (error.message ?: error.javaClass.simpleName))
         })
         updatePreviewSize(requestedPreviewLongEdge)
@@ -399,10 +400,10 @@ class EditorViewModel @JvmOverloads constructor(
                             val message = colorMessage ?: failure.dcpReason?.let(::dcpFailureText) ?: failure.message
                             if (failure.invalid && colorMessage == null) message + "\n" + text(R.string.look_invalid_file) else message
                         }
-                val pending = mutable.value.pendingLookCompatibility + result.pending
+                val pending = mutable.value.pendingLookImports + result.pending
                 mutable.value = mutation.state.copy(looks = result.looks,
-                    pendingLookCompatibility = pending,
-                    lookCompatibilityPreparing = false,
+                    pendingLookImports = pending,
+                    lookImportPreparing = false,
                     operation = if (pending.isEmpty()) Operation.NONE else Operation.IMPORT_LOOK,
                     lookImportReport = listOfNotNull(mutable.value.lookImportReport, report).takeIf { it.isNotEmpty() }?.joinToString("\n"),
                     error = if (mutation.blockedRecipeSelection) text(R.string.editor_reset_unrepresentable) else mutation.state.error,
@@ -422,8 +423,8 @@ class EditorViewModel @JvmOverloads constructor(
             is LookResult.Failed -> {
                 if (result.reload) lookRevision = lookQueue.submit(LookWork.Load)
                 val title = text(if (result.reload) R.string.look_error else R.string.look_storage_error)
-                mutable.value = mutable.value.copy(operation = if (mutable.value.pendingLookCompatibility.isEmpty()) Operation.NONE else Operation.IMPORT_LOOK,
-                    lookCompatibilityPreparing = false,
+                mutable.value = mutable.value.copy(operation = if (mutable.value.pendingLookImports.isEmpty()) Operation.NONE else Operation.IMPORT_LOOK,
+                    lookImportPreparing = false,
                     error = title + "\n" + (result.error.message ?: result.error.javaClass.simpleName))
             }
         }
@@ -484,7 +485,8 @@ class EditorViewModel @JvmOverloads constructor(
         closeAdjustmentOperation()
         durablePreview = null
         pendingPhotoImport.begin(PhotoIdentity(uri.toString()))
-        mutable.value = mutable.value.copy(operation = Operation.IMPORT, rendering = true, error = null, retryLegacyX3f = false)
+        mutable.value = mutable.value.copy(operation = Operation.IMPORT, rendering = true, error = null, retryLegacyX3f = false,
+            hdrCameraDraft = null)
         // closeAdjustmentOperation 会释放延迟文件，先建立导入保护再移交恢复引用。
         failedX3fImport = null
         previewResizeJob?.cancel()
@@ -557,14 +559,24 @@ class EditorViewModel @JvmOverloads constructor(
     fun dismissLookImportReport() { mutable.value = mutable.value.copy(lookImportReport = null) }
 
     fun resolveLookCompatibility(draft: LUTCompatibility?) {
-        if (mutable.value.lookCompatibilityPreparing) return
-        val pending = mutable.value.pendingLookCompatibility.firstOrNull() ?: return
-        val remaining = mutable.value.pendingLookCompatibility.drop(1)
+        if (mutable.value.lookImportPreparing) return
+        val pending = mutable.value.pendingLookImports.firstOrNull() as? PendingLookCompatibility ?: return
         if (draft != null && (!draft.canImport || draft.sourceHash != pending.draft.sourceHash)) return
-        mutable.value = mutable.value.copy(pendingLookCompatibility = remaining,
-            lookCompatibilityPreparing = draft != null,
-            operation = if (draft != null || remaining.isNotEmpty()) Operation.IMPORT_LOOK else Operation.NONE)
-        if (draft != null) lookRevision = lookQueue.submit(LookWork.Import(listOf(pending.uri), draft))
+        resolveLookImport(draft?.let { LookWork.Import(listOf(pending.uri), compatibility = it) })
+    }
+
+    fun resolveDcpImport(choices: DcpImportChoices?) {
+        if (mutable.value.lookImportPreparing) return
+        val pending = mutable.value.pendingLookImports.firstOrNull() as? PendingDcpImport ?: return
+        resolveLookImport(choices?.let { LookWork.Import(listOf(pending.uri), dcp = it) })
+    }
+
+    private fun resolveLookImport(work: LookWork.Import?) {
+        val remaining = mutable.value.pendingLookImports.drop(1)
+        mutable.value = mutable.value.copy(pendingLookImports = remaining,
+            lookImportPreparing = work != null,
+            operation = if (work != null || remaining.isNotEmpty()) Operation.IMPORT_LOOK else Operation.NONE)
+        if (work != null) lookRevision = lookQueue.submit(work)
     }
 
     fun renameLook(id: String, name: String) {
@@ -619,7 +631,8 @@ class EditorViewModel @JvmOverloads constructor(
         durablePreview = null
         if (edits != current.edits) editRevision += 1
         mutable.value = current.copy(edits = edits, rendering = true, exact = false, error = null,
-            previewResizePending = previewResizeJob != null)
+            previewResizePending = previewResizeJob != null,
+            hdrCameraDraft = current.hdrCameraDraft?.retainedFor(edits.hdr?.cameraSettings))
         currentRevision = submitRender(Work.Preview(current.photo!!, edits, interactive, gpuMode(),
             edge = interactivePreviewSize.edge(previewLongEdge, interactive, android.os.SystemClock.uptimeMillis())))
         if (!interactive) persist(current.photo, edits) { saved ->
@@ -895,7 +908,7 @@ class EditorViewModel @JvmOverloads constructor(
             result.fold({ restored ->
                 failedDraftSave = false; draftSaveBaseline = null
                 editRevision += 1; draftRevision += 1
-                mutable.value = mutable.value.copy(edits = restored, draft = null, saveState = EditSaveState.RESTORED,
+                mutable.value = mutable.value.copy(edits = restored, draft = null, hdrCameraDraft = null, saveState = EditSaveState.RESTORED,
                     saveError = null, error = null, adjustmentRevision = current.adjustmentRevision + 1)
                 includeIndependentRecipeLook(restored); renderCommittedForNavigation(); completed(true)
             }, { error ->
@@ -976,7 +989,8 @@ class EditorViewModel @JvmOverloads constructor(
                 mutableQuickPreset.value = EditorQuickPresetState(visible = mutableQuickPreset.value.visible)
             }
             editRevision += 1
-            mutable.value = mutable.value.copy(edits = restored, saveState = EditSaveState.SAVED, saveError = null, error = null)
+            mutable.value = mutable.value.copy(edits = restored, saveState = EditSaveState.SAVED, saveError = null, error = null,
+                hdrCameraDraft = mutable.value.hdrCameraDraft?.retainedFor(restored.hdr?.cameraSettings))
             includeIndependentRecipeLook(restored)
             if (restored.recipeID == null && current.edits.film != restored.film) updateRecentLooks(restored.film)
             renderCommittedForNavigation()
@@ -1231,13 +1245,23 @@ class EditorViewModel @JvmOverloads constructor(
         val photo = current.photo ?: return
         val hdr = current.edits.hdr ?: return
         if (!current.edits.isHDREditing || !photo.isCameraRawHDR || photo.hdrSource?.isProRAW == true ||
-            !current.controlsEnabled || current.draft != null || cameraHDRPreflightPending || development == hdr.cameraSettings) return
+            !current.controlsEnabled || current.draft != null || current.importingHDRCameraProfile ||
+            cameraHDRPreflightPending || development == hdr.cameraSettings) return
         preflightHDRCamera(photo,current,current.edits.copy(hdr = hdr.withCameraDevelopment(development)))
+    }
+
+    fun changeHDRCameraDraft(settings: com.rawlab.android.settings.HDRCameraDevelopmentSettings) {
+        val current = mutable.value
+        val photo = current.photo ?: return
+        val baseline = current.edits.hdr?.cameraSettings ?: return
+        if (!current.controlsEnabled || current.importingHDRCameraProfile || !current.edits.isHDREditing) return
+        mutable.value = current.copy(hdrCameraDraft = HDRCameraPanelDraft(photo.identity, baseline, settings))
     }
 
     fun beginHDRCameraProfileImport(): Boolean {
         val current = mutable.value
-        if (!current.controlsEnabled || !current.edits.isHDREditing || current.draft != null ||
+        if (!current.controlsEnabled || !current.edits.isHDREditing || current.draft != null || current.rendering ||
+            current.importingHDRCameraProfile || pendingHDRCameraProfileImport != null ||
             current.photo?.isCameraRawHDR != true || current.photo.hdrSource?.isProRAW == true) return false
         pendingHDRCameraProfileImport = sourceRevision to editRevision
         return true
@@ -1246,15 +1270,30 @@ class EditorViewModel @JvmOverloads constructor(
     fun finishHDRCameraProfileImport(uri: Uri?) {
         val revision = pendingHDRCameraProfileImport
         pendingHDRCameraProfileImport = null
-        if (uri == null || revision != (sourceRevision to editRevision)) return
+        if (uri == null || revision == null) return
+        if (revision != (sourceRevision to editRevision)) {
+            mutable.value = mutable.value.copy(message = text(R.string.hdr_camera_profile_changed))
+            return
+        }
+        mutable.value = mutable.value.copy(importingHDRCameraProfile = true, error = null)
         viewModelScope.launch {
-            val imported = runCatching { withContext(Dispatchers.IO) { storage.importHDRCameraProfile(uri) } }
-            if (revision != (sourceRevision to editRevision)) return@launch
-            imported.onSuccess { profile ->
-                val camera = mutable.value.edits.hdr?.cameraSettings ?: return@onSuccess
-                applyHDRCameraDevelopment(camera.copy(cameraProfile = profile))
-            }.onFailure {
-                mutable.value = mutable.value.copy(error = AppStrings.text(R.string.hdr_camera_profile_invalid))
+            try {
+                val imported = readHDRCameraProfile({ withContext(Dispatchers.IO) { storage.importHDRCameraProfile(uri) } },
+                    { revision == (sourceRevision to editRevision) && mutable.value.controlsEnabled })
+                if (disposed) return@launch
+                imported.onSuccess { profile ->
+                    val current = mutable.value
+                    val photo = current.photo ?: return@onSuccess
+                    val baseline = current.edits.hdr?.cameraSettings ?: return@onSuccess
+                    val draft = HDRCameraPanelDraft(photo.identity, baseline, current.hdrCameraDraftSettings ?: baseline)
+                    mutable.value = current.copy(hdrCameraDraft = draft.withProfile(profile))
+                }.onFailure {
+                    if (it is EditPersistenceConflict)
+                        mutable.value = mutable.value.copy(message = text(R.string.hdr_camera_profile_changed))
+                    else mutable.value = mutable.value.copy(error = text(R.string.hdr_camera_profile_invalid))
+                }
+            } finally {
+                if (!disposed) mutable.value = mutable.value.copy(importingHDRCameraProfile = false)
             }
         }
     }
@@ -1302,6 +1341,8 @@ class EditorViewModel @JvmOverloads constructor(
     fun selectCollectionAll(selected: Boolean) = collections.selectAll(selected)
     fun removeCollectionPhoto(id: String) = collections.remove(id)
     fun refreshCollection() = collections.refresh()
+    fun collectionSupportsHDRExport(skipping: Set<String> = emptySet()) =
+        collection.value.supportsHDRExport(editStore::versionedState, skipping)
     fun collectionDraftFailure(id: String): String? {
         val current = mutable.value
         val photo = current.photo?.takeIf { it.identity.value == id } ?: return null

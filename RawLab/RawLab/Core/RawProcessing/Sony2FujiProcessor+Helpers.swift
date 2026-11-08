@@ -61,6 +61,18 @@ extension Sony2FujiProcessor {
         url.pathExtension.lowercased() == "x3f" && settings.x3fMode == .normal
     }
 
+    func defaultSettings(for url: URL, isRaw: Bool, x3fModeOverride: X3fMode? = nil) throws -> RawSettings {
+        try RawSettings.sourceDefaults(for: url, isRaw: isRaw, sourceIsHDR: HDRSourceInfo.probe(url) != nil,
+            x3fDefaultMode: { try x3fModeOverride ?? self.x3fDefaultMode(for: $0) })
+    }
+
+    func x3fDefaultMode(for url: URL) throws -> X3fMode {
+        var mode = SONY2FUJI_X3F_NORMAL
+        let status = url.path.withCString { sony2fuji_x3f_default_mode($0, &mode) }
+        guard status == SONY2FUJI_STATUS_OK else { throw processingFailure(status) }
+        return mode == SONY2FUJI_X3F_NORMAL ? .normal : .legacy
+    }
+
     func configureCurve(_ session: OpaquePointer, settings: ToneCurveSettings) throws {
         guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的曲线参数")) }
         var config = settings.nativeConfig

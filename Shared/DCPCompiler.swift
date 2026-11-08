@@ -9,8 +9,8 @@ enum DCPCompilerError: Error, LocalizedError, Equatable {
         case .malformed: return L10n.text("DCP 文件损坏，或使用了不支持的 TIFF 结构。")
         case .tooLarge: return L10n.text("DCP 文件或外观数据超过安全大小限制。")
         case .invalidCalibration: return L10n.text("DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。")
-        case .missingToneCurve: return L10n.text("DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。")
-        case .automaticBlack: return L10n.text("DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。")
+        case .missingToneCurve: return L10n.text("DCP 没有内嵌色调曲线。")
+        case .automaticBlack: return L10n.text("DCP 要求自动黑位处理。")
         case .tripleIlluminant: return L10n.text("DCP 使用三光源 HueSatMap，暂不支持转换。")
         case .unsupportedStages: return L10n.text("DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。")
         case .invalidTable: return L10n.text("DCP 的 HueSatMap/LookTable 数据、维度或编码不受支持。")
@@ -35,23 +35,43 @@ enum DCPCompilerError: Error, LocalizedError, Equatable {
     }
 }
 
+struct DCPImportOptions: Equatable {
+    var toneCurveJSON: Data?
+    var omitAutomaticBlack: Bool
+
+    init(toneCurveJSON: Data? = nil, omitAutomaticBlack: Bool = false) {
+        self.toneCurveJSON = toneCurveJSON
+        self.omitAutomaticBlack = omitAutomaticBlack
+    }
+}
+
 enum DCPCompiler {
     private static let maxSourceBytes = 128 * 1024 * 1024
 
-    static func compile(source: URL) throws -> Data {
+    static func compile(source: URL, options: DCPImportOptions = .init()) throws -> Data {
         let handle = try FileHandle(forReadingFrom: source)
         defer { try? handle.close() }
         let data = try handle.read(upToCount: maxSourceBytes + 1) ?? Data()
-        return try compile(data: data, sourceName: source.lastPathComponent)
+        return try compile(data: data, sourceName: source.lastPathComponent, options: options)
     }
 
-    static func compile(data: Data, sourceName: String) throws -> Data {
+    static func compile(data: Data, sourceName: String, options: DCPImportOptions = .init()) throws -> Data {
+        if options.toneCurveJSON?.isEmpty == true { throw DCPCompilerError.invalidToneCurve }
         var blob = sony2fuji_blob()
         defer { sony2fuji_release_blob(&blob) }
         var reason = SONY2FUJI_DCP_ERROR_NONE
         let status = sourceName.withCString { name in
             data.withUnsafeBytes { bytes in
-                sony2fuji_compile_dcp(bytes.baseAddress, bytes.count, name, &blob, &reason)
+                let compile = { (curve: UnsafeRawPointer?, curveSize: Int) in
+                    sony2fuji_compile_dcp_with_options(bytes.baseAddress, bytes.count, name,
+                                                       curve, curveSize,
+                                                       options.omitAutomaticBlack ? 1 : 0,
+                                                       &blob, &reason)
+                }
+                guard let curve = options.toneCurveJSON else { return compile(nil, 0) }
+                return curve.withUnsafeBytes { curveBytes in
+                    compile(curveBytes.baseAddress, curveBytes.count)
+                }
             }
         }
         guard status == SONY2FUJI_STATUS_OK else {

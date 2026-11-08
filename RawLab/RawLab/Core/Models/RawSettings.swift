@@ -444,6 +444,15 @@ struct RawSettings: Codable, Equatable {
         Float(min(max(lutStrength, Self.lutStrengthRange.lowerBound), Self.lutStrengthRange.upperBound))
     }
 
+    static func sourceDefaults(for url: URL, isRaw: Bool, sourceIsHDR: Bool,
+                               x3fDefaultMode: (URL) throws -> X3fMode) throws -> RawSettings {
+        var settings = RawSettings.default
+        if !isRaw { settings.exposureMode = .sensor }
+        if isRaw && url.pathExtension.lowercased() == "x3f" { settings.x3fMode = try x3fDefaultMode(url) }
+        if sourceIsHDR { settings.hdr = HDRSettings() }
+        return settings
+    }
+
     static let `default` = RawSettings(
         exposure: 0,
         contrast: 1,
@@ -680,9 +689,13 @@ extension RawSettings {
         guard enabled else { result.hdr?.mode = .sdr; return result }
         var initial = HDRSettings()
         if !cameraRAW {
-            initial.exposure = exposure; initial.contrast = (contrast - 1) * 100
-            initial.highlights = -highlights * 100; initial.shadows = shadows * 100
-            initial.saturation = (saturation - 1) * 100; initial.geometry = geometry
+            let scale = recipeScale
+            initial.exposure = min(4, max(-4, exposure * scale))
+            initial.contrast = min(100, max(-100, (contrast - 1) * 100 * scale))
+            initial.highlights = min(100, max(-100, -highlights * 100 * scale))
+            initial.shadows = min(100, max(-100, shadows * 100 * scale))
+            initial.saturation = min(100, max(-100, (saturation - 1) * 100 * scale))
+            initial.geometry = geometry
         }
         result.hdr = try HDRSettings.enabling(stored: hdr, initial: initial, sourceIsHDR: sourceIsHDR || cameraRAW)
         return result

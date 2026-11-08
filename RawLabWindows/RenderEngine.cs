@@ -164,7 +164,7 @@ internal sealed partial class RenderEngine : IDisposable
         // HDR previews have a 2000px ceiling, including the viewport's native-size request.
         var cacheEdge=settings.IsHDREditing && sourceFingerprint!=null ? HDRPreviewEdge(edge) : edge;
         var referenceKey=(new NeutralReferenceKey(rawStamp,PhotoInput.IsRaster(path),settings.Processing,
-            settings.Geometry,settings.Lens,cacheEdge,settings.IsHDREditing,settings.X3fMode),gpuMode,settings.ProRAWDecodeVersion);
+            settings.Geometry,settings.Lens,cacheEdge,settings.IsHDREditing,settings.X3fMode,NeutralReference.HDRCameraSettings(settings.IsHDREditing ? settings.HDR : null)),gpuMode,settings.ProRAWDecodeVersion);
         if(original?.Key!=referenceKey || fingerprintChanged)original=null;
         // AI 模型或磁盘结果可在 WPF 帧之外变化，必须经过 native 的完整性与身份检查。
         var cached=!settings.ActiveAIDenoise ? previews.GetValueOrDefault(cacheEdge) : null;
@@ -489,6 +489,10 @@ internal sealed partial class RenderEngine : IDisposable
         Native.Check(Native.sony2fuji_session_set_tone_controls(session, ref config));
     }
     internal static bool X3fAvailable => Native.sony2fuji_x3f_available() != 0;
+    internal static X3fMode X3fDefaultMode(string path)
+    {
+        return PhotoInput.X3fDefaultMode(path);
+    }
     private void SetX3f(string path, Adjustments settings)
     {
         if (PhotoInput.IsNormalX3f(path,settings) && settings.AIDenoiseEnabled)

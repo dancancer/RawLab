@@ -99,7 +99,7 @@ extension ContentView {
                     if settings.isHDREditing {
                         Button(L10n.text("保存 SDR JPEG")) {
                             singleExportFormat = .jpeg; exportLongEdge=nil; showingExportSize=true
-                        }.disabled(editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewFailed)
+                        }.disabled(editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
                         if HDRImage.heifExportAvailable {
                             Button(BatchOutputFormat.hdrHEIF.title) {
                                 singleExportFormat = .hdrHEIF; exportLongEdge = nil; showingExportSize = true
@@ -311,7 +311,8 @@ extension ContentView {
                         let revision = viewModel.sourceRevision
                         HDRLookControls(settings: Binding(get: { settings.hdr ?? HDRSettings() },
                             set: { if viewModel.sourceRevision == revision && settings.isHDREditing { settings.hdr = $0 } }
-                        ), onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
+                        ), onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction,
+                           onResourceRestored: { viewModel.retryPreview(settings: settings) })
                             .padding(.horizontal, 16).id(revision).disabled(editorBusy || editingLocked)
                     }
                     IOSQuickPresetView(model: viewModel, requestAction: requestAdjustmentAction,
@@ -409,7 +410,8 @@ extension ContentView {
                         if viewModel.sourceSupportsCameraHDR, viewModel.sourceProRAW == nil, let hdr = settings.hdr {
                             HDRCameraDevelopmentControls(settings: hdr.cameraDevelopmentSettings,
                                 supportsBayerDevelopment: viewModel.rawHDRSource?.supportsBayerDevelopment == true,
-                                apply: applyHDRCameraDevelopment)
+                                apply: applyHDRCameraDevelopment,
+                                onResourceRestored: { viewModel.retryPreview(settings: settings) })
                                 .id(viewModel.sourceRevision).disabled(isEditorDraftActive || editorBusy)
                         }
                     }

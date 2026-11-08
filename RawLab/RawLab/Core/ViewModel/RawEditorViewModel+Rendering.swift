@@ -98,7 +98,7 @@ extension RawEditorViewModel {
             completedPreviewCache.removeAll()
             completedPreviewCacheBytes = 0
         }
-        guard isLookAvailable(for: settings) else {
+        guard settings.isHDREditing || isLookAvailable(for: settings) else {
             setLatestRenderID(UUID())
             previewRendering = false
             previewFailed = true
@@ -131,7 +131,7 @@ extension RawEditorViewModel {
         let usesRaw = sourceKind == .raw
         let sourceFile = self.sourceFile
         let previousHDRSettings = acceptedPreviewRequest?.settings
-        let existingHDRReference = !comparisonChanged && previousHDRSettings?.hdr?.geometry == settings.hdr?.geometry &&
+        let existingHDRReference = !comparisonChanged && previousHDRSettings?.hdr?.neutralGeometrySettings == settings.hdr?.neutralGeometrySettings &&
             previousHDRSettings?.proRAWDecodeVersion == settings.proRAWDecodeVersion ? hdrReference : nil
         let diagnosticContext = ["sourceKind": usesRaw ? "raw" : "raster",
                                  "mode": settings.isHDREditing ? "hdr" : "sdr",
@@ -155,9 +155,9 @@ extension RawEditorViewModel {
                 sourceFile.withReadAccess { url in
                     do {
                         let cancelled = { !self.isLatestRenderID(renderID) }
-                        let edited=try self.processor.processHDR(url:url,settings:hdr,previewLongEdge:maxDimension,
+                        let edited=try self.processor.processHDR(url:url,settings:hdr.previewSettings(),previewLongEdge:maxDimension,
                             proRAWDecodeVersion:settings.proRAWDecodeVersion,cancelled:cancelled)
-                        var neutral=HDRSettings(); neutral.geometry=hdr.geometry
+                        let neutral = hdr.neutralGeometrySettings
                         let reference = try existingHDRReference ?? HDRPresentation(self.processor.processHDR(
                             url:url,settings:neutral,previewLongEdge:maxDimension,
                             proRAWDecodeVersion:settings.proRAWDecodeVersion,cancelled:cancelled))
@@ -169,6 +169,7 @@ extension RawEditorViewModel {
                             self.histogram=nil; self.baseHistogram=nil
                             self.basePreviewGeometry=hdr.geometry; self.comparisonReferenceKey=referenceKey
                             self.acceptedPreviewRequest=request; self.acceptedPreviewFrameID=renderID; self.previewFailed=false
+                            self.statusMessage = hdr.missingResourceMessage
                             self.nativeImageSize=CGSize(width:edited.outputNativeWidth,height:edited.outputNativeHeight)
                             self.cacheCompletedPreview(for: cacheKey)
                         }
@@ -383,7 +384,8 @@ extension RawEditorViewModel {
     }
 
     func cacheCompletedPreview(for key: PreviewCacheKey, histogramInput: Sony2FujiProcessor.Buffer? = nil) {
-        guard key.quality == .final, previewImage != nil, comparisonReferenceKey == key.referenceKey else { return }
+        guard key.quality == .final, previewImage != nil, comparisonReferenceKey == key.referenceKey,
+              !key.settings.isHDREditing || key.settings.hdr?.missingResourceMessage == nil else { return }
         let entry = CompletedPreview(
             key: key,
             previewImage: previewImage,
@@ -460,7 +462,8 @@ extension RawEditorViewModel {
     func comparisonKey(settings: RawSettings, longEdge: Int) -> ComparisonReferenceKey {
         ComparisonReferenceKey(sourceRevision: sourceRevision, file: sourceFile, identity: sourceIdentity,
                                kind: sourceKind, processing: settings.processing, x3fMode: settings.x3fMode, geometry: settings.geometrySettings,
-                               lens: settings.lensSettings, longEdge: longEdge,hdrMode:settings.hdr?.mode)
+                               lens: settings.lensSettings, longEdge: longEdge,hdrMode:settings.hdr?.mode,
+                               hdrCamera: settings.isHDREditing ? settings.hdr?.neutralGeometrySettings.cameraDevelopmentSettings : nil)
     }
 
     func retryPreview(settings: RawSettings) {

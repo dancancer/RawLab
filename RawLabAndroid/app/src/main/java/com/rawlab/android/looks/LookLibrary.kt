@@ -1,6 +1,5 @@
 package com.rawlab.android.looks
 
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -66,7 +65,8 @@ class LookLibrary(
     fun importLook(source: File, originalName: String = source.name): ManagedLook =
         source.inputStream().use { importLook(it, originalName) }
 
-    fun importLook(input: InputStream, originalName: String, compatibility: LUTCompatibility? = null): ManagedLook = locked {
+    fun importLook(input: InputStream, originalName: String, compatibility: LUTCompatibility? = null,
+        toneCurve: ByteArray? = null, omitAutomaticBlack: Boolean = false): ManagedLook = locked {
         val id = UUID.randomUUID().toString()
         val transaction = File(root, ".import-$id.pending")
         check(transaction.createNewFile()) { "Cannot record look import" }
@@ -75,7 +75,8 @@ class LookLibrary(
         try {
             val dcp = originalName.substringAfterLast('.').equals("dcp", ignoreCase = true)
             val format = if (dcp) {
-                val compiled = dcpCompiler.compile(readBoundedDcp(input), sourceName(originalName))
+                val compiled = dcpCompiler.compile(readDcpInput(input, MAX_DCP_SOURCE_BYTES), sourceName(originalName),
+                    toneCurve, omitAutomaticBlack)
                 if (compiled.isEmpty()) throw DcpCompilationException(DcpFailureReason.MALFORMED)
                 if (compiled.size > MAX_DCP_OUTPUT_BYTES)
                     throw DcpCompilationException(DcpFailureReason.TOO_LARGE)
@@ -222,23 +223,6 @@ class LookLibrary(
         return if (read == magic.size && magic.contentEquals(RLOOK_MAGIC)) LookFormat.RLOOK else LookFormat.CUBE
     }
 
-    private fun readBoundedDcp(input: InputStream): ByteArray {
-        val data = ByteArrayOutputStream()
-        val buffer = ByteArray(DCP_READ_BUFFER_BYTES)
-        var total = 0L
-        while (true) {
-            val remaining = MAX_DCP_SOURCE_BYTES - total
-            val request = minOf(buffer.size.toLong(), remaining + 1).toInt()
-            val count = input.read(buffer, 0, request)
-            if (count < 0) break
-            if (count == 0) continue
-            total += count
-            if (total > MAX_DCP_SOURCE_BYTES) throw DcpCompilationException(DcpFailureReason.TOO_LARGE)
-            data.write(buffer, 0, count)
-        }
-        return data.toByteArray()
-    }
-
     private fun sourceName(originalName: String): String =
         originalName.substringAfterLast('/').ifEmpty { "look.dcp" }
 
@@ -292,8 +276,7 @@ class LookLibrary(
         private val monitors = ConcurrentHashMap<String, Any>()
         private const val REGISTRY_NAME = "registry.properties"
         private const val REGISTRY_VERSION = 1
-        private const val DCP_READ_BUFFER_BYTES = 64 * 1024
-        private const val MAX_DCP_SOURCE_BYTES = 128 * 1024 * 1024L
+        private const val MAX_DCP_SOURCE_BYTES = 128 * 1024 * 1024
         private const val MAX_DCP_OUTPUT_BYTES = 64 * 1024 * 1024
         private val RLOOK_MAGIC = "RLOOKDCP".toByteArray()
     }

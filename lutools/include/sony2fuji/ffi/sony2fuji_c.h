@@ -373,6 +373,8 @@ typedef struct sony2fuji_session sony2fuji_session;
 
 // Independent from processing version. New sessions preserve legacy pixels.
 int32_t sony2fuji_x3f_available(void);
+// Identifies a source and chooses the renderer for a new edit.
+sony2fuji_status sony2fuji_x3f_default_mode(const char* input_path, sony2fuji_x3f_mode* mode);
 sony2fuji_status sony2fuji_session_set_x3f_mode(sony2fuji_session* session, sony2fuji_x3f_mode mode);
 // Last normal-X3F error on this session; owned by the session until its next render.
 const char* sony2fuji_session_x3f_error(const sony2fuji_session* session);
@@ -446,7 +448,7 @@ sony2fuji_status sony2fuji_session_set_processing_version(
 
 // File adapters: one opaque SDR RGB image.
 // macOS/iOS ImageIO accepts JPEG/PNG/TIFF/HEIF; Windows WIC accepts JPEG/PNG/TIFF.
-// The Apple adapter also accepts 16-bit integer RGB TIFF and returns RGBA16.
+// Apple 与 Windows 也接受 16 位整数 RGB PNG/TIFF，返回 RGBA16。
 // Applies orientation and ICC -> sRGB once. Untagged RGB assumes sRGB.
 // Rejects transparency, HDR and other unsupported encodings.
 // Pass a zero-initialized or previously returned buffer; release with
@@ -500,6 +502,14 @@ sony2fuji_status sony2fuji_compile_dcp(
     const void* data, size_t size_bytes, const char* source_name,
     sony2fuji_blob* out_blob, sony2fuji_dcp_error* out_reason
 );
+
+// A JSON array of x/y pairs may supply a missing ProfileToneCurve. Pass null
+// and zero to use the profile's curve. A nonzero omit_automatic_black opts out
+// of the profile's automatic black rendering.
+sony2fuji_status sony2fuji_compile_dcp_with_options(
+    const void* data, size_t size_bytes, const char* source_name,
+    const void* tone_curve_json, size_t tone_curve_size, uint32_t omit_automatic_black,
+    sony2fuji_blob* out_blob, sony2fuji_dcp_error* out_reason);
 
 void sony2fuji_release_blob(sony2fuji_blob* blob);
 

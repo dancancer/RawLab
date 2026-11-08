@@ -344,7 +344,8 @@ struct EditorView: View {
                 if model.sourceIsBayerHDR, let hdr = model.settings.hdr {
                     HDRCameraDevelopmentControls(settings: hdr.cameraDevelopmentSettings,
                         supportsBayerDevelopment: model.rawHDRSource?.supportsBayerDevelopment == true,
-                        apply: model.applyHDRCameraDevelopment)
+                        apply: model.applyHDRCameraDevelopment,
+                        onResourceRestored: { model.schedule(forceExact: true) })
                         .id(model.sourceRevision).disabled(!model.canApplyHDRCameraDevelopment)
                 }
             } else {

@@ -8,13 +8,17 @@ enum QuickPresetState {
 
 extension EditorModel {
     var canUsePresetPhoto: Bool {
-        file != nil && !exporting && !lookLibraryBusy && !aiState.isRunning && !geometryDraftDeparturePending
+        file != nil && canApplyPresetToPhotos
+    }
+
+    var canApplyPresetToPhotos: Bool {
+        !exporting && !lookLibraryBusy && !aiState.isRunning && !geometryDraftDeparturePending
     }
 
     @discardableResult func preparePresetAction(onStay: @escaping () -> Void = {}, _ action: @escaping () -> Void) -> Bool {
-        guard canUsePresetPhoto, ParameterValueField.resolvePendingInputs() else { return false }
+        guard canApplyPresetToPhotos, ParameterValueField.resolvePendingInputs() else { return false }
         if scheduler.interacting { setInteracting(false) }
-        guard saveEdits() else { return false }
+        if file != nil { guard saveEdits() else { return false } }
         if geometryDraft != nil { requestLeavingGeometryDraft(action, onStay: onStay) }
         else { action() }
         return true

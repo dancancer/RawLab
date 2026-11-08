@@ -253,8 +253,7 @@ internal static class HDRNative
             if (status != StatusOk) throw new HDRSourceException(status, diagnostic.Reason, diagnostic.Field);
             var look = new HDRLookSettings(System.Text.Encoding.ASCII.GetString(info.Sha256, 0, 64), Path.GetFileNameWithoutExtension(path), 1);
             if (!look.IsValid || look.AssetPath(directory) is not { } destination) throw new HDRSourceException(1, 18, 10);
-            try { File.Move(staging, destination); }
-            catch (IOException) when (look.AssetIsAvailable(directory)) { }
+            if (!look.AssetIsAvailable(directory)) File.Move(staging, destination, overwrite: true);
             return look;
         } finally { File.Delete(staging); }
     }

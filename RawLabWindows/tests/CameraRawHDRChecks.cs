@@ -14,7 +14,32 @@ internal static class CameraRawHDRChecks
         CapabilityIsSeparateFromGainMapContainers();
         CameraModeUsesNeutralHDRSnapshot();
         CameraStampIsUsedWhenProbeHasNoDigest();
+        AIUnavailableHintExplainsCameraSettingsAndGpuMode();
+        Check(new HDRSourceException(2, 19, 11).Message ==
+            Loc.Text("无效或不可用的相机显影设置（白平衡或镜头校正）。"),
+            "Camera development failures do not incorrectly blame lens correction alone");
         Console.WriteLine("PASS: Windows camera RAW HDR model");
+    }
+
+    private static void AIUnavailableHintExplainsCameraSettingsAndGpuMode()
+    {
+        var settings = new HDRSettings();
+        Check(PhotoInput.HDRCameraAIUnavailableHint(settings, 0) == null &&
+            PhotoInput.HDRCameraAIUnavailableHint(settings, 1) == null &&
+            PhotoInput.HDRCameraAIUnavailableHint(null, 2) == null,
+            "Ordinary HDR Auto/CPU and SDR do not receive a camera HDR restriction hint");
+        Check(PhotoInput.HDRCameraAIUnavailableHint(settings, 2) ==
+            Loc.Text("HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。"),
+            "HDR GPU Force explains how to enable AI");
+        foreach (var level in new[] { 1, 2 })
+            Check(PhotoInput.HDRCameraAIUnavailableHint(settings with { CameraDevelopment = new(FbddLevel: level) }, 0) ==
+                Loc.Text("请先关闭 FBDD，再使用 HDR AI 降噪。"), "Both FBDD levels explain the AI restriction");
+        var profile = new HDRCameraProfile(new string('a', 64), "D65");
+        Check(PhotoInput.HDRCameraAIUnavailableHint(settings with { CameraDevelopment = new(CameraProfile: profile) }, 0) ==
+            Loc.Text("请先清除 HDR 相机配置，再使用 AI 降噪。"), "Camera profiles explain the AI restriction");
+        Check(PhotoInput.HDRCameraAIUnavailableHint(settings with { Mode = HDRMode.Sdr,
+            CameraDevelopment = new(CameraProfile: profile) }, 2) == null,
+            "Dormant HDR camera settings do not affect SDR hints");
     }
 
     private static void CapabilityIsSeparateFromGainMapContainers()

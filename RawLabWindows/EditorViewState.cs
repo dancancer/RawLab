@@ -2,14 +2,22 @@ namespace RawLab.Windows;
 
 internal static class NeutralReference
 {
-    internal static bool Matches(NeutralReferenceKey? reference,OriginalIdentity? source,ProcessingIdentity processing,GeometrySettings geometry,LensSettings lens,int edge=640,bool hdr=false,X3fMode x3fMode=X3fMode.Normal)=>
-        reference!=null && source!=null && reference.Source.SameFile(source) && reference.Processing==processing && reference.Geometry==geometry && reference.Lens==lens && reference.Edge==edge && reference.HDR==hdr && reference.X3fMode==x3fMode;
+    internal static bool Matches(NeutralReferenceKey? reference,OriginalIdentity? source,ProcessingIdentity processing,GeometrySettings geometry,LensSettings lens,int edge=640,bool hdr=false,X3fMode x3fMode=X3fMode.Normal,HDRCameraDevelopmentSettings? hdrCamera=null)=>
+        reference!=null && source!=null && reference.Source.SameFile(source) && reference.Processing==processing && reference.Geometry==geometry && reference.Lens==lens && reference.Edge==edge && reference.HDR==hdr && reference.X3fMode==x3fMode && reference.HDRCamera==hdrCamera;
+    internal static HDRCameraDevelopmentSettings? HDRCameraSettings(HDRSettings? settings)
+    {
+        var camera = settings?.CameraSettings;
+        // 对比颜色时沿用同一镜头画框，其他相机显影调整不进入参考图身份。
+        return camera == null ? null : new(LensDistortion:camera.LensDistortion,LensTca:camera.LensTca,
+            LensAutoCrop:camera.LensAutoCrop,LensProfile:camera.LensProfile);
+    }
     internal static Adjustments Settings(string path,Adjustments committed)
     {
         var result = PhotoInput.PrepareInputSettings(path, new Adjustments { Lens = committed.Lens, Processing = committed.Processing, X3fMode = committed.X3fMode });
         if (committed.HDR is { } hdr)
         {
-            result.HDR = hdr.Reset() with { Mode = hdr.Mode };
+            result.HDR = hdr.Reset() with { Mode = hdr.Mode,
+                CameraDevelopment = hdr.CameraDevelopment == null ? null : HDRCameraSettings(hdr) };
             result.ProRAWDecodeVersion = committed.ProRAWDecodeVersion;
         }
         result.Geometry = committed.Geometry;
@@ -50,4 +58,4 @@ internal static class PhotoViewProjection
 }
 
 internal sealed record NeutralReferenceKey(OriginalIdentity Source,bool Raster,ProcessingIdentity Processing,
-    GeometrySettings Geometry,LensSettings Lens,int Edge,bool HDR=false,X3fMode X3fMode=X3fMode.Normal);
+    GeometrySettings Geometry,LensSettings Lens,int Edge,bool HDR=false,X3fMode X3fMode=X3fMode.Normal,HDRCameraDevelopmentSettings? HDRCamera=null);

@@ -357,6 +357,22 @@ bool fullRank(const Matrix& matrix) {
     return std::isfinite(singular[2]) && singular[2] > threshold;
 }
 
+std::vector<double> externalTonePoints(std::string_view source) {
+    if (source.size() > 1024 * 1024) fail(DcpCompilerError::TooLarge);
+    const auto curve = Json::parse(source.begin(), source.end(), nullptr, false);
+    if (!curve.is_array() || curve.size() < 2 || curve.size() > 8192)
+        fail(DcpCompilerError::InvalidToneCurve);
+    std::vector<double> points;
+    points.reserve(curve.size() * 2);
+    for (const auto& point : curve) {
+        if (!point.is_array() || point.size() != 2 || !point[0].is_number() || !point[1].is_number())
+            fail(DcpCompilerError::InvalidToneCurve);
+        points.push_back(point[0].get<double>());
+        points.push_back(point[1].get<double>());
+    }
+    return points;
+}
+
 std::vector<double> toneSamples(const std::vector<double>& points) {
     const std::size_t count = points.size() / 2;
     std::vector<double> x(count), y(count);
@@ -533,7 +549,8 @@ HDRCameraProfile cameraProfile(const CameraMatrices& matrices) {
     return profile;
 }
 
-std::vector<uint8_t> compileImpl(const void* data, std::size_t size, const std::string& sourceName) {
+std::vector<uint8_t> compileImpl(const void* data, std::size_t size, const std::string& sourceName,
+                                 std::string_view toneCurveJson, bool omitAutomaticBlack) {
     Reader reader(data, size);
     for (uint16_t key : {uint16_t(52525), uint16_t(52539), uint16_t(52543), uint16_t(52544), uint16_t(52551)})
         if (reader.tags.find(key) != reader.tags.end()) fail(DcpCompilerError::UnsupportedStages);
@@ -602,13 +619,21 @@ std::vector<uint8_t> compileImpl(const void* data, std::size_t size, const std::
     if (cells > maxCells) fail(DcpCompilerError::TooLarge);
 
     const auto toneIterator = reader.tags.find(50940);
-    if (toneIterator == reader.tags.end()) fail(DcpCompilerError::MissingToneCurve);
-    if (toneIterator->second.kind != 11 || toneIterator->second.count < 4 || toneIterator->second.count > 16384 ||
-        toneIterator->second.count % 2 != 0)
-        fail(DcpCompilerError::InvalidToneCurve);
-    const auto points = reader.numbers(toneIterator->second);
+    const bool externalTone = !toneCurveJson.empty();
+    std::vector<double> points;
+    if (toneIterator == reader.tags.end()) {
+        if (!externalTone) fail(DcpCompilerError::MissingToneCurve);
+        points = externalTonePoints(toneCurveJson);
+    } else {
+        if (externalTone || toneIterator->second.kind != 11 ||
+            toneIterator->second.count < 4 || toneIterator->second.count > 16384 ||
+            toneIterator->second.count % 2 != 0)
+            fail(DcpCompilerError::InvalidToneCurve);
+        points = reader.numbers(toneIterator->second);
+    }
     const auto tone = toneSamples(points);
-    if (reader.scalar(51110, 4, 0) != 1) fail(DcpCompilerError::AutomaticBlack);
+    const auto black = reader.scalar(51110, 4, 0);
+    if (black != 1 && (black != 0 || !omitAutomaticBlack)) fail(DcpCompilerError::AutomaticBlack);
     const double exposure = reader.scalar(51109, 10, 0);
     if (!std::isfinite(exposure) || std::abs(exposure) > 16) fail(DcpCompilerError::InvalidExposure);
     const double exposureMultiplier = std::pow(2.0, exposure);
@@ -634,7 +659,8 @@ std::vector<uint8_t> compileImpl(const void* data, std::size_t size, const std::
         {"look_encoding", hasLook ? look.encoding : 0}, {"name", reader.text(50936)},
         {"profile_exposure_ev", exposure}, {"scope", "D65-adapted profile appearance; target RAW calibration/WB unchanged; no Adobe rendering parity"},
         {"source_model", reader.text(50708)}, {"tone_points", points.size() / 2},
-        {"tone_source", "profile"}, {"black_render_policy", "none-profile"},
+        {"tone_source", externalTone ? "external" : "profile"},
+        {"black_render_policy", black == 1 ? "none-profile" : "omitted-explicitly"},
         {"apply_profile_exposure", true}, {"exposure_method", "linear EV before look; not Adobe exposure-tone emulation"}
     };
     Json metadata = {
@@ -685,9 +711,14 @@ std::vector<uint8_t> compileImpl(const void* data, std::size_t size, const std::
 
 std::vector<uint8_t> compileDcp(const void* data, std::size_t size, const std::string& sourceName,
                                 DcpCompilerError& error) {
+    return compileDcp(data, size, sourceName, error, {}, false);
+}
+
+std::vector<uint8_t> compileDcp(const void* data, std::size_t size, const std::string& sourceName,
+                                DcpCompilerError& error, std::string_view toneCurveJson, bool omitAutomaticBlack) {
     error = DcpCompilerError::None;
     try {
-        return compileImpl(data, size, sourceName);
+        return compileImpl(data, size, sourceName, toneCurveJson, omitAutomaticBlack);
     } catch (const CompileFailure& failure) {
         error = failure.reason;
         return {};

@@ -93,6 +93,15 @@ class HDRSettingsTest {
         assertThrows(IllegalArgumentException::class.java) { StructuredSettingsCodec.decode(mismatched, "photo_edit") }
     }
 
+    @Test fun rasterSourceDefaultsUseSensorExposure() {
+        for (hdr in listOf(false, true)) {
+            val defaults = sourceDefaultSettings(hdr, inputKind = com.rawlab.android.format.PhotoInputKind.RASTER)
+            assertEquals(2, defaults.exposureMode)
+            assertEquals(hdr, defaults.isHDREditing)
+            if (hdr) assertEquals(2, defaults.withHDRMode(false, true).exposureMode)
+        }
+    }
+
     @Test fun proRawHdrPinsItsDecoderWhilePreservingBothModeRecords() {
         val sdr = EditSettings(film = "velvia", exposure = -.5f)
         val hdr = sdr.withHDRMode(true, false, cameraRaw = true, proRAW = true)
@@ -184,6 +193,25 @@ class HDRSettingsTest {
         assertEquals(-1.25f, hdr.exposure)
         assertEquals(-1.25f, hdr.sdrSnapshotSettings()?.exposure)
         assertEquals(GeometrySettings(quarterTurns = 1), hdr.sdrSnapshotSettings()?.geometry)
+    }
+
+    @Test
+    fun gainMapHdrStartsFromBoundedEffectiveRecipeValues() {
+        val sdr = EditSettings(recipeID = "test-recipe", strength = .5f, exposure = 1f,
+            contrast = .4f, highlights = -.6f, shadows = .8f, saturation = -.2f)
+        val hdr = HDRSettings.from(sdr)
+        assertEquals(.5f, hdr.exposure)
+        assertEquals(20f, hdr.contrast)
+        assertEquals(-30f, hdr.highlights, .00001f)
+        assertEquals(40f, hdr.shadows)
+        assertEquals(-10f, hdr.saturation)
+        val bounded = HDRSettings.from(sdr.copy(strength = 2f, exposure = 4f,
+            contrast = 1f, highlights = -1f, shadows = 1f, saturation = -1f))
+        assertEquals(4f, bounded.exposure)
+        assertEquals(100f, bounded.contrast)
+        assertEquals(-100f, bounded.highlights)
+        assertEquals(100f, bounded.shadows)
+        assertEquals(-100f, bounded.saturation)
     }
 
     @Test

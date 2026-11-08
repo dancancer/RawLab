@@ -385,6 +385,10 @@ extension ContentView {
                 lookCompatibilityCompletion = finish
                 confirmedLookCompatibility = nil
                 pendingLookCompatibility = .init(source: source, draft: draft)
+            }, dcpOptionsPrompt: { source, reason, finish in
+                dcpImportOptionsCompletion = finish
+                confirmedDCPImportOptions = nil
+                pendingDCPImportOptions = .init(source: source, reason: reason)
             }) { report in
                 if case .select(let selectedID) = LookImportSelection.decision(previousID: settings.lutID,
                                                                                 imported: report.imported) {
@@ -427,12 +431,13 @@ extension ContentView {
         showingBefore = false
         do {
             let source = try await loadPhotoSource(from: item)
+            let resourceIdentifier = item.itemIdentifier
+            let identity = (try? await viewModel.photoIdentity(for: source, from: item))
+                ?? resourceIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
             guard photoImportRequestID == requestID, !Task.isCancelled else {
                 PhotoImportFile.release(source.url)
                 return
             }
-            let identity = item.itemIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
-                ?? (try? PhotoIdentity.fallback(for: source.url))
             viewModel.importImage(from: source, identity: identity, settings: .default,
                 diagnosticContext: ["entryPoint": "photos"],
                 onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in

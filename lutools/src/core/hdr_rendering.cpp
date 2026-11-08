@@ -345,6 +345,8 @@ ImageData renderHDRHslProbe(ImageData image, const HDRRenderOptions& options) {
     beforeColor.color.hsl = {};
     beforeColor.color.grading = {};
     beforeColor.rendition = {};
+    beforeColor.look.reset();
+    beforeColor.lookStrength = 0;
     edit(image, beforeColor, true);
     finishGeometry(image, beforeColor);
     return image;

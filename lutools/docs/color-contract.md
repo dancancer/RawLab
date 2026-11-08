@@ -90,19 +90,24 @@ The additive `SONY2FUJI_INPUT_DISPLAY_BUFFER=2` consumes tightly packed opaque
 RGB8/RGBA8 or little-endian RGBA16 display-sRGB. Existing `RAW=0`, scene `BUFFER=1`, request v2 layout and
 their rendering are unchanged. The shared macOS/iOS ImageIO adapter applies EXIF orientation
 once and converts tagged RGB to sRGB; untagged RGB assumes sRGB. It accepts
-single-frame 8-bit SDR JPEG, PNG, TIFF and HEIF, plus 16-bit integer RGB TIFF.
+single-frame 8-bit SDR JPEG, PNG, TIFF and HEIF, plus opaque 16-bit integer RGB
+PNG and TIFF, including RawLab's own PNG exports.
 For Sigma Photo Pro TIFF exports with a separate 160-pixel preview IFD, it
 decodes the full-resolution primary image only. An explicitly paginated IFD
 is never treated as a preview.
-TIFF's 16-bit precision is retained at the sRGB buffer boundary and through
-float processing before output encoding. Transparency, other high-bit-depth
-inputs, floating-point/HDR, multi-frame/page and CMYK inputs are rejected.
+PNG/TIFF 16-bit precision is retained as little-endian RGBA16 at the sRGB buffer
+boundary and through float processing before output encoding. Nonopaque alpha
+(including 65534 at 16 bits), high-bit-depth formats other than integer RGB
+PNG/TIFF, floating-point/HDR, multi-frame/page and CMYK inputs are rejected.
 Untagged grayscale/indexed images are not inferred to use
 a particular gray transfer function and are rejected.
 
 Raster import adapters accept up to 128,000,000 source pixels, including the
 roughly 102–105 MP dimensions of 100 MP medium-format cameras. Apple, Windows
-and Android use the same budget; the CLI advertises it in `raster_input`.
+and Android's 8-bit adapters use the same budget; the CLI advertises it in `raster_input`.
+Android integer PNG16 has a separate 32,000,000-pixel decode limit: its 8-byte
+output plus decoder/orientation buffers would otherwise exceed 2 GB near 128 MP.
+The check runs before pixel decoding and reports the PNG16-specific limit.
 Overflow checks and format/depth validation still run before allocation. This
 is a decode budget, not a promise that every device has enough free memory.
 The separate embedded-preview exposure-reference budget does not limit RAW
@@ -122,21 +127,59 @@ This display-referred path reuses the reference CPU stages. GPU Auto explicitly
 falls back to CPU and Force returns unsupported until the scene-view GPU
 shaders have a matching display-input mode. Rendered DNG output preserves the
 result as output-referred float RGB; it does not turn an 8-bit source into RAW/HDR.
-The Apple adapter uses ImageIO. Windows has a separate WIC adapter for JPEG/PNG
-and classic single-page RGB8 TIFF, verified on Windows rather than inferred from
-Mac results; HEIF and BigTIFF are not enabled.
-Windows chooses JPEG/PNG/TIFF validation from the file signature, so a misleading
+The Apple adapter uses ImageIO. Windows uses WIC for 8-bit JPEG and 8/16-bit
+integer RGB PNG and classic TIFF, and its bundled libheif for opaque 8-bit SDR
+HEIF. It converts tagged RGB to sRGB and treats untagged RGB as sRGB. BigTIFF
+remains unsupported. The same Sigma Photo Pro exception applies on Windows only
+to a 16-bit primary followed by one smaller 8-bit IFD with a 160-pixel long edge
+and matching aspect ratio (within one primary-image pixel of cross-product
+rounding). Neither IFD may carry a page marker (`PageNumber`, the
+`NewSubfileType` page bit, or `OldSubfileType=3`). Windows converts high-bit-depth
+pixels to 64bpp RGBA before ICC-to-sRGB conversion, preserving 16-bit channels.
+Its bounded display-preview entry point always returns RGBA8, including when
+the source needs no resizing. Windows decoding and ICC behavior require native
+Windows verification rather than inference from Mac results.
+Windows chooses JPEG/PNG/TIFF/HEIF validation from the file signature, so a misleading
 supported extension does not select the wrong metadata parser. Windows and
 Android accept a validated MPF baseline primary image with only VGA/Full HD large
 thumbnails, decoding the primary image at full resolution. Both continue to reject
 MPF gain maps, stereo/multi-angle images, unknown auxiliary types and invalid
 image ranges; this does not enable general multi-frame input.
 Unknown non-sRGB PNG color metadata
-without a supported ICC profile is rejected instead of guessed. Android uses a
-separate API-26-compatible platform decoder for validated JPEG/PNG files and
-passes their oriented opaque display-sRGB pixels through the same explicit
-display-buffer C API. Android does not enable TIFF or HEIF; its native file-loader
-entry point remains unsupported rather than pretending to decode those files.
+without a supported ICC profile is rejected instead of guessed. On Apple,
+SDR PNG8/PNG16 cICP `{1,13,0,1}` (sRGB), `{12,13,0,1}` (Display P3), and
+`{1,1,0,1}` (BT.709) are accepted when ImageIO decodes the declared color space,
+then converted to sRGB. This also applies when a matching ICC profile is present.
+The adapter verifies the decoded space rather than assuming every OS version
+understands cICP. Other combinations remain unsupported: ImageIO on macOS
+27.0.1 ignores `{1,6,0,1}` and returns sRGB with unchanged code values, so accepting
+it would lose the declared transfer function. HDR cICP (including PQ/HLG),
+mastering/content-light metadata and malformed cICP lengths remain rejected.
+Windows and Android retain their existing stricter cICP admission rules;
+Apple's additional SDR combinations rely on the verified ImageIO conversion.
+Android uses a separate API-26-compatible platform decoder for validated 8-bit
+JPEG/PNG files.
+Opaque integer RGB/RGBA16 PNG uses the bundled PNG decoder to retain all 16 bits,
+applies EXIF orientation once and validates the platform's bounded SDR RGB
+color-space description. Unlike the 8-bit platform decoder, the PNG16 adapter
+converts that RGB description with transfer-function tables and a 3×3 matrix;
+it does not apply the complete embedded ICC through Skia. PNG16 rejects ICC
+profiles with A2B/B2A/D2B/B2D transform tags, including matrix/TRC fallbacks,
+and multi-sample TRC curves that cannot be represented parametrically.
+Accepted matrix/parametric-TRC profiles still depend on Android's color-space
+identification; this is not a claim of arbitrary ICC equivalence to the 8-bit
+decoder or Apple's ColorSync. The platform's
+RGBA_F16/scRGB-nl bounds description of integer-sRGB PNG16 is normalized to
+bounded sRGB before validation. Its owned native RGBA16
+buffer reaches the display-buffer C API without an 8-bit or half-float intermediate;
+untagged RGB assumes sRGB. Actual transparency remains unsupported at either depth.
+After a JPEG's EOI (or its last registered MPF thumbnail), Android ignores
+non-JPEG trailing data such as Motion Photo video or SEFT, checking only the
+start of the tail for an unregistered JPEG signature. C2PA-labelled JUMBF APP11
+metadata is accepted, including matching continuations; other APP11 data such
+as JPEG XT remains unsupported.
+Android also supports validated SDR HEIF through the platform decoder on API 28+.
+TIFF and the native file-loader entry point remain unsupported on Android.
 The native clients resolve camera-only settings separately for every mixed-batch
 target and retain the original frozen recipe. A raster source's dormant camera
 WB, lens and exposure-baseline values do not become active on a RAW target:
@@ -557,7 +600,7 @@ default to Auto black require an explicit omission policy. Triple-illuminant HSM
 HDR/spatial/RGB stages and full Adobe rendering remain unsupported.
 
 Application DCP import uses one portable C++ compiler through
-`sony2fuji_compile_dcp`, separate from rendering. The additive C ABI accepts
+`sony2fuji_compile_dcp` and `sony2fuji_compile_dcp_with_options`, separate from rendering. The C ABI accepts
 bounded input bytes and a source filename and returns an owned RLOOK blob plus
 a stable, localized-by-client rejection reason. Release blobs with
 `sony2fuji_release_blob`; existing request and image-buffer layouts are unchanged.
@@ -568,8 +611,10 @@ rejection returns `UNSUPPORTED` with a typed reason; invalid API arguments and
 allocation failures use `INVALID_ARGUMENT` and `OUT_OF_MEMORY`. `source_name` is
 a UTF-8 filename for metadata, not a path used to read or write files. Input
 bytes are read-only and limited to 128 MiB; output is limited to 64 MiB.
-Automatic import is deliberately stricter than the legacy preparation CLI:
-it requires an embedded tone curve and explicit `DefaultBlackRender=None`.
+Automatic import requires an embedded tone curve and explicit
+`DefaultBlackRender=None`. The options entry point also accepts a JSON curve
+of up to 1 MiB when the embedded curve is missing. An explicit flag can omit
+`DefaultBlackRender=Auto`.
 Import never substitutes the donor profile for the target RAW calibration/WB,
 and it does not enable a new GPU backend or change rendering results.
 

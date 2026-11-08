@@ -78,7 +78,7 @@ internal sealed class LookLibrary
 
     private readonly string directory;
     private readonly string registryPath;
-    private readonly Func<string, byte[]> compileDcp;
+    private readonly Func<string, DcpImportOptions?, byte[]> compileDcp;
     private readonly Func<string, LookValidation> validateLook;
     private readonly Func<string, LUTCompatibility, byte[]> prepareCompatibility;
     private readonly object writeGate = new();
@@ -105,11 +105,14 @@ internal sealed class LookLibrary
         string? directory = null,
         Func<string, byte[]>? compileDcp = null,
         Func<string, LookValidation>? validateLook = null,
-        Func<string, LUTCompatibility, byte[]>? prepareCompatibility = null)
+        Func<string, LUTCompatibility, byte[]>? prepareCompatibility = null,
+        Func<string, DcpImportOptions?, byte[]>? compileDcpWithOptions = null)
     {
         this.directory = Path.GetFullPath(directory ?? DefaultDirectory);
         registryPath = Path.Combine(this.directory, "registry.json");
-        this.compileDcp = compileDcp ?? DcpCompiler.Compile;
+        if (compileDcpWithOptions != null) this.compileDcp = compileDcpWithOptions;
+        else if (compileDcp != null) this.compileDcp = (path, _) => compileDcp(path);
+        else this.compileDcp = (path, options) => DcpCompiler.Compile(path, options);
         this.validateLook = validateLook ?? ValidateNative;
         this.prepareCompatibility = prepareCompatibility ?? ((path, draft) => draft.Prepare(path));
         Load();
@@ -136,11 +139,14 @@ internal sealed class LookLibrary
         }
     }
 
-    internal ManagedLook ImportLook(string source, LUTCompatibility? compatibility = null)
+    internal ManagedLook ImportLook(string source, LUTCompatibility? compatibility = null,
+        DcpImportOptions? dcpOptions = null)
     {
         var fullSource = Path.GetFullPath(source);
         var suffix = Path.GetExtension(fullSource).TrimStart('.').ToLowerInvariant();
         if (suffix is not ("cube" or "vlt" or "rlook" or "dcp"))
+            throw new LookLibraryException(LookLibraryError.InvalidLook);
+        if (dcpOptions != null && suffix != "dcp")
             throw new LookLibraryException(LookLibraryError.InvalidLook);
         if (!File.Exists(fullSource) || (File.GetAttributes(fullSource) & FileAttributes.Directory) != 0)
             throw new LookLibraryException(LookLibraryError.UnreadableSource);
@@ -160,7 +166,7 @@ internal sealed class LookLibrary
             }
             else if (suffix == "dcp")
             {
-                var bytes = compileDcp(fullSource);
+                var bytes = compileDcp(fullSource, dcpOptions);
                 if (bytes.LongLength > DcpCompiler.MaxOutputBytes)
                     throw new LookLibraryException(LookLibraryError.TooLarge);
                 File.WriteAllBytes(staging, bytes);

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace sony2fuji {
@@ -28,6 +29,9 @@ enum class DcpCompilerError : uint32_t {
 std::vector<uint8_t> compileDcp(const void* data, std::size_t size,
                                 const std::string& sourceName,
                                 DcpCompilerError& error);
+std::vector<uint8_t> compileDcp(const void* data, std::size_t size,
+                                const std::string& sourceName, DcpCompilerError& error,
+                                std::string_view toneCurveJson, bool omitAutomaticBlack);
 
 struct HDRCameraProfile {
     std::string cameraModel;

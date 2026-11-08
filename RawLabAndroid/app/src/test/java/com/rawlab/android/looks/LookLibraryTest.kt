@@ -65,14 +65,17 @@ class LookLibraryTest {
     @Test
     fun dcpIsCompiledToManagedRlookAndValidated() {
         val root = Files.createTempDirectory("rawlab-look-dcp").toFile()
-        val compiler = DcpCompiler { source, sourceName ->
+        val curve = "[[0,0],[1,1]]".toByteArray()
+        val compiler = DcpCompiler { source, sourceName, toneCurve, omitAutomaticBlack ->
             assertArrayEquals("synthetic dcp".toByteArray(), source)
             assertEquals("profile.dcp", sourceName)
+            assertArrayEquals(curve, toneCurve)
+            assertTrue(omitAutomaticBlack)
             "RLOOKDCP".toByteArray()
         }
         try {
             val imported = LookLibrary(root, validator, compiler).importLook(
-                "synthetic dcp".byteInputStream(), "profile.dcp")
+                "synthetic dcp".byteInputStream(), "profile.dcp", toneCurve = curve, omitAutomaticBlack = true)
 
             assertEquals(LookFormat.RLOOK, imported.format)
             assertEquals(2, imported.version)
@@ -91,12 +94,12 @@ class LookLibraryTest {
         val failure = DcpCompilationException(DcpFailureReason.MISSING_TONE_CURVE)
         try {
             val error = assertThrows(DcpCompilationException::class.java) {
-                LookLibrary(root, validator, DcpCompiler { _, _ -> throw failure })
+                LookLibrary(root, validator, DcpCompiler { _, _, _, _ -> throw failure })
                     .importLook("synthetic dcp".byteInputStream(), "profile.dcp")
             }
             assertSame(failure, error)
             assertEquals(DcpFailureReason.MISSING_TONE_CURVE, error.reason)
-            assertTrue(LookLibrary(root, validator, DcpCompiler { _, _ -> error("not reached") })
+            assertTrue(LookLibrary(root, validator, DcpCompiler { _, _, _, _ -> error("not reached") })
                 .list().isEmpty())
             assertTrue(root.listFiles().orEmpty().all { it.name == ".lock" })
         } finally {

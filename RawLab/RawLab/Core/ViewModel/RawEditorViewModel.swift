@@ -59,6 +59,7 @@ final class RawEditorViewModel: ObservableObject {
         let lens: LensCorrectionSettings
         let longEdge: Int
         let hdrMode: HDRSettings.Mode?
+        let hdrCamera: HDRCameraDevelopmentSettings?
     }
     var comparisonReferenceKey: ComparisonReferenceKey?
     var basePreviewLens = LensCorrectionSettings()

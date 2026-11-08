@@ -248,6 +248,9 @@ final class EditorModel: ObservableObject {
         }
     }
     @Published var saveStatusKey = ""
+    var pendingSDRFallbackNotice = false
+    var sourceUsesSDRFallback = false
+    var probeHDRSource: HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) }
     var saveStatus: String { L10n.text(saveStatusKey) }
     @Published var saveError: String?
     @Published var batch: BatchExportModel?
@@ -334,7 +337,7 @@ final class EditorModel: ObservableObject {
     var canApplyHDRCameraDevelopment: Bool {
         canApplySettings || (canChangePhotoSettings && settings.hdr?.cameraDevelopmentSettings.cameraProfile != nil)
     }
-    var canExport: Bool { canApplySettings }
+    var canExport: Bool { canApplySettings && (!settings.isHDREditing || settings.hdr?.missingResourceMessage == nil) }
 
 
     init(lookDirectory: URL = LookLibrary.defaultDirectory,

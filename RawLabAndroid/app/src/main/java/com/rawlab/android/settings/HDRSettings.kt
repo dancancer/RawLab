@@ -7,8 +7,11 @@ import java.security.MessageDigest
 
 enum class HDRMode { SDR, HDR }
 
-fun sourceDefaultSettings(isHDRSource: Boolean, cameraRaw: Boolean = false): EditSettings =
-    if (isHDRSource && !cameraRaw) EditSettings().withHDRMode(true, true) else EditSettings()
+fun sourceDefaultSettings(isHDRSource: Boolean, cameraRaw: Boolean = false,
+    inputKind: com.rawlab.android.format.PhotoInputKind = com.rawlab.android.format.PhotoInputKind.RAW): EditSettings {
+    val defaults = EditSettings(exposureMode = if (inputKind == com.rawlab.android.format.PhotoInputKind.RASTER) 2 else 1)
+    return if (isHDRSource && !cameraRaw) defaults.withHDRMode(true, true) else defaults
+}
 
 sealed class HDRModeError(message: String) : IllegalArgumentException(message) {
     data object UnsupportedSource : HDRModeError("HDR source is unavailable")
@@ -176,6 +179,12 @@ data class HDRSettings(
         rendition = rendition?.let { HDRRenditionSettings() }, effects = effects?.let { PhotoEffectsSettings() },
         detail = detail?.let { HDRDetailSettings() }, look = look?.let { HDRLookSettings() },
         cameraDevelopment = cameraDevelopment?.let { HDRCameraDevelopmentSettings() })
+    val neutralGeometrySettings: HDRSettings
+        get() = reset().copy(geometry = geometry, cameraDevelopment = cameraDevelopment?.let {
+            // 对比颜色时沿用同一镜头画框，白平衡及其他显影参数仍保持中性。
+            HDRCameraDevelopmentSettings(lensDistortion = it.lensDistortion, lensTca = it.lensTca,
+                lensAutoCrop = it.lensAutoCrop, lensProfile = it.lensProfile)
+        })
     fun withTone(value: HDRToneSettings) = copy(tone = value.takeUnless { tone == null && it.isDefault })
     fun withColor(value: HDRColorSettings): HDRSettings {
         if (color == null && value.isDefault) return this
@@ -198,11 +207,11 @@ data class HDRSettings(
 
     companion object {
         fun from(settings: EditSettings) = HDRSettings(
-            exposure = settings.exposure,
-            contrast = settings.contrast * 100f,
-            highlights = settings.highlights * 100f,
-            shadows = settings.shadows * 100f,
-            saturation = settings.saturation * 100f,
+            exposure = (settings.exposure * settings.recipeScale).coerceIn(-4f, 4f),
+            contrast = (settings.contrast * 100f * settings.recipeScale).coerceIn(-100f, 100f),
+            highlights = (settings.highlights * 100f * settings.recipeScale).coerceIn(-100f, 100f),
+            shadows = (settings.shadows * 100f * settings.recipeScale).coerceIn(-100f, 100f),
+            saturation = (settings.saturation * 100f * settings.recipeScale).coerceIn(-100f, 100f),
             geometry = settings.geometry,
         )
     }

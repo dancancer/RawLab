@@ -22,6 +22,8 @@ internal static class HDRChecks
         DetailKeepsHDRAndSDRIndependent();
         LookKeepsHDRAndSDRIndependent();
         CameraDevelopmentUsesItsOwnVersion();
+        NeutralReferenceKeepsOnlyCameraLensSettings();
+        NeutralReferenceIdentityTracksOnlyCameraLensSettings();
         NativeLayoutsMatchHDRContract();
         LogicalFieldsCrossFamiliesWithoutCopyingGeometryOrInactiveState();
         BatchPreparationPreservesTheFrozenModeWithoutReopeningItsSource();
@@ -29,6 +31,53 @@ internal static class HDRChecks
             JsonSerializer.Deserialize<ExportFormat>("2")==ExportFormat.RenderedDng,
             "Existing journal enum numbers keep PNG and DNG meanings");
         Console.WriteLine("PASS: Windows HDR settings, snapshot isolation, transfer v2 and ABI model");
+    }
+
+    private static void NeutralReferenceKeepsOnlyCameraLensSettings()
+    {
+        var camera = new HDRCameraDevelopmentSettings(true,8400,24,true,2,true,true,false,"lens-id",
+            new HDRCameraProfile(new string('a',64),"D65"));
+        var hdr = new HDRSettings { Exposure=1,Temperature=7200,Tint=12,Contrast=30,
+            Geometry=new(.1,.2,.7,.6,1,true,false,2) }.WithCameraDevelopment(camera)
+            .WithDetail(new HDRDetailSettings(1,.4,.3,.2));
+        var edited = new Adjustments { HDR=hdr,Geometry=hdr.Geometry,ProRAWDecodeVersion=1 };
+        var before = NeutralReference.Settings("fixture.ARW",edited);
+        var expectedCamera = new HDRCameraDevelopmentSettings(LensDistortion:true,LensTca:true,
+            LensAutoCrop:false,LensProfile:"lens-id");
+        Check(before.HDR!.CameraSettings==expectedCamera,
+            "HDR neutral reference keeps distortion, TCA, auto-crop and lens profile while resetting WB, exposure, FBDD and camera profile");
+        Check(before.HDR.Exposure==0 && before.HDR.Temperature==6500 && before.HDR.Tint==0 &&
+            before.HDR.Contrast==0 && before.HDR.DetailSettings.IsDefault && before.Geometry==edited.Geometry &&
+            before.ProRAWDecodeVersion==1,"HDR neutral reference retains composition and decoder version while resetting grading");
+        Check(edited.HDR==hdr && edited.HDR.CameraSettings==camera,"Neutral preparation leaves committed HDR edits untouched");
+        Check(NeutralReference.Settings("fixture.ARW",new Adjustments { HDR=new HDRSettings() }).HDR!.CameraDevelopment==null,
+            "A legacy HDR neutral reference does not invent camera development");
+        Check(hdr.Reset().CameraSettings.IsDefault,"Full HDR reset still clears lens corrections");
+    }
+
+    private static void NeutralReferenceIdentityTracksOnlyCameraLensSettings()
+    {
+        var camera = new HDRCameraDevelopmentSettings(LensDistortion:true,LensTca:true,LensAutoCrop:false,LensProfile:"lens-id");
+        var hdr = new HDRSettings().WithCameraDevelopment(camera);
+        var key = new NeutralReferenceKey(new("fixture.ARW",12,34,56),false,ProcessingIdentity.Legacy,new(),new(),640,
+            HDR:true,HDRCamera:NeutralReference.HDRCameraSettings(hdr));
+        foreach(var changed in new[] {camera with {LensDistortion=false},camera with {LensTca=false},
+            camera with {LensAutoCrop=true},camera with {LensProfile="another lens"}}) {
+            var referenceCamera = NeutralReference.HDRCameraSettings(hdr with {CameraDevelopment=changed});
+            Check(key!=key with {HDRCamera=referenceCamera},"Each HDR lens field invalidates the neutral frame identity");
+            Check(!NeutralReference.Matches(key,key.Source,key.Processing,key.Geometry,key.Lens,hdr:true,hdrCamera:referenceCamera),
+                "An old HDR lens frame cannot be reported ready after a lens change");
+        }
+        var colorEdit = hdr with {Exposure=1,CameraDevelopment=camera with {CustomWhiteBalance=true,Temperature=8400,Tint=24,
+            SensorExposure=true,FbddLevel=2,CameraProfile=new(new string('b',64),"D65")}};
+        Check(NeutralReference.Matches(key,key.Source,key.Processing,key.Geometry,key.Lens,hdr:true,
+            hdrCamera:NeutralReference.HDRCameraSettings(colorEdit)),"Color and camera grading edits reuse the neutral lens frame");
+        Check(NeutralReference.HDRCameraSettings(new HDRSettings())==NeutralReference.HDRCameraSettings(new HDRSettings()
+            .WithCameraDevelopment(new(CustomWhiteBalance:true,Temperature:8400))),
+            "Creating a WB record without lens changes retains the default neutral identity");
+        var legacy = key with {HDR=false,HDRCamera=null};
+        Check(NeutralReference.Matches(legacy,legacy.Source,legacy.Processing,legacy.Geometry,legacy.Lens),
+            "Existing SDR reference callers remain compatible with the optional HDR identity");
     }
 
     private static void BatchPreparationPreservesTheFrozenModeWithoutReopeningItsSource()
@@ -81,6 +130,20 @@ internal static class HDRChecks
 
     private static void EnablingPreservesLegacyState()
     {
+        var recipe = new Adjustments();
+        recipe.ApplyMasterRecipe(MasterRecipe.All[0]);
+        recipe.Set(Parameter.Strength, 50); recipe.Set(Parameter.Exposure, 1);
+        recipe.Set(Parameter.Contrast, 40); recipe.Set(Parameter.Highlights, -60);
+        recipe.Set(Parameter.Shadows, 80); recipe.Set(Parameter.Saturation, -20);
+        var effective = HDRSettings.FromSdr(recipe);
+        Check(effective.Exposure == .5 && effective.Contrast == 20 && effective.Highlights == -30 &&
+              effective.Shadows == 40 && effective.Saturation == -10, "Gain-map HDR uses effective recipe values");
+        recipe.Set(Parameter.Strength, 200); recipe.Set(Parameter.Exposure, 4);
+        recipe.Set(Parameter.Contrast, 100); recipe.Set(Parameter.Highlights, -100);
+        recipe.Set(Parameter.Shadows, 100); recipe.Set(Parameter.Saturation, -100);
+        var bounded = HDRSettings.FromSdr(recipe);
+        Check(bounded.Exposure == 4 && bounded.Contrast == 100 && bounded.Highlights == -100 &&
+              bounded.Shadows == 100 && bounded.Saturation == -100 && bounded.IsValid, "Gain-map HDR clamps effective values");
         var settings = new Adjustments { Denoise = DenoiseSettings.Clean };
         settings.Set(Parameter.Tint, 4);
         settings.SetHDRMode(true, true);

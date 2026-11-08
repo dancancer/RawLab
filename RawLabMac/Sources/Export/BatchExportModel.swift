@@ -19,25 +19,30 @@ final class MacHDRBatchPreparation {
     private let settings: Adjustments
     private let store: EditPersistence
     private let films: [Film]
-    init(source: URL,settings: Adjustments,store: EditPersistence,films: [Film]) {
+    private let probeHDRSource: HDRSourceInfo.Probe
+    init(source: URL,settings: Adjustments,store: EditPersistence,films: [Film],
+         probeHDRSource: @escaping HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) }) {
         self.source=source; self.settings=settings; self.store=store; self.films=films
+        self.probeHDRSource=probeHDRSource
     }
-    func prepare(_ item: BatchExportItem,ordinal: Int,format: ExportFormat,longEdge: Int?) throws -> BatchFrozenSettings {
+    func prepare(_ item: BatchExportItem,ordinal: Int,format: ExportFormat,longEdge: Int?,sourceIsHDR: Bool? = nil,sdrFallback: Bool = false) throws -> BatchFrozenSettings {
         guard try OriginalFileIdentity(item.input)==item.identity else { throw BatchExportFailure.changedInput }
         let record=try store.versionedState(for:item.input)
-        let raster=RenderEngine.isRasterInput(item.input),info=try HDRSourceInfo.probe(item.input)
-        var defaults=Adjustments(); defaults.exposureMode=raster ? .sensor : .preview
-        if info != nil { defaults.hdr=HDRSettings() }
-        let target=record.state ?? PhotoEditState(settings:defaults,filmID:"")
+        let raster=RenderEngine.isRasterInput(item.input)
+        var fallback=sdrFallback
+        let sourceIsHDR=try sourceIsHDR ?? (probeHDRSource(item.input,{ fallback=true }) != nil)
+        var target=try record.state ?? PhotoEditState(settings:RenderEngine.defaultSettings(for:item.input,sourceIsHDR:sourceIsHDR),filmID:"")
+        if fallback { target.settings.hdr?.mode = .sdr }
         let rawInfo = !raster && target.settings.isHDREditing ? try HDRSourceInfo.probeRAW(item.input) : nil
         if target.settings.isHDREditing {
-            guard let sourceInfo = info ?? rawInfo else { throw HDRSettings.ModeError.unsupportedSource }
-            try sourceInfo.validateEditDecodeVersion(target.settings.proRAWDecodeVersion)
+            guard sourceIsHDR || rawInfo != nil else { throw HDRSettings.ModeError.unsupportedSource }
+            if let rawInfo { try rawInfo.validateEditDecodeVersion(target.settings.proRAWDecodeVersion) }
+            else if target.settings.proRAWDecodeVersion != nil { throw HDRSettings.ModeError.invalidSettings }
         }
         let payload=try HDRAdjustmentTransfer.batchPayload(settings:settings.hdr!,identifier:source.path,
             processingVersion:settings.processing.version,targetIsHDR:target.settings.isHDREditing)
         let context=MacAdjustmentTransferContext(identifier:item.identity.path,isRaw:!raster,
-            sourceIsHDR:info != nil, sourceSupportsCameraHDR: rawInfo != nil)
+            sourceIsHDR:sourceIsHDR, sourceSupportsCameraHDR: rawInfo != nil, sourceIsBayerHDR: rawInfo?.isCameraRAW == true)
         let prepared=try MacAdjustmentTransfer.prepare(payload:payload,target:target,context:context)
         if format.requiresHDR && !prepared.settings.isHDREditing {
             throw RenderError.failed(format.hdrRequiredMessage)
@@ -88,12 +93,16 @@ final class BatchExportModel: ObservableObject {
     private var previewRevision = UUID()
     private let onUsage: (UsageEvent) -> Void
     private let hdrPreparation: MacHDRBatchPreparation?
+    private let probeHDRSource: HDRSourceInfo.Probe
 
-    init(job: BatchExportJob, journal: BatchJournal,hdrPreparation: MacHDRBatchPreparation? = nil,onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
+    init(job: BatchExportJob, journal: BatchJournal,hdrPreparation: MacHDRBatchPreparation? = nil,
+         probeHDRSource: @escaping HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) },
+         onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
         self.job = job
         self.journal = journal
         self.onUsage = onUsage
         self.hdrPreparation=hdrPreparation
+        self.probeHDRSource = probeHDRSource
         error = job.failure
     }
 
@@ -108,6 +117,15 @@ final class BatchExportModel: ObservableObject {
     var summary: String {
         if !job.started { return L10n.format("已选 %@ 张", String(describing: job.selectedCount)) }
         return L10n.format("成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张", String(describing: job.succeededCount), String(describing: job.failedCount), String(describing: job.remainingCount))
+    }
+
+    func notice(for item: BatchExportItem) -> String? {
+        var messages = item.noticeKey.map { [L10n.text($0)] } ?? []
+        if job.mode == .uniformFrozen, !job.settings.isHDREditing, job.settings.aiDenoiseEnabled,
+           RenderEngine.isRasterInput(item.input) {
+            messages.append(L10n.text("普通图片未使用 AI 降噪"))
+        }
+        return messages.isEmpty ? nil : messages.joined(separator: "\n")
     }
 
     func addFiles() {
@@ -146,8 +164,10 @@ final class BatchExportModel: ObservableObject {
         queue.async { [self] in
             for item in candidates {
                 var failure: String?
+                var sdrFallback = false
                 do {
-                    let snapshot = try hdrPreparation?.prepare(item,ordinal:0,format:validationJob.format,longEdge:validationJob.longEdge) ?? validationJob.snapshot(for:item)
+                    let info = try probeHDRSource(item.input, { sdrFallback = true })
+                    let snapshot = try hdrPreparation?.prepare(item,ordinal:0,format:validationJob.format,longEdge:validationJob.longEdge,sourceIsHDR:info != nil,sdrFallback:sdrFallback) ?? validationJob.snapshot(for:item)
                     if snapshot.settings.activeAIDenoise {
                         try RenderEngine.validateAIInput(item.input, settings: snapshot.settings)
                     } else {
@@ -156,10 +176,14 @@ final class BatchExportModel: ObservableObject {
                     }
                 } catch { failure = error.localizedDescription }
                 let message = failure
+                let noticeKey = failure == nil && sdrFallback ? "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。" : nil
                 DispatchQueue.main.async {
-                    if let message, let index = self.job.items.firstIndex(where: { $0.input == item.input }) {
-                        self.job.items[index].validationError = message
-                        self.job.items[index].selected = false
+                    if let index = self.job.items.firstIndex(where: { $0.input == item.input }) {
+                        self.job.items[index].noticeKey = noticeKey
+                        if let message {
+                            self.job.items[index].validationError = message
+                            self.job.items[index].selected = false
+                        }
                     }
                 }
             }

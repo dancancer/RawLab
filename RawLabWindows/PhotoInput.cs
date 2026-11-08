@@ -59,6 +59,14 @@ internal static class PhotoInput
     internal static bool IsHDRCameraAICandidate(HDRSourceInfo? info) =>
         info?.SupportsBayerDevelopment == true;
 
+    internal static string? HDRCameraAIUnavailableHint(HDRSettings? settings, int gpuMode)
+    {
+        if (settings?.Mode != HDRMode.Hdr) return null;
+        if (settings.CameraSettings.CameraProfile != null) return Loc.Text("请先清除 HDR 相机配置，再使用 AI 降噪。");
+        if (settings.CameraSettings.FbddLevel != 0) return Loc.Text("请先关闭 FBDD，再使用 HDR AI 降噪。");
+        return gpuMode == 2 ? Loc.Text("HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。") : null;
+    }
+
     internal static Adjustments PrepareHDRInputSettings(string path, Adjustments value)
     {
         if (ProbeHDR(path, out var info) != HDRProbeState.Supported) return value;
@@ -68,8 +76,28 @@ internal static class PhotoInput
         return prepared;
     }
 
+    internal static X3fMode X3fDefaultMode(string path)
+    {
+        var status = Native.sony2fuji_x3f_default_mode(path, out var mode);
+        Native.Check(status);
+        return mode;
+    }
+
+    internal static Adjustments PrepareDefaultSettings(string path)
+    {
+        var prepared = PrepareInputSettings(path, new Adjustments());
+        if (IsX3f(path)) prepared.X3fMode = X3fDefaultMode(path);
+        return PrepareHDRInputSettings(path, prepared);
+    }
+
     internal static Adjustments PrepareBatchSettings(string source,string target,Adjustments value)
     {
+        if (IsRaster(target) && value.AIDenoiseEnabled && !value.IsHDREditing) {
+            // 普通图片目标只关闭 AI 降噪；曝光、白平衡和镜头仍由渲染时的输入归一化处理，快照保持原样。
+            var raster = value.Clone();
+            raster.AIDenoiseEnabled = false;
+            return raster;
+        }
         if(!IsRaster(source) || !IsRaw(target))return value;
         var recipeTint=value.MasterRecipeID == null ? (double?)null : value[Parameter.Tint];
         var prepared=PrepareInputSettings(source,value);

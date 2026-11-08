@@ -4,7 +4,7 @@
 
 ## 安装和启动
 
-需要 Python 3.11+、`uv` 和支持 Agent recipe v4、result protocol v1 的 RawLab CLI。官方 Python MCP SDK 固定为 `2.2.0`，间接依赖由 `uv.lock` 锁定。配置需要指向项目构建或已校验的发布包里的 CLI 可执行文件。
+需要 Python 3.11+、`uv` 和支持 Agent recipe v4（可额外提供 v5～v13）/ result protocol v1 的 RawLab CLI。官方 Python MCP SDK 固定为 `2.2.0`，间接依赖由 `uv.lock` 锁定。CLI 可以使用项目构建或已校验的发布包；普通桌面应用路径不能代替 CLI 可执行文件。
 
 从仓库根目录安装：
 
@@ -45,11 +45,13 @@ uv sync --project tools/mcp --frozen
 
 `validate_recipe` 只读取 recipe，保留 CLI 标准化结果中的相对路径；不要求引用的源图、外观或输出目录已存在。引用路径仍须位于配置的允许根内。校验原 JSON 的重复键、未知字段、范围、版本和类型由原 CLI 完成，不能通过 Python 重写绕过原 parser。
 
-preview/export 要求源图和外观文件存在，输出父目录存在。每次请求在输出目录创建私有暂存目录；CLI 成功且实际文件匹配后，以同文件系统 hard link 无覆盖发布。已有目标或目标软链接会拒绝，禁止覆盖 recipe、输入和外观。文件系统不支持 hard link 时返回失败，不降级为覆盖写入。取消或超时终止该请求的 CLI 并清理自己的暂存文件；服务正常关闭也会回收仍在运行的 CLI。清理失败不会覆盖成功结果、CLI 错误、取消或超时语义；服务会向 stderr 输出包含 `.rawlab-mcp-*` 私有目录路径的 warning，便于识别并回收残留。强制杀死服务或断电不提供自动恢复，应检查遗留 `.rawlab-mcp-*` 目录后再清理。
+preview/export 要求源图和外观文件存在，输出父目录存在。每次请求在输出目录创建私有暂存目录。CLI 成功后，Windows 通过同卷重命名发布，其他系统优先使用硬链接。已有同名目标时拒绝覆盖。对于不支持硬链接的卷（例如 macOS 上的 exFAT），MCP 独占创建目标文件，再写入已经渲染完成的内容。写入过程中目标文件可见，写入失败时清理该文件。禁止覆盖配方、输入和外观文件。
+
+取消或超时会终止该请求的 CLI 并清理私有暂存目录。服务正常关闭也会回收仍在运行的 CLI。暂存清理失败时，服务会在 stderr 记录目录路径。强制退出或断电后可检查遗留的 `.rawlab-mcp-*` 目录。
 
 工具返回 JSON text 和同内容的 `structuredContent`，保持 CLI 的 `protocol_version/command/ok/result/error` envelope，失败标记 `isError=true`。MCP 的 `image_info/render_preview/export_photo` 对应 envelope command `info/preview/export`。CLI 错误保留 code/status；MCP 路径/参数限制使用 `invalid_argument`，超时或协议错误使用 `processing_error`。recipe、source 和 image 在适配层预检缺失时映射为 `io_error`、`status=3`（C ABI `IO_ERROR`）；recipe 中的 look 只做 allowed-root canonical 校验，缺失 look 由已调用的 native export 原样返回其 backend error（例如 `unsupported,status=2`）。output parent 缺失属于 MCP 安全发布策略，返回 `invalid_argument`、`status=null`，不会创建 stage；这不模拟 native 各输出格式可能返回的错误（例如 PNG 的 `processing_error,status=4`）。source/look 的 recipe 结构仍会先由 native `validate_recipe` 读取，适配层不会把适配层预检伪称为 native render/export 已运行或返回的 backend status。允许根、leaf symlink、NUL/不可编码路径等限制仍为 `invalid_argument`、`status=null`。日志和诊断只使用 stderr。
 
-服务按 CLI 能力协商 recipe v1～v6 和 v8～v14。v5 使用 `rawlab` 处理系列，版本 2 采用 C5，v1～v4 继续采用旧处理语义。HDR v6 和 v8～v13 使用 `rawlab_hdr`、`hdr_raster` 来源及 `hdr_jpeg` 输出。v8 增加黑白场、S 曲线和自定义曲线，v9 增加鲜艳度、八色域 HSL 和颜色分级，v10 增加 HDR 亮度上限和独立 SDR 底图调整，v11 增加暗角和颗粒，v12 增加锐化、清晰度、去朦胧和图像级降噪，v13 增加显式声明扩展线性 sRGB 的 HDR CUBE，并校验资源的 SHA-256。v14 沿用 v13 的处理版本 7，新增相机 RAW（`raw`）、ProRAW（`proraw`）和 JPEG、PNG、渲染型 DNG SDR 导出。相机 RAW 的可选 `input.camera_development` 沿用 Mac 的绝对白平衡、曝光参考、FBDD、镜头和相机配置语义；相机配置的 `camera_profile.path` 与 look 路径一样，必须在只读根内并按配方目录解析。ProRAW HDR JPEG 使用核心流式路径和系统临时目录；CLI 仅在启用 DNG SDK 的构建中宣告 ProRAW 输入能力。完整字段见 [edit-json v14](../../lutools/docs/edit-json.md#v14-hdr-sources-and-sdr-exports)。各版本须由 CLI 宣告才可使用。HDR `preview` 返回编辑后的 SDR PNG，能力字段 `hdr.display` 为 false。路径限制定义本地工具的授权范围，操作系统层面的隔离需要独立配置。
+服务按 CLI 能力协商 recipe v1～v14。v5 使用 `rawlab` 处理系列，版本 2 采用 C5，v1～v4 继续采用旧处理语义。HDR v6 和 v8～v13 使用 `rawlab_hdr`、`hdr_raster` 来源及 `hdr_jpeg` 输出。v8 增加黑白场、S 曲线和自定义曲线，v9 增加鲜艳度、八色域 HSL 和颜色分级，v10 增加 HDR 亮度上限和独立 SDR 底图调整，v11 增加暗角和颗粒，v12 增加锐化、清晰度、去朦胧和图像级降噪，v13 增加显式声明扩展线性 sRGB 的 HDR CUBE，并校验资源的 SHA-256。v14 沿用 v13 的处理版本 7，新增相机 RAW（`raw`）、ProRAW（`proraw`）和 JPEG、PNG、渲染型 DNG SDR 导出。相机 RAW 的可选 `input.camera_development` 沿用 Mac 的绝对白平衡、曝光参考、FBDD、镜头和相机配置语义；相机配置的 `camera_profile.path` 与 look 路径一样，必须在只读根内并按配方目录解析。ProRAW HDR JPEG 使用核心流式路径和系统临时目录；CLI 仅在启用 DNG SDK 的构建中宣告 ProRAW 输入能力。完整字段见 [edit-json v14](../../lutools/docs/edit-json.md#v14-hdr-sources-and-sdr-exports)。各版本须由 CLI 宣告才可使用。v7 在 v5 RAW 配方上保留必需的 `x3f_mode`（`legacy` 或 `normal-v1`），不会丢弃 X3F 显影身份。未知的未来版本仍不自动支持。HDR `preview` 返回编辑后的 SDR PNG，能力字段 `hdr.display` 为 false。路径限制定义本地工具的授权范围，操作系统层面的隔离需要独立配置。
 
 ## 验证
 
@@ -68,6 +70,6 @@ RAWLAB_MCP_CLI='/absolute/RawLab CLI/bin/sony2fuji' \
 
 Hosted CI 的 contracts job 使用锁文件运行协议和 adapter 回归；Mac render suite 在构建后，把同一 checkout 生成的 CLI 传入真实对照测试。两项均接入现有 `CI result` 门槛。Linux contracts 中没有原生 CLI，真实对照用例明确跳过；Mac 对照必须设置 `RAWLAB_MCP_CLI`，不能把跳过当成通过。
 
-macOS 和 Windows 本地已覆盖真实 stdio 五工具、并发目标保护、Unicode/符号链接路径、hard link 无覆盖发布，以及当前 CLI 的 v4/v5 配方和像素对照；Windows 另以真实 RAW 验证 native CLI 取消与超时、进程退出、暂存清理和后续调用。跨批次状态见[验收总账](../../docs/integration/editing-iteration/README.md)。这些本地结果不代表 Windows Hosted CI 已接入 MCP 检查。
+macOS 和 Windows 本地已覆盖真实 stdio 五工具、并发目标保护、Unicode/符号链接路径、跨平台无覆盖发布，以及当前 CLI 的 v4/v5 配方和像素对照；Windows 另以真实 RAW 验证 native CLI 取消与超时、进程退出、暂存清理和后续调用。跨批次状态见[验收总账](../../docs/integration/editing-iteration/README.md)。这些本地结果不代表 Windows Hosted CI 已接入 MCP 检查。
 
 Windows 测试中的 Python fake CLI 通过测试专用启动入口作为直接子进程执行；真实 CLI 对照仍使用未替换的生产入口。符号链接测试要求当前测试账户具备创建符号链接的权限，不修改系统策略或自动跳过。当前受信任 CLI 不应启动外部子进程；POSIX 回收进程组，Windows 当前只回收直接 CLI 子进程。

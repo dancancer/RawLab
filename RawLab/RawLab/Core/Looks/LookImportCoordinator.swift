@@ -65,6 +65,13 @@ enum LookImportSelection {
 final class LookImportCoordinator {
     typealias Delivery = (@escaping () -> Void) -> Void
     typealias CompatibilityPrompt = (URL, LUTCompatibility, @escaping (LUTCompatibility?) -> Void) -> Void
+    typealias DCPOptionsPrompt = (URL, DCPCompilerError, @escaping (DCPImportOptions?) -> Void) -> Void
+
+    private enum DCPResolution {
+        case cancelled
+        case imported(ManagedLook)
+        case failed(LookImportFailureReason)
+    }
 
     private let queue: DispatchQueue
     private let directory: URL
@@ -91,6 +98,7 @@ final class LookImportCoordinator {
     }
 
     func importLooks(from sources: [URL], compatibilityPrompt: CompatibilityPrompt? = nil,
+                     dcpOptionsPrompt: DCPOptionsPrompt? = nil,
                      completion: @escaping (LookImportBatchResult) -> Void) {
         queue.async {
             guard !sources.isEmpty else {
@@ -107,11 +115,13 @@ final class LookImportCoordinator {
             }
 
             self.importNext(sources, index: 0, library: library, prompt: compatibilityPrompt,
+                            dcpPrompt: dcpOptionsPrompt,
                             imported: [], failures: [], completion: completion)
         }
     }
 
     private func importNext(_ sources: [URL], index: Int, library: LookLibrary, prompt: CompatibilityPrompt?,
+                            dcpPrompt: DCPOptionsPrompt?,
                             imported: [ManagedLook], failures: [LookImportFailure],
                             completion: @escaping (LookImportBatchResult) -> Void) {
         guard index < sources.count else {
@@ -142,9 +152,30 @@ final class LookImportCoordinator {
                             }
                             if access { source.stopAccessingSecurityScopedResource() }
                             self.importNext(sources, index: index + 1, library: library, prompt: prompt,
+                                            dcpPrompt: dcpPrompt,
                                             imported: resolved, failures: rejected, completion: completion)
                         }
                     }
+                }
+                return
+            }
+            if let dcpError = error as? DCPCompilerError,
+               Self.isInteractiveDCPError(dcpError), let dcpPrompt {
+                resolveDCP(source: source, library: library, error: dcpError, prompt: dcpPrompt) { resolution in
+                    var resolved = imported
+                    var rejected = failures
+                    switch resolution {
+                    case .cancelled:
+                        break
+                    case .imported(let managed):
+                        resolved.append(managed)
+                    case .failed(let reason):
+                        rejected.append(.init(fileName: source.lastPathComponent, reason: reason))
+                    }
+                    if access { source.stopAccessingSecurityScopedResource() }
+                    self.importNext(sources, index: index + 1, library: library, prompt: prompt,
+                                    dcpPrompt: dcpPrompt,
+                                    imported: resolved, failures: rejected, completion: completion)
                 }
                 return
             }
@@ -152,7 +183,41 @@ final class LookImportCoordinator {
         }
         if access { source.stopAccessingSecurityScopedResource() }
         importNext(sources, index: index + 1, library: library, prompt: prompt,
+                   dcpPrompt: dcpPrompt,
                    imported: nextImported, failures: nextFailures, completion: completion)
+    }
+
+    private func resolveDCP(source: URL, library: LookLibrary, error: DCPCompilerError,
+                            prompt: @escaping DCPOptionsPrompt,
+                            previousOptions: DCPImportOptions? = nil,
+                            completion: @escaping (DCPResolution) -> Void) {
+        deliver {
+            prompt(source, error) { options in
+                self.queue.async {
+                    guard let options else {
+                        completion(.cancelled)
+                        return
+                    }
+                    let merged = DCPImportOptions(
+                        toneCurveJSON: options.toneCurveJSON ?? previousOptions?.toneCurveJSON,
+                        omitAutomaticBlack: options.omitAutomaticBlack || previousOptions?.omitAutomaticBlack == true)
+                    do {
+                        let record = try library.importLook(from: source, dcpOptions: merged)
+                        completion(.imported(.init(record: record, url: library.url(for: record))))
+                    } catch let nextError as DCPCompilerError
+                                where Self.isInteractiveDCPError(nextError) && nextError != error {
+                        self.resolveDCP(source: source, library: library, error: nextError, prompt: prompt,
+                                        previousOptions: merged, completion: completion)
+                    } catch let importError {
+                        completion(.failed(Self.reason(for: importError)))
+                    }
+                }
+            }
+        }
+    }
+
+    private static func isInteractiveDCPError(_ error: DCPCompilerError) -> Bool {
+        [.missingToneCurve, .automaticBlack].contains(error)
     }
 
     private func ensureLibrary() throws -> LookLibrary {

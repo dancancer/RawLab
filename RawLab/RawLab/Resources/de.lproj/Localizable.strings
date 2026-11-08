@@ -8,14 +8,15 @@
 "4:3" = "4:3";
 "DCP 使用三光源 HueSatMap，暂不支持转换。" = "Das DCP verwendet eine HueSatMap mit drei Lichtquellen, die für die Konvertierung noch nicht unterstützt wird.";
 "DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。" = "Das DCP enthält nicht unterstützte räumliche Verstärkungen, HDR- oder RGB-Tabellenverarbeitung und kann nicht konvertiert werden.";
+"DCP 导入选项" = "DCP-Importoptionen";
 "DCP 文件或外观数据超过安全大小限制。" = "Die DCP-Datei oder die Look-Daten überschreiten die sichere Größenbegrenzung.";
 "DCP 文件损坏，或使用了不支持的 TIFF 结构。" = "Die DCP-Datei ist beschädigt oder verwendet eine nicht unterstützte TIFF-Struktur.";
 "DCP 曝光偏移无效；需要 -16 至 +16 EV 的有限数值。" = "Der DCP-Belichtungsversatz ist ungültig; erforderlich ist ein endlicher Wert von -16 bis +16 EV.";
 "DCP 曲线无效；需要 2 至 8192 个有限、范围为 0 至 1 且横坐标递增的点。" = "Die DCP-Kurve ist ungültig; erforderlich sind 2 bis 8192 endliche Punkte im Bereich 0 bis 1 mit aufsteigenden x-Koordinaten.";
+"DCP 没有内嵌色调曲线。" = "Das DCP enthält keine eingebettete Tonwertkurve.";
 "DCP 的 HueSatMap/LookTable 数据、维度或编码不受支持。" = "Die HueSatMap-/LookTable-Daten, Dimensionen oder Kodierung des DCP werden nicht unterstützt.";
-"DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。" = "Dem DCP fehlt ProfileToneCurve; die Adobe-Standardkurve kann nicht automatisch abgeleitet werden. Geben Sie zuerst mit dem Vorbereitungswerkzeug eine Kurve an.";
 "DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。" = "Dem DCP fehlt eine eindeutige, gültige D65 ColorMatrix/ForwardMatrix; die Konvertierung ist nicht möglich.";
-"DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。" = "Das DCP erfordert eine automatische Schwarzwertverarbeitung, die von dieser Konvertierung noch nicht unterstützt wird. Wählen Sie zuerst mit dem Vorbereitungswerkzeug ausdrücklich eine Schwarzwertstrategie.";
+"DCP 要求自动黑位处理。" = "Das DCP fordert eine automatische Schwarzwertverarbeitung an.";
 "DNG · 渲染型" = "DNG · Entwickelt";
 "DNG 只能保存到文件" = "DNG kann nur in Dateien gespeichert werden";
 "DNG 已执行内嵌 Stage3 处理，未叠加校正" = "Eingebettete DNG-Stage-3-Verarbeitung bereits angewendet; zusätzliche Korrektur übersprungen";
@@ -217,6 +218,7 @@
 "外观分类" = "Look-Kategorie";
 "外观名称" = "Look-Name";
 "外观名称不能为空或包含控制字符。" = "Der Name des Looks darf nicht leer sein und keine Steuerzeichen enthalten.";
+"外观强度" = "Look-Intensität";
 "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。" = "Die Look-Datei ist beschädigt oder inkompatibel; eine kompatible CUBE- oder RLOOK-Datei ist erforderlich.";
 "多点曲线" = "Punktkurve";
 "多点曲线将从直线开始，旧 S 曲线数值会保留。" = "Die Punktkurve beginnt als Gerade. Der S-Kurvenwert bleibt erhalten.";
@@ -375,6 +377,7 @@
 "方向、裁切和构图一致" = "Ausrichtung, Zuschnitt und Bildaufbau stimmen überein";
 "方案 %@" = "Option %@";
 "旋转" = "Drehung";
+"无效或不可用的相机显影设置（白平衡或镜头校正）。" = "Die Kameraentwicklungseinstellungen (Weißabgleich oder Objektivkorrektur) sind ungültig oder nicht verfügbar.";
 "无效或不可用的镜头校正设置" = "Ungültige oder nicht verfügbare Objektivkorrektureinstellungen";
 "无效或不可用的降噪参数" = "Ungültiger oder nicht verfügbarer Rauschreduzierungsparameter";
 "无效的 HSL 参数" = "Ungültige HSL-Parameter";
@@ -500,6 +503,7 @@
 "此像素不可取样。" = "Dieses Pixel kann nicht erfasst werden.";
 "此外观已不在外观库中。" = "Dieser Look ist nicht mehr in der Look-Bibliothek enthalten.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Nur Anpassungen in der Gruppe „%@“ werden zurückgesetzt. Andere Gruppen bleiben unverändert.";
+"此照片或构建尚不能使用 AI 降噪。" = "KI-Entrauschen ist für dieses Foto oder Build nicht verfügbar.";
 "此照片没有可用的相机白平衡校准。" = "Dieses Foto enthält keine nutzbare Kamera-Weißabgleichkalibrierung.";
 "此照片没有可编辑的 HDR 增益图。" = "Dieses Foto hat keine bearbeitbare HDR-Gain-Map.";
 "此设备暂不支持导出 HDR 模式下的 ProRAW 照片。" = "Dieses Gerät unterstützt den Export von ProRAW-Fotos im HDR-Modus noch nicht.";
@@ -562,6 +566,7 @@
 "目标：%@ 张照片" = "Zielfotos: %@";
 "相对白平衡" = "Relativer Weißabgleich";
 "相机白平衡（按目标照片）" = "Kamera-Weißabgleich (pro Zielfoto)";
+"省略自动黑位" = "Automatische Schwarzwertkorrektur auslassen";
 "确定" = "OK";
 "确认兼容导入" = "Mit diesen Einstellungen importieren";
 "确认并冻结任务" = "Bestätigen und Aufgabe festschreiben";
@@ -614,6 +619,7 @@
 "色相：向相邻颜色偏移。" = "Farbton: Verschiebung zu benachbarten Farben.";
 "色调" = "Tönung";
 "色调偏移" = "Tönungsversatz";
+"色调曲线（JSON）" = "Tonwertkurve (JSON)";
 "苍茫雪山与森林雾气，去除数码刺眼生绿，苔原冷绿与柔和暖金交织" = "Weite Schneelandschaften und Waldnebel, harte digitale Grüntöne entfernt; Tundra-Kühlgrün trifft auf weiches Warmgold";
 "英国乡村秋日油画风，厚重大地色，枯草金黄与深林墨绿交织" = "Ölgemälde-Look eines britischen Herbstes auf dem Land, satte Erdtöne, goldenes Gras und tiefes Waldgrün";
 "范围" = "Bereich";
@@ -694,6 +700,7 @@
 "选择" = "Auswählen";
 "选择一张照片即可比较方案；也可以展开高级设置手动配置。" = "Wählen Sie ein Foto, um die Optionen zu vergleichen, oder öffnen Sie die erweiterten Einstellungen für eine manuelle Konfiguration.";
 "选择参考图" = "Referenzbild auswählen";
+"选择曲线文件…" = "Kurvendatei auswählen…";
 "选择此组" = "Gruppe auswählen";
 "选择照片…" = "Foto auswählen…";
 "选择照片后同步所需调整，也可进入单张微调，再返回原集合。" = "Wählen Sie Fotos zum Synchronisieren aus oder bearbeiten Sie ein Foto einzeln und kehren Sie zur selben Sammlung zurück.";

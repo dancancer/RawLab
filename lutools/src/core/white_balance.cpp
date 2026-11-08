@@ -161,7 +161,7 @@ CameraWhiteBalance::CameraWhiteBalance(const libraw_data_t& raw) {
 }
 
 bool CameraWhiteBalance::multipliers(double temperature, double tint, float output[4], const Matrix* profileMatrix) const {
-    if (!valid_ || !std::isfinite(temperature) || !std::isfinite(tint) ||
+    if ((!profileMatrix && !valid_) || !std::isfinite(temperature) || !std::isfinite(tint) ||
         temperature<2000 || temperature>50000 || std::abs(tint)>150) return false;
     const auto xy=temperatureWhitePoint(temperature,tint);
     const std::array<double,3> xyz={xy.x/xy.y,1,(1-xy.x-xy.y)/xy.y};

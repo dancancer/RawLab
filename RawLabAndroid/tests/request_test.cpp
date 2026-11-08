@@ -89,4 +89,13 @@ int main() {
     assert(display.input_pixel_format == SONY2FUJI_PIXEL_RGBA8);
     assert(display.input_color_space == SONY2FUJI_COLOR_SRGB && display.input_is_linear == 0);
     assert(display.wb_mode == SONY2FUJI_WB_CAMERA && display.temperature == 6500 && display.tint == 0);
+
+    std::array<uint16_t, 2 * 3 * 4> display16Pixels{};
+    auto display16 = rawlab::makeDisplayRequest("export.png", display16Pixels.data(), 2, 3,
+        SONY2FUJI_PIXEL_RGBA16, nullptr, nullptr, 1, 0, false, 6500, 0,
+        0, 0, 0, 0, 0, 0, 400, rawlab::ExportFormat::PNG);
+    assert(display16.input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER);
+    assert(display16.input_pixels == display16Pixels.data());
+    assert(display16.input_pixel_format == SONY2FUJI_PIXEL_RGBA16);
+    assert(display16.input_color_space == SONY2FUJI_COLOR_SRGB && display16.input_is_linear == 0);
 }

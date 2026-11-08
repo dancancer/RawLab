@@ -133,11 +133,12 @@ public partial class MainWindow
     private void RestoreEdits(string input)
     {
         editStore ??= new EditStore(EditStore.DefaultDirectory);
-        currentEditRecord=editStore.VersionedState(input);editGesture=null;adjustmentReloadRequired=false;
-        var saved = currentEditRecord.Edit;
+        var nextRecord = editStore.VersionedState(input);
+        var saved = nextRecord.Edit;
         // New HDR sources start in HDR mode; an existing snapshot without HDR
         // remains the legacy SDR record by construction.
-        settings = saved?.Settings.Restore() ?? PhotoInput.PrepareHDRInputSettings(input, new Adjustments());
+        var nextSettings = saved?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(input);
+        currentEditRecord=nextRecord;editGesture=null;adjustmentReloadRequired=false;settings=nextSettings;
         lut = saved == null ? null : ResolveLook(saved);
         if (settings.MasterRecipeID == null && lut != null && !films.Any(f => StringComparer.OrdinalIgnoreCase.Equals(f.Path, lut)))
         {

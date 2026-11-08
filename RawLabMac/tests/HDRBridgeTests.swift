@@ -62,10 +62,27 @@ import ImageIO
     }
     static func main() throws {
         let input=URL(fileURLWithPath:CommandLine.arguments[1])
-        let info=try HDRSourceInfo.probe(input)!
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
         defer { try? FileManager.default.removeItem(at:directory) }
+        var unavailable = HDRSettings()
+        unavailable.exposure = 1.25
+        unavailable.lookSettings = HDRLookSettings(sha256: String(repeating: "a", count: 64), name: "Missing look", strength: 1)
+        unavailable.cameraDevelopmentSettings.whiteBalance = .temperature
+        unavailable.cameraDevelopmentSettings.temperature = 5000
+        unavailable.cameraDevelopmentSettings.lensDistortion = true
+        unavailable.cameraDevelopmentSettings.lensProfile = "target-lens"
+        unavailable.cameraDevelopmentSettings.cameraProfile = HDRCameraProfile(sha256: String(repeating: "b", count: 64), name: "Missing profile")
+        let fallback = unavailable.previewSettings(lookDirectory: directory, profileDirectory: directory)
+        require(fallback.lookSettings.isDefault && fallback.cameraDevelopmentSettings.cameraProfile == nil,
+                "Missing HDR resources did not fall back for preview")
+        var expectedFallback = unavailable
+        expectedFallback.lookSettings = HDRLookSettings(); expectedFallback.cameraDevelopmentSettings.cameraProfile = nil
+        require(fallback == expectedFallback && unavailable.lookSettings.sha256 != nil &&
+                unavailable.cameraDevelopmentSettings.cameraProfile != nil, "HDR preview fallback changed saved settings or lens/WB")
+        print("PASS missing HDR resource preview settings preserve saved references, WB and lens")
+        fflush(stdout)
+        let info=try HDRSourceInfo.probe(input)!
         try autoreleasepool {
             let cache=HDRSourceCache(limit:16*1024)
             let preview=try cache.preview(input,info:info,longEdge:32)

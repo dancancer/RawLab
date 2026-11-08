@@ -11,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <thread>
+#include <optional>
 #ifdef SONY2FUJI_ENABLE_X3F
 #include "rawlab_x3f.h"
 #endif
@@ -19,6 +20,13 @@ namespace sony2fuji {
 
 #ifdef SONY2FUJI_ENABLE_X3F
 namespace {
+std::optional<uint32_t> x3fPipelineForModel(const std::string& model) {
+    if (model == "DP1S" || model == "SIGMA DP1S") return 0;
+    if (model.find("Merrill") != std::string::npos) return 2;
+    if (model.find("Quattro") != std::string::npos || model.find("quattro") != std::string::npos) return 1;
+    return std::nullopt;
+}
+
 class X3fCancellation {
     std::unique_ptr<rawlab_x3f_cancel_token, decltype(&rawlab_x3f_cancel_free)> token_;
     std::atomic<bool> done_{false};
@@ -64,6 +72,15 @@ bool x3fRenderingAvailable() {
 #endif
 }
 
+bool x3fModelSupported(const std::string& model) {
+#ifdef SONY2FUJI_ENABLE_X3F
+    return x3fPipelineForModel(model).has_value();
+#else
+    (void)model;
+    return false;
+#endif
+}
+
 X3fProcessor::X3fProcessor() {
 #ifdef SONY2FUJI_ENABLE_X3F
     handle_ = rawlab_x3f_create();
@@ -90,12 +107,9 @@ ErrorCode X3fProcessor::process(const std::string& path, const std::string& mode
         return ErrorCode::InvalidFormat;
     }
     if (base_.pixels.empty()) {
-        uint32_t pipeline;
-        if (model == "DP1S" || model == "SIGMA DP1S") pipeline = 0;
-        else if (model.find("Merrill") != std::string::npos) pipeline = 2;
-        else if (model.find("Quattro") != std::string::npos || model.find("quattro") != std::string::npos) pipeline = 1;
-        else {
-            error_ = "Normal X3F rendering has not been validated for this camera model";
+        const auto pipeline = x3fPipelineForModel(model);
+        if (!pipeline) {
+            error_ = "Normal X3F rendering is unavailable for this sensor. Use Legacy mode.";
             return ErrorCode::InvalidFormat;
         }
         // LibRaw 的 flip 与 EXIF orientation 使用不同编号。
@@ -105,7 +119,7 @@ ErrorCode X3fProcessor::process(const std::string& path, const std::string& mode
         auto* handle = static_cast<rawlab_x3f_handle*>(handle_);
         checkProcessingCancellation();
         X3fCancellation cancellation;
-        const auto result = rawlab_x3f_decode(handle, path.c_str(), pipeline, orientations[flip], cancellation.get(), &decoded);
+        const auto result = rawlab_x3f_decode(handle, path.c_str(), *pipeline, orientations[flip], cancellation.get(), &decoded);
         if (result == 4) throw ProcessingCancelled();
         checkProcessingCancellation();
         if (result != 0) { error_ = rawlab_x3f_error(handle); return ErrorCode::ProcessingError; }

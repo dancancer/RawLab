@@ -21,6 +21,15 @@ data class BatchSelectionState(
     val error: String? = null,
 ) {
     val selectedPhotos get() = photos.filter { it.id in selected }
+    fun supportsHDRExport(readRecord: (PhotoIdentity) -> VersionedPhotoEdit, skipping: Set<String> = emptySet()): Boolean {
+        val targets = selectedPhotos.filterNot { it.id in skipping }
+        return targets.isNotEmpty() && targets.all { photo ->
+            photo.sourceIsHDR && runCatching {
+                (readRecord(photo.identity).settings ?: sourceDefaultSettings(photo.sourceIsHDR,
+                    cameraRaw = photo.inputKind == com.rawlab.android.format.PhotoInputKind.RAW)).isHDREditing
+            }.getOrDefault(false)
+        }
+    }
     fun append(additions: List<BatchTarget>): BatchSelectionState {
         val known = photos.mapTo(mutableSetOf()) { it.id }
         val accepted = additions.filter { known.add(it.id) }
@@ -67,7 +76,7 @@ class BatchSelectionExport(private val directory: File,
                 validateActive(photo.id); validateSource(photo)
                 val inputHash = BatchFrozenSettings.checksum(photo.sourceFile)
                 val record = readRecord(photo.identity)
-                val settings = record.settings ?: com.rawlab.android.settings.sourceDefaultSettings(photo.sourceIsHDR, cameraRaw = photo.inputKind == com.rawlab.android.format.PhotoInputKind.RAW)
+                val settings = record.settings ?: com.rawlab.android.photo.defaultEditSettingsFor(photo.sourceFile, photo.inputKind, photo.sourceIsHDR, cameraRaw = photo.inputKind == com.rawlab.android.format.PhotoInputKind.RAW)
                 if (settings.isHDREditing && !photo.sourceIsHDR)
                     throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.source")
                 if (settings.isHDREditing) validateHDRSource(photo, settings)

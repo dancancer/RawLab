@@ -98,12 +98,32 @@ import ImageIO
         } catch HDRSettings.ModeError.invalidSettings {}
         cameraEdit.proRAWDecodeVersion = nil
         try store.save(camera, state: PhotoEditState(settings: cameraEdit, filmID: ""))
-        let savedCamera = try store.versionedState(for: camera)
         var cameraSource = source; cameraSource.hdr?.renditionSettings.sdrExposureEV = -0.75
         let cameraPreparation = MacHDRBatchPreparation(source: input, settings: cameraSource, store: store, films: [])
         let cameraFrozen = try cameraPreparation.prepare(cameraItem, ordinal: 0, format: .hdrJPEG, longEdge: 64)
         check(cameraFrozen.settings.hdr == cameraSource.hdr && cameraFrozen.settings.exposure == -2,
               "Camera RAW batch lost the HDR edits or its dormant SDR snapshot")
+        var targetDevelopment = HDRCameraDevelopmentSettings()
+        targetDevelopment.selectWhiteBalance(.temperature)
+        targetDevelopment.temperature = 5200; targetDevelopment.tint = 17
+        targetDevelopment.exposureReference = .sensor
+        targetDevelopment.lensDistortion = true; targetDevelopment.lensTCA = true
+        targetDevelopment.lensAutoCrop = false; targetDevelopment.lensProfile = "target lens profile"
+        targetDevelopment.cameraProfile = HDRCameraProfile(
+            sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            name: "target camera profile")
+        do {
+            let original = try store.versionedState(for: camera).state!
+            defer { try? store.save(camera, state: original) }
+            var target = original
+            target.settings.hdr?.cameraDevelopmentSettings = targetDevelopment
+            try store.save(camera, state: target)
+            let prepared = try cameraPreparation.prepare(cameraItem, ordinal: 0, format: .hdrJPEG, longEdge: 64)
+            check(targetDevelopment != cameraSource.hdr!.cameraDevelopmentSettings &&
+                  prepared.settings.hdr?.cameraDevelopmentSettings == targetDevelopment,
+                  "Mac HDR batch preparation copied source camera development over the target")
+        }
+        let savedCamera = try store.versionedState(for: camera)
         var cameraJob = BatchExportJob(source: input, settings: cameraSource, look: nil, lookName: "HDR")
         cameraJob.items = [cameraItem]; cameraJob.outputDirectory = directory
         cameraJob.longEdge = 64; cameraJob.format = .hdrJPEG

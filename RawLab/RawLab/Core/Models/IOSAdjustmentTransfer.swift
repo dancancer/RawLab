@@ -134,10 +134,8 @@ enum IOSAdjustmentTransfer {
         try applyWhiteBalance(payload, target: target.settings, to: &result, context: context,
             fullRecipe: fullRecipe, contextChanged: contextChanged)
         if let mode = payload[.exposureMode]?.string {
-            guard context.isRaw || !payload.source.isRaw || mode == "sensor" else {
-                throw AdjustmentTransferError.incompatible(Field.exposureMode.rawValue)
-            }
-            result.exposureMode = mode == "scene" ? .scene : mode == "preview" ? .preview : .sensor
+            // 普通图片没有 RAW 曝光基准，选中任何来源模式均保持 sensor。
+            result.exposureMode = !context.isRaw || mode == "sensor" ? .sensor : mode == "scene" ? .scene : .preview
         }
         for (field, key) in effectKeys {
             if let value = payload[field]?.number {

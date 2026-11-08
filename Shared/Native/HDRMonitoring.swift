@@ -77,6 +77,7 @@ struct HDRLookControls: View {
     @Binding var settings: HDRSettings
     let onEditingChanged: (Bool) -> Void
     let onCancelled: () -> Void
+    var onResourceRestored: () -> Void = {}
     @State private var choosingFile = false
     @State private var importing = false
     @State private var failed = false
@@ -99,12 +100,16 @@ struct HDRLookControls: View {
 
     private func load(_ apply: @escaping (HDRSettings) throws -> HDRSettings) {
         let before = settings
+        let restoring = before.lookSettings.asset().map { !FileManager.default.isReadableFile(atPath: $0.path) } == true
         importing = true; failed = false
         Task { @MainActor in
             defer { importing = false }
             do {
                 let result = try await Task.detached { try apply(before) }.value
-                if settings == before { settings = result }
+                if settings == before {
+                    settings = result
+                    if restoring && result == before { onResourceRestored() }
+                }
             } catch { failed = true }
         }
     }
@@ -136,6 +141,10 @@ struct HDRLookControls: View {
                 }).accessibilityLabel(L10n.text("外观强度")).accessibilityValue(percent)
                     .accessibilityIdentifier("hdr.look.strength")
             }
+            if let asset = look.asset(), !FileManager.default.isReadableFile(atPath: asset.path) {
+                Text(L10n.text("上次使用的外观不可用，请重新选择或导入外观。"))
+                    .font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("hdr.look.missing")
+            }
             if failed {
                 Text(L10n.text("无法读取外观文件。")).font(.caption).foregroundStyle(.secondary)
                     .accessibilityIdentifier("hdr.look.error")
@@ -157,31 +166,30 @@ struct HDRCameraDevelopmentControls: View {
     let settings: HDRCameraDevelopmentSettings
     let supportsBayerDevelopment: Bool
     let apply: (HDRCameraDevelopmentSettings) -> Void
+    let onResourceRestored: () -> Void
     @State private var draft: HDRCameraDevelopmentSettings
     @State private var choosingProfile = false
     @State private var importingProfile = false
     @State private var profileError: String?
 
     init(settings: HDRCameraDevelopmentSettings, supportsBayerDevelopment: Bool,
-         apply: @escaping (HDRCameraDevelopmentSettings) -> Void) {
+         apply: @escaping (HDRCameraDevelopmentSettings) -> Void,
+         onResourceRestored: @escaping () -> Void = {}) {
         self.settings = settings
         self.supportsBayerDevelopment = supportsBayerDevelopment
         self.apply = apply
+        self.onResourceRestored = onResourceRestored
         _draft = State(initialValue: settings)
     }
 
     var body: some View {
         DisclosureGroup("HDR RAW") {
             profileControls
-            Picker(L10n.text("白平衡模式"), selection: $draft.whiteBalance) {
+            Picker(L10n.text("白平衡模式"), selection: Binding(get: { draft.whiteBalance }, set: { draft.selectWhiteBalance($0) })) {
                 Text(L10n.text("相机白平衡（按目标照片）")).tag(HDRCameraDevelopmentSettings.WhiteBalance.asShot)
                 Text(L10n.text("自定义")).tag(HDRCameraDevelopmentSettings.WhiteBalance.temperature)
             }
             .accessibilityIdentifier("hdr.camera.wb")
-            .onChange(of: draft.whiteBalance) { _, mode in
-                draft.temperature = mode == .asShot ? 0 : 6500
-                draft.tint = 0
-            }
             if draft.whiteBalance == .temperature {
                 cameraSlider("色温", value: $draft.temperature, range: 2000...50000, step: 50, unit: " K", id: "temperature")
                 cameraSlider("色调", value: $draft.tint, range: -150...150, step: 1, unit: "", id: "tint")
@@ -213,12 +221,16 @@ struct HDRCameraDevelopmentControls: View {
                 UTType(filenameExtension: $0, conformingTo: .data) ?? .data
             }) { result in
                 guard let url = try? result.get() else { return }
+                let restoring = draft == settings && draft.cameraProfile.map {
+                    (try? HDRCameraProfileAssetStore.url(for: $0)) == nil
+                } == true
                 importingProfile = true
                 profileError = nil
                 Task { @MainActor in
                     defer { importingProfile = false }
                     do {
                         draft.cameraProfile = try await Task.detached { try HDRCameraProfileAssetStore.install(url) }.value
+                        if restoring && draft.cameraProfile?.sha256 == settings.cameraProfile?.sha256 { onResourceRestored() }
                     } catch { profileError = error.localizedDescription }
                 }
             }
@@ -237,6 +249,10 @@ struct HDRCameraDevelopmentControls: View {
                     .accessibilityIdentifier("hdr.camera.profile.clear")
             }
         }.buttonStyle(.borderless)
+        if let profile = draft.cameraProfile, (try? HDRCameraProfileAssetStore.url(for: profile)) == nil {
+            Text(L10n.text("找不到 HDR 相机配置，请重新导入。"))
+                .font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("hdr.camera.profile.missing")
+        }
         if let profileError { Text(profileError).font(.caption).foregroundStyle(.secondary) }
     }
 

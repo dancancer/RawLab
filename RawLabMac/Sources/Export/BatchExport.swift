@@ -60,6 +60,7 @@ struct BatchExportItem: Codable, Identifiable {
     var completedIdentity: OriginalFileIdentity?
     var error: String?
     var validationError: String?
+    var noticeKey: String?
     var frozen: BatchFrozenSettings?
     var resourceIdentifier: String?
 
@@ -151,6 +152,7 @@ struct BatchExportJob: Codable {
     var suffix: String { format.suffix }
 
     func settings(for input: URL) -> Adjustments {
+        if RenderEngine.isRasterInput(input) { return settings.resolvedForRaster }
         guard RenderEngine.isRasterInput(source), !RenderEngine.isRasterInput(input) else { return settings }
         // 普通图像上不可用的相机参数不能在 RAW 目标上重新生效。
         var resolved = settings
