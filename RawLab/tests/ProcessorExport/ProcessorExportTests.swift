@@ -70,12 +70,10 @@ struct ProcessorExportTests {
             try processor.exportDNG(url: missingRawURL, settings: .default, lutURL: nil,
                                     outputURL: output.appendingPathComponent("missing-source.dng"), exportLongEdge: 64)
             check(false, "missing RAW is not classified as a global output failure")
-        } catch let error as Sony2FujiProcessor.ProcessorError {
-            if case .outputIO = error {
-                check(false, "missing RAW is not classified as a global output failure")
-            } else {
-                check(true, "missing RAW is not classified as a global output failure")
-            }
+        } catch {
+            let sourceError = error as NSError
+            check(sourceError.domain == NSCocoaErrorDomain && sourceError.code == NSFileReadNoSuchFileError,
+                  "missing RAW is a file-not-found source error, not a global output failure")
         }
         let rasterURL = output.appendingPathComponent("oriented.jpg")
         try writeOrientedRaster(to: rasterURL)
