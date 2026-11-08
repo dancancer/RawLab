@@ -46,12 +46,27 @@ struct EditMemoryTests {
                 fatalError("invalid X3F mode was accepted")
             } catch is DecodingError { }
         }
-        check(PhotoImportFile.sourceKind(for: URL(fileURLWithPath: "/tmp/sigma.X3F"))?.isRaw == true,
-              "Sigma X3F imports as RAW even without a system UTI registration")
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("rawlab-edit-memory-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
+        let mislabeledX3f = root.appendingPathComponent("sigma.jpeg")
+        try Data("FOVb".utf8).write(to: mislabeledX3f)
+        let x3fSource = try PhotoImportFile.retainSource(mislabeledX3f)
+        defer { PhotoImportFile.release(x3fSource.url) }
+        check(x3fSource.isRaw && x3fSource.url.pathExtension == "x3f" && x3fSource.displayName == "sigma.jpeg",
+              "The Sigma signature selects X3F and preserves the selected filename")
+        let mislabeledDNG = root.appendingPathComponent("digital-negative.jpeg")
+        // Little-endian TIFF with the DNGVersion entry in IFD0.
+        let dngHeader: [UInt8] = [
+            0x49, 0x49, 42, 0, 8, 0, 0, 0, 1, 0,
+            0x12, 0xc6, 1, 0, 4, 0, 0, 0, 1, 4, 0, 0, 0, 0, 0, 0,
+        ]
+        try Data(dngHeader).write(to: mislabeledDNG)
+        let dngSource = try PhotoImportFile.retainSource(mislabeledDNG)
+        defer { PhotoImportFile.release(dngSource.url) }
+        check(dngSource.isRaw && dngSource.url.pathExtension == "dng",
+              "DNGVersion in the first TIFF directory selects the DNG decoder")
 
         let first = PhotoIdentity(resourceIdentifier: "asset-a")
         let second = PhotoIdentity(resourceIdentifier: "asset-b")
@@ -193,6 +208,53 @@ struct EditMemoryTests {
         check(!FileManager.default.fileExists(atPath: retained.path), "temporary picker ownership is released after use")
         PhotoImportFile.release(sameNameB)
         check(FileManager.default.fileExists(atPath: sameNameB.path), "temporary cleanup never removes unrelated inputs")
+        let documents = root.appendingPathComponent("Documents", isDirectory: true)
+        let inbox = documents.appendingPathComponent("Inbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        let inboxInput = inbox.appendingPathComponent("opened-from-files.x3f")
+        try Data("FOVb-inbox".utf8).write(to: inboxInput)
+        let inboxSource = try PhotoImportFile.retainSource(inboxInput, documentsDirectory: documents)
+        defer { PhotoImportFile.release(inboxSource.url) }
+        let inboxBytes = try Data(contentsOf: inboxSource.url)
+        check(!FileManager.default.fileExists(atPath: inboxInput.path) &&
+              inboxBytes == Data("FOVb-inbox".utf8),
+              "Retaining an app Inbox source removes only the copied Inbox original")
+        let inboxSibling = documents.appendingPathComponent("Inbox-backup", isDirectory: true)
+        try FileManager.default.createDirectory(at: inboxSibling, withIntermediateDirectories: true)
+        let siblingInput = inboxSibling.appendingPathComponent("sibling.x3f")
+        try Data("FOVb-sibling".utf8).write(to: siblingInput)
+        let siblingSource = try PhotoImportFile.retainSource(siblingInput, documentsDirectory: documents)
+        defer { PhotoImportFile.release(siblingSource.url) }
+        check(FileManager.default.fileExists(atPath: siblingInput.path) &&
+              !PhotoImportFile.isApplicationInboxFile(siblingInput, documentsDirectory: documents),
+              "An Inbox-like sibling directory is outside the app Inbox")
+        let outside = root.appendingPathComponent("outside", isDirectory: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        let escape = inbox.appendingPathComponent("escape", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: escape, withDestinationURL: outside)
+        let escapedInput = escape.appendingPathComponent("escaped.x3f")
+        try Data("FOVb-escaped".utf8).write(to: escapedInput)
+        let escapedSource = try PhotoImportFile.retainSource(escapedInput, documentsDirectory: documents)
+        defer { PhotoImportFile.release(escapedSource.url) }
+        check(FileManager.default.fileExists(atPath: escapedInput.path) &&
+              !PhotoImportFile.isApplicationInboxFile(escapedInput, documentsDirectory: documents),
+              "An Inbox symlink escape is never treated as an app-owned Inbox source")
+        let externalInput = root.appendingPathComponent("outside-inbox.x3f")
+        try Data("FOVb-external".utf8).write(to: externalInput)
+        let externalSource = try PhotoImportFile.retainSource(externalInput, documentsDirectory: documents)
+        defer { PhotoImportFile.release(externalSource.url) }
+        check(FileManager.default.fileExists(atPath: externalInput.path),
+              "Retaining an external source never removes the caller-owned file")
+        let linkedDocuments = root.appendingPathComponent("LinkedDocuments", isDirectory: true)
+        try FileManager.default.createDirectory(at: linkedDocuments, withIntermediateDirectories: true)
+        let linkedInbox = linkedDocuments.appendingPathComponent("Inbox", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: linkedInbox, withDestinationURL: outside)
+        let linkedInput = linkedInbox.appendingPathComponent("linked-inbox.x3f")
+        try Data("FOVb-linked-inbox".utf8).write(to: linkedInput)
+        let linkedSource = try PhotoImportFile.retainSource(linkedInput, documentsDirectory: linkedDocuments)
+        defer { PhotoImportFile.release(linkedSource.url) }
+        check(FileManager.default.fileExists(atPath: linkedInput.path),
+              "An Inbox directory symlink never grants ownership of an external original")
         try resetRules()
         print("PASS: edit memory regression suite")
     }

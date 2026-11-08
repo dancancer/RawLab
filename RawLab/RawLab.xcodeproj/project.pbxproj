@@ -41,6 +41,7 @@
 		AB2300000000000000000001 /* EditorResetTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2300000000000000000002 /* EditorResetTransaction.swift */; };
 		AB2200000000000000000001 /* EditorAdjustmentRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2200000000000000000002 /* EditorAdjustmentRules.swift */; };
         A8CACE000000000000000001 /* CachedPhotoFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8CACE000000000000000002; };
+        A8D1A6000000000000000001 /* ErrorDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8D1A6000000000000000002; };
         A8CACE000000000000000003 /* ContentView+AutoExposure.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8CACE000000000000000004; };
         D01800000000000000000001 /* ProcessorError.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01800000000000000000011; };
         D12000000000000000000001 /* DCPCompiler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12000000000000000000011; };
@@ -272,6 +273,7 @@
 		AB2300000000000000000002 /* EditorResetTransaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorResetTransaction.swift; sourceTree = "<group>"; };
 		AB2200000000000000000002 /* EditorAdjustmentRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorAdjustmentRules.swift; sourceTree = "<group>"; };
         A8CACE000000000000000002 /* CachedPhotoFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/CachedPhotoFile.swift"; sourceTree = SOURCE_ROOT; };
+        A8D1A6000000000000000002 /* ErrorDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/ErrorDiagnostics.swift"; sourceTree = SOURCE_ROOT; };
         A8CACE000000000000000004 /* ContentView+AutoExposure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Editor/ContentView+AutoExposure.swift"; sourceTree = SOURCE_ROOT; };
         D01800000000000000000011 /* ProcessorError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Errors/ProcessorError.swift"; sourceTree = "<group>"; };
         D12000000000000000000011 /* DCPCompiler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DCPCompiler.swift; path = "../Shared/DCPCompiler.swift"; sourceTree = SOURCE_ROOT; };
@@ -794,6 +796,7 @@
 				FFB7F58510C1A1C611BA4923 /* RawEditorViewModel+AdjustmentPresets.swift */,
 				956EBF18B976027FAEED40C9 /* AdjustmentPresetStore.swift */,
 				A8CACE000000000000000002 /* CachedPhotoFile.swift */,
+				A8D1A6000000000000000002 /* ErrorDiagnostics.swift */,
 				A8CACE000000000000000004 /* ContentView+AutoExposure.swift */,
 				AB2100000000000000000002 /* Localization.swift */,
 				8F7749DA9EDF45519E2428F1 /* App */,
@@ -1233,6 +1236,7 @@
 				14F0A7B0ADEC409D4F0A11F0 /* RawEditorViewModel+AdjustmentPresets.swift in Sources */,
 				7259547D00CAB296D381D32C /* AdjustmentPresetStore.swift in Sources */,
 				A8CACE000000000000000001 /* CachedPhotoFile.swift in Sources */,
+				A8D1A6000000000000000001 /* ErrorDiagnostics.swift in Sources */,
 				A8CACE000000000000000003 /* ContentView+AutoExposure.swift in Sources */,
 				D01100000000000000000003,
                 70225C4235E6456CAD81B158,

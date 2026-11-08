@@ -71,6 +71,8 @@ public sealed class BatchJob
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Source { get; set; } = "";
     public bool SourceIsProRAW { get; set; }
+    public bool SourceSupportsCameraHDR { get; set; }
+    [JsonIgnore] internal bool HasCameraHDRSource => SourceIsProRAW || SourceSupportsCameraHDR;
     public AdjustmentSnapshot Settings { get; set; } = new Adjustments().Capture();
     public int AIBackend { get; set; } = 2;
     public string AIDeviceID { get; set; } = "";
@@ -104,7 +106,8 @@ public sealed class BatchJob
         Source = source, Settings = settings.Copy(), Look = look, LookName = name
     };
     public BatchJob Copy() => new() {
-        Version=Version, SettingsMode=SettingsMode, Id=Id, Source=Source, SourceIsProRAW=SourceIsProRAW, Settings=Settings.Copy(), AIBackend=AIBackend, AIDeviceID=AIDeviceID, Look=Look, LookName=LookName,
+        Version=Version, SettingsMode=SettingsMode, Id=Id, Source=Source, SourceIsProRAW=SourceIsProRAW,
+        SourceSupportsCameraHDR=SourceSupportsCameraHDR, Settings=Settings.Copy(), AIBackend=AIBackend, AIDeviceID=AIDeviceID, Look=Look, LookName=LookName,
         OutputDirectory=OutputDirectory, Png=Png, OutputFormat=OutputFormat, LongEdge=LongEdge, Started=Started, Interrupted=Interrupted, Cancelled=Cancelled,
         Error=Error, Items=Items.Select(x => x with { Frozen = x.Frozen?.Copy() }).ToList()
     };
@@ -121,12 +124,12 @@ public sealed class BatchJob
         if (AIBackend is not (0 or 2 or 3)) throw new InvalidDataException("Invalid Windows AI backend in batch journal.");
         if (AIDeviceID is not {Length:<=256}) throw new InvalidDataException("Invalid Windows AI device in batch journal.");
         _ = Settings.Restore();
-        if (Settings.HDR is { Mode: HDRMode.Hdr } && PhotoInput.IsCameraRaw(Source) && !SourceIsProRAW)
-            throw new InvalidDataException(Loc.Text("相机 RAW HDR 暂不支持批量导出。"));
-        if (Settings.HDR is { Mode: HDRMode.Hdr } && SourceIsProRAW && Settings.ProRAWDecodeVersion != HDRNative.ProRAWDecodeVersion)
+        if (Settings.HDR is { Mode: HDRMode.Hdr } && PhotoInput.IsRaw(Source) && !HasCameraHDRSource)
+            throw new InvalidDataException(Loc.Text("不支持此相机 RAW 的 HDR 显影。"));
+        if (Settings.HDR is { Mode: HDRMode.Hdr } &&
+            Settings.ProRAWDecodeVersion != (SourceIsProRAW ? HDRNative.ProRAWDecodeVersion : (int?)null))
             throw new InvalidDataException(Loc.Text("不支持此处理版本，原有记录未被覆盖。"));
-        static bool ActiveAI(AdjustmentSnapshot settings) => settings.HDR is not { Mode: HDRMode.Hdr } && settings.AIDenoiseEnabled;
-        if (AIBackend == 0 && (ActiveAI(Settings) || Items.Any(item => item.Frozen is {} frozen && ActiveAI(frozen.Settings))))
+        if (AIBackend == 0 && (Settings.ActiveAIDenoise || Items.Any(item => item.Frozen?.Settings.ActiveAIDenoise == true)))
             throw new InvalidDataException(Loc.Text("AI 降噪不支持 CPU，请重新创建使用 GPU 的批量任务。"));
         if (Mode != PerTargetFrozen)
         {
@@ -142,7 +145,7 @@ public sealed class BatchJob
             var frozen = item.Frozen;
             if (item.AwaitingTargetSettings)
             {
-                if (!Started || !SourceIsProRAW || Settings.HDR is not { Mode: HDRMode.Hdr } ||
+                if (!Started || !HasCameraHDRSource || Settings.HDR is not { Mode: HDRMode.Hdr } ||
                     !item.Selected || !item.CanSelect || item.Status != BatchStatus.Failed || frozen != null)
                     throw new InvalidDataException("Invalid deferred batch item.");
                 continue;

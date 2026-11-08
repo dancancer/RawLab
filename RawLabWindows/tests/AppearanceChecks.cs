@@ -1,6 +1,7 @@
 using System.IO;
 using System.Reflection;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
@@ -35,8 +36,8 @@ internal static class AppearanceChecks
         var tip=new ToolTip{Content="Detail"};var panel=new StackPanel();
         var lensEditor=new LensPanel();
         lensEditor.Refresh(new(Manual:true),new(0,"","",false,false,1,new[]{new LensCandidate("test","Maker","Lens",true,false,true)}));
-        var gallery=new ContentControl{Content=new PhotoGroup(new[]{new LibraryEntry("",false){IsSelected=true}}),
-            ContentTemplate=(DataTemplate)editor.Files.FindResource(new DataTemplateKey(typeof(PhotoGroup)))};
+        var gallery = new ListBox { Style = editor.SidebarGallery.Style, Height = 110,
+            ItemsSource = new[] { new MainWindow.WorkspacePhotoRow([new LibraryEntry("fixture.jpg", false) { IsSelected = true }], 2, 100) } };
         panel.SetResourceReference(Panel.BackgroundProperty,"WindowSurface");
         foreach(var control in new UIElement[]{input,combo,button,accent,selected,tree,lensEditor,gallery,focus})panel.Children.Add(control);
         var host=new Window{Content=panel,Width=600,Height=600};host.Show();
@@ -140,9 +141,9 @@ internal static class AppearanceChecks
             {
                 EditorAppearance.Apply(app.Resources,true,new(Brushes.White,Brushes.Black,Brushes.Navy,Brushes.White),scale);
                 editor.UpdateLayout();
-                foreach(var strip in new[]{editor.Tools,editor.FilmStrip})
+                foreach(var strip in new Panel[]{editor.Tools,editor.FilmStrip})
                 {
-                    var captions=Descendants(strip).OfType<TextBlock>().ToArray();
+                    var captions=strip.Children.OfType<Button>().Where(button=>!Equals(AutomationProperties.GetAutomationId(button), "preset.quick.open")).SelectMany(Descendants).OfType<TextBlock>().ToArray();
                     check(captions.Length>0 && captions.All(text=>Math.Abs(text.FontSize-11*scale)<.001),"Retained tool/film captions follow live text scale: "+strip.Name+"/"+scale);
                 }
                 foreach(var recipe in editor.RecipeStrip.Children.OfType<Button>())

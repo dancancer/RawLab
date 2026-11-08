@@ -48,6 +48,7 @@ pub struct Control<'a> {
     window: Option<(u64, u64)>,
     pub(crate) denoise_backend: crate::DenoiseBackend,
     pub(crate) denoise_options: crate::DenoiseOptions,
+    pub(crate) merrill_adjustments: Option<&'a crate::MerrillAdjustments>,
 }
 
 impl<'a> Control<'a> {
@@ -57,6 +58,7 @@ impl<'a> Control<'a> {
             window: None,
             denoise_backend: crate::DenoiseBackend::Auto,
             denoise_options: crate::DenoiseOptions::DEFAULT,
+            merrill_adjustments: None,
         }
     }
     pub const fn none() -> Self {
@@ -65,6 +67,7 @@ impl<'a> Control<'a> {
             window: None,
             denoise_backend: crate::DenoiseBackend::Auto,
             denoise_options: crate::DenoiseOptions::DEFAULT,
+            merrill_adjustments: None,
         }
     }
     /// Choose a denoising backend without changing another conversion's state.
@@ -94,5 +97,14 @@ impl<'a> Control<'a> {
         options.validate().map_err(Error::InvalidData)?;
         self.denoise_options = options;
         Ok(self)
+    }
+
+    /// Apply saved tone and saturation controls to one Merrill sRGB SPP conversion.
+    pub const fn with_merrill_adjustments(
+        mut self,
+        adjustments: &'a crate::MerrillAdjustments,
+    ) -> Self {
+        self.merrill_adjustments = Some(adjustments);
+        self
     }
 }

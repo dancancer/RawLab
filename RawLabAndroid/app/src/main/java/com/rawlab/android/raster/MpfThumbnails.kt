@@ -97,7 +97,7 @@ internal object MpfThumbnails {
                 !validateThumbnailHeader(stream, range) ||
                 !skipTo(stream, range.end - 2) || stream.read() != 0xff || stream.read() != 0xd9) return false
         }
-        return stream.read() == -1
+        return !RasterContainerValidator.hasTrailingJpeg(stream)
     }
 
     private fun validateThumbnailHeader(stream: RasterStream, range: JpegRange): Boolean {

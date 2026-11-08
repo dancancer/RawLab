@@ -39,6 +39,14 @@ import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.settings.DenoiseSettings
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.LensSettings
+import com.rawlab.android.settings.editingBlackPoint
+import com.rawlab.android.settings.editingClarity
+import com.rawlab.android.settings.editingDehaze
+import com.rawlab.android.settings.editingSharpening
+import com.rawlab.android.settings.editingWhitePoint
+import com.rawlab.android.settings.editingVibrance
+import com.rawlab.android.settings.editingCurve
+import com.rawlab.android.settings.editingCurveStrength
 
 internal val editorToolOrder = EditorAdjustmentGroup.entries.flatMap(EditorAdjustmentRules::tools)
 
@@ -52,8 +60,6 @@ internal val editorToolIcons: List<ImageVector> get() = listOf(Icons.Outlined.Ph
     Icons.Outlined.SsidChart, Icons.Outlined.WaterDrop, Icons.Outlined.Thermostat, Icons.Outlined.Palette,
     Icons.Outlined.Deblur, Icons.Outlined.NoiseAware, Icons.Outlined.Circle, Icons.Outlined.Grain,
     Icons.Outlined.ColorLens, Icons.Outlined.Layers, Icons.Outlined.CenterFocusStrong, Icons.Outlined.CropRotate, Icons.Filled.Circle, Icons.Outlined.RadioButtonUnchecked, Icons.Filled.WaterDrop, Icons.Outlined.Palette, Icons.Outlined.Tonality, Icons.Outlined.Cloud)
-
-private fun hdrToolSupported(index: Int): Boolean = index in setOf(2, 3, 4, 5, 7, 8, 9, 17)
 
 internal fun whiteBalanceChanged(edits: EditSettings, shotTemperature: Float?, shotTint: Float?): Boolean {
     val temperature = shotTemperature ?: edits.temperature
@@ -75,7 +81,7 @@ internal fun EditorToolStrip(state: EditorState, selected: Int, tools: List<Int>
     LazyRow(modifier.fillMaxWidth().clipToBounds().testTag("editor-tools"), state = list, contentPadding = PaddingValues(horizontal = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         items(entries, key = { it }) { index ->
-            if (index == -1) TextButton(onClick = { onPerspective?.invoke() }, enabled = navigationEnabled && state.controlsEnabled && (!state.edits.isHDREditing || hdrToolSupported(17)),
+            if (index == -1) TextButton(onClick = { onPerspective?.invoke() }, enabled = navigationEnabled && state.controlsEnabled,
                 modifier = Modifier.heightIn(min = 48.dp).testTag("editor-tool-perspective").semantics { this.selected = active == -1 }) {
                 Icon(Icons.Outlined.Transform, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.geometry_perspective_tool))
@@ -96,16 +102,16 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, navig
         3 -> Triple(edits.highlights * 100f, 0f, -100f..100f)
         4 -> Triple(edits.shadows * 100f, 0f, -100f..100f)
         5 -> Triple(edits.contrast * 100f, 0f, -100f..100f)
-        6 -> if (edits.curve.isDefault) Triple(edits.toneCurve * 100f, 0f, -100f..100f) else null
+        6 -> if (edits.editingCurve.isDefault) Triple(edits.editingCurveStrength * 100f, 0f, -100f..100f) else null
         7 -> Triple(edits.saturation * 100f, 0f, -100f..100f)
         // Temperature and tint share one entry; keep the legacy tint slot for restored UI state only.
         9 -> Triple(edits.tint, if (edits.recipeID != null) 0f else state.preview?.tint ?: edits.tint, -150f..150f)
-        10 -> Triple(edits.sharpening * 100f, 0f, 0f..200f)
-        18 -> Triple(edits.blackPoint, 0f, -100f..100f)
-        19 -> Triple(edits.whitePoint, 0f, -100f..100f)
-        20 -> Triple(edits.vibrance, 0f, -100f..100f)
-        22 -> Triple(edits.clarity, 0f, -100f..100f)
-        23 -> Triple(edits.dehaze, 0f, -100f..100f)
+        10 -> Triple(edits.editingSharpening * 100f, 0f, 0f..200f)
+        18 -> Triple(edits.editingBlackPoint, 0f, -100f..100f)
+        19 -> Triple(edits.editingWhitePoint, 0f, -100f..100f)
+        20 -> Triple(edits.editingVibrance, 0f, -100f..100f)
+        22 -> Triple(edits.editingClarity, 0f, -100f..100f)
+        23 -> Triple(edits.editingDehaze, 0f, -100f..100f)
         else -> null
     }
     val changed = EditorAdjustmentRules.isModified(EditorResetScope.Tool(index), edits, state.resetContext())
@@ -119,14 +125,14 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, navig
         "${formatAdjustment(edits.temperature, 1f)} K", formatAdjustment(edits.tint, 1f)
     ).joinToString(" · ") else number
     val unavailableReason = when {
-        state.edits.isHDREditing && !hdrToolSupported(index) -> stringResource(R.string.tool_unavailable_hdr)
+        state.edits.isHDREditing && !EditorAdjustmentRules.supportsHDR(index) -> stringResource(R.string.tool_unavailable_hdr)
         index == 16 && state.photo?.isX3f == true && edits.x3fMode == com.rawlab.android.settings.X3fMode.NORMAL -> stringResource(R.string.lens_input_unsupported)
         index == 16 && !rawOnly -> stringResource(R.string.tool_raw_lens_only)
         index == 8 && !state.edits.isHDREditing && (!rawOnly || state.preview?.temperature?.isFinite() != true) -> stringResource(R.string.tool_white_balance_unavailable)
         else -> null
     }
     val selectable = Modifier.selectable(selected,
-        enabled = navigationEnabled && state.controlsEnabled && (!state.edits.isHDREditing || hdrToolSupported(index)) &&
+        enabled = navigationEnabled && state.controlsEnabled && (!state.edits.isHDREditing || EditorAdjustmentRules.supportsHDR(index)) &&
             (index != 8 || rawOnly || state.edits.isHDREditing) &&
             (index != 16 || rawOnly && !(state.photo?.isX3f == true && edits.x3fMode == com.rawlab.android.settings.X3fMode.NORMAL)),
         role = Role.Tab, onClick = onClick).testTag("editor-tool-$index").semantics(mergeDescendants = true) {

@@ -83,11 +83,12 @@ internal static partial class EditorReviewChecks
         {
             var window=Open("close-journal-retry");var held=new HeldContext(SynchronizationContext.Current!);
             var folder=new LibraryEntry(Path.GetDirectoryName(photo)!,true);
-            var loading=folder.Load();InteractionChecks.PumpUntil(()=>loading.IsCompleted);loading.GetAwaiter().GetResult();
-            check(folder.Children.Count==2 && folder.Children.All(entry=>entry.Path==photo || entry.Path==other),
+            Get<Library>(window,"library").Roots.Add(folder);
+            if (!window.LibraryPanel.IsVisible) PhotoFeatureChecks.Click(window.LibraryToggleButton);
+            InteractionChecks.PumpUntil(()=>window.FolderPhotoCount.Text.Length>0);
+            check(folder.Photos.Count==2 && folder.Photos.All(entry=>entry.Path==photo || entry.Path==other),
                 "Close recovery library excludes earlier exported images and contains only its two source photos");
-            window.Files.ItemsSource=new[]{folder};folder.IsExpanded=true;window.UpdateLayout();
-            var visible=folder.Children.First(entry=>entry.Path==photo);
+            var visible=folder.Photos.First(entry=>entry.Path==photo);
             InteractionChecks.PumpUntil(()=>visible.Thumbnail!=null);
             check(Get<HashSet<LibraryEntry>>(window,"visibleThumbnails").Contains(visible),"Close recovery starts with an actually visible loaded library thumbnail");
             var journal=Get<BatchJournal>(window,"batchJournal");var engine=Get<object>(window,"engine");
@@ -96,7 +97,7 @@ internal static partial class EditorReviewChecks
             Task? preflight=null;var recovered=false;var reported=false;
             try
             {
-                Invoke(window,"ShowBatch",job);var batch=Get<BatchExportWindow>(window,"batchWindow");
+                Invoke(window,"ShowBatch",job,false);var batch=Get<BatchExportWindow>(window,"batchWindow");
                 batch.BusyChanged+=active=>{
                     if(active || !batch.CloseFailed)return;
                     recovered=window.IsVisible && window.IsEnabled && !Get<bool>(window,"closing") &&
@@ -110,7 +111,16 @@ internal static partial class EditorReviewChecks
                 using(var locked=new FileStream(Path.Combine(journal.DirectoryPath,"job.json"),FileMode.Open,FileAccess.Read,FileShare.Read))
                 {
                     window.Close();
-                    check(window.IsVisible && !window.IsEnabled && Get<bool>(window,"closing"),"Owner waits for preflight before attempting journal cleanup");
+                    // The update guard dispatches the actual close request to the batch window.
+                    InteractionChecks.PumpUntil(() => Get<bool>(batch, "closeRequested") || !window.IsVisible);
+                    window.Dispatcher.Invoke(() => { }, DispatcherPriority.Normal);
+                    var ownerClosing = Get<bool>(window, "closing");
+                    var shutdownStarted = Get<bool>(window, "analyticsDisposed");
+                    check(window.IsVisible && !window.IsEnabled && ownerClosing && !shutdownStarted &&
+                        batch.IsVisible && batch.Busy && !preflight!.IsCompleted &&
+                        ReferenceEquals(engine, Get<object?>(window, "engine")),
+                        $"Owner waits for preflight before attempting journal cleanup (visible={window.IsVisible}, " +
+                        $"closing={ownerClosing}, shutdownStarted={shutdownStarted}, batchBusy={batch.Busy})");
                     check(visible.Thumbnail==null,"Deferred owner close releases the visible library thumbnail");
                     held.Release();InteractionChecks.PumpUntil(()=>preflight!.IsCompleted);preflight!.GetAwaiter().GetResult();
                     check(batch.IsVisible && batch.CloseFailed && !batch.Discarded && recovered,"Journal cleanup failure restores the real owner without disposing its engine");

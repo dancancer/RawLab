@@ -123,11 +123,14 @@ internal static class HDRReviewChecks
             }
             Get<Dictionary<EditorAdjustmentTool,(Button Button,AdjustmentRing Ring)>>(window,"workspaceTools")[EditorAdjustmentTool.Exposure].Button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             window.OrdinaryParameter.Number.Text="4";check(window.OrdinaryParameter.Commit(),"Exposure commits before clipping check");Ready(window);
-            window.ClippingButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Ready(window);
             var frame=Get<RenderedImage>(window,"result");
-            check(window.ResultCanvas.ShowClipping && frame.Clipping!=null,"Clipping toggle supplies the actual canvas mask in mode "+hdr);
-            var photo=Pixels(frame.Image,PixelFormats.Bgra32);var mask=Pixels(frame.Clipping!,PixelFormats.Bgra32);
-            check(frame.Clipping!.PixelWidth==frame.Image.PixelWidth && frame.Clipping.PixelHeight==frame.Image.PixelHeight,"Clipping mask matches the displayed SDR dimensions");
+            window.ClippingButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Ready(window);
+            InteractionChecks.PumpUntil(()=>Get<BitmapSource?>(window.ResultCanvas,"mask")!=null);
+            var overlay=Get<BitmapSource>(window.ResultCanvas,"mask");
+            check(window.ResultCanvas.ShowClipping && ReferenceEquals(frame,Get<RenderedImage>(window,"result")),
+                "Clipping supplies the canvas mask without replacing the frame in mode "+hdr);
+            var photo=Pixels(frame.Image,PixelFormats.Bgra32);var mask=Pixels(overlay,PixelFormats.Bgra32);
+            check(overlay.PixelWidth==frame.Image.PixelWidth && overlay.PixelHeight==frame.Image.PixelHeight,"Clipping mask matches the displayed SDR dimensions");
             var expected=new byte[photo.Length];
             for(var i=0;i<photo.Length;i+=4) {
                 if(photo[i]==255 || photo[i+1]==255 || photo[i+2]==255){expected[i+2]=255;expected[i+3]=160;}
@@ -136,7 +139,8 @@ internal static class HDRReviewChecks
             check(mask.SequenceEqual(expected) && Enumerable.Range(0,mask.Length/4).Any(i=>mask[i*4+3]==160),"Highlight and black warnings follow the corresponding SDR output pixels");
             Capture(window,Path.Combine(root,hdr ? "hdr-clipping.png" : "sdr-clipping.png"));
             window.ClippingButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Ready(window);
-            check(!window.ResultCanvas.ShowClipping && Get<RenderedImage>(window,"result").Clipping==null,"Disabling clipping removes the mask and invalidates the masked preview");
+            check(!window.ResultCanvas.ShowClipping && ReferenceEquals(frame,Get<RenderedImage>(window,"result")),
+                "Disabling clipping hides the overlay and retains the preview");
         }
     }
 

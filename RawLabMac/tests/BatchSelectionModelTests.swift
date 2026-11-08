@@ -7,6 +7,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
 
 @main struct BatchSelectionModelTests {
     static func main() throws {
+        setbuf(stdout, nil)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -22,6 +23,55 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             CGImageDestinationAddImage(destination, image, nil)
             guard CGImageDestinationFinalize(destination) else { fatalError("fixture") }
         }
+        switch ProcessInfo.processInfo.environment["RAWLAB_ENTRY_CASE"] {
+        case "A": try HDRSourceProbeTests.run(); try BatchFlowModelTests.unsupportedHDRSystem(root: root, fixture: first); return
+        case "A-regressions":
+            try HDRSourceProbeTests.run()
+            try BatchFlowModelTests.uneditedFallbackCollection(root: root, fixture: first)
+            try BatchFlowModelTests.fallbackPersistence(root: root, fixture: first)
+            try BatchFlowModelTests.appleFallbackAdmission(root: root, fixture: first)
+            return
+        case "A-apple": try BatchFlowModelTests.appleFallbackAdmission(root: root, fixture: first); return
+        case "A-storage": try BatchFlowModelTests.fallbackPersistence(root: root, fixture: first); return
+        case "A-collection": try BatchFlowModelTests.unsupportedHDRSystem(root: root, fixture: first, exerciseOpening: false); return
+        case "B": try BatchFlowModelTests.uniformAI(root: root, fixture: first); return
+        case "D": try BatchFlowModelTests.adaptiveJPEG(root: root, fixture: first); return
+        case "E": try BatchFlowModelTests.presetWithoutPhoto(root: root, fixture: first); return
+        case "E-no-photo": try BatchFlowModelTests.presetWithoutPhoto(root: root, fixture: first, exerciseOpenPhoto: false); return
+        default: break
+        }
+        try HDRSourceProbeTests.run()
+        try BatchFlowModelTests.uneditedFallbackCollection(root: root, fixture: first)
+        try BatchFlowModelTests.fallbackPersistence(root: root, fixture: first)
+        try BatchFlowModelTests.appleFallbackAdmission(root: root, fixture: first)
+        try BatchFlowModelTests.unsupportedHDRSystem(root: root, fixture: first)
+        try BatchFlowModelTests.adaptiveJPEG(root: root, fixture: first)
+        try BatchFlowModelTests.presetWithoutPhoto(root: root, fixture: first)
+        try BatchFlowModelTests.uniformAI(root: root, fixture: second)
+        do {
+            let model = EditorModel(lookDirectory: root.appendingPathComponent("deferred-looks"),
+                editDirectory: root.appendingPathComponent("deferred-edits"), batchDirectory: root.appendingPathComponent("deferred-batch"),
+                presetDirectory: root.appendingPathComponent("deferred-presets"))
+            var probedOnMain: Bool?
+            let deferredTargets = model.adjustmentTransferTargetPreparation([second],
+                payload: try MacAdjustmentTransfer.capture(scope: .custom([.exposure]),
+                    snapshot: PhotoEditState(settings: Adjustments(), filmID: ""),
+                    context: MacAdjustmentTransferContext(identifier: first.path, isRaw: false)),
+                probeRAW: { _ in probedOnMain = Thread.isMainThread; return nil })
+            try check(probedOnMain == nil, "Capturing paste/sync inputs defers RAW probing")
+            let targetsReady = DispatchSemaphore(value: 0)
+            var preparedTargets: [AdjustmentTransferTarget] = []
+            DispatchQueue.global(qos: .userInitiated).async {
+                preparedTargets = deferredTargets()
+                targetsReady.signal()
+            }
+            while targetsReady.wait(timeout: .now()) != .success { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+            try check(probedOnMain == false, "Deferred paste/sync RAW probing runs off the main thread")
+            try check(preparedTargets.first?.isCurrent?() == true, "Prepared targets accept the captured source revision")
+            model.sourceRevision = UUID()
+            try check(preparedTargets.first?.isCurrent?() == false, "Changing source revision invalidates prepared targets")
+            fflush(stdout)
+        }
         try BatchFlowModelTests.preparedSourceChange(root: root, fixture: first)
         try BatchFlowModelTests.automaticLaunch(root: root, fixture: first)
         try BatchFlowModelTests.pendingLaunches(root: root, fixture: first)
@@ -33,6 +83,12 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             presetDirectory: root.appendingPathComponent("presets"))
         model.addCollectionPhotos([first, second, third, alias, second])
         let ids = model.batchSelection.ordered
+        model.batchSelection.select(ids[0], false)
+        let unavailable = root.appendingPathComponent("missing.png")
+        let accepted = model.addCollectionPhotos([alias, unavailable], selectExisting: true)
+        try check(accepted == [alias] && model.batchSelection.selected.contains(ids[0]) &&
+            model.batchSelection.ordered == ids && model.collectionError?.contains("missing.png") == true,
+            "workspace handoff reselects existing photos, preserves order, and only consumes accepted URLs")
         model.open(alias); try rendered(model)
         try check(model.file == first, "alias navigation reuses collection identity and its edit record")
         try check(ids.count == 3 && model.batchSelection.selected.count == 3, "collection deduplicates physical files and retains same names with different identities")
@@ -171,6 +227,19 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try rendered(model)
         model.updateGeometryDraft { $0.cropWidth = 0.75 }; try rendered(model)
         try check(model.resolveCollectionDraft(id, apply: true), "applying geometry saves before final confirmation")
+        try rendered(model)
+        model.selectAdjustmentGeometryTab(.crop)
+        try rendered(model)
+        model.updateGeometryDraft { $0.cropWidth = 0.65 }
+        model.requestLeavingGeometryDraft {}
+        model.resolveGeometryDraftDeparture(.discard)
+        try check(model.geometryDraft == nil && model.adjustmentNavigation.tool == .geometry,
+            "leaving for another workspace can retain the selected geometry tool")
+        model.selectAdjustmentGeometryTab(.crop)
+        try check(model.geometryDraft?.geometry.cropWidth == 0.75,
+            "reopening the selected geometry tool starts a draft from the applied crop")
+        model.cancelGeometryDraft()
+        try rendered(model)
         let cube = root.appendingPathComponent("collection-look.cube")
         let data = "LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n".data(using: .utf8)!
         try data.write(to: cube)

@@ -96,7 +96,7 @@ public partial class MainWindow
                 RefreshCropDraft();RefreshControls();Schedule();return;
             }
             settings=candidate.Settings.Restore();
-            if(ResetsAI(prepared.Scope))ResetAITask();
+            if(EditorAdjustmentRules.ResetsAI(prepared.Scope))ResetAITask();
             // 身份未变时保留已解析的 LUT 路径及界面映射，避免把保存身份当成路径。
             if(candidate.Look!=current.Look)
             {
@@ -133,11 +133,12 @@ public partial class MainWindow
     private void RestoreEdits(string input)
     {
         editStore ??= new EditStore(EditStore.DefaultDirectory);
-        currentEditRecord=editStore.VersionedState(input);editGesture=null;adjustmentReloadRequired=false;
-        var saved = currentEditRecord.Edit;
+        var nextRecord = editStore.VersionedState(input);
+        var saved = nextRecord.Edit;
         // New HDR sources start in HDR mode; an existing snapshot without HDR
         // remains the legacy SDR record by construction.
-        settings = saved?.Settings.Restore() ?? PhotoInput.PrepareHDRInputSettings(input, new Adjustments());
+        var nextSettings = saved?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(input);
+        currentEditRecord=nextRecord;editGesture=null;adjustmentReloadRequired=false;settings=nextSettings;
         lut = saved == null ? null : ResolveLook(saved);
         if (settings.MasterRecipeID == null && lut != null && !films.Any(f => StringComparer.OrdinalIgnoreCase.Equals(f.Path, lut)))
         {
@@ -183,6 +184,7 @@ public partial class MainWindow
             if (previous != null) batchJournal.Discard(previous);
             var job = BatchJob.Create(file, settings.Capture(), settings.IsHDREditing ? null : lut, LookTitle);
             job.SourceIsProRAW = hdrSource?.IsProRAW == true;
+            job.SourceSupportsCameraHDR = hdrSource?.IsCameraRaw == true;
             job.AIBackend=RequestedAIBackend;job.AIDeviceID=aiPreference.DeviceID;
             batchJournal.FreezeLook(job); batchJournal.Save(job); previousBatch = job;
             ShowBatch(job);
@@ -229,6 +231,7 @@ public partial class MainWindow
     private void RecoverFailedClose(BatchExportWindow window)
     {
         closing=false;IsEnabled=true;
+        if(Application.Current is App app)app.SetSystemPhotoAdmission(true);
         ResumePreview();QueueThumbnailRefresh();
         RefreshControls();RefreshBatchNotice();
         SetStatus(window.Job.Error ?? Loc.Text("任务未保存。"),true);

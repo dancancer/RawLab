@@ -128,7 +128,7 @@ struct IOSAdjustmentPresetView: View {
         if renaming == nil {
             IOSAdjustmentScopeEditor(scope: $scope, fields: $fields, preview: scopePreview,
                 lookName: model.adjustmentSummaryLookName, errorMessage: { model.adjustmentErrorMessage($0) }, identifier: "preset.save",
-                fieldIdentifier:"preset",titleKey:"调整范围",allowed:settings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
+                fieldIdentifier:"preset",titleKey:"调整范围",allowed:model.adjustmentTransferFields(for: settings))
         }
         Section {
             Button(L10n.text("保存预设"), action: save)

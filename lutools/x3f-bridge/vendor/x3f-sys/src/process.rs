@@ -6380,6 +6380,15 @@ unsafe fn get_image_impl(
     mut merge: Option<&mut MergeFrame>,
 ) -> crate::Result<()> {
     let dng_recovery = options.dng_highlight_recovery;
+    if control.merrill_adjustments.is_some()
+        && (!options.spp_denoise
+            || options.color_mode.is_none()
+            || encoding != x3f_color_encoding_e_SRGB)
+    {
+        return Err(crate::Error::InvalidData(
+            "saved Merrill adjustments require a Merrill SPP sRGB conversion with a camera color mode",
+        ));
+    }
     if options.spp_denoise {
         if control.denoise_options != crate::DenoiseOptions::default() {
             return Err(crate::Error::InvalidData(

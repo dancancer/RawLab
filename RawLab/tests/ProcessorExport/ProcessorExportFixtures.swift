@@ -12,20 +12,24 @@ extension ProcessorExportTests {
             (SONY2FUJI_STATUS_PROCESSING_ERROR, "处理失败：processing error")
         ]
         for (status, expected) in cases {
-            check(processor.processingFailure(status).localizedDescription == expected,
+            let error = processor.processingFailure(status)
+            check(error.localizedDescription == expected,
                   "process status \(status) has one accurate localized message and preserves its detail")
+            check(error.diagnosticStatus == status, "process failure keeps native status \(status) for diagnostics")
         }
-        if case .processFailed(let message) = processor.processingFailure(SONY2FUJI_STATUS_PROCESSING_ERROR) {
+        if case .processFailed(let message, _) = processor.processingFailure(SONY2FUJI_STATUS_PROCESSING_ERROR) {
             check(message == "processing error", "generic process failure keeps the native associated value")
         } else { check(false, "generic process failure keeps its existing enum contract") }
         for (status, expected) in [
-            (SONY2FUJI_STATUS_UNSUPPORTED, "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。"),
+            (SONY2FUJI_STATUS_UNSUPPORTED, "请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。"),
             (SONY2FUJI_STATUS_IO_ERROR, "无法读取照片，请检查文件和访问权限。"),
             (SONY2FUJI_STATUS_OUT_OF_MEMORY, "内存不足，无法解码普通图片。"),
             (SONY2FUJI_STATUS_PROCESSING_ERROR, "无法解码普通图片：processing error")
         ] {
-            check(processor.displayImageFailure(status).localizedDescription == expected,
+            let error = processor.displayImageFailure(status)
+            check(error.localizedDescription == expected,
                   "decoder status \(status) distinguishes format, access, memory and processing failures")
+            check(error.diagnosticStatus == status, "decoder failure keeps native status \(status) for diagnostics")
         }
     }
 

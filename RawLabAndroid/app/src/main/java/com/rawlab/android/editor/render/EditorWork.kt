@@ -9,7 +9,9 @@ import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.looks.ManagedLook
 import com.rawlab.android.looks.LUTCompatibility
-import com.rawlab.android.editor.PendingLookCompatibility
+import com.rawlab.android.editor.PendingDcpImport
+import com.rawlab.android.editor.PendingLookImport
+import com.rawlab.android.looks.DcpImportChoices
 import com.rawlab.android.looks.DcpCompilationException
 import com.rawlab.android.looks.DcpFailureReason
 import com.rawlab.android.looks.InvalidLookException
@@ -73,7 +75,7 @@ internal sealed interface Work {
         val gpuMode: Int, val sourceRevision: Long, val edge: Int = 1600) : Work
     data class Export(val photo: ImportedPhoto, val edits: EditSettings, val destination: Uri?, val format: ExportFormat,
         val longEdge: Int?, val gpuMode: Int) : Work
-    data class AutoExposure(val photo: ImportedPhoto, val edits: EditSettings) : Work
+    data class AutoExposure(val photo: ImportedPhoto, val edits: EditSettings, val gpuMode: Int) : Work
 }
 internal sealed interface WorkResult {
     data class X3fImportFailure(val retry: Work.Import, val error: Throwable) : WorkResult
@@ -98,7 +100,11 @@ internal fun WorkResult.discardOwnedInput() {
 }
 internal sealed interface LookWork {
     data object Load : LookWork
-    data class Import(val uris: List<Uri>, val compatibility: LUTCompatibility? = null) : LookWork
+    data class Import(
+        val uris: List<Uri>,
+        val compatibility: LUTCompatibility? = null,
+        val dcp: DcpImportChoices? = null
+    ) : LookWork
     data class Rename(val id: String, val name: String) : LookWork
     data class Delete(val id: String) : LookWork
 }
@@ -108,7 +114,7 @@ internal data class LookImportFailure(val message: String, val invalid: Boolean,
 internal sealed interface LookResult {
     data class Loaded(val looks: List<LookChoice>) : LookResult
     data class Imported(val imported: List<ManagedLook>, val failures: List<LookImportFailure>, val looks: List<LookChoice>,
-        val pending: List<PendingLookCompatibility> = emptyList()) : LookResult
+        val pending: List<PendingLookImport> = emptyList()) : LookResult
     data class Renamed(val look: ManagedLook, val looks: List<LookChoice>) : LookResult
     data class Deleted(val id: String, val looks: List<LookChoice>) : LookResult
     data class Failed(val error: Throwable, val reload: Boolean) : LookResult
@@ -121,9 +127,9 @@ internal fun runLookWork(storage: PhotoStorage, work: LookWork): LookResult = sy
         is LookWork.Import -> {
             val imported = mutableListOf<ManagedLook>()
             val failures = mutableListOf<LookImportFailure>()
-            val pending = mutableListOf<PendingLookCompatibility>()
+            val pending = mutableListOf<PendingLookImport>()
             for (uri in work.uris) {
-                try { imported += storage.importLook(uri, work.compatibility) }
+                try { imported += storage.importLook(uri, work.compatibility, work.dcp) }
                 catch (error: Exception) {
                     val causes = generateSequence<Throwable>(error) { it.cause }.toList()
                     val colorReason = causes.filterIsInstance<com.rawlab.android.engine.LUTColorContractException>().firstOrNull()?.reason
@@ -131,8 +137,17 @@ internal fun runLookWork(storage: PhotoStorage, work: LookWork): LookResult = sy
                         val candidate = runCatching { storage.inspectLookCompatibility(uri) }.getOrNull()
                         if (candidate != null) { pending += candidate; continue }
                     }
-                    val dcpReason = causes.firstOrNull { it is DcpCompilationException }
-                        ?.let { (it as DcpCompilationException).reason }
+                    val dcpReason = causes.filterIsInstance<DcpCompilationException>().firstOrNull()?.reason
+                    val needsCurve = dcpReason == DcpFailureReason.MISSING_TONE_CURVE
+                    val needsBlackChoice = dcpReason == DcpFailureReason.AUTOMATIC_BLACK
+                    if ((needsCurve && work.dcp?.toneCurve == null) ||
+                        (needsBlackChoice && work.dcp?.omitAutomaticBlack != true)) {
+                        pending += PendingDcpImport(
+                            uri, storage.lookSourceName(uri),
+                            needsCurve || work.dcp?.toneCurve != null, needsBlackChoice, work.dcp
+                        )
+                        continue
+                    }
                     failures += LookImportFailure(
                         error.message?.takeIf(String::isNotBlank) ?: error.javaClass.simpleName,
                         causes.any { it is InvalidLookException }, dcpReason,

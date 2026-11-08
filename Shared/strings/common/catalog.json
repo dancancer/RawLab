@@ -1,4 +1,36 @@
 {
+  "DCP 导入选项": {
+    "en": "DCP import options",
+    "de": "DCP-Importoptionen",
+    "fr": "Options d’importation DCP",
+    "es": "Opciones de importación de DCP",
+    "ja": "DCPの読み込みオプション",
+    "zh-Hans": "DCP 导入选项"
+  },
+  "色调曲线（JSON）": {
+    "en": "Tone curve (JSON)",
+    "de": "Tonwertkurve (JSON)",
+    "fr": "Courbe de tonalité (JSON)",
+    "es": "Curva de tonos (JSON)",
+    "ja": "トーンカーブ（JSON）",
+    "zh-Hans": "色调曲线（JSON）"
+  },
+  "选择曲线文件…": {
+    "en": "Choose curve file…",
+    "de": "Kurvendatei auswählen…",
+    "fr": "Choisir le fichier de courbe…",
+    "es": "Seleccionar archivo de curva…",
+    "ja": "カーブファイルを選択…",
+    "zh-Hans": "选择曲线文件…"
+  },
+  "省略自动黑位": {
+    "en": "Omit automatic black rendering",
+    "de": "Automatische Schwarzwertkorrektur auslassen",
+    "fr": "Ignorer le rendu automatique du noir",
+    "es": "Omitir el ajuste automático del negro",
+    "ja": "自動ブラック処理を省略",
+    "zh-Hans": "省略自动黑位"
+  },
   "全部外观": {
     "en": "All looks",
     "de": "Alle Looks",
@@ -143,14 +175,70 @@
     "ja": "プリセットを確認中…",
     "zh-Hans": "正在检查预设…"
   },
-  "此 X3F 显影模式不支持 AI 降噪。": {"de":"Dieser X3F-Entwicklungsmodus unterstützt keine KI-Entrauschung.","en":"AI denoising is not supported in this X3F rendering mode.","es":"Este modo de revelado X3F no admite reducción de ruido por IA.","fr":"La réduction du bruit par IA n’est pas prise en charge dans ce mode de développement X3F.","ja":"この X3F 現像モードでは AI ノイズ除去を使用できません。","zh-Hans":"此 X3F 显影模式不支持 AI 降噪。"},
-  "无法正常显影 X3F：{0}": {"de":"X3F konnte nicht normal entwickelt werden: {0}","en":"Unable to render X3F normally: {0}","es":"No se pudo revelar X3F con normalidad: {0}","fr":"Impossible de développer normalement le fichier X3F : {0}","ja":"X3F を通常現像できません：{0}","zh-Hans":"无法正常显影 X3F：{0}"},
-  "使用旧版显影重试": {"de":"Mit bisheriger Entwicklung erneut versuchen","en":"Retry with legacy rendering","es":"Reintentar con el revelado anterior","fr":"Réessayer avec l’ancien développement","ja":"旧版の現像で再試行","zh-Hans":"使用旧版显影重试"},
-  "X3F 显影": {"de":"X3F-Entwicklung","en":"X3F rendering","es":"Revelado X3F","fr":"Développement X3F","ja":"X3F 現像","zh-Hans":"X3F 显影"},
-  "正常显影": {"de":"Normale Entwicklung","en":"Normal rendering","es":"Revelado normal","fr":"Développement normal","ja":"通常現像","zh-Hans":"正常显影"},
-  "伪红外（旧版）": {"de":"Falsch-Infrarot (alt)","en":"False infrared (legacy)","es":"Falso infrarrojo (anterior)","fr":"Faux infrarouge (ancien)","ja":"擬似赤外線（従来）","zh-Hans":"伪红外（旧版）"},
-  "以文件保存的显影为基准，白平衡作相对调整。": {"de":"Die gespeicherte Entwicklung ist die Basis; der Weißabgleich wird relativ angepasst.","en":"Uses the saved rendering as the baseline, with relative white-balance adjustments.","es":"Usa el revelado guardado como base, con ajustes relativos del balance de blancos.","fr":"Utilise le développement enregistré comme référence, avec des ajustements relatifs de la balance des blancs.","ja":"保存済みの現像を基準に、ホワイトバランスを相対調整します。","zh-Hans":"以文件保存的显影为基准，白平衡作相对调整。"},
-  "保留旧版的特殊色彩。": {"de":"Behält die besonderen Farben der früheren Entwicklung bei.","en":"Preserves the distinctive colors of the legacy renderer.","es":"Conserva los colores particulares del revelado anterior.","fr":"Conserve les couleurs particulières de l’ancien développement.","ja":"従来の現像による独特な色を保持します。","zh-Hans":"保留旧版的特殊色彩。"},
+  "此 X3F 显影模式不支持 AI 降噪。": {
+    "de": "Dieser X3F-Entwicklungsmodus unterstützt keine KI-Entrauschung.",
+    "en": "AI denoising is not supported in this X3F rendering mode.",
+    "es": "Este modo de revelado X3F no admite reducción de ruido por IA.",
+    "fr": "La réduction du bruit par IA n’est pas prise en charge dans ce mode de développement X3F.",
+    "ja": "この X3F 現像モードでは AI ノイズ除去を使用できません。",
+    "zh-Hans": "此 X3F 显影模式不支持 AI 降噪。"
+  },
+  "无法正常显影 X3F：{0}": {
+    "de": "X3F konnte nicht normal entwickelt werden: {0}",
+    "en": "Unable to render X3F normally: {0}",
+    "es": "No se pudo revelar X3F con normalidad: {0}",
+    "fr": "Impossible de développer normalement le fichier X3F : {0}",
+    "ja": "X3F を通常現像できません：{0}",
+    "zh-Hans": "无法正常显影 X3F：{0}"
+  },
+  "使用旧版显影重试": {
+    "de": "Mit bisheriger Entwicklung erneut versuchen",
+    "en": "Retry with legacy rendering",
+    "es": "Reintentar con el revelado anterior",
+    "fr": "Réessayer avec l’ancien développement",
+    "ja": "旧版の現像で再試行",
+    "zh-Hans": "使用旧版显影重试"
+  },
+  "X3F 显影": {
+    "de": "X3F-Entwicklung",
+    "en": "X3F rendering",
+    "es": "Revelado X3F",
+    "fr": "Développement X3F",
+    "ja": "X3F 現像",
+    "zh-Hans": "X3F 显影"
+  },
+  "正常显影": {
+    "de": "Normale Entwicklung",
+    "en": "Normal rendering",
+    "es": "Revelado normal",
+    "fr": "Développement normal",
+    "ja": "通常現像",
+    "zh-Hans": "正常显影"
+  },
+  "伪红外（旧版）": {
+    "de": "Falsch-Infrarot (alt)",
+    "en": "False infrared (legacy)",
+    "es": "Falso infrarrojo (anterior)",
+    "fr": "Faux infrarouge (ancien)",
+    "ja": "擬似赤外線（従来）",
+    "zh-Hans": "伪红外（旧版）"
+  },
+  "以文件保存的显影为基准，白平衡作相对调整。": {
+    "de": "Die gespeicherte Entwicklung ist die Basis; der Weißabgleich wird relativ angepasst.",
+    "en": "Uses the saved rendering as the baseline, with relative white-balance adjustments.",
+    "es": "Usa el revelado guardado como base, con ajustes relativos del balance de blancos.",
+    "fr": "Utilise le développement enregistré comme référence, avec des ajustements relatifs de la balance des blancs.",
+    "ja": "保存済みの現像を基準に、ホワイトバランスを相対調整します。",
+    "zh-Hans": "以文件保存的显影为基准，白平衡作相对调整。"
+  },
+  "保留旧版的特殊色彩。": {
+    "de": "Behält die besonderen Farben der früheren Entwicklung bei.",
+    "en": "Preserves the distinctive colors of the legacy renderer.",
+    "es": "Conserva los colores particulares del revelado anterior.",
+    "fr": "Conserve les couleurs particulières de l’ancien développement.",
+    "ja": "従来の現像による独特な色を保持します。",
+    "zh-Hans": "保留旧版的特殊色彩。"
+  },
   "16-bit PNG": {
     "de": "16-Bit-PNG",
     "en": "16-bit PNG",
@@ -215,21 +303,21 @@
     "ja": "DCP に一意で有効な D65 ColorMatrix/ForwardMatrix がないため、変換できません。",
     "zh-Hans": "DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。"
   },
-  "DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。": {
-    "de": "Dem DCP fehlt ProfileToneCurve; die Adobe-Standardkurve kann nicht automatisch abgeleitet werden. Geben Sie zuerst mit dem Vorbereitungswerkzeug eine Kurve an.",
-    "en": "The DCP is missing ProfileToneCurve; Adobe's default curve cannot be inferred automatically. Specify a curve explicitly with the preparation tool first.",
-    "es": "Al DCP le falta ProfileToneCurve; no se puede inferir automáticamente la curva predeterminada de Adobe. Especifique primero una curva con la herramienta de preparación.",
-    "fr": "Le DCP ne contient pas ProfileToneCurve ; la courbe Adobe par défaut ne peut pas être déduite automatiquement. Spécifiez d’abord une courbe avec l’outil de préparation.",
-    "ja": "DCP に ProfileToneCurve がないため、Adobe のデフォルト曲線を自動推定できません。準備ツールで曲線を明示的に指定してください。",
-    "zh-Hans": "DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。"
+  "DCP 没有内嵌色调曲线。": {
+    "de": "Das DCP enthält keine eingebettete Tonwertkurve.",
+    "en": "The DCP has no embedded tone curve.",
+    "es": "El DCP no contiene una curva tonal integrada.",
+    "fr": "Le DCP ne contient pas de courbe tonale intégrée.",
+    "ja": "DCP にトーンカーブが埋め込まれていません。",
+    "zh-Hans": "DCP 没有内嵌色调曲线。"
   },
-  "DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。": {
-    "de": "Das DCP erfordert eine automatische Schwarzwertverarbeitung, die von dieser Konvertierung noch nicht unterstützt wird. Wählen Sie zuerst mit dem Vorbereitungswerkzeug ausdrücklich eine Schwarzwertstrategie.",
-    "en": "The DCP requires automatic black-level processing, which is not yet supported by this conversion. Select a black-level policy explicitly with the preparation tool first.",
-    "es": "El DCP requiere un procesamiento automático del nivel de negros, que esta conversión aún no admite. Seleccione primero una estrategia de negros explícita con la herramienta de preparación.",
-    "fr": "Le DCP nécessite un traitement automatique du niveau de noir, que cette conversion ne prend pas encore en charge. Sélectionnez d’abord explicitement une stratégie de niveau de noir avec l’outil de préparation.",
-    "ja": "DCP には自動ブラックレベル処理が必要ですが、この変換はまだ対応していません。準備ツールでブラックレベルの方針を明示的に選択してください。",
-    "zh-Hans": "DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。"
+  "DCP 要求自动黑位处理。": {
+    "de": "Das DCP fordert eine automatische Schwarzwertverarbeitung an.",
+    "en": "The DCP requests automatic black-level processing.",
+    "es": "El DCP solicita un ajuste automático del nivel de negros.",
+    "fr": "Le DCP demande un réglage automatique du niveau de noir.",
+    "ja": "DCP が自動ブラックレベル処理を指定しています。",
+    "zh-Hans": "DCP 要求自动黑位处理。"
   },
   "DCP 使用三光源 HueSatMap，暂不支持转换。": {
     "de": "Das DCP verwendet eine HueSatMap mit drei Lichtquellen, die für die Konvertierung noch nicht unterstützt wird.",
@@ -1823,13 +1911,13 @@
     "ja": "出力のハイライトと黒レベルのクリッピングを表示",
     "zh-Hans": "显示输出高光与黑位裁切"
   },
-  "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。": {
-    "de": "Rasterbilder müssen undurchsichtige 8-Bit-SDR-Bilder im Format JPEG, PNG, TIFF oder HEIF sein.",
-    "en": "Raster input requires an opaque 8-bit SDR JPEG, PNG, TIFF, or HEIF image.",
-    "es": "La imagen debe ser opaca, SDR de 8 bits, en formato JPEG, PNG, TIFF o HEIF.",
-    "fr": "L’image doit être opaque, SDR 8 bits, au format JPEG, PNG, TIFF ou HEIF.",
-    "ja": "通常画像は、不透明な8ビットSDRのJPEG、PNG、TIFF、HEIFに対応しています。",
-    "zh-Hans": "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。"
+  "请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。": {
+    "de": "Wähle ein undurchsichtiges SDR-Bild: JPEG, PNG, TIFF oder HEIF mit 8 Bit oder RGB-TIFF mit 16 Bit.",
+    "en": "Choose an opaque SDR image: 8-bit JPEG, PNG, TIFF, or HEIF, or 16-bit RGB TIFF.",
+    "es": "Elige una imagen SDR opaca: JPEG, PNG, TIFF o HEIF de 8 bits, o TIFF RGB de 16 bits.",
+    "fr": "Choisissez une image SDR opaque : JPEG, PNG, TIFF ou HEIF 8 bits, ou TIFF RVB 16 bits.",
+    "ja": "不透明なSDR画像を選択してください。8ビットのJPEG、PNG、TIFF、HEIF、または16ビットのRGB TIFFに対応しています。",
+    "zh-Hans": "请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。"
   },
   "暖调日系 · 漫射金光": {
     "de": "Warmer Japan-Look · diffuses goldenes Licht",
@@ -5975,6 +6063,14 @@
     "ja": "SDR JPEG を保存",
     "zh-Hans": "保存 SDR JPEG"
   },
+  "HDR HEIF 需要启用 HDR 编辑。": {
+    "de": "Für HDR-HEIF muss die HDR-Bearbeitung aktiviert sein.",
+    "en": "Enable HDR Editing to export HDR HEIF.",
+    "es": "Activa la edición HDR para exportar HEIF HDR.",
+    "fr": "Activez l’édition HDR pour exporter en HEIF HDR.",
+    "ja": "HDR HEIF の書き出しには HDR 編集を有効にしてください。",
+    "zh-Hans": "HDR HEIF 需要启用 HDR 编辑。"
+  },
   "HDR JPEG": {
     "de": "HDR-JPEG",
     "en": "HDR JPEG",
@@ -6039,6 +6135,54 @@
     "ja": "HDR 写真には macOS 15 または iOS 18 以降が必要です。",
     "zh-Hans": "HDR 照片需要 macOS 15 或 iOS 18 及以上版本。"
   },
+  "HDR 输出与 SDR 底图": {
+    "en": "HDR Output and SDR Base",
+    "de": "HDR-Ausgabe und SDR-Basis",
+    "fr": "Sortie HDR et base SDR",
+    "es": "Salida HDR y base SDR",
+    "ja": "HDR 出力と SDR ベース",
+    "zh-Hans": "HDR 输出与 SDR 底图"
+  },
+  "HDR 亮度上限": {
+    "en": "HDR Luminance Limit",
+    "de": "HDR-Helligkeitsgrenze",
+    "fr": "Limite de luminance HDR",
+    "es": "Límite de luminancia HDR",
+    "ja": "HDR 輝度の上限",
+    "zh-Hans": "HDR 亮度上限"
+  },
+  "SDR 底图曝光": {
+    "en": "SDR Base Exposure",
+    "de": "Belichtung der SDR-Basis",
+    "fr": "Exposition de la base SDR",
+    "es": "Exposición de la base SDR",
+    "ja": "SDR ベースの露出",
+    "zh-Hans": "SDR 底图曝光"
+  },
+  "SDR 底图对比度": {
+    "en": "SDR Base Contrast",
+    "de": "Kontrast der SDR-Basis",
+    "fr": "Contraste de la base SDR",
+    "es": "Contraste de la base SDR",
+    "ja": "SDR ベースのコントラスト",
+    "zh-Hans": "SDR 底图对比度"
+  },
+  "SDR 底图饱和度": {
+    "en": "SDR Base Saturation",
+    "de": "Sättigung der SDR-Basis",
+    "fr": "Saturation de la base SDR",
+    "es": "Saturación de la base SDR",
+    "ja": "SDR ベースの彩度",
+    "zh-Hans": "SDR 底图饱和度"
+  },
+  "不限": {
+    "en": "Unlimited",
+    "de": "Unbegrenzt",
+    "fr": "Sans limite",
+    "es": "Sin límite",
+    "ja": "制限なし",
+    "zh-Hans": "不限"
+  },
   "HDR 编辑": {
     "de": "HDR-Bearbeitung",
     "en": "HDR Editing",
@@ -6094,6 +6238,14 @@
     "fr": "La photo d’origine a changé. Importez-la à nouveau.",
     "ja": "元の写真が変更されています。再度読み込んでください。",
     "zh-Hans": "原始照片已变化，请重新导入。"
+  },
+  "参考白": {
+    "de": "Referenzweiß",
+    "en": "Reference White",
+    "es": "Blanco de referencia",
+    "fr": "Blanc de référence",
+    "ja": "基準白",
+    "zh-Hans": "参考白"
   },
   "参考白以上 {0}": {
     "de": "Über Referenzweiß {0}",
@@ -7086,5 +7238,181 @@
     "fr": "Enregistrez ensemble le mode de balance des blancs, la température et la teinte avant d’appliquer cette recette.",
     "es": "Guarda juntos el modo de balance de blancos, la temperatura y el matiz antes de aplicar este preset.",
     "ja": "ホワイトバランスモード、色温度、色かぶりをまとめて保存してから、このプリセットを適用してください。"
+  },
+  "文件夹": {
+    "de": "Ordner",
+    "en": "Folders",
+    "es": "Carpetas",
+    "fr": "Dossiers",
+    "ja": "フォルダ",
+    "zh-Hans": "文件夹"
+  },
+  "当前照片": {
+    "de": "Aktuelles Foto",
+    "en": "Current photo",
+    "es": "Foto actual",
+    "fr": "Photo actuelle",
+    "ja": "現在の写真",
+    "zh-Hans": "当前照片"
+  },
+  "当前通道 {0}，修改仅作用于该颜色。": {
+    "de": "Aktueller Kanal: {0}. Änderungen gelten nur für diese Farbe.",
+    "en": "Current channel: {0}. Changes apply only to this color.",
+    "es": "Canal actual: {0}. Los cambios solo se aplican a este color.",
+    "fr": "Canal actuel : {0}. Les modifications s’appliquent uniquement à cette couleur.",
+    "ja": "現在のチャンネル：{0}。変更はこの色にのみ適用されます。",
+    "zh-Hans": "当前通道 {0}，修改仅作用于该颜色。"
+  },
+  "{0} 张照片": {
+    "de": "Fotos: {0}",
+    "en": "Photos: {0}",
+    "es": "Fotos: {0}",
+    "fr": "Photos : {0}",
+    "ja": "写真 {0} 枚",
+    "zh-Hans": "{0} 张照片"
+  },
+  "上一级": {
+    "de": "Übergeordneter Ordner",
+    "en": "Parent Folder",
+    "es": "Carpeta superior",
+    "fr": "Dossier parent",
+    "ja": "親フォルダ",
+    "zh-Hans": "上一级"
+  },
+  "加入选片集合": {
+    "de": "Zur Auswahl hinzufügen",
+    "en": "Add to Photo Selection",
+    "es": "Añadir a la selección",
+    "fr": "Ajouter à la sélection",
+    "ja": "写真の選択に追加",
+    "zh-Hans": "加入选片集合"
+  },
+  "在目录树中定位": {
+    "de": "Im Ordnerbaum anzeigen",
+    "en": "Reveal in Folder Tree",
+    "es": "Mostrar en el árbol de carpetas",
+    "fr": "Afficher dans l’arborescence des dossiers",
+    "ja": "フォルダツリーに表示",
+    "zh-Hans": "在目录树中定位"
+  },
+  "外观强度": {
+    "de": "Look-Intensität",
+    "en": "Look Strength",
+    "es": "Intensidad del look",
+    "fr": "Intensité du look",
+    "ja": "ルックの強さ",
+    "zh-Hans": "外观强度"
+  },
+  "已选": {
+    "de": "Ausgewählt",
+    "en": "Selected",
+    "es": "Seleccionada",
+    "fr": "Sélectionnée",
+    "ja": "選択済み",
+    "zh-Hans": "已选"
+  },
+  "当前外观": {
+    "de": "Aktueller Look",
+    "en": "Current Look",
+    "es": "Look actual",
+    "fr": "Look actuel",
+    "ja": "現在のルック",
+    "zh-Hans": "当前外观"
+  },
+  "收起全部": {
+    "de": "Alle einklappen",
+    "en": "Collapse All",
+    "es": "Contraer todo",
+    "fr": "Tout replier",
+    "ja": "すべて折りたたむ",
+    "zh-Hans": "收起全部"
+  },
+  "正在读取目录…": {
+    "de": "Ordner wird geladen…",
+    "en": "Loading folder…",
+    "es": "Cargando carpeta…",
+    "fr": "Chargement du dossier…",
+    "ja": "フォルダを読み込み中…",
+    "zh-Hans": "正在读取目录…"
+  },
+  "纯预览": {
+    "de": "Vorschau",
+    "en": "Preview",
+    "es": "Vista previa",
+    "fr": "Aperçu",
+    "ja": "プレビュー",
+    "zh-Hans": "纯预览"
+  },
+  "选片": {
+    "de": "Auswahl",
+    "en": "Select",
+    "es": "Selección",
+    "fr": "Sélection",
+    "ja": "選択",
+    "zh-Hans": "选片"
+  },
+  "不是支持的图像文件": {
+    "de": "Nicht unterstützte Bilddatei",
+    "en": "Unsupported image file",
+    "es": "Archivo de imagen no compatible",
+    "fr": "Fichier image non pris en charge",
+    "ja": "対応していない画像ファイル",
+    "zh-Hans": "不是支持的图像文件"
+  },
+  "HDR 相机配置": {
+    "en": "HDR camera profile",
+    "de": "HDR-Kameraprofil",
+    "fr": "Profil de caméra HDR",
+    "es": "Perfil de cámara HDR",
+    "ja": "HDR カメラプロファイル",
+    "zh-Hans": "HDR 相机配置"
+  },
+  "导入相机配置…": {
+    "en": "Import camera profile…",
+    "de": "Kameraprofil importieren…",
+    "fr": "Importer un profil de caméra…",
+    "es": "Importar perfil de cámara…",
+    "ja": "カメラプロファイルを読み込む…",
+    "zh-Hans": "导入相机配置…"
+  },
+  "清除相机配置": {
+    "en": "Clear camera profile",
+    "de": "Kameraprofil entfernen",
+    "fr": "Retirer le profil de caméra",
+    "es": "Quitar perfil de cámara",
+    "ja": "カメラプロファイルを解除",
+    "zh-Hans": "清除相机配置"
+  },
+  "找不到 HDR 相机配置，请重新导入。": {
+    "en": "The HDR camera profile is missing. Import it again.",
+    "de": "Das HDR-Kameraprofil fehlt. Importieren Sie es erneut.",
+    "fr": "Le profil de caméra HDR est introuvable. Importez-le à nouveau.",
+    "es": "Falta el perfil de cámara HDR. Impórtalo de nuevo.",
+    "ja": "HDR カメラプロファイルが見つかりません。再度読み込んでください。",
+    "zh-Hans": "找不到 HDR 相机配置，请重新导入。"
+  },
+  "无法读取 HDR 相机配置，或配置与当前相机不匹配。": {
+    "en": "The HDR camera profile could not be read or does not match this camera.",
+    "de": "Das HDR-Kameraprofil ist nicht lesbar oder passt nicht zu dieser Kamera.",
+    "fr": "Le profil de caméra HDR est illisible ou ne correspond pas à cet appareil.",
+    "es": "No se puede leer el perfil de cámara HDR o no coincide con esta cámara.",
+    "ja": "HDR カメラプロファイルを読み込めないか、このカメラに対応していません。",
+    "zh-Hans": "无法读取 HDR 相机配置，或配置与当前相机不匹配。"
+  },
+  "无效或不可用的相机显影设置（白平衡或镜头校正）。": {
+    "en": "Camera development settings (white balance or lens correction) are invalid or unavailable.",
+    "de": "Die Kameraentwicklungseinstellungen (Weißabgleich oder Objektivkorrektur) sind ungültig oder nicht verfügbar.",
+    "fr": "Les réglages de développement de l’appareil (balance des blancs ou correction d’objectif) sont invalides ou indisponibles.",
+    "es": "Los ajustes de revelado de la cámara (balance de blancos o corrección de lente) no son válidos o no están disponibles.",
+    "ja": "カメラ現像設定（ホワイトバランスまたはレンズ補正）が無効か、利用できません。",
+    "zh-Hans": "无效或不可用的相机显影设置（白平衡或镜头校正）。"
+  },
+  "普通图片未使用 AI 降噪": {
+    "en": "AI denoise was not used for ordinary images",
+    "de": "Für normale Bilder wurde keine KI-Entrauschung verwendet",
+    "fr": "La réduction du bruit par IA n’a pas été utilisée pour les images ordinaires",
+    "es": "No se usó la reducción de ruido con IA en las imágenes normales",
+    "ja": "通常の画像には AI ノイズ除去を使用していません",
+    "zh-Hans": "普通图片未使用 AI 降噪"
   }
 }

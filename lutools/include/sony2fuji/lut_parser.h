@@ -44,6 +44,7 @@ public:
         contractState_ == LUTContractState::Compatibility || contractState_ == LUTContractState::ApproximateBase; }
     LUTContractState contractState() const { return contractState_; }
     bool hasColorContract() const { return explicitContract_; }
+    bool hasHDRLookContract() const { return hdrLookContract_; }
     const LUTColorContract& colorContract() const { return colorContract_; }
     bool isVLT() const { return vlt_; }
     bool requiresCPU() const { return explicitContract_ || vlt_; }
@@ -78,6 +79,7 @@ private:
     LUTColorContract colorContract_;
     LUTContractState contractState_ = LUTContractState::MissingColor;
     bool explicitContract_ = false;
+    bool hdrLookContract_ = false;
     bool vlt_ = false;
 
     // 解析 .cube 文件

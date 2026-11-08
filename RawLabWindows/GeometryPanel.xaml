@@ -27,7 +27,7 @@
    </WrapPanel>
    <StackPanel x:Name="TransformRows"/>
    <Expander x:Name="PreciseCrop" Header="{DynamicResource '位置与尺寸'}" PreviewMouseDown="PreciseCropPressed" PreviewKeyDown="PreciseCropKeyDown">
-    <Grid x:Name="CropRows" Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions></Grid>
+    <UniformGrid x:Name="CropRows" Columns="1" Margin="0,6,0,0"/>
    </Expander>
   </StackPanel>
   <StackPanel x:Name="PerspectiveRows" Visibility="Collapsed"/>

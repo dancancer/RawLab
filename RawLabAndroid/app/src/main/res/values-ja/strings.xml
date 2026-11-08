@@ -198,6 +198,7 @@
     <string name="message_output_found">"出力を確認済み"</string>
     <string name="message_output_storage_failed">"出力の保存に失敗しました: %1$s"</string>
     <string name="message_photo_gallery">"フォトギャラリー"</string>
+    <string name="message_png16_decode_limit">"16ビットPNGはデコード上限の3200万画素を超えています。"</string>
     <string name="message_preparing">"準備中"</string>
     <string name="message_processing">"書き出し中"</string>
     <string name="message_remove">"削除"</string>

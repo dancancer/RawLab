@@ -288,7 +288,7 @@ extension ContentView {
              "draftCrop": geometryDraft?.cropWidth ?? -1, "draftActive": isEditorDraftActive,
              "draftChanged": isEditorDraftChanged, "draftAlert": draftExitPresented,
              "pendingPhoto": pendingPhotoImport, "pendingFile": pendingFileImport,
-             "photoPicker": showingPhotoImporter, "filePicker": showingFileImporter,
+             "photoPicker": showingPhotoImporter, "filePicker": showingDocumentImporter,
              "saveState": String(describing: viewModel.editSaveState),
              "recentLookIDs": viewModel.recentLooks.ids, "selectedLookID": settings.lutID ?? "",
              "historyCount": viewModel.adjustmentSession?.transactions.count ?? 0,

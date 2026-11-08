@@ -6,14 +6,27 @@ import UniformTypeIdentifiers
 enum ExportFormat: String, CaseIterable, Codable, Identifiable {
     case jpeg, png
     case hdrJPEG = "hdr_jpeg"
+    case hdrHEIF = "hdr_heif"
     case renderedDNG = "dng"
 
     var id: String { rawValue }
-    static func available(isHDR: Bool) -> [ExportFormat] { isHDR ? [.hdrJPEG,.jpeg,.png,.renderedDNG] : [.jpeg,.png,.renderedDNG] }
-    var suffix: String { self == .jpeg || self == .hdrJPEG ? "jpg" : rawValue }
+    static func available(isHDR: Bool) -> [ExportFormat] {
+        let sdr: [ExportFormat] = [.jpeg,.png,.renderedDNG]
+        guard isHDR else { return sdr }
+        return (HDRImage.heifExportAvailable ? [.hdrJPEG,.hdrHEIF] : [.hdrJPEG]) + sdr
+    }
+    var requiresHDR: Bool { self == .hdrJPEG || self == .hdrHEIF }
+    var hdrRequiredMessage: String {
+        self == .hdrHEIF ? L10n.text("HDR HEIF 需要启用 HDR 编辑。") : L10n.text("HDR JPEG 需要启用 HDR 编辑。")
+    }
+    var suffix: String {
+        if self == .hdrHEIF { return "heic" }
+        return self == .jpeg || self == .hdrJPEG ? "jpg" : rawValue
+    }
     var title: String {
         switch self {
         case .hdrJPEG: return L10n.text("HDR JPEG")
+        case .hdrHEIF: return "HDR HEIF"
         case .jpeg: return "JPEG"
         case .png: return L10n.text("16-bit PNG")
         case .renderedDNG: return L10n.text("DNG · 渲染型")
@@ -22,14 +35,15 @@ enum ExportFormat: String, CaseIterable, Codable, Identifiable {
     var contentType: UTType {
         switch self {
         case .hdrJPEG: return .jpeg
+        case .hdrHEIF: return .heic
         case .jpeg: return .jpeg
         case .png: return .png
         case .renderedDNG: return UTType(filenameExtension: "dng") ?? .rawImage
         }
     }
-    var nativeFormat: sony2fuji_output_format {
+    var nativeFormat: sony2fuji_output_format? {
         switch self {
-        case .hdrJPEG: return SONY2FUJI_OUTPUT_JPEG
+        case .hdrJPEG, .hdrHEIF: return nil
         case .jpeg: return SONY2FUJI_OUTPUT_JPEG
         case .png: return SONY2FUJI_OUTPUT_PNG
         case .renderedDNG: return SONY2FUJI_OUTPUT_DNG
@@ -39,6 +53,7 @@ enum ExportFormat: String, CaseIterable, Codable, Identifiable {
         switch url.pathExtension.lowercased() {
         case "png": return .png
         case "dng": return .renderedDNG
+        case "heic", "heif": return .hdrHEIF
         default: return .jpeg
         }
     }
@@ -185,12 +200,35 @@ final class RenderEngine {
     private let aiCacheDirectory: URL
     private let aiBackend: sony2fuji_ai_backend
     static var aiAvailable: Bool { sony2fuji_ai_available() != 0 }
+    static var hdrCameraAIAvailable: Bool { sony2fuji_hdr_camera_ai_available() != 0 }
     static var bundledAIModel: URL? { Bundle.main.url(forResource: "DualDn", withExtension: nil, subdirectory: "AI") }
     private let gpuMode: sony2fuji_gpu_mode
     private let statisticsProvider: (inout sony2fuji_buffer) -> PreviewStatistics?
     private var whiteBalanceCache: (key: RawWhiteBalanceCacheKey, processing: ProcessingIdentity, x3fMode: X3fMode, value: WhiteBalance?)?
     static var x3fAvailable: Bool { sony2fuji_x3f_available() != 0 }
     static func isX3fInput(_ url: URL?) -> Bool { url?.pathExtension.lowercased() == "x3f" }
+    static func defaultSettings(for url: URL,
+                                probeHDRSource: HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) }) throws -> Adjustments {
+        try defaultSettings(for: url, sourceIsHDR: probeHDRSource(url, {}) != nil)
+    }
+    static func defaultSettings(for url: URL, sourceIsHDR: Bool) throws -> Adjustments {
+        var settings = Adjustments()
+        if isRasterInput(url) { settings.exposureMode = .sensor }
+        if isX3fInput(url) { settings.x3fMode = try x3fDefaultMode(for: url) }
+        if sourceIsHDR { settings.hdr = HDRSettings() }
+        return settings
+    }
+    static func x3fDefaultMode(for url: URL) throws -> X3fMode {
+        var mode = SONY2FUJI_X3F_NORMAL
+        let status = url.path.withCString { sony2fuji_x3f_default_mode($0, &mode) }
+        guard status == SONY2FUJI_STATUS_OK else {
+            if status == SONY2FUJI_STATUS_IO_ERROR {
+                throw RenderError.processing(status, input: url, look: nil, output: nil)
+            }
+            throw RenderError.failed(L10n.format("无法正常显影 X3F：%@", String(cString: sony2fuji_status_message(status))))
+        }
+        return mode == SONY2FUJI_X3F_NORMAL ? .normal : .legacy
+    }
     private let lensDatabaseURL: URL?
     private struct LensCatalogKey: Equatable {
         let url: URL
@@ -284,11 +322,23 @@ final class RenderEngine {
     }
 
     static func validateAIInput(_ url: URL, settings: Adjustments) throws {
+        if settings.isHDREditing {
+            guard hdrCameraAIAvailable, bundledAIModel != nil,
+                  isHDRCameraAICandidate(info: try HDRSourceInfo.probeRAW(url), settings: settings) else {
+                throw RenderError.aiFailed(L10n.text("此照片或构建尚不能使用 AI 降噪。"))
+            }
+            return
+        }
         guard !isRasterInput(url) else { throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。")) }
         guard !isX3fInput(url) || settings.x3fMode != .normal else {
             throw RenderError.failed(L10n.text("此 X3F 显影模式不支持 AI 降噪。"))
         }
         guard aiAvailable, bundledAIModel != nil else { throw RenderError.aiFailed(L10n.text("此构建未安装 AI 降噪模型。")) }
+    }
+
+    static func isHDRCameraAICandidate(info: HDRSourceInfo?, settings: Adjustments) -> Bool {
+        info?.supportsBayerDevelopment == true &&
+            settings.hdr?.cameraDevelopmentSettings.fbddLevel == 0 && settings.hdr?.cameraDevelopmentSettings.cameraProfile == nil
     }
 
     private func configureAI(enabled: Bool) throws {
@@ -319,8 +369,44 @@ final class RenderEngine {
         return .aiFailed(L10n.format("AI 降噪失败：%@", message))
     }
 
+    private func withHDRCameraAI<T>(_ url: URL, settings: Adjustments, info: HDRSourceInfo?,
+                                   operation: (String?) throws -> T) throws -> T {
+        guard settings.hdrCameraAIEnabled else { return try operation(nil) }
+        guard Self.hdrCameraAIAvailable, Self.isHDRCameraAICandidate(info: info, settings: settings) else {
+            throw RenderError.aiFailed(L10n.text("此照片或构建尚不能使用 AI 降噪。"))
+        }
+        try configureAI(enabled: true)
+        do { return try operation(HDRImage.cameraAIKey(url, session: session)) }
+        catch let error as HDRNativeError where error.reason == UInt32(SONY2FUJI_HDR_REASON_CAMERA_AI) {
+            throw aiError(error.status)
+        }
+    }
+
     func prepareAI(_ url: URL, settings: Adjustments, progress: AIPreparation) throws {
         guard !progress.isCancelled else { throw RenderError.aiCancelled }
+        if settings.isHDREditing {
+            guard Self.hdrCameraAIAvailable,
+                  Self.isHDRCameraAICandidate(info: try HDRSourceInfo.probeRAW(url), settings: settings) else {
+                throw RenderError.aiFailed(L10n.text("此照片或构建尚不能使用 AI 降噪。"))
+            }
+            try configureAI(enabled: true)
+            let context = Unmanaged.passUnretained(progress).toOpaque()
+            _ = sony2fuji_session_set_cancellation_callback(session, { context in
+                guard let context else { return 0 }
+                return Unmanaged<AIPreparation>.fromOpaque(context).takeUnretainedValue().isCancelled ? 1 : 0
+            }, context)
+            defer { _ = sony2fuji_session_set_cancellation_callback(session, nil, nil) }
+            let status = url.path.withCString { path in
+                sony2fuji_hdr_prepare_camera_raw_ai(session, path, { context, phase, done, total in
+                    guard let context else { return 0 }
+                    return Unmanaged<AIPreparation>.fromOpaque(context).takeUnretainedValue()
+                        .report(phase: Int(phase), completed: done, total: total)
+                }, context, nil)
+            }
+            guard status == SONY2FUJI_STATUS_OK else { throw aiError(status) }
+            guard !progress.isCancelled else { throw RenderError.aiCancelled }
+            return
+        }
         guard !Self.isRasterInput(url) else { throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。")) }
         guard !Self.isX3fInput(url) || settings.x3fMode != .normal else {
             throw RenderError.failed(L10n.text("此 X3F 显影模式不支持 AI 降噪。"))
@@ -354,6 +440,17 @@ final class RenderEngine {
     }
 
     func autoExposure(_ url: URL, settings: Adjustments) throws -> Double {
+        if let hdr = settings.hdr, hdr.mode == .hdr {
+            guard gpuMode != SONY2FUJI_GPU_FORCE else {
+                throw HDRNativeError(status: SONY2FUJI_STATUS_UNSUPPORTED,
+                    reason: UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU), field: UInt32(SONY2FUJI_HDR_FIELD_SESSION))
+            }
+            let info = settings.hdrCameraAIEnabled ? try HDRSourceInfo.probeRAW(url) : nil
+            return try withHDRCameraAI(url, settings: settings, info: info) { key in
+                try hdrSources.autoExposure(url, settings: hdr, proRAWDecodeVersion: settings.proRAWDecodeVersion,
+                    session: session, lensDatabase: lensDatabaseURL, cameraAIKey: key)
+            }
+        }
         let settings = try resolvedSettings(url, settings: settings)
         try configureProcessing(settings.processing)
         try configureX3f(settings.x3fMode)
@@ -497,14 +594,39 @@ final class RenderEngine {
         }
         if let edge { request.preview_long_edge = UInt32(edge) }
         request.output_target = output == nil ? SONY2FUJI_TARGET_BUFFER : SONY2FUJI_TARGET_FILE
-        request.output_format = output == nil ? SONY2FUJI_OUTPUT_RGBA8 :
-            ExportFormat.forOutput(output!).nativeFormat
+        if let output {
+            let format = ExportFormat.forOutput(output)
+            guard let nativeFormat = format.nativeFormat else { throw RenderError.failed(format.hdrRequiredMessage) }
+            request.output_format = nativeFormat
+        } else {
+            request.output_format = SONY2FUJI_OUTPUT_RGBA8
+        }
         request.jpeg_quality = 95
         return (settings, request)
     }
 
     func sampleHSL(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, interactive: Bool,
                    revision: HSLTargetRevision, point: CGPoint) throws -> HSLTargetSample {
+        if settings.isHDREditing {
+            guard gpuMode != SONY2FUJI_GPU_FORCE else {
+                throw HDRNativeError(status: SONY2FUJI_STATUS_UNSUPPORTED,
+                    reason: UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU), field: UInt32(SONY2FUJI_HDR_FIELD_SESSION))
+            }
+            guard let session, let record = settings.hdr,
+                  let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url) else {
+                throw HDRSettings.ModeError.unsupportedSource
+            }
+            if info.proRAW != nil { try ProRAWSource.validatedDecodeVersion(settings.proRAWDecodeVersion) }
+            let previewEdge = edge ?? 2000
+            let source = try withHDRCameraAI(url, settings: settings, info: info) { key in
+                try hdrSources.preview(url, info: info, longEdge: previewEdge, session: session,
+                    camera: record.cameraDevelopmentSettings, lensDatabase: lensDatabaseURL, cameraAIKey: key)
+            }
+            let request = try makeHDRRequest(settings: record, intent: SONY2FUJI_INTENT_PREVIEW, longEdge: previewEdge)
+            return source.withPair {
+                HSLTargetSample.capture(session: session, pair: $0, request: request, revision: revision, x: point.x, y: point.y)
+            }
+        }
         let (_, prepared) = try photoRequest(url, settings: settings, lut: lut, edge: edge, output: nil,
             interactive: interactive, exportLongEdge: nil, viewportPreview: edge != nil)
         var request = prepared
@@ -527,7 +649,9 @@ final class RenderEngine {
         if settings.isHDREditing {
             return try renderHDR(url,settings:settings,edge:edge,output:output,longEdge:exportLongEdge,format:exportFormat)
         }
-        if exportFormat == .hdrJPEG { throw RenderError.failed(L10n.text("HDR JPEG 需要启用 HDR 编辑。")) }
+        if let exportFormat, exportFormat.requiresHDR {
+            throw RenderError.failed(exportFormat.hdrRequiredMessage)
+        }
         let (settings, prepared) = try photoRequest(url, settings: settings, lut: lut, edge: edge, output: output,
             interactive: interactive, exportLongEdge: exportLongEdge, viewportPreview: viewportPreview)
         var request = prepared
@@ -556,8 +680,8 @@ final class RenderEngine {
         }
         if let output {
             if ExportFormat.forOutput(output) != .renderedDNG {
-                // 核心已成功解码；ImageIO 不识别的 X3F 仍写入输出尺寸和方向，不捏造拍摄 EXIF。
-                let fallback: [CFString: Any]? = url.pathExtension.lowercased() == "x3f" ? [:] : nil
+                // 核心已成功解码；ImageIO 不识别的 RAW 仍写入输出尺寸和方向，不捏造拍摄 EXIF。
+                let fallback: [CFString: Any]? = Self.isRasterInput(url) ? nil : [:]
                 try ExportMetadata.preserve(from: url, in: output, fallbackSourceProperties: fallback)
             }
             return nil
@@ -615,16 +739,25 @@ final class RenderEngine {
         let previewEdge = edge ?? (info.isDevelopedRAW && output == nil ? 2000 : nil)
         let final = previewEdge == nil
         if final && info.isDevelopedRAW { hdrSources.clear() }
-        if info.proRAW != nil, let output {
-            let selected = format ?? (ExportFormat.forOutput(output) == .jpeg ? .hdrJPEG : ExportFormat.forOutput(output))
+        let selected = output.map { format ?? (ExportFormat.forOutput($0) == .jpeg ? .hdrJPEG : ExportFormat.forOutput($0)) }
+        if selected == .hdrHEIF && !HDRImage.heifExportAvailable {
+            throw RenderError.failed(L10n.text("不支持此 HDR 格式或颜色描述。"))
+        }
+        if info.proRAW != nil, !settings.hdrCameraAIEnabled, let output, let selected {
             if selected == .hdrJPEG || selected == .jpeg {
                 try ProRAWExporter.export(url: url, info: info, settings: record, output: output,
                     longEdge: longEdge, keepHDR: selected == .hdrJPEG, session: session)
                 return nil
             }
         }
-        let source = try final ? HDRImage.decode(url,info:info,intent:SONY2FUJI_INTENT_FINAL,session:session) :
-            hdrSources.preview(url,info:info,longEdge:previewEdge!,session:session)
+        let source = try withHDRCameraAI(url, settings: settings, info: info) { key in
+            if final {
+                return try HDRImage.decode(url, info: info, intent: SONY2FUJI_INTENT_FINAL, session: session,
+                    camera: record.cameraDevelopmentSettings, cameraAIKey: key)
+            }
+            return try hdrSources.preview(url, info: info, longEdge: previewEdge!, session: session,
+                camera: record.cameraDevelopmentSettings, lensDatabase: lensDatabaseURL, cameraAIKey: key)
+        }
         let rendered: HDRImage
         if record==HDRSettings() && longEdge==nil {
             rendered=source
@@ -632,10 +765,14 @@ final class RenderEngine {
             rendered=try source.rendered(session:session,settings:record,
                 intent:final ? SONY2FUJI_INTENT_FINAL : SONY2FUJI_INTENT_PREVIEW,longEdge:final ? longEdge : previewEdge)
         }
-        if let output {
-            let selected=format ?? (ExportFormat.forOutput(output) == .jpeg ? .hdrJPEG : ExportFormat.forOutput(output))
-            if selected == .hdrJPEG { try rendered.exportJPEG(to:output) }
-            else { try rendered.exportSDR(to:output,format:selected.nativeFormat) }
+        if let output, let selected {
+            switch selected {
+            case .hdrJPEG: try rendered.exportJPEG(to:output)
+            case .hdrHEIF: try rendered.exportHEIF(to:output)
+            default:
+                guard let native = selected.nativeFormat else { throw RenderError.failed(selected.hdrRequiredMessage) }
+                try rendered.exportSDR(to:output,format:native)
+            }
             return nil
         }
         let presentation=try HDRPresentation(rendered)

@@ -75,7 +75,7 @@ struct BatchExportView: View {
                 Task { await model.addPickerItems(items) }
             }
             .fileImporter(isPresented: $showingFileImporter,
-                          allowedContentTypes: PhotoImportFile.supportedContentTypes,
+                          allowedContentTypes: PhotoImportFile.photoPickerContentTypes,
                           allowsMultipleSelection: true) { result in
                 guard let urls = try? result.get() else { return }
                 Task { await model.addFiles(urls) }
@@ -205,7 +205,12 @@ struct BatchExportView: View {
             Text(L10n.text("输出")).font(.title3.weight(.semibold)).padding(.top, 18).padding(.bottom, 10)
             Picker(L10n.text("格式"), selection: Binding(get: { model.job.outputFormat }, set: model.setFormat)) {
                 Text(BatchOutputFormat.jpeg.title).tag(BatchOutputFormat.jpeg)
-                if model.job.source.settings.isHDREditing { Text(BatchOutputFormat.hdrJPEG.title).tag(BatchOutputFormat.hdrJPEG) }
+                if model.job.source.settings.isHDREditing {
+                    Text(BatchOutputFormat.hdrJPEG.title).tag(BatchOutputFormat.hdrJPEG)
+                    if HDRImage.heifExportAvailable || model.job.outputFormat == .hdrHEIF {
+                        Text(BatchOutputFormat.hdrHEIF.title).tag(BatchOutputFormat.hdrHEIF)
+                    }
+                }
                 Text(BatchOutputFormat.renderedDNG.title).tag(BatchOutputFormat.renderedDNG)
             }
             .pickerStyle(.segmented)

@@ -84,13 +84,8 @@ data class EditSettings(
     }
     val isHDREditing get() = hdr?.mode == HDRMode.HDR
 
-    fun reset(): EditSettings = if (isHDREditing) {
-        val value = HDRSettings()
-        copy(exposure = value.exposure, temperature = value.temperature, tint = value.tint,
-            contrast = value.contrast, highlights = value.highlights, shadows = value.shadows,
-            saturation = value.saturation, geometry = value.geometry, hdr = value,
-            sdrSnapshot = sdrSnapshot)
-    } else EditSettings(film = film, processing = processing, x3fMode = x3fMode, hdr = hdr,
+    fun reset(): EditSettings = if (isHDREditing) hdrDefaults()
+    else EditSettings(film = film, processing = processing, x3fMode = x3fMode, hdr = hdr,
         proRAWDecodeVersion = proRAWDecodeVersion)
 
     /** Camera-only controls are resolved per target; the persisted edit remains unchanged. */

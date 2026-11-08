@@ -53,6 +53,13 @@ import Foundation
         check(base.usesOriginal && !lensKey.usesOriginal && base != lensKey, "lens-only edit cannot reuse uncorrected original reference")
         var geometry = settings; geometry.geometry = GeometrySettings(); geometry.geometry?.quarterTurns = 1
         check(base != MacNeutralReferenceKey(source: identity, settings: geometry, edge: 800), "committed geometry participates in reference identity")
+        var hdr = settings; hdr.hdr = HDRSettings()
+        let hdrKey = MacNeutralReferenceKey(source: identity, settings: hdr, edge: 800)
+        hdr.hdr?.cameraDevelopmentSettings.lensDistortion = true
+        let hdrLensKey = MacNeutralReferenceKey(source: identity, settings: hdr, edge: 800)
+        check(hdrKey != hdrLensKey && !hdrKey.canServe(hdrLensKey, fullResolution: true),
+              "HDR lens development must invalidate the neutral reference")
+
         var legacy = settings; legacy.processing = .legacy
         check(base != MacNeutralReferenceKey(source: identity, settings: legacy, edge: 800), "processing identity participates in reference identity")
         check(base.canServe(MacNeutralReferenceKey(source: identity, settings: settings, edge: 1600), fullResolution: true), "immutable full-native reference satisfies a larger pane without rerender")

@@ -34,6 +34,26 @@ struct AdjustmentTransferSessionTests {
         try historyRace(root: root, a: a)
         try storageFailures(root: root, a: a, b: b)
         try clipboardAndEmptyTargets(root: root, a: a)
+        try sourceDefaults(root: root, a: a, b: b)
+    }
+
+    static func sourceDefaults(root: URL, a: URL, b: URL) throws {
+        let store = try EditPersistence(directory: root.appendingPathComponent("source-defaults"))
+        let session = AdjustmentTransferSession(store: store)
+        var legacy = state(0); legacy.settings.x3fMode = .legacy
+        var good = target(a), failed = target(b)
+        good.resolveDefaultState = { legacy }
+        failed.resolveDefaultState = { throw CocoaError(.fileReadNoPermission) }
+        let prepared = try session.prepare(payload: payload(1), targets: [good, failed])
+        check(prepared.targets[0].candidate?.settings.x3fMode == .legacy && prepared.targets[1].error != nil,
+              "Per-source defaults retain Legacy while a failed probe stays attached to its own target")
+        check(try store.state(for: a) == nil && store.state(for: b) == nil,
+              "Default preparation never creates edit records")
+        try store.save(a, state: state(0))
+        good.resolveDefaultState = { throw CocoaError(.fileReadNoPermission) }
+        let saved = try session.prepare(payload: payload(1), targets: [good])
+        check(saved.targets[0].error == nil && saved.targets[0].candidate?.settings.x3fMode == .normal,
+              "Saved records skip the default probe and retain their selected mode")
     }
 
     static func partialFailureAndHistory(root: URL, a: URL, b: URL) throws {

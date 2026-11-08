@@ -7,8 +7,20 @@ struct DirectoryContents {
     let folders: [URL]
     let photos: [URL]
     static let rawExtensions: Set<String> = ["arw", "arq", "dng", "nef", "nrw", "cr2", "cr3", "crw", "raf",
-        "rw2", "rwl", "orf", "pef", "srw", "raw", "3fr", "fff", "iiq", "mos", "x3f"]
+        "rw2", "rwl", "orf", "pef", "srw", "raw", "3fr", "fff", "iiq", "mos", "srf", "sr2", "mrw", "kdc", "dcr", "erf", "x3f"]
     static let supportedExtensions = rawExtensions.union(["jpg", "jpeg", "png", "tif", "tiff", "heif", "heic"])
+
+    static func photoURLs(from urls: [URL]) -> [URL] {
+        var seen = Set<URL>()
+        return urls.compactMap { candidate in
+            guard candidate.isFileURL else { return nil }
+            let url = candidate.standardizedFileURL.resolvingSymlinksInPath()
+            guard supportedExtensions.contains(url.pathExtension.lowercased()),
+                  (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
+                  seen.insert(url).inserted else { return nil }
+            return url
+        }
+    }
 
     static func read(_ url: URL) throws -> Self {
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .isPackageKey]
@@ -43,10 +55,23 @@ final class PhotoFolder: ObservableObject, Identifiable {
     @Published private(set) var loading = false
     @Published private(set) var error: String?
     private var loaded = false
+    private var loadWaiters: [() -> Void] = []
+    var canExpand: Bool { !loaded || !folders.isEmpty }
+    var isExpandedInTree: Bool { expanded && canExpand }
     private var folderSubscriptions: [AnyCancellable] = []
     init(_ url: URL) { self.url = url }
 
     func toggle() { expanded.toggle(); if expanded { load() } }
+    func load(then completion: @escaping () -> Void) {
+        if loaded { completion(); return }
+        loadWaiters.append(completion)
+        load()
+    }
+    func refresh() {
+        guard !loading else { return }
+        loaded = false
+        load()
+    }
     func load() {
         guard !loaded, !loading else { return }
         loading = true; error = nil
@@ -58,10 +83,14 @@ final class PhotoFolder: ObservableObject, Identifiable {
                 self.loading = false
                 switch result {
                 case .success(let contents):
-                    self.folders = contents.folders.map(PhotoFolder.init)
+                    let existing = Dictionary(uniqueKeysWithValues: self.folders.map { ($0.id, $0) })
+                    self.folders = contents.folders.map { existing[$0] ?? PhotoFolder($0) }
                     self.photos = contents.photos; self.loaded = true
                 case .failure(let error): self.error = error.localizedDescription
                 }
+                let waiters = self.loadWaiters
+                self.loadWaiters.removeAll()
+                waiters.forEach { $0() }
             }
         }
     }

@@ -1,6 +1,7 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/raw_processor.h"
 #include "core/processing_cancellation.h"
+#include "core/x3f_processor.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -131,6 +132,14 @@ void formatIdentity() {
     TemporaryDirectory temp;
     const auto disguised = temp.path / "incorrect.X3F";
     std::filesystem::copy_file(fixture, disguised);
+    sony2fuji_x3f_mode mode = SONY2FUJI_X3F_NORMAL;
+    require(sony2fuji_x3f_default_mode("", &mode) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+            "empty default-mode path is invalid");
+    const auto missing = temp.path / "missing.X3F";
+    require(sony2fuji_x3f_default_mode(missing.u8string().c_str(), &mode) == SONY2FUJI_STATUS_IO_ERROR,
+            "missing default-mode source retains IO error");
+    require(sony2fuji_x3f_default_mode(disguised.u8string().c_str(), &mode) == SONY2FUJI_STATUS_OK &&
+            mode == SONY2FUJI_X3F_LEGACY, "non-FOVb X3F extension keeps LibRaw legacy compatibility");
     sony2fuji::RAWProcessor processor;
     require(processor.loadFile(disguised.u8string()) == sony2fuji::ErrorCode::Success, "LibRaw recognizes renamed DNG");
     sony2fuji::RAWProcessOptions options; options.x3fMode = sony2fuji::X3fMode::Normal;
@@ -145,6 +154,19 @@ void formatIdentity() {
     require(normal.size() == image.pixels.size() &&
             std::memcmp(normal.data(), image.pixels.data(), normal.size() * sizeof(sony2fuji::RGB)) == 0,
             "non-X3F pixels remain unchanged");
+}
+
+sony2fuji_x3f_mode defaultMode(const char* path) {
+    sony2fuji_x3f_mode mode = SONY2FUJI_X3F_NORMAL;
+    require(sony2fuji_x3f_default_mode(path, &mode) == SONY2FUJI_STATUS_OK,
+            "X3F default query succeeds for a valid source");
+    return mode;
+}
+
+void familyDispatchCapabilities() {
+    require(sony2fuji::x3fModelSupported("DP1S") == (sony2fuji_x3f_available() != 0),
+            "DP1S uses Normal when that renderer is available");
+    require(!sony2fuji::x3fModelSupported("SD14"), "SD14 uses Legacy");
 }
 
 void errorSemantics(const char* path) {
@@ -178,14 +200,27 @@ int main(int argc, char** argv) {
         require(sony2fuji_session_set_x3f_mode(s.get(), static_cast<sony2fuji_x3f_mode>(99)) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
                 "unknown mode rejected");
         formatIdentity();
+        familyDispatchCapabilities();
         if (argc == 1) {
             std::cout << "PASS X3F mode validation; real RAW coverage requires explicit fixture arguments\n";
             return 0;
         }
         require(sony2fuji_x3f_available() == 1, "normal decoder included");
-        errorSemantics(argv[1]);
+        std::vector<sony2fuji_x3f_mode> defaults;
+        defaults.reserve(static_cast<size_t>(argc - 1));
+        for (int i = 1; i < argc; ++i) defaults.push_back(defaultMode(argv[i]));
+        for (int i = 0; i < static_cast<int>(defaults.size()); ++i) {
+            if (defaults[static_cast<size_t>(i)] == SONY2FUJI_X3F_NORMAL) {
+                errorSemantics(argv[i + 1]);
+                break;
+            }
+        }
         for (int i = 1; i < argc; ++i) {
             const auto legacy = render(s.get(), argv[i], SONY2FUJI_X3F_LEGACY);
+            if (defaults[static_cast<size_t>(i - 1)] == SONY2FUJI_X3F_LEGACY) {
+                std::cout << "PASS legacy-only X3F default " << argv[i] << " " << legacy.width << "x" << legacy.height << '\n';
+                continue;
+            }
             const auto normal = render(s.get(), argv[i], SONY2FUJI_X3F_NORMAL);
             const auto restored = render(s.get(), argv[i], SONY2FUJI_X3F_LEGACY);
             require(legacy.width == restored.width && legacy.height == restored.height && legacy.pixels == restored.pixels,
@@ -241,8 +276,11 @@ int main(int argc, char** argv) {
             std::cout << "PASS native X3F workflow " << argv[i] << " " << normal.width << "x" << normal.height
                       << " display rounding max=" << maximum << '\n';
         }
-        replacedSource(argv[1]);
-        cancellation(argv[1]);
+        for (int i = 1; i < argc; ++i) {
+            if (defaults[static_cast<size_t>(i - 1)] != SONY2FUJI_X3F_NORMAL) continue;
+            replacedSource(argv[i]);
+            cancellation(argv[i]);
+        }
         return 0;
     } catch (const std::exception& e) { std::cerr << "FAIL " << e.what() << '\n'; return 1; }
 }

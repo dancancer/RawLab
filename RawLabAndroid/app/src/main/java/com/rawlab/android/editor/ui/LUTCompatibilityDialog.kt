@@ -23,12 +23,48 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.rawlab.android.R
+import com.rawlab.android.editor.PendingDcpImport
 import com.rawlab.android.editor.PendingLookCompatibility
 import com.rawlab.android.looks.*
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.album.AlbumScreen
 import java.util.Locale
+
+@Composable
+internal fun DcpImportDialog(pending: PendingDcpImport, finish: (DcpImportChoices?) -> Unit) {
+    var curve by rememberSaveable(pending.uri.toString()) { mutableStateOf(pending.choices?.toneCurve) }
+    var omitBlack by rememberSaveable(pending.uri.toString()) { mutableStateOf(pending.choices?.omitAutomaticBlack ?: false) }
+    val chooseCurve = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) curve = uri
+    }
+    AlertDialog(
+        onDismissRequest = { finish(null) },
+        title = { Text(stringResource(R.string.dcp_import_options)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(pending.name)
+                if (pending.needsCurve) {
+                    Text(stringResource(R.string.dcp_tone_curve))
+                    TextButton(onClick = { chooseCurve.launch(arrayOf("*/*")) }) {
+                        Text(curve?.lastPathSegment?.substringAfterLast('/') ?: stringResource(R.string.dcp_choose_curve))
+                    }
+                }
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Checkbox(checked = omitBlack, onCheckedChange = { omitBlack = it })
+                    Text(stringResource(R.string.dcp_omit_auto_black))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { finish(DcpImportChoices(curve, omitBlack)) },
+                enabled = (!pending.needsCurve || curve != null) && (!pending.needsBlackChoice || omitBlack)
+            ) { Text(stringResource(R.string.import_look)) }
+        },
+        dismissButton = { TextButton(onClick = { finish(null) }) { Text(stringResource(R.string.cancel)) } }
+    )
+}
 
 @Composable
 internal fun LUTCompatibilityDialog(pending: PendingLookCompatibility, photo: ImportedPhoto?, storage: PhotoStorage,
@@ -50,6 +86,9 @@ internal fun LUTCompatibilityDialog(pending: PendingLookCompatibility, photo: Im
     val chooseReference = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) { conditions = LUTReferenceConditions(); preview.loadReference(uri) }
     }
+    val chooseSampleFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) selectedPhoto = uri.toString()
+    }
     val choices = pending.draft.candidates.mapNotNull { candidate -> pending.draft.applying(candidate, state.displayInput)?.let { candidate to it } }
     val spaces = LUTCompatibility.spaces.associateWith { spaceName(it) }
     val ranges = mapOf("full" to stringResource(R.string.lut_range_full), "legal10" to stringResource(R.string.lut_range_legal))
@@ -60,7 +99,7 @@ internal fun LUTCompatibilityDialog(pending: PendingLookCompatibility, photo: Im
         properties = DialogProperties(usePlatformDefaultWidth = false)) {
         if (choosingPhoto) {
             Surface(Modifier.fillMaxSize().testTag("lut-photo-library")) {
-                AlbumScreen(storage, onBack = { choosingPhoto = false }, onFile = null,
+                AlbumScreen(storage, onBack = { choosingPhoto = false }, onFile = { chooseSampleFile.launch(arrayOf("*/*")) },
                     onPhoto = { selectedPhoto = it.toString() },
                     selectedPhotos = selectedPhoto?.let { setOf(it) } ?: emptySet(),
                     doneLabel = stringResource(R.string.lut_use_library_photo), doneEnabled = selectedPhoto != null,
@@ -140,7 +179,7 @@ internal fun LUTCompatibilityDialog(pending: PendingLookCompatibility, photo: Im
                     state.errors[draft.previewKey()]?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     TextButton(onClick = { referenceExpanded = !referenceExpanded }, modifier = Modifier.testTag("lut-reference-section")) { Text(stringResource(R.string.lut_reference_section)) }
                     if (referenceExpanded) {
-                        OutlinedButton(onClick = { chooseReference.launch(arrayOf("image/jpeg", "image/png")) }, modifier = Modifier.testTag("lut-reference-picker")) { Text(stringResource(R.string.lut_reference_choose)) }
+                        OutlinedButton(onClick = { chooseReference.launch(arrayOf("image/jpeg", "image/png", "image/heic", "image/heif")) }, modifier = Modifier.testTag("lut-reference-picker")) { Text(stringResource(R.string.lut_reference_choose)) }
                         state.referenceName?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
                         Text(stringResource(R.string.lut_reference_help), style = MaterialTheme.typography.bodySmall)
                         ReferenceCheck(stringResource(R.string.lut_reference_same_source), conditions.sameSource) { conditions = conditions.copy(sameSource = it) }

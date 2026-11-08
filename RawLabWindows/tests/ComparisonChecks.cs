@@ -68,10 +68,5 @@ static class ComparisonChecks
         var beforeMetadataChange=waitingChanges;waitingView.SetSourceSize(4000,6000);
         check(waitingCanvas.PreviewLongEdge==waitingView.PreviewLongEdge(waitingCanvas.RenderSize,VisualTreeHelper.GetDpi(waitingCanvas),default) && waitingChanges>beforeMetadataChange,
             "Late source metadata updates viewport resolution without an embedded image");
-        var grid=new PhotoGridPanel();for(var i=0;i<3;i++)grid.Children.Add(new Border());
-        grid.Measure(new Size(220,double.PositiveInfinity));grid.Arrange(new Rect(0,0,220,grid.DesiredSize.Height));
-        check(grid.Children[1].TranslatePoint(new Point(),grid).X==0 && grid.DesiredSize.Height==420,"Narrow file tree uses one thumbnail column");
-        grid.Measure(new Size(320,double.PositiveInfinity));grid.Arrange(new Rect(0,0,320,grid.DesiredSize.Height));
-        check(grid.Children[1].TranslatePoint(new Point(),grid).X==160 && grid.DesiredSize.Height==280,"Wide file tree uses two thumbnail columns");
     }
 }

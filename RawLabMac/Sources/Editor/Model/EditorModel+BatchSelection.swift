@@ -2,7 +2,8 @@ import AppKit
 import UniformTypeIdentifiers
 
 extension EditorModel {
-    func addCollectionPhotos(_ urls: [URL]) {
+    @discardableResult func addCollectionPhotos(_ urls: [URL], selectExisting: Bool = false) -> [URL] {
+        var accepted: [URL] = []
         var errors = [String]()
         for url in urls {
             do {
@@ -13,9 +14,12 @@ extension EditorModel {
                 let photo = try MacCollectionPhoto(input)
                 if batchSelectionPhotos[photo.id] == nil { batchSelectionPhotos[photo.id] = photo }
                 batchSelection.append([photo.id])
+                if selectExisting { batchSelection.select(photo.id, true) }
+                accepted.append(url)
             } catch { errors.append("\(url.lastPathComponent)：\(error.localizedDescription)") }
         }
         collectionError = errors.isEmpty ? nil : errors.joined(separator: "\n")
+        return accepted
     }
 
     func chooseCollectionPhotos() {
@@ -79,22 +83,25 @@ extension EditorModel {
         if geometryDraft != nil { cancelGeometryDraft() }
         saveWork?.cancel(); scheduler.setInteracting(false); interactionEntry = nil
         guard let committedEdit else { return false }
-        var defaults = Adjustments()
-        defaults.exposureMode = RenderEngine.isRasterInput(photo.url) ? .sensor : .preview
-        restoreAdjustmentState(committedEdit.state ?? PhotoEditState(settings: defaults, filmID: ""))
+        do {
+            let restored = try committedEdit.state ?? PhotoEditState(settings: RenderEngine.defaultSettings(for: photo.url, sourceIsHDR: sourceIsHDR), filmID: "")
+            restoreAdjustmentState(restored)
+        } catch { saveError = error.localizedDescription; return false }
         dirty = false; saveError = nil; editRevision = UUID(); schedule(forceExact: true)
         return true
     }
 
-    func prepareCollectionSource(completion: @escaping () -> Void) {
-        guard !exporting, ParameterValueField.resolvePendingInputs() else { return }
+    func prepareCollectionSource(onStay: @escaping () -> Void = {}, onFailure: @escaping () -> Void = {},
+                                 completion: @escaping () -> Void) {
+        guard !exporting else { onFailure(); return }
+        guard ParameterValueField.resolvePendingInputs() else { onStay(); return }
         let ready = { [weak self] in
             guard let self else { return }
             if self.scheduler.interacting { self.setInteracting(false) }
-            guard self.saveEdits() else { return }
+            guard self.saveEdits() else { onFailure(); return }
             completion()
         }
-        if geometryDraft != nil { requestLeavingGeometryDraft(ready) } else { ready() }
+        if geometryDraft != nil { requestLeavingGeometryDraft(ready, onStay: onStay) } else { ready() }
     }
 
     func captureCollectionSynchronization(scope: AdjustmentTransferScope) throws -> MacCollectionSynchronization {
@@ -127,18 +134,20 @@ extension EditorModel {
     }
 
     private func collectionExportPreparation(skipping: Set<String>, format: ExportFormat, longEdge: Int?,
-                                             directory: URL) throws -> MacCollectionExportPreparation {
+                                             directory: URL, adaptiveJPEG: Bool = false) throws -> MacCollectionExportPreparation {
         _ = try requireAdjustmentSession()
         let selection = batchSelection.targets()
         return MacCollectionExportPreparation(selection: selection, photos: batchSelectionPhotos,
             drafts: Set(selection.filter(collectionHasDraft)), activeFile: file, activeRecord: committedEdit,
             activeRevision: editRevision, activeAIBusy: aiState.isRunning, store: editStore!, films: films,
-            skipped: skipping, format: format, longEdge: longEdge, directory: directory)
+            skipped: skipping, format: format, longEdge: longEdge, directory: directory, adaptiveJPEG: adaptiveJPEG,
+            probeHDRSource: probeHDRSource)
     }
 
     func prepareCollectionExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?,
-                                 directory: URL) throws -> MacCollectionExportReview {
-        try collectionExportPreparation(skipping: skipping, format: format, longEdge: longEdge, directory: directory).prepare()
+                                 directory: URL, adaptiveJPEG: Bool = false) throws -> MacCollectionExportReview {
+        try collectionExportPreparation(skipping: skipping, format: format, longEdge: longEdge, directory: directory,
+                                        adaptiveJPEG: adaptiveJPEG).prepare()
     }
 
     func cancelCollectionExportPreparation() {
@@ -146,12 +155,13 @@ extension EditorModel {
         collectionExportPreparing = false; collectionExportReview = nil; collectionExportError = nil
     }
 
-    func startCollectionExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?, directory: URL,
+    func startCollectionExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?, directory: URL, adaptiveJPEG: Bool = false,
                                completed: @escaping (UUID) -> Void = { _ in }) {
         guard !collectionExportPreparing, !exporting else { return }
         cancelCollectionExportPreparation()
         do {
-            let input = try collectionExportPreparation(skipping: skipping, format: format, longEdge: longEdge, directory: directory)
+            let input = try collectionExportPreparation(skipping: skipping, format: format, longEdge: longEdge, directory: directory,
+                                                       adaptiveJPEG: adaptiveJPEG)
             let generation = collectionExportGeneration, source = sourceRevision, revision = editRevision
             let prepare = prepareCollectionExportOperation
             collectionExportPreparing = true
@@ -193,7 +203,7 @@ extension EditorModel {
             throw RenderError.failed(L10n.text("请先完成或关闭现有批量任务。"))
         }
         let current = try collectionExportPreparation(skipping: review.skipped, format: review.format,
-            longEdge: review.longEdge, directory: review.directory)
+            longEdge: review.longEdge, directory: review.directory, adaptiveJPEG: review.adaptiveJPEG)
         func validateReview() throws {
             for snapshot in review.snapshots {
                 let fresh = try current.snapshot(snapshot.photo)
@@ -206,7 +216,7 @@ extension EditorModel {
         let first = review.snapshots[0]
         var job = BatchExportJob(source: first.photo.url, settings: first.settings, look: nil, lookName: first.lookName)
         job.settingsMode = .perTargetFrozen; job.version = 3
-        job.format = review.format; job.longEdge = review.longEdge; job.outputDirectory = review.directory
+        job.format = review.adaptiveJPEG ? .jpeg : review.format; job.longEdge = review.longEdge; job.outputDirectory = review.directory
         var ownedLooks = [URL]()
         do {
             for (ordinal, snapshot) in review.snapshots.enumerated() {
@@ -217,8 +227,11 @@ extension EditorModel {
                 let look = try batchJournal.snapshotLook(snapshot.look, for: item.id)
                 if let look { ownedLooks.append(look) }
                 item.selected = true
+                item.noticeKey = snapshot.noticeKey
                 item.frozen = BatchFrozenSettings(ordinal: ordinal, settings: snapshot.settings, look: look,
-                    lookSHA256: snapshot.lookSHA256, lookName: snapshot.lookName, outputFormat: review.format, longEdge: review.longEdge)
+                    lookSHA256: snapshot.lookSHA256, lookName: snapshot.lookName,
+                    outputFormat: review.adaptiveJPEG ? (snapshot.settings.isHDREditing ? .hdrJPEG : .jpeg) : review.format,
+                    longEdge: review.longEdge)
                 try item.frozen!.verifyLook(); job.items.append(item)
             }
             try validateReview()

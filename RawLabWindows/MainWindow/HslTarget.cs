@@ -51,7 +51,7 @@ public partial class MainWindow
             CurrentViewSource is not {} source || !work.Source.SameFile(source))
         {hslTargetNotice=HslTargetAvailability.Stale;RefreshHslTarget();return;}
         var before=settings.Capture();
-        var token=hslTarget.Begin(settings.Hsl,hslTargetAxis,revision);hslTargetPoint=point;
+        var token=hslTarget.Begin(settings.EditingHsl,hslTargetAxis,revision);hslTargetPoint=point;
         if(keyDelta is {} delta){hslTarget.Move(delta);hslTarget.End();}
         scheduler.Submit(work with {Probe=new(token,hslTargetAxis,revision,before,point)});
         RefreshHslTarget();UpdateBusy();Pump();
@@ -69,7 +69,7 @@ public partial class MainWindow
             BeginEditGesture();hslHistoryActive=editGesture!=null;
             if(!hslHistoryActive){CancelHslTarget();hslTargetNotice=HslTargetAvailability.Failed;}
             else {
-                interacting=true;settings.Hsl=next;MarkEdited();RefreshControls();Schedule();
+                interacting=true;settings.EditingHsl=next;MarkEdited();RefreshControls();Schedule();
                 if(!hslTarget.Dragging)EndHslTarget();
             }
         }
@@ -79,7 +79,7 @@ public partial class MainWindow
     {
         var next=hslTarget.Move(delta);
         if(next==null || !hslHistoryActive)return;
-        settings.Hsl=next;interacting=true;MarkEdited();RefreshControls();Schedule();
+        settings.EditingHsl=next;interacting=true;MarkEdited();RefreshControls();Schedule();
     }
     private void EndHslTarget()
     {

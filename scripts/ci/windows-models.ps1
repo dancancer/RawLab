@@ -14,6 +14,7 @@ $projects=[ordered]@{
     updates='updates/UpdateChecks.csproj'
     updateSdk='updates-sdk/UpdateSdkChecks.csproj'
     usage='usage/UsageAnalytics.Tests.csproj'
+    systemOpen='system-open/SystemOpen.Tests.csproj'
 }
 try {
     foreach($name in $projects.Keys) {

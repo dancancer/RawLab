@@ -47,15 +47,19 @@ import com.rawlab.android.editor.canvas.PhotoViewOptions
 import com.rawlab.android.editor.canvas.ComparisonMode
 import com.rawlab.android.editor.controls.AdjustmentHapticGate
 import com.rawlab.android.editor.controls.LocalAdjustmentCancellation
+import com.rawlab.android.editor.controls.LocalAdjustmentSession
 import com.rawlab.android.editor.controls.LocalAdjustmentFocus
 import com.rawlab.android.editor.controls.LocalAdjustmentHapticGate
 import com.rawlab.android.editor.controls.LocalEditorHaptics
+import com.rawlab.android.editor.controls.NumericControl
 import com.rawlab.android.editor.controls.editorUsesSideDock
 import com.rawlab.android.editor.controls.editorDockLayout
 import com.rawlab.android.geometry.GeometryRatio
 import com.rawlab.android.photo.PhotoInfo
 import com.rawlab.android.photo.PhotoInfoReader
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.HDRCameraDevelopmentSettings
+import com.rawlab.android.settings.HDRRenditionSettings
 import com.rawlab.android.ui.ToolIcon
 
 // ============================================================================
@@ -71,6 +75,9 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onEdit: (EditSettings, Boolean) -> Unit, onRetry: () -> Unit,
     onExport: () -> Unit, onMessageDismiss: () -> Unit, onLicenses: () -> Unit, onGpuChange: (Boolean) -> Unit,
     onHDRChange: (Boolean) -> Unit = {},
+    onHDRCameraDevelopment: (HDRCameraDevelopmentSettings) -> Unit = {},
+    onImportHDRCameraProfile: () -> Unit = {},
+    onHDRCameraDraftChange: (HDRCameraDevelopmentSettings) -> Unit = {},
     onSaveRetry: () -> Unit = {},
     adjustmentReloadRequired: Boolean = false, onReloadAdjustments: ((Boolean) -> Unit) -> Unit = { it(false) },
     onCancelAdjustment: () -> Unit = {},
@@ -85,6 +92,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onBatchExport: () -> Unit = {},
     onCollection: () -> Unit = {}, collectionEditing: Boolean = false,
     onImportLook: () -> Unit = {}, onRenameLook: (String, String) -> Unit = { _, _ -> },
+    onImportHDRLook: () -> Unit = {},
+    onApplyHDRSilver: (Boolean) -> Unit = {},
     onDeleteLook: (String) -> Unit = {}, onLookImportReportDismiss: () -> Unit = {},
     onAbout: () -> Unit = {}, updateVersion: String? = null,
     onPreviewSizeChange: (Int) -> Unit = {},
@@ -97,7 +106,10 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onPrepareReset: (EditorResetScope) -> EditorResetPreparation = {
         EditorResetPreparation(EditorResetResult.Blocked("The current preview is not ready"))
     },
-    onCommitReset: (PreparedEditorReset) -> Boolean = { false }) {
+    onCommitReset: (PreparedEditorReset) -> Boolean = { false },
+    systemPhotoRequest: SystemPhotoOpenRequest? = null,
+    onSystemPhotoConsumed: (SystemPhotoOpenRequest) -> Unit = {},
+    onSystemPhotoReady: (SystemPhotoOpenRequest, (Boolean) -> Unit) -> Unit = { _, finish -> finish(false) }) {
     var view by rememberSaveable(stateSaver = listSaver<PhotoViewOptions, Any>(save = {
         listOf(it.comparisonEnabled, it.preferredMode.ordinal, it.margins, it.infoMode, it.purePreview)
     }, restore = { PhotoViewOptions(it[0] as Boolean, ComparisonMode.entries[it[1] as Int], it[2] as Boolean, it[3] as Int, it[4] as Boolean) })) { mutableStateOf(PhotoViewOptions()) }
@@ -114,6 +126,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     var blockedScope by remember { mutableStateOf<EditorResetScope?>(null) }
     var resetError by remember { mutableStateOf<Int?>(null) }
     var pendingLeave by remember(state.photo?.identity, state.photo?.file?.absolutePath) { mutableStateOf<(() -> Unit)?>(null) }
+    var pendingSystemPhoto by remember { mutableStateOf<SystemPhotoOpenRequest?>(null) }
     var settings by rememberSaveable { mutableStateOf(false) }
     var adjusting by remember { mutableStateOf(false) }
     LaunchedEffect(tool) { if (tool == 9) tool = 8 }
@@ -134,6 +147,23 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                 val destination = pendingLeave
                 pendingLeave = null
                 if (destination != null) destination() else tool = 2
+            }
+        }
+    }
+    fun cancelLeave() {
+        pendingSystemPhoto?.let(onSystemPhotoConsumed)
+        pendingSystemPhoto = null
+        pendingLeave = null
+        pendingAll = false; prepareAllWhenReady = false
+    }
+    LaunchedEffect(systemPhotoRequest?.id, state.operation, state.committingAdjustments, state.saveState, pendingAll, pendingLeave != null) {
+        val request = systemPhotoRequest
+        if (request != null && state.operation == Operation.NONE && !state.committingAdjustments &&
+            state.saveState != EditSaveState.FAILED && !pendingAll && pendingLeave == null) {
+            pendingSystemPhoto = request
+            leave {
+                pendingSystemPhoto = null
+                onSystemPhotoReady(request) { accepted -> if (accepted) onSystemPhotoConsumed(request) }
             }
         }
     }
@@ -158,13 +188,13 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     }
     fun openQuickPresets() { onCancelAdjustment(); expanded = true; onPresets() }
     val selectGroup: (EditorAdjustmentGroup) -> Unit = { group ->
-        if (group == EditorAdjustmentGroup.LOOKS && state.edits.isHDREditing) openQuickPresets()
-        else {
         if (quickPresetsVisible) onClosePresets()
         leave {
             if (expanded && EditorAdjustmentRules.groupFor(tool) == group && !quickPresetsVisible) expanded = false
-            else { tool = EditorAdjustmentRules.defaultTool(group); expanded = true }
-        }
+            else {
+                tool = EditorAdjustmentRules.defaultTool(group)
+                expanded = true
+            }
         }
     }
     fun finishAll() { pendingAll = false; prepareAllWhenReady = false }
@@ -214,14 +244,14 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         }
     }
     BackHandler(enabled = state.draft != null) { leave { tool = 2 } }
-    if (pendingLeave != null) AlertDialog(onDismissRequest = { pendingLeave = null; finishAll() },
+    if (pendingLeave != null) AlertDialog(onDismissRequest = { cancelLeave() },
         title = { Text(stringResource(R.string.adjustment_leave)) },
         confirmButton = { TextButton(onClick = { applyAndLeave() },
             enabled = state.canApplyDraft) { Text(stringResource(R.string.adjustment_apply)) } },
         dismissButton = {
             Column {
                 TextButton(onClick = { onDiscardDraft(); pendingLeave?.invoke(); pendingLeave = null }) { Text(stringResource(R.string.adjustment_discard)) }
-                TextButton(onClick = { pendingLeave = null; finishAll() }) { Text(stringResource(R.string.adjustment_continue)) }
+                TextButton(onClick = { cancelLeave() }) { Text(stringResource(R.string.adjustment_continue)) }
             }
         })
     preparedReset?.let { prepared ->
@@ -242,6 +272,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                 }
             }
         }) }
+    val sourceKey = "${state.photo?.identity?.value}:${state.photo?.file?.absolutePath}"
+    val liveSourceKey by rememberUpdatedState(sourceKey)
     if (settings) AlertDialog(onDismissRequest = { settings = false }, title = { Text(stringResource(R.string.editor_settings)) },
         text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -253,18 +285,41 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                 Switch(state.edits.isHDREditing, onHDRChange, enabled = state.controlsEnabled && state.draft == null,
                     modifier = Modifier.testTag("hdr-editing"))
             }
+            state.edits.hdr?.takeIf { state.edits.isHDREditing }?.let { hdr ->
+                var expanded by remember(sourceKey) { mutableStateOf(false) }
+                TextButton(onClick = { expanded = !expanded }, modifier = Modifier.testTag("hdr-rendition")) {
+                    Text(stringResource(R.string.hdr_rendition))
+                }
+                if (expanded) CompositionLocalProvider(LocalAdjustmentSession provides sourceKey,
+                    LocalAdjustmentCancellation provides { _ -> if (liveSourceKey == sourceKey) onCancelAdjustment() }) {
+                    HDRRenditionRows(hdr.renditionSettings, state.controlsEnabled && state.draft == null) { next, dragging ->
+                        if (liveSourceKey == sourceKey) onEdit(state.edits.copy(hdr = hdr.withRendition(next)), dragging)
+                    }
+                }
+                if (state.photo?.isCameraRawHDR == true && state.photo.hdrSource?.isProRAW != true) {
+                    var cameraOpen by remember(sourceKey) { mutableStateOf(false) }
+                    TextButton(onClick = { cameraOpen = !cameraOpen }, enabled = !state.importingHDRCameraProfile,
+                        modifier = Modifier.testTag("hdr-camera")) { Text("HDR RAW") }
+                    if (cameraOpen) HDRCameraDevelopmentRows(hdr.cameraSettings,
+                        state.controlsEnabled && state.draft == null && !state.rendering && !state.importingHDRCameraProfile,
+                        state.photo.hdrSource?.supportsBayerDevelopment == true, onHDRCameraDevelopment, onImportHDRCameraProfile,
+                        state.hdrCameraDraftSettings ?: hdr.cameraSettings, onHDRCameraDraftChange)
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.adjustment_haptics), Modifier.weight(1f))
                 Switch(haptics, { haptics = it; preferences.edit().putBoolean("haptics", it).apply() })
             }
             LanguageMenu()
         } }, confirmButton = { TextButton(onClick = { settings = false }) { Text(stringResource(R.string.confirm)) } })
-    val sourceKey = "${state.photo?.identity?.value}:${state.photo?.file?.absolutePath}"
-    val liveSourceKey by rememberUpdatedState(sourceKey)
     val liveTarget by rememberUpdatedState(hslTarget)
+    val hdrMode = state.edits.isHDREditing
+    val liveHDRMode by rememberUpdatedState(hdrMode)
     val targetAxis = hslTarget.state.axis
     val targetMode = hslTarget.state.enabled && tool == 14 && state.draft == null
-    val canvasTarget = if (targetMode) hslTarget.guarded { liveSourceKey == sourceKey && liveTarget.state.axis == targetAxis } else null
+    val canvasTarget = if (targetMode) hslTarget.guarded {
+        liveSourceKey == sourceKey && liveTarget.state.axis == targetAxis && liveHDRMode == hdrMode
+    } else null
     LaunchedEffect(tool) { if (tool != 14) liveTarget.enabled(false) }
     LaunchedEffect(targetMode) { if (targetMode) view = view.cancelHold() }
     BackHandler(targetMode) { hslTarget.enabled(false) }
@@ -314,7 +369,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     LaunchedEffect(state.message) {
         state.message?.let { snackbar.showSnackbar(it); onMessageDismiss() }
     }
-    state.lookImportReport?.takeIf { state.pendingLookCompatibility.isEmpty() && !state.lookCompatibilityPreparing }?.let { report ->
+    state.lookImportReport?.takeIf { state.pendingLookImports.isEmpty() && !state.lookImportPreparing }?.let { report ->
         AlertDialog(onDismissRequest = onLookImportReportDismiss,
             title = { Text(stringResource(R.string.look_import_result)) },
             text = { Text(report, Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) },
@@ -333,7 +388,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             onFilmSelected, onGeometryRatio, selectGroup, channel, { onCancelAdjustment(); channel = it }, requestReset, side, !pendingAll, compact,
             onGeometryLock, onGeometrySwap, onGeometryGrid, onPresets = { if (quickPresetsVisible) onClosePresets() else openQuickPresets() },
             quickPresetsVisible = quickPresetsVisible, quickPresetContent = quickPresetContent, gradingZone = gradingZone,
-            onGradingZoneChange = { onCancelAdjustment(); gradingZone = it }, hslTarget = hslTarget, onSelectFilm = onSelectFilm)
+            onGradingZoneChange = { onCancelAdjustment(); gradingZone = it }, hslTarget = hslTarget, onSelectFilm = onSelectFilm,
+            onImportHDRLook = { leave(onImportHDRLook) }, onApplyHDRSilver = { master -> leave { onApplyHDRSilver(master) } })
     })
     // 纯预览与横竖布局只移动/暂不测量同一面板，保留 fine、滚动和本地输入状态。
     val retainedDock = remember { movableContentOf<Modifier, Boolean, Boolean> { modifier, side, compact -> currentDock(modifier, side, compact) } }
@@ -442,6 +498,87 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             }
         }
     }
+    }
+}
+
+@Composable
+private fun HDRRenditionRows(settings: HDRRenditionSettings, enabled: Boolean,
+    change: (HDRRenditionSettings, Boolean) -> Unit) {
+    NumericControl(R.string.hdr_peak_limit, settings.peakLimitEV, 0f..6f, "EV", enabled,
+        { value, dragging -> change(settings.copy(peakLimitEV = value), dragging) },
+        { change(settings.copy(peakLimitEV = 0f), false) }, stepOverride = .1f)
+    if (settings.peakLimitEV == 0f) Text(stringResource(R.string.hdr_peak_unlimited), style = MaterialTheme.typography.labelSmall)
+    NumericControl(R.string.hdr_sdr_exposure, settings.sdrExposureEV, -4f..4f, "EV", enabled,
+        { value, dragging -> change(settings.copy(sdrExposureEV = value), dragging) },
+        { change(settings.copy(sdrExposureEV = 0f), false) }, stepOverride = .1f)
+    NumericControl(R.string.hdr_sdr_contrast, settings.sdrContrast, -100f..100f, "%", enabled,
+        { value, dragging -> change(settings.copy(sdrContrast = value), dragging) },
+        { change(settings.copy(sdrContrast = 0f), false) })
+    NumericControl(R.string.hdr_sdr_saturation, settings.sdrSaturation, -100f..100f, "%", enabled,
+        { value, dragging -> change(settings.copy(sdrSaturation = value), dragging) },
+        { change(settings.copy(sdrSaturation = 0f), false) })
+}
+
+@Composable
+internal fun HDRCameraDevelopmentRows(settings: HDRCameraDevelopmentSettings, enabled: Boolean, supportsBayerDevelopment: Boolean,
+    apply: (HDRCameraDevelopmentSettings) -> Unit, importProfile: () -> Unit,
+    draft: HDRCameraDevelopmentSettings, changeDraft: (HDRCameraDevelopmentSettings) -> Unit) {
+    @Composable fun switch(label: Int, value: Boolean, tag: String, update: (Boolean) -> Unit, allowed: Boolean = enabled) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(label), Modifier.weight(1f))
+            Switch(value, update, enabled = allowed, modifier = Modifier.testTag(tag))
+        }
+    }
+    switch(R.string.transfer_field_white_balance_mode, draft.customWhiteBalance, "hdr-camera-wb", {
+        changeDraft(draft.copy(customWhiteBalance = it, temperature = if (it) 6500f else 0f, tint = 0f))
+    })
+    if (draft.customWhiteBalance) {
+        NumericControl(R.string.temperature, draft.temperature, 2000f..50000f, "K", enabled,
+            { value, _ -> changeDraft(draft.copy(temperature = value)) }, { changeDraft(draft.copy(temperature = 6500f)) }, defaultValue = 6500f)
+        NumericControl(R.string.tint, draft.tint, -150f..150f, "", enabled,
+            { value, _ -> changeDraft(draft.copy(tint = value)) }, { changeDraft(draft.copy(tint = 0f)) })
+    }
+    Text(stringResource(R.string.transfer_field_exposure_mode))
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FilterChip(!draft.sensorExposure, { changeDraft(draft.copy(sensorExposure = false)) }, { Text(stringResource(R.string.adjustment_summary_exposure_scene)) },
+            enabled = enabled)
+        FilterChip(draft.sensorExposure, { changeDraft(draft.copy(sensorExposure = true)) }, { Text(stringResource(R.string.exposure_sensor)) },
+            enabled = enabled, modifier = Modifier.testTag("hdr-camera-sensor"))
+    }
+    if (supportsBayerDevelopment) {
+        Text(stringResource(R.string.transfer_field_raw_denoise))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            for (level in 0..2) {
+                FilterChip(draft.fbddLevel == level, { changeDraft(draft.copy(fbddLevel = level)) },
+                    { Text(if (level == 0) stringResource(R.string.disabled) else "FBDD $level") },
+                    enabled = enabled, modifier = Modifier.testTag("hdr-camera-fbdd-$level"))
+            }
+        }
+    }
+    switch(R.string.transfer_field_lens_distortion, draft.lensDistortion, "hdr-camera-distortion", {
+        changeDraft(draft.copy(lensDistortion = it, lensProfile = draft.lensProfile.takeIf { _ -> it || draft.lensTca }))
+    })
+    switch(R.string.transfer_field_lens_tca, draft.lensTca, "hdr-camera-tca", {
+        changeDraft(draft.copy(lensTca = it, lensProfile = draft.lensProfile.takeIf { _ -> it || draft.lensDistortion }))
+    })
+    switch(R.string.transfer_field_lens_auto_crop, draft.lensAutoCrop, "hdr-camera-autocrop",
+        { changeDraft(draft.copy(lensAutoCrop = it)) }, allowed = enabled && draft.lensActive)
+    draft.cameraProfile?.let { profile ->
+        Text(stringResource(R.string.hdr_camera_profile))
+        Text(profile.name, modifier = Modifier.testTag("hdr-camera-profile-name"))
+    }
+    Row {
+        TextButton(onClick = importProfile, enabled = enabled, modifier = Modifier.testTag("hdr-camera-profile-import")) {
+            Text(stringResource(R.string.hdr_camera_profile_import))
+        }
+        if (draft.cameraProfile != null) {
+            TextButton(onClick = { changeDraft(draft.copy(cameraProfile = null)) }, enabled = enabled) {
+                Text(stringResource(R.string.hdr_camera_profile_clear))
+            }
+        }
+    }
+    TextButton(onClick = { apply(draft) }, enabled = enabled && draft != settings, modifier = Modifier.testTag("hdr-camera-apply")) {
+        Text(stringResource(R.string.adjustment_apply))
     }
 }
 

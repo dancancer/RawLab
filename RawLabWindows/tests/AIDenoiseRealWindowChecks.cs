@@ -63,6 +63,55 @@ internal static class AIDenoiseRealWindowChecks
                 "Disabling real AI returns to the ordinary preview and export path");
         } finally {window.Close();Pump(()=>!window.IsVisible);app.Shutdown();}
     }
+    internal static void RunHDR(string model, string raw, string cache, string output, Action<bool,string> check)
+    {
+        var app = Application.Current ?? TestWindowState.CreateApplication();
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
+        var job = new AIDenoiseJob((identity,snapshot,progress) => {
+            using var worker = new RenderEngine(0, aiModelDirectory:model, aiCacheDirectory:cache, aiBackend:identity.Backend);
+            worker.PrepareAI(identity.Source.Path,snapshot,progress);
+        });
+        var window = new MainWindow(new UsageAnalytics(),null,job) { Width=1440, Height=920 };
+        TestWindowState.Isolate(window,output);
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var engine = new RenderEngine(1, aiModelDirectory:model, aiCacheDirectory:cache);
+        typeof(MainWindow).GetField("engine",flags)!.SetValue(window,engine);
+        Adjustments Settings() => (Adjustments)typeof(MainWindow).GetField("settings",flags)!.GetValue(window)!;
+        try
+        {
+            window.Show();
+            window.OpenFile(raw);
+            Pump(() => window.ExportPng.IsEnabled);
+            window.HDREditMenu.IsChecked = true;
+            window.HDREditMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            Pump(() => Settings().IsHDREditing && window.ExportHdrJpeg.IsEnabled);
+            typeof(MainWindow).GetMethod("SelectTool",flags)!.Invoke(window,[EditorAdjustmentTool.Denoise]);
+            window.UpdateLayout();
+            var toggle = (CheckBox)window.DenoiseEditor.FindName("AIEnabledBox");
+            var hint = (TextBlock)window.DenoiseEditor.FindName("AIStatus");
+            check(toggle.IsVisible && toggle.IsEnabled,
+                $"HDR AI is available in the RAW denoise panel (visible={toggle.IsVisible}, enabled={toggle.IsEnabled}, {hint.Text})");
+            toggle.IsChecked = true;
+            Pump(() => job.State.Status == AIDenoiseStatus.Failed || Settings().HDRCameraAIEnabled && window.ExportHdrJpeg.IsEnabled);
+            check(Settings().HDRCameraAIEnabled && !Settings().AIDenoiseEnabled && engine.LastAIBackend=="DirectML",
+                "HDR preview consumes the prepared DirectML result: " + job.State.Error);
+            Capture(window,Path.Combine(output,"hdr-ai-ready.png"));
+
+            var destination = Path.Combine(output,"hdr-ai.jpg");
+            var export = window.ExportPhoto(ExportFormat.HdrJpeg,destination);
+            Pump(() => export.IsCompleted);
+            export.GetAwaiter().GetResult();
+            check(File.Exists(destination) && HDRNative.Probe(destination,out _) == HDRProbeState.Supported &&
+                engine.LastAIBackend == "DirectML","HDR AI exports a readable gain-map JPEG");
+
+            window.OpenFile(raw);
+            Pump(() => job.State.Status == AIDenoiseStatus.Failed || window.ExportHdrJpeg.IsEnabled);
+            check(Settings().IsHDREditing && Settings().HDRCameraAIEnabled && window.ExportHdrJpeg.IsEnabled,
+                "Reopening the RAW restores the HDR AI edit and enables export");
+        }
+        finally { window.Close(); Pump(() => !window.IsVisible); app.Shutdown(); }
+    }
+
     private static void Capture(MainWindow window,string path)
     {
         var content=(FrameworkElement)window.Content;content.UpdateLayout();

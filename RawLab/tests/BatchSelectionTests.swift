@@ -1,11 +1,24 @@
 import Foundation
 
 func checkBatchSelection(_ root: URL) throws {
+    try checkCollectionHDRJPEG(root)
     func check(_ value: Bool, _ message: String) throws { try BatchExportTests.require(value, message) }
     func rejected(_ body: () throws -> Void) -> Bool { do { try body(); return false } catch { return true } }
     let store = try EditPersistence(directory: root.appendingPathComponent("collection-edits"))
     let collection = IOSBatchSelection()
     let journal = try BatchJournalStore(directory: root.appendingPathComponent("collection-jobs"))
+    let defaultsCollection = IOSBatchSelection()
+    for (name, raw) in [("default.X3F", true), ("default.png", false)] {
+        let url = root.appendingPathComponent(name)
+        try Data([1,2,3]).write(to: url)
+        defaultsCollection.append(IOSAdjustmentPhoto(identity: PhotoIdentity(resourceIdentifier: name),
+            displayName: name, file: .externallyManaged(url), isRaw: raw))
+    }
+    let defaultsReview = defaultsCollection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: nil,
+        x3fDefaultMode: { _ in .legacy }, probeHDR: { _ in false }, validateActive: { _ in }, resolveLook: { _ in (nil,nil) })
+    try check(defaultsReview.ready && defaultsReview.rows[0].settings?.x3fMode == .legacy &&
+        defaultsReview.rows[1].settings?.exposureMode == .sensor && defaultsReview.rows.allSatisfy { $0.record?.state == nil },
+        "unedited collection snapshots use per-source X3F and raster defaults without saving records")
     var identities: [PhotoIdentity] = []
     for index in 0..<3 {
         let file = root.appendingPathComponent("collection-\(index).png")
@@ -31,21 +44,21 @@ func checkBatchSelection(_ root: URL) throws {
     var drafts: Set<String> = [identities[1].key]
     let active: (String) throws -> Void = { key in if drafts.contains(key) { throw CocoaError(.userCancelled) } }
     let look: (RawSettings) throws -> (URL?, String?) = { _ in (nil, nil) }
-    let blocked = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: 2048, probeHDR: { _ in false }, validateActive: active, resolveLook: look)
+    let blocked = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: 2048, x3fDefaultMode: { _ in .legacy }, probeHDR: { _ in false }, validateActive: active, resolveLook: look)
     try check(!blocked.ready && blocked.rows[1].error != nil, "export preflight includes the active dirty target")
-    let skipped = collection.prepareExport(store: store, skipping: drafts, format: .jpeg, longEdge: 2048, probeHDR: { _ in false }, validateActive: active, resolveLook: look)
+    let skipped = collection.prepareExport(store: store, skipping: drafts, format: .jpeg, longEdge: 2048, x3fDefaultMode: { _ in .legacy }, probeHDR: { _ in false }, validateActive: active, resolveLook: look)
     try check(skipped.ready && skipped.rows.map(\.id) == [identities[0].key, identities[2].key] && collection.selection.selected.count == 3,
               "operation skips leave collection selection and the draft untouched")
-    let allSkipped = collection.prepareExport(store: store, skipping: Set(identities.map(\.key)), format: .jpeg, longEdge: nil, probeHDR: { _ in false }, validateActive: active, resolveLook: look)
+    let allSkipped = collection.prepareExport(store: store, skipping: Set(identities.map(\.key)), format: .jpeg, longEdge: nil, x3fDefaultMode: { _ in .legacy }, probeHDR: { _ in false }, validateActive: active, resolveLook: look)
     try check(!allSkipped.ready && rejected { _ = try collection.freeze(allSkipped, store: store, journal: journal, validateActive: active) }, "all skipped cannot create an empty task")
     drafts = []
-    let review = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: 2048, probeHDR: { _ in false }, validateActive: active, resolveLook: look)
+    let review = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: 2048, x3fDefaultMode: { _ in .legacy }, probeHDR: { _ in false }, validateActive: active, resolveLook: look)
     try check(review.ready && review.rows.map { $0.settings?.exposure } == [0.5, 1, 1.5], "confirmation displays each photo's final committed settings")
     var changed = store.state(for: identities[1])!.settings
     changed.exposure = 1.2
     try store.save(identities[1], state: PhotoEditState(settings: changed))
     try check(rejected { _ = try collection.freeze(review, store: store, journal: journal, validateActive: active) }, "late saved edits invalidate a prior confirmation")
-    let fresh = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: 2048, probeHDR: { _ in false }, validateActive: active, resolveLook: look)
+    let fresh = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: 2048, x3fDefaultMode: { _ in .legacy }, probeHDR: { _ in false }, validateActive: active, resolveLook: look)
     drafts.insert(identities[2].key)
     try check(rejected { _ = try collection.freeze(fresh, store: store, journal: journal, validateActive: active) }, "late unsaved drafts block freezing")
     drafts = []
@@ -68,17 +81,17 @@ func checkBatchSelection(_ root: URL) throws {
     changed.lutID = "custom-look"
     try store.save(identities[1], state: PhotoEditState(settings: changed))
     let withLook: (RawSettings) throws -> (URL?, String?) = { ($0.hasLook ? lookFile : nil, "Own look") }
-    let lookReview = collection.prepareExport(store: store, skipping: [], format: .renderedDNG, longEdge: nil, probeHDR: { _ in false }, validateActive: active, resolveLook: withLook)
+    let lookReview = collection.prepareExport(store: store, skipping: [], format: .renderedDNG, longEdge: nil, x3fDefaultMode: { _ in .legacy }, probeHDR: { _ in false }, validateActive: active, resolveLook: withLook)
     try Data("look-two".utf8).write(to: lookFile)
     try check(rejected { _ = try collection.freeze(lookReview, store: store, journal: journal, validateActive: active) }, "changed look invalidates export confirmation")
-    let stableLook = collection.prepareExport(store: store, skipping: [], format: .renderedDNG, longEdge: nil, probeHDR: { _ in false }, validateActive: active, resolveLook: withLook)
+    let stableLook = collection.prepareExport(store: store, skipping: [], format: .renderedDNG, longEdge: nil, x3fDefaultMode: { _ in .legacy }, probeHDR: { _ in false }, validateActive: active, resolveLook: withLook)
     let looked = try collection.freeze(stableLook, store: store, journal: journal, validateActive: active)
     try FileManager.default.removeItem(at: lookFile)
     try looked.targets[1].frozen!.verifyFiles(input: looked.targets[1].sourceURL)
     try check(looked.targets[1].frozen?.lookURL != lookFile && looked.outputFormat == .renderedDNG, "task-owned look survives library deletion and retains output settings")
     let lost = collection.photos[identities[0].key]!.photo.file!
     try lost.withReadAccess { try FileManager.default.removeItem(at: $0) }
-    let missing = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: nil, probeHDR: { _ in false }, validateActive: active, resolveLook: withLook)
+    let missing = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: nil, x3fDefaultMode: { _ in .legacy }, probeHDR: { _ in false }, validateActive: active, resolveLook: withLook)
     try check(missing.rows[0].error != nil && collection.selection.ordered.count == 3, "missing source is marked per photo without substitution or collection loss")
     collection.refreshValidation()
     let deadline = Date().addingTimeInterval(5)
@@ -89,4 +102,34 @@ func checkBatchSelection(_ root: URL) throws {
 
     for target in job.targets { try target.frozen!.verifyFiles(input: target.sourceURL) }
     try check(true, "original file deletion does not invalidate task-owned frozen inputs")
+}
+
+private func checkCollectionHDRJPEG(_ root: URL) throws {
+    let store = try EditPersistence(directory: root.appendingPathComponent("collection-hdr-edits"))
+    let journal = try BatchJournalStore(directory: root.appendingPathComponent("collection-hdr-jobs"))
+    let collection = IOSBatchSelection()
+    for (id, isHDR) in [("hdr", true), ("sdr", false)] {
+        let source = root.appendingPathComponent("collection-\(id).jpg")
+        try Data(id.utf8).write(to: source)
+        let identity = PhotoIdentity(resourceIdentifier: id)
+        collection.append(.init(identity: identity, displayName: source.lastPathComponent,
+                                file: .externallyManaged(source), isRaw: false))
+        var settings = RawSettings.default
+        if isHDR { settings.hdr = HDRSettings() }
+        try store.save(identity, state: .init(settings: settings))
+    }
+    let review = collection.exportInput.prepareExport(store: store, skipping: [], format: .hdrJPEG, longEdge: nil,
+        x3fDefaultMode: { _ in .legacy }, probeHDR: { _ in false }, validateActive: { _ in },
+        resolveLook: { _ in (nil, nil) }, validateHDRSource: { _, _ in })
+    try BatchExportTests.require(!review.ready && review.rows[0].settings?.isHDREditing == true &&
+                                review.rows[0].error == nil && review.rows[1].error != nil,
+                                "HDR JPEG collection preflight rejects only photos without HDR editing")
+    let skipped = collection.exportInput.prepareExport(store: store, skipping: ["photo:sdr"], format: .hdrJPEG, longEdge: nil,
+        x3fDefaultMode: { _ in .legacy }, probeHDR: { _ in false }, validateActive: { _ in },
+        resolveLook: { _ in (nil, nil) }, validateHDRSource: { _, _ in })
+    let job = try collection.freeze(skipped, store: store, journal: journal, validateActive: { _ in })
+    try BatchExportTests.require(skipped.ready && job.outputFormat == .hdrJPEG && job.targets.count == 1 &&
+                                job.targets[0].frozen?.outputFormat == .hdrJPEG &&
+                                job.targets[0].frozen?.settings.isHDREditing == true,
+                                "Skipping SDR photos freezes HDR JPEG without downgrading the saved HDR mode")
 }

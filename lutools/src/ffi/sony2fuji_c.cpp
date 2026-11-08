@@ -4,6 +4,7 @@
 #include "sony2fuji/sony2fuji.h"
 #include "sony2fuji/dcp_look.h"
 #include "core/photo_rendering.h"
+#include "core/hdr_rendering.h"
 #include "core/x3f_processor.h"
 #include "core/chroma_denoise.h"
 #include "core/wavelet_denoise.h"
@@ -19,6 +20,7 @@
 #include "core/photo_lut_contract.h"
 #include "core/lut_compatibility.h"
 #include "gpu/image_stats.h"
+#include "platform/hdr_image.h"
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
 #include "ai/ai_session.h"
 #include "ai/directml_device.h"
@@ -128,7 +130,13 @@ struct sony2fuji_hsl_probe {
     sony2fuji::ImageData image;
     uint64_t source_revision = 0, request_revision = 0;
     sony2fuji_hsl_probe_quality quality = SONY2FUJI_HSL_PROBE_EXACT_CPU;
+    bool hdr = false;
 };
+
+sony2fuji_hsl_probe* makeHDRHslProbe(sony2fuji::ImageData image, uint64_t sourceRevision, uint64_t requestRevision, bool preview) {
+    const auto quality = preview ? SONY2FUJI_HSL_PROBE_PREVIEW_CPU : SONY2FUJI_HSL_PROBE_EXACT_CPU;
+    return new sony2fuji_hsl_probe{std::move(image), sourceRevision, requestRevision, quality, true};
+}
 
 namespace sony2fuji {
 WaveletCacheDiagnostics waveletCacheDiagnostics(const sony2fuji_session* session) {
@@ -1101,8 +1109,10 @@ sony2fuji_status loadBufferImage(
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     }
 
+    const bool rgba16 = request.input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER &&
+        request.input_pixel_format == SONY2FUJI_PIXEL_RGBA16;
     if (request.input_pixel_format != SONY2FUJI_PIXEL_RGB8 &&
-        request.input_pixel_format != SONY2FUJI_PIXEL_RGBA8) {
+        request.input_pixel_format != SONY2FUJI_PIXEL_RGBA8 && !rgba16) {
         return SONY2FUJI_STATUS_UNSUPPORTED;
     }
 
@@ -1111,16 +1121,20 @@ sony2fuji_status loadBufferImage(
     image.pixels.resize(static_cast<size_t>(request.input_width) * request.input_height);
 
     const uint8_t* data = static_cast<const uint8_t*>(request.input_pixels);
-    uint32_t channels = request.input_pixel_format == SONY2FUJI_PIXEL_RGBA8 ? 4 : 3;
+    const size_t pixelBytes = rgba16 ? 8 : request.input_pixel_format == SONY2FUJI_PIXEL_RGBA8 ? 4 : 3;
+    const auto read16 = [](const uint8_t* p) { return (p[0] | (p[1] << 8)) / 65535.0f; };
 
     for (size_t i = 0; i < image.pixels.size(); ++i) {
         if (i % 4096 == 0) sony2fuji::checkProcessingCancellation();
-        size_t offset = i * channels;
-        if (request.input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER && channels == 4 && data[offset + 3] != 255)
-            return SONY2FUJI_STATUS_UNSUPPORTED;
-        image.pixels[i].r = data[offset] / 255.0f;
-        image.pixels[i].g = data[offset + 1] / 255.0f;
-        image.pixels[i].b = data[offset + 2] / 255.0f;
+        const auto* pixel = data + i * pixelBytes;
+        if (rgba16) {
+            if (pixel[6] != 255 || pixel[7] != 255) return SONY2FUJI_STATUS_UNSUPPORTED;
+            image.pixels[i] = {read16(pixel), read16(pixel + 2), read16(pixel + 4)};
+        } else {
+            if (request.input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER && pixelBytes == 4 && pixel[3] != 255)
+                return SONY2FUJI_STATUS_UNSUPPORTED;
+            image.pixels[i] = {pixel[0] / 255.0f, pixel[1] / 255.0f, pixel[2] / 255.0f};
+        }
     }
 
     if (space) {
@@ -1243,6 +1257,110 @@ sony2fuji_status finishOutput(
 }
 
 } // namespace
+
+std::shared_ptr<const sony2fuji::LensCorrectionDatabase> hdrSessionLensDatabase(sony2fuji_session* session) {
+    if (!session) return sony2fuji::LensCorrectionDatabase::load();
+    ensureLensDatabase(session);
+    return session->lens_database;
+}
+
+int32_t sony2fuji_hdr_camera_ai_available(void) {
+#if defined(SONY2FUJI_ENABLE_AI_DENOISE) && defined(__APPLE__)
+    return sony2fuji::ai::CoreMLGraph::gpuPlanAvailable() ? 1 : 0;
+#elif defined(SONY2FUJI_ENABLE_AI_DENOISE) && defined(_WIN32)
+    return sony2fuji_ai_hardware_available();
+#else
+    return 0;
+#endif
+}
+
+namespace {
+[[noreturn]] void unavailableHDRCameraAI() {
+    throw sony2fuji::hdr::Error(SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_HDR_REASON_CAMERA_AI,
+        SONY2FUJI_HDR_FIELD_SESSION, "HDR camera AI requires a configured hardware GPU session");
+}
+
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+template<class Job> decltype(auto) withHDRCameraAI(sony2fuji_session* session, Job job) {
+    using namespace sony2fuji;
+    if (!session || !session->ai || !session->ai->enabled || !sony2fuji_hdr_camera_ai_available())
+        unavailableHDRCameraAI();
+    auto& state = *session->ai;
+    auto fail = [&](sony2fuji_status status, const char* message) {
+        state.lastBackend.clear();
+        state.lastError = ai::nativeErrorText(message);
+        state.recordFailure(static_cast<int>(status), state.lastError);
+        throw hdr::Error(status, SONY2FUJI_HDR_REASON_CAMERA_AI, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT, message);
+    };
+    try {
+        state.lastError.clear();
+        return job(state);
+    } catch (const ai::Cancelled&) { throw ProcessingCancelled(); }
+    catch (const ProcessingCancelled&) { throw; }
+    catch (const hdr::Error&) { throw; }
+    catch (const std::bad_alloc&) { throw; }
+    catch (const ai::NotReady& error) { fail(SONY2FUJI_STATUS_AI_NOT_READY, error.what()); }
+    catch (const ai::Unsupported& error) { fail(SONY2FUJI_STATUS_UNSUPPORTED, error.what()); }
+    catch (const ai::DecodeError& error) { fail(mapError(error.code), error.what()); }
+    catch (const std::filesystem::filesystem_error& error) { fail(SONY2FUJI_STATUS_IO_ERROR, error.what()); }
+    catch (const std::exception& error) { fail(SONY2FUJI_STATUS_PROCESSING_ERROR, error.what()); }
+    std::terminate();
+}
+#endif
+}
+
+void hdrSessionPrepareCameraAI(sony2fuji_session* session, const char* path, uint64_t fileBytes,
+    sony2fuji_ai_progress_callback progress, void* context) {
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+    withHDRCameraAI(session, [&](sony2fuji::ai::AISession& state) {
+        using namespace sony2fuji;
+        const ai::JobProgress report = [&](ai::Phase phase, size_t done, size_t total) {
+            return !processingCancellation.cancelled() &&
+                (!progress || progress(context, static_cast<int32_t>(phase), done, total) != 0);
+        };
+        if (!report(ai::Phase::Loading, 0, 1)) throw ProcessingCancelled();
+        const auto identity = ai::sourceIdentityKey(path, checkProcessingCancellation);
+        RAWBayerSource source;
+        {
+            RAWProcessor processor;
+            int width = 0, height = 0;
+            uint64_t sensorPixels = 0;
+            auto status = processor.inspectCameraHDR(path, width, height, sensorPixels);
+            if (status == ErrorCode::InvalidFormat) throw ai::Unsupported("Unsupported Bayer RAW for HDR AI");
+            if (status != ErrorCode::Success) throw ai::DecodeError(status, "Cannot open Bayer RAW for HDR AI");
+            // Sensor buffers, packed tensors and the largest model tile can overlap during preparation.
+            hdr::admitMemory(fileBytes + sensorPixels * 24 + (256ull << 20));
+            status = processor.unpackInspectedCameraHDR();
+            if (status == ErrorCode::Success) status = processor.readBayerSource(RAWProcessOptions{}, source);
+            if (status != ErrorCode::Success) throw ai::DecodeError(status, "Cannot unpack Bayer RAW for HDR AI");
+        }
+        if (!report(ai::Phase::Loading, 1, 1)) throw ProcessingCancelled();
+        state.prepareHDRBayer(path, identity, source, report);
+    });
+#else
+    (void)session; (void)path; (void)fileBytes; (void)progress; (void)context;
+    unavailableHDRCameraAI();
+#endif
+}
+
+std::string hdrSessionCameraAIKey(sony2fuji_session* session, const char* path) {
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+    return withHDRCameraAI(session, [&](sony2fuji::ai::AISession& ai) { return ai.hdrBayerKey(path); });
+#else
+    (void)session; (void)path;
+    unavailableHDRCameraAI();
+#endif
+}
+
+sony2fuji::RAWBayerOverride hdrSessionLoadCameraAI(sony2fuji_session* session, const std::string& key,
+    const sony2fuji::RAWBayerSource& metadata) {
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+    return withHDRCameraAI(session, [&](sony2fuji::ai::AISession& ai) { return ai.loadHDRBayer(key, metadata); });
+#else
+    (void)session; (void)key; (void)metadata;
+    unavailableHDRCameraAI();
+#endif
+}
 
 sony2fuji_status sony2fuji_validate_look(
     const char* path, sony2fuji_look_format* format, uint32_t* format_version
@@ -1426,6 +1544,35 @@ sony2fuji_status sony2fuji_session_set_processing_version(
 }
 
 int32_t sony2fuji_x3f_available(void) { return sony2fuji::x3fRenderingAvailable() ? 1 : 0; }
+
+sony2fuji_status sony2fuji_x3f_default_mode(const char* input_path, sony2fuji_x3f_mode* mode) {
+    if (!input_path || !*input_path || !mode) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    try {
+        sony2fuji::processingCancellation.check();
+        std::ifstream input(std::filesystem::u8path(input_path), std::ios::binary);
+        if (!input) return SONY2FUJI_STATUS_IO_ERROR;
+        char signature[4]{};
+        input.read(signature, sizeof(signature));
+        if (input.bad() || (input.fail() && !input.eof())) return SONY2FUJI_STATUS_IO_ERROR;
+        sony2fuji::processingCancellation.check();
+        if (input.gcount() != sizeof(signature) || std::memcmp(signature, "FOVb", sizeof(signature)) != 0) {
+            *mode = SONY2FUJI_X3F_LEGACY;
+            return SONY2FUJI_STATUS_OK;
+        }
+        // 机型判断只读元数据，即使检查后文件被替换也不能触发像素解包。
+        sony2fuji::RAWProcessor processor;
+        const auto loaded = processor.inspectFile(input_path);
+        if (loaded != sony2fuji::ErrorCode::Success) return mapError(loaded);
+        *mode = sony2fuji::x3fModelSupported(processor.getCameraModel()) ? SONY2FUJI_X3F_NORMAL : SONY2FUJI_X3F_LEGACY;
+        return SONY2FUJI_STATUS_OK;
+    } catch (const sony2fuji::ProcessingCancelled&) {
+        return SONY2FUJI_STATUS_CANCELLED;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (const std::exception&) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
+}
 
 sony2fuji_status sony2fuji_session_set_x3f_mode(sony2fuji_session* session, sony2fuji_x3f_mode mode) {
     if (!session || (mode != SONY2FUJI_X3F_LEGACY && mode != SONY2FUJI_X3F_NORMAL))
@@ -2323,7 +2470,11 @@ sony2fuji_status sony2fuji_hsl_probe_sample(const sony2fuji_hsl_probe* probe,
     const int left = static_cast<int>(x), top = static_cast<int>(y);
     const int right = std::min(left+1, image.width-1), bottom = std::min(top+1, image.height-1);
     const float dx = static_cast<float>(x-left), dy = static_cast<float>(y-top);
-    const auto mix = [](const sony2fuji::RGB& a, const sony2fuji::RGB& b, float t) {
+    const auto mix = [hdr = probe->hdr](const sony2fuji::RGB& a, const sony2fuji::RGB& b, float t) {
+        if (hdr) {
+            const auto channel = [t](float left, float right) { return float(left + (double(right) - left) * t); };
+            return sony2fuji::RGB(channel(a.r, b.r), channel(a.g, b.g), channel(a.b, b.b));
+        }
         return sony2fuji::RGB(a.r+(b.r-a.r)*t, a.g+(b.g-a.g)*t, a.b+(b.b-a.b)*t);
     };
     const auto pixel = mix(mix(image.at(left,top),image.at(right,top),dx),
@@ -2332,7 +2483,7 @@ sony2fuji_status sony2fuji_hsl_probe_sample(const sony2fuji_hsl_probe* probe,
         result->availability = SONY2FUJI_HSL_PROBE_NONFINITE; return SONY2FUJI_STATUS_OK;
     }
     result->rgb[0] = pixel.r; result->rgb[1] = pixel.g; result->rgb[2] = pixel.b;
-    const auto color = sony2fuji::analyzeHslColor(pixel);
+    const auto color = probe->hdr ? sony2fuji::analyzeHDRColor(pixel) : sony2fuji::analyzeHslColor(pixel);
     if (!color.valid || color.spread < 1.f/255) {
         result->availability = SONY2FUJI_HSL_PROBE_NEAR_GRAY; return SONY2FUJI_STATUS_OK;
     }

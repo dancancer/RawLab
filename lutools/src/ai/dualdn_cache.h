@@ -1,6 +1,7 @@
 #pragma once
 #include "dualdn_geometry.h"
 #include "sony2fuji/raw_processor.h"
+#include <functional>
 #include <optional>
 #include <set>
 
@@ -8,7 +9,7 @@ namespace sony2fuji::ai {
 enum class CacheKind { Raw, RGB, SceneRGB };
 std::string sourceMetadataKey(const std::string& path);
 std::string rawCacheKeyFromIdentity(const std::string& sourceIdentity, const std::string& modelDigest, int backend);
-std::string sourceIdentityKey(const std::string& path);
+std::string sourceIdentityKey(const std::string& path, void (*checkpoint)() = nullptr);
 std::string rawCacheKey(const std::string& path, const std::string& modelDigest, int backend);
 std::string rgbCacheKey(const std::string& rawKey, const RAWProcessOptions& options);
 std::string sceneRGBCacheKey(const std::string& rawKey, const RAWProcessOptions& options);
@@ -20,7 +21,8 @@ public:
     std::optional<Tensor> load(const std::string& key, CacheKind kind, int width, int height,
                                const std::string& dependency = {}, std::string* producer = nullptr) const;
     void store(const std::string& key, CacheKind kind, int width, int height, const float* values, size_t count,
-               const std::string& dependency = {}, const std::string& producer = {}) const;
+               const std::string& dependency = {}, const std::string& producer = {},
+               const std::function<void()>& beforePublish = {}) const;
     void prune(uint64_t byteLimit, const std::set<std::string>& protectedKeys) const;
 private:
     std::string directory_;

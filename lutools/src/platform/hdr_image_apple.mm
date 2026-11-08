@@ -92,8 +92,7 @@ void readMetadataSource(File& file, const char* path, const uint8_t* expectedSHA
     require(file.source, SONY2FUJI_HDR_REASON_MALFORMED_AUX, "Cannot parse HDR container");
 }
 
-void read(File& file, const char* path) {
-    readMetadataSource(file,path);
+void describe(File& file) {
     const CFStringRef type = CGImageSourceGetType(file.source);
     file.info.version = 1; file.info.struct_size = sizeof(file.info);
     if (type && CFEqual(type, CFSTR("public.jpeg"))) file.info.container = SONY2FUJI_HDR_CONTAINER_JPEG;
@@ -115,8 +114,12 @@ void read(File& file, const char* path) {
     file.info.orientation = orientation ? orientation : 1;
 }
 
-void open(File& file, const char* path) HDR_AVAILABLE {
-    read(file,path);
+void read(File& file, const char* path) {
+    readMetadataSource(file,path);
+    describe(file);
+}
+
+void inspectGainMap(File& file) HDR_AVAILABLE {
     const bool xmp=file.info.container==SONY2FUJI_HDR_CONTAINER_JPEG && has(file.data,"http://ns.adobe.com/hdr-gain-map/1.0/");
     const bool isoDeclared=file.info.container==SONY2FUJI_HDR_CONTAINER_JPEG && has(file.data,"urn:iso:std:iso:ts:21496:-1");
     // 旧式 Apple JPEG 也使用 Adobe namespace；以原容器的辅助类型区分，不能依赖 ImageIO 合成的 ISO 字典。
@@ -171,6 +174,11 @@ void open(File& file, const char* path) HDR_AVAILABLE {
         file.info.content_headroom=jpeg.headroom;
     }
 
+}
+
+void open(File& file, const char* path) HDR_AVAILABLE {
+    read(file,path);
+    inspectGainMap(file);
 }
 
 ImageData pixels(CIContext* context, CIImage* input, int width, int height) {
@@ -545,6 +553,112 @@ void exportJPEG(const HDRImagePair& image,const sony2fuji_hdr_export_config_v1& 
         error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM,"HDR requires macOS15/iOS18");
     }
 }
+static CIImage* heifLinearImage(const ImageData& plane, CGColorSpaceRef color, bool hdr) HDR_AVAILABLE {
+    const size_t bytesPerRow = size_t(plane.width) * sizeof(float) * 4;
+    NSMutableData* data = [NSMutableData dataWithLength:bytesPerRow * plane.height];
+    if (!data) throw std::bad_alloc();
+    auto* pixels = static_cast<float*>(data.mutableBytes);
+    // 以正通道峰值标记 HDR 输入，低于参考白的编辑仍可带增益图。
+    float headroom = hdr ? 1.001f : 1;
+    for (int y = 0; y < plane.height; ++y) {
+        checkProcessingCancellation();
+        for (int x = 0; x < plane.width; ++x) {
+            const auto& p = plane.pixels[size_t(y) * plane.width + x];
+            *pixels++ = p.r; *pixels++ = p.g; *pixels++ = p.b; *pixels++ = 1;
+            if (hdr) headroom = std::max({headroom,p.r,p.g,p.b});
+        }
+    }
+    auto provider = CGDataProviderCreateWithCFData((__bridge CFDataRef)data);
+    if (!provider) throw std::bad_alloc();
+    auto pixelsImage = CGImageCreate(plane.width,plane.height,32,128,bytesPerRow,color,
+        kCGBitmapFloatComponents | kCGBitmapByteOrder32Host | kCGImageAlphaPremultipliedLast,
+        provider,nullptr,false,kCGRenderingIntentDefault);
+    CGDataProviderRelease(provider);
+    if (!pixelsImage) throw std::bad_alloc();
+    auto tagged = headroom > 1 ? CGImageCreateCopyWithContentHeadroom(headroom,pixelsImage) : CGImageRetain(pixelsImage);
+    CGImageRelease(pixelsImage);
+    if (!tagged) throw std::bad_alloc();
+    CIImage* image = [CIImage imageWithCGImage:tagged];
+    CGImageRelease(tagged);
+    return image;
+}
+
+static NSData* encodeHEIF(const HDRImagePair& image, NSDictionary* properties, uint32_t color, uint32_t quality) HDR_AVAILABLE {
+    using ColorSpace = std::unique_ptr<std::remove_pointer_t<CGColorSpaceRef>,decltype(&CGColorSpaceRelease)>;
+    ColorSpace linear(CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB),CGColorSpaceRelease);
+    ColorSpace base(CGColorSpaceCreateWithName(color == SONY2FUJI_HDR_COLOR_DISPLAY_P3 ?
+        kCGColorSpaceDisplayP3 : kCGColorSpaceSRGB),CGColorSpaceRelease);
+    if (!linear || !base) throw std::bad_alloc();
+    CIImage* hdr = heifLinearImage(image.hdr,linear.get(),true);
+    CIImage* sdr = [heifLinearImage(image.sdr,linear.get(),false) imageBySettingProperties:properties];
+    require(hdr && sdr,SONY2FUJI_HDR_REASON_OUTPUT_IO,"Cannot build the HEIF renditions");
+    CIContext* context = [CIContext contextWithOptions:@{kCIContextUseSoftwareRenderer:@YES,
+        kCIContextWorkingColorSpace:(__bridge id)linear.get()}];
+    NSData* data = [context HEIFRepresentationOfImage:sdr format:kCIFormatRGBX8 colorSpace:base.get()
+        options:@{kCIImageRepresentationHDRImage:hdr, kCIImageRepresentationHDRGainMapAsRGB:@YES,
+            (__bridge NSString*)kCGImageDestinationLossyCompressionQuality:@((quality ? quality : 95)/100.0)}];
+    require(data.length,SONY2FUJI_HDR_REASON_OUTPUT_IO,"Cannot encode adaptive HDR HEIF");
+    File verification; verification.data = data;
+    verification.source = CGImageSourceCreateWithData((__bridge CFDataRef)data,nullptr);
+    require(verification.source,SONY2FUJI_HDR_REASON_OUTPUT_IO,"Cannot read the encoded HEIF");
+    describe(verification);
+    inspectGainMap(verification);
+    require(verification.info.container == SONY2FUJI_HDR_CONTAINER_HEIF && verification.info.protocol == SONY2FUJI_HDR_PROTOCOL_ISO &&
+        verification.info.width == uint32_t(image.hdr.width) && verification.info.height == uint32_t(image.hdr.height) &&
+        verification.info.orientation == 1 && verification.info.color_description == color &&
+        [verification.properties[(__bridge NSString*)kCGImagePropertyDepth] unsignedIntValue] == 8 &&
+        (hdr.contentHeadroom <= 1.001f || verification.info.content_headroom > 1),
+        SONY2FUJI_HDR_REASON_OUTPUT_IO,"Encoded HEIF did not retain the expected ISO gain map, geometry or color");
+    return data;
+}
+
+static bool probeHEIFExport() HDR_AVAILABLE {
+    @autoreleasepool {
+        try {
+            // 系统提供编码接口也可能无法读回 ISO 增益图，先用小图验证当前运行环境。
+            ProcessingCancellationScope capabilityProbe(ProcessingCancellation{});
+            HDRImagePair sample;
+            sample.hdr = ImageData(64,64);
+            sample.sdr = ImageData(64,64);
+            for (int y = 0; y < 64; ++y) for (int x = 0; x < 64; ++x) {
+                const float v = 0.25f + 0.75f * x / 63;
+                sample.sdr.at(x,y) = {v,v,v};
+                sample.hdr.at(x,y) = {2*v,2*v,2*v};
+            }
+            return encodeHEIF(sample,@{},SONY2FUJI_HDR_COLOR_DISPLAY_P3,95) != nil;
+        } catch (...) {
+            return false;
+        }
+    }
+}
+
+bool heifExportAvailable() {
+    if (@available(macOS 15.0,iOS 18.0,*)) {
+        static const bool supported = probeHEIFExport();
+        return supported;
+    }
+    return false;
+}
+
+void exportHEIF(const HDRImagePair& image,const sony2fuji_hdr_export_config_v1& config,const char* path) {
+    @autoreleasepool {
+        if (@available(macOS 15.0,iOS 18.0,*)) {
+            File metadataFile;
+            NSDictionary* properties = metadata(metadataFile,config.metadata_source_path,config.source_sha256,image.hdr.width,image.hdr.height,path);
+            NSData* data = encodeHEIF(image,properties,config.base_color,config.jpeg_quality);
+            if (config.metadata_source_path) {
+                File verification;
+                readMetadataSource(verification,config.metadata_source_path,config.source_sha256);
+                differentFile(config.metadata_source_path,path);
+            }
+            checkProcessingCancellation();
+            atomicWrite(data,path);
+            return;
+        }
+        error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM,"HDR HEIF requires macOS15/iOS18");
+    }
+}
+
 void exportSDR(const HDRImagePair& image,const sony2fuji_hdr_sdr_export_config_v1& config,const char* path) {
     @autoreleasepool {
         if (@available(macOS 15.0,iOS 18.0,*)) {

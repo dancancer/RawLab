@@ -1,6 +1,7 @@
 #include "agent_commands.h"
 #include "raw_info.h"
 #include "core/x3f_processor.h"
+#include "core/sha256.h"
 #include "sony2fuji/edit_recipe.h"
 #include "nlohmann/json.hpp"
 #include <filesystem>
@@ -63,6 +64,18 @@ bool rasterPath(const std::string& path) {
         extension == ".tiff" || extension == ".heif" || extension == ".heic";
 }
 
+bool rawPath(const std::string& path) {
+    auto extension = std::filesystem::u8path(path).extension().u8string();
+    std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return std::tolower(c); });
+    // 与 Mac 文件库的 RAW 后缀表一致，避免把 TIFF 结构 RAW 的 IFD0 缩略图当作原图。
+    static const char* extensions[] = {".arw", ".arq", ".dng", ".nef", ".nrw", ".cr2", ".cr3", ".crw", ".raf",
+        ".rw2", ".rwl", ".orf", ".pef", ".srw", ".raw", ".3fr", ".fff", ".iiq", ".mos", ".srf", ".sr2",
+        ".mrw", ".kdc", ".dcr", ".erf", ".x3f"};
+    for (const auto* candidate : extensions)
+        if (extension == candidate) return true;
+    return false;
+}
+
 bool hdrAvailable() {
 #if defined(__APPLE__)
     if (__builtin_available(macOS 15.0,iOS 18.0,*)) return true;
@@ -89,29 +102,68 @@ struct HDRCommandResult {
     float sourceHeadroom=0,editedHeadroom=0;
 };
 
-HDRCommandResult renderHDR(const EditRecipe& recipe,bool preview) {
+HDRCommandResult renderHDR(const EditRecipe& recipe,bool preview,const std::string& lensDatabase) {
     HDRCommandResult result;
     HDRPair source,edited;
-    auto options=hdrInitial<sony2fuji_hdr_decode_options_v1>(); options.intent=SONY2FUJI_INTENT_FINAL;
-    result.status=sony2fuji_hdr_decode(recipe.inputPath.c_str(),&options,&source.value,&result.diagnostic);
+    const auto& settings=*recipe.hdr;
     sony2fuji_session* pointer=nullptr;
-    if (result.status==SONY2FUJI_STATUS_OK) result.status=sony2fuji_session_create(&pointer);
+    result.status=sony2fuji_session_create(&pointer);
     const std::unique_ptr<sony2fuji_session,decltype(&sony2fuji_session_destroy)> session(pointer,sony2fuji_session_destroy);
-    const auto request=recipe.toHDRRequest();
+    if (result.status==SONY2FUJI_STATUS_OK && settings.inputType=="raw" && !lensDatabase.empty())
+        result.status=sony2fuji_session_set_lens_database(session.get(),lensDatabase.c_str());
+    if (result.status!=SONY2FUJI_STATUS_OK) return result;
+    const auto request=recipe.toHDRRenderRequest();
+    if (settings.inputType=="proraw" && settings.hdrOutput && !preview) {
+        auto info=hdrInitial<sony2fuji_hdr_source_info_v1>();
+        result.status=sony2fuji_hdr_probe_proraw(recipe.inputPath.c_str(),&info,&result.diagnostic);
+        if (result.status!=SONY2FUJI_STATUS_OK) return result;
+        auto config=hdrInitial<sony2fuji_hdr_export_config_v1>();
+        config.jpeg_quality=recipe.jpegQuality; config.base_color=settings.baseColor;
+        config.metadata_policy=SONY2FUJI_HDR_METADATA_ISO_XMP; config.metadata_source_path=recipe.inputPath.c_str();
+        const auto digest=hash::sha256File(recipe.inputPath);
+        for (size_t i=0;i<32;++i) config.source_sha256[i]=uint8_t(std::stoul(digest.substr(i*2,2),nullptr,16));
+        auto streamed=hdrInitial<sony2fuji_hdr_stream_result_v1>();
+        const auto temporary=std::filesystem::temp_directory_path().u8string();
+        result.status=sony2fuji_hdr_export_proraw(session.get(),recipe.inputPath.c_str(),
+            &request.base.base.base.base.base.base,&config,1,temporary.c_str(),recipe.outputPath.c_str(),&streamed,&result.diagnostic);
+        result.sourceHeadroom=streamed.source_headroom; result.editedHeadroom=streamed.edited_headroom;
+        return result;
+    }
+    auto options=hdrInitial<sony2fuji_hdr_decode_options_v1>(); options.intent=SONY2FUJI_INTENT_FINAL;
+    if (settings.inputType=="raw") {
+        sony2fuji_hdr_camera_development_v2 development{};
+        development.base=settings.cameraDevelopment;
+        development.base.lens_profile_id=settings.lensProfile.empty() ? nullptr : settings.lensProfile.c_str();
+        if (!settings.cameraProfilePath.empty()) {
+            development.base.version=2; development.base.struct_size=sizeof(development);
+            development.profile_path=settings.cameraProfilePath.c_str();
+            std::copy(settings.cameraProfileSHA256.begin(),settings.cameraProfileSHA256.end(),development.profile_sha256);
+        }
+        result.status=sony2fuji_hdr_decode_camera_raw_with_development(session.get(),recipe.inputPath.c_str(),
+            &options,&development.base,&source.value,&result.diagnostic);
+    } else if (settings.inputType=="proraw") {
+        const auto temporary=std::filesystem::temp_directory_path().u8string();
+        result.status=sony2fuji_hdr_decode_proraw(session.get(),recipe.inputPath.c_str(),&options,temporary.c_str(),&source.value,&result.diagnostic);
+    } else result.status=sony2fuji_hdr_decode(recipe.inputPath.c_str(),&options,&source.value,&result.diagnostic);
     if (result.status==SONY2FUJI_STATUS_OK)
-        result.status=sony2fuji_hdr_render(session.get(),&source.value,&request,&edited.value,&result.diagnostic);
+        result.status=sony2fuji_hdr_render(session.get(),&source.value,&request.base.base.base.base.base.base,&edited.value,&result.diagnostic);
     if (result.status!=SONY2FUJI_STATUS_OK) return result;
     result.sourceHeadroom=edited.value.source_headroom; result.editedHeadroom=edited.value.hdr.content_headroom;
-    if (preview) {
+    // 与客户端一致：相机 RAW 和 ProRAW 渲染型 DNG 不读原片元数据；
+    // 跨平台元数据读取只认增益图和 ProRAW 容器，传入 NEF/CR3 等会让导出失败。
+    const bool cameraRAW=settings.inputType=="raw";
+    if (preview || !settings.hdrOutput) {
         auto config=hdrInitial<sony2fuji_hdr_sdr_export_config_v1>();
-        config.output_format=SONY2FUJI_OUTPUT_PNG; config.quality=recipe.jpegQuality;
-        config.metadata_source_path=recipe.inputPath.c_str();
+        config.output_format=preview ? SONY2FUJI_OUTPUT_PNG : recipe.outputFormat; config.quality=recipe.jpegQuality;
+        const bool proRAWDNG=settings.inputType=="proraw" && config.output_format==SONY2FUJI_OUTPUT_DNG;
+        config.metadata_source_path=cameraRAW || proRAWDNG ? nullptr : recipe.inputPath.c_str();
         std::copy_n(source.value.source_sha256,32,config.source_sha256);
         result.status=sony2fuji_hdr_export_sdr(&edited.value,&config,recipe.outputPath.c_str(),&result.diagnostic);
     } else {
         auto config=hdrInitial<sony2fuji_hdr_export_config_v1>();
         config.jpeg_quality=recipe.jpegQuality; config.base_color=recipe.hdr->baseColor;
-        config.metadata_policy=SONY2FUJI_HDR_METADATA_ISO_XMP; config.metadata_source_path=recipe.inputPath.c_str();
+        config.metadata_policy=SONY2FUJI_HDR_METADATA_ISO_XMP;
+        config.metadata_source_path=cameraRAW ? nullptr : recipe.inputPath.c_str();
         std::copy_n(source.value.source_sha256,32,config.source_sha256);
         result.status=sony2fuji_hdr_export_jpeg(&edited.value,&config,recipe.outputPath.c_str(),&result.diagnostic);
     }
@@ -180,25 +232,46 @@ int runAgentCommands(int argc, char* argv[]) {
             if (hdrAvailable()) {
                 versions.push_back(6); formats.push_back("hdr_jpeg");
                 hdr={{"processing_version",1},{"recipe_min_version",6},{"probe",true},{"decode",true},
+                    {"processing_versions",{1,2,3,4,5,6,7}},{"tone_recipe_version",8},{"color_recipe_version",9},{"rendition_recipe_version",10},
+                    {"effects_recipe_version",11},
+                    {"detail_recipe_version",12},
+                    {"look_recipe_version",13},{"look_profile","display-linear-srgb-v1"},
+                    {"source_recipe_version",14},{"input_types",{"hdr_raster","raw"}},
+                    {"output_formats",{"hdr_jpeg","jpeg","png","dng"}},
                     {"minimum_system",{{"macos","15.0"},{"ios","18.0"},{"android","26"},{"windows","10"}}},
                     {"protocols",{"apple_gain_map","iso_21496","ultra_hdr"}},
                     {"working_format","rgb32f_extended_linear_srgb"},{"backend","cpu"},{"gpu_force","unsupported"},
                     {"adjustments",{"exposure","relative_white_balance","contrast","highlights","shadows","saturation","geometry"}},
+                    {"tone_adjustments",{"black_point","white_point","s_curve","curve"}},
+                    {"color_adjustments",{"vibrance","hsl","color_grading"}},
+                    {"detail_adjustments",{"sharpening","clarity","dehaze","denoise"}},
+                    {"rendition_adjustments",{"peak_limit_ev","sdr_exposure_ev","sdr_contrast","sdr_saturation"}},
+                    {"effects_adjustments",{"vignette","grain"}},
                     {"jpeg_export",{{"metadata",{"iso","xmp"}},{"base_colors",{"srgb","display_p3"}}}},
                     {"display",false},{"preview_rendition","sdr"}};
+#if defined(SONY2FUJI_ENABLE_DNGSDK)
+                hdr["input_types"].push_back("proraw");
+#endif
             }
 #if defined(__APPLE__) || defined(_WIN32)
             inputs.push_back("raster");
 #if defined(_WIN32)
-            raster = {{"formats", {"jpeg", "png", "tiff"}}, {"bits_per_component", 8},
+            raster = {{"formats", {"jpeg", "png", "tiff", "heif"}}, {"bits_per_component", {8, 16}},
 #else
-            raster = {{"formats", {"jpeg", "png", "tiff", "heif"}}, {"bits_per_component", 8},
+            raster = {{"formats", {"jpeg", "png", "tiff", "heif"}}, {"bits_per_component", {8, 16}},
 #endif
+                {"tiff_bits_per_component", {8, 16}},
                 {"alpha", "opaque_only"}, {"dynamic_range", "sdr"}, {"color_space", "srgb"},
                 {"backend", "cpu"}, {"max_pixels", 128000000}};
 #endif
-            if (hdrAvailable()) inputs.push_back("hdr_raster");
+            if (hdrAvailable()) {
+                inputs.push_back("hdr_raster");
+#if defined(SONY2FUJI_ENABLE_DNGSDK)
+                inputs.push_back("proraw");
+#endif
+            }
             versions.push_back(7);
+            if (hdrAvailable()) for (int version : {8, 9, 10, 11, 12, 13, 14}) versions.push_back(version);
             std::cout << machineJson(envelope(command, {{"recipe_versions", versions},
                 {"commands", {"capabilities", "validate_recipe", "info", "preview", "export"}}, {"input_types", inputs},
                 {"raster_input", raster},
@@ -224,8 +297,25 @@ int runAgentCommands(int argc, char* argv[]) {
             if (infoFile.empty() || !recipeFile.empty() || printRecipe || preview || seenEdge || !lensDatabase.empty())
                 return fail("invalid_argument", "--info <image> requires one input and no recipe");
             const auto absolute = std::filesystem::absolute(std::filesystem::u8path(infoFile)).lexically_normal().u8string();
-            if (rasterPath(absolute)) {
-                if (hdrCandidatePath(absolute)) {
+            const bool knownRaster=rasterPath(absolute);
+            bool rasterCandidate=knownRaster, hdrCandidate=hdrCandidatePath(absolute);
+            if (!knownRaster && !rawPath(absolute)) {
+                std::ifstream file(std::filesystem::u8path(absolute),std::ios::binary);
+                char signature[12]{}; file.read(signature,sizeof(signature));
+                const auto length=file.gcount();
+                const bool jpeg=length>=2 && static_cast<unsigned char>(signature[0])==0xff && static_cast<unsigned char>(signature[1])==0xd8;
+                const bool heif=length>=12 && std::string(signature+4,4)=="ftyp" &&
+                    (std::string(signature+8,4)=="heic" || std::string(signature+8,4)=="heix" ||
+                     std::string(signature+8,4)=="mif1" || std::string(signature+8,4)=="heif");
+                const bool png=length>=8 && std::string(signature,8)==std::string("\x89PNG\r\n\x1a\n",8);
+                const bool tiff=length>=4 &&
+                    ((signature[0]=='I' && signature[1]=='I' && (signature[2]==42 || signature[2]==43) && signature[3]==0) ||
+                     (signature[0]=='M' && signature[1]=='M' && signature[2]==0 && (signature[3]==42 || signature[3]==43)));
+                hdrCandidate=jpeg || heif;
+                rasterCandidate=hdrCandidate || png || tiff;
+            }
+            if (rasterCandidate) {
+                if (hdrCandidate) {
                     auto hdr=hdrInitial<sony2fuji_hdr_source_info_v1>();
                     auto diagnostic=hdrInitial<sony2fuji_hdr_diagnostic_v1>();
                     const auto status=sony2fuji_hdr_probe(absolute.c_str(),&hdr,&diagnostic);
@@ -246,15 +336,18 @@ int runAgentCommands(int argc, char* argv[]) {
                 }
                 sony2fuji_buffer image{};
                 const auto status = sony2fuji_load_display_image(absolute.c_str(), &image);
-                if (status != SONY2FUJI_STATUS_OK)
-                    return fail(statusCode(status), "Raster input requires a supported single-frame opaque 8-bit SDR image", status);
-                const Json result = {{"input_path", absolute}, {"input_type", "raster"},
-                    {"identified_size", {{"width", image.width}, {"height", image.height}, {"orientation", 1}}},
-                    {"rendered_size", nullptr}, {"color_space", "srgb"}, {"bits_per_component", 8},
-                    {"camera", nullptr}, {"lens", nullptr}, {"capture", nullptr}, {"as_shot_white_balance", nullptr}};
-                sony2fuji_release_buffer(&image);
-                std::cout << machineJson(envelope(command, result)) << '\n';
-                return 0;
+                if (status != SONY2FUJI_STATUS_OK && knownRaster)
+                    return fail(statusCode(status), "Raster input requires a supported single-frame opaque SDR image", status);
+                if (status == SONY2FUJI_STATUS_OK) {
+                    const Json result = {{"input_path", absolute}, {"input_type", "raster"},
+                        {"identified_size", {{"width", image.width}, {"height", image.height}, {"orientation", 1}}},
+                        {"rendered_size", nullptr}, {"color_space", "srgb"},
+                        {"bits_per_component", image.pixel_format == SONY2FUJI_PIXEL_RGBA16 ? 16 : 8},
+                        {"camera", nullptr}, {"lens", nullptr}, {"capture", nullptr}, {"as_shot_white_balance", nullptr}};
+                    sony2fuji_release_buffer(&image);
+                    std::cout << machineJson(envelope(command, result)) << '\n';
+                    return 0;
+                }
             }
             RawInfoResult inspected;
             {
@@ -280,7 +373,6 @@ int runAgentCommands(int argc, char* argv[]) {
         std::string error;
         if (!parseEditRecipe(document, recipe, error)) return fail("invalid_recipe", error);
         if (recipe.hdr && !hdrAvailable()) return fail("unsupported","HDR requires macOS15/iOS18",SONY2FUJI_STATUS_UNSUPPORTED);
-        if (recipe.hdr && !lensDatabase.empty()) return fail("invalid_argument","HDR recipes do not support --lens-database");
         if (printRecipe) {
             const auto normalized = serializeEditRecipe(recipe);
             std::cout << (jsonOutput ? machineJson(envelope(command, Json::parse(normalized))) + "\n" : normalized);
@@ -293,6 +385,7 @@ int runAgentCommands(int argc, char* argv[]) {
         resolve(recipe.inputPath);
         resolve(recipe.outputPath);
         resolve(recipe.lookPath);
+        if (recipe.hdr) resolve(recipe.hdr->cameraProfilePath);
         if (recipe.schemaVersion == 7 && !hasX3fSignature(recipe.inputPath))
             return fail("invalid_argument", "schema_version 7 requires an actual FOVb X3F source",
                 SONY2FUJI_STATUS_INVALID_ARGUMENT);
@@ -313,13 +406,17 @@ int runAgentCommands(int argc, char* argv[]) {
             return fail("invalid_argument", "Output must not overwrite the input", SONY2FUJI_STATUS_INVALID_ARGUMENT);
         if (!recipe.lookPath.empty() && overwrites(std::filesystem::u8path(recipe.lookPath)))
             return fail("invalid_argument", "Output must not overwrite the look", SONY2FUJI_STATUS_INVALID_ARGUMENT);
+        if (recipe.hdr && !recipe.hdr->cameraProfilePath.empty() && overwrites(std::filesystem::u8path(recipe.hdr->cameraProfilePath)))
+            return fail("invalid_argument", "Output must not overwrite the camera profile", SONY2FUJI_STATUS_INVALID_ARGUMENT);
+        if (!lensDatabase.empty() && overwrites(std::filesystem::u8path(lensDatabase)))
+            return fail("invalid_argument", "Output must not overwrite the lens database", SONY2FUJI_STATUS_INVALID_ARGUMENT);
         sony2fuji_status status;
         std::string sourceError;
         Json lensResult = nullptr;
         HDRCommandResult hdrResult;
         if (recipe.hdr) {
             DiagnosticsToStderr diagnostics;
-            hdrResult=renderHDR(recipe,preview); status=hdrResult.status;
+            hdrResult=renderHDR(recipe,preview,lensDatabase); status=hdrResult.status;
         } else {
             DiagnosticsToStderr diagnostics;
             sony2fuji_session* pointer = nullptr;
@@ -392,7 +489,7 @@ int runAgentCommands(int argc, char* argv[]) {
         if (status != SONY2FUJI_STATUS_OK) return fail(statusCode(status), recipe.hdr ?
             "HDR processing failed; diagnostic reason="+std::to_string(hdrResult.diagnostic.reason) :
             (sourceError.empty() ? sony2fuji_status_message(status) : sourceError),status);
-        Json result = {{"output_path", recipe.outputPath}, {"format", recipe.hdr && !preview ? "hdr_jpeg" : formatName(recipe.outputFormat)}};
+        Json result = {{"output_path", recipe.outputPath}, {"format", recipe.hdr && recipe.hdr->hdrOutput && !preview ? "hdr_jpeg" : formatName(recipe.outputFormat)}};
         if (recipe.hdr) {
             result["source_headroom"]=hdrResult.sourceHeadroom; result["edited_headroom"]=hdrResult.editedHeadroom;
             if (preview) result["rendition"]="sdr";

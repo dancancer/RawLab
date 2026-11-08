@@ -13,7 +13,7 @@ import com.rawlab.android.looks.MasterRecipe
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.EditSettings
-import com.rawlab.android.settings.requireProRAWDecoder
+import com.rawlab.android.settings.requireHDRDecodeVersion
 import com.rawlab.android.settings.PhotoIdentity
 import java.io.IOException
 import java.io.File
@@ -29,6 +29,10 @@ internal data class AdjustmentPreparationWork(val generation: UUID, val payload:
     val collectionPhotos: Map<String, ImportedPhoto> = emptyMap(), val validateCollection: ((String) -> Unit)? = null)
 internal data class AdjustmentPreparationResult(val generation: UUID, val operation: PreparedAdjustmentTransfer, val ownedFiles: Map<String, File>)
 
+internal val EditorState.adjustmentTransferFields: Set<AdjustmentField> get() = if (edits.isHDREditing) {
+    AdjustmentField.hdrTransferFields(photo?.let { it.isCameraRawHDR && it.hdrSource?.isProRAW == false } == true)
+} else AdjustmentField.entries.filterNot { it.isHDROnly }.toSet()
+
 /** 与普通渲染一样在串行资源队列执行；每个 native processor 在该目标预检结束时释放。 */
 internal class EditorAdjustmentPreparation(private val context: Context, private val storage: PhotoStorage,
     private val store: EditorEditStore) {
@@ -37,9 +41,10 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
         checkActive()
         val session = store.adjustmentSession ?: throw IOException("Edit store is unavailable; reload saved adjustments")
         val builtin = storage.builtinLookIDs()
+        val recipes = MasterRecipe.load(context)
         val available = builtin.keys.map { "builtin:$it" }.toSet() +
             storage.looks().filter { it.managed && it.available }.map { it.id } +
-            MasterRecipe.load(context).map { "recipe:${it.id}" }
+            recipes.map { "recipe:${it.id}" }
         val owned = mutableMapOf<String, File>()
         try {
             val targets = work.uris.distinct().map { uri ->
@@ -55,23 +60,40 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
                     checkActive()
                     val validate = sourceValidator
                     val saved = store.versionedState(identity)
-                    val neutral = EditSettings(processing = saved.settings?.processing ?: EditSettings().processing,
-                        x3fMode = saved.settings?.x3fMode ?: EditSettings().x3fMode)
+                    val targetDefaults = saved.settings ?: photo.defaultEditSettings()
+                    val neutral = EditSettings(processing = targetDefaults.processing, x3fMode = targetDefaults.x3fMode)
                     val database = storage.lensDatabase()
                     val frame = NativeProcessor(NativeProcessor.CPU, database).use { native ->
                         if (saved.settings?.isHDREditing == true) {
                             val info = photo.hdrSource ?: throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.source")
-                            if (info.isProRAW) saved.settings.requireProRAWDecoder()
-                            val decoded = if (info.isCameraRaw) native.decodeHDRCamera(photo.file, info, 128)
+                            saved.settings.requireHDRDecodeVersion(info.isProRAW)
+                            val decoded = if (info.isCameraRaw) native.decodeHDRCamera(photo.file, info, 128,
+                                camera = requireNotNull(saved.settings.hdr).cameraSettings, profileDirectory = storage.hdrCameraProfileDirectory)
                                 else com.rawlab.android.engine.NativeHDRBridge.decode(photo.file, info, 128)
-                            decoded.use { native.renderHDR(it, requireNotNull(saved.settings.hdr), 128).close() }
+                            decoded.use { native.renderHDR(it, requireNotNull(saved.settings.hdr), 128, lookDirectory = storage.hdrLookDirectory).close() }
                             null
                         } else native.preview(photo.file, null, neutral, 128, false, photo.inputKind)
                     }
                     checkActive()
                     val transferContext = AdjustmentTransferContext(identity.value, photo.inputKind == PhotoInputKind.RAW,
                         available, builtin, frame?.temperature?.takeIf { it.isFinite() }, frame?.tint?.takeIf { it.isFinite() },
-                        sourceSupportsProRAWHDR = photo.hdrSource?.isProRAW == true,
+                        sourceSupportsCameraHDR = photo.isCameraRawHDR, sourceIsProRAW = photo.hdrSource?.isProRAW == true,
+                        hdrLookDirectory = storage.hdrLookDirectory,
+                        validateHDRCamera = { candidate ->
+                            checkActive()
+                            sourceValidator()
+                            val info = photo.hdrSource?.takeIf { it.isCameraRaw && !it.isProRAW }
+                                ?: throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.camera_development")
+                            val hdr = requireNotNull(candidate.hdr)
+                            NativeProcessor(NativeProcessor.CPU, database).use { native ->
+                                native.decodeHDRCamera(photo.file, info, 128, camera = hdr.cameraSettings,
+                                    profileDirectory = storage.hdrCameraProfileDirectory).use { decoded ->
+                                    native.renderHDR(decoded, hdr, 128, lookDirectory = storage.hdrLookDirectory).close()
+                                }
+                            }
+                            checkActive()
+                        },
+                        recipeTintDefaults = recipes.associate { it.id to it.tint },
                         validateLens = { request ->
                             checkActive()
                             val report = NativeProcessor(NativeProcessor.CPU, database).use {
@@ -82,7 +104,7 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
                                 throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "target lens calibration unavailable")
                         })
                     AdjustmentTransferTarget(identity, displayName,
-                        photo.defaultEditSettings(), transferContext,
+                        targetDefaults, transferContext,
                         isCurrent = { work.isCurrent(identity.value) }, validateSource = validate,
                         validateHistorySource = EditorAdjustmentHistory.historySourceValidation(photo))
                 } catch (error: java.util.concurrent.CancellationException) { throw error }

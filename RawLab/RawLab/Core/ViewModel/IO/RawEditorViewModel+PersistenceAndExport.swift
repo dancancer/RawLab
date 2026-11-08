@@ -46,8 +46,11 @@ extension RawEditorViewModel {
             editSaveState = .failed(L10n.text("调整记录已恢复，请重新选择照片载入。"))
             return false
         }
+        let defaults: PhotoEditState?
+        do { defaults = try expected.state == nil ? PhotoEditState(settings:sourceDefaultSettings) : nil }
+        catch { editSaveState = .failed(adjustmentErrorMessage(error)); return false }
         let outcome = session.commitEdit(expected: expected, state: candidate, displayName: sourceDisplayName,
-            defaultState:PhotoEditState(settings:sourceDefaultSettings),isCurrent:{ self.editorEditSource==source },
+            defaultState:defaults,isCurrent:{ self.editorEditSource==source },
             validateSource: adjustmentSourceValidator)
         if let saved = outcome.saved {
             adjustmentReloadRequired = false
@@ -60,6 +63,7 @@ extension RawEditorViewModel {
             return true
         }
         adjustmentReloadRequired = outcome.status == .conflict
+        if let error = outcome.error { ErrorDiagnostics.log(error, operation: .editPersistence, stage: "saveEdits") }
         editSaveState = .failed(outcome.error?.localizedDescription ?? L10n.text("调整记录已恢复，请重新选择照片载入。"))
         return false
     }
@@ -81,7 +85,10 @@ extension RawEditorViewModel {
                 adjustmentSession = editPersistence.map(IOSAdjustmentTransferSession.init(store:))
                 editSaveState = .idle
                 statusMessage = L10n.text("调整记录已恢复，请重新选择照片载入。")
-            } catch { editSaveState = .failed(error.localizedDescription) }
+            } catch {
+                ErrorDiagnostics.log(error, operation: .editPersistence, stage: "reopenStore")
+                editSaveState = .failed(error.localizedDescription)
+            }
             return
         }
         saveCurrentSettings(settings)
@@ -105,7 +112,23 @@ extension RawEditorViewModel {
 
     func exportJPEG(settings: RawSettings, longEdge: Int? = nil, keepHDR: Bool = true,
                     completion: @escaping (Result<Data, Error>) -> Void) {
+        exportPhoto(settings: settings, longEdge: longEdge, format: settings.isHDREditing && keepHDR ? .hdrJPEG : .jpeg,
+                    completion: completion)
+    }
+
+    func exportPhoto(settings: RawSettings, longEdge: Int?, format: BatchOutputFormat,
+                     completion: @escaping (Result<Data, Error>) -> Void) {
         dispatchPrecondition(condition: .onQueue(.main))
+        guard let hdrFormat = format.hdrPhotoFormat else {
+            completion(.failure(CocoaError(.fileWriteUnsupportedScheme)))
+            return
+        }
+        if format.requiresHDR && !settings.isHDREditing {
+            completion(.failure(BatchExportError.target(format.hdrRequiredMessage)))
+            return
+        }
+        do { try format.validateHDRHEIF() }
+        catch { completion(.failure(error)); return }
         guard !previewRendering, !previewResizePending, !previewFailed, !isBusy else {
             completion(.failure(BatchExportError.global(L10n.text("请等待预览完成后导出。"))))
             return
@@ -136,10 +159,11 @@ extension RawEditorViewModel {
                     let data: Data
 
                     if let hdr=settings.hdr,settings.isHDREditing {
-                        let output=FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-\(UUID().uuidString).jpg")
+                        let output=FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-\(UUID().uuidString).\(format.suffix)")
                         defer { try? FileManager.default.removeItem(at:output) }
                         try self.processor.exportHDR(url: sourceURL, settings: hdr, output: output, longEdge: longEdge,
-                            keepHDR: keepHDR, cancelled: { cancellation.isCancelled })
+                            proRAWDecodeVersion: settings.proRAWDecodeVersion, format: hdrFormat,
+                            cancelled: { cancellation.isCancelled })
                         data=try Data(contentsOf:output)
                     } else if sourceKind == .raw {
                         let result = try self.processor.processRaw(
@@ -153,7 +177,8 @@ extension RawEditorViewModel {
                             from: result.buffer,
                             sourceURL: sourceURL,
                             orientation: result.orientation,
-                            quality: 0.92
+                            quality: 0.92,
+                            sourceIsRaw: true
                         )
                         data = output
                     } else {
@@ -282,15 +307,15 @@ extension RawEditorViewModel {
                         from: fullResult.buffer,
                         sourceURL: url,
                         orientation: fullResult.orientation,
-                        quality: 0.92
+                        quality: 0.92,
+                        sourceIsRaw: true
                     )
 
                     DispatchQueue.main.async {
                         self.sourceFile = sourceFile
                         self.sourceKind = .raw
                         self.sourceIsHDR = false
-                        self.sourceSupportsCameraHDR = false
-                        self.sourceProRAW = nil
+                        self.rawHDRSource = nil
                         self.sourceDisplayName = url.lastPathComponent
                         self.sourceOrientation = previewResult.orientation ?? rawPreview.orientation
                         self.draftBuffer = rawPreview.buffer
@@ -326,8 +351,7 @@ extension RawEditorViewModel {
                         self.sourceFile = nil
                         self.sourceKind = nil
                         self.sourceIsHDR = false
-                        self.sourceSupportsCameraHDR = false
-                        self.sourceProRAW = nil
+                        self.rawHDRSource = nil
                         self.sourceDisplayName = nil
                         self.sourceOrientation = nil
                         self.rawLUTID = nil

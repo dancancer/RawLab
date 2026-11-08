@@ -9,7 +9,7 @@ trap 'rm -rf "$TEMP"' EXIT
 swiftc -swift-version 5 -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
     -target "$ARCH-apple-macosx$MACOSX_DEPLOYMENT_TARGET" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
-    "$ROOT/Shared/Localization.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HDRSettings.swift" "$ROOT/Shared/HDRRecipe.swift" "$ROOT/Shared/HDRDisplay.swift" \
+    "$ROOT/Shared/Localization.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HDRSettings.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveSettings.swift" "$ROOT/Shared/ToneCurveNative.swift" "$ROOT/Shared/HDRRecipe.swift" "$ROOT/Shared/HDRDisplay.swift" \
     "$ROOT/Shared/Native/HDRPresentation.swift" \
     "$ROOT/Shared/Native/ProRAWSource.swift" "$ROOT/Shared/Native/ProRAWExport.swift" "$ROOT/Shared/Native/HDRRequest.swift" "$ROOT/Shared/Native/HDRSource.swift" "$ROOT/Shared/Native/HDRImage.swift" \
     "$ROOT/RawLabMac/tests/HDRBridgeTests.swift" "${CORE_LINK[@]}" \

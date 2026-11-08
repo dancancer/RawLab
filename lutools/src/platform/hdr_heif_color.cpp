@@ -15,15 +15,21 @@ namespace {
 std::vector<uint8_t> nclx(uint16_t primaries,uint16_t transfer) {
     cmsCIExyYTRIPLE rgb;
     if(primaries==1)rgb={{.64,.33,1},{.3,.6,1},{.15,.06,1}};
+    else if(primaries==5)rgb={{.64,.33,1},{.29,.60,1},{.15,.06,1}};
+    else if(primaries==6 || primaries==7)rgb={{.630,.340,1},{.310,.595,1},{.155,.070,1}};
     else if(primaries==12)rgb={{.68,.32,1},{.265,.69,1},{.15,.06,1}};
     else if(primaries==9)rgb={{.708,.292,1},{.17,.797,1},{.131,.046,1}};
     else unsupported();
-    if(transfer!=13 && transfer!=1 && transfer!=8)unsupported();
+    if(transfer!=13 && transfer!=1 && transfer!=4 && transfer!=5 && transfer!=6 &&
+       transfer!=7 && transfer!=8 && transfer!=14 && transfer!=15)unsupported();
     std::vector<cmsUInt16Number> table(4096);
     for(size_t i=0;i<table.size();++i) {
         const double x=double(i)/(table.size()-1);
         const double y=transfer==13 ? (x<=.04045 ? x/12.92 : std::pow((x+.055)/1.055,2.4)) :
-            transfer==1 ? (x<.081 ? x/4.5 : std::pow((x+.099)/1.099,1/.45)) : x;
+            transfer==8 ? x : transfer==4 ? std::pow(x,2.2) : transfer==5 ? std::pow(x,2.8) :
+            transfer==7 ? (x<.0912 ? x/4 : std::pow((x+.1115)/1.1115,1/.45)) :
+            transfer==15 ? (x<.08145 ? x/4.5 : std::pow((x+.0993)/1.0993,1/.45)) :
+            (x<.081 ? x/4.5 : std::pow((x+.099)/1.099,1/.45));
         table[i]=cmsUInt16Number(std::lround(y*65535));
     }
     auto* curve=cmsBuildTabulatedToneCurve16(nullptr,uint32_t(table.size()),table.data());
@@ -67,17 +73,26 @@ std::vector<uint8_t> color(View profile) {
     unsupported();
 }
 }
-std::vector<uint8_t> heifRGBProfile(const heif_image_handle* image) {
+std::vector<uint8_t> heifRGBProfile(const heif_image_handle* image,bool allowMissing) {
     const auto size=heif_image_handle_get_raw_color_profile_size(image);
     if(size) {
         if(size>1024*1024)malformed();std::vector<uint8_t> result(size);
         if(heif_image_handle_get_raw_color_profile(image,result.data()).code!=heif_error_Ok)malformed();return result;
     }
     heif_color_profile_nclx* description=nullptr;
-    if(heif_image_handle_get_nclx_color_profile(image,&description).code!=heif_error_Ok || !description)unsupported();
-    const auto primaries=description->color_primaries;
-    const auto transfer=description->transfer_characteristics;
-    heif_nclx_color_profile_free(description);return nclx(uint16_t(primaries),uint16_t(transfer));
+    const auto profileError=heif_image_handle_get_nclx_color_profile(image,&description);
+    if(profileError.code!=heif_error_Ok || !description) {
+        if(allowMissing && profileError.code==heif_error_Color_profile_does_not_exist) return {};
+        unsupported();
+    }
+    auto primaries=description->color_primaries;
+    auto transfer=description->transfer_characteristics;
+    heif_nclx_color_profile_free(description);
+    if (allowMissing) {
+        if (primaries==heif_color_primaries_unspecified) primaries=heif_color_primaries_ITU_R_BT_709_5;
+        if (transfer==heif_transfer_characteristic_unspecified) transfer=heif_transfer_characteristic_IEC_61966_2_1;
+    }
+    return nclx(uint16_t(primaries),uint16_t(transfer));
 }
 std::vector<uint8_t> heifItemRGBProfile(const void* data,size_t size,uint32_t item) {
     // 稳定 libheif API 不暴露 tmap 的 colr 内容；只解析其有界 ipco/ipma 关联。

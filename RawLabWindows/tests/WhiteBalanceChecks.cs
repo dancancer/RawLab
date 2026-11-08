@@ -1,8 +1,56 @@
 using System.IO;
+using System.Reflection;
 using RawLab.Windows;
 
 internal static class WhiteBalanceChecks
 {
+    internal static void RecipeCache(string repo,string raw,Action<bool,string> check)
+    {
+        var directory=Path.Combine(repo,"build","recipe-camera-wb",Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var source=Path.Combine(directory,Path.GetFileName(raw));
+        File.Copy(raw,source);
+        try
+        {
+            using var engine=new RenderEngine(0);
+            using var cancellation=new CancellationTokenSource();
+            engine.SetCancellation(cancellation.Token);
+            const BindingFlags privateInstance=BindingFlags.Instance|BindingFlags.NonPublic;
+            var session=(Native.Session)typeof(RenderEngine).GetField("session",privateInstance)!.GetValue(engine)!;
+            var prepare=typeof(RenderEngine).GetMethod("PrepareRecipe",privateInstance)!;
+            Adjustments Resolve(Adjustments settings)=>(Adjustments)prepare.Invoke(engine,[source,settings])!;
+            var polls=0;
+            Native.CancellationCallback countCalls=_=>{Interlocked.Increment(ref polls);return 0;};
+            // Replacing the RAW may recreate the native session. Keep the observer registered through that path.
+            typeof(RenderEngine).GetField("cancellationCallback",privateInstance)!.SetValue(engine,countCalls);
+            Native.Check(Native.sony2fuji_session_set_cancellation_callback(session,countCalls,IntPtr.Zero));
+            var recipe=new Adjustments();recipe.ApplyMasterRecipe(MasterRecipe.All[0]);
+            recipe.Set(Parameter.Strength,100);recipe.Set(Parameter.Tint,10);
+            var first=Resolve(recipe);
+            check(polls>0 && first.AsShot!=null,"First recipe reads the target RAW camera white balance with the native probe");
+            polls=0;
+            recipe.Set(Parameter.Exposure,.5);recipe.Set(Parameter.Tint,-15);recipe.Set(Parameter.Strength,50);
+            var edited=Resolve(recipe);
+            check(polls==0 && edited.AsShot==first.AsShot && edited.Request(source,null,640,null).Tint!=first.Request(source,null,640,null).Tint,
+                "Edits reuse the target camera calibration without a native probe and apply the new recipe offset");
+            recipe.ExposureMode=recipe.ExposureMode==0 ? 1 : 0;
+            check(Resolve(recipe).AsShot!=null && polls>0,"A change of RAW exposure mode refreshes the calibration");
+            polls=0;
+            File.SetLastWriteTimeUtc(source,File.GetLastWriteTimeUtc(source).AddSeconds(4));
+            check(Resolve(recipe).AsShot!=null && polls>0,"A changed RAW identity refreshes the calibration");
+            var lut=recipe.Recipe!.LutPath;
+            var original=engine.RenderPreview(source,recipe,lut,384,false,false,false).Result;
+            recipe.Set(Parameter.Exposure,1.5);
+            var updated=engine.RenderPreview(source,recipe,lut,640,false,false,false).Result;
+            using var fresh=new RenderEngine(0);
+            var expected=fresh.RenderPreview(source,recipe,lut,640,false,false,false).Result;
+            check(original.WhiteBalance!=null && original.WhiteBalance==updated.WhiteBalance &&
+                updated.WhiteBalance==expected.WhiteBalance && updated.Histogram.SequenceEqual(expected.Histogram),
+                "Real recipe previews use the same camera calibration and output as a fresh render across edits and sizes");
+        }
+        finally { Directory.Delete(directory,true); }
+    }
+
     internal static void Run(Action<bool,string> check)
     {
         foreach(var sample in new[] {

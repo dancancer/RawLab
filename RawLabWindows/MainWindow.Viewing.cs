@@ -5,12 +5,15 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media.Imaging;
 
 namespace RawLab.Windows;
 
 public partial class MainWindow
 {
     private readonly HashSet<ContextMenu> viewingMenus=[];
+    private (BitmapSource Source, BitmapSource Mask)? clippingOverlay;
+    private bool clippingOverlayPending;
     private bool beforeKeyDown;
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
     // 窗口外松键不会清掉 WPF 的 repeat 缓存；激活和焦点恢复时以真实键状态同步。
@@ -31,7 +34,7 @@ public partial class MainWindow
         get {if(file==null)return null;try{return OriginalIdentity.Read(file);}catch(IOException){return null;}catch(UnauthorizedAccessException){return null;}}
     }
     private bool ReferenceCurrent=>neutralResult!=null && neutralRevision==openRevision && acceptedAfter==acceptedReference &&
-        NeutralReference.Matches(acceptedReference,CurrentViewSource,settings.Processing,settings.Geometry,settings.Lens,RenderEdge(interacting),settings.IsHDREditing,settings.X3fMode);
+        NeutralReference.Matches(acceptedReference,CurrentViewSource,settings.Processing,settings.Geometry,settings.Lens,RenderEdge(interacting),settings.IsHDREditing,settings.X3fMode,NeutralReference.HDRCameraSettings(settings.IsHDREditing ? settings.HDR : null));
     private bool ViewInputBlocked=>Keyboard.FocusedElement is TextBoxBase or ComboBox ||
         OwnedWindows.Cast<Window>().Any(window=>window.IsVisible) ||
         MainMenu.Items.OfType<MenuItem>().Any(item=>item.IsSubmenuOpen) || viewingMenus.Count>0;
@@ -72,7 +75,8 @@ public partial class MainWindow
         PrepareHDRFrames();
         var reference=ReferenceCurrent ? neutralResult : null;
         NeutralCanvas.SetImage(HDRPresentationBitmap(reference),reference?.Clipping);
-        ResultCanvas.SetImage(HDRPresentationBitmap(result),result?.Clipping);
+        if (clippingOverlay is { } overlay && !ReferenceEquals(overlay.Source, result?.Image)) clippingOverlay = null;
+        ResultCanvas.SetImage(HDRPresentationBitmap(result),clippingOverlay?.Mask);
         ResultCanvas.SetComparison(HDRPresentationBitmap(reference),reference?.Clipping);
         ResultCanvas.ShowingBefore=view.HoldingBefore && reference!=null;
         var shown=view.HoldingBefore ? reference : result;
@@ -81,6 +85,29 @@ public partial class MainWindow
         ClipStats.Text=shown?.Histogram.Length==768 ? Loc.Format("暗部 {0:P1}   高光 {1:P1} · 显示图统计",shown.Shadows,shown.Highlights) : Loc.Text("统计不可用");
         RefreshPhotoLabels();
         RefreshHDRPresentation();
+        RefreshClippingMask();
+    }
+    private async void RefreshClippingMask()
+    {
+        if (closing || !clipping || clippingOverlay != null || clippingOverlayPending || result?.Image is not { } source) return;
+        clippingOverlayPending = true;
+        try
+        {
+            var mask = await Task.Run(() => RenderEngine.CreateClippingMask(source));
+            if (!closing && ReferenceEquals(result?.Image, source))
+            {
+                clippingOverlay = (source, mask);
+                ResultCanvas.SetClippingMask(mask);
+            }
+        }
+        catch (Exception error)
+        {
+            if (!closing && clipping && ReferenceEquals(result?.Image, source)) Report(error);
+        }
+        finally { clippingOverlayPending = false; }
+
+        // 滑块或视口可以在计算期间发布新图，后续只为当前帧生成遮罩。
+        if (!ReferenceEquals(result?.Image, source)) RefreshClippingMask();
     }
     private void RefreshPhotoLabels()
     {

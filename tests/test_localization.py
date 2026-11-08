@@ -9,6 +9,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+SHARED_SWIFT_SOURCES = [path for path in (ROOT / "Shared").rglob("*.swift")
+                        if "tests" not in path.relative_to(ROOT / "Shared").parts]
 LANGUAGES = ("en", "zh-Hans", "de", "fr", "ja", "es")
 PRINTF = re.compile(r"%(?:\d+\$)?[-+0 #]*(?:\d+)?(?:\.\d+)?(?:[hlLzjt]+)?[@diufegsc]", re.I)
 APPLE_CLIENTS = {"RawLabMac": "RawLabMac/Sources", "RawLab/RawLab": "RawLab/RawLab"}
@@ -85,6 +87,33 @@ def android_catalogs():
 
 
 class GeneratorSourceTests(unittest.TestCase):
+    def test_hdr_camera_development_diagnostic_uses_shared_wording(self):
+        key = "无效或不可用的相机显影设置（白平衡或镜头校正）。"
+        shared = json.loads((ROOT / "Shared/strings/common/catalog.json").read_text())
+        self.assertTrue(key in shared, "HDR camera development wording must be shared")
+        self.assertEqual(set(shared[key]), set(LANGUAGES))
+        for client in ("macos", "ios", "windows", "android"):
+            platform = json.loads((ROOT / f"Shared/strings/platforms/{client}.json").read_text())
+            native_key = "hdr_camera_development_unavailable" if client == "android" else key
+            with self.subTest(client=client):
+                self.assertEqual(platform["entries"][native_key]["source"], key)
+                self.assertNotIn(key, platform["unique"])
+                self.assertNotIn(key, platform["overrides"])
+
+    def test_hdr_camera_development_diagnostic_maps_to_camera_wording(self):
+        key = "无效或不可用的相机显影设置（白平衡或镜头校正）。"
+        mappings = (
+            ("Shared/Native/HDRSource.swift", r'case SONY2FUJI_HDR_REASON_CAMERA_DEVELOPMENT:\s*return L10n\.text\("([^"]+)"\)', key),
+            ("RawLabWindows/HDRSourceInfo.cs", r'19\s*=>\s*Loc\.Text\("([^"]+)"\)', key),
+            ("RawLabAndroid/app/src/main/java/com/rawlab/android/engine/HDRProcessingException.kt",
+             r'19\s*->\s*AppStrings\.text\(R\.string\.([a-z_]+)\)', "hdr_camera_development_unavailable"),
+        )
+        for path, pattern, expected in mappings:
+            with self.subTest(path=path):
+                match = re.search(pattern, (ROOT / path).read_text())
+                self.assertIsNotNone(match)
+                self.assertEqual(match[1], expected)
+
     def test_generated_catalogs_have_no_unowned_entries(self):
         result = subprocess.run(
             [sys.executable, str(ROOT / "scripts/localization/generate.py"), "--check"],
@@ -356,7 +385,7 @@ class LocalizationTests(unittest.TestCase):
                         for lang in LANGUAGES}
             self.assert_parity(catalogs, lambda s: sorted(PRINTF.findall(s.replace("%%", ""))))
             missing = sorted({(source.name, json.loads('"' + raw + '"'))
-                              for source in list((ROOT / sources).rglob("*.swift")) + list((ROOT / "Shared").glob("*.swift"))
+                              for source in list((ROOT / sources).rglob("*.swift")) + SHARED_SWIFT_SOURCES
                               for raw in re.findall(r'L10n\.(?:text|format)\("((?:[^"\\]|\\.)*)"', source.read_text())
                               if json.loads('"' + raw + '"') not in catalogs["en"]})
             self.assertEqual(missing, [], client)
@@ -366,7 +395,7 @@ class LocalizationTests(unittest.TestCase):
     def test_source_literals_are_translated(self):
         for client, sources in APPLE_CLIENTS.items():
             catalog = apple_catalog(ROOT / client / "Resources/en.lproj/Localizable.strings")
-            files = list((ROOT / sources).rglob("*.swift")) + list((ROOT / "Shared").glob("*.swift"))
+            files = list((ROOT / sources).rglob("*.swift")) + SHARED_SWIFT_SOURCES
             self.assertEqual(untranslated(files, catalog, "L10n."), [], client)
         windows = ROOT / "RawLabWindows"
         self.assertEqual(untranslated(windows_sources(), windows_catalog("en"), "Loc.", windows_internal_group), [], "RawLabWindows")

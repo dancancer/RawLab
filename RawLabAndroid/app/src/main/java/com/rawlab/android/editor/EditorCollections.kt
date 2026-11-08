@@ -1,12 +1,16 @@
 package com.rawlab.android.editor
 
+import com.rawlab.android.engine.requireAsset
+
 import android.net.Uri
 import com.rawlab.android.batch.*
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.PhotoIdentity
+import com.rawlab.android.settings.HDRModeError
 import com.rawlab.android.settings.VersionedPhotoEdit
+import com.rawlab.android.settings.requireHDRDecodeVersion
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,7 +29,17 @@ internal class EditorCollections(private val storage: PhotoStorage, parentScope:
     private val deferredRelease = java.util.concurrent.ConcurrentHashMap<String, ImportedPhoto>()
     private data class SourceValidation(val stamp: () -> Unit, val content: () -> Unit)
     private val validators = java.util.concurrent.ConcurrentHashMap<String, SourceValidation>()
-    private val exporter = BatchSelectionExport(journalRoot, readRecord, storage::lookPath, ::validate)
+    private val exporter = BatchSelectionExport(journalRoot, readRecord, storage::lookPath, ::validate) { target, settings ->
+        val info = imported[target.id]?.hdrSource ?: throw HDRModeError.UnsupportedSource
+        settings.requireHDRDecodeVersion(info.isProRAW)
+        val hdr = requireNotNull(settings.hdr)
+        require(hdr.cameraSettings.isDefault || info.isCameraRaw && !info.isProRAW)
+        hdr.cameraSettings.cameraProfile?.requireAsset(storage.hdrCameraProfileDirectory)
+        val look = hdr.lookSettings
+        if (!look.assetIsAvailable(storage.hdrLookDirectory))
+            throw com.rawlab.android.adjustments.AdjustmentTransferException(
+                com.rawlab.android.adjustments.AdjustmentFailure.MISSING_LOOK, look.name ?: "HDR LUT")
+    }
 
     fun close(onReleased: () -> Unit) {
         val job = scope.coroutineContext[Job]!!
@@ -83,8 +97,7 @@ internal class EditorCollections(private val storage: PhotoStorage, parentScope:
                         validate.content()
                         imported[id] = photo; validators[id] = validate
                         additions += BatchTarget(photo.identity, photo.file, photo.name, photo.uri.toString(), photo.inputKind,
-                            // Camera RAW HDR is an explicit editor mode, not a batch/raster default.
-                            sourceIsHDR = photo.isHDRSource && (!photo.isCameraRawHDR || photo.hdrSource?.isProRAW == true))
+                            sourceIsHDR = photo.isHDRSource)
                     } catch (error: Exception) {
                         val id = uri.toString()
                         failures[id] = error.message ?: error.javaClass.simpleName

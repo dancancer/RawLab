@@ -90,11 +90,14 @@ class RasterInputTest {
     }
 
     @Test
-    fun rasterContainerValidationRejectsAlphaAndSixteenBitPng() {
+    fun rasterContainerValidationAcceptsEightAndSixteenBitRgbPng() {
         assertTrue(RasterContainerValidator.inspect(pngHeader(2, 2, 8, 2, true)).isValid)
         assertTrue(RasterContainerValidator.inspect(pngHeader(2, 2, 8, 6, true)).isValid)
         assertFalse(RasterContainerValidator.inspect(pngHeader(2, 2, 8, 6, false)).isValid)
+        assertTrue(RasterContainerValidator.inspect(pngHeader(2, 2, 16, 2, true)).isValid)
+        assertTrue(RasterContainerValidator.inspect(pngHeader(2, 2, 16, 6, true)).isValid)
         assertFalse(RasterContainerValidator.inspect(pngHeader(2, 2, 16, 2, false)).isValid)
+        assertFalse(RasterContainerValidator.inspect(pngHeader(2, 2, 16, 0, true)).isValid)
     }
 
     @Test

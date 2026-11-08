@@ -68,12 +68,12 @@ internal static class ViewComparisonChecks
             Click(window.InfoEntryButton);InteractionChecks.PumpUntil(()=>window.InfoOverlay.IsVisible);Click(window.InfoButton);Capture(window,output,"capture-info");
             check(Get<PhotoInfoMode>(window,"photoInfoMode")==PhotoInfoMode.Capture,"Photo corner and toolbar advance the same information mode");
             Click(window.InfoEntryButton);check(!window.InfoOverlay.IsVisible,"Photo corner completes the information cycle back to hidden");
-            Click(window.CompareSide);Ready(window);Click(window.AdjustToggleButton);window.LibraryColumn.Width=new GridLength(520);window.Width=1000;window.Height=780;window.UpdateLayout();Ready(window);Capture(window,output,"vertical-side");
-            check(window.PhotoArea.ActualHeight>window.PhotoArea.ActualWidth && Grid.GetRow(window.NeutralCanvas)==0 && Grid.GetRow(window.ResultCanvas)==1,"A tall narrow photo area stacks comparison without changing the dock budget");
+            Click(window.CompareSide);Ready(window);EditorShellChecks.ArrangeLayout(window,new Size(1230,980));Ready(window);Capture(window,output,"vertical-side");
+            check(window.PhotoArea.ActualHeight>window.PhotoArea.ActualWidth && Grid.GetRow(window.NeutralCanvas)==0 && Grid.GetRow(window.ResultCanvas)==1,"A tall narrow photo area stacks comparison without changing the inspector width");
             CheckLabels(window,check);
-            Click(window.AdjustToggleButton);window.LibraryColumn.Width=new GridLength(244);window.Width=1200;window.Height=800;window.UpdateLayout();Ready(window);
-            Click(window.CompareButton);var area=window.PhotoArea.RenderSize;var dock=window.DockRow.ActualHeight;Invoke(window,"Schedule",false);window.UpdateLayout();Capture(window,output,"busy");
-            check(window.BusyIndicator.IsVisible && window.BusyIndicator.ActualHeight==2 && window.PhotoArea.RenderSize==area && window.DockRow.ActualHeight==dock,"Latest-preview busy is a two-DIP photo overlay with no canvas or dock layout jump");Ready(window);
+            EditorShellChecks.ArrangeLayout(window,new Size(1200,800));Ready(window);
+            Click(window.CompareButton);var area=window.PhotoArea.RenderSize;var dock=window.AdjustmentPanel.ActualWidth;Invoke(window,"Schedule",false);window.UpdateLayout();Capture(window,output,"busy");
+            check(window.BusyIndicator.IsVisible && window.BusyIndicator.ActualHeight==2 && window.PhotoArea.RenderSize==area && window.AdjustmentPanel.ActualWidth==dock,"Latest-preview busy is a two-DIP photo overlay with no canvas or inspector layout jump");Ready(window);
             if(Environment.GetEnvironmentVariable("RAWLAB_TEST_NATIVE_POINTER")=="1")PointerChecks(window,output,check);
             else Console.WriteLine("NOT REACHED: native S3 pointer/keyboard checks require RAWLAB_TEST_NATIVE_POINTER=1 on the interactive input desktop");
             LayoutChecks(window,app,output,check);
@@ -269,7 +269,7 @@ internal static class ViewComparisonChecks
     private static void Capture(MainWindow window,string output,string name)
     {
         window.UpdateLayout();object RectValue(Rect r)=>new {r.X,r.Y,r.Width,r.Height};
-        var state=new {photoArea=window.PhotoArea.RenderSize,dock=window.DockRow.ActualHeight,busy=window.BusyIndicator.ActualHeight,windowState=window.WindowState.ToString(),font=window.FontSize,dpi=VisualTreeHelper.GetDpi(window).DpiScaleX,
+        var state=new {photoArea=window.PhotoArea.RenderSize,dock=window.AdjustmentPanel.ActualWidth,busy=window.BusyIndicator.ActualHeight,windowState=window.WindowState.ToString(),font=window.FontSize,dpi=VisualTreeHelper.GetDpi(window).DpiScaleX,
             neutral=RectValue(window.NeutralCanvas.ImageBounds),result=RectValue(window.ResultCanvas.ImageBounds),split=window.ResultCanvas.Divider,
             labels=new[]{window.NeutralLabel,window.FilmLabel}.Select(label=>new {label.Name,visible=label.IsVisible,bounds=RectValue(label.TransformToAncestor(window.PhotoArea).TransformBounds(new Rect(label.RenderSize)))}),
             before=window.ResultCanvas.ShowingBefore,mode=Get<EditorViewState>(window,"view").PreferredMode.ToString()};

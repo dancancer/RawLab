@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import UIKit
+import UniformTypeIdentifiers
 
 extension Sony2FujiProcessor {
     func semanticInputType(for buffer: Buffer) -> sony2fuji_input_type {
@@ -9,33 +10,25 @@ extension Sony2FujiProcessor {
     }
 
     func loadMetadata(from url: URL) throws -> ImageMetadata {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
-        else {
-            if let camera = try HDRSourceInfo.probeCameraRAW(url) {
-                return ImageMetadata(width: camera.native.width, height: camera.native.height,
-                                     orientation: CGImagePropertyOrientation(rawValue: camera.native.orientation) ?? .up)
-            }
-            if url.pathExtension.lowercased() == "x3f" {
-                let dimensions = url.path.withCString { rawlab_get_raw_dimensions($0) }
-                if dimensions.width > 0, dimensions.height > 0 {
-                    return ImageMetadata(width: dimensions.width, height: dimensions.height, orientation: .up)
-                }
-            }
-            throw ProcessorError.metadataUnavailable
+        // Generic TIFF metadata can describe only an embedded RAW preview.
+        if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+           CGImageSourceGetType(source) as String? != UTType.tiff.identifier,
+           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
+            guard let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.uint32Value,
+                  let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.uint32Value,
+                  width > 0, height > 0 else { throw ProcessorError.invalidDimensions }
+            let orientation = (properties[kCGImagePropertyOrientation] as? NSNumber)
+                .flatMap { CGImagePropertyOrientation(rawValue: $0.uint32Value) }
+            return ImageMetadata(width: width, height: height, orientation: orientation)
         }
 
-        guard let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.uint32Value,
-              let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.uint32Value,
-              width > 0,
-              height > 0
-        else {
-            throw ProcessorError.invalidDimensions
+        if let camera = try HDRSourceInfo.probeCameraRAW(url) {
+            return ImageMetadata(width: camera.native.width, height: camera.native.height,
+                                 orientation: CGImagePropertyOrientation(rawValue: camera.native.orientation) ?? .up)
         }
-
-        let orientationValue = (properties[kCGImagePropertyOrientation] as? NSNumber)?.uint32Value
-        let orientation = orientationValue.flatMap { CGImagePropertyOrientation(rawValue: $0) }
-        return ImageMetadata(width: width, height: height, orientation: orientation)
+        let dimensions = url.path.withCString { rawlab_get_raw_dimensions($0) }
+        guard dimensions.width > 0, dimensions.height > 0 else { throw ProcessorError.metadataUnavailable }
+        return ImageMetadata(width: dimensions.width, height: dimensions.height, orientation: .up)
     }
 
     func createSession() throws -> OpaquePointer {
@@ -66,6 +59,18 @@ extension Sony2FujiProcessor {
 
     func isNormalX3f(_ url: URL, settings: RawSettings) -> Bool {
         url.pathExtension.lowercased() == "x3f" && settings.x3fMode == .normal
+    }
+
+    func defaultSettings(for url: URL, isRaw: Bool, x3fModeOverride: X3fMode? = nil) throws -> RawSettings {
+        try RawSettings.sourceDefaults(for: url, isRaw: isRaw, sourceIsHDR: HDRSourceInfo.probe(url) != nil,
+            x3fDefaultMode: { try x3fModeOverride ?? self.x3fDefaultMode(for: $0) })
+    }
+
+    func x3fDefaultMode(for url: URL) throws -> X3fMode {
+        var mode = SONY2FUJI_X3F_NORMAL
+        let status = url.path.withCString { sony2fuji_x3f_default_mode($0, &mode) }
+        guard status == SONY2FUJI_STATUS_OK else { throw processingFailure(status) }
+        return mode == SONY2FUJI_X3F_NORMAL ? .normal : .legacy
     }
 
     func configureCurve(_ session: OpaquePointer, settings: ToneCurveSettings) throws {

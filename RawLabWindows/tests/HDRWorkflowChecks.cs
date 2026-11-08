@@ -15,6 +15,248 @@ internal static class HDRWorkflowChecks
     private static void Invoke(object owner,string method)=>owner.GetType().GetMethod(method,Private)!.Invoke(owner,null);
     private static void Ready(MainWindow window)=>InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
 
+    internal static void RunRendition(string repo, string fixture, Action<bool,string> check)
+    {
+        var root = Path.Combine(repo,"build","windows-hdr-rendition",Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var input = Path.Combine(root,"source.jpg");
+        File.Copy(fixture,input);
+        Loc.Initialize("en");
+        var app = TestWindowState.CreateApplication();
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
+        var window = new MainWindow(); TestWindowState.Isolate(window,root);
+        Adjustments Settings() => Get<Adjustments>(window,"settings");
+        HDRRenderedPair Frame() => Get<RenderedImage>(window,"result").HDR!;
+        void Edit(string field, string value, bool accept)
+        {
+            Exception? error = null;
+            window.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle,new Action(() => {
+                Window? dialog = null;
+                try {
+                    dialog = window.OwnedWindows.OfType<Window>().Single(child => AutomationProperties.GetAutomationId(child) == "hdr.rendition");
+                    var panel = (StackPanel)dialog.Content;
+                    var row = panel.Children.OfType<ParameterRow>().Single(control =>
+                        AutomationProperties.GetAutomationId(control.Number) == "hdr.rendition."+field+".value");
+                    row.Number.Text=value;
+                    check(row.Commit(),"Visible rendition control accepts "+field);
+                    if (!accept) { dialog.Close(); return; }
+                    Capture(dialog,Path.Combine(root,"hdr-rendition-"+field+".png"));
+                    var apply = panel.Children.OfType<WrapPanel>().Single().Children.OfType<Button>().Single(button =>
+                        AutomationProperties.GetAutomationId(button) == "hdr.rendition.apply");
+                    apply.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                } catch (Exception failure) {
+                    error=failure;
+                    foreach (var child in window.OwnedWindows.OfType<Window>().ToArray()) child.Close();
+                }
+            }));
+            check(window.HDRRenditionMenu.IsEnabled,"HDR rendition menu is enabled");
+            window.HDRRenditionMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            if (error != null) throw error;
+            Ready(window);
+        }
+        try {
+            window.Show(); window.OpenFile(input); Ready(window);
+            var original = Frame();
+            var originalHDR = Settings().HDR!;
+            var originalSDRExposure = Settings().Capture().Values[(int)Parameter.Exposure];
+            Edit("sdrExposure","-1.5",false);
+            check(Settings().HDR == originalHDR,"Closing the output dialog discards its draft");
+            Edit("sdrExposure","-1.5",true);
+            var baseEdited = Frame();
+            check(Settings().HDR!.ProcessingVersion == 4 && Settings().HDR!.RenditionSettings.SdrExposureEV == -1.5 &&
+                  baseEdited.HDR.RGB.SequenceEqual(original.HDR.RGB) && !baseEdited.SDR.RGB.SequenceEqual(original.SDR.RGB),
+                "Editing the SDR base changes only its float plane");
+            Edit("peakLimit","0.3",true);
+            var capped = Frame();
+            var edited = Settings().HDR!;
+            check(Math.Abs(edited.RenditionSettings.PeakLimitEV-.3) < 1e-9 &&
+                  !capped.HDR.RGB.SequenceEqual(baseEdited.HDR.RGB) && capped.SDR.RGB.SequenceEqual(baseEdited.SDR.RGB),
+                "Capping the HDR peak changes only the master");
+            window.UndoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
+            check(Settings().HDR!.RenditionSettings.PeakLimitEV == 0 && Settings().HDR!.RenditionSettings.SdrExposureEV == -1.5,
+                "Undo reverts the entire last rendition dialog commit");
+            window.RedoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
+            check(Settings().HDR == edited,"Redo restores the HDR peak edit");
+            window.HDREditMenu.IsChecked=false;
+            window.HDREditMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
+            check(!window.HDRRenditionMenu.IsEnabled && Settings()[Parameter.Exposure] == originalSDRExposure,
+                "Ordinary SDR editing retains its own exposure");
+            window.HDREditMenu.IsChecked=true;
+            window.HDREditMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
+            window.OpenFile(input); Ready(window);
+            check(Settings().HDR == edited,"Reopening restores both rendition controls");
+            foreach (var format in new[] { ExportFormat.HdrJpeg, ExportFormat.SdrJpeg }) {
+                var output = Path.Combine(root,format+".jpg");
+                var task = window.ExportPhoto(format,output);
+                InteractionChecks.PumpUntil(() => task.IsCompleted);
+                task.GetAwaiter().GetResult(); Ready(window);
+                var probe = HDRNative.Probe(output,out _);
+                check(probe == (format == ExportFormat.HdrJpeg ? HDRProbeState.Supported : HDRProbeState.NotHDR),
+                    "Rendition output reopens with the expected gain-map presence");
+            }
+        } finally { window.Close(); app.Shutdown(); }
+    }
+
+    internal static void RunEffects(string repo, string fixture, Action<bool,string> check)
+    {
+        var root = Path.Combine(repo,"build","windows-hdr-effects",Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var input = Path.Combine(root,"source.jpg"); File.Copy(fixture,input);
+        Loc.Initialize("en");
+        var app = TestWindowState.CreateApplication();
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
+        var window = new MainWindow(); TestWindowState.Isolate(window,root);
+        const string lookName = "HDR Silver";
+        var silverSource = Path.Combine(AppContext.BaseDirectory,"BundledLooks","HDR","HDR Silver.cube");
+        var silverDigest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(silverSource))).ToLowerInvariant();
+        var silverAsset = new HDRLookSettings(silverDigest,"HDR Silver",1).AssetPath()!;
+        var silverWasInstalled = File.Exists(silverAsset);
+        Adjustments Settings() => Get<Adjustments>(window,"settings");
+        HDRRenderedPair Frame() => Get<RenderedImage>(window,"result").HDR!;
+        void Select(EditorAdjustmentTool tool)
+        {
+            var button = window.Tools.Children.OfType<Button>().Single(item =>
+                AutomationProperties.GetAutomationId(item) == tool.ToString());
+            if (!button.IsVisible) {
+                var groups = Get<Dictionary<EditorAdjustmentGroup,Button>>(window,"groupButtons");
+                var group = groups[EditorAdjustmentRules.GroupFor(tool)];
+                check(group.IsVisible && group.IsEnabled,"HDR tool group is reachable: "+tool);
+                PhotoFeatureChecks.Click(group);
+                window.UpdateLayout();
+            }
+            check(button.IsVisible && button.IsEnabled,"HDR tool button is reachable: "+tool);
+            PhotoFeatureChecks.Click(button);
+            window.UpdateLayout();
+        }
+        void Commit(ParameterRow row, string value)
+        {
+            check(row.IsVisible && row.IsEnabled && row.Number.IsEnabled,"Visible HDR parameter accepts input");
+            row.Number.Text=value;
+            check(row.Commit(),"HDR parameter commits "+value);
+            Ready(window);
+        }
+        void Edit(PhotoEffectTool tool, PhotoEffectParameter parameter, string value)
+        {
+            Select(tool == PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain);
+            var row = Get<Dictionary<PhotoEffectParameter,ParameterRow>>(window.PhotoEffectsEditor,"rows")[parameter];
+            Commit(row,value);
+        }
+        void EditLook(Action<Window, StackPanel, Button[]> edit)
+        {
+            Exception? error = null;
+            window.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() => {
+                try {
+                    var dialog = window.OwnedWindows.OfType<Window>().Single(w => AutomationProperties.GetAutomationId(w) == "hdr.look");
+                    var panel = (StackPanel)dialog.Content;
+                    var buttons = panel.Children.OfType<WrapPanel>().SelectMany(row => row.Children.OfType<Button>()).ToArray();
+                    edit(dialog, panel, buttons);
+                    PhotoFeatureChecks.Click(buttons.Single(b => AutomationProperties.GetAutomationId(b) == "hdr.look.apply"));
+                } catch (Exception failure) {
+                    error = failure;
+                    foreach (var child in window.OwnedWindows.OfType<Window>().ToArray()) child.Close();
+                }
+            }));
+            check(window.HDRLookMenu.IsEnabled,"HDR LUT menu is enabled");
+            window.HDRLookMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            if (error != null) throw error;
+            Ready(window);
+        }
+        try {
+            window.Show(); window.OpenFile(input); Ready(window);
+            var original = Frame();
+            var sdr = Settings().Effects;
+            Edit(PhotoEffectTool.Vignette,PhotoEffectParameter.VignetteAmount,"-55");
+            var dark = Frame();
+            check(!dark.HDR.RGB.SequenceEqual(original.HDR.RGB) && !dark.SDR.RGB.SequenceEqual(original.SDR.RGB),
+                "Vignette affects both renditions");
+            Edit(PhotoEffectTool.Grain,PhotoEffectParameter.GrainAmount,"40");
+            var edited = Settings().HDR!;
+            check(edited.ProcessingVersion==5 && edited.EffectSettings.GrainAmount==40 && Settings().Effects==sdr &&
+                  !Frame().HDR.RGB.SequenceEqual(dark.HDR.RGB), "Grain renders only in the active HDR edit");
+            Capture(window,Path.Combine(root,"hdr-effects.png"));
+            window.UndoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
+            check(Settings().HDR!.EffectSettings.GrainAmount==0 && Settings().HDR!.EffectSettings.VignetteAmount==-55,
+                "Undo restores the last HDR effect without changing the vignette");
+            window.RedoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
+            window.OpenFile(input); Ready(window);
+            check(Settings().HDR==edited,"Reopening restores HDR vignette and grain");
+            var previous = Settings().Capture();
+            foreach (var (tool, amount) in new[] {
+                (EditorAdjustmentTool.Clarity,"55"), (EditorAdjustmentTool.Dehaze,"-40"), (EditorAdjustmentTool.Sharpening,"125")
+            }) {
+                var before = Frame();
+                Select(tool);
+                Commit(window.OrdinaryParameter,amount);
+                check(!Frame().HDR.RGB.SequenceEqual(before.HDR.RGB),"HDR detail changes the rendered master: "+tool);
+            }
+            var beforeDenoise = Frame();
+            Select(EditorAdjustmentTool.Denoise);
+            Commit((ParameterRow)window.DenoiseEditor.FindName("HDRAmount"),"65");
+            var detail = Settings().HDR!;
+            check(detail.ProcessingVersion==6 && detail.DetailSettings==new HDRDetailSettings(1.25,.55,-.4,.65) &&
+                !Frame().HDR.RGB.SequenceEqual(beforeDenoise.HDR.RGB),"HDR denoise updates only its rendered HDR edit");
+            Capture(window,Path.Combine(root,"hdr-detail.png"));
+            window.UndoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
+            check(Settings().HDR!.DetailSettings.Denoise==0,"Undo reverts the HDR denoise strength");
+            window.RedoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
+            window.OpenFile(input); Ready(window);
+            var reopened = Settings().Capture();
+            check(reopened.HDR==detail && reopened.Values.SequenceEqual(previous.Values) && reopened.Atmosphere==previous.Atmosphere &&
+                reopened.Denoise==previous.Denoise,"Reopening restores all HDR detail and preserves the SDR settings");
+            var output = Path.Combine(root,"hdr-effects.jpg");
+            var task = window.ExportPhoto(ExportFormat.HdrJpeg,output);
+            InteractionChecks.PumpUntil(() => task.IsCompleted);
+            task.GetAwaiter().GetResult();
+            check(HDRNative.Probe(output,out _) == HDRProbeState.Supported,"HDR effects and detail export with a readable gain map");
+            var beforeLook = Frame();
+            EditLook((dialog, panel, buttons) => {
+                var silver = buttons.Single(b => AutomationProperties.GetAutomationId(b) == "hdr.look.silver");
+                check(silver.IsVisible && silver.IsEnabled,"Bundled HDR look is reachable");
+                PhotoFeatureChecks.Click(silver);
+                InteractionChecks.PumpUntil(() => silver.IsEnabled);
+                var row = panel.Children.OfType<ParameterRow>().Single();
+                check(row.Number.IsEnabled && File.Exists(silverAsset),"Selecting HDR Silver installs the verified LUT");
+                row.Number.Text="65";
+                check(row.Commit(),"HDR LUT strength accepts 65 percent");
+                Capture(dialog,Path.Combine(root,"hdr-look.png"));
+            });
+            var look = Settings().HDR!;
+            check(look.ProcessingVersion==7 && look.LookSettings == new HDRLookSettings(silverDigest,lookName,.65) &&
+                !Frame().HDR.RGB.SequenceEqual(beforeLook.HDR.RGB) && !Frame().SDR.RGB.SequenceEqual(beforeLook.SDR.RGB),
+                "HDR Silver affects both renditions");
+            window.OpenFile(input); Ready(window);
+            check(Settings().HDR == look && window.ActiveFilm.Text == lookName,"Reopening restores the HDR look and strength");
+            EditLook((_, _, buttons) => PhotoFeatureChecks.Click(buttons.Single(b => AutomationProperties.GetAutomationId(b) == "hdr.look.clear")));
+            check(Settings().HDR!.LookSettings.IsDefault && Frame().HDR.RGB.SequenceEqual(beforeLook.HDR.RGB),"Clearing HDR LUT restores the ungraded master");
+            window.UndoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
+            check(Settings().HDR == look,"Undo restores the HDR look");
+            var graded = Path.Combine(root,"hdr-look.jpg");
+            var export = window.ExportPhoto(ExportFormat.HdrJpeg,graded);
+            InteractionChecks.PumpUntil(() => export.IsCompleted);
+            export.GetAwaiter().GetResult();
+            check(HDRNative.Probe(graded,out _) == HDRProbeState.Supported && !File.ReadAllBytes(output).SequenceEqual(File.ReadAllBytes(graded)),
+                "HDR LUT survives gain-map JPEG export");
+            EditLook((_, panel, buttons) => {
+                var master = buttons.Single(b => AutomationProperties.GetAutomationId(b) == "hdr.look.silver-master");
+                check(master.IsVisible && master.IsEnabled,"Bundled HDR Master recipe is reachable");
+                PhotoFeatureChecks.Click(master);
+                InteractionChecks.PumpUntil(() => master.IsEnabled);
+                check(panel.Children.OfType<TextBlock>().Select(label => label.Text).SequenceEqual(new[] { "HDR Silver", "" }),
+                    "Bundled HDR Master resolves its packaged LUT");
+            });
+            var masterEdit = Settings().HDR!;
+            check(masterEdit.LookSettings.Sha256 == silverDigest && masterEdit.LookSettings.Strength == 1 &&
+                masterEdit.ToneSettings.BlackPoint == -8 && Math.Abs(masterEdit.ToneSettings.CurveStrength - 14) < 1e-9 &&
+                masterEdit.EffectSettings.GrainAmount == 14,
+                "The bundled HDR Master applies its look, curve and grain in one edit");
+            window.UndoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
+            check(Settings().HDR == look,"Undo reverts the entire HDR Master recipe");
+        } finally {
+            window.Close(); app.Shutdown();
+            if (!silverWasInstalled) File.Delete(silverAsset);
+        }
+    }
+
     internal static void RunProRAWBatch(string repo, string fixture, Action<bool,string> check)
     {
         var root=Path.Combine(Path.GetFullPath(repo),"build","proraw-batch-workflow",Guid.NewGuid().ToString("N"));
@@ -222,6 +464,78 @@ internal static class HDRWorkflowChecks
             Ready(window);
             check(Settings()[Parameter.Exposure] == value, "Active mode receives the exposure edit");
         }
+        void EditFbdd(int level)
+        {
+            var before = Frame().HDR!;
+            Exception? error = null;
+            window!.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle,new Action(() => {
+                try {
+                    var dialog = window.OwnedWindows.OfType<Window>().Single(w => AutomationProperties.GetAutomationId(w) == "hdr.camera");
+                    var panel = (StackPanel)dialog.Content;
+                    var fbdd = panel.Children.OfType<ComboBox>().Single(combo => AutomationProperties.GetAutomationId(combo) == "hdr.camera.fbdd");
+                    check(fbdd.IsVisible && fbdd.IsEnabled,"Camera RAW FBDD control is reachable");
+                    fbdd.SelectedIndex=level;
+                    if (level == 2) Capture(dialog,Path.Combine(root,"camera-hdr-fbdd.png"));
+                    PhotoFeatureChecks.Click(panel.Children.OfType<WrapPanel>().Single().Children.OfType<Button>().Single(
+                        button => AutomationProperties.GetAutomationId(button) == "hdr.camera.apply"));
+                } catch (Exception failure) {
+                    error=failure;
+                    foreach (var child in window.OwnedWindows.OfType<Window>().ToArray()) child.Close();
+                }
+            }));
+            check(window.HDRCameraMenu.IsEnabled,"HDR RAW menu is available for Bayer");
+            window.HDRCameraMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            if (error != null) throw error;
+            InteractionChecks.PumpUntil(() => Settings().HDR?.CameraSettings.FbddLevel == level && Frame().HDR != before);
+            Ready(window);
+            check(Settings().HDR!.RecordVersion==8 && (level != 2 || !Frame().HDR!.HDR.RGB.SequenceEqual(before.HDR.RGB)),
+                "HDR FBDD changes the decoded result and saves a camera development record");
+        }
+        void TransferFbdd()
+        {
+            T Control<T>(Window dialog,string id) where T:DependencyObject => PhotoFeatureChecks.Descendants<T>(dialog)
+                .Single(item => AutomationProperties.GetAutomationId(item) == id);
+            Exception? failure = null;
+            window!.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle,new Action(() => {
+                var dialog = window.OwnedWindows.OfType<Window>().FirstOrDefault(w => AutomationProperties.GetAutomationId(w) == "adjustment.copy");
+                try {
+                    if (dialog == null) throw new InvalidOperationException("Missing camera copy dialog");
+                    Control<ComboBox>(dialog,"adjustment.copy.scope").SelectedIndex = 3;
+                    dialog.UpdateLayout();
+                    PhotoFeatureChecks.Click(Control<Button>(dialog,"adjustment.copy.clear"));
+                    Control<CheckBox>(dialog,"adjustment.field.hdr.camera_development").IsChecked = true;
+                    var copy = Control<Button>(dialog,"adjustment.copy.confirm");
+                    check(copy.IsEnabled,"Camera HDR scope captures only HDR RAW");
+                    PhotoFeatureChecks.Click(copy);
+                } catch (Exception error) { failure=error; dialog?.Close(); }
+            }));
+            window.CopyAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            if (failure != null) throw failure;
+            EditFbdd(1);
+            var finished = false;
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
+            timer.Tick += (_,_) => {
+                var dialog = window.OwnedWindows.OfType<Window>().FirstOrDefault(w => AutomationProperties.GetAutomationId(w) == "adjustment.results");
+                if (dialog == null) return;
+                timer.Stop();
+                try {
+                    var apply = Control<Button>(dialog,"adjustment.results.apply");
+                    check(apply.IsEnabled,"Bayer target passes camera paste native preflight");
+                    PhotoFeatureChecks.Click(apply);
+                    PhotoFeatureChecks.Click(Control<Button>(dialog,"adjustment.results.close"));
+                    finished = true;
+                } catch (Exception error) { failure=error; dialog.Close(); }
+            };
+            try {
+                timer.Start();
+                window.PasteAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                InteractionChecks.PumpUntil(() => finished || failure != null);
+            } finally { timer.Stop(); }
+            if (failure != null) throw failure;
+            Ready(window);
+            check(Settings().HDR?.CameraSettings.FbddLevel == 2 && Settings()[Parameter.Exposure] == 1.25,
+                "Pasting HDR RAW restores the saved FBDD without changing other settings");
+        }
         void Export(ExportFormat format, string output)
         {
             var task = window!.ExportPhoto(format, output);
@@ -241,6 +555,8 @@ internal static class HDRWorkflowChecks
                 check(!window!.ResultHDRSurface.Available, "HDR editing remains usable with the SDR canvas in Windows session 0");
             check(Settings()[Parameter.Exposure] == 0, "First HDR edit starts with independent exposure");
             EditExposure(1.25);
+            var bayer = Settings().ProRAWDecodeVersion == null;
+            if (bayer) { EditFbdd(2); TransferFbdd(); }
             Toggle(false);
             check(Settings()[Parameter.Exposure] == .5, "Switching to SDR restores the SDR exposure");
             Toggle(true);
@@ -253,6 +569,7 @@ internal static class HDRWorkflowChecks
             Open();
             check(window.HDREditMenu.IsChecked && Settings().IsHDREditing && Frame().HDR != null &&
                 Settings()[Parameter.Exposure] == 1.25, "Reopened editor restores the last mode and HDR exposure");
+            if (bayer) check(Settings().HDR!.CameraSettings.FbddLevel == 2,"Reopening restores the saved HDR FBDD setting");
             Toggle(false);
             check(Settings()[Parameter.Exposure] == .5, "Reopened editor also restores the independent SDR exposure");
             Toggle(true);
@@ -282,6 +599,7 @@ internal static class HDRWorkflowChecks
                     $"SDR JPEG decodes at full size ({jpeg.PixelWidth} × {jpeg.PixelHeight})");
             }
             check(SourceHash() == originalHash, "Camera RAW source remains byte-for-byte unchanged");
+            if (Settings().ProRAWDecodeVersion == null) VerifyCameraRawBatch(root,source,Settings(),check);
         }
         catch
         {
@@ -293,6 +611,43 @@ internal static class HDRWorkflowChecks
             window?.Close();
             app.Shutdown();
         }
+    }
+
+    private static void VerifyCameraRawBatch(string root, string source, Adjustments hdr, Action<bool,string> check)
+    {
+        var extension = Path.GetExtension(source);
+        var high = Path.Combine(root,"batch-hdr"+extension); File.Copy(source,high);
+        var low = Path.Combine(root,"batch-sdr"+extension); File.Copy(source,low);
+        var store = new EditStore(Path.Combine(root,"batch-edits"));
+        var saved = hdr.Clone(); saved.Set(Parameter.Exposure,-.5);
+        saved.HDR = saved.HDR!.WithRendition(new() { SdrExposureEV=-.75 });
+        store.Save(high,saved.Capture(),null);
+        var before = store.VersionedState(high);
+        var job = BatchJob.Create(source,hdr.Capture(),null,"HDR");
+        job.SourceSupportsCameraHDR=true; job.OutputDirectory=root; job.Format=ExportFormat.SdrJpeg; job.LongEdge=64;
+        var journal = new BatchJournal(Path.Combine(root,"camera-uniform"));
+        var preparation = new BatchHDRPreparation(store,_ => null);
+        var batch = new BatchExportWindow(job,journal,_ => new RenderEngine(0),hdrPreparation:preparation);
+        try {
+            batch.Show();
+            var adding=batch.AddInputs([high,low]); InteractionChecks.PumpUntil(()=>adding.IsCompleted); adding.GetAwaiter().GetResult();
+            check(batch.Job.SelectedCount==2,"Camera RAW batch admits saved HDR and fresh SDR targets");
+            var run=batch.StartExecution(); InteractionChecks.PumpUntil(()=>run.IsCompleted); run.GetAwaiter().GetResult();
+            var completed=journal.Load()!;
+            check(completed.Mode==BatchJob.PerTargetFrozen && completed.SucceededCount==2 &&
+                  completed.Items[0].Frozen!.Settings.HDR?.Mode==HDRMode.Hdr &&
+                  completed.Items[1].Frozen!.Settings.HDR?.Mode!=HDRMode.Hdr,"Unified camera RAW batch exports both frozen modes");
+            check(store.VersionedState(high).SameAs(before) && store.VersionedState(low).Edit==null,
+                "Uniform output keeps saved target records");
+        } finally { batch.Close(); }
+        var selection = new BatchSelectionSession(); selection.Add([high,low]);
+        var collection = new BatchSelectionExport(store,new BatchJournal(Path.Combine(root,"camera-collection")),_=>null);
+        var reviewed = collection.Prepare(selection,[],ExportFormat.HdrJpeg,64,root,_=>null);
+        check(!reviewed.Ready && reviewed.Rows[0].Error==null && reviewed.Rows[1].Error!=null,
+            "HDR JPEG collection preflight identifies the camera RAW still in SDR mode");
+        var frozen = collection.Freeze(selection,collection.Prepare(selection,[],ExportFormat.SdrJpeg,64,root,_=>null),_=>null);
+        check(frozen.HasCameraHDRSource && frozen.Items[0].Frozen!.Settings.HDR==saved.HDR &&
+              frozen.Items[1].Frozen!.Settings.HDR?.Mode!=HDRMode.Hdr,"Collection freezes each RAW photo's own settings");
     }
 
     private static void SessionCancellationAfterDisplayReset(string root, string source, Action<bool, string> check)
@@ -314,13 +669,15 @@ internal static class HDRWorkflowChecks
         engine.SetCancellation(cancellation.Token);
         engine.Render(first, new(), null, 32, statistics: false, clipping: false);
         engine.Render(second, new(), null, 32, statistics: false, clipping: false);
+        check(PhotoInput.ProbeCameraRaw(source,out var info) == HDRProbeState.Supported && info != null,
+            "Camera RAW fixture passes native HDR probing");
         var settings = new Adjustments();
-        settings.SetHDRMode(true, sourceIsHDR: true, cameraRaw: true, proRAW: true);
+        settings.SetHDRMode(true, sourceIsHDR: true, cameraRaw: true, proRAW: info!.IsProRAW);
         cancellation.Cancel();
         var cancelled = false;
         try { engine.Render(source, settings, null, 32, statistics: false, clipping: false); }
         catch (OperationCanceledException) { cancelled = true; }
-        check(cancelled, "Cancellation remains bound after raster session replacement before ProRAW HDR decode");
+        check(cancelled, "Cancellation remains bound after raster session replacement before camera HDR decode");
     }
 
     internal static void Run(string repo,string fixture,Action<bool,string> check)
@@ -341,7 +698,7 @@ internal static class HDRWorkflowChecks
             Capture(exportMenu,Path.Combine(root,"sdr-export-menu.png"));exportMenu.IsOpen=false;
             var settings=Get<Adjustments>(window,"settings");
             check(settings.IsHDREditing,"Fresh HDR phone photo opens with HDR editing enabled");
-            check(!window.AutoExposureButton.IsEnabled && !window.MenuAutoExposure.IsEnabled,"HDR editing disables the SDR-only automatic exposure action");
+            check(window.AutoExposureButton.IsEnabled && window.MenuAutoExposure.IsEnabled,"HDR editing enables automatic exposure");
             window.MenuCompareSwipe.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));Ready(window);
             check((bool)window.GetType().GetProperty("ReferenceCurrent",Private)!.GetValue(window)!,
                 "HDR comparison publishes a current neutral reference");
@@ -372,6 +729,38 @@ internal static class HDRWorkflowChecks
                 Summary<TextBlock>("adjustment.copy.summary.empty").Text==Loc.Text("尚无已修改的调整。"),
                 "Native neutral HDR modified scope is empty and cannot be copied");
             summaryDialog.Close();
+            var beforeAutoExposure=Get<Adjustments>(window,"settings");
+            var previousExposure=beforeAutoExposure[Parameter.Exposure];
+            var dormantExposure=beforeAutoExposure.Capture().Values[(int)Parameter.Exposure];
+            using (var hdrMeter=new RenderEngine()) {
+                var expected=hdrMeter.AutoExposure(source,beforeAutoExposure);
+                check(expected!=previousExposure,"HDR workflow fixture produces an exposure correction");
+                window.AutoExposureButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                InteractionChecks.PumpUntil(()=>!Get<bool>(window,"autoExposing"));Ready(window);
+                var afterAutoExposure=Get<Adjustments>(window,"settings");
+                check(afterAutoExposure[Parameter.Exposure]==expected &&
+                    afterAutoExposure.Capture().Values[(int)Parameter.Exposure]==dormantExposure,
+                    "Automatic exposure commits the HDR value without changing the dormant SDR value");
+                window.MenuAutoExposure.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                InteractionChecks.PumpUntil(()=>!Get<bool>(window,"autoExposing"));Ready(window);
+                window.UndoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));Ready(window);
+                check(Get<Adjustments>(window,"settings")[Parameter.Exposure]==previousExposure,
+                    "One undo restores the HDR exposure after repeated automatic metering");
+                window.RedoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));Ready(window);
+                check(Get<Adjustments>(window,"settings")[Parameter.Exposure]==expected,
+                    "Redo restores the HDR automatic exposure");
+                window.OpenFile(source);Ready(window);
+                var reopened=Get<Adjustments>(window,"settings");
+                check(reopened[Parameter.Exposure]==expected &&
+                    reopened.Capture().Values[(int)Parameter.Exposure]==dormantExposure,
+                    "Reopening preserves HDR automatic exposure and the dormant SDR value");
+                var destination=Path.Combine(root,"hdr-auto-exposure.jpg");
+                var export=window.ExportPhoto(ExportFormat.HdrJpeg,destination);
+                InteractionChecks.PumpUntil(()=>export.IsCompleted);
+                export.GetAwaiter().GetResult();
+                check(File.Exists(destination) && HDRNative.Probe(destination,out _)==HDRProbeState.Supported,
+                    "The reopened automatic exposure exports a readable HDR JPEG");
+            }
             var tools=Get<Dictionary<EditorAdjustmentTool,(Button Button,AdjustmentRing Ring)>>(window,"workspaceTools");
             foreach(var (tool,parameter,value) in new[] {
                 (EditorAdjustmentTool.Exposure,Parameter.Exposure,.5),
@@ -384,6 +773,19 @@ internal static class HDRWorkflowChecks
                 window.OrdinaryParameter.Number.Text=value.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 check(window.OrdinaryParameter.Commit(),"HDR parameter commits through the visible editor: "+tool);Ready(window);
                 check(Get<Adjustments>(window,"settings")[parameter]==value,"HDR record receives the edited value: "+tool);
+            }
+            foreach (var (tool, parameter, value) in new[] {
+                (EditorAdjustmentTool.BlackPoint, ToneControlParameter.BlackPoint, -25d),
+                (EditorAdjustmentTool.WhitePoint, ToneControlParameter.WhitePoint, 50d)
+            }) {
+                var button = tools[tool].Button;
+                check(button.IsEnabled, "HDR tone tool is enabled: " + tool);
+                button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                window.OrdinaryParameter.Number.Text = value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                check(window.OrdinaryParameter.Commit(), "HDR tone commits through the visible editor: " + tool); Ready(window);
+                var active = Get<Adjustments>(window,"settings");
+                check(active.EditingToneValue(parameter) == value && active.ToneControls[parameter] == 0 &&
+                    active.HDR!.ProcessingVersion == 2, "HDR tone changes the active record: " + tool);
             }
             tools[EditorAdjustmentTool.WhiteBalance].Button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             foreach(var (field,value) in new[]{("temperature",7300d),("tint",12d)}) {
@@ -441,7 +843,21 @@ internal static class HDRWorkflowChecks
             var first=engine.RenderPreview(source,sdr,null,128,false,true,false);
             var next=engine.RenderPreview(source,neutral,null,128,false,true,false);
             check(first.Result.HDR==null && next.Result.HDR!=null && next.Neutral.HDR!=null,"Result and neutral caches include HDR mode");
+            var native=engine.RenderPreview(source,neutral,null,0,false,true,false);
+            check(ReferenceEquals(next,engine.RenderPreview(source,neutral,null,128,false,true,false)) &&
+                ReferenceEquals(native,engine.RenderPreview(source,neutral,null,2000,false,true,false)),
+                "HDR viewport sizes reuse completed frames and both requests for the 2000px limit share one frame");
+            var adjusted=neutral.Clone();adjusted.Set(Parameter.Exposure,.5);
+            var adjustedFrame=engine.RenderPreview(source,adjusted,null,2000,false,true,false);
+            check(ReferenceEquals(native.Neutral,adjustedFrame.Neutral) && !ReferenceEquals(native.Result,adjustedFrame.Result),
+                "HDR color edits reuse the matching neutral frame but regenerate the adjusted pixels");
             var meter=engine.AutoExposure(source,sdr);check(double.IsFinite(meter),"SDR HDR-source auto exposure completes on bounded input");
+            engine.SetGpuMode(2);
+            var forceRejected=false;
+            try { engine.AutoExposure(source,neutral); }
+            catch(HDRSourceException error) when(error.Reason==HDRNative.ReasonUnsupportedGpu) { forceRejected=true; }
+            check(forceRejected,"HDR auto exposure respects GPU Force");
+            engine.SetGpuMode(0);
             neutral.Geometry=new GeometrySettings { QuarterTurns=1,CropWidth=.75 };
             var geometry=engine.RenderPreview(source,neutral,null,128,false,false,false).Result;
             check(geometry.NativeWidth==geometry.HDR!.OutputNativeWidth && geometry.NativeHeight==geometry.HDR.OutputNativeHeight,

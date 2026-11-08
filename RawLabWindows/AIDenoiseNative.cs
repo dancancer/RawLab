@@ -13,6 +13,16 @@ internal static partial class Native
     }
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     internal delegate int AIProgress(IntPtr context,int phase,ulong completed,ulong total);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)]
+    internal static extern int sony2fuji_hdr_prepare_camera_raw_ai(Session session,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string path, AIProgress progress, IntPtr context, ref HDRDiagnostic diagnostic);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)]
+    internal static extern int sony2fuji_hdr_camera_ai_key(Session session,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string path, [Out] byte[] key, uint capacity, ref HDRDiagnostic diagnostic);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)]
+    internal static extern int sony2fuji_hdr_decode_camera_raw_with_ai(Session? session,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref HDRDecodeOptions options, ref HDRCameraDevelopment development,
+        ref HDRImagePair result, ref HDRDiagnostic diagnostic);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_ai_available();
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_ai_hardware_available();
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern IntPtr sony2fuji_ai_get_devices();

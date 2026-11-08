@@ -19,6 +19,10 @@ struct ViewportPreviewTests {
         let output = URL(fileURLWithPath: CommandLine.arguments[3])
         if CommandLine.arguments.contains("--model-only") {
             try modelChecks(raw: raw, lut: lut, output: output)
+            if let index = CommandLine.arguments.firstIndex(of: "--hdr-reference"),
+               CommandLine.arguments.indices.contains(index + 1) {
+                hdrChecks(url: URL(fileURLWithPath: CommandLine.arguments[index + 1]), output: output)
+            }
             return
         }
         try atmosphereChecks(raw: raw, output: output)
@@ -221,8 +225,16 @@ struct ViewportPreviewTests {
         wait("resized drag settles without extra full-image work") { !model.busy && model.result?.image.width == 832 }
         model.updatePreviewLongEdge(1600)
         wait("viewport size can grow again after a drag") { !model.busy && model.result?.image.width == 1600 }
+        let fittedImage = model.result!.image
         model.fullResolution = true
         wait("100 percent returns to native rendering") { !model.busy && model.result?.isFullResolution == true }
+        let nativeImage = model.result!.image
+        model.fullResolution = false
+        wait("returning to fit restores the viewport preview") { !model.busy && model.result?.image.width == 1600 }
+        check(model.result!.image === fittedImage, "fit reuses its completed pixels after a native preview")
+        model.fullResolution = true
+        wait("returning to 100 percent restores the native preview") { !model.busy && model.result?.isFullResolution == true }
+        check(model.result!.image === nativeImage, "100 percent reuses its completed pixels after fit")
         model.setInteracting(true)
         model.settings.exposure = 0.75
         wait("pixel-mode adjustments publish a bounded proxy") {
@@ -260,6 +272,31 @@ struct ViewportPreviewTests {
         model.fullResolution = true
         wait("100 percent cancels pending proxy resize work") { !model.busy && model.result?.isFullResolution == true }
         check(model.error == nil, "editor finishes without rendering errors")
+    }
+
+    static func hdrChecks(url: URL, output: URL) {
+        let model = EditorModel(lookDirectory: output.appendingPathComponent("hdr-looks"),
+                                editDirectory: output.appendingPathComponent("hdr-edits"),
+                                batchDirectory: output.appendingPathComponent("hdr-batch"))
+        model.updatePreviewLongEdge(320)
+        model.open(url)
+        wait("initial HDR import publishes its fitted pair") {
+            !model.importing && !model.busy && model.result?.hdr?.width == 320
+        }
+        let fit = model.result!.hdr
+        model.fullResolution = true
+        wait("first HDR native-size preview develops a larger pair") { !model.busy && (model.result?.hdr?.width ?? 0) > 320 }
+        let native = model.result!.hdr
+        model.fullResolution = false
+        wait("return to HDR Fit completes") { !model.busy && model.result?.hdr?.width == 320 }
+        check(model.result?.hdr === fit, "HDR Fit reuses the imported pair")
+        model.fullResolution = true
+        wait("return to HDR native size completes") { !model.busy && (model.result?.hdr?.width ?? 0) > 320 }
+        check(model.result?.hdr === native, "HDR native size reuses the completed pair")
+        let reference = model.neutral?.hdr
+        model.settings.hdr?.exposure = 0.5
+        wait("HDR exposure edit completes") { !model.busy && model.result?.hdr !== native }
+        check(reference != nil && model.neutral?.hdr === reference, "HDR color edits reuse the unchanged neutral pair")
     }
 
     static func wait(_ name: String, condition: () -> Bool) {

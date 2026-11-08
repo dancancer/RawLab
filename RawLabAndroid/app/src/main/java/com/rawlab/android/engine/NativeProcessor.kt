@@ -21,7 +21,9 @@ import com.rawlab.android.settings.HslTargetRevision
 import com.rawlab.android.settings.HslTargetSample
 import com.rawlab.android.settings.HslTargetAvailability
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.HDRSettings
 import com.rawlab.android.settings.LensSettings
+import com.rawlab.android.settings.X3fMode
 
 // 原生层对外观文件的识别结果：格式与 RLOOK 版本
 enum class LookFormat(val extension: String) {
@@ -105,8 +107,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     fun previewCompatibility(input: File, inputKind: PhotoInputKind, lut: File?, configuration: String?): NativeFrame {
         check(handle != 0L)
         val pixels = rasterInput(input, inputKind, 512)
-        return nativeCompatibilityPreview(handle, input.path, pixels?.bitmap, pixels?.width ?: 0,
-            pixels?.height ?: 0, lut?.path, configuration)
+        return nativeCompatibilityPreview(handle, input.path, pixels?.pixels, pixels?.width ?: 0,
+            pixels?.height ?: 0, pixels?.pixelFormat ?: 0, lut?.path, configuration)
     }
 
     private fun previewRequest(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
@@ -122,8 +124,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
         with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
             midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
-        return nativeProcess(handle, input.path, pixels?.bitmap, pixels?.width ?: 0,
-            pixels?.height ?: 0, if (pixels == null) 0 else 1, lut?.path, null, effective.strength,
+        return nativeProcess(handle, input.path, pixels?.pixels, pixels?.width ?: 0,
+            pixels?.height ?: 0, pixels?.pixelFormat ?: 0, lut?.path, null, effective.strength,
             effective.exposure, effective.customWb, effective.temperature, effective.tint,
             effective.highlights, effective.shadows, effective.contrast, effective.renderToneCurve,
             effective.saturation, effective.sharpening, edge, interactive, ExportFormat.JPEG.nativeValue, 0,
@@ -139,12 +141,25 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     fun sampleHsl(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
         inputKind: PhotoInputKind, revision: HslTargetRevision, x: Float, y: Float,
         cancellationGeneration: Long = -1L): HslTargetSample {
-        if (!x.isFinite() || !y.isFinite())
-            return HslTargetSample.unavailable(revision, HslTargetAvailability.NONFINITE)
-        if (x !in 0f..1f || y !in 0f..1f)
-            return HslTargetSample.unavailable(revision, HslTargetAvailability.OUTSIDE)
+        return sampleHsl(revision, x, y) {
+            previewRequest(input, lut, settings, edge, interactive, inputKind, revision, it, cancellationGeneration)
+        }
+    }
+
+    @Synchronized
+    internal fun sampleHDRHsl(source: NativeHDRImage, settings: HDRSettings, edge: Int,
+        revision: HslTargetRevision, x: Float, y: Float, cancellationGeneration: Long, lookDirectory: File? = null): HslTargetSample {
+        check(handle != 0L)
+        return sampleHsl(revision, x, y) {
+            NativeHDRBridge.sampleHsl(handle, source, settings, edge, revision.source, revision.request, it, cancellationGeneration, lookDirectory)
+        }
+    }
+
+    private fun sampleHsl(revision: HslTargetRevision, x: Float, y: Float, sample: (FloatArray) -> Unit): HslTargetSample {
+        if (!x.isFinite() || !y.isFinite()) return HslTargetSample.unavailable(revision, HslTargetAvailability.NONFINITE)
+        if (x !in 0f..1f || y !in 0f..1f) return HslTargetSample.unavailable(revision, HslTargetAvailability.OUTSIDE)
         val probe = FloatArray(13).also { it[0] = x; it[1] = y }
-        previewRequest(input, lut, settings, edge, interactive, inputKind, revision, probe, cancellationGeneration)
+        sample(probe)
         return HslTargetSample(revision, HslTargetAvailability.entries.getOrNull(probe[0].toInt()) ?: HslTargetAvailability.FAILED,
             probe.slice(2..4), probe.slice(5..12), probe[1] == 1f)
     }
@@ -166,8 +181,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
             midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
         val backend = intArrayOf(-1)
-        nativeProcess(handle, input.path, pixels?.bitmap, pixels?.width ?: 0, pixels?.height ?: 0,
-            if (pixels == null) 0 else 1, lut?.path, output.path, effective.strength,
+        nativeProcess(handle, input.path, pixels?.pixels, pixels?.width ?: 0, pixels?.height ?: 0,
+            pixels?.pixelFormat ?: 0, lut?.path, output.path, effective.strength,
             effective.exposure, effective.customWb, effective.temperature, effective.tint,
             effective.highlights, effective.shadows, effective.contrast, effective.renderToneCurve,
             effective.saturation, effective.sharpening, 0, false, format.nativeValue, longEdge ?: 0,
@@ -194,8 +209,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
         with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
             midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
-        return nativeAutoExposure(handle, input.path, pixels?.bitmap, pixels?.width ?: 0, pixels?.height ?: 0,
-            if (pixels == null) 0 else 1, effective.customWb, effective.temperature, effective.tint,
+        return nativeAutoExposure(handle, input.path, pixels?.pixels, pixels?.width ?: 0, pixels?.height ?: 0,
+            pixels?.pixelFormat ?: 0, effective.customWb, effective.temperature, effective.tint,
             effective.exposureMode, effective.recipeID != null, effective.strength, effective.processing.version, effective.x3fMode.nativeValue)
     }
 
@@ -206,25 +221,34 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     }
 
     @Synchronized
+    internal fun estimateHDRExposure(source: NativeHDRImage, settings: com.rawlab.android.settings.HDRSettings,
+        cancellationGeneration: Long): Float {
+        check(handle != 0L) { "Processor is closed" }
+        return NativeHDRBridge.estimateAutoExposure(handle, source, settings, cancellationGeneration)
+    }
+
+    @Synchronized
     internal fun renderHDR(source: NativeHDRImage, settings: com.rawlab.android.settings.HDRSettings, edge: Int,
-        cancellationGeneration: Long = -1L): NativeHDRImage {
+        cancellationGeneration: Long = -1L, lookDirectory: File? = null): NativeHDRImage {
         check(handle != 0L) { "Processor is closed" }
         require(edge in 0..65535)
-        return NativeHDRBridge.render(handle, source, settings, edge, cancellationGeneration)
+        return NativeHDRBridge.render(handle, source, settings, edge, cancellationGeneration, lookDirectory)
     }
 
     internal fun decodeHDRCamera(file: File, info: com.rawlab.android.photo.HDRSourceInfo, edge: Int,
-        cancellationGeneration: Long = -1L): NativeHDRImage {
+        cancellationGeneration: Long = -1L,
+        camera: com.rawlab.android.settings.HDRCameraDevelopmentSettings = com.rawlab.android.settings.HDRCameraDevelopmentSettings(),
+        profileDirectory: File? = null): NativeHDRImage {
         check(handle != 0L) { "Processor is closed" }
-        return NativeHDRBridge.decodeCameraRaw(handle, file, info, edge, cancellationGeneration)
+        return NativeHDRBridge.decodeCameraRaw(handle, file, info, edge, cancellationGeneration, camera, profileDirectory)
     }
 
     internal fun exportProRAW(file: File, info: com.rawlab.android.photo.HDRSourceInfo,
-        edits: EditSettings, output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long = -1L) {
+        edits: EditSettings, output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long = -1L, lookDirectory: File? = null) {
         check(handle != 0L) { "Processor is closed" }
         edits.requireProRAWDecoder()
         NativeHDRBridge.exportProRAW(handle, file, info, requireNotNull(edits.hdr).copy(geometry = edits.geometry),
-            output, keepHDR, edge, cancellationGeneration)
+            output, keepHDR, edge, cancellationGeneration, lookDirectory)
     }
 
     // 取消不能等待 preview 的 Java monitor 或 native session 渲染锁。
@@ -283,8 +307,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     }
 
     private external fun nativeCreate(mode: Int): Long
-    private external fun nativeCompatibilityPreview(handle: Long, input: String, pixels: Bitmap?, width: Int, height: Int,
-        lut: String?, configuration: String?): NativeFrame
+    private external fun nativeCompatibilityPreview(handle: Long, input: String, pixels: Any?, width: Int, height: Int,
+        pixelFormat: Int, lut: String?, configuration: String?): NativeFrame
     private external fun nativeSetGpuMode(handle: Long, mode: Int)
     private external fun nativeSetLensDatabase(handle: Long, path: String)
     private external fun nativeSetLensCorrection(handle: Long, distortion: Boolean, tca: Boolean, autoCrop: Boolean, profile: ByteArray)
@@ -300,10 +324,10 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     private external fun nativeLensProfiles(handle: Long, input: String): Array<String>
     private external fun nativeLensReport(handle: Long): Array<String>
     private external fun nativeDestroy(handle: Long)
-    private external fun nativeAutoExposure(handle: Long, input: String, pixels: Bitmap?, width: Int, height: Int,
+    private external fun nativeAutoExposure(handle: Long, input: String, pixels: Any?, width: Int, height: Int,
         pixelFormat: Int, customWb: Boolean,
         temperature: Float, tint: Float, exposureMode: Int, recipeActive: Boolean, strength: Float, processingVersion: Int, x3fMode: Int): Float
-    private external fun nativeProcess(handle: Long, input: String, pixels: Bitmap?, width: Int, height: Int,
+    private external fun nativeProcess(handle: Long, input: String, pixels: Any?, width: Int, height: Int,
         pixelFormat: Int, lut: String?, output: String?,
         strength: Float, exposure: Float, customWb: Boolean, temperature: Float, tint: Float,
         highlights: Float, shadows: Float, contrast: Float, toneCurve: Float, saturation: Float, sharpening: Float,
@@ -317,10 +341,17 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
 
     companion object {
         @JvmStatic external fun nativeX3fAvailable(): Boolean
+        @JvmStatic external fun nativeX3fDefaultMode(input: String): Int
         const val CPU = 0
         const val AUTO = 1
         const val FORCE = 2
         init { System.loadLibrary("rawlab-jni") }
+
+        fun x3fDefaultMode(input: File): X3fMode = when (nativeX3fDefaultMode(input.path)) {
+            X3fMode.LEGACY.nativeValue -> X3fMode.LEGACY
+            X3fMode.NORMAL.nativeValue -> X3fMode.NORMAL
+            else -> error("Invalid native X3F default mode")
+        }
 
         fun validateLook(file: File): LookValidation {
             val result = try { NativeLookBridge.validate(file.path) }
@@ -348,11 +379,11 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             NativeLookBridge.compare(candidate.pixels, candidate.width, candidate.height,
                 reference.pixels, reference.width, reference.height, conditions).toString(Charsets.UTF_8)
 
-        fun compileDcp(source: ByteArray, sourceName: String): ByteArray {
+        fun compileDcp(source: ByteArray, sourceName: String, toneCurve: ByteArray? = null, omitAutomaticBlack: Boolean = false): ByteArray {
             if (source.size.toLong() > MAX_DCP_SOURCE_BYTES)
                 throw DcpCompilationException(DcpFailureReason.TOO_LARGE)
             require(sourceName.isNotBlank()) { "Missing DCP source filename" }
-            return NativeDcpBridge.compile(source, sourceName.toByteArray(Charsets.UTF_8)).also {
+            return NativeDcpBridge.compile(source, sourceName.toByteArray(Charsets.UTF_8), toneCurve, omitAutomaticBlack).also {
                 if (it.size.toLong() > MAX_DCP_OUTPUT_BYTES)
                     throw DcpCompilationException(DcpFailureReason.TOO_LARGE)
             }
@@ -371,5 +402,5 @@ private object NativeLookBridge {
 }
 
 private object NativeDcpBridge {
-    @JvmStatic external fun compile(source: ByteArray, sourceNameUtf8: ByteArray): ByteArray
+    @JvmStatic external fun compile(source: ByteArray, sourceNameUtf8: ByteArray, toneCurve: ByteArray?, omitAutomaticBlack: Boolean): ByteArray
 }

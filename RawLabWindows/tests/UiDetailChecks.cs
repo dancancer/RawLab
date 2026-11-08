@@ -58,11 +58,12 @@ internal static class UiDetailChecks
                     MenuPlacement(window,check);
                     CopyCompletionChecks.Run(window,language,check);
                     ResetMenus(window,language,check);
-                    LibraryHint(window,output,language,check);
+                    LibraryControls(window,language,check);
                     FailedOpen(window,output,language,check);
                     AboutFooter(window,output,check);
                     ToolCaptions(window,language,check);
                     WholeText(window,language,check);
+                    SystemOpenModal(window,output,check);
                 }
                 finally
                 {
@@ -73,6 +74,19 @@ internal static class UiDetailChecks
             }
         }
         finally { Loc.Initialize(previous);app.Shutdown(); }
+    }
+
+    private static void SystemOpenModal(MainWindow window,string output,Action<bool,string> check)
+    {
+        var input=Path.Combine(output,"unsupported-system-open.txt");File.WriteAllText(input,"not a photo");
+        var source=window.CollectionSourcePath;
+        window.IsEnabled=false;
+        try {check(!window.TryOpenSystemPhotos([input]) && window.CollectionSourcePath==source,"A disabled editor retains system requests");}
+        finally {window.IsEnabled=true;}
+        System.Windows.Interop.ComponentDispatcher.PushModal();
+        try {check(!window.TryOpenSystemPhotos([input]) && window.CollectionSourcePath==source,"A nested modal loop retains system requests");}
+        finally {System.Windows.Interop.ComponentDispatcher.PopModal();}
+        check(window.TryOpenSystemPhotos([input]),"After the modal loop an unsupported request reports its error and is consumed");
     }
 
     // 工具栏、工具条与“自动”按钮：每个功能一个图标，不能两个按钮长得一样
@@ -118,8 +132,6 @@ internal static class UiDetailChecks
         window.Files.ItemsSource=new[]{folder};window.UpdateLayout();
         var names=UIElementAutomationPeer.CreatePeerForElement(window.Files)!.GetChildren()?.Select(child=>child.GetName()).ToList() ?? [];
         check(names.SequenceEqual(new[]{folder.Name}),"Folder tree items are announced by name: "+string.Join(" / ",names));
-        var group=new PhotoGroup([new LibraryEntry(Path.Combine(output,"a.ARW"),false)]);
-        check(group.ToString()==Loc.Text("照片"),"Photo group is announced as photos: "+group);
         window.Files.ItemsSource=Array.Empty<LibraryEntry>();window.UpdateLayout();
     }
     // 空闲状态栏既不重复也不违背旁边的 GPU 选择
@@ -218,13 +230,10 @@ internal static class UiDetailChecks
             "Dock and Edit menus use the same ordered reset labels: "+language);
         if(reset!=null)reset.IsOpen=false;
     }
-    // 启动时从磁盘恢复的目录同样显示右键提示
-    private static void LibraryHint(MainWindow window,string output,string language,Action<bool,string> check)
+    private static void LibraryControls(MainWindow window,string language,Action<bool,string> check)
     {
-        window.Files.ItemsSource=new[]{new LibraryEntry(Path.GetFullPath(output),true)};window.UpdateLayout();
-        check(window.LibraryHint.Visibility==Visibility.Visible,"Folder hint follows restored library folders: "+language);
-        window.Files.ItemsSource=Array.Empty<LibraryEntry>();window.UpdateLayout();
-        check(window.LibraryHint.Visibility==Visibility.Collapsed,"Folder hint hides without folders: "+language);
+        check(window.CollapseFoldersButton.Parent != window.Files && !window.CollapseFoldersButton.IsEnabled,
+            "Collapse All remains outside the folder viewport and is disabled when no folders are expanded: " + language);
     }
     // 打开失败：状态栏不再显示“正在显影”，也不留下空的直方图框
     private static void FailedOpen(MainWindow window,string output,string language,Action<bool,string> check)
@@ -252,7 +261,7 @@ internal static class UiDetailChecks
         }
         finally { about.Close(); }
     }
-    // 工具条：说明文字只在空格或连字符处换行，不把一个词拆成两行；图标保持同一高度
+    // 工具在窄栏纵向排列，图标与标题都保留在内容宽度内。
     private static void ToolCaptions(MainWindow window,string language,Action<bool,string> check)
     {
         BuildTools(window);Refresh(window);
@@ -262,11 +271,11 @@ internal static class UiDetailChecks
             foreach(var group in Enum.GetValues<EditorAdjustmentGroup>()) {
                 // 无 RAW 的布局检查只建立组会话；真实导航与草稿守卫由 WorkspaceGroupChecks 覆盖。
                 expanded.SetValue(window,group);Refresh(window);
-                window.AdjustmentPanel.Visibility=Visibility.Visible;window.UpdateLayout();
+                window.AdjustmentPanel.Visibility=Visibility.Visible;window.InspectorColumn.Width=new GridLength(280);window.UpdateLayout();
                 var buttons=window.Tools.Children.OfType<Button>().Where(button=>button.IsVisible).ToList();
                 var ids=buttons.Select(AutomationProperties.GetAutomationId).ToArray();
-                var expected=EditorAdjustmentRules.Tools(group).SelectMany(tool=>tool==EditorAdjustmentTool.Geometry
-                    ? new[]{tool.ToString(),"Perspective"} : new[]{tool.ToString()}).ToArray();
+                var expected=EditorAdjustmentRules.Tools(group).Where(tool=>tool!=EditorAdjustmentTool.Strength).SelectMany(tool=>tool==EditorAdjustmentTool.Geometry
+                    ? new[]{tool.ToString(),"Perspective"} : new[]{tool.ToString()}).Concat(group==EditorAdjustmentGroup.Looks ? ["preset.quick.open"] : Array.Empty<string>()).ToArray();
                 check(buttons.Count>0 && ids.SequenceEqual(expected) && buttons.All(button=>button.ActualWidth>0 && button.ActualHeight>0),
                     $"Caption fixture lays out every tool in descriptor order: {language}/{group}");
                 checkedTools.UnionWith(ids);
@@ -275,10 +284,10 @@ internal static class UiDetailChecks
                     caption.ActualHeight>LineHeight(caption)*1.5 && !caption.Text.Any(c=>c is ' ' or '-'))
                     .Select(caption=>"\n  "+caption.Text).ToList();
                 check(broken.Count==0,$"Tool captions never break inside a word: {language}/{group}"+string.Concat(broken));
-                var tops=buttons.Select(button=>Descendants(button).OfType<EditorIcon>().First()).Select(icon=>icon.TranslatePoint(new Point(),window.Tools).Y).ToList();
-                check(tops.Max()-tops.Min()<.5,$"Tool icons stay on one line: {tops.Min():0.#}-{tops.Max():0.#} ({language}/{group})");
+                var tops=buttons.SelectMany(button=>Descendants(button).OfType<EditorIcon>().Take(1)).Select(icon=>icon.TranslatePoint(new Point(),window.Tools).X).ToList();
+                check(tops.Count>0 && tops.Max()-tops.Min()<.5,$"Inspector tools align their icons in one column ({language}/{group})");
             }
-            check(checkedTools.SetEquals(Enum.GetValues<EditorAdjustmentTool>().Select(tool=>tool.ToString()).Append("Perspective")),
+            check(checkedTools.SetEquals(Enum.GetValues<EditorAdjustmentTool>().Where(tool=>tool!=EditorAdjustmentTool.Strength).Select(tool=>tool.ToString()).Append("Perspective").Append("preset.quick.open")),
                 "Caption alignment covers all adjustment tools and Perspective navigation: "+language);
         } finally {expanded.SetValue(window,previous);Refresh(window);}
     }

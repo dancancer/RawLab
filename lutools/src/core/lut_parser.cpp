@@ -127,6 +127,7 @@ ErrorCode LUT3D::loadFromData(const std::string& bytes, bool vlt) {
     std::streamoff compatibilityOffset = -1;
     std::vector<RGB> values;
     bool minSeen = false, maxSeen = false, vltHeader = false, vltSource = false, duplicateContract = false;
+    bool hdrLook = false;
     std::set<std::string> colorKeys;
     bool duplicateColor = false;
     size_t bytesRead = 0;
@@ -160,6 +161,13 @@ ErrorCode LUT3D::loadFromData(const std::string& bytes, bool vlt) {
                 contractText = value;
                 contractState_ = readContract(value, colorContract_);
             }
+            if (key == "rawlabhdrlook") {
+                const auto start = value.find_first_not_of(" \t");
+                const auto end = value.find_last_not_of(" \t");
+                if (hdrLook || size_ || start == std::string::npos ||
+                    value.substr(start, end - start + 1) != "display-linear-srgb-v1") return ErrorCode::InvalidFormat;
+                hdrLook = true;
+            }
             if (key == "rawlabcompatibility") {
                 compatibility = value;
                 compatibilityOffset = lineOffset;
@@ -175,7 +183,7 @@ ErrorCode LUT3D::loadFromData(const std::string& bytes, bool vlt) {
         if (key == "TITLE") {
             std::getline(input, title_);
         } else if (key == "LUT_3D_SIZE") {
-            if (size_ || !(input >> size_) || size_ < 2 || size_ > 256) return ErrorCode::InvalidFormat;
+            if (size_ || !(input >> size_) || size_ < 2 || size_ > (hdrLook ? 65 : 256)) return ErrorCode::InvalidFormat;
             if (vlt_ && size_ != 17) return ErrorCode::InvalidFormat;
             values.reserve(static_cast<size_t>(size_) * size_ * size_);
         } else if (key == "DOMAIN_MIN") {
@@ -205,6 +213,19 @@ ErrorCode LUT3D::loadFromData(const std::string& bytes, bool vlt) {
     // CUBE specifies R-fast order, independent of the output color variation.
     data_ = std::move(values);
     if (vlt_ && (!vltHeader || !vltSource)) return ErrorCode::InvalidFormat;
+    if (hdrLook) {
+        const auto coversHDR = [](float low, float high) { return low >= -16 && low <= 0 && high >= 2 && high <= 64; };
+        const auto validValue = [](const RGB& p) {
+            return std::min({p.r, p.g, p.b}) >= -16 && std::max({p.r, p.g, p.b}) <= 64;
+        };
+        if (vlt_ || explicitContract_ || compatibilityOffset >= 0 || !gamma.empty() || !gamut.empty() || !style.empty() ||
+            !maxSeen || !coversHDR(domainMin_.r, domainMax_.r) || !coversHDR(domainMin_.g, domainMax_.g) ||
+            !coversHDR(domainMin_.b, domainMax_.b) || !std::all_of(data_.begin(), data_.end(), validValue))
+            return ErrorCode::InvalidFormat;
+        hdrLookContract_ = true;
+        contractState_ = LUTContractState::Unsupported;
+        return ErrorCode::Success;
+    }
     if (duplicateColor || (!explicitContract_ && !style.empty() && (!gamma.empty() || !gamut.empty()))) {
         contractState_ = LUTContractState::Invalid;
         return ErrorCode::Success;

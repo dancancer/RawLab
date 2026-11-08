@@ -37,6 +37,7 @@ static class Program
         try
         {
             if(args.Length==1 && args[0]=="--white-balance") { WhiteBalanceChecks.Run(Check);Console.WriteLine($"PASS {checks} white balance checks");return 0; }
+            if(args.Length==3 && args[0]=="--recipe-white-balance") { WhiteBalanceChecks.RecipeCache(args[1],args[2],Check);Console.WriteLine($"PASS {checks} recipe camera white balance cache checks");return 0; }
             if(args.Length==3 && args[0]=="--histogram") { ViewComparisonChecks.NeutralChecks(args[1],args[2],Check);Console.WriteLine($"PASS {checks} histogram checks");return 0; }
             if(args.Length==3 && args[0]=="--atmosphere-ui") { AtmosphereUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} atmosphere UI checks");return 0; }
             if(args.Length==3 && args[0]=="--update-ui") { SoftwareUpdateUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} update UI checks");return 0; }
@@ -47,7 +48,11 @@ static class Program
             if(args.Length==3 && args[0]=="--curve-ui") { ToneCurveUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} curve UI checks");return 0; }
             if(args.Length==3 && args[0]=="--hsl-target-render") { HslTargetRenderChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HSL target render checks");return 0; }
             if(args.Length==3 && args[0]=="--hsl-target") { HslTargetUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HSL target UI checks");return 0; }
+            if(args.Length==3 && args[0]=="--hdr-color-ui") { HslTargetUiChecks.RunHDR(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HDR color UI checks");return 0; }
+            if(args.Length==3 && args[0]=="--hdr-rendition-ui") { HDRWorkflowChecks.RunRendition(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HDR rendition UI checks");return 0; }
+            if(args.Length==3 && args[0]=="--hdr-effects-ui") { HDRWorkflowChecks.RunEffects(args[1],args[2],Check);Console.WriteLine($"PASS {checks} HDR effects UI checks");return 0; }
             if(args.Length==2 && args[0]=="--ai-gpu") { AIGpuWindowChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} AI GPU UI checks");return 0; }
+            if(args.Length==5 && args[0]=="--hdr-ai-real-window") { Loc.Initialize("zh-Hans");AIDenoiseRealWindowChecks.RunHDR(args[1],args[2],args[3],args[4],Check);Console.WriteLine($"PASS {checks} HDR AI window checks");return 0; }
             if(args.Length==4 && args[0]=="--x3f") {Loc.Initialize("zh-Hans");X3fRenderingChecks.Run(args[1],args[2],args[3],Check);Console.WriteLine($"PASS {checks} X3F workflow checks");return 0;}
             TestWindowState.PreserveExistingBatch(journalDirectory);
             Loc.Initialize("zh-Hans");
@@ -69,6 +74,7 @@ static class Program
             if(args.Length==2 && args[0]=="--ai-panel") { AIDenoisePanelChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} AI panel checks");return 0; }
             if(args.Length is 4 or 5 && args[0]=="--ai-denoise") { AIDenoiseChecks.Run(args[1],args[2],args[3],Check,args.Length==5 ? args[4] : "DirectML");Console.WriteLine($"PASS {checks} AI denoise checks");return 0; }
             if(args.Length>=1 && args[0]=="--first-preview") { FirstPreviewChecks.Run(args.Skip(1),Check);Console.WriteLine($"PASS {checks} first preview checks");return 0; }
+            if(args.Length==3 && args[0]=="--preview-reuse") { PreviewChecks.RunViewport(args[1],args[2],Check);Console.WriteLine($"PASS {checks} preview reuse checks");return 0; }
             if(args.Length==3 && args[0]=="--view-compare") { ViewComparisonChecks.Run(args[1],args[2],Check);return 0; }
             if(args.Length==3 && args[0]=="--view-pointer") { ViewComparisonChecks.Run(args[1],args[2],Check,pointerOnly:true);return 0; }
             if(args.Length==3 && args[0]=="--view-labels") { ViewComparisonChecks.Run(args[1],args[2],Check,labelsOnly:true);return 0; }
@@ -285,41 +291,25 @@ static class Program
             window.OpenFile(raw);Check(Math.Abs(window.ValueSlider.Value-.625)<.001,"Photo switch restores its own exposure");
             window.ValueSlider.Value=.5;PumpUntil(()=>window.ExportPng.IsEnabled,TimeSpan.FromMinutes(3));
             Check(window.BackendLabel.Text.Contains("Direct3D 11"),"WPF reports actual GPU backend");
-            var filmDividers=window.FilmStrip.Children.OfType<Border>().Select(
-                System.Windows.Automation.AutomationProperties.GetAutomationId).ToArray();
-            Check(filmDividers.SequenceEqual(new[]{"film.group-divider.Kodak","film.group-divider.Other"}),
-                "Film picker has only two flat group boundaries, Fuji then Kodak then Other");
-            Check(window.FilmStrip.Children.OfType<Button>().Any(button=>
-                System.Windows.Automation.AutomationProperties.GetName(button)=="EKTAR 100 RawLab edition"),
-                "Grouped film picker retains the RawLab Ektar display name");
-            foreach(var picker in new[] {
-                (Category:window.FilmCategory,Strip:window.FilmStrip,Scroller:window.FilmScroller,Left:window.FilmScrollLeft,Right:window.FilmScrollRight),
-                (Category:window.MasterRecipeCategory,Strip:window.RecipeStrip,Scroller:window.RecipeScroller,Left:window.RecipeScrollLeft,Right:window.RecipeScrollRight) })
-            {
-                picker.Category.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                window.Width=1000;window.Measure(new Size(1000,920));window.Arrange(new Rect(0,0,1000,920));window.UpdateLayout();
-                picker.Scroller.ScrollToLeftEnd();window.UpdateLayout();
-                PumpUntil(()=>picker.Left.Visibility==Visibility.Visible && !picker.Left.IsEnabled && picker.Right.IsEnabled,TimeSpan.FromSeconds(5));
-                Console.WriteLine($"Picker {System.Windows.Automation.AutomationProperties.GetName(picker.Category)}: window={window.ActualWidth}, extent={picker.Scroller.ExtentWidth}, viewport={picker.Scroller.ViewportWidth}, offset={picker.Scroller.HorizontalOffset}, left={picker.Left.Visibility}/{picker.Left.IsEnabled}/{picker.Left.ActualWidth}, right={picker.Right.Visibility}/{picker.Right.IsEnabled}/{picker.Right.ActualWidth}");
-                Check(picker.Left.Visibility==Visibility.Visible && !picker.Left.IsEnabled && picker.Right.IsEnabled,"Overflow picker has reachable desktop scroll controls");
-                picker.Right.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                PumpUntil(()=>picker.Scroller.HorizontalOffset>1,TimeSpan.FromSeconds(5));
-                Check(picker.Left.IsEnabled,"Desktop picker button scrolls content and enables return");
-                var items=picker.Strip.Children.Cast<UIElement>().ToArray();
-                picker.Strip.Children.Clear();picker.Strip.Children.Add(items[0]);window.UpdateLayout();
-                PumpUntil(()=>picker.Left.Visibility==Visibility.Collapsed && picker.Right.Visibility==Visibility.Collapsed,TimeSpan.FromSeconds(5));
-                Check(picker.Left.Visibility==Visibility.Collapsed && picker.Right.Visibility==Visibility.Collapsed,"Picker hides both buttons when the complete list fits");
-                picker.Strip.Children.Clear();foreach(var item in items)picker.Strip.Children.Add(item);window.UpdateLayout();
-            }
+            Check(window.FilmStrip.Columns == 3 && window.FilmStrip.Children.OfType<Button>().Any(button =>
+                System.Windows.Automation.AutomationProperties.GetName(button) == "EKTAR 100 RawLab edition"),
+                "The inspector's three-column film grid retains the RawLab Ektar display name");
+            window.MasterRecipeCategory.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            window.Width = 1000; window.UpdateLayout();
+            Check(window.RecipeStrip.Columns == 2 && window.ToolsScroller.ScrollableHeight > 0,
+                "The recipe chooser uses a vertical viewport in a narrow inspector");
+            var recipe = window.RecipeStrip.Children.OfType<Button>().Last();
+            recipe.BringIntoView(); window.UpdateLayout();
+            recipe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            PumpUntil(() => window.ExportPng.IsEnabled, TimeSpan.FromMinutes(3));
+            Check(window.LookStrengthRow.IsVisible && window.LookStrengthRow.Slider.IsEnabled &&
+                window.LookStrengthRow.Number.Text == "100" && Math.Abs(window.LookStrengthRow.Slider.Value - .5) < .001,
+                "Look Strength stays above the recipe chooser and starts at its 100% midpoint");
+            window.LookStrengthRow.Slider.Value = 1;
+            Check(window.LookStrengthRow.Number.Text == "200" && !window.ExportPng.IsEnabled,
+                "Look Strength reaches 200% and invalidates stale export for a master recipe");
+            PumpUntil(() => window.ExportPng.IsEnabled, TimeSpan.FromMinutes(3));
             window.Width=1440;window.Measure(new Size(1440,920));window.Arrange(new Rect(0,0,1440,920));window.UpdateLayout();
-            var strengthButton=window.Tools.Children.OfType<Button>().Single(button=>
-                System.Windows.Automation.AutomationProperties.GetName(button)=="强度");
-            strengthButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Check(window.ValueText.Text=="100" && Math.Abs(window.ValueSlider.Value-.5)<.001,
-                "WPF film strength starts at 100% in the middle of its slider");
-            window.ValueSlider.Value=1;
-            Check(window.ValueText.Text=="200" && !window.ExportPng.IsEnabled,"WPF film slider reaches 200% and invalidates stale export");
-            PumpUntil(()=>window.ExportPng.IsEnabled,TimeSpan.FromMinutes(3));
             // Capture the client area independently of window chrome.
             var content=(FrameworkElement)window.Content;window.Content=null;
             content.Measure(new Size(1440,920));content.Arrange(new Rect(0,0,1440,920));content.UpdateLayout();
