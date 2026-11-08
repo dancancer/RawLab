@@ -178,7 +178,7 @@ struct ContentView: View {
         .preferredColorScheme(.dark)
         .tint(.yellow)
         .photosPicker(isPresented: $showingPhotoImporter, selection: $selectedPhotoItem,
-                      matching: .images, preferredItemEncoding: .current)
+                      matching: .images, preferredItemEncoding: .current, photoLibrary: .shared())
         .sheet(isPresented: $showingPrivacy) { UsagePrivacyView() }
         .fileImporter(isPresented: $showingDocumentImporter,
                       allowedContentTypes: importKind.contentTypes,

@@ -482,6 +482,7 @@
     "显示色彩降噪模式必须为 0、1 或 2。": "Le mode de réduction du bruit chromatique d’affichage doit être 0, 1 ou 2.",
     "显示裁切提示": "Afficher les alertes d'écrêtage",
     "显示输出高光与黑位裁切": "Afficher l'écrêtage des hautes lumières et du niveau de noir de la sortie",
+    "普通图片未使用 AI 降噪": "La réduction du bruit par IA n’a pas été utilisée pour les images ordinaires",
     "普通显影使用 CPU；AI 降噪仍使用硬件 GPU。": "Le rendu photo utilise le CPU ; la réduction du bruit par IA utilise toujours le GPU matériel.",
     "普通降噪参数已保留，关闭 AI 降噪即可恢复。": "Les réglages habituels de débruitage sont conservés. Désactivez le débruitage IA pour les rétablir.",
     "暂无可导出的 AI 诊断。": "Aucun diagnostic IA à exporter.",

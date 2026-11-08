@@ -27,7 +27,7 @@ struct IOSBatchSelectionView: View {
                         Text(L10n.text("选择照片后同步所需调整，也可进入单张微调，再返回原集合。"))
                             .font(.footnote).foregroundStyle(.secondary)
                         HStack {
-                            PhotosPicker(selection: $pickerItems, matching: .images, preferredItemEncoding: .current) {
+                            PhotosPicker(selection: $pickerItems, matching: .images, preferredItemEncoding: .current, photoLibrary: .shared()) {
                                 Label(L10n.text("添加照片"), systemImage: "plus")
                             }.accessibilityIdentifier("collection.photos")
                             Spacer()
@@ -240,8 +240,8 @@ private struct IOSCollectionExportView: View {
                 Section {
                     Text(L10n.text("将按每张照片已保存的调整导出。跳过只影响本次导出。"))
                     Picker(L10n.text("格式"), selection: $format) {
-                        ForEach([BatchOutputFormat.jpeg, .renderedDNG], id: \.self) { Text($0.title).tag($0) }
-                    }
+                        ForEach([BatchOutputFormat.jpeg, .hdrJPEG, .renderedDNG], id: \.self) { Text($0.title).tag($0) }
+                    }.accessibilityIdentifier("collection.export.format")
                     ExportSizePicker(longEdge: $longEdge, onValidityChanged: { sizeValid = $0 })
                 }
                 Section {

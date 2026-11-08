@@ -112,6 +112,10 @@ struct BatchExportView: View {
                                 Text(item.input.deletingLastPathComponent().path).font(.caption)
                                     .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                             }
+                            if let notice = model.notice(for: item) {
+                                Text(notice).font(.caption).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }.frame(maxWidth: .infinity, alignment: .leading).help(item.input.path)
                         if !model.job.started && model.job.mode == .uniformFrozen {
                             Button { model.remove(item.id) } label: { Image(systemName: "xmark.circle") }

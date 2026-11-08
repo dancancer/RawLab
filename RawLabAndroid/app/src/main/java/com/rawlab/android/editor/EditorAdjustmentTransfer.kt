@@ -37,9 +37,10 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
         checkActive()
         val session = store.adjustmentSession ?: throw IOException("Edit store is unavailable; reload saved adjustments")
         val builtin = storage.builtinLookIDs()
+        val recipes = MasterRecipe.load(context)
         val available = builtin.keys.map { "builtin:$it" }.toSet() +
             storage.looks().filter { it.managed && it.available }.map { it.id } +
-            MasterRecipe.load(context).map { "recipe:${it.id}" }
+            recipes.map { "recipe:${it.id}" }
         val owned = mutableMapOf<String, File>()
         try {
             val targets = work.uris.distinct().map { uri ->
@@ -72,6 +73,7 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
                     val transferContext = AdjustmentTransferContext(identity.value, photo.inputKind == PhotoInputKind.RAW,
                         available, builtin, frame?.temperature?.takeIf { it.isFinite() }, frame?.tint?.takeIf { it.isFinite() },
                         sourceSupportsProRAWHDR = photo.hdrSource?.isProRAW == true,
+                        recipeTintDefaults = recipes.associate { it.id to it.tint },
                         validateLens = { request ->
                             checkActive()
                             val report = NativeProcessor(NativeProcessor.CPU, database).use {

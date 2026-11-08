@@ -482,6 +482,7 @@
     "显示色彩降噪模式必须为 0、1 或 2。": "Der Anzeigefarb-Rauschreduzierungsmodus muss 0, 1 oder 2 sein.",
     "显示裁切提示": "Clipping-Warnungen anzeigen",
     "显示输出高光与黑位裁切": "Clipping der Ausgabe-Lichter und des Schwarzwerts anzeigen",
+    "普通图片未使用 AI 降噪": "Für normale Bilder wurde keine KI-Entrauschung verwendet",
     "普通显影使用 CPU；AI 降噪仍使用硬件 GPU。": "Die Fotoentwicklung nutzt die CPU; KI-Entrauschung nutzt weiterhin die Hardware-GPU.",
     "普通降噪参数已保留，关闭 AI 降噪即可恢复。": "Die üblichen Entrauschungseinstellungen bleiben erhalten. Deaktivieren Sie KI-Entrauschen, um sie wieder zu verwenden.",
     "暂无可导出的 AI 诊断。": "Keine KI-Diagnose zum Exportieren vorhanden.",
