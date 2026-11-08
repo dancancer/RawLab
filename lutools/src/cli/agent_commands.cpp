@@ -64,6 +64,18 @@ bool rasterPath(const std::string& path) {
         extension == ".tiff" || extension == ".heif" || extension == ".heic";
 }
 
+bool rawPath(const std::string& path) {
+    auto extension = std::filesystem::u8path(path).extension().u8string();
+    std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return std::tolower(c); });
+    // 与 Mac 文件库的 RAW 后缀表一致，避免把 TIFF 结构 RAW 的 IFD0 缩略图当作原图。
+    static const char* extensions[] = {".arw", ".arq", ".dng", ".nef", ".nrw", ".cr2", ".cr3", ".crw", ".raf",
+        ".rw2", ".rwl", ".orf", ".pef", ".srw", ".raw", ".3fr", ".fff", ".iiq", ".mos", ".srf", ".sr2",
+        ".mrw", ".kdc", ".dcr", ".erf", ".x3f"};
+    for (const auto* candidate : extensions)
+        if (extension == candidate) return true;
+    return false;
+}
+
 bool hdrAvailable() {
 #if defined(__APPLE__)
     if (__builtin_available(macOS 15.0,iOS 18.0,*)) return true;
@@ -286,8 +298,24 @@ int runAgentCommands(int argc, char* argv[]) {
                 return fail("invalid_argument", "--info <image> requires one input and no recipe");
             const auto absolute = std::filesystem::absolute(std::filesystem::u8path(infoFile)).lexically_normal().u8string();
             const bool knownRaster=rasterPath(absolute);
-            {
-                if (hdrCandidatePath(absolute) || !knownRaster) {
+            bool rasterCandidate=knownRaster, hdrCandidate=hdrCandidatePath(absolute);
+            if (!knownRaster && !rawPath(absolute)) {
+                std::ifstream file(std::filesystem::u8path(absolute),std::ios::binary);
+                char signature[12]{}; file.read(signature,sizeof(signature));
+                const auto length=file.gcount();
+                const bool jpeg=length>=2 && static_cast<unsigned char>(signature[0])==0xff && static_cast<unsigned char>(signature[1])==0xd8;
+                const bool heif=length>=12 && std::string(signature+4,4)=="ftyp" &&
+                    (std::string(signature+8,4)=="heic" || std::string(signature+8,4)=="heix" ||
+                     std::string(signature+8,4)=="mif1" || std::string(signature+8,4)=="heif");
+                const bool png=length>=8 && std::string(signature,8)==std::string("\x89PNG\r\n\x1a\n",8);
+                const bool tiff=length>=4 &&
+                    ((signature[0]=='I' && signature[1]=='I' && (signature[2]==42 || signature[2]==43) && signature[3]==0) ||
+                     (signature[0]=='M' && signature[1]=='M' && signature[2]==0 && (signature[3]==42 || signature[3]==43)));
+                hdrCandidate=jpeg || heif;
+                rasterCandidate=hdrCandidate || png || tiff;
+            }
+            if (rasterCandidate) {
+                if (hdrCandidate) {
                     auto hdr=hdrInitial<sony2fuji_hdr_source_info_v1>();
                     auto diagnostic=hdrInitial<sony2fuji_hdr_diagnostic_v1>();
                     const auto status=sony2fuji_hdr_probe(absolute.c_str(),&hdr,&diagnostic);
@@ -303,14 +331,7 @@ int runAgentCommands(int argc, char* argv[]) {
                             {"camera",nullptr},{"lens",nullptr},{"capture",nullptr},{"as_shot_white_balance",nullptr}};
                         std::cout<<machineJson(envelope(command,result))<<'\n'; return 0;
                     }
-                    // 未知后缀也可能是 PNG、TIFF 或 RAW；仅候选容器的 HDR 错误禁止降级。
-                    std::ifstream file(std::filesystem::u8path(absolute),std::ios::binary);
-                    char signature[12]{}; file.read(signature,sizeof(signature));
-                    const bool jpeg=static_cast<unsigned char>(signature[0])==0xff && static_cast<unsigned char>(signature[1])==0xd8;
-                    const bool heif=std::string(signature+4,4)=="ftyp" &&
-                        (std::string(signature+8,4)=="heic" || std::string(signature+8,4)=="heix" ||
-                         std::string(signature+8,4)=="mif1" || std::string(signature+8,4)=="heif");
-                    if (diagnostic.reason!=SONY2FUJI_HDR_REASON_NOT_HDR && (knownRaster || jpeg || heif))
+                    if (diagnostic.reason!=SONY2FUJI_HDR_REASON_NOT_HDR)
                         return fail(statusCode(status),"HDR input rejected; diagnostic reason="+std::to_string(diagnostic.reason),status);
                 }
                 sony2fuji_buffer image{};
