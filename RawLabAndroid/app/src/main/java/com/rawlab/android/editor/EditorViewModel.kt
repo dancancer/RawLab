@@ -39,6 +39,7 @@ import com.rawlab.android.format.ExportSize
 import com.rawlab.android.geometry.GeometryRatio
 import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.looks.DcpFailureReason
+import com.rawlab.android.looks.DcpImportChoices
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.canonicalZeros
@@ -367,8 +368,8 @@ class EditorViewModel @JvmOverloads constructor(
             return
         }
         result.fold(::acceptLookValue, { error ->
-            mutable.value = mutable.value.copy(operation = if (mutable.value.pendingLookCompatibility.isEmpty()) Operation.NONE else Operation.IMPORT_LOOK,
-                lookCompatibilityPreparing = false,
+            mutable.value = mutable.value.copy(operation = if (mutable.value.pendingLookImports.isEmpty()) Operation.NONE else Operation.IMPORT_LOOK,
+                lookImportPreparing = false,
                 error = text(R.string.look_storage_error) + "\n" + (error.message ?: error.javaClass.simpleName))
         })
         updatePreviewSize(requestedPreviewLongEdge)
@@ -399,10 +400,10 @@ class EditorViewModel @JvmOverloads constructor(
                             val message = colorMessage ?: failure.dcpReason?.let(::dcpFailureText) ?: failure.message
                             if (failure.invalid && colorMessage == null) message + "\n" + text(R.string.look_invalid_file) else message
                         }
-                val pending = mutable.value.pendingLookCompatibility + result.pending
+                val pending = mutable.value.pendingLookImports + result.pending
                 mutable.value = mutation.state.copy(looks = result.looks,
-                    pendingLookCompatibility = pending,
-                    lookCompatibilityPreparing = false,
+                    pendingLookImports = pending,
+                    lookImportPreparing = false,
                     operation = if (pending.isEmpty()) Operation.NONE else Operation.IMPORT_LOOK,
                     lookImportReport = listOfNotNull(mutable.value.lookImportReport, report).takeIf { it.isNotEmpty() }?.joinToString("\n"),
                     error = if (mutation.blockedRecipeSelection) text(R.string.editor_reset_unrepresentable) else mutation.state.error,
@@ -422,8 +423,8 @@ class EditorViewModel @JvmOverloads constructor(
             is LookResult.Failed -> {
                 if (result.reload) lookRevision = lookQueue.submit(LookWork.Load)
                 val title = text(if (result.reload) R.string.look_error else R.string.look_storage_error)
-                mutable.value = mutable.value.copy(operation = if (mutable.value.pendingLookCompatibility.isEmpty()) Operation.NONE else Operation.IMPORT_LOOK,
-                    lookCompatibilityPreparing = false,
+                mutable.value = mutable.value.copy(operation = if (mutable.value.pendingLookImports.isEmpty()) Operation.NONE else Operation.IMPORT_LOOK,
+                    lookImportPreparing = false,
                     error = title + "\n" + (result.error.message ?: result.error.javaClass.simpleName))
             }
         }
@@ -558,14 +559,24 @@ class EditorViewModel @JvmOverloads constructor(
     fun dismissLookImportReport() { mutable.value = mutable.value.copy(lookImportReport = null) }
 
     fun resolveLookCompatibility(draft: LUTCompatibility?) {
-        if (mutable.value.lookCompatibilityPreparing) return
-        val pending = mutable.value.pendingLookCompatibility.firstOrNull() ?: return
-        val remaining = mutable.value.pendingLookCompatibility.drop(1)
+        if (mutable.value.lookImportPreparing) return
+        val pending = mutable.value.pendingLookImports.firstOrNull() as? PendingLookCompatibility ?: return
         if (draft != null && (!draft.canImport || draft.sourceHash != pending.draft.sourceHash)) return
-        mutable.value = mutable.value.copy(pendingLookCompatibility = remaining,
-            lookCompatibilityPreparing = draft != null,
-            operation = if (draft != null || remaining.isNotEmpty()) Operation.IMPORT_LOOK else Operation.NONE)
-        if (draft != null) lookRevision = lookQueue.submit(LookWork.Import(listOf(pending.uri), draft))
+        resolveLookImport(draft?.let { LookWork.Import(listOf(pending.uri), compatibility = it) })
+    }
+
+    fun resolveDcpImport(choices: DcpImportChoices?) {
+        if (mutable.value.lookImportPreparing) return
+        val pending = mutable.value.pendingLookImports.firstOrNull() as? PendingDcpImport ?: return
+        resolveLookImport(choices?.let { LookWork.Import(listOf(pending.uri), dcp = it) })
+    }
+
+    private fun resolveLookImport(work: LookWork.Import?) {
+        val remaining = mutable.value.pendingLookImports.drop(1)
+        mutable.value = mutable.value.copy(pendingLookImports = remaining,
+            lookImportPreparing = work != null,
+            operation = if (work != null || remaining.isNotEmpty()) Operation.IMPORT_LOOK else Operation.NONE)
+        if (work != null) lookRevision = lookQueue.submit(work)
     }
 
     fun renameLook(id: String, name: String) {

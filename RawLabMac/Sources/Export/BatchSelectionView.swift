@@ -163,6 +163,7 @@ private struct BatchCollectionExportView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
     @State private var format = ExportFormat.jpeg
+    @State private var adaptiveJPEG = false
     @State private var longEdge: Int?
     @State private var directory: URL?
     @State private var skipped = Set<String>()
@@ -181,11 +182,12 @@ private struct BatchCollectionExportView: View {
             }
             Text(L10n.text("将按每张照片已保存的调整导出。跳过只影响本次导出。")).foregroundStyle(.secondary)
             HStack(spacing: 20) {
-                Picker(L10n.text("格式"), selection: $format) {
-                    ForEach(ExportFormat.allCases.filter { $0 != .hdrHEIF || HDRImage.heifExportAvailable }) {
-                        Text($0.title).tag($0)
-                    }
-                }.frame(width: 220)
+                Picker(L10n.text("格式"), selection: Binding<ExportFormat?>(
+                    get: { adaptiveJPEG ? nil : format },
+                    set: { value in adaptiveJPEG = value == nil; format = value ?? .jpeg })) {
+                    Text(L10n.text("HDR 照片用 HDR JPEG，其余用 JPEG")).tag(nil as ExportFormat?)
+                    ForEach(ExportFormat.allCases.filter { $0 != .hdrHEIF || HDRImage.heifExportAvailable }) { Text($0.title).tag(Optional($0)) }
+                }.frame(width: 310).accessibilityIdentifier("collection.export.format")
                 ExportSizePicker(longEdge: $longEdge).frame(width: 240)
                 Button(directory?.lastPathComponent ?? L10n.text("选择输出文件夹")) { chooseDirectory() }
             }
@@ -222,10 +224,11 @@ private struct BatchCollectionExportView: View {
                     .disabled(directory == nil || targetCount == 0 || model.collectionExportPreparing || model.collectionExportBlockedByTask)
                     .accessibilityIdentifier("collection.export.start")
             }
-        }.padding(24).frame(width: 780).tint(.yellow)
+        }.padding(24).frame(width: 870).tint(.yellow)
         .onAppear { invalidate() }
         .onDisappear { model.cancelCollectionExportPreparation() }
         .onChange(of: format) { _, _ in invalidate() }
+        .onChange(of: adaptiveJPEG) { _, _ in invalidate() }
         .onChange(of: longEdge) { _, _ in invalidate() }
         .onChange(of: model.batchSelection.selected) { _, _ in invalidate() }
         .onChange(of: model.sourceRevision) { _, _ in invalidate() }
@@ -255,6 +258,10 @@ private struct BatchCollectionExportView: View {
                 }
             }
             if let snapshot = row?.snapshot {
+                if let notice = snapshot.noticeKey {
+                    Text(L10n.text(notice)).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 DisclosureGroup(L10n.format("%@ · 曝光 %@ · 查看最终调整", L10n.text(snapshot.lookName), AdjustmentParameter.exposure.spec.display(AdjustmentParameter.exposure.value(from:snapshot.settings)))) {
                     BatchSettingsSummary(settings: snapshot.settings).padding(.top, 8)
                 }
@@ -276,7 +283,8 @@ private struct BatchCollectionExportView: View {
     private func start() {
         guard let directory else { return }
         message = nil
-        model.startCollectionExport(skipping: skipped, format: format, longEdge: longEdge, directory: directory) { _ in
+        model.startCollectionExport(skipping: skipped, format: format, longEdge: longEdge, directory: directory,
+                                    adaptiveJPEG: adaptiveJPEG) { _ in
             dismiss(); openWindow(id: "batch-export")
         }
     }

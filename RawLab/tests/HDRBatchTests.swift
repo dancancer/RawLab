@@ -91,6 +91,7 @@ import UIKit
         }
         func cameraReview(_ format: BatchOutputFormat) -> IOSCollectionExportReview {
             collection.exportInput.prepareExport(store: store, skipping: [], format: format, longEdge: 64,
+                x3fDefaultMode: { _ in .legacy },
                 probeHDR: { try HDRSourceInfo.probe($0) != nil }, validateActive: { _ in }, resolveLook: { _ in (nil, nil) },
                 validateHDRSource: { try HDRSourceInfo.validateEditingSource($0, proRAWDecodeVersion: $1) })
         }

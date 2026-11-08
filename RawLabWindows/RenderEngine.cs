@@ -489,6 +489,10 @@ internal sealed partial class RenderEngine : IDisposable
         Native.Check(Native.sony2fuji_session_set_tone_controls(session, ref config));
     }
     internal static bool X3fAvailable => Native.sony2fuji_x3f_available() != 0;
+    internal static X3fMode X3fDefaultMode(string path)
+    {
+        return PhotoInput.X3fDefaultMode(path);
+    }
     private void SetX3f(string path, Adjustments settings)
     {
         if (PhotoInput.IsNormalX3f(path,settings) && settings.AIDenoiseEnabled)

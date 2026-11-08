@@ -752,6 +752,10 @@ ErrorCode RAWProcessor::loadFile(const std::string& filepath, X3fMode mode) {
     return pImpl_->loadFile(filepath, mode);
 }
 
+ErrorCode RAWProcessor::inspectFile(const std::string& filepath) {
+    return pImpl_->loadFile(filepath, X3fMode::Legacy, true);
+}
+
 ErrorCode RAWProcessor::inspectCameraHDR(const std::string& filepath, int& width, int& height, uint64_t& sensorPixels) {
     return pImpl_->inspectCameraHDR(filepath, width, height, sensorPixels);
 }

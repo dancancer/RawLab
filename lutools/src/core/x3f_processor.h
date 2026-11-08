@@ -7,6 +7,7 @@ namespace sony2fuji {
 bool hasX3fSignature(const std::string& path);
 bool hasX3fExtension(const std::string& path);
 bool x3fRenderingAvailable();
+bool x3fModelSupported(const std::string& model);
 
 // 保存设置显影后的 display-linear sRGB；不是未映射的 scene-linear RAW。
 class X3fProcessor {

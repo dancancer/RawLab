@@ -65,7 +65,9 @@ public partial class MainWindow
                         HDRSourceInfo? cameraHDR = null;
                         if(raw && PhotoInput.ProbeCameraRaw(path,out var probed) == HDRProbeState.Supported)
                             cameraHDR = probed;
-                        var defaults=PhotoInput.PrepareHDRInputSettings(path,new Adjustments());
+                        var record=editStore!.VersionedState(path);
+                        if(!record.Identity.SameFile(identity))throw new EditPersistenceConflict();
+                        var defaults=record.Edit?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(path);
                         (double Temperature,double Tint)? calibration=null;
                         if(raw) {
                             using var native=new RenderEngine(1);

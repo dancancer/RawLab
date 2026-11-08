@@ -3,6 +3,14 @@ import Foundation
 @main enum HDRModelTests {
     static func check(_ value: @autoclosure () -> Bool, _ message: String) { if !value() { fatalError(message) } }
     static func main() throws {
+        var aiSource = Adjustments()
+        aiSource.aiDenoiseEnabled = true
+        aiSource.exposure = 0.8
+        aiSource.rawNoiseReduction = 2
+        let raster = aiSource.resolvedForRaster
+        check(!raster.aiDenoiseEnabled && raster.rawNoiseReduction == 0 && raster.exposure == 0.8,
+              "raster targets must omit RAW-only AI while retaining shared adjustments")
+        check(aiSource.aiDenoiseEnabled, "resolving a raster target must retain AI on the RAW source")
         let legacy = try JSONDecoder().decode(Adjustments.self, from: Data("{}".utf8))
         check(legacy.hdr == nil && !legacy.isHDREditing && legacy.processing == .legacy, "legacy record changed mode or processing")
         var sdr = Adjustments(); sdr.exposure = 1; sdr.contrast = -25; sdr.highlights = 50

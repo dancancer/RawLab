@@ -114,8 +114,8 @@ public static class AdjustmentTransfer
         foreach(var field in fields) if(EffectiveNumbers(s)[field]!=Expected(field)) s=AssignEffective(s,field,Expected(field));
         s=AdjustmentTransferWB.Apply(p,target.Settings,s,context,fullRecipe,changed);
         if(Text(p[F.ExposureMode]) is {} mode) {
-            if(!context.IsRaw && p.Source.IsRaw && mode!="sensor") throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,F.ExposureMode.ID());
-            s=s with {ExposureMode=Array.IndexOf(new[]{"scene","preview","sensor"},mode)};
+            // 普通图片没有 RAW 曝光基准，选中任何来源模式均保持 sensor。
+            s=s with {ExposureMode=!context.IsRaw ? 2 : Array.IndexOf(new[]{"scene","preview","sensor"},mode)};
         }
         s=AdjustmentTransferValues.ApplyObjects(p,s,context);
         s=AdjustmentTransferRefinement.Apply(p,target.Settings,s,fullRecipe);

@@ -31,7 +31,7 @@ internal object IccProfiles {
         val samples: IntArray? = null,
     )
 
-    fun validatePngChunk(chunk: ByteArray): Boolean {
+    fun validatePngChunk(chunk: ByteArray, requireParametric: Boolean = false): Boolean {
         var nameEnd = -1
         for (index in chunk.indices) {
             if (chunk[index] == 0.toByte()) {
@@ -48,7 +48,7 @@ internal object IccProfiles {
             }
         }
         if (chunk[nameEnd + 1].toInt() and 0xFF != 0) return false
-        return inflateAndValidate(chunk, nameEnd + 2)
+        return inflateAndValidate(chunk, nameEnd + 2, requireParametric)
     }
 
     fun validateJpegChunks(chunks: Map<Int, ByteArray>, total: Int?): Boolean {
@@ -76,7 +76,7 @@ internal object IccProfiles {
         return true
     }
 
-    private fun inflateAndValidate(chunk: ByteArray, compressedOffset: Int): Boolean {
+    private fun inflateAndValidate(chunk: ByteArray, compressedOffset: Int, requireParametric: Boolean): Boolean {
         if (compressedOffset !in 0 until chunk.size) return false
         val inflater = Inflater()
         return try {
@@ -94,7 +94,7 @@ internal object IccProfiles {
                 return false
             }
             if (inflater.remaining != 0) return false
-            validateProfile(profile.toByteArray())
+            validateProfile(profile.toByteArray(), requireParametric)
         } catch (_: DataFormatException) {
             false
         } finally {
@@ -102,7 +102,7 @@ internal object IccProfiles {
         }
     }
 
-    private fun validateProfile(profile: ByteArray): Boolean {
+    private fun validateProfile(profile: ByteArray, requireParametric: Boolean = false): Boolean {
         if (profile.size < 132) return false
         val declaredSize = readU32(profile, 0)
         if (declaredSize < ICC_HEADER_BYTES + TAG_TABLE_HEADER_BYTES ||
@@ -127,10 +127,15 @@ internal object IccProfiles {
             val tag = IccTag(readSignature(profile, entry), offset.toInt(), size.toInt())
             if (tags.put(tag.signature, tag) != null) return false
         }
-        return validateRgbMatrixAndTrc(profile, tags)
+        // PNG16 只能使用平台的参数化 RGB 描述，不能忽略 LUT 转换而静默采用备用矩阵。
+        if (requireParametric && tags.keys.any {
+            it in setOf("A2B0", "A2B1", "A2B2", "B2A0", "B2A1", "B2A2",
+                "D2B0", "D2B1", "D2B2", "D2B3", "B2D0", "B2D1", "B2D2", "B2D3")
+        }) return false
+        return validateRgbMatrixAndTrc(profile, tags, requireParametric)
     }
 
-    private fun validateRgbMatrixAndTrc(profile: ByteArray, tags: Map<String, IccTag>): Boolean {
+    private fun validateRgbMatrixAndTrc(profile: ByteArray, tags: Map<String, IccTag>, requireParametric: Boolean): Boolean {
         val mediaWhitePoint = readXyzTag(profile, tags["wtpt"]) ?: return false
         if (mediaWhitePoint.any { it <= 0.0 }) return false
         val red = readXyzTag(profile, tags["rXYZ"]) ?: return false
@@ -146,6 +151,7 @@ internal object IccProfiles {
         val redTrc = readTrcTag(profile, tags["rTRC"]) ?: return false
         val greenTrc = readTrcTag(profile, tags["gTRC"]) ?: return false
         val blueTrc = readTrcTag(profile, tags["bTRC"]) ?: return false
+        if (requireParametric && listOf(redTrc, greenTrc, blueTrc).any { it.samples != null }) return false
         return equivalentTrc(redTrc, greenTrc) && equivalentTrc(redTrc, blueTrc)
     }
 

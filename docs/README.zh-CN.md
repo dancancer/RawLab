@@ -14,7 +14,7 @@ RawLab 用于显影相机 RAW 文件、应用兼容的富士胶片模拟 LUT 和
 
 - RAW 显影，支持曝光、相机空间白平衡、明暗、色彩和锐化调整。
 - 四端支持 Sigma DP1S、Merrill 和 Quattro 范围内的 X3F 普通显影，旧编辑可保留传统模式。该显影使用 CPU，不承诺与 Sigma Photo Pro 完全一致；机型、参数与限制见 [X3F 显影说明](../lutools/docs/x3f-rendering.md)。
-- 支持普通不透明 RGB8 SDR 图像：四端均可输入 JPEG/PNG，macOS、iOS 和 Windows 另支持 TIFF，macOS/iOS 另支持 HEIF。普通图像复用编辑与导出核心，不额外应用 RAW 显影曲线或相机专属设置；HDR、高位深、透明及多帧等不支持的输入会明确拒绝。格式与处理边界见[普通图像输入契约](../lutools/docs/color-contract.md#display-referred-raster-input)。
+- 支持普通不透明 RGB8 SDR 图像：四端均可输入 JPEG/PNG，macOS、iOS 和 Windows 另支持 TIFF，macOS/iOS 以及 Windows（使用随包 libheif）支持普通 SDR HEIF/HEIC。普通图像复用编辑与导出核心，不额外应用 RAW 显影曲线或相机专属设置；HDR、高位深、透明及多帧等不支持的输入会明确拒绝。格式与处理边界见[普通图像输入契约](../lutools/docs/color-contract.md#display-referred-raster-input)。
 - 四端支持手机增益图 HDR JPEG/HEIF，保留独立的 HDR/SDR 编辑，提供七项基础调整、几何、亮度监测、预设和选择性同步，导出 HDR JPEG 或明确的 SDR 成片。切到 SDR 编辑后可使用普通 LUT 预览。HDR 处理使用 CPU，显示取决于系统和屏幕能力，条件不足时使用 SDR 呈现；见[平台范围](design/hdr-photos/android-windows.md)。
 - 四端为受支持的相机 RAW 和 Apple ProRAW 提供 HDR 显影，RAW 默认以 SDR 打开。HDR 与 SDR 分别保存调整，可导出增益图 HDR JPEG 或 SDR JPEG。支持范围见[相机 RAW](design/hdr-photos/camera-raw.md)和 [ProRAW](design/hdr-photos/proraw.md)。
 - 四端新照片默认使用“匹配内嵌预览”曝光基准，提供一次性自动曝光和八色 HSL 调整；保留旧照片已保存的曝光基准。

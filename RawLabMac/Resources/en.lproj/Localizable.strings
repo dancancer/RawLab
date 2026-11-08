@@ -28,14 +28,15 @@
 "Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。" = "Agent recipes do not support AI denoise. Turn off AI denoise first.";
 "DCP 使用三光源 HueSatMap，暂不支持转换。" = "The DCP uses a three-illuminant HueSatMap, which is not supported for conversion yet.";
 "DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。" = "The DCP contains unsupported spatial gains, HDR, or RGB-table processing and cannot be converted.";
+"DCP 导入选项" = "DCP import options";
 "DCP 文件或外观数据超过安全大小限制。" = "The DCP file or look data exceeds the safe size limit.";
 "DCP 文件损坏，或使用了不支持的 TIFF 结构。" = "The DCP file is damaged or uses an unsupported TIFF structure.";
 "DCP 曝光偏移无效；需要 -16 至 +16 EV 的有限数值。" = "The DCP exposure offset is invalid; it must be a finite value from -16 to +16 EV.";
 "DCP 曲线无效；需要 2 至 8192 个有限、范围为 0 至 1 且横坐标递增的点。" = "The DCP tone curve is invalid; it needs 2 to 8192 finite points in the 0 to 1 range with increasing x-coordinates.";
+"DCP 没有内嵌色调曲线。" = "The DCP has no embedded tone curve.";
 "DCP 的 HueSatMap/LookTable 数据、维度或编码不受支持。" = "The DCP HueSatMap/LookTable data, dimensions, or encoding are unsupported.";
-"DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。" = "The DCP is missing ProfileToneCurve; Adobe's default curve cannot be inferred automatically. Specify a curve explicitly with the preparation tool first.";
 "DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。" = "The DCP lacks a unique, valid D65 ColorMatrix/ForwardMatrix and cannot be converted.";
-"DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。" = "The DCP requires automatic black-level processing, which is not yet supported by this conversion. Select a black-level policy explicitly with the preparation tool first.";
+"DCP 要求自动黑位处理。" = "The DCP requests automatic black-level processing.";
 "DNG · 渲染型" = "DNG · Rendered";
 "DNG 只能保存到文件" = "DNG Can Only Be Saved to Files";
 "DNG 已执行内嵌 Stage3 处理，未叠加校正" = "Embedded DNG Stage 3 Already Applied; Additional Correction Skipped";
@@ -54,6 +55,7 @@
 "HDR 处理失败（%@）。" = "HDR processing failed (%@).";
 "HDR 显示不可用，当前显示 SDR。" = "HDR display is unavailable. Showing SDR.";
 "HDR 模式暂不支持此工具。" = "This tool is not available in HDR mode yet.";
+"HDR 照片用 HDR JPEG，其余用 JPEG" = "HDR JPEG for HDR photos, JPEG for the rest";
 "HDR 照片需要 macOS 15 或 iOS 18 及以上版本。" = "HDR photos require macOS 15 or iOS 18 or later.";
 "HDR 相机配置" = "HDR camera profile";
 "HDR 编辑" = "HDR Editing";
@@ -542,6 +544,7 @@
 "显示裁切提示" = "Show clipping warnings";
 "显示裁剪三分网格" = "Show Rule of Thirds Crop Grid";
 "显示输出高光与黑位裁切" = "Show output highlight and black-level clipping";
+"普通图片未使用 AI 降噪" = "AI denoise was not used for ordinary images";
 "普通降噪参数已保留，关闭 AI 降噪即可恢复。" = "Standard denoise settings are retained. Turn off AI denoise to restore them.";
 "暂无编辑历史。" = "No edit history yet.";
 "暖调日系 · 漫射金光" = "Warm Japanese · diffused golden light";
@@ -660,6 +663,8 @@
 "此照片有未应用的几何或镜头草稿。" = "This photo has an unapplied geometry or lens draft.";
 "此照片没有可用的相机白平衡校准。" = "This photo has no usable camera white balance calibration.";
 "此照片没有可编辑的 HDR 增益图。" = "This photo has no editable HDR gain map.";
+"此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。" = "Editing this photo in HDR requires macOS 15. It will be exported in SDR.";
+"此照片的 HDR 需 macOS 15 才能编辑，已按 SDR 打开。" = "Editing this photo in HDR requires macOS 15. It was opened in SDR.";
 "此目录没有 RAW 照片。" = "This folder contains no RAW photos.";
 "此目录没有照片。" = "This folder contains no photos.";
 "此输入不支持镜头校正" = "Lens Correction Unsupported for This Input";
@@ -735,6 +740,7 @@
 "直方图" = "Histogram";
 "相对白平衡" = "Relative White Balance";
 "相机白平衡（按目标照片）" = "Camera white balance (per target photo)";
+"省略自动黑位" = "Omit automatic black rendering";
 "确认兼容导入" = "Import with these settings";
 "确认并冻结任务" = "Confirm and freeze task";
 "移除" = "Remove";
@@ -807,6 +813,7 @@
 "色相、饱和度和明度" = "Hue, saturation, and lightness";
 "色相：向相邻颜色偏移。" = "Hue: shift toward neighboring colors.";
 "色调" = "Tint";
+"色调曲线（JSON）" = "Tone curve (JSON)";
 "苍茫雪山与森林雾气，去除数码刺眼生绿，苔原冷绿与柔和暖金交织" = "Vast snowy mountains and forest mist, removing harsh digital greens; tundra cool greens blend with soft warm gold";
 "英国乡村秋日油画风，厚重大地色，枯草金黄与深林墨绿交织" = "British countryside autumn oil-painting look, rich earth tones, golden dry grass and deep forest green";
 "范围与插值" = "Range and interpolation";
@@ -913,6 +920,7 @@
 "选择安装时间" = "Choose installation time";
 "选择待导出的 RAW 照片" = "Select RAW photos to export";
 "选择待导出的照片" = "Select Photos to Export";
+"选择曲线文件…" = "Choose curve file…";
 "选择此组" = "Select Group";
 "选择照片…" = "Select Photos…";
 "选择照片和方案后显示预览" = "Choose a photo and option to see a preview";

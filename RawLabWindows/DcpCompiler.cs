@@ -19,8 +19,8 @@ internal sealed class DcpCompileException : Exception
     {
         DcpErrorReason.TooLarge => Loc.Text("DCP 文件或外观数据超过安全大小限制。"),
         DcpErrorReason.InvalidCalibration => Loc.Text("DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。"),
-        DcpErrorReason.MissingToneCurve => Loc.Text("DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。"),
-        DcpErrorReason.AutomaticBlack => Loc.Text("DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。"),
+        DcpErrorReason.MissingToneCurve => Loc.Text("DCP 没有内嵌色调曲线。"),
+        DcpErrorReason.AutomaticBlack => Loc.Text("DCP 要求自动黑位处理。"),
         DcpErrorReason.TripleIlluminant => Loc.Text("DCP 使用三光源 HueSatMap，暂不支持转换。"),
         DcpErrorReason.UnsupportedStages => Loc.Text("DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。"),
         DcpErrorReason.InvalidTable => Loc.Text("DCP 的 HueSatMap/LookTable 数据、维度或编码不受支持。"),
@@ -31,13 +31,32 @@ internal sealed class DcpCompileException : Exception
     };
 }
 
+internal readonly record struct DcpImportOptions(byte[]? ToneCurveJson, bool OmitAutomaticBlack);
+
 internal static class DcpCompiler
 {
     // These limits are part of the shared import contract, not a Windows UI limit.
     internal const long MaxSourceBytes = 128L * 1024 * 1024;
     internal const long MaxOutputBytes = 64L * 1024 * 1024;
+    internal const long MaxToneCurveJsonBytes = 1024L * 1024;
 
-    internal static byte[] Compile(string source)
+    private const string Dll = "sony2fuji.dll";
+
+    [DllImport(Dll, EntryPoint = "sony2fuji_compile_dcp_with_options", ExactSpelling = true,
+        CallingConvention = CallingConvention.Cdecl)]
+    private static extern int CompileDcpWithOptions(
+        IntPtr source,
+        nuint sourceSizeBytes,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string sourceName,
+        IntPtr toneCurveJson,
+        nuint toneCurveSizeBytes,
+        uint omitAutomaticBlack,
+        ref PInvokeNative.DcpBlob output,
+        ref DcpErrorReason reason);
+
+    internal static byte[] Compile(string source) => Compile(source, null);
+
+    internal static byte[] Compile(string source, DcpImportOptions? options)
     {
         if (string.IsNullOrWhiteSpace(source))
             throw new DcpCompileException(DcpErrorReason.Malformed, PInvokeNative.StatusInvalidArgument);
@@ -50,17 +69,27 @@ internal static class DcpCompiler
             throw new DcpCompileException(DcpErrorReason.TooLarge);
 
         var data = ReadBounded(sourceInfo.FullName);
+        var toneCurve = options?.ToneCurveJson;
+        if (toneCurve is { Length: 0 })
+            throw new DcpCompileException(DcpErrorReason.InvalidTone);
+        if (toneCurve is { LongLength: > MaxToneCurveJsonBytes })
+            throw new DcpCompileException(DcpErrorReason.TooLarge);
+
         PInvokeNative.DcpBlob blob = default;
         var reason = DcpErrorReason.None;
+        GCHandle sourceHandle = default;
+        GCHandle toneCurveHandle = default;
         try
         {
-            var handle = default(GCHandle);
             try
             {
-                if (data.Length != 0) handle = GCHandle.Alloc(data, GCHandleType.Pinned);
-                var pointer = data.Length == 0 ? IntPtr.Zero : handle.AddrOfPinnedObject();
-                var status = PInvokeNative.CompileDcp(pointer, checked((nuint)data.LongLength),
-                    sourceInfo.Name, ref blob, ref reason);
+                if (data.Length != 0) sourceHandle = GCHandle.Alloc(data, GCHandleType.Pinned);
+                if (toneCurve is { Length: > 0 }) toneCurveHandle = GCHandle.Alloc(toneCurve, GCHandleType.Pinned);
+                var pointer = data.Length == 0 ? IntPtr.Zero : sourceHandle.AddrOfPinnedObject();
+                var toneCurvePointer = toneCurve is { Length: > 0 } ? toneCurveHandle.AddrOfPinnedObject() : IntPtr.Zero;
+                var status = CompileDcpWithOptions(pointer, checked((nuint)data.LongLength),
+                    sourceInfo.Name, toneCurvePointer, checked((nuint)(toneCurve?.LongLength ?? 0)),
+                    options?.OmitAutomaticBlack == true ? 1u : 0u, ref blob, ref reason);
                 if (status != PInvokeNative.StatusOk)
                     throw new DcpCompileException(reason == DcpErrorReason.None ? DcpErrorReason.Malformed : reason, status);
                 if (blob.Data == IntPtr.Zero || blob.SizeBytes == 0)
@@ -74,7 +103,8 @@ internal static class DcpCompiler
             }
             finally
             {
-                if (handle.IsAllocated) handle.Free();
+                if (toneCurveHandle.IsAllocated) toneCurveHandle.Free();
+                if (sourceHandle.IsAllocated) sourceHandle.Free();
             }
         }
         finally
@@ -84,16 +114,32 @@ internal static class DcpCompiler
         }
     }
 
-    private static byte[] ReadBounded(string source)
+    internal static byte[] ReadToneCurveJson(string source)
+    {
+        if (string.IsNullOrWhiteSpace(source))
+            throw new DcpCompileException(DcpErrorReason.Malformed, PInvokeNative.StatusInvalidArgument);
+
+        var sourceInfo = new FileInfo(source);
+        if (!sourceInfo.Exists) throw new FileNotFoundException(Loc.Text("无法读取或写入文件，请检查路径和访问权限。"), source);
+        if ((sourceInfo.Attributes & FileAttributes.Directory) != 0)
+            throw new IOException(Loc.Text("无法读取或写入文件，请检查路径和访问权限。"));
+        if (sourceInfo.Length > MaxToneCurveJsonBytes)
+            throw new DcpCompileException(DcpErrorReason.TooLarge);
+        var data = ReadBounded(sourceInfo.FullName, MaxToneCurveJsonBytes);
+        if (data.Length == 0) throw new DcpCompileException(DcpErrorReason.InvalidTone);
+        return data;
+    }
+
+    private static byte[] ReadBounded(string source, long limit = MaxSourceBytes)
     {
         using var stream = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read);
-        using var data = new MemoryStream((int)Math.Min(stream.Length, MaxSourceBytes));
+        using var data = new MemoryStream((int)Math.Min(stream.Length, limit));
         var buffer = new byte[1024 * 1024];
         while (true)
         {
             var read = stream.Read(buffer, 0, buffer.Length);
             if (read == 0) break;
-            if (data.Length > MaxSourceBytes - read)
+            if (data.Length > limit - read)
                 throw new DcpCompileException(DcpErrorReason.TooLarge);
             data.Write(buffer, 0, read);
         }

@@ -34,7 +34,7 @@ internal class BatchHDRPreparation(
         val raw = target.inputKind == PhotoInputKind.RAW
         val info = probeSource(target.sourceFile, raw)
         val record=readRecord(target.identity)
-        val previous=record.settings ?: sourceDefaultSettings(info != null, cameraRaw = raw)
+        val previous=record.settings ?: com.rawlab.android.photo.defaultEditSettingsFor(target.sourceFile, target.inputKind, info != null, cameraRaw = raw)
         if(previous.isHDREditing && info == null) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.source")
         val payload=AdjustmentTransfer.captureHDRBatch(source.settings,sourceContext,previous.isHDREditing)
         val settings=AdjustmentTransfer.prepare(payload,previous,

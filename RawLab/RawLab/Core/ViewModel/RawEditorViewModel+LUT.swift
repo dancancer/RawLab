@@ -75,13 +75,15 @@ extension RawEditorViewModel {
     }
 
     func importLooks(from sources: [URL], compatibilityPrompt: LookImportCoordinator.CompatibilityPrompt? = nil,
+                     dcpOptionsPrompt: LookImportCoordinator.DCPOptionsPrompt? = nil,
                      completion: @escaping (LookImportBatchResult) -> Void) {
         guard !sources.isEmpty else {
             completion(LookImportBatchResult(imported: [], failures: []))
             return
         }
         isImportingLooks = true
-        lookImportCoordinator.importLooks(from: sources, compatibilityPrompt: compatibilityPrompt) { [weak self] result in
+        lookImportCoordinator.importLooks(from: sources, compatibilityPrompt: compatibilityPrompt,
+                                          dcpOptionsPrompt: dcpOptionsPrompt) { [weak self] result in
             guard let self else { return }
             self.resultDelivery {
                 let custom = self.customLUTs(from: result.imported)

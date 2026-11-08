@@ -207,6 +207,28 @@ final class RenderEngine {
     private var whiteBalanceCache: (key: RawWhiteBalanceCacheKey, processing: ProcessingIdentity, x3fMode: X3fMode, value: WhiteBalance?)?
     static var x3fAvailable: Bool { sony2fuji_x3f_available() != 0 }
     static func isX3fInput(_ url: URL?) -> Bool { url?.pathExtension.lowercased() == "x3f" }
+    static func defaultSettings(for url: URL,
+                                probeHDRSource: HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) }) throws -> Adjustments {
+        try defaultSettings(for: url, sourceIsHDR: probeHDRSource(url, {}) != nil)
+    }
+    static func defaultSettings(for url: URL, sourceIsHDR: Bool) throws -> Adjustments {
+        var settings = Adjustments()
+        if isRasterInput(url) { settings.exposureMode = .sensor }
+        if isX3fInput(url) { settings.x3fMode = try x3fDefaultMode(for: url) }
+        if sourceIsHDR { settings.hdr = HDRSettings() }
+        return settings
+    }
+    static func x3fDefaultMode(for url: URL) throws -> X3fMode {
+        var mode = SONY2FUJI_X3F_NORMAL
+        let status = url.path.withCString { sony2fuji_x3f_default_mode($0, &mode) }
+        guard status == SONY2FUJI_STATUS_OK else {
+            if status == SONY2FUJI_STATUS_IO_ERROR {
+                throw RenderError.processing(status, input: url, look: nil, output: nil)
+            }
+            throw RenderError.failed(L10n.format("无法正常显影 X3F：%@", String(cString: sony2fuji_status_message(status))))
+        }
+        return mode == SONY2FUJI_X3F_NORMAL ? .normal : .legacy
+    }
     private let lensDatabaseURL: URL?
     private struct LensCatalogKey: Equatable {
         let url: URL
@@ -658,8 +680,8 @@ final class RenderEngine {
         }
         if let output {
             if ExportFormat.forOutput(output) != .renderedDNG {
-                // 核心已成功解码；ImageIO 不识别的 X3F 仍写入输出尺寸和方向，不捏造拍摄 EXIF。
-                let fallback: [CFString: Any]? = url.pathExtension.lowercased() == "x3f" ? [:] : nil
+                // 核心已成功解码；ImageIO 不识别的 RAW 仍写入输出尺寸和方向，不捏造拍摄 EXIF。
+                let fallback: [CFString: Any]? = Self.isRasterInput(url) ? nil : [:]
                 try ExportMetadata.preserve(from: url, in: output, fallbackSourceProperties: fallback)
             }
             return nil

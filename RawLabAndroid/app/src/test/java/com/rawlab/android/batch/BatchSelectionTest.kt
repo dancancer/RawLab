@@ -34,6 +34,20 @@ class BatchSelectionTest {
         assertFalse(selection.supportsHDRExport({ throw java.io.IOException("Unreadable saved record") }))
     }
 
+    @Test fun noRecordRasterCollectionUsesSourceDefaultsWithoutSaving() {
+        val root = Files.createTempDirectory("collection-defaults").toFile()
+        try {
+            val store = EditStore(File(root, "edits"))
+            val input = File(root, "photo.png").also { it.writeText("input") }
+            val photo = BatchTarget(PhotoIdentity("photo"), input, "photo.png", inputKind = PhotoInputKind.RASTER)
+            val exporter = BatchSelectionExport(File(root, "jobs"), store::versionedState, { null })
+            val review = exporter.prepare(BatchSelectionState().append(listOf(photo)), emptySet(), ExportFormat.PNG, null, null) {}
+            assertTrue(review.ready)
+            assertEquals(2, review.rows.single().settings!!.exposureMode)
+            assertNull(store.versionedState(photo.identity).settings)
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun navigationSelectionAndSynchronizationAreIndependent() {
         val first = BatchTarget(PhotoIdentity("first"), File("first"), "same.jpg")
         val second = BatchTarget(PhotoIdentity("second"), File("second"), "same.jpg")

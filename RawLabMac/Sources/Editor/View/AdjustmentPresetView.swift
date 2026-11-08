@@ -107,7 +107,7 @@ struct AdjustmentPresetView: View {
                                 Menu {
                                     Button(L10n.text("应用到多张照片")) {
                                         model.preparePresetAction { applying = preset; message = nil }
-                                    }.disabled(!model.canUsePresetPhoto)
+                                    }.disabled(!model.canApplyPresetToPhotos)
                                     Button(L10n.text("重命名")) { renaming = preset; name = preset.name; message = nil; editing = true; nameFocused = true }
                                     Button(L10n.text("删除"), role: .destructive) { confirmation = .delete(preset) }
                                 } label: { Image(systemName: "ellipsis") }

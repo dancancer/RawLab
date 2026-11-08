@@ -27,7 +27,11 @@ internal static class AIBatchWindowChecks
             var clock=Stopwatch.StartNew();var preflight=window.AddInputs([raw,raster]);
             Pump(()=>preflight.IsCompleted);preflight.GetAwaiter().GetResult();
             check(window.Job.Items.Single(item=>item.Input==raw).Selected,"AI RAW remains selected after lightweight batch preflight");
-            check(!window.Job.Items.Single(item=>item.Input==raster).Selected,"AI raster target is excluded during batch preflight");
+            check(window.Job.Items.Single(item=>item.Input==raster).Selected &&
+                window.Job.Items.Single(item=>item.Input==raster).ValidationError==null,"Raster target remains selected without RAW AI");
+            check(!window.Job.SnapshotFor(window.Job.Items.Single(item=>item.Input==raster)).Settings.AIDenoiseEnabled,
+                "Raster target freezes AI disabled");
+            check(window.Summary.Text.Contains(Loc.Text("普通图片未使用 AI 降噪")),"Mixed batch summary explains raster AI omission");
             check(clock.Elapsed<TimeSpan.FromSeconds(5),"AI preflight avoids model preparation and inference");
             void Start() {
                 window.PrimaryAction.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -41,9 +45,10 @@ internal static class AIBatchWindowChecks
                 "Cancelling real AI preparation leaves the RAW retryable");
             check(journal.Load()!.Items.Single(item=>item.Input==raw).Status==BatchStatus.Waiting,"Cancelled AI state survives journal reload");
             Start();Pump(()=>!window.Running);
-            check(window.Job.SucceededCount==1 && window.Job.FailedCount==0,"Restarted AI batch automatically prepares and exports the RAW");
+            check(window.Job.SucceededCount==2 && window.Job.FailedCount==0,"Restarted AI batch exports both RAW and raster targets");
             var item=window.Job.Items.Single(item=>item.Input==raw);
             check(File.Exists(item.Output),"AI batch publishes its rendered output");
+            check(File.Exists(window.Job.Items.Single(item=>item.Input==raster).Output),"Raster output is published without AI preparation");
             check(window.AIProgress.Visibility==Visibility.Collapsed,"Completed batch clears AI progress");
         } finally {window.CancelExecution();Pump(()=>!window.Running);window.Close();app.Shutdown();}
     }

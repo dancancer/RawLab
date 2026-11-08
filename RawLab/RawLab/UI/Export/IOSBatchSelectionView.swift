@@ -27,7 +27,7 @@ struct IOSBatchSelectionView: View {
                         Text(L10n.text("选择照片后同步所需调整，也可进入单张微调，再返回原集合。"))
                             .font(.footnote).foregroundStyle(.secondary)
                         HStack {
-                            PhotosPicker(selection: $pickerItems, matching: .images, preferredItemEncoding: .current) {
+                            PhotosPicker(selection: $pickerItems, matching: .images, preferredItemEncoding: .current, photoLibrary: .shared()) {
                                 Label(L10n.text("添加照片"), systemImage: "plus")
                             }.accessibilityIdentifier("collection.photos")
                             Spacer()
@@ -167,22 +167,29 @@ private struct IOSCollectionSyncView: View {
     @State private var fields: Set<AdjustmentTransferField>
     @State private var synchronization: IOSCollectionSynchronization?
     @State private var message: String?
-    private var sourceSettings: RawSettings {
-        model.loadedEditRecord?.state?.settings ?? model.sourceDefaultSettings
+    private var sourceSettings: Result<RawSettings, Error> {
+        Result { try model.loadedEditRecord?.state?.settings ?? model.sourceDefaultSettings }
     }
     init(model: RawEditorViewModel, collection: IOSBatchSelection, settings: RawSettings,
          resolveDraft: @escaping (String, Bool) -> Bool) {
         self.model=model; self.collection=collection; self.settings=settings; self.resolveDraft=resolveDraft
-        let source=model.loadedEditRecord?.state?.settings ?? model.sourceDefaultSettings
-        _fields=State(initialValue:source.isHDREditing ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common)
+        let source = Result { try model.loadedEditRecord?.state?.settings ?? model.sourceDefaultSettings }
+        switch source {
+        case .success(let source):
+            _fields=State(initialValue:source.isHDREditing ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common)
+        case .failure:
+            _fields=State(initialValue:[])
+        }
     }
     var body: some View {
-        Group {
+        let source = sourceSettings
+        return Group {
             if let synchronization {
                 IOSAdjustmentTransferView(model: model, kind: .paste, settings: settings, synchronization: synchronization)
             } else {
                 NavigationStack {
                     Form {
+                        if case .success(let sourceSettings) = source {
                         IOSAdjustmentScopeEditor(scope: $scope, fields: $fields,
                             preview: Result { try model.previewAdjustmentPayload(scope: scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields), settings: sourceSettings) },
                             lookName: model.adjustmentSummaryLookName, errorMessage: { model.adjustmentErrorMessage($0) }, titleKey: "同步范围", sourceName: model.sourceDisplayName,
@@ -205,12 +212,16 @@ private struct IOSCollectionSyncView: View {
                                 .accessibilityIdentifier("collection.sync.prepare")
                         }
                         if let message { Section { Text(message) } }
+                        } else if case .failure(let error) = source {
+                            Section { Text(model.adjustmentErrorMessage(error)) }
+                        }
                     }
                     .navigationTitle(L10n.text("同步调整")).navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("取消")) { dismiss() } } }
                 }
             }
-        }.onChange(of:sourceSettings.isHDREditing) { _, isHDR in
+        }.onChange(of:(try? source.get())?.isHDREditing) { _, isHDR in
+            guard let isHDR else { return }
             fields=isHDR ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common
         }
     }
@@ -240,11 +251,11 @@ private struct IOSCollectionExportView: View {
                 Section {
                     Text(L10n.text("将按每张照片已保存的调整导出。跳过只影响本次导出。"))
                     Picker(L10n.text("格式"), selection: $format) {
-                        ForEach([BatchOutputFormat.jpeg, .renderedDNG], id: \.self) { Text($0.title).tag($0) }
+                        ForEach([BatchOutputFormat.jpeg, .hdrJPEG, .renderedDNG], id: \.self) { Text($0.title).tag($0) }
                         if HDRImage.heifExportAvailable {
                             Text(BatchOutputFormat.hdrHEIF.title).tag(BatchOutputFormat.hdrHEIF)
                         }
-                    }
+                    }.accessibilityIdentifier("collection.export.format")
                     ExportSizePicker(longEdge: $longEdge, onValidityChanged: { sizeValid = $0 })
                 }
                 Section {

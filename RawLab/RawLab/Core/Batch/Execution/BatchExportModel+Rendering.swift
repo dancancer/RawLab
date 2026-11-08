@@ -33,9 +33,9 @@ final class IOSHDRBatchPreparation {
         guard let store else { throw EditPersistenceError.corruptStore }
         let record=try store.versionedState(for:target.identity)
         let info=try HDRSourceInfo.probe(target.sourceURL)
-        var defaults=RawSettings.default
-        if info != nil { defaults.hdr=HDRSettings() }
-        let previous=record.state ?? PhotoEditState(settings:defaults)
+        let previous=try record.state ?? PhotoEditState(settings:RawSettings.sourceDefaults(
+            for:target.sourceURL,isRaw:target.sourceKind == .raw,sourceIsHDR:info != nil,
+            x3fDefaultMode:{ try Sony2FujiProcessor().x3fDefaultMode(for:$0) }))
         let rawInfo = target.sourceKind == .raw && previous.settings.isHDREditing
             ? try HDRSourceInfo.probeRAW(target.sourceURL) : nil
         if previous.settings.isHDREditing {
@@ -94,7 +94,8 @@ extension BatchExportModel {
                                                           rawWhiteBalance: nil)
             }
             return try processor.makeJPEGData(from: result.buffer, sourceURL: target.sourceURL,
-                                              orientation: result.orientation, quality: 0.92)
+                                              orientation: result.orientation, quality: 0.92,
+                                              sourceIsRaw: target.sourceKind == .raw)
         }
     }
 

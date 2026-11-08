@@ -22,6 +22,27 @@ class RasterIccTest {
     }
 
     @Test
+    fun png16RejectsLutTransformsEvenWhenMatrixTrcFallbackExists() {
+        val signatures = (0..2).flatMap { listOf("A2B$it", "B2A$it") } +
+            (0..3).flatMap { listOf("D2B$it", "B2D$it") }
+        for (signature in signatures) {
+            val profile = syntheticIccProfile(displayP3 = true, transformTag = signature)
+            assertTrue("8-bit profile behavior must remain compatible: $signature",
+                RasterContainerValidator.inspect(pngWithIccp(profile)).isValid)
+            assertFalse("PNG16 cannot apply $signature exactly",
+                RasterContainerValidator.inspect(pngWithIccp(profile, depth = 16)).isValid)
+        }
+        assertTrue(RasterContainerValidator.inspect(pngWithIccp(syntheticIccProfile(true), depth = 16)).isValid)
+    }
+
+    @Test
+    fun png16RejectsSampledCurvesThatColorSpaceWouldApproximate() {
+        val profile = syntheticIccProfile(displayP3 = true, sampledCurve = true)
+        assertTrue(RasterContainerValidator.inspect(pngWithIccp(profile)).isValid)
+        assertFalse(RasterContainerValidator.inspect(pngWithIccp(profile, depth = 16)).isValid)
+    }
+
+    @Test
     fun pngExplicitSrgbMarkersConflictWithIccProfiles() {
         val png = pngWithIccp(syntheticIccProfile(displayP3 = true))
         val prefix = png.copyOf(png.size - 12)
@@ -112,6 +133,7 @@ class RasterIccTest {
 
     private fun pngWithIccp(
         profile: ByteArray,
+        depth: Int = 8,
         profileName: String = "RawLab ICC",
         compressionMethod: Int = 0,
         truncateCompressedProfile: Boolean = false,
@@ -123,7 +145,7 @@ class RasterIccTest {
         val ihdr = ByteArray(13).also {
             writeU32(it, 0, 2)
             writeU32(it, 4, 2)
-            it[8] = 8
+            it[8] = depth.toByte()
             it[9] = 2
         }
         return PNG_SIGNATURE + pngChunk("IHDR", ihdr) + pngChunk("iCCP", iccp) + pngChunk("IEND", ByteArray(0))
@@ -157,7 +179,13 @@ class RasterIccTest {
     private fun iccChunk(sequence: Int, total: Int, payload: ByteArray): ByteArray =
         ICC_PROFILE_PREFIX + byteArrayOf(sequence.toByte(), total.toByte()) + payload
 
-    private fun syntheticIccProfile(displayP3: Boolean, extraTags: Int = 0, curveType: Int = 3): ByteArray {
+    private fun syntheticIccProfile(displayP3: Boolean, extraTags: Int = 0, curveType: Int = 3,
+        transformTag: String? = null, sampledCurve: Boolean = false): ByteArray {
+        val curve = if (sampledCurve) ByteArray(18).also {
+            "curv".toByteArray().copyInto(it)
+            writeU32(it, 8, 3)
+            it[14] = 0x40; it[16] = 0xff.toByte(); it[17] = 0xff.toByte()
+        } else parametricCurveTag(curveType)
         val tags = listOf(
             Tag("rXYZ", xyzTag(if (displayP3) 0.5151 else 0.4361, if (displayP3) 0.2412 else 0.2225,
                 if (displayP3) -0.0011 else 0.0139)),
@@ -166,10 +194,11 @@ class RasterIccTest {
             Tag("bXYZ", xyzTag(if (displayP3) 0.1571 else 0.1431, if (displayP3) 0.0666 else 0.0606,
                 if (displayP3) 0.7841 else 0.7141)),
             Tag("wtpt", xyzTag(0.9642, 1.0, 0.8249)),
-            Tag("rTRC", parametricCurveTag(curveType)),
-            Tag("gTRC", parametricCurveTag(curveType)),
-            Tag("bTRC", parametricCurveTag(curveType)),
-        ) + (0 until extraTags).map { Tag("x" + it.toString().padStart(3, '0'), xyzTag(0.5, 0.5, 0.5)) }
+            Tag("rTRC", curve),
+            Tag("gTRC", curve),
+            Tag("bTRC", curve),
+        ) + listOfNotNull(transformTag?.let { Tag(it, "mAB ".toByteArray() + ByteArray(28)) }) +
+            (0 until extraTags).map { Tag("x" + it.toString().padStart(3, '0'), xyzTag(0.5, 0.5, 0.5)) }
         val tableEnd = 132 + tags.size * 12
         val totalSize = tableEnd + tags.sumOf { it.data.size }
         val profile = ByteArray(totalSize)

@@ -99,18 +99,17 @@ internal class EditorRenderer(
             try {
                 photo.validateOriginal?.invoke()
                 val record = restore(photo.identity)
-                var restored = record?.settings ?: if (photo.hdrSource != null)
-                    photo.defaultEditSettings() else null
-                if (work.x3fModeOverride != null) restored = (restored ?: EditSettings()).copy(x3fMode = work.x3fModeOverride)
-                canRetryLegacy = photo.isX3f && (restored ?: EditSettings()).x3fMode == com.rawlab.android.settings.X3fMode.NORMAL
-                if (restored != null && !restored.isHDREditing && runCatching { storage.lookPath(restored) }.isFailure) {
+                var restored = record?.settings ?: photo.defaultEditSettings(work.x3fModeOverride)
+                if (work.x3fModeOverride != null) restored = restored.copy(x3fMode = work.x3fModeOverride)
+                canRetryLegacy = photo.isX3f && restored.x3fMode == com.rawlab.android.settings.X3fMode.NORMAL
+                if (!restored.isHDREditing && runCatching { storage.lookPath(restored) }.isFailure) {
                     val native = engine()
                     native.setGpuMode(work.gpuMode)
                     val validation = native.preview(photo.file, null, restored.copy(film = "neutral", recipeID = null), 256, false, photo.inputKind, generation)
                     if (debuggable)
                         android.util.Log.i("RawLabImport", "missingLookValidationBackend=${validation.backend}")
                     WorkResult.MissingLook(photo, restored, record, work.x3fModeOverride != null, owned)
-                } else perform(Work.Preview(photo, restored ?: EditSettings(), false, work.gpuMode,
+                } else perform(Work.Preview(photo, restored, false, work.gpuMode,
                     importing = true, restored = record?.settings != null, importedRecord = record,
                     persistOnImport = work.x3fModeOverride != null, ownsImportedInput = owned), generation)
             }

@@ -444,6 +444,15 @@ struct RawSettings: Codable, Equatable {
         Float(min(max(lutStrength, Self.lutStrengthRange.lowerBound), Self.lutStrengthRange.upperBound))
     }
 
+    static func sourceDefaults(for url: URL, isRaw: Bool, sourceIsHDR: Bool,
+                               x3fDefaultMode: (URL) throws -> X3fMode) throws -> RawSettings {
+        var settings = RawSettings.default
+        if !isRaw { settings.exposureMode = .sensor }
+        if isRaw && url.pathExtension.lowercased() == "x3f" { settings.x3fMode = try x3fDefaultMode(url) }
+        if sourceIsHDR { settings.hdr = HDRSettings() }
+        return settings
+    }
+
     static let `default` = RawSettings(
         exposure: 0,
         contrast: 1,

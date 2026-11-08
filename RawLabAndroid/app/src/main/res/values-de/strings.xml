@@ -198,6 +198,7 @@
     <string name="message_output_found">"Ausgabe gefunden"</string>
     <string name="message_output_storage_failed">"Fehler beim Speichern der Ausgabe: %1$s"</string>
     <string name="message_photo_gallery">"Fotogalerie"</string>
+    <string name="message_png16_decode_limit">"16-Bit-PNG überschreitet die Dekodierungsgrenze von 32 Megapixeln."</string>
     <string name="message_preparing">"Wird vorbereitet"</string>
     <string name="message_processing">"Wird exportiert"</string>
     <string name="message_remove">"Entfernen"</string>

@@ -20,6 +20,10 @@ import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.looks.BundledLooks
 import com.rawlab.android.looks.DcpCompiler
+import com.rawlab.android.looks.DcpCompilationException
+import com.rawlab.android.looks.DcpFailureReason
+import com.rawlab.android.looks.DcpImportChoices
+import com.rawlab.android.looks.readDcpInput
 import com.rawlab.android.looks.LookLibrary
 import com.rawlab.android.looks.LookValidator
 import com.rawlab.android.looks.ManagedLook
@@ -39,6 +43,14 @@ import com.rawlab.android.settings.LookChoice
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.sourceDefaultSettings
 
+internal fun defaultEditSettingsFor(file: File, inputKind: PhotoInputKind, isHDRSource: Boolean,
+    cameraRaw: Boolean, x3fModeOverride: com.rawlab.android.settings.X3fMode? = null,
+    x3fDefaultMode: (File) -> com.rawlab.android.settings.X3fMode = { NativeProcessor.x3fDefaultMode(it) }): EditSettings {
+    val defaults = sourceDefaultSettings(isHDRSource, cameraRaw, inputKind)
+    return if (inputKind == PhotoInputKind.RAW && file.extension.equals("x3f", ignoreCase = true))
+        defaults.copy(x3fMode = x3fModeOverride ?: x3fDefaultMode(file)) else defaults
+}
+
 data class AlbumPhoto(val uri: Uri, val name: String, val album: String,
     val width: Int = 0, val height: Int = 0, val orientation: Int = 0) {
     val aspectRatio: Float? get() = albumAspectRatio(width, height, orientation)
@@ -51,7 +63,8 @@ data class ImportedPhoto(val uri: Uri, val name: String, val file: File,
     val isHDRSource get() = hdrSource != null
     val isCameraRawHDR get() = hdrSource?.isCameraRaw == true
     val isX3f get() = inputKind == PhotoInputKind.RAW && name.substringAfterLast('.', "").equals("x3f", ignoreCase = true)
-    fun defaultEditSettings(): EditSettings = sourceDefaultSettings(isHDRSource, cameraRaw = isCameraRawHDR)
+    fun defaultEditSettings(x3fModeOverride: com.rawlab.android.settings.X3fMode? = null): EditSettings =
+        defaultEditSettingsFor(file, inputKind, isHDRSource, isCameraRawHDR, x3fModeOverride)
 }
 
 internal fun albumAspectRatio(width: Int, height: Int, orientation: Int): Float? {
@@ -153,7 +166,7 @@ class PhotoStorage(
     }
     fun builtinLookIDs(): Map<String, String> = films.mapNotNull { film -> film.fileName?.let { it to film.id } }.toMap()
 
-    private fun lookSourceName(uri: Uri): String = runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
+    internal fun lookSourceName(uri: Uri): String = runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
             if (it.moveToFirst()) it.getString(0) else null
         } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Look"
 
@@ -223,11 +236,17 @@ class PhotoStorage(
         } finally { temporary.delete() }
     }
 
-    fun importLook(uri: Uri, compatibility: LUTCompatibility? = null): ManagedLook {
+    fun importLook(uri: Uri, compatibility: LUTCompatibility? = null, dcp: DcpImportChoices? = null): ManagedLook {
         val name = lookSourceName(uri)
         try {
+            val curve = dcp?.toneCurve?.let { curveUri ->
+                val input = resolver.openInputStream(curveUri) ?: throw IOException("Cannot open tone curve")
+                input.use { readDcpInput(it, 1024 * 1024) }.also {
+                    if (it.isEmpty()) throw DcpCompilationException(DcpFailureReason.INVALID_TONE_CURVE)
+                }
+            }
             val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot open look")
-            return stream.use { lookLibrary.importLook(it, name, compatibility) }
+            return stream.use { lookLibrary.importLook(it, name, compatibility, curve, dcp?.omitAutomaticBlack == true) }
         } catch (error: Exception) {
             throw IOException("${name}: ${error.message ?: error.javaClass.simpleName}", error)
         }

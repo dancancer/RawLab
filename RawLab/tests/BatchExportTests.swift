@@ -1,5 +1,10 @@
 import Foundation
 
+// 独立模型不加载原生资源；相机配置资产由 hdr-batch 原生测试覆盖。
+enum HDRCameraProfileAssetStore {
+    @discardableResult static func url(for profile: HDRCameraProfile) throws -> URL { fatalError("unexpected native camera profile") }
+}
+
 @main
 struct BatchExportTests {
     static func check(_ condition: @autoclosure () -> Bool, _ message: String) {

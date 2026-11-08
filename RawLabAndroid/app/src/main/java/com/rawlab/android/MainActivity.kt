@@ -39,7 +39,11 @@ import com.rawlab.android.analytics.setup.UsageAnalyticsRegistry
 import com.rawlab.android.batch.ui.BatchSelectionScreen
 import com.rawlab.android.batch.ui.BatchExportScreen
 import com.rawlab.android.editor.EditorViewModel
+import com.rawlab.android.editor.PendingDcpImport
+import com.rawlab.android.editor.PendingLookCompatibility
+import com.rawlab.android.editor.ui.DcpImportDialog
 import com.rawlab.android.editor.ui.EditorScreen
+import com.rawlab.android.editor.ui.LUTCompatibilityDialog
 import com.rawlab.android.editor.ui.AdjustmentSheet
 import com.rawlab.android.editor.ui.AdjustmentTransferSheet
 import com.rawlab.android.editor.ui.AdjustmentPresetSheet
@@ -225,8 +229,13 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             onApplyDraft = model::applyDraft, onDiscardDraft = model::discardDraft,
             onGeometryRatio = model::chooseGeometryRatio, onGeometryLock = model::toggleGeometryLock,
             onGeometrySwap = model::swapGeometryRatio, onGeometryGrid = model::toggleGeometryGrid)
-        if (!state.lookCompatibilityPreparing) state.pendingLookCompatibility.firstOrNull()?.let { pending ->
-            com.rawlab.android.editor.ui.LUTCompatibilityDialog(pending, state.photo, model.storage, model::resolveLookCompatibility)
+        if (!state.lookImportPreparing) {
+            when (val pending = state.pendingLookImports.firstOrNull()) {
+                is PendingLookCompatibility ->
+                    LUTCompatibilityDialog(pending, state.photo, model.storage, model::resolveLookCompatibility)
+                is PendingDcpImport -> DcpImportDialog(pending, model::resolveDcpImport)
+                null -> Unit
+            }
         }
         }
         }

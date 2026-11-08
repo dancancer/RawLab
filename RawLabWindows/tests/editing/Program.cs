@@ -7,6 +7,11 @@ if (args.Contains("--hdr-look-import")) {
     return;
 }
 
+if (args.Contains("--batch-raster-ai-only")) {
+    BatchRasterAIChecks();
+    return;
+}
+
 if (args.Contains("--summary-only")) {
     AdjustmentSummaryChecks.Run();
     return;
@@ -23,6 +28,8 @@ if (args.Contains("--camera-raw-hdr")) {
     return;
 }
 X3fPersistenceChecks();
+Check(PhotoInput.PrepareDefaultSettings("fixture.png").ExposureMode == 2,
+    "No-record raster defaults retain sensor exposure");
 AIGpuDiagnosticsChecks.Run();
 if(args.Contains("--ai-support"))return;
 
@@ -111,7 +118,22 @@ static void AIDenoisePersistenceChecks()
     Check(JsonSerializer.SerializeToNode(restored.Capture())!["AIDenoiseEnabled"]?.GetValue<bool>() == false,
         "Direct full reset clears AI");
 }
+static void BatchRasterAIChecks()
+{
+    var source = new Adjustments { AIDenoiseEnabled = true };
+    source.Set(Parameter.Exposure, .7);
+    foreach (var target in new[] { "target.jpg", "target.png" }) {
+        var effective = PhotoInput.PrepareBatchSettings("source.arw", target, source);
+        Check(!effective.AIDenoiseEnabled && effective[Parameter.Exposure] == .7,
+            "Ordinary image batch targets skip AI and retain shared adjustments");
+        Check(source.AIDenoiseEnabled, "Preparing a raster target never changes RAW source AI settings");
+    }
+    Check(PhotoInput.PrepareBatchSettings("source.arw", "target.nef", source).AIDenoiseEnabled,
+        "RAW batch targets retain AI denoise");
+    Console.WriteLine("PASS: batch raster targets omit RAW-only AI");
+}
 AIDenoisePersistenceChecks();
+BatchRasterAIChecks();
 await AIDenoiseJobChecks.Run();
 static void ProcessingChecks()
 {

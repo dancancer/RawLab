@@ -1,5 +1,35 @@
 {
   "entries": {
+    "dcp_import_options": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "DCP 导入选项",
+      "types": []
+    },
+    "dcp_tone_curve": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "色调曲线（JSON）",
+      "types": []
+    },
+    "dcp_choose_curve": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "选择曲线文件…",
+      "types": []
+    },
+    "dcp_omit_auto_black": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "省略自动黑位",
+      "types": []
+    },
+    "message_png16_decode_limit": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "16 位 PNG 超过 3200 万像素解码上限。",
+      "types": []
+    },
     "collection_cancel_check": {
       "file": "editor_strings.xml",
       "formats": [],
@@ -549,7 +579,7 @@
     "dcp_automatic_black": {
       "file": "editor_strings.xml",
       "formats": [],
-      "source": "DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。",
+      "source": "DCP 要求自动黑位处理。",
       "types": []
     },
     "dcp_invalid_calibration": {
@@ -585,7 +615,7 @@
     "dcp_missing_tone_curve": {
       "file": "editor_strings.xml",
       "formats": [],
-      "source": "DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。",
+      "source": "DCP 没有内嵌色调曲线。",
       "types": []
     },
     "dcp_too_large": {
@@ -5139,6 +5169,14 @@
     }
   },
   "unique": {
+    "16 位 PNG 超过 3200 万像素解码上限。": {
+      "de": "16-Bit-PNG überschreitet die Dekodierungsgrenze von 32 Megapixeln.",
+      "en": "16-bit PNG exceeds the 32 MP decode limit.",
+      "es": "El PNG de 16 bits supera el límite de decodificación de 32 MP.",
+      "fr": "Le PNG 16 bits dépasse la limite de décodage de 32 Mpx.",
+      "ja": "16ビットPNGはデコード上限の3200万画素を超えています。",
+      "zh-Hans": "16 位 PNG 超过 3200 万像素解码上限。"
+    },
     "1–65535 像素": {
       "de": "1–65535 Pixel",
       "en": "1–65535 pixels",

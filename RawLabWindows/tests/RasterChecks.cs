@@ -81,12 +81,61 @@ internal static class RasterChecks
         var tiffPreview=RenderEngine.ReadEmbeddedPreview(tiff,7);
         check(tiffPreview.Image!=null && Math.Max(tiffPreview.Image.PixelWidth,tiffPreview.Image.PixelHeight)<=7 &&
             tiffPreview.Width==width && tiffPreview.Height==height,"Classic RGB8 TIFF uses the bounded managed thumbnail adapter");
+        var png16=Path.Combine(inputs,"rgb16.png");var tiff16=Path.Combine(inputs,"rgb16.tiff");
+        var sigma16=Path.Combine(inputs,"sigma16.tiff");
+        var sigmaPrimary=Path.Combine(inputs,"sigma-primary16.tiff");
+        Save16(png16,new PngBitmapEncoder(),false);Save16(tiff16,new TiffBitmapEncoder{Compression=TiffCompressOption.None},false);
+        Save16(sigmaPrimary,new TiffBitmapEncoder{Compression=TiffCompressOption.None},true,false);
+        Save16(sigma16,new TiffBitmapEncoder{Compression=TiffCompressOption.None},true);
+        foreach(var source in new[]{png16,tiff16,sigmaPrimary,sigma16})
+        {
+            identities.Add(source,Hash(source));
+            var sourceWidth=source==sigma16 || source==sigmaPrimary?300:width;
+            var sourceHeight=source==sigma16 || source==sigmaPrimary?200:height;
+            var rendered=engine.Render(source,new(),null,0,statistics:false,clipping:false)!;
+            var first=Bytes(rendered.Image);
+            check(rendered.Image.PixelWidth==sourceWidth && rendered.Image.PixelHeight==sourceHeight &&
+                Math.Abs(first[0]-66)<=1 && Math.Abs(first[1]-36)<=1 && Math.Abs(first[2]-5)<=1,
+                "Generated TIFF/PNG16 reaches the managed renderer with correct RGB order and full primary dimensions");
+            check(DisplayBytes()==(long)sourceWidth*sourceHeight*8,"Managed renderer retains the 16-bit source without truncating its cache");
+            foreach(var edge in new[]{7,512})
+            {
+                var thumbnail=RenderEngine.ReadEmbeddedPreview(source,edge);
+                check(thumbnail.Image!=null && thumbnail.Width==sourceWidth && thumbnail.Height==sourceHeight &&
+                    Math.Max(thumbnail.Image.PixelWidth,thumbnail.Image.PixelHeight)==Math.Min(edge,sourceWidth),
+                    "Generated TIFF/PNG16 thumbnail stays bounded and uses the full primary image");
+                var thumbBytes=Bytes(thumbnail.Image!);
+                var colorsMatch=thumbnail.Image!.Format==PixelFormats.Bgra32 || thumbnail.Image.Format==PixelFormats.Pbgra32;
+                for(var c=0;c<3;c++)
+                {
+                    double fullSum=0,thumbSum=0;
+                    for(var i=c;i<first.Length;i+=4)fullSum+=first[i];
+                    for(var i=c;i<thumbBytes.Length;i+=4)thumbSum+=thumbBytes[i];
+                    var fullMean=fullSum/(sourceWidth*sourceHeight);
+                    var thumbMean=thumbSum/(thumbnail.Image.PixelWidth*thumbnail.Image.PixelHeight);
+                    Console.WriteLine($"{Path.GetFileName(source)} edge={edge} BGRA channel={c} primary mean={fullMean:F4} thumbnail mean={thumbMean:F4}");
+                    // 7 像素缩略图的盒子宽度不是图案周期的整数倍，均值会有约 2 的取样偏差；
+                    // 通道顺序错误时偏差在 27 以上，阈值 4 仍能区分。
+                    colorsMatch&=Math.Abs(fullMean-thumbMean)<=4;
+                }
+                check(colorsMatch,"Generated TIFF/PNG16 thumbnail remains an 8-bit bitmap with correct channel order");
+                if(source==sigma16)
+                    check(thumbBytes.SequenceEqual(Bytes(RenderEngine.ReadEmbeddedPreview(sigmaPrimary,edge).Image!)),
+                        "Adding the Sigma preview IFD does not change primary-image thumbnail pixels");
+            }
+        }
+        var ownExport=Path.Combine(inputs,"rawlab-export16.png");
+        engine.Render(png,new(),null,0,output:ownExport);
+        identities.Add(ownExport,Hash(ownExport));
+        check(Bytes(engine.Render(ownExport,new(),null,0,statistics:false,clipping:false)!.Image).SequenceEqual(rgba) &&
+            DisplayBytes()==width*height*8,"RawLab PNG16 export reimports through the managed renderer without changing pixels");
         var state=new Adjustments{ExposureMode=0,Lens=new(true,true,true),DisplayChromaDenoise=1,
             Hsl=new HslSettings().WithValue(0,2,24),Effects=new(-18,61,12,73,24,11,29,37),
             Geometry=new(.1,.125,.75,.75,1,true,false,2,.03,-.02)};
         state.Set(Parameter.Temperature,4200);state.Set(Parameter.Tint,44);
         var captured=JsonSerializer.Serialize(state.Capture());
         Verify(png,state,null,"edited");Verify(jpeg,new(),null,"jpeg");Verify(tiff,state,null,"tiff");
+        Verify(png16,state,null,"png16");Verify(tiff16,state,null,"tiff16");Verify(sigma16,state,null,"sigma16");
         check(JsonSerializer.Serialize(state.Capture())==captured,"Raster normalization does not mutate the captured RAW-only settings");
         var store=new EditStore(Path.Combine(output,"edits"));store.Save(png,state.Capture(),null);
         var restored=new EditStore(Path.Combine(output,"edits")).Find(png)!;
@@ -172,6 +221,25 @@ internal static class RasterChecks
         Console.WriteLine("Raster artifacts: "+output);
 
         void Save(string path,BitmapEncoder encoder){encoder.Frames.Add(BitmapFrame.Create(bitmap));using var file=File.Create(path);encoder.Save(file);}
+        void Save16(string path,BitmapEncoder encoder,bool sigma,bool addPreview=true)
+        {
+            var w=sigma?300:width;var h=sigma?200:height;var data=new byte[w*h*6];
+            for(var y=0;y<h;y++)for(var x=0;x<w;x++)
+            {
+                var values=new[]{1234+x%12*791,9153+y%8*1279,17072+x%12*503+y%8*223};
+                for(var c=0;c<3;c++){var offset=(y*w+x)*6+c*2;data[offset]=(byte)values[c];data[offset+1]=(byte)(values[c]>>8);}
+            }
+            var image16=BitmapSource.Create(w,h,96,96,PixelFormats.Rgb48,null,data,w*6);
+            BitmapMetadata? metadata=null;
+            if(sigma){metadata=new BitmapMetadata("tiff");metadata.SetQuery("/ifd/{ushort=305}","SIGMA Photo Pro 6.9.0");}
+            encoder.Frames.Add(BitmapFrame.Create(image16,null,metadata,null));
+            if(sigma && addPreview)
+            {
+                var previewPixels=Enumerable.Repeat((byte)127,160*106*3).ToArray();
+                encoder.Frames.Add(BitmapFrame.Create(BitmapSource.Create(160,106,96,96,PixelFormats.Rgb24,null,previewPixels,160*3)));
+            }
+            using var file=File.Create(path);encoder.Save(file);
+        }
         long DisplayBytes(){var property=typeof(RenderEngine).GetProperty("CachedDisplayBytes",BindingFlags.Instance|BindingFlags.NonPublic);check(property!=null,"Display cache exposes an actual bounded allocation counter");return (long)property!.GetValue(engine)!;}
         void Verify(string input,Adjustments settings,string? look,string name)
         {

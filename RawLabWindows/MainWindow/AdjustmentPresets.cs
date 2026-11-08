@@ -12,12 +12,8 @@ public partial class MainWindow
         if (file == null || currentEditRecord == null || !StringComparer.OrdinalIgnoreCase.Equals(currentEditRecord.Identity.Path, Path.GetFullPath(file)) ||
             editDirty || transform.Active || editGesture != null || exporting || closing || aiJob.State.IsRunning || adjustmentReloadRequired)
             throw new AdjustmentTransferException(AdjustmentFailure.Draft);
-        // Camera RAW HDR is opt-in; do not turn capability probing into an
-        // HDR target default for preset transfer. Generic gain-map sources
-        // retain the established HDR default behavior.
-        var defaults = new Adjustments { ExposureMode = PhotoInput.IsRaw(file) ? 1 : 2,
-            HDR = hdrSource is { IsCameraRaw: false } ? new HDRSettings() : null };
-        var committed = currentEditRecord.Edit ?? new SavedEdit(currentEditRecord.Identity, defaults.Capture(), null);
+        var committed = currentEditRecord.Edit ?? new SavedEdit(currentEditRecord.Identity,
+            PhotoInput.PrepareDefaultSettings(file).Capture(), null);
         var snapshot = new SavedEdit(currentEditRecord.Identity, settings.Capture(), CurrentLookIdentity());
         return AdjustmentTransfer.PreviewCapture(scope, snapshot, committed, CurrentTransferContext());
     }

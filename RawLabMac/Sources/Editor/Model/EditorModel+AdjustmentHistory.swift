@@ -28,7 +28,10 @@ extension EditorModel {
             if committedEdit?.identity.path != file.resolvingSymlinksInPath().standardizedFileURL.path {
                 committedEdit = try editStore!.versionedState(for: file)
             }
-            let outcome = session.commitEdit(expected: committedEdit!, state: candidate)
+            var persisted = candidate
+            // 降级会话只编辑 SDR 层，不能覆盖新系统保存的 HDR 模式和参数。
+            if sourceUsesSDRFallback { persisted.settings.hdr = committedEdit?.state?.settings.hdr }
+            let outcome = session.commitEdit(expected: committedEdit!, state: persisted)
             guard let saved = outcome.saved else {
                 throw outcome.error ?? AdjustmentTransferError.incompatible("save")
             }
@@ -99,10 +102,10 @@ extension EditorModel {
             if !quickPresetState.isPreparing { cancelQuickPreset() }
             if let state = saved.state { recordSavedLookChange(from: committedEdit?.state, to: state) }
             committedEdit = saved
-            var defaults = Adjustments()
-            defaults.exposureMode = RenderEngine.isRasterInput(file) ? .sensor : .preview
-            if sourceIsHDR { defaults.hdr=HDRSettings() }
-            restoreAdjustmentState(saved.state ?? PhotoEditState(settings: defaults, filmID: ""))
+            do {
+                let restored = try saved.state ?? PhotoEditState(settings: RenderEngine.defaultSettings(for: file, sourceIsHDR: sourceIsHDR), filmID: "")
+                restoreAdjustmentState(restored)
+            } catch { saveError = error.localizedDescription; return }
             dirty = false; saveError = nil
             saveWork?.cancel()
             editRevision = UUID()
@@ -115,6 +118,7 @@ extension EditorModel {
         let camera = settings.asShotWhiteBalance, support = settings.supportsRawNoiseReduction
         updatingMetadata = true
         settings = snapshot.settings
+        if sourceUsesSDRFallback { settings.hdr?.mode = .sdr }
         if !returningToCameraSDR {
             settings.resolveWhiteBalance(camera)
             settings.resolveRawNoiseReductionSupport(support)
