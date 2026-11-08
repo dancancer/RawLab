@@ -277,16 +277,20 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
 
     static func historyErrorChecks(root: URL, first: URL) throws {
         let directory = root.appendingPathComponent("history-errors")
+        // 历史操作不再比较磁盘上的调整记录，改用原图身份变化触发失败；只改这张专用副本，不影响后续用例。
+        let photo = root.appendingPathComponent("history-error-source").appendingPathExtension(first.pathExtension)
+        try? FileManager.default.removeItem(at: photo)
+        try FileManager.default.copyItem(at: first, to: photo)
         let model = EditorModel(lookDirectory: root.appendingPathComponent("error-looks"), editDirectory: directory,
             batchDirectory: root.appendingPathComponent("error-batch"))
-        model.open(first); try rendered(model)
+        model.open(photo); try rendered(model)
         model.settings.exposure = 1; try check(model.saveEdits(), "history error fixture saves")
-        var replacement = model.editState(settings: model.settings); replacement.settings.exposure = 2
-        try EditPersistence(directory: directory).save(first, state: replacement)
+        let modified = try FileManager.default.attributesOfItem(atPath: photo.path)[.modificationDate] as! Date
+        try FileManager.default.setAttributes([.modificationDate: modified.addingTimeInterval(60)], ofItemAtPath: photo.path)
         model.undoAdjustment()
         try check(model.saveError == nil && model.adjustmentSheet == .history,
             "keyboard history failure opens history recovery without pretending the photo is unsaved")
-        try check(model.pendingAdjustmentHistory?.photo == first && model.pendingAdjustmentHistory?.undo == true,
+        try check(model.pendingAdjustmentHistory?.photo == photo && model.pendingAdjustmentHistory?.undo == true,
             "keyboard recovery retains the single-photo operation scope")
     }
 

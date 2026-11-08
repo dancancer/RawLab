@@ -234,7 +234,8 @@ internal static class AdjustmentHistoryUiChecks
             "Replacement retry starts with a visible failed-save action and retained edits");
 
         Set(window,"editStore",store);
-        var replacement=photo+".replacement"+Path.GetExtension(raw);File.Copy(raw,replacement,true);File.Move(replacement,photo,true);
+        // 打开中的照片被应用以只读方式锁定，Windows 不允许替换文件；修改时间同样改变原图身份。
+        File.SetLastWriteTimeUtc(photo,File.GetLastWriteTimeUtc(photo).AddMinutes(1));
         Invoke(window,"SaveEdits");
         check(Equals(window.SaveState.ToolTip,Loc.Text("原始文件已被替换，请重新选择照片。")),
             "A replaced original uses the localized save-failure tooltip");

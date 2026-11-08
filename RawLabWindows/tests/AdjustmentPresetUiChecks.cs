@@ -53,10 +53,11 @@ internal static class AdjustmentPresetUiChecks
             check(payload.Fields.SetEquals([AdjustmentField.Exposure]) && edits.ReadState(source).SameAs(revision) &&
                 session.Clipboard == clipboard && session.Transactions.Count == history, "Native preset capture preserves photo receipt, clipboard and history");
             var standard = window.CapturePresetAdjustments(AdjustmentScope.Standard);
-            check(standard.Fields.SetEquals(AdjustmentFields.All) && window.AdjustmentPanel.IsEnabled,
+            // Standard 只含常用调整（不含几何），不是全部字段。
+            check(standard.Fields.SetEquals(AdjustmentFields.Common) && window.AdjustmentPanel.IsEnabled,
                 "Preset capture keeps the editor usable without a disk revision gate");
             var copiedStandard = window.CopyCurrentAdjustments(AdjustmentScope.Standard);
-            check(copiedStandard.Fields.SetEquals(AdjustmentFields.All) && session.Clipboard == copiedStandard && window.AdjustmentPanel.IsEnabled,
+            check(copiedStandard.Fields.SetEquals(AdjustmentFields.Common) && session.Clipboard == copiedStandard && window.AdjustmentPanel.IsEnabled,
                 "Copy confirmation preserves the current in-memory photo and leaves editing enabled");
             window.OpenFile(target); Ready(window); File.Delete(source);
             var preparation = window.PrepareAdjustmentTargets(preset.Payload, [target], AdjustmentHistoryAction.Preset);
