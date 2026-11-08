@@ -15,6 +15,32 @@ import ImageIO
         defer { try? FileManager.default.removeItem(at:root) }
         let model=EditorModel(lookDirectory:root.appendingPathComponent("looks"),editDirectory:root.appendingPathComponent("edits"),
             batchDirectory:root.appendingPathComponent("batch"))
+        for cameraProfile in [false, true] {
+            let recovery = root.appendingPathComponent("recovery-\(cameraProfile)")
+            let model = EditorModel(lookDirectory: recovery.appendingPathComponent("looks"),
+                editDirectory: recovery.appendingPathComponent("edits"), batchDirectory: recovery.appendingPathComponent("batch"))
+            let recoveryInput = cameraProfile
+                ? URL(fileURLWithPath: ProcessInfo.processInfo.environment["RAWLAB_TEST_CAMERA_RAW"]!) : input
+            var missing = Adjustments(); missing.hdr = HDRSettings()
+            if cameraProfile {
+                missing.hdr?.cameraDevelopmentSettings.cameraProfile = HDRCameraProfile(
+                    sha256: String(repeating: "f", count: 64), name: "Missing profile")
+            } else {
+                missing.hdr?.lookSettings = HDRLookSettings(sha256: String(repeating: "e", count: 64), name: "Missing look", strength: 1)
+            }
+            _ = try model.requireAdjustmentSession()
+            try model.editStore!.save(recoveryInput, state: PhotoEditState(settings: missing, filmID: ""))
+            model.open(recoveryInput)
+            wait("Missing HDR resource blocked opening") { !model.importing && !model.busy }
+            check(model.file == recoveryInput && model.result != nil && model.settings.hdr == missing.hdr && !model.canExport,
+                  "Missing HDR resource was lost or its fallback could be exported")
+            check(model.error != nil && model.canApplyHDRCameraDevelopment, "Missing HDR resource did not leave a recovery path")
+            model.settings.hdr?.lookSettings = HDRLookSettings()
+            model.settings.hdr?.cameraDevelopmentSettings.cameraProfile = nil
+            model.schedule(forceExact: true)
+            wait("Cleared HDR resources did not render") { !model.busy && !model.previewOutdated }
+            check(model.canExport && model.error == nil, "Clearing missing HDR resources did not restore export")
+        }
         model.open(input)
         wait("HDR source did not open") { !model.importing && !model.busy && model.result != nil }
         check(model.settings.isHDREditing && model.sourceIsHDR,"new HDR source default missing")

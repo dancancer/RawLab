@@ -71,16 +71,34 @@ extension EditorModel {
 
     func adjustmentTransferTargets(_ urls: [URL], payload: AdjustmentTransferPayload, excludingSource: String? = nil,
                                    excludingIdentity: String? = nil, collection: Bool = false) -> [AdjustmentTransferTarget] {
-        let activePath = file?.resolvingSymlinksInPath().standardizedFileURL.path
+        adjustmentTransferTargetPreparation(urls, payload: payload, excludingSource: excludingSource,
+            excludingIdentity: excludingIdentity, collection: collection)()
+    }
+
+    func adjustmentTransferTargetPreparation(_ urls: [URL], payload: AdjustmentTransferPayload, excludingSource: String? = nil,
+                                            excludingIdentity: String? = nil, collection: Bool = false,
+                                            probeRAW: @escaping (URL) throws -> HDRSourceInfo? = HDRSourceInfo.probeRAW) -> () -> [AdjustmentTransferTarget] {
+        let activeFile = file
+        let activePath = activeFile?.resolvingSymlinksInPath().standardizedFileURL.path
         let source = sourceRevision
         let revision = editRevision
-        return urls.filter { $0.resolvingSymlinksInPath().standardizedFileURL.path != excludingSource &&
+        let activeRaw = rawHDRSource, activeHDR = sourceIsHDR
+        let activeDraft = geometryDraft != nil || dirty
+        let looks = availableAdjustmentLooks, photos = batchSelectionPhotos
+        // 主线程只冻结模型状态；逐张 RAW 探测随 prepare 在后台执行。
+        return { [weak self] in urls.filter { $0.resolvingSymlinksInPath().standardizedFileURL.path != excludingSource &&
             (excludingIdentity == nil || (try? BatchExportItem.resourceKey($0)) != excludingIdentity) }.map { url in
             let path = url.resolvingSymlinksInPath().standardizedFileURL.path
-            let collectionPhoto = collection ? batchSelectionPhotos.values.first { $0.url.path == path } : nil
+            let collectionPhoto = collection ? photos.values.first { $0.url.path == path } : nil
             var defaults = Adjustments()
             defaults.exposureMode = RenderEngine.isRasterInput(url) ? .sensor : .preview
-            var context = adjustmentTransferContext(for: url)
+            let raster = RenderEngine.isRasterInput(url)
+            let raw = activeFile == url ? activeRaw : try? probeRAW(url)
+            var context = MacAdjustmentTransferContext(identifier: path, isRaw: !raster,
+                sourceIsHDR: activeFile == url ? activeHDR : ((try? HDRSourceInfo.probe(url)) != nil),
+                sourceSupportsCameraHDR: raw != nil, sourceIsBayerHDR: raw?.isCameraRAW == true,
+                availableLookIDs: looks, defaultExposureMode: raster ? .sensor : .preview,
+                hasUncommittedDraft: activeFile == url && activeDraft)
             if context.sourceIsHDR { defaults.hdr=HDRSettings() }
             if context.sourceIsBayerHDR {
                 context.validateHDRCameraRequest = { candidate in
@@ -126,7 +144,7 @@ extension EditorModel {
                     hydrated.settings.resolveRawNoiseReductionSupport(frame.supportsRawNoiseReduction)
                     return hydrated
                 })
-        }
+        } }
     }
 
     func applyAdjustmentPaste(_ operation: PreparedAdjustmentTransfer, skipping: Set<String> = []) {

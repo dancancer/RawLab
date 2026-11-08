@@ -334,7 +334,7 @@ final class EditorModel: ObservableObject {
     var canApplyHDRCameraDevelopment: Bool {
         canApplySettings || (canChangePhotoSettings && settings.hdr?.cameraDevelopmentSettings.cameraProfile != nil)
     }
-    var canExport: Bool { canApplySettings }
+    var canExport: Bool { canApplySettings && (!settings.isHDREditing || settings.hdr?.missingResourceMessage == nil) }
 
 
     init(lookDirectory: URL = LookLibrary.defaultDirectory,

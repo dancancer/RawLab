@@ -187,6 +187,25 @@ class HDRSettingsTest {
     }
 
     @Test
+    fun gainMapHdrStartsFromBoundedEffectiveRecipeValues() {
+        val sdr = EditSettings(recipeID = "test-recipe", strength = .5f, exposure = 1f,
+            contrast = .4f, highlights = -.6f, shadows = .8f, saturation = -.2f)
+        val hdr = HDRSettings.from(sdr)
+        assertEquals(.5f, hdr.exposure)
+        assertEquals(20f, hdr.contrast)
+        assertEquals(-30f, hdr.highlights, .00001f)
+        assertEquals(40f, hdr.shadows)
+        assertEquals(-10f, hdr.saturation)
+        val bounded = HDRSettings.from(sdr.copy(strength = 2f, exposure = 4f,
+            contrast = 1f, highlights = -1f, shadows = 1f, saturation = -1f))
+        assertEquals(4f, bounded.exposure)
+        assertEquals(100f, bounded.contrast)
+        assertEquals(-100f, bounded.highlights)
+        assertEquals(100f, bounded.shadows)
+        assertEquals(-100f, bounded.saturation)
+    }
+
+    @Test
     fun disablingHdrRestoresTheSdrSnapshotAndRetainsHdrEdits() {
         val original = EditSettings(exposure = -1.25f)
         val enabled = original.withHDRMode(true, sourceIsHDR = true)

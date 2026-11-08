@@ -72,7 +72,7 @@ enum HDRCameraProfileAssetStore {
         return profile
     }
 
-    @discardableResult static func url(for profile: HDRCameraProfile) throws -> URL {
+    @discardableResult static func url(for profile: HDRCameraProfile, in directory: URL = Self.directory) throws -> URL {
         let url = asset(profile, in: directory)
         guard FileManager.default.isReadableFile(atPath: url.path) else {
             throw error(status: SONY2FUJI_STATUS_IO_ERROR)
@@ -89,6 +89,33 @@ enum HDRCameraProfileAssetStore {
             field: UInt32(SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT))
     }
 }
+extension HDRSettings {
+    var missingResourceMessage: String? {
+        if let asset = lookSettings.asset(), !FileManager.default.isReadableFile(atPath: asset.path) {
+            return L10n.text("上次使用的外观不可用，请重新选择或导入外观。")
+        }
+        if let profile = cameraDevelopmentSettings.cameraProfile,
+           (try? HDRCameraProfileAssetStore.url(for: profile)) == nil {
+            return L10n.text("找不到 HDR 相机配置，请重新导入。")
+        }
+        return nil
+    }
+
+    func previewSettings(lookDirectory: URL = HDRLookSettings.directory,
+                         profileDirectory: URL = HDRCameraProfileAssetStore.directory) -> HDRSettings {
+        var preview = self
+        // 只剥离预览副本；编辑记录保留引用，正式导出仍严格校验资源。
+        if let asset = lookSettings.asset(in: lookDirectory), !FileManager.default.isReadableFile(atPath: asset.path) {
+            preview.lookSettings = HDRLookSettings()
+        }
+        if let profile = cameraDevelopmentSettings.cameraProfile,
+           (try? HDRCameraProfileAssetStore.url(for: profile, in: profileDirectory)) == nil {
+            preview.cameraDevelopmentSettings.cameraProfile = nil
+        }
+        return preview
+    }
+}
+
 import CoreGraphics
 
 func hdrNativeGeometrySize(_ source: CGSize, geometry: GeometrySettings) throws -> CGSize {

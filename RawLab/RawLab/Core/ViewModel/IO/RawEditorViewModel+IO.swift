@@ -193,8 +193,8 @@ extension RawEditorViewModel {
                         let restoredSettings=restoredSettings
                         let missingLook = !self.isLookAvailable(for: restoredSettings)
                         if let hdr=restoredSettings.hdr,restoredSettings.isHDREditing {
-                            let edited=try self.processor.processHDR(url:localURL,settings:hdr,previewLongEdge:Int(self.previewMaxDimension))
-                            var neutral=HDRSettings(); neutral.geometry=hdr.geometry
+                            let edited=try self.processor.processHDR(url:localURL,settings:hdr.previewSettings(),previewLongEdge:Int(self.previewMaxDimension))
+                            let neutral = hdr.neutralGeometrySettings
                             let original=try self.processor.processHDR(url:localURL,settings:neutral,previewLongEdge:Int(self.previewMaxDimension))
                             let presentation=try HDRPresentation(edited), reference=try HDRPresentation(original)
                             self.resultDelivery {
@@ -212,6 +212,7 @@ extension RawEditorViewModel {
                                 self.rawLUTID=nil; self.rawLUTApplied=false; self.rawWhiteBalance=nil; self.lensInfo=nil
                                 self.nativeImageSize=CGSize(width:edited.outputNativeWidth,height:edited.outputNativeHeight)
                                 self.hasImage=true; self.isBusy=false; self.sourceRevision=UUID()
+                                self.statusMessage = hdr.missingResourceMessage
                                 self.recordImportedComparison(settings:restoredSettings)
                                 self.acceptImportedEditRecord(versioned,settings:restoredSettings)
                                 self.persistedEditorSettings=nil; self.failedDraftSource=nil

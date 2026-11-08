@@ -198,11 +198,11 @@ data class HDRSettings(
 
     companion object {
         fun from(settings: EditSettings) = HDRSettings(
-            exposure = settings.exposure,
-            contrast = settings.contrast * 100f,
-            highlights = settings.highlights * 100f,
-            shadows = settings.shadows * 100f,
-            saturation = settings.saturation * 100f,
+            exposure = (settings.exposure * settings.recipeScale).coerceIn(-4f, 4f),
+            contrast = (settings.contrast * 100f * settings.recipeScale).coerceIn(-100f, 100f),
+            highlights = (settings.highlights * 100f * settings.recipeScale).coerceIn(-100f, 100f),
+            shadows = (settings.shadows * 100f * settings.recipeScale).coerceIn(-100f, 100f),
+            saturation = (settings.saturation * 100f * settings.recipeScale).coerceIn(-100f, 100f),
             geometry = settings.geometry,
         )
     }

@@ -217,6 +217,7 @@
 "外观分类" = "Look category";
 "外观名称" = "Look name";
 "外观名称不能为空或包含控制字符。" = "The look name cannot be empty or contain control characters.";
+"外观强度" = "Look Strength";
 "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。" = "The look file is damaged or incompatible; a compatible CUBE or RLOOK file is required.";
 "多点曲线" = "Point curve";
 "多点曲线将从直线开始，旧 S 曲线数值会保留。" = "The point curve starts as a straight line. Your S-curve value is retained.";
@@ -500,6 +501,7 @@
 "此像素不可取样。" = "This pixel cannot be sampled.";
 "此外观已不在外观库中。" = "This look is no longer in the look library.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Only adjustments in the %@ group will be reset. Other groups will stay unchanged.";
+"此照片或构建尚不能使用 AI 降噪。" = "AI denoising is unavailable for this photo or build.";
 "此照片没有可用的相机白平衡校准。" = "This photo has no usable camera white balance calibration.";
 "此照片没有可编辑的 HDR 增益图。" = "This photo has no editable HDR gain map.";
 "此设备暂不支持导出 HDR 模式下的 ProRAW 照片。" = "This device does not yet support exporting ProRAW photos in HDR editing mode.";

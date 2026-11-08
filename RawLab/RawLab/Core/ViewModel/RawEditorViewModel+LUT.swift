@@ -133,7 +133,7 @@ extension RawEditorViewModel {
     }
 
     func isLookAvailable(for settings: RawSettings) -> Bool {
-        if settings.isHDREditing { return true }
+        if settings.isHDREditing { return settings.hdr?.missingResourceMessage == nil }
         guard settings.hasLook else { return true }
         guard let url = lutURL(for: settings) else { return false }
         return FileManager.default.isReadableFile(atPath: url.path)

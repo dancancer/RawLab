@@ -191,6 +191,7 @@ struct Adjustments: Equatable, Codable {
     var neutralGeometrySettings: Adjustments {
         var neutral = neutralSettings
         neutral.setGeometrySettings(geometrySettings)
+        if isHDREditing { neutral.hdr = hdr?.neutralGeometrySettings }
         neutral.lensCorrection = lensCorrection
         return neutral
     }
@@ -887,8 +888,13 @@ extension Adjustments {
         guard enabled else { result.hdr?.mode = .sdr; return result }
         var initial = HDRSettings()
         if !cameraRAW {
-            initial.exposure = exposure; initial.contrast = contrast; initial.highlights = highlights
-            initial.shadows = shadows; initial.saturation = saturation; initial.geometry = geometry ?? GeometrySettings()
+            let scale = masterRecipe == nil ? 1 : strength
+            initial.exposure = min(4, max(-4, exposure * scale))
+            initial.contrast = min(100, max(-100, contrast * scale))
+            initial.highlights = min(100, max(-100, highlights * scale))
+            initial.shadows = min(100, max(-100, shadows * scale))
+            initial.saturation = min(100, max(-100, saturation * scale))
+            initial.geometry = geometry ?? GeometrySettings()
         }
         result.hdr = try HDRSettings.enabling(stored: hdr, initial: initial, sourceIsHDR: sourceIsHDR || cameraRAW)
         return result

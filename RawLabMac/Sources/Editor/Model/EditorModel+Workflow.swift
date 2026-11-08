@@ -413,7 +413,9 @@ extension EditorModel {
                     let engine=try RenderEngine()
                     let neutralSettings = snapshot.neutralGeometrySettings
                     let neutral=try engine.render(url,settings:neutralSettings,lut:nil,edge:hdrEdge ?? 2000)
-                    let result=try engine.render(url,settings:snapshot,lut:look,edge:hdrEdge ?? 2000)
+                    var preview = snapshot
+                    if snapshot.isHDREditing { preview.hdr = snapshot.hdr?.previewSettings() }
+                    let result=try engine.render(url,settings:preview,lut:look,edge:hdrEdge ?? 2000)
                     if let hdrSource, let hdrEdge, let neutral, neutral.hdr != nil {
                         self.geometryReferenceCache = (MacNeutralReferenceKey(source: hdrSource, settings: neutralSettings, edge: hdrEdge), neutral)
                     }
@@ -477,6 +479,7 @@ extension EditorModel {
             pendingImportEvent=false; onUsage(.photoImported)
             if settings.isHDREditing { adjustmentNavigation.selectTool(.exposure) }
         } else { schedule() }
+        if settings.isHDREditing { error = settings.hdr?.missingResourceMessage }
     }
     func autoExposure() {
         guard let file, result != nil, !importing, !autoExposing, !exporting, geometryDraft == nil else { return }

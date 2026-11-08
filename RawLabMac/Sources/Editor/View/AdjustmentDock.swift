@@ -43,7 +43,8 @@ struct AdjustmentDock: View {
                         HDRLookControls(settings: Binding(
                             get: { model.settings.hdr ?? HDRSettings() },
                             set: { if model.sourceRevision == revision && model.settings.isHDREditing { model.settings.hdr = $0 } }
-                        ), onEditingChanged: model.setInteracting, onCancelled: model.cancelAdjustmentInteraction)
+                        ), onEditingChanged: model.setInteracting, onCancelled: model.cancelAdjustmentInteraction,
+                           onResourceRestored: { model.schedule(forceExact: true) })
                             .padding(.horizontal, 10).padding(.vertical, 6).id(revision).disabled(model.busy)
                         Divider()
                     }

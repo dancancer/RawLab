@@ -81,6 +81,20 @@ internal static class HDRChecks
 
     private static void EnablingPreservesLegacyState()
     {
+        var recipe = new Adjustments();
+        recipe.ApplyMasterRecipe(MasterRecipe.All[0]);
+        recipe.Set(Parameter.Strength, 50); recipe.Set(Parameter.Exposure, 1);
+        recipe.Set(Parameter.Contrast, 40); recipe.Set(Parameter.Highlights, -60);
+        recipe.Set(Parameter.Shadows, 80); recipe.Set(Parameter.Saturation, -20);
+        var effective = HDRSettings.FromSdr(recipe);
+        Check(effective.Exposure == .5 && effective.Contrast == 20 && effective.Highlights == -30 &&
+              effective.Shadows == 40 && effective.Saturation == -10, "Gain-map HDR uses effective recipe values");
+        recipe.Set(Parameter.Strength, 200); recipe.Set(Parameter.Exposure, 4);
+        recipe.Set(Parameter.Contrast, 100); recipe.Set(Parameter.Highlights, -100);
+        recipe.Set(Parameter.Shadows, 100); recipe.Set(Parameter.Saturation, -100);
+        var bounded = HDRSettings.FromSdr(recipe);
+        Check(bounded.Exposure == 4 && bounded.Contrast == 100 && bounded.Highlights == -100 &&
+              bounded.Shadows == 100 && bounded.Saturation == -100 && bounded.IsValid, "Gain-map HDR clamps effective values");
         var settings = new Adjustments { Denoise = DenoiseSettings.Clean };
         settings.Set(Parameter.Tint, 4);
         settings.SetHDRMode(true, true);

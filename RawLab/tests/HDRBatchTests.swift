@@ -77,7 +77,6 @@ import UIKit
         } catch HDRSettings.ModeError.invalidSettings {}
         cameraEdit.proRAWDecodeVersion = nil
         try store.save(cameraID, state: PhotoEditState(settings: cameraEdit))
-        let savedCamera = try store.versionedState(for: cameraID)
         let cameraFrozen = try preparation.prepare(cameraTarget, ordinal: 2, format: .hdrJPEG, longEdge: 64)
         check(cameraFrozen.settings.isHDREditing && cameraFrozen.settings.hdr?.exposure == 1 &&
               cameraFrozen.settings.exposure == -2, "Camera RAW batch lost its saved mode or dormant SDR")
@@ -102,6 +101,45 @@ import UIKit
         check(cameraJob.targets[0].frozen?.settings == cameraEdit && cameraJob.targets[1].frozen?.settings == old &&
               cameraJob.targets.dropFirst(2).allSatisfy { $0.frozen?.settings.isHDREditing == true },
               "Collection freeze did not keep each photo's own adjustments")
+        var targetDevelopment = HDRCameraDevelopmentSettings()
+        targetDevelopment.selectWhiteBalance(.temperature)
+        targetDevelopment.temperature = 5200; targetDevelopment.tint = 17
+        targetDevelopment.exposureReference = .sensor
+        targetDevelopment.lensDistortion = true; targetDevelopment.lensTCA = true
+        targetDevelopment.lensAutoCrop = false; targetDevelopment.lensProfile = "target lens profile"
+        targetDevelopment.cameraProfile = HDRCameraProfile(
+            sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            name: "target camera profile")
+        do {
+            let original = try store.versionedState(for: cameraID).state!
+            defer { try? store.save(cameraID, state: original) }
+            var targetSettings = original.settings
+            targetSettings.hdr?.cameraDevelopmentSettings = targetDevelopment
+            let target = PhotoEditState(settings: targetSettings)
+            try store.save(cameraID, state: target)
+            let prepared = try preparation.prepare(cameraTarget, ordinal: 2, format: .jpeg, longEdge: 64)
+            check(targetDevelopment != settings.hdr!.cameraDevelopmentSettings &&
+                  prepared.settings.hdr?.cameraDevelopmentSettings == targetDevelopment,
+                  "iOS HDR batch preparation copied source camera development over the target")
+
+            let cameraOnly = IOSBatchSelection()
+            let cameraPhoto = IOSAdjustmentPhoto(identity: cameraID, displayName: "camera.dng",
+                file: .externallyManaged(camera), isRaw: true)
+            cameraOnly.append(cameraPhoto)
+            let row = IOSCollectionExportReview.Row(photo: IOSCollectionPhoto(cameraPhoto),
+                record: try store.versionedState(for: cameraID), settings: target.settings,
+                look: nil, lookSHA256: nil, lookName: "HDR", error: nil)
+            let review = IOSCollectionExportReview(selection: [cameraID.key], rows: [row],
+                format: .jpeg, longEdge: 64)
+            let freezeJournal = try BatchJournalStore(directory: root.appendingPathComponent("camera-profile-freeze"))
+            var frozenID: UUID?
+            defer { if let id = frozenID { try? freezeJournal.discard(id: id) } }
+            let frozen = try cameraOnly.freeze(review, store: store, journal: freezeJournal, validateActive: { _ in })
+            frozenID = frozen.id
+            check(frozen.targets[0].frozen?.settings.hdr?.cameraDevelopmentSettings == targetDevelopment,
+                  "iOS collection freeze copied source camera development over the target")
+        }
+        let savedCamera = try store.versionedState(for: cameraID)
         let cameraRenderer = BatchExportModel(job: cameraJob, journalStore: journal)
         let outputFile = root.appendingPathComponent("camera-export.jpg")
         let cameraJPEG = try cameraRenderer.render(target: cameraTarget, settings: cameraEdit, look: nil, longEdge: 64, format: .hdrJPEG)

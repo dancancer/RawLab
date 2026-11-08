@@ -6,6 +6,21 @@ import Foundation
         let legacy = try JSONDecoder().decode(RawSettings.self, from: Data("{}".utf8))
         check(legacy.hdr == nil && !legacy.isHDREditing && legacy.processing == .legacy, "legacy record changed mode or processing")
         var sdr = RawSettings.default; sdr.exposure = 1; sdr.contrast = 0.75; sdr.highlights = -0.5
+        var recipe = sdr; recipe.masterRecipeID = "test-recipe"; recipe.lutStrength = 0.5
+        recipe.contrast = 1.4; recipe.highlights = 0.6; recipe.shadows = 0.8; recipe.saturation = 0.8
+        let recipeHDR = try recipe.withHDRMode(true, sourceIsHDR: true)
+        check(recipeHDR.hdr?.exposure == 0.5 && abs(recipeHDR.hdr!.contrast - 20) < 0.00001 &&
+              recipeHDR.hdr?.highlights == -30 && recipeHDR.hdr?.shadows == 40 &&
+              abs(recipeHDR.hdr!.saturation + 10) < 0.00001, "Gain-map HDR did not start from effective recipe values")
+        var extreme = sdr; extreme.exposure = 8; extreme.contrast = 3; extreme.highlights = 2; extreme.shadows = 2; extreme.saturation = -1
+        let bounded = try extreme.withHDRMode(true, sourceIsHDR: true)
+        check(bounded.hdr?.exposure == 4 && bounded.hdr?.contrast == 100 && bounded.hdr?.highlights == -100 &&
+              bounded.hdr?.shadows == 100 && bounded.hdr?.saturation == -100,
+              "Gain-map HDR did not clamp legacy values to HDR ranges")
+        var recipeRestored = try recipeHDR.withHDRMode(false, sourceIsHDR: true)
+        recipeRestored.hdr = nil
+        check(recipeRestored == recipe,
+              "HDR initialization changed the dormant SDR recipe")
         var active = try sdr.withHDRMode(true, sourceIsHDR: true)
         check(active.hdr?.exposure == 1 && active.hdr?.contrast == -25 && active.hdr?.highlights == 50, "conversion lost UI scale/direction")
         AdjustmentKind.exposure.setValue(2, in: &active)

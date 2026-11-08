@@ -217,6 +217,7 @@
 "外观分类" = "Look-Kategorie";
 "外观名称" = "Look-Name";
 "外观名称不能为空或包含控制字符。" = "Der Name des Looks darf nicht leer sein und keine Steuerzeichen enthalten.";
+"外观强度" = "Look-Intensität";
 "外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。" = "Die Look-Datei ist beschädigt oder inkompatibel; eine kompatible CUBE- oder RLOOK-Datei ist erforderlich.";
 "多点曲线" = "Punktkurve";
 "多点曲线将从直线开始，旧 S 曲线数值会保留。" = "Die Punktkurve beginnt als Gerade. Der S-Kurvenwert bleibt erhalten.";
@@ -500,6 +501,7 @@
 "此像素不可取样。" = "Dieses Pixel kann nicht erfasst werden.";
 "此外观已不在外观库中。" = "Dieser Look ist nicht mehr in der Look-Bibliothek enthalten.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Nur Anpassungen in der Gruppe „%@“ werden zurückgesetzt. Andere Gruppen bleiben unverändert.";
+"此照片或构建尚不能使用 AI 降噪。" = "KI-Entrauschen ist für dieses Foto oder Build nicht verfügbar.";
 "此照片没有可用的相机白平衡校准。" = "Dieses Foto enthält keine nutzbare Kamera-Weißabgleichkalibrierung.";
 "此照片没有可编辑的 HDR 增益图。" = "Dieses Foto hat keine bearbeitbare HDR-Gain-Map.";
 "此设备暂不支持导出 HDR 模式下的 ProRAW 照片。" = "Dieses Gerät unterstützt den Export von ProRAW-Fotos im HDR-Modus noch nicht.";

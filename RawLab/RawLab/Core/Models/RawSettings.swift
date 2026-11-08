@@ -680,9 +680,13 @@ extension RawSettings {
         guard enabled else { result.hdr?.mode = .sdr; return result }
         var initial = HDRSettings()
         if !cameraRAW {
-            initial.exposure = exposure; initial.contrast = (contrast - 1) * 100
-            initial.highlights = -highlights * 100; initial.shadows = shadows * 100
-            initial.saturation = (saturation - 1) * 100; initial.geometry = geometry
+            let scale = recipeScale
+            initial.exposure = min(4, max(-4, exposure * scale))
+            initial.contrast = min(100, max(-100, (contrast - 1) * 100 * scale))
+            initial.highlights = min(100, max(-100, -highlights * 100 * scale))
+            initial.shadows = min(100, max(-100, shadows * 100 * scale))
+            initial.saturation = min(100, max(-100, (saturation - 1) * 100 * scale))
+            initial.geometry = geometry
         }
         result.hdr = try HDRSettings.enabling(stored: hdr, initial: initial, sourceIsHDR: sourceIsHDR || cameraRAW)
         return result

@@ -306,6 +306,13 @@ struct HDRCameraDevelopmentSettings: Codable, Hashable {
     var lensProfile: String?
     var cameraProfile: HDRCameraProfile?
 
+    mutating func selectWhiteBalance(_ mode: WhiteBalance) {
+        guard whiteBalance != mode else { return }
+        whiteBalance = mode
+        temperature = mode == .asShot ? 0 : 6500
+        tint = 0
+    }
+
     var lensActive: Bool { lensDistortion || lensTCA }
     var isDefault: Bool { self == Self() }
     var isValid: Bool {
@@ -471,6 +478,18 @@ struct HDRSettings: Equatable, Codable {
         if version >= 6 { detail = HDRDetailSettings() }
         if version >= 7 { look = HDRLookSettings() }
         if hasCameraDevelopment { cameraDevelopment = HDRCameraDevelopmentSettings() }
+    }
+
+    var neutralGeometrySettings: HDRSettings {
+        var neutral = self
+        neutral.reset()
+        neutral.geometry = geometry
+        // 对比颜色时沿用同一镜头画框，避免畸变和自动裁切造成错位。
+        neutral.cameraDevelopmentSettings.lensDistortion = cameraDevelopmentSettings.lensDistortion
+        neutral.cameraDevelopmentSettings.lensTCA = cameraDevelopmentSettings.lensTCA
+        neutral.cameraDevelopmentSettings.lensAutoCrop = cameraDevelopmentSettings.lensAutoCrop
+        neutral.cameraDevelopmentSettings.lensProfile = cameraDevelopmentSettings.lensProfile
+        return neutral
     }
 
     static func enabling(stored: HDRSettings?, initial: HDRSettings, sourceIsHDR: Bool) throws -> HDRSettings {

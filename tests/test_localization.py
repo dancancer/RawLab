@@ -9,6 +9,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+SHARED_SWIFT_SOURCES = [path for path in (ROOT / "Shared").rglob("*.swift")
+                        if "tests" not in path.relative_to(ROOT / "Shared").parts]
 LANGUAGES = ("en", "zh-Hans", "de", "fr", "ja", "es")
 PRINTF = re.compile(r"%(?:\d+\$)?[-+0 #]*(?:\d+)?(?:\.\d+)?(?:[hlLzjt]+)?[@diufegsc]", re.I)
 APPLE_CLIENTS = {"RawLabMac": "RawLabMac/Sources", "RawLab/RawLab": "RawLab/RawLab"}
@@ -356,7 +358,7 @@ class LocalizationTests(unittest.TestCase):
                         for lang in LANGUAGES}
             self.assert_parity(catalogs, lambda s: sorted(PRINTF.findall(s.replace("%%", ""))))
             missing = sorted({(source.name, json.loads('"' + raw + '"'))
-                              for source in list((ROOT / sources).rglob("*.swift")) + list((ROOT / "Shared").glob("*.swift"))
+                              for source in list((ROOT / sources).rglob("*.swift")) + SHARED_SWIFT_SOURCES
                               for raw in re.findall(r'L10n\.(?:text|format)\("((?:[^"\\]|\\.)*)"', source.read_text())
                               if json.loads('"' + raw + '"') not in catalogs["en"]})
             self.assertEqual(missing, [], client)
@@ -366,7 +368,7 @@ class LocalizationTests(unittest.TestCase):
     def test_source_literals_are_translated(self):
         for client, sources in APPLE_CLIENTS.items():
             catalog = apple_catalog(ROOT / client / "Resources/en.lproj/Localizable.strings")
-            files = list((ROOT / sources).rglob("*.swift")) + list((ROOT / "Shared").glob("*.swift"))
+            files = list((ROOT / sources).rglob("*.swift")) + SHARED_SWIFT_SOURCES
             self.assertEqual(untranslated(files, catalog, "L10n."), [], client)
         windows = ROOT / "RawLabWindows"
         self.assertEqual(untranslated(windows_sources(), windows_catalog("en"), "Loc.", windows_internal_group), [], "RawLabWindows")
