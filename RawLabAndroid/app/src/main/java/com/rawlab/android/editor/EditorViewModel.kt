@@ -61,8 +61,6 @@ import com.rawlab.android.settings.EditPersistenceConflict
 import com.rawlab.android.settings.LookChoice
 import com.rawlab.android.format.PhotoInputKind
 import java.util.UUID
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
