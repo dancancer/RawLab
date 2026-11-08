@@ -660,7 +660,7 @@
 "请输入不同的预设名称。" = "Geben Sie einen anderen Namen für die Vorgabe ein.";
 "请输入预设名称。" = "Geben Sie einen Namen für die Vorgabe ein.";
 "请选择" = "Auswählen…";
-"请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。" = "Wähle ein undurchsichtiges SDR-Bild: JPEG, PNG, TIFF oder HEIF mit 8 Bit oder RGB-TIFF mit 16 Bit.";
+"请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB PNG、TIFF。" = "Wähle ein undurchsichtiges SDR-Bild: JPEG, PNG, TIFF oder HEIF mit 8 Bit oder RGB-PNG bzw. -TIFF mit 16 Bit.";
 "调整" = "Anpassungen";
 "调整内容无法读取，请重新复制。" = "Die Anpassungen können nicht gelesen werden. Kopieren Sie sie erneut.";
 "调整前" = "Vorher";

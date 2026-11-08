@@ -1027,9 +1027,9 @@
       "formats": [],
       "source": "明度"
     },
-    "请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。": {
+    "请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB PNG、TIFF。": {
       "formats": [],
-      "source": "请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB TIFF。"
+      "source": "请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB PNG、TIFF。"
     },
     "暖调日系 · 漫射金光": {
       "formats": [],
