@@ -114,7 +114,9 @@ internal static class RasterChecks
                     var fullMean=fullSum/(sourceWidth*sourceHeight);
                     var thumbMean=thumbSum/(thumbnail.Image.PixelWidth*thumbnail.Image.PixelHeight);
                     Console.WriteLine($"{Path.GetFileName(source)} edge={edge} BGRA channel={c} primary mean={fullMean:F4} thumbnail mean={thumbMean:F4}");
-                    colorsMatch&=Math.Abs(fullMean-thumbMean)<=2;
+                    // 7 像素缩略图的盒子宽度不是图案周期的整数倍，均值会有约 2 的取样偏差；
+                    // 通道顺序错误时偏差在 27 以上，阈值 4 仍能区分。
+                    colorsMatch&=Math.Abs(fullMean-thumbMean)<=4;
                 }
                 check(colorsMatch,"Generated TIFF/PNG16 thumbnail remains an 8-bit bitmap with correct channel order");
                 if(source==sigma16)
