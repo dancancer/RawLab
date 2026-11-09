@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Automation;
@@ -114,19 +115,23 @@ internal static class AdjustmentPresetDialogChecks
                 [AdjustmentField.Look] = AdjustmentPayload.Value(new { kind = "managed", id = "missing-native-preset-look" })
             }));
         var editsPath = Path.Combine(output, "edits", "edits.json"); var savedEdits = File.ReadAllBytes(editsPath);
+        var session = (AdjustmentTransferSession)typeof(MainWindow).GetProperty("TransferSession", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(owner)!;
+        var history = session.Transactions.Count;
         try {
-            Drive(owner, [
-                new("preset.library", w => Click(w, "preset.apply." + missing.ID)),
-                new("adjustment.results", w => {
-                    check(!Find<Button>(w, "adjustment.results.apply").IsEnabled &&
-                        UiDetailChecks.Descendants(w).OfType<TextBlock>().Any(t => t.Text == Loc.Text("目标缺少所选外观，请先导入外观。")),
-                        "Native preset preflight shows the missing look and blocks application");
-                    Screenshot(w, Path.Combine(output, "missing-look.png")); Click(w, "adjustment.results.close");
-                }),
-                new("preset.library", w => Click(w, "preset.close"))
-            ]);
-            check(File.ReadAllBytes(editsPath).SequenceEqual(savedEdits), "Blocked native preset leaves the photo registry unchanged");
-        } finally { store.Delete(missing); }
+            Drive(owner, [new("preset.library", w => Click(w, "preset.apply." + missing.ID))]);
+            check(!Application.Current.Windows.OfType<Window>().Any(w => w != owner && w.IsVisible),
+                "Native direct preset apply closes the library without a results dialog");
+            InteractionChecks.PumpUntil(() => owner.QuickPresetPhase != QuickPresetPhase.Preparing);
+            owner.UpdateLayout();
+            check(owner.QuickPresetPhase == QuickPresetPhase.Failed && owner.QuickPresetSurface.IsVisible &&
+                Find<TextBlock>(owner.QuickPresetSurface, "preset.quick.status").Text == missing.Name + " · " + Loc.Text("目标缺少所选外观，请先导入外观。"),
+                "Native direct preset apply shows the localized missing-look failure in the quick panel");
+            Screenshot(owner, Path.Combine(output, "missing-look.png"));
+            check(File.ReadAllBytes(editsPath).SequenceEqual(savedEdits), "Failed native preset apply preserves the photo registry bytes");
+            check(session.Transactions.Count == history, "Failed native preset apply preserves the photo history count");
+        } finally { owner.CloseQuickPresets(); store.Delete(missing); }
+        check(!owner.QuickPresetSurface.IsVisible && owner.QuickPresetPhase == QuickPresetPhase.Idle,
+            "Closing the failed quick preset restores the state for locale checks");
         Locales(owner, store, output, check);
     }
     private static void Locales(MainWindow owner, AdjustmentPresetStore store, string output, Action<bool, string> check)
