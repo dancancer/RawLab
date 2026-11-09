@@ -27,13 +27,15 @@ enum IOSQuickPresetModelChecks {
         let identity = PhotoIdentity(resourceIdentifier: "quick-preset-source")
         model.sourceFile = .externallyManaged(file); model.sourceIdentity = identity
         model.sourceKind = .raster; model.hasImage = true
-        model.acceptImportedEditRecord(try store.readState(for: identity), settings: .default)
+        // 与真实导入一致使用来源默认值，避免把 raster 的 sensor 曝光误当作未保存输入。
+        let defaults = try model.sourceDefaultSettings
+        model.acceptImportedEditRecord(try store.readState(for: identity), settings: defaults)
         let payload = try AdjustmentTransferPayload(source: .init(identifier: "fixture", isRaw: false,
             processingVersion: 2, recipe: nil), values: ["light.exposure": .number(0.7)])
         let presets = AdjustmentPresetStore(directory: directory.appendingPathComponent("quick-presets"))
         let preset = try presets.create(name: "Quick exposure", payload: payload)
         model.quickPresetsVisible = true
-        model.applyPresetToCurrentPhoto(preset, settings: .default)
+        model.applyPresetToCurrentPhoto(preset, settings: defaults)
         try wait { !model.quickPresetState.isPreparing }
         guard case .saved(_, let transaction) = model.quickPresetState else { throw NSError(domain: "quick preset did not save: \(String(describing: model.quickPresetState))", code: 1) }
         try check(store.state(for: identity)?.settings.exposure == 0.7, "one click saves the prepared value")
@@ -54,8 +56,9 @@ enum IOSQuickPresetModelChecks {
         guard case .undone = model.quickPresetState else { throw NSError(domain: "undo not reported", code: 1) }
         try check(store.state(for: identity) == nil && model.canRedoAdjustment, "undo restores record absence")
         let zero = try presets.create(name: "No change", payload: AdjustmentTransferPayload(source: payload.source, values: ["light.exposure": .number(0)]))
-        model.applyPresetToCurrentPhoto(zero, settings: .default)
+        model.applyPresetToCurrentPhoto(zero, settings: defaults)
         try wait { !model.quickPresetState.isPreparing }
+        guard case .unchanged = model.quickPresetState else { throw NSError(domain: "no-change preset did not report unchanged", code: 1) }
         try check(model.canRedoAdjustment, "no change preserves existing redo")
 
         func lateRequest(_ invalidate: () throws -> Void, _ message: String) throws {
@@ -63,9 +66,9 @@ enum IOSQuickPresetModelChecks {
             let count = model.adjustmentSession!.transactions.count
             model.quickPresetsVisible = true
             model.adjustmentQueue.suspend()
-            model.applyPresetToCurrentPhoto(preset, settings: before.state?.settings ?? .default)
+            model.applyPresetToCurrentPhoto(preset, settings: before.state?.settings ?? defaults)
             try check(model.quickPresetState.isPreparing, "enters checking before \(message)")
-            model.applyPresetToCurrentPhoto(preset, settings: before.state?.settings ?? .default)
+            model.applyPresetToCurrentPhoto(preset, settings: before.state?.settings ?? defaults)
             try invalidate()
             let drained = DispatchSemaphore(value: 0)
             model.adjustmentQueue.async { drained.signal() }
@@ -79,16 +82,16 @@ enum IOSQuickPresetModelChecks {
         try lateRequest({ model.cancelQuickPreset() }, "cancel")
         try lateRequest({ model.closeQuickPresets() }, "close panel")
         try lateRequest({ model.sourceRevision = UUID() }, "source revision change")
-        try lateRequest({ model.queueSettingsSave(.default) }, "later ordinary input")
-        _ = model.saveCurrentSettings(.default)
+        try lateRequest({ model.queueSettingsSave(defaults) }, "later ordinary input")
+        _ = model.saveCurrentSettings(defaults)
         model.quickPresetsVisible = true
         rejectWrite = true
-        model.applyPresetToCurrentPhoto(preset, settings: .default)
+        model.applyPresetToCurrentPhoto(preset, settings: defaults)
         try wait { !model.quickPresetState.isPreparing }
         guard case .failed = model.quickPresetState else { throw NSError(domain: "failed save reported success", code: 1) }
         try check(store.state(for: identity) == nil, "save failure preserves original")
         rejectWrite = false
-        model.applyPresetToCurrentPhoto(preset, settings: .default)
+        model.applyPresetToCurrentPhoto(preset, settings: defaults)
         try wait { !model.quickPresetState.isPreparing }
         guard case .saved(_, let latest) = model.quickPresetState else { throw NSError(domain: "retry did not save", code: 1) }
         var later = store.state(for: identity)!.settings; later.contrast = 0.4
