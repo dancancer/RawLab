@@ -23,7 +23,7 @@ internal static partial class EditorReviewChecks
             try
             {
                 var job=BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral");
-                Invoke(window,"ShowBatch",job);
+                Invoke(window,"ShowBatch",job,false);
                 var batch=Get<BatchExportWindow>(window,"batchWindow");
                 check(batch.Owner==window,"Busy regression uses the real MainWindow batch owner wiring");
                 var look=Path.Combine(repo,"lutools","flog-2-new","FLog2_to_Velvia_65grid_V.1.00.cube");
@@ -57,7 +57,7 @@ internal static partial class EditorReviewChecks
                         "The last batch owner resumes the imported look preview before export is enabled");
                     return;
                 }
-                window.Close();
+                CloseApproved(window);
                 check(window.IsVisible && Get<object?>(window,"engine")!=null && !Get<bool>(window,"closeFinished"),
                     "Close waits for the remaining busy owner without releasing the render engine: "+name);
                 held.Release();releaseBatch.Set();

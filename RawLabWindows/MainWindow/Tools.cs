@@ -260,7 +260,8 @@ public partial class MainWindow
         }
         foreach(var (tool,controls) in workspaceTools) {
             controls.Button.Visibility=tool!=EditorAdjustmentTool.Strength && expandedGroup==EditorAdjustmentRules.GroupFor(tool) ? Visibility.Visible : Visibility.Collapsed;
-            controls.Button.IsEnabled=file!=null && !exporting &&
+            // 导航刷新沿用镜头面板的输入约束，避免重新启用普通图片的 RAW 工具。
+            controls.Button.IsEnabled=file!=null && !exporting && (tool!=EditorAdjustmentTool.Lens || LensEditor.IsEnabled) &&
                 (!settings.IsHDREditing || tool is EditorAdjustmentTool.Exposure or EditorAdjustmentTool.Highlights or EditorAdjustmentTool.Shadows or
                     EditorAdjustmentTool.Contrast or EditorAdjustmentTool.BlackPoint or EditorAdjustmentTool.WhitePoint or EditorAdjustmentTool.ToneCurve or
                     EditorAdjustmentTool.Saturation or EditorAdjustmentTool.WhiteBalance or EditorAdjustmentTool.Geometry or
@@ -570,11 +571,11 @@ public partial class MainWindow
     private void SetStatus(Func<string> text,bool error=false) { SetStatus(text(),error); localizedStatus=text; }
     private void RefreshRenderLabels()
     {
+        RefreshViewingFrames();
         // 没有显影结果：正在打开时说明在显影；空闲或失败时只留平台与色彩空间，不沿用过时的进度
         if (result == null) { BackendLabel.Text=file != null && !renderFailed ? Loc.Text("相机预览 · 正在显影") : "Windows · sRGB"; return; }
         BackendLabel.Text=result.HDR != null ? Loc.Text("HDR 显示不可用，当前显示 SDR。") :
             $"{(result.Backend==3 ? "Direct3D 11 · GPU" : renderedGpuMode==0 || (file!=null && LibraryEntry.IsRaster(file)) ? "CPU" : Loc.Text("CPU · GPU 已回退"))} · sRGB";
-        RefreshViewingFrames();
         var raster=file!=null && LibraryEntry.IsRaster(file);
         BaselineLabel.Text=result.HDR != null ? Loc.Text("SDR 兼容预览") : raster ? Loc.Text("显示图像") : Loc.Format("基础偏移 {0:+0.00;-0.00;0.00} EV", result.Baseline);
         AsShotButton.ToolTip=raster ? Loc.Text("不适用") : result.WhiteBalance==null ? Loc.Text("此 RAW 缺少有效校准，使用相机原始白平衡") : Loc.Format("拍摄时：{0} K / {1}", result.WhiteBalance.Value.Temperature.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo(Loc.Language)), result.WhiteBalance.Value.Tint.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo(Loc.Language)));

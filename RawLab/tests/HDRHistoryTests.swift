@@ -6,13 +6,15 @@ import UIKit
     static func main() throws {
         setbuf(stdout,nil)
         let root=URL(fileURLWithPath:CommandLine.arguments[1])
-        let input=root.appendingPathComponent("source.heic"); try Data([1,2,3]).write(to:input)
+        let input=URL(fileURLWithPath:CommandLine.arguments[2])
         let store=try EditPersistence(directory:root.appendingPathComponent("edits"))
         let model=RawEditorViewModel(editPersistence:store)
         let identity=PhotoIdentity(resourceIdentifier:"first-hdr-edit")
         model.sourceFile = .externallyManaged(input); model.sourceIdentity=identity
         model.sourceKind = .raster; model.sourceIsHDR=true; model.hasImage=true
-        var settings=RawSettings.default; settings.hdr=HDRSettings()
+        var settings=RawSettings.default; settings.exposureMode = .sensor; settings.hdr=HDRSettings()
+        let defaults = try model.sourceDefaultSettings
+        check(defaults == settings, "HDR fixture did not produce the complete raster HDR defaults")
         model.acceptImportedEditRecord(try store.readState(for:identity),settings:settings)
         let absent=try store.readState(for:identity)
         try model.copyAdjustments(scope:.custom([.hdrTemperature]),settings:settings)

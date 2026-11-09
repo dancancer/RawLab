@@ -1,4 +1,5 @@
 import CryptoKit
+import Photos
 import SwiftUI
 import UIKit
 
@@ -352,9 +353,12 @@ extension ContentView {
             receipt["batchFrozenExposure"] = batchModel?.job.targets.compactMap { $0.frozen?.settings.exposure } ?? []
             receipt["batchID"] = batchModel?.job.id.uuidString ?? ""
             receipt["batchStatus"] = batchModel?.job.status.rawValue ?? ""
+            receipt["batchError"] = batchModel?.validationMessage ?? batchModel?.job.globalError ?? ""
+            receipt["photoAddAuthorization"] = PHPhotoLibrary.authorizationStatus(for: .addOnly).rawValue
             receipt["batchRunning"] = batchModel?.isRunning ?? false
             receipt["batchCompleted"] = batchModel?.completedCount ?? 0
             receipt["collectionChecking"] = viewModel.collectionExportPreparing
+            receipt["collectionExportError"] = viewModel.collectionExportError ?? ""
             receipt["adjustmentQueueDrains"] = probe.adjustmentQueueDrains
             receipt["scenePhase"] = probe.scenePhase
             receipt["batchHandoffs"] = probe.batchHandoffs

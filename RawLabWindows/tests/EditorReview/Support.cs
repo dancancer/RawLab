@@ -86,6 +86,9 @@ internal static partial class EditorReviewChecks
     }
     private static T Get<T>(object owner,string name)=>(T)owner.GetType().GetField(name,Private)!.GetValue(owner)!;
     private static void Set(object owner,string name,object value)=>owner.GetType().GetField(name,Private)!.SetValue(owner,value);
+    // 更新退出准备是 3326555c 加入的异步关口，由 CloseJournalRetry 覆盖；这里从已批准的关闭开始，
+    // 让其余用例在 Close() 返回时检查批量日志、渲染和引擎的真实关闭顺序。
+    private static void CloseApproved(MainWindow window){Set(window,"updateQuitApproved",true);window.Close();}
     private static object? Invoke(object owner,string name,params object[] args)=>owner.GetType().GetMethod(name,Private)!.Invoke(owner,args);
     private static void Click(Button button)=>button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     private static DragEventArgs RouteDrop(UIElement target,IDataObject data,bool drop,DragDropEffects allowed=DragDropEffects.Copy|DragDropEffects.Move)

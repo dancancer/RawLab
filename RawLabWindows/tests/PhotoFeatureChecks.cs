@@ -3,7 +3,6 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
-using System.Text;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -46,21 +45,30 @@ internal static class PhotoFeatureChecks
         Directory.CreateDirectory(output);
         var targets = Path.Combine(output, "targets"); Directory.CreateDirectory(targets);
         var nested = Path.Combine(targets, "nested"); Directory.CreateDirectory(nested);
-        var source = Path.Combine(output, "source.ARW"); File.Copy(fixture, source);
-        var target = Path.Combine(targets, "target.ARW"); File.Copy(fixture, target);
-        var second = Path.Combine(targets, "second.ARW"); File.Copy(fixture, second);
-        var excluded = Path.Combine(nested, "excluded.ARW"); File.Copy(fixture, excluded);
+        var extension = Path.GetExtension(fixture);
+        var source = Path.Combine(targets, "source" + extension); File.Copy(fixture, source);
+        var target = Path.Combine(targets, "target" + extension); File.Copy(fixture, target);
+        var second = Path.Combine(targets, "second" + extension); File.Copy(fixture, second);
+        var excluded = Path.Combine(nested, "excluded" + extension); File.Copy(fixture, excluded);
         File.WriteAllText(Path.Combine(targets, "ignored.txt"), "not a photo");
         var rasterTarget = Path.Combine(targets, "ordinary.png");
         var bitmap=BitmapSource.Create(8,6,96,96,PixelFormats.Bgr24,null,Enumerable.Repeat((byte)120,8*6*3).ToArray(),8*3);
         var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));
         using(var stream=File.Create(rasterTarget))encoder.Save(stream);
         var hashes = new[] { source, target, second, rasterTarget, excluded }.ToDictionary(path => path, path => SHA256.HashData(File.ReadAllBytes(path)));
+        Console.WriteLine("ExifTool: " + ExportMetadata.VerifyAvailable());
         var info = PhotoInfoReader.Read(source);
-        Check(info?.Camera?.Contains("SONY", StringComparison.OrdinalIgnoreCase) == true && info.Lens != null && info.Shutter != null,
-            "Production ExifTool reads actual RAW camera, lens and shutter");
+        Check(!string.IsNullOrWhiteSpace(info?.Camera) && !string.IsNullOrWhiteSpace(info?.Shutter),
+            "Production ExifTool reads actual RAW camera and shutter");
         Check(info!.DisplayWidth > 0 && info.DisplayHeight > 0 && info.CaptureTime != null,
             "Production ExifTool reports oriented source dimensions and capture time");
+        // 固定镜头 RAW 可以没有 LensModel；用已知 EXIF 的副本保留镜头读取的集成检查。
+        var metadataSource = Path.Combine(output, "metadata.png"); File.Copy(rasterTarget, metadataSource);
+        ExportMetadata.Run(["-overwrite_original", "-EXIF:Make=RawLab", "-EXIF:Model=Fixture camera",
+            "-EXIF:LensMake=RawLab", "-EXIF:LensModel=Fixture lens", "-EXIF:ExposureTime=1/125", metadataSource]);
+        var metadata = PhotoInfoReader.Read(metadataSource);
+        Check(metadata is { Camera: "RawLab Fixture camera", Lens: "RawLab Fixture lens", Shutter: "1/125" },
+            "Production ExifTool reads exact camera, lens and shutter from controlled EXIF");
 
         var app = TestWindowState.CreateApplication();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
@@ -148,22 +156,39 @@ internal static class PhotoFeatureChecks
             Check((int?)Field(window, "exportLongEdge") == 512 && window.ExportCustomSize.IsChecked, "Single custom dialog commits a valid pixel size");
             Click(window.InfoButton);
             InteractionChecks.PumpUntil(() => window.InfoOverlay.Visibility == Visibility.Visible);
-            Check(window.InfoFileText.Text.Contains("source.ARW") && window.InfoFileText.Text.Contains(info.CaptureTime!), "Real WPF file overlay uses source metadata");
+            Check(window.InfoFileText.Text.Contains(Path.GetFileName(source)) && window.InfoFileText.Text.Contains(info.CaptureTime!), "Real WPF file overlay uses source metadata");
             Click(window.InfoButton);
-            Check(window.InfoCaptureText.Text.Contains("SONY", StringComparison.OrdinalIgnoreCase), "Real WPF capture overlay shows camera metadata");
+            Check(window.InfoCaptureText.Text == info.CaptureLine, "Real WPF capture overlay shows the actual capture metadata");
             Screenshot(window, Path.Combine(output, "info.png"));
             window.LibraryColumn.Width = new GridLength(288); window.UpdateLayout();
             Check(window.InfoOverlay.ActualWidth + 28 <= window.EditorArea.ActualWidth + 1, "Info overlay stays within the photo column");
             Click(window.InfoButton); Check(window.InfoOverlay.Visibility == Visibility.Collapsed, "WPF info action cycles back to hidden");
             window.OpenFile(target); window.OpenFile(source);
             Click(window.InfoButton);
-            InteractionChecks.PumpUntil(() => window.InfoFileText.Text.Contains("source.ARW"));
-            Check(!window.InfoFileText.Text.Contains("target.ARW"), "Rapid photo switches never publish the previous file metadata");
+            InteractionChecks.PumpUntil(() => window.InfoFileText.Text.Contains(Path.GetFileName(source)));
+            Check(!window.InfoFileText.Text.Contains(Path.GetFileName(target)), "Rapid photo switches never publish the previous file metadata");
             ToolGroupChecks.RunAssertions(window, output, Check);
-            Click(Descendants<Button>(window).Single(button =>
+            Click(Descendants<Button>(window.PhotoEffectsEditor).Single(button =>
                 AutomationProperties.GetName(button) == "重置当前效果"));
             InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled);
+            Check(((Adjustments)Field(window, "settings")!).Effects.VignetteAmount == 0,
+                "Current effect reset clears the vignette edited by the tool-group checks");
+            Click(window.FilmCategory);
+            var films = (Dictionary<string, Button>)Field(window, "filmButtons")!;
+            Click(films.First(pair => File.Exists(pair.Key) && StringComparer.OrdinalIgnoreCase.Equals(
+                Path.GetDirectoryName(pair.Key), Path.Combine(AppContext.BaseDirectory, "LUTs"))).Value);
+            InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled);
             var current = ((Adjustments)Field(window, "settings")!).Capture();
+            var currentLook = window.CurrentLookIdentity();
+            Check(currentLook != null && current.CameraWhiteBalance && current.MasterRecipeID == null,
+                "Folder fixture has a real look and camera white balance compatible with RAW and raster targets");
+            Check((bool)window.GetType().GetMethod("SaveEdits", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null)!,
+                "Folder fixture saves the source before copying adjustments");
+            var sourceState = store.ReadState(source);
+            var directTargets = new[] { target, second, rasterTarget };
+            var targetGeometry = new GeometrySettings(FlipHorizontal: true);
+            foreach (var path in directTargets)
+                store.Save(path, new Adjustments { Geometry = targetGeometry, ExposureMode = PhotoInput.IsRaw(path) ? 1 : 2 }.Capture(), null);
             var folder = new LibraryEntry(targets, true);
             var library = (Library)Field(window, "library")!;
             library.Roots.Add(folder);
@@ -178,16 +203,25 @@ internal static class PhotoFeatureChecks
             OpenContext(window, root);
             Check(window.FileTreeContextMenu.IsOpen && window.ApplyTreeEntryMenu.IsEnabled, "Folder context menu offers enabled apply-current-settings action");
             window.FileTreeContextMenu.IsOpen = false;
-            var confirmation = ConfirmApply(3);
-            window.ApplyTreeEntryMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            InteractionChecks.PumpUntil(() => window.Status.Text == Loc.Format("已将当前设置应用到 {0} 张照片", 3));
-            confirmation.Stop();
-            Check(store.Find(target)?.Settings.SameAs(current) == true && store.Find(second)?.Settings.SameAs(current) == true &&
-                  store.Find(rasterTarget)?.Settings.SameAs(current) == true,
-                "Confirmed folder action writes current settings to direct RAW and raster children");
-            Check(store.Find(excluded) == null && (string?)Field(window, "file") == source,
+            ApplyFolderSettings(window, directTargets);
+            var expected = AdjustmentTransferValues.Values(new(sourceState.Identity, current, currentLook), new(source, true));
+            foreach (var path in directTargets)
+            {
+                var saved = store.Find(path);
+                Check(saved != null, "Confirmed folder action saves the direct child: " + Path.GetFileName(path));
+                var raster = PhotoInput.IsRaster(path);
+                var actual = AdjustmentTransferValues.Values(saved!, new(path, !raster));
+                // Standard 不包含几何；普通图片的曝光基准和白平衡按目标能力归一化。
+                var matches = AdjustmentFields.Common.All(field => AdjustmentPayload.Same(actual[field],
+                    raster && field == AdjustmentField.ExposureMode ? AdjustmentPayload.Value("sensor") :
+                    raster && field == AdjustmentField.WhiteBalanceMode ? AdjustmentPayload.Value("none") : expected[field]));
+                Check(matches && saved!.Settings.Geometry == targetGeometry,
+                    "Folder action copies Standard fields and preserves target geometry: " + Path.GetFileName(path));
+            }
+            Check(store.Find(excluded) == null && store.ReadState(source).SameAs(sourceState) &&
+                  ((Adjustments)Field(window, "settings")!).Capture().SameAs(current) && (string?)Field(window, "file") == source,
                 "Folder action excludes nested files and never changes the source photo");
-            Check(store.Find(target)?.Look == window.CurrentLookIdentity(), "Apply-current-settings also copies the current look identity");
+            Check(directTargets.All(path => store.Find(path)?.Look == currentLook), "Apply-current-settings also copies the current look identity");
             Screenshot(window, Path.Combine(output, "context.png"));
             if (Process.GetCurrentProcess().SessionId != 0)
             {
@@ -310,34 +344,48 @@ internal static class PhotoFeatureChecks
         using var stream = File.Create(path); encoder.Save(stream);
     }
 
-    private static DispatcherTimer ConfirmApply(int count)
+    private static void ApplyFolderSettings(MainWindow window, string[] targets)
     {
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        var clock = Stopwatch.StartNew();
+        Exception? failure = null;
+        AdjustmentResultDialog? dialog = null;
+        var completed = false;
         timer.Tick += (_, _) => {
-            var dialog = IntPtr.Zero;
-            EnumWindows((candidate, _) => {
-                GetWindowThreadProcessId(candidate, out var pid);
-                var title = new StringBuilder(1024); GetWindowText(candidate, title, title.Capacity);
-                if (pid == Environment.ProcessId && title.ToString() == Loc.Format("应用当前设置到 {0} 张照片？",count)) { dialog = candidate; return false; }
-                return true;
-            }, IntPtr.Zero);
-            if (dialog == IntPtr.Zero) return;
-            var text = new StringBuilder();
-            EnumChildWindows(dialog, (child, _) => { var part = new StringBuilder(1024); GetWindowText(child, part, part.Capacity); text.Append(part); return true; }, IntPtr.Zero);
-            var valid = text.ToString().Contains(Loc.Text("将替换目标照片的本机调整记录，不改写原始文件。"));
-            SendMessage(GetDlgItem(dialog, valid ? 6 : 7), 0x00F5, IntPtr.Zero, IntPtr.Zero);
-            timer.Stop();
-            Check(valid, "Native confirmation shows the actual target count");
+            try
+            {
+                if (clock.Elapsed > TimeSpan.FromSeconds(90)) throw new TimeoutException("Folder adjustment results did not appear within 90s");
+                dialog = Application.Current.Windows.OfType<AdjustmentResultDialog>().SingleOrDefault(candidate => candidate.IsVisible && candidate.Owner == window);
+                if (dialog == null) return;
+                timer.Stop(); dialog.UpdateLayout();
+                T Find<T>(string id) where T : DependencyObject => Descendants<T>(dialog).Single(control => AutomationProperties.GetAutomationId(control) == id);
+                var summary = Find<TextBlock>("adjustment.results.summary");
+                Check(summary.Text.EndsWith(Loc.Format("已预检 {0} 张照片。确认后保存所选调整。", targets.Length), StringComparison.Ordinal),
+                    "Folder adjustment preflight reports exactly three targets");
+                Check(Descendants<TextBlock>(dialog).Where(text => text.ToolTip is string path && targets.Contains(path)).Count() == targets.Length,
+                    "Folder preflight lists only the direct RAW and raster targets");
+                var apply = Find<Button>("adjustment.results.apply");
+                Check(apply.IsEnabled, "Folder adjustment preflight enables Apply");
+                Click(apply);
+                Check(summary.Text.EndsWith(Loc.Format("已保存 {0} 张 · 未变化 {1} 张 · 已跳过 {2} 张 · 已撤销 {3} 张 · 未完成 {4} 张", targets.Length, 0, 0, 0, 0), StringComparison.Ordinal),
+                    "Folder adjustment results report three saved photos");
+                Click(Find<Button>("adjustment.results.close"));
+                completed = !dialog.IsVisible;
+            }
+            catch (Exception error)
+            {
+                failure = error; timer.Stop();
+                foreach (var visible in Application.Current.Windows.OfType<AdjustmentResultDialog>().Where(candidate => candidate.Owner == window).ToArray()) visible.Close();
+            }
         };
-        timer.Start(); return timer;
+        timer.Start();
+        try
+        {
+            window.ApplyTreeEntryMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            InteractionChecks.PumpUntil(() => completed || failure != null);
+            if (failure != null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+            Check(completed, "Folder adjustment results close after applying");
+        }
+        finally { timer.Stop(); if (dialog?.IsVisible == true) dialog.Close(); }
     }
-
-    private delegate bool EnumWindowCallback(IntPtr window, IntPtr data);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindow(string className, string windowName);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr window, StringBuilder text, int length);
-    [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr window, EnumWindowCallback callback, IntPtr data);
-    [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowCallback callback, IntPtr data);
-    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out int processId);
-    [DllImport("user32.dll")] private static extern IntPtr GetDlgItem(IntPtr window, int item);
-    [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
 }

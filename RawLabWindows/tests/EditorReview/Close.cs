@@ -28,7 +28,7 @@ internal static partial class EditorReviewChecks
                     if(batchFirst!=null)
                     {
                         var job=BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral");
-                        Get<BatchJournal>(window,"batchJournal").Save(job);Invoke(window,"ShowBatch",job);batch=Get<BatchExportWindow>(window,"batchWindow");
+                        Get<BatchJournal>(window,"batchJournal").Save(job);Invoke(window,"ShowBatch",job,false);batch=Get<BatchExportWindow>(window,"batchWindow");
                     }
                     held.Capture(()=>{window.ValueSlider.Value=.6;window.ValueSlider.Value=.65;});
                     InteractionChecks.PumpUntil(()=>held.Pending);
@@ -43,7 +43,7 @@ internal static partial class EditorReviewChecks
                         journalLock=new FileStream(Path.Combine(Get<BatchJournal>(window,"batchJournal").DirectoryPath,"job.json"),FileMode.Open,FileAccess.Read,FileShare.Read);
                     }
                     var revision=scheduler.GetType().GetProperty("Revision")!.GetValue(scheduler);
-                    window.Close();
+                    CloseApproved(window);
                     check(window.IsVisible && !window.IsEnabled && !Get<bool>(window,"closeFinished"),
                         "Close waits for the active worker even with another preview queued: "+batchFirst);
                     if(batchFirst==true){releaseBatch.Set();InteractionChecks.PumpUntil(()=>preflight!.IsCompleted);}
@@ -154,9 +154,9 @@ internal static partial class EditorReviewChecks
         {
             var window=Open("close-idle-"+foreground);var journal=Get<BatchJournal>(window,"batchJournal");
             var engine=Get<object>(window,"engine");var held=new HeldContext(SynchronizationContext.Current!);Task? import=null;
-            var adjustment=Get<Adjustments>(window,"settings");adjustment.Denoise=DenoiseSettings.Clean;Invoke(window,"Schedule",false);
+            var adjustment=Get<Adjustments>(window,"settings");adjustment.Denoise=DenoiseSettings.Clean;Invoke(window,"Schedule",false,false);
             InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-            var job=BatchJob.Create(photo,adjustment.Capture(),null,"Neutral");journal.Save(job);Invoke(window,"ShowBatch",job);
+            var job=BatchJob.Create(photo,adjustment.Capture(),null,"Neutral");journal.Save(job);Invoke(window,"ShowBatch",job,false);
             var batch=Get<BatchExportWindow>(window,"batchWindow");var previous=Get<int>(window,"previewLongEdge");
             var look=Get<string?>(window,"lut");var timer=Get<DispatcherTimer>(window,"previewResize");
             try
@@ -166,7 +166,7 @@ internal static partial class EditorReviewChecks
                     window.ResultCanvas.Viewport!.Magnify(.5);var edge=window.ResultCanvas.PreviewLongEdge;
                     check(timer.IsEnabled && edge!=previous && !window.ExportPng.IsEnabled,"Idle-close fixture has a real pending denoise resize: "+foreground);
                     if(foreground){look=Path.Combine(repo,"lutools","flog-2-new","FLog2_to_Velvia_65grid_V.1.00.cube");held.Capture(()=>import=window.ImportLookFiles([look]));}
-                    window.Close();
+                    CloseApproved(window);
                     check(window.IsVisible && window.IsEnabled && !Get<bool>(window,"closing") && !Get<bool>(window,"closeFinished") &&
                         batch.IsVisible && batch.CloseFailed && !batch.Busy && !batch.Discarded && ReferenceEquals(engine,Get<object>(window,"engine")),
                         "Synchronous journal failure cancels owner close without disposing its engine: "+foreground);
@@ -209,7 +209,7 @@ internal static partial class EditorReviewChecks
             var job=BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral");
             job.Format=ExportFormat.Png;job.LongEdge=128;job.OutputDirectory=destination;
             job.Items=[BatchItem.Create(photo) with{Selected=true},BatchItem.Create(other) with{Selected=true}];journal.Save(job);
-            Invoke(window,"ShowBatch",job);var batch=Get<BatchExportWindow>(window,"batchWindow");
+            Invoke(window,"ShowBatch",job,false);var batch=Get<BatchExportWindow>(window,"batchWindow");
             using var progress=new BatchProgressGate(window.Dispatcher);
             try
             {
@@ -217,7 +217,7 @@ internal static partial class EditorReviewChecks
                 var running=AtomicJson.Read<BatchJob>(Path.Combine(journal.DirectoryPath,"job.json"));
                 check(batch.Running && running.Items[0].Status==BatchStatus.Running && running.Items[1].Status==BatchStatus.Waiting,
                     "Running-close fixture pauses the real worker after its first journaled item starts");
-                window.Close();
+                CloseApproved(window);
                 check(window.IsVisible && !window.IsEnabled && Get<bool>(window,"closing") && !Get<bool>(window,"closeFinished") &&
                     ReferenceEquals(engine,Get<object?>(window,"engine")),"Owner close waits for the running batch and retains the render engine");
                 check(Get<CancellationTokenSource>(batch,"cancellation").IsCancellationRequested,"Owner close requests stop-after-current-item on the real batch");
@@ -245,7 +245,7 @@ internal static partial class EditorReviewChecks
         void CloseIdleNoop()
         {
             var window=Open("close-idle-noop");var journal=Get<BatchJournal>(window,"batchJournal");
-            var job=BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral");journal.Save(job);Invoke(window,"ShowBatch",job);
+            var job=BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral");journal.Save(job);Invoke(window,"ShowBatch",job,false);
             var batch=Get<BatchExportWindow>(window,"batchWindow");
             var scheduler=Get<object>(window,"scheduler");long Revision()=>(long)scheduler.GetType().GetProperty("Revision")!.GetValue(scheduler)!;
             var revision=Revision();var previous=Get<RenderedImage>(window,"result");
@@ -256,7 +256,7 @@ internal static partial class EditorReviewChecks
                 {
                     for(var attempt=0;attempt<3;attempt++)
                     {
-                        window.Close();
+                        CloseApproved(window);
                         check(batch.CloseFailed && window.IsVisible && window.IsEnabled && !Get<bool>(window,"closing"),"Repeated idle close failure restores the owner");
                         check(Revision()==revision && ReferenceEquals(previous,Get<RenderedImage>(window,"result")) && window.ExportPng.IsEnabled,
                             "Idle close failure with an exact unchanged frame submits no render: "+attempt);
@@ -275,7 +275,7 @@ internal static partial class EditorReviewChecks
             {
                 if(initial)
                 {
-                    step.Capture(()=>Invoke(window,"ShowBatch",job));batch=Get<BatchExportWindow>(window,"batchWindow");
+                    step.Capture(()=>Invoke(window,"ShowBatch",job,false));batch=Get<BatchExportWindow>(window,"batchWindow");
                     // Loaded is delivered by WPF; explicitly step its real async body under the held context.
                     InteractionChecks.PumpUntil(()=>batch.SourceThumbnail.Source!=null);
                     InteractionChecks.PumpUntil(()=>Get<System.Collections.IEnumerable>(batch,"rows").Cast<BatchRow>().All(row=>row.Thumbnail!=null));
@@ -284,7 +284,7 @@ internal static partial class EditorReviewChecks
                 }
                 else
                 {
-                    Invoke(window,"ShowBatch",job);batch=Get<BatchExportWindow>(window,"batchWindow");
+                    Invoke(window,"ShowBatch",job,false);batch=Get<BatchExportWindow>(window,"batchWindow");
                     InteractionChecks.PumpUntil(()=>batch.SourceThumbnail.Source!=null);
                     step.Capture(()=>preflight=batch.AddInputs([photo,other]));
                     step.Next();
@@ -303,7 +303,7 @@ internal static partial class EditorReviewChecks
         void CloseSourceThumbnail()
         {
             var window=Open("source-thumbnail-close");var job=BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral");
-            Invoke(window,"ShowBatch",job);var batch=Get<BatchExportWindow>(window,"batchWindow");
+            Invoke(window,"ShowBatch",job,false);var batch=Get<BatchExportWindow>(window,"batchWindow");
             var step=new SteppedContext(SynchronizationContext.Current!);
             try
             {
