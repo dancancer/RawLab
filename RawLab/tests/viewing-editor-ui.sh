@@ -67,6 +67,8 @@ if [[ "${RAWLAB_BUILD_ONLY:-0}" == 1 ]]; then
     exit 0
 fi
 xcrun simctl install "$DEVICE" "$HARNESS"
+# 集合导出会真实写入 Photos，先授权测试宿主，避免系统弹窗阻塞自动导出。
+xcrun simctl privacy "$DEVICE" grant photos-add com.rawlab.tests.viewing-editor
 xcrun simctl uninstall "$DEVICE" com.example.RawLabUITests.xctrunner >/dev/null 2>&1 || true
 STATUS=0
 IFS=',' read -r -a SELECTED_TESTS <<< "${RAWLAB_VIEWING_EDITOR_TEST:-testActualCropHandlesAlignWithNativePhotoMargin}"
