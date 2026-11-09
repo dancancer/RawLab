@@ -208,6 +208,10 @@ CI never repeats runtime UI checks. UI-test target compilation is not a UI-test 
 - Windows does not invoke `build.ps1 -Test`: that entry point's default suite
   requires physical D3D11 and an external RAW path. The hosted suite uses the
   already-public tracked DJI DNG and explicitly selected CPU-safe cases.
+  Windows `native/full` includes `raw_active_area_metadata` in that selection.
+  It also selects `raw_active_area_sony` when an existing external photo is
+  configured through `SONY2FUJI_TEST_SONY_ASPECT_RAW`; the private Sony fixture
+  is not provided by CI by default.
 - The iOS job compiles UI tests with `build-for-testing`; it does **not** execute
   XCTest, import Photos fixtures, sign a device app or validate installation.
 - Android compiles instrumentation tests but does **not** run connected-device
