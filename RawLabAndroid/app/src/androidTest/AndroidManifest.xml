@@ -5,5 +5,7 @@
             android:exported="false" android:grantUriPermissions="true" />
         <activity android:name="com.rawlab.android.SystemPhotoShareActivity"
             android:exported="true" android:theme="@android:style/Theme.NoDisplay" />
+        <activity android:name="com.rawlab.android.camera.CameraMediaReaderActivity"
+            android:exported="true" android:theme="@android:style/Theme.NoDisplay" />
     </application>
 </manifest>

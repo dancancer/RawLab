@@ -31,6 +31,24 @@ class RumUsageAnalyticsTransportTest {
     )
 
     @Test
+    fun cameraNetworkPermissionsDoNotExpandSdkContext() {
+        val isolated = com.rawlab.android.analytics.rum.RumIsolatedContext(context)
+        assertEquals(android.content.pm.PackageManager.PERMISSION_GRANTED,
+            context.checkSelfPermission(android.Manifest.permission.ACCESS_NETWORK_STATE))
+        assertTrue(context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) != null)
+        assertEquals(null, isolated.getSystemService(android.content.Context.CONNECTIVITY_SERVICE))
+        assertEquals(null, isolated.applicationContext.getSystemService(android.net.ConnectivityManager::class.java))
+        for (permission in listOf(android.Manifest.permission.ACCESS_NETWORK_STATE, android.Manifest.permission.ACCESS_WIFI_STATE,
+            android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.BLUETOOTH_CONNECT)) {
+            assertEquals(android.content.pm.PackageManager.PERMISSION_DENIED, isolated.checkSelfPermission(permission))
+            assertEquals(android.content.pm.PackageManager.PERMISSION_DENIED,
+                isolated.checkPermission(permission, android.os.Process.myPid(), android.os.Process.myUid()))
+            assertEquals(android.content.pm.PackageManager.PERMISSION_DENIED, isolated.checkCallingOrSelfPermission(permission))
+        }
+        assertEquals(android.content.pm.PackageManager.PERMISSION_GRANTED, isolated.checkSelfPermission(android.Manifest.permission.INTERNET))
+    }
+
+    @Test
     fun installIdBecomesTheSdkDeviceId() {
         val sdk = RecordingRumSDKClient()
         val transport = transport(sdk)
