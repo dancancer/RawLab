@@ -93,13 +93,14 @@ draft before transferring adjustments, then choose targets with the system docum
 review compatibility. Retrying incomplete targets preserves earlier successful saves.
 
 普通编辑与粘贴使用同一套逐照片历史，完成滑尺拖动只记一次，取消恢复起点。历史可按
-单张或整次粘贴撤销/重做，仅保留在当前会话；已保存参数可在重开照片后恢复。遇到外部
-记录变化时先明确确认重新载入，避免覆盖未保存修改。原始照片始终不写回。
+单张或整次粘贴撤销/重做，仅保留在当前会话；已保存参数可在重开照片后恢复。编辑在
+当前会话内提交，保存失败保留调整并可重试，旧编辑记录仍可读取。原始照片始终不写回。
 
 Ordinary edits and paste share per-photo history. A completed ruler drag creates one entry;
 cancellation restores its starting value. Undo/redo works per photo or across a paste transaction.
-History lasts for the current session, while saved adjustments survive reopening. External record
-changes require an explicit reload decision. Original photo data is never rewritten.
+History lasts for the current session, while saved adjustments survive reopening. Edits commit
+within that session; failed saves retain adjustments for retry, and older edit records remain
+readable. Original photo data is never rewritten.
 
 ## 构建 / Build
 
@@ -145,11 +146,11 @@ Assets are generated from existing repository resources rather than duplicated i
 
 ## Release
 
-[下载 Android v0.9.3 APK / Download Android v0.9.3 APK](https://github.com/dancancer/RawLab/releases/download/v0.9.3/RawLab-Android-0.9.3.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.9.3) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.9.3/SHA256SUMS.txt)
+[下载 Android v0.10.0 APK / Download Android v0.10.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.10.0/RawLab-Android-0.10.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.10.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.10.0/SHA256SUMS.txt)
 
-发布 APK 为 `versionName=0.9.3`、`versionCode=18`，沿用正式发布签名，支持同签名旧正式版覆盖升级。为受支持的相机 RAW 和 Apple ProRAW 新增 HDR 显影，并修复拍摄白平衡不可用时大师配方的显影失败，见[发布说明](../docs/releases/v0.9/v0.9.3.md)。既有默认开启的使用统计和关于页关闭开关保留。实际构建、JVM、模拟器与设备覆盖见发布附件 `BUILD-PROVENANCE.json`。
+发布 APK 为 `versionName=0.10.0`、`versionCode=19`，沿用正式发布签名，支持同签名旧正式版覆盖升级。本版扩展 HDR 调整与外观，支持系统打开和单张/多张照片分享、16 位整数 RGB PNG（上限 32 MP）及 Android 9+ 的普通 SDR HEIF，并改进含视频尾部或 C2PA 元数据的 JPEG 导入，见[发布说明](../docs/releases/v0.10/v0.10.0.md)。既有默认开启的使用统计和关于页关闭开关保留。实际构建、JVM、模拟器与设备覆盖见发布附件 `BUILD-PROVENANCE.json`。
 
-The release APK uses version 0.9.3/code 18 and the existing release identity. It adds HDR editing for supported camera RAW and Apple ProRAW files, and fixes master recipe rendering when calibrated as-shot white balance is unavailable. Usage-statistics defaults are unchanged. See the [release notes](../docs/releases/v0.9/v0.9.3.md) and package provenance for actual build, emulator and physical-device coverage.
+The release APK uses version 0.10.0/code 19 and the existing release identity. It expands HDR controls and looks, accepts system photo opens and single/multiple-photo shares, imports 16-bit integer RGB PNG up to 32 MP and SDR HEIF on Android 9+, and improves JPEG import with video trailers or C2PA metadata. Usage-statistics defaults are unchanged. See the [release notes](../docs/releases/v0.10/v0.10.0.md) and package provenance for actual build, emulator and physical-device coverage.
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。

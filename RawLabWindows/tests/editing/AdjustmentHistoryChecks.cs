@@ -116,13 +116,18 @@ internal static class AdjustmentHistoryChecks
         var directory=Path.Combine(root,"concurrent-independent");var photos=Enumerable.Range(0,8)
             .Select(index=>Path.Combine(root,$"concurrent-{index}.ARW")).ToArray();
         foreach(var photo in photos)File.WriteAllText(photo,"independent");
-        Parallel.For(0,photos.Length,index=>{
-            var writer=new EditStore(directory);var settings=new Adjustments();settings.Set(Parameter.Exposure,(index+1)/10.0);
-            writer.Save(photos[index],settings.Capture(),null);
-        });
+        // Windows 上无锁读取会和原子替换竞争；多轮并发读写，读写双方都不能因共享冲突失败。
+        const int rounds=20;
+        for(var round=0;round<rounds;round++)
+            Parallel.For(0,photos.Length*2,index=>{
+                var store=new EditStore(directory);var photo=photos[index%photos.Length];
+                if(index>=photos.Length){_=store.Find(photo);return;}
+                var settings=new Adjustments();settings.Set(Parameter.Exposure,(index+round)/10.0);
+                store.Save(photo,settings.Capture(),null);
+            });
         var reader=new EditStore(directory);
         Check(photos.Select((photo,index)=>reader.Find(photo) is {} saved &&
-            Math.Abs(saved.Settings.Values[1]-(index+1)/10.0)<1e-9).All(value=>value),
+            Math.Abs(saved.Settings.Values[1]-(index+rounds-1)/10.0)<1e-9).All(value=>value),
             "Independent store writers preserve every photo record without conditional-save winners");
     }
 
