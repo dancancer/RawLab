@@ -8,6 +8,11 @@ import com.rawlab.android.settings.LookChoice
 import com.rawlab.android.settings.SettingsCodec
 
 class FilmGroupingTest {
+    @Test fun builtInFilmsKeepTheirPackagedLutMapping() {
+        assertEquals("FLog2_to_PROVIA_65grid_V.1.00.cube", Film.all.single { it.id == "provia" }.fileName)
+        assertNull(Film.all.single { it.id == "neutral" }.fileName)
+    }
+
     @Test fun flatGroupsKeepNeutralFirstAndImportedNamesIndependent() {
         val ektar = "EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65"
         val camera = "RawLab_camera_contax_nd_std_sRGB_v1"
