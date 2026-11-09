@@ -216,6 +216,7 @@
 "原始文件已被替换，请重新选择照片。" = "The original file has been replaced. Select the photo again.";
 "原始比例" = "Original Ratio";
 "原始照片已变化，请重新导入。" = "The original photo has changed. Import it again.";
+"原始预览" = "Original preview";
 "原尺寸" = "Original size";
 "去噪优先" = "Noise Reduction Priority";
 "去朦胧" = "Dehaze";
@@ -371,6 +372,7 @@
 "已生成 %@ 个渲染型 DNG" = "Rendered DNG Files Created: %@";
 "已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Rendered DNG Files Created: %@ (Not Saved to the Selected Location)";
 "已生成渲染型 DNG，未另存到所选位置。" = "Rendered DNG Created, but Not Saved to the Selected Location.";
+"已编辑" = "Edited";
 "已自动升级，原设置已保留。" = "Updated automatically. Original settings are saved.";
 "已调整" = "Adjusted";
 "已跳过" = "Skipped";
@@ -1015,6 +1017,7 @@
 "预览尚未就绪，请稍后重试。" = "The preview is not ready yet. Try again shortly.";
 "预览已变化，请重新取色。" = "The preview changed. Sample again.";
 "预览已更新" = "Preview updated";
+"预览待更新" = "Preview updating";
 "预览方式" = "Preview Mode";
 "预览方式不会改变编辑或导出。" = "Preview mode does not change edits or exports.";
 "预览未更新" = "Preview not updated";

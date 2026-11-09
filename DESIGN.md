@@ -144,7 +144,7 @@ Film artwork and film selection outlines use the namespaced rounded tokens. Hist
 
 - Use SF Symbols, native sliders, numeric fields, pickers, menus and file dialogs. Film label bitmaps are bundled local resources with generation provenance.
 - The toolbar contains workspace modes, browser visibility, open, comparison, photo information, one zoom menu, adjustment visibility and export. The information action cycles hidden/file/capture; desktop `I` is inactive while entering text. Fit, actual pixels, zoom in and zoom out live inside the zoom menu. Editing sliders do not belong in the toolbar.
-- Directory contents and visible thumbnails load on demand. RAW thumbnails use embedded previews with orientation.
+- Directory contents and visible thumbnails load on demand. Unedited RAW thumbnails may use embedded previews with orientation. Edited photos show the saved rendered result and a passive pencil at the lower right, independently of the current-photo border and selection checkmark. Mobile lists add All / Edited / Unedited filters; iOS keeps a bounded Recently Opened library. See [edited-photo previews](docs/design/editor-workspace/edited-photo-previews.md) for state, cache and source-access rules.
 - Histogram collapse state survives photo changes. Switching workspace modes keeps the selected adjustment tools and panel sizes. A slider marks its default and fills from that point to the current value.
 - No-photo, loading, disabled, error/retry and export-complete states are explicit. Export must not overwrite the source file.
 - Photo adjustments and look identities persist locally per original photo; unseen photos start with defaults. Save failures remain visible and retryable. No sidecars or cloud catalog are created.

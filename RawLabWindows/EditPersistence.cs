@@ -172,6 +172,15 @@ public sealed class EditStore
     public static string DefaultDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "Edits");
     private readonly string path;
     private readonly Action<string,object> write;
+    public event Action<PhotoEditState>? Changed;
+    private void NotifyChanged(PhotoEditState state)
+    {
+        if (Changed is not {} handlers) return;
+        foreach (Action<PhotoEditState> handler in handlers.GetInvocationList()) {
+            try { handler(state.Copy()); }
+            catch { /* 观察者失败不把已成功写盘的调整报告为保存失败。 */ }
+        }
+    }
 
     public EditStore(string directory,Action<string,object>? write = null)
     {
@@ -211,13 +220,17 @@ public sealed class EditStore
     public PhotoEditState SaveState(OriginalIdentity identity,SavedEdit? edit)
     {
         if(edit!=null) {_=edit.Settings.Restore();if(!edit.Identity.SameFile(identity))throw new PhotoChangedException();}
-        using var held=AcquireLock();var registry=ReadRegistry();
-        identity.RequireCurrent();
-        var current=ReadRecord(registry,identity);
-        if(SavedEdit.Same(current.Edit,edit))return current;
-        if(edit==null)registry.Records.Remove(identity.Path);else registry.Records[identity.Path]=edit.Copy();
-        write(path,registry);
-        return new(identity,edit?.Copy());
+        PhotoEditState saved;
+        using (AcquireLock()) {
+            var registry=ReadRegistry();identity.RequireCurrent();
+            var current=ReadRecord(registry,identity);
+            if(SavedEdit.Same(current.Edit,edit))return current;
+            if(edit==null)registry.Records.Remove(identity.Path);else registry.Records[identity.Path]=edit.Copy();
+            write(path,registry);
+            saved=new(identity,edit?.Copy());
+        }
+        NotifyChanged(saved);
+        return saved;
     }
 
     public ProcessingMigrationReceipt? ReadProcessingMigration(string input)
@@ -240,7 +253,8 @@ public sealed class EditStore
         if (status == ProcessingMigrationReceipt.Kept && !candidate.SameAs(expectedBefore))
             throw new InvalidDataException(Loc.Text("调整记录无效，原有文件未被覆盖。"));
         _ = expectedBefore.Settings.Restore(); _ = candidate.Settings.Restore();
-        using var held=AcquireLock();
+        PhotoEditState saved;
+        using (AcquireLock()) {
         var registry=ReadRegistry();expectedIdentity.RequireCurrent();
         var current=ReadRecord(registry,expectedIdentity);
         if (!current.SameAs(new PhotoEditState(expectedIdentity,expectedBefore)))
@@ -252,13 +266,18 @@ public sealed class EditStore
         var receipt=new ProcessingMigrationReceipt(expectedIdentity,expectedBefore.Copy(),candidate.Copy(),status);
         records[expectedIdentity.Path]=candidate.Copy();receipts[expectedIdentity.Path]=receipt;
         write(path,new Registry(1,records,receipts));
-        return new(expectedIdentity,candidate.Copy());
+        saved=new(expectedIdentity,candidate.Copy());
+        }
+        NotifyChanged(saved);
+        return saved;
     }
 
     public PhotoEditState RollbackProcessingMigration(OriginalIdentity identity, PhotoEditState expectedCurrent)
     {
         if (!identity.SameFile(expectedCurrent.Identity)) throw new PhotoChangedException();
-        using var held=AcquireLock();var registry=ReadRegistry();identity.RequireCurrent();
+        PhotoEditState saved;
+        using (AcquireLock()) {
+        var registry=ReadRegistry();identity.RequireCurrent();
         var storedReceipts=registry.MigrationReceipts;
         if (storedReceipts == null || !storedReceipts.TryGetValue(identity.Path,out var receipt) ||
             receipt.Status != ProcessingMigrationReceipt.Migrated)
@@ -270,7 +289,10 @@ public sealed class EditStore
         records[identity.Path]=receipt.Before.Copy();
         receipts[identity.Path]=receipt with { Status=ProcessingMigrationReceipt.RolledBack };
         write(path,new Registry(1,records,receipts));
-        return new(identity,receipt.Before.Copy());
+        saved=new(identity,receipt.Before.Copy());
+        }
+        NotifyChanged(saved);
+        return saved;
     }
 
     private FileStream AcquireLock()
@@ -292,15 +314,17 @@ public sealed class EditStore
     public void Save(IEnumerable<string> inputs, AdjustmentSnapshot settings, string? look)
     {
         _ = settings.Restore();
-        using var held=AcquireLock();
-        var updated = ReadRegistry();var changed=false;
-        foreach (var input in inputs)
-        {
-            var identity = OriginalIdentity.Read(input);
-            var edit=new SavedEdit(identity, settings.Copy(), look);
-            if(updated.Records.TryGetValue(identity.Path,out var previous) && previous.SameAs(edit))continue;
-            updated.Records[identity.Path]=edit;changed=true;
+        var changed = new List<PhotoEditState>();
+        using (AcquireLock()) {
+            var updated = ReadRegistry();
+            foreach (var input in inputs) {
+                var identity = OriginalIdentity.Read(input);
+                var edit=new SavedEdit(identity, settings.Copy(), look);
+                if(updated.Records.TryGetValue(identity.Path,out var previous) && previous.SameAs(edit))continue;
+                updated.Records[identity.Path]=edit;changed.Add(new(identity,edit));
+            }
+            if(changed.Count>0)write(path,updated);
         }
-        if(changed)write(path,updated);
+        foreach(var state in changed)NotifyChanged(state);
     }
 }

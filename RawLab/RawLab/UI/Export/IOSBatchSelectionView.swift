@@ -4,6 +4,7 @@ import SwiftUI
 struct IOSBatchSelectionView: View {
     @ObservedObject var model: RawEditorViewModel
     @ObservedObject var collection: IOSBatchSelection
+    @ObservedObject var previews: IOSPhotoPreviewLibrary
     let settings: RawSettings
     let hasPendingBatch: Bool
     let resolveDraft: (String, Bool) -> Bool
@@ -113,7 +114,11 @@ struct IOSBatchSelectionView: View {
             Toggle(L10n.text("选择"), isOn: Binding(get: { collection.selection.selected.contains(stored.id) }, set: {
                 collection.selection.select(stored.id, $0)
             })).labelsHidden().toggleStyle(.button).accessibilityIdentifier("collection.select.\(stored.id)")
-            if let file = stored.photo.file { BatchPhotoThumbnail(sourceFile: file).frame(width: 54, height: 54) }
+            if let file = stored.photo.file {
+                IOSPhotoThumbnail(input: .source(.init(identity: stored.photo.identity, file: file,
+                    displayName: stored.photo.displayName, isRaw: stored.photo.isRaw)), library: previews, model: model)
+                    .frame(width: 54, height: 54)
+            }
             VStack(alignment: .leading) {
                 Text(stored.photo.displayName).lineLimit(2)
                 if let error = collection.failures[stored.id] ?? stored.error?.localizedDescription { Text(error).font(.caption).foregroundStyle(.orange) }

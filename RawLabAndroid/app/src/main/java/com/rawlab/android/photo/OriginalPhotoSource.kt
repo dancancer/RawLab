@@ -16,6 +16,7 @@ internal object OriginalPhotoSource {
         data class File(val device: Long, val inode: Long, val size: Long, val seconds: Long, val nanos: Long) : Stamp
         data class Content(val digest: String) : Stamp
     }
+    fun fingerprint(resolver: ContentResolver, uri: Uri): String = stamp(resolver, uri).toString()
     fun capture(resolver: ContentResolver, uri: Uri): () -> Unit {
         val original = stamp(resolver, uri)
         return { if (stamp(resolver, uri) != original) throw PhotoChangedException() }

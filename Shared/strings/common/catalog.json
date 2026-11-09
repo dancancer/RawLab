@@ -7478,5 +7478,53 @@
     "es": "Esta foto conserva su versión de procesamiento anterior.",
     "ja": "この写真は以前の処理バージョンを維持します。",
     "zh-Hans": "此照片的调整保留原处理版本。"
+  },
+  "已编辑": {
+    "en": "Edited",
+    "de": "Bearbeitet",
+    "fr": "Modifiée",
+    "es": "Editada",
+    "ja": "編集済み",
+    "zh-Hans": "已编辑"
+  },
+  "预览待更新": {
+    "en": "Preview updating",
+    "de": "Vorschau wird aktualisiert",
+    "fr": "Mise à jour de l’aperçu",
+    "es": "Actualizando vista previa",
+    "ja": "プレビューを更新中",
+    "zh-Hans": "预览待更新"
+  },
+  "没有符合筛选的照片": {
+    "en": "No photos match this filter",
+    "de": "Keine Fotos für diesen Filter",
+    "fr": "Aucune photo ne correspond à ce filtre",
+    "es": "Ninguna foto coincide con este filtro",
+    "ja": "条件に一致する写真はありません",
+    "zh-Hans": "没有符合筛选的照片"
+  },
+  "原始预览": {
+    "en": "Original preview",
+    "de": "Originalvorschau",
+    "fr": "Aperçu original",
+    "es": "Vista previa original",
+    "ja": "元のプレビュー",
+    "zh-Hans": "原始预览"
+  },
+  "未编辑": {
+    "en": "Unedited",
+    "de": "Unbearbeitet",
+    "fr": "Non modifiée",
+    "es": "Sin editar",
+    "ja": "未編集",
+    "zh-Hans": "未编辑"
+  },
+  "重新选择照片": {
+    "de": "Fotos erneut auswählen",
+    "en": "Select photos again",
+    "es": "Seleccionar fotos de nuevo",
+    "fr": "Sélectionner à nouveau les photos",
+    "ja": "写真を再選択",
+    "zh-Hans": "重新选择照片"
   }
 }

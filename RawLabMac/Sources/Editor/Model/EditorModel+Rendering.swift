@@ -241,6 +241,11 @@ extension EditorModel {
                     settings.resolveRawNoiseReductionSupport(result.supportsRawNoiseReduction)
                     updatingMetadata = false
                 }
+                if completion == .publishExact, !request.value.editingGeometry,
+                   let committedEdit, committedEdit.state == editState(settings: request.value.settings),
+                   request.value.lut == nil || request.value.previewScope?.look == request.value.lut.flatMap({ try? OriginalFileIdentity($0) }) {
+                    completedEditPreview = (committedEdit, result.image)
+                }
                 hslAcceptedRequest = request
                 hslAcceptedSettings = settings
                 if completion == .publishInteractive {

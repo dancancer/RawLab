@@ -23,6 +23,15 @@ public sealed class LibraryEntry : INotifyPropertyChanged
     private OriginalIdentity? thumbnailIdentity;
     private bool thumbnailVisible;
     private int thumbnailRequest;
+    private CancellationTokenSource? thumbnailCancellation;
+    private bool isEdited;
+    private bool adjustedThumbnail;
+    private string? previewNotice;
+    public bool IsEdited { get=>isEdited; private set {if(isEdited==value)return;isEdited=value;OnPropertyChanged();OnPropertyChanged(nameof(PhotoStatus));} }
+    public string? PreviewNotice { get=>previewNotice is {} key ? Loc.Text(key) : null; private set {previewNotice=value;OnPropertyChanged();OnPropertyChanged(nameof(PhotoStatus));} }
+    internal void RefreshPhotoStatus() {OnPropertyChanged(nameof(PreviewNotice));OnPropertyChanged(nameof(PhotoStatus));}
+    public string PhotoStatus => string.Join(" · ",new[]{IsSelected ? Loc.Text("当前照片") : null,
+        IsMarked ? Loc.Text("已选") : null,IsEdited ? Loc.Text("已编辑") : null,PreviewNotice}.Where(value=>value!=null));
     public BitmapSource? Thumbnail { get=>thumbnail; private set { thumbnail=value; OnPropertyChanged(); } }
     public LibraryEntry? Parent { get; private set; }
     public ObservableCollection<LibraryEntry> Children { get; } = [];
@@ -31,8 +40,8 @@ public sealed class LibraryEntry : INotifyPropertyChanged
     private bool isSelected;
     private bool isMarked;
     private bool isExpanded;
-    public bool IsSelected { get=>isSelected; set { if(isSelected==value)return;isSelected=value;OnPropertyChanged(); } }
-    public bool IsMarked { get=>isMarked; set { if(isMarked==value)return;isMarked=value;OnPropertyChanged(); } }
+    public bool IsSelected { get=>isSelected; set { if(isSelected==value)return;isSelected=value;OnPropertyChanged();OnPropertyChanged(nameof(PhotoStatus)); } }
+    public bool IsMarked { get=>isMarked; set { if(isMarked==value)return;isMarked=value;OnPropertyChanged();OnPropertyChanged(nameof(PhotoStatus)); } }
     public bool IsExpanded { get=>isExpanded; set { if(isExpanded==value)return;isExpanded=value;OnPropertyChanged(); } }
     public LibraryEntry(string path, bool folder)
     {
@@ -106,32 +115,46 @@ public sealed class LibraryEntry : INotifyPropertyChanged
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or Win32Exception) { return null; }
     }
 
-    public async Task LoadThumbnail()
+    public Task LoadThumbnail() => LoadThumbnail(null,null,2,"");
+    internal async Task LoadThumbnail(EditedPhotoPreviews? previews,Func<SavedEdit,string?>? resolveLook,int aiBackend,string aiDevice,bool refresh=false)
     {
-        if (IsFolder || thumbnailVisible || string.IsNullOrEmpty(Path)) return;
-        thumbnailVisible = true;
-        var request = ++thumbnailRequest;
-        await ThumbnailSlots.WaitAsync();
-        try
-        {
-            if (request != thumbnailRequest) return;
-            var (identity, image) = await Task.Run(() => (ReadThumbnailIdentity(Path), RenderEngine.Thumbnail(Path)));
-            if (request == thumbnailRequest)
-            {
-                thumbnailIdentity = identity;
-                Thumbnail = image;
+        if(IsFolder || thumbnailVisible && !refresh || string.IsNullOrEmpty(Path))return;
+        thumbnailVisible=true;
+        thumbnailCancellation?.Cancel();thumbnailCancellation?.Dispose();
+        thumbnailCancellation=new();var cancellation=thumbnailCancellation.Token;
+        var request=++thumbnailRequest;
+        try {
+            PhotoEditState? record=null;
+            if(previews!=null) {
+                record=await previews.ReadStateAsync(Path,cancellation);
+                if(request!=thumbnailRequest)return;
+                IsEdited=EditedPhotoPreviewKey.IsEdited(record);
+                if(thumbnailIdentity?.SameFile(record.Identity)!=true) {Thumbnail=null;adjustedThumbnail=false;}
+                PreviewNotice=IsEdited ? adjustedThumbnail ? "预览待更新" : "原始预览" : null;
             }
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException or DllNotFoundException or BadImageFormatException or EntryPointNotFoundException) { }
-        finally { ThumbnailSlots.Release(); }
+            if(Thumbnail==null || !IsEdited && adjustedThumbnail) {
+                await ThumbnailSlots.WaitAsync(cancellation);
+                try {
+                    var loaded=await Task.Run(()=>(Identity:ReadThumbnailIdentity(Path),Image:RenderEngine.Thumbnail(Path)),cancellation);
+                    if(request!=thumbnailRequest)return;
+                    thumbnailIdentity=loaded.Identity;Thumbnail=loaded.Image;adjustedThumbnail=false;
+                } finally {ThumbnailSlots.Release();}
+            }
+            if(IsEdited && record!=null && previews!=null) {
+                var look=record.Edit is {} edit ? resolveLook?.Invoke(edit) : null;
+                var image=await previews.ImageAsync(record,look,aiBackend,aiDevice,cancellation);
+                if(request!=thumbnailRequest)return;
+                thumbnailIdentity=record.Identity;Thumbnail=image;adjustedThumbnail=true;PreviewNotice=null;
+            }
+        } catch(OperationCanceledException) { }
+        catch(Exception) {if(request==thumbnailRequest)PreviewNotice="预览未更新";}
     }
     public void ReleaseThumbnail()
     {
-        if (!thumbnailVisible) return;
-        thumbnailVisible = false;
-        ++thumbnailRequest;
-        thumbnailIdentity = null;
-        Thumbnail = null;
+        if(!thumbnailVisible)return;
+        thumbnailVisible=false;++thumbnailRequest;
+        thumbnailCancellation?.Cancel();thumbnailCancellation?.Dispose();thumbnailCancellation=null;
+        thumbnailIdentity=null;Thumbnail=null;adjustedThumbnail=false;
     }
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName]string? name=null)=>PropertyChanged?.Invoke(this,new(name));

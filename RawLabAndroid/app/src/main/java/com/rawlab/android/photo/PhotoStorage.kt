@@ -53,7 +53,7 @@ internal fun defaultEditSettingsFor(file: File, inputKind: PhotoInputKind, isHDR
 
 data class AlbumPhoto(val uri: Uri, val name: String, val album: String,
     val width: Int = 0, val height: Int = 0, val orientation: Int = 0,
-    val albumId: String = album, val relativePath: String? = null) {
+    val albumId: String = album, val relativePath: String? = null, val mimeType: String? = null, val sourceVersion: String = "") {
     val aspectRatio: Float? get() = albumAspectRatio(width, height, orientation)
 }
 data class ImportedPhoto(val uri: Uri, val name: String, val file: File,
@@ -126,6 +126,8 @@ class PhotoStorage(
                 arguments = arrayOf(context.packageName)
             }
         }
+        projection += listOf(MediaStore.Images.Media.DATE_MODIFIED, MediaStore.Images.Media.SIZE)
+        if (Build.VERSION.SDK_INT >= 30) projection += MediaStore.Images.Media.GENERATION_MODIFIED
         val result = mutableListOf<AlbumPhoto>()
         resolver.query(collection, projection.toTypedArray(), selection, arguments, "${MediaStore.Images.Media.DATE_ADDED} DESC")?.use { cursor ->
             while (cursor.moveToNext()) {
@@ -137,7 +139,10 @@ class PhotoStorage(
                         ?: ContentUris.withAppendedId(collection, cursor.getLong(0))
                     result += AlbumPhoto(uri, name, cursor.getString(3) ?: "RAW",
                         cursor.getInt(4), cursor.getInt(5), cursor.getInt(6),
-                        path?.let { "$volume:$it" } ?: cursor.getString(7).orEmpty(), path)
+                        path?.let { "$volume:$it" } ?: cursor.getString(7).orEmpty(), path, cursor.getString(2),
+                        listOf(MediaStore.Images.Media.DATE_MODIFIED, MediaStore.Images.Media.SIZE,
+                            if (Build.VERSION.SDK_INT >= 30) MediaStore.Images.Media.GENERATION_MODIFIED else MediaStore.Images.Media._ID)
+                            .joinToString(":") { cursor.getLong(cursor.getColumnIndexOrThrow(it)).toString() })
                 }
             }
         }

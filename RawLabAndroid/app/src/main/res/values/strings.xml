@@ -3,10 +3,18 @@
 <resources>
     <string name="about_rawlab">"About RawLab"</string>
     <string name="album_columns">"%1$d per row"</string>
+    <string name="album_edit_filter_all">"All"</string>
+    <string name="album_edit_filter_edited">"Edited"</string>
+    <string name="album_edit_filter_unedited">"Unedited"</string>
+    <string name="album_edit_status_unavailable">"Edit status is unavailable"</string>
     <string name="album_empty">"No accessible photos"</string>
     <string name="album_error">"Unable to read album. Check photo permission."</string>
+    <string name="album_no_edit_matches">"No photos match this filter"</string>
+    <string name="album_original_preview">"Original preview"</string>
     <string name="album_original_ratio">"Original Ratio"</string>
     <string name="album_own_photos">"Shows photos saved by RawLab. Grant access to browse more photos."</string>
+    <string name="album_preview_unavailable">"Preview not updated"</string>
+    <string name="album_preview_updating">"Preview updating"</string>
     <string name="album_square">"Square thumbnails"</string>
     <string name="album_view_options">"View options"</string>
     <string name="all_albums">"All albums"</string>

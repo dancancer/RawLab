@@ -3,10 +3,18 @@
 <resources>
     <string name="about_rawlab">"RawLabについて"</string>
     <string name="album_columns">"1 行 %1$d 枚"</string>
+    <string name="album_edit_filter_all">"すべて"</string>
+    <string name="album_edit_filter_edited">"編集済み"</string>
+    <string name="album_edit_filter_unedited">"未編集"</string>
+    <string name="album_edit_status_unavailable">"編集状態を読み込めません"</string>
     <string name="album_empty">"アクセスできる写真がありません"</string>
     <string name="album_error">"アルバムを読み込めません。写真の権限を確認してください。"</string>
+    <string name="album_no_edit_matches">"条件に一致する写真はありません"</string>
+    <string name="album_original_preview">"元のプレビュー"</string>
     <string name="album_original_ratio">"元の縦横比"</string>
     <string name="album_own_photos">"RawLabが保存した写真を表示します。権限を許可すると、さらに写真を閲覧できます。"</string>
+    <string name="album_preview_unavailable">"プレビューが更新されていません"</string>
+    <string name="album_preview_updating">"プレビューを更新中"</string>
     <string name="album_square">"正方形のサムネイル"</string>
     <string name="album_view_options">"表示オプション"</string>
     <string name="all_albums">"すべてのアルバム"</string>

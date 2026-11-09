@@ -156,6 +156,7 @@ public partial class MainWindow
     {
         var ticket=scheduler.Start(); if(ticket==null)return;
         RenderedImage? neutral=null,rendered=null; HslTargetSample? hslSample=null;Exception? failure=null;
+        string? thumbnailResources=null;var thumbnailAIBackend=RequestedAIBackend;var thumbnailAIDevice=aiPreference.DeviceID;
         try
         {
             Action? renderStarted=ticket.Id==quietViewportRevision ? () => Dispatcher.BeginInvoke(new Action(() => {
@@ -169,6 +170,7 @@ public partial class MainWindow
                     hslSample=engine.SampleHsl(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,probe.Revision,probe.Point.X,probe.Point.Y);
                     return ((RenderedImage?)null,(RenderedImage?)null);
                 }
+                try {thumbnailResources=EditedPhotoPreviewKey.ResourceFingerprint(w.Settings.Capture(),w.Lut,thumbnailAIBackend,thumbnailAIDevice);}catch { }
                 var frame=engine.RenderPreview(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,w.Compare,clipping:false,renderStarted:renderStarted);
                 return(frame.Neutral,frame.Result);
             });
@@ -214,6 +216,10 @@ public partial class MainWindow
                 RefreshViewingFrames();
                 RefreshRenderLabels();
                 exactReady=current && !work.Interactive && !transform.Active;
+                if(exactReady && thumbnailResources!=null) {
+                    acceptedPhotoPreviewResources=thumbnailResources;
+                    CacheCurrentPhotoPreview(thumbnailResources);
+                }
                 if(transform.Active)
                 {
                     transformPreviewReady=current && !work.Interactive;

@@ -80,6 +80,7 @@ local editing and adjustment reuse, not a general photo catalog or cloud library
 - Preview and export follow the same processing semantics. A reduced preview is
   not evidence of full-resolution quality, and numerical correctness is distinct
   from a subjective preference for a look.
+- Photo browsers expose saved non-default edits with a pencil marker and rendered thumbnails. iOS Recently Opened retains bounded local copies; removing a recent record preserves the original photo and saved adjustments. See the [edited-photo preview contract](docs/design/editor-workspace/edited-photo-previews.md).
 - Ordinary GPU Auto processing retains CPU fallback; Force requires actual GPU
   execution. Desktop AI denoising instead requires a supported hardware GPU
   backend (Mac Core ML or Windows DirectML), reports unavailability and does not

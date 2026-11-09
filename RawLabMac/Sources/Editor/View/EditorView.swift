@@ -6,6 +6,12 @@ struct EditorView: View {
     @ObservedObject var model: EditorModel
     @Environment(\.openWindow) private var openWindow
     @StateObject private var library = PhotoLibrary()
+    @StateObject private var photoPreviews: MacEditedPhotoPreviews
+
+    init(model: EditorModel) {
+        self.model = model
+        _photoPreviews = StateObject(wrappedValue: MacEditedPhotoPreviews(editDirectory: model.editDirectory))
+    }
     @StateObject private var browser = MacWorkspaceBrowserState()
     @AppStorage("workspace.files.width") private var savedLibraryWidth = Double(MacWorkspaceLayout.defaultLibraryWidth)
     @AppStorage("workspace.adjustments.width") private var savedInspectorWidth = Double(MacWorkspaceLayout.defaultInspectorWidth)
@@ -167,7 +173,20 @@ struct EditorView: View {
 
     private var observedEditor: some View {
         editorContent
+        .environmentObject(photoPreviews)
+        .onChange(of: model.films, initial: true) { _, films in
+            photoPreviews.films = films
+            photoPreviews.refresh()
+        }
+        .onChange(of: model.busy || model.importing || model.exporting || model.aiState.isRunning, initial: true) { _, busy in photoPreviews.isEditorBusy = busy }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in photoPreviews.refresh() }
+        .onChange(of: model.adjustmentHistoryRevision) { _, _ in photoPreviews.refresh() }
+        .onReceive(model.$completedEditPreview) { preview in
+            guard let preview else { return }
+            photoPreviews.accept(record: preview.record, image: preview.image)
+        }
         .onChange(of: model.sourceRevision) { _, _ in
+            photoPreviews.refresh()
             queuedQuickPreset = nil
             viewing.sourceChanged()
             fit()

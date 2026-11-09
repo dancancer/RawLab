@@ -12,6 +12,9 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import com.rawlab.android.photo.EditedPhotoPreviews
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -97,6 +100,8 @@ class EditorViewModel @JvmOverloads constructor(
     private val batchProcessorFactory: (Int, File?) -> NativeProcessor = { mode, database -> NativeProcessor(mode, database) },
 ) : AndroidViewModel(application) {
     val storage = PhotoStorage(application)
+    private val photoPreviews = EditedPhotoPreviews(application)
+    private val photoPreviewOwner = UUID.randomUUID().toString()
     val presetStore = AdjustmentPresetStore(File(application.filesDir, "presets"))
     private val lookPreferences = application.getSharedPreferences("look-browser", android.content.Context.MODE_PRIVATE)
     private val recentLooks = com.rawlab.android.looks.RecentLooks(runCatching {
@@ -287,6 +292,10 @@ class EditorViewModel @JvmOverloads constructor(
     }
 
     init {
+        viewModelScope.launch {
+            state.map { it.rendering || it.operation != Operation.NONE || it.committingAdjustments }
+                .distinctUntilChanged().collect { EditedPhotoPreviews.setForegroundBusy(photoPreviewOwner, it) }
+        }
         editStore.initialResult.let { mutable.value = mutable.value.copy(saveState = it.state, saveError = it.message) }
         lookRevision = lookQueue.submit(LookWork.Load)
         batches.refreshPending()
@@ -448,6 +457,9 @@ class EditorViewModel @JvmOverloads constructor(
                     acceptedHslPreview = request
                     acceptedHslSettings = settings
                     acceptedHslRevision = HslTargetRevision(sourceRevision, currentRevision)
+                    if (!request.interactive) viewModelScope.launch {
+                        runCatching { photoPreviews.accept(request.photo, request.edits, value.pair.result) }
+                    }
                     includeIndependentRecipeLook(settings)
                     if (request.persistOnImport) persist(request.photo, settings) { saved ->
                         mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
@@ -1139,7 +1151,16 @@ class EditorViewModel @JvmOverloads constructor(
             if (saved.state == EditSaveState.SAVED && source == sourceRevision && mutable.value.photo?.identity == photo.identity &&
                 mutable.value.edits.film == edits.film && edits.recipeID == null && previousFilm != edits.film) updateRecentLooks(edits.film)
             completed(saved)
+            if (saved.state == EditSaveState.SAVED && source == sourceRevision) cacheAcceptedPhotoPreview()
         }
+    }
+
+    private fun cacheAcceptedPhotoPreview() {
+        val current = mutable.value
+        val request = acceptedHslPreview ?: return
+        val pair = current.preview ?: return
+        if (!current.exact || current.draft != null || request.interactive || current.photo?.identity != request.photo.identity) return
+        viewModelScope.launch { runCatching { photoPreviews.accept(request.photo, request.edits, pair.result) } }
     }
 
     private fun updateRecentLooks(applied: String? = null) {
@@ -1769,6 +1790,8 @@ class EditorViewModel @JvmOverloads constructor(
         else text(R.string.process_error) + "\n" + (error.message ?: error.javaClass.simpleName)
 
     override fun onCleared() {
+        EditedPhotoPreviews.setForegroundBusy(photoPreviewOwner, false)
+        photoPreviews.close()
         cancelProcessingMigration()
         clearX3fRecovery()
         disposed = true

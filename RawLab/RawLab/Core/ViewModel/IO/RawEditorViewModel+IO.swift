@@ -219,7 +219,7 @@ extension RawEditorViewModel {
                                 self.persistedEditorSettings=nil; self.failedDraftSource=nil
                                 if self.editPersistence != nil { self.setEditNotice(state == nil ? .idle : .restored) }
                                 ErrorDiagnostics.app.recordImportSuccess(attemptID: importRevision, context: importContext)
-                                onSettingsRestored?(restoredSettings); onImported?()
+                                onSettingsRestored?(restoredSettings); self.importedPhotoRevision = UUID(); onImported?()
                             }
                         } else if sourceKind == .raw {
                             let rawBase = try self.buildRawPreviewBase(url: localURL, geometry: restoredSettings.geometrySettings, processing: restoredSettings.processing, x3fMode: restoredSettings.x3fMode, lens: restoredSettings.lensSettings)
@@ -278,6 +278,7 @@ extension RawEditorViewModel {
                                 if x3fModeOverride != nil { self.queueSettingsSave(restoredSettings) }
                                 if self.hasImage && adjustedImage != nil {
                                     ErrorDiagnostics.app.recordImportSuccess(attemptID: importRevision, context: importContext)
+                                    self.importedPhotoRevision = UUID()
                                     onImported?()
                                 }
                                 if missingLook { self.statusMessage = L10n.text("上次使用的外观不可用，请重新选择或导入外观。") }
@@ -340,6 +341,7 @@ extension RawEditorViewModel {
                                 self.startProcessingMigrationIfNeeded(settings: restoredSettings)
                                 if self.hasImage && adjustedImage != nil {
                                     ErrorDiagnostics.app.recordImportSuccess(attemptID: importRevision, context: importContext)
+                                    self.importedPhotoRevision = UUID()
                                     onImported?()
                                 }
                                 if missingLook { self.statusMessage = L10n.text("上次使用的外观不可用，请重新选择或导入外观。") }

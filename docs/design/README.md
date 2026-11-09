@@ -7,6 +7,7 @@
 | [Sony 相机传图](camera-transfer/README.md) · [Mac 原型](camera-transfer/prototype/index.html) · [移动端原型](camera-transfer/prototype/mobile.html) | Mac / iOS / Android 连接、挑选、传输与编辑交接；Sony 分代协议与跨品牌调研 | 2026-11-08：UI r1 待确认；α7C II 桌面协议及 Mac 最小闭环已实施 |
 | [本次迭代总需求](editing-iteration/requirements.md) · [总技术方案](editing-iteration/technical-design.md) | 第一阶段未完成项＋第二阶段全量＋桌面更新；新增功能、依赖和 IT 验收总表 | 两份文档的状态与基线；工作区是其中 ITER-02 子项 |
 | [四端应用设计资产](editor-workspace/README.md) · [设计板](editor-workspace/index.html) · [覆盖表](editor-workspace/coverage.html) | 四端现有完整功能界面；本轮分组、HSL、前后对比与桌面更新；共用图标、状态和检查工具 | [manifest.js](editor-workspace/manifest.js) |
+| [已编辑照片与效果缩略图](editor-workspace/edited-photo-previews.md) | 四端标记与效果预览、移动端筛选、iOS 最近打开及本机副本边界 | v1 交互契约；2026-11-09 确认四端实施与铅笔图标，运行验证见对应变更记录 |
 | [调整记忆与批量导出](2026-10-09-edit-memory-batch-export/README.md) | 既有已确认方案与静态参考图 | 该目录 README；保留历史来源，不把图片当运行证据 |
 | [手机 HDR 照片技术方案](hdr-photos/technical-design.md) · [分阶段实施计划](../integration/hdr-photos/implementation-plan.md) | Mac/iOS 首批手机增益图照片导入、基础编辑、双呈现、浮点接口与兼容 JPEG 验收 | 2026-10-28 已授权实施，从 HDR-00 推进；完成范围以阶段及实际验证为准 |
 

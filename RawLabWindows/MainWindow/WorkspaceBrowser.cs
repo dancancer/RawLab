@@ -11,6 +11,62 @@ namespace RawLab.Windows;
 public partial class MainWindow
 {
     private LibraryEntry? browsedFolder;
+    private EditedPhotoPreviews? photoPreviews;
+    private string? photoPreviewCacheDirectory = null;
+    private string? acceptedPhotoPreviewResources;
+    private FileSystemWatcher? photoFolderWatch;
+    private readonly DispatcherTimer photoFolderRefresh=new() {Interval=TimeSpan.FromMilliseconds(200)};
+    private void ObservePhotoFolder(LibraryEntry? folder)
+    {
+        if(folder?.Path==photoFolderWatch?.Path)return;
+        photoFolderWatch?.Dispose();photoFolderWatch=null;photoFolderRefresh.Stop();
+        if(folder==null)return;
+        try {
+            var watcher=new FileSystemWatcher(folder.Path) {NotifyFilter=NotifyFilters.FileName | NotifyFilters.LastWrite |
+                NotifyFilters.Size | NotifyFilters.CreationTime};
+            FileSystemEventHandler changed=(_,_)=>Dispatcher.BeginInvoke(new Action(()=> {
+                if(!closing && browsedFolder?.Path==watcher.Path) {photoFolderRefresh.Stop();photoFolderRefresh.Start();}
+            }));
+            watcher.Changed+=changed;watcher.Created+=changed;watcher.Deleted+=changed;
+            watcher.Renamed+=(_,e)=>changed(watcher,e);
+            watcher.EnableRaisingEvents=true;photoFolderWatch=watcher;
+        } catch(Exception error) when(error is IOException or UnauthorizedAccessException or ArgumentException) { }
+    }
+
+    private EditedPhotoPreviews? PhotoPreviews()
+    {
+        if(editStore==null)return null;
+        if(photoPreviews!=null && ReferenceEquals(photoPreviews.Store,editStore))return photoPreviews;
+        if(photoPreviews!=null) {
+            photoPreviews.Store.Changed-=PhotoEditChanged;photoPreviews.Ready-=PhotoPreviewReady;
+            _=photoPreviews.DisposeAsync();
+        }
+        photoPreviews=new(editStore,photoPreviewCacheDirectory);
+        photoPreviews.Store.Changed+=PhotoEditChanged;
+        photoPreviews.Ready+=PhotoPreviewReady;
+        photoPreviews.SetPaused(scheduler.Busy || exporting || aiJob.State.IsRunning);
+        return photoPreviews;
+    }
+    private void PhotoEditChanged(PhotoEditState state)=>PhotoPreviewReady(state.Identity.Path);
+    private void PhotoPreviewReady(string path)
+    {
+        Dispatcher.BeginInvoke(new Action(()=> {
+            if(closing)return;
+            var previews=PhotoPreviews();
+            foreach(var entry in visibleThumbnails.Where(entry=>path.Length==0 || StringComparer.OrdinalIgnoreCase.Equals(entry.Path,path)))
+                _=entry.LoadThumbnail(previews,ResolveLook,RequestedAIBackend,aiPreference.DeviceID,refresh:true);
+        }));
+    }
+    private void CacheCurrentPhotoPreview(string resources)
+    {
+        if(!exactReady || result==null || currentEditRecord?.Edit is not {} edit || hslAcceptedSettings==null ||
+            hslAcceptedWork?.Source.SameFile(edit.Identity)!=true || !edit.Settings.SameAs(hslAcceptedSettings) || edit.Look!=CurrentLookIdentity() || PhotoPreviews() is not {} previews)return;
+        _=Cache();
+        async Task Cache() {
+            try {await previews.AcceptAsync(currentEditRecord.Copy(),result.Image,lut,resources,RequestedAIBackend,aiPreference.DeviceID);}
+            catch { /* 缩略图缓存不能影响编辑结果。 */ }
+        }
+    }
     private long browseRevision;
     private bool readingFolder;
     private Exception? folderError;
@@ -32,6 +88,11 @@ public partial class MainWindow
     private void InitializeWorkspaceBrowser()
     {
         galleries = [new(SidebarGallery, false), new(SelectionGallery, true)];
+        photoFolderRefresh.Tick+=(_,_)=> {
+            if(readingFolder)return;
+            photoFolderRefresh.Stop();
+            if(!closing && browsedFolder!=null)_=BrowseFolder(browsedFolder,reload:true);
+        };
         Files.ItemsSource = library.Roots;
         Files.PreviewKeyDown += FilesContextKeyDown;
         library.Roots.CollectionChanged += (_, _) => ReconcileFolders();
@@ -91,6 +152,7 @@ public partial class MainWindow
         if (closing || (ReferenceEquals(folder, browsedFolder) && !reload)) return;
         var revision = ++browseRevision;
         browsedFolder = folder;
+        ObservePhotoFolder(folder);
         ForgetSelectionRange();
         readingFolder = folder != null;
         folderError = null;
@@ -307,7 +369,7 @@ public partial class MainWindow
             Visit(viewport, viewport, clip);
         }
         foreach (var entry in visibleThumbnails.Except(visible)) entry.ReleaseThumbnail();
-        foreach (var entry in visible.Except(visibleThumbnails)) _ = entry.LoadThumbnail();
+        foreach (var entry in visible.Except(visibleThumbnails)) _ = entry.LoadThumbnail(PhotoPreviews(),ResolveLook,RequestedAIBackend,aiPreference.DeviceID);
         visibleThumbnails.Clear();
         visibleThumbnails.UnionWith(visible);
 

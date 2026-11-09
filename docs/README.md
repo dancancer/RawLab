@@ -34,6 +34,7 @@ published packages, checksums and package provenance.
 
 - [Sony Wi-Fi photo transfer design](design/camera-transfer/sony-wifi-design.md), [experimental desktop tool](../tools/camera-transfer/README.md) and [camera vendor SDK survey](design/camera-transfer/vendor-sdk-survey.md): Sony α7C II protocol and macOS import experiment; other platforms and brands remain outside the implementation
 - [UI/UX interaction contract](design/editor-workspace/ui-ux-interaction-contract.md): scope summaries, quick presets, one-action export, adaptive workspace and look browsing; [iteration record](archive/integration/ui-ux-optimization-20261030.md)
+- [Edited-photo markers and previews](design/editor-workspace/edited-photo-previews.md): four-platform pencil markers, saved-effect thumbnails, mobile filters and iOS Recently Opened
 - [Product scope](../PRODUCT.md), [desktop design](../DESIGN.md) and [product roadmap](architecture/roadmap.md)
 - [Maintained design assets](design/README.md), including the [four-platform app prototype and coverage](design/editor-workspace/README.md)
 - [Iteration requirements](design/editing-iteration/requirements.md) and [technical design](design/editing-iteration/technical-design.md): phase-one remaining work, all of phase two and desktop updates

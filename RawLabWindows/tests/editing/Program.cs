@@ -2,6 +2,8 @@ using RawLab.Windows;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+if (args.Contains("--edited-previews")) { EditedPhotoPreviewChecks.Run(); return; }
+
 if (args.Contains("--hdr-look-import")) {
     HDRAssetImportChecks.Run();
     return;
@@ -34,6 +36,7 @@ if (args.Contains("--history-only")) {
     BatchSelectionChecks.Run();
     return;
 }
+EditedPhotoPreviewChecks.Run();
 X3fPersistenceChecks();
 Check(PhotoInput.PrepareDefaultSettings("fixture.png").ExposureMode == 2,
     "No-record raster defaults retain sensor exposure");

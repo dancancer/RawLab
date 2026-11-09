@@ -537,6 +537,7 @@ public partial class MainWindow
     }
     private void UpdateBusy()
     {
+        photoPreviews?.SetPaused(scheduler.Busy || exporting || aiJob.State.IsRunning);
         MenuCollection.IsEnabled=CollectionReturn.IsEnabled=!CollectionBusy;
         CollectionReturn.Visibility=Collection.CurrentID!=null ? Visibility.Visible : Visibility.Collapsed;
         var exportReady=ShowsPhotoWorkspace && pendingAllReset==null && !AIBlocksOutput && exactReady && !scheduler.Busy && !previewResize.IsEnabled && !exporting && result!=null && LookAvailable && !transform.Active;

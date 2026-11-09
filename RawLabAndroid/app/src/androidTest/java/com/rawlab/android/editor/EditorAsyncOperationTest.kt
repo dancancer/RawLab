@@ -13,6 +13,8 @@ import com.rawlab.android.editor.render.SerialWorkQueue
 import com.rawlab.android.editor.render.Work
 import com.rawlab.android.editor.render.WorkResult
 import com.rawlab.android.settings.EditStore
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -60,6 +62,37 @@ class EditorAsyncOperationTest {
         val entered = CountDownLatch(1); val release = CountDownLatch(1)
         queue.submit({ entered.countDown(); check(release.await(30, TimeUnit.SECONDS)) }) {}
         assertTrue(entered.await(5, TimeUnit.SECONDS)); return release
+    }
+    @Test fun completedPreviewIsCachedAfterDelayedSave() {
+        val source = fixture(); val owner = ViewModelStore(); val delay = AtomicBoolean(false)
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        val cached = CountDownLatch(1)
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default)
+        var observer: kotlinx.coroutines.Job? = null
+        try {
+            lateinit var model: EditorViewModel
+            main {
+                model = EditorViewModel(context.applicationContext as Application, editStoreFactory = { directory ->
+                    EditStore(directory) { from, to ->
+                        if (delay.get()) { entered.countDown(); check(release.await(30, TimeUnit.SECONDS)) }
+                        Files.move(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                    }
+                }); owner.put("editor", model); model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source))
+            }
+            ready(model)
+            val identity = model.state.value.photo!!.identity
+            observer = scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                com.rawlab.android.photo.EditedPhotoPreviews.ready.first { it == identity }
+                cached.countDown()
+            }
+            delay.set(true)
+            main { model.edit(model.state.value.edits.copy(exposure = 1f)) }
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            await { model.state.value.exact && !model.state.value.rendering }
+            assertEquals("The effect frame completes before persistence", 1L, cached.count)
+            release.countDown()
+            assertTrue("The successful save seeds the completed frame without another render", cached.await(15, TimeUnit.SECONDS))
+        } finally { release.countDown(); observer?.cancel(); main { owner.clear() }; source.delete() }
     }
     @Test fun resetSaveFailureSurvivesLatePreview() {
         val source = fixture(); val owner = ViewModelStore(); val fail = AtomicBoolean(false)

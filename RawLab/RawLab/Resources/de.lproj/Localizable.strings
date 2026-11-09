@@ -74,6 +74,7 @@
 "上下拖动调整，方向键微调，Esc 取消" = "Zum Anpassen nach oben oder unten ziehen, mit Pfeiltasten feinjustieren, mit Esc abbrechen";
 "上次使用的外观不可用，请重新选择或导入外观。" = "Der zuletzt verwendete Look ist nicht verfügbar. Bitte wählen oder importieren Sie erneut einen Look.";
 "上次同步结果与历史" = "Ergebnisse und Verlauf der letzten Synchronisierung";
+"上次预览" = "Letzte Vorschau";
 "不支持此 HDR 格式或颜色描述。" = "Dieses HDR-Format oder diese Farbbeschreibung wird nicht unterstützt.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "Dieses Foto, dieser Look oder diese Verarbeitungsart wird nicht unterstützt. Prüfen Sie die Dateikompatibilität und Verarbeitungseinstellungen.";
 "不能覆盖原始文件。" = "Die Originaldatei kann nicht überschrieben werden.";
@@ -95,10 +96,12 @@
 "仅 RAW 照片支持镜头校正。" = "Die Objektivkorrektur ist nur für RAW-Fotos verfügbar.";
 "仅在暗角强度为负值时可用。" = "Nur bei negativer Vignettenstärke verfügbar.";
 "仅已修改" = "Nur geändert";
+"仅显示在本机用 RawLab 打开过的照片。" = "Mit RawLab auf diesem Gerät geöffnete Fotos.";
 "仅用于已显影且基础风格匹配的照片，不能直接用于 RAW。" = "Nur für entwickelte Fotos mit passendem Basisstil. Nicht direkt auf RAW anwendbar.";
 "仅用于本次导出，保留各照片原有调整" = "Nur für diesen Export; vorhandene Anpassungen der Fotos bleiben erhalten";
 "仍需假设：%@" = "Weiterhin Annahmen: %@";
 "从文件导入" = "Aus Dateien importieren";
+"从最近打开中移除" = "Aus zuletzt geöffnet entfernen";
 "从照片图库导入" = "Aus Fotos importieren";
 "从照片库选择" = "Aus der Fotobibliothek wählen";
 "以下为配方逻辑值；强度为 %@。部分范围会按此强度换算。" = "Dies sind logische Rezeptwerte; die Stärke beträgt %@. Einige Bereiche werden mit dieser Stärke skaliert.";
@@ -130,6 +133,7 @@
 "保存结果待确认" = "Speicherergebnis muss bestätigt werden";
 "保存预设" = "Vorgabe speichern";
 "保留旧版的特殊色彩。" = "Behält die besonderen Farben der früheren Entwicklung bei.";
+"保留最近 100 张照片及约 2 GB 本机副本。移除记录不会删除原照片或调整。" = "Speichert bis zu 100 zuletzt geöffnete Fotos und etwa 2 GB lokale Kopien. Beim Entfernen eines Eintrags bleiben Original und Anpassungen erhalten.";
 "保留这次几何或镜头修改？" = "Diese Geometrie- oder Objektivänderungen behalten?";
 "候选效果" = "Kandidatenergebnisse";
 "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。" = "Falschfarben: Blau für Schatten, Bernstein über Referenzweiß, Pink über der Displaykapazität.";
@@ -174,6 +178,8 @@
 "原始文件已被替换，请重新选择照片。" = "Die Originaldatei wurde ersetzt. Bitte wählen Sie das Foto erneut aus.";
 "原始比例" = "Originalverhältnis";
 "原始照片已变化，请重新导入。" = "Das Originalfoto wurde geändert. Importieren Sie es erneut.";
+"原始预览" = "Originalvorschau";
+"原片已变化，请重新选择照片。原有调整已保留。" = "Das Original wurde geändert. Wähle das Foto erneut aus. Vorhandene Anpassungen bleiben erhalten.";
 "去噪优先" = "Rauschreduzierung priorisieren";
 "去朦胧" = "Dunst entfernen";
 "参数或输出路径无效。" = "Ungültige Parameter oder ungültiger Ausgabepfad.";
@@ -235,6 +241,7 @@
 "对照参考图（可选）" = "Mit einem Referenzbild vergleichen (optional)";
 "导入外观" = "Look importieren";
 "导入外观…" = "Look importieren…";
+"导入并打开一张照片后，可在这里继续编辑。" = "Importiere und öffne ein Foto, um es hier weiterzubearbeiten.";
 "导入照片" = "Foto importieren";
 "导入相机配置…" = "Kameraprofil importieren…";
 "导入结果" = "Importergebnis";
@@ -262,6 +269,7 @@
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "Die von RawLab gespeicherte Kopie des Looks wird entfernt; die Originaldatei wird nicht gelöscht.";
 "将覆盖以下 %@ 项调整；其他调整保留目标原值。" = "Zu überschreibende Anpassungen: %@. Andere Anpassungen behalten die Zielwerte.";
 "尚无已修改的调整。" = "Noch keine geänderten Anpassungen.";
+"尚无最近打开的照片" = "Keine zuletzt geöffneten Fotos";
 "尚无用户预设" = "Noch keine eigenen Vorgaben";
 "尚未保存，允许重新导出" = "Noch nicht gespeichert; erneuten Export erlauben";
 "尚未复制调整。请先从一张照片复制所需范围。" = "Noch keine Anpassungen kopiert. Kopieren Sie zuerst die gewünschten Einstellungen eines Fotos.";
@@ -297,6 +305,7 @@
 "已生成 %@ 个渲染型 DNG" = "Entwickelte DNG-Dateien erstellt: %@";
 "已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Entwickelte DNG-Dateien erstellt: %@ (nicht am gewählten Ort gespeichert)";
 "已生成渲染型 DNG，未另存到所选位置。" = "Entwickeltes DNG erstellt, aber nicht am gewählten Ort gespeichert.";
+"已编辑" = "Bearbeitet";
 "已自动升级，原设置已保留。" = "Automatisch aktualisiert. Ursprüngliche Einstellungen sind gespeichert.";
 "已调整" = "Bearbeitet";
 "已跳过" = "Übersprungen";
@@ -336,6 +345,7 @@
 "所选照片：%@" = "Ausgewähltes Foto: %@";
 "所选调整与目标不兼容，请调整范围或跳过目标。" = "Diese Anpassungen sind mit dem Foto nicht kompatibel. Ändern Sie den Umfang oder überspringen Sie es.";
 "手动" = "Manuell";
+"打开" = "Öffnen";
 "打开系统设置" = "Systemeinstellungen öffnen";
 "批量导出" = "Stapel-Export";
 "批量编辑" = "Stapelbearbeitung";
@@ -400,6 +410,7 @@
 "无法写入 HDR 导出文件，请检查可用空间和目标权限。" = "Der HDR-Export kann nicht geschrieben werden. Prüfen Sie freien Speicher und Zielberechtigungen.";
 "无法写入成片，请检查输出位置和剩余空间。" = "Das exportierte Foto kann nicht geschrieben werden. Überprüfen Sie den Ausgabeort und den freien Speicherplatz.";
 "无法创建新的预设标识，请重试。" = "Es konnte keine neue Vorgabenkennung erstellt werden. Versuchen Sie es erneut.";
+"无法加入最近打开：%@" = "Konnte nicht zu den zuletzt geöffneten Fotos hinzugefügt werden: %@";
 "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。" = "Das originale RAW konnte nicht abgerufen werden. Erlauben Sie in den Systemeinstellungen den Zugriff auf dieses Foto und versuchen Sie es erneut.";
 "无法导出错误日志。" = "Das Fehlerprotokoll konnte nicht exportiert werden.";
 "无法显示处理结果" = "Verarbeitungsergebnisse können nicht angezeigt werden";
@@ -414,10 +425,13 @@
 "无法读取已保存的外观库，原有记录未被覆盖。" = "Die gespeicherte Look-Bibliothek kann nicht gelesen werden; die ursprünglichen Einträge wurden nicht überschrieben.";
 "无法读取已保存的调整，原有记录未被覆盖。" = "Gespeicherte Anpassungen konnten nicht gelesen werden; der vorhandene Datensatz wurde nicht überschrieben.";
 "无法读取或写入文件，请检查路径和访问权限。" = "Die Datei kann nicht gelesen oder geschrieben werden. Bitte überprüfen Sie den Pfad und die Zugriffsberechtigungen.";
+"无法读取最近打开的照片，原有记录未被覆盖。" = "Zuletzt geöffnete Fotos konnten nicht gelesen werden. Vorhandene Einträge wurden nicht überschrieben.";
 "无法读取照片，请检查文件和访问权限。" = "Das Foto kann nicht gelesen werden. Prüfen Sie die Datei und Zugriffsrechte.";
 "无法读取统计设置，已保持关闭。" = "Die Analyseeinstellung konnte nicht gelesen werden. Die Analyse bleibt deaktiviert.";
 "无法读取镜头校正状态" = "Status der Objektivkorrektur konnte nicht gelesen werden";
 "无法读取镜头配置列表" = "Objektivprofile konnten nicht gelesen werden";
+"无法重新打开照片" = "Foto konnte nicht erneut geöffnet werden";
+"无法重新打开这张照片，请重新选择。原有调整已保留。" = "Dieses Foto konnte nicht erneut geöffnet werden. Wähle es erneut aus. Vorhandene Anpassungen bleiben erhalten.";
 "无法重置调整" = "Anpassungen können nicht zurückgesetzt werden";
 "无配方" = "Kein Rezept";
 "日系通透水光肌，空气感透明青蓝，暗部大面积展开与柔润高光" = "Japanisch leuchtende Haut, luftiges transparentes Blaucyan, offene Schatten und weiche Lichter";
@@ -445,6 +459,7 @@
 "更多" = "Mehr";
 "更换预览照片" = "Vorschaubild ändern";
 "最近使用" = "Zuletzt verwendet";
+"最近打开" = "Zuletzt geöffnet";
 "有多个匹配镜头，请手动选择" = "Mehrere passende Objektive; bitte manuell auswählen";
 "有未提交调整。" = "Es gibt unbestätigte Anpassungen.";
 "未包含几何与镜头。" = "Geometrie und Objektiv sind nicht enthalten.";
@@ -456,6 +471,7 @@
 "未找到机身或传感器尺寸信息" = "Kamera- oder Sensorgrößeninformationen fehlen";
 "未找到胶片 LUT" = "Keine Film-LUTs gefunden";
 "未找到镜头" = "Keine Objektive gefunden";
+"未编辑" = "Unbearbeitet";
 "未获得相册读取权限，请手动核对保存结果，或在系统设置中授权。" = "Der Lesezugriff auf Fotos wurde nicht gewährt. Prüfen Sie die Ergebnisse manuell oder erlauben Sie den Zugriff in den Systemeinstellungen.";
 "未读取到拍摄参数" = "Aufnahmeparameter nicht verfügbar";
 "未调整" = "Unbearbeitet";
@@ -531,6 +547,7 @@
 "没有匹配的外观" = "Keine passenden Looks";
 "没有可处理目标，请重新选择照片。" = "Keine Fotos zum Verarbeiten übrig. Wählen Sie erneut Fotos aus.";
 "没有可复制的调整，请选择其他范围。" = "Keine Anpassungen zum Kopieren. Wählen Sie einen anderen Umfang.";
+"没有符合筛选的照片" = "Keine Fotos für diesen Filter";
 "油润复古 · 城市胶片" = "Sattes Vintage · urbaner Filmlook";
 "洋红" = "Magenta";
 "添加" = "Hinzufügen";
@@ -606,6 +623,7 @@
 "继续未完成的 %@ 张" = "Ausstehende Fotos fortsetzen (%@)";
 "继续编辑" = "Weiter bearbeiten";
 "绿" = "Grün";
+"编辑状态" = "Bearbeitungsstatus";
 "缩放与显示" = "Zoom und Anzeige";
 "缺少拍摄时白平衡数据，无法保留配方效果。" = "Die Weißabgleichsdaten der Aufnahme fehlen. Die Wirkung des Rezepts kann daher nicht beibehalten werden.";
 "缺少有效相机校准，保留拍摄时白平衡" = "Kein gültiges Kameraprofil; Weißabgleich wie aufgenommen bleibt erhalten";
@@ -653,6 +671,7 @@
 "视频范围（10 位 64–940）" = "Videobereich (10 Bit 64–940)";
 "计算与参考的差异" = "Abweichung von der Referenz berechnen";
 "试用方案 · 无颜色依据" = "Testoption · Keine Farbbasis";
+"试试其他编辑状态。" = "Wähle einen anderen Bearbeitungsstatus.";
 "语言" = "Sprache";
 "请使用 %@ 的步进。" = "Verwende eine Schrittweite von %@.";
 "请先完成或结束已有批量任务，再创建新任务。" = "Schließen Sie die vorhandene Stapelaufgabe ab oder beenden Sie sie, bevor Sie eine neue erstellen.";
@@ -733,6 +752,7 @@
 "重命名预设" = "Vorgabe umbenennen";
 "重新检查" = "Erneut prüfen";
 "重新载入" = "Neu laden";
+"重新选择照片" = "Fotos erneut auswählen";
 "重置" = "Zurücksetzen";
 "重置 HSL" = "HSL zurücksetzen";
 "重置%@" = "%@ zurücksetzen";
@@ -785,6 +805,7 @@
 "预览尚未就绪，请稍后重试。" = "Die Vorschau ist noch nicht bereit. Versuchen Sie es gleich erneut.";
 "预览已变化，请重新取色。" = "Die Vorschau hat sich geändert. Wählen Sie die Farbe erneut.";
 "预览已更新" = "Vorschau aktualisiert";
+"预览待更新" = "Vorschau wird aktualisiert";
 "预览方式" = "Vorschaumodus";
 "预览方式不会改变编辑或导出。" = "Der Vorschaumodus ändert weder Bearbeitung noch Export.";
 "预览未更新" = "Vorschau nicht aktualisiert";

@@ -40,6 +40,15 @@ struct ContentView: View {
     @Environment(\.scenePhase) var scenePhase
     @StateObject var viewModel = RawEditorViewModel()
     @StateObject var hdrDisplay=HDRDisplayState()
+    @StateObject var photoPreviews = IOSPhotoPreviewLibrary()
+    @State var showingRecentPhotos = false
+    @State var recentPhotoFilter = PhotoEditFilter.all
+    @State var recentPhotoScrollID: String?
+    @State var recentPhotoToOpen: RecentPhoto?
+    @State var recentImportRequested = false
+    @State var recentOpenError: String?
+    @State var recentFailedPhoto: RecentPhoto?
+    @State var recentReselection: RecentPhoto?
     @State var settings = RawSettings.default
     @State private var didAutoLoadSample = false
     @State var photoViewing = PhotoViewingState()
@@ -152,6 +161,27 @@ struct ContentView: View {
         let interactionObserved = applyEditorInteractionObservers(to: draftObserved)
         return applyEditorSheets(to: interactionObserved)
             .sheet(isPresented: $showingProcessingContext) { processingContextSheet }
+            .sheet(isPresented: $showingRecentPhotos, onDismiss: finishRecentPhotos) {
+                RecentPhotosView(library: photoPreviews, model: viewModel, filter: $recentPhotoFilter, scrollID: $recentPhotoScrollID,
+                    open: { recentPhotoToOpen = $0; showingRecentPhotos = false },
+                    importPhoto: { recentImportRequested = true; showingRecentPhotos = false })
+            }
+            .alert(L10n.text("无法重新打开照片"), isPresented: Binding(get: { recentOpenError != nil }, set: { if !$0 { recentOpenError = nil } })) {
+                Button(L10n.text("从照片图库导入")) {
+                    recentOpenError = nil; requestEditorImport(file: false, recent: recentFailedPhoto); recentFailedPhoto = nil
+                }
+                Button(L10n.text("从文件导入")) {
+                    recentOpenError = nil; requestEditorImport(file: true, recent: recentFailedPhoto); recentFailedPhoto = nil
+                }
+                Button(L10n.text("取消"), role: .cancel) { recentOpenError = nil; recentFailedPhoto = nil }
+            } message: { Text(recentOpenError ?? "") }
+            .onChange(of: viewModel.importedPhotoRevision) { _, _ in recordRecentPhoto() }
+            .onChange(of: viewModel.hslFrameRevision) { _, _ in cacheCurrentPhotoPreview() }
+            .onChange(of: viewModel.adjustmentHistoryRevision) { _, _ in
+                cacheCurrentPhotoPreview()
+                Task { await photoPreviews.reload(editDirectory: viewModel.editPersistence?.directory) }
+            }
+            .onChange(of: editorBusy || viewModel.previewRendering || viewModel.previewResizePending || viewModel.matchingProcessing, initial: true) { _, busy in photoPreviews.isEditorBusy = busy }
             .onOpenURL { requestSystemPhotoImport([$0]) }
             .onChange(of: editorBusy) { _, busy in
                 if !busy { continueSystemPhotoImport() }
@@ -427,7 +457,7 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showingBatchSelection, onDismiss: finishBatchSelection) {
-            IOSBatchSelectionView(model: viewModel, collection: viewModel.batchSelection, settings: settings,
+            IOSBatchSelectionView(model: viewModel, collection: viewModel.batchSelection, previews: photoPreviews, settings: settings,
                 hasPendingBatch: batchModel != nil || collectionBatchHandoff.hasPending, resolveDraft: resolveCollectionDraft,
                 editPhoto: { queuedCollectionEdit = $0; showingBatchSelection = false },
                 showExistingBatch: { queuedCollectionExistingBatch = true; showingBatchSelection = false },

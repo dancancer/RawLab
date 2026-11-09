@@ -30,12 +30,11 @@
               <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Rows="1" Columns="{Binding DataContext.Columns, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type ItemsControl}}}"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                  <Button Click="PhotoSelected" PreviewMouseLeftButtonDown="PhotoTilePressed" PreviewMouseRightButtonDown="PhotoTileContextPressed" ToolTip="{Binding Name}" AutomationProperties.Name="{Binding Name}" Margin="2" Padding="3" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                  <Button Click="PhotoSelected" PreviewMouseLeftButtonDown="PhotoTilePressed" PreviewMouseRightButtonDown="PhotoTileContextPressed" ToolTip="{Binding Name}" AutomationProperties.Name="{Binding Name}" AutomationProperties.ItemStatus="{Binding PhotoStatus}" Margin="2" Padding="3" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
                     <Button.Style>
                       <Style TargetType="Button" BasedOn="{StaticResource QuietButton}">
                         <Style.Triggers>
-                          <DataTrigger Binding="{Binding IsSelected}" Value="True"><Setter Property="Tag" Value="selected"/><Setter Property="AutomationProperties.ItemStatus" Value="{DynamicResource '当前照片'}"/></DataTrigger>
-                          <DataTrigger Binding="{Binding IsMarked}" Value="True"><Setter Property="AutomationProperties.ItemStatus" Value="{DynamicResource '已选'}"/></DataTrigger>
+                          <DataTrigger Binding="{Binding IsSelected}" Value="True"><Setter Property="Tag" Value="selected"/></DataTrigger>
                         </Style.Triggers>
                       </Style>
                     </Button.Style>
@@ -55,6 +54,14 @@
                       <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="3" Padding="5,1" Background="{DynamicResource Accent}" CornerRadius="3" IsHitTestVisible="False">
                         <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding IsMarked}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Border.Style>
                         <TextBlock Text="✓" Foreground="{DynamicResource AccentText}"/>
+                      </Border>
+                      <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="4" Padding="4" Background="#B8000000" CornerRadius="3" IsHitTestVisible="False" ToolTip="{DynamicResource '已编辑'}">
+                        <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding IsEdited}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Border.Style>
+                        <local:EditorIcon Kind="Pencil" Width="13" Height="13" TextElement.Foreground="White"/>
+                      </Border>
+                      <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="3" Padding="3" Background="#B8000000" CornerRadius="3" IsHitTestVisible="False">
+                        <Border.Style><Style TargetType="Border"><Style.Triggers><DataTrigger Binding="{Binding PreviewNotice}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
+                        <TextBlock Text="{Binding PreviewNotice}" Foreground="White" FontSize="9"/>
                       </Border>
                       <TextBlock Grid.Row="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" FontSize="{DynamicResource EditorCaptionSize}" TextAlignment="Center" Margin="1,4,1,1"/>
                     </Grid>

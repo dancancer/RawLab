@@ -5741,6 +5741,54 @@
       "formats": [],
       "source": "重新下载不可用的原片",
       "types": []
+    },
+    "album_edit_filter_all": {
+      "formats": [],
+      "source": "全部",
+      "file": "strings.xml",
+      "types": []
+    },
+    "album_edit_filter_edited": {
+      "formats": [],
+      "source": "已编辑",
+      "file": "strings.xml",
+      "types": []
+    },
+    "album_edit_filter_unedited": {
+      "formats": [],
+      "source": "未编辑",
+      "file": "strings.xml",
+      "types": []
+    },
+    "album_edit_status_unavailable": {
+      "formats": [],
+      "source": "无法读取编辑状态",
+      "file": "strings.xml",
+      "types": []
+    },
+    "album_no_edit_matches": {
+      "formats": [],
+      "source": "没有符合筛选的照片",
+      "file": "strings.xml",
+      "types": []
+    },
+    "album_preview_updating": {
+      "formats": [],
+      "source": "预览待更新",
+      "file": "strings.xml",
+      "types": []
+    },
+    "album_original_preview": {
+      "formats": [],
+      "source": "原始预览",
+      "file": "strings.xml",
+      "types": []
+    },
+    "album_preview_unavailable": {
+      "formats": [],
+      "source": "预览未更新",
+      "file": "strings.xml",
+      "types": []
     }
   },
   "overrides": {
@@ -6547,14 +6595,6 @@
       "ja": "一部の書き出しに失敗",
       "zh-Hans": "部分导出失败"
     },
-    "重新选择照片": {
-      "de": "Fotos erneut auswählen",
-      "en": "Select photos again",
-      "es": "Seleccionar fotos de nuevo",
-      "fr": "Sélectionner à nouveau les photos",
-      "ja": "写真を再選択",
-      "zh-Hans": "重新选择照片"
-    },
     "重新选择输出目录": {
       "de": "Ausgabeverzeichnis erneut auswählen",
       "en": "Choose output directory again",
@@ -7346,6 +7386,14 @@
       "fr": "Télécharger à nouveau les originaux indisponibles",
       "ja": "利用できない元の写真を再ダウンロード",
       "zh-Hans": "重新下载不可用的原片"
+    },
+    "无法读取编辑状态": {
+      "en": "Edit status is unavailable",
+      "de": "Bearbeitungsstatus nicht verfügbar",
+      "fr": "État de modification indisponible",
+      "es": "Estado de edición no disponible",
+      "ja": "編集状態を読み込めません",
+      "zh-Hans": "无法读取编辑状态"
     }
   }
 }

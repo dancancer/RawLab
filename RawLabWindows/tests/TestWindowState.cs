@@ -38,6 +38,7 @@ internal static class TestWindowState
         notice.Visibility=updates.HasUpdate ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         updates.PropertyChanged+=(_,_)=>notice.Visibility=updates.HasUpdate ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         Set("editStore",new EditStore(editDirectory ?? Path.Combine(root,"edits")));
+        Set("photoPreviewCacheDirectory",Path.Combine(root,"photo-previews"));
         Set("recentLooksPath",Path.Combine(root,"recent-looks.json"));
         Set("workspaceWidthsPath", Path.Combine(root,"workspace-widths.json"));
         Set("recentLooks",new RecentLooks());

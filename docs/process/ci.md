@@ -179,6 +179,8 @@ CI never repeats runtime UI checks. UI-test target compilation is not a UI-test 
   The runner stages generated PNG/CUBE fixtures in a test app copy and executes
   picker opening, selection, cancellation and reopening. Run on each required
   iPadOS runtime; `RAWLAB_DOCUMENT_IMPORT_TEST` selects a narrower XCTest case.
+- iOS Recently Opened UI: `IOS_SIMULATOR_UDID=<dedicated-device> bash RawLab/tests/recent-photo-ui.sh <build-for-testing-products> <new-output-directory>`. Seed one photo with `simctl addmedia` first. The runner grants Photos access only on that simulator and verifies edit filters, reopening across process restart, reset and removal. It rejects skipped tests.
+- Edited-preview cache and iOS recent-source retention checks run in the fast Apple model groups. Mac rendered-preview and resource-watcher checks use `bash RawLabMac/tests/edited-photo-previews.sh` after building the native core; `edited-photo-ui.sh <output-directory>` builds an isolated native editor harness for marker, selection and reset inspection.
 - Windows fast models: `./scripts/ci/windows-models.ps1`; no WPF window, native
   rendering DLL, RAW fixture or self-contained app build is required.
 - Android models: `./gradlew :app:testDebugUnitTest`; the task graph excludes native

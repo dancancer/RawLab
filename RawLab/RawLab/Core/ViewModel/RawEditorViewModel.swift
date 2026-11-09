@@ -159,6 +159,7 @@ final class RawEditorViewModel: ObservableObject {
         sourceKind == .raw && sourceFile?.withReadAccess { $0.pathExtension.lowercased() == "x3f" } == true
     }
     var sourceIdentity: PhotoIdentity?
+    @Published var importedPhotoRevision = UUID()
     @Published var sourceDisplayName: String?
     var restoredSettings: RawSettings?
     var pendingSettings: RawSettings?

@@ -54,6 +54,7 @@ final class PhotoFolder: ObservableObject, Identifiable {
     @Published private(set) var photos: [URL] = []
     @Published private(set) var loading = false
     @Published private(set) var error: String?
+    @Published private(set) var contentRevision = 0
     private var loaded = false
     private var loadWaiters: [() -> Void] = []
     var canExpand: Bool { !loaded || !folders.isEmpty }
@@ -81,6 +82,7 @@ final class PhotoFolder: ObservableObject, Identifiable {
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.loading = false
+                self.contentRevision &+= 1
                 switch result {
                 case .success(let contents):
                     let existing = Dictionary(uniqueKeysWithValues: self.folders.map { ($0.id, $0) })
@@ -143,14 +145,17 @@ final class PhotoLibrary: ObservableObject {
 // NSCache and OperationQueue are thread-safe; cached CGImage-backed images are immutable.
 final class PhotoThumbnails: @unchecked Sendable {
     static let shared = PhotoThumbnails()
-    private let cache = NSCache<NSURL, NSImage>()
+    private let cache = NSCache<NSString, NSImage>()
     private let queue: OperationQueue = {
         let queue = OperationQueue(); queue.maxConcurrentOperationCount = 2
         queue.qualityOfService = .utility; return queue
     }()
     private init() { cache.countLimit = 300 }
     func image(for url: URL) async -> NSImage? {
-        if let image = cache.object(forKey: url as NSURL) { return image }
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else { return nil }
+        let modified = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        let key = "\(url.standardizedFileURL.path)|\(attributes[.size] ?? 0)|\(modified)|\(attributes[.systemFileNumber] ?? 0)"
+        if let image = cache.object(forKey: key as NSString) { return image }
         return await withCheckedContinuation { continuation in
             queue.addOperation { [self] in
                 let raster = !DirectoryContents.rawExtensions.contains(url.pathExtension.lowercased())
@@ -162,7 +167,7 @@ final class PhotoThumbnails: @unchecked Sendable {
                 if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
                    let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
                     result = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
-                    cache.setObject(result!, forKey: url as NSURL)
+                    cache.setObject(result!, forKey: key as NSString)
                 }
                 continuation.resume(returning: result)
             }

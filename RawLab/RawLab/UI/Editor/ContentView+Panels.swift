@@ -47,6 +47,9 @@ extension ContentView {
                 Button { requestCollectionNavigation(.returnToCollection) } label: { Image(systemName: "square.grid.2x2") }
                     .accessibilityLabel(L10n.text("返回批量集合")).accessibilityIdentifier("collection.return").disabled(editorBusy)
             }
+            Button(action: showRecentPhotos) { Image(systemName: "clock.arrow.circlepath") }
+                .accessibilityLabel(L10n.text("最近打开")).accessibilityIdentifier("recents.open")
+                .disabled(editorBusy || isEditorDraftActive)
             photoImportButton(isEnabled: !editorBusy)
                 .opacity(rulerFocusOpacity)
         }
@@ -176,7 +179,7 @@ extension ContentView {
                                 .font(.largeTitle)
                                 .foregroundStyle(.secondary)
                                 .accessibilityHidden(true)
-                            PhotosPicker(selection: $selectedPhotoItem, matching: .images, preferredItemEncoding: .current, photoLibrary: .shared()) {
+                            Button { requestEditorImport(file: false) } label: {
                                 Text(L10n.text("导入照片"))
                                     .font(.headline)
                                     .multilineTextAlignment(.center)
@@ -189,6 +192,8 @@ extension ContentView {
                             .disabled(editorBusy)
                             .accessibilityLabel(L10n.text("导入照片"))
                             .accessibilityIdentifier("editor.import.empty")
+                            Button(L10n.text("最近打开"), action: showRecentPhotos)
+                                .buttonStyle(.bordered).disabled(editorBusy).accessibilityIdentifier("recents.open.empty")
                             fileImportButton(isEnabled: !editorBusy && !isEditorDraftChanged)
                                 .buttonStyle(.bordered)
                         }
