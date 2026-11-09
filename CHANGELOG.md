@@ -35,6 +35,9 @@ release notes include assets, installation requirements and validation limits.
   DCP import when an embedded tone curve is missing.
 - Neutral RAW camera fields blocking adjustment transfer to ordinary images.
 - Android JPEG video trailers/C2PA metadata.
+- Windows blank canvas before the first preview, the lens entry for ordinary
+  images, batch cancellation dropping the photo in progress and Reset All
+  reopening a stale geometry/lens draft.
 - Opening photos with missing HDR looks or camera profiles.
 
 Version `0.10.0`, build `19`. See the
