@@ -273,7 +273,8 @@ private struct IOSCollectionExportView: View {
                     if busy { ProgressView(L10n.text("正在准备导出…")).accessibilityIdentifier("collection.export.checking") }
                     if let message = model.collectionExportError ?? message { Text(message).foregroundStyle(.orange) }
                 }
-            }.disabled(busy)
+            }.accessibilityIdentifier("collection.export.form")
+                .disabled(busy)
                 .navigationTitle(L10n.text("按每张调整导出…")).navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.text(busy ? "取消检查" : "取消")) {

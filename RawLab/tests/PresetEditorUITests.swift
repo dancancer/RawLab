@@ -27,8 +27,8 @@ extension ViewingEditorUITests {
         XCTAssertEqual((receipt(app)["recentLookIDs"] as? [String])?.first, look)
         openAdjustmentAction("collection.open", app: app)
         XCTAssertTrue(app.buttons["collection.export"].waitForExistence(timeout: 10));app.buttons["collection.export"].tap()
-        let start = app.buttons["collection.export.start"];revealFormControl(start, app: app);start.tap()
-        wait(app, timeout: 120) { $0["batchStatus"] as? String == "completed" && $0["batchCompleted"] as? Int == 1 }
+        revealCollectionExportStart(app).tap()
+        wait(app, timeout: 120, for: "finish exporting the combined look and preset") { $0["batchStatus"] as? String == "completed" && $0["batchCompleted"] as? Int == 1 }
         XCTAssertEqual(receipt(app)["batchFrozenExposure"] as? [Double], [0.5])
         capture(app, "look-preset-collection-completed")
         app.buttons["Task Actions"].tap();app.buttons["Discard Task"].tap();app.buttons["Discard Task"].tap()
