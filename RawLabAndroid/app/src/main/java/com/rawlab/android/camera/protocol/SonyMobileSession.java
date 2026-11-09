@@ -12,6 +12,12 @@ import javax.net.SocketFactory;
 public final class SonyMobileSession implements Closeable {
     public interface Reporter { void report(String message); }
     public interface Progress { void transferred(long bytes, long total); }
+    /** 相机完整结束了本次事务，预览不可用等响应不会破坏后续报文边界。 */
+    public static final class ResponseException extends IOException {
+        ResponseException(int operation, int code) {
+            super(String.format(Locale.ROOT, "PTP op 0x%04x response 0x%04x", operation, code));
+        }
+    }
     private final Socket command, event;
     private final Reporter report;
     private int transaction;
@@ -175,6 +181,19 @@ public final class SonyMobileSession implements Closeable {
 
     synchronized byte[] operation(int op, int[] parameters, boolean requireData, int limit) throws IOException {
         if (!ALLOWED.contains(op) || parameters.length > 5 || limit < 0 || limit > LIMIT) throw new IOException("Operation outside mobile experiment allowlist");
+        if (closed) throw new IOException("Camera session is closed");
+        try {
+            return exchange(op, parameters, requireData, limit);
+        } catch (ResponseException response) {
+            throw response;
+        } catch (IOException failure) {
+            // 读取中断或报文错误后，流中可能仍有旧事务数据，不能再复用任一通道。
+            close();
+            throw failure;
+        }
+    }
+
+    private byte[] exchange(int op, int[] parameters, boolean requireData, int limit) throws IOException {
         int tid = op == 0x1002 ? (transaction = 0) : ++transaction;
         ByteArrayOutputStream request = new ByteArrayOutputStream();
         request.write(u32(1)); request.write(u16(op)); request.write(u32(tid));
@@ -204,8 +223,9 @@ public final class SonyMobileSession implements Closeable {
                 if (packet.bytes.length < 6 || packet.bytes.length > 26 || (packet.bytes.length - 6) % 4 != 0) throw new IOException("Invalid PTP response");
                 int code = r.u16();
                 if (r.i32() != tid) throw new IOException("PTP response transaction mismatch");
-                if (code != 0x2001) throw new IOException(String.format(Locale.ROOT, "PTP op 0x%04x response 0x%04x", op, code));
-                if ((requireData && !started) || (started && !ended)) throw new IOException("PTP response before complete data");
+                if (started && !ended) throw new IOException("PTP response before complete data");
+                if (code != 0x2001) throw new ResponseException(op, code);
+                if (requireData && !started) throw new IOException("PTP response before complete data");
                 report.report(String.format(Locale.ROOT, "ptp_complete op=0x%04x bytes=%d", op, data.size()));
                 return data.toByteArray();
             } else if (packet.type == 13 && packet.bytes.length == 0) writePacket(command, 14, new byte[0]);

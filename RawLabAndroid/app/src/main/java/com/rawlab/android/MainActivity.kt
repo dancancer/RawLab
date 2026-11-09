@@ -160,6 +160,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     val context = LocalContext.current
     DisposableEffect(owner, model) {
         val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) camera.onForeground()
             if (event == Lifecycle.Event.ON_STOP && (context as? android.app.Activity)?.isChangingConfigurations != true) {
                 model.onBackground()
                 camera.onBackground()

@@ -246,3 +246,60 @@ func TestRepeatedDownloadsKeepRecoveryHistoryBounded(t *testing.T) {
 		t.Fatal("duplicate provenance grows without a new source")
 	}
 }
+
+func TestRecoveryRemovesRegisteredTerminalPartialsWithoutRemovingOriginals(t *testing.T) {
+	for _, state := range []string{"saved", "failed", "cancelled", "interrupted"} {
+		t.Run(state, func(t *testing.T) {
+			root := t.TempDir()
+			s, err := Open(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			original, err := receive(s, rawBytes)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = receive(s, rawBytes); err != nil {
+				t.Fatal(err)
+			}
+			attempt := s.data.Attempts[len(s.data.Attempts)-1]
+			attempt.State = state
+			partial := s.partialPath(attempt.ID)
+			if err = s.persist(); err != nil {
+				t.Fatal(err)
+			}
+			s.Close()
+			// 模拟终态清单已落盘、Receive 的 defer 尚未清理时退出。
+			if err = os.WriteFile(partial, rawBytes, 0600); err != nil {
+				t.Fatal(err)
+			}
+			unregistered := filepath.Join(root, ".partial", "unregistered.partial")
+			orphan := filepath.Join(root, "files", "unregistered.ARW")
+			for _, path := range []string{unregistered, orphan} {
+				if err = os.WriteFile(path, rawBytes, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			s, err = Open(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			if _, err = os.Stat(partial); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("registered %s partial survived recovery: %v", state, err)
+			}
+			for _, path := range []string{original.Path, unregistered, orphan} {
+				content, readErr := os.ReadFile(path)
+				if readErr != nil || !bytes.Equal(content, rawBytes) {
+					t.Errorf("recovery changed protected file %s: %v", path, readErr)
+				}
+			}
+			if path, resolveErr := s.Resolve(original.SourceID); resolveErr != nil || path != original.Path || len(s.Records()) != 1 {
+				t.Fatalf("original identity changed: %s %v", path, resolveErr)
+			}
+			if s.data.Attempts[len(s.data.Attempts)-1].State != state {
+				t.Fatalf("recovery rewrote terminal state %s", state)
+			}
+		})
+	}
+}

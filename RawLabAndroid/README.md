@@ -244,6 +244,20 @@ c++ -std=c++17 -I RawLabAndroid/app/src/main/cpp -I lutools/include \
 /tmp/rawlab-android-request-test
 ```
 
+相机 MediaStore 进程死亡测试默认跳过，不会终止普通 `connectedDebugAndroidTest`。
+已安装应用及测试 APK 后，在仓库根目录用独立脚本分别启动 pending、published 和恢复进程：
+
+```sh
+ANDROID_SERIAL=<device> ANDROID_ADB_SERVER_PORT=<port> \
+RAWLAB_TEST_APP_ID=com.rawlab.android.cameramedia \
+bash RawLabAndroid/tests/camera-media-recovery.sh /tmp/rawlab-camera-recovery
+```
+
+实体设备必须使用独立测试包名。脚本要求旧测试进程确实退出、准备记录与阶段匹配，
+再由新进程验证同一媒体 URI；已有准备记录时拒绝覆盖。失败记录应先检查，
+需要清理时仅显式运行 `CameraMediaRecoveryTest#cleanupRecoveryFixture`，并传
+`-e cameraRecoveryPhase cleanup`；不使用 `pm clear` 或全库删除。
+
 独立 GLES LUT 回归直接编译当前源码并在 ARM64 真机运行，不安装 APK。覆盖分块边界、
 6100 万/1 亿像素，以及上传、计算、映射和读回失败后的 Auto 回退、Force 报错与恢复。
 需要 NDK 27.2.12479018；脚本会清理本机及设备上的临时文件。

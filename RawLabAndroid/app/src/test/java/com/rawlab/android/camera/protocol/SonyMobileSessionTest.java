@@ -69,6 +69,65 @@ public final class SonyMobileSessionTest {
         }
     }
 
+    @Test public void malformedPreviewTransactionClosesBothChannels() throws Exception {
+        assertFatalPreviewClosesChannels("transaction");
+    }
+
+    @Test public void malformedPreviewPacketLengthClosesBothChannels() throws Exception {
+        assertFatalPreviewClosesChannels("length");
+    }
+
+    @Test public void previewTimeoutClosesBothChannels() throws Exception {
+        assertFatalPreviewClosesChannels("timeout");
+    }
+
+    private static void assertFatalPreviewClosesChannels(String failure) throws Exception {
+        try (FakeServer server = new FakeServer(command -> {
+            Request request = readRequest(command);
+            if (failure.equals("transaction")) {
+                SonyMobileSession.writePacket(command, 7, concat(SonyMobileSession.u16(0x2001),
+                        SonyMobileSession.u32(request.transaction + 1)));
+            } else if (failure.equals("length")) {
+                command.getOutputStream().write(concat(SonyMobileSession.u32(7), SonyMobileSession.u32(7)));
+                command.getOutputStream().flush();
+            }
+            waitForClose(command, null);
+        }, 250)) {
+            try (SonyMobileSession session = new SonyMobileSession(server.factory(),
+                    InetAddress.getLoopbackAddress(), UUID.randomUUID(), message -> {})) {
+                SonyMobileSession.Asset asset = new SonyMobileSession.Asset(session, CONTENT, FILE, "DSC00001.ARW", 100, 123);
+                try {
+                    session.preview(asset, false);
+                    fail("accepted fatal preview " + failure);
+                } catch (IOException expected) {
+                    assertTrue("fatal preview left a reusable socket", server.clients.stream().allMatch(Socket::isClosed));
+                }
+            }
+            server.finish();
+        }
+    }
+
+    @Test public void unavailablePreviewResponseKeepsAlignedSessionUsable() throws Exception {
+        byte[] bytes = new byte[]{1, 2, 3};
+        try (FakeServer server = new FakeServer(command -> {
+            Request unavailable = readRequest(command);
+            SonyMobileSession.writePacket(command, 7, concat(SonyMobileSession.u16(0x2005),
+                    SonyMobileSession.u32(unavailable.transaction)));
+            Request retry = readRequest(command);
+            sendData(command, retry.transaction, bytes, bytes.length);
+        })) {
+            try (SonyMobileSession session = new SonyMobileSession(server.factory(),
+                    InetAddress.getLoopbackAddress(), UUID.randomUUID(), message -> {})) {
+                SonyMobileSession.Asset asset = new SonyMobileSession.Asset(session, CONTENT, FILE, "DSC00001.ARW", 100, 123);
+                try { session.preview(asset, false); fail("expected unavailable preview"); }
+                catch (IOException expected) { assertTrue(expected.getMessage().contains("0x2005")); }
+                assertFalse(server.clients.stream().anyMatch(Socket::isClosed));
+                assertArrayEquals(bytes, session.preview(asset, false));
+            }
+            server.finish();
+        }
+    }
+
     @Test
     public void previewRejectsResponseAboveThumbnailBudget() throws Exception {
         assertPreviewBudgetIsEnforced(false, (2 << 20) + 1);
@@ -289,10 +348,17 @@ public final class SonyMobileSessionTest {
         final ServerSocket server;
         final Responder responder;
         final AtomicReference<Throwable> failure = new AtomicReference<>();
+        final List<Socket> clients = new CopyOnWriteArrayList<>();
+        final int timeout;
         final Thread thread;
 
         FakeServer(Responder responder) throws IOException {
+            this(responder, 15000);
+        }
+
+        FakeServer(Responder responder, int timeout) throws IOException {
             this.responder = responder;
+            this.timeout = timeout;
             server = new ServerSocket(0, 2, InetAddress.getLoopbackAddress());
             thread = new Thread(() -> run(), "sony-mobile-session-test-server");
             thread.start();
@@ -301,11 +367,16 @@ public final class SonyMobileSessionTest {
         SocketFactory factory() {
             return new SocketFactory() {
                 @Override public Socket createSocket() {
-                    return new Socket() {
+                    Socket socket = new Socket() {
                         @Override public void connect(SocketAddress ignored, int timeout) throws IOException {
                             super.connect(new InetSocketAddress(InetAddress.getLoopbackAddress(), server.getLocalPort()), timeout);
                         }
+                        @Override public void setSoTimeout(int milliseconds) throws SocketException {
+                            super.setSoTimeout(milliseconds == 0 ? 0 : Math.min(milliseconds, FakeServer.this.timeout));
+                        }
                     };
+                    clients.add(socket);
+                    return socket;
                 }
 
                 @Override public Socket createSocket(String host, int port) { throw new UnsupportedOperationException(); }

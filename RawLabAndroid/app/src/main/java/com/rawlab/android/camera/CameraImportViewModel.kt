@@ -16,6 +16,7 @@ import com.rawlab.android.photo.MediaPhotoLibrary
 import com.rawlab.android.camera.protocol.SonyMobileSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -25,6 +26,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.net.InetAddress
 import java.util.UUID
 
@@ -60,6 +62,8 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     @Volatile private var generation = 0
     private var permit: CameraTransferPermit? = null
     private var transfer: Job? = null
+    private var importPreparation: Job? = null
+    private var foreground = false
     private var opening: String? = null
     private val previews = object : android.util.LruCache<String, Bitmap>(12 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
@@ -116,8 +120,10 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
             val result = withContext(Dispatchers.IO) { runCatching {
                 val opened = SonyMobileSession(network.socketFactory, address, clientId) { }
                 try {
-                    if (current != generation) throw java.io.IOException("Stale camera connection")
-                    session = opened
+                    withContext(Dispatchers.Main.immediate) {
+                        if (current != generation) throw IOException("Stale camera connection")
+                        session = opened
+                    }
                     val info = opened.deviceInfo()
                     opened.openSession()
                     val found = opened.listPhotos(info)
@@ -158,26 +164,43 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         previews.evictAll()
         mutable.update { it.copy(stage = null, connected = false) }
     }
-    fun onBackground() { if (mutable.value.transferring) stop() }
+    fun onForeground() { foreground = true }
+    fun onBackground() {
+        foreground = false
+        if (mutable.value.transferring || importPreparation?.isActive == true) stop()
+    }
     fun stop() { disconnect(); mutable.update { it.copy(message = R.string.camera_paused) } }
 
     fun startImport() {
         val snapshot = mutable.value
-        if (!snapshot.connected || snapshot.transferring || snapshot.preparing || snapshot.selected.isEmpty()) return
+        if (!foreground || !snapshot.connected || snapshot.transferring || snapshot.preparing || snapshot.selected.isEmpty()) return
         val selectedCamera = cameraId
+        val current = generation
         mutable.update { it.copy(preparing = true, message = null) }
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { storeLock.withLock { runCatching {
-                store.create(selectedCamera, snapshot.photos.filter { it.key in snapshot.selected }, snapshot.destination)
-            } } }
-            mutable.update { it.copy(preparing = false) }
-            result.onSuccess { job -> updateJob(job); runQueue(job) }
-                .onFailure { mutable.update { it.copy(message = R.string.camera_storage_failed) } }
+        importPreparation = viewModelScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) { storeLock.withLock { runCatching {
+                    store.create(selectedCamera, snapshot.photos.filter { it.key in snapshot.selected }, snapshot.destination)
+                } } }
+                result.onSuccess { job ->
+                    if (!foreground || current != generation) {
+                        // 后台事件使这次准入失效；即使已经返回前台，也只保留可继续的任务。
+                        val paused = job.copy(status = CameraJobStatus.PAUSED)
+                        val saved = withContext(Dispatchers.IO) { storeLock.withLock { runCatching { store.save(paused) } } }
+                        updateJob(paused)
+                        mutable.update { it.copy(message = if (saved.isFailure) R.string.camera_storage_failed else it.message ?: R.string.camera_paused) }
+                    } else { updateJob(job); runQueue(job) }
+                }.onFailure { mutable.update { it.copy(message = R.string.camera_storage_failed) } }
+            } finally {
+                importPreparation = null
+                mutable.update { it.copy(preparing = false) }
+            }
         }
     }
     fun resume() { mutable.value.job?.let(::runQueue) }
 
     private fun runQueue(job: CameraImportJob) {
+        if (!foreground || mutable.value.transferring || job.status == CameraJobStatus.COMPLETE) return
         val opened = session
         val info = device
         if (opened == null || info == null) {
@@ -185,7 +208,6 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
             mutable.update { it.copy(message = R.string.camera_disconnected) }
             return
         }
-        if (mutable.value.transferring || job.status == CameraJobStatus.COMPLETE) return
         val fresh = assets
         if (job.cameraId != cameraId || job.items.any { it.saved == null && it.photo.key !in fresh }) {
             mutable.update { it.copy(message = R.string.camera_source_changed) }; return
@@ -239,7 +261,15 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         return withContext(Dispatchers.IO) { sessionLock.withLock {
             if (current != generation || mutable.value.transferring) return@withLock null
             val asset = assets[photo.key] ?: return@withLock null
-            val bytes = runCatching { session?.preview(asset, large) }.getOrNull() ?: return@withLock null
+            val bytes = try { session?.preview(asset, large) ?: return@withLock null }
+            catch (_: SonyMobileSession.ResponseException) { return@withLock null }
+            catch (_: IOException) {
+                // 缩略图离屏会取消调用方，但致命错误后的连接状态仍必须同步到主线程。
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    if (current == generation) onFailure(SonyCameraConnection.Failure.DISCONNECTED)
+                }
+                return@withLock null
+            }
             val bitmap = decodeCameraPreview(bytes, large)
             if (current == generation && bitmap != null) { previews.put(cacheKey, bitmap); bitmap } else null
         } }

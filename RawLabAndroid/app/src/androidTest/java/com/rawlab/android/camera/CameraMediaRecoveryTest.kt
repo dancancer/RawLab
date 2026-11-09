@@ -12,20 +12,24 @@ import com.rawlab.android.photo.MediaPhotoAccess
 import com.rawlab.android.photo.MediaPhotoLibrary
 import org.json.JSONObject
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.UUID
 
-/** stage 方法故意终止测试进程；由下一次独立 instrumentation 调用 recover 验证落盘恢复。 */
+/** 仅由 camera-media-recovery.sh 显式分阶段运行；默认设备套件跳过这些进程终止步骤。 */
 @SdkSuppress(minSdkVersion = 29)
 class CameraMediaRecoveryTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val manifest get() = File(context.filesDir, "camera-media-recovery-test.json")
 
-    @Test fun stagePendingBeforeProcessDeath() = stage(false)
-    @Test fun stagePublishedBeforeProcessDeath() = stage(true)
+    @Test fun stagePendingBeforeProcessDeath() { requirePhase("stage-pending"); stage(false) }
+    @Test fun stagePublishedBeforeProcessDeath() { requirePhase("stage-published"); stage(true) }
+
+    private fun requirePhase(phase: String) = assumeTrue("Run with explicit cameraRecoveryPhase=$phase",
+        InstrumentationRegistry.getArguments().getString("cameraRecoveryPhase") == phase)
 
     private fun stage(published: Boolean) {
         assertFalse("A previous recovery fixture needs cleanup", manifest.exists())
@@ -58,8 +62,10 @@ class CameraMediaRecoveryTest {
     }
 
     @Test fun recoverInNewProcess() {
+        requirePhase("recover")
         val record = JSONObject(manifest.readText())
         assertNotEquals(record.getInt("pid"), Process.myPid())
+        assertFalse("The previous fixture process must have exited", File("/proc/${record.getInt("pid")}").exists())
         val root = checkedRoot(record)
         val uri = record.getString("uri")
         try {
@@ -74,7 +80,10 @@ class CameraMediaRecoveryTest {
         } finally { cleanup(record) }
     }
 
-    @Test fun cleanupRecoveryFixture() { if (manifest.exists()) cleanup(JSONObject(manifest.readText())) }
+    @Test fun cleanupRecoveryFixture() {
+        requirePhase("cleanup")
+        if (manifest.exists()) cleanup(JSONObject(manifest.readText()))
+    }
 
     private fun checkedRoot(record: JSONObject): File {
         val name = record.getString("root")
@@ -82,9 +91,18 @@ class CameraMediaRecoveryTest {
         return File(context.filesDir, name)
     }
     private fun cleanup(record: JSONObject) {
-        context.contentResolver.delete(Uri.parse(record.getString("uri")), null, null)
-        context.getSharedPreferences("camera-media-sources", 0).edit().remove(record.getString("uri")).commit()
-        checkedRoot(record).deleteRecursively()
+        val root = checkedRoot(record)
+        val uri = record.getString("uri")
+        val sources = context.getSharedPreferences("camera-media-sources", 0)
+        val media = MediaPhotoLibrary(context).inspect(uri)
+        if (media != null) {
+            require(media.displayName == "RECOVERY.JPG" &&
+                media.relativePath == "Pictures/RawLab/Tests/${root.name.removePrefix("camera-media-recovery-")}/2026-10-22/")
+            require(sources.getString(uri, null) == "${File(root, "source.jpg").length()}:${record.getString("digest")}")
+            context.contentResolver.delete(Uri.parse(uri), null, null)
+        }
+        sources.edit().remove(uri).commit()
+        root.deleteRecursively()
         manifest.delete()
     }
 }

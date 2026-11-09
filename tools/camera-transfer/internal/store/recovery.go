@@ -127,16 +127,16 @@ func (s *Store) recover() error {
 		}
 	}
 	for _, a := range s.data.Attempts {
-		if a.State != "transferring" && a.State != "publishPrepared" {
-			continue
+		if a.State == "transferring" || a.State == "publishPrepared" {
+			if r := s.data.Sources[a.SourceID]; r != nil && r.State == "committed" {
+				a.State = "saved"
+			} else {
+				a.State = "interrupted"
+			}
 		}
-		if r := s.data.Sources[a.SourceID]; r != nil && r.State == "committed" {
-			a.State = "saved"
-		} else {
-			a.State = "interrupted"
-		}
+		// 终态落盘与 Receive 的 defer 之间也可能退出；裁剪清单前清理每个已登记 partial。
 		if err := os.Remove(s.partialPath(a.ID)); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("clean interrupted partial: %w", err)
+			return fmt.Errorf("clean registered partial: %w", err)
 		}
 	}
 	// Unreferenced complete files are deliberately retained. They are never imported
