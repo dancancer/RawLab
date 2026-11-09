@@ -115,7 +115,8 @@ struct AdjustmentHistoryModelTests {
     private static func storageRecovery(directory: URL) throws {
         let store = try EditPersistence(directory: directory.appendingPathComponent("recovered-store"))
         let identity = PhotoIdentity(resourceIdentifier: "recovered-photo")
-        var saved = RawSettings.default; saved.exposure = 0.7; saved.contrast = 12
+        // SDR 对比度保存为倍率，界面上的 +12 对应 1.12。
+        var saved = RawSettings.default; saved.exposure = 0.7; saved.contrast = 1.12
         try store.save(identity, state: PhotoEditState(settings: saved))
         let model = RawEditorViewModel(editPersistence: store)
         model.sourceFile = .externallyManaged(directory.appendingPathComponent("source.png"))
@@ -128,10 +129,11 @@ struct AdjustmentHistoryModelTests {
                   "recovering an unread store restores saved settings before the next edit")
         var next = model.adjustmentRestoredSettings!; next.exposure = 0.9
         model.queueSettingsSave(next)
-        try check(model.saveCurrentSettings(next) && store.state(for: identity)?.settings.contrast == 12,
+        try check(model.saveCurrentSettings(next), "the first edit after recovery saves successfully")
+        try check(store.readState(for: identity).state?.settings == next,
                   "the first edit after recovery preserves other saved adjustments")
         try check(model.performAdjustmentHistory(undo: true).first?.status == .applied &&
-                  store.state(for: identity)?.settings == saved,
+                  store.readState(for: identity).state?.settings == saved && model.adjustmentRestoredSettings == saved,
                   "recovered history retains the real saved before state")
 
         model.editPersistence = nil; model.adjustmentSession = nil
