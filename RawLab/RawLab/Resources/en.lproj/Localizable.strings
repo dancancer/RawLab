@@ -74,6 +74,7 @@
 "上下拖动调整，方向键微调，Esc 取消" = "Drag up or down to adjust, use arrow keys for fine changes, Esc to cancel";
 "上次使用的外观不可用，请重新选择或导入外观。" = "The last used look is unavailable. Choose or import a look again.";
 "上次同步结果与历史" = "Last sync results and history";
+"上次预览" = "Last preview";
 "不支持此 HDR 格式或颜色描述。" = "This HDR format or color description is not supported.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "This photo, look, or processing mode is not supported. Check file compatibility and processing settings.";
 "不能覆盖原始文件。" = "The original file cannot be overwritten.";
@@ -95,10 +96,12 @@
 "仅 RAW 照片支持镜头校正。" = "Lens correction is available only for RAW photos.";
 "仅在暗角强度为负值时可用。" = "Available only when vignette intensity is negative.";
 "仅已修改" = "Modified only";
+"仅显示在本机用 RawLab 打开过的照片。" = "Photos opened with RawLab on this device.";
 "仅用于已显影且基础风格匹配的照片，不能直接用于 RAW。" = "Only for rendered photos with the matching base style. Cannot be applied directly to RAW.";
 "仅用于本次导出，保留各照片原有调整" = "For This Export Only; Each Photo’s Existing Adjustments Are Preserved";
 "仍需假设：%@" = "Assumptions remain: %@";
 "从文件导入" = "Import from Files";
+"从最近打开中移除" = "Remove from recently opened";
 "从照片图库导入" = "Import from Photos";
 "从照片库选择" = "Choose from photo library";
 "以下为配方逻辑值；强度为 %@。部分范围会按此强度换算。" = "These are recipe logical values; strength is %@. Some fields are scaled by this strength.";
@@ -130,6 +133,7 @@
 "保存结果待确认" = "Save Result Needs Confirmation";
 "保存预设" = "Save Preset";
 "保留旧版的特殊色彩。" = "Preserves the distinctive colors of the legacy renderer.";
+"保留最近 100 张照片及约 2 GB 本机副本。移除记录不会删除原照片或调整。" = "Keeps up to 100 recent photos and about 2 GB of local copies. Removing an entry keeps the original photo and its edits.";
 "保留这次几何或镜头修改？" = "Keep these geometry or lens changes?";
 "候选效果" = "Candidate results";
 "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。" = "False color: blue for shadows, amber above reference white, pink beyond display capacity.";
@@ -174,6 +178,8 @@
 "原始文件已被替换，请重新选择照片。" = "The original file has been replaced. Select the photo again.";
 "原始比例" = "Original Ratio";
 "原始照片已变化，请重新导入。" = "The original photo has changed. Import it again.";
+"原始预览" = "Original preview";
+"原片已变化，请重新选择照片。原有调整已保留。" = "The original has changed. Select the photo again. Your existing edits are preserved.";
 "去噪优先" = "Noise Reduction Priority";
 "去朦胧" = "Dehaze";
 "参数或输出路径无效。" = "Invalid parameters or output path.";
@@ -235,6 +241,7 @@
 "对照参考图（可选）" = "Compare with a reference image (optional)";
 "导入外观" = "Import Look";
 "导入外观…" = "Import Look…";
+"导入并打开一张照片后，可在这里继续编辑。" = "Import and open a photo to continue editing it here.";
 "导入照片" = "Import Photo";
 "导入相机配置…" = "Import camera profile…";
 "导入结果" = "Import results";
@@ -262,6 +269,7 @@
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "The copy of the look saved by RawLab will be removed; the original file will not be deleted.";
 "将覆盖以下 %@ 项调整；其他调整保留目标原值。" = "Adjustments to overwrite: %@. Other adjustments keep their target values.";
 "尚无已修改的调整。" = "No modified adjustments yet.";
+"尚无最近打开的照片" = "No recently opened photos";
 "尚无用户预设" = "No User Presets Yet";
 "尚未保存，允许重新导出" = "Not Saved Yet; Allow Re-Export";
 "尚未复制调整。请先从一张照片复制所需范围。" = "No adjustments copied yet. Copy the desired settings from a photo first.";
@@ -297,6 +305,7 @@
 "已生成 %@ 个渲染型 DNG" = "Rendered DNG Files Created: %@";
 "已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Rendered DNG Files Created: %@ (Not Saved to the Selected Location)";
 "已生成渲染型 DNG，未另存到所选位置。" = "Rendered DNG Created, but Not Saved to the Selected Location.";
+"已编辑" = "Edited";
 "已自动升级，原设置已保留。" = "Updated automatically. Original settings are saved.";
 "已调整" = "Adjusted";
 "已跳过" = "Skipped";
@@ -336,6 +345,7 @@
 "所选照片：%@" = "Selected Photo: %@";
 "所选调整与目标不兼容，请调整范围或跳过目标。" = "These adjustments are incompatible with this photo. Change the scope or skip it.";
 "手动" = "Manual";
+"打开" = "Open";
 "打开系统设置" = "Open System Settings";
 "批量导出" = "Batch Export";
 "批量编辑" = "Batch editing";
@@ -400,6 +410,7 @@
 "无法写入 HDR 导出文件，请检查可用空间和目标权限。" = "Cannot write the HDR export. Check free space and destination permissions.";
 "无法写入成片，请检查输出位置和剩余空间。" = "Unable to write the exported photo. Check the output location and free space.";
 "无法创建新的预设标识，请重试。" = "Could not create a new preset identifier. Try again.";
+"无法加入最近打开：%@" = "Could not add to recently opened: %@";
 "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。" = "Unable to Retrieve the Original RAW. Authorize Access to This Photo in System Settings, Then Try Again.";
 "无法导出错误日志。" = "Could not export the error log.";
 "无法显示处理结果" = "Unable to display processing results";
@@ -414,10 +425,13 @@
 "无法读取已保存的外观库，原有记录未被覆盖。" = "The saved look library cannot be read; the original records were not overwritten.";
 "无法读取已保存的调整，原有记录未被覆盖。" = "Unable to Read Saved Adjustments; Existing Record Was Not Overwritten.";
 "无法读取或写入文件，请检查路径和访问权限。" = "Unable to read or write the file. Check the path and access permissions.";
+"无法读取最近打开的照片，原有记录未被覆盖。" = "Recently opened photos could not be read. Existing records have not been overwritten.";
 "无法读取照片，请检查文件和访问权限。" = "Unable to read the photo. Check the file and access permissions.";
 "无法读取统计设置，已保持关闭。" = "The analytics setting could not be read, so analytics stays off.";
 "无法读取镜头校正状态" = "Could Not Read Lens Correction Status";
 "无法读取镜头配置列表" = "Could Not Read Lens Profiles";
+"无法重新打开照片" = "Could not reopen photo";
+"无法重新打开这张照片，请重新选择。原有调整已保留。" = "This photo could not be reopened. Select it again. Your existing edits are preserved.";
 "无法重置调整" = "Cannot reset adjustments";
 "无配方" = "No Recipe";
 "日系通透水光肌，空气感透明青蓝，暗部大面积展开与柔润高光" = "Japanese luminous skin, airy transparent blue-cyan, open shadows and soft highlights";
@@ -445,6 +459,7 @@
 "更多" = "More";
 "更换预览照片" = "Change preview photo";
 "最近使用" = "Recent";
+"最近打开" = "Recently opened";
 "有多个匹配镜头，请手动选择" = "Multiple Lens Matches; Choose Manually";
 "有未提交调整。" = "There are uncommitted adjustments.";
 "未包含几何与镜头。" = "Geometry and lens are not included.";
@@ -456,6 +471,7 @@
 "未找到机身或传感器尺寸信息" = "Camera or Sensor Size Information Missing";
 "未找到胶片 LUT" = "No Film LUTs Found";
 "未找到镜头" = "No Lenses Found";
+"未编辑" = "Unedited";
 "未获得相册读取权限，请手动核对保存结果，或在系统设置中授权。" = "Photos Read Access Was Not Granted. Check Saved Results Manually or Authorize Access in System Settings.";
 "未读取到拍摄参数" = "Capture Settings Unavailable";
 "未调整" = "Unadjusted";
@@ -531,6 +547,7 @@
 "没有匹配的外观" = "No matching looks";
 "没有可处理目标，请重新选择照片。" = "No photos remain to process. Select photos again.";
 "没有可复制的调整，请选择其他范围。" = "No adjustments to copy. Choose a different scope.";
+"没有符合筛选的照片" = "No photos match this filter";
 "油润复古 · 城市胶片" = "Rich vintage · urban film";
 "洋红" = "Magenta";
 "添加" = "Add";
@@ -606,6 +623,7 @@
 "继续未完成的 %@ 张" = "Continue Unfinished Photos (%@)";
 "继续编辑" = "Keep Editing";
 "绿" = "Green";
+"编辑状态" = "Edit status";
 "缩放与显示" = "Zoom and display";
 "缺少拍摄时白平衡数据，无法保留配方效果。" = "As-shot white balance data is missing, so the recipe's appearance cannot be preserved.";
 "缺少有效相机校准，保留拍摄时白平衡" = "No Valid Camera Calibration; Preserving As-Shot White Balance";
@@ -653,6 +671,7 @@
 "视频范围（10 位 64–940）" = "Video range (10-bit 64–940)";
 "计算与参考的差异" = "Calculate difference from reference";
 "试用方案 · 无颜色依据" = "Trial option · No color basis";
+"试试其他编辑状态。" = "Try another edit status.";
 "语言" = "Language";
 "请使用 %@ 的步进。" = "Use increments of %@.";
 "请先完成或结束已有批量任务，再创建新任务。" = "Finish or end the existing batch task before creating a new one.";
@@ -733,6 +752,7 @@
 "重命名预设" = "Rename Preset";
 "重新检查" = "Check Again";
 "重新载入" = "Reload";
+"重新选择照片" = "Select photos again";
 "重置" = "Reset";
 "重置 HSL" = "Reset HSL";
 "重置%@" = "Reset %@";
@@ -785,6 +805,7 @@
 "预览尚未就绪，请稍后重试。" = "The preview is not ready yet. Try again shortly.";
 "预览已变化，请重新取色。" = "The preview changed. Sample again.";
 "预览已更新" = "Preview updated";
+"预览待更新" = "Preview updating";
 "预览方式" = "Preview Mode";
 "预览方式不会改变编辑或导出。" = "Preview mode does not change edits or exports.";
 "预览未更新" = "Preview not updated";

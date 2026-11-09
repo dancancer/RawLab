@@ -482,6 +482,9 @@ extension EditorModel {
                 exactPreviewCache.useScope(work.previewScope)
                 exactPreviewCache.store(neutral: stagedNeutral, result: stagedResult, for: work)
             }
+            if restoredRecord.state == editState(settings: settings), settings.hdr?.missingResourceMessage == nil {
+                completedEditPreview = (restoredRecord, stagedResult.image)
+            }
             statusState = .preview(stagedResult.image.width,stagedResult.image.height,original:false)
             pendingImportEvent=false; onUsage(.photoImported)
             if settings.isHDREditing { adjustmentNavigation.selectTool(.exposure) }

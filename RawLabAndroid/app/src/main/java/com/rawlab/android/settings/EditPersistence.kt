@@ -12,6 +12,9 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import com.rawlab.android.geometry.GeometrySettings
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
 /** Stable source identity. A picker URI is preferred; content:<digest> is used only when no URI exists. */
 @JvmInline
@@ -31,11 +34,14 @@ class AdjustmentOperationExpiredException : IllegalStateException("This adjustme
 class AdjustmentHistoryOrderException : IllegalStateException("Undo or redo the photo's edits in history order.")
 class AdjustmentNotReadyException : IllegalStateException("The current adjustments are not committed")
 
+data class EditStoreChange(val directory: String, val state: PhotoEditState)
+
 class EditStore(private val directory: File,
     private val replaceFile: (File, File) -> Unit = ::replaceEditFileAtomically,
 ) {
     private val file = File(directory, "edits.properties")
-    private val processLock = locks.getOrPut(directory.canonicalPath) { ReentrantLock() }
+    private val directoryPath = directory.canonicalPath
+    private val processLock = locks.getOrPut(directoryPath) { ReentrantLock() }
     @Volatile private var lastReadableRecords: Map<PhotoIdentity, EditSettings> = emptyMap()
     private data class Snapshot(val records: Map<PhotoIdentity, EditSettings>,
         val properties: Properties = Properties()) {
@@ -56,6 +62,10 @@ class EditStore(private val directory: File,
         catch (_: Exception) { lastReadableRecords[identity] }
 
     fun readState(identity: PhotoIdentity): PhotoEditState = withStoreLock { read().record(identity) }
+    fun readStates(identities: Collection<PhotoIdentity>): Map<PhotoIdentity, PhotoEditState> = withStoreLock {
+        val snapshot = read()
+        identities.associateWith(snapshot::record)
+    }
 
     fun save(identity: PhotoIdentity, settings: EditSettings?): PhotoEditState = withStoreLock {
         commit(read(), identity, settings)
@@ -186,6 +196,7 @@ class EditStore(private val directory: File,
             replaceFile(temporary, file)
             cachedSnapshot = updated.copy(properties = properties)
             cachedBytes = bytes
+            changed.tryEmit(EditStoreChange(directoryPath, updated.record(identity)))
         } catch (error: Throwable) {
             cachedBytes = null; cachedSnapshot = null
             temporary.delete()
@@ -226,6 +237,8 @@ class EditStore(private val directory: File,
     }
 
     companion object {
+        private val changed = MutableSharedFlow<EditStoreChange>(extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+        val changes = changed.asSharedFlow()
         // JVM 内先串行，再取文件锁；否则同进程的不同 FileChannel 会直接抛 overlapping lock。
         private val locks = ConcurrentHashMap<String, ReentrantLock>()
     }

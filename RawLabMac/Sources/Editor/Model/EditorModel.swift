@@ -297,6 +297,7 @@ final class EditorModel: ObservableObject {
     static let processingMigrationQueue = DispatchQueue(label: "rawlab.processing-migration", qos: .utility)
     var interactionEntry: PhotoEditState?
     var interactionWasDirty = false
+    @Published var completedEditPreview: (record: PhotoEditRecord, image: CGImage)?
     @Published var adjustmentHistoryRevision = 0
     @Published var adjustmentClipboard: AdjustmentTransferPayload?
     @Published var adjustmentSheet: AdjustmentSheetKind?

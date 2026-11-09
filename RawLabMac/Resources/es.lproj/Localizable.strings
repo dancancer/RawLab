@@ -216,6 +216,7 @@
 "原始文件已被替换，请重新选择照片。" = "El archivo original ha sido reemplazado. Selecciona la foto de nuevo.";
 "原始比例" = "Proporción original";
 "原始照片已变化，请重新导入。" = "La foto original ha cambiado. Impórtala de nuevo.";
+"原始预览" = "Vista previa original";
 "原尺寸" = "Tamaño original";
 "去噪优先" = "Prioridad a la reducción de ruido";
 "去朦胧" = "Borrar neblina";
@@ -371,6 +372,7 @@
 "已生成 %@ 个渲染型 DNG" = "Archivos DNG revelados creados: %@";
 "已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Archivos DNG revelados creados: %@ (no se guardaron en la ubicación elegida)";
 "已生成渲染型 DNG，未另存到所选位置。" = "Se creó el DNG revelado, pero no se guardó en la ubicación elegida.";
+"已编辑" = "Editada";
 "已自动升级，原设置已保留。" = "Actualizado automáticamente. Se conservan los ajustes originales.";
 "已调整" = "Ajustado";
 "已跳过" = "Omitida";
@@ -1015,6 +1017,7 @@
 "预览尚未就绪，请稍后重试。" = "La vista previa aún no está lista. Vuelve a intentarlo en breve.";
 "预览已变化，请重新取色。" = "La vista previa ha cambiado. Toma otra muestra.";
 "预览已更新" = "Vista previa actualizada";
+"预览待更新" = "Actualizando vista previa";
 "预览方式" = "Modo de vista previa";
 "预览方式不会改变编辑或导出。" = "El modo de vista previa no cambia los ajustes ni la exportación.";
 "预览未更新" = "Vista previa sin actualizar";

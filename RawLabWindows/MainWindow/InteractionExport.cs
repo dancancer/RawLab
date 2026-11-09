@@ -194,6 +194,7 @@ public partial class MainWindow
         if(!ResolveTransformDraft() || !SaveEdits()){e.Cancel=true;return;}
         if(Application.Current is App app)app.SetSystemPhotoAdmission(false);
         closing=true;
+        photoFolderWatch?.Dispose();photoFolderWatch=null;photoFolderRefresh.Stop();
         CancelProcessingMigration();
         ResetAITask();
         previewResize.Stop();
@@ -217,6 +218,10 @@ public partial class MainWindow
         IsEnabled = false;
         // 离线时 SDK 关闭可能一直等网络：最多等 ShutdownLimit，之后照常退出
         await usageAnalytics.CloseAsync(UsageAnalytics.ShutdownLimit);
+        if(photoPreviews!=null) {
+            photoPreviews.Store.Changed-=PhotoEditChanged;photoPreviews.Ready-=PhotoPreviewReady;
+            await photoPreviews.DisposeAsync();photoPreviews=null;
+        }
         closeFinished=true;engine?.Dispose();engine=null;Closing-=WindowClosing;Close();
     }
 }

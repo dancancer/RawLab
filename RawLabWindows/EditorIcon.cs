@@ -10,6 +10,7 @@ public sealed class EditorIcon : FrameworkElement
     public string Kind { get=>(string)GetValue(KindProperty); set=>SetValue(KindProperty,value); }
     private static readonly Dictionary<string,Geometry> Shapes=new()
     {
+        ["Pencil"]=Geometry.Parse("M4,16 L16,4 L20,8 L8,20 L3,21 Z M14,6 L18,10 M4,16 L8,20"),
         ["Info"]=Geometry.Parse("M12,2 A10,10 0 1 1 11.99,2 M12,11 V17 M12,7 V7.1"),
         ["Lens"]=Geometry.Parse("M9,3 H5 A2,2 0 0 0 3,5 V9 M15,3 H19 A2,2 0 0 1 21,5 V9 M21,15 V19 A2,2 0 0 1 19,21 H15 M9,21 H5 A2,2 0 0 1 3,19 V15 M12,8 A4,4 0 1 1 11.99,8"),
         ["Geometry"]=Geometry.Parse("M6,2 V18 H22 M2,6 H18 V22 M10,10 H14 V14 H10 Z"),

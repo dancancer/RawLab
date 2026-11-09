@@ -3442,6 +3442,92 @@
     "此照片的调整保留原处理版本。": {
       "formats": [],
       "source": "此照片的调整保留原处理版本。"
+    },
+    "打开": {
+      "formats": [],
+      "source": "打开"
+    },
+    "已编辑": {
+      "formats": [],
+      "source": "已编辑"
+    },
+    "未编辑": {
+      "formats": [],
+      "source": "未编辑"
+    },
+    "预览待更新": {
+      "formats": [],
+      "source": "预览待更新"
+    },
+    "原始预览": {
+      "formats": [],
+      "source": "原始预览"
+    },
+    "上次预览": {
+      "formats": [],
+      "source": "上次预览"
+    },
+    "编辑状态": {
+      "formats": [],
+      "source": "编辑状态"
+    },
+    "最近打开": {
+      "formats": [],
+      "source": "最近打开"
+    },
+    "仅显示在本机用 RawLab 打开过的照片。": {
+      "formats": [],
+      "source": "仅显示在本机用 RawLab 打开过的照片。"
+    },
+    "尚无最近打开的照片": {
+      "formats": [],
+      "source": "尚无最近打开的照片"
+    },
+    "没有符合筛选的照片": {
+      "formats": [],
+      "source": "没有符合筛选的照片"
+    },
+    "导入并打开一张照片后，可在这里继续编辑。": {
+      "formats": [],
+      "source": "导入并打开一张照片后，可在这里继续编辑。"
+    },
+    "试试其他编辑状态。": {
+      "formats": [],
+      "source": "试试其他编辑状态。"
+    },
+    "保留最近 100 张照片及约 2 GB 本机副本。移除记录不会删除原照片或调整。": {
+      "formats": [],
+      "source": "保留最近 100 张照片及约 2 GB 本机副本。移除记录不会删除原照片或调整。"
+    },
+    "从最近打开中移除": {
+      "formats": [],
+      "source": "从最近打开中移除"
+    },
+    "原片已变化，请重新选择照片。原有调整已保留。": {
+      "formats": [],
+      "source": "原片已变化，请重新选择照片。原有调整已保留。"
+    },
+    "无法重新打开这张照片，请重新选择。原有调整已保留。": {
+      "formats": [],
+      "source": "无法重新打开这张照片，请重新选择。原有调整已保留。"
+    },
+    "无法读取最近打开的照片，原有记录未被覆盖。": {
+      "formats": [],
+      "source": "无法读取最近打开的照片，原有记录未被覆盖。"
+    },
+    "无法重新打开照片": {
+      "formats": [],
+      "source": "无法重新打开照片"
+    },
+    "重新选择照片": {
+      "formats": [],
+      "source": "重新选择照片"
+    },
+    "无法加入最近打开：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "无法加入最近打开：{0}"
     }
   },
   "overrides": {
@@ -4281,6 +4367,126 @@
       "fr": "Les réglages enregistrés sont à nouveau disponibles. Réessayez d’enregistrer.",
       "ja": "調整記録が再び利用できるようになりました。保存をもう一度お試しください。",
       "zh-Hans": "调整记录已恢复，请重试保存。"
+    },
+    "无法加入最近打开：{0}": {
+      "en": "Could not add to recently opened: {0}",
+      "de": "Konnte nicht zu den zuletzt geöffneten Fotos hinzugefügt werden: {0}",
+      "fr": "Impossible d’ajouter aux photos récentes : {0}",
+      "es": "No se pudo añadir a las fotos recientes: {0}",
+      "ja": "最近開いた写真に追加できませんでした：{0}",
+      "zh-Hans": "无法加入最近打开：{0}"
+    },
+    "仅显示在本机用 RawLab 打开过的照片。": {
+      "en": "Photos opened with RawLab on this device.",
+      "de": "Mit RawLab auf diesem Gerät geöffnete Fotos.",
+      "fr": "Photos ouvertes avec RawLab sur cet appareil.",
+      "es": "Fotos abiertas con RawLab en este dispositivo.",
+      "ja": "このデバイスのRawLabで開いた写真を表示します。",
+      "zh-Hans": "仅显示在本机用 RawLab 打开过的照片。"
+    },
+    "从最近打开中移除": {
+      "en": "Remove from recently opened",
+      "de": "Aus zuletzt geöffnet entfernen",
+      "fr": "Retirer des photos récentes",
+      "es": "Quitar de abiertas recientemente",
+      "ja": "最近開いた写真から削除",
+      "zh-Hans": "从最近打开中移除"
+    },
+    "最近打开": {
+      "en": "Recently opened",
+      "de": "Zuletzt geöffnet",
+      "fr": "Ouvertes récemment",
+      "es": "Abiertas recientemente",
+      "ja": "最近開いた写真",
+      "zh-Hans": "最近打开"
+    },
+    "导入并打开一张照片后，可在这里继续编辑。": {
+      "en": "Import and open a photo to continue editing it here.",
+      "de": "Importiere und öffne ein Foto, um es hier weiterzubearbeiten.",
+      "fr": "Importez et ouvrez une photo pour poursuivre sa modification ici.",
+      "es": "Importa y abre una foto para seguir editándola aquí.",
+      "ja": "写真を読み込んで開くと、ここから編集を再開できます。",
+      "zh-Hans": "导入并打开一张照片后，可在这里继续编辑。"
+    },
+    "无法读取最近打开的照片，原有记录未被覆盖。": {
+      "en": "Recently opened photos could not be read. Existing records have not been overwritten.",
+      "de": "Zuletzt geöffnete Fotos konnten nicht gelesen werden. Vorhandene Einträge wurden nicht überschrieben.",
+      "fr": "Impossible de lire les photos récentes. Les entrées existantes n’ont pas été écrasées.",
+      "es": "No se pudieron leer las fotos recientes. No se han sobrescrito los registros existentes.",
+      "ja": "最近開いた写真を読み込めません。既存の履歴は上書きされていません。",
+      "zh-Hans": "无法读取最近打开的照片，原有记录未被覆盖。"
+    },
+    "无法重新打开照片": {
+      "en": "Could not reopen photo",
+      "de": "Foto konnte nicht erneut geöffnet werden",
+      "fr": "Impossible de rouvrir la photo",
+      "es": "No se pudo volver a abrir la foto",
+      "ja": "写真を再度開けません",
+      "zh-Hans": "无法重新打开照片"
+    },
+    "保留最近 100 张照片及约 2 GB 本机副本。移除记录不会删除原照片或调整。": {
+      "en": "Keeps up to 100 recent photos and about 2 GB of local copies. Removing an entry keeps the original photo and its edits.",
+      "de": "Speichert bis zu 100 zuletzt geöffnete Fotos und etwa 2 GB lokale Kopien. Beim Entfernen eines Eintrags bleiben Original und Anpassungen erhalten.",
+      "fr": "Conserve jusqu’à 100 photos récentes et environ 2 Go de copies locales. Retirer une entrée conserve l’original et ses réglages.",
+      "es": "Conserva hasta 100 fotos recientes y unos 2 GB de copias locales. Quitar una entrada conserva la foto original y sus ajustes.",
+      "ja": "最近の写真100枚、約2 GBまでのローカルコピーを保存します。履歴から削除しても元の写真と編集内容は残ります。",
+      "zh-Hans": "保留最近 100 张照片及约 2 GB 本机副本。移除记录不会删除原照片或调整。"
+    },
+    "尚无最近打开的照片": {
+      "en": "No recently opened photos",
+      "de": "Keine zuletzt geöffneten Fotos",
+      "fr": "Aucune photo ouverte récemment",
+      "es": "No hay fotos abiertas recientemente",
+      "ja": "最近開いた写真はありません",
+      "zh-Hans": "尚无最近打开的照片"
+    },
+    "无法重新打开这张照片，请重新选择。原有调整已保留。": {
+      "en": "This photo could not be reopened. Select it again. Your existing edits are preserved.",
+      "de": "Dieses Foto konnte nicht erneut geöffnet werden. Wähle es erneut aus. Vorhandene Anpassungen bleiben erhalten.",
+      "fr": "Impossible de rouvrir cette photo. Sélectionnez-la à nouveau. Vos réglages sont conservés.",
+      "es": "No se pudo volver a abrir esta foto. Selecciónala de nuevo. Se conservan los ajustes existentes.",
+      "ja": "この写真を再度開けません。写真を選び直してください。編集内容は保持されています。",
+      "zh-Hans": "无法重新打开这张照片，请重新选择。原有调整已保留。"
+    },
+    "编辑状态": {
+      "en": "Edit status",
+      "de": "Bearbeitungsstatus",
+      "fr": "État de modification",
+      "es": "Estado de edición",
+      "ja": "編集状態",
+      "zh-Hans": "编辑状态"
+    },
+    "原片已变化，请重新选择照片。原有调整已保留。": {
+      "en": "The original has changed. Select the photo again. Your existing edits are preserved.",
+      "de": "Das Original wurde geändert. Wähle das Foto erneut aus. Vorhandene Anpassungen bleiben erhalten.",
+      "fr": "L’original a changé. Sélectionnez à nouveau la photo. Vos réglages sont conservés.",
+      "es": "El original ha cambiado. Selecciona la foto de nuevo. Se conservan los ajustes existentes.",
+      "ja": "元の写真が変更されました。写真を選び直してください。編集内容は保持されています。",
+      "zh-Hans": "原片已变化，请重新选择照片。原有调整已保留。"
+    },
+    "试试其他编辑状态。": {
+      "en": "Try another edit status.",
+      "de": "Wähle einen anderen Bearbeitungsstatus.",
+      "fr": "Essayez un autre état de modification.",
+      "es": "Prueba otro estado de edición.",
+      "ja": "別の編集状態を選んでください。",
+      "zh-Hans": "试试其他编辑状态。"
+    },
+    "上次预览": {
+      "en": "Last preview",
+      "de": "Letzte Vorschau",
+      "fr": "Dernier aperçu",
+      "es": "Última vista previa",
+      "ja": "前回のプレビュー",
+      "zh-Hans": "上次预览"
+    },
+    "打开": {
+      "en": "Open",
+      "de": "Öffnen",
+      "fr": "Ouvrir",
+      "es": "Abrir",
+      "ja": "開く",
+      "zh-Hans": "打开"
     }
   }
 }

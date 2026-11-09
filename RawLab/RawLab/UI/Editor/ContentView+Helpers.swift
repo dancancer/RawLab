@@ -348,8 +348,9 @@ extension ContentView {
             .disabled(!isEnabled)
     }
 
-    func requestEditorImport(file: Bool) {
+    func requestEditorImport(file: Bool, recent: RecentPhoto? = nil) {
         guard !editorBusy else { return }
+        recentReselection = recent
         photoViewing.endTemporaryViewing()
         pendingFileImport = file
         pendingPhotoImport = !file
@@ -359,6 +360,7 @@ extension ContentView {
     }
 
     func requestSystemPhotoImport(_ urls: [URL]) {
+        recentReselection = nil
         pendingSystemPhotoURLs = PhotoImportFile.appendSystemPhotoEvent(urls, to: pendingSystemPhotoURLs)
         continueSystemPhotoImport()
     }
@@ -469,15 +471,24 @@ extension ContentView {
         }
         isImporting = true
         showingBefore = false
+        let reselecting = recentReselection
+        recentReselection = nil
         do {
             let source = try await loadPhotoSource(from: item)
+            var transferred = false
+            defer { if !transferred { PhotoImportFile.release(source.url) } }
             let resourceIdentifier = item.itemIdentifier
-            let identity = (try? await viewModel.photoIdentity(for: source, from: item))
+            var identity = (try? await viewModel.photoIdentity(for: source, from: item))
                 ?? resourceIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
-            guard photoImportRequestID == requestID, !Task.isCancelled else {
-                PhotoImportFile.release(source.url)
-                return
+            if let reselecting {
+                let content = try await Task.detached(priority: .userInitiated) { try PhotoIdentity.fallback(for: source.url).contentIdentifier }.value
+                guard content == reselecting.identity.contentIdentifier else {
+                    throw RecentPhotoError.originalChanged
+                }
+                identity = reselecting.identity
             }
+            guard photoImportRequestID == requestID, !Task.isCancelled else { return }
+            transferred = true
             viewModel.importImage(from: source, identity: identity, settings: .default,
                 diagnosticContext: ["entryPoint": "photos"],
                 onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
@@ -501,6 +512,7 @@ extension ContentView {
     }
 
     func cancelPhotoImport() {
+        recentReselection = nil
         photoImportRequestID = nil
         photoImportTask?.cancel()
         photoImportTask = nil
@@ -515,6 +527,7 @@ extension ContentView {
         guard !editorBusy, !isEditorDraftChanged else { return false }
         let urls = PhotoImportFile.fileURLs(from: (try? result.get()) ?? [])
         guard let url = urls.first else {
+            recentReselection = nil
             if case .failure(let error) = result, !(error is CancellationError) {
                 viewModel.reportError(error, operation: .photoImport, stage: "filePicker", context: ["entryPoint": "files"])
             }
@@ -552,6 +565,8 @@ extension ContentView {
         viewModel.cancelImageImport()
         isImporting = true
         showingBefore = false
+        let reselecting = recentReselection
+        recentReselection = nil
         photoImportTask = Task {
             defer { PhotoImportFile.release(url) }
             let (prepared, context): (Result<(PhotoImportSource, PhotoIdentity?), Error>, [String: String]) = await Task.detached(priority: .userInitiated) {
@@ -562,7 +577,17 @@ extension ContentView {
                 context["securityScope"] = String(accessing)
                 do {
                     let source = try await PhotoImportFile.load(fromFile: url)
-                    return (Result.success((source, try? PhotoIdentity.fallback(for: source.url))), context)
+                    var transferred = false
+                    defer { if !transferred { PhotoImportFile.release(source.url) } }
+                    var identity = try PhotoIdentity.fallback(for: source.url)
+                    if let reselecting {
+                        guard identity.contentIdentifier == reselecting.identity.contentIdentifier else {
+                            throw RecentPhotoError.originalChanged
+                        }
+                        identity = reselecting.identity
+                    }
+                    transferred = true
+                    return (Result.success((source, identity)), context)
                 } catch {
                     return (Result.failure(error), context)
                 }

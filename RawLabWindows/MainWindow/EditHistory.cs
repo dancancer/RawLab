@@ -58,6 +58,7 @@ public partial class MainWindow
         var previousLook=before.Edit?.Look;
         currentEditRecord=result.Saved;
         RecordRecentLook(previousLook,result.Saved?.Edit?.Look);
+        if(acceptedPhotoPreviewResources is {} resources)CacheCurrentPhotoPreview(resources);
         return result;
     }
     private string? ResolveLook(SavedEdit saved)

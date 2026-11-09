@@ -237,6 +237,22 @@ internal static class WorkspaceLookChecks
         InteractionChecks.PumpUntil(() => anchoredPhoto.Thumbnail != null && neighbor.Thumbnail != null);
         check(root.Photos.Count(entry => entry.Thumbnail != null) < root.Photos.Count,
             "The browser decodes thumbnails for the visible gallery without loading the whole folder");
+        var originalBrightness=ThumbnailBrightness(neighbor.Thumbnail!);
+        var previewStore=Get<EditStore>(window,"editStore");
+        var previewIdentity=OriginalIdentity.Read(neighbor.Path);
+        var previewSettings=PhotoInput.PrepareInputSettings(neighbor.Path,new Adjustments());
+        previewSettings.Set(Parameter.Exposure,1);
+        previewStore.SaveState(previewIdentity,new(previewIdentity,previewSettings.Capture(),null));
+        InteractionChecks.PumpUntil(()=>neighbor.IsEdited && neighbor.PreviewNotice==null);
+        check(neighbor.PhotoStatus.Contains(Loc.Text("已编辑")),"A saved edit has an independent accessible pencil status");
+        var editedThumbnail=neighbor.Thumbnail;
+        check(ThumbnailBrightness(editedThumbnail!) > originalBrightness + 5,
+            "The effect thumbnail contains the saved exposure, not the original pixels");
+        EditorShellChecks.CaptureLayout(window, EditorShellChecks.ArrangeLayout(window, new Size(1024, 720)), Path.Combine(output,"edited-photo-preview.png"));
+        previewStore.SaveState(previewIdentity,null);
+        InteractionChecks.PumpUntil(()=>!neighbor.IsEdited && neighbor.PreviewNotice==null);
+        check(neighbor.Thumbnail!=null && !ReferenceEquals(editedThumbnail,neighbor.Thumbnail),"Reset restores the original thumbnail and removes the pencil");
+        EditorShellChecks.CaptureLayout(window, EditorShellChecks.ArrangeLayout(window, new Size(1024, 720)), Path.Combine(output,"reset-photo-preview.png"));
         var unchangedThumbnail = neighbor.Thumbnail;
         var beforeReplacement = OriginalIdentity.Read(anchoredPhoto.Path);
         var replacement = Png(32, 12);
@@ -284,6 +300,8 @@ internal static class WorkspaceLookChecks
         menu.IsOpen = false;
         Click(window.LibraryToggleButton);
         Click(window.SelectionWorkspaceButton);
+        InteractionChecks.PumpUntil(()=>!Get<bool>(window,"readingFolder") &&
+            !Get<DispatcherTimer>(window,"photoFolderRefresh").IsEnabled && window.SelectionGallery.Items.Count > 0);
         FlushGalleryLayout();
         check(window.SelectionGallery.Items.OfType<MainWindow.WorkspacePhotoRow>().First().Columns >= 3,
             "The contact sheet adds columns when it uses the center of the window");
@@ -300,6 +318,14 @@ internal static class WorkspaceLookChecks
             window.UpdateLayout();
             window.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
             window.UpdateLayout();
+        }
+
+        static double ThumbnailBrightness(BitmapSource image)
+        {
+            var converted=new FormatConvertedBitmap(image,PixelFormats.Bgra32,null,0);
+            var pixel=new byte[4];
+            converted.CopyPixels(new Int32Rect(image.PixelWidth/2,image.PixelHeight/2,1,1),pixel,4,0);
+            return (pixel[0]+pixel[1]+pixel[2])/3.0;
         }
 
         static byte[] Png(int width, int height)

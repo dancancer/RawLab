@@ -3,10 +3,18 @@
 <resources>
     <string name="about_rawlab">"Über RawLab"</string>
     <string name="album_columns">"%1$d pro Zeile"</string>
+    <string name="album_edit_filter_all">"Alle"</string>
+    <string name="album_edit_filter_edited">"Bearbeitet"</string>
+    <string name="album_edit_filter_unedited">"Unbearbeitet"</string>
+    <string name="album_edit_status_unavailable">"Bearbeitungsstatus nicht verfügbar"</string>
     <string name="album_empty">"Keine zugänglichen Fotos"</string>
     <string name="album_error">"Album konnte nicht gelesen werden. Prüfen Sie die Fotoberechtigung."</string>
+    <string name="album_no_edit_matches">"Keine Fotos für diesen Filter"</string>
+    <string name="album_original_preview">"Originalvorschau"</string>
     <string name="album_original_ratio">"Originalverhältnis"</string>
     <string name="album_own_photos">"Zeigt von RawLab gespeicherte Fotos an. Erteilen Sie die Berechtigung, um weitere Fotos zu durchsuchen."</string>
+    <string name="album_preview_unavailable">"Vorschau nicht aktualisiert"</string>
+    <string name="album_preview_updating">"Vorschau wird aktualisiert"</string>
     <string name="album_square">"Quadratische Vorschaubilder"</string>
     <string name="album_view_options">"Anzeigeoptionen"</string>
     <string name="all_albums">"Alle Alben"</string>

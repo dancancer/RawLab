@@ -37,6 +37,7 @@
     <Compile Include="../../PhotoInfo.cs" Link="PhotoInfo.cs" />
     <Compile Include="../../PhotoInput.cs" Link="PhotoInput.cs" />
     <Compile Include="../FeatureRegressionChecks.cs" Link="FeatureRegressionChecks.cs" />
+    <Compile Include="../../EditedPhotoPreviewCache.cs" />
     <Compile Include="../../EditPersistence.cs" Link="EditPersistence.cs" Condition="Exists('../../EditPersistence.cs')" />
     <Compile Include="../../ProcessingMigration.cs" Link="ProcessingMigration.cs" />
     <Compile Include="../../BatchSelection.cs" />
