@@ -386,7 +386,7 @@ public partial class BatchExportWindow : Window
                 }
                 var previousStatuses = work.Items.ToDictionary(item => item.Id, item => item.Status);
                 if (work.Format is not (ExportFormat.RenderedDng or ExportFormat.HdrJpeg)) ExportMetadata.VerifyAvailable();
-                using var engine = createEngine(work.AIBackend);engine.SetAIDevice(work.AIDeviceID);engine.SetCancellation(cancellation.Token);
+                using var engine = createEngine(work.AIBackend);engine.SetAIDevice(work.AIDeviceID);
                 BatchRunner.Run(work, journal, failuresOnly, cancellation.Token,
                     (updated, _) => {
                         foreach (var item in updated.Items)
@@ -402,10 +402,14 @@ public partial class BatchExportWindow : Window
                             using var progress=new AIPreparation((phase,done,total)=>
                                 Dispatcher.BeginInvoke(new Action(()=>{aiProgress=new(AIDenoiseStatus.Running,phase,done,total);Refresh();})));
                             using var registration=cancellation.Token.Register(progress.Cancel);
-                            try { engine.PrepareAI(input,settings,progress); }
-                            finally { Dispatcher.BeginInvoke(new Action(()=>{aiProgress=null;Refresh();})); }
+                            engine.SetCancellation(cancellation.Token);
+                            try { engine.PrepareAI(input,settings,progress); cancellation.Token.ThrowIfCancellationRequested(); }
+                            finally {
+                                // 取消只中止 AI 准备；后续 32px 预渲染和成片导出必须完成当前项。
+                                engine.SetCancellation(CancellationToken.None);
+                                Dispatcher.BeginInvoke(new Action(()=>{aiProgress=null;Refresh();}));
+                            }
                         }
-                        cancellation.Token.ThrowIfCancellationRequested();
                         engine.Render(input, settings, look, 32, statistics: false, clipping: false);
                         engine.Render(input, settings, look, 0, output: destination, longEdge: longEdge, formatOverride: work.Format);
                     });
