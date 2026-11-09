@@ -216,14 +216,15 @@ run effects at source resolution on Metal; ordinary previews use reduced input. 
 and display-chroma guided filtering, retaining CPU estimation/calibration and
 OpenCV color/resampling semantics. Auto has CPU fallback; Force does not hide GPU
 failure. Legacy FBDD, RAW decoding and file encoding remain CPU operations.
-新处理版本 2 使用 C5，亮度、色度和粗色斑强度均可调。提高强度会减少噪声，也可能压低弱纹理；
+处理版本 2、3 使用 C5，亮度、色度和粗色斑强度均可调。提高强度会减少噪声，也可能压低弱纹理；
 低强度更适合保留细节。C5 在 CPU 上分块滤波，Auto 可继续使用 Metal 显示渲染；Force 不支持需要执行 C5 的请求。
-旧记录保留版本 1，新编辑采用版本 2；重置调整不自动升级处理版本。
+旧记录保留原版本，新编辑采用版本 3；重置调整不自动升级处理版本。
+版本 3 的基础调节和普通曝光 ±5 EV 见[基础调节契约](../lutools/docs/basic-controls-v3.md)。
 
-Processing version 2 uses tiled CPU C5 with adjustable luma, chroma and coarse strengths.
+Processing versions 2 and 3 use tiled CPU C5 with adjustable luma, chroma and coarse strengths.
 Lower strengths retain more detail; stronger denoising may suppress weak texture. Auto can
 continue Metal display rendering, while Force rejects an active C5 filter request.
-Existing records retain version 1; new edits use version 2.
+Existing records retain their saved version; new edits use version 3.
 
 See the [shared contract](../lutools/docs/color-contract.md#gpu-denoising).
 

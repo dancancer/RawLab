@@ -645,6 +645,33 @@ final class RenderEngine {
         return sample
     }
 
+    func migrateProcessing(_ url: URL, settings: Adjustments, lut: URL?,
+                           cancellation: ProcessingMigrationCancellation) throws -> ProcessingMigrationOutcome {
+        guard !settings.isHDREditing, !settings.activeAIDenoise, settings.masterRecipeID == nil else {
+            throw RenderError.failed(L10n.text("此照片的调整保留原处理版本。"))
+        }
+        let (_, prepared) = try photoRequest(url, settings: settings, lut: lut, edge: nil, output: nil,
+            interactive: false, exportLongEdge: nil, viewportPreview: false)
+        var request = prepared
+        let context = Unmanaged.passUnretained(cancellation).toOpaque()
+        _ = sony2fuji_session_set_cancellation_callback(session, { pointer in
+            guard let pointer else { return 0 }
+            return Unmanaged<ProcessingMigrationCancellation>.fromOpaque(pointer).takeUnretainedValue().isCancelled ? 1 : 0
+        }, context)
+        defer { _ = sony2fuji_session_set_cancellation_callback(session, nil, nil) }
+        var native = sony2fuji_processing_migration_result()
+        let status = try withInput(url, request: &request) { input in
+            (lut?.path ?? "").withCString { path in
+                input.lut_path = lut == nil ? nil : path
+                return sony2fuji_session_migrate_processing(session, &input, &native)
+            }
+        }
+        guard status == SONY2FUJI_STATUS_OK else {
+            throw RenderError.failed(String(cString: sony2fuji_status_message(status)))
+        }
+        return ProcessingMigrationOutcome(native)
+    }
+
     func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, interactive: Bool = false, exportLongEdge: Int? = nil, viewportPreview: Bool = false, exportFormat: ExportFormat? = nil) throws -> RenderedImage? {
         if settings.isHDREditing {
             return try renderHDR(url,settings:settings,edge:edge,output:output,longEdge:exportLongEdge,format:exportFormat)

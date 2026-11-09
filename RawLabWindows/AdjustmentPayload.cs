@@ -349,7 +349,7 @@ public sealed class AdjustmentPayload
             : PayloadVersion != 1 || ScopeVersion != 1)
             throw new AdjustmentTransferException(AdjustmentFailure.UnsupportedVersion);
         if (Values.Count==0) throw new AdjustmentTransferException(AdjustmentFailure.EmptyScope);
-        if (string.IsNullOrEmpty(Source.Identifier) || Source.ProcessingVersion is not (1 or 2) ||
+        if (string.IsNullOrEmpty(Source.Identifier) || Source.ProcessingVersion is not (1 or 2 or 3) ||
             Source.IsHDR && (Source.IsRaw || Source.Recipe != null)) throw Invalid("source");
         if (!Source.IsHDR && Values.Keys.Any(field => field.IsHDROnly())) throw Invalid("hdr context");
         if (Source.HdrProcessingVersion is { } hdrVersion) {

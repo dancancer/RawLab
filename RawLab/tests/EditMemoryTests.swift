@@ -9,7 +9,7 @@ struct EditMemoryTests {
 
     static func main() throws {
         let defaultObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(RawSettings.default)) as! [String: Any]
-        check((defaultObject["processing"] as? [String: Any])?["version"] as? Int == 2,
+        check((defaultObject["processing"] as? [String: Any])?["version"] as? Int == 3,
               "new settings persist current processing identity")
         check(defaultObject["x3fMode"] as? String == "normal-v1", "fresh settings select normal X3F rendering")
         var oldObject = defaultObject
@@ -153,8 +153,18 @@ struct EditMemoryTests {
         check(scopedStore.state(for: resetIdentity)?.settings.processing == .legacy,
               "scoped legacy reset survives save and reopen")
         check(reopened.state(for: first)?.settings.processing == .current, "processing identity survives restart")
+        check(ProcessingIdentity.current.version == 3, "new edits use basic controls v3")
+        for version in [1, 2, 3] {
+            var versioned = defaultObject
+            versioned["processing"] = ["family": "rawlab", "version": version, "quality": "standard"]
+            var settings = try JSONDecoder().decode(RawSettings.self,
+                from: JSONSerialization.data(withJSONObject: versioned))
+            settings.exposure = 0.5
+            settings = settings.resettingAdjustments()
+            check(settings.processing.version == version, "reset preserves every supported processing version")
+        }
         for identity: Any in [NSNull(), ["family": "other", "version": 2, "quality": "standard"],
-                             ["family": "rawlab", "version": 3, "quality": "standard"],
+                             ["family": "rawlab", "version": 4, "quality": "standard"],
                              ["family": "rawlab", "version": 2, "quality": "fast"],
                              ["family": "rawlab", "version": 2, "quality": "standard", "future": true]] {
             var invalid = defaultObject
@@ -477,7 +487,11 @@ extension EditMemoryTests {
         check(blocked(recipeSettings, .group(.looks), context), "unrepresentable scaled exposure blocks without clamping")
         recipeSettings = RawSettings.default; recipeSettings.masterRecipeID = "unknown-recipe"
         check(blocked(recipeSettings, .all), "unknown recipe blocks even all reset")
-        for invalid in [Double.nan, Double.infinity, 4.01] {
+        for endpoint in [-5.0, 5.0] {
+            var endpointSettings = settings; endpointSettings.exposure = endpoint
+            check(!blocked(endpointSettings, .allHSL), "ordinary exposure endpoints remain valid during unrelated edits")
+        }
+        for invalid in [Double.nan, Double.infinity, 5.01, -5.01] {
             var invalidSettings = settings; invalidSettings.exposure = invalid
             check(blocked(invalidSettings, .allHSL), "complete input validation rejects invalid unselected exposure")
         }

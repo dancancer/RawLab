@@ -158,7 +158,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     }
     val owner = LocalLifecycleOwner.current
     val context = LocalContext.current
-    DisposableEffect(owner, model) {
+    DisposableEffect(owner, model, camera) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_START) camera.onForeground()
             if (event == Lifecycle.Event.ON_STOP && (context as? android.app.Activity)?.isChangingConfigurations != true) {
@@ -167,6 +167,16 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             }
         }
         owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+    val editorVisible = !cameraOpen && batch == null && !collectionOpen && !album
+    DisposableEffect(owner, model, editorVisible) {
+        fun updateEditorActivity() {
+            model.setEditorActive(editorVisible && owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+        }
+        val observer = LifecycleEventObserver { _, _ -> updateEditorActivity() }
+        owner.lifecycle.addObserver(observer)
+        updateEditorActivity()
         onDispose { owner.lifecycle.removeObserver(observer) }
     }
     DisposableEffect(cameraState.transferring) {
@@ -183,8 +193,10 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     var licenses by rememberSaveable { mutableStateOf(false) }
     val screenState = rememberSaveableStateHolder()
     val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) album = false
-        if (fileFromCameraAlbum && uri != null) model.receiveSystemPhotos(listOf(uri)) else model.importPhoto(uri)
+        if (fileFromCameraAlbum && uri != null) {
+            album = false
+            model.receiveSystemPhotos(listOf(uri))
+        } else model.importPhoto(uri) { accepted -> if (accepted) album = false }
         fileFromCameraAlbum = false
     }
     val openLook = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
@@ -225,20 +237,20 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
         screenState.SaveableStateProvider("album") {
             AlbumScreen(model.storage, onBack = { album = false; if (albumFromCamera) cameraOpen = true },
                 onFile = { fileFromCameraAlbum = albumFromCamera; openFile.launch(arrayOf("*/*")) }, initialPhotos = albumPhotoFocus.takeIf { it.isNotEmpty() }?.toSet(),
-                onPhoto = {
-                    album = false
+                onPhoto = { uri ->
                     if (albumFromCamera) {
                         // 相机页往返保留草稿；选定本地照片后才进入既有的离开确认。
                         albumFromCamera = false
-                        model.receiveSystemPhotos(listOf(it))
-                    } else model.importPhoto(it)
+                        album = false
+                        model.receiveSystemPhotos(listOf(uri))
+                    } else model.importPhoto(uri) { accepted -> if (accepted) album = false }
                 })
         }
     } else {
         screenState.SaveableStateProvider("editor") {
         Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         if (cameraState.transferring || cameraState.job?.status == com.rawlab.android.camera.CameraJobStatus.PAUSED) {
-            TextButton(onClick = { cameraTaskRequested = true; cameraOpen = true },
+            TextButton(onClick = { model.setEditorActive(false); cameraTaskRequested = true; cameraOpen = true },
                 modifier = Modifier.fillMaxWidth().statusBarsPadding().testTag("camera-open-task")) {
                 Text(stringResource(R.string.camera_view_task))
             }
@@ -250,8 +262,9 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             }
         }
         Box(Modifier.weight(1f)) {
-        EditorScreen(state, onAlbum = { albumFromCamera = false; albumPhotoFocus = emptyList(); album = true }, onFile = { openFile.launch(arrayOf("*/*")) },
-            onCamera = { cameraTaskRequested = false; cameraOpen = true },
+        EditorScreen(state, onAlbum = { model.setEditorActive(false); albumFromCamera = false; albumPhotoFocus = emptyList(); album = true }, onFile = { openFile.launch(arrayOf("*/*")) },
+            onRollbackProcessing = model::rollbackProcessingMigration,
+            onCamera = { model.setEditorActive(false); cameraTaskRequested = false; cameraOpen = true },
             systemPhotoRequest = systemPhotoRequests.firstOrNull()?.takeUnless { collection.busy },
             onSystemPhotoConsumed = model::consumeSystemPhotoRequest,
             onSystemPhotoReady = { request, completed ->

@@ -145,6 +145,8 @@ final class RawEditorViewModel: ObservableObject {
     @Published var sourceFile: PhotoSourceFile?
     @Published var sourceRevision = UUID() {
         didSet {
+            cancelProcessingMigration()
+            processingMigrationReceipt = nil
             hslSourceRevision &+= 1
             acceptedPreviewRequest = nil
             completedPreviewCache.removeAll()
@@ -166,6 +168,11 @@ final class RawEditorViewModel: ObservableObject {
     var persistedEditorSettings: PersistedEditorSettings?
     var failedDraftSource: EditorEditSource?
     var loadedEditRecord: PhotoEditRecord?
+    @Published var processingMigrationReceipt: ProcessingMigrationReceipt<PhotoEditState>?
+    @Published var matchingProcessing = false
+    var processingMigrationCancellation: ProcessingMigrationCancellation?
+    var processingMigrationAttemptSource: UUID?
+    static let processingMigrationQueue = DispatchQueue(label: "com.rawlab.processing-migration", qos: .utility)
     let batchSelection = IOSBatchSelection()
     @Published var collectionExportPreparing = false
     @Published var collectionExportFreezing = false
@@ -210,7 +217,9 @@ final class RawEditorViewModel: ObservableObject {
     var previewLongEdge = 1280
     var requestedPreviewLongEdge = 1280
     var previewResizeWorkItem: DispatchWorkItem?
-    var currentPreviewSettings = RawSettings.default
+    var currentPreviewSettings = RawSettings.default {
+        didSet { if oldValue != currentPreviewSettings { cancelProcessingMigration() } }
+    }
     let sampleResourceName = "sample"
     let sampleResourceExtension = "ARW"
     let previewMaxDimension: CGFloat = 1280

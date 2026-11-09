@@ -41,6 +41,14 @@ class AdjustmentTransferSession(private val store: EditStore) {
     fun editGeneration(identity: PhotoIdentity): Long = editGenerations[identity.value] ?: 0L
     fun isCurrentSave(saved: PhotoEditState): Boolean = saved.sameAs(knownRecords[saved.identity.value])
 
+    fun adoptProcessingMigration(saved: PhotoEditState) {
+        history = history.map { transaction ->
+            transaction.copy(parts = transaction.parts.filter { it.identity != saved.identity })
+        }.filter { it.parts.isNotEmpty() }
+        historyHeads.remove(saved.identity.value)
+        remember(saved)
+    }
+
     fun refreshSource(identity: PhotoIdentity, validate: () -> Unit) {
         if (knownRecords.containsKey(identity.value)) sourceValidators[identity.value] = validate
     }

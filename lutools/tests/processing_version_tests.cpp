@@ -20,7 +20,8 @@ static void cacheChecks() {
     ProcessingVersion previous = ProcessingVersion::C5V2;
     bool first = true;
     for (const auto version : {ProcessingVersion::Legacy, ProcessingVersion::Legacy, ProcessingVersion::C5V2,
-                               ProcessingVersion::C5V2, ProcessingVersion::Legacy}) {
+                               ProcessingVersion::C5V2, ProcessingVersion::BasicV3,
+                               ProcessingVersion::BasicV3, ProcessingVersion::C5V2, ProcessingVersion::Legacy}) {
         options.processingVersion = version;
         auto cached = processingReferenceFixture();
         auto fresh = cached;
@@ -31,6 +32,14 @@ static void cacheChecks() {
         require(applyWaveletDenoise(fresh, options) == ErrorCode::Success, "fresh filtering");
         require(std::memcmp(cached.pixels.data(), fresh.pixels.data(), fresh.pixels.size() * sizeof(RGB)) == 0,
                 "version switches equal fresh filtering");
+        if (version == ProcessingVersion::BasicV3) {
+            auto v2 = processingReferenceFixture();
+            auto v2Options = options;
+            v2Options.processingVersion = ProcessingVersion::C5V2;
+            require(applyWaveletDenoise(v2, v2Options) == ErrorCode::Success, "v2 comparison filtering");
+            require(std::memcmp(cached.pixels.data(), v2.pixels.data(), v2.pixels.size() * sizeof(RGB)) == 0,
+                    "basic controls v3 retains v2 C5 pixels");
+        }
         previous = version;
         first = false;
     }

@@ -193,8 +193,8 @@ struct EditorPresentationTests {
               AdjustmentKind.temperature.progress(in: settings) < 0.1,
               "Positive progress uses the upper half of the expanded temperature range")
         settings.exposure = -1
-        check(AdjustmentKind.exposure.progress(in: settings) == -0.25,
-              "Negative exposure travels counterclockwise")
+        check(AdjustmentKind.exposure.progress(in: settings) == -0.2,
+              "Negative exposure uses the five-stop counterclockwise range")
         settings.lutStrength = 0
         check(AdjustmentKind.strength.progress(in: settings) == -1,
               "Strength is anchored at its existing 100 percent default")

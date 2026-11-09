@@ -28,6 +28,17 @@ public sealed class AdjustmentTransferSession(EditStore store)
         Fields=t.Fields.ToHashSet(),Parts=t.Parts.Select(p=>p with {Before=p.Before?.Copy(),After=p.After?.Copy()}).ToArray()}).ToArray();
     public AdjustmentPayload? Clipboard {get;private set;}
     public bool IsCurrentSave(PhotoEditState saved)=>saved.SameAs(knownRecords.GetValueOrDefault(saved.Identity.Path));
+    internal void RememberExternalSave(PhotoEditState saved)=>Remember(saved);
+    internal void AdoptExternalProcessingMigration(PhotoEditState saved)
+    {
+        var key=saved.Identity.Path;
+        for(var i=history.Count-1;i>=0;i--)
+        {
+            var parts=history[i].Parts.Where(part=>!SamePath(part.Identity.Path,key)).ToArray();
+            if(parts.Length==0)history.RemoveAt(i);else history[i]=history[i] with {Parts=parts};
+        }
+        heads.Remove(key);Remember(saved);
+    }
     public AdjustmentPayload Copy(AdjustmentScope scope,SavedEdit source,AdjustmentTransferContext context)
     {var payload=AdjustmentTransfer.Capture(scope,source,context);Clipboard=payload;return payload;}
     public PreparedAdjustmentTransfer Prepare(AdjustmentPayload payload,IEnumerable<AdjustmentTransferTarget> targets,

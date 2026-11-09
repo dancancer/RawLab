@@ -248,6 +248,7 @@
 "向左旋转 90°" = "90° nach links drehen";
 "向左滚动%@" = "%@ nach links scrollen";
 "四面体" = "Tetraedrisch";
+"回到迁移前" = "Ursprüngliche Einstellungen wiederherstellen";
 "圆度" = "Rundheit";
 "在 Finder 中打开" = "Im Finder öffnen";
 "在照片上取色并上下拖动" = "Wählen Sie eine Farbe im Foto und ziehen Sie nach oben oder unten";
@@ -263,6 +264,7 @@
 "基础曝光偏移" = "Basisbelichtungsversatz";
 "处理 v1（旧版）" = "Verarbeitung v1 (alt)";
 "处理 v2" = "Verarbeitung v2";
+"处理 v3" = "Verarbeitung v3";
 "处理失败：%@" = "Verarbeitung fehlgeschlagen: %@";
 "处理版本" = "Verarbeitungsversion";
 "处理结果为空" = "Das Verarbeitungsergebnis ist leer";
@@ -314,6 +316,7 @@
 "导出长边必须为 1-65535 像素。" = "Die lange Seite muss 1-65535 Pixel betragen.";
 "将以下项目转为独立调整，以保留其他分组的当前效果：%@" = "Die folgenden Werte werden in unabhängige Anpassungen umgewandelt, damit die aktuelle Wirkung anderer Gruppen erhalten bleibt: %@";
 "将在下次正常退出时重新检查并安装" = "Beim nächsten regulären Beenden wird erneut nach dem Update gesucht und es wird installiert";
+"将恢复迁移前的全部调整，之后的修改会被替换。" = "Alle Einstellungen vor der Aktualisierung werden wiederhergestellt. Spätere Änderungen werden ersetzt.";
 "将按每张照片已保存的调整导出。跳过只影响本次导出。" = "Jedes Foto verwendet seine gespeicherten Anpassungen. Überspringen gilt nur für diesen Export.";
 "将替换目标照片的本机调整记录，不改写原始 RAW。" = "Ersetzt die lokalen Anpassungen der Zielfotos, ohne die ursprüngliche RAW-Datei zu ändern.";
 "将替换目标照片的本机调整记录，不改写原始文件。" = "Die lokalen Anpassungsdatensätze der Zielfotos werden ersetzt. Originaldateien werden nicht geändert.";
@@ -345,6 +348,7 @@
 "已匹配配置 · 校正尚未开启" = "Profil zugeordnet · Korrektur aus";
 "已匹配镜头" = "Objektiv zugeordnet";
 "已启用" = "Aktiviert";
+"已回退，保留旧版本。" = "Wiederhergestellt. Die bisherige Version bleibt erhalten.";
 "已导入 %@ 个外观，%@ 个文件导入失败：\n" = "Importierte Looks: %@; nicht importierte Dateien: %@\n";
 "已导出" = "Exportiert";
 "已导出 %@ 个渲染型 DNG" = "Entwickelte DNG-Dateien exportiert: %@";
@@ -367,6 +371,7 @@
 "已生成 %@ 个渲染型 DNG" = "Entwickelte DNG-Dateien erstellt: %@";
 "已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Entwickelte DNG-Dateien erstellt: %@ (nicht am gewählten Ort gespeichert)";
 "已生成渲染型 DNG，未另存到所选位置。" = "Entwickeltes DNG erstellt, aber nicht am gewählten Ort gespeichert.";
+"已自动升级，原设置已保留。" = "Automatisch aktualisiert. Ursprüngliche Einstellungen sind gespeichert.";
 "已调整" = "Bearbeitet";
 "已跳过" = "Übersprungen";
 "已选" = "Ausgewählt";
@@ -626,6 +631,7 @@
 "正在准备 AI 降噪" = "KI-Entrauschen wird vorbereitet";
 "正在准备导出…" = "Export wird vorbereitet…";
 "正在准备编辑画布…" = "Bearbeitungsfläche wird vorbereitet…";
+"正在匹配原画面…" = "Ursprüngliches Bild wird angeglichen…";
 "正在取色…" = "Farbe wird erfasst…";
 "正在处理 RAW 噪声" = "RAW-Rauschen wird verarbeitet";
 "正在处理更新，编辑暂不可用。" = "Ein Update wird verarbeitet. Die Bearbeitung ist vorübergehend nicht verfügbar.";
@@ -667,6 +673,7 @@
 "此照片没有可编辑的 HDR 增益图。" = "Dieses Foto hat keine bearbeitbare HDR-Gain-Map.";
 "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。" = "Die HDR-Bearbeitung dieses Fotos erfordert macOS 15. Es wird in SDR exportiert.";
 "此照片的 HDR 需 macOS 15 才能编辑，已按 SDR 打开。" = "Die HDR-Bearbeitung dieses Fotos erfordert macOS 15. Es wurde in SDR geöffnet.";
+"此照片的调整保留原处理版本。" = "Dieses Foto behält seine bisherige Verarbeitungsversion.";
 "此目录没有 RAW 照片。" = "Dieser Ordner enthält keine RAW-Fotos.";
 "此目录没有照片。" = "Dieser Ordner enthält keine Fotos.";
 "此输入不支持镜头校正" = "Objektivkorrektur für diese Eingabe nicht unterstützt";
@@ -722,6 +729,7 @@
 "用户外观 · %@" = "Eigener Look · %@";
 "电影叙事宽画幅质感，强反差光影切割，深邃暗部与聚光灯金光" = "Filmische Breitbild-Ästhetik, hart geschnittenes Licht und Schatten, tiefe Dunkelheit und goldenes Scheinwerferlicht";
 "电影夜景胶片色调，红色灯光与深邃冷青绿暗部" = "Filmische Nachtfarben, rote Lichter und tiefe kühl-cyane-grüne Schatten";
+"画面差异较大，已保留旧版本。" = "Die Bildabweichung ist zu groß. Die bisherige Version bleibt erhalten.";
 "画面比例" = "Bildseitenverhältnis";
 "畸变" = "Verzeichnung";
 "畸变未应用" = "Verzeichnungskorrektur nicht angewendet";

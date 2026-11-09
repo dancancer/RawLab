@@ -6,6 +6,66 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
 }
 
 @main struct EditMemoryTests {
+    static func processingMigrationChecks() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let photo = root.appendingPathComponent("migration.dng")
+        try Data("original".utf8).write(to: photo)
+        let directory = root.appendingPathComponent("edits")
+        let store = try EditPersistence(directory: directory)
+        var settings = Adjustments(); settings.processing = .c5; settings.exposure = 0.5
+        settings.highlights = -20; settings.vibrance = 17.5
+        let original = PhotoEditState(settings: settings, filmID: "saved-look")
+        try store.save(photo, state: original)
+        let expected = try store.readState(for: photo)
+        let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.003, worstTileRMSE: 0.002,
+            detailRMSE: 0.001, evaluations: 24)
+        var candidate = original; candidate.settings.processing = .current; candidate.settings.highlights = -14
+        let failing = try EditPersistence(directory: directory, writeData: { _, _ in throw Failure(message: "disk full") })
+        let file = directory.appendingPathComponent("edits.json"), before = try Data(contentsOf: file)
+        do {
+            _ = try failing.commitProcessingMigration(expected: expected, candidate: candidate, quality: quality)
+            throw Failure(message: "failed migration save must throw")
+        } catch let error as Failure { try check(error.message == "disk full", "migration write failure is propagated") }
+        try check(try Data(contentsOf: file) == before, "failed atomic write preserves old pixels and does not lose backup")
+        _ = try store.commitProcessingMigration(expected: expected, candidate: candidate, quality: quality)
+        let reopened = try EditPersistence(directory: directory)
+        try check(try reopened.state(for: photo) == candidate, "accepted migration survives restart")
+        try check(try reopened.processingMigration(for: photo)?.original == original, "full original look and settings are durable")
+        do {
+            _ = try reopened.commitProcessingMigration(expected: expected, candidate: candidate, quality: quality)
+            throw Failure(message: "stale fit must fail")
+        } catch AdjustmentCommitError.expired { }
+        var later = candidate; later.settings.exposure = 1.25
+        try reopened.save(photo, state: later)
+        let rollbackExpected = try reopened.readState(for: photo)
+        let restored = try reopened.rollbackProcessingMigration(expected: rollbackExpected)
+        try check(restored.state == original, "rollback restores all original parameters, version and look after later edits")
+        let receipt = try reopened.processingMigration(for: photo)!
+        try check(receipt.status == .rolledBack && !receipt.shouldAttempt(current: original, sourceVersion: 2),
+            "rollback suppresses repeated automatic migration after restart")
+
+        let rejectedPhoto = root.appendingPathComponent("rejected.dng")
+        try Data("second".utf8).write(to: rejectedPhoto)
+        try store.save(rejectedPhoto, state: original)
+        let rejectedExpected = try store.readState(for: rejectedPhoto)
+        let highError = ProcessingMigrationQuality(rgbRMSE: 0.1, p99Error: 0.2, worstTileRMSE: 0.2, detailRMSE: 0.02, evaluations: 161)
+        _ = try store.commitProcessingMigration(expected: rejectedExpected, candidate: nil, quality: highError)
+        try check(try store.readState(for: rejectedPhoto) == rejectedExpected, "rejected fit preserves the complete old record")
+        let kept = try store.processingMigration(for: rejectedPhoto)!
+        try check(!kept.shouldAttempt(current: original, sourceVersion: 2), "unchanged rejected settings do not retry")
+        var edited = original; edited.settings.shadows = 25
+        try check(kept.shouldAttempt(current: edited, sourceVersion: 2), "changed rejected settings may be reconsidered")
+        try store.save(rejectedPhoto, state: edited)
+        do {
+            _ = try store.commitProcessingMigration(expected: rejectedExpected, candidate: candidate, quality: quality)
+            throw Failure(message: "cross-instance concurrent edit must win")
+        } catch AdjustmentCommitError.expired { }
+        try check(try store.state(for: rejectedPhoto) == edited, "stale candidate cannot overwrite another save")
+        print("PASS: processing migration atomic CAS, rejection, persistence and rollback")
+    }
+
     static func protectedStoreChecks() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -44,8 +104,18 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
             return object["processing"] as? NSDictionary
         }
         let legacy: NSDictionary = ["family": "rawlab", "version": 1, "quality": "standard"]
-        let current: NSDictionary = ["family": "rawlab", "version": 2, "quality": "standard"]
-        try check(try identity(Adjustments()) == current, "new desktop edits explicitly store processing v2")
+        let current: NSDictionary = ["family": "rawlab", "version": 3, "quality": "standard"]
+        for endpoint in [-5.0, 5.0] {
+            var settings = Adjustments(); settings.exposure = endpoint
+            try settings.validateResetValues()
+            let restored = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(settings))
+            try check(restored.exposure == endpoint, "ordinary exposure endpoints survive persistence")
+            let hdr = try settings.withHDRMode(true, sourceIsHDR: true)
+            try check(AdjustmentParameter.exposure.spec(for: settings).range == -5...5 &&
+                      AdjustmentParameter.exposure.spec(for: hdr).range == -4...4,
+                      "HDR UI retains its separate exposure range")
+        }
+        try check(try identity(Adjustments()) == current, "new desktop edits explicitly store processing v3")
         var restored = try JSONDecoder().decode(Adjustments.self, from: Data("{}".utf8))
         try check(try identity(restored) == legacy, "missing processing identity restores legacy, not the new default")
         restored.exposure = 0.7
@@ -54,10 +124,19 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         restored.resetAll()
         try check(try identity(restored) == legacy, "reset keeps the restored processing identity")
         try check(try identity(restored.neutralGeometrySettings) == legacy, "neutral geometry keeps processing identity")
+        for version in [1, 2, 3] {
+            let bytes = try JSONSerialization.data(withJSONObject: ["processing":
+                ["family": "rawlab", "version": version, "quality": "standard"]])
+            var saved = try JSONDecoder().decode(Adjustments.self, from: bytes)
+            saved.exposure = 0.5
+            saved.resetAll()
+            try check((try identity(saved))?["version"] as? Int == version,
+                      "explicit versions survive editing and reset without upgrades")
+        }
         for invalid: Any in [
             NSNull(),
             ["family": "other", "version": 1, "quality": "standard"],
-            ["family": "rawlab", "version": 3, "quality": "standard"],
+            ["family": "rawlab", "version": 4, "quality": "standard"],
             ["family": "rawlab", "version": 0, "quality": "standard"],
             ["family": "rawlab", "version": true, "quality": "standard"],
             ["family": "rawlab", "version": 1, "quality": "fast"],
@@ -91,6 +170,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         try check(try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(x3f)).x3fMode == .normal,
                   "X3F mode survives save/reopen and batch serialization")
         try processingIdentityChecks()
+        try processingMigrationChecks()
         try protectedStoreChecks()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

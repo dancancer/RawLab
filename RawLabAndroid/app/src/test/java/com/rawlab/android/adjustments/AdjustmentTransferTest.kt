@@ -251,7 +251,10 @@ class AdjustmentTransferTest {
     @Test fun fractionalEffectsBypassUIQuantizationAndRawRequestsRejectRaster() {
         val result = prepare(payload(F.GRAIN_AMOUNT to AdjustmentValue.Number(12.375), F.VIGNETTE_MIDPOINT to AdjustmentValue.Number(32.25)))
         assertEquals(12.375f, result.effects.grainAmount); assertEquals(32.25f, result.effects.vignetteMidpoint)
-        assertThrows(AdjustmentTransferException::class.java) { prepare(payload(F.EXPOSURE to AdjustmentValue.Number(5.0))) }
+        for (endpoint in listOf(-5.0, 5.0)) {
+            assertEquals(endpoint.toFloat(), prepare(payload(F.EXPOSURE to AdjustmentValue.Number(endpoint))).exposure)
+        }
+        assertThrows(AdjustmentTransferException::class.java) { prepare(payload(F.EXPOSURE to AdjustmentValue.Number(5.01))) }
         val raster = EditSettings(exposureMode = 2)
         assertEquals(raster, prepare(payload(F.EXPOSURE_MODE to AdjustmentValue.Text("preview")), raster, context.copy(isRaw = false)))
         assertThrows(AdjustmentTransferException::class.java) {

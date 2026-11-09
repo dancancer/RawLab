@@ -471,6 +471,7 @@ extension EditorModel {
         updatingMetadata = false
         dirty = false
         saveStatusKey = restored == nil ? "" : "已恢复上次调整"
+        processingMigrationReceipt = try? editStore?.processingMigration(for: url)
         clearSaveStatusLater()
         if let stagedResult {
             scheduler.invalidatePending()
@@ -486,6 +487,7 @@ extension EditorModel {
             if settings.isHDREditing { adjustmentNavigation.selectTool(.exposure) }
         } else { schedule() }
         if settings.isHDREditing { error = settings.hdr?.missingResourceMessage }
+        startProcessingMigrationIfNeeded()
     }
     func autoExposure() {
         guard let file, result != nil, !importing, !autoExposing, !exporting, geometryDraft == nil else { return }

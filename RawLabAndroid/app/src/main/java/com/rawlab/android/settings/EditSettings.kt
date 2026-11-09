@@ -5,11 +5,12 @@ import kotlin.math.floor
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
 
-data class ProcessingIdentity(val family: String = "rawlab", val version: Int = 2, val quality: String = "standard") {
-    init { require(family == "rawlab" && version in 1..2 && quality == "standard") }
+data class ProcessingIdentity(val family: String = "rawlab", val version: Int = 3, val quality: String = "standard") {
+    init { require(family == "rawlab" && version in 1..3 && quality == "standard") }
     fun encode() = "$family,$version,$quality"
     companion object {
         val LEGACY = ProcessingIdentity(version = 1)
+        val C5 = ProcessingIdentity(version = 2)
         val CURRENT = ProcessingIdentity()
         fun decode(value: String?): ProcessingIdentity {
             if (value == null) return LEGACY
@@ -69,7 +70,7 @@ data class EditSettings(
         require(listOf(blackPoint, whitePoint, vibrance, clarity, dehaze).all { it.isFinite() && it in -100f..100f })
         require(exposureMode in 0..2)
         require(strength.isFinite() && strength in 0f..2f)
-        require(exposure.isFinite() && exposure in -4f..4f)
+        require(exposure.isFinite() && exposure in -5f..5f)
         require(highlights.isFinite() && highlights in -1f..1f)
         require(shadows.isFinite() && shadows in -1f..1f)
         require(contrast.isFinite() && contrast in -1f..1f)
@@ -318,7 +319,7 @@ internal fun EditSettings.independentForReset(
     val scaledContrast = contrast * recipeScale
     val scaledSaturation = saturation * recipeScale
     val convertWb = input == PhotoInputKind.RAW && recipeID != null && (customWb || tint * strength != 0f)
-    if (scaledExposure !in -4f..4f ||
+    if (scaledExposure !in -5f..5f ||
         listOf(scaledHighlights, scaledShadows, scaledContrast, scaledSaturation).any { it !in -1f..1f } ||
         (convertWb && (before.temperature !in 2000f..50000f || before.tint !in -150f..150f))) return null
     val candidate = copy(film = "neutral", recipeID = null, strength = 1f, masterRecipeSettingsVersion = 3,

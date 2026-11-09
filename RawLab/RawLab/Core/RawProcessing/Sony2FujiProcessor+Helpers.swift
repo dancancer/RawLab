@@ -45,7 +45,12 @@ extension Sony2FujiProcessor {
     }
 
     func configureProcessing(_ session: OpaquePointer, identity: ProcessingIdentity) throws {
-        let processing = identity.version == 1 ? SONY2FUJI_PROCESSING_LEGACY : SONY2FUJI_PROCESSING_C5_V2
+        let processing: sony2fuji_processing_version
+        switch identity.version {
+        case 1: processing = SONY2FUJI_PROCESSING_LEGACY
+        case 2: processing = SONY2FUJI_PROCESSING_C5_V2
+        default: processing = SONY2FUJI_PROCESSING_BASIC_V3
+        }
         let processingStatus = sony2fuji_session_set_processing_version(session, processing)
         guard processingStatus == SONY2FUJI_STATUS_OK else {
             throw ProcessorError.processFailed(statusMessage(processingStatus))

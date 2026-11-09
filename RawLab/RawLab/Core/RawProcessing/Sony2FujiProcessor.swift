@@ -355,6 +355,50 @@ struct Sony2FujiProcessor {
         }
     }
 
+    func migrateProcessing(url: URL, isRaw: Bool, settings: RawSettings, lutURL: URL?,
+                           cancellation: ProcessingMigrationCancellation) throws -> ProcessingMigrationOutcome {
+        guard !settings.isHDREditing, settings.masterRecipeID == nil, (1...2).contains(settings.processing.version) else {
+            throw ProcessorError.processFailed(L10n.text("此照片的调整保留原处理版本。"))
+        }
+        let raster = isRaw ? nil : try loadRasterBuffer(url: url, applyingOrientation: true).buffer
+        let inputType = raster.map { semanticInputType(for: $0) } ?? SONY2FUJI_INPUT_RAW
+        return try withRawSession(reuse: false, inputType: inputType) { session in
+            let effective = try effectiveSettings(settings, session: session, url: isRaw ? url : nil, inputType: inputType)
+            try configureSession(session, settings: effective, interactive: false, viewportPreview: false)
+            var request = makeBaseRequest(settings: effective, inputType: inputType)
+            request.input_type = inputType
+            request.intent = SONY2FUJI_INTENT_FINAL
+            request.size_mode = SONY2FUJI_SIZE_NATIVE
+            request.lut_strength = lutURL == nil ? 0 : effective.clampedLUTStrength
+            let context = Unmanaged.passUnretained(cancellation).toOpaque()
+            _ = sony2fuji_session_set_cancellation_callback(session, { pointer in
+                guard let pointer else { return 0 }
+                return Unmanaged<ProcessingMigrationCancellation>.fromOpaque(pointer).takeUnretainedValue().isCancelled ? 1 : 0
+            }, context)
+            defer { _ = sony2fuji_session_set_cancellation_callback(session, nil, nil) }
+            var native = sony2fuji_processing_migration_result()
+            let status = (lutURL?.path ?? "").withCString { look in
+                request.lut_path = lutURL == nil ? nil : look
+                if let raster {
+                    request.input_width = UInt32(raster.width); request.input_height = UInt32(raster.height)
+                    request.input_pixel_format = raster.pixelFormat
+                    request.input_color_space = SONY2FUJI_COLOR_SRGB
+                    request.input_is_linear = 0
+                    return raster.data.withUnsafeBytes { bytes in
+                        request.input_pixels = bytes.baseAddress
+                        return sony2fuji_session_migrate_processing(session, &request, &native)
+                    }
+                }
+                return url.path.withCString { path in
+                    request.input_path = path
+                    return sony2fuji_session_migrate_processing(session, &request, &native)
+                }
+            }
+            guard status == SONY2FUJI_STATUS_OK else { throw processingFailure(status, input: url, look: lutURL, session: session) }
+            return ProcessingMigrationOutcome(native)
+        }
+    }
+
     func processRaw(
         url: URL,
         settings: RawSettings,

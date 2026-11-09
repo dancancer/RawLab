@@ -66,7 +66,7 @@ internal object StructuredSettingsCodec {
         val sdrSnapshot = if (s.has("sdrSnapshot")) s.string("sdrSnapshot") else null
         val hsl = s.getJSONArray("hsl")
         require(hsl.length() == 24)
-        return EditSettings(film = s.string("film"), strength = s.number("strength", 0.0..2.0), exposure = s.number("exposure", -4.0..4.0),
+        return EditSettings(film = s.string("film"), strength = s.number("strength", 0.0..2.0), exposure = s.number("exposure", -5.0..5.0),
             x3fMode = if (s.has("x3fMode")) X3fMode.decode(s.string("x3fMode")) else X3fMode.LEGACY,
             exposureMode = s.integer("exposureMode"), highlights = s.number("highlights", -1.0..1.0), shadows = s.number("shadows", -1.0..1.0),
             contrast = s.number("contrast", -1.0..1.0), toneCurve = s.number("toneCurve", -1.0..1.0), saturation = s.number("saturation", -1.0..1.0),

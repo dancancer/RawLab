@@ -254,6 +254,7 @@ extension EditorModel {
         }
         launchNextRender()
         refreshBusy()
+        startProcessingMigrationIfNeeded()
     }
 
     func refreshBusy() {

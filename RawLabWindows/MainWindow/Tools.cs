@@ -390,7 +390,10 @@ public partial class MainWindow
             var hdrParameter=atmosphereSpec!=null || (toneSpec!=null ? HDRSettings.Supports(toneSpec.Id) : HDRSettings.Supports(selectedParameter));
             var title=atmosphereSpec?.Title ?? toneSpec?.Title ?? spec.Title;var unit=extensionControl ? "%" : spec.Unit;
             var value=atmosphereSpec!=null ? settings.EditingAtmosphereValue(atmosphereSpec.Id) : toneSpec!=null ? settings.EditingToneValue(toneSpec.Id) : settings[selectedParameter];
-            OrdinaryParameter.Refresh(Loc.Text(title),extensionControl ? new NumericRange(-100,100) : NumericRange.For(spec),
+            var inputRange=extensionControl ? new NumericRange(-100,100) : NumericRange.For(spec);
+            if(settings.IsHDREditing && selectedParameter==Parameter.Exposure)
+                inputRange=inputRange with { Min=-4, Max=4 };
+            OrdinaryParameter.Refresh(Loc.Text(title),inputRange,
                 value,extensionControl ? 0 : settings.Default(selectedParameter),unit,
                 inputScope:(object?)selectedAtmosphereParameter ?? (object?)selectedToneParameter ?? selectedParameter);
             AutomationProperties.SetName(ValueSlider,Loc.Text(title));
@@ -476,6 +479,7 @@ public partial class MainWindow
             ExposureMode.SelectedIndex=settings.ExposureMode;
             ProcessingVersion.SelectedIndex=settings.Processing.Version-1;
             ProcessingVersion.IsEnabled=file!=null && !exporting && !transform.Active && pendingAllReset==null;
+            RefreshProcessingMigrationControls();
             ExposureMode.IsEnabled=ResetAllButton.IsEnabled=file!=null && !exporting;
             ExposureMode.IsEnabled=ExposureMode.IsEnabled && !raster && !hdrEditing && !transform.Active && !PhotoInput.IsNormalX3f(file,settings);
             X3fSettingsPanel.Visibility=PhotoInput.IsX3f(file) ? Visibility.Visible : Visibility.Collapsed;
@@ -555,7 +559,7 @@ public partial class MainWindow
         InfoEntryButton.Visibility=file==null ? Visibility.Collapsed : Visibility.Visible;
         InfoEntryButton.IsEnabled=file!=null && !exporting;
         AdjustmentPanel.IsEnabled=!exporting;GpuMode.IsEnabled=!exporting && (file==null || !LibraryEntry.IsRaster(file));
-        var busy=(scheduler.Busy && scheduler.Revision!=quietViewportRevision) || previewResize.IsEnabled || aiJob.State.IsRunning;
+        var busy=(scheduler.Busy && scheduler.Revision!=quietViewportRevision) || previewResize.IsEnabled || aiJob.State.IsRunning || processingMigrationBusy;
         BusyIndicator.Visibility=busy ? Visibility.Visible : Visibility.Collapsed;
         BusyAnimation.Visibility=SystemParameters.ClientAreaAnimation ? Visibility.Visible : Visibility.Collapsed;
         BusyStill.Visibility=SystemParameters.ClientAreaAnimation ? Visibility.Collapsed : Visibility.Visible;

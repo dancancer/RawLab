@@ -104,7 +104,7 @@ extension ContentView {
             : adjustment.formatted
         return VStack(alignment: .leading, spacing: 8) {
             AdjustmentControl(title: adjustment.title, value: adjustmentBinding(adjustment),
-                              range: adjustment.range, step: adjustment.step,
+                              range: settings.isHDREditing && adjustment == .exposure ? -4...4 : adjustment.range, step: adjustment.step,
                               defaultValue: adjustment.value(from: .default),
                               unit: hdrDenoise ? "%" : adjustment.unit,
                               formatter: formatter,

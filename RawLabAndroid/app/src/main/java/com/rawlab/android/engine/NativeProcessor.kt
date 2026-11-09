@@ -24,6 +24,7 @@ import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.HDRSettings
 import com.rawlab.android.settings.LensSettings
 import com.rawlab.android.settings.X3fMode
+import com.rawlab.android.settings.ProcessingMigrationOutcome
 
 // 原生层对外观文件的识别结果：格式与 RLOOK 版本
 enum class LookFormat(val extension: String) {
@@ -111,9 +112,19 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             pixels?.height ?: 0, pixels?.pixelFormat ?: 0, lut?.path, configuration)
     }
 
+    @Synchronized
+    internal fun migrateProcessing(input: File, lut: File?, settings: EditSettings, inputKind: PhotoInputKind,
+        cancellationGeneration: Long): ProcessingMigrationOutcome {
+        require(settings.processing.version in 1..2 && !settings.isHDREditing && settings.recipeID == null)
+        val result = FloatArray(20)
+        previewRequest(input, lut, settings, 0, false, inputKind,
+            cancellationGeneration = cancellationGeneration, migration = result)
+        return ProcessingMigrationOutcome.decode(settings, result)
+    }
+
     private fun previewRequest(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
         inputKind: PhotoInputKind, revision: HslTargetRevision? = null, probe: FloatArray? = null,
-        cancellationGeneration: Long = -1L): NativeFrame? {
+        cancellationGeneration: Long = -1L, migration: FloatArray? = null): NativeFrame? {
         check(handle != 0L) { "Processor is closed" }
         val effective = settings.effectiveFor(inputKind)
         val pixels = rasterInput(input, inputKind, edge)
@@ -134,7 +145,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             effective.effects.vignetteRoundness, effective.effects.vignetteFeather, effective.effects.vignetteHighlights,
             effective.effects.grainAmount, effective.effects.grainSize, effective.effects.grainRoughness,
             effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, effective.processing.version, effective.x3fMode.nativeValue, null,
-            revision?.source ?: 0, revision?.request ?: 0, probe, cancellationGeneration)
+            revision?.source ?: 0, revision?.request ?: 0, probe, cancellationGeneration, migration)
     }
 
     @Synchronized
@@ -337,7 +348,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         vignetteHighlights: Float, grainAmount: Float, grainSize: Float, grainRoughness: Float,
         exposureMode: Int, hsl: FloatArray, recipeActive: Boolean, processingVersion: Int, x3fMode: Int, backend: IntArray? = null,
         sourceRevision: Long = 0, requestRevision: Long = 0, hslProbe: FloatArray? = null,
-        cancellationGeneration: Long = -1L): NativeFrame?
+        cancellationGeneration: Long = -1L, migration: FloatArray? = null): NativeFrame?
 
     companion object {
         @JvmStatic external fun nativeX3fAvailable(): Boolean

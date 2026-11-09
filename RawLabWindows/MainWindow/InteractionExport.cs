@@ -194,6 +194,7 @@ public partial class MainWindow
         if(!ResolveTransformDraft() || !SaveEdits()){e.Cancel=true;return;}
         if(Application.Current is App app)app.SetSystemPhotoAdmission(false);
         closing=true;
+        CancelProcessingMigration();
         ResetAITask();
         previewResize.Stop();
         if(batchWindow is {} batch)

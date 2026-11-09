@@ -40,6 +40,7 @@ public partial class MainWindow
 
     private void MarkEdited()
     {
+        CancelProcessingMigration();
         if (quickPreset.Phase == QuickPresetPhase.Preparing) CancelQuickPreset();
         ++editRevision;
         if (!ready || syncing || file == null) return;
@@ -137,7 +138,7 @@ public partial class MainWindow
         // New HDR sources start in HDR mode; an existing snapshot without HDR
         // remains the legacy SDR record by construction.
         var nextSettings = saved?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(input);
-        currentEditRecord=nextRecord;editGesture=null;settings=nextSettings;
+        currentEditRecord=nextRecord;processingMigrationReceipt=editStore.ReadProcessingMigration(input);editGesture=null;settings=nextSettings;
         lut = saved == null ? null : ResolveLook(saved);
         if (settings.MasterRecipeID == null && lut != null && !films.Any(f => StringComparer.OrdinalIgnoreCase.Equals(f.Path, lut)))
         {

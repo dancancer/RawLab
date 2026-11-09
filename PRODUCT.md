@@ -71,9 +71,12 @@ local editing and adjustment reuse, not a general photo catalog or cloud library
   bit depth or the shared core. Its boundaries are recorded in the
   [HDR design](docs/design/hdr-photos/technical-design.md).
 - Source photos remain read-only. Persisted edits, presets and batch settings
-  preserve their versioned meaning; migrations or rendering changes must be
-  explicit rather than silently reinterpreting saved work. Compatibility details
-  belong in the contracts and release notes.
+  preserve their versioned meaning. Opening an old edit can start an automatic
+  appearance-preserving migration: fit the new parameters, validate the full-source
+  render, and atomically retain the original settings before adoption. Excessive
+  error keeps the old version; a persistent rollback restores the entire original
+  edit and stops automatic retries for that photo. See the
+  [migration contract](lutools/docs/processing-migration.md).
 - Preview and export follow the same processing semantics. A reduced preview is
   not evidence of full-resolution quality, and numerical correctness is distinct
   from a subjective preference for a look.

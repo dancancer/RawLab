@@ -361,9 +361,20 @@ struct EditorView: View {
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Picker(L10n.text("处理版本"), selection: $model.settings.processing) {
                 Text(L10n.text("处理 v1（旧版）")).tag(ProcessingIdentity.legacy)
-                Text(L10n.text("处理 v2")).tag(ProcessingIdentity.current)
+                Text(L10n.text("处理 v2")).tag(ProcessingIdentity.c5)
+                Text(L10n.text("处理 v3")).tag(ProcessingIdentity.current)
             }.id(localizationLocale.identifier).accessibilityIdentifier("processing.version")
                 .disabled(model.geometryDraft != nil)
+            if let status = model.processingMigrationStatus {
+                Text(L10n.text(status)).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("processing.migration.status")
+            }
+            if model.processingMigrationReceipt?.status == .migrated {
+                Button(L10n.text("回到迁移前"), action: model.rollbackProcessingMigration)
+                    .disabled(!model.canRollbackProcessingMigration)
+                    .accessibilityIdentifier("processing.migration.rollback")
+            }
             if RenderEngine.isX3fInput(model.file) {
                 Picker(L10n.text("X3F 显影"), selection: Binding(get: { model.settings.x3fMode }, set: model.selectX3fMode)) {
                     ForEach(X3fMode.allCases) { mode in

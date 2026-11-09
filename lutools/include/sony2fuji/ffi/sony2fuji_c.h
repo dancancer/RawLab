@@ -147,7 +147,8 @@ typedef enum sony2fuji_raw_exposure_mode {
 
 typedef enum sony2fuji_processing_version {
     SONY2FUJI_PROCESSING_LEGACY = 1,
-    SONY2FUJI_PROCESSING_C5_V2 = 2
+    SONY2FUJI_PROCESSING_C5_V2 = 2,
+    SONY2FUJI_PROCESSING_BASIC_V3 = 3
 } sony2fuji_processing_version;
 
 typedef enum sony2fuji_x3f_mode {
@@ -743,6 +744,52 @@ sony2fuji_status sony2fuji_process(
     sony2fuji_session* session,
     const sony2fuji_request* request,
     sony2fuji_buffer* out_buffer
+);
+
+#define SONY2FUJI_PROCESSING_MIGRATION_VERSION 1u
+typedef enum sony2fuji_migration_disposition {
+    SONY2FUJI_MIGRATION_UNCHANGED = 0,
+    SONY2FUJI_MIGRATION_ACCEPTED = 1,
+    SONY2FUJI_MIGRATION_REJECTED = 2
+} sony2fuji_migration_disposition;
+
+typedef struct sony2fuji_processing_migration_result {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t source_version;
+    int32_t target_version;
+    int32_t disposition;
+    uint32_t evaluation_count;
+    // Canonical core values, including the core's reversed highlight sign.
+    float exposure_ev;
+    float contrast;
+    float highlights;
+    float shadows;
+    float saturation;
+    float black_point;
+    float white_point;
+    float vibrance;
+    float clarity;
+    float dehaze;
+    // Normalized display-sRGB errors over all full-source pixels (16-bit snapshots).
+    // Worst tile uses native 64x64 regions; detail uses all horizontal/vertical gradients.
+    float rgb_rmse;
+    float p99_error;
+    float worst_tile_rmse;
+    float detail_rmse;
+} sony2fuji_processing_migration_result;
+
+// Fits supported v1/v2 SDR edits to v3 in a private session. No source/session/file
+// is changed and no output file is created. All configured edits and the request's
+// input/look are retained; only the ten result scalars are fitted. ACCEPTED requires
+// full-source validation after the bounded proxy search. Failure or REJECTED must
+// retain the saved source identity/settings. AI sessions and Force are unsupported.
+// The session cancellation callback applies throughout this operation, including
+// validation. The caller keeps input/look bytes stable and commits with its own CAS.
+sony2fuji_status sony2fuji_session_migrate_processing(
+    const sony2fuji_session* session,
+    const sony2fuji_request* request,
+    sony2fuji_processing_migration_result* result
 );
 
 sony2fuji_status sony2fuji_compute_histogram(

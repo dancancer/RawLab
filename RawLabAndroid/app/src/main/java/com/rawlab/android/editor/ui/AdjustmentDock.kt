@@ -110,7 +110,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     onGeometryLock: () -> Unit = {}, onGeometrySwap: () -> Unit = {}, onGeometryGrid: () -> Unit = {},
     onPresets: () -> Unit = {}, quickPresetsVisible: Boolean = false, quickPresetContent: @Composable () -> Unit = {}, gradingZone: ColorGradingZone = ColorGradingZone.SHADOWS,
     onGradingZoneChange: (ColorGradingZone) -> Unit = {}, hslTarget: HslTargetActions = HslTargetActions(),
-    onSelectFilm: (String) -> Boolean = { false }, onImportHDRLook: () -> Unit = {}, onApplyHDRSilver: (Boolean) -> Unit = {}) {
+    onSelectFilm: (String) -> Boolean = { false }, onImportHDRLook: () -> Unit = {}, onApplyHDRSilver: (Boolean) -> Unit = {},
+    onRollbackProcessing: () -> Unit = {}) {
     val edits = state.visibleEdits
     val context = LocalContext.current
     val rawInput = state.photo?.inputKind == PhotoInputKind.RAW
@@ -134,6 +135,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     var reset by rememberSaveable { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
     var processingContext by remember { mutableStateOf(false) }
+    var confirmProcessingRollback by remember { mutableStateOf(false) }
     var perspective by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
     val groupList = rememberLazyListState()
     val toolList = rememberLazyListState()
@@ -306,7 +308,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
             1 -> NumericControl(R.string.strength, edits.strength * 100, 0f..200f, "%", state.controlsEnabled && (edits.film != "neutral" || edits.recipeID != null),
                 { value, dragging -> onEdit(edits.copy(strength = value / 100), dragging) }, { onEdit(edits.copy(strength = 1f), false) })
             2 -> Column {
-                NumericControl(R.string.exposure, edits.exposure, -4f..4f, "EV", state.controlsEnabled,
+                NumericControl(R.string.exposure, edits.exposure, if (edits.isHDREditing) -4f..4f else -5f..5f, "EV", state.controlsEnabled,
                     { value, dragging -> onEdit(edits.copy(exposure = value), dragging) }, { onEdit(edits.copy(exposure = 0f), false) })
                 var modeMenu by remember { mutableStateOf(false) }
                 val modes = listOf(R.string.exposure_scene, R.string.exposure_preview, R.string.exposure_sensor)
@@ -428,6 +430,21 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(displayLook)
+                val migrationText = if (state.matchingProcessing) R.string.processing_migration_matching else when (state.processingMigration?.status) {
+                    com.rawlab.android.settings.ProcessingMigrationStatus.MIGRATED -> R.string.processing_migration_completed
+                    com.rawlab.android.settings.ProcessingMigrationStatus.KEPT -> R.string.processing_migration_kept
+                    com.rawlab.android.settings.ProcessingMigrationStatus.ROLLED_BACK -> R.string.processing_migration_rolled_back
+                    null -> null
+                }
+                migrationText?.let { Text(stringResource(it), Modifier.padding(top = 12.dp).testTag("processing.migration.status"),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                if (state.processingMigration?.status == com.rawlab.android.settings.ProcessingMigrationStatus.MIGRATED) {
+                    TextButton(onClick = { confirmProcessingRollback = true },
+                        enabled = state.controlsEnabled && state.draft == null && !state.matchingProcessing,
+                        modifier = Modifier.testTag("processing.migration.rollback")) {
+                        Text(stringResource(R.string.processing_migration_rollback))
+                    }
+                }
                 if (x3fInput) {
                     val available = remember { NativeProcessor.nativeX3fAvailable() }
                     Text(stringResource(R.string.x3f_rendering), Modifier.padding(top = 16.dp), style = MaterialTheme.typography.titleSmall)
@@ -447,6 +464,12 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 }
             }
         }, confirmButton = { TextButton(onClick = { processingContext = false }) { Text(stringResource(R.string.confirm)) } })
+    if (confirmProcessingRollback) AlertDialog(onDismissRequest = { confirmProcessingRollback = false },
+        title = { Text(stringResource(R.string.processing_migration_rollback)) },
+        text = { Text(stringResource(R.string.processing_migration_rollback_warning)) },
+        confirmButton = { TextButton(onClick = { confirmProcessingRollback = false; processingContext = false; onRollbackProcessing() }) {
+            Text(stringResource(R.string.processing_migration_rollback))
+        } }, dismissButton = { TextButton(onClick = { confirmProcessingRollback = false }) { Text(stringResource(R.string.cancel)) } })
     if (allTools) ModalBottomSheet(onDismissRequest = { allTools = false },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         EditorSheetSystemBars()

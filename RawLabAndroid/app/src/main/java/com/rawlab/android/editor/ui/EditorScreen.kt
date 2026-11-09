@@ -76,6 +76,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onExport: () -> Unit, onMessageDismiss: () -> Unit, onLicenses: () -> Unit, onGpuChange: (Boolean) -> Unit,
     onCamera: () -> Unit = {},
     onHDRChange: (Boolean) -> Unit = {},
+    onRollbackProcessing: () -> Unit = {},
     onHDRCameraDevelopment: (HDRCameraDevelopmentSettings) -> Unit = {},
     onImportHDRCameraProfile: () -> Unit = {},
     onHDRCameraDraftChange: (HDRCameraDevelopmentSettings) -> Unit = {},
@@ -381,7 +382,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             onGeometryLock, onGeometrySwap, onGeometryGrid, onPresets = { if (quickPresetsVisible) onClosePresets() else openQuickPresets() },
             quickPresetsVisible = quickPresetsVisible, quickPresetContent = quickPresetContent, gradingZone = gradingZone,
             onGradingZoneChange = { onCancelAdjustment(); gradingZone = it }, hslTarget = hslTarget, onSelectFilm = onSelectFilm,
-            onImportHDRLook = { leave(onImportHDRLook) }, onApplyHDRSilver = { master -> leave { onApplyHDRSilver(master) } })
+            onImportHDRLook = { leave(onImportHDRLook) }, onApplyHDRSilver = { master -> leave { onApplyHDRSilver(master) } },
+            onRollbackProcessing = onRollbackProcessing)
     })
     // 纯预览与横竖布局只移动/暂不测量同一面板，保留 fine、滚动和本地输入状态。
     val retainedDock = remember { movableContentOf<Modifier, Boolean, Boolean> { modifier, side, compact -> currentDock(modifier, side, compact) } }

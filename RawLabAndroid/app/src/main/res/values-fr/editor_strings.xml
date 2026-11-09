@@ -362,6 +362,13 @@
     <string name="preset_save">"Enregistrer le préréglage"</string>
     <string name="preset_save_as">"Enregistrer sous"</string>
     <string name="preset_scope">"Réglages à inclure"</string>
+    <string name="processing_migration_completed">"Mise à jour automatique. Les réglages d’origine sont conservés."</string>
+    <string name="processing_migration_kept">"Le rendu est trop différent. La version précédente est conservée."</string>
+    <string name="processing_migration_matching">"Correspondance avec le rendu original…"</string>
+    <string name="processing_migration_rollback">"Restaurer les réglages d’origine"</string>
+    <string name="processing_migration_rollback_warning">"Tous les réglages antérieurs à la mise à jour seront restaurés. Les modifications ultérieures seront remplacées."</string>
+    <string name="processing_migration_rolled_back">"Réglages restaurés. La version précédente est conservée."</string>
+    <string name="processing_migration_unavailable">"Cette photo conserve sa version de traitement précédente."</string>
     <string name="remove_look_confirmation">"Supprimer \"%1$s\" ?"</string>
     <string name="reset_all_body">"Le film actuel est conservé. La recette et les autres réglages sont réinitialisés. Les photos, looks et tâches par lot sont conservés."</string>
     <string name="reset_all_title">"Réinitialiser tous les réglages ?"</string>

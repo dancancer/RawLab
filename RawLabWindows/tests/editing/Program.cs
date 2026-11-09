@@ -144,8 +144,8 @@ BatchRasterAIChecks();
 await AIDenoiseJobChecks.Run();
 static void ProcessingChecks()
 {
-    Check(Processing(new Adjustments())?["version"]?.GetValue<int>() == 2,
-        "New desktop edits explicitly persist processing v2");
+    Check(Processing(new Adjustments())?["version"]?.GetValue<int>() == 3,
+        "New desktop edits explicitly persist processing v3");
     var old = JsonSerializer.SerializeToNode(new Adjustments().Capture())!.AsObject();
     old.Remove("Processing");
     var restored = old.Deserialize<AdjustmentSnapshot>()!.Restore();
@@ -169,6 +169,13 @@ static void ProcessingChecks()
         "Scoped full reset preserves legacy identity");
     Check(JsonSerializer.Deserialize<AdjustmentSnapshot>(JsonSerializer.Serialize(scopedReset.Candidate!.Settings))!.Restore().Processing == ProcessingIdentity.Legacy,
         "Scoped legacy reset survives serialization and restore");
+    foreach (var identity in new[] { ProcessingIdentity.Legacy, ProcessingIdentity.C5, ProcessingIdentity.Current }) {
+        var settings = new Adjustments { Processing = identity };
+        settings.Set(Parameter.Exposure, .5);
+        settings.ResetAll();
+        var saved = JsonSerializer.Deserialize<AdjustmentSnapshot>(JsonSerializer.Serialize(settings.Capture()))!.Restore();
+        Check(saved.Processing == identity, "Every supported version survives reset and serialization");
+    }
     var current = JsonSerializer.SerializeToNode(restored.Capture())!.AsObject();
     current["Processing"] = JsonNode.Parse("""{"family":"rawlab","version":2,"quality":"standard"}""");
     Check(!restored.Capture().SameAs(current.Deserialize<AdjustmentSnapshot>()!),
@@ -176,7 +183,7 @@ static void ProcessingChecks()
     foreach (var invalid in new[] {
         "null",
         """{"family":"other","version":1,"quality":"standard"}""",
-        """{"family":"rawlab","version":3,"quality":"standard"}""",
+        """{"family":"rawlab","version":4,"quality":"standard"}""",
         """{"family":"rawlab","version":0,"quality":"standard"}""",
         """{"family":"rawlab","version":true,"quality":"standard"}""",
         """{"family":"rawlab","version":1,"quality":"fast"}""",
@@ -195,6 +202,7 @@ static void ProcessingChecks()
 }
 ViewChecks.Run(Check);
 ProcessingChecks();
+ProcessingMigrationChecks.Run();
 static void ProtectedProcessingChecks(string root)
 {
     var directory = Path.Combine(root, "protected-edits");

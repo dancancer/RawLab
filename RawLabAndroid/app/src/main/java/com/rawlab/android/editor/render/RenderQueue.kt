@@ -34,6 +34,16 @@ internal class RenderQueue<T, R>(
         revision
     }
 
+    /** 失效旧帧而不启动新渲染；已提交的新设置可以等待编辑页恢复。 */
+    fun invalidate(): Long = synchronized(lock) {
+        check(!closed)
+        revision += 1
+        active?.cancel()
+        pending?.value?.let(discardPending)
+        pending = null
+        revision
+    }
+
     private fun drain() {
         while (true) {
             val task = synchronized(lock) {

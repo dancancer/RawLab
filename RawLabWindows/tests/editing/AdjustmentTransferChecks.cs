@@ -165,7 +165,10 @@ internal static class AdjustmentTransferChecks
         var self=AdjustmentTransfer.Capture(AdjustmentScope.All,Edit(target),context);
         Check(Prepare(self,target,context).Settings.SameAs(target.Capture()),"same full recipe is exactly unchanged");
         Reject(()=>Prepare(Payload((F.CropX,.2))),"partial crop cannot silently shrink unselected width");
-        Reject(()=>Prepare(Payload((F.Exposure,5.0))),"native exposure range is narrower than payload");
+        foreach(var endpoint in new[]{-5.0,5.0})
+            Check(Prepare(Payload((F.Exposure,endpoint))).Settings.Restore()[Parameter.Exposure]==endpoint,
+                "ordinary exposure endpoints survive selective transfer");
+        Reject(()=>Prepare(Payload((F.Exposure,5.01))),"native exposure range is narrower than payload");
         Reject(()=>Prepare(Payload((F.RawDenoise,1))),"FBDD is unsupported");
         Reject(()=>Prepare(Payload((F.PostRGBDenoise,.1))),"post RGB is unsupported");
         Reject(()=>Prepare(Payload((F.LensDistortion,true))),"lens enabled requires target calibration");

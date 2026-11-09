@@ -13,7 +13,8 @@ struct ProcessingIdentity: Equatable, Hashable, Codable {
     let version: Int
     let quality: String
     static let legacy = ProcessingIdentity(version: 1)
-    static let current = ProcessingIdentity(version: 2)
+    static let c5 = ProcessingIdentity(version: 2)
+    static let current = ProcessingIdentity(version: 3)
     private init(version: Int) {
         family = "rawlab"
         self.version = version
@@ -37,7 +38,7 @@ struct ProcessingIdentity: Equatable, Hashable, Codable {
         family = try values.decode(String.self, forKey: .family)
         version = try values.decode(Int.self, forKey: .version)
         quality = try values.decode(String.self, forKey: .quality)
-        guard family == "rawlab", version == 1 || version == 2, quality == "standard" else {
+        guard family == "rawlab", (1...3).contains(version), quality == "standard" else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
                 debugDescription: "Unsupported processing identity"))
         }

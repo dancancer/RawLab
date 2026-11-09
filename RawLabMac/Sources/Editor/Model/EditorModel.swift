@@ -177,6 +177,8 @@ final class EditorModel: ObservableObject {
     var hslAcceptedSettings: Adjustments?
     var hslSourceRevision: UInt64 = 1
     @Published var sourceRevision = UUID() { didSet {
+        cancelProcessingMigration()
+        processingMigrationReceipt = nil
         hslSourceRevision &+= 1; hslAcceptedRequest = nil; hslAcceptedSettings = nil
         closeQuickPresets()
         cancelCollectionExportPreparation()
@@ -193,6 +195,7 @@ final class EditorModel: ObservableObject {
     @Published var busy = false { didSet { if oldValue && !busy { resumeResetToolIfReady() } } }
     @Published var autoExposing = false
     var editRevision = UUID() { didSet {
+        cancelProcessingMigration()
         exactPreviewCache.useScope(nil)
         if quickPresetState.isPreparing { cancelQuickPreset() }
         if collectionExportPreparing { cancelCollectionExportPreparation() }
@@ -287,6 +290,11 @@ final class EditorModel: ObservableObject {
     }
     var adjustmentSession: AdjustmentTransferSession?
     var committedEdit: PhotoEditRecord?
+    @Published var processingMigrationReceipt: ProcessingMigrationReceipt<PhotoEditState>?
+    @Published var matchingProcessing = false
+    var processingMigrationCancellation: ProcessingMigrationCancellation?
+    var processingMigrationAttemptSource: UUID?
+    static let processingMigrationQueue = DispatchQueue(label: "rawlab.processing-migration", qos: .utility)
     var interactionEntry: PhotoEditState?
     var interactionWasDirty = false
     @Published var adjustmentHistoryRevision = 0

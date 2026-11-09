@@ -74,6 +74,8 @@ data class EditorState(
     val draft: AdjustmentDraft? = null,
     val adjustmentRevision: Long = 0,
     val committingAdjustments: Boolean = false,
+    val processingMigration: com.rawlab.android.settings.ProcessingMigrationReceipt? = null,
+    val matchingProcessing: Boolean = false,
 ) {
     val hdrCameraDraftSettings get() = edits.hdr?.cameraSettings?.let { baseline ->
         photo?.let { hdrCameraDraft?.valueFor(it.identity, baseline) } ?: baseline

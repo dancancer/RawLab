@@ -200,6 +200,7 @@
 "向左旋转 90°" = "Pivoter de 90° à gauche";
 "四分之一灵敏度" = "Sensibilité divisée par quatre";
 "四面体" = "Tétraédrique";
+"回到迁移前" = "Restaurer les réglages d’origine";
 "圆度" = "Rondeur";
 "在照片上取色并上下拖动" = "Prélevez une couleur dans la photo, puis faites glisser vers le haut ou le bas";
 "场景" = "Scène";
@@ -255,6 +256,7 @@
 "导出长边像素" = "Bord long à l’export (pixels)";
 "导出长边必须为 1-65535 像素。" = "Le bord long doit être compris entre 1 et 65535 pixels.";
 "将以下项目转为独立调整，以保留其他分组的当前效果：%@" = "Les éléments suivants seront convertis en réglages indépendants pour préserver le rendu actuel des autres groupes : %@";
+"将恢复迁移前的全部调整，之后的修改会被替换。" = "Tous les réglages antérieurs à la mise à jour seront restaurés. Les modifications ultérieures seront remplacées.";
 "将按各自调整导出 %@ 张照片。" = "Exporter avec les réglages individuels · Photos : %@";
 "将按每张照片已保存的调整导出。跳过只影响本次导出。" = "Chaque photo utilise ses réglages enregistrés. L’exclusion ne concerne que cette exportation.";
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "La copie du look enregistrée par RawLab sera supprimée ; le fichier d’origine ne sera pas effacé.";
@@ -278,6 +280,7 @@
 "已到下限" = "Limite minimale atteinte";
 "已匹配镜头" = "Objectif identifié";
 "已启用" = "Activé";
+"已回退，保留旧版本。" = "Réglages restaurés. La version précédente est conservée.";
 "已在照片图库中确认保存" = "Enregistrement confirmé dans Photos";
 "已处理 %@ / %@" = "Traités : %@ / %@";
 "已导入 %@ 个外观，%@ 个文件导入失败：\n" = "Looks importés : %@ ; fichiers non importés : %@\n";
@@ -294,6 +297,7 @@
 "已生成 %@ 个渲染型 DNG" = "Fichiers DNG développés créés : %@";
 "已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Fichiers DNG développés créés : %@ (non enregistrés à l’emplacement choisi)";
 "已生成渲染型 DNG，未另存到所选位置。" = "DNG développé créé, mais non enregistré à l’emplacement choisi.";
+"已自动升级，原设置已保留。" = "Mise à jour automatique. Les réglages d’origine sont conservés.";
 "已调整" = "Ajusté";
 "已跳过" = "Ignorée";
 "已选 %@ 张" = "Sélection : %@";
@@ -487,6 +491,7 @@
 "正在准备导出…" = "Préparation de l’exportation…";
 "正在准备照片…" = "Préparation des photos…";
 "正在加载胶片" = "Chargement des films";
+"正在匹配原画面…" = "Correspondance avec le rendu original…";
 "正在取色…" = "Échantillonnage…";
 "正在处理" = "Traitement";
 "正在导入" = "Importation";
@@ -508,6 +513,7 @@
 "此照片或构建尚不能使用 AI 降噪。" = "Le débruitage IA est indisponible pour cette photo ou cette version.";
 "此照片没有可用的相机白平衡校准。" = "Cette photo ne possède pas d’étalonnage exploitable de la balance des blancs de l’appareil.";
 "此照片没有可编辑的 HDR 增益图。" = "Cette photo ne contient pas de carte de gain HDR modifiable.";
+"此照片的调整保留原处理版本。" = "Cette photo conserve sa version de traitement précédente.";
 "此设备暂不支持导出 HDR 模式下的 ProRAW 照片。" = "Cet appareil ne prend pas encore en charge l’exportation de photos ProRAW en mode HDR.";
 "此输入不支持镜头校正" = "Correction optique non prise en charge pour cette image";
 "此配置与预览照片类型不匹配，请更换照片或配置。" = "Cette configuration ne correspond pas au type de photo d’aperçu. Choisissez une autre photo ou configuration.";
@@ -551,6 +557,7 @@
 "用户外观 · %@" = "Look personnel · %@";
 "电影叙事宽画幅质感，强反差光影切割，深邃暗部与聚光灯金光" = "Texture cinématographique grand écran, lumière et ombres très contrastées, noirs profonds et lumière dorée de projecteur";
 "电影夜景胶片色调，红色灯光与深邃冷青绿暗部" = "Tons de film de nuit cinématographique, lumières rouges et ombres cyan-vert froid profond";
+"画面差异较大，已保留旧版本。" = "Le rendu est trop différent. La version précédente est conservée.";
 "画面比例" = "Format de l’image";
 "畸变" = "Distorsion";
 "畸变标定不可用" = "Étalonnage de la distorsion indisponible";

@@ -74,6 +74,16 @@ final class AdjustmentTransferSession {
 
     func isCurrentSave(_ record: PhotoEditRecord) -> Bool { knownRecords[record.identity.path] == record }
 
+    // 迁移拥有持久回退；旧的内存历史不能越过这次原子提交覆盖它。
+    func adoptProcessingMigration(_ record: PhotoEditRecord) {
+        for index in transactions.indices {
+            transactions[index].parts.removeAll { $0.identity.path == record.identity.path }
+        }
+        transactions.removeAll { $0.parts.isEmpty }
+        historyHeads.removeValue(forKey: record.identity.path)
+        remember(record)
+    }
+
     private func remember(_ record: PhotoEditRecord) {
         knownRecords[record.identity.path] = record
         generationLock.lock(); defer { generationLock.unlock() }
