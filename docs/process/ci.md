@@ -84,6 +84,33 @@ this is not reuse of an unverified product binary.
 
 ## Checks and Evidence
 
+### Choosing and Maintaining Tests
+
+A test earns its maintenance and execution cost by detecting a plausible regression
+with a meaningful effect on users or delivery. Keep an independent expected result:
+pixels or numerical tolerances, persisted data, observable state transitions, public
+protocols, resource validity, and build/test failure propagation.
+
+- Prefer the smallest test that exercises the real behavior. Keep native/UI coverage
+  when the regression depends on rendering, framework behavior or user interaction.
+- Remove exact duplicates and superseded migration checklists. A test for an old PR's
+  list of renamed strings is not an enduring localization contract; generation,
+  missing-key, placeholder and language-switching checks are.
+- Do not freeze private function names, source snippets, call counts or control layout
+  in text searches. Those assertions cannot establish that the behavior works and
+  make harmless refactoring fail. Review wording and visual layout in their context.
+- Static checks remain useful for declarative contracts such as workflow permissions,
+  package metadata, asset hashes, schemas and resource completeness. Preserve those
+  boundaries rather than reproducing every configuration value in a second file.
+- Screenshot generators and benchmarks can support manual inspection and measurement.
+  Without an asserted result or threshold, their successful execution is not a
+  regression-test pass.
+- Before removing a test, identify its failure mode and any retained coverage. A
+  failing test, slow test or short test is not by itself a deletion candidate. Record
+  pre-existing failures and unavailable native/device coverage separately.
+
+### Execution Evidence
+
 | Check | Runner | Model route / heavier route |
 | --- | --- | --- |
 | Select affected platforms | Ubuntu 24.04 | Selects platforms, groups, matrix and cold/warm mode |
@@ -141,6 +168,13 @@ CI never repeats runtime UI checks. UI-test target compilation is not a UI-test 
 
 - Apple fast models: `bash scripts/ci/apple-models.sh macos` or `ios`; no prebuilt
   C++ core or simulator is required.
+  Multi-file Swift model runners use whole-module compilation to avoid repeated
+  per-file work, retaining their existing optimization levels and assertions.
+  Each invocation shares one temporary compiler-module cache between the adjustment
+  transfer suites, then removes it on success or failure. Test executables and
+  results are always rebuilt; no compiled product or test result is reused.
+  The standalone `RawLabMac/tests/chroma-settings.sh` and `wavelet-settings.sh`
+  likewise need only the Swift models and C ABI declarations, not native libraries.
 - iOS Files/LUT UI: `IOS_SIMULATOR_UDID=<dedicated-device> bash RawLab/tests/document-import-ui.sh <build-for-testing-products> <new-output-directory>`.
   The runner stages generated PNG/CUBE fixtures in a test app copy and executes
   picker opening, selection, cancellation and reopening. Run on each required

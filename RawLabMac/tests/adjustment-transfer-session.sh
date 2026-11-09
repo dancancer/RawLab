@@ -5,7 +5,7 @@ export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
 OUT="$(mktemp -d /tmp/rawlab-adjustment-session.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
-swiftc -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
+swiftc -whole-module-optimization -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
     -module-cache-path "${RAWLAB_TRANSFER_MODULE_CACHE:-$OUT/module-cache}" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "$ROOT/Shared/Localization.swift" "$ROOT/Shared/HSLSettings.swift" \
