@@ -66,7 +66,17 @@ internal static class DenoiseChecks
             var proxy=fresh.RenderPreview(raw,settings,null,1000,true,true,false);
             var exact=fresh.RenderPreview(raw,settings,null,appliedEdge,false,true,false);
             Check(Pixels(exact.Result.Image).SequenceEqual(Pixels(clean.Result.Image)),"Fresh proxy never contaminates exact denoise");
-            Check(ReferenceEquals(proxy.Neutral,exact.Neutral),"Proxy retains the fixed original frame");
+            var nativeEdge=Math.Max(off.Neutral.NativeWidth,off.Neutral.NativeHeight);
+            Check(Math.Max(proxy.Neutral.Image.PixelWidth,proxy.Neutral.Image.PixelHeight)==Math.Min(1000,nativeEdge) &&
+                Math.Max(exact.Neutral.Image.PixelWidth,exact.Neutral.Image.PixelHeight)==Math.Min(appliedEdge,nativeEdge),
+                "Proxy and exact originals follow their respective viewport sizes");
+            Check(Pixels(exact.Neutral.Image).SequenceEqual(Pixels(off.Neutral.Image)) &&
+                exact.Neutral.Histogram.Length==768 && exact.Neutral.Histogram.SequenceEqual(off.Neutral.Histogram),
+                "Exact original pixels and histogram match an independent same-size neutral frame");
+            var adjusted=settings.Clone();adjusted.Set(Parameter.Exposure,1);
+            var adjustedFrame=fresh.RenderPreview(raw,adjusted,null,appliedEdge,false,true,false);
+            Check(ReferenceEquals(exact.Neutral,adjustedFrame.Neutral) && !ReferenceEquals(exact.Result,adjustedFrame.Result),
+                "Later same-size adjustments reuse the exact original without reusing the edited result");
         }
         settings.Denoise=settings.Denoise with {Enabled=false};
         Check(Pixels(engine.Render(raw,settings,null,appliedEdge,viewportPreview:true)!.Image).SequenceEqual(Pixels(off.Result.Image)),"Disabling restores the original output");

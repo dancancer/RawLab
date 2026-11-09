@@ -66,7 +66,7 @@ internal static class UsageIntegrationChecks
             job.Format=ExportFormat.Png;job.LongEdge=128;job.OutputDirectory=Path.Combine(output,"batch-output");Directory.CreateDirectory(job.OutputDirectory);
             job.Items.Add(BatchItem.Create(photo) with{Selected=true});
             job.Items.Add(BatchItem.Create(bad) with{Selected=true});journal.Save(job);
-            Invoke(window,"ShowBatch",job);var batch=Get<BatchExportWindow>(window,"batchWindow");
+            Invoke(window,"ShowBatch",job,false);var batch=Get<BatchExportWindow>(window,"batchWindow");
             RunBatch();
             var first=transport.Events.OfType<BatchExportCompletedEvent>().Single();
             check(first.Outcome==BatchOutcome.Partial && first.SucceededCount==1 && first.FailedCount==1,
@@ -86,7 +86,7 @@ internal static class UsageIntegrationChecks
                 terminal.Items.Add(BatchItem.Create(photo) with{Selected=true});
                 terminal.OutputDirectory=Path.Combine(output,interrupted ? "blocked-output" : "cancelled-output");
                 if(interrupted)File.WriteAllText(terminal.OutputDirectory,"not a directory");else Directory.CreateDirectory(terminal.OutputDirectory);
-                journal.Save(terminal);Invoke(window,"ShowBatch",terminal);batch=Get<BatchExportWindow>(window,"batchWindow");
+                journal.Save(terminal);Invoke(window,"ShowBatch",terminal,false);batch=Get<BatchExportWindow>(window,"batchWindow");
                 if(!interrupted)batch.BusyChanged+=active=>{if(active && batch.Running)batch.CancelExecution();};
                 var count=transport.Events.OfType<BatchExportCompletedEvent>().Count();RunBatch();
                 var terminalEvent=transport.Events.OfType<BatchExportCompletedEvent>().Last();

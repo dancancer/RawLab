@@ -102,17 +102,32 @@ internal static class ViewComparisonChecks
     private static void LayoutChecks(MainWindow window,Application app,string output,Action<bool,string> check)
     {
         var previous=Loc.Language;var size=(double)app.Resources["EditorBodySize"];var preference=Path.Combine(output,"language.txt");
+        var checkedInline=false;var checkedPopup=false;
         try {
             foreach(var language in new[]{"zh-Hans","en","de","fr","ja","es"})foreach(var font in new[]{13.0,26.0}) {
                 Loc.SetPreference(language,preference);app.Resources["EditorBodySize"]=font;window.FontSize=font;
-                window.Width=font==26 ? 1000 : 1200;window.Height=font==26 ? 720 : 800;window.UpdateLayout();
+                EditorShellChecks.ArrangeLayout(window,font==26 ? new Size(1000,720) : new Size(1200,800));
                 window.SetComparisonMode(true,true);Ready(window);window.UpdateLayout();
                 check(window.HistogramTitle.Text==Loc.Text("RGB 直方图") && window.HistogramSource.Text==Loc.Text("调整后"),"RGB title and comparison statistics source follow the active language: "+language);
-                foreach(var text in new[]{window.HistogramTitle,window.HistogramSource,window.ClipStats}) {
-                    var bounds=text.TransformToAncestor(window.PhotoArea).TransformBounds(new Rect(text.RenderSize));
-                    check(text.IsVisible && text.ActualHeight+text.Margin.Top+text.Margin.Bottom+.5>=text.DesiredSize.Height && System.Windows.Controls.Primitives.LayoutInformation.GetLayoutClip(text)==null && new Rect(window.PhotoArea.RenderSize).Contains(bounds),$"Histogram text fits the photo area: {language}/{font}/{text.Name}; actual={text.ActualHeight:0.##}, desired={text.DesiredSize.Height:0.##}, margin={text.Margin}, bounds={bounds}");
+                // 工作区会在调整栏和独立 Popup 之间移动直方图；检查用户实际看到的标题与容器。
+                var inline=window.HistogramSurface.IsVisible;
+                if(inline){if(!window.HistogramPanel.IsVisible)Click(window.HistogramInlineButton);}
+                else if(!window.HistogramPopup.IsOpen)Click(window.HistogramButton);
+                InteractionChecks.PumpUntil(()=>window.HistogramPanel.IsVisible && window.HistogramPanel.IsLoaded && (inline || window.HistogramPopup.IsOpen));window.UpdateLayout();
+                FrameworkElement host=inline ? window.HistogramSurface : window.HistogramPopupContent;
+                host.UpdateLayout();
+                var title=inline ? window.HistogramHeading : window.HistogramTitle;
+                check(title.Text==Loc.Text("RGB 直方图"),"Visible histogram heading follows the active language: "+language);
+                foreach(var text in new[]{title,window.HistogramSource,window.ClipStats}) {
+                    var bounds=text.TransformToAncestor(host).TransformBounds(new Rect(text.RenderSize));
+                    check(text.IsVisible && text.ActualHeight+text.Margin.Top+text.Margin.Bottom+.5>=text.DesiredSize.Height && System.Windows.Controls.Primitives.LayoutInformation.GetLayoutClip(text)==null && new Rect(host.RenderSize).Contains(bounds),$"Histogram text fits its visible host: {language}/{font}/{text.Name}; actual={text.ActualHeight:0.##}, desired={text.DesiredSize.Height:0.##}, margin={text.Margin}, bounds={bounds}");
                 }
+                if(inline){checkedInline=true;check(new Rect(window.AdjustmentPanel.RenderSize).Contains(host.TransformToAncestor(window.AdjustmentPanel).TransformBounds(new Rect(host.RenderSize))),"Inline histogram fits the visible inspector");}
+                else checkedPopup=true;
+                var histogramBitmap=new RenderTargetBitmap(Math.Max(1,(int)Math.Ceiling(host.ActualWidth)),Math.Max(1,(int)Math.Ceiling(host.ActualHeight)),96,96,PixelFormats.Pbgra32);histogramBitmap.Render(host);
+                var histogramEncoder=new PngBitmapEncoder();histogramEncoder.Frames.Add(BitmapFrame.Create(histogramBitmap));using(var stream=File.Create(Path.Combine(output,$"histogram-{language}-{font}.png")))histogramEncoder.Save(stream);
                 Capture(window,output,$"view-{language}-{window.Width}-{font}");CheckLabels(window,check);
+                window.HistogramPopup.IsOpen=false;
                 check(window.BusyIndicator.Height==2 && window.CompareButton.ActualWidth>=28 && window.CompareModeButton.ActualWidth>=28,
                     $"Viewing controls retain reachable targets and fixed progress thickness: {language}/{font}");
                 Click(window.CompareModeButton);var menu=window.CompareButton.ContextMenu!;
@@ -122,7 +137,8 @@ internal static class ViewComparisonChecks
                 var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));using(var stream=File.Create(Path.Combine(output,$"mode-menu-{language}-{font}.png")))encoder.Save(stream);
                 check(window.CompareSide.Header?.ToString()==Loc.Text("并排") && window.CompareSwipe.Header?.ToString()==Loc.Text("分割线"),"Mode menu follows the active language: "+language);menu.IsOpen=false;
             }
-        } finally {Loc.SetPreference(previous,preference);app.Resources["EditorBodySize"]=size;window.FontSize=size;window.Width=1200;window.Height=800;window.SetComparisonMode(false,false);window.UpdateLayout();Ready(window);}
+            check(checkedInline && checkedPopup,"Histogram layout checks cover both inline and compact popup presentations");
+        } finally {window.HistogramPopup.IsOpen=false;Loc.SetPreference(previous,preference);app.Resources["EditorBodySize"]=size;window.FontSize=size;EditorShellChecks.ArrangeLayout(window,new Size(1200,800));window.SetComparisonMode(false,false);window.UpdateLayout();Ready(window);}
     }
     private static void CheckLabels(MainWindow window,Action<bool,string> check)
     {
