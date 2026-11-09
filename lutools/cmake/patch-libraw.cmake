@@ -25,6 +25,34 @@ include("${CMAKE_CURRENT_LIST_DIR}/libraw-sony-arw6.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/libraw-cameras.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/libraw-vng.cmake")
 
+# Sony 私有比例裁切标签会覆盖同一 IFD 的完整 DefaultCrop。
+# 识别 RAW IFD 后恢复文件声明的有效区，不从机型、比例或存储填充推算。
+replace_libraw(src/metadata/identify.cpp
+    "  /* Early reject for damaged images again (after dng fields processing) */" [=[
+  if (!dng_version && makeIs(LIBRAW_CAMERAMAKER_Sony))
+  {
+    const int raw_ifd = find_ifd_by_offset(data_offset);
+    if (raw_ifd >= 0)
+    {
+      const auto &levels = tiff_ifd[raw_ifd].dng_levels;
+      const unsigned crop_fields = LIBRAW_DNGFM_CROPORIGIN | LIBRAW_DNGFM_CROPSIZE;
+      const auto &crop = levels.default_crop;
+      if ((levels.parsedfields & crop_fields) == crop_fields && crop[2] && crop[3] &&
+          unsigned(crop[0]) + crop[2] <= raw_width &&
+          unsigned(crop[1]) + crop[3] <= raw_height)
+      {
+        auto &active = imgdata.sizes.raw_inset_crops[0];
+        active.cleft = crop[0];
+        active.ctop = crop[1];
+        active.cwidth = crop[2];
+        active.cheight = crop[3];
+      }
+    }
+  }
+
+  /* Early reject for damaged images again (after dng fields processing) */
+]=])
+
 # 只替换 Nikon HE 像素解码，保留 LibRaw 的元数据、白平衡与显影流程。
 set(nikon_he_source "${CMAKE_CURRENT_LIST_DIR}/../third_party/nikon_he")
 file(MAKE_DIRECTORY "${LIBRAW_SOURCE_DIR}/src/decoders/rawlab_nikon_he")

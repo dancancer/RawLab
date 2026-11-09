@@ -52,6 +52,12 @@ exported as a valid image. Preview exposure retains its 64-million-pixel decode
 limit and uses a smaller embedded thumbnail when the default preview exceeds it.
 
 Source dependency builds apply `cmake/patch-libraw.cmake` to LibRaw 0.22.2.
+For non-DNG Sony RAW, a complete, in-bounds `DefaultCropOrigin/DefaultCropSize`
+on the selected RAW IFD defines the active image area. Sony's private aspect-ratio
+crop tags must not replace it: in-camera 4:3, 16:9 or 1:1 framing must not discard
+pixels from that active area. Missing or invalid standard crop metadata retains
+the existing LibRaw fallback; dimensions are never inferred from the camera model
+or forced to 3:2. This applies equally to normal rendering and HDR inspection.
 X-Trans demosaic tiles read an immutable source copy before parallel processing;
 their output must never feed adjacent tiles' overlapping source halos. This
 keeps OpenMP enabled but adds eight bytes per active sensor pixel during X-Trans
