@@ -25,7 +25,7 @@ internal static partial class EditorReviewChecks
             Task? foreground=null,preflight=null;
             try
             {
-                Invoke(window,"ShowBatch",BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral"));
+                Invoke(window,"ShowBatch",BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral"),false);
                 var batch=Get<BatchExportWindow>(window,"batchWindow");
                 if(pendingBeforeImport)
                 {
