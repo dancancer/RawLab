@@ -109,6 +109,36 @@ import Foundation
             _ = try store.commitProcessingMigration(expected: rejectedExpected, candidate: candidate, quality: quality)
         }
         try check(store.state(for: rejected) == changed, "Concurrent saved state wins")
+
+        for legacy in [false, true] {
+            let alias = PhotoIdentity(contentIdentifier: "rejected-alias-\(legacy)")
+            let asset = PhotoIdentity(resourceIdentifier: "rejected-asset-\(legacy)",
+                contentIdentifier: legacy ? "unrecorded-content" : alias.contentIdentifier,
+                legacyContentIdentifier: legacy ? alias.contentIdentifier : nil)
+            try store.save(alias, state: before)
+            let expected = try store.readState(for: asset)
+            _ = try store.commitProcessingMigration(expected: expected, candidate: nil, quality: quality)
+            let restarted = try EditPersistence(directory: root)
+            try check(try restarted.readState(for: asset) == expected,
+                "Rejected alias migration preserves the resolved old edit")
+            let kept = try restarted.processingMigration(for: asset)
+            try check(kept?.status == .kept && kept?.original == before &&
+                kept?.shouldAttempt(current: before, sourceVersion: 2) == false,
+                "Rejected resource receipt survives reopening a content or legacy-content fallback")
+            try rejects("Rejected alias edit does not repeat fitting after restart") {
+                _ = try restarted.commitProcessingMigration(expected: expected, candidate: nil, quality: quality)
+            }
+            try check(try restarted.processingMigration(for: alias) == nil,
+                "Resource rejection does not modify an independent content receipt")
+            var editedOld = old; editedOld.exposure = 0.75
+            let edited = before.replacing(settings: editedOld, preservingFilmID: before.filmID)
+            try restarted.save(alias, state: edited)
+            try check(try restarted.processingMigration(for: asset)?.shouldAttempt(current: edited, sourceVersion: 2) == true,
+                "Changing the fallback edit permits a new attempt")
+            try restarted.save(asset, state: before)
+            try check(try restarted.processingMigration(for: asset)?.original == before,
+                "Creating the resource record keeps its rejection receipt")
+        }
     }
 
     static func lazyTransferableFallback(_ directory: URL) async throws {

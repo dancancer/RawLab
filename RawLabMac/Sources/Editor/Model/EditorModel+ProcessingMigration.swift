@@ -24,7 +24,7 @@ extension EditorModel {
 
     func startProcessingMigrationIfNeeded() {
         guard let file, result != nil, !busy, !importing, !dirty, !exporting, !autoExposing,
-              !scheduler.interacting, !aiState.isRunning, geometryDraft == nil,
+              !scheduler.interacting, !ParameterValueField.hasPendingInputs, !aiState.isRunning, geometryDraft == nil,
               !settings.isHDREditing, !settings.activeAIDenoise, settings.masterRecipeID == nil,
               settings.processing.version < 3, !sourceUsesSDRFallback,
               processingMigrationAttemptSource != sourceRevision,
@@ -57,7 +57,8 @@ extension EditorModel {
                 guard !cancellation.isCancelled, self.file == file, self.sourceRevision == source,
                       self.pendingOpenID == opening, self.editRevision == edit, self.settings == snapshot,
                       self.selectedFilm?.url == look, !self.dirty, !self.exporting,
-                      !self.scheduler.interacting, self.geometryDraft == nil, !self.aiState.isRunning,
+                      !self.scheduler.interacting, !ParameterValueField.hasPendingInputs,
+                      self.geometryDraft == nil, !self.aiState.isRunning,
                       case .success(let fitted) = outcome else { return }
                 do {
                     try lookIdentity?.requireCurrent()

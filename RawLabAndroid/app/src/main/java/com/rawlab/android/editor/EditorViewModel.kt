@@ -987,7 +987,8 @@ class EditorViewModel @JvmOverloads constructor(
         }
     }
 
-    private fun cancelProcessingMigration() {
+    private fun cancelProcessingMigration(skipCurrentSource: Boolean = false) {
+        if (skipCurrentSource) processingMigrationAttemptSource = sourceRevision
         processingMigrationRun = null
         processingMigrationEngine?.cancelPreview()
         if (mutable.value.matchingProcessing) mutable.value = mutable.value.copy(matchingProcessing = false)
@@ -1039,7 +1040,8 @@ class EditorViewModel @JvmOverloads constructor(
                 editStore.adjustmentSession?.adoptProcessingMigration(saved)
                 saved to editStore.processingMigration(photo.identity)
             }) { committed ->
-                if (sourceRevision != source || mutable.value.photo?.identity != photo.identity) return@commitAdjustments
+                if (processingMigrationRun != ticket || sourceRevision != source || editRevision != edit ||
+                    mutable.value.photo?.identity != photo.identity) return@commitAdjustments
                 committed.onSuccess { (saved, receipt) ->
                     adjustmentHistory.acceptSaved(photo, saved)
                     editRevision += 1
@@ -1105,6 +1107,7 @@ class EditorViewModel @JvmOverloads constructor(
     }
 
     fun cancelAdjustmentInteraction() {
+        cancelProcessingMigration(skipCurrentSource = true)
         if (mutable.value.committingAdjustments) return
         clearHslTarget()
         val restored = adjustmentHistory.cancel(mutable.value.photo, sourceRevision) ?: return
@@ -1674,6 +1677,7 @@ class EditorViewModel @JvmOverloads constructor(
 
     private fun releaseEditorRasterForBatch(completed: (Boolean) -> Unit) {
         if (disposed) { completed(false); return }
+        cancelProcessingMigration(skipCurrentSource = true)
         if (mutable.value.committingAdjustments) {
             viewModelScope.launch {
                 state.first { !it.committingAdjustments }
@@ -1700,6 +1704,7 @@ class EditorViewModel @JvmOverloads constructor(
     fun closeBatch() = batches.close()
 
     fun onBackground() {
+        cancelProcessingMigration(skipCurrentSource = true)
         cancelCollectionExport()
         if (mutable.value.committingAdjustments) { batches.cancelForBackground(); return }
         cancelAdjustmentInteraction()

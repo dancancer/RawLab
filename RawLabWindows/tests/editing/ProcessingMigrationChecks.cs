@@ -16,8 +16,17 @@ internal static class ProcessingMigrationChecks
         AtomicMigrationAndCas();
         RestartRollbackSuppressesAutomaticRetry();
         KeptReceiptRetriesOnlyAfterSettingsChange();
+        ForceDoesNotStartAutomaticMigration();
         MigrationHistoryIsolation();
         Console.WriteLine("PASS: processing migration mapping, rejection, CAS, rollback and retry policy");
+    }
+
+    private static void ForceDoesNotStartAutomaticMigration()
+    {
+        var before = Source(new OriginalIdentity("force.ARW", 1, 2, 3));
+        Check(ProcessingMigration.ShouldAttempt(before, null, gpuMode: 0), "CPU permits automatic migration");
+        Check(ProcessingMigration.ShouldAttempt(before, null, gpuMode: 1), "Auto permits automatic migration");
+        Check(!ProcessingMigration.ShouldAttempt(before, null, gpuMode: 2), "Force skips automatic migration before starting a worker");
     }
 
     private static SavedEdit Source(OriginalIdentity identity)

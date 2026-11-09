@@ -24,15 +24,16 @@ public partial class MainWindow
 
     private void BeginProcessingMigration(string path)
     {
+        var gpu=RequestedGpuMode;
         if (processingMigrationBusy || closing || exporting || editDirty || file != path || currentEditRecord?.Edit is not { } before ||
-            !ProcessingMigration.ShouldAttempt(before,processingMigrationReceipt) || !LookAvailable)
+            !ProcessingMigration.ShouldAttempt(before,processingMigrationReceipt,gpu) || !LookAvailable)
             return;
         var source=before.Identity;
         try { if (!source.SameFile(OriginalIdentity.Read(path))) return; }
         catch (IOException) { return; }
         var snapshot=settings.Clone();
         var expectedSettings=snapshot.Capture();
-        var opened=openRevision;var revision=editRevision;var expectedLook=lut;var gpu=RequestedGpuMode;
+        var opened=openRevision;var revision=editRevision;var expectedLook=lut;
         OriginalIdentity? lookIdentity;
         try { lookIdentity=expectedLook == null ? null : OriginalIdentity.Read(expectedLook); }
         catch (IOException) { return; }

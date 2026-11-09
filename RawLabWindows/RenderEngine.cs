@@ -101,7 +101,7 @@ internal sealed partial class RenderEngine : IDisposable
     {
         if (settings.IsHDREditing || settings.HDR != null || settings.ActiveAIDenoise || settings.MasterRecipeID != null ||
             settings.Processing.Version is not (1 or 2))
-            throw new InvalidOperationException(Loc.Text("此照片不满足自动升级处理版本的条件。"));
+            throw new InvalidOperationException(Loc.Text("此照片的调整保留原处理版本。"));
         cancellationToken.ThrowIfCancellationRequested();
         var prepared=PrepareRequest(path,settings,lut,0,false,null,null,false);
         try

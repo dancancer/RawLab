@@ -62,8 +62,9 @@ internal static class ProcessingMigration
         return true;
     }
 
-    internal static bool ShouldAttempt(SavedEdit current, ProcessingMigrationReceipt? receipt)
+    internal static bool ShouldAttempt(SavedEdit current, ProcessingMigrationReceipt? receipt, int gpuMode = 0)
     {
+        if (gpuMode == 2) return false;
         var settings = current.Settings.Restore();
         if (!Eligible(settings) || settings.Processing.Version is not (1 or 2)) return false;
         if (receipt?.Status == ProcessingMigrationReceipt.RolledBack) return false;
