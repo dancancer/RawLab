@@ -1,5 +1,7 @@
 package com.rawlab.android
 
+import com.rawlab.android.camera.CameraImportScreen
+import com.rawlab.android.camera.CameraImportViewModel
 import com.rawlab.android.editor.controls.HslTargetActions
 
 import android.os.Build
@@ -23,6 +25,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
@@ -66,6 +69,7 @@ class MainActivity : ComponentActivity() {
         super.attachBaseContext(AppStrings.localizedContext(newBase))
     }
     val model: EditorViewModel by lazy { ViewModelProvider(this)[EditorViewModel::class.java] }
+    internal val camera: CameraImportViewModel by lazy { ViewModelProvider(this)[CameraImportViewModel::class.java] }
     val updates: UpdateViewModel by lazy { ViewModelProvider(this)[UpdateViewModel::class.java] }
     val usage: UsageAnalytics by lazy { UsageAnalyticsRegistry.get(applicationContext) }
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -73,7 +77,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         usage.beginSession()
-        setContent { RawLabTheme { RawLabApp(model, updates, usage) } }
+        setContent { RawLabTheme { RawLabApp(model, updates, usage, camera) } }
         if (savedInstanceState == null) receivePhotoIntent(intent)
     }
 
@@ -116,7 +120,7 @@ fun RawLabTheme(content: @Composable () -> Unit) {
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: UsageAnalytics) {
+private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: UsageAnalytics, camera: CameraImportViewModel) {
     val state by model.state.collectAsStateWithLifecycle()
     val quickPreset by model.quickPreset.collectAsStateWithLifecycle()
     var presetLibraryRevision by remember { mutableIntStateOf(0) }
@@ -137,29 +141,48 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
                 adjustmentSheet = AdjustmentSheet.HISTORY
         })
     }
+    var cameraOpen by rememberSaveable { mutableStateOf(false) }
+    var cameraTaskRequested by remember { mutableStateOf(false) }
+    val cameraState by camera.state.collectAsStateWithLifecycle()
     var album by rememberSaveable { mutableStateOf(false) }
+    var albumFromCamera by rememberSaveable { mutableStateOf(false) }
+    var albumPhotoFocus by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var fileFromCameraAlbum by rememberSaveable { mutableStateOf(false) }
     var collectionOpen by rememberSaveable { mutableStateOf(false) }
     val collection by model.collection.collectAsStateWithLifecycle()
     val systemPhotoRequests by model.systemPhotoRequests.collectAsStateWithLifecycle()
     val batch by model.batch.collectAsStateWithLifecycle()
     val pendingBatch by model.pendingBatch.collectAsStateWithLifecycle()
     LaunchedEffect(systemPhotoRequests.firstOrNull()?.id, batch, collection.busy) {
-        if (systemPhotoRequests.isNotEmpty() && batch == null && !collection.busy) { album = false; collectionOpen = false }
+        if (systemPhotoRequests.isNotEmpty() && batch == null && !collection.busy) { album = false; collectionOpen = false; cameraOpen = false }
     }
     val owner = LocalLifecycleOwner.current
     val context = LocalContext.current
-    val editorVisible = batch == null && !collectionOpen && !album
+    DisposableEffect(owner, model, camera) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) camera.onForeground()
+            if (event == Lifecycle.Event.ON_STOP && (context as? android.app.Activity)?.isChangingConfigurations != true) {
+                model.onBackground()
+                camera.onBackground()
+            }
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+    val editorVisible = !cameraOpen && batch == null && !collectionOpen && !album
     DisposableEffect(owner, model, editorVisible) {
         fun updateEditorActivity() {
             model.setEditorActive(editorVisible && owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
         }
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP && (context as? android.app.Activity)?.isChangingConfigurations != true) model.onBackground()
-            updateEditorActivity()
-        }
+        val observer = LifecycleEventObserver { _, _ -> updateEditorActivity() }
         owner.lifecycle.addObserver(observer)
         updateEditorActivity()
         onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+    DisposableEffect(cameraState.transferring) {
+        val window = (context as? android.app.Activity)?.window
+        if (cameraState.transferring) window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose { window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
     var exportDialog by rememberSaveable { mutableStateOf(false) }
     var format by rememberSaveable { mutableStateOf(ExportFormat.JPEG) }
@@ -170,7 +193,11 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     var licenses by rememberSaveable { mutableStateOf(false) }
     val screenState = rememberSaveableStateHolder()
     val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        model.importPhoto(uri) { accepted -> if (accepted) album = false }
+        if (fileFromCameraAlbum && uri != null) {
+            album = false
+            model.receiveSystemPhotos(listOf(uri))
+        } else model.importPhoto(uri) { accepted -> if (accepted) album = false }
+        fileFromCameraAlbum = false
     }
     val openLook = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         model.importLooks(uris)
@@ -186,18 +213,48 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     val saveDng = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/x-adobe-dng")) {
         if (it == null) exportDialog = true else model.export(it, ExportFormat.DNG, pendingExportLongEdgeText.toIntOrNull())
     }
-    if (batch != null) {
+    if (cameraOpen) {
+        screenState.SaveableStateProvider("camera") {
+        CameraImportScreen(camera, onBack = { cameraOpen = false; albumFromCamera = false },
+            showTask = cameraTaskRequested, onTaskShown = { cameraTaskRequested = false }, onOpen = { uris ->
+            // 原件交接仍走系统导入队列，由编辑器现有草稿门禁决定何时替换画布。
+            model.receiveSystemPhotos(uris)
+            cameraOpen = false
+            albumFromCamera = false
+        }, onViewInAlbum = { uris ->
+            albumPhotoFocus = uris.map(Uri::toString)
+            albumFromCamera = true
+            collectionOpen = false
+            cameraOpen = false
+            album = true
+        })
+        }
+    } else if (batch != null) {
         BatchExportScreen(model = batch!!, storage = model.storage, onBack = model::closeBatch)
     } else if (collectionOpen) {
         BatchSelectionScreen(model, onBack = { collectionOpen = false }, onEdit = { collectionOpen = false })
     } else if (album) {
         screenState.SaveableStateProvider("album") {
-            AlbumScreen(model.storage, onBack = { album = false },
-                onFile = { openFile.launch(arrayOf("*/*")) },
-                onPhoto = { uri -> model.importPhoto(uri) { accepted -> if (accepted) album = false } })
+            AlbumScreen(model.storage, onBack = { album = false; if (albumFromCamera) cameraOpen = true },
+                onFile = { fileFromCameraAlbum = albumFromCamera; openFile.launch(arrayOf("*/*")) }, initialPhotos = albumPhotoFocus.takeIf { it.isNotEmpty() }?.toSet(),
+                onPhoto = { uri ->
+                    if (albumFromCamera) {
+                        // 相机页往返保留草稿；选定本地照片后才进入既有的离开确认。
+                        albumFromCamera = false
+                        album = false
+                        model.receiveSystemPhotos(listOf(uri))
+                    } else model.importPhoto(uri) { accepted -> if (accepted) album = false }
+                })
         }
     } else {
+        screenState.SaveableStateProvider("editor") {
         Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        if (cameraState.transferring || cameraState.job?.status == com.rawlab.android.camera.CameraJobStatus.PAUSED) {
+            TextButton(onClick = { model.setEditorActive(false); cameraTaskRequested = true; cameraOpen = true },
+                modifier = Modifier.fillMaxWidth().statusBarsPadding().testTag("camera-open-task")) {
+                Text(stringResource(R.string.camera_view_task))
+            }
+        }
         pendingBatch.firstOrNull()?.let { job ->
             Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Text(AppStrings.text(R.string.message_unfinished_batch_export), Modifier.weight(1f))
@@ -205,8 +262,9 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             }
         }
         Box(Modifier.weight(1f)) {
-        EditorScreen(state, onAlbum = { model.setEditorActive(false); album = true }, onFile = { openFile.launch(arrayOf("*/*")) },
+        EditorScreen(state, onAlbum = { model.setEditorActive(false); albumFromCamera = false; albumPhotoFocus = emptyList(); album = true }, onFile = { openFile.launch(arrayOf("*/*")) },
             onRollbackProcessing = model::rollbackProcessingMigration,
+            onCamera = { model.setEditorActive(false); cameraTaskRequested = false; cameraOpen = true },
             systemPhotoRequest = systemPhotoRequests.firstOrNull()?.takeUnless { collection.busy },
             onSystemPhotoConsumed = model::consumeSystemPhotoRequest,
             onSystemPhotoReady = { request, completed ->
@@ -283,6 +341,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
         }
         }
         }
+    }
     }
     adjustmentSheet?.let { kind ->
         AdjustmentTransferSheet(model, kind, selectedPreset) { adjustmentSheet = null; selectedPreset = null }

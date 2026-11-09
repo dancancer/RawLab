@@ -2,10 +2,8 @@ package com.rawlab.android.editor
 
 import android.graphics.Bitmap
 import android.net.Uri
+import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.performClick
 import androidx.test.platform.app.InstrumentationRegistry
 import com.rawlab.android.MainActivity
 import com.rawlab.android.editor.render.SerialWorkQueue
@@ -47,8 +45,10 @@ class ProcessingMigrationNavigationTest {
 
     @Test fun openingAlbumDiscardsQueuedMigrationWithoutAnAdjustmentGesture() = leaveDuringMigration(false)
     @Test fun openingAlbumInvalidatesMigrationAlreadyQueuedForSaving() = leaveDuringMigration(true)
+    @Test fun openingCameraDiscardsQueuedMigrationWithoutAnAdjustmentGesture() = leaveDuringMigration(false, camera = true)
+    @Test fun openingCameraInvalidatesMigrationAlreadyQueuedForSaving() = leaveDuringMigration(true, camera = true)
 
-    private fun leaveDuringMigration(commitQueued: Boolean) {
+    private fun leaveDuringMigration(commitQueued: Boolean, camera: Boolean = false) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val source = File(context.cacheDir, "migration-navigation-${UUID.randomUUID()}.png")
         Bitmap.createBitmap(80, 60, Bitmap.Config.ARGB_8888).apply { eraseColor(0xff777777.toInt()) }.let { bitmap ->
@@ -80,8 +80,15 @@ class ProcessingMigrationNavigationTest {
                 savedBytes = File(directory, "edits.properties").readBytes()
                 revision = field(model, "currentRevision")
             }
-            compose.onNodeWithContentDescription("相册").performClick()
-            compose.waitUntil(10_000) { compose.onAllNodesWithText("全部相册").fetchSemanticsNodes().isNotEmpty() }
+            if (camera) {
+                compose.onNode(hasContentDescription("更多") and hasAnyAncestor(hasTestTag("editor-menu"))).performClick()
+                compose.onNodeWithTag("camera-entry").performClick()
+                compose.onNodeWithTag("camera-back").assertIsDisplayed()
+            } else {
+                compose.onNodeWithContentDescription("相册").performClick()
+                compose.waitUntil(10_000) { compose.onAllNodesWithText("全部相册").fetchSemanticsNodes().isNotEmpty() }
+            }
+            compose.runOnIdle { assertEquals("hidden editor stays inactive", false, field(model, "editorActive")) }
             migrationRelease.countDown()
             commitRelease?.countDown()
             drain(migration)
@@ -94,6 +101,14 @@ class ProcessingMigrationNavigationTest {
                 assertNull(model.state.value.processingMigration)
                 assertNull(model.state.value.saveError)
                 assertEquals("navigation must not schedule a migration preview", revision, field(model, "currentRevision"))
+            }
+            if (camera) {
+                compose.onNodeWithTag("camera-back").performClick()
+                compose.onNodeWithContentDescription("相册").assertIsDisplayed()
+                compose.runOnIdle {
+                    assertEquals("camera back restores the editor activity", true, field(model, "editorActive"))
+                    assertFalse("returning does not retry the cancelled open context", model.state.value.matchingProcessing)
+                }
             }
         } finally {
             migrationRelease.countDown()

@@ -52,7 +52,8 @@ internal fun defaultEditSettingsFor(file: File, inputKind: PhotoInputKind, isHDR
 }
 
 data class AlbumPhoto(val uri: Uri, val name: String, val album: String,
-    val width: Int = 0, val height: Int = 0, val orientation: Int = 0) {
+    val width: Int = 0, val height: Int = 0, val orientation: Int = 0,
+    val albumId: String = album, val relativePath: String? = null) {
     val aspectRatio: Float? get() = albumAspectRatio(width, height, orientation)
 }
 data class ImportedPhoto(val uri: Uri, val name: String, val file: File,
@@ -80,6 +81,7 @@ class PhotoStorage(
     dcpCompiler: DcpCompiler = NativeDcpCompiler,
 ) : AutoCloseable {
     private val resolver = context.contentResolver
+    private val mediaLibrary = MediaPhotoLibrary(context)
     private val directory = File(context.cacheDir, "rawlab-${UUID.randomUUID()}")
     private val systemPhotos = File(context.filesDir, "system-photos")
     private val lookLibrary = LookLibrary(looksDirectory, lookValidator, dcpCompiler)
@@ -107,18 +109,35 @@ class PhotoStorage(
         return target
     }
 
-    fun album(): List<AlbumPhoto> {
+    fun album(ownOnly: Boolean = false): List<AlbumPhoto> {
+        if (ownOnly && Build.VERSION.SDK_INT < 29) return emptyList()
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-        val projection = arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME,
+        val projection = mutableListOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME,
             MediaStore.Images.Media.MIME_TYPE, MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
-            MediaStore.Images.Media.WIDTH, MediaStore.Images.Media.HEIGHT, MediaStore.Images.Media.ORIENTATION)
+            MediaStore.Images.Media.WIDTH, MediaStore.Images.Media.HEIGHT, MediaStore.Images.Media.ORIENTATION,
+            MediaStore.Images.Media.BUCKET_ID)
+        var selection: String? = null
+        var arguments: Array<String>? = null
+        if (Build.VERSION.SDK_INT >= 29) {
+            projection += listOf(MediaStore.Images.Media.RELATIVE_PATH, MediaStore.Images.Media.VOLUME_NAME)
+            selection = "${MediaStore.Images.Media.IS_PENDING} = 0"
+            if (ownOnly) {
+                selection += " AND ${MediaStore.Images.Media.OWNER_PACKAGE_NAME} = ?"
+                arguments = arrayOf(context.packageName)
+            }
+        }
         val result = mutableListOf<AlbumPhoto>()
-        resolver.query(collection, projection, null, null, "${MediaStore.Images.Media.DATE_ADDED} DESC")?.use { cursor ->
+        resolver.query(collection, projection.toTypedArray(), selection, arguments, "${MediaStore.Images.Media.DATE_ADDED} DESC")?.use { cursor ->
             while (cursor.moveToNext()) {
                 val name = cursor.getString(1) ?: "RAW"
                 if (PhotoFiles.accepts(name, cursor.getString(2))) {
-                    result += AlbumPhoto(ContentUris.withAppendedId(collection, cursor.getLong(0)), name, cursor.getString(3) ?: "RAW",
-                        cursor.getInt(4), cursor.getInt(5), cursor.getInt(6))
+                    val path = if (Build.VERSION.SDK_INT >= 29) cursor.getString(8) else null
+                    val volume = if (Build.VERSION.SDK_INT >= 29) cursor.getString(9) else null
+                    val uri = mediaLibrary.canonicalIfKnown(volume, cursor.getLong(0))
+                        ?: ContentUris.withAppendedId(collection, cursor.getLong(0))
+                    result += AlbumPhoto(uri, name, cursor.getString(3) ?: "RAW",
+                        cursor.getInt(4), cursor.getInt(5), cursor.getInt(6),
+                        path?.let { "$volume:$it" } ?: cursor.getString(7).orEmpty(), path)
                 }
             }
         }
@@ -141,6 +160,7 @@ class PhotoStorage(
     } catch (_: Exception) { null }
 
     fun retainSystemPhoto(uri: Uri): Uri {
+        knownCameraSource(uri)?.let { return it }
         runCatching {
             resolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
@@ -175,32 +195,36 @@ class PhotoStorage(
     }
 
     fun import(uri: Uri): ImportedPhoto {
+        val source = knownCameraSource(uri) ?: uri
         runCatching {
-            resolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            resolver.takePersistableUriPermission(source, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        val retained = uri.takeIf { it.scheme == "file" }?.path?.let(::File)?.takeIf {
+        val retained = source.takeIf { it.scheme == "file" }?.path?.let(::File)?.takeIf {
             it.parentFile?.canonicalFile == systemPhotos.canonicalFile
         }
         try { retained?.let(SystemPhotoStore::validate) }
         catch (_: ChangedSystemPhoto) { throw IOException(AppStrings.text(R.string.collection_source_changed)) }
-        val name = retained?.let(SystemPhotoStore::originalName) ?: runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
+        val name = retained?.let(SystemPhotoStore::originalName) ?: runCatching { resolver.query(source, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
             if (it.moveToFirst()) it.getString(0) else null
-        } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "RAW"
-        val inputKind = PhotoFiles.kind(retained?.name ?: name, resolver.getType(uri))
+        } ?: source.lastPathSegment?.substringAfterLast('/') ?: "RAW"
+        val inputKind = PhotoFiles.kind(retained?.name ?: name, resolver.getType(source))
             ?: throw IOException("Selected item is not a supported photo")
-        val validate = OriginalPhotoSource.capture(resolver, uri)
-        val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot open input")
+        val validate = OriginalPhotoSource.capture(resolver, source)
+        val stream = resolver.openInputStream(source) ?: throw IOException("Cannot open input")
         val file = WorkingCopy.import(directory, stream, retained?.name ?: name)
         try {
             validate()
             val hdrSource = when (inputKind) {
-                PhotoInputKind.RASTER -> if (HDRSourceInfo.mayContainGainMap(name, resolver.getType(uri)))
+                PhotoInputKind.RASTER -> if (HDRSourceInfo.mayContainGainMap(name, resolver.getType(source)))
                     NativeHDRBridge.probe(file) else null
                 PhotoInputKind.RAW -> NativeHDRBridge.probeCameraRaw(file)
             }
-            return ImportedPhoto(uri, name, file, PhotoIdentity(uri.toString()), inputKind, validate, hdrSource)
+            return ImportedPhoto(source, name, file, PhotoIdentity(source.toString()), inputKind, validate, hdrSource)
         } catch (error: Throwable) { file.delete(); throw error }
     }
+
+    private fun knownCameraSource(uri: Uri): Uri? = try { mediaLibrary.resolveKnown(uri) }
+        catch (_: MediaPhotoChanged) { throw IOException(AppStrings.text(R.string.collection_source_changed)) }
 
     fun looks(): List<LookChoice> = films.map { LookChoice(it.id, it.name, managed = false) } + lookLibrary.list().map {
         LookChoice(it.id, it.name, managed = true, available = it.available, appearanceUnverified = it.appearanceUnverified, compatibilityMode = it.compatibilityMode)

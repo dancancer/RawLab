@@ -20,6 +20,18 @@ Auto 可接续 GLES 显示渲染，Force 不支持需要执行 C5 的滤波。�
 
 ## 功能 / Features
 
+- 「从相机导入」提供蓝牙发现、系统配对、自动加入相机 Wi-Fi、RAW/JPEG 选片和原文件导入。
+  当前连接范围为 Sony α7C II / 固件 2.00 的「智能手机连接」，自动 Wi-Fi 需要 Android 10+。
+  点击查找时才请求位置/附近设备权限；相机 Wi-Fi 只用于本应用传输。首次按系统提示配对，重连复用已有配对，不自动解除配对。
+  原件保存到系统媒体库，默认按每张照片的拍摄日期放入 `Pictures/RawLab/Camera/YYYY-MM-DD/`。
+  保存位置可配置子目录及统一目录／拍摄日／拍摄月份分组；未知日期进入 `Unknown date`，不以导入时间代替。
+  已登记且内容未变的重复照片复用原件和调整。单张可打开编辑，多张可加入选片集合，也可直接在现有相册中查看。
+  本应用保存的照片无需全库读取权限即可浏览；其他获得授权且支持 RAW 的应用也能读取这些媒体。
+  保持应用在前台完成传输；停止、断线或进入后台会保留已保存项，重连后从未完成文件开头重传。
+  打开相机页保留当前编辑草稿，进入新照片时才执行既有草稿确认。不会删除相机中的照片。
+  当前真机验证范围为 Pixel XL / Android 10 与上述相机的 RAW 路径；JPEG 原件传输及其他设备尚未实测。
+  原件、任务恢复及编辑身份边界见[Android 媒体库设计](../docs/design/camera-transfer/android-media-library.md)。
+
 - 手机 HDR JPEG/HEIF 默认打开 HDR 编辑，提供曝光、相对色温/色偏、对比度、高光、阴影、饱和度及几何；预设、选择性同步、历史和批量导出保留独立 HDR 状态。HDR JPEG 重新生成增益图，显式 SDR JPEG/PNG16/DNG 使用 SDR rendition。切到 SDR 编辑后可使用 LUT 兼容向导。HDR 处理使用 CPU，FP16 硬件显示需 API 34+、HDR/SDR 比率和硬件加速窗口，条件不足显示 SDR；不支持 GPU Force。普通 SDR HEIF 的平台解码需 API 28+。范围见[平台对齐设计](../docs/design/hdr-photos/android-windows.md)。
   Phone HDR JPEG/HEIF defaults to HDR editing with seven basic adjustments and geometry. Presets, selective synchronization, history and batch snapshots preserve independent HDR state. HDR JPEG regenerates a gain map; explicit SDR exports use the SDR rendition. Switch to SDR editing for LUT compatibility previews. Processing uses the CPU; FP16 presentation requires API 34+, an available HDR/SDR ratio and a hardware-accelerated window, with SDR fallback. GPU Force is unsupported. Ordinary SDR HEIF decoding requires API 28+.
 
@@ -234,6 +246,20 @@ c++ -std=c++17 -I RawLabAndroid/app/src/main/cpp -I lutools/include \
   RawLabAndroid/tests/request_test.cpp -o /tmp/rawlab-android-request-test
 /tmp/rawlab-android-request-test
 ```
+
+相机 MediaStore 进程死亡测试默认跳过，不会终止普通 `connectedDebugAndroidTest`。
+已安装应用及测试 APK 后，在仓库根目录用独立脚本分别启动 pending、published 和恢复进程：
+
+```sh
+ANDROID_SERIAL=<device> ANDROID_ADB_SERVER_PORT=<port> \
+RAWLAB_TEST_APP_ID=com.rawlab.android.cameramedia \
+bash RawLabAndroid/tests/camera-media-recovery.sh /tmp/rawlab-camera-recovery
+```
+
+实体设备必须使用独立测试包名。脚本要求旧测试进程确实退出、准备记录与阶段匹配，
+再由新进程验证同一媒体 URI；已有准备记录时拒绝覆盖。失败记录应先检查，
+需要清理时仅显式运行 `CameraMediaRecoveryTest#cleanupRecoveryFixture`，并传
+`-e cameraRecoveryPhase cleanup`；不使用 `pm clear` 或全库删除。
 
 独立 GLES LUT 回归直接编译当前源码并在 ARM64 真机运行，不安装 APK。覆盖分块边界、
 6100 万/1 亿像素，以及上传、计算、映射和读回失败后的 Auto 回退、Force 报错与恢复。
