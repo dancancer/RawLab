@@ -45,7 +45,7 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
     onAlbum: () -> Unit, onFile: () -> Unit, onLicenses: () -> Unit, onPreviewSizeChange: (Int) -> Unit,
     onDraftEdit: (EditSettings, Boolean) -> Unit, onSaveRetry: () -> Unit,
     view: PhotoViewOptions = PhotoViewOptions(), onCanvasTap: () -> Unit = {}, onHoldBefore: (Boolean) -> Unit = {},
-    onModeChange: (ComparisonMode) -> Unit = {}, onCompareClose: () -> Unit = {}, onRetry: () -> Unit = {}, hslTarget: HslTargetActions? = null, showTargetStatus: Boolean = false) {
+    onModeChange: (ComparisonMode) -> Unit = {}, onCompareClose: () -> Unit = {}, onRetry: () -> Unit = {}, hslTarget: HslTargetActions? = null, showTargetStatus: Boolean = false, onCamera: () -> Unit = {}) {
     val comparisonInset = if (compare) with(LocalDensity.current) {
         MaterialTheme.typography.labelSmall.lineHeight.toDp() + 36.dp
     } else 12.dp
@@ -66,7 +66,7 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
                         EditorSaveNotice(state, onSaveRetry, Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
                     }
                 })
-        } ?: EmptyEditor(onAlbum, onFile, state.operation == Operation.NONE)
+        } ?: EmptyEditor(onAlbum, onFile, state.operation == Operation.NONE, onCamera)
         val busy = state.rendering || state.previewResizePending
         val previewStatus = stringResource(when {
             busy -> R.string.rendering
@@ -137,11 +137,12 @@ internal fun RenderError(state: EditorState, onRetry: () -> Unit, modifier: Modi
 }
 
 @Composable
-internal fun EmptyEditor(onAlbum: () -> Unit, onFile: () -> Unit, enabled: Boolean) {
+internal fun EmptyEditor(onAlbum: () -> Unit, onFile: () -> Unit, enabled: Boolean, onCamera: () -> Unit = {}) {
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Button(onClick = onAlbum, enabled = enabled) { Icon(Icons.Outlined.PhotoLibrary, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.select_photo)) }
         TextButton(onClick = onFile, enabled = enabled) { Text(stringResource(R.string.open_file)) }
+        TextButton(onClick = onCamera, enabled = enabled, modifier = Modifier.testTag("camera-entry")) { Text(stringResource(R.string.camera_import)) }
         Text(stringResource(R.string.empty_hint), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
     }
 }

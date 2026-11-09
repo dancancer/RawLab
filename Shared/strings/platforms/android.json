@@ -5149,6 +5149,556 @@
       "formats": [],
       "source": "调整记录暂不可用，请稍后重试。",
       "types": []
+    },
+    "camera_import": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "从相机导入",
+      "types": []
+    },
+    "camera_intro": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "先在相机打开「网络 → 连接/电脑遥控 → 智能手机连接」。首次连接需要核对配对数字，并允许连接相机 Wi-Fi。",
+      "types": []
+    },
+    "camera_supported": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "当前支持 Sony α7C II（固件 2.00），需要 Android 10 或更高版本。",
+      "types": []
+    },
+    "camera_find": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "查找相机",
+      "types": []
+    },
+    "camera_history": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "导入记录",
+      "types": []
+    },
+    "camera_disconnect": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "断开连接",
+      "types": []
+    },
+    "camera_scanning": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在查找相机…",
+      "types": []
+    },
+    "camera_pairing": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "请核对手机和相机的配对数字",
+      "types": []
+    },
+    "camera_bluetooth": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在连接相机…",
+      "types": []
+    },
+    "camera_wifi_starting": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在开启相机 Wi-Fi…",
+      "types": []
+    },
+    "camera_wifi_confirmation": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "请允许系统连接相机 Wi-Fi",
+      "types": []
+    },
+    "camera_network": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在读取相机照片…",
+      "types": []
+    },
+    "camera_connected": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已连接",
+      "types": []
+    },
+    "camera_permissions": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "请允许位置和附近设备权限，再查找相机。",
+      "types": []
+    },
+    "camera_bluetooth_off": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "请打开手机蓝牙后重试。",
+      "types": []
+    },
+    "camera_location_off": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "请打开系统位置服务后重试。",
+      "types": []
+    },
+    "camera_not_found": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "没有找到相机。请保持相机处于等待连接画面。",
+      "types": []
+    },
+    "camera_connection_failed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "连接未完成。请保持相机唤醒，重新查找并连接。",
+      "types": []
+    },
+    "camera_disconnected": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "相机连接已断开。已保存的照片仍可查看。",
+      "types": []
+    },
+    "camera_transfer_failed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "导入未完成。已保存照片已保留，请重新连接后继续。",
+      "types": []
+    },
+    "camera_source_changed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "相机上的照片已变化或不属于这台相机，请重新挑选。",
+      "types": []
+    },
+    "camera_storage_failed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "无法保存导入记录或原件。请检查可用空间后重试。",
+      "types": []
+    },
+    "camera_source_missing": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已保存的原件缺失或已改变，无法打开。",
+      "types": []
+    },
+    "camera_preview_unavailable": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "预览不可用",
+      "types": []
+    },
+    "camera_empty": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "相机中没有可导入的 RAW 或 JPEG 照片。",
+      "types": []
+    },
+    "camera_no_matches": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "没有符合筛选条件的照片。",
+      "types": []
+    },
+    "camera_format": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "照片格式",
+      "types": []
+    },
+    "camera_all": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "全部",
+      "types": []
+    },
+    "camera_all_dates": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "全部日期",
+      "types": []
+    },
+    "camera_selected": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "查看已选",
+      "types": []
+    },
+    "camera_selection_count": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$d",
+        "%2$s"
+      ],
+      "source": "已选 {0} 张 · {1}",
+      "types": [
+        "d",
+        "s"
+      ]
+    },
+    "camera_import_count": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$d"
+      ],
+      "source": "导入 {0} 张",
+      "types": [
+        "d"
+      ]
+    },
+    "camera_saved": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已导入",
+      "types": []
+    },
+    "camera_duplicate": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已在本机",
+      "types": []
+    },
+    "camera_preview": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "放大预览",
+      "types": []
+    },
+    "camera_select": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "选中",
+      "types": []
+    },
+    "camera_deselect": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "取消选中",
+      "types": []
+    },
+    "camera_previous": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "上一张",
+      "types": []
+    },
+    "camera_next": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "下一张",
+      "types": []
+    },
+    "camera_progress": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "导入进度",
+      "types": []
+    },
+    "camera_foreground": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "导入时请保持 RawLab 在前台。",
+      "types": []
+    },
+    "camera_stop": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "停止导入",
+      "types": []
+    },
+    "camera_resume": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "继续未完成",
+      "types": []
+    },
+    "camera_open": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "打开编辑",
+      "types": []
+    },
+    "camera_collection": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "加入选片集合",
+      "types": []
+    },
+    "camera_saved_count": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$d",
+        "%2$d"
+      ],
+      "source": "已保存 {0} / {1} 张",
+      "types": [
+        "d",
+        "d"
+      ]
+    },
+    "camera_current": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "正在导入 {0}",
+      "types": [
+        "s"
+      ]
+    },
+    "camera_paused": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "上次导入未完成",
+      "types": []
+    },
+    "camera_complete": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "导入完成",
+      "types": []
+    },
+    "camera_no_history": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "还没有导入记录",
+      "types": []
+    },
+    "camera_view_task": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "查看导入任务",
+      "types": []
+    },
+    "camera_back_photos": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "继续挑选",
+      "types": []
+    },
+    "camera_waiting": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "等待导入",
+      "types": []
+    },
+    "camera_filter_apply": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$d"
+      ],
+      "source": "显示 {0} 张照片",
+      "types": [
+        "d"
+      ]
+    },
+    "camera_filter": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "筛选照片",
+      "types": []
+    },
+    "camera_clear": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "清空选择",
+      "types": []
+    },
+    "camera_open_saved": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "查看已导入",
+      "types": []
+    },
+    "camera_hidden_selected": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "包含筛选范围外的已选照片",
+      "types": []
+    },
+    "camera_no_original_deleted": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "相机中的原照片会保留。",
+      "types": []
+    },
+    "camera_loading": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在加载…",
+      "types": []
+    },
+    "camera_busy": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "导入任务仍在进行",
+      "types": []
+    },
+    "camera_cancel_connection": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "取消连接",
+      "types": []
+    },
+    "camera_save_location": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "保存位置",
+      "types": []
+    },
+    "camera_save_location_title": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "相机照片保存位置",
+      "types": []
+    },
+    "camera_directory": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "目录",
+      "types": []
+    },
+    "camera_directory_hint": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "位于系统图片目录内，例如 RawLab/Camera",
+      "types": []
+    },
+    "camera_directory_invalid": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "目录名称无效，请使用普通文件夹名称。",
+      "types": []
+    },
+    "camera_directory_grouping": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "目录分组",
+      "types": []
+    },
+    "camera_group_none": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "统一目录",
+      "types": []
+    },
+    "camera_group_day": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "按拍摄日期",
+      "types": []
+    },
+    "camera_group_month": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "按拍摄月份",
+      "types": []
+    },
+    "camera_path_example": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "路径示例",
+      "types": []
+    },
+    "camera_unknown_capture_date": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "未知拍摄日期",
+      "types": []
+    },
+    "camera_unknown_date_hint": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "缺少拍摄日期的照片会保存到“Unknown date”目录。",
+      "types": []
+    },
+    "camera_settings_future": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "仅影响之后开始的导入任务。",
+      "types": []
+    },
+    "camera_save_settings": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "保存设置",
+      "types": []
+    },
+    "camera_view_album": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "在相册中查看",
+      "types": []
+    },
+    "camera_this_import": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "本次导入",
+      "types": []
+    },
+    "camera_view_all_photos": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "查看全部照片",
+      "types": []
+    },
+    "album_own_photos": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "显示 RawLab 保存的照片，授权后可浏览更多照片。",
+      "types": []
+    },
+    "camera_saved_to_album": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已保存到系统相册",
+      "types": []
+    },
+    "camera_local_source_changed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "原片已被其他应用修改，无法继续使用原来的编辑记录。",
+      "types": []
+    },
+    "camera_destination_summary": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "保存到：{0}",
+      "types": [
+        "s"
+      ]
+    },
+    "camera_original_unavailable": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "原片不可用",
+      "types": []
+    },
+    "camera_original_missing": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "原片无法访问",
+      "types": []
+    },
+    "camera_original_changed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "原片已变化",
+      "types": []
+    },
+    "camera_retry_originals": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "重新下载不可用的原片",
+      "types": []
     }
   },
   "overrides": {
@@ -6090,6 +6640,670 @@
       "es": "La foto o sus ajustes han cambiado. El perfil de cámara importado no se ha aplicado. Inténtalo de nuevo.",
       "ja": "写真または調整が変更されたため、読み込んだカメラプロファイルは適用されませんでした。もう一度お試しください。",
       "zh-Hans": "照片或调整已更改，未应用导入的相机配置。请重试。"
+    },
+    "从相机导入": {
+      "de": "Von Kamera importieren",
+      "en": "Import from Camera",
+      "es": "Importar desde la cámara",
+      "fr": "Importer depuis l’appareil photo",
+      "ja": "カメラから読み込む",
+      "zh-Hans": "从相机导入"
+    },
+    "先在相机打开「网络 → 连接/电脑遥控 → 智能手机连接」。首次连接需要核对配对数字，并允许连接相机 Wi-Fi。": {
+      "de": "Öffnen Sie zuerst an der Kamera „Netzwerk → Verbindung/PC-Fernbedienung → Smartphone-Verbindung“. Bei der ersten Verbindung müssen Sie die Kopplungsnummern vergleichen und die Verbindung mit dem Kamera-WLAN erlauben.",
+      "en": "On the camera, open “Network → Connection/Computer Remote → Smartphone connection” first. The first connection requires you to verify the pairing numbers and allow connection to the camera’s Wi-Fi.",
+      "es": "En la cámara, abre primero «Red → Conexión/Mando a distancia del ordenador → Conexión con smartphone». La primera conexión requiere comprobar los números de emparejamiento y permitir la conexión a la red Wi-Fi de la cámara.",
+      "fr": "Sur l’appareil photo, ouvrez d’abord « Réseau → Connexion/Télécommande PC → Connexion smartphone ». La première connexion nécessite de vérifier les numéros d’association et d’autoriser la connexion au Wi-Fi de l’appareil.",
+      "ja": "カメラでまず「ネットワーク → 接続／PCリモート → スマートフォン接続」を開いてください。初回接続ではペアリング番号を確認し、カメラの Wi-Fi への接続を許可します。",
+      "zh-Hans": "先在相机打开「网络 → 连接/电脑遥控 → 智能手机连接」。首次连接需要核对配对数字，并允许连接相机 Wi-Fi。"
+    },
+    "当前支持 Sony α7C II（固件 2.00），需要 Android 10 或更高版本。": {
+      "de": "Derzeit wird die Sony α7C II (Firmware 2.00) unterstützt; Android 10 oder höher ist erforderlich.",
+      "en": "Currently supports Sony α7C II (firmware 2.00); Android 10 or later is required.",
+      "es": "Actualmente compatible con Sony α7C II (firmware 2.00); se requiere Android 10 o posterior.",
+      "fr": "Compatible actuellement avec le Sony α7C II (firmware 2.00) ; Android 10 ou version ultérieure est requis.",
+      "ja": "現在は Sony α7C II（ファームウェア 2.00）に対応しています。Android 10 以降が必要です。",
+      "zh-Hans": "当前支持 Sony α7C II（固件 2.00），需要 Android 10 或更高版本。"
+    },
+    "查找相机": {
+      "de": "Kamera suchen",
+      "en": "Find camera",
+      "es": "Buscar cámara",
+      "fr": "Rechercher un appareil photo",
+      "ja": "カメラを検索",
+      "zh-Hans": "查找相机"
+    },
+    "导入记录": {
+      "de": "Importverlauf",
+      "en": "Import history",
+      "es": "Historial de importación",
+      "fr": "Historique des importations",
+      "ja": "読み込み履歴",
+      "zh-Hans": "导入记录"
+    },
+    "断开连接": {
+      "de": "Verbindung trennen",
+      "en": "Disconnect",
+      "es": "Desconectar",
+      "fr": "Déconnecter",
+      "ja": "接続を解除",
+      "zh-Hans": "断开连接"
+    },
+    "正在查找相机…": {
+      "de": "Kamera wird gesucht …",
+      "en": "Searching for camera…",
+      "es": "Buscando cámara…",
+      "fr": "Recherche de l’appareil photo…",
+      "ja": "カメラを検索中…",
+      "zh-Hans": "正在查找相机…"
+    },
+    "请核对手机和相机的配对数字": {
+      "de": "Prüfen Sie die Kopplungsnummer auf dem Smartphone und der Kamera",
+      "en": "Check the pairing number on your phone and camera",
+      "es": "Comprueba el número de emparejamiento en el teléfono y la cámara",
+      "fr": "Vérifiez le numéro d’association sur le téléphone et l’appareil photo",
+      "ja": "スマートフォンとカメラのペアリング番号を確認してください",
+      "zh-Hans": "请核对手机和相机的配对数字"
+    },
+    "正在连接相机…": {
+      "de": "Verbindung zur Kamera wird hergestellt …",
+      "en": "Connecting to camera…",
+      "es": "Conectando con la cámara…",
+      "fr": "Connexion à l’appareil photo…",
+      "ja": "カメラに接続中…",
+      "zh-Hans": "正在连接相机…"
+    },
+    "正在开启相机 Wi-Fi…": {
+      "de": "Kamera-WLAN wird aktiviert …",
+      "en": "Starting camera Wi-Fi…",
+      "es": "Activando la red Wi-Fi de la cámara…",
+      "fr": "Activation du Wi-Fi de l’appareil photo…",
+      "ja": "カメラの Wi-Fi を起動中…",
+      "zh-Hans": "正在开启相机 Wi-Fi…"
+    },
+    "请允许系统连接相机 Wi-Fi": {
+      "de": "Erlauben Sie dem System, eine Verbindung mit dem Kamera-WLAN herzustellen",
+      "en": "Allow the system to connect to the camera’s Wi-Fi",
+      "es": "Permite que el sistema se conecte a la red Wi-Fi de la cámara",
+      "fr": "Autorisez le système à se connecter au Wi-Fi de l’appareil photo",
+      "ja": "システムによるカメラの Wi-Fi への接続を許可してください",
+      "zh-Hans": "请允许系统连接相机 Wi-Fi"
+    },
+    "正在读取相机照片…": {
+      "de": "Fotos von der Kamera werden gelesen …",
+      "en": "Reading photos from camera…",
+      "es": "Leyendo fotos de la cámara…",
+      "fr": "Lecture des photos de l’appareil photo…",
+      "ja": "カメラの写真を読み込み中…",
+      "zh-Hans": "正在读取相机照片…"
+    },
+    "已连接": {
+      "de": "Verbunden",
+      "en": "Connected",
+      "es": "Conectada",
+      "fr": "Connecté",
+      "ja": "接続済み",
+      "zh-Hans": "已连接"
+    },
+    "请允许位置和附近设备权限，再查找相机。": {
+      "de": "Erlauben Sie die Berechtigungen für Standort und Geräte in der Nähe und suchen Sie dann nach der Kamera.",
+      "en": "Allow location and nearby devices permissions, then search for the camera.",
+      "es": "Permite los permisos de ubicación y dispositivos cercanos; después busca la cámara.",
+      "fr": "Autorisez les permissions de localisation et d’appareils à proximité, puis recherchez l’appareil photo.",
+      "ja": "位置情報と付近のデバイスの権限を許可してから、カメラを検索してください。",
+      "zh-Hans": "请允许位置和附近设备权限，再查找相机。"
+    },
+    "请打开手机蓝牙后重试。": {
+      "de": "Schalten Sie Bluetooth am Smartphone ein und versuchen Sie es erneut.",
+      "en": "Turn on Bluetooth on your phone and try again.",
+      "es": "Activa el Bluetooth del teléfono y vuelve a intentarlo.",
+      "fr": "Activez le Bluetooth du téléphone, puis réessayez.",
+      "ja": "スマートフォンの Bluetooth をオンにして、もう一度お試しください。",
+      "zh-Hans": "请打开手机蓝牙后重试。"
+    },
+    "请打开系统位置服务后重试。": {
+      "de": "Aktivieren Sie die Standortdienste in den Systemeinstellungen und versuchen Sie es erneut.",
+      "en": "Turn on location services in system settings and try again.",
+      "es": "Activa los servicios de ubicación en los ajustes del sistema y vuelve a intentarlo.",
+      "fr": "Activez les services de localisation dans les réglages système, puis réessayez.",
+      "ja": "システム設定で位置情報サービスをオンにして、もう一度お試しください。",
+      "zh-Hans": "请打开系统位置服务后重试。"
+    },
+    "没有找到相机。请保持相机处于等待连接画面。": {
+      "de": "Keine Kamera gefunden. Lassen Sie die Kamera im Bildschirm zum Warten auf eine Verbindung.",
+      "en": "No camera found. Keep the camera on its connection-waiting screen.",
+      "es": "No se ha encontrado ninguna cámara. Mantén la cámara en la pantalla de espera de conexión.",
+      "fr": "Aucun appareil photo trouvé. Laissez l’appareil sur l’écran d’attente de connexion.",
+      "ja": "カメラが見つかりません。カメラを接続待機画面にしたままにしてください。",
+      "zh-Hans": "没有找到相机。请保持相机处于等待连接画面。"
+    },
+    "连接未完成。请保持相机唤醒，重新查找并连接。": {
+      "de": "Die Verbindung wurde nicht abgeschlossen. Lassen Sie die Kamera aktiv und suchen Sie erneut nach ihr, um eine Verbindung herzustellen.",
+      "en": "Connection did not complete. Keep the camera awake, then search and connect again.",
+      "es": "La conexión no se completó. Mantén la cámara activa y vuelve a buscarla y conectarla.",
+      "fr": "La connexion n’est pas terminée. Gardez l’appareil photo actif, puis recherchez-le et reconnectez-le.",
+      "ja": "接続を完了できませんでした。カメラを起動したまま、もう一度検索して接続してください。",
+      "zh-Hans": "连接未完成。请保持相机唤醒，重新查找并连接。"
+    },
+    "相机连接已断开。已保存的照片仍可查看。": {
+      "de": "Die Kamera wurde getrennt. Gespeicherte Fotos können weiterhin angezeigt werden.",
+      "en": "The camera was disconnected. Saved photos are still available.",
+      "es": "La cámara se ha desconectado. Las fotos guardadas siguen disponibles.",
+      "fr": "L’appareil photo est déconnecté. Les photos enregistrées restent disponibles.",
+      "ja": "カメラとの接続が切れました。保存済みの写真は引き続き表示できます。",
+      "zh-Hans": "相机连接已断开。已保存的照片仍可查看。"
+    },
+    "导入未完成。已保存照片已保留，请重新连接后继续。": {
+      "de": "Der Import wurde nicht abgeschlossen. Gespeicherte Fotos bleiben erhalten. Verbinden Sie die Kamera erneut und versuchen Sie es wieder.",
+      "en": "Import did not complete. Saved photos were kept; reconnect and try again.",
+      "es": "La importación no se completó. Las fotos guardadas se conservaron; vuelve a conectar la cámara e inténtalo de nuevo.",
+      "fr": "L’importation n’est pas terminée. Les photos enregistrées sont conservées ; reconnectez l’appareil et réessayez.",
+      "ja": "読み込みを完了できませんでした。保存済みの写真は保持されています。再接続してもう一度お試しください。",
+      "zh-Hans": "导入未完成。已保存照片已保留，请重新连接后继续。"
+    },
+    "相机上的照片已变化或不属于这台相机，请重新挑选。": {
+      "de": "Die Fotos auf der Kamera wurden geändert oder gehören zu einer anderen Kamera. Wählen Sie sie erneut aus.",
+      "en": "The camera photos changed or belong to a different camera. Select them again.",
+      "es": "Las fotos de la cámara han cambiado o pertenecen a otra cámara. Vuelve a seleccionarlas.",
+      "fr": "Les photos de l’appareil ont changé ou proviennent d’un autre appareil. Sélectionnez-les à nouveau.",
+      "ja": "カメラの写真が変更されたか、別のカメラのものです。もう一度選択してください。",
+      "zh-Hans": "相机上的照片已变化或不属于这台相机，请重新挑选。"
+    },
+    "无法保存导入记录或原件。请检查可用空间后重试。": {
+      "de": "Der Importverlauf oder die Originaldateien konnten nicht gespeichert werden. Prüfen Sie den verfügbaren Speicher und versuchen Sie es erneut.",
+      "en": "Unable to save the import record or original files. Check available storage and try again.",
+      "es": "No se puede guardar el registro de importación o los archivos originales. Comprueba el espacio disponible e inténtalo de nuevo.",
+      "fr": "Impossible d’enregistrer l’historique d’importation ou les fichiers originaux. Vérifiez l’espace disponible et réessayez.",
+      "ja": "読み込み記録または元のファイルを保存できません。空き容量を確認して、もう一度お試しください。",
+      "zh-Hans": "无法保存导入记录或原件。请检查可用空间后重试。"
+    },
+    "已保存的原件缺失或已改变，无法打开。": {
+      "de": "Das gespeicherte Original fehlt oder wurde geändert und kann nicht geöffnet werden.",
+      "en": "The saved original is missing or has changed and cannot be opened.",
+      "es": "Falta el original guardado o ha cambiado; no se puede abrir.",
+      "fr": "L’original enregistré est introuvable ou a changé et ne peut pas être ouvert.",
+      "ja": "保存済みの元ファイルが見つからないか変更されているため、開けません。",
+      "zh-Hans": "已保存的原件缺失或已改变，无法打开。"
+    },
+    "预览不可用": {
+      "de": "Vorschau nicht verfügbar",
+      "en": "Preview unavailable",
+      "es": "Vista previa no disponible",
+      "fr": "Aperçu indisponible",
+      "ja": "プレビューを利用できません",
+      "zh-Hans": "预览不可用"
+    },
+    "相机中没有可导入的 RAW 或 JPEG 照片。": {
+      "de": "Auf der Kamera sind keine importierbaren RAW- oder JPEG-Fotos.",
+      "en": "The camera has no RAW or JPEG photos to import.",
+      "es": "La cámara no contiene fotos RAW o JPEG que se puedan importar.",
+      "fr": "L’appareil photo ne contient aucune photo RAW ou JPEG à importer.",
+      "ja": "カメラに読み込める RAW または JPEG 写真がありません。",
+      "zh-Hans": "相机中没有可导入的 RAW 或 JPEG 照片。"
+    },
+    "没有符合筛选条件的照片。": {
+      "de": "Keine Fotos entsprechen dem aktuellen Filter.",
+      "en": "No photos match the current filter.",
+      "es": "Ninguna foto coincide con el filtro actual.",
+      "fr": "Aucune photo ne correspond au filtre actuel.",
+      "ja": "現在のフィルターに一致する写真はありません。",
+      "zh-Hans": "没有符合筛选条件的照片。"
+    },
+    "照片格式": {
+      "de": "Fotoformat",
+      "en": "Photo format",
+      "es": "Formato de foto",
+      "fr": "Format photo",
+      "ja": "写真形式",
+      "zh-Hans": "照片格式"
+    },
+    "全部日期": {
+      "de": "Alle Datumsangaben",
+      "en": "All dates",
+      "es": "Todas las fechas",
+      "fr": "Toutes les dates",
+      "ja": "すべての日付",
+      "zh-Hans": "全部日期"
+    },
+    "查看已选": {
+      "de": "Ausgewählte anzeigen",
+      "en": "View selected",
+      "es": "Ver seleccionadas",
+      "fr": "Voir la sélection",
+      "ja": "選択項目を表示",
+      "zh-Hans": "查看已选"
+    },
+    "已选 {0} 张 · {1}": {
+      "de": "{0} ausgewählt · {1}",
+      "en": "{0} selected · {1}",
+      "es": "{0} seleccionadas · {1}",
+      "fr": "{0} sélectionnées · {1}",
+      "ja": "{0} 枚を選択 · {1}",
+      "zh-Hans": "已选 {0} 张 · {1}"
+    },
+    "导入 {0} 张": {
+      "de": "{0} Fotos importieren",
+      "en": "Import {0} photos",
+      "es": "Importar {0} fotos",
+      "fr": "Importer {0} photos",
+      "ja": "{0} 枚を読み込む",
+      "zh-Hans": "导入 {0} 张"
+    },
+    "已导入": {
+      "de": "Importiert",
+      "en": "Imported",
+      "es": "Importada",
+      "fr": "Importée",
+      "ja": "読み込み済み",
+      "zh-Hans": "已导入"
+    },
+    "已在本机": {
+      "de": "Bereits auf diesem Gerät",
+      "en": "Already on this device",
+      "es": "Ya está en este dispositivo",
+      "fr": "Déjà sur cet appareil",
+      "ja": "この端末に保存済み",
+      "zh-Hans": "已在本机"
+    },
+    "放大预览": {
+      "de": "Vergrößerte Vorschau",
+      "en": "Zoom preview",
+      "es": "Vista previa ampliada",
+      "fr": "Aperçu agrandi",
+      "ja": "拡大プレビュー",
+      "zh-Hans": "放大预览"
+    },
+    "选中": {
+      "de": "Auswählen",
+      "en": "Select",
+      "es": "Seleccionar",
+      "fr": "Sélectionner",
+      "ja": "選択",
+      "zh-Hans": "选中"
+    },
+    "取消选中": {
+      "de": "Auswahl aufheben",
+      "en": "Deselect",
+      "es": "Deseleccionar",
+      "fr": "Désélectionner",
+      "ja": "選択を解除",
+      "zh-Hans": "取消选中"
+    },
+    "上一张": {
+      "de": "Vorheriges Foto",
+      "en": "Previous photo",
+      "es": "Foto anterior",
+      "fr": "Photo précédente",
+      "ja": "前の写真",
+      "zh-Hans": "上一张"
+    },
+    "下一张": {
+      "de": "Nächstes Foto",
+      "en": "Next photo",
+      "es": "Foto siguiente",
+      "fr": "Photo suivante",
+      "ja": "次の写真",
+      "zh-Hans": "下一张"
+    },
+    "导入进度": {
+      "de": "Importfortschritt",
+      "en": "Import progress",
+      "es": "Progreso de la importación",
+      "fr": "Progression de l’importation",
+      "ja": "読み込みの進捗",
+      "zh-Hans": "导入进度"
+    },
+    "导入时请保持 RawLab 在前台。": {
+      "de": "Lassen Sie RawLab während des Imports im Vordergrund.",
+      "en": "Keep RawLab in the foreground during import.",
+      "es": "Mantén RawLab en primer plano durante la importación.",
+      "fr": "Gardez RawLab au premier plan pendant l’importation.",
+      "ja": "読み込み中は RawLab を前面に表示してください。",
+      "zh-Hans": "导入时请保持 RawLab 在前台。"
+    },
+    "停止导入": {
+      "de": "Import stoppen",
+      "en": "Stop import",
+      "es": "Detener la importación",
+      "fr": "Arrêter l’importation",
+      "ja": "読み込みを停止",
+      "zh-Hans": "停止导入"
+    },
+    "继续未完成": {
+      "de": "Unvollständige fortsetzen",
+      "en": "Continue unfinished",
+      "es": "Continuar pendientes",
+      "fr": "Reprendre les éléments restants",
+      "ja": "未完了分を続行",
+      "zh-Hans": "继续未完成"
+    },
+    "打开编辑": {
+      "de": "Im Editor öffnen",
+      "en": "Open in editor",
+      "es": "Abrir en el editor",
+      "fr": "Ouvrir dans l’éditeur",
+      "ja": "エディターで開く",
+      "zh-Hans": "打开编辑"
+    },
+    "已保存 {0} / {1} 张": {
+      "de": "{0} / {1} Fotos gespeichert",
+      "en": "Saved {0} / {1} photos",
+      "es": "{0} / {1} fotos guardadas",
+      "fr": "{0} / {1} photos enregistrées",
+      "ja": "{0} / {1} 枚を保存済み",
+      "zh-Hans": "已保存 {0} / {1} 张"
+    },
+    "正在导入 {0}": {
+      "de": "{0} wird importiert",
+      "en": "Importing {0}",
+      "es": "Importando {0}",
+      "fr": "Importation de {0}",
+      "ja": "{0} を読み込み中",
+      "zh-Hans": "正在导入 {0}"
+    },
+    "上次导入未完成": {
+      "de": "Der letzte Import wurde nicht abgeschlossen",
+      "en": "The last import did not finish",
+      "es": "La última importación no se completó",
+      "fr": "La dernière importation n’est pas terminée",
+      "ja": "前回の読み込みは完了していません",
+      "zh-Hans": "上次导入未完成"
+    },
+    "导入完成": {
+      "de": "Import abgeschlossen",
+      "en": "Import complete",
+      "es": "Importación completada",
+      "fr": "Importation terminée",
+      "ja": "読み込み完了",
+      "zh-Hans": "导入完成"
+    },
+    "还没有导入记录": {
+      "de": "Noch kein Importverlauf",
+      "en": "No import history yet",
+      "es": "Aún no hay historial de importación",
+      "fr": "Aucun historique d’importation pour le moment",
+      "ja": "読み込み履歴はまだありません",
+      "zh-Hans": "还没有导入记录"
+    },
+    "查看导入任务": {
+      "de": "Importaufgabe anzeigen",
+      "en": "View import task",
+      "es": "Ver tarea de importación",
+      "fr": "Voir la tâche d’importation",
+      "ja": "読み込みタスクを表示",
+      "zh-Hans": "查看导入任务"
+    },
+    "继续挑选": {
+      "de": "Auswahl fortsetzen",
+      "en": "Continue selecting",
+      "es": "Seguir seleccionando",
+      "fr": "Continuer la sélection",
+      "ja": "選択を続ける",
+      "zh-Hans": "继续挑选"
+    },
+    "等待导入": {
+      "de": "Warten auf Import",
+      "en": "Waiting to import",
+      "es": "Esperando para importar",
+      "fr": "En attente d’importation",
+      "ja": "読み込み待ち",
+      "zh-Hans": "等待导入"
+    },
+    "显示 {0} 张照片": {
+      "de": "{0} Fotos anzeigen",
+      "en": "Show {0} photos",
+      "es": "Mostrar {0} fotos",
+      "fr": "Afficher {0} photos",
+      "ja": "{0} 枚の写真を表示",
+      "zh-Hans": "显示 {0} 张照片"
+    },
+    "筛选照片": {
+      "de": "Fotos filtern",
+      "en": "Filter photos",
+      "es": "Filtrar fotos",
+      "fr": "Filtrer les photos",
+      "ja": "写真を絞り込む",
+      "zh-Hans": "筛选照片"
+    },
+    "查看已导入": {
+      "de": "Importierte anzeigen",
+      "en": "View imported",
+      "es": "Ver importadas",
+      "fr": "Voir les photos importées",
+      "ja": "読み込み済みを表示",
+      "zh-Hans": "查看已导入"
+    },
+    "包含筛选范围外的已选照片": {
+      "de": "Enthält ausgewählte Fotos außerhalb des Filters",
+      "en": "Includes selected photos outside the filter",
+      "es": "Incluye fotos seleccionadas fuera del filtro",
+      "fr": "Contient des photos sélectionnées hors du filtre",
+      "ja": "フィルター範囲外で選択した写真を含む",
+      "zh-Hans": "包含筛选范围外的已选照片"
+    },
+    "相机中的原照片会保留。": {
+      "de": "Die Originalfotos auf der Kamera bleiben erhalten.",
+      "en": "Original photos on the camera will be kept.",
+      "es": "Las fotos originales de la cámara se conservarán.",
+      "fr": "Les photos originales de l’appareil seront conservées.",
+      "ja": "カメラ内の元の写真は保持されます。",
+      "zh-Hans": "相机中的原照片会保留。"
+    },
+    "正在加载…": {
+      "de": "Wird geladen …",
+      "en": "Loading…",
+      "es": "Cargando…",
+      "fr": "Chargement…",
+      "ja": "読み込み中…",
+      "zh-Hans": "正在加载…"
+    },
+    "导入任务仍在进行": {
+      "de": "Ein Importvorgang läuft noch",
+      "en": "An import task is still in progress",
+      "es": "Ya hay una tarea de importación en curso",
+      "fr": "Une tâche d’importation est toujours en cours",
+      "ja": "読み込みタスクがまだ実行中です",
+      "zh-Hans": "导入任务仍在进行"
+    },
+    "取消连接": {
+      "de": "Verbindung abbrechen",
+      "en": "Cancel connection",
+      "es": "Cancelar conexión",
+      "fr": "Annuler la connexion",
+      "ja": "接続をキャンセル",
+      "zh-Hans": "取消连接"
+    },
+    "相机照片保存位置": {
+      "de": "Speicherort für Kamerafotos",
+      "en": "Camera photo save location",
+      "es": "Ubicación de guardado de las fotos de la cámara",
+      "fr": "Emplacement d’enregistrement des photos de l’appareil photo",
+      "ja": "カメラ写真の保存先",
+      "zh-Hans": "相机照片保存位置"
+    },
+    "目录": {
+      "de": "Ordner",
+      "en": "Folder",
+      "es": "Carpeta",
+      "fr": "Dossier",
+      "ja": "フォルダ",
+      "zh-Hans": "目录"
+    },
+    "位于系统图片目录内，例如 RawLab/Camera": {
+      "de": "Im systemweiten Ordner Pictures, z. B. RawLab/Camera",
+      "en": "Inside the system Pictures folder, for example, RawLab/Camera",
+      "es": "Dentro de la carpeta Pictures del sistema, por ejemplo, RawLab/Camera",
+      "fr": "Dans le dossier système Pictures, par exemple RawLab/Camera",
+      "ja": "システムのPicturesフォルダ内（例：RawLab/Camera）",
+      "zh-Hans": "位于系统图片目录内，例如 RawLab/Camera"
+    },
+    "目录名称无效，请使用普通文件夹名称。": {
+      "de": "Ungültiger Ordnername. Verwenden Sie einen einfachen Ordnernamen.",
+      "en": "Invalid folder name. Use a standard folder name.",
+      "es": "El nombre de la carpeta no es válido. Usa un nombre de carpeta normal.",
+      "fr": "Nom de dossier invalide. Utilisez un nom de dossier standard.",
+      "ja": "フォルダ名が無効です。通常のフォルダ名を使用してください。",
+      "zh-Hans": "目录名称无效，请使用普通文件夹名称。"
+    },
+    "目录分组": {
+      "de": "Ordnergruppierung",
+      "en": "Folder grouping",
+      "es": "Agrupación de carpetas",
+      "fr": "Regroupement des dossiers",
+      "ja": "フォルダのグループ化",
+      "zh-Hans": "目录分组"
+    },
+    "统一目录": {
+      "de": "Ein Ordner",
+      "en": "Single folder",
+      "es": "Una sola carpeta",
+      "fr": "Un seul dossier",
+      "ja": "1つのフォルダ",
+      "zh-Hans": "统一目录"
+    },
+    "按拍摄日期": {
+      "de": "Nach Aufnahmedatum",
+      "en": "By capture date",
+      "es": "Por fecha de captura",
+      "fr": "Par date de prise de vue",
+      "ja": "撮影日別",
+      "zh-Hans": "按拍摄日期"
+    },
+    "按拍摄月份": {
+      "de": "Nach Aufnahmemonat",
+      "en": "By capture month",
+      "es": "Por mes de captura",
+      "fr": "Par mois de prise de vue",
+      "ja": "撮影月別",
+      "zh-Hans": "按拍摄月份"
+    },
+    "路径示例": {
+      "de": "Beispielpfad",
+      "en": "Example path",
+      "es": "Ejemplo de ruta",
+      "fr": "Exemple de chemin",
+      "ja": "パスの例",
+      "zh-Hans": "路径示例"
+    },
+    "未知拍摄日期": {
+      "de": "Unbekanntes Aufnahmedatum",
+      "en": "Unknown capture date",
+      "es": "Fecha de captura desconocida",
+      "fr": "Date de prise de vue inconnue",
+      "ja": "撮影日不明",
+      "zh-Hans": "未知拍摄日期"
+    },
+    "缺少拍摄日期的照片会保存到“Unknown date”目录。": {
+      "de": "Fotos ohne Aufnahmedatum werden im Ordner „Unknown date“ gespeichert.",
+      "en": "Photos without a capture date are saved in the “Unknown date” folder.",
+      "es": "Las fotos sin fecha de captura se guardan en la carpeta «Unknown date».",
+      "fr": "Les photos sans date de prise de vue sont enregistrées dans le dossier « Unknown date ».",
+      "ja": "撮影日がない写真は「Unknown date」フォルダに保存されます。",
+      "zh-Hans": "缺少拍摄日期的照片会保存到“Unknown date”目录。"
+    },
+    "仅影响之后开始的导入任务。": {
+      "de": "Gilt nur für danach gestartete Importaufgaben.",
+      "en": "Only affects import tasks started afterward.",
+      "es": "Solo afecta a las tareas de importación iniciadas posteriormente.",
+      "fr": "S’applique uniquement aux tâches d’importation démarrées par la suite.",
+      "ja": "以後開始するインポートタスクにのみ適用されます。",
+      "zh-Hans": "仅影响之后开始的导入任务。"
+    },
+    "保存设置": {
+      "de": "Einstellungen speichern",
+      "en": "Save settings",
+      "es": "Guardar configuración",
+      "fr": "Enregistrer les paramètres",
+      "ja": "設定を保存",
+      "zh-Hans": "保存设置"
+    },
+    "在相册中查看": {
+      "de": "In der Galerie ansehen",
+      "en": "View in gallery",
+      "es": "Ver en la galería",
+      "fr": "Afficher dans la galerie",
+      "ja": "ギャラリーで表示",
+      "zh-Hans": "在相册中查看"
+    },
+    "本次导入": {
+      "de": "Dieser Import",
+      "en": "This import",
+      "es": "Esta importación",
+      "fr": "Cette importation",
+      "ja": "今回のインポート",
+      "zh-Hans": "本次导入"
+    },
+    "查看全部照片": {
+      "de": "Alle Fotos ansehen",
+      "en": "View all photos",
+      "es": "Ver todas las fotos",
+      "fr": "Afficher toutes les photos",
+      "ja": "すべての写真を表示",
+      "zh-Hans": "查看全部照片"
+    },
+    "显示 RawLab 保存的照片，授权后可浏览更多照片。": {
+      "de": "Zeigt von RawLab gespeicherte Fotos an. Erteilen Sie die Berechtigung, um weitere Fotos zu durchsuchen.",
+      "en": "Shows photos saved by RawLab. Grant access to browse more photos.",
+      "es": "Muestra las fotos guardadas por RawLab. Concede acceso para explorar más fotos.",
+      "fr": "Affiche les photos enregistrées par RawLab. Autorisez l’accès pour parcourir d’autres photos.",
+      "ja": "RawLabが保存した写真を表示します。権限を許可すると、さらに写真を閲覧できます。",
+      "zh-Hans": "显示 RawLab 保存的照片，授权后可浏览更多照片。"
+    },
+    "已保存到系统相册": {
+      "de": "In der Systemgalerie gespeichert",
+      "en": "Saved to system gallery",
+      "es": "Guardado en la galería del sistema",
+      "fr": "Enregistré dans la galerie système",
+      "ja": "システムギャラリーに保存済み",
+      "zh-Hans": "已保存到系统相册"
+    },
+    "原片已被其他应用修改，无法继续使用原来的编辑记录。": {
+      "de": "Das Original wurde von einer anderen App geändert. Der bisherige Bearbeitungsverlauf kann nicht fortgesetzt werden.",
+      "en": "The original was modified by another app, so its existing edit history can’t be continued.",
+      "es": "El original ha sido modificado por otra aplicación, por lo que no se puede continuar con su historial de edición existente.",
+      "fr": "L’original a été modifié par une autre application. L’historique de modifications existant ne peut pas être poursuivi.",
+      "ja": "元の写真が他のアプリで変更されたため、元の編集履歴を続行できません。",
+      "zh-Hans": "原片已被其他应用修改，无法继续使用原来的编辑记录。"
+    },
+    "保存到：{0}": {
+      "de": "Speichern unter: {0}",
+      "en": "Save to: {0}",
+      "es": "Guardar en: {0}",
+      "fr": "Enregistrer dans : {0}",
+      "ja": "保存先：{0}",
+      "zh-Hans": "保存到：{0}"
+    },
+    "原片不可用": {
+      "de": "Originale nicht verfügbar",
+      "en": "Originals unavailable",
+      "es": "Originales no disponibles",
+      "fr": "Originaux indisponibles",
+      "ja": "元の写真を利用できません",
+      "zh-Hans": "原片不可用"
+    },
+    "原片无法访问": {
+      "de": "Original nicht verfügbar",
+      "en": "Original unavailable",
+      "es": "Original no disponible",
+      "fr": "Original inaccessible",
+      "ja": "元の写真にアクセスできません",
+      "zh-Hans": "原片无法访问"
+    },
+    "原片已变化": {
+      "de": "Original geändert",
+      "en": "Original changed",
+      "es": "Original modificado",
+      "fr": "Original modifié",
+      "ja": "元の写真が変更されています",
+      "zh-Hans": "原片已变化"
+    },
+    "重新下载不可用的原片": {
+      "de": "Nicht verfügbare Originale erneut herunterladen",
+      "en": "Download unavailable originals again",
+      "es": "Volver a descargar los originales no disponibles",
+      "fr": "Télécharger à nouveau les originaux indisponibles",
+      "ja": "利用できない元の写真を再ダウンロード",
+      "zh-Hans": "重新下载不可用的原片"
     }
   }
 }

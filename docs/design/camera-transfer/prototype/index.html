@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>RawLab · 从相机导入</title>
+  <link rel="stylesheet" href="prototype.css">
+  <script src="prototype.js" defer></script>
+</head>
+<body>
+  <header class="design-bar">
+    <div><strong>RawLab</strong><span class="design-divider"></span><span>相机导入</span><span class="prototype-label">交互原型</span></div>
+    <a href="mobile.html">移动端方案</a>
+    <label>查看场景
+      <select id="scenario" aria-label="切换设计场景">
+        <option value="browse">浏览与选片</option>
+        <option value="connect">首次连接</option>
+        <option value="transfer">正在导入</option>
+        <option value="offline">连接中断</option>
+        <option value="partial">部分未完成</option>
+        <option value="complete">导入完成</option>
+        <option value="empty">没有照片</option>
+        <option value="thumbnail">预览不可用</option>
+        <option value="storage">空间不足</option>
+        <option value="draft">编辑草稿待处理</option>
+      </select>
+    </label>
+  </header>
+  <div id="app" class="app-window" aria-label="相机导入交互原型"></div>
+  <footer class="prototype-note"><span>照片与拍摄数据为示例。此原型不会连接相机或保存文件。</span><span>单击选择 · 双击 / 空格预览 · Shift 连选</span></footer>
+  <dialog id="preview-dialog" aria-label="照片预览"></dialog>
+  <dialog id="guard-dialog" aria-label="处理未应用的调整"></dialog>
+  <aside id="camera-popover" class="camera-popover" popover aria-label="相机详情"></aside>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

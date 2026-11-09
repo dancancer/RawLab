@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -55,7 +56,7 @@ import com.rawlab.android.ui.ToolIcon
 @Composable
 fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: (() -> Unit)?, onPhoto: (Uri) -> Unit,
     selectedPhotos: Set<String>? = null, onDone: (() -> Unit)? = null,
-    doneLabel: String? = null, doneEnabled: Boolean = true) {
+    doneLabel: String? = null, doneEnabled: Boolean = true, initialPhotos: Set<String>? = null) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
@@ -64,7 +65,8 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: (() -> Unit)?
     var photos by remember { mutableStateOf<List<AlbumPhoto>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var failed by remember { mutableStateOf(false) }
-    var bucket by rememberSaveable { mutableStateOf<String?>(null) }
+    var bucket by rememberSaveable(initialPhotos) { mutableStateOf<String?>(null) }
+    var focused by rememberSaveable(initialPhotos) { mutableStateOf(!initialPhotos.isNullOrEmpty()) }
     val preferences = remember { context.getSharedPreferences("album_layout", android.content.Context.MODE_PRIVATE) }
     var columns by rememberSaveable { mutableIntStateOf(preferences.getInt("columns", 3).coerceIn(1, 6)) }
     var squareThumbnails by rememberSaveable { mutableStateOf(preferences.getBoolean("square", false)) }
@@ -91,8 +93,8 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: (() -> Unit)?
         }.toSet()
         access = AlbumAccess.level(Build.VERSION.SDK_INT, granted)
         try {
-            photos = if (access == AlbumAccess.Level.NONE) emptyList() else withContext(Dispatchers.IO) { storage.album() }
-            if (bucket != null && photos.none { it.album == bucket }) bucket = null
+            photos = withContext(Dispatchers.IO) { storage.album(ownOnly = access == AlbumAccess.Level.NONE) }
+            if (bucket != null && photos.none { it.albumId == bucket }) bucket = null
         } catch (error: Exception) {
             if (error is kotlinx.coroutines.CancellationException) throw error
             failed = true
@@ -142,8 +144,8 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: (() -> Unit)?
             ToolIcon(Icons.Outlined.Refresh, R.string.refresh, onClick = { refresh++ })
         })
     }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            if (access == AlbumAccess.Level.NONE) {
+        Column(Modifier.fillMaxSize().padding(padding).testTag("album-root")) {
+            if (access == AlbumAccess.Level.NONE && photos.isEmpty() && !loading && !failed && !focused) {
                 Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(stringResource(R.string.permission_title), style = MaterialTheme.typography.titleLarge)
                     Text(stringResource(R.string.permission_body), style = MaterialTheme.typography.bodyMedium)
@@ -156,22 +158,32 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: (() -> Unit)?
                     if (onFile != null) OutlinedButton(onClick = onFile) { Text(stringResource(R.string.open_file)) }
                 }
             } else {
-                if (access == AlbumAccess.Level.PARTIAL) {
+                if (access == AlbumAccess.Level.NONE || access == AlbumAccess.Level.PARTIAL) {
                     Column(Modifier.padding(horizontal = 16.dp)) {
-                        Text(stringResource(R.string.partial_access), style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(if (access == AlbumAccess.Level.NONE) R.string.album_own_photos else R.string.partial_access),
+                            style = MaterialTheme.typography.bodyMedium)
                         TextButton(onClick = { permission.launch(AlbumAccess.permissions(Build.VERSION.SDK_INT).toTypedArray()) }) {
-                            Text(stringResource(R.string.select_more))
+                            Text(stringResource(if (access == AlbumAccess.Level.NONE) R.string.grant_access else R.string.select_more))
                         }
                     }
                 }
-                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (focused) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.camera_this_import), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                    TextButton(onClick = { focused = false; bucket = null }) { Text(stringResource(R.string.camera_view_all_photos)) }
+                }
+                val shownPhotos = if (focused) photos.filter { it.uri.toString() in initialPhotos.orEmpty() } else photos
+                val groups = shownPhotos.distinctBy { it.albumId }
+                val repeatedNames = groups.groupingBy { it.album }.eachCount().filterValues { it > 1 }.keys
+                LazyRow(modifier = Modifier.testTag("album-groups"), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     item { FilterChip(selected = bucket == null, onClick = { bucket = null }, label = { Text(stringResource(R.string.all_albums)) }) }
-                    items(photos.map { it.album }.distinct()) { name ->
-                        FilterChip(selected = bucket == name, onClick = { bucket = name }, label = { Text(name) })
+                    items(groups, key = { it.albumId }) { group ->
+                        val name = if (group.album in repeatedNames) group.relativePath?.trimEnd('/')?.removePrefix("Pictures/") ?: group.album else group.album
+                        FilterChip(selected = bucket == group.albumId, onClick = { bucket = group.albumId }, label = { Text(name) },
+                            modifier = Modifier.testTag("album-group-${group.albumId}"))
                     }
                 }
                 if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-                if (failed || (!loading && photos.isEmpty())) {
+                if (failed || (!loading && shownPhotos.isEmpty())) {
                     Column(Modifier.padding(24.dp)) {
                         Text(stringResource(if (failed) R.string.album_error else R.string.album_empty))
                         if (onFile != null) TextButton(onClick = onFile) { Text(stringResource(R.string.open_file)) }
@@ -179,8 +191,8 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: (() -> Unit)?
                 }
                 // 查询期间不让空网格重测，将保存的位置保留到照片列表恢复。
                 val spacing = if (columns >= 5) 4.dp else 8.dp
-                if (photos.isNotEmpty()) {
-                    val visiblePhotos = photos.filter { bucket == null || it.album == bucket }
+                if (shownPhotos.isNotEmpty()) {
+                    val visiblePhotos = shownPhotos.filter { bucket == null || it.albumId == bucket }
                     if (squareThumbnails) {
                         LazyVerticalGrid(state = gridState, columns = GridCells.Fixed(columns), contentPadding = PaddingValues(spacing),
                             horizontalArrangement = Arrangement.spacedBy(spacing), verticalArrangement = Arrangement.spacedBy(12.dp)) {

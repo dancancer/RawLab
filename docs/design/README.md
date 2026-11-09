@@ -4,6 +4,7 @@
 
 | 资产 | 用途 | 状态来源 |
 | --- | --- | --- |
+| [Sony 相机传图](camera-transfer/README.md) · [Mac 原型](camera-transfer/prototype/index.html) · [移动端原型](camera-transfer/prototype/mobile.html) | Mac / iOS / Android 连接、挑选、传输与编辑交接；Sony 分代协议与跨品牌调研 | 2026-11-08：UI r1 待确认；α7C II 桌面协议及 Mac 最小闭环已实施 |
 | [本次迭代总需求](editing-iteration/requirements.md) · [总技术方案](editing-iteration/technical-design.md) | 第一阶段未完成项＋第二阶段全量＋桌面更新；新增功能、依赖和 IT 验收总表 | 两份文档的状态与基线；工作区是其中 ITER-02 子项 |
 | [四端应用设计资产](editor-workspace/README.md) · [设计板](editor-workspace/index.html) · [覆盖表](editor-workspace/coverage.html) | 四端现有完整功能界面；本轮分组、HSL、前后对比与桌面更新；共用图标、状态和检查工具 | [manifest.js](editor-workspace/manifest.js) |
 | [调整记忆与批量导出](2026-10-09-edit-memory-batch-export/README.md) | 既有已确认方案与静态参考图 | 该目录 README；保留历史来源，不把图片当运行证据 |
