@@ -22,18 +22,22 @@ film looks do not promise an exact match to in-camera JPEGs.
   all four clients, with a legacy mode for existing edits. This CPU renderer
   does not promise an exact Sigma Photo Pro match; see the
   [camera scope and limits](lutools/docs/x3f-rendering.md).
-- Ordinary opaque RGB8 SDR images: JPEG/PNG
-  on all four clients, TIFF on macOS/iOS/Windows and HEIF on macOS/iOS. Raster
-  input shares the editing/export core without the RAW scene curve or camera
-  controls. Other HDR, high-bit-depth, transparent and multi-frame inputs
-  are rejected rather than silently converted. See the
+- Ordinary opaque SDR images: 8-bit JPEG/PNG and 16-bit integer RGB PNG on all
+  four clients, 8/16-bit TIFF on macOS/iOS/Windows, and SDR HEIF on macOS/iOS,
+  Windows and Android 9+. Raster input shares the editing/export core without
+  the RAW scene curve or camera controls. Floating-point, other high-bit-depth,
+  transparent and general multi-frame inputs are rejected rather than silently
+  converted. See the
   [input contract](lutools/docs/color-contract.md#display-referred-raster-input).
 - Phone gain-map HDR JPEG/HEIF on all four clients: independent HDR/SDR edits,
-  seven basic HDR adjustments and geometry, luminance monitoring, presets,
-  selective synchronization, and HDR JPEG or explicit SDR exports. HDR source
-  photos can use ordinary LUT previews after switching to SDR editing.
+  automatic exposure, tone curves, HSL, color grading, detail, effects and
+  geometry, plus an HDR peak limit and separate SDR-base adjustments. HDR CUBE
+  looks, presets and selective synchronization carry supported settings.
+  Export gain-map HDR JPEG or explicit SDR results; macOS/iOS also offer HDR
+  HEIF where supported by the system. HDR source photos can use ordinary LUT
+  previews after switching to SDR editing.
   HDR processing uses the CPU; HDR presentation requires a capable display and
-  platform support. See [platform scope](docs/design/hdr-photos/android-windows.md).
+  platform support. See the [release scope and limits](docs/releases/v0.10/v0.10.0.md).
 - HDR editing for supported camera RAW and Apple ProRAW files on all four
   clients. RAW starts in SDR, with independent saved settings for the HDR mode.
   See [camera RAW support](docs/design/hdr-photos/camera-raw.md) and
@@ -76,8 +80,12 @@ film looks do not promise an exact match to in-camera JPEGs.
   iOS and Android packages do not include AI denoising. Bundled AI models have
   separate noncommercial licenses; see [licensing](docs/reference/licensing.md).
 - A shared C++17 core, command-line tools and a desktop LUT preparation utility.
-- Desktop Agent JSON editing, capability discovery, previews and FINAL exports
-  reuse the same parameters and processing core as the GUI and frozen batches.
+- Desktop Agent and MCP recipes support RAW, ordinary images and HDR sources,
+  including camera RAW and ProRAW HDR, with capability discovery, SDR previews
+  and final exports through the same processing core as the GUI and frozen batches.
+- System Open With, document-open and file-drop entry points where supported;
+  Android also accepts photo shares, and Windows forwards new file opens to the
+  running app. Multiple photos open as a collection.
 - Crop, rotate, straighten, flip and perspective correction; photos open with
   one preview and optional before/after comparison.
 
@@ -93,14 +101,14 @@ film looks do not promise an exact match to in-camera JPEGs.
 HDR editing requires macOS 15+ on Mac. Android HDR presentation requires API 34+
 and suitable display/window support; Windows uses FP16/scRGB when available.
 Supported HDR photos remain editable with an SDR presentation on other displays.
-See the [0.9.3 compatibility notes](docs/releases/v0.9/v0.9.3.md#compatibility-and-known-limits)
+See the [0.10.0 compatibility notes](docs/releases/v0.10/v0.10.0.md#compatibility-and-known-limits)
 for X3F, AI, update and device-coverage limits.
 
 ## Downloads and Documentation
 
 - [Documentation index](docs/README.md)
 - [Download the latest release](https://github.com/dancancer/RawLab/releases/latest)
-- [v0.9.3 release notes (build 18)](docs/releases/v0.9/v0.9.3.md)
+- [v0.10.0 release notes (build 19)](docs/releases/v0.10/v0.10.0.md)
 - [Installation and distribution notes](docs/guides/installation.md)
 - [iPhone installation guide](docs/guides/ios-installation.md)
 - [Changelog](CHANGELOG.md)

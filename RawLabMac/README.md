@@ -39,11 +39,11 @@ The left pane is the neutral render and the right pane is Velvia. Film selection
 镜头工具提供独立的畸变矫正、横向色差校正、自动/手动匹配和自动裁边，默认关闭校正。配置随逐照片编辑保存，批量自动模式逐张匹配；中性对照不校正。离线数据库、依赖和功能边界见[跨平台说明](../docs/reference/platforms/lens-correction.md)。紫绿去边暂未实现。
 
 
-v0.9.3 构建 18 为受支持的相机 RAW 和 Apple ProRAW 新增 HDR 显影，可导出增益图 HDR JPEG 或 SDR JPEG。功能与已知问题修复见 [v0.9.3 发布说明](../docs/releases/v0.9/v0.9.3.md)。
+v0.10.0 构建 19 扩展 HDR 曲线、色彩、细节、效果和外观，增加桌面工作区、系统打开与多文件集合入口，并支持 16 位整数 RGB PNG/TIFF 输入。HDR HEIF 导出取决于系统能力；macOS 14 可将受支持的 ISO/Adobe 增益图照片作为 SDR 打开。功能与限制见 [v0.10.0 发布说明](../docs/releases/v0.10/v0.10.0.md)。
 
-预编译版本：[GitHub Release v0.9.3](https://github.com/dancancer/RawLab/releases/tag/v0.9.3)。下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.9.3/RawLab-Mac-0.9.3-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.9.3/RawLab-Mac-0.9.3-x86_64.zip)，解压后将 `RawLab Mac.app` 放入当前用户可写的位置。最低部署目标为 macOS 14，HDR 编辑需要 macOS 15+。发行包使用固定自签名证书与 Sparkle EdDSA 更新签名，没有 Apple 公证；首次运行可能需要在“隐私与安全性”选择“仍要打开”。新版系统上的构建不等于物理 macOS 14 验收。
+预编译版本：[GitHub Release v0.10.0](https://github.com/dancancer/RawLab/releases/tag/v0.10.0)。下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.10.0/RawLab-Mac-0.10.0-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.10.0/RawLab-Mac-0.10.0-x86_64.zip)，解压后将 `RawLab Mac.app` 放入当前用户可写的位置。最低部署目标为 macOS 14，HDR 编辑需要 macOS 15+。发行包使用固定自签名证书与 Sparkle EdDSA 更新签名，没有 Apple 公证；首次运行可能需要在“隐私与安全性”选择“仍要打开”。新版系统上的构建不等于物理 macOS 14 验收。
 
-Prebuilt apps: [v0.9.3](https://github.com/dancancer/RawLab/releases/tag/v0.9.3), build 18, for Apple Silicon and Intel. Both target macOS 14; HDR editing requires macOS 15+. Packages use the fixed self-signed certificate and Sparkle EdDSA without notarization. See the [release notes](../docs/releases/v0.9/v0.9.3.md) and package provenance for actual runtime coverage.
+Prebuilt apps: [v0.10.0](https://github.com/dancancer/RawLab/releases/tag/v0.10.0), build 19, for Apple Silicon and Intel. Both target macOS 14; HDR editing requires macOS 15+. Packages use the fixed self-signed certificate and Sparkle EdDSA without notarization. See the [release notes](../docs/releases/v0.10/v0.10.0.md) and package provenance for actual runtime coverage.
 
 “关于 RawLab”和“检查更新”提供仓库、作者主页及更新设置。默认自动检查更新；自动下载和退出时安装需要用户开启，随后由 Sparkle 校验并替换应用。应用目录必须对当前用户可写；从 0.8.2 升级需要手动安装一次受信任的 0.9.0 或更新版本。
 
