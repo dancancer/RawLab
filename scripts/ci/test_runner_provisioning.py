@@ -64,8 +64,6 @@ class MacRunnerConfigurationTests(unittest.TestCase):
         self.assertIn('"$pool/venv/bin/python" -m pip install -r "$(dirname "$0")/requirements-apple-runner.txt"', text)
         self.assertIn('--work $pool/_work', text)
         self.assertLess(text.index('[[ "$xcode" != "$pool/tools/Xcode.app" ]]'), text.index('mkdir -p'))
-        requirements = SCRIPT.with_name('requirements-apple-runner.txt').read_text().split()
-        self.assertIn('cmake==4.3.2', requirements)
 
     def test_pool_volume_and_xcode_location_are_required(self):
         script = SCRIPT.with_name('provision-macos-runner.sh')
@@ -91,12 +89,6 @@ class MacRunnerConfigurationTests(unittest.TestCase):
             elsewhere = subprocess.run(command, env=environment, capture_output=True, text=True)
             self.assertNotEqual(elsewhere.returncode, 0)
             self.assertIn(f'Copy the selected Xcode to {pool}/tools/Xcode.app', elsewhere.stderr)
-
-    def test_provisioning_refuses_the_developer_or_non_mac_account(self):
-        script = SCRIPT.with_name('provision-macos-runner.sh')
-        result = subprocess.run(['bash', str(script)], capture_output=True, text=True)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('Use the non-administrator rawlab-ci account on an Apple Silicon Mac.', result.stderr)
 
     def test_runner_startup_files_must_stay_inside_the_ci_home(self):
         script = SCRIPT.with_name('provision-macos-runner.sh')

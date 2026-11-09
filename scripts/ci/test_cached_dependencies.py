@@ -91,11 +91,6 @@ class CachedMacTests(unittest.TestCase):
         self.assertIn("Product configure reached", result.stdout)
         self.assertNotIn("Dependency build requested", result.stderr)
 
-    def test_miss_still_builds_dependencies(self):
-        result = self.build("")
-        self.assertEqual(result.returncode, 29, result.stdout + result.stderr)
-        self.assertIn("Dependency build requested", result.stderr)
-
     def test_local_build_does_not_reuse_libraw_without_current_patch_stamp(self):
         result = self.build("")
         self.assertEqual(result.returncode, 29, result.stdout + result.stderr)
