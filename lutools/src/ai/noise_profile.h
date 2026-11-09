@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include <string>
 #include <stdexcept>
 
@@ -21,5 +22,6 @@ inline constexpr const char* noiseProtocol = "rawlab-bayer-noise-v3:haar-mad-v2:
 // 字符串接口只查询原有标定；source 接口对其他有效 Bayer 估计当前图像的归一化方差。
 NoiseParameters selectNoiseProfile(const std::string& cameraModel, float iso);
 NoiseParameters selectNoiseProfile(const RAWBayerSource& source);
+std::optional<NoiseParameters> calibratedNoiseProfile(const RAWBayerSource& source);
 NoiseParameters estimateRawNoise(const RAWBayerSource& source);
 } // namespace sony2fuji::ai

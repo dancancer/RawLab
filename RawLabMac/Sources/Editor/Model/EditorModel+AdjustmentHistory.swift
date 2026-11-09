@@ -26,14 +26,18 @@ extension EditorModel {
         do {
             let session = try requireAdjustmentSession()
             if committedEdit?.identity.path != file.resolvingSymlinksInPath().standardizedFileURL.path {
-                committedEdit = try editStore!.versionedState(for: file)
+                committedEdit = try editStore!.readState(for: file)
             }
-            let outcome = session.commitEdit(expected: committedEdit!, state: candidate)
+            var persisted = candidate
+            // 降级会话只编辑 SDR 层，不能覆盖新系统保存的 HDR 模式和参数。
+            if sourceUsesSDRFallback { persisted.settings.hdr = committedEdit?.state?.settings.hdr }
+            let outcome = session.commitEdit(expected: committedEdit!, state: persisted)
             guard let saved = outcome.saved else {
                 throw outcome.error ?? AdjustmentTransferError.incompatible("save")
             }
-            if let state = saved.state { recordSavedLookChange(from: committedEdit?.state, to: state) }
+            let previous = committedEdit?.state
             committedEdit = saved
+            if let state = saved.state { recordSavedLookChange(from: previous, to: state) }
             adjustmentHistoryRevision &+= 1
             saveError = nil; saveStatusKey = "调整已保存"
             clearSaveStatusLater()
@@ -61,9 +65,11 @@ extension EditorModel {
         guard let entry = interactionEntry else { return }
         saveWork?.cancel()
         scheduler.setInteracting(false)
-        let aiEnabled = settings.aiDenoiseEnabled
-        let aiChanged = aiEnabled != entry.settings.aiDenoiseEnabled
-        var restored = entry; restored.settings.aiDenoiseEnabled = aiEnabled
+        let aiChanged = settings.aiDenoiseEnabled != entry.settings.aiDenoiseEnabled ||
+            settings.hdrCameraAIEnabled != entry.settings.hdrCameraAIEnabled
+        var restored = entry
+        restored.settings.aiDenoiseEnabled = settings.aiDenoiseEnabled
+        restored.settings.hdrCameraAIEnabled = settings.hdrCameraAIEnabled
         restoreAdjustmentState(restored)
         dirty = interactionWasDirty || aiChanged
         interactionEntry = nil
@@ -93,14 +99,15 @@ extension EditorModel {
         let path = file?.resolvingSymlinksInPath().standardizedFileURL.path
         if !dirty, geometryDraft == nil,
            let saved = outcomes.first(where: { $0.targetID == path && $0.saved != nil })?.saved,
-           let file, (try? editStore?.versionedState(for: file)) == saved {
+           let file, committedEdit?.identity == saved.identity, adjustmentSession?.isCurrentSave(saved) == true {
             if !quickPresetState.isPreparing { cancelQuickPreset() }
-            if let state = saved.state { recordSavedLookChange(from: committedEdit?.state, to: state) }
-            committedEdit = saved
-            var defaults = Adjustments()
-            defaults.exposureMode = RenderEngine.isRasterInput(file) ? .sensor : .preview
-            if sourceIsHDR { defaults.hdr=HDRSettings() }
-            restoreAdjustmentState(saved.state ?? PhotoEditState(settings: defaults, filmID: ""))
+            do {
+                let restored = try saved.state ?? PhotoEditState(settings: RenderEngine.defaultSettings(for: file, sourceIsHDR: sourceIsHDR), filmID: "")
+                let previous = committedEdit?.state
+                committedEdit = saved
+                restoreAdjustmentState(restored)
+                recordSavedLookChange(from: previous, to: restored)
+            } catch { saveError = error.localizedDescription; return }
             dirty = false; saveError = nil
             saveWork?.cancel()
             editRevision = UUID()
@@ -113,6 +120,7 @@ extension EditorModel {
         let camera = settings.asShotWhiteBalance, support = settings.supportsRawNoiseReduction
         updatingMetadata = true
         settings = snapshot.settings
+        if sourceUsesSDRFallback { settings.hdr?.mode = .sdr }
         if !returningToCameraSDR {
             settings.resolveWhiteBalance(camera)
             settings.resolveRawNoiseReductionSupport(support)
@@ -123,7 +131,13 @@ extension EditorModel {
     }
 
     func adjustmentErrorMessage(_ error: Error?) -> String {
-        if error is EditPersistenceConflict { return L10n.text("照片或调整已变化，请重新检查目标。") }
+        if let error = error as? AdjustmentCommitError {
+            switch error {
+            case .photoChanged: return L10n.text("原始文件已被替换，请重新选择照片。")
+            case .expired: return L10n.text("此操作已过期，请重新操作。")
+            case .historyOrder: return L10n.text("请按历史顺序撤销或重做。")
+            }
+        }
         switch error as? AdjustmentTransferError {
         case .emptyScope: return L10n.text("没有可复制的调整，请选择其他范围。")
         case .draftRequiresPreflight: return L10n.text("请先应用或放弃未完成的输入和几何草稿。")

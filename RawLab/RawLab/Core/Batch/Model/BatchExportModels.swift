@@ -77,13 +77,19 @@ enum BatchJobStatus: String, Codable, Equatable {
 enum BatchOutputFormat: String, Codable, Equatable, Hashable {
     case jpeg
     case hdrJPEG = "hdr_jpeg"
+    case hdrHEIF = "hdr_heif"
     case renderedDNG = "dng"
 
     var publishesToPhotos: Bool { self != .renderedDNG }
+    var requiresHDR: Bool { self == .hdrJPEG || self == .hdrHEIF }
+    var hdrRequiredMessage: String {
+        self == .hdrHEIF ? L10n.text("HDR HEIF 需要启用 HDR 编辑。") : L10n.text("HDR JPEG 需要启用 HDR 编辑。")
+    }
 
     var title: String {
         switch self {
         case .hdrJPEG: return L10n.text("HDR JPEG")
+        case .hdrHEIF: return "HDR HEIF"
         case .jpeg: return "JPEG"
         case .renderedDNG: return L10n.text("DNG · 渲染型")
         }
@@ -92,21 +98,36 @@ enum BatchOutputFormat: String, Codable, Equatable, Hashable {
     var suffix: String {
         switch self {
         case .jpeg,.hdrJPEG: return "jpg"
+        case .hdrHEIF: return "heic"
         case .renderedDNG: return "dng"
         }
     }
 }
 
-enum BatchExportError: LocalizedError {
+enum BatchExportError: LocalizedError, CustomNSError {
     case target(String)
-    case global(String)
-    case uncertain(String)
+    case global(String, underlying: Error? = nil)
+    case uncertain(String, underlying: Error? = nil)
 
     var errorDescription: String? {
         switch self {
-        case .target(let message), .global(let message), .uncertain(let message):
+        case .target(let message), .global(let message, _), .uncertain(let message, _):
             return message
         }
+    }
+
+    var underlyingError: Error? {
+        switch self {
+        case .target: return nil
+        case .global(_, let error), .uncertain(_, let error): return error
+        }
+    }
+
+    var errorUserInfo: [String: Any] {
+        var info: [String: Any] = [:]
+        info[NSLocalizedDescriptionKey] = errorDescription
+        if let underlyingError { info[NSUnderlyingErrorKey] = underlyingError as NSError }
+        return info
     }
 }
 

@@ -39,11 +39,11 @@ The left pane is the neutral render and the right pane is Velvia. Film selection
 镜头工具提供独立的畸变矫正、横向色差校正、自动/手动匹配和自动裁边，默认关闭校正。配置随逐照片编辑保存，批量自动模式逐张匹配；中性对照不校正。离线数据库、依赖和功能边界见[跨平台说明](../docs/reference/platforms/lens-correction.md)。紫绿去边暂未实现。
 
 
-v0.9.3 构建 18 为受支持的相机 RAW 和 Apple ProRAW 新增 HDR 显影，可导出增益图 HDR JPEG 或 SDR JPEG。功能与已知问题修复见 [v0.9.3 发布说明](../docs/releases/v0.9/v0.9.3.md)。
+v0.10.0 构建 19 扩展 HDR 曲线、色彩、细节、效果和外观，增加桌面工作区、系统打开与多文件集合入口，并支持 16 位整数 RGB PNG/TIFF 输入。HDR HEIF 导出取决于系统能力；macOS 14 可将受支持的 ISO/Adobe 增益图照片作为 SDR 打开。功能与限制见 [v0.10.0 发布说明](../docs/releases/v0.10/v0.10.0.md)。
 
-预编译版本：[GitHub Release v0.9.3](https://github.com/dancancer/RawLab/releases/tag/v0.9.3)。下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.9.3/RawLab-Mac-0.9.3-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.9.3/RawLab-Mac-0.9.3-x86_64.zip)，解压后将 `RawLab Mac.app` 放入当前用户可写的位置。最低部署目标为 macOS 14，HDR 编辑需要 macOS 15+。发行包使用固定自签名证书与 Sparkle EdDSA 更新签名，没有 Apple 公证；首次运行可能需要在“隐私与安全性”选择“仍要打开”。新版系统上的构建不等于物理 macOS 14 验收。
+预编译版本：[GitHub Release v0.10.0](https://github.com/dancancer/RawLab/releases/tag/v0.10.0)。下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.10.0/RawLab-Mac-0.10.0-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.10.0/RawLab-Mac-0.10.0-x86_64.zip)，解压后将 `RawLab Mac.app` 放入当前用户可写的位置。最低部署目标为 macOS 14，HDR 编辑需要 macOS 15+。发行包使用固定自签名证书与 Sparkle EdDSA 更新签名，没有 Apple 公证；首次运行可能需要在“隐私与安全性”选择“仍要打开”。新版系统上的构建不等于物理 macOS 14 验收。
 
-Prebuilt apps: [v0.9.3](https://github.com/dancancer/RawLab/releases/tag/v0.9.3), build 18, for Apple Silicon and Intel. Both target macOS 14; HDR editing requires macOS 15+. Packages use the fixed self-signed certificate and Sparkle EdDSA without notarization. See the [release notes](../docs/releases/v0.9/v0.9.3.md) and package provenance for actual runtime coverage.
+Prebuilt apps: [v0.10.0](https://github.com/dancancer/RawLab/releases/tag/v0.10.0), build 19, for Apple Silicon and Intel. Both target macOS 14; HDR editing requires macOS 15+. Packages use the fixed self-signed certificate and Sparkle EdDSA without notarization. See the [release notes](../docs/releases/v0.10/v0.10.0.md) and package provenance for actual runtime coverage.
 
 “关于 RawLab”和“检查更新”提供仓库、作者主页及更新设置。默认自动检查更新；自动下载和退出时安装需要用户开启，随后由 Sparkle 校验并替换应用。应用目录必须对当前用户可写；从 0.8.2 升级需要手动安装一次受信任的 0.9.0 或更新版本。
 
@@ -123,9 +123,9 @@ Packaging checks verify the architecture, minimum OS, signature, and dependency 
 - 外观库保存于 `~/Library/Application Support/RawLab/Looks`，使用原子写入的 `registry.json` 保存稳定 ID、名称、格式和源文件名。DCP 由四端共用的 C++ 核心在后台转换成 RLOOK，无需 Python/OCIO，也不经过 RGB CUBE 烘焙；所有成品均通过共享 native 校验后安装。Mac/iOS 共用 Swift 文件适配器及外观库存储。原 DCP 不会被修改，删除外部原文件不影响外观，重启后会恢复。右键菜单支持重命名和删除托管副本，内置外观不受影响。XMP 仍不支持。
 
   The library manages looks in Application Support with a persistent registry. The cross-platform C++ compiler converts supported DCPs to RLOOK in the background without Python, OCIO or RGB-CUBE baking, then validates them through the shared core. Mac/iOS share the Swift file adapter and library storage. Sources remain unchanged; managed copies survive source removal and restart. Context menus rename or remove only managed copies. XMP execution is not implemented.
-- DCP 自动导入要求唯一且有效的显式 D65 ColorMatrix/ForwardMatrix、内嵌 ProfileToneCurve，以及 `DefaultBlackRender=None`（值 1）。缺失曲线、默认/显式自动黑位、三光源 HueSatMap、空间/HDR/RGB 表等会给出具体错误，不静默猜测或省略。这里比旧 CLI 的无 HSM 黑位策略更严格；需要自选曲线/黑位的资源可先用 [LUT Preparation](../lutools/docs/lut-preparation.md) 明确制备，再导入 RLOOK。转换仍只是 D65 外观适配，不承诺 Lightroom 或原厂 JPEG 一致。
+- DCP 导入要求唯一且有效的显式 D65 ColorMatrix/ForwardMatrix。有内嵌曲线并指定无自动黑位的配置可直接导入。缺曲线时可选择 JSON 曲线文件。配置要求自动黑位时，可选择省略该步骤再导入。三光源 HueSatMap、空间/HDR/RGB 表等仍会报告具体错误。转换范围见 [LUT Preparation](../lutools/docs/lut-preparation.md)。
 
-  Automatic DCP import requires one valid explicit D65 ColorMatrix/ForwardMatrix pair, an embedded ProfileToneCurve and DefaultBlackRender=None (1). Missing tone, default/explicit Auto black, triple-illuminant HSM and spatial/HDR/RGB stages report specific errors rather than being guessed or skipped. This is stricter than the legacy CLI's no-HSM black policy. Use the preparation CLI for explicit custom tone/black choices, then import the resulting RLOOK. D65 appearance adaptation is not Lightroom or manufacturer-JPEG parity.
+  DCP import requires one valid explicit D65 ColorMatrix/ForwardMatrix pair. Profiles with an embedded tone curve and automatic black disabled import directly. Supply a JSON tone curve if the profile has none. If the profile requests automatic black, you can omit that step and continue importing. Triple-illuminant HSM and spatial/HDR/RGB stages still report specific errors. See [LUT Preparation](../lutools/docs/lut-preparation.md) for the supported conversion stages.
 - 左侧文件树支持添加多个本地目录、按需展开子目录和点击 RAW 缩略图选片，可从工具栏收起。目录列表会保留；从侧栏移除目录不会删除原文件。缩略图只读取内嵌预览，不自动触发完整显影。
 
   Add multiple local directories, expand subdirectories on demand and select RAW thumbnails in the collapsible left file tree. The directory list persists; removing an entry never deletes files. Thumbnails use embedded previews rather than full RAW development.

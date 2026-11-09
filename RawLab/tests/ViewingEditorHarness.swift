@@ -1,4 +1,5 @@
 import CryptoKit
+import Photos
 import SwiftUI
 import UIKit
 
@@ -87,6 +88,10 @@ final class ViewingEditorProbe {
     func settingsText(_ settings: RawSettings) -> String {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         return String(data: try! encoder.encode(settings), encoding: .utf8)!
+    }
+    func storedStateText(_ state: PhotoEditState?) -> String {
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        return String(data: try! encoder.encode(state), encoding: .utf8)!
     }
     func recordPreview(_ request: RawEditorViewModel.PreviewRequest, source: UUID) {
         previews.append(["source": source.uuidString, "exposure": request.settings.exposure,
@@ -288,7 +293,7 @@ extension ContentView {
              "draftCrop": geometryDraft?.cropWidth ?? -1, "draftActive": isEditorDraftActive,
              "draftChanged": isEditorDraftChanged, "draftAlert": draftExitPresented,
              "pendingPhoto": pendingPhotoImport, "pendingFile": pendingFileImport,
-             "photoPicker": showingPhotoImporter, "filePicker": showingFileImporter,
+             "photoPicker": showingPhotoImporter, "filePicker": showingDocumentImporter,
              "saveState": String(describing: viewModel.editSaveState),
              "recentLookIDs": viewModel.recentLooks.ids, "selectedLookID": settings.lutID ?? "",
              "historyCount": viewModel.adjustmentSession?.transactions.count ?? 0,
@@ -303,10 +308,10 @@ extension ContentView {
              "pendingAdjustmentAction": String(describing: pendingAdjustmentAction),
              "queuedPresetAction": String(describing: queuedPresetAction),
              "sourceStoredExposure": store.state(for: identity)?.settings.exposure as Any? ?? NSNull(),
-             "sourceStoredRevision": (try? store.versionedState(for: identity).revision) ?? "",
+             "sourceStoredSnapshot": probe.storedStateText(store.state(for: identity)),
              "targetStoredExposure": probe.transferTarget.flatMap { store.state(for: $0)?.settings.exposure } as Any? ?? NSNull(),
              "targetStoredCrop": probe.transferTarget.flatMap { store.state(for: $0)?.settings.geometry.cropWidth } as Any? ?? NSNull(),
-             "targetStoredRevision": probe.transferTarget.flatMap { try? store.versionedState(for: $0).revision } ?? "",
+             "targetStoredSnapshot": probe.storedStateText(probe.transferTarget.flatMap { store.state(for: $0) }),
              "failingTarget": probe.failIdentity ?? "",
              "gestureActive": viewModel.adjustmentInteraction != nil,
              "pendingSettings": viewModel.pendingSettings != nil, "modelDraftActive": viewModel.hasAdjustmentDraft,
@@ -348,9 +353,12 @@ extension ContentView {
             receipt["batchFrozenExposure"] = batchModel?.job.targets.compactMap { $0.frozen?.settings.exposure } ?? []
             receipt["batchID"] = batchModel?.job.id.uuidString ?? ""
             receipt["batchStatus"] = batchModel?.job.status.rawValue ?? ""
+            receipt["batchError"] = batchModel?.validationMessage ?? batchModel?.job.globalError ?? ""
+            receipt["photoAddAuthorization"] = PHPhotoLibrary.authorizationStatus(for: .addOnly).rawValue
             receipt["batchRunning"] = batchModel?.isRunning ?? false
             receipt["batchCompleted"] = batchModel?.completedCount ?? 0
             receipt["collectionChecking"] = viewModel.collectionExportPreparing
+            receipt["collectionExportError"] = viewModel.collectionExportError ?? ""
             receipt["adjustmentQueueDrains"] = probe.adjustmentQueueDrains
             receipt["scenePhase"] = probe.scenePhase
             receipt["batchHandoffs"] = probe.batchHandoffs

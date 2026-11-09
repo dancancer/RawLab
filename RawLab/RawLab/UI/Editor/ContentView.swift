@@ -10,13 +10,19 @@ struct LookCompatibilityPresentation: Identifiable {
     let draft: LUTCompatibility
 }
 
+struct DCPImportOptionsPresentation: Identifiable {
+    let id = UUID()
+    let source: URL
+    let reason: DCPCompilerError
+}
+
 enum EditorDocumentImportKind {
     case photo
     case looks
 
     var contentTypes: [UTType] {
         switch self {
-        case .photo: PhotoImportFile.supportedContentTypes
+        case .photo: PhotoImportFile.photoPickerContentTypes
         case .looks: PhotoImportFile.supportedLookContentTypes
         }
     }
@@ -41,6 +47,7 @@ struct ContentView: View {
     @State var photoComparisonControlBounds = CGRect.zero
     @State var pendingPhotoImport = false
     @State var pendingFileImport = false
+    @State var pendingSystemPhotoURLs: [[URL]] = []
     var showingBefore: Bool {
         get { photoViewing.holdingBefore }
         nonmutating set {
@@ -72,7 +79,6 @@ struct ContentView: View {
     @State var applyingPreset: AdjustmentPreset?
     @State var returnToPresetLibrary = false
     @State var presetLibraryRevision = UUID()
-    @State var adjustmentReloadPresented = false
     @State var lensDraft: RawSettings?
     @State var draftExitPresented = false
     @State var pendingToolSelection: EditorToolSelection?
@@ -107,6 +113,9 @@ struct ContentView: View {
     @State var pendingLookCompatibility: LookCompatibilityPresentation?
     @State var lookCompatibilityCompletion: ((LUTCompatibility?) -> Void)?
     @State var confirmedLookCompatibility: LUTCompatibility?
+    @State var pendingDCPImportOptions: DCPImportOptionsPresentation?
+    @State var dcpImportOptionsCompletion: ((DCPImportOptions?) -> Void)?
+    @State var confirmedDCPImportOptions: DCPImportOptions?
     @State var renamingLUT: LUTOption?
     @State var renamedLUTName = ""
     @State var showingLookRename = false
@@ -142,12 +151,22 @@ struct ContentView: View {
         let interactionObserved = applyEditorInteractionObservers(to: draftObserved)
         return applyEditorSheets(to: interactionObserved)
             .sheet(isPresented: $showingProcessingContext) { processingContextSheet }
+            .onOpenURL { requestSystemPhotoImport([$0]) }
+            .onChange(of: editorBusy) { _, busy in
+                if !busy { continueSystemPhotoImport() }
+            }
     }
 
     private var editorNavigation: some View {
         NavigationStack {
             GeometryReader { geometry in
                 editorWorkspace(size: geometry.size, accessibility: dynamicTypeSize.isAccessibilitySize)
+                    .dropDestination(for: PhotoImportFile.self) { files, _ in
+                        let urls = stageSystemPhotoImport(files)
+                        guard !urls.isEmpty else { return false }
+                        requestSystemPhotoImport(urls)
+                        return true
+                    }
             }
             .safeAreaInset(edge: .top) {
                 if let batchModel, !showingBatchExport {
@@ -178,7 +197,7 @@ struct ContentView: View {
         .preferredColorScheme(.dark)
         .tint(.yellow)
         .photosPicker(isPresented: $showingPhotoImporter, selection: $selectedPhotoItem,
-                      matching: .images, preferredItemEncoding: .current)
+                      matching: .images, preferredItemEncoding: .current, photoLibrary: .shared())
         .sheet(isPresented: $showingPrivacy) { UsagePrivacyView() }
         .fileImporter(isPresented: $showingDocumentImporter,
                       allowedContentTypes: importKind.contentTypes,
@@ -205,6 +224,18 @@ struct ContentView: View {
                 pendingLookCompatibility = nil
             }
         }
+        .sheet(item: $pendingDCPImportOptions, onDismiss: {
+            let completion = dcpImportOptionsCompletion
+            let options = confirmedDCPImportOptions
+            dcpImportOptionsCompletion = nil
+            confirmedDCPImportOptions = nil
+            completion?(options)
+        }) { pending in
+            IOSDCPImportOptionsView(source: pending.source, reason: pending.reason) { options in
+                confirmedDCPImportOptions = options
+                pendingDCPImportOptions = nil
+            }
+        }
         .alert(L10n.text("重命名外观"), isPresented: $showingLookRename) {
             TextField(L10n.text("外观名称"), text: $renamedLUTName)
             Button(L10n.text("取消"), role: .cancel) { renamingLUT = nil }
@@ -222,9 +253,13 @@ struct ContentView: View {
                 Button(L10n.text("使用旧版显影重试")) { retry { settings = $0 } }
                     .accessibilityIdentifier("x3f.retryLegacy")
             }
+            if viewModel.statusHasDiagnostics {
+                Button(L10n.text("导出错误日志"), action: exportErrorDiagnostics)
+                    .disabled(!canStartFileExport)
+                    .accessibilityIdentifier("diagnostics.export.alert")
+            }
             Button(L10n.text("关闭"), role: .cancel) {
                 viewModel.statusMessage = nil
-                viewModel.retryLegacyX3fImport = nil
             }
         } message: {
             ScrollView {
@@ -409,24 +444,26 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingExportSize) {
             ExportSizeSheet(longEdge: $exportLongEdge,
-                            title: singleExportFormat == .renderedDNG ? "导出渲染型 DNG" : "保存当前照片") {
+                            title: singleExportFormat == .renderedDNG ? "导出渲染型 DNG" :
+                                singleExportFormat == .hdrHEIF ? singleExportFormat.title : "保存当前照片") {
                 showingExportSize = false
                 if singleExportFormat == .renderedDNG {
                     exportDNG(longEdge: exportLongEdge)
                 } else {
-                    exportJPEG(longEdge: exportLongEdge,keepHDR:singleExportFormat == .hdrJPEG)
+                    exportPhoto(longEdge: exportLongEdge, format: singleExportFormat)
                 }
             }
         }
         .sheet(item: $fileExportRequest) { request in
             FileExportPicker(urls: request.urls) { exported in
                 fileExportRequest = nil
-                if exported { UsageAnalytics.shared.record(.exportCompleted) }
+                if exported && request.recordsPhotoExport { UsageAnalytics.shared.record(.exportCompleted) }
                 if request.removeAfterExport {
                     for url in request.urls { try? FileManager.default.removeItem(at: url) }
                 }
                 viewModel.statusMessage = exported ? request.successMessage : request.cancelMessage
             }
+            .interactiveDismissDisabled(!request.recordsPhotoExport)
         }
         .alert(L10n.text("保留这次几何或镜头修改？"), isPresented: $draftExitPresented) {
             Button(L10n.text("应用")) { finishDraftNavigation(apply: true) }
@@ -438,16 +475,6 @@ struct ContentView: View {
             Button(L10n.text("重置"), role: .destructive) { confirmEditorReset() }
             Button(L10n.text("取消"), role: .cancel) { cancelEditorReset() }
         } message: { Text(resetConfirmationMessage) }
-        .alert(L10n.text("重新载入已保存调整"), isPresented: $adjustmentReloadPresented) {
-            Button(L10n.text("重新载入已保存调整"), role: .destructive) {
-                guard viewModel.reloadSavedAdjustments() else { return }
-                if let restored = viewModel.adjustmentRestoredSettings { settings = restored }
-                cancelDraftNavigation()
-                discardEditorDraft()
-                activateEditorTool(.adjustment(.exposure))
-            }
-            Button(L10n.text("继续编辑"), role: .cancel) {}
-        } message: { Text(L10n.text("重新载入会放弃未保存的调整，并读取此照片当前已保存的记录。")) }
         .onDisappear {
             cancelSliderInteraction()
             viewModel.saveCurrentSettings(settings)

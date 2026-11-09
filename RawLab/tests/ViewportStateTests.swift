@@ -17,7 +17,8 @@ struct ViewportStateTests {
         let model = RawEditorViewModel(editPersistence: try EditPersistence(directory: directory.appendingPathComponent(UUID().uuidString)))
         model.hasImage = true
         model.sourceKind = .raster
-        model.sourceFile = .externallyManaged(imageURL)
+        // Export reopens the source; the cached preview can still resize if that file is missing.
+        model.sourceFile = .externallyManaged(succeeds ? imageURL : directory.appendingPathComponent("missing-source.jpg"))
         let buffer = try model.processor.loadRasterBuffer(url: imageURL).buffer
         model.draftBuffer = succeeds ? buffer : nil
         model.draftPreviewBuffer = buffer

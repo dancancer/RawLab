@@ -213,6 +213,7 @@ struct ParameterValueTests {
             case "strict-input": strictInputChecks()
             case "crop-precision": cropPrecisionChecks()
             case "row-layout": rowLayoutChecks()
+            case "slider-drawing": sliderDrawingChecks()
             case "validation-race": validationRaceChecks()
             case "text-no-preview": textNoPreviewChecks()
             default: check(false, "Unknown parameter-value focus: \(focus)")
@@ -430,6 +431,7 @@ struct ParameterValueTests {
         valueFieldLayoutChecks()
         rowAlignmentChecks()
         rowLayoutChecks()
+        sliderDrawingChecks()
         check(AdjustmentParameter.exposure.spec.display(0.4) == "+0.40 EV" && AdjustmentParameter.contrast.spec.display(-15) == "-15%" &&
               AdjustmentParameter.temperature.spec.display(5105) == "5105 K" && AdjustmentParameter.strength.spec.display(1) == "100%",
               "Displayed values match the editor field: sign for signed ranges, a space before EV and K, none before %")
@@ -499,6 +501,29 @@ struct ParameterValueTests {
         func fields(_ view: NSView) -> [NumericTextField] {
             (view as? NumericTextField).map { [$0] } ?? view.subviews.flatMap(fields)
         }
+        func sliders(_ view: NSView) -> [NativeParameterSlider] {
+            (view as? NativeParameterSlider).map { [$0] } ?? view.subviews.flatMap(sliders)
+        }
+        for width in [260.0, 340.0] {
+            let host = NSHostingView(rootView: ParameterRow(title: "Exposure", value: .constant(0),
+                range: -4...4, defaultValue: 0, unit: "EV", precision: .exposure,
+                identifier: "value.compact.exposure", compact: true))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 100),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            defer { window.contentView = nil; window.close() }
+            host.layoutSubtreeIfNeeded()
+            drainDeferredValidity()
+            host.layoutSubtreeIfNeeded()
+            let field = fields(host).first!
+            let slider = sliders(host).first!
+            let rail = slider.convert(slider.bounds, to: host)
+            check(rail.width >= width - 4 && host.bounds.contains(rail),
+                  "The inspector gives exposure a full-width rail at \(width) pt (got \(rail.width))")
+            check(!rail.intersects(field.convert(field.bounds, to: host)),
+                  "The rail and numeric field occupy separate rows")
+        }
         var fontSizes: [CGFloat] = []
         for size in [DynamicTypeSize.large, .accessibility3] {
             let box = ValueBox(12.34)
@@ -553,6 +578,34 @@ struct ParameterValueTests {
                 try! FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
                 try! png.write(to: URL(fileURLWithPath: directory).appendingPathComponent("mac-temperature-stable.png"))
             }
+        }
+    }
+
+    static func sliderDrawingChecks() {
+        let slider = NativeParameterSlider(frame: NSRect(x: 0, y: 0, width: 240, height: 26))
+        slider.appearance = NSAppearance(named: .darkAqua)
+        let cell = RoundParameterSliderCell()
+        slider.cell = cell
+        slider.minValue = 0
+        slider.maxValue = 1
+        cell.defaultPosition = 0.5
+
+        for endpoint in [0.0, 1.0] {
+            slider.doubleValue = endpoint
+            let bitmap = slider.bitmapImageRepForCachingDisplay(in: slider.bounds)!
+            slider.cacheDisplay(in: slider.bounds, to: bitmap)
+            let scale = CGFloat(bitmap.pixelsWide) / slider.bounds.width
+            let knobCenter = cell.knobRect(flipped: slider.isFlipped).midX
+            let outward: CGFloat = endpoint == 0 ? -1 : 1
+            func pixel(_ distance: CGFloat) -> NSColor {
+                let column = Int((knobCenter + outward * distance) * scale)
+                return bitmap.colorAt(x: column, y: bitmap.pixelsHigh / 2)!.usingColorSpace(.deviceRGB)!
+            }
+            check(pixel(8.5).alphaComponent < 0.05,
+                  "The rail and changed fill stop under the thumb at slider endpoint \(endpoint)")
+            let changed = pixel(-12)
+            check(changed.alphaComponent > 0.8 && changed.redComponent > 0.6 && changed.greenComponent > 0.4 && changed.blueComponent < 0.4,
+                  "The changed span stays visible between the default and thumb at endpoint \(endpoint)")
         }
     }
 

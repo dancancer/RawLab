@@ -23,7 +23,7 @@ import Foundation
         check(legacy.settings.hdr == nil && legacy.settings.exposure == 1, "copy silently switched target mode")
 
         let proRAWContext = IOSAdjustmentTransferContext(identifier: "proraw", isRaw: true,
-            sourceSupportsProRAWHDR: true)
+            sourceSupportsCameraHDR: true)
         let proRAWPayload = try IOSAdjustmentTransfer.capture(scope: .all, snapshot: source, context: proRAWContext)
         var proRAWTargetSettings = RawSettings.default; proRAWTargetSettings.hdr = HDRSettings()
         let proRAWTarget = PhotoEditState(settings: proRAWTargetSettings, filmID: nil)
@@ -38,15 +38,23 @@ import Foundation
         let proRAWSDR = try IOSAdjustmentTransfer.prepare(payload: common, target: sdr, context: proRAWContext)
         check(proRAWSDR.settings.hdr == nil && proRAWSDR.settings.exposure == 1,
               "ProRAW HDR transfer upgraded an SDR target")
+        let cameraContext = IOSAdjustmentTransferContext(identifier: "camera", isRaw: true, sourceSupportsCameraHDR: true)
+        var cameraSettings = settings
+        cameraSettings.hdr?.renditionSettings.sdrExposureEV = -0.75
+        let cameraPayload = try IOSAdjustmentTransfer.capture(scope: .modified,
+            snapshot: PhotoEditState(settings: cameraSettings, filmID: nil), context: cameraContext)
+        let cameraTarget = try IOSAdjustmentTransfer.prepare(payload: cameraPayload, target: target, context: cameraContext)
+        check(cameraTarget.settings.hdr == cameraSettings.hdr && cameraTarget.settings.exposure == -2 &&
+              cameraTarget.settings.proRAWDecodeVersion == nil, "Camera RAW transfer lost either edit or invented a ProRAW version")
         do {
             _ = try IOSAdjustmentTransfer.capture(scope: .all, snapshot: source,
                 context: IOSAdjustmentTransferContext(identifier: "raw", isRaw: true, sourceIsHDR: true))
-            fatalError("ordinary RAW HDR capture was accepted")
+            fatalError("RAW without HDR capability was accepted as a source")
         } catch AdjustmentTransferError.incompatible {}
         do {
             _ = try IOSAdjustmentTransfer.prepare(payload: proRAWPayload, target: proRAWTarget,
                 context: IOSAdjustmentTransferContext(identifier: "raw", isRaw: true, sourceIsHDR: true))
-            fatalError("ordinary RAW HDR target was accepted")
+            fatalError("RAW without HDR capability was accepted as a target")
         } catch AdjustmentTransferError.incompatible {}
         print("PASS iOS HDR transfer capture, target preflight and mixed-mode isolation")
     }

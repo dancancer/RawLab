@@ -10,6 +10,15 @@ import Foundation
         guard meter.cachedRasterBytes>0 && meter.cachedRasterBytes<=1280*1280*4 else {
             throw RenderError.failed("SDR auto exposure retained full-resolution raster: \(meter.cachedRasterBytes) bytes")
         }
+        let hdrMeter=try RenderEngine(gpuMode:SONY2FUJI_GPU_OFF)
+        var hdrSettings=Adjustments(); hdrSettings.hdr=HDRSettings()
+        let hdrExposure=try hdrMeter.autoExposure(source,settings:hdrSettings)
+        hdrSettings.set(.exposure,to:3)
+        let repeated=try hdrMeter.autoExposure(source,settings:hdrSettings)
+        guard hdrExposure.isFinite, (-4...4).contains(hdrExposure), repeated==hdrExposure,
+              hdrMeter.cachedRasterBytes==0 else {
+            fatalError("HDR auto exposure did not use an unedited, bounded HDR source")
+        }
         let engine=try RenderEngine(gpuMode:SONY2FUJI_GPU_OFF)
         let preview=try engine.render(source,settings:Adjustments(),lut:nil,edge:256)!
         guard max(preview.image.width,preview.image.height)==256 else { fatalError("SDR preview output is not bounded") }

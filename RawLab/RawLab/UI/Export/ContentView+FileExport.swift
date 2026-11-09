@@ -9,8 +9,37 @@ struct FileExportRequest: Identifiable {
     let id = UUID()
     let urls: [URL]
     let removeAfterExport: Bool
-    let successMessage: String
-    let cancelMessage: String
+    let successMessage: String?
+    let cancelMessage: String?
+    var recordsPhotoExport = true
+}
+
+extension ContentView {
+    var canStartFileExport: Bool {
+        !isSaving && !showingExportSize && fileExportRequest == nil
+    }
+
+    @MainActor func exportErrorDiagnostics() {
+        guard canStartFileExport else { return }
+        Task {
+            do {
+                let file = try await Task.detached(priority: .utility) { try ErrorDiagnostics.app.makeExportFile() }.value
+                guard canStartFileExport else {
+                    if let file { try? FileManager.default.removeItem(at: file) }
+                    return
+                }
+                guard let file else {
+                    viewModel.statusMessage = L10n.text("暂无可导出的错误日志。")
+                    return
+                }
+                fileExportRequest = FileExportRequest(urls: [file], removeAfterExport: true, successMessage: nil,
+                                                      cancelMessage: nil, recordsPhotoExport: false)
+            } catch {
+                guard canStartFileExport else { return }
+                viewModel.statusMessage = L10n.text("无法导出错误日志。")
+            }
+        }
+    }
 }
 
 struct FileExportPicker: UIViewControllerRepresentable {

@@ -52,13 +52,17 @@ extension ContentView {
                 }
                 isImporting = true
                 file.withReadAccess { url in
-                    viewModel.importImage(from: stored.photo.isRaw ? .raw(url) : .raster(url), identity: stored.photo.identity, onSettingsRestored: { restored in
+                    viewModel.importImage(from: stored.photo.isRaw ? .raw(url) : .raster(url), identity: stored.photo.identity,
+                                          diagnosticContext: ["entryPoint": "batchSelection"], onSettingsRestored: { restored in
                         settings = restored
                         viewModel.sourceDisplayName = stored.photo.displayName
                         _ = viewModel.batchSelection.selection.beginEditing(id)
                     })
                 }
-            } catch { viewModel.statusMessage = error.localizedDescription }
+            } catch {
+                viewModel.reportError(error, operation: .photoImport, stage: "readBatchSelection",
+                                      context: ["entryPoint": "batchSelection"])
+            }
         }
     }
 
@@ -78,11 +82,14 @@ extension ContentView {
         discardEditorDraft()
         activateEditorTool(.adjustment(.exposure))
         viewModel.hasAdjustmentDraft = false
-        guard viewModel.reloadSavedAdjustments() else { return false }
-        if let restored = viewModel.adjustmentRestoredSettings {
+        do {
+            let restored = try viewModel.restoreCommittedSettings()
             settings = restored
-            viewModel.adjustmentRestoredSettings = nil
+            viewModel.updatePreview(settings: restored, includeHistogram: true, quality: .final)
+            return true
+        } catch {
+            viewModel.reportError(error, operation: .editPersistence, stage: "restoreCommittedAdjustments")
+            return false
         }
-        return true
     }
 }

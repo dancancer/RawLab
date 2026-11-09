@@ -69,6 +69,7 @@ val prepareTestAssets by tasks.registering(Sync::class) {
     filePermissions { unix("rw-r--r--") }
     from(repo.resolve("lutools/tests/fixtures/jpeg-lossy.dng"))
     from(repo.resolve("lutools/tests/fixtures/bayer-demosaic.dng"))
+    from(repo.resolve("lutools/tests/fixtures/hdr-look-linear.cube"))
     from(repo.resolve("lutools/tests/fixtures/hdr/apple-legacy-macos26.jpg"))
     from(repo.resolve("Shared/fixtures/adjustment-presets-v1.json"))
     if (testRaw.isPresent) from(testRaw.get()) { rename { "sample.RAW" } }
@@ -92,6 +93,7 @@ val prepareAssets by tasks.registering(Sync::class) {
     }
     from(repo.resolve("RawLabMac/Resources/FilmIcons")) { into("artwork"); include("*.png") }
     from(repo.resolve("Shared/BundledLooks")) { into("films"); include("*.cube") }
+    from(repo.resolve("Shared/BundledLooks/HDR")) { into("BundledLooks/HDR") }
     from(repo.resolve("Shared/BundledLooks/catalog.json")) { rename { "bundled-looks.json" } }
     from(repo.resolve("Shared/BundledLooks/Artwork")) { into("artwork"); include("*.png") }
     from(repo.resolve("Shared/BundledLooks/NOTICE.md")) { into("licenses"); rename { "Bundled-Looks.md" } }
@@ -140,8 +142,8 @@ android {
         applicationId = "com.rawlab.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 18
-        versionName = "0.9.3"
+        versionCode = 19
+        versionName = "0.10.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         externalNativeBuild { cmake { arguments += listOf("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON", "-DANDROID_STL=c++_shared") } }

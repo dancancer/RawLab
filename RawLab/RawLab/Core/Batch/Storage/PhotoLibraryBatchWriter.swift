@@ -2,6 +2,7 @@ import Photos
 import PhotosUI
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 enum PhotoLibraryBatchWriter {
     static func authorize() throws {
@@ -33,6 +34,7 @@ enum PhotoLibraryBatchWriter {
             let request = PHAssetCreationRequest.forAsset()
             let options = PHAssetResourceCreationOptions()
             options.originalFilename = outputName
+            if (outputName as NSString).pathExtension == "heic" { options.uniformTypeIdentifier = UTType.heic.identifier }
             request.addResource(with: .photo, data: data, options: options)
             if let identifier = request.placeholderForCreatedAsset?.localIdentifier {
                 do { try checkpoint(identifier) } catch { checkpointError = error }
@@ -41,7 +43,13 @@ enum PhotoLibraryBatchWriter {
             didSucceed = success; writeError = error; semaphore.signal()
         }
         semaphore.wait()
-        if !didSucceed { throw BatchExportError.global(writeError?.localizedDescription ?? L10n.format("保存 %@ 失败。", String(describing: target.displayName))) }
-        if checkpointError != nil { throw BatchExportError.uncertain(L10n.text("照片已写入，但任务记录未更新，请先核对保存结果。")) }
+        if !didSucceed {
+            let message = writeError?.localizedDescription ?? L10n.format("保存 %@ 失败。", target.displayName)
+            throw BatchExportError.global(message, underlying: writeError)
+        }
+        if let checkpointError {
+            throw BatchExportError.uncertain(L10n.text("照片已写入，但任务记录未更新，请先核对保存结果。"),
+                                             underlying: checkpointError)
+        }
     }
 }

@@ -15,7 +15,6 @@ SOURCES+=("$ROOT/RawLabMac/Sources/Lens/MacStraightenPreview.swift")
 SOURCES+=("$ROOT/RawLabMac/Sources/Geometry/MacCropInteraction.swift")
 SOURCES+=("$ROOT/RawLabMac/Sources/Inputs/ParameterValueField.swift" "$ROOT/RawLabMac/Sources/Inputs/ParameterPrecision.swift")
 TRANSFER_SOURCES=(
-  "$ROOT/Shared/AdjustmentTransfer.swift" "$ROOT/Shared/HDRAdjustmentTransfer.swift"
   "$ROOT/Shared/AdjustmentPresetStore.swift"
   "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"
   "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"

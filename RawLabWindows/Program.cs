@@ -11,10 +11,16 @@ internal static class Program
     {
         VelopackApp.Build().SetAutoApplyOnStartup(false).Run();
         Loc.Initialize();
+        var paths = SystemPhotoOpen.Paths(Environment.GetCommandLineArgs().Skip(1));
+        var pipeName = SystemPhotoOpen.PipeName(UpdateStore.DefaultDirectory);
         try
         {
-            using var lease = new UpdateRunLease(UpdateStore.DefaultDirectory);
-            var app = new App(); app.InitializeComponent(); app.Run();
+            using var lease = SystemPhotoOpen.AcquireOrForwardAsync(UpdateStore.DefaultDirectory, pipeName, paths).GetAwaiter().GetResult();
+            if (lease == null) return;
+            var app = new App(); app.InitializeComponent();
+            app.EnqueueSystemPhotos(paths);
+            using var server = new SystemPhotoOpenServer(pipeName, app.EnqueueSystemPhotos);
+            app.Run();
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {

@@ -7,18 +7,29 @@ import android.graphics.Matrix
 import android.graphics.ImageDecoder
 import android.os.Build
 import androidx.exifinterface.media.ExifInterface
+import com.rawlab.android.R
+import com.rawlab.android.i18n.AppStrings
 import java.io.File
 import java.io.IOException
+import java.nio.ByteBuffer
 import kotlin.math.min
 
 // ============================================================================
 //  普通图像解码：方向、色彩空间与像素上限
 // ============================================================================
 
-internal class DecodedRaster(val bitmap: Bitmap) : AutoCloseable {
-    val width: Int get() = bitmap.width
-    val height: Int get() = bitmap.height
-    override fun close() = bitmap.recycle()
+internal class DecodedRaster private constructor(private val data: Any, val width: Int, val height: Int,
+    val pixelFormat: Int) : AutoCloseable {
+    constructor(bitmap: Bitmap) : this(bitmap, bitmap.width, bitmap.height, 1)
+    constructor(pixels: ByteBuffer, width: Int, height: Int) : this(pixels, width, height, 2)
+    private var closed = false
+    val pixels: Any get() { check(!closed); return data }
+    val bitmap: Bitmap get() = data as Bitmap
+    override fun close() {
+        if (closed) return
+        closed = true
+        if (data is Bitmap) data.recycle() else NativePng16.release(data as ByteBuffer)
+    }
 }
 
 internal object RasterImageDecoder {
@@ -28,7 +39,10 @@ internal object RasterImageDecoder {
         }
         if (heif) return decodeHEIF(file)
         val validation = file.inputStream().use(RasterContainerValidator::inspect)
-        val info = validation.info ?: throw IOException(validation.error ?: "Unsupported raster image")
+        val info = validation.info ?: throw IOException(
+            if (validation.error == RasterContainerValidator.PNG16_TOO_LARGE)
+                AppStrings.text(R.string.message_png16_decode_limit)
+            else validation.error ?: "Unsupported raster image")
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         // decodeFile returns null for a bounds-only request on some API levels; out* is the contract.
         BitmapFactory.decodeFile(file.path, bounds)
@@ -37,10 +51,14 @@ internal object RasterImageDecoder {
         if (bounds.outWidth != info.width || bounds.outHeight != info.height)
             throw IOException("Image dimensions changed during decode")
         if (bounds.outWidth.toLong() * bounds.outHeight > RasterContainerValidator.MAX_PIXELS) throw IOException("Image is too large")
-        if (info.hasColorProfile && bounds.outColorSpace == null)
+        // Android 将整数 PNG16 的 sRGB 报告为 RGBA_F16/scRGB-nl；原始采样仍被限制在 [0,1]。
+        val sourceSpace = if (info.bitDepth == 16 && bounds.outColorSpace == ColorSpace.get(ColorSpace.Named.EXTENDED_SRGB))
+            ColorSpace.get(ColorSpace.Named.SRGB) else bounds.outColorSpace
+        if (info.hasColorProfile && sourceSpace == null)
             throw IOException("Image color space is not supported")
-        if (Build.VERSION.SDK_INT >= 26 && !isSupportedSdrColorSpace(bounds.outColorSpace))
+        if (Build.VERSION.SDK_INT >= 26 && !isSupportedSdrColorSpace(sourceSpace))
             throw IOException("Image color space is not supported")
+        if (info.bitDepth == 16) return NativePng16.decode(file, info, sourceSpace)
         val options = BitmapFactory.Options().apply {
             inPreferredConfig = Bitmap.Config.ARGB_8888
             inScaled = false

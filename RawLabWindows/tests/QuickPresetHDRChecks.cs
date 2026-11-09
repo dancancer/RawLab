@@ -19,7 +19,7 @@ internal static class QuickPresetHDRChecks
         try {
             window.Show(); window.OpenFile(source); Ready(window);
             var settings = Get<Adjustments>(window, "settings");
-            if (!settings.IsHDREditing && PhotoInput.IsCameraRaw(source) &&
+            if (!settings.IsHDREditing && PhotoInput.IsRaw(source) &&
                 PhotoInput.ProbeCameraRaw(source, out var sourceInfo) == HDRProbeState.Supported && sourceInfo?.IsProRAW == true)
             {
                 window.HDREditMenu.IsChecked = true;
@@ -45,8 +45,8 @@ internal static class QuickPresetHDRChecks
             check(window.QuickPresetPhase == QuickPresetPhase.Undone && store.Find(source)!.Settings.HDR!.Exposure == 0,
                 "Quick HDR Undo restores the preceding HDR state");
             window.HDREditMenu.IsChecked = false; window.HDREditMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
-            var before = store.VersionedState(source); window.ShowQuickPresets(); Done(window.ApplyPresetToCurrentPhoto(preset));
-            check(window.QuickPresetPhase == QuickPresetPhase.Failed && store.VersionedState(source).SameAs(before),
+            var before = store.ReadState(source); window.ShowQuickPresets(); Done(window.ApplyPresetToCurrentPhoto(preset));
+            check(window.QuickPresetPhase == QuickPresetPhase.Failed && store.ReadState(source).SameAs(before),
                 "Quick relative HDR white balance cannot overwrite SDR editing mode");
             Console.WriteLine("Quick HDR artifacts: " + root);
         } finally { window.Close(); app.Shutdown(); }

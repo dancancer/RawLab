@@ -3,7 +3,7 @@ if(POLICY CMP0135)
     cmake_policy(SET CMP0135 NEW)
 endif()
 
-# The DNG writer needs TIFF directory/strip handling only. Keep this dependency
+# The DNG writer and TIFF page check need directory/strip handling only. Keep this dependency
 # static and turn off every optional codec/tool target so mobile builds do not
 # pull in unrelated image formats.
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)

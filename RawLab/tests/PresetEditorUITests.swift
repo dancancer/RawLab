@@ -27,8 +27,8 @@ extension ViewingEditorUITests {
         XCTAssertEqual((receipt(app)["recentLookIDs"] as? [String])?.first, look)
         openAdjustmentAction("collection.open", app: app)
         XCTAssertTrue(app.buttons["collection.export"].waitForExistence(timeout: 10));app.buttons["collection.export"].tap()
-        let start = app.buttons["collection.export.start"];revealFormControl(start, app: app);start.tap()
-        wait(app, timeout: 120) { $0["batchStatus"] as? String == "completed" && $0["batchCompleted"] as? Int == 1 }
+        revealCollectionExportStart(app).tap()
+        wait(app, timeout: 120, for: "finish exporting the combined look and preset") { $0["batchStatus"] as? String == "completed" && $0["batchCompleted"] as? Int == 1 }
         XCTAssertEqual(receipt(app)["batchFrozenExposure"] as? [Double], [0.5])
         capture(app, "look-preset-collection-completed")
         app.buttons["Task Actions"].tap();app.buttons["Discard Task"].tap();app.buttons["Discard Task"].tap()
@@ -87,7 +87,7 @@ extension ViewingEditorUITests {
         let cancel = app.buttons["preset.quick.cancel"]; revealFormControl(cancel, app: app); cancel.tap()
         notify("com.rawlab.quick-preset.release")
         wait(app) { $0["quickPreparationHeld"] as? Bool == false && $0["quickPreparing"] as? Bool == false }
-        XCTAssertEqual(receipt(app)["sourceStoredRevision"] as? String, before["sourceStoredRevision"] as? String)
+        XCTAssertEqual(receipt(app)["sourceStoredSnapshot"] as! String, before["sourceStoredSnapshot"] as! String)
         XCTAssertEqual(receipt(app)["historyCount"] as? Int, before["historyCount"] as? Int)
         capture(app, "quick-preset-cancel")
         notify("com.rawlab.s3.fail-next-save")
@@ -95,7 +95,7 @@ extension ViewingEditorUITests {
         revealFormControl(apply, app: app); apply.tap()
         let retry = app.buttons["preset.quick.retry"]
         revealFormControl(retry, app: app); XCTAssertTrue(retry.waitForExistence(timeout: 15))
-        XCTAssertEqual(receipt(app)["sourceStoredRevision"] as? String, before["sourceStoredRevision"] as? String)
+        XCTAssertEqual(receipt(app)["sourceStoredSnapshot"] as! String, before["sourceStoredSnapshot"] as! String)
         retry.tap()
         wait(app) { $0["sourceStoredExposure"] as? Double == 0.5 && $0["exposure"] as? Double == 0.5 }
         XCTAssertEqual(receipt(app)["historyCount"] as? Int, (before["historyCount"] as! Int) + 1)
@@ -117,7 +117,7 @@ extension ViewingEditorUITests {
         let saved = receipt(app)
         revealFormControl(apply, app: app); apply.tap()
         wait(app) { $0["quickPreparing"] as? Bool == false }
-        XCTAssertEqual(receipt(app)["sourceStoredRevision"] as? String, saved["sourceStoredRevision"] as? String)
+        XCTAssertEqual(receipt(app)["sourceStoredSnapshot"] as! String, saved["sourceStoredSnapshot"] as! String)
         XCTAssertEqual(receipt(app)["historyCount"] as? Int, saved["historyCount"] as? Int)
         let status = app.staticTexts["preset.quick.status"]; revealFormControl(status, app: app)
         XCTAssertTrue(status.label.contains("Unchanged"), status.label)
@@ -146,7 +146,7 @@ extension ViewingEditorUITests {
         revealFormControl(exposure, app: app)
         XCTAssertTrue(exposure.label.contains("+0.50 EV"), app.debugDescription)
         XCTAssertEqual(receipt(app)["historyCount"] as? Int, initial["historyCount"] as? Int)
-        XCTAssertEqual(receipt(app)["sourceStoredRevision"] as? String, initial["sourceStoredRevision"] as? String)
+        XCTAssertEqual(receipt(app)["sourceStoredSnapshot"] as! String, initial["sourceStoredSnapshot"] as! String)
         XCTAssertTrue(receipt(app)["clipboard"] is NSNull)
         capture(app, "scope-summary-modified")
         chooseScope("Custom")
@@ -213,24 +213,23 @@ extension ViewingEditorUITests {
         wait(app) { $0["presetFault"] as? String == fault }
     }
 
-    func testPresetRejectsExternalPhotoRevisionWhileSaveFormIsOpen() {
+    func testPresetSaveUsesSessionStateAfterExternalRecordChange() {
         let app = launch(language: "en", presetFixtures: true)
         openPresets(app)
         app.buttons["preset.create"].tap()
-        presetName("Stale source", app: app)
+        presetName("Session source", app: app)
         let history = receipt(app)["historyCount"] as? Int
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
             CFNotificationName("com.rawlab.iter03.external-edit" as CFString), nil, nil, true)
         wait(app) { $0["sourceStoredExposure"] as? Double == 1.3 }
         let save = app.buttons["preset.save.confirm"]
         revealFormControl(save, app: app); save.tap()
-        wait(app) { ($0["saveState"] as? String ?? "").contains("failed") }
-        let message = app.staticTexts["preset.message"]
-        revealFormControl(message, app: app); XCTAssertTrue(message.exists)
-        XCTAssertTrue(presets(app).isEmpty)
+        // 磁盘记录被外部改写不再阻止保存预设：预设取自本会话已提交的状态，不写照片记录，也不进照片历史。
+        wait(app) { ($0["presets"] as? [[String: Any]])?.contains { $0["name"] as? String == "Session source" } == true }
+        XCTAssertFalse((receipt(app)["saveState"] as? String ?? "").contains("failed"))
         XCTAssertEqual(receipt(app)["historyCount"] as? Int, history)
         XCTAssertEqual(receipt(app)["sourceStoredExposure"] as? Double, 1.3)
-        capture(app, "preset-external-revision-blocked")
+        capture(app, "preset-external-record-session-source")
     }
 
     func testPresetScopeRenameApplyHistoryAndRestart() {

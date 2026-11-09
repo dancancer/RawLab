@@ -1,6 +1,9 @@
 package com.rawlab.android.adjustments
 
 import com.rawlab.android.settings.*
+import com.rawlab.android.looks.MasterRecipe
+import com.rawlab.android.looks.applyRecipe
+import org.json.JSONArray
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.format.PhotoInputKind
 import org.json.JSONObject
@@ -21,6 +24,90 @@ class AdjustmentTransferTest {
         context: AdjustmentTransferContext = this.context) = AdjustmentTransfer.prepare(payload, target, context)
     private fun capture(settings: EditSettings, vararg fields: F) =
         AdjustmentTransfer.capture(AdjustmentScope.Custom(fields.toSet()), settings, context.copy(identifier = "source"))
+
+    private fun builtinRecipes(): List<MasterRecipe> {
+        val rows = JSONArray(File("../../Shared/master-recipes.json").readText())
+        return (0 until rows.length()).map { MasterRecipe.decode(rows.getJSONObject(it)) }
+    }
+
+    @Test fun fullNeutralRawRecipeClearsPreviousRasterTint() {
+        val recipe = builtinRecipes().first()
+        val raster = context.copy(isRaw = false, availableLookIDs = setOf("recipe:${recipe.id}"))
+        val target = EditSettings(exposureMode = 2).applyRecipe(recipe)
+        val source = target.copy(tint = 0f)
+        val full = AdjustmentTransfer.capture(AdjustmentScope.Custom(F.COMMON), source, context)
+        val applied = prepare(full, target, raster)
+        assertNotEquals(target, applied); assertEquals(0f, applied.tint)
+        assertEquals(AdjustmentValue.Number(0.0), AdjustmentTransferValues.values(applied, raster)[F.TINT])
+        assertEquals(applied, prepare(full, applied, raster))
+    }
+
+    @Test fun builtinRawRecipesMatchDirectRasterApplication() {
+        val recipes = builtinRecipes()
+        val raster = context.copy(isRaw = false, availableLookIDs = recipes.map { "recipe:${it.id}" }.toSet(),
+            recipeTintDefaults = recipes.associate { it.id to it.tint })
+        for (recipe in recipes) for (strength in listOf(0f, .5f, 1f, 2f)) {
+            val source = EditSettings().applyRecipe(recipe).copy(strength = strength)
+            val direct = EditSettings(exposureMode = 2).applyRecipe(recipe).copy(strength = strength)
+            val previous = EditSettings(exposureMode = 2).applyRecipe(recipes.first())
+            for (scope in listOf(AdjustmentScope.Custom(F.COMMON), AdjustmentScope.All)) {
+                val frozen = AdjustmentPayload.decode(AdjustmentTransfer.capture(scope, source, context).encode())
+                val applied = prepare(frozen, previous, raster)
+                assertEquals("${recipe.id}, strength $strength", AdjustmentTransferValues.values(direct, raster),
+                    AdjustmentTransferValues.values(applied, raster))
+                assertEquals(applied, prepare(frozen, applied, raster))
+            }
+            val partial = AdjustmentTransfer.capture(AdjustmentScope.Custom(F.WHITE_BALANCE), source, context)
+            assertThrows(AdjustmentTransferException::class.java) { prepare(partial, previous, raster) }
+            val edited = AdjustmentTransfer.capture(AdjustmentScope.Custom(F.COMMON), source.copy(tint = recipe.tint + 1), context)
+            assertThrows(AdjustmentTransferException::class.java) { prepare(edited, previous, raster) }
+            val fixed = AdjustmentTransfer.capture(AdjustmentScope.Custom(F.COMMON),
+                source.copy(customWb = true, temperature = 5400f), context)
+            assertThrows(AdjustmentTransferException::class.java) { prepare(fixed, previous, raster) }
+        }
+    }
+
+    @Test fun neutralRawStandardPasteKeepsRasterWhiteBalanceAndSensorExposure() {
+        val raster = context.copy(identifier = "target.jpg", isRaw = false, cameraTemperature = null, cameraTint = null)
+        val target = EditSettings(exposureMode = 2)
+        for (mode in 0..2) {
+            val source = EditSettings(exposureMode = mode, exposure = 1.25f)
+            val standard = AdjustmentTransfer.capture(AdjustmentScope.Custom(F.COMMON), source, context)
+            val applied = prepare(standard, target, raster)
+            assertNotEquals(target, applied); assertEquals(1.25f, applied.exposure)
+            assertEquals(AdjustmentValue.Text("none"), AdjustmentTransferValues.values(applied, raster)[F.WHITE_BALANCE_MODE])
+            assertFalse(applied.customWb); assertEquals(6500f, applied.temperature); assertEquals(0f, applied.tint)
+            assertEquals(2, applied.exposureMode)
+            assertEquals(applied, prepare(standard, applied, raster))
+            val neutral = AdjustmentTransfer.capture(AdjustmentScope.Custom(F.COMMON), source.copy(exposure = 0f), context)
+            assertEquals(target, prepare(neutral, target, raster))
+            assertEquals(target, prepare(capture(source, F.EXPOSURE_MODE), target, raster))
+        }
+        for (field in F.WHITE_BALANCE) {
+            assertEquals(target, prepare(capture(EditSettings(), field), target, raster))
+        }
+        for (strength in listOf(0f, 1f)) {
+            val recipe = EditSettings(recipeID = "r", strength = strength, tint = 0f)
+            assertEquals(target, prepare(capture(recipe, F.WHITE_BALANCE_MODE, F.TEMPERATURE, F.TINT), target, raster))
+            val relative = capture(recipe.copy(tint = 5f), F.TINT)
+            val error = assertThrows(AdjustmentTransferException::class.java) { prepare(relative, target, raster) }
+            assertEquals(AdjustmentFailure.INCOMPATIBLE, error.reason)
+        }
+    }
+
+    @Test fun fixedRawWhiteBalanceAndNonzeroFbddStillRejectRaster() {
+        val raster = context.copy(isRaw = false)
+        val fixed = EditSettings(customWb = true, temperature = 5400f, tint = 3.5f)
+        for (fields in listOf(F.WHITE_BALANCE, setOf(F.TEMPERATURE), setOf(F.TINT))) {
+            val request = AdjustmentTransfer.capture(AdjustmentScope.Custom(fields), fixed, context)
+            val error = assertThrows(AdjustmentTransferException::class.java) { prepare(request, context = raster) }
+            assertEquals(AdjustmentFailure.INCOMPATIBLE, error.reason)
+        }
+        val error = assertThrows(AdjustmentTransferException::class.java) {
+            prepare(payload(F.RAW_DENOISE to AdjustmentValue.Number(1.0)), context = raster)
+        }
+        assertEquals(AdjustmentFailure.INCOMPATIBLE, error.reason)
+    }
 
     @Test fun defaultScopePasteIntoEqualPhotoDoesNotCreateNegativeZeroOrChange() {
         val settings = EditSettings()
@@ -45,7 +132,9 @@ class AdjustmentTransferTest {
 
     @Test fun allIncludesGeometryAndModifiedUsesDefaultsWithoutGeometry() {
         val source = EditSettings(exposure = .5f, geometry = GeometrySettings(cropWidth = .5f))
-        assertEquals(F.entries.filterNot { it.isHDRRelative }.toSet(), AdjustmentTransfer.capture(AdjustmentScope.All, source, context).fields)
+        val all = AdjustmentTransfer.capture(AdjustmentScope.All, source, context).fields
+        assertEquals(F.entries.filterNot { it.isHDROnly }.toSet(), all)
+        assertEquals(72, all.size)
         assertEquals(setOf(F.EXPOSURE), AdjustmentTransfer.capture(AdjustmentScope.Modified, source, context).fields)
         assertThrows(AdjustmentTransferException::class.java) {
             AdjustmentTransfer.capture(AdjustmentScope.Modified, EditSettings(), context)
@@ -163,9 +252,8 @@ class AdjustmentTransferTest {
         val result = prepare(payload(F.GRAIN_AMOUNT to AdjustmentValue.Number(12.375), F.VIGNETTE_MIDPOINT to AdjustmentValue.Number(32.25)))
         assertEquals(12.375f, result.effects.grainAmount); assertEquals(32.25f, result.effects.vignetteMidpoint)
         assertThrows(AdjustmentTransferException::class.java) { prepare(payload(F.EXPOSURE to AdjustmentValue.Number(5.0))) }
-        assertThrows(AdjustmentTransferException::class.java) {
-            prepare(payload(F.EXPOSURE_MODE to AdjustmentValue.Text("preview")), context = context.copy(isRaw = false))
-        }
+        val raster = EditSettings(exposureMode = 2)
+        assertEquals(raster, prepare(payload(F.EXPOSURE_MODE to AdjustmentValue.Text("preview")), raster, context.copy(isRaw = false)))
         assertThrows(AdjustmentTransferException::class.java) {
             prepare(payload(F.LOOK to AdjustmentValue.Object(mapOf("kind" to AdjustmentValue.Text("managed"), "id" to AdjustmentValue.Text("missing")))))
         }

@@ -2,6 +2,16 @@ using RawLab.Windows;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+if (args.Contains("--hdr-look-import")) {
+    HDRAssetImportChecks.Run();
+    return;
+}
+
+if (args.Contains("--batch-raster-ai-only")) {
+    BatchRasterAIChecks();
+    return;
+}
+
 if (args.Contains("--summary-only")) {
     AdjustmentSummaryChecks.Run();
     return;
@@ -17,7 +27,16 @@ if (args.Contains("--camera-raw-hdr")) {
     CameraRawHDRChecks.Run();
     return;
 }
+if (args.Contains("--history-only")) {
+    AdjustmentTransferChecks.Run();
+    AdjustmentHistoryChecks.Run();
+    AdjustmentPresetChecks.Run();
+    BatchSelectionChecks.Run();
+    return;
+}
 X3fPersistenceChecks();
+Check(PhotoInput.PrepareDefaultSettings("fixture.png").ExposureMode == 2,
+    "No-record raster defaults retain sensor exposure");
 AIGpuDiagnosticsChecks.Run();
 if(args.Contains("--ai-support"))return;
 
@@ -106,7 +125,22 @@ static void AIDenoisePersistenceChecks()
     Check(JsonSerializer.SerializeToNode(restored.Capture())!["AIDenoiseEnabled"]?.GetValue<bool>() == false,
         "Direct full reset clears AI");
 }
+static void BatchRasterAIChecks()
+{
+    var source = new Adjustments { AIDenoiseEnabled = true };
+    source.Set(Parameter.Exposure, .7);
+    foreach (var target in new[] { "target.jpg", "target.png" }) {
+        var effective = PhotoInput.PrepareBatchSettings("source.arw", target, source);
+        Check(!effective.AIDenoiseEnabled && effective[Parameter.Exposure] == .7,
+            "Ordinary image batch targets skip AI and retain shared adjustments");
+        Check(source.AIDenoiseEnabled, "Preparing a raster target never changes RAW source AI settings");
+    }
+    Check(PhotoInput.PrepareBatchSettings("source.arw", "target.nef", source).AIDenoiseEnabled,
+        "RAW batch targets retain AI denoise");
+    Console.WriteLine("PASS: batch raster targets omit RAW-only AI");
+}
 AIDenoisePersistenceChecks();
+BatchRasterAIChecks();
 await AIDenoiseJobChecks.Run();
 static void ProcessingChecks()
 {
@@ -781,18 +815,52 @@ try
     using var cancellation = new CancellationTokenSource();
     BatchRunner.Run(cancelled, journal, false, cancellation.Token, (_, _) => { }, (_, _, _, destination) => { File.WriteAllText(destination, "first"); cancellation.Cancel(); });
     Check(cancelled.Cancelled && cancelled.Items[0].Status == BatchStatus.Succeeded && cancelled.Items[1].Status == BatchStatus.Waiting, "cancel preserves completed output");
+    var beforeRender = BatchJob.Create(a, saved, null, "Neutral"); beforeRender.OutputDirectory = output;
+    beforeRender.Items.Add(BatchItem.Create(a) with { Selected=true });
+    beforeRender.Items.Add(BatchItem.Create(b) with { Selected=true });
+    using var beforeRenderCancellation = new CancellationTokenSource();
+    var startedCalls = 0;
+    BatchRunner.Run(beforeRender,journal,false,beforeRenderCancellation.Token,(updated,_)=>{
+        if(updated.Items[0].Status!=BatchStatus.Running)return;
+        Check(AtomicJson.Read<BatchJob>(Path.Combine(journal.DirectoryPath,"job.json")).Items[0].Status==BatchStatus.Running,
+            "Active item is journaled before cancellation reaches the renderer");
+        beforeRenderCancellation.Cancel();
+    },(_,_,_,destination)=>{
+        startedCalls++;
+        Check(beforeRenderCancellation.IsCancellationRequested,"Stop is requested before the active item renders");
+        File.WriteAllText(destination,"active item completed");
+    });
+    var stopped = AtomicJson.Read<BatchJob>(Path.Combine(journal.DirectoryPath,"job.json"));
+    Check(startedCalls==1 && stopped.Cancelled && !stopped.Interrupted && stopped.SucceededCount==1 &&
+        stopped.Items[0].Status==BatchStatus.Succeeded && stopped.Items[1].Status==BatchStatus.Waiting &&
+        File.ReadAllText(stopped.Items[0].Output!)=="active item completed" && !File.Exists(beforeRender.TemporaryPath(beforeRender.Items[0])),
+        "Cancel after Running still publishes the active item, leaves the next Waiting and removes staging files");
     var duringPreparation = BatchJob.Create(a, saved, null, "Neutral"); duringPreparation.OutputDirectory = output;
     duringPreparation.Items.Add(BatchItem.Create(a) with { Selected=true });
     duringPreparation.Items.Add(BatchItem.Create(b) with { Selected=true });
     using var preparationCancellation = new CancellationTokenSource();
     var preparedCount = 0;
     BatchRunner.Run(duringPreparation,journal,false,preparationCancellation.Token,(_,_)=>{},(_,_,_,destination)=>{
-        if(++preparedCount==2) { preparationCancellation.Cancel(); throw new OperationCanceledException(preparationCancellation.Token); }
+        if(++preparedCount==2) {
+            File.WriteAllText(destination,"partial AI output");
+            preparationCancellation.Cancel(); throw new OperationCanceledException(preparationCancellation.Token);
+        }
         File.WriteAllText(destination,"completed");
     });
     Check(duringPreparation.Cancelled && duringPreparation.FailedCount==0 && duringPreparation.Items[0].Status==BatchStatus.Succeeded &&
         duringPreparation.Items[1].Status==BatchStatus.Waiting,"AI preparation cancellation preserves completed output and keeps the active item retryable");
+    Check(duringPreparation.Items[1].Output==null && !File.Exists(duringPreparation.TemporaryPath(duringPreparation.Items[1])),
+        "AI cancellation removes partial staging output without publishing it");
     Check(journal.Load()!.Items[1].Status==BatchStatus.Waiting,"AI cancellation saves a retryable journal");
+    var resumedPreparation = journal.Load()!;
+    var resumedInputs = new List<string>();
+    BatchRunner.Run(resumedPreparation,journal,false,CancellationToken.None,(_,_)=>{},(input,_,_,destination)=>{
+        resumedInputs.Add(input); File.WriteAllText(destination,"AI resumed");
+    });
+    Check(resumedInputs.SequenceEqual(new[]{b}) && resumedPreparation.SucceededCount==2 && !resumedPreparation.Cancelled &&
+        File.ReadAllText(resumedPreparation.Items[0].Output!)=="completed",
+        "Resuming cancelled AI preparation completes only the Waiting item and preserves the first output");
+    Console.WriteLine("PASS: Windows batch stop-after-Running, AI cancellation cleanup and resume");
     cancelled.Items[1] = cancelled.Items[1] with { Status = BatchStatus.Running };
     journal.Save(cancelled);
     var recovered = journal.Load()!;

@@ -1,0 +1,13 @@
+# RawLabHDRLook: display-linear-srgb-v1
+TITLE "RawLab HDR linear fixture"
+DOMAIN_MIN 0 0 0
+DOMAIN_MAX 4 4 4
+LUT_3D_SIZE 2
+0.125 0 0
+3.125 0 0
+0.125 3 0
+3.125 3 0
+0.125 0 3
+3.125 0 3
+0.125 3 3
+3.125 3 3

@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 
 @main
 struct RawLabMacApp: App {
@@ -57,6 +58,7 @@ struct RawLabMacApp: App {
         NSApplication.shared.setActivationPolicy(.regular)
     }
     var body: some Scene {
+        let _ = bindSystemOpenWindow()
         Window("RawLab Mac", id: "editor") {
             Group {
                 if let model = runtime.model, let updates = runtime.controller {
@@ -64,6 +66,10 @@ struct RawLabMacApp: App {
                         UpdateAvailabilityBanner(updates: updates, legacy: runtime.legacy) { showUpdateWindow("update-prompt") }
                         EditorView(model: model)
                             .disabled(updates.blocksEditing)
+                            .onReceive(model.$exporting.removeDuplicates()) { if !$0 { retrySystemOpen() } }
+                            .onReceive(model.$importing.removeDuplicates()) { if !$0 { retrySystemOpen() } }
+                            .onReceive(model.$geometryDraftDeparturePending.removeDuplicates()) { if !$0 { retrySystemOpen() } }
+                            .onReceive(model.$saveError.removeDuplicates()) { if $0 == nil { retrySystemOpen() } }
                     }
                 } else if let error = runtime.startupError {
                     VStack(alignment: .leading, spacing: 16) {
@@ -73,6 +79,10 @@ struct RawLabMacApp: App {
                     }.padding(24)
                 } else { ProgressView(L10n.text("正在检查启动状态…")) }
             }.task { await runtime.start(delegate: appDelegate); if runtime.model != nil { UsageAnalytics.shared.beginSession() } }
+                .onChange(of: runtime.model != nil, initial: true) { _, ready in
+                    if ready { appDelegate.openPhotos = handleSystemOpen }
+                }
+                .onChange(of: installationActive) { _, active in if !active { retrySystemOpen() } }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                     UsageAnalytics.shared.endSession()
                 }
@@ -130,6 +140,31 @@ struct RawLabMacApp: App {
     }
 
     private var installationActive: Bool { runtime.controller?.blocksEditing ?? false }
+
+    private func bindSystemOpenWindow() {
+        appDelegate.openEditorWindow = { openWindow(id: "editor") }
+    }
+
+    private func retrySystemOpen() {
+        DispatchQueue.main.async { appDelegate.retryOpenPhotos() }
+    }
+
+    private func handleSystemOpen(_ urls: [URL], finished: @escaping (Bool) -> Void) {
+        guard let model = runtime.model, !installationActive, !model.exporting, !model.importing,
+              !model.geometryDraftDeparturePending else { finished(false); return }
+        let photos = DirectoryContents.photoURLs(from: urls)
+        guard let first = photos.first else { model.error = L10n.text("不是支持的图像文件"); finished(true); return }
+        openWindow(id: "editor")
+        if photos.count == 1 { ParameterValueField.cancelPendingInputs() }
+        model.prepareCollectionSource(onStay: { finished(true) }, onFailure: { finished(false) }) {
+            if photos.count == 1 { model.open(first) }
+            else {
+                model.addCollectionPhotos(photos, selectExisting: true)
+                openWindow(id: "batch-selection")
+            }
+            finished(true)
+        }
+    }
 
     private func showUpdateWindow(_ id: String) {
         ParameterValueField.preserveInputsForUpdateNavigation()

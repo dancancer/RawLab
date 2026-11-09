@@ -1,8 +1,53 @@
 using System.Windows;
+using System.Windows.Threading;
 
 namespace RawLab.Windows;
 public partial class App : Application
 {
+    private readonly SystemPhotoOpenQueue systemPhotoRequests = new();
+    private MainWindow? systemEditor;
+    private DispatcherTimer? systemPhotoTimer;
+    private bool drainingSystemPhotos;
+
+    internal bool EnqueueSystemPhotos(string[] paths)
+    {
+        if (Dispatcher.HasShutdownStarted || !systemPhotoRequests.Enqueue(paths, DateTimeOffset.UtcNow)) return false;
+        if (paths.Length > 0)
+        {
+            try
+            {
+                if (Dispatcher.BeginInvoke(new Action(() => systemPhotoTimer?.Start())).Status == DispatcherOperationStatus.Aborted)
+                    return false;
+            }
+            catch (InvalidOperationException) { return false; }
+        }
+        return true;
+    }
+    internal void SetSystemPhotoAdmission(bool accepting) => systemPhotoRequests.Accepting = accepting;
+
+    private void DrainSystemPhotos()
+    {
+        if (drainingSystemPhotos) return;
+        drainingSystemPhotos = true;
+        try
+        {
+            while (systemEditor?.IsLoaded == true && systemPhotoRequests.Peek(DateTimeOffset.UtcNow) is { } paths)
+            {
+                if (!systemEditor.TryOpenSystemPhotos(paths)) break;
+                systemPhotoRequests.RemoveFirst();
+            }
+            if (!systemPhotoRequests.HasRequests) systemPhotoTimer?.Stop();
+        }
+        finally { drainingSystemPhotos = false; }
+    }
+
+    private void ShowSystemEditor(MainWindow editor)
+    {
+        systemEditor = editor;
+        editor.Show();
+        DrainSystemPhotos();
+    }
+
     protected override async void OnStartup(StartupEventArgs e)
     {
         Exit+=(_,_)=>HDRSourceCache.Clear();
@@ -18,6 +63,10 @@ public partial class App : Application
         Microsoft.Win32.SystemEvents.UserPreferenceChanged+=preferencesChanged;
         Exit+=(_,_)=>{SystemParameters.StaticPropertyChanged-=parametersChanged;Microsoft.Win32.SystemEvents.UserPreferenceChanged-=preferencesChanged;};
         base.OnStartup(e);
+        systemPhotoTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(100), DispatcherPriority.Background,
+            (_, _) => DrainSystemPhotos(), Dispatcher);
+        systemPhotoTimer.Start();
+        Exit += (_, _) => SetSystemPhotoAdmission(false);
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         var version = typeof(App).Assembly.GetName().Version;
         var current = version?.ToString(3) ?? "unknown";
@@ -41,11 +90,11 @@ public partial class App : Application
                 await updates.FinishStartupHealthCheckAsync(editor.UpdateDataHealthy);
                 if (updates.BlocksEditing) return;
                 updates.RetryStartup = null;
-                MainWindow = editor; editor.Show(); recovery.Close();
+                MainWindow = editor; ShowSystemEditor(editor); recovery.Close();
             };
             recovery.Show();
         }
-        else { MainWindow = editor; editor!.Show(); }
+        else { MainWindow = editor; ShowSystemEditor(editor!); }
         ShutdownMode = ShutdownMode.OnMainWindowClose;
     }
 }

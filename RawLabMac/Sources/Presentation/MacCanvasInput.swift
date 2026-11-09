@@ -127,6 +127,7 @@ struct MacViewingKeyboard: NSViewRepresentable {
     var canHold: Bool
     var onHold: (Bool) -> Void
     var onInformation: () -> Void
+    var onEscape: () -> Bool
     func makeNSView(context: Context) -> KeyboardView { KeyboardView() }
     func updateNSView(_ view: KeyboardView, context: Context) { view.owner = self }
     static func dismantleNSView(_ view: KeyboardView, coordinator: ()) { view.stop() }
@@ -147,6 +148,8 @@ struct MacViewingKeyboard: NSViewRepresentable {
                       self.window?.attachedSheet == nil, !self.menuActive,
                       !(self.window?.firstResponder is NSTextView), !(self.window?.firstResponder is NSTextField),
                       event.modifierFlags.intersection([.command, .control]).isEmpty else { return event }
+                if event.keyCode == 53, event.modifierFlags.intersection([.option, .shift]).isEmpty,
+                   !event.isARepeat, owner.onEscape() { return nil }
                 if event.characters == "\\", owner.canHold { self.heldKeyCode = event.keyCode; owner.onHold(true); return nil }
                 if event.modifierFlags.intersection(.option).isEmpty, event.charactersIgnoringModifiers?.lowercased() == "i", !event.isARepeat { owner.onInformation(); return nil }
                 return event

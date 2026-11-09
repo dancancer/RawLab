@@ -3,6 +3,47 @@
 Release history is kept here rather than in the project READMEs. Detailed
 release notes include assets, installation requirements and validation limits.
 
+## [0.10.0]
+
+### Added
+
+- Full HDR tone, color, detail and effects controls, HDR CUBE looks, HDR Silver,
+  camera RAW development controls and supported desktop Bayer GPU AI denoising.
+- Runtime-gated HDR HEIF export on macOS/iOS and broader iOS ProRAW JPEG export.
+- System photo opening on all four clients, including Android photo shares and
+  forwarding Windows file opens to the running app.
+- 16-bit integer RGB PNG input on all four clients, 16-bit TIFF on
+  macOS/iOS/Windows, Windows SDR HEIF and Android SDR HEIF on Android 9+.
+- Expanded HDR Agent/MCP recipes, camera RAW/ProRAW sources, SDR exports,
+  X3F rendering-mode preservation and MCP export to filesystems without hard links.
+- Exportable local iOS error reports.
+
+### Changed
+
+- macOS and Windows Edit, Select and Preview workspaces with a larger canvas,
+  separate folder/thumbnail navigation and reusable completed previews.
+- Session-based editing without disk-revision reload locks; failed saves retain
+  adjustments for retry, with older edit records still readable.
+
+### Fixed
+
+- iPad JPEG zoom clarity, iOS format detection and consistent photo-library
+  originals/edit recovery across import entry points.
+- macOS 14 SDR opening of supported ISO/Adobe gain-map photos and mixed
+  HDR/SDR collection export; macOS/Windows raster batches with source AI enabled.
+- Saved Merrill color modes and tone settings, X3F decoder selection and
+  DCP import when an embedded tone curve is missing.
+- Neutral RAW camera fields blocking adjustment transfer to ordinary images.
+- Android JPEG video trailers/C2PA metadata.
+- Windows blank canvas before the first preview, the lens entry for ordinary
+  images, batch cancellation dropping the photo in progress, Reset All
+  reopening a stale geometry/lens draft and Windows saves failing while edit
+  records were being read.
+- Opening photos with missing HDR looks or camera profiles.
+
+Version `0.10.0`, build `19`. See the
+[release notes](docs/releases/v0.10/v0.10.0.md) for compatibility and coverage.
+
 ## [0.9.3]
 
 ### Added

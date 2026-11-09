@@ -14,6 +14,14 @@ typedef struct RawDimensions {
 
 RawDimensions rawlab_get_raw_dimensions(const char *path);
 
+typedef enum RawFileKind {
+    RAWLAB_FILE_NOT_RAW,
+    RAWLAB_FILE_RAW,
+    RAWLAB_FILE_SONY_RAW,
+} RawFileKind;
+
+RawFileKind rawlab_probe_raw_file(const char *path);
+
 #ifdef __cplusplus
 }
 #endif

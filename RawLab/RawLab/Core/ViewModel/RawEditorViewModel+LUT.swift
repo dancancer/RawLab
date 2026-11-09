@@ -65,7 +65,7 @@ extension RawEditorViewModel {
                     case .failure(let reason):
                         self.availableLUTs = bundled.options
                         self.lutMap = bundled.map
-                        self.statusMessage = reason.localizedDescription
+                        self.reportError(reason, operation: .lookImport, stage: "prepareLook", message: reason.localizedDescription)
                     }
                     self.includeIndependentRecipeLook(self.currentPreviewSettings)
                     self.isLoadingLUTs = false
@@ -75,13 +75,15 @@ extension RawEditorViewModel {
     }
 
     func importLooks(from sources: [URL], compatibilityPrompt: LookImportCoordinator.CompatibilityPrompt? = nil,
+                     dcpOptionsPrompt: LookImportCoordinator.DCPOptionsPrompt? = nil,
                      completion: @escaping (LookImportBatchResult) -> Void) {
         guard !sources.isEmpty else {
             completion(LookImportBatchResult(imported: [], failures: []))
             return
         }
         isImportingLooks = true
-        lookImportCoordinator.importLooks(from: sources, compatibilityPrompt: compatibilityPrompt) { [weak self] result in
+        lookImportCoordinator.importLooks(from: sources, compatibilityPrompt: compatibilityPrompt,
+                                          dcpOptionsPrompt: dcpOptionsPrompt) { [weak self] result in
             guard let self else { return }
             self.resultDelivery {
                 let custom = self.customLUTs(from: result.imported)
@@ -117,7 +119,8 @@ extension RawEditorViewModel {
                                                   isCompatibility: look.record.isCompatibility) : option
                     }
                     self.lutMap[id] = LUTReference(id: id, name: look.record.name, sourceURL: look.url, isCustom: true)
-                case .failure(let error): self.statusMessage = error.localizedDescription
+                case .failure(let error):
+                    self.reportError(error, operation: .lookImport, stage: "saveLook", message: error.localizedDescription)
                 }
             }
         }
@@ -132,7 +135,7 @@ extension RawEditorViewModel {
     }
 
     func isLookAvailable(for settings: RawSettings) -> Bool {
-        if settings.isHDREditing { return true }
+        if settings.isHDREditing { return settings.hdr?.missingResourceMessage == nil }
         guard settings.hasLook else { return true }
         guard let url = lutURL(for: settings) else { return false }
         return FileManager.default.isReadableFile(atPath: url.path)

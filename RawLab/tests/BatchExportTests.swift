@@ -1,5 +1,10 @@
 import Foundation
 
+// 独立模型不加载原生资源；相机配置资产由 hdr-batch 原生测试覆盖。
+enum HDRCameraProfileAssetStore {
+    @discardableResult static func url(for profile: HDRCameraProfile) throws -> URL { fatalError("unexpected native camera profile") }
+}
+
 @main
 struct BatchExportTests {
     static func check(_ condition: @autoclosure () -> Bool, _ message: String) {
@@ -416,8 +421,17 @@ struct BatchExportTests {
             let blockedDirectory = BatchFileOutputStore.root().appendingPathComponent(job.id.uuidString)
             try Data("directory blocker".utf8).write(to: blockedDirectory, options: .withoutOverwriting)
             defer { try? FileManager.default.removeItem(at: blockedDirectory) }
+            let expectedCause: NSError
+            do {
+                try FileManager.default.createDirectory(at: blockedDirectory, withIntermediateDirectories: true)
+                throw NSError(domain: "DNGPublicationRegression", code: 2)
+            } catch {
+                expectedCause = error as NSError
+            }
             var renderCount = 0
             var checkpointCount = 0
+            var loggedCause: NSError?
+            var loggedStage: String?
             let result = try BatchExportRunner.run(job: job, journalStore: nil,
                 render: { _, _ in
                     renderCount += 1
@@ -429,9 +443,16 @@ struct BatchExportTests {
                 write: { file, name, _, _ in
                     try BatchFileWriter.write(file: file, outputName: name, jobID: job.id) { _ in checkpointCount += 1 }
                 },
-                cleanup: { try? FileManager.default.removeItem(at: $0) })
+                cleanup: { try? FileManager.default.removeItem(at: $0) },
+                didFail: { error, stage in
+                    loggedCause = (error as NSError).userInfo[NSUnderlyingErrorKey] as? NSError
+                    loggedStage = stage
+                })
             try require(result.status == .failed && result.globalError != nil && result.targets[0].status == .failed,
                   "DNG directory failure during \(failureDuringRender ? "render" : "publication") is a global storage failure")
+            try require(loggedCause?.domain == expectedCause.domain && loggedCause?.code == expectedCause.code &&
+                        loggedStage == (failureDuringRender ? "render" : "publish"),
+                        "DNG global failures pass the original system domain and code to diagnostics")
             try require(result.recovered().globalError == result.globalError,
                   "DNG recovery preserves unresolved global storage failures")
             try require(result.targets[1].status == .pending && renderCount == 1 && checkpointCount == 0,

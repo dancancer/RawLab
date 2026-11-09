@@ -20,3 +20,17 @@ RawDimensions rawlab_get_raw_dimensions(const char *path) {
     dims.height = static_cast<uint32_t>(processor.getHeight());
     return dims;
 }
+
+RawFileKind rawlab_probe_raw_file(const char *path) {
+    if (!path || path[0] == '\0') {
+        return RAWLAB_FILE_NOT_RAW;
+    }
+
+    // readLensMetadata uses LibRaw identification without unpacking pixels.
+    sony2fuji::LensMetadata metadata;
+    if (sony2fuji::RAWProcessor::readLensMetadata(path, metadata) != sony2fuji::ErrorCode::Success) {
+        return RAWLAB_FILE_NOT_RAW;
+    }
+    return metadata.cameraMake == "Sony" || metadata.cameraMake == "SONY"
+        ? RAWLAB_FILE_SONY_RAW : RAWLAB_FILE_RAW;
+}

@@ -13,16 +13,21 @@ final class RawEditorViewModel: ObservableObject {
     @Published var hdrPresentation: HDRPresentation?
     @Published var hdrReference: HDRPresentation?
     @Published var sourceIsHDR=false
-    @Published var sourceSupportsCameraHDR=false
-    @Published var sourceProRAW: ProRAWSource?
-    var proRAWExportRestricted: Bool { sourceProRAW?.permitsStreamedJPEGExport == false }
-    var proRAWFullPairExportRestricted: Bool { sourceProRAW?.permitsFullSizeExport == false }
+    @Published var rawHDRSource: HDRSourceInfo?
+    var sourceSupportsCameraHDR: Bool { rawHDRSource != nil }
+    var sourceProRAW: ProRAWSource? { rawHDRSource?.proRAW }
     @Published var cameraHDRPreflight=false
     var importPreviousRevision: UUID?
     @Published var nativeImageSize: CGSize?
     @Published var basePreviewImage: UIImage?
     @Published var hasImage = false
-    @Published var statusMessage: String?
+    @Published var statusMessage: String? {
+        didSet {
+            statusHasDiagnostics = false
+            retryLegacyX3fImport = nil
+        }
+    }
+    @Published var statusHasDiagnostics = false
     @Published var retryLegacyX3fImport: ((@escaping (RawSettings) -> Void) -> Void)?
     @Published var isBusy = false
     @Published var isExportingHDR = false
@@ -54,6 +59,7 @@ final class RawEditorViewModel: ObservableObject {
         let lens: LensCorrectionSettings
         let longEdge: Int
         let hdrMode: HDRSettings.Mode?
+        let hdrCamera: HDRCameraDevelopmentSettings?
     }
     var comparisonReferenceKey: ComparisonReferenceKey?
     var basePreviewLens = LensCorrectionSettings()
@@ -83,13 +89,73 @@ final class RawEditorViewModel: ObservableObject {
         let longEdge: Int
     }
 
+    struct PreviewLUTFileIdentity: Equatable {
+        let url: URL
+        let fileNumber: UInt64?
+        let size: UInt64?
+        let modificationDate: Date?
+    }
+
+    struct PreviewCacheKey: Equatable {
+        let sourceRevision: UUID
+        let settings: RawSettings
+        let referenceKey: ComparisonReferenceKey
+        let lut: PreviewLUTFileIdentity?
+        let edge: Int
+        let quality: PreviewQuality
+        let includeHistogram: Bool
+    }
+
+    struct CompletedPreview {
+        let key: PreviewCacheKey
+        let previewImage: UIImage?
+        let basePreviewImage: UIImage?
+        var histogram: Sony2FujiProcessor.RGBHistogram?
+        // CGImage retains the same pixel data; keep its buffer metadata until analysis finishes.
+        var histogramInput: Sony2FujiProcessor.Buffer?
+        let baseHistogram: Sony2FujiProcessor.RGBHistogram?
+        let nativeImageSize: CGSize?
+        let hdrPresentation: HDRPresentation?
+        let hdrReference: HDRPresentation?
+        let basePreviewGeometry: GeometrySettings
+        let basePreviewProcessing: ProcessingIdentity
+        let basePreviewLens: LensCorrectionSettings
+        let comparisonReferenceKey: ComparisonReferenceKey?
+        let rawWhiteBalance: Sony2FujiProcessor.RawWhiteBalance?
+        let lensInfo: LensInfo?
+        let sourceOrientation: CGImagePropertyOrientation?
+
+        var estimatedMemoryBytes: Int {
+            var total = 0
+            func add(_ bytes: Int) {
+                total = bytes > Int.max - total ? Int.max : total + bytes
+            }
+            for image in [previewImage, basePreviewImage] {
+                if let cgImage = image?.cgImage { add(cgImage.bytesPerRow * cgImage.height) }
+            }
+            if let hdrPresentation { add(hdrPresentation.image.byteCount) }
+            if let hdrReference { add(hdrReference.image.byteCount) }
+            return total
+        }
+    }
+
     let processor = Sony2FujiProcessor()
     let renderQueue = DispatchQueue(label: "com.rawlab.preview", qos: .userInitiated)
     let renderStateLock = NSLock()
     @Published var sourceFile: PhotoSourceFile?
-    @Published var sourceRevision = UUID() { didSet { hslSourceRevision &+= 1; acceptedPreviewRequest = nil; closeQuickPresets() } }
+    @Published var sourceRevision = UUID() {
+        didSet {
+            hslSourceRevision &+= 1
+            acceptedPreviewRequest = nil
+            completedPreviewCache.removeAll()
+            completedPreviewCacheBytes = 0
+            closeQuickPresets()
+        }
+    }
     var sourceKind: ImageSourceKind?
-    var sourceIsX3f: Bool { sourceKind == .raw && (sourceDisplayName as NSString?)?.pathExtension.lowercased() == "x3f" }
+    var sourceIsX3f: Bool {
+        sourceKind == .raw && sourceFile?.withReadAccess { $0.pathExtension.lowercased() == "x3f" } == true
+    }
     var sourceIdentity: PhotoIdentity?
     @Published var sourceDisplayName: String?
     var restoredSettings: RawSettings?
@@ -99,7 +165,7 @@ final class RawEditorViewModel: ObservableObject {
     var editRecordMetadata: EditorRecordMetadata?
     var persistedEditorSettings: PersistedEditorSettings?
     var failedDraftSource: EditorEditSource?
-    var loadedEditRecord: VersionedPhotoEdit?
+    var loadedEditRecord: PhotoEditRecord?
     let batchSelection = IOSBatchSelection()
     @Published var collectionExportPreparing = false
     @Published var collectionExportFreezing = false
@@ -112,7 +178,6 @@ final class RawEditorViewModel: ObservableObject {
     var adjustmentSourceValidator: (() throws -> Void)?
     var hasAdjustmentDraft = false { didSet { if hasAdjustmentDraft && quickPresetState.isPreparing { cancelQuickPreset() } } }
     @Published var adjustmentInteractionRejected = false
-    @Published var adjustmentReloadRequired = false
     @Published var adjustmentHistoryRevision = UUID()
     @Published var adjustmentRestoredSettings: RawSettings?
     @Published var adjustmentHistoryResults: [IOSAdjustmentTransferOutcome] = []
@@ -139,6 +204,9 @@ final class RawEditorViewModel: ObservableObject {
     var previewWorkItem: DispatchWorkItem?
     var histogramWorkItem: DispatchWorkItem?
     var lastPreviewRequest: PreviewRequest?
+    var completedPreviewCache: [CompletedPreview] = []
+    let completedPreviewCacheLimit = 3
+    var completedPreviewCacheBytes = 0
     var previewLongEdge = 1280
     var requestedPreviewLongEdge = 1280
     var previewResizeWorkItem: DispatchWorkItem?
@@ -154,6 +222,7 @@ final class RawEditorViewModel: ObservableObject {
     var rawLUTApplied = false
 
     var editPersistence: EditPersistence?
+    var openEditPersistence: () throws -> EditPersistence = EditPersistence.appStore
     let presetStore: AdjustmentPresetStore
 
     init(editPersistence: EditPersistence? = nil,
@@ -174,7 +243,11 @@ final class RawEditorViewModel: ObservableObject {
             recentLooksURL = store.directory.appendingPathComponent("recent-looks.json")
             recentLooks = RecentLooks.load(from: recentLooksURL!)
         }
-        catch { self.editPersistence = nil; editSaveState = .failed(error.localizedDescription) }
+        catch {
+            self.editPersistence = nil
+            ErrorDiagnostics.log(error, operation: .editPersistence, stage: "openStore")
+            editSaveState = .failed(error.localizedDescription)
+        }
     }
 
 }

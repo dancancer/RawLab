@@ -63,7 +63,7 @@ Mac 的 UI 百分比、native snapshot 或 Agent render recipe。
 | `light.contrast`、`color.saturation` | `[0,2]` multiplier，默认 1；Mac 的百分比偏移只在 adapter 中换算。 |
 | `light.highlights/shadows/s_curve` | `[-1,1]`；highlights 使用 core 方向，Mac UI 正号在 adapter 中翻转。 |
 | `tone.black_point`、`tone.white_point`、`color.vibrance` | `[-100,100]`，默认 0，独立于旧 recipe strength。前两项归 light，鲜艳度归 color；common 默认包含，缺字段保留目标。仅在 native/Agent 边界除以 100。 |
-| `light.exposure_mode` | `scene/preview/sensor`；raster 来源只允许 sensor。 |
+| `light.exposure_mode` | `scene/preview/sensor`；raster 来源只允许 sensor。raster 目标接受三种模式并保持 sensor，因为 RAW 曝光基准对普通图片无意义。 |
 | `detail.sharpening` | `[0,2]`。 |
 | `color.hsl.<axis>.<channel>` | 24 个独立数值，`[-100,100]`，保留小数。 |
 | `color.grading.shadows/midtones/highlights` | 每个明暗区为完整 `{hue,saturation}` 对象；hue 为 `[0,360)` 度，saturation 为 `[0,100]`。即使 saturation 为 0，仍保留待用 hue；不随配方强度缩放。 |
@@ -90,6 +90,20 @@ raw 与 chroma 不因选择 wavelet 而被偷偷改写，其有效路径仍由�
 普通图片目标只接受默认的 lens 请求：distortion/tca 为 false、auto_crop 为 true、profile_id
 为 null。即使畸变/TCA 未启用，显式 profile 或非默认 auto_crop 也必须报告不兼容，不能
 通过 raster 的有效值投影把选中请求丢弃后报告未变化。
+
+RAW 来源到普通图片目标的 WB 也按选中请求判断：`mode=camera`、Kelvin/tint 为 null
+属于无效果请求；有 recipe 上下文时，tint 的中性编码为数值 0。部分选择仅包含这些
+中性分量时同样放行，保留目标固有的 `none` WB，不复制来源相机校准。
+完整配方（选中 recipe look 及对应版本的全部依赖）另允许 `camera`、空 Kelvin 和等于
+当前内置配方目录 `tintDelta` 的相对 tint，与在普通图片上直接套该配方一致；不按来源
+强度缩放逻辑 tint，强度为 0 时也保留它。完整配方必须写入来源的逻辑 tint，包括 0，
+覆盖目标旧配方的 tint；普通图片的有效 WB 仍为 `none`，逻辑相对 tint 留待跨 RAW 复用。
+固定 Kelvin、固定 tint、手动改过的非零 recipe 相对 tint，以及未选择完整配方的非零
+相对 tint 仍报不兼容；来源强度为 0 也不能静默丢弃这些请求。非零
+`detail.denoise.raw_level` 等其他不支持请求继续阻挡。
+默认范围包含 WB 和曝光基准，不能因为无效果字段或完整配方自带的相对 tint 而拒绝
+其他可表达的显影调整。单独中性 WB 和任意曝光基准本身不产生修改；完整配方的逻辑
+相对 tint 变化必须参与结果比较，不能保留目标旧值后误报未变化。
 
 WB 的模式、Kelvin 和 tint 可独立选择。只选固定 Kelvin/tint 时，目标必须具有可表达
 该值的模式；不能为了成功而重置未选的 WB 值。比如固定 Kelvin 粘到 camera 模式而未选

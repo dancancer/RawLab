@@ -27,12 +27,13 @@ struct IOSBatchSelectionView: View {
                         Text(L10n.text("选择照片后同步所需调整，也可进入单张微调，再返回原集合。"))
                             .font(.footnote).foregroundStyle(.secondary)
                         HStack {
-                            PhotosPicker(selection: $pickerItems, matching: .images, preferredItemEncoding: .current) {
+                            PhotosPicker(selection: $pickerItems, matching: .images, preferredItemEncoding: .current, photoLibrary: .shared()) {
                                 Label(L10n.text("添加照片"), systemImage: "plus")
                             }.accessibilityIdentifier("collection.photos")
                             Spacer()
                             Button(L10n.text("从文件导入")) { showFiles = true }.accessibilityIdentifier("collection.files")
                         }
+                        .buttonStyle(.borderless)
                         HStack {
                             Button(L10n.text("全选")) { collection.selection.selectAll(true) }
                             Spacer()
@@ -77,11 +78,14 @@ struct IOSBatchSelectionView: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) {
                 Button(L10n.text("关闭")) { dismiss() }.disabled(loading)
             } }
-            .fileImporter(isPresented: $showFiles, allowedContentTypes: PhotoImportFile.supportedContentTypes,
+            .fileImporter(isPresented: $showFiles, allowedContentTypes: PhotoImportFile.photoPickerContentTypes,
                           allowsMultipleSelection: true) { result in
                 switch result {
                 case .success(let urls): loadTask = Task { await addFiles(urls) }
-                case .failure(let error): message = error.localizedDescription
+                case .failure(let error):
+                    ErrorDiagnostics.log(error, operation: .adjustment, stage: "filePicker",
+                                         context: ["workflow": "batchSelection", "entryPoint": "files"])
+                    message = error.localizedDescription
                 }
             }
             .onChange(of: pickerItems) { _, items in
@@ -128,10 +132,7 @@ struct IOSBatchSelectionView: View {
         for item in items {
             guard !Task.isCancelled else { return }
             do {
-                let source = try await PhotoImportFile.load(from: item)
-                defer { PhotoImportFile.release(source.url) }
-                let identity = item.itemIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
-                let photo = try await model.retainAdjustmentPhoto(source, identity: identity)
+                let photo = try await model.loadAdjustmentPhoto(from: item, workflow: "batchSelection")
                 guard !Task.isCancelled else { return }
                 collection.append(photo)
             } catch { appendFailure(L10n.text("选择照片…"), error) }
@@ -142,12 +143,8 @@ struct IOSBatchSelectionView: View {
         defer { loading = false }
         for url in urls {
             guard !Task.isCancelled else { return }
-            let access = url.startAccessingSecurityScopedResource()
-            defer { if access { url.stopAccessingSecurityScopedResource() } }
             do {
-                let source = try PhotoImportFile.retainSource(url)
-                defer { PhotoImportFile.release(source.url) }
-                let photo = try await model.retainAdjustmentPhoto(source)
+                let photo = try await model.loadAdjustmentPhoto(fromFile: url, workflow: "batchSelection")
                 guard !Task.isCancelled else { return }
                 collection.append(photo)
             } catch { appendFailure(url.lastPathComponent, error) }
@@ -170,26 +167,33 @@ private struct IOSCollectionSyncView: View {
     @State private var fields: Set<AdjustmentTransferField>
     @State private var synchronization: IOSCollectionSynchronization?
     @State private var message: String?
-    private var sourceSettings: RawSettings {
-        model.loadedEditRecord?.state?.settings ?? model.sourceDefaultSettings
+    private var sourceSettings: Result<RawSettings, Error> {
+        Result { try model.loadedEditRecord?.state?.settings ?? model.sourceDefaultSettings }
     }
     init(model: RawEditorViewModel, collection: IOSBatchSelection, settings: RawSettings,
          resolveDraft: @escaping (String, Bool) -> Bool) {
         self.model=model; self.collection=collection; self.settings=settings; self.resolveDraft=resolveDraft
-        let source=model.loadedEditRecord?.state?.settings ?? model.sourceDefaultSettings
-        _fields=State(initialValue:source.isHDREditing ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common)
+        let source = Result { try model.loadedEditRecord?.state?.settings ?? model.sourceDefaultSettings }
+        switch source {
+        case .success(let source):
+            _fields=State(initialValue:source.isHDREditing ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common)
+        case .failure:
+            _fields=State(initialValue:[])
+        }
     }
     var body: some View {
-        Group {
+        let source = sourceSettings
+        return Group {
             if let synchronization {
                 IOSAdjustmentTransferView(model: model, kind: .paste, settings: settings, synchronization: synchronization)
             } else {
                 NavigationStack {
                     Form {
+                        if case .success(let sourceSettings) = source {
                         IOSAdjustmentScopeEditor(scope: $scope, fields: $fields,
                             preview: Result { try model.previewAdjustmentPayload(scope: scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields), settings: sourceSettings) },
                             lookName: model.adjustmentSummaryLookName, errorMessage: { model.adjustmentErrorMessage($0) }, titleKey: "同步范围", sourceName: model.sourceDisplayName,
-                                                 allowed: sourceSettings.isHDREditing ? AdjustmentTransferField.hdrSupported : AdjustmentTransferField.legacyFields)
+                                                 allowed: model.adjustmentTransferFields(for: sourceSettings))
                         Section {
                             Text(L10n.format("目标：%@ 张照片", String(collection.selection.targets(excluding: model.sourceIdentity?.key).count)))
                             Text(L10n.text("来源照片不参与同步。"))
@@ -208,12 +212,16 @@ private struct IOSCollectionSyncView: View {
                                 .accessibilityIdentifier("collection.sync.prepare")
                         }
                         if let message { Section { Text(message) } }
+                        } else if case .failure(let error) = source {
+                            Section { Text(model.adjustmentErrorMessage(error)) }
+                        }
                     }
                     .navigationTitle(L10n.text("同步调整")).navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("取消")) { dismiss() } } }
                 }
             }
-        }.onChange(of:sourceSettings.isHDREditing) { _, isHDR in
+        }.onChange(of:(try? source.get())?.isHDREditing) { _, isHDR in
+            guard let isHDR else { return }
             fields=isHDR ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common
         }
     }
@@ -243,8 +251,11 @@ private struct IOSCollectionExportView: View {
                 Section {
                     Text(L10n.text("将按每张照片已保存的调整导出。跳过只影响本次导出。"))
                     Picker(L10n.text("格式"), selection: $format) {
-                        ForEach([BatchOutputFormat.jpeg, .renderedDNG], id: \.self) { Text($0.title).tag($0) }
-                    }
+                        ForEach([BatchOutputFormat.jpeg, .hdrJPEG, .renderedDNG], id: \.self) { Text($0.title).tag($0) }
+                        if HDRImage.heifExportAvailable {
+                            Text(BatchOutputFormat.hdrHEIF.title).tag(BatchOutputFormat.hdrHEIF)
+                        }
+                    }.accessibilityIdentifier("collection.export.format")
                     ExportSizePicker(longEdge: $longEdge, onValidityChanged: { sizeValid = $0 })
                 }
                 Section {
@@ -262,7 +273,8 @@ private struct IOSCollectionExportView: View {
                     if busy { ProgressView(L10n.text("正在准备导出…")).accessibilityIdentifier("collection.export.checking") }
                     if let message = model.collectionExportError ?? message { Text(message).foregroundStyle(.orange) }
                 }
-            }.disabled(busy)
+            }.accessibilityIdentifier("collection.export.form")
+                .disabled(busy)
                 .navigationTitle(L10n.text("按每张调整导出…")).navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.text(busy ? "取消检查" : "取消")) {

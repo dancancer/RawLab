@@ -61,70 +61,16 @@ public partial class MainWindow
     {
         ExportJpeg.Header=Loc.Text("JPEG…");
         ExportPng.Header=Loc.Text("PNG · 16-bit…");
-        foreach(var (button,direction,group) in new[] {
-            (FilmScrollLeft,"向左滚动{0}","胶片"),(FilmScrollRight,"向右滚动{0}","胶片"),
-            (RecipeScrollLeft,"向左滚动{0}","大师配方"),(RecipeScrollRight,"向右滚动{0}","大师配方") })
-        {
-            var label=Loc.Format(direction,Loc.Text(group));
-            button.ToolTip=label;
-            AutomationProperties.SetName(button,label);
-        }
         RefreshStateToolTips();
     }
-    private void RefreshStateToolTips()
+    private void ClippingClicked(object sender,RoutedEventArgs e)
     {
-        HistogramButton.ToolTip=HistogramSurface.Visibility==Visibility.Visible ?
-            Loc.Text((histogramCompact ? HistogramPopup.IsOpen : histogramExpanded) ? "收起直方图" : "展开直方图") : null;
-        AdjustToggleButton.ToolTip=Loc.Text(AdjustmentPanel.Visibility==Visibility.Visible ? "收起调整栏" : "展开调整栏");
-    }
-    private EditorAdjustmentTool? hiddenTransformTool;
-    private void DockToggle(object sender,RoutedEventArgs e)
-    {
-        if(file==null || pendingAllReset!=null)return;
-        CloseQuickPresets();
-        CancelParameterInputs();
-        var visible=AdjustmentPanel.Visibility==Visibility.Visible;
-        if(visible) {
-            var previousTool=transform.Active ? CurrentTool : (EditorAdjustmentTool?)null;
-            var previousGroup=expandedGroup;
-            if(!ResolveTransformDraft())return;
-            hiddenTransformTool=previousTool;expandedGroup=previousGroup;
-        } else if(hiddenTransformTool is {} tool) {
-            hiddenTransformTool=null;SelectTool(tool);
-        }
-        if(visible && expandedGroup!=null)dockHeight=DockRow.ActualHeight;
-        AdjustmentPanel.Visibility=visible ? Visibility.Collapsed : Visibility.Visible;
-        AdjustmentSplitter.Visibility=visible ? Visibility.Collapsed : Visibility.Visible;
-        DockRow.MinHeight=visible || expandedGroup==null ? 0 : 216;
-        DockRow.Height=visible ? new(0) : expandedGroup==null ? GridLength.Auto : new(dockHeight);
-        RefreshHslTarget();
-        AdjustmentSplitter.Visibility=visible || expandedGroup==null ? Visibility.Collapsed : Visibility.Visible;
-        SplitterRow.Height=new(visible || expandedGroup==null ? 0 : 6);
+        clipping = !clipping;
+        NeutralCanvas.ShowClipping = ResultCanvas.ShowClipping = clipping;
+        RefreshClippingMask();
+        RefreshHDRPresentation();
         RefreshControls();
-        RefreshStateToolTips();
-        UpdateDockMinimum();
     }
-    private void UpdateDockMinimum()
-    {
-        if(resizingDock)return;
-        if(AdjustmentPanel.Visibility==Visibility.Visible && expandedGroup!=null && EditorArea.ActualHeight>0)
-        {
-            DockRow.MinHeight=216;
-            DockRow.MaxHeight=Math.Max(216,EditorArea.ActualHeight-166);
-            var complex=quickPresetsVisible || choosingFilm || choosingRecipes || choosingDenoise || choosingLens || choosingGeometry ||
-                choosingHsl || choosingGrading || choosingWhiteBalance || choosingPhotoEffects || selectedParameter==Parameter.ToneCurve;
-            dockHeight=workspaceLayout.PanelHeight(complex,EditorArea.ActualHeight);
-            DockRow.Height=new(dockHeight);
-        }
-        PanelAutomatic.Visibility=workspaceLayout.IsAutomatic ? Visibility.Collapsed : Visibility.Visible;
-    }
-    private void HistogramClicked(object sender,RoutedEventArgs e)
-    {
-        if(histogramCompact)HistogramPopup.IsOpen=!HistogramPopup.IsOpen;
-        else histogramExpanded=!histogramExpanded;
-        RefreshHistogramWorkspace();
-    }
-    private void ClippingClicked(object sender,RoutedEventArgs e) { clipping=!clipping;NeutralCanvas.ShowClipping=ResultCanvas.ShowClipping=clipping;NeutralCanvas.InvalidateVisual();ResultCanvas.InvalidateVisual();RefreshControls();Schedule(); }
     // 工具栏下拉菜单贴着按钮下沿弹出；默认的 MousePoint 在键盘打开时会跑到鼠标所在的任意位置
     private void ZoomClicked(object sender,RoutedEventArgs e) { if(sender is Button button && button.ContextMenu is {} menu){menu.PlacementTarget=button;menu.Placement=PlacementMode.Bottom;menu.IsOpen=true;} }
     private void FitClicked(object sender,RoutedEventArgs e) {CancelViewingInput();if(!transform.Active)viewport.Fit();}
@@ -142,11 +88,13 @@ public partial class MainWindow
         if(e.Key==Key.Escape && quickPresetsVisible){CloseQuickPresets();e.Handled=true;return;}
         if(e.Key==Key.Escape && hslTargetEnabled){SetHslTargetMode(false,hslTargetAxis);e.Handled=true;return;}
         if(e.Key==Key.Escape && editGesture!=null){CancelParameterInputs();CancelEditGesture();e.Handled=true;return;}
+        if(e.Key==Key.Escape && DismissWorkspaceTransient()){e.Handled=true;return;}
         if(e.Key==Key.Z && Keyboard.Modifiers==ModifierKeys.Control){RunPhotoHistory(true);e.Handled=true;return;}
         if(e.Key==Key.Y && Keyboard.Modifiers==ModifierKeys.Control || e.Key==Key.Z && Keyboard.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift))
             {RunPhotoHistory(false);e.Handled=true;return;}
         if(e.Key==Key.C && Keyboard.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift)){CopyAdjustmentsClicked(sender,e);e.Handled=true;return;}
         if(e.Key==Key.V && Keyboard.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift)){PasteAdjustmentsClicked(sender,e);e.Handled=true;return;}
+        if(!ShowsPhotoWorkspace && !(e.Key==Key.O && Keyboard.Modifiers==ModifierKeys.Control))return;
         if((viewingKey is Key.I or Key.Oem5) && (ViewInputBlocked || Keyboard.Modifiers!=ModifierKeys.None))return;
         if(viewingKey==Key.Oem5){if(startsBeforeKey)BeginHoldingBefore();e.Handled=true;return;}
         if(e.Key==Key.O && Keyboard.Modifiers==ModifierKeys.Control)OpenClicked(sender,e);
@@ -244,6 +192,7 @@ public partial class MainWindow
         updateQuitApproved=false;
         CancelParameterInputs();CancelViewingInput();
         if(!ResolveTransformDraft() || !SaveEdits()){e.Cancel=true;return;}
+        if(Application.Current is App app)app.SetSystemPhotoAdmission(false);
         closing=true;
         ResetAITask();
         previewResize.Stop();
@@ -253,6 +202,7 @@ public partial class MainWindow
             batch.Close();
             if(batch.IsVisible && !batch.Busy){e.Cancel=true;RecoverFailedClose(batch);return;}
         }
+        RefreshViewingFrames();
         thumbnailRefresh.Stop();foreach(var entry in visibleThumbnails)entry.ReleaseThumbnail();visibleThumbnails.Clear();
         if(scheduler.Busy || exporting || !aiJob.Completion.IsCompleted){e.Cancel=true;closing=true;IsEnabled=false;SetStatus(() => Loc.Text("正在完成当前任务后关闭…"));return;}
         e.Cancel = true;

@@ -17,7 +17,7 @@ internal static partial class EditorReviewChecks
                 var window=Open("workspace-all-"+choice+"-"+confirm);DispatcherTimer? timer=null;
                 try {
                     var state=Get<Adjustments>(window,"settings");state.Processing=ProcessingIdentity.Legacy;state.Set(Parameter.Exposure,.7);
-                    Invoke(window,"MarkEdited");Invoke(window,"SaveEdits");Invoke(window,"Schedule",false);
+                    Invoke(window,"MarkEdited");Invoke(window,"SaveEdits");Invoke(window,"Schedule",false,false);
                     InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
                     Click(window.GeometryCategory);
                     InteractionChecks.PumpUntil(()=>Get<bool>(window,"transformPreviewReady") && !Get<DispatcherTimer>(window,"previewResize").IsEnabled);

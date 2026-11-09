@@ -285,8 +285,7 @@ class BatchExportModel(
             } catch (error: Exception) { destination.delete(); throw error }
         }
         val hdrInfo = com.rawlab.android.engine.NativeHDRBridge.probeSource(destination, inputKind == PhotoInputKind.RAW)
-        val hdr = hdrInfo != null && (!hdrInfo.isCameraRaw || hdrInfo.isProRAW)
-        return BatchTarget(identity, destination, name, uri.toString(), inputKind, sourceIsHDR = hdr)
+        return BatchTarget(identity, destination, name, uri.toString(), inputKind, sourceIsHDR = hdrInfo != null)
     }
 
     private fun displayName(uri: Uri): String = runCatching {
@@ -308,10 +307,8 @@ class BatchExportModel(
     }
 
     private fun hdrPreparation(source: BatchSourceSnapshot): BatchHDRPreparation = BatchHDRPreparation(source,
-        EditStore(File(context.filesDir,"edits"))::versionedState,storage::lookPath,
-        { file -> com.rawlab.android.engine.NativeHDRBridge.probeSource(file, !com.rawlab.android.photo.HDRSourceInfo.mayContainGainMap(file))
-            ?.let { !it.isCameraRaw || it.isProRAW } == true },
-        { file -> com.rawlab.android.engine.NativeHDRBridge.probeCameraRaw(file)?.isProRAW == true })
+        EditStore(File(context.filesDir,"edits"))::readState,storage::lookPath,
+        com.rawlab.android.engine.NativeHDRBridge::probeSource, storage.hdrLookDirectory, storage.hdrCameraProfileDirectory)
 
     private fun inputFile(jobID: String, identity: PhotoIdentity, name: String): File {
         val root = File(context.filesDir, "RawLab/BatchJobs/${jobID}/inputs")
@@ -336,11 +333,13 @@ class BatchExportModel(
                     if (gpuMode == NativeProcessor.FORCE) throw com.rawlab.android.engine.HDRProcessingException(2,13,6)
                     val info = requireNotNull(com.rawlab.android.engine.NativeHDRBridge.probeSource(target.sourceFile, target.inputKind == PhotoInputKind.RAW))
                     if (info.isProRAW) settings.requireProRAWDecoder()
-                    val decoded = if (info.isCameraRaw) it.decodeHDRCamera(target.sourceFile, info, 1280)
+                    val decoded = if (info.isCameraRaw) it.decodeHDRCamera(target.sourceFile, info, 1280,
+                        camera = requireNotNull(settings.hdr).cameraSettings, profileDirectory = storage.hdrCameraProfileDirectory)
                         else com.rawlab.android.engine.NativeHDRBridge.decode(target.sourceFile, info, 1280)
                     decoded.use { source ->
                         it.setGpuMode(NativeProcessor.CPU)
-                        it.renderHDR(source, requireNotNull(settings.hdr).copy(geometry = settings.geometry), 1280).use { pair -> pair.sdrBitmap() }
+                        it.renderHDR(source, requireNotNull(settings.hdr).copy(geometry = settings.geometry), 1280,
+                            lookDirectory = storage.hdrLookDirectory).use { pair -> pair.sdrBitmap() }
                     }
                 } else it.preview(target.sourceFile, if(prepared!=null)prepared.lookFile else snapshot.lookFor(target), settings, 1280, true, target.inputKind).bitmap()
             }

@@ -14,7 +14,7 @@ internal static class TransformUiChecks
     internal static void Run(string repo,string raw,Action<bool,string> check)
     {
         if(File.Exists(Path.Combine(BatchJournal.DefaultDirectory,"job.json")))throw new InvalidOperationException("Preserve existing batch job; use an isolated test account.");
-        var output=Path.Combine(repo,"build","windows-v08-ui");Directory.CreateDirectory(output);
+        var output=Path.Combine(Path.GetFullPath(repo),"build","windows-v08-ui");Directory.CreateDirectory(output);
         var directory=Path.Combine(output,Guid.NewGuid().ToString("N"));Directory.CreateDirectory(directory);
         var photo=Path.Combine(directory,"photo"+Path.GetExtension(raw));var other=Path.Combine(directory,"other"+Path.GetExtension(raw));
         File.Copy(raw,photo);File.Copy(raw,other);
@@ -60,7 +60,9 @@ internal static class TransformUiChecks
                 .TransformBounds(new Rect(window.GeometrySurface.RenderSize));
             var actionBounds=window.DraftActions.TransformToAncestor(window.AdjustmentPanel)
                 .TransformBounds(new Rect(window.DraftActions.RenderSize));
-            check(geometryBounds.Height>40 && actionBounds.Top>=geometryBounds.Bottom-.5 &&
+            var toolViewport = window.ToolsScroller.TransformToAncestor(window.AdjustmentPanel)
+                .TransformBounds(new Rect(window.ToolsScroller.RenderSize));
+            check(geometryBounds.Height>40 && actionBounds.Top>=toolViewport.Bottom-.5 &&
                 actionBounds.Bottom<=window.AdjustmentPanel.ActualHeight,
                 "Crop parameters and fixed draft actions occupy separate visible regions");
             window.SetComparisonMode(true,true);window.BeforeViewMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
@@ -82,9 +84,9 @@ internal static class TransformUiChecks
             }
             Click((Button)window.GeometryEditor.FindName("ResetGeometry"));InteractionChecks.PumpUntil(()=>PreviewReady(window));
             var previousLook=Get<string>(window,"lut");Set(window,"lut",Path.Combine(directory,"missing.cube"));
-            typeof(MainWindow).GetMethod("Schedule",Private)!.Invoke(window,[false]);
+            typeof(MainWindow).GetMethod("Schedule",Private)!.Invoke(window,[false,false]);
             check(!window.ApplyDraftButton.IsEnabled && draft.Active,"Failed draft preview invalidates a previously ready Apply gate");
-            Set(window,"lut",previousLook);typeof(MainWindow).GetMethod("Schedule",Private)!.Invoke(window,[false]);InteractionChecks.PumpUntil(()=>PreviewReady(window));
+            Set(window,"lut",previousLook);typeof(MainWindow).GetMethod("Schedule",Private)!.Invoke(window,[false,false]);InteractionChecks.PumpUntil(()=>PreviewReady(window));
             var width=(TextBox)window.GeometryEditor.FindName("CropWidth");Commit(width,"60");
             check(draft.Geometry.CropWidth==.6 && Get<Adjustments>(window,"settings").Capture().SameAs(original) && store.Find(photo)!.Settings.SameAs(original),
                 "Crop preview changes neither committed settings nor saved record");
@@ -161,9 +163,9 @@ internal static class TransformUiChecks
                 Get<string>(window,"lut")==normalLook && !File.ReadAllBytes(Path.Combine(directory,"edits","edits.json")).SequenceEqual(recordBeforeReset) &&
                 store.Find(photo)!.Settings.SameAs(Get<Adjustments>(window,"settings").Capture()) && history.Transactions.Count==historyBeforeReset+1,
                 "Ordinary reset preserves resolved look and commits one durable history component and preview");
-            var resetReceipt=store.VersionedState(photo);
+            var resetReceipt=store.ReadState(photo);
             InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);Invoke(window,"SaveEdits");
-            check(store.VersionedState(photo).SameAs(resetReceipt) && history.Transactions.Count==historyBeforeReset+1,
+            check(store.ReadState(photo).SameAs(resetReceipt) && history.Transactions.Count==historyBeforeReset+1,
                 "Preview completion and the former autosave boundary cannot append another reset save");
             var noChange=window.PrepareReset(new(EditorResetKind.Group,EditorAdjustmentGroup.Light))!;
             normalPreview=PreviewRequests(window);normalRevision=Get<long>(window,"editRevision");

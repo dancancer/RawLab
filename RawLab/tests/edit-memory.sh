@@ -13,3 +13,4 @@ swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" \
     "$ROOT/RawLab/tests/EditMemoryTests.swift" \
     -o "$OUT/edit-memory"
 "$OUT/edit-memory"
+bash "$ROOT/RawLab/tests/error-diagnostics.sh"

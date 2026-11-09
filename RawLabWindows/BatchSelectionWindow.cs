@@ -192,7 +192,7 @@ internal sealed class CollectionExportDialog : Window
             review=prepared;RefreshRows();
             if(review.Ready){editor.FreezeCollectionExport(review,autoStart:true);DialogResult=true;return;}
             message.Text=review.Rows.Count==0 ? Loc.Text("没有可导出的照片，请取消跳过或重新选择。") : Loc.Format("实际导出 {0} 张",review.Rows.Count);
-        }catch(Exception error){if(!closed && request==generation){Invalidate();message.Text=error.Message;}}
+        }catch(Exception error){if(!closed && request==generation){Invalidate();message.Text=AdjustmentTransferPresentation.Detail(error);}}
         finally{if(request==generation){checking=false;configuration.IsEnabled=rows.IsEnabled=true;confirm.IsEnabled=editor.Collection.SelectedPhotos.Any(photo=>!skipping.Contains(photo.ID));}}
     }
 }

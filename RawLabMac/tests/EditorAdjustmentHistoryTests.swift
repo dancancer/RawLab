@@ -75,7 +75,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try check(model.settings.saturation == 17 && model.dirty,
             "retry receipts never replace later unsaved edits on an already successful photo")
         model.cancelAdjustmentInteraction(); try rendered(model)
-        model.settings.saturation = 20; try check(model.saveEdits(), "editing after paste uses the new storage revision")
+        model.settings.saturation = 20; try check(model.saveEdits(), "editing after paste saves the new photo state")
         model.undoAdjustment(); try rendered(model)
         try check(model.settings.saturation == 0 && model.settings.exposure == 0.6, "ordinary undo leaves earlier paste intact")
         model.undoAdjustment(); try rendered(model)
@@ -95,15 +95,11 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         let count = model.adjustmentSession!.transactions.count
         _ = try model.copyAdjustments(scope: .all)
         try check(model.adjustmentSession!.transactions.count == count, "copy is not a photo edit")
-        let external = try EditPersistence(directory: root.appendingPathComponent("edits"))
-        var other = model.editState(settings: model.settings); other.settings.exposure = 3
-        try external.save(first, state: other)
-        model.settings.exposure = 2
-        try check(!model.saveEdits() && model.dirty && model.saveError != nil,
-            "external changes block ordinary saves and preserve unsaved input")
-        let externallySaved = try external.state(for: first)
-        try check(model.adjustmentSession!.transactions.count == count && externallySaved?.settings.exposure == 3,
-            "failed save neither overwrites storage nor creates history")
+        model.settings.exposure = 3
+        try check(model.saveEdits() && !model.dirty && model.saveError == nil,
+            "a later ordinary edit remains saveable in the single editor session")
+        try check(model.editStore!.state(for: first)?.settings.exposure == 3,
+            "the later ordinary edit becomes the current saved state")
         try recipeLUTChecks(root: root, first: first, second: second)
         try historyErrorChecks(root: root, first: first)
         try presetChecks(root: root, first: first, second: second)
@@ -116,8 +112,13 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         aiBatch.add([second])
         let deadline = Date().addingTimeInterval(30)
         while aiBatch.validating && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
-        try check(!aiBatch.validating && aiBatch.job.items.first?.selected == false && aiBatch.job.items.first?.validationError != nil,
-            "AI batch preflight excludes raster targets before export")
+        try check(!aiBatch.validating && aiBatch.job.items.first?.selected == true && aiBatch.job.items.first?.validationError == nil,
+            "AI batch preflight keeps raster targets selected without validation errors")
+        let rasterItem = aiBatch.job.items[0]
+        try check(aiBatch.job.settings.aiDenoiseEnabled && !aiBatch.job.snapshot(for: rasterItem).settings.aiDenoiseEnabled,
+            "AI batch export disables AI for raster targets while retaining the source settings")
+        try check(aiBatch.notice(for: rasterItem) == L10n.text("普通图片未使用 AI 降噪"),
+            "AI batch raster targets explain that AI denoise was not used")
     }
 
     static func curveNavigationChecks(root: URL, photo: URL) throws {
@@ -231,19 +232,13 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try check(model.settings.exposure == -0.2 && model.canRedoAdjustment, "native Undo restores the pre-preset photo")
         model.redoAdjustment(); try rendered(model)
         try check(model.settings.exposure == 0.7, "native Redo restores the same preset component")
-        let externalStore = try EditPersistence(directory: directory)
-        var externalSettings = model.settings; externalSettings.exposure = 1.8
-        try externalStore.save(second, state: model.editState(settings: externalSettings))
-        let externalReceipt = try externalStore.versionedState(for: second)
-        let beforeConflictHistory = model.adjustmentSession!.transactions.count
-        do { _ = try model.capturePresetAdjustments(scope: .custom([.exposure])); throw NSError(domain: "Expected stale preset capture failure", code: 1) }
-        catch EditPersistenceConflict.changed {}
-        try check(try externalStore.versionedState(for: second) == externalReceipt && model.presetStore.list() == [preset] &&
-            model.adjustmentSession!.transactions.count == beforeConflictHistory && model.adjustmentClipboard == clipboard && model.saveError == nil,
-            "preset capture rejects an external photo revision without changing saved state, library, history, clipboard or photo-save status")
-        model.open(first); try rendered(model)
-        model.open(second); try rendered(model)
-        try check(model.settings.exposure == 1.8, "switching away and back after stale preset capture adopts the external settings")
+        model.settings.exposure = 1.8
+        try check(model.saveEdits(), "a later local edit remains saveable before preset capture")
+        let beforePresetCaptureHistory = model.adjustmentSession!.transactions.count
+        let recaptured = try model.capturePresetAdjustments(scope: .custom([.exposure]))
+        try check(recaptured.fields == [.exposure] && model.presetStore.list() == [preset] &&
+            model.adjustmentSession!.transactions.count == beforePresetCaptureHistory && model.adjustmentClipboard == clipboard && model.saveError == nil,
+            "preset capture uses the current in-memory saved state without a disk revision gate")
         model.editStore = try EditPersistence(directory: directory, writeData: { _, _ in throw CocoaError(.fileWriteUnknown) })
         model.settings.exposure = 1.3
         do { _ = try model.capturePresetAdjustments(scope: .custom([.exposure])); throw NSError(domain: "Expected preset source save failure", code: 1) }
@@ -282,16 +277,20 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
 
     static func historyErrorChecks(root: URL, first: URL) throws {
         let directory = root.appendingPathComponent("history-errors")
+        // 历史操作不再比较磁盘上的调整记录，改用原图身份变化触发失败；只改这张专用副本，不影响后续用例。
+        let photo = root.appendingPathComponent("history-error-source").appendingPathExtension(first.pathExtension)
+        try? FileManager.default.removeItem(at: photo)
+        try FileManager.default.copyItem(at: first, to: photo)
         let model = EditorModel(lookDirectory: root.appendingPathComponent("error-looks"), editDirectory: directory,
             batchDirectory: root.appendingPathComponent("error-batch"))
-        model.open(first); try rendered(model)
+        model.open(photo); try rendered(model)
         model.settings.exposure = 1; try check(model.saveEdits(), "history error fixture saves")
-        var replacement = model.editState(settings: model.settings); replacement.settings.exposure = 2
-        try EditPersistence(directory: directory).save(first, state: replacement)
+        let modified = try FileManager.default.attributesOfItem(atPath: photo.path)[.modificationDate] as! Date
+        try FileManager.default.setAttributes([.modificationDate: modified.addingTimeInterval(60)], ofItemAtPath: photo.path)
         model.undoAdjustment()
         try check(model.saveError == nil && model.adjustmentSheet == .history,
             "keyboard history failure opens history recovery without pretending the photo is unsaved")
-        try check(model.pendingAdjustmentHistory?.photo == first && model.pendingAdjustmentHistory?.undo == true,
+        try check(model.pendingAdjustmentHistory?.photo == photo && model.pendingAdjustmentHistory?.undo == true,
             "keyboard recovery retains the single-photo operation scope")
     }
 

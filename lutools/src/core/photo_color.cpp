@@ -100,7 +100,8 @@ void applyHsl(ImageData& image, const HslOptions& options) {
     }
 }
 
-bool estimateAutoExposure(const ImageData& image, ColorSpace space, const RGB& whiteBalance, float& ev) {
+bool estimateAutoExposure(const ImageData& image, ColorSpace space, const RGB& whiteBalance, float& ev,
+    bool preserveBrightHighlights) {
     if (image.width <= 0 || image.height <= 0 || image.pixels.empty()) return false;
     const int columns = std::min(256, image.width), rows = std::min(256, image.height);
     std::vector<float> samples;
@@ -122,7 +123,10 @@ bool estimateAutoExposure(const ImageData& image, ColorSpace space, const RGB& w
     const float highlights = samples[static_cast<size_t>((samples.size()-1)*.995)];
     if (highlights <= 1e-6f) return false;
     float result = std::log2(.1845f/std::max(median,1e-6f));
-    if (result > 0 && highlights > 0) result = std::min(result,std::log2(4/highlights));
+    if (result > 0) {
+        const float limit = std::log2(4 / highlights);
+        result = std::min(result, preserveBrightHighlights ? std::max(0.f, limit) : limit);
+    }
     ev = std::clamp(result,-4.0f,4.0f);
     return true;
 }

@@ -1,2 +1,7 @@
 # 许可完整性测试使用上游原始字节，包括换行和空白。
 lutools/tests/fixtures/restormer-v1-LICENSE.txt -text -whitespace
+# 随包外观以原始字节计算 SHA-256，检出时必须保留跨平台资源身份。
+Shared/BundledLooks/HDR/* -text
+Shared/BundledLooks/*.cube -text
+lutools/flog-2-new/*.cube -text
+RawLabMac/Resources/MasterRecipes/*.cube -text

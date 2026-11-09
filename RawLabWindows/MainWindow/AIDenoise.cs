@@ -13,20 +13,21 @@ public partial class MainWindow
     private const int MaxAIReprepareAttempts=3;
     private int RequestedAIBackend=>GpuMode.SelectedIndex==2 ? 3 : 2;
     private Adjustments AIWorkSettings { get { var snapshot=settings.Clone();snapshot.Lens=PreviewLens;return snapshot; } }
-    private bool CanStartAI=>file!=null && !PhotoInput.IsNormalX3f(file,settings) && PhotoInput.IsRaw(file) && RenderEngine.AIAvailable && RenderEngine.AIHardwareAvailable &&
+    private bool HDRCameraAICandidate=>file!=null && PhotoInput.IsHDRCameraAICandidate(hdrSource);
+    private bool CanStartAI=>file!=null && (settings.IsHDREditing
+        ? HDRCameraAICandidate && settings.HDR!.CameraSettings.AllowsAI && RequestedGpuMode!=2
+        : !PhotoInput.IsNormalX3f(file,settings) && PhotoInput.IsRaw(file)) && RenderEngine.AIAvailable && RenderEngine.AIHardwareAvailable &&
         RenderEngine.HasBundledAIModel && RenderEngine.GetAIDevices().IsAvailable(aiPreference.DeviceID) && !exporting && !transform.Active && !closing;
     private bool AIResultReady
     {
         get {
-            if(!settings.AIDenoiseEnabled)return true;
+            if(!settings.ActiveAIDenoise)return true;
             try { return file!=null && aiJob.State.Status==AIDenoiseStatus.Ready &&
                 aiJob.Identity==AIDenoiseIdentity.Read(file,AIWorkSettings,RequestedAIBackend,aiPreference.DeviceID); }
             catch(Exception error) when(error is IOException or UnauthorizedAccessException) { return false; }
         }
     }
-    // HDR rendering intentionally bypasses the dormant SDR/AI denoise path;
-    // an old AI result must not block camera HDR preview or export.
-    private bool AIBlocksOutput=>!settings.IsHDREditing && (aiJob.State.IsRunning || !AIResultReady);
+    private bool AIBlocksOutput=>aiJob.State.IsRunning || !AIResultReady;
     private void InitializeAI()
     {
         aiJob.Changed+=()=>{
@@ -38,23 +39,25 @@ public partial class MainWindow
         DenoiseEditor.AIRetryRequested+=()=>RequestAI(true);
         DenoiseEditor.AIDiagnosticsRequested+=async()=>await ExportAIDiagnostics(this,aiJob.State.DiagnosticPath);
     }
-    private void RefreshAIControls()=>DenoiseEditor.RefreshAI(RenderEngine.AIAvailable || settings.AIDenoiseEnabled,
-        settings.AIDenoiseEnabled,CanStartAI,aiJob.State,
-        !RenderEngine.AIHardwareAvailable ? Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。") :
-            !RenderEngine.GetAIDevices().IsAvailable(aiPreference.DeviceID) ? Loc.Text("所选 AI 显卡不可用，请在设置中重新选择。") : null,GpuMode.SelectedIndex==1);
+    private void RefreshAIControls()
+    {
+        var visible = settings.ActiveAIDenoise || RenderEngine.AIAvailable && (!settings.IsHDREditing || HDRCameraAICandidate);
+        DenoiseEditor.RefreshAI(visible,settings.ActiveAIDenoise,CanStartAI,aiJob.State,
+            PhotoInput.HDRCameraAIUnavailableHint(settings.HDR,RequestedGpuMode) ??
+                (!RenderEngine.AIHardwareAvailable ? Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。") :
+                !RenderEngine.GetAIDevices().IsAvailable(aiPreference.DeviceID) ? Loc.Text("所选 AI 显卡不可用，请在设置中重新选择。") : null),GpuMode.SelectedIndex==1);
+    }
     private void ResetAITask() { aiManuallyRequested=false;aiNotReadyIdentity=null;aiNotReadyAttempts=0;aiJob.Reset(); }
-    private static bool ResetsAI(EditorResetScope scope)=>scope.Kind==EditorResetKind.All ||
-        scope.Kind==EditorResetKind.Group && scope.Group==EditorAdjustmentGroup.Detail ||
-        scope.Kind==EditorResetKind.Tool && scope.Tool==EditorAdjustmentTool.Denoise;
-    private bool HasPendingAIReset(EditorResetScope scope)=>ResetsAI(scope) && aiManuallyRequested;
+    private bool HasPendingAIReset(EditorResetScope scope)=>EditorAdjustmentRules.ResetsAI(scope) && aiManuallyRequested;
     private void SetAIEnabled(bool enabled)
     {
         if(enabled) { RequestAI(true);return; }
-        ResetAITask();settings.AIDenoiseEnabled=false;MarkEdited();RefreshControls();Schedule();
+        ResetAITask();settings.ActiveAIDenoise=false;MarkEdited();RefreshControls();Schedule();
     }
     private void ReconcileAI()
     {
-        if(!settings.AIDenoiseEnabled && !aiManuallyRequested) {
+        if(settings.IsHDREditing && !settings.HDR!.CameraSettings.AllowsAI && aiManuallyRequested)ResetAITask();
+        if(!settings.ActiveAIDenoise && !aiManuallyRequested) {
             if(aiJob.State.Status is AIDenoiseStatus.Running or AIDenoiseStatus.Ready)aiJob.Reset();
             return;
         }
@@ -82,15 +85,15 @@ public partial class MainWindow
             if(!completed && revision==openRevision && file==identity.Source.Path && aiJob.Identity==identity &&
                 aiJob.State.Status is AIDenoiseStatus.Failed or AIDenoiseStatus.Cancelled) {
                 ClearPendingAllReset();aiManuallyRequested=false;
-                if(!settings.AIDenoiseEnabled)Schedule();
+                if(!settings.ActiveAIDenoise)Schedule();
                 return;
             }
             if(!completed || revision!=openRevision || file!=identity.Source.Path ||
                 aiJob.Identity!=identity || aiJob.State.Status!=AIDenoiseStatus.Ready ||
                 AIDenoiseIdentity.Read(file,AIWorkSettings,RequestedAIBackend,aiPreference.DeviceID)!=identity)return;
             aiManuallyRequested=false;
-            if(!settings.AIDenoiseEnabled) {
-                settings.AIDenoiseEnabled=true;MarkEdited();
+            if(!settings.ActiveAIDenoise) {
+                settings.ActiveAIDenoise=true;MarkEdited();
                 // 首次开启只更新已提交的 AI 标志，草稿镜头仍等待 Apply。
                 if(transform.Active)transformSource=new(file,openRevision,editRevision,CaptureCurrentEdit(),lut);
             }
@@ -100,7 +103,7 @@ public partial class MainWindow
     }
     private void AIResultUnavailable()
     {
-        if(!settings.AIDenoiseEnabled || aiJob.State.Status!=AIDenoiseStatus.Ready || aiJob.Identity is not {} identity)return;
+        if(!settings.ActiveAIDenoise || aiJob.State.Status!=AIDenoiseStatus.Ready || aiJob.Identity is not {} identity)return;
         if(aiNotReadyIdentity!=identity) { aiNotReadyIdentity=identity;aiNotReadyAttempts=0; }
         if(++aiNotReadyAttempts>MaxAIReprepareAttempts) {
             aiJob.Fail(Loc.Text("AI 降噪结果连续未就绪，请重试。"));aiManuallyRequested=false;
@@ -110,7 +113,7 @@ public partial class MainWindow
     }
     private bool HandleAIFailure(Exception error)
     {
-        if(!settings.AIDenoiseEnabled || settings.IsHDREditing)return false;
+        if(!settings.ActiveAIDenoise)return false;
         if(error is AINotReadyException) {AIResultUnavailable();return true;}
         if(error is AIDenoiseException) {
             ClearPendingAllReset();aiJob.Fail(error.Message,AIDiagnosticStore.ReportPath(error),AIDiagnosticStore.SaveFailed(error));RefreshControls();return true;

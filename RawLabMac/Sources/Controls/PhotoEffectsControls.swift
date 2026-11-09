@@ -44,7 +44,7 @@ struct PhotoEffectsControls: View {
             ForEach(parameters) { parameter in
                 ParameterRow(title: parameter == .grainAmount ? L10n.text("颗粒强度") : parameter.title,
                              value: Binding(
-                    get: { model.settings.effectSettings[keyPath: parameter.keyPath] },
+                    get: { model.settings.editingEffectValue(parameter) },
                     set: { model.settings.setEffect(parameter, to: $0) }
                 ), range: parameter.range, defaultValue: parameter.defaultValue,
                 identifier: "effects.value.\(parameter.rawValue)", onEditingChanged: model.setInteracting)

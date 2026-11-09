@@ -30,7 +30,7 @@ while IFS= read -r file; do SOURCES+=("$file"); done < <(rg --files "$OUT/source
 xcrun --sdk iphonesimulator swiftc -swift-version 5 -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/module-cache" -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" "${SOURCES[@]}" "$OUT/source/RawLab/tests/ViewingRenderTests.swift" "$OUT/bridge.o" -F "$APP/Frameworks" -framework sony2fuji -lc++ -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$APP/viewing-render"
 codesign --force --deep --sign - "$APP" >/dev/null
 STATUS=0
-xcrun simctl spawn "$DEVICE" "$APP/viewing-render" "$OUT" "${RAWLAB_TEST_RAW:-}" || STATUS=$?
+xcrun simctl spawn "$DEVICE" "$APP/viewing-render" "$OUT" "${RAWLAB_TEST_RAW:-}" "${RAWLAB_TEST_HDR:-}" || STATUS=$?
 python3 - "$OUT" "$DEVICE" "$STATUS" <<'PY_RECEIPT'
 import pathlib,json,hashlib,sys
 out=pathlib.Path(sys.argv[1]);app=out/'ViewingRenderTests.app'

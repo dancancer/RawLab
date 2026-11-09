@@ -314,6 +314,12 @@ DecodedImage decodeFile(const char* path,const sony2fuji_hdr_decode_options_v1& 
     result.pixels.decodeRevision=nextRevision.fetch_add(1);
     return result;
 }
+bool heifExportAvailable() { return false; }
+void exportHEIF(const HDRImagePair&,const sony2fuji_hdr_export_config_v1&,const char*) {
+    throw Error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM,
+        SONY2FUJI_HDR_FIELD_EXPORT,"HDR HEIF encoding is unavailable on this platform");
+}
+
 void exportJPEG(const HDRImagePair& image,const sony2fuji_hdr_export_config_v1& config,const char* path) {
     if (config.metadata_policy!=SONY2FUJI_HDR_METADATA_ISO_XMP) throw std::invalid_argument("HDR JPEG requires ISO and XMP metadata");
     const auto exif=captureMetadata(config.metadata_source_path,config.source_sha256,image.hdr.width,image.hdr.height);

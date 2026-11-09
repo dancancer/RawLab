@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import asdict, dataclass
+import errno
 import json
 import logging
 import os
@@ -14,10 +15,52 @@ from .config import ServerConfig
 
 
 COMMANDS = {"capabilities", "validate_recipe", "info", "preview", "export"}
-RECIPE_VERSIONS = {1, 2, 3, 4, 5, 6}
+RECIPE_VERSIONS = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}
 MAX_JSON_BYTES = 4 * 1024 * 1024
 IO_ERROR_STATUS = 3
 logger = logging.getLogger(__name__)
+
+
+def _copy_exclusive(staged, destination):
+    """在保留目标文件名的前提下复制已完成的暂存文件。"""
+    with staged.open("rb") as source:
+        output = destination.open("xb")
+        try:
+            with output:
+                shutil.copyfileobj(source, output)
+        except OSError:
+            destination.unlink(missing_ok=True)
+            raise
+
+
+async def _publish(staged, destination):
+    """Publish a completed stage without replacing an existing destination."""
+    if os.name == "nt":
+        # Windows rename fails with FileExistsError instead of replacing the target.
+        # Staging is created below the destination's canonical parent, so this is
+        # an atomic same-volume move and also works on volumes without hard links.
+        os.rename(staged, destination)
+        return
+    try:
+        os.link(staged, destination)
+        return
+    except OSError as error:
+        if error.errno not in (errno.ENOTSUP, errno.EOPNOTSUPP, errno.EPERM):
+            raise
+    # FAT volumes may lack hard links. Reserve the filename before copying.
+    copy = asyncio.create_task(asyncio.to_thread(_copy_exclusive, staged, destination))
+    try:
+        await asyncio.shield(copy)
+    except asyncio.CancelledError:
+        # 复制线程可能仍在读取暂存文件；屏蔽 AnyIO 重复取消，并等待直接 task.cancel() 后的线程结束。
+        with anyio.CancelScope(shield=True):
+            while True:
+                try:
+                    await asyncio.shield(copy)
+                    break
+                except asyncio.CancelledError:
+                    continue
+        raise
 
 
 class AdapterError(Exception):
@@ -286,6 +329,12 @@ class CliAdapter:
                 protected.add(look_path.canonical)
                 if not validating:
                     look["path"] = str(look_path.lexical)
+            profile = recipe["input"].get("camera_development", {}).get("camera_profile")
+            if profile:
+                profile_path = self._read_path(reference(profile["path"]), require_file=not validating)
+                protected.add(profile_path.canonical)
+                if not validating:
+                    profile["path"] = str(profile_path.lexical)
             output = self._output_path(preview_output if preview_output is not None else reference(recipe["output"]["path"]),
                                        require_parent=not validating)
             if not validating and output.canonical in protected:
@@ -338,6 +387,11 @@ class CliAdapter:
             private_recipe = folder / "recipe.json"
             private_recipe.write_text(json.dumps(recipe, ensure_ascii=False, allow_nan=False), encoding="utf-8")
             args = ["--recipe", private_recipe]
+            if self.config.lens_database is not None:
+                database = self._read_path(self.config.lens_database, require_file=False)
+                if not (database.canonical.is_file() or database.canonical.is_dir()):
+                    raise AdapterError("Lens database no longer exists within an allowed read root")
+                args += ["--lens-database", database.canonical]
             if command == "preview":
                 args += ["--preview", staged, "--long-edge", str(long_edge)]
             result = await self._run(command, [*args, "--json"])
@@ -351,8 +405,7 @@ class CliAdapter:
                 raise AdapterError("Output directory changed during rendering", "output_io_error") from e
             if current_output.canonical != output.canonical:
                 raise AdapterError("Output directory changed during rendering", "output_io_error")
-            # 同卷 hard link 是无覆盖的原子发布；目标已存在时不会替换任何文件。
-            os.link(staged, output.lexical)
+            await _publish(staged, output.lexical)
             return Envelope(command, True, {**result.result, "output_path": str(output.lexical)})
         except AdapterError as e:
             return failure(command, e)

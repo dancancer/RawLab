@@ -1,21 +1,163 @@
 {
   "entries": {
-    "此 X3F 显影模式不支持 AI 降噪。": {"formats": [],"source": "此 X3F 显影模式不支持 AI 降噪。"},
-    "正常显影": {"formats": [],"source": "正常显影"},
-    "伪红外（旧版）": {"formats": [],"source": "伪红外（旧版）"},
-    "X3F 显影": {"formats": [],"source": "X3F 显影"},
-    "以文件保存的显影为基准，白平衡作相对调整。": {"formats": [],"source": "以文件保存的显影为基准，白平衡作相对调整。"},
-    "保留旧版的特殊色彩。": {"formats": [],"source": "保留旧版的特殊色彩。"},
-    "不支持此 X3F 显影模式。": {"formats": [],"source": "不支持此 X3F 显影模式。"},
-    "无法正常显影 X3F：%@": {"formats": ["%@"],"source": "无法正常显影 X3F：{0}"},
-    "任务已保存，请继续导出。": {"formats": [], "source": "任务已保存，请继续导出。"},
-    "取消检查": {"formats": [], "source": "取消检查"},
-    "将按每张照片已保存的调整导出。跳过只影响本次导出。": {"formats": [], "source": "将按每张照片已保存的调整导出。跳过只影响本次导出。"},
-    "开始导出 %@ 张": {"formats": ["%@"], "source": "开始导出 {0} 张"},
-    "查看目标": {"formats": [], "source": "查看目标"},
-    "正在准备导出…": {"formats": [], "source": "正在准备导出…"},
-    "草稿已处理，请开始导出。": {"formats": [], "source": "草稿已处理，请开始导出。"},
-    "重新检查": {"formats": [], "source": "重新检查"},
+    "DCP 导入选项": {
+      "formats": [],
+      "source": "DCP 导入选项"
+    },
+    "色调曲线（JSON）": {
+      "formats": [],
+      "source": "色调曲线（JSON）"
+    },
+    "选择曲线文件…": {
+      "formats": [],
+      "source": "选择曲线文件…"
+    },
+    "省略自动黑位": {
+      "formats": [],
+      "source": "省略自动黑位"
+    },
+    "%@ 张照片": {
+      "formats": [
+        "%@"
+      ],
+      "source": "{0} 张照片"
+    },
+    "上一级": {
+      "formats": [],
+      "source": "上一级"
+    },
+    "加入选片集合": {
+      "formats": [],
+      "source": "加入选片集合"
+    },
+    "在目录树中定位": {
+      "formats": [],
+      "source": "在目录树中定位"
+    },
+    "外观强度": {
+      "formats": [],
+      "source": "外观强度"
+    },
+    "工作区": {
+      "formats": [],
+      "source": "工作区"
+    },
+    "已选": {
+      "formats": [],
+      "source": "已选"
+    },
+    "当前外观": {
+      "formats": [],
+      "source": "当前外观"
+    },
+    "收起全部": {
+      "formats": [],
+      "source": "收起全部"
+    },
+    "收起分支": {
+      "formats": [],
+      "source": "收起分支"
+    },
+    "正在编辑另一目录的照片": {
+      "formats": [],
+      "source": "正在编辑另一目录的照片"
+    },
+    "正在读取目录…": {
+      "formats": [],
+      "source": "正在读取目录…"
+    },
+    "浏览栏宽度": {
+      "formats": [],
+      "source": "浏览栏宽度"
+    },
+    "纯预览": {
+      "formats": [],
+      "source": "纯预览"
+    },
+    "胶片、导入外观和大师配方共用": {
+      "formats": [],
+      "source": "胶片、导入外观和大师配方共用"
+    },
+    "调整栏宽度": {
+      "formats": [],
+      "source": "调整栏宽度"
+    },
+    "选片": {
+      "formats": [],
+      "source": "选片"
+    },
+    "编辑": {
+      "formats": [],
+      "source": "编辑"
+    },
+    "此 X3F 显影模式不支持 AI 降噪。": {
+      "formats": [],
+      "source": "此 X3F 显影模式不支持 AI 降噪。"
+    },
+    "正常显影": {
+      "formats": [],
+      "source": "正常显影"
+    },
+    "伪红外（旧版）": {
+      "formats": [],
+      "source": "伪红外（旧版）"
+    },
+    "X3F 显影": {
+      "formats": [],
+      "source": "X3F 显影"
+    },
+    "以文件保存的显影为基准，白平衡作相对调整。": {
+      "formats": [],
+      "source": "以文件保存的显影为基准，白平衡作相对调整。"
+    },
+    "保留旧版的特殊色彩。": {
+      "formats": [],
+      "source": "保留旧版的特殊色彩。"
+    },
+    "不支持此 X3F 显影模式。": {
+      "formats": [],
+      "source": "不支持此 X3F 显影模式。"
+    },
+    "无法正常显影 X3F：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "无法正常显影 X3F：{0}"
+    },
+    "任务已保存，请继续导出。": {
+      "formats": [],
+      "source": "任务已保存，请继续导出。"
+    },
+    "取消检查": {
+      "formats": [],
+      "source": "取消检查"
+    },
+    "将按每张照片已保存的调整导出。跳过只影响本次导出。": {
+      "formats": [],
+      "source": "将按每张照片已保存的调整导出。跳过只影响本次导出。"
+    },
+    "开始导出 %@ 张": {
+      "formats": [
+        "%@"
+      ],
+      "source": "开始导出 {0} 张"
+    },
+    "查看目标": {
+      "formats": [],
+      "source": "查看目标"
+    },
+    "正在准备导出…": {
+      "formats": [],
+      "source": "正在准备导出…"
+    },
+    "草稿已处理，请开始导出。": {
+      "formats": [],
+      "source": "草稿已处理，请开始导出。"
+    },
+    "重新检查": {
+      "formats": [],
+      "source": "重新检查"
+    },
     "此预设包含 HDR 相对白平衡，当前编辑模式不支持。": {
       "formats": [],
       "source": "此预设包含 HDR 相对白平衡，当前编辑模式不支持。"
@@ -199,13 +341,13 @@
       "formats": [],
       "source": "DCP 缺少唯一、有效的 D65 ColorMatrix/ForwardMatrix，无法转换。"
     },
-    "DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。": {
+    "DCP 没有内嵌色调曲线。": {
       "formats": [],
-      "source": "DCP 缺少 ProfileToneCurve；无法自动推断 Adobe 默认曲线。请先用制备工具明确指定曲线。"
+      "source": "DCP 没有内嵌色调曲线。"
     },
-    "DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。": {
+    "DCP 要求自动黑位处理。": {
       "formats": [],
-      "source": "DCP 要求自动黑位处理，自动转换暂不支持。请先用制备工具明确选择黑位策略。"
+      "source": "DCP 要求自动黑位处理。"
     },
     "DCP 使用三光源 HueSatMap，暂不支持转换。": {
       "formats": [],
@@ -549,8 +691,8 @@
       "source": "原始尺寸"
     },
     "原始文件已被替换，请重新选择照片。": {
-      "formats": [],
-      "source": "原始文件已被替换，请重新选择照片。"
+      "source": "原始文件已被替换，请重新选择照片。",
+      "formats": []
     },
     "原始比例": {
       "formats": [],
@@ -1307,9 +1449,9 @@
       "formats": [],
       "source": "显示输出高光与黑位裁切"
     },
-    "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。": {
+    "请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB PNG、TIFF。": {
       "formats": [],
-      "source": "普通图像仅支持不透明的 8-bit SDR JPEG、PNG、TIFF 或 HEIF。"
+      "source": "请选择不透明的 SDR 图像：8 位 JPEG、PNG、TIFF、HEIF，或 16 位 RGB PNG、TIFF。"
     },
     "暖调日系 · 漫射金光": {
       "formats": [],
@@ -2716,10 +2858,6 @@
       "formats": [],
       "source": "没有可复制的调整，请选择其他范围。"
     },
-    "照片或调整已变化，请重新检查目标。": {
-      "formats": [],
-      "source": "照片或调整已变化，请重新检查目标。"
-    },
     "畸变校正": {
       "formats": [],
       "source": "畸变校正"
@@ -2761,10 +2899,6 @@
     "调整内容无法读取，请重新复制。": {
       "formats": [],
       "source": "调整内容无法读取，请重新复制。"
-    },
-    "调整已变化": {
-      "formats": [],
-      "source": "调整已变化"
     },
     "调整照片": {
       "formats": [],
@@ -3637,6 +3771,10 @@
       "formats": [],
       "source": "HDR Agent 配方仅支持 HDR JPEG 输出。"
     },
+    "HDR HEIF 需要启用 HDR 编辑。": {
+      "formats": [],
+      "source": "HDR HEIF 需要启用 HDR 编辑。"
+    },
     "HDR JPEG": {
       "formats": [],
       "source": "HDR JPEG"
@@ -3675,6 +3813,30 @@
       "formats": [],
       "source": "HDR 照片需要 macOS 15 或 iOS 18 及以上版本。"
     },
+    "HDR 输出与 SDR 底图": {
+      "source": "HDR 输出与 SDR 底图",
+      "formats": []
+    },
+    "HDR 亮度上限": {
+      "source": "HDR 亮度上限",
+      "formats": []
+    },
+    "SDR 底图曝光": {
+      "source": "SDR 底图曝光",
+      "formats": []
+    },
+    "SDR 底图对比度": {
+      "source": "SDR 底图对比度",
+      "formats": []
+    },
+    "SDR 底图饱和度": {
+      "source": "SDR 底图饱和度",
+      "formats": []
+    },
+    "不限": {
+      "source": "不限",
+      "formats": []
+    },
     "HDR 编辑": {
       "formats": [],
       "source": "HDR 编辑"
@@ -3704,6 +3866,10 @@
     "原始照片已变化，请重新导入。": {
       "formats": [],
       "source": "原始照片已变化，请重新导入。"
+    },
+    "参考白": {
+      "formats": [],
+      "source": "参考白"
     },
     "参考白以上 %@": {
       "formats": [
@@ -4157,11 +4323,118 @@
     "请将白平衡模式、色温和色调一起保存，再应用此预设。": {
       "formats": [],
       "source": "请将白平衡模式、色温和色调一起保存，再应用此预设。"
+    },
+    "HDR 相机配置": {
+      "formats": [],
+      "source": "HDR 相机配置"
+    },
+    "导入相机配置…": {
+      "formats": [],
+      "source": "导入相机配置…"
+    },
+    "清除相机配置": {
+      "formats": [],
+      "source": "清除相机配置"
+    },
+    "找不到 HDR 相机配置，请重新导入。": {
+      "formats": [],
+      "source": "找不到 HDR 相机配置，请重新导入。"
+    },
+    "无法读取 HDR 相机配置，或配置与当前相机不匹配。": {
+      "formats": [],
+      "source": "无法读取 HDR 相机配置，或配置与当前相机不匹配。"
+    },
+    "无效或不可用的相机显影设置（白平衡或镜头校正）。": {
+      "formats": [],
+      "source": "无效或不可用的相机显影设置（白平衡或镜头校正）。"
+    },
+    "普通图片未使用 AI 降噪": {
+      "formats": [],
+      "source": "普通图片未使用 AI 降噪"
+    },
+    "此照片的 HDR 需 macOS 15 才能编辑，已按 SDR 打开。": {
+      "formats": [],
+      "source": "此照片的 HDR 需 macOS 15 才能编辑，已按 SDR 打开。"
+    },
+    "HDR 照片用 HDR JPEG，其余用 JPEG": {
+      "formats": [],
+      "source": "HDR 照片用 HDR JPEG，其余用 JPEG"
+    },
+    "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。": {
+      "formats": [],
+      "source": "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。"
+    },
+    "操作已失效": {
+      "source": "操作已失效",
+      "formats": []
+    },
+    "此操作已过期，请重新操作。": {
+      "source": "此操作已过期，请重新操作。",
+      "formats": []
+    },
+    "请按历史顺序撤销或重做。": {
+      "source": "请按历史顺序撤销或重做。",
+      "formats": []
     }
   },
   "overrides": {},
   "unique": {
-    "不支持此 X3F 显影模式。": {"de": "Dieser X3F-Entwicklungsmodus wird nicht unterstützt.","en": "This X3F rendering mode is not supported.","es": "Este modo de revelado X3F no es compatible.","fr": "Ce mode de développement X3F n’est pas pris en charge.","ja": "この X3F 現像モードはサポートされていません。","zh-Hans": "不支持此 X3F 显影模式。"},
+    "工作区": {
+      "de": "Arbeitsbereich",
+      "en": "Workspace",
+      "es": "Espacio de trabajo",
+      "fr": "Espace de travail",
+      "ja": "ワークスペース",
+      "zh-Hans": "工作区"
+    },
+    "收起分支": {
+      "de": "Zweig einklappen",
+      "en": "Collapse Branch",
+      "es": "Contraer rama",
+      "fr": "Replier la branche",
+      "ja": "分岐を折りたたむ",
+      "zh-Hans": "收起分支"
+    },
+    "正在编辑另一目录的照片": {
+      "de": "Ein Foto aus einem anderen Ordner wird bearbeitet",
+      "en": "Editing a photo in another folder",
+      "es": "Editando una foto de otra carpeta",
+      "fr": "Retouche d’une photo d’un autre dossier",
+      "ja": "別のフォルダの写真を編集中",
+      "zh-Hans": "正在编辑另一目录的照片"
+    },
+    "浏览栏宽度": {
+      "de": "Breite des Fotobrowsers",
+      "en": "Browser Width",
+      "es": "Anchura del explorador",
+      "fr": "Largeur du navigateur",
+      "ja": "ブラウザの幅",
+      "zh-Hans": "浏览栏宽度"
+    },
+    "胶片、导入外观和大师配方共用": {
+      "de": "Für Filmsimulationen, importierte Looks und Meisterrezepte",
+      "en": "Applies to film simulations, imported looks and master recipes",
+      "es": "Se aplica a simulaciones de película, looks importados y recetas maestras",
+      "fr": "S’applique aux simulations de film, aux looks importés et aux recettes maîtres",
+      "ja": "フィルムシミュレーション、読み込んだルック、マスターレシピに適用",
+      "zh-Hans": "胶片、导入外观和大师配方共用"
+    },
+    "调整栏宽度": {
+      "de": "Breite der Anpassungsleiste",
+      "en": "Adjustments Width",
+      "es": "Anchura del panel de ajustes",
+      "fr": "Largeur du panneau de réglages",
+      "ja": "調整パネルの幅",
+      "zh-Hans": "调整栏宽度"
+    },
+    "不支持此 X3F 显影模式。": {
+      "de": "Dieser X3F-Entwicklungsmodus wird nicht unterstützt.",
+      "en": "This X3F rendering mode is not supported.",
+      "es": "Este modo de revelado X3F no es compatible.",
+      "fr": "Ce mode de développement X3F n’est pas pris en charge.",
+      "ja": "この X3F 現像モードはサポートされていません。",
+      "zh-Hans": "不支持此 X3F 显影模式。"
+    },
     "0 至 100": {
       "de": "0 bis 100",
       "en": "0 to 100",
@@ -4217,14 +4490,6 @@
       "fr": "Il ne s'agit pas d'un fichier RAW pris en charge",
       "ja": "サポートされている RAW ファイルではありません",
       "zh-Hans": "不是支持的 RAW 文件"
-    },
-    "不是支持的图像文件": {
-      "de": "Nicht unterstützte Bilddatei",
-      "en": "Unsupported image file",
-      "es": "Archivo de imagen no compatible",
-      "fr": "Fichier image non pris en charge",
-      "ja": "対応していない画像ファイル",
-      "zh-Hans": "不是支持的图像文件"
     },
     "交互预览… {0} × {1} · sRGB": {
       "de": "Interaktive Vorschau… {0} × {1} · sRGB",
@@ -4538,14 +4803,6 @@
       "ja": "強度は0です。他の設定値は保持されます。",
       "zh-Hans": "强度为 0，其他参数会保留。"
     },
-    "当前通道 {0}，修改仅作用于该颜色。": {
-      "de": "Aktueller Kanal: {0}. Änderungen gelten nur für diese Farbe.",
-      "en": "Current channel: {0}. Changes apply only to this color.",
-      "es": "Canal actual: {0}. Los cambios solo se aplican a este color.",
-      "fr": "Canal actuel : {0}. Les modifications s’appliquent uniquement à cette couleur.",
-      "ja": "現在のチャンネル：{0}。変更はこの色にのみ適用されます。",
-      "zh-Hans": "当前通道 {0}，修改仅作用于该颜色。"
-    },
     "所选镜头不可用": {
       "de": "Gewähltes Objektiv nicht verfügbar",
       "en": "Selected Lens Unavailable",
@@ -4593,14 +4850,6 @@
       "fr": "Aperçu de l'effet",
       "ja": "エフェクトのプレビュー",
       "zh-Hans": "效果预览"
-    },
-    "文件夹": {
-      "de": "Ordner",
-      "en": "Folders",
-      "es": "Carpetas",
-      "fr": "Dossiers",
-      "ja": "フォルダ",
-      "zh-Hans": "文件夹"
     },
     "新建任务": {
       "de": "Neue Aufgabe erstellen",
@@ -5218,14 +5467,6 @@
       "ja": "選択した写真に調整を適用して保存…",
       "zh-Hans": "应用调整并保存到所选照片…"
     },
-    "当前照片": {
-      "de": "Aktuelles Foto",
-      "en": "Current photo",
-      "es": "Foto actual",
-      "fr": "Photo actuelle",
-      "ja": "現在の写真",
-      "zh-Hans": "当前照片"
-    },
     "批量编辑…": {
       "de": "Stapelbearbeitung…",
       "en": "Batch editing…",
@@ -5449,6 +5690,30 @@
       "fr": "Aperçu interactif… {0} × {1} · HDR",
       "ja": "インタラクティブプレビュー… {0} × {1} · HDR",
       "zh-Hans": "交互预览… {0} × {1} · HDR"
+    },
+    "此照片的 HDR 需 macOS 15 才能编辑，已按 SDR 打开。": {
+      "en": "Editing this photo in HDR requires macOS 15. It was opened in SDR.",
+      "de": "Die HDR-Bearbeitung dieses Fotos erfordert macOS 15. Es wurde in SDR geöffnet.",
+      "fr": "La retouche HDR de cette photo nécessite macOS 15. Elle a été ouverte en SDR.",
+      "es": "Editar esta foto en HDR requiere macOS 15. Se ha abierto en SDR.",
+      "ja": "この写真を HDR で編集するには macOS 15 が必要です。SDR で開きました。",
+      "zh-Hans": "此照片的 HDR 需 macOS 15 才能编辑，已按 SDR 打开。"
+    },
+    "HDR 照片用 HDR JPEG，其余用 JPEG": {
+      "en": "HDR JPEG for HDR photos, JPEG for the rest",
+      "de": "HDR JPEG für HDR-Fotos, JPEG für die übrigen",
+      "fr": "HDR JPEG pour les photos HDR, JPEG pour les autres",
+      "es": "HDR JPEG para fotos HDR, JPEG para el resto",
+      "ja": "HDR 写真は HDR JPEG、その他は JPEG",
+      "zh-Hans": "HDR 照片用 HDR JPEG，其余用 JPEG"
+    },
+    "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。": {
+      "en": "Editing this photo in HDR requires macOS 15. It will be exported in SDR.",
+      "de": "Die HDR-Bearbeitung dieses Fotos erfordert macOS 15. Es wird in SDR exportiert.",
+      "fr": "La retouche HDR de cette photo nécessite macOS 15. Elle sera exportée en SDR.",
+      "es": "Editar esta foto en HDR requiere macOS 15. Se exportará en SDR.",
+      "ja": "この写真を HDR で編集するには macOS 15 が必要です。SDR で書き出します。",
+      "zh-Hans": "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。"
     }
   }
 }

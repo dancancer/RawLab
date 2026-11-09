@@ -1,12 +1,16 @@
 package com.rawlab.android.editor
 
+import com.rawlab.android.engine.requireAsset
+
 import android.net.Uri
 import com.rawlab.android.batch.*
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.PhotoIdentity
-import com.rawlab.android.settings.VersionedPhotoEdit
+import com.rawlab.android.settings.HDRModeError
+import com.rawlab.android.settings.PhotoEditState
+import com.rawlab.android.settings.requireHDRDecodeVersion
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,7 +18,8 @@ import kotlinx.coroutines.flow.update
 import java.io.File
 
 internal class EditorCollections(private val storage: PhotoStorage, parentScope: CoroutineScope,
-    private val journalRoot: File, readRecord: (PhotoIdentity) -> VersionedPhotoEdit,
+    private val journalRoot: File, readRecord: (PhotoIdentity) -> PhotoEditState,
+    editGeneration: (PhotoIdentity) -> Long,
     private val captureActiveValidation: () -> (String) -> Unit,
     private val canRelease: (ImportedPhoto) -> Boolean,
 ) {
@@ -25,7 +30,17 @@ internal class EditorCollections(private val storage: PhotoStorage, parentScope:
     private val deferredRelease = java.util.concurrent.ConcurrentHashMap<String, ImportedPhoto>()
     private data class SourceValidation(val stamp: () -> Unit, val content: () -> Unit)
     private val validators = java.util.concurrent.ConcurrentHashMap<String, SourceValidation>()
-    private val exporter = BatchSelectionExport(journalRoot, readRecord, storage::lookPath, ::validate)
+    private val exporter = BatchSelectionExport(journalRoot, readRecord, storage::lookPath, ::validate, { target, settings ->
+        val info = imported[target.id]?.hdrSource ?: throw HDRModeError.UnsupportedSource
+        settings.requireHDRDecodeVersion(info.isProRAW)
+        val hdr = requireNotNull(settings.hdr)
+        require(hdr.cameraSettings.isDefault || info.isCameraRaw && !info.isProRAW)
+        hdr.cameraSettings.cameraProfile?.requireAsset(storage.hdrCameraProfileDirectory)
+        val look = hdr.lookSettings
+        if (!look.assetIsAvailable(storage.hdrLookDirectory))
+            throw com.rawlab.android.adjustments.AdjustmentTransferException(
+                com.rawlab.android.adjustments.AdjustmentFailure.MISSING_LOOK, look.name ?: "HDR LUT")
+    }, editGeneration)
 
     fun close(onReleased: () -> Unit) {
         val job = scope.coroutineContext[Job]!!
@@ -83,8 +98,7 @@ internal class EditorCollections(private val storage: PhotoStorage, parentScope:
                         validate.content()
                         imported[id] = photo; validators[id] = validate
                         additions += BatchTarget(photo.identity, photo.file, photo.name, photo.uri.toString(), photo.inputKind,
-                            // Camera RAW HDR is an explicit editor mode, not a batch/raster default.
-                            sourceIsHDR = photo.isHDRSource && (!photo.isCameraRawHDR || photo.hdrSource?.isProRAW == true))
+                            sourceIsHDR = photo.isHDRSource)
                     } catch (error: Exception) {
                         val id = uri.toString()
                         failures[id] = error.message ?: error.javaClass.simpleName
@@ -157,14 +171,16 @@ internal fun collectionMessage(message: String): String {
         "Photo look is unavailable" -> com.rawlab.android.R.string.collection_look_unavailable
         "Photo look changed" -> com.rawlab.android.R.string.collection_look_changed
         "Review the selected photos again" -> com.rawlab.android.R.string.collection_selection_changed
-        "Photo source changed" -> com.rawlab.android.R.string.collection_source_changed
+        "Photo source changed", "The original photo changed. Select it again." -> com.rawlab.android.R.string.collection_source_changed
         "Photo source unavailable", "Photo source is unavailable", "Photo left the collection" -> com.rawlab.android.R.string.collection_source_unavailable
         "Cannot create batch inputs" -> com.rawlab.android.R.string.collection_storage_error
         "Apply, discard or skip this photo's draft" -> com.rawlab.android.R.string.collection_draft_error
         "Choose a source photo first" -> com.rawlab.android.R.string.collection_choose_source
         "No targets remain after excluding the source photo" -> com.rawlab.android.R.string.collection_no_sync_targets
         "Close the current export task first" -> com.rawlab.android.R.string.collection_existing_job
-        "Photo adjustments changed after they were read" -> com.rawlab.android.R.string.transfer_conflict_message
+        "Photo adjustments changed after they were read", "This adjustment operation is no longer current." ->
+            com.rawlab.android.R.string.transfer_conflict_message
+        "Undo or redo the photo's edits in history order." -> com.rawlab.android.R.string.transfer_history_order_message
         else -> return com.rawlab.android.i18n.AppStrings.text(com.rawlab.android.R.string.process_error) + "\n" + message
     }
     return com.rawlab.android.i18n.AppStrings.text(resource)

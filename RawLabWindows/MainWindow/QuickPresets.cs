@@ -27,9 +27,11 @@ public partial class MainWindow
         if (file == null || closing || exporting) return;
         PreserveQuickPresetInputs(); CancelHslTarget();
         quickPresetsVisible = true; expandedGroup = EditorAdjustmentGroup.Looks;
-        AdjustmentPanel.Visibility = AdjustmentSplitter.Visibility = Visibility.Visible;
-        DockRow.Height = new(dockHeight); DockRow.MinHeight = 216; SplitterRow.Height = new(6);
-        RefreshQuickPresets(reload: true); RefreshControls(); UpdateDockMinimum();
+        suspendedTransform = null;
+        workspaceLayout.SetMode(WorkspaceMode.Editing);
+        workspaceLayout.ShowInspector();
+        RefreshWorkspace();
+        RefreshQuickPresets(reload: true); RefreshControls();
     }
 
     internal void CloseQuickPresets()
@@ -63,21 +65,20 @@ public partial class MainWindow
         var generation = ++quickPresetGeneration; var revision = editRevision;
         try {
             _ = CaptureVerifiedAdjustmentSource();
-            var expected = currentEditRecord!; var session = TransferSession;
+            var session = TransferSession;
             quickPreset = new(QuickPresetPhase.Preparing, preset); RefreshQuickPresets(); RefreshControls();
             var operation = await PrepareAdjustmentTargets(preset.Payload, [source], AdjustmentHistoryAction.Preset);
             if (QuickPresetPrepared is { } prepared) await prepared();
             if (generation != quickPresetGeneration || !quickPresetsVisible) return;
             if (file != source || opened != openRevision || revision != editRevision || operation == null) { CancelQuickPreset(); return; }
             if (operation.Targets.FirstOrDefault()?.Error is { } targetError) throw targetError;
-            if (operation.Targets.Count != 1 || operation.Targets[0].Original?.SameAs(expected) != true || currentEditRecord?.SameAs(expected) != true)
-                throw new EditPersistenceConflict();
+            if (operation.Targets.Count != 1) throw new AdjustmentOperationExpiredException();
             var outcome = AdoptAdjustmentOutcomes(session.Apply(operation), []).Single();
             if (outcome.Status == AdjustmentStatus.Applied && (outcome.Error != null || outcome.Saved?.SameAs(currentEditRecord) != true)) {
-                quickPreset = new(QuickPresetPhase.Failed, preset, Message: Loc.Text("调整已保存，当前照片需要重新载入。"));
+                quickPreset = new(QuickPresetPhase.Failed, preset, Message: Loc.Text("调整已保存，界面未更新。"));
             } else if (outcome.Error == null && outcome.Saved?.SameAs(currentEditRecord) == true && outcome.Status is AdjustmentStatus.Applied or AdjustmentStatus.Unchanged) {
                 quickPreset = new(outcome.Status == AdjustmentStatus.Applied ? QuickPresetPhase.Saved : QuickPresetPhase.Unchanged, preset, operation.ID);
-            } else throw outcome.Error ?? new EditPersistenceConflict();
+            } else throw outcome.Error ?? new AdjustmentOperationExpiredException();
         } catch (Exception error) {
             if (generation == quickPresetGeneration) quickPreset = new(QuickPresetPhase.Failed, preset, Message: QuickPresetError(error));
         } finally {
@@ -97,7 +98,7 @@ public partial class MainWindow
     }
 
     private static string QuickPresetError(Exception error) => error switch {
-        AdjustmentTransferException { Failure: AdjustmentFailure.Incompatible, Detail: "hdr.camera_raw" } => Loc.Text("相机 RAW HDR 暂不支持预设或批量传递。"),
+        AdjustmentTransferException { Failure: AdjustmentFailure.Incompatible, Detail: "hdr.camera_raw" } => Loc.Text("不支持此相机 RAW 的 HDR 显影。"),
         AdjustmentTransferException { Failure: AdjustmentFailure.Incompatible, Detail: "hdr.relative_white_balance" } => Loc.Text("此预设包含 HDR 相对白平衡，当前编辑模式不支持。"),
         AdjustmentTransferException { Failure: AdjustmentFailure.Incompatible, Detail: var detail } when detail?.StartsWith("select white balance mode",StringComparison.Ordinal)==true => Loc.Text("请将白平衡模式、色温和色调一起保存，再应用此预设。"),
         AdjustmentTransferException { Failure: AdjustmentFailure.Incompatible, Detail: "target camera white balance unavailable" } => Loc.Text("此照片没有可用的相机白平衡校准。"),
@@ -116,7 +117,7 @@ public partial class MainWindow
         QuickPresetSurface.Content = QuickPresetView.Build(quickPresetLibrary, quickPresetLibraryError, quickPreset, AdjustmentSummaryLookName,
             () => ShowPresetsClicked(this, new()), () => { if (PrepareQuickPresetCommand()) ShowPresetSaveEditor(); RefreshQuickPresets(true); },
             () => RefreshQuickPresets(true), async preset => await ApplyPresetToCurrentPhoto(preset), async preset => await ApplyPresetToPhotos(preset),
-            UndoQuickPreset, CancelQuickPreset, adjustmentReloadRequired, () => ReloadEditsClicked(this, new()));
+            UndoQuickPreset, CancelQuickPreset);
     }
 
     private async Task ApplyPresetToPhotos(AdjustmentPreset preset)

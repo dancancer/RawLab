@@ -16,7 +16,7 @@ internal static partial class EditorReviewChecks
         {
             var name="resize-"+export+"-"+foregroundFirst;var window=Open(name);
             var adjustment=Get<Adjustments>(window,"settings");adjustment.Denoise=DenoiseSettings.Clean;
-            EditorShellChecks.ArrangeLayout(window,new Size(1440,920));Invoke(window,"Schedule",false);
+            EditorShellChecks.ArrangeLayout(window,new Size(1440,920));Invoke(window,"Schedule",false,false);
             InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
             var previousEdge=Get<int>(window,"previewLongEdge");var previousResult=Get<RenderedImage>(window,"result");
             var held=new HeldContext(SynchronizationContext.Current!);using var releaseBatch=new ManualResetEventSlim();
@@ -25,7 +25,7 @@ internal static partial class EditorReviewChecks
             Task? foreground=null,preflight=null;
             try
             {
-                Invoke(window,"ShowBatch",BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral"));
+                Invoke(window,"ShowBatch",BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral"),false);
                 var batch=Get<BatchExportWindow>(window,"batchWindow");
                 if(pendingBeforeImport)
                 {

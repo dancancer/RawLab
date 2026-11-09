@@ -45,5 +45,25 @@ import ImageIO
         require(try engine.sampleHSL(url, settings: settings, lut: nil, edge: 10, interactive: false, revision: revision,
             point: CGPoint(x: -0.000000001, y: 0)).availability == .outside, "double coordinate validation precedes Float conversion")
         print("PASS Mac native HSL target raster, upstream configuration, geometry and immutable revisions")
+        if CommandLine.arguments.count > 1 {
+            let hdrURL = URL(fileURLWithPath: CommandLine.arguments[1])
+            var hdr = Adjustments()
+            hdr.hdr = HDRSettings()
+            hdr.set(.exposure, to: 2)
+            hdr.set(.vibrance, to: 35)
+            hdr.hdr?.geometry.cropWidth = 0.8
+            let center = CGPoint(x: 0.5, y: 0.5)
+            let first = try engine.sampleHSL(hdrURL, settings: hdr, lut: nil, edge: 512, interactive: false,
+                revision: revision, point: center)
+            require(first.isUsable && first.revision == revision && first.preview, "HDR preview did not produce a revision-bound hue")
+            hdr.editingHSLSettings.set(.hue, channel: first.channels[0], value: 75)
+            hdr.editingGradingSettings.highlights = ColorGradingWheel(hue: 210, saturation: 70)
+            let after = try engine.sampleHSL(hdrURL, settings: hdr, lut: nil, edge: 512, interactive: false,
+                revision: revision, point: center)
+            require(after == first, "HDR HSL and grading fed back into the sample")
+            let frame = try engine.render(hdrURL, settings: hdr, lut: nil, edge: 512)
+            require(frame?.hdr != nil, "HDR color produced a non-HDR frame")
+            print("PASS Mac HDR color render and pre-HSL probe on a gain-map original")
+        }
     }
 }

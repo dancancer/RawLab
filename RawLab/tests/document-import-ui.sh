@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PRODUCTS="${1:?Pass the current build-for-testing Build/Products directory}"
 OUT="${2:?Pass a new output directory}"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
+TEST_FILTER="${RAWLAB_DOCUMENT_IMPORT_TEST:-RawLabUITests/DocumentImportUITests}"
 if [[ -e "$OUT" ]]; then echo "Output already exists: $OUT" >&2; exit 1; fi
 mkdir -p "$OUT"
 python3 - "$ROOT" "$PRODUCTS" "$OUT" <<'PY'
@@ -62,6 +63,23 @@ for target in targets:
     (documents / 'RawLabImportFixture.png').write_bytes(
         b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
         + chunk(b'IDAT', zlib.compress(pixels)) + chunk(b'IEND', b''))
+    for name in ('RawLabRasterAsRaw.arw', 'RawLabPhotoWithoutExtension'):
+        shutil.copyfile(documents / 'RawLabImportFixture.png', documents / name)
+    (documents / 'RawLabTextAsJPEG.jpeg').write_text('This is a text file.')
+    if raw_fixture := os.environ.get('RAWLAB_DOCUMENT_IMPORT_RAW'):
+        shutil.copyfile(raw_fixture, documents / 'RawLabRawAsJPEG.jpeg')
+        target['EnvironmentVariables']['RAWLAB_DOCUMENT_IMPORT_RAW'] = '1'
+    if os.environ.get('RAWLAB_DOCUMENT_IMPORT_TEST', '').endswith('/testIPadJPEGPreviewResolvesFineDetailAfterZoom'):
+        width, height = 7008, 4672
+        stripes = (b'\x18' * 9 + b'\xe8' * 9) * (width // 6)
+        encoder = zlib.compressobj()
+        pixels = b''.join(encoder.compress(b'\0' + stripes) for _ in range(height)) + encoder.flush()
+        chart = out / 'detail.png'
+        chart.write_bytes(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+                          + chunk(b'IDAT', pixels) + chunk(b'IEND', b''))
+        subprocess.run(['/usr/bin/sips', '-s', 'format', 'jpeg', '-s', 'formatOptions', 'best', str(chart),
+                        '--out', str(documents / 'RawLabDetailFixture.jpeg')], check=True, stdout=subprocess.DEVNULL)
+        chart.unlink()
     values = '\n'.join(f'{i & 1} {(i >> 1) & 1} {(i >> 2) & 1}' for i in range(8)) + '\n'
     (documents / 'RawLabImportFixture.cube').write_text(
         '#Gamma:F-Log2 to Test\n#Gamut:F-Gamut to ITU-R BT.709\nLUT_3D_SIZE 2\n' + values)
@@ -87,11 +105,16 @@ for target in targets:
 plistlib.dump(config, (out / 'document-import.xctestrun').open('wb'))
 PY
 STATUS=0
+TEST_FILTERS=(-only-testing:"$TEST_FILTER")
+# The large-photo detail check requires an iPad and its own fixture; select it explicitly.
+if [[ "${RAWLAB_DOCUMENT_IMPORT_TEST:-}" != */testIPadJPEGPreviewResolvesFineDetailAfterZoom ]]; then
+    TEST_FILTERS+=(-skip-testing:RawLabUITests/DocumentImportUITests/testIPadJPEGPreviewResolvesFineDetailAfterZoom)
+fi
 xcodebuild test-without-building -xctestrun "$OUT/document-import.xctestrun" \
     -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_UDID" \
     -resultBundlePath "$OUT/DocumentImport.xcresult" -parallel-testing-enabled NO \
     -collect-test-diagnostics never \
-    -only-testing:"${RAWLAB_DOCUMENT_IMPORT_TEST:-RawLabUITests/DocumentImportUITests}" \
+    "${TEST_FILTERS[@]}" \
     > "$OUT/document-import-ui.log" 2>&1 || STATUS=$?
 xcrun xcresulttool get test-results summary --path "$OUT/DocumentImport.xcresult" --compact > "$OUT/summary.json"
 python3 - "$OUT" <<'PY'
@@ -117,6 +140,26 @@ import json, os, sys
 result = json.load(open(sys.argv[1]))
 assert result['failedTests'] == 0 and result['passedTests'] > 0 and result['skippedTests'] == 0, result
 if not os.environ.get('RAWLAB_DOCUMENT_IMPORT_TEST'):
-    assert result['passedTests'] == result['totalTestCount'] == 4, result
+    assert result['passedTests'] == result['totalTestCount'] == 6, result
 PY
+if [[ "$TEST_FILTER" == RawLabUITests/DocumentImportUITests ||
+      "$TEST_FILTER" == RawLabUITests/DocumentImportUITests/testTargetSelectionErrorsAreExported ]]; then
+    APP_ID="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$OUT/RawLabImportUI.app/Info.plist")"
+    DATA="$(xcrun simctl get_app_container "$IOS_SIMULATOR_UDID" "$APP_ID" data)"
+    python3 - "$DATA/Documents" <<'PY'
+import json, pathlib, sys
+reports = list(pathlib.Path(sys.argv[1]).glob('RawLab-ErrorLog-*.json'))
+assert len(reports) == 1, 'Expected one report saved through Files'
+events = json.loads(reports[0].read_text())['events']
+for workflow in ('batchSelection', 'adjustmentPaste'):
+    failures = [event for event in events if event['operation'] == 'adjustment'
+                and event['context'].get('workflow') == workflow]
+    assert len(failures) == 1, (workflow, failures)
+    event = failures[0]
+    assert event['stage'] == 'retainPickerSource' and event['outcome'] == 'failed', event
+    assert event['context']['entryPoint'] == 'files' and event['context']['extension'] == 'jpeg', event
+    assert event['error']['domain'] == 'RawLab.PhotoImportError' and event['error']['code'] == 0, event
+print('PASS: exported JSON contains the original failure for both target pickers')
+PY
+fi
 echo "PASS: document import UI; results: $OUT/DocumentImport.xcresult"

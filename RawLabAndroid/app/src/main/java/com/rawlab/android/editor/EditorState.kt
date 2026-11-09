@@ -7,10 +7,28 @@ import com.rawlab.android.settings.LookChoice
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.looks.ManagedLook
 import com.rawlab.android.format.PhotoInputKind
+import com.rawlab.android.looks.DcpImportChoices
 import com.rawlab.android.looks.LUTCompatibility
 import android.net.Uri
 
-data class PendingLookCompatibility(val uri: Uri, val name: String, val draft: LUTCompatibility)
+sealed interface PendingLookImport {
+    val uri: Uri
+    val name: String
+}
+
+data class PendingLookCompatibility(
+    override val uri: Uri,
+    override val name: String,
+    val draft: LUTCompatibility
+) : PendingLookImport
+
+data class PendingDcpImport(
+    override val uri: Uri,
+    override val name: String,
+    val needsCurve: Boolean,
+    val needsBlackChoice: Boolean,
+    val choices: DcpImportChoices?
+) : PendingLookImport
 
 // ============================================================================
 //  编辑器的界面状态：当前照片、参数、预览与进行中的操作
@@ -48,13 +66,18 @@ data class EditorState(
     val saveError: String? = null,
     val message: String? = null,
     val lookImportReport: String? = null,
-    val pendingLookCompatibility: List<PendingLookCompatibility> = emptyList(),
-    val lookCompatibilityPreparing: Boolean = false,
+    val importingHDRCameraProfile: Boolean = false,
+    val hdrCameraDraft: HDRCameraPanelDraft? = null,
+    val pendingLookImports: List<PendingLookImport> = emptyList(),
+    val lookImportPreparing: Boolean = false,
     val gpuEnabled: Boolean = true,
     val draft: AdjustmentDraft? = null,
     val adjustmentRevision: Long = 0,
     val committingAdjustments: Boolean = false,
 ) {
+    val hdrCameraDraftSettings get() = edits.hdr?.cameraSettings?.let { baseline ->
+        photo?.let { hdrCameraDraft?.valueFor(it.identity, baseline) } ?: baseline
+    }
     val canExport get() = photo != null && preview != null && exact && !rendering && !previewResizePending &&
         operation == Operation.NONE && !committingAdjustments && draft == null && saveState != EditSaveState.FAILED
     val controlsEnabled get() = photo != null && operation == Operation.NONE && !committingAdjustments

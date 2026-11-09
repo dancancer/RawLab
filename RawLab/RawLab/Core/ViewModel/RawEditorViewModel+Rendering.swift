@@ -37,13 +37,27 @@ extension RawEditorViewModel {
         }
     }
 
-    func updatePreviewSize(_ edge: Int, settings: RawSettings) {
+    var viewportPreviewLimit: Int {
+        // Keep the larger working image bounded on iPad, including at extreme zoom.
+        if UIDevice.current.userInterfaceIdiom == .pad, sourceKind == .raster, !sourceIsHDR {
+            return 4096
+        }
+        return Int(previewMaxDimension)
+    }
+
+    var viewportNativeSize: CGSize? {
+        viewportPreviewLimit > Int(previewMaxDimension) ? nativeImageSize : nil
+    }
+
+    func updatePreviewSize(_ requestedEdge: Int, settings: RawSettings) {
+        let edge = min(viewportPreviewLimit, requestedEdge)
         guard activeImportRevision == nil, hasImage, edge > 0,
               edge != requestedPreviewLongEdge || (edge != previewLongEdge && previewResizeWorkItem == nil) else { return }
         currentPreviewSettings = settings
-        requestedPreviewLongEdge = min(Int(previewMaxDimension), edge)
+        requestedPreviewLongEdge = edge
         guard !isBusy else { return }
         previewResizeWorkItem?.cancel()
+        previewResizeWorkItem = nil
         previewResizePending = false
         guard requestedPreviewLongEdge != previewLongEdge else { return }
         let sourceRevision = self.sourceRevision
@@ -56,7 +70,7 @@ extension RawEditorViewModel {
             self.updatePreview(settings: self.currentPreviewSettings)
         }
         previewResizeWorkItem = commit
-        if settings.denoise.enabled {
+        if edge > Int(previewMaxDimension) || settings.denoise.enabled {
             previewResizePending = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: commit)
         } else {
@@ -78,16 +92,29 @@ extension RawEditorViewModel {
             previewResizePending = false
             previewLongEdge = requestedPreviewLongEdge
         }
-        let maxDimension = previewLongEdge
+        let isInteractiveDetail = quality == .interactive && previewLongEdge > Int(previewMaxDimension)
+        let maxDimension = isInteractiveDetail ? Int(previewMaxDimension) : previewLongEdge
         let referenceSettings = committedPreviewSettings ?? settings
-        let referenceKey = comparisonKey(settings: referenceSettings, longEdge: maxDimension)
+        let referenceEdge = isInteractiveDetail ? comparisonReferenceKey?.longEdge ?? maxDimension : maxDimension
+        let referenceKey = comparisonKey(settings: referenceSettings, longEdge: referenceEdge)
         let comparisonChanged = comparisonReferenceKey != referenceKey
         let request = PreviewRequest(settings: settings, quality: quality,
                                      includeHistogram: includeHistogram, longEdge: maxDimension)
         if request == lastPreviewRequest, !previewRendering, !previewFailed, !comparisonChanged { return }
         previewWorkItem?.cancel()
         previewWorkItem = nil
-        guard isLookAvailable(for: settings) else {
+        let sourceRevision = self.sourceRevision
+        let lutURL = lutURL(for: settings)
+        let cacheKey = PreviewCacheKey(sourceRevision: sourceRevision, settings: settings,
+                                       referenceKey: referenceKey, lut: previewLUTIdentity(for: lutURL),
+                                       edge: maxDimension, quality: quality,
+                                       includeHistogram: includeHistogram)
+        if let previous = completedPreviewCache.last?.key,
+           previous.settings != settings || previous.lut != cacheKey.lut {
+            completedPreviewCache.removeAll()
+            completedPreviewCacheBytes = 0
+        }
+        guard settings.isHDREditing || isLookAvailable(for: settings) else {
             setLatestRenderID(UUID())
             previewRendering = false
             previewFailed = true
@@ -101,17 +128,30 @@ extension RawEditorViewModel {
         previewFailed = false
 
         let renderID = UUID()
-        let sourceRevision = self.sourceRevision
         setLatestRenderID(renderID)
         cancelHistogramWorkItem()
 
         let finalHistogramDelay = histogramDelay ?? ((includeHistogram && quality == .final) ? self.histogramDelay : 0)
-        let lutURL = lutURL(for: settings)
+        if let cached = completedPreview(for: cacheKey) {
+            applyCachedPreview(cached, request: request, renderID: renderID)
+            if let input = cached.histogramInput {
+                scheduleHistogramUpdate(for: input, renderID: renderID, sourceRevision: sourceRevision,
+                                        delay: finalHistogramDelay, cacheKey: cacheKey)
+            }
+            return
+        }
+
         let existingDraftBuffer = draftBuffer
         let existingDraftPreview = draftPreviewBuffer
         let existingOrientation = sourceOrientation
         let usesRaw = sourceKind == .raw
         let sourceFile = self.sourceFile
+        let previousHDRSettings = acceptedPreviewRequest?.settings
+        let existingHDRReference = !comparisonChanged && previousHDRSettings?.hdr?.neutralGeometrySettings == settings.hdr?.neutralGeometrySettings &&
+            previousHDRSettings?.proRAWDecodeVersion == settings.proRAWDecodeVersion ? hdrReference : nil
+        let diagnosticContext = ["sourceKind": usesRaw ? "raw" : "raster",
+                                 "mode": settings.isHDREditing ? "hdr" : "sdr",
+                                 "longEdge": String(maxDimension), "quality": String(describing: quality)]
 
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
@@ -131,10 +171,13 @@ extension RawEditorViewModel {
                 sourceFile.withReadAccess { url in
                     do {
                         let cancelled = { !self.isLatestRenderID(renderID) }
-                        let edited=try self.processor.processHDR(url:url,settings:hdr,previewLongEdge:maxDimension,cancelled:cancelled)
-                        var neutral=HDRSettings(); neutral.geometry=hdr.geometry
-                        let original=try self.processor.processHDR(url:url,settings:neutral,previewLongEdge:maxDimension,cancelled:cancelled)
-                        let presentation=try HDRPresentation(edited),reference=try HDRPresentation(original)
+                        let edited=try self.processor.processHDR(url:url,settings:hdr.previewSettings(),previewLongEdge:maxDimension,
+                            proRAWDecodeVersion:settings.proRAWDecodeVersion,cancelled:cancelled)
+                        let neutral = hdr.neutralGeometrySettings
+                        let reference = try existingHDRReference ?? HDRPresentation(self.processor.processHDR(
+                            url:url,settings:neutral,previewLongEdge:maxDimension,
+                            proRAWDecodeVersion:settings.proRAWDecodeVersion,cancelled:cancelled))
+                        let presentation=try HDRPresentation(edited)
                         self.resultDelivery {
                             guard self.sourceRevision==sourceRevision,self.isLatestRenderID(renderID) else { return }
                             self.hdrPresentation=presentation; self.hdrReference=reference
@@ -142,12 +185,16 @@ extension RawEditorViewModel {
                             self.histogram=nil; self.baseHistogram=nil
                             self.basePreviewGeometry=hdr.geometry; self.comparisonReferenceKey=referenceKey
                             self.acceptedPreviewRequest=request; self.acceptedPreviewFrameID=renderID; self.previewFailed=false
+                            self.statusMessage = hdr.missingResourceMessage
                             self.nativeImageSize=CGSize(width:edited.outputNativeWidth,height:edited.outputNativeHeight)
+                            self.cacheCompletedPreview(for: cacheKey)
                         }
                     } catch {
                         self.resultDelivery {
                             guard self.sourceRevision==sourceRevision,self.isLatestRenderID(renderID) else { return }
-                            self.previewFailed=true; self.statusMessage=error.localizedDescription
+                            self.previewFailed = true
+                            self.reportError(error, operation: .preview, stage: "renderHDR",
+                                             attemptID: renderID, context: diagnosticContext)
                         }
                     }
                 }
@@ -186,6 +233,7 @@ extension RawEditorViewModel {
                                 return
                             }
                             self.previewImage = previewImage
+                            self.hdrPresentation = nil; self.hdrReference = nil
                             self.acceptedPreviewFrameID = renderID
                             self.acceptedPreviewRequest = request
                             self.histogram = nil
@@ -199,6 +247,7 @@ extension RawEditorViewModel {
                             if self.sourceOrientation == nil {
                                 self.sourceOrientation = result.orientation
                             }
+                            self.cacheCompletedPreview(for: cacheKey, histogramInput: includeHistogram ? result.buffer : nil)
                         }
 
                         if includeHistogram {
@@ -206,7 +255,8 @@ extension RawEditorViewModel {
                                 for: result.buffer,
                                 renderID: renderID,
                                 sourceRevision: sourceRevision,
-                                delay: finalHistogramDelay
+                                delay: finalHistogramDelay,
+                                cacheKey: cacheKey
                             )
                         }
                     } catch {
@@ -215,7 +265,8 @@ extension RawEditorViewModel {
                                 return
                             }
                             self.previewFailed = true
-                            self.statusMessage = error.localizedDescription
+                            self.reportError(error, operation: .preview, stage: "renderRAW",
+                                             attemptID: renderID, context: diagnosticContext)
                         }
                     }
                 }
@@ -234,7 +285,9 @@ extension RawEditorViewModel {
                 catch {
                     self.resultDelivery {
                         guard self.sourceRevision==sourceRevision,self.isLatestRenderID(renderID) else { return }
-                        self.previewFailed=true; self.statusMessage=error.localizedDescription
+                        self.previewFailed = true
+                        self.reportError(error, operation: .preview, stage: "decodeRaster",
+                                         attemptID: renderID, context: diagnosticContext)
                     }
                     return
                 }
@@ -252,7 +305,7 @@ extension RawEditorViewModel {
             do {
                 comparison = comparisonChanged ? try self.renderComparison(
                     url: nil, buffer: inputBuffer, geometry: referenceSettings.geometrySettings, processing: referenceSettings.processing,
-                            x3fMode: referenceSettings.x3fMode, lens: referenceSettings.lensSettings, longEdge: maxDimension) : nil
+                            x3fMode: referenceSettings.x3fMode, lens: referenceSettings.lensSettings, longEdge: referenceEdge) : nil
                 outputBuffer = try self.processor.processBuffer(
                     buffer: inputBuffer,
                     settings: settings,
@@ -267,7 +320,8 @@ extension RawEditorViewModel {
                         return
                     }
                     self.previewFailed = true
-                    self.statusMessage = error.localizedDescription
+                    self.reportError(error, operation: .preview, stage: "renderRaster",
+                                     attemptID: renderID, context: diagnosticContext)
                 }
                 return
             }
@@ -289,6 +343,7 @@ extension RawEditorViewModel {
                                          lens: referenceSettings.lensSettings, key: referenceKey)
                 }
                 self.lensInfo = nil
+                self.cacheCompletedPreview(for: cacheKey, histogramInput: includeHistogram ? outputBuffer : nil)
             }
 
             if includeHistogram {
@@ -296,12 +351,98 @@ extension RawEditorViewModel {
                     for: outputBuffer,
                     renderID: renderID,
                     sourceRevision: sourceRevision,
-                    delay: finalHistogramDelay
+                    delay: finalHistogramDelay,
+                    cacheKey: cacheKey
                 )
             }
         }
         previewWorkItem = workItem
         renderQueue.async(execute: workItem)
+    }
+
+    func previewLUTIdentity(for url: URL?) -> PreviewLUTFileIdentity? {
+        guard let url else { return nil }
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return PreviewLUTFileIdentity(
+            url: url.standardizedFileURL,
+            fileNumber: (attributes?[.systemFileNumber] as? NSNumber)?.uint64Value,
+            size: (attributes?[.size] as? NSNumber)?.uint64Value,
+            modificationDate: attributes?[.modificationDate] as? Date
+        )
+    }
+
+    func completedPreview(for key: PreviewCacheKey) -> CompletedPreview? {
+        guard let index = completedPreviewCache.firstIndex(where: { $0.key == key }) else { return nil }
+        let cached = completedPreviewCache.remove(at: index)
+        completedPreviewCache.append(cached)
+        return cached
+    }
+
+    func applyCachedPreview(_ cached: CompletedPreview, request: PreviewRequest, renderID: UUID) {
+        previewImage = cached.previewImage
+        basePreviewImage = cached.basePreviewImage
+        hdrPresentation = cached.hdrPresentation
+        hdrReference = cached.hdrReference
+        histogram = request.includeHistogram ? cached.histogram : nil
+        baseHistogram = cached.baseHistogram
+        nativeImageSize = cached.nativeImageSize
+        basePreviewGeometry = cached.basePreviewGeometry
+        basePreviewProcessing = cached.basePreviewProcessing
+        basePreviewLens = cached.basePreviewLens
+        comparisonReferenceKey = cached.comparisonReferenceKey
+        rawWhiteBalance = cached.rawWhiteBalance
+        lensInfo = cached.lensInfo
+        if sourceOrientation == nil { sourceOrientation = cached.sourceOrientation }
+        acceptedPreviewRequest = request
+        acceptedPreviewFrameID = renderID
+        previewFailed = false
+        previewRendering = false
+    }
+
+    func cacheCompletedPreview(for key: PreviewCacheKey, histogramInput: Sony2FujiProcessor.Buffer? = nil) {
+        guard key.quality == .final, previewImage != nil, comparisonReferenceKey == key.referenceKey,
+              !key.settings.isHDREditing || key.settings.hdr?.missingResourceMessage == nil else { return }
+        let entry = CompletedPreview(
+            key: key,
+            previewImage: previewImage,
+            basePreviewImage: basePreviewImage,
+            histogram: key.includeHistogram ? histogram : nil,
+            histogramInput: histogramInput,
+            baseHistogram: baseHistogram,
+            nativeImageSize: nativeImageSize,
+            hdrPresentation: hdrPresentation,
+            hdrReference: hdrReference,
+            basePreviewGeometry: basePreviewGeometry,
+            basePreviewProcessing: basePreviewProcessing,
+            basePreviewLens: basePreviewLens,
+            comparisonReferenceKey: comparisonReferenceKey,
+            rawWhiteBalance: rawWhiteBalance,
+            lensInfo: lensInfo,
+            sourceOrientation: sourceOrientation
+        )
+        let entryBytes = entry.estimatedMemoryBytes
+        let budget = key.settings.isHDREditing ? 128 * 1024 * 1024 : 64 * 1024 * 1024
+        guard entryBytes <= budget else { return }
+        if let existingIndex = completedPreviewCache.firstIndex(where: { $0.key == key }) {
+            completedPreviewCacheBytes -= completedPreviewCache[existingIndex].estimatedMemoryBytes
+            completedPreviewCache.remove(at: existingIndex)
+        }
+        while completedPreviewCacheBytes + entryBytes > budget,
+              !completedPreviewCache.isEmpty {
+            completedPreviewCacheBytes -= completedPreviewCache.removeFirst().estimatedMemoryBytes
+        }
+        completedPreviewCache.append(entry)
+        completedPreviewCacheBytes += entryBytes
+        while completedPreviewCache.count > completedPreviewCacheLimit {
+            completedPreviewCacheBytes -= completedPreviewCache.removeFirst().estimatedMemoryBytes
+        }
+    }
+
+    func updateCachedPreviewHistogram(_ histogram: Sony2FujiProcessor.RGBHistogram?,
+                                      for key: PreviewCacheKey) {
+        guard let index = completedPreviewCache.firstIndex(where: { $0.key == key }) else { return }
+        completedPreviewCache[index].histogram = histogram
+        completedPreviewCache[index].histogramInput = nil
     }
 
     func renderComparison(url: URL?, buffer: Sony2FujiProcessor.Buffer?,
@@ -337,7 +478,8 @@ extension RawEditorViewModel {
     func comparisonKey(settings: RawSettings, longEdge: Int) -> ComparisonReferenceKey {
         ComparisonReferenceKey(sourceRevision: sourceRevision, file: sourceFile, identity: sourceIdentity,
                                kind: sourceKind, processing: settings.processing, x3fMode: settings.x3fMode, geometry: settings.geometrySettings,
-                               lens: settings.lensSettings, longEdge: longEdge,hdrMode:settings.hdr?.mode)
+                               lens: settings.lensSettings, longEdge: longEdge,hdrMode:settings.hdr?.mode,
+                               hdrCamera: settings.isHDREditing ? settings.hdr?.neutralGeometrySettings.cameraDevelopmentSettings : nil)
     }
 
     func retryPreview(settings: RawSettings) {
@@ -349,10 +491,15 @@ extension RawEditorViewModel {
     func recordImportedComparison(settings: RawSettings) {
         committedPreviewSettings = settings
         basePreviewLens = settings.lensSettings
-        comparisonReferenceKey = comparisonKey(settings: settings, longEdge: Int(previewMaxDimension))
+        let edge = Int(previewMaxDimension)
+        let reference = comparisonKey(settings: settings, longEdge: edge)
+        comparisonReferenceKey = reference
         acceptedPreviewFrameID = UUID()
-        acceptedPreviewRequest = PreviewRequest(settings: settings, quality: .final, includeHistogram: true, longEdge: Int(previewMaxDimension))
+        acceptedPreviewRequest = PreviewRequest(settings: settings, quality: .final, includeHistogram: true, longEdge: edge)
         previewFailed = false
+        cacheCompletedPreview(for: PreviewCacheKey(sourceRevision: sourceRevision, settings: settings,
+            referenceKey: reference, lut: previewLUTIdentity(for: lutURL(for: settings)),
+            edge: edge, quality: .final, includeHistogram: true))
     }
 
     func schedulePreviewUpdate(
@@ -402,6 +549,8 @@ extension RawEditorViewModel {
         comparisonReferenceKey = nil
         acceptedPreviewFrameID = nil
         acceptedPreviewRequest = nil
+        completedPreviewCache.removeAll()
+        completedPreviewCacheBytes = 0
     }
 
     func setLatestRenderID(_ renderID: UUID) {
@@ -424,18 +573,21 @@ extension RawEditorViewModel {
         renderStateLock.unlock()
     }
 
-    func setHistogramWorkItem(_ workItem: DispatchWorkItem) {
+    func setHistogramWorkItem(_ workItem: DispatchWorkItem, renderID: UUID) -> Bool {
         renderStateLock.lock()
+        defer { renderStateLock.unlock() }
+        guard latestRenderID == renderID else { return false }
         histogramWorkItem?.cancel()
         histogramWorkItem = workItem
-        renderStateLock.unlock()
+        return true
     }
 
     func scheduleHistogramUpdate(
         for buffer: Sony2FujiProcessor.Buffer,
         renderID: UUID,
         sourceRevision: UUID,
-        delay: TimeInterval
+        delay: TimeInterval,
+        cacheKey: PreviewCacheKey
     ) {
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
@@ -450,10 +602,11 @@ extension RawEditorViewModel {
                     return
                 }
                 self.histogram = histogram
+                self.updateCachedPreviewHistogram(histogram, for: cacheKey)
             }
         }
 
-        setHistogramWorkItem(workItem)
+        guard setHistogramWorkItem(workItem, renderID: renderID) else { return }
 
         if delay > 0 {
             renderQueue.asyncAfter(deadline: .now() + delay, execute: workItem)

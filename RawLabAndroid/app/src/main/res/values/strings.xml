@@ -198,6 +198,7 @@
     <string name="message_output_found">"Output found"</string>
     <string name="message_output_storage_failed">"Output storage failed: %1$s"</string>
     <string name="message_photo_gallery">"Photo gallery"</string>
+    <string name="message_png16_decode_limit">"16-bit PNG exceeds the 32 MP decode limit."</string>
     <string name="message_preparing">"Preparing"</string>
     <string name="message_processing">"Exporting"</string>
     <string name="message_remove">"Remove"</string>

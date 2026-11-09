@@ -41,7 +41,7 @@ internal static class AIDenoiseWindowChecks
             window.OpenFile(raw);Pump(()=>window.ExportPng.IsEnabled);
             Begin();
             var previewBefore=typeof(MainWindow).GetField("hslAcceptedWork",flags)!.GetValue(window);
-            Settings().Set(Parameter.Exposure,.25);Call("MarkEdited");Call("Schedule",false);
+            Settings().Set(Parameter.Exposure,.25);Call("MarkEdited");Call("Schedule",false,false);
             Pump(()=>!ReferenceEquals(previewBefore,typeof(MainWindow).GetField("hslAcceptedWork",flags)!.GetValue(window)));
             check(job.State.IsRunning && !Settings().AIDenoiseEnabled,"Ordinary preview continues while the first AI result is being prepared");
             Call("ExecuteReset",new EditorResetScope(EditorResetKind.Tool,Tool:EditorAdjustmentTool.Denoise));
@@ -75,7 +75,7 @@ internal static class AIDenoiseWindowChecks
             Call("BeginTransform",TransformTool.Lens);Pump(()=>started>beforeDraft);
             var originalPreparation=job.Completion;
             var transform=(TransformDraft)typeof(MainWindow).GetField("transform",flags)!.GetValue(window)!;
-            transform.Update(new GeometrySettings {StraightenDegrees=1});Call("Schedule",false);
+            transform.Update(new GeometrySettings {StraightenDegrees=1});Call("Schedule",false,false);
             check(ReferenceEquals(originalPreparation,job.Completion),"Geometry-only draft keeps the same AI task");
             var failurePendingType=typeof(MainWindow).GetNestedType("PendingAllReset",BindingFlags.NonPublic)!;
             var failurePending=Activator.CreateInstance(failurePendingType,BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.Instance,
@@ -89,7 +89,7 @@ internal static class AIDenoiseWindowChecks
                 "AI preparation failure clears the pending all-reset continuation before preview can run");
             check(job.Identity?.Lens.Distortion==true && !Settings().Lens.Distortion,
                 "Active lens draft prepares its own identity without committing lens settings");
-            var failedPreparation=job.Completion;Call("Schedule",false);
+            var failedPreparation=job.Completion;Call("Schedule",false,false);
             check(ReferenceEquals(failedPreparation,job.Completion),"Same failed draft identity does not retry automatically");
             release.Reset();var beforeRestore=started;Call("CancelTransformDraft");
             Pump(()=>started>beforeRestore && job.State.IsRunning);
@@ -112,7 +112,7 @@ internal static class AIDenoiseWindowChecks
             check(started-beforeMissing==4 && job.State.Error==Loc.Text("AI 降噪结果连续未就绪，请重试。") &&
                 window.AdjustmentPanel.IsEnabled && ((Button)window.DenoiseEditor.FindName("AIRetry")).IsEnabled,
                 "Repeated native AI_NOT_READY stops after three re-preparations and keeps retry controls usable");
-            Call("Schedule",false);Pump(()=>job.Completion.IsCompleted);
+            Call("Schedule",false,false);Pump(()=>job.Completion.IsCompleted);
             check(started-beforeMissing==4,"Ordinary preview requests do not restart an exhausted AI preparation");
             ((CheckBox)window.DenoiseEditor.FindName("AIEnabledBox")).IsChecked=false;
             Pump(()=>window.ExportPng.IsEnabled);

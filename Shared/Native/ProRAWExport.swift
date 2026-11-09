@@ -10,10 +10,10 @@ enum ProRAWExporter {
                        longEdge: Int? = nil, keepHDR: Bool, session: OpaquePointer,
                        temporaryRoot: URL = FileManager.default.temporaryDirectory,
                        cancelled: () -> Bool = { false }) throws -> sony2fuji_hdr_stream_result_v1 {
-        guard let source = info.proRAW, let stamp = info.cameraStamp else {
+        guard let source = info.proRAW, let stamp = info.cameraStamp, settings.cameraDevelopmentSettings.isDefault else {
             throw HDRSettings.ModeError.unsupportedSource
         }
-        var request = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL, longEdge: longEdge)
+        let request = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL, longEdge: longEdge)
         return try withoutActuallyEscaping(cancelled) { cancellation in
             let reader = Reader(url: url, source: source, stamp: stamp, cancelled: cancellation)
             defer { reader.releaseDecoder() }
@@ -54,8 +54,10 @@ enum ProRAWExporter {
                         temporaryRoot.path.withCString { temporaryPath in
                             input.decoder_identifier = decoder
                             config.metadata_source_path = sourcePath
-                            return sony2fuji_hdr_export_stream(session, &input, &request, &config, keepHDR ? 1 : 0,
-                                temporaryPath, outputPath, &result, &diagnostic)
+                            return withHDRRequestPrefix(request) {
+                                sony2fuji_hdr_export_stream(session, &input, $0, &config, keepHDR ? 1 : 0,
+                                    temporaryPath, outputPath, &result, &diagnostic)
+                            }
                         }
                     }
                 }

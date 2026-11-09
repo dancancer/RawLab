@@ -74,18 +74,23 @@ final class RoundParameterSliderCell: NSSliderCell {
     var defaultPosition = 0.0
     var colors: [NSColor] = []
     override func drawBar(inside rect: NSRect, flipped: Bool) {
-        let track = NSRect(x: rect.minX, y: rect.midY - 1.5, width: rect.width, height: 3)
+        // AppKit tracks the center of the knob between these insets.
+        let inset = knobThickness / 2
+        guard rect.width > 2 * inset else { return }
+        let track = NSRect(x: rect.minX + inset, y: rect.midY - 1.5, width: rect.width - 2 * inset, height: 3)
         let path = NSBezierPath(roundedRect: track, xRadius: 1.5, yRadius: 1.5)
         NSColor.separatorColor.setFill(); path.fill()
         if colors.count > 1 { NSGradient(colors: colors)?.draw(in: path, angle: 0) }
-        let position = (doubleValue - minValue) / max(Double.ulpOfOne, maxValue - minValue)
-        let start = min(defaultPosition, position)
-        let fill = NSRect(x: track.minX + track.width * start, y: track.minY,
-                          width: track.width * abs(position - defaultPosition), height: track.height)
-        NSColor.systemYellow.setFill(); NSBezierPath(roundedRect: fill, xRadius: 1.5, yRadius: 1.5).fill()
+        let defaultX = track.minX + track.width * defaultPosition
+        let knobX = knobRect(flipped: flipped).midX
+        let fill = NSRect(x: min(defaultX, knobX), y: track.minY, width: abs(knobX - defaultX), height: track.height)
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        path.addClip()
+        NSColor.systemYellow.setFill()
+        NSBezierPath(rect: fill).fill()
         NSColor.labelColor.setFill()
-        NSBezierPath(ovalIn: NSRect(x: track.minX + track.width * defaultPosition - 1.5,
-                                   y: track.midY - 1.5, width: 3, height: 3)).fill()
+        NSBezierPath(ovalIn: NSRect(x: defaultX - 1.5, y: track.midY - 1.5, width: 3, height: 3)).fill()
     }
     override func drawKnob(_ knobRect: NSRect) {
         let circle = NSBezierPath(ovalIn: NSRect(x: knobRect.midX - 7, y: knobRect.midY - 7, width: 14, height: 14))
@@ -142,6 +147,8 @@ struct ParameterRow: View {
     var directionHelp = ""
     var accessibilityTitle: String? = nil
     var inputScope = ""
+    var compact = false
+    var showsTicks = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var valueWidth: CGFloat {
@@ -168,7 +175,6 @@ struct ParameterRow: View {
     }
     private var name: some View {
         Text(title).font(.system(size: textSize)).fixedSize(horizontal: false, vertical: true)
-            .frame(minWidth: 100, alignment: .leading)
             .modifier(ParameterResetGesture(action: reset))
             .help(metadata + " " + pointerHelp)
     }
@@ -190,7 +196,7 @@ struct ParameterRow: View {
         RoundParameterSlider(value: $value, range: range, defaultValue: defaultValue,
                              precision: precision, mapping: sliderMapping, colors: trackColors,
                              onEditingChanged: onEditingChanged)
-            .frame(minWidth: 160, minHeight: 26)
+            .frame(maxWidth: .infinity, minHeight: 22)
             .modifier(ParameterResetGesture(action: reset))
             .accessibilityLabel(accessibilityTitle ?? title)
             .accessibilityIdentifier(controlIdentifier("slider"))
@@ -198,13 +204,33 @@ struct ParameterRow: View {
             .accessibilityAction(named: L10n.format("重置%@", title), reset)
             .help(metadata + " " + directionHelp + " " + pointerHelp)
     }
+    private var labeledTrack: some View {
+        VStack(spacing: 0) {
+            if showsTicks {
+                Text("0").foregroundStyle(.primary).frame(maxWidth: .infinity)
+                    .overlay(alignment: .leading) { Text("−100") }
+                    .overlay(alignment: .trailing) { Text("+100") }
+                    .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                    .padding(.horizontal, 3).accessibilityHidden(true)
+            }
+            track
+        }
+        .alignmentGuide(VerticalAlignment.center) { showsTicks ? $0[VerticalAlignment.bottom] - 11 : $0[VerticalAlignment.center] }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             ViewThatFits(in: .horizontal) {
-                if !dynamicTypeSize.isAccessibilitySize { HStack(spacing: 10) { name.frame(width: 120, alignment: .leading); track; number } }
-                VStack(spacing: 4) {
-                    HStack(spacing: 10) { name; Spacer(minLength: 8); number }
-                    track
+                if !compact && !dynamicTypeSize.isAccessibilitySize {
+                    HStack(spacing: 10) {
+                        name.frame(width: 120, alignment: .leading)
+                        labeledTrack.frame(minWidth: 160)
+                        number
+                    }
+                }
+                VStack(spacing: 0) {
+                    HStack(spacing: 8) { name; Spacer(minLength: 0); number }
+                    labeledTrack
                 }
             }
             if let validationMessage {
@@ -238,6 +264,8 @@ struct AdjustmentRow: View {
     var onEditingChanged: (Bool) -> Void = { _ in }
     var onAuto: (() -> Void)?
     var autoBusy = false
+    var compact = false
+    var titleOverride: String?
     private var spec: AdjustmentSpec { specOverride ?? parameter.spec }
     private var precision: ParameterPrecision {
         switch parameter {
@@ -256,13 +284,13 @@ struct AdjustmentRow: View {
                 }.labelsHidden().frame(width: 160).id(localizationLocale.identifier)
                     .accessibilityLabel(L10n.text("白平衡"))
             }
-            ParameterRow(title: spec.title,
+            ParameterRow(title: titleOverride ?? spec.title,
                          value: Binding(get: { value * spec.multiplier }, set: { value = $0 / spec.multiplier }),
                          range: (spec.range.lowerBound * spec.multiplier)...(spec.range.upperBound * spec.multiplier),
                          defaultValue: spec.defaultValue * spec.multiplier, unit: spec.unit,
                          precision: precision, identifier: "value.\(parameter.rawValue)",
                          onEditingChanged: onEditingChanged,
-                         sliderMapping: spec.reciprocalScale ? .reciprocalKelvin : .linear)
+                         sliderMapping: spec.reciprocalScale ? .reciprocalKelvin : .linear, compact: compact, showsTicks: showsTicks)
             if let onAuto {
                 Button(action: onAuto) { Label(L10n.text("自动"), systemImage: "wand.and.stars") }
                     .controlSize(.small).tint(.secondary).disabled(autoBusy)

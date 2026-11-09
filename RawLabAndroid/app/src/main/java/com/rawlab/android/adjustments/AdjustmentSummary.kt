@@ -32,13 +32,23 @@ class AdjustmentSummary(val payload: AdjustmentPayload, private val locale: Loca
         val number = value.number ?: 0.0
         return when (field) {
             LOOK -> lookText(value, lookName)
+            HDR_LOOK -> value.hdrLook()?.let { look -> look.name?.let { it + " · " + percent(look.strength.toDouble(), false) } }
+                ?: text("中性")
+            HDR_CAMERA_DEVELOPMENT -> value.hdrCameraDevelopment()?.let { camera ->
+                val whiteBalance = if (camera.customWhiteBalance) number(camera.temperature.toDouble()) + " K · " +
+                    text("色调") + " " + number(camera.tint.toDouble(), signed = true) else text("相机白平衡（按目标照片）")
+                val exposure = text(if (camera.sensorExposure) "传感器基准" else "场景")
+                val denoise = if (camera.fbddLevel == 0) text("关闭") else "FBDD ${camera.fbddLevel}"
+                listOf(whiteBalance, exposure, denoise).joinToString(" · ")
+            }.orEmpty()
             STRENGTH -> number(number * 100) + "%"
-            EXPOSURE -> number(number, minimum = 2, signed = true) + " EV"
+            EXPOSURE, HDR_SDR_EXPOSURE -> number(number, minimum = 2, signed = true) + " EV"
+            HDR_PEAK_LIMIT -> if (number == 0.0) text("不限") else number(number, signed = true) + " EV"
             EXPOSURE_MODE -> text(when (value.text) { "scene" -> "场景"; "preview" -> "预览"; else -> "传感器基准" })
             CONTRAST, SATURATION -> percent(number - 1, true)
             HIGHLIGHTS -> percent(-number, true)
             SHADOWS, S_CURVE -> percent(number, true)
-            BLACK_POINT, WHITE_POINT, VIBRANCE, CLARITY, DEHAZE -> number(number, signed = true) + "%"
+            BLACK_POINT, WHITE_POINT, VIBRANCE, CLARITY, DEHAZE, HDR_SDR_CONTRAST, HDR_SDR_SATURATION -> number(number, signed = true) + "%"
             HDR_TEMPERATURE -> number(number) + " K（" + text("相对白平衡") + "）"
             HDR_TINT -> number(number, signed = true) + "（" + text("相对白平衡") + "）"
             WHITE_BALANCE_MODE -> text(when (value.text) { "camera" -> "相机白平衡（按目标照片）"; "temperature" -> "自定义"; else -> "不适用" })

@@ -47,31 +47,31 @@ internal static class SoftwareUpdateUiChecks
             var session=(AdjustmentTransferSession)typeof(MainWindow).GetProperty("TransferSession",Private)!.GetValue(window)!;
             foreach(var draft in new[]{"1.25","-"}) {
                 window.Activate();window.OrdinaryParameter.Number.Focus();window.OrdinaryParameter.Number.Text=draft;
-                var saved=store.VersionedState(photo);var count=session.Transactions.Count;var state=Get<Adjustments>(window,"settings").Capture();
+                var saved=store.ReadState(photo);var count=session.Transactions.Count;var state=Get<Adjustments>(window,"settings").Capture();
                 Invoke(window,"ShowSoftwareUpdates",true);var dialog=Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow");
                 InteractionChecks.PumpUntil(()=>dialog.IsVisible);Click(Button(dialog,"updates.check"));
                 InteractionChecks.PumpUntil(()=>controller.State.Phase==UpdatePhase.Available);
                 check(window.OrdinaryParameter.Number.Text==draft && window.OrdinaryParameter.HasPendingInput &&
-                    Get<Adjustments>(window,"settings").Capture().SameAs(state) && store.VersionedState(photo).SameAs(saved) && session.Transactions.Count==count,
+                    Get<Adjustments>(window,"settings").Capture().SameAs(state) && store.ReadState(photo).SameAs(saved) && session.Transactions.Count==count,
                     "Opening and checking from actual update window preserves input, edits and history: "+draft);
                 Click(Button(dialog,"updates.download"));InteractionChecks.PumpUntil(()=>controller.State.Phase==UpdatePhase.Downloading);
                 check(controller.Gate.Blockers().Contains("draft"),"Production gate sees suspended numeric input while downloading");
                 Click(Button(dialog,"updates.cancel"));InteractionChecks.PumpUntil(()=>controller.State.Phase==UpdatePhase.Available);
                 dialog.Close();window.Activate();window.OrdinaryParameter.Number.Focus();
-                check(window.OrdinaryParameter.Number.Text==draft && store.VersionedState(photo).SameAs(saved) && session.Transactions.Count==count,
+                check(window.OrdinaryParameter.Number.Text==draft && store.ReadState(photo).SameAs(saved) && session.Transactions.Count==count,
                     "Closing and cancelling updates leaves the editor input unchanged: "+draft);
                 window.OrdinaryParameter.CancelInput();
             }
             Invoke(window,"BeginTransform",TransformTool.Geometry);InteractionChecks.PumpUntil(()=>Get<TransformDraft>(window,"transform").Active);
             var transform=Get<TransformDraft>(window,"transform");var geometry=transform.Geometry with{StraightenDegrees=1.2};
-            transform.Update(geometry,transform.Lens);var baseline=store.VersionedState(photo);var history=session.Transactions.Count;
+            transform.Update(geometry,transform.Lens);var baseline=store.ReadState(photo);var history=session.Transactions.Count;
             Invoke(window,"ShowSoftwareUpdates",false);var prompt=Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow");
             check(transform.Active && transform.Geometry==geometry && controller.Gate.Blockers().Contains("draft"),"Update prompt preserves the real transform draft and blocks installation");
             Click(Button(prompt,"updates.check"));InteractionChecks.PumpUntil(()=>controller.State.Phase==UpdatePhase.Available);
             Click(Button(prompt,"updates.download"));InteractionChecks.PumpUntil(()=>controller.State.Phase==UpdatePhase.Downloading);
             adapter.Download.TrySetResult();InteractionChecks.PumpUntil(()=>controller.State.Phase==UpdatePhase.PackageReady);
             Click(Button(prompt,"updates.onQuit"));InteractionChecks.PumpUntil(()=>controller.State.Phase==UpdatePhase.WaitingForTasks);
-            check(adapter.Installs==0 && transform.Active && store.VersionedState(photo).SameAs(baseline) && session.Transactions.Count==history,
+            check(adapter.Installs==0 && transform.Active && store.ReadState(photo).SameAs(baseline) && session.Transactions.Count==history,
                 "Choosing installation while a transform draft exists does not apply, discard or save it");
             controller.Cancel();prompt.Close();Invoke(window,"CancelTransformDraft");Ready(window);
             Invoke(window,"ShowSoftwareUpdates",true);var settings=Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow");
@@ -123,7 +123,7 @@ internal static class SoftwareUpdateUiChecks
             repairedStartup.FinishStartupHealthCheckAsync(window.UpdateDataHealthy).GetAwaiter().GetResult();
             check(!repairedStartup.RequiresRecovery && !repairedStartup.RequiresStartupHealthCheck,"Real editor data health completes repair on fresh startup");
             repairWindow.Close();
-            var beforeFailure=store.VersionedState(photo);
+            var beforeFailure=store.ReadState(photo);
             Invoke(window,"ShowCollection");var collection=Get<BatchSelectionWindow>(window,"collectionWindow");
             adapter.RejectInstall=true;controller.CheckAsync(true).GetAwaiter().GetResult();
             var downloading=controller.DownloadAsync();adapter.Download.TrySetResult();
@@ -131,7 +131,7 @@ internal static class SoftwareUpdateUiChecks
             var installing=controller.ChooseAsync(UpdateInstallChoice.RestartNow);
             InteractionChecks.PumpUntil(()=>installing.IsCompleted && !controller.PreparingInstallation);
             check(controller.State.Failure?.Stage==UpdatePhase.Installing && !window.EditorShell.IsEnabled && window.UpdateLockBanner.IsVisible &&
-                store.VersionedState(photo).SameAs(beforeFailure),
+                store.ReadState(photo).SameAs(beforeFailure),
                 "A failed installer dispatch disables the real editor and preserves saved edits");
             check(!collection.IsEnabled,"Installation lock also disables an existing collection window");
             collection.Close();Invoke(window,"ShowCollection");collection=Get<BatchSelectionWindow>(window,"collectionWindow");

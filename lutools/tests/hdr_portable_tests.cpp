@@ -1,12 +1,14 @@
 #include "core/hdr_jpeg.h"
 #include "platform/hdr_image.h"
 #include "platform/hdr_metadata.h"
+#include "platform/hdr_heif_color.h"
 #include <libheif/heif.h>
 #include <lcms2.h>
 #include <libheif/heif_items.h>
 #include <ultrahdr/gainmapmetadata.h>
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -28,6 +30,55 @@ void write(const std::filesystem::path& path, const std::vector<uint8_t>& data) 
     output.write(reinterpret_cast<const char*>(data.data()), data.size());
     check(output.good(), "fixture write failed");
 }
+std::vector<uint8_t> nclxProfile(uint16_t primaries, uint16_t transfer) {
+    const auto box=[](const char* type, std::vector<uint8_t> data) {
+        const auto size=uint32_t(data.size()+8);
+        std::vector<uint8_t> result{uint8_t(size>>24),uint8_t(size>>16),uint8_t(size>>8),uint8_t(size),
+            uint8_t(type[0]),uint8_t(type[1]),uint8_t(type[2]),uint8_t(type[3])};
+        result.insert(result.end(),data.begin(),data.end());return result;
+    };
+    auto properties=box("ipco",box("colr",{'n','c','l','x',uint8_t(primaries>>8),uint8_t(primaries),
+        uint8_t(transfer>>8),uint8_t(transfer),0,0,128}));
+    const auto associations=box("ipma",{0,0,0,0,0,0,0,1,0,1,1,1});
+    properties.insert(properties.end(),associations.begin(),associations.end());
+    auto meta=box("iprp",properties);meta.insert(meta.begin(),4,0);meta=box("meta",meta);
+    return sony2fuji::hdr::heifItemRGBProfile(meta.data(),meta.size(),1);
+}
+void sdrNclxColors() {
+    for (const auto primaries : {5,6,7}) for (const auto transfer : {1,4,5,6,7,8,13,14,15}) {
+        const auto bytes=nclxProfile(primaries,transfer);
+        const auto profile=cmsOpenProfileFromMem(bytes.data(),uint32_t(bytes.size()));
+        const auto srgb=cmsCreate_sRGBProfile();
+        check(profile && srgb,"SDR nclx profile creation failed");
+        const auto transform=cmsCreateTransform(profile,TYPE_RGB_DBL,srgb,TYPE_RGB_DBL,INTENT_RELATIVE_COLORIMETRIC,0);
+        check(transform!=nullptr,"SDR nclx must convert to display sRGB");
+        const cmsCIExyY white{.3127,.3290,1};cmsCIEXYZ d65;cmsxyY2XYZ(&d65,&white);
+        const auto expectedPrimaries= primaries==5 ?
+            std::array<cmsCIExyY,3>{{{.64,.33,1},{.29,.60,1},{.15,.06,1}}} :
+            std::array<cmsCIExyY,3>{{{.630,.340,1},{.310,.595,1},{.155,.070,1}}};
+        const cmsTagSignature tags[]={cmsSigRedColorantTag,cmsSigGreenColorantTag,cmsSigBlueColorantTag};
+        for (int channel=0;channel<3;++channel) {
+            const auto xyz=static_cast<const cmsCIEXYZ*>(cmsReadTag(profile,tags[channel]));
+            check(xyz!=nullptr,"SDR nclx has no colorant tag");
+            cmsCIEXYZ adapted;cmsCIExyY xy;
+            check(cmsAdaptToIlluminant(&adapted,cmsD50_XYZ(),&d65,xyz)!=0,"cannot restore nclx white point");
+            cmsXYZ2xyY(&xy,&adapted);
+            check(std::abs(xy.x-expectedPrimaries[channel].x)<.001 &&
+                std::abs(xy.y-expectedPrimaries[channel].y)<.001,"SDR nclx primaries changed");
+        }
+        for (const double x : {.01,.04,.08,.081,.08145,.0912,.5,.9}) {
+            const double input[]={x,x,x};double output[3];cmsDoTransform(transform,input,output,1);
+            const double linear=transfer==13 ? (x<=.04045 ? x/12.92 : std::pow((x+.055)/1.055,2.4)) :
+                transfer==8 ? x : transfer==4 ? std::pow(x,2.2) : transfer==5 ? std::pow(x,2.8) :
+                transfer==7 ? (x<.0912 ? x/4 : std::pow((x+.1115)/1.1115,1/.45)) :
+                transfer==15 ? (x<.08145 ? x/4.5 : std::pow((x+.0993)/1.0993,1/.45)) :
+                (x<.081 ? x/4.5 : std::pow((x+.099)/1.099,1/.45));
+            const auto expected=linear<=.0031308 ? linear*12.92 : 1.055*std::pow(linear,1/2.4)-.055;
+            for (const auto value : output) check(std::abs(value-expected)<.002,"SDR nclx transfer differs from display sRGB");
+        }
+        cmsDeleteTransform(transform);cmsCloseProfile(profile);cmsCloseProfile(srgb);
+    }
+}
 }
 
 int main(int argc, const char* argv[]) {
@@ -35,6 +86,7 @@ int main(int argc, const char* argv[]) {
         ("rawlab-portable-hdr-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     std::filesystem::create_directories(root);
     try {
+        sdrNclxColors();
         const std::string xmp="<x:xmpmeta xmlns:x=\"adobe:ns:meta/\" xmlns:g=\"http://ns.apple.com/HDRGainMap/1.0/\"><g:HDRGainMapVersion>65536</g:HDRGainMapVersion></x:xmpmeta>";
         check(sony2fuji::hdr::appleXMPHeadroom(xmp.data(),xmp.size())==0,"valid Apple gain-map metadata rejected");
         auto future=xmp; future.replace(future.find("65536"),5,"65537");

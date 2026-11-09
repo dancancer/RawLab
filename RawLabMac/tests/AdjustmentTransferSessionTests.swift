@@ -6,6 +6,11 @@ struct AdjustmentTransferSessionTests {
         guard condition else { fatalError(message) }
         print("PASS: \(message)")
     }
+    static func isExpired(_ error: Error?) -> Bool {
+        guard let error = error as? AdjustmentCommitError else { return false }
+        if case .expired = error { return true }
+        return false
+    }
     static func state(_ exposure: Double) -> PhotoEditState {
         var settings = Adjustments(); settings.exposure = exposure
         return PhotoEditState(settings: settings, filmID: "")
@@ -27,13 +32,33 @@ struct AdjustmentTransferSessionTests {
         let a = root.appendingPathComponent("A.raw"), b = root.appendingPathComponent("B.raw")
         try Data("original-A".utf8).write(to: a); try Data("original-B".utf8).write(to: b)
         try partialFailureAndHistory(root: root, a: a, b: b)
-        try conditionalSaveAndLegacy(root: root, a: a)
+        try saveAndLegacy(root: root, a: a)
         try preflight(root: root, a: a, b: b)
         try historyOrder(root: root, a: a)
         try historyFailureAndSkip(root: root, a: a, b: b)
         try historyRace(root: root, a: a)
         try storageFailures(root: root, a: a, b: b)
         try clipboardAndEmptyTargets(root: root, a: a)
+        try sourceDefaults(root: root, a: a, b: b)
+    }
+
+    static func sourceDefaults(root: URL, a: URL, b: URL) throws {
+        let store = try EditPersistence(directory: root.appendingPathComponent("source-defaults"))
+        let session = AdjustmentTransferSession(store: store)
+        var legacy = state(0); legacy.settings.x3fMode = .legacy
+        var good = target(a), failed = target(b)
+        good.resolveDefaultState = { legacy }
+        failed.resolveDefaultState = { throw CocoaError(.fileReadNoPermission) }
+        let prepared = try session.prepare(payload: payload(1), targets: [good, failed])
+        check(prepared.targets[0].candidate?.settings.x3fMode == .legacy && prepared.targets[1].error != nil,
+              "Per-source defaults retain Legacy while a failed probe stays attached to its own target")
+        check(try store.state(for: a) == nil && store.state(for: b) == nil,
+              "Default preparation never creates edit records")
+        try store.save(a, state: state(0))
+        good.resolveDefaultState = { throw CocoaError(.fileReadNoPermission) }
+        let saved = try session.prepare(payload: payload(1), targets: [good])
+        check(saved.targets[0].error == nil && saved.targets[0].candidate?.settings.x3fMode == .normal,
+              "Saved records skip the default probe and retain their selected mode")
     }
 
     static func partialFailureAndHistory(root: URL, a: URL, b: URL) throws {
@@ -66,7 +91,7 @@ struct AdjustmentTransferSessionTests {
         check(session.apply(noChange).map(\.status) == [.unchanged], "Default-to-default paste is unchanged")
         check(session.redoPhoto(a).map(\.status) == [.applied], "No-change paste preserves redo")
         _ = session.undoPhoto(a)
-        let before = try store.versionedState(for: a)
+        let before = try store.readState(for: a)
         check(session.commitEdit(expected: before, state: state(2)).status == .applied, "Ordinary successful edit shares the commit ledger")
         check(session.redoPhoto(a).isEmpty, "New edit invalidates only that photo's redo")
         check(try session.redoPhoto(b).map(\.status) == [.applied] && store.state(for: b) == state(1),
@@ -79,30 +104,33 @@ struct AdjustmentTransferSessionTests {
               "Original photos remain untouched")
     }
 
-    static func conditionalSaveAndLegacy(root: URL, a: URL) throws {
+    static func saveAndLegacy(root: URL, a: URL) throws {
         let directory = root.appendingPathComponent("versions")
-        let first = try EditPersistence(directory: directory)
-        let second = try EditPersistence(directory: directory)
-        let session = AdjustmentTransferSession(store: first)
+        let store = try EditPersistence(directory: directory)
+        let session = AdjustmentTransferSession(store: store)
         let old = try session.prepare(payload: payload(1), targets: [target(a)])
-        try second.save(a, state: state(2))
-        check(session.apply(old).map(\.status) == [.conflict], "Another store's save invalidates a prepared candidate")
-        check((try first.state(for: a)) == state(2) && session.transactions.isEmpty, "Conflict does not overwrite or create history")
+        let before = try store.readState(for: a)
+        check(session.commitEdit(expected: before, state: state(2)).status == .applied,
+              "A later local commit advances the in-memory edit generation")
+        let expired = session.apply(old)
+        check(expired.map(\.status) == [.conflict] && isExpired(expired.first?.error),
+              "A prepared candidate expires after a later local edit")
+        check(try store.state(for: a) == state(2), "An expired candidate cannot overwrite the later local edit")
         let current = try session.prepare(payload: payload(3), targets: [target(a)])
-        _ = session.apply(current)
-        try second.save(a, state: state(1))
-        try second.save(a, state: state(3))
-        check(session.undoPhoto(a).map(\.status) == [.conflict], "Revision guard detects external change-and-return (ABA)")
+        check(session.apply(current).map(\.status) == [.applied], "A fresh operation applies after the stale one is rejected")
         let file = directory.appendingPathComponent("edits.json")
         var json = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
-        json.removeValue(forKey: "revisions")
+        json["revisions"] = [a.resolvingSymlinksInPath().path: "legacy-revision"]
         try JSONSerialization.data(withJSONObject: json).write(to: file, options: .atomic)
         let legacy = try EditPersistence(directory: directory)
-        check(try legacy.versionedState(for: a).revision == nil && legacy.state(for: a) == state(3),
-              "Registry v1 without revision metadata remains readable")
-        let saved = try legacy.versionedState(for: a)
-        _ = try legacy.compareAndSave(expected: saved, state: state(4))
-        check((try legacy.versionedState(for: a)).revision != nil, "Revision metadata is added only by a successful write")
+        check(try legacy.state(for: a) == state(3),
+              "Legacy registry with removed revision metadata remains readable")
+        let saved = try legacy.readState(for: a)
+        _ = try legacy.saveState(identity: saved.identity, state: state(4))
+        let rewritten = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+        let currentState = try legacy.state(for: a)
+        check(rewritten["revisions"] == nil && currentState == state(4),
+              "New writes omit the removed revision metadata")
     }
 
     static func preflight(root: URL, a: URL, b: URL) throws {
@@ -127,8 +155,8 @@ struct AdjustmentTransferSessionTests {
         let session = AdjustmentTransferSession(store: store)
         let first = try session.prepare(payload: payload(1), targets: [target(a)])
         _ = session.apply(first)
-        _ = session.commitEdit(expected: try store.versionedState(for: a), state: state(2))
-        _ = session.commitEdit(expected: try store.versionedState(for: a), state: state(1))
+        _ = session.commitEdit(expected: try store.readState(for: a), state: state(2))
+        _ = session.commitEdit(expected: try store.readState(for: a), state: state(1))
         guard session.undoTransaction(first.id).map(\.status) == [.conflict] else {
             throw NSError(domain: "AdjustmentHistoryTests", code: 1,
                 userInfo: [NSLocalizedDescriptionKey: "Older transaction must not undo later independent edits that returned to the same value"])
@@ -159,7 +187,7 @@ struct AdjustmentTransferSessionTests {
         check(session.transactions[0].parts.map(\.state) == [.undone, .applied], "Failed undo remains applied and retryable")
         check(session.undoTransaction(operation.id).map(\.status) == [.applied], "Whole undo retry only processes remaining applied photo")
         _ = session.redoTransaction(operation.id)
-        _ = session.commitEdit(expected: try store.versionedState(for: a), state: state(2))
+        _ = session.commitEdit(expected: try store.readState(for: a), state: state(2))
         let blocked = session.undoTransaction(operation.id)
         check(blocked.map(\.status) == [.conflict, .blocked], "Later photo edit blocks whole transaction before any write")
         check(blocked.map(\.requiresHistoryDecision) == [true, false], "Conflict UI skips only rejected targets, not the compatible waiting targets")
@@ -173,11 +201,11 @@ struct AdjustmentTransferSessionTests {
         let directory = root.appendingPathComponent("storage-failure")
         let store = try EditPersistence(directory: directory)
         try store.save(a, state: state(1))
-        let expected = try store.versionedState(for: a)
+        let expected = try store.readState(for: a)
         let failing = try EditPersistence(directory: directory, writeData: { _, _ in throw CocoaError(.fileWriteOutOfSpace) })
         let session = AdjustmentTransferSession(store: failing)
         check(session.commitEdit(expected: expected, state: state(2)).status == .failed, "Disk write failure is reported by ordinary commit")
-        check(try store.versionedState(for: a) == expected && session.transactions.isEmpty, "Failed write preserves existing record and revision")
+        check(try store.readState(for: a) == expected && session.transactions.isEmpty, "Failed write preserves the existing record")
         let replacement = root.appendingPathComponent("replacement.raw")
         try Data("first".utf8).write(to: replacement)
         let replaceSession = AdjustmentTransferSession(store: store)
@@ -209,15 +237,11 @@ struct AdjustmentTransferSessionTests {
     static func historyRace(root: URL, a: URL) throws {
         let store = try EditPersistence(directory: root.appendingPathComponent("history-race"))
         let session = AdjustmentTransferSession(store: store)
-        _ = session.commitEdit(expected: try store.versionedState(for: a), state: state(1))
-        var calls = 0
-        let results = session.undoPhoto(a, isCurrent: { _ in
-            calls += 1
-            if calls == 2 { try! store.save(a, state: state(2)) }
-            return true
-        })
-        check(results.first?.status == .conflict && results.first?.requiresHistoryDecision == true,
-            "A write-time history race keeps the conflict decision available")
+        let pending = try session.prepare(payload: payload(1), targets: [target(a)])
+        _ = session.commitEdit(expected: try store.readState(for: a), state: state(2))
+        let results = session.apply(pending)
+        check(results.first?.status == .conflict && isExpired(results.first?.error),
+            "A later local edit keeps the stale operation expired at write time")
     }
 
     static func clipboardAndEmptyTargets(root: URL, a: URL) throws {
@@ -233,7 +257,7 @@ struct AdjustmentTransferSessionTests {
         let empty = try session.prepare(payload: copy, targets: [])
         check(session.apply(empty).isEmpty && session.transactions.isEmpty, "Empty target operation creates no success or history")
         var invalid = state(1); invalid.settings.exposure = .nan
-        check(session.commitEdit(expected: try store.versionedState(for: a), state: invalid).status == .failed,
+        check(session.commitEdit(expected: try store.readState(for: a), state: invalid).status == .failed,
               "Invalid ordinary candidate cannot enter saved history")
     }
 }

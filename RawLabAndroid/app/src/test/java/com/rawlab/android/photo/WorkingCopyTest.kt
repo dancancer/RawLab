@@ -1,6 +1,7 @@
 package com.rawlab.android.photo
 
 import java.io.ByteArrayInputStream
+import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.nio.file.Files
@@ -8,6 +9,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WorkingCopyTest {
+    @Test fun fileDefaultsUseLegacyCapabilityAndExplicitRetrySkipsProbe() {
+        val mode = com.rawlab.android.settings.X3fMode.LEGACY
+        val kind = com.rawlab.android.format.PhotoInputKind.RAW
+        val file = java.io.File("camera.X3F")
+        assertEquals(mode, defaultEditSettingsFor(file, kind, false, false, x3fDefaultMode = { mode }).x3fMode)
+        assertEquals(mode, defaultEditSettingsFor(file, kind, false, false, mode,
+            x3fDefaultMode = { error("explicit Legacy retry must not probe again") }).x3fMode)
+    }
+
     @Test fun preservesBytesAndDoesNotUseUntrustedFilename() {
         val directory = Files.createTempDirectory("rawlab-copy").toFile()
         try {
@@ -37,5 +47,28 @@ class WorkingCopyTest {
             assertThrows(IOException::class.java) { WorkingCopy.import(directory, failed) }
             assertEquals(0, directory.listFiles()!!.size)
         } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun maxBytesStopsAnUndeclaredLengthStreamBeforeAFullCopy() {
+        val directory = Files.createTempDirectory("rawlab-copy-limit").toFile()
+        try {
+            assertThrows(WorkingCopyTooLarge::class.java) {
+                WorkingCopy.import(directory, ByteArrayInputStream(ByteArray(8)), maxBytes = 4)
+            }
+            assertTrue(directory.listFiles().orEmpty().isEmpty())
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun expectedBytesChecksRemainingSpaceBeforeCreatingAFile() {
+        val root = Files.createTempDirectory("rawlab-copy-space").toFile()
+        val directory = object : File(root.path) {
+            override fun getUsableSpace(): Long = 0L
+        }
+        try {
+            assertThrows(WorkingCopyStorageFull::class.java) {
+                WorkingCopy.import(directory, ByteArrayInputStream(byteArrayOf(1)), expectedBytes = 1)
+            }
+            assertTrue(root.listFiles().orEmpty().isEmpty())
+        } finally { root.deleteRecursively() }
     }
 }

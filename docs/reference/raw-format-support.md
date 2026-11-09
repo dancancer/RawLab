@@ -2,7 +2,7 @@
 
 RawLab 使用 LibRaw 0.22.2-Release 的 ABI 和数据布局，并通过
 [`patch-libraw.cmake`](../../lutools/cmake/patch-libraw.cmake) 在四个平台应用相同的解码与相机元数据修正。
-普通 JPEG/PNG/TIFF 使用平台图像解码器；启用 LibRaw 的 JPEG 依赖专门用于 RAW 容器里的 JPEG 编码。
+普通 JPEG/PNG/TIFF 使用平台图像解码器；Windows 普通 SDR HEIF/HEIC 使用随包 libheif 解码并转换为显示 sRGB；启用 LibRaw 的 JPEG 依赖专门用于 RAW 容器里的 JPEG 编码。
 
 ## 固定源码来源
 
@@ -59,7 +59,9 @@ dp2 Quattro、两份有损 DNG、A1 II 的未压缩/无损/有损/缩小模式�
 这些公开参考文件来自 [raw.pixls.us](https://raw.pixls.us/)，以 CC0 发布；[参考文件清单](../../lutools/tests/fixtures/raw-references.json)记录来源 URL、许可、大小和校验值。测试检查型号、有效尺寸、相机矩阵、完整解码、
 显影和像素细节，不能用内嵌预览替代 RAW 解码。
 
-普通图像的 ICC+EXIF 色彩元数据回归在 Windows 原生 `windows_display_image` 测试中。
+普通图像的 ICC+EXIF 色彩元数据回归在 Windows 原生 `windows_display_image` 测试中；设置
+`RAWLAB_TEST_SDR_HEIF` 和 `RAWLAB_TEST_SDR_HEIF_SIZE=宽x高` 可用一张外部 HEIF 样片补充
+libheif 的方向、sRGB 和预览回归。带 HDR 增益图的 HEIF 必须走 HDR 入口，不会被降级为普通 SDR。
 用户原始 JPEG 可通过 `RAWLAB_TEST_RASTER` 运行 Apple 图像测试；Android 使用
 `rawlabTestSonyArw6` / `rawlabTestRaster` Gradle 属性及 `ExternalPhotoImportInstrumentedTest`。
 

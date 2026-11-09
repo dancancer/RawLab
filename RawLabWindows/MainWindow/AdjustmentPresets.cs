@@ -10,14 +10,10 @@ public partial class MainWindow
     internal AdjustmentPayload PreviewAdjustmentPayload(AdjustmentScope scope)
     {
         if (file == null || currentEditRecord == null || !StringComparer.OrdinalIgnoreCase.Equals(currentEditRecord.Identity.Path, Path.GetFullPath(file)) ||
-            editDirty || transform.Active || editGesture != null || exporting || closing || aiJob.State.IsRunning || adjustmentReloadRequired)
+            editDirty || transform.Active || editGesture != null || exporting || closing || aiJob.State.IsRunning)
             throw new AdjustmentTransferException(AdjustmentFailure.Draft);
-        // Camera RAW HDR is opt-in; do not turn capability probing into an
-        // HDR target default for preset transfer. Generic gain-map sources
-        // retain the established HDR default behavior.
-        var defaults = new Adjustments { ExposureMode = PhotoInput.IsRaw(file) ? 1 : 2,
-            HDR = hdrSource is { IsCameraRaw: false } ? new HDRSettings() : null };
-        var committed = currentEditRecord.Edit ?? new SavedEdit(currentEditRecord.Identity, defaults.Capture(), null);
+        var committed = currentEditRecord.Edit ?? new SavedEdit(currentEditRecord.Identity,
+            PhotoInput.PrepareDefaultSettings(file).Capture(), null);
         var snapshot = new SavedEdit(currentEditRecord.Identity, settings.Capture(), CurrentLookIdentity());
         return AdjustmentTransfer.PreviewCapture(scope, snapshot, committed, CurrentTransferContext());
     }
@@ -39,21 +35,20 @@ public partial class MainWindow
 
     private SavedEdit CaptureVerifiedAdjustmentSource()
     {
-        if (file == null || editDirty || transform.Active || editGesture != null || exporting || closing || aiJob.State.IsRunning || adjustmentReloadRequired)
+        if (file == null || editDirty || transform.Active || editGesture != null || exporting || closing || aiJob.State.IsRunning)
             throw new AdjustmentTransferException(AdjustmentFailure.Draft);
-        if (currentEditRecord == null || !editStore!.VersionedState(file).SameAs(currentEditRecord)) {
-            adjustmentReloadRequired = true;
-            SetSaveNotice("调整未保存 · 重试", AdjustmentTransferPresentation.Error(new EditPersistenceConflict()), true); RefreshControls();
-            throw new EditPersistenceConflict();
-        }
-        return CaptureCurrentEdit();
+        if(currentEditRecord==null || !StringComparer.OrdinalIgnoreCase.Equals(file,currentEditRecord.Identity.Path))
+            throw new PhotoChangedException();
+        var source=CaptureCurrentEdit();
+        if(!currentEditRecord.Identity.SameFile(source.Identity))throw new PhotoChangedException();
+        return source;
     }
 
     private async void ShowPresetsClicked(object sender, RoutedEventArgs e)
     {
         if (closing || exporting || transferPreparing) return;
         while (!closing) {
-            var library = new AdjustmentPresetLibraryDialog(this, presetStore, file != null && !aiJob.State.IsRunning && !adjustmentReloadRequired, AdjustmentSummaryLookName);
+            var library = new AdjustmentPresetLibraryDialog(this, presetStore, file != null && !aiJob.State.IsRunning, AdjustmentSummaryLookName);
             library.ShowDialog();
             if (library.SaveRequested) {
                 if (!PrepareQuickPresetCommand()) return;
@@ -79,7 +74,7 @@ public partial class MainWindow
                 if (confirmation.Choice == PresetConfirmationChoice.Confirm) { presetStore.Overwrite(duplicate.Existing, payload); return null; }
                 return confirmation.Choice == PresetConfirmationChoice.SaveAs ? Loc.Text("请输入不同的预设名称。") : Loc.Text("同名预设已存在，请使用其他名称。");
             }
-        },settings.IsHDREditing, PreviewAdjustmentPayload, AdjustmentSummaryLookName);
+        },settings.IsHDREditing, PreviewAdjustmentPayload, AdjustmentSummaryLookName,CurrentTransferContext().SupportsHDRCameraDevelopment);
         editor.ShowDialog();
     }
 }

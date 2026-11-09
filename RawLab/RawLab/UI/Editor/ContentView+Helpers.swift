@@ -8,7 +8,9 @@ import UniformTypeIdentifiers
 extension ContentView {
     func supportsHDR(_ tool: EditorToolSelection) -> Bool {
         if tool == .geometry { return true }
-        if case .adjustment(let kind)=tool { return kind.hdrKeyPath != nil }
+        if case .adjustment(let kind)=tool {
+            return kind.hdrKeyPath != nil || kind == .hsl || kind == .colorGrading || kind == .vignette || kind == .grain
+        }
         return false
     }
 
@@ -28,7 +30,6 @@ extension ContentView {
               let source=viewModel.editorEditSource else { return }
         do {
             var candidate=try settings.withHDRMode(enabled,sourceIsHDR:viewModel.sourceIsHDR,
-                                                   hasLook:settings.hasLook,
                                                    cameraRAW:viewModel.sourceSupportsCameraHDR)
             if enabled, viewModel.sourceProRAW != nil {
                 candidate.proRAWDecodeVersion = try ProRAWSource.validatedDecodeVersion(settings.proRAWDecodeVersion)
@@ -41,15 +42,31 @@ extension ContentView {
                     guard viewModel.sourceRevision == sourceRevision else { return }
                     switch result {
                     case .success: activateHDRMode(proposed, source: source)
-                    case .failure(let error): viewModel.statusMessage = error.localizedDescription
+                    case .failure(let error): viewModel.reportError(error, operation: .preview, stage: "enableCameraHDR")
                     }
                 }
             } else {
                 activateHDRMode(candidate, source: source)
             }
-        } catch HDRSettings.ModeError.conflicts {
-            viewModel.statusMessage=L10n.text("当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。")
-        } catch { viewModel.statusMessage=error.localizedDescription }
+        } catch { viewModel.reportError(error, operation: .preview, stage: "changeHDRMode") }
+    }
+
+    func applyHDRCameraDevelopment(_ development: HDRCameraDevelopmentSettings) {
+        guard !editorBusy, !isEditorDraftActive, settings.isHDREditing, viewModel.sourceSupportsCameraHDR,
+              viewModel.sourceProRAW == nil, let source = viewModel.editorEditSource,
+              development.isValid, development != settings.hdr?.cameraDevelopmentSettings,
+              viewModel.saveCurrentSettings(settings) else { return }
+        let before = settings
+        let revision = viewModel.sourceRevision
+        var candidate = settings
+        candidate.hdr?.cameraDevelopmentSettings = development
+        viewModel.preflightCameraHDR(settings: candidate) { result in
+            guard viewModel.sourceRevision == revision, settings == before else { return }
+            switch result {
+            case .success: activateHDRMode(candidate, source: source)
+            case .failure(let error): viewModel.reportError(error, operation: .preview, stage: "cameraHDRDevelopment")
+            }
+        }
     }
 
     private func activateHDRMode(_ candidate: RawSettings, source: EditorEditSource) {
@@ -116,22 +133,27 @@ extension ContentView {
         return settings.customWhiteBalance(cameraTemperature: camera.temperature, cameraTint: camera.tint)
     }
 
-    func exportJPEG(longEdge: Int? = nil, keepHDR: Bool = true) {
+    func exportPhoto(longEdge: Int?, format: BatchOutputFormat) {
         guard !isEditorDraftActive else { return }
         isSaving = true
-        viewModel.exportJPEG(settings: settings, longEdge: longEdge,keepHDR:keepHDR) { result in
+        viewModel.exportPhoto(settings: settings, longEdge: longEdge, format: format) { result in
             switch result {
             case .success(let data):
-                saveToPhotoLibrary(data)
+                saveToPhotoLibrary(data, format: format)
             case .failure(let error):
                 isSaving = false
-                viewModel.statusMessage = error is CancellationError ? L10n.text("导出已取消") : error.localizedDescription
+                if error is CancellationError {
+                    viewModel.statusMessage = L10n.text("导出已取消")
+                } else {
+                    viewModel.reportError(error, operation: .photoExport, stage: "renderPhoto",
+                                          context: ["outputFormat": format.rawValue])
+                }
             }
         }
     }
 
     func exportDNG(longEdge: Int? = nil) {
-        guard !isEditorDraftActive else { return }
+        guard !isEditorDraftActive, canStartFileExport else { return }
         isSaving = true
         viewModel.exportDNG(settings: settings, longEdge: longEdge) { result in
             switch result {
@@ -145,7 +167,7 @@ extension ContentView {
                 )
             case .failure(let error):
                 isSaving = false
-                viewModel.statusMessage = error.localizedDescription
+                viewModel.reportError(error, operation: .photoExport, stage: "renderDNG")
             }
         }
     }
@@ -336,6 +358,46 @@ extension ContentView {
         continueEditorImport()
     }
 
+    func requestSystemPhotoImport(_ urls: [URL]) {
+        pendingSystemPhotoURLs = PhotoImportFile.appendSystemPhotoEvent(urls, to: pendingSystemPhotoURLs)
+        continueSystemPhotoImport()
+    }
+
+    func stageSystemPhotoImport(_ files: [PhotoImportFile]) -> [URL] {
+        var seen = Set<URL>()
+        var transferred = Set<URL>()
+        return files.compactMap { file in
+            let sourceURL = file.source.url.standardizedFileURL
+            guard seen.insert(sourceURL).inserted else {
+                if !transferred.contains(sourceURL) { PhotoImportFile.release(file.source.url) }
+                return nil
+            }
+            do {
+                let staged = try PhotoImportFile.renameRetainedSource(file.source.url,
+                                                                       filename: file.source.displayName)
+                transferred.insert(sourceURL)
+                return staged
+            } catch {
+                PhotoImportFile.release(file.source.url)
+                viewModel.reportError(error, operation: .photoImport, stage: "stageDrop",
+                                      context: ["entryPoint": "drop"])
+                return nil
+            }
+        }
+    }
+
+    func continueSystemPhotoImport() {
+        guard !pendingSystemPhotoURLs.isEmpty, !editorBusy else { return }
+        photoViewing.endTemporaryViewing()
+        cancelSliderInteraction()
+        if isEditorDraftChanged { draftExitPresented = true; return }
+        if isEditorDraftActive { activateEditorTool(.adjustment(.exposure)) }
+        guard viewModel.saveCurrentSettings(settings) else { return }
+        guard let event = PhotoImportFile.consumeSystemPhotoEvent(from: pendingSystemPhotoURLs) else { return }
+        guard importFromFile(.success(event.current)) else { return }
+        pendingSystemPhotoURLs = event.remaining
+    }
+
     func continueEditorImport() {
         guard pendingFileImport || pendingPhotoImport else { return }
         guard viewModel.saveCurrentSettings(settings) else { return }
@@ -357,14 +419,16 @@ extension ContentView {
         guard !editorBusy, !isEditorDraftChanged else { return }
         switch result {
         case .failure(let error):
-            if !(error is CancellationError), (error as NSError).code != CocoaError.Code.userCancelled.rawValue {
-                viewModel.statusMessage = error.localizedDescription
-            }
+            viewModel.reportError(error, operation: .lookImport, stage: "filePicker", context: ["entryPoint": "files"])
         case .success(let sources):
             viewModel.importLooks(from: sources, compatibilityPrompt: { source, draft, finish in
                 lookCompatibilityCompletion = finish
                 confirmedLookCompatibility = nil
                 pendingLookCompatibility = .init(source: source, draft: draft)
+            }, dcpOptionsPrompt: { source, reason, finish in
+                dcpImportOptionsCompletion = finish
+                confirmedDCPImportOptions = nil
+                pendingDCPImportOptions = .init(source: source, reason: reason)
             }) { report in
                 if case .select(let selectedID) = LookImportSelection.decision(previousID: settings.lutID,
                                                                                 imported: report.imported) {
@@ -375,13 +439,21 @@ extension ContentView {
                     updated.lutID = selectedID
                     applySettingsChange(updated)
                 }
-                guard !report.failures.isEmpty else { return }
+                guard let first = report.failures.first else { return }
                 let prefix = L10n.format("已导入 %@ 个外观，%@ 个文件导入失败：\n",
                                          String(report.imported.count), String(report.failures.count))
                 let details = report.failures.map {
                     "\($0.fileName): \($0.reason.localizedDescription)"
                 }.joined(separator: "\n")
-                viewModel.statusMessage = prefix + details
+                let attemptID = UUID()
+                let context = ["entryPoint": "files", "failedCount": String(report.failures.count),
+                               "importedCount": String(report.imported.count)]
+                viewModel.reportError(first.reason, operation: .lookImport, stage: "importLook",
+                                      attemptID: attemptID, context: context, message: prefix + details)
+                for failure in report.failures.dropFirst() {
+                    ErrorDiagnostics.log(failure.reason, operation: .lookImport, stage: "importLook",
+                                         attemptID: attemptID, context: context)
+                }
             }
         }
     }
@@ -399,13 +471,15 @@ extension ContentView {
         showingBefore = false
         do {
             let source = try await loadPhotoSource(from: item)
+            let resourceIdentifier = item.itemIdentifier
+            let identity = (try? await viewModel.photoIdentity(for: source, from: item))
+                ?? resourceIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
             guard photoImportRequestID == requestID, !Task.isCancelled else {
                 PhotoImportFile.release(source.url)
                 return
             }
-            let identity = item.itemIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
-                ?? (try? PhotoIdentity.fallback(for: source.url))
             viewModel.importImage(from: source, identity: identity, settings: .default,
+                diagnosticContext: ["entryPoint": "photos"],
                 onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
                 guard photoImportRequestID == requestID else { return }
                 settings = restored
@@ -420,7 +494,8 @@ extension ContentView {
             isImporting = false
             selectedPhotoItem = nil
             if !Task.isCancelled && !(error is CancellationError) {
-                viewModel.statusMessage = error.localizedDescription
+                viewModel.reportError(error, operation: .photoImport, stage: "readPhotoLibrary",
+                                      attemptID: requestID, context: ["entryPoint": "photos"])
             }
         }
     }
@@ -435,15 +510,42 @@ extension ContentView {
     }
 
     @MainActor
-    func importFromFile(_ result: Result<[URL], Error>) {
-        guard !editorBusy, !isEditorDraftChanged else { return }
-        guard let url = try? result.get().first else {
+    @discardableResult
+    func importFromFile(_ result: Result<[URL], Error>) -> Bool {
+        guard !editorBusy, !isEditorDraftChanged else { return false }
+        let urls = PhotoImportFile.fileURLs(from: (try? result.get()) ?? [])
+        guard let url = urls.first else {
             if case .failure(let error) = result, !(error is CancellationError) {
-                viewModel.statusMessage = error.localizedDescription
+                viewModel.reportError(error, operation: .photoImport, stage: "filePicker", context: ["entryPoint": "files"])
             }
-            return
+            return false
         }
-        guard viewModel.saveCurrentSettings(settings) else { return }
+        guard viewModel.saveCurrentSettings(settings) else { return false }
+        if urls.count > 1 {
+            isImporting = true
+            photoImportTask = Task { @MainActor in
+                defer {
+                    for url in urls { PhotoImportFile.release(url) }
+                    photoImportTask = nil
+                    isImporting = false
+                }
+                for url in urls {
+                    guard !Task.isCancelled else { return }
+                    do {
+                        let photo = try await viewModel.loadAdjustmentPhoto(fromFile: url, workflow: "batchSelection")
+                        guard !Task.isCancelled else { return }
+                        viewModel.batchSelection.append(photo)
+                    } catch {
+                        guard !Task.isCancelled else { return }
+                        viewModel.batchSelection.append(.init(identity: .init(resourceIdentifier: "unreadable:\(UUID())"),
+                            displayName: url.lastPathComponent, file: nil, isRaw: false, error: error))
+                    }
+                }
+                viewModel.batchSelection.selection.returnToCollection()
+                showingBatchSelection = true
+            }
+            return true
+        }
         photoImportTask?.cancel()
         let requestID = UUID()
         photoImportRequestID = requestID
@@ -451,14 +553,18 @@ extension ContentView {
         isImporting = true
         showingBefore = false
         photoImportTask = Task {
-            let prepared: Result<(PhotoImportSource, PhotoIdentity?), Error> = await Task.detached(priority: .userInitiated) {
+            defer { PhotoImportFile.release(url) }
+            let (prepared, context): (Result<(PhotoImportSource, PhotoIdentity?), Error>, [String: String]) = await Task.detached(priority: .userInitiated) {
                 let accessing = url.startAccessingSecurityScopedResource()
                 defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                var context = ErrorDiagnostics.fileContext(url)
+                context["entryPoint"] = "files"
+                context["securityScope"] = String(accessing)
                 do {
-                    let source = try PhotoImportFile.retainSource(url)
-                    return .success((source, try? PhotoIdentity.fallback(for: source.url)))
+                    let source = try await PhotoImportFile.load(fromFile: url)
+                    return (Result.success((source, try? PhotoIdentity.fallback(for: source.url))), context)
                 } catch {
-                    return .failure(error)
+                    return (Result.failure(error), context)
                 }
             }.value
             guard !Task.isCancelled, photoImportRequestID == requestID else {
@@ -469,6 +575,7 @@ extension ContentView {
             case .success(let value):
                 photoImportTask = nil
                 viewModel.importImage(from: value.0, identity: value.1, settings: .default,
+                                      diagnosticContext: context,
                                       onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
                     settings = restored
                 if restored.isHDREditing { activateEditorTool(.adjustment(.exposure)) }
@@ -477,9 +584,13 @@ extension ContentView {
                 photoImportTask = nil
                 photoImportRequestID = nil
                 isImporting = false
-                if !Task.isCancelled { viewModel.statusMessage = error.localizedDescription }
+                if !Task.isCancelled {
+                    viewModel.reportError(error, operation: .photoImport, stage: "retainPickerSource",
+                                          attemptID: requestID, context: context)
+                }
             }
         }
+        return true
     }
 
     func openBatchExport() {
@@ -503,36 +614,45 @@ extension ContentView {
                 batchModel?.onUsage = { UsageAnalytics.shared.record($0) }
                 batchModel?.onDiscard = { batchModel = nil; showingBatchExport = false; recoverBatchExport() }
             }
-        } catch { viewModel.statusMessage = L10n.format("无法读取上次批量任务：%@", String(describing: error.localizedDescription)) }
+        } catch {
+            viewModel.reportError(error, operation: .batchExport, stage: "recover",
+                                  message: L10n.format("无法读取上次批量任务：%@", error.localizedDescription))
+        }
     }
 
     func loadPhotoSource(from item: PhotosPickerItem) async throws -> PhotoImportSource {
         try await PhotoImportFile.loadSource { try await PhotoImportFile.load(from: item) }
     }
 
-    func saveToPhotoLibrary(_ data: Data) {
+    func saveToPhotoLibrary(_ data: Data, format: BatchOutputFormat) {
         PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
             guard status == .authorized || status == .limited else {
                 DispatchQueue.main.async {
                     isSaving = false
-                    viewModel.statusMessage = L10n.text("无法保存照片，请在系统设置中允许添加照片。")
+                    viewModel.reportError(NSError(domain: "RawLab.PhotoLibrary", code: status.rawValue),
+                                          operation: .photoExport, stage: "photoLibraryPermission",
+                                          message: L10n.text("无法保存照片，请在系统设置中允许添加照片。"))
                 }
                 return
             }
 
             PHPhotoLibrary.shared().performChanges({
                 let request = PHAssetCreationRequest.forAsset()
-                request.addResource(with: .photo, data: data, options: nil)
+                let options = PHAssetResourceCreationOptions()
+                options.uniformTypeIdentifier = (format == .hdrHEIF ? UTType.heic : .jpeg).identifier
+                request.addResource(with: .photo, data: data, options: options)
             }, completionHandler: { success, error in
                 DispatchQueue.main.async {
                     isSaving = false
                     if let error = error {
-                        viewModel.statusMessage = error.localizedDescription
+                        viewModel.reportError(error, operation: .photoExport, stage: "savePhotoLibrary")
                     } else if success {
                         UsageAnalytics.shared.record(.exportCompleted)
                         viewModel.statusMessage = L10n.text("已保存到照片。")
                     } else {
-                        viewModel.statusMessage = L10n.text("保存失败，请重试。")
+                        viewModel.reportError(NSError(domain: "RawLab.PhotoLibrary", code: -1),
+                                              operation: .photoExport, stage: "savePhotoLibrary",
+                                              message: L10n.text("保存失败，请重试。"))
                     }
                 }
             })

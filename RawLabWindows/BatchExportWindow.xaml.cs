@@ -60,7 +60,7 @@ public partial class BatchExportWindow : Window
         };
         Closing += (_, args) => {
             if(Running || preflighting){args.Cancel=true;closeRequested=true;if(Running)CancelExecution();return;}
-            if(!PreserveOnUpdateExit && !Frozen && !job.Started && !Discarded)try{journal.Discard(job);Discarded=true;CloseFailed=false;}catch(Exception error){args.Cancel=true;CloseFailed=true;closeRequested=false;job.Error=error.Message;Refresh();_=LoadThumbnails();}
+            if(!PreserveOnUpdateExit && !Frozen && !job.Started && !Discarded)try{journal.Discard(job);Discarded=true;CloseFailed=false;}catch(Exception error){args.Cancel=true;CloseFailed=true;closeRequested=false;job.Error=AdjustmentTransferPresentation.Detail(error);Refresh();_=LoadThumbnails();}
         };
         ready = true;
         RefreshLanguage();
@@ -93,6 +93,9 @@ public partial class BatchExportWindow : Window
         Heading.Text = preflighting ? Loc.Text("正在检查照片…") : Running ? cancellation.IsCancellationRequested ? Loc.Text("正在停止…") : Loc.Text("正在导出") :
             job.Interrupted ? Loc.Text("导出已中断") : job.Cancelled ? Loc.Text("导出已取消") : job.Started ? Loc.Text("导出完成") : Loc.Text("批量导出");
         Summary.Text = job.Started ? Loc.Format("成功 {0} 张 · 失败 {1} 张 · 未处理 {2} 张", job.SucceededCount, job.FailedCount, job.RemainingCount) : Loc.Format("已选 {0} 张", job.SelectedCount);
+        if (!Frozen && job.Settings.HDR?.Mode != HDRMode.Hdr && job.Settings.AIDenoiseEnabled &&
+            job.Items.Any(item => item.Selected && PhotoInput.IsRaster(item.Input)))
+            Summary.Text += "\n" + Loc.Text("普通图片未使用 AI 降噪");
         ErrorText.Text = job.Error ?? ""; ErrorText.Visibility = string.IsNullOrEmpty(job.Error) ? Visibility.Collapsed : Visibility.Visible;
         Progress.Visibility = job.Started || preflighting ? Visibility.Visible : Visibility.Collapsed;Progress.IsIndeterminate=preflighting;
         Progress.Maximum = Math.Max(1, job.SelectedCount); Progress.Value = job.SucceededCount + job.FailedCount;
@@ -132,7 +135,7 @@ public partial class BatchExportWindow : Window
     private void SaveDraft()
     {
         try { journal.Save(job); job.Error = null; UpdateJournalFailed=false; }
-        catch (Exception error) { UpdateJournalFailed=true;job.Error = Loc.Format("任务未保存：{0}", error.Message); }
+        catch (Exception error) { UpdateJournalFailed=true;job.Error = Loc.Format("任务未保存：{0}", AdjustmentTransferPresentation.Detail(error)); }
         Refresh();
     }
     public bool PrepareForUpdate()
@@ -167,7 +170,7 @@ public partial class BatchExportWindow : Window
                 {
                     if(closeRequested)break;
                     try { accepted.Add(ValidateInput(snapshot,BatchItem.Create(input) with {Selected=true},validator)); }
-                    catch(Exception error){errors.Add(Path.GetFileName(input)+": "+error.Message);}
+                    catch(Exception error){errors.Add(Path.GetFileName(input)+": "+AdjustmentTransferPresentation.Detail(error));}
                 }
                 return accepted;
             });
@@ -176,26 +179,25 @@ public partial class BatchExportWindow : Window
             SaveDraft();if(errors.Count>0)job.Error=string.Join("\n",errors);
             await LoadThumbnails();
         }
-        catch(Exception error){if(!closed)job.Error=error.Message;}
+        catch(Exception error){if(!closed)job.Error=AdjustmentTransferPresentation.Detail(error);}
         finally{preflighting=false;if(!closed){Refresh();if(closeRequested)Close();}BusyChanged?.Invoke(false);}
     }
     private BatchItem ValidateInput(BatchJob snapshot, BatchItem item, RenderEngine validator)
     {
         try {
-            if (!item.Identity.SameFile(OriginalIdentity.Read(item.Input))) throw new EditPersistenceConflict();
+            if (!item.Identity.SameFile(OriginalIdentity.Read(item.Input))) throw new PhotoChangedException();
             var prepared=BatchHDRPreparation.Required(snapshot) ? RequireHDRPreparation().Prepare(snapshot,item) : null;
             var effective=prepared?.Settings.Restore() ??
                 RenderEngine.PrepareBatchSettings(snapshot.Source,item.Input,snapshot.Settings.Restore());
-            if (effective.IsHDREditing && effective.ProRAWDecodeVersion == HDRNative.ProRAWDecodeVersion &&
-                !PhotoInput.SupportsProRAWHDR(item.Input))
-                throw new InvalidOperationException(Loc.Text("不支持此相机 RAW 的 HDR 显影。"));
-            if (!effective.IsHDREditing && effective.AIDenoiseEnabled)
+            if (prepared == null && effective.IsHDREditing)
+                BatchSelectionExport.ValidateHDRFormat(item.Input,effective.Capture(),ExportFormat.SdrJpeg);
+            if (effective.ActiveAIDenoise)
                 RenderEngine.ValidateAIInput(item.Input,snapshot.AIDeviceID,effective.X3fMode);
             else
                 validator.Render(item.Input,effective,prepared == null ? snapshot.Look : prepared.Look,64,statistics:false,clipping:false,viewportPreview:true);
             return ApplyFormatValidation(item with {ValidationError=null,HDRJpegIncompatible=!effective.IsHDREditing},snapshot.Format);
         } catch (Exception error) {
-            return item with {ValidationError=error.Message,HDRJpegIncompatible=false,Selected=false};
+            return item with {ValidationError=AdjustmentTransferPresentation.Detail(error),HDRJpegIncompatible=false,Selected=false};
         }
     }
     private static BatchItem ApplyFormatValidation(BatchItem item, ExportFormat format)
@@ -282,7 +284,7 @@ public partial class BatchExportWindow : Window
                     ExportFormat.Png => Png, ExportFormat.RenderedDng => Dng, _ => Jpeg
                 };
                 previous.IsChecked=true;
-                job.Error=error.Message;
+                job.Error=AdjustmentTransferPresentation.Detail(error);
             }
         } finally {
             preflighting=false;
@@ -346,7 +348,7 @@ public partial class BatchExportWindow : Window
     {
         if(Running || preflighting)return;
         if(MessageBox.Show(this,Loc.Text("结束此任务并保留已导出的照片？"),Loc.Text("结束导出任务"),MessageBoxButton.YesNo,MessageBoxImage.Question)!=MessageBoxResult.Yes)return;
-        try{journal.Discard(job);Discarded=true;Close();}catch(Exception error){job.Error=error.Message;Refresh();}
+        try{journal.Discard(job);Discarded=true;Close();}catch(Exception error){job.Error=AdjustmentTransferPresentation.Detail(error);Refresh();}
     }
     private void CloseClicked(object sender, RoutedEventArgs e)
     {
@@ -384,7 +386,7 @@ public partial class BatchExportWindow : Window
                 }
                 var previousStatuses = work.Items.ToDictionary(item => item.Id, item => item.Status);
                 if (work.Format is not (ExportFormat.RenderedDng or ExportFormat.HdrJpeg)) ExportMetadata.VerifyAvailable();
-                using var engine = createEngine(work.AIBackend);engine.SetAIDevice(work.AIDeviceID);engine.SetCancellation(cancellation.Token);
+                using var engine = createEngine(work.AIBackend);engine.SetAIDevice(work.AIDeviceID);
                 BatchRunner.Run(work, journal, failuresOnly, cancellation.Token,
                     (updated, _) => {
                         foreach (var item in updated.Items)
@@ -396,14 +398,18 @@ public partial class BatchExportWindow : Window
                         Dispatcher.BeginInvoke(new Action(() => SetRunJob(updated)));
                     },
                     (input, settings, look, destination, longEdge) => {
-                        if(!settings.IsHDREditing && settings.AIDenoiseEnabled) {
+                        if(settings.ActiveAIDenoise) {
                             using var progress=new AIPreparation((phase,done,total)=>
                                 Dispatcher.BeginInvoke(new Action(()=>{aiProgress=new(AIDenoiseStatus.Running,phase,done,total);Refresh();})));
                             using var registration=cancellation.Token.Register(progress.Cancel);
-                            try { engine.PrepareAI(input,settings,progress); }
-                            finally { Dispatcher.BeginInvoke(new Action(()=>{aiProgress=null;Refresh();})); }
+                            engine.SetCancellation(cancellation.Token);
+                            try { engine.PrepareAI(input,settings,progress); cancellation.Token.ThrowIfCancellationRequested(); }
+                            finally {
+                                // 取消只中止 AI 准备；后续 32px 预渲染和成片导出必须完成当前项。
+                                engine.SetCancellation(CancellationToken.None);
+                                Dispatcher.BeginInvoke(new Action(()=>{aiProgress=null;Refresh();}));
+                            }
                         }
-                        cancellation.Token.ThrowIfCancellationRequested();
                         engine.Render(input, settings, look, 32, statistics: false, clipping: false);
                         engine.Render(input, settings, look, 0, output: destination, longEdge: longEdge, formatOverride: work.Format);
                     });
@@ -412,9 +418,9 @@ public partial class BatchExportWindow : Window
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { work.Cancelled=true; }
         catch (Exception error)
         {
-            if(work.Settings.AIDenoiseEnabled || work.Items.Any(item=>item.Selected && item.Frozen?.Settings.AIDenoiseEnabled==true))
+            if(work.Settings.ActiveAIDenoise || work.Items.Any(item=>item.Selected && item.Frozen?.Settings.ActiveAIDenoise==true))
                 aiDiagnostics.Capture(error,new("batch",work.AIDeviceID,work.AIBackend,Devices:RenderEngine.GetAIDevices().JSON));
-            work.Error = error.Message; work.Interrupted = true;
+            work.Error = AdjustmentTransferPresentation.Detail(error); work.Interrupted = true;
             try { journal.Save(work); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
         finally
@@ -459,7 +465,7 @@ public partial class BatchExportWindow : Window
             });
             if (preview.IsVisible) { image.Source = frame?.Image; title.Text = Loc.Format("{0} · 本次导出效果", lookName); }
         }
-        catch (Exception error) { if (preview.IsVisible) title.Text = error.Message; }
+        catch (Exception error) { if (preview.IsVisible) title.Text = AdjustmentTransferPresentation.Detail(error); }
     }
 }
 

@@ -27,13 +27,15 @@ enum IOSQuickPresetModelChecks {
         let identity = PhotoIdentity(resourceIdentifier: "quick-preset-source")
         model.sourceFile = .externallyManaged(file); model.sourceIdentity = identity
         model.sourceKind = .raster; model.hasImage = true
-        model.acceptImportedEditRecord(try store.versionedState(for: identity), settings: .default)
+        // 与真实导入一致使用来源默认值，避免把 raster 的 sensor 曝光误当作未保存输入。
+        let defaults = try model.sourceDefaultSettings
+        model.acceptImportedEditRecord(try store.readState(for: identity), settings: defaults)
         let payload = try AdjustmentTransferPayload(source: .init(identifier: "fixture", isRaw: false,
             processingVersion: 2, recipe: nil), values: ["light.exposure": .number(0.7)])
         let presets = AdjustmentPresetStore(directory: directory.appendingPathComponent("quick-presets"))
         let preset = try presets.create(name: "Quick exposure", payload: payload)
         model.quickPresetsVisible = true
-        model.applyPresetToCurrentPhoto(preset, settings: .default)
+        model.applyPresetToCurrentPhoto(preset, settings: defaults)
         try wait { !model.quickPresetState.isPreparing }
         guard case .saved(_, let transaction) = model.quickPresetState else { throw NSError(domain: "quick preset did not save: \(String(describing: model.quickPresetState))", code: 1) }
         try check(store.state(for: identity)?.settings.exposure == 0.7, "one click saves the prepared value")
@@ -43,29 +45,30 @@ enum IOSQuickPresetModelChecks {
         guard case .idle = model.quickPresetState else { throw NSError(domain: "global undo must dismiss the previous quick preset result", code: 1) }
         try check(model.quickPresetsVisible && store.state(for: identity) == nil, "global undo preserves preset browsing and restores the photo")
         _ = model.performAdjustmentHistory(undo: false)
-        let saved = try store.versionedState(for: identity)
+        let saved = try store.readState(for: identity)
         model.applyPresetToCurrentPhoto(preset, settings: saved.state!.settings)
         try wait { !model.quickPresetState.isPreparing }
         guard case .unchanged = model.quickPresetState else { throw NSError(domain: "unchanged not reported", code: 1) }
-        try check(try store.versionedState(for: identity) == saved && model.adjustmentSession?.transactions.count == 1,
-                  "unchanged preserves the receipt and history")
+        try check(store.readState(for: identity).hasSameAdjustments(as: saved) && model.adjustmentSession?.transactions.count == 1,
+                  "unchanged preserves the committed record and history")
         model.quickPresetState = .saved(preset, transaction)
         model.undoQuickPreset(settings: saved.state!.settings)
         guard case .undone = model.quickPresetState else { throw NSError(domain: "undo not reported", code: 1) }
         try check(store.state(for: identity) == nil && model.canRedoAdjustment, "undo restores record absence")
         let zero = try presets.create(name: "No change", payload: AdjustmentTransferPayload(source: payload.source, values: ["light.exposure": .number(0)]))
-        model.applyPresetToCurrentPhoto(zero, settings: .default)
+        model.applyPresetToCurrentPhoto(zero, settings: defaults)
         try wait { !model.quickPresetState.isPreparing }
+        guard case .unchanged = model.quickPresetState else { throw NSError(domain: "no-change preset did not report unchanged", code: 1) }
         try check(model.canRedoAdjustment, "no change preserves existing redo")
 
         func lateRequest(_ invalidate: () throws -> Void, _ message: String) throws {
-            let before = try store.versionedState(for: identity)
+            let before = try store.readState(for: identity)
             let count = model.adjustmentSession!.transactions.count
             model.quickPresetsVisible = true
             model.adjustmentQueue.suspend()
-            model.applyPresetToCurrentPhoto(preset, settings: before.state?.settings ?? .default)
+            model.applyPresetToCurrentPhoto(preset, settings: before.state?.settings ?? defaults)
             try check(model.quickPresetState.isPreparing, "enters checking before \(message)")
-            model.applyPresetToCurrentPhoto(preset, settings: before.state?.settings ?? .default)
+            model.applyPresetToCurrentPhoto(preset, settings: before.state?.settings ?? defaults)
             try invalidate()
             let drained = DispatchSemaphore(value: 0)
             model.adjustmentQueue.async { drained.signal() }
@@ -73,31 +76,31 @@ enum IOSQuickPresetModelChecks {
             var complete = false
             try wait { if !complete { complete = drained.wait(timeout: .now()) == .success }; return complete }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-            try check(try store.versionedState(for: identity) == before && model.adjustmentSession!.transactions.count == count,
+            try check(store.readState(for: identity).hasSameAdjustments(as: before) && model.adjustmentSession!.transactions.count == count,
                       "\(message) discards late preparation without writing")
         }
         try lateRequest({ model.cancelQuickPreset() }, "cancel")
         try lateRequest({ model.closeQuickPresets() }, "close panel")
         try lateRequest({ model.sourceRevision = UUID() }, "source revision change")
-        try lateRequest({ model.queueSettingsSave(.default) }, "later ordinary input")
-        _ = model.saveCurrentSettings(.default)
+        try lateRequest({ model.queueSettingsSave(defaults) }, "later ordinary input")
+        _ = model.saveCurrentSettings(defaults)
         model.quickPresetsVisible = true
         rejectWrite = true
-        model.applyPresetToCurrentPhoto(preset, settings: .default)
+        model.applyPresetToCurrentPhoto(preset, settings: defaults)
         try wait { !model.quickPresetState.isPreparing }
         guard case .failed = model.quickPresetState else { throw NSError(domain: "failed save reported success", code: 1) }
         try check(store.state(for: identity) == nil, "save failure preserves original")
         rejectWrite = false
-        model.applyPresetToCurrentPhoto(preset, settings: .default)
+        model.applyPresetToCurrentPhoto(preset, settings: defaults)
         try wait { !model.quickPresetState.isPreparing }
         guard case .saved(_, let latest) = model.quickPresetState else { throw NSError(domain: "retry did not save", code: 1) }
         var later = store.state(for: identity)!.settings; later.contrast = 0.4
         model.queueSettingsSave(later); try check(model.saveCurrentSettings(later), "ordinary edit after preset saves")
-        let ordinary = try store.versionedState(for: identity)
+        let ordinary = try store.readState(for: identity)
         model.quickPresetState = .saved(preset, latest)
         model.undoQuickPreset(settings: later)
         guard case .undoFailed = model.quickPresetState else { throw NSError(domain: "stale undo not reported", code: 1) }
-        try check(try store.versionedState(for: identity) == ordinary, "stale undo cannot undo unrelated editing")
+        try check(store.readState(for: identity).hasSameAdjustments(as: ordinary), "stale undo cannot undo unrelated editing")
 
         model.adjustmentQueue.suspend()
         model.applyPresetToCurrentPhoto(zero, settings: later)
@@ -105,7 +108,7 @@ enum IOSQuickPresetModelChecks {
         try store.save(identity, state: PhotoEditState(settings: external))
         model.adjustmentQueue.resume()
         try wait { !model.quickPresetState.isPreparing }
-        guard case .failed = model.quickPresetState else { throw NSError(domain: "external edit not rejected", code: 1) }
-        try check(store.state(for: identity)?.settings == external, "external edits cannot be overwritten")
+        guard case .saved = model.quickPresetState else { throw NSError(domain: "external edit did not apply current operation", code: 1) }
+        try check(store.state(for: identity)?.settings.exposure == 0, "current preset operation replaces an external disk value")
     }
 }

@@ -148,6 +148,11 @@ extension ContentView {
             continueAdjustmentAction()
             return
         }
+        if !pendingSystemPhotoURLs.isEmpty {
+            activateEditorTool(.adjustment(.exposure))
+            continueSystemPhotoImport()
+            return
+        }
         if pendingFileImport || pendingPhotoImport {
             activateEditorTool(.adjustment(.exposure))
             continueEditorImport()
@@ -172,10 +177,11 @@ extension ContentView {
     }
 
     func retryEditorSave() {
-        if viewModel.adjustmentReloadRequired { adjustmentReloadPresented = true; return }
         if isEditorDraftActive && viewModel.hasFailedDraftSave {
-            if pendingToolSelection != nil || pendingAdjustmentExpansion != nil || resetRestoreTool != nil || pendingFileImport || pendingPhotoImport || pendingAdjustmentAction != nil || pendingCollectionNavigation != nil { finishDraftNavigation(apply: true) }
+            if pendingToolSelection != nil || pendingAdjustmentExpansion != nil || resetRestoreTool != nil || pendingFileImport || pendingPhotoImport || !pendingSystemPhotoURLs.isEmpty || pendingAdjustmentAction != nil || pendingCollectionNavigation != nil { finishDraftNavigation(apply: true) }
             else { applyEditorDraft() }
+        } else if !pendingSystemPhotoURLs.isEmpty {
+            continueSystemPhotoImport()
         } else if pendingFileImport || pendingPhotoImport {
             continueEditorImport()
         } else if pendingCollectionNavigation != nil {
@@ -273,6 +279,11 @@ extension ContentView {
     }
 
     func cancelDraftNavigation() {
+        let skippedSystemPhoto = !pendingSystemPhotoURLs.isEmpty
+        if skippedSystemPhoto {
+            let skipped = pendingSystemPhotoURLs.removeFirst()
+            for url in skipped { PhotoImportFile.release(url) }
+        }
         pendingCollectionNavigation = nil
         pendingAdjustmentAction = nil
         pendingFileImport = false
@@ -282,6 +293,10 @@ extension ContentView {
         resetRestoreTool = nil
         resetIntentSource = nil
         resetWaitingForReady = false
+        if skippedSystemPhoto {
+            // 让确认框先完成 dismiss，再尝试下一条系统事件，避免同一轮重开确认框。
+            DispatchQueue.main.async { continueSystemPhotoImport() }
+        }
     }
 
     var resetSnapshot: PhotoEditState {

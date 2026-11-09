@@ -19,6 +19,81 @@ except ImportError:  # pragma: no cover - exercised by environments without the 
 
 
 class EditRecipeSchema(unittest.TestCase):
+    def hdr_v14(self):
+        return {
+            "schema_version": 14,
+            "processing": {"family": "rawlab_hdr", "version": 7, "quality": "standard"},
+            "input": {"path": "photo.ARW", "type": "raw"},
+            "edits": {"exposure": {"ev": .5}, "white_balance": {"mode": "relative"}},
+            "output": {"path": "out.jpg", "format": "hdr_jpeg", "base_color": "srgb"},
+        }
+
+    def test_v14_hdr_inputs_outputs_and_round_trip(self):
+        for source in ("raw", "proraw", "hdr_raster"):
+            for output in ("hdr_jpeg", "jpeg", "png", "dng"):
+                with self.subTest(source=source, output=output):
+                    document = self.hdr_v14()
+                    document["input"]["type"] = source
+                    document["output"]["format"] = output
+                    if output != "hdr_jpeg":
+                        del document["output"]["base_color"]
+                    normalized = self.normalize(document)
+                    self.assertEqual(normalized["input"]["type"], source)
+                    self.assertEqual(normalized["output"]["format"], output)
+                    self.assertEqual(self.normalize(normalized), normalized)
+                    if jsonschema:
+                        schema = json.loads((ROOT / "docs/edit-json-v14.schema.json").read_text())
+                        jsonschema.Draft202012Validator.check_schema(schema)
+                        validator = jsonschema.Draft202012Validator(schema)
+                        validator.validate(document)
+                        validator.validate(normalized)
+
+    def test_v14_camera_development_retains_mac_semantics(self):
+        document = self.hdr_v14()
+        camera = {
+            "version": 1, "white_balance_mode": "temperature", "temperature": 5300, "tint": 12,
+            "exposure_reference": "sensor", "fbdd_level": 2, "lens_distortion": True,
+            "lens_tca": True, "lens_auto_crop": False, "lens_profile": "camera/lens",
+            "camera_profile": {"path": "profiles/camera.dcp", "sha256": "a" * 64},
+        }
+        document["input"]["camera_development"] = camera
+        normalized = self.normalize(document)
+        self.assertEqual(normalized["input"]["camera_development"], camera)
+        self.assertEqual(self.normalize(normalized), normalized)
+        if jsonschema:
+            validator = jsonschema.Draft202012Validator(json.loads((ROOT / "docs/edit-json-v14.schema.json").read_text()))
+            validator.validate(normalized)
+        invalid_fields = (("white_balance_mode", "camera"), ("temperature", 1999), ("tint", 151),
+                          ("fbdd_level", 3), ("exposure_reference", "preview"), ("future", 1),
+                          ("camera_profile", {"path": "camera.dcp", "sha256": "A" * 64}))
+        for field, value in invalid_fields:
+            invalid = copy.deepcopy(document)
+            invalid["input"]["camera_development"][field] = value
+            self.reject(invalid, field)
+            if jsonschema:
+                self.assertFalse(validator.is_valid(invalid))
+        document["input"]["camera_development"] = {"white_balance_mode": "as_shot", "temperature": 5300}
+        self.reject(document, "temperature")
+        document["input"]["camera_development"] = {"lens_profile": "camera/lens"}
+        self.reject(document, "lens_profile")
+        for source in ("proraw", "hdr_raster"):
+            document["input"]["type"] = source
+            document["input"]["camera_development"] = {}
+            self.reject(document, "camera_development")
+
+    def test_old_hdr_schemas_reject_v14_extensions(self):
+        for version, processing in ((6, 1), (8, 2), (9, 3), (10, 4), (11, 5), (12, 6), (13, 7)):
+            for source in ("raw", "proraw"):
+                document = self.hdr_v14()
+                document.update(schema_version=version)
+                document["processing"]["version"] = processing
+                document["input"]["type"] = source
+                self.reject(document, "input.type")
+            for output in ("jpeg", "png", "dng"):
+                document["input"]["type"] = "hdr_raster"
+                document["output"]["format"] = output
+                self.reject(document, "output.format")
+
     def test_v7_x3f_identity(self):
         schema = json.loads((ROOT / "docs/edit-json-v7.schema.json").read_text())
         document = json.loads((ROOT / "examples/edit-recipes/x3f-v7.json").read_text())
@@ -65,6 +140,94 @@ class EditRecipeSchema(unittest.TestCase):
             self.reject(invalid,field)
             if jsonschema:
                 self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(invalid))
+
+    def test_v8_hdr_tone_schema(self):
+        schema = json.loads((ROOT / "docs/edit-json-v8.schema.json").read_text())
+        document = json.loads((ROOT / "examples/edit-recipes/hdr-v8.json").read_text())
+        normalized = self.normalize(document)
+        self.assertEqual(normalized["processing"]["version"], 2)
+        self.assertEqual(normalized["edits"]["tone"]["curve"], document["edits"]["tone"]["curve"])
+        self.assertEqual(self.normalize(normalized), normalized)
+        if jsonschema:
+            jsonschema.Draft202012Validator.check_schema(schema)
+            validator = jsonschema.Draft202012Validator(schema)
+            validator.validate(document)
+            validator.validate(normalized)
+        for field, value in (("black_point", -1.01), ("s_curve", 0.25), ("curve", {"mode": "legacy", "points": [[0, 0]]})):
+            invalid = copy.deepcopy(document)
+            invalid["edits"]["tone"][field] = value
+            self.reject(invalid, field)
+            if jsonschema:
+                self.assertFalse(validator.is_valid(invalid))
+        document["processing"]["version"] = 1
+        self.reject(document, "processing.version")
+        if jsonschema:
+            self.assertFalse(validator.is_valid(document))
+
+    def test_v9_hdr_color_schema(self):
+        schema = json.loads((ROOT / "docs/edit-json-v9.schema.json").read_text())
+        document = json.loads((ROOT / "examples/edit-recipes/hdr-v9.json").read_text())
+        normalized = self.normalize(document)
+        self.assertEqual(normalized["processing"]["version"], 3)
+        self.assertAlmostEqual(normalized["edits"]["color"]["vibrance"], 0.35)
+        self.assertEqual(normalized["edits"]["hsl"], document["edits"]["hsl"])
+        self.assertEqual(normalized["edits"]["color_grading"]["shadows"], {"hue": 210, "saturation": 12})
+        self.assertEqual(self.normalize(normalized), normalized)
+        if jsonschema:
+            jsonschema.Draft202012Validator.check_schema(schema)
+            validator = jsonschema.Draft202012Validator(schema)
+            validator.validate(document)
+            validator.validate(normalized)
+        for group, field, value in (("color", "vibrance", 1.1), ("hsl", "hue", [0]),
+                                    ("color_grading", "shadows", {"hue": 360, "saturation": 0})):
+            invalid = copy.deepcopy(document)
+            invalid["edits"][group][field] = value
+            self.reject(invalid, f"edits.{group}.{field}")
+            if jsonschema:
+                self.assertFalse(validator.is_valid(invalid))
+
+    def test_v10_hdr_rendition_schema(self):
+        schema = json.loads((ROOT / "docs/edit-json-v10.schema.json").read_text())
+        document = json.loads((ROOT / "examples/edit-recipes/hdr-v10.json").read_text())
+        normalized = self.normalize(document)
+        self.assertEqual(normalized["processing"]["version"], 4)
+        for field, value in document["edits"]["rendition"].items():
+            self.assertAlmostEqual(normalized["edits"]["rendition"][field], value)
+        self.assertEqual(self.normalize(normalized), normalized)
+        if jsonschema:
+            jsonschema.Draft202012Validator.check_schema(schema)
+            validator = jsonschema.Draft202012Validator(schema)
+            validator.validate(document)
+            validator.validate(normalized)
+        for field, value in (("peak_limit_ev", -0.1), ("sdr_exposure_ev", 4.1),
+                             ("sdr_contrast", 1.1), ("sdr_saturation", "0"), ("screen_headroom", 4)):
+            invalid = copy.deepcopy(document)
+            invalid["edits"]["rendition"][field] = value
+            self.reject(invalid, f"edits.rendition.{field}")
+            if jsonschema:
+                self.assertFalse(validator.is_valid(invalid))
+        del document["edits"]["rendition"]
+        self.assertTrue(all(value == 0 for value in self.normalize(document)["edits"]["rendition"].values()))
+
+    def test_v11_hdr_effects_schema(self):
+        schema = json.loads((ROOT / "docs/edit-json-v11.schema.json").read_text())
+        document = json.loads((ROOT / "examples/edit-recipes/hdr-v11.json").read_text())
+        normalized = self.normalize(document)
+        self.assertEqual(normalized["processing"]["version"], 5)
+        self.assertEqual(normalized["edits"]["effects"]["vignette_amount"], -60)
+        self.assertEqual(normalized["edits"]["effects"]["grain_amount"], 55)
+        self.assertEqual(self.normalize(normalized), normalized)
+        if jsonschema:
+            jsonschema.Draft202012Validator.check_schema(schema)
+            validator = jsonschema.Draft202012Validator(schema)
+            validator.validate(document)
+            validator.validate(normalized)
+        for field, value in (("vignette_amount", -101), ("grain_amount", -1), ("dehaze", .1)):
+            invalid = copy.deepcopy(document)
+            invalid["edits"]["effects"][field] = value
+            self.reject(invalid, f"edits.effects.{field}")
+            if jsonschema:
+                self.assertFalse(validator.is_valid(invalid))
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="rawlab-edit-v4-schema-")

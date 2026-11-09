@@ -38,6 +38,29 @@ public partial class MainWindow
         collectionWindow.Refresh(restorePosition:true);collectionWindow.Show();collectionWindow.Activate();RefreshControls();
     }
     internal void AddCollectionPhotos(IEnumerable<string> paths) {Collection.Add(paths,file);Collection.RefreshFailures();}
+    // 用户拒绝导航时消费请求；只有暂时阻塞或保存失败才交给定时器重试。
+    internal bool TryOpenSystemPhotos(IEnumerable<string> paths)
+    {
+        if(System.Windows.Interop.ComponentDispatcher.IsThreadModal || !IsEnabled || CollectionBusy || editGesture!=null || RetrySave.Visibility==Visibility.Visible)return false;
+        var photos=SystemPhotoOpen.Paths(paths).Where(path=>File.Exists(path) && LibraryEntry.IsImage(path)).ToArray();
+        if(photos.Length==0){SetStatus(() => Loc.Text("不是支持的图像文件"),true);return true;}
+        if(WindowState==WindowState.Minimized)WindowState=WindowState.Normal;
+        Show();Activate();
+        if(photos.Length==1) {
+            CancelParameterInputs();
+            if(!ResolveTransformDraft())return true;
+            if(!SaveEdits())return false;
+            OpenFile(photos[0]);
+        }
+        else {
+            CancelHslTarget();
+            if(!CommitCollectionInputs())return true;
+            if(!ResolveTransformDraft())return true;
+            if(!SaveEdits())return false;
+            AddCollectionPhotos(photos);Collection.ReturnToCollection();ShowCollection();
+        }
+        return true;
+    }
     internal bool EditCollectionPhoto(string id)
     {
         if(CollectionBusy || !CommitCollectionInputs())return false;
@@ -57,7 +80,7 @@ public partial class MainWindow
         if(photo==null || !StringComparer.OrdinalIgnoreCase.Equals(file,photo.Path))return null;
         if(!HistoryTargetIsCurrent(photo.Path))return SaveState.ToolTip as string ?? Loc.Text("请应用、放弃或跳过这张照片的草稿。");
         try {
-            if(currentEditRecord==null || !editStore!.VersionedState(photo.Path).SameAs(currentEditRecord))throw new EditPersistenceConflict();
+            if(currentEditRecord==null || !currentEditRecord.Identity.SameFile(photo.Identity))throw new PhotoChangedException();
             return null;
         }catch(Exception error){return error.Message;}
     }
@@ -76,8 +99,7 @@ public partial class MainWindow
         }
         CancelParameterInputs();CancelEditGesture();
         if(transform.Active)CancelTransformDraft();
-        editDirty=false;ReloadCurrentAdjustments();
-        return !adjustmentReloadRequired && CollectionDraftFailure(id)==null;
+        return ReloadCurrentAdjustments() && CollectionDraftFailure(id)==null;
     }
     internal void CancelCollectionOperation(){++transferGeneration;transferPreparing=false;}
     internal async Task SynchronizeCollection(Window owner)
@@ -89,7 +111,8 @@ public partial class MainWindow
         AdjustmentPayload? payload=null;
         var scope=new AdjustmentScopeDialog(owner,Path.GetFileName(file)+" · "+Loc.Format("目标：{0} 张照片",targets.Count),selected=>{
             try{payload=CapturePresetAdjustments(selected);return null;}catch(Exception error){return error.Message;}
-        },"同步调整","检查同步目标",settings.IsHDREditing,PreviewAdjustmentPayload,AdjustmentSummaryLookName);
+        },"同步调整","检查同步目标",settings.IsHDREditing,PreviewAdjustmentPayload,AdjustmentSummaryLookName,
+            CurrentTransferContext().SupportsHDRCameraDevelopment);
         if(scope.ShowDialog()!=true || payload==null)return;
         try {
             var expected=targets.ToDictionary(photo=>photo.Path,StringComparer.OrdinalIgnoreCase);
@@ -122,7 +145,7 @@ public partial class MainWindow
     internal CollectionExportReview PrepareCollectionExport(IReadOnlyCollection<string> skipping,ExportFormat format,int? longEdge,string directory)
     {
         editStore ??=new(EditStore.DefaultDirectory);
-        return new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,aiPreference.DeviceID)).Prepare(Collection,skipping,format,longEdge,directory,CollectionDraftFailure);
+        return new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,aiPreference.DeviceID),TransferSession.EditGeneration).Prepare(Collection,skipping,format,longEdge,directory,CollectionDraftFailure);
     }
     internal async Task<CollectionExportReview?> PrepareCollectionExportAsync(IReadOnlyCollection<string> skipping,ExportFormat format,int? longEdge,string directory)
     {
@@ -132,7 +155,7 @@ public partial class MainWindow
         var failures=photos.ToDictionary(photo=>photo.ID,photo=>CollectionDraftFailure(photo.ID));
         var generation=++transferGeneration;var opened=openRevision;var revision=editRevision;var current=file;
         var device=aiPreference.DeviceID;
-        var exporter=new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,device));
+        var exporter=new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,device),TransferSession.EditGeneration);
         transferPreparing=true;
         try {
             var result=await Task.Run(()=>exporter.Prepare(photos,skipped,format,longEdge,directory,id=>failures.GetValueOrDefault(id)));
@@ -147,7 +170,7 @@ public partial class MainWindow
             throw new InvalidOperationException(Loc.Text("请先结束或完成当前导出任务。"));
         if(batchWindow!=null){batchWindow.Close();if(batchWindow!=null)throw new InvalidOperationException(Loc.Text("请先关闭当前任务窗口。"));}
         editStore ??=new(EditStore.DefaultDirectory);
-        var job=new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,aiPreference.DeviceID)).Freeze(Collection,review,CollectionDraftFailure,RequestedAIBackend,aiPreference.DeviceID);
+        var job=new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,aiPreference.DeviceID),TransferSession.EditGeneration).Freeze(Collection,review,CollectionDraftFailure,RequestedAIBackend,aiPreference.DeviceID);
         previousBatch=job;ShowBatch(job,autoStart);return job;
     }
     internal void ViewCollectionExport()=>ShowBatchClicked(this,new());

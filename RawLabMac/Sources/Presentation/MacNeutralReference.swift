@@ -28,17 +28,21 @@ struct MacNeutralReferenceKey: Equatable {
     let edge: Int?
     let hdrMode: HDRSettings.Mode?
     let hdrVersion: Int?
+    let hdrCamera: HDRCameraDevelopmentSettings?
+    let proRAWDecodeVersion: Int?
 
     init(source: MacReferenceSource, settings: Adjustments, edge: Int?) {
         self.source = source; processing = settings.processing
         x3fMode = settings.x3fMode
         geometry = settings.geometrySettings; lens = settings.lensSettings; self.edge = edge
         hdrMode=settings.hdr?.mode; hdrVersion=settings.hdr?.processingVersion
+        hdrCamera = settings.isHDREditing ? settings.hdr?.neutralGeometrySettings.cameraDevelopmentSettings : nil
+        proRAWDecodeVersion = settings.proRAWDecodeVersion
     }
     func canServe(_ requested: MacNeutralReferenceKey, fullResolution: Bool) -> Bool {
         source == requested.source && processing == requested.processing && x3fMode == requested.x3fMode &&
             geometry == requested.geometry && lens == requested.lens &&
-            hdrMode == requested.hdrMode && hdrVersion == requested.hdrVersion &&
+            hdrMode == requested.hdrMode && hdrVersion == requested.hdrVersion && hdrCamera == requested.hdrCamera && proRAWDecodeVersion == requested.proRAWDecodeVersion &&
             (edge == requested.edge || fullResolution)
     }
     var usesOriginal: Bool { geometry.isIdentity && lens == LensCorrectionSettings() }

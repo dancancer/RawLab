@@ -8,7 +8,7 @@ public partial class MainWindow
 {
     private AdjustmentTransferSession? adjustmentSession;
     private EditStore? sessionStore;
-    private VersionedPhotoEdit? currentEditRecord;
+    private PhotoEditState? currentEditRecord;
     private sealed record EditGesture(string Path,long OpenRevision,SavedEdit Before,bool WasDirty);
     private EditGesture? editGesture;
     private AdjustmentTransferSession TransferSession
@@ -37,20 +37,25 @@ public partial class MainWindow
         if(editGesture is not {} gesture)return;
         editGesture=null;interacting=false;editSaveTimer.Stop();
         if(file!=gesture.Path || openRevision!=gesture.OpenRevision)return;
-        var aiEnabled=settings.AIDenoiseEnabled;
-        var aiChanged=aiEnabled!=gesture.Before.Settings.AIDenoiseEnabled;
-        settings=gesture.Before.Settings.Restore();settings.AIDenoiseEnabled=aiEnabled;lut=ResolveLook(gesture.Before);
+        var aiEnabled=settings.ActiveAIDenoise;
+        var aiChanged=aiEnabled!=gesture.Before.Settings.ActiveAIDenoise;
+        settings=gesture.Before.Settings.Restore();settings.ActiveAIDenoise=aiEnabled;lut=ResolveLook(gesture.Before);
         editDirty=gesture.WasDirty || aiChanged;++editRevision;RefreshControls();Schedule();
         if(aiChanged && !closing)SaveEdits();
     }
     private AdjustmentOutcome CommitCurrentEdit(AdjustmentSnapshot snapshot)
     {
-        if(file==null || currentEditRecord==null)throw new EditPersistenceConflict();
+        if(file==null)throw new InvalidOperationException("No photo is open.");
         var candidate=new SavedEdit(OriginalIdentity.Read(file),snapshot,CurrentLookIdentity());
-        var defaults=PhotoInput.PrepareHDRInputSettings(file,new Adjustments());defaults.ResolveWhiteBalance(settings.AsShot);
-        var result=TransferSession.CommitEdit(currentEditRecord,candidate,new(candidate.Identity,defaults.Capture(),null));
-        if(result.Status is not (AdjustmentStatus.Applied or AdjustmentStatus.Unchanged))throw result.Error ?? new EditPersistenceConflict();
-        var previousLook=currentEditRecord.Edit?.Look;
+        var before=currentEditRecord ?? new PhotoEditState(candidate.Identity,null);
+        SavedEdit? defaultEdit=null;
+        if(before.Edit==null) {
+            var defaults=PhotoInput.PrepareDefaultSettings(file);defaults.ResolveWhiteBalance(settings.AsShot);
+            defaultEdit=new(candidate.Identity,defaults.Capture(),null);
+        }
+        var result=TransferSession.CommitEdit(before,candidate,defaultEdit);
+        if(result.Status is not (AdjustmentStatus.Applied or AdjustmentStatus.Unchanged))throw result.Error ?? new InvalidOperationException("Adjustment was not saved.");
+        var previousLook=before.Edit?.Look;
         currentEditRecord=result.Saved;
         RecordRecentLook(previousLook,result.Saved?.Edit?.Look);
         return result;
@@ -64,28 +69,31 @@ public partial class MainWindow
             return Path.Combine(AppContext.BaseDirectory,"LUTs",Path.GetFileName(saved.Look[8..]));
         return lookLibrary?.ResolveIdentity(saved.Look) ?? saved.Look;
     }
-    private void AdoptSavedEdit(VersionedPhotoEdit saved)
+    private void AdoptSavedEdit(PhotoEditState saved)
     {
         if(file==null || !StringComparer.OrdinalIgnoreCase.Equals(file,saved.Identity.Path))return;
+        if(currentEditRecord==null || !currentEditRecord.Identity.SameFile(saved.Identity))throw new PhotoChangedException();
         if(editDirty || transform.Active || editGesture!=null)throw new AdjustmentTransferException(AdjustmentFailure.Draft);
-        if(!editStore!.VersionedState(file).SameAs(saved))throw new EditPersistenceConflict();
+        if(!TransferSession.IsCurrentSave(saved))throw new AdjustmentOperationExpiredException();
         var calibration=settings.AsShot;
         var previousLook=currentEditRecord?.Edit?.Look;
-        currentEditRecord=saved;settings=saved.Edit?.Settings.Restore() ?? PhotoInput.PrepareHDRInputSettings(file,new Adjustments());
-        if(calibration!=null)settings.ResolveWhiteBalance(calibration);
-        lut=saved.Edit is {} edit ? ResolveLook(edit) : null;
+        var restored=saved.Edit?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(file);
+        if(calibration!=null)restored.ResolveWhiteBalance(calibration);
+        var restoredLook=saved.Edit is {} edit ? ResolveLook(edit) : null;
+        currentEditRecord=saved;settings=restored;lut=restoredLook;
+        ++editRevision;ResetAITask();
         if(lut!=null && !films.Any(f=>StringComparer.OrdinalIgnoreCase.Equals(f.Path,lut))) {
             var managed=lookLibrary?.Looks.FirstOrDefault(look=>StringComparer.OrdinalIgnoreCase.Equals(look.Path,lut));
             films.Add(new(managed?.Name ?? lookLibrary?.DisplayName(lut,Path.GetFileNameWithoutExtension(lut)) ?? Path.GetFileNameWithoutExtension(lut),lut,null,
                 AppearanceUnverified:managed?.AppearanceUnverified ?? false,CompatibilityMode:managed?.CompatibilityMode ?? 0));BuildFilms();
         }
         RecordRecentLook(previousLook,saved.Edit?.Look);
-        ++editRevision;ResetAITask();RefreshControls();Schedule();
+        RefreshControls();Schedule();
     }
     private bool PrepareAdjustmentCommand()
     {
         CancelHslTarget();
-        if(file==null || exporting || closing || aiJob.State.IsRunning || adjustmentReloadRequired)return false;
+        if(file==null || exporting || closing || aiJob.State.IsRunning)return false;
         foreach(var row in ParameterRows(AdjustmentPanel).Where(row=>row.IsVisible && row.IsEnabled)) {
             if(row.Commit())continue;
             row.Number.Focus();return false;
@@ -94,23 +102,17 @@ public partial class MainWindow
         return ResolveTransformDraft() && SaveEdits();
     }
     private bool HistoryTargetIsCurrent(string path)=>!StringComparer.OrdinalIgnoreCase.Equals(path,file) ||
-        !editDirty && !transform.Active && editGesture==null && !exporting && !closing && !aiJob.State.IsRunning && !adjustmentReloadRequired;
+        !editDirty && !transform.Active && editGesture==null && !exporting && !closing && !aiJob.State.IsRunning;
 
-    private void ReloadEditsClicked(object sender,RoutedEventArgs e)
+    internal bool ReloadCurrentAdjustments()
     {
-        if(file==null || exporting || closing)return;
-        if((editDirty || transform.Dirty || GeometryEditor.HasInvalidInput) && MessageBox.Show(this,
-            Loc.Text("丢弃当前未保存修改并重新载入调整？"),Loc.Text("重新载入调整"),MessageBoxButton.YesNo,MessageBoxImage.Question)!=MessageBoxResult.Yes)return;
-        ReloadCurrentAdjustments();
-    }
-    internal void ReloadCurrentAdjustments()
-    {
-        if(file==null)return;
+        if(file==null)return false;
         try {
-            _=editStore!.VersionedState(file);
-            editGesture=null;editDirty=false;interacting=false;adjustmentReloadRequired=false;
+            _=editStore!.ReadState(file);
+            editGesture=null;editDirty=false;interacting=false;
             if(transform.Active){transform.Cancel();EndTransform();}
-            editNoticeTimer.Stop();SaveState.Text="";saveNoticeKey=null;RetrySave.Visibility=Visibility.Collapsed;OpenFile(file);
-        }catch(Exception error){ShowAdjustmentError(error);}
+            editNoticeTimer.Stop();SaveState.Text="";saveNoticeKey=null;RetrySave.Visibility=Visibility.Collapsed;
+            var opened=openRevision;OpenFile(file);return openRevision!=opened;
+        }catch(Exception error){ShowAdjustmentError(error);return false;}
     }
 }

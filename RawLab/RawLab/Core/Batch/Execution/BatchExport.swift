@@ -154,17 +154,27 @@ final class BatchExportModel: ObservableObject {
         var targets: [BatchTarget] = []
         var failures: [String] = []
         for item in items {
+            let attemptID = UUID()
+            var stage = "readPhotoLibrary"
+            var context = ["entryPoint": "photos"]
             do {
                 let file = try await PhotoImportFile.load(from: item)
                 defer { PhotoImportFile.release(file.url) }
-                let itemIdentity = item.itemIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
+                context["sourceKind"] = file.isRaw ? "raw" : "raster"
+                context["extension"] = ErrorDiagnostics.fileNameExtension(file.url)
+                stage = "readIdentity"
+                let resourceIdentifier = item.itemIdentifier
                 let identity = try await perform {
-                    try itemIdentity ?? PhotoIdentity.fallback(for: file.url)
+                    try PhotoIdentity.fallback(for: file.url, resourceIdentifier: resourceIdentifier)
                 }
+                stage = "prepareTarget"
                 let target = try await prepareTarget(file, identity: identity, jobID: jobID,
                                                      journalStore: journalStore)
                 targets.append(target)
-            } catch { failures.append(L10n.format("所选照片：%@", String(describing: error.localizedDescription))) }
+            } catch {
+                ErrorDiagnostics.log(error, operation: .batchExport, stage: stage, attemptID: attemptID, context: context)
+                failures.append(L10n.format("所选照片：%@", error.localizedDescription))
+            }
         }
         let loaded = targets, errors = failures
         await MainActor.run {
@@ -183,14 +193,22 @@ final class BatchExportModel: ObservableObject {
         for url in urls {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            let attemptID = UUID()
+            var stage = "retainPickerSource"
+            var context = ["entryPoint": "files", "securityScope": String(accessing)]
+            context["extension"] = ErrorDiagnostics.fileNameExtension(url)
             do {
                 let source = try await perform { try PhotoImportFile.retainSource(url) }
                 defer { PhotoImportFile.release(source.url) }
+                context["sourceKind"] = source.isRaw ? "raw" : "raster"
+                stage = "readIdentity"
                 let identity = try await perform { try PhotoIdentity.fallback(for: source.url) }
+                stage = "prepareTarget"
                 targets.append(try await prepareTarget(source, identity: identity, jobID: jobID,
                                                        journalStore: journalStore))
             } catch {
-                failures.append(L10n.format("所选照片：%@", String(describing: error.localizedDescription)))
+                ErrorDiagnostics.log(error, operation: .batchExport, stage: stage, attemptID: attemptID, context: context)
+                failures.append(L10n.format("所选照片：%@", error.localizedDescription))
             }
         }
         let loaded = targets, errors = failures
@@ -212,9 +230,6 @@ final class BatchExportModel: ObservableObject {
         for index in result.targets.indices {
             if isCancellationRequested { throw CancellationError() }
             let prepared=try hdrPreparation.prepare(result.targets[index],ordinal:index,format:draft.outputFormat,longEdge:draft.longEdge)
-            guard draft.outputFormat != .hdrJPEG || prepared.settings.isHDREditing else {
-                throw BatchExportError.target(L10n.text("HDR JPEG 需要启用 HDR 编辑。")+" "+result.targets[index].displayName)
-            }
             var frozen=prepared
             if let original=prepared.lookURL {
                 let folder=try BatchInputStore.directory(for:draft.id,root:journal.directory).deletingLastPathComponent()
@@ -249,6 +264,11 @@ final class BatchExportModel: ObservableObject {
         backgroundInterruption = false
         let failedIDs = failuresOnly ? Set(snapshot.targets.filter { $0.status == .failed }.map(\.id)) : nil
         let succeededBefore = snapshot.targets.filter { $0.status == .succeeded }.count
+        let attemptID = UUID()
+        let diagnosticContext = ["outputFormat": snapshot.outputFormat.rawValue, "targetCount": String(snapshot.targets.count)]
+        let logFailure: (Error, String) -> Void = { error, stage in
+            ErrorDiagnostics.log(error, operation: .batchExport, stage: stage, attemptID: attemptID, context: diagnosticContext)
+        }
         queue.async { [self] in
             var attempted = Set<String>()
             do {
@@ -272,7 +292,7 @@ final class BatchExportModel: ObservableObject {
                             snapshot = updated
                             DispatchQueue.main.async { self.job = updated }
                         },
-                        onlyIDs: failedIDs)
+                        onlyIDs: failedIDs, didFail: logFailure)
                 } else if let jpegWriter {
                     result = try BatchExportRunner.run(job: snapshot, journalStore: journalStore,
                         render: { target, resolvedSettings in
@@ -287,7 +307,7 @@ final class BatchExportModel: ObservableObject {
                             snapshot = updated
                             DispatchQueue.main.async { self.job = updated }
                         },
-                        onlyIDs: failedIDs)
+                        onlyIDs: failedIDs, didFail: logFailure)
                 } else {
                     try PhotoLibraryBatchWriter.authorize()
                     result = try BatchExportRunner.run(job: snapshot, journalStore: journalStore,
@@ -306,7 +326,7 @@ final class BatchExportModel: ObservableObject {
                             snapshot = updated
                             DispatchQueue.main.async { self.job = updated }
                         },
-                        onlyIDs: failedIDs)
+                        onlyIDs: failedIDs, didFail: logFailure)
                 }
                 let failed = result.targets.filter { attempted.contains($0.id) && $0.status == .failed }.count
                 DispatchQueue.main.async {
@@ -327,6 +347,7 @@ final class BatchExportModel: ObservableObject {
                 }
             } catch {
                 let preparationFailed=snapshot.settingsMode == .uniformFrozen && snapshot.source.settings.isHDREditing && attempted.isEmpty
+                logFailure(error, preparationFailed ? "prepare" : "run")
                 let cancelled=error is CancellationError
                 let recovered = snapshot.outputFormat == .renderedDNG
                     ? snapshot.recovered()

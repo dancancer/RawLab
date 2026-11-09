@@ -170,6 +170,8 @@ for lut in "$ROOT"/lutools/flog-2-new/*.cube; do
     cp "$lut" "$APP/Contents/Resources/LUTs/"
 done
 cp "$ROOT"/Shared/BundledLooks/*.cube "$APP/Contents/Resources/LUTs/"
+mkdir -p "$APP/Contents/Resources/BundledLooks/HDR"
+cp "$ROOT"/Shared/BundledLooks/HDR/* "$APP/Contents/Resources/BundledLooks/HDR/"
 cp "$ROOT/Shared/BundledLooks/catalog.json" "$APP/Contents/Resources/bundled-looks.json"
 cp "$ROOT"/Shared/BundledLooks/Artwork/*.png "$APP/Contents/Resources/FilmIcons/"
 cp "$ROOT/Shared/BundledLooks/NOTICE.md" "$APP/Contents/Resources/Licenses/Bundled-Looks.md"
@@ -182,6 +184,17 @@ for artwork in "$ROOT"/RawLabMac/Resources/FilmIcons/*; do
         *.png|*.jpg|*.jpeg) cp "$artwork" "$APP/Contents/Resources/FilmIcons/" ;;
     esac
 done
+# 46pt 胶片图标按屏幕像素预缩小，避免界面将大图一次压到很小的纹理。
+FILM_ICONS="$APP/Contents/Resources/FilmIcons"
+mkdir -p "$FILM_ICONS/Thumbnails"
+for artwork in "$FILM_ICONS/"*.png; do
+    name="$(basename "$artwork" .png)"
+    for scale in 1 2; do
+        sips --resampleHeightWidthMax "$((46 * scale))" "$artwork" \
+            --out "$FILM_ICONS/Thumbnails/$name@${scale}x.png" >/dev/null
+    done
+done
+
 # Package dependencies from either Homebrew or the architecture-specific source build.
 # Refresh generated copies: existing files may belong to an older dependency build.
 rm -f "$APP/Contents/Frameworks/"*.dylib

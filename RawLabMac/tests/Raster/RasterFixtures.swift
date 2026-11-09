@@ -101,12 +101,12 @@ func fixtureAlphaImage() -> CGImage {
                    shouldInterpolate: false, intent: .defaultIntent)!
 }
 
-func fixture16BitImage() -> CGImage {
-    let values: [UInt16] = [0x0123, 0x4567, 0x89ab, 0xcdef, 0x1357, 0x9bdf]
+func fixture16BitGrayImage() -> CGImage {
+    let values: [UInt16] = [0x0123, 0xcdef]
     var bytes = [UInt8]()
     for value in values { bytes += [UInt8(value >> 8), UInt8(value & 255)] }
-    return CGImage(width: 2, height: 1, bitsPerComponent: 16, bitsPerPixel: 48,
-                   bytesPerRow: 12, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+    return CGImage(width: 2, height: 1, bitsPerComponent: 16, bitsPerPixel: 16,
+                   bytesPerRow: 4, space: CGColorSpaceCreateDeviceGray(),
                    bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue | CGBitmapInfo.byteOrder16Big.rawValue),
                    provider: CGDataProvider(data: Data(bytes) as CFData)!, decode: nil,
                    shouldInterpolate: false, intent: .defaultIntent)!

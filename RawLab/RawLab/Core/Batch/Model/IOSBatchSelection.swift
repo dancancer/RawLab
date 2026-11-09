@@ -39,12 +39,13 @@ struct IOSCollectionPhoto: Identifiable {
 struct IOSCollectionExportReview {
     struct Row: Identifiable {
         let photo: IOSCollectionPhoto
-        let record: VersionedPhotoEdit?
+        let record: PhotoEditRecord?
         let settings: RawSettings?
         let look: URL?
         let lookSHA256: String?
         let lookName: String?
         let error: Error?
+        let editGeneration: UInt64
         var id: String { photo.id }
     }
     let selection: [String]
@@ -89,21 +90,24 @@ final class IOSBatchSelection: ObservableObject {
     }
 
     func prepareExport(store: EditPersistence, skipping: Set<String>, format: BatchOutputFormat, longEdge: Int?,
-                       probeHDR: (URL) throws -> Bool, validateActive: (String) throws -> Void,
-                       resolveLook: (RawSettings) throws -> (URL?, String?)) -> IOSCollectionExportReview {
+                       x3fDefaultMode: (URL) throws -> X3fMode, probeHDR: (URL) throws -> Bool, validateActive: (String) throws -> Void,
+                       resolveLook: (RawSettings) throws -> (URL?, String?),
+                       editGeneration: (String) -> UInt64 = { _ in 0 }) -> IOSCollectionExportReview {
         exportInput.prepareExport(store: store, skipping: skipping, format: format, longEdge: longEdge,
-            probeHDR: probeHDR, validateActive: validateActive, resolveLook: resolveLook)
+            x3fDefaultMode: x3fDefaultMode, probeHDR: probeHDR, validateActive: validateActive,
+            resolveLook: resolveLook, editGeneration: editGeneration)
     }
 
     func freeze(_ review: IOSCollectionExportReview, store: EditPersistence, journal: BatchJournalStore,
-                validateActive: (String) throws -> Void) throws -> BatchExportJob {
+                validateActive: (String) throws -> Void,
+                editGeneration: (String) -> UInt64 = { _ in 0 }) throws -> BatchExportJob {
         try exportInput.freeze(review, store: store, journal: journal, validateActive: { key in
             guard selection.targets() == review.selection,
                   photos[key]?.photo.file == review.rows.first(where: { $0.id == key })?.photo.photo.file else {
-                throw EditPersistenceConflict.changed
+                throw AdjustmentCommitError.expired
             }
             try validateActive(key)
-        })
+        }, editGeneration: editGeneration)
     }
 }
 
@@ -113,48 +117,69 @@ struct IOSCollectionExportInput {
     let photos: [String: IOSCollectionPhoto]
 
     func prepareExport(store: EditPersistence, skipping: Set<String>, format: BatchOutputFormat, longEdge: Int?,
-                       probeHDR: (URL) throws -> Bool,
+                       x3fDefaultMode: (URL) throws -> X3fMode, probeHDR: (URL) throws -> Bool,
                        validateActive: (String) throws -> Void,
                        resolveLook: (RawSettings) throws -> (URL?, String?),
-                       validateHDRVersion: (URL, Int) throws -> Void = { _, _ in }) -> IOSCollectionExportReview {
+                       validateHDRSource: (URL, Int?) throws -> Void = { _, _ in
+                           throw HDRSettings.ModeError.unsupportedSource
+                       }, editGeneration: (String) -> UInt64 = { _ in 0 }) -> IOSCollectionExportReview {
         let selected = selection
         let rows = selected.filter { !skipping.contains($0) }.compactMap { id -> IOSCollectionExportReview.Row? in
             guard let photo = photos[id] else { return nil }
             do {
                 try photo.validate()
                 try validateActive(id)
+                let generation = editGeneration(id)
                 guard ExportSize.isValid(longEdge) else { throw BatchExportError.global(L10n.text("导出尺寸无效。")) }
-                let record = try store.versionedState(for: photo.photo.identity)
-                var settings = record.state?.settings ?? .default
-                if record.state==nil,let file=photo.photo.file,try file.withReadAccess(probeHDR) { settings.hdr=HDRSettings() }
-                if settings.isHDREditing, let version = settings.proRAWDecodeVersion, let file = photo.photo.file {
-                    try file.withReadAccess { try validateHDRVersion($0, version) }
+                let record = try store.readState(for: photo.photo.identity)
+                let settings: RawSettings
+                if let saved = record.state { settings = saved.settings }
+                else {
+                    guard let file = photo.photo.file else { throw CocoaError(.fileReadNoSuchFile) }
+                    settings = try file.withReadAccess { url in
+                        try RawSettings.sourceDefaults(for: url, isRaw: photo.photo.isRaw,
+                            sourceIsHDR: probeHDR(url), x3fDefaultMode: x3fDefaultMode)
+                    }
                 }
-                if format == .hdrJPEG && !settings.isHDREditing { throw BatchExportError.target(L10n.text("HDR JPEG 需要启用 HDR 编辑。")) }
+                if format.requiresHDR && !settings.isHDREditing { throw BatchExportError.target(format.hdrRequiredMessage) }
+                if settings.isHDREditing {
+                    guard let file = photo.photo.file else { throw CocoaError(.fileReadNoSuchFile) }
+                    try file.withReadAccess { try validateHDRSource($0, settings.proRAWDecodeVersion) }
+                    if let profile = settings.hdr?.cameraDevelopmentSettings.cameraProfile {
+                        try HDRCameraProfileAssetStore.url(for: profile)
+                    }
+                    let look = settings.hdr!.lookSettings
+                    guard look.assetIsAvailable() else {
+                        throw BatchExportError.target(L10n.text("目标所需的外观不可用，请先导入外观。"))
+                    }
+                }
                 let (look, name) = try settings.isHDREditing ? (nil,nil) : resolveLook(settings)
                 if settings.hasLook && look == nil {
                     throw BatchExportError.target(L10n.text("目标所需的外观不可用，请先导入外观。"))
                 }
                 let hash = try look.map { try PhotoIdentity.fallback(for: $0).contentIdentifier! }
-                return .init(photo: photo, record: record, settings: settings, look: look, lookSHA256: hash, lookName: name, error: nil)
+                return .init(photo: photo, record: record, settings: settings, look: look, lookSHA256: hash,
+                    lookName: name, error: nil, editGeneration: generation)
             } catch {
-                return .init(photo: photo, record: nil, settings: nil, look: nil, lookSHA256: nil, lookName: nil, error: error)
+                return .init(photo: photo, record: nil, settings: nil, look: nil, lookSHA256: nil,
+                    lookName: nil, error: error, editGeneration: editGeneration(id))
             }
         }
         return .init(selection: selected, rows: rows, format: format, longEdge: longEdge)
     }
 
     func freeze(_ review: IOSCollectionExportReview, store: EditPersistence, journal: BatchJournalStore,
-                validateActive: (String) throws -> Void) throws -> BatchExportJob {
+                validateActive: (String) throws -> Void,
+                editGeneration: (String) -> UInt64 = { _ in 0 }) throws -> BatchExportJob {
         func validateReview() throws {
-            guard review.ready, selection == review.selection else { throw EditPersistenceConflict.changed }
+            guard review.ready, selection == review.selection else { throw AdjustmentCommitError.expired }
             for row in review.rows {
                 guard photos[row.id]?.photo.file == row.photo.photo.file,
-                      try store.versionedState(for: row.photo.photo.identity) == row.record else { throw EditPersistenceConflict.changed }
+                      editGeneration(row.id) == row.editGeneration else { throw AdjustmentCommitError.expired }
                 try row.photo.validate()
                 try validateActive(row.id)
                 if let look = row.look, try PhotoIdentity.fallback(for: look).contentIdentifier != row.lookSHA256 {
-                    throw EditPersistenceConflict.changed
+                    throw AdjustmentCommitError.expired
                 }
             }
         }

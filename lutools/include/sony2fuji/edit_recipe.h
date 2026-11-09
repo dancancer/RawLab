@@ -8,10 +8,27 @@
 namespace sony2fuji {
 
 struct HDRRecipeSettings {
+    std::string inputType = "hdr_raster";
+    bool hdrOutput = true;
+    sony2fuji_hdr_camera_development_v1 cameraDevelopment{1,
+        sizeof(sony2fuji_hdr_camera_development_v1), 0, 0, 0, 0, 0, 0, nullptr};
+    std::string lensProfile;
+    std::string cameraProfilePath;
+    std::string cameraProfileSHA256;
+    bool lensAutoCrop = true;
     uint32_t processingVersion = SONY2FUJI_HDR_PROCESSING_VERSION;
     float relativeTemperature = 6500;
     float relativeTint = 0;
     uint32_t baseColor = SONY2FUJI_HDR_COLOR_SRGB;
+    float peakLimitEV = 0;
+    float sdrExposureEV = 0;
+    float sdrContrast = 0;
+    float sdrSaturation = 0;
+    float sharpening = 0;
+    float clarity = 0;
+    float dehaze = 0;
+    float denoise = 0;
+    std::string lookSHA256;
 };
 
 // JSON recipe versions are independent of the existing binary request v2.
@@ -22,7 +39,7 @@ struct EditRecipe {
     sony2fuji_x3f_mode x3fMode = SONY2FUJI_X3F_LEGACY;
     std::string inputPath;
     bool rasterInput = false;
-    // v6 只接受 HDR 来源；相对 WB/处理版本不借用旧 RAW 字段。
+    // HDR 配方使用独立的相对白平衡和处理版本。
     std::optional<HDRRecipeSettings> hdr;
     std::string outputPath;
     std::string lookPath;
@@ -74,6 +91,7 @@ struct EditRecipe {
     // String pointers borrow this recipe; keep it alive and unchanged while used.
     sony2fuji_request toRequest() const;
     sony2fuji_hdr_request_v1 toHDRRequest() const;
+    sony2fuji_hdr_request_v7 toHDRRenderRequest() const;
 };
 
 // Invalid documents leave the destination unchanged. Error includes the field.

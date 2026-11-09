@@ -2,30 +2,37 @@
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:local="clr-namespace:RawLab.Windows" MaxWidth="720">
+ <UserControl.Resources><BooleanToVisibilityConverter x:Key="DenoiseExpanded"/><DataTemplate x:Key="DenoisePresetLabel"><TextBlock Text="{Binding}" TextWrapping="Wrap"/></DataTemplate></UserControl.Resources>
  <StackPanel Margin="4">
-  <StackPanel x:Name="AISurface" Visibility="Collapsed" Margin="0,0,0,12">
-   <WrapPanel>
-    <CheckBox x:Name="AIEnabledBox" Content="{DynamicResource 'AI 降噪（实验）'}" Checked="AIEnabledChanged" Unchecked="AIEnabledChanged" AutomationProperties.Name="{DynamicResource 'AI 降噪（实验）'}" VerticalAlignment="Center"/>
-    <Button x:Name="AICancel" Content="{DynamicResource '取消'}" Click="AICancelClicked" Visibility="Collapsed" Margin="12,0,0,0"/>
-    <Button x:Name="AIRetry" Content="{DynamicResource '重试'}" Click="AIRetryClicked" Visibility="Collapsed" Margin="12,0,0,0"/>
-    <Button x:Name="AIExportDiagnostics" Content="{DynamicResource '导出 AI 诊断包…'}" Click="AIExportDiagnosticsClicked" Visibility="Collapsed" Margin="12,0,0,0"/>
-   </WrapPanel>
+  <local:ParameterRow x:Name="HDRAmount" Visibility="Collapsed"/>
+  <StackPanel x:Name="OrdinaryDenoise">
+   <CheckBox x:Name="EnabledBox" Content="{DynamicResource '降噪'}" Checked="EnabledChanged" Unchecked="EnabledChanged" AutomationProperties.Name="{DynamicResource '降噪'}" AutomationProperties.AutomationId="denoise.enabled"/>
+   <TextBlock Text="{DynamicResource '降噪预设'}" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,8,0,3"/>
+   <ComboBox x:Name="PresetBox" SelectionChanged="PresetChanged" AutomationProperties.Name="{DynamicResource '降噪预设'}" AutomationProperties.AutomationId="denoise.preset">
+    <ComboBoxItem Content="{DynamicResource '细节优先'}" ContentTemplate="{StaticResource DenoisePresetLabel}"/>
+    <ComboBoxItem Content="{DynamicResource '去噪优先'}" ContentTemplate="{StaticResource DenoisePresetLabel}"/>
+    <ComboBoxItem IsEnabled="False" Content="{DynamicResource '自定义'}" ContentTemplate="{StaticResource DenoisePresetLabel}"/>
+   </ComboBox>
+   <StackPanel x:Name="LumaParameter" Margin="0,4,0,0"/>
+   <DockPanel Margin="0,4,0,0">
+    <Button DockPanel.Dock="Right" Click="ResetClicked" ToolTip="{DynamicResource '重置降噪'}" AutomationProperties.Name="{DynamicResource '重置降噪'}" Style="{StaticResource ToolButton}" Padding="6,2"><local:EditorIcon Kind="Reset" Width="16" Height="16"/></Button>
+    <Expander x:Name="Details" Header="{DynamicResource '精细调整'}" IsExpanded="False" AutomationProperties.AutomationId="denoise.advanced"/>
+   </DockPanel>
+   <StackPanel x:Name="Parameters" Visibility="{Binding IsExpanded, ElementName=Details, Converter={StaticResource DenoiseExpanded}}"/>
+  </StackPanel>
+  <StackPanel x:Name="AISurface" Visibility="Collapsed" Margin="0,10,0,0">
+   <CheckBox x:Name="AIEnabledBox" Checked="AIEnabledChanged" Unchecked="AIEnabledChanged" AutomationProperties.Name="{DynamicResource 'AI 降噪（实验）'}">
+    <TextBlock Text="{DynamicResource 'AI 降噪（实验）'}" TextWrapping="Wrap"/>
+   </CheckBox>
+   <StackPanel Margin="0,4,0,0">
+    <Button x:Name="AICancel" Content="{DynamicResource '取消'}" Click="AICancelClicked" Visibility="Collapsed" HorizontalAlignment="Left"/>
+    <Button x:Name="AIRetry" Content="{DynamicResource '重试'}" Click="AIRetryClicked" Visibility="Collapsed" HorizontalAlignment="Left"/>
+    <Button x:Name="AIExportDiagnostics" Click="AIExportDiagnosticsClicked" Visibility="Collapsed" HorizontalAlignment="Left">
+     <TextBlock Text="{DynamicResource '导出 AI 诊断包…'}" TextWrapping="Wrap"/>
+    </Button>
+   </StackPanel>
    <ProgressBar x:Name="AIProgress" Minimum="0" Maximum="1" Height="4" Margin="0,8,0,0" Visibility="Collapsed" AutomationProperties.Name="{DynamicResource 'AI 降噪进度'}"/>
    <TextBlock x:Name="AIStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Margin="0,6,0,0" AutomationProperties.LiveSetting="Polite"/>
-  </StackPanel>
-  <StackPanel x:Name="OrdinaryDenoise">
-  <WrapPanel Margin="0,0,0,8">
-   <CheckBox x:Name="EnabledBox" Content="{DynamicResource '降噪'}" VerticalAlignment="Center" Checked="EnabledChanged" Unchecked="EnabledChanged" AutomationProperties.Name="{DynamicResource '降噪'}"/>
-   <ComboBox x:Name="PresetBox" MinWidth="140" MaxWidth="280" SelectionChanged="PresetChanged" AutomationProperties.Name="{DynamicResource '降噪预设'}" Margin="12,0">
-    <ComboBoxItem Content="{DynamicResource '细节优先'}"/><ComboBoxItem Content="{DynamicResource '去噪优先'}"/><ComboBoxItem Content="{DynamicResource '自定义'}"/>
-   </ComboBox>
-   <Button Click="ResetClicked" ToolTip="{DynamicResource '重置降噪'}" AutomationProperties.Name="{DynamicResource '重置降噪'}" Padding="6,2"><local:EditorIcon Kind="Reset" Width="16" Height="16"/></Button>
-  </WrapPanel>
-  <!-- 精细调整展开时各行已经列出名称和数值，摘要只在收起时出现，免得同一组数值显示两遍 -->
-  <TextBlock x:Name="Summary" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Margin="0,0,0,4">
-   <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><DataTrigger Binding="{Binding IsExpanded, ElementName=Details}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
-  </TextBlock>
-  <Expander x:Name="Details" Header="{DynamicResource '精细调整'}" IsExpanded="True"><StackPanel x:Name="Parameters"/></Expander>
   </StackPanel>
  </StackPanel>
 </UserControl>

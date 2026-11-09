@@ -41,16 +41,20 @@ extension RawEditorViewModel {
 
     func persistEditCandidate(_ candidate: PhotoEditState, source: EditorEditSource) -> Bool {
         guard editorEditSource == source else { return false }
-        guard let expected = loadedEditRecord, expected.identity == source.identity, let session = adjustmentSession else {
-            adjustmentReloadRequired = true
-            editSaveState = .failed(L10n.text("调整记录已恢复，请重新选择照片载入。"))
-            return false
-        }
+        let expected: PhotoEditRecord
+        let defaults: PhotoEditState?
+        do {
+            let store = try requireEditPersistence()
+            expected = try loadedEditRecord ?? store.readState(for: source.identity)
+            guard expected.identity == source.identity else { return false }
+            loadedEditRecord = expected
+            defaults = try expected.state == nil ? PhotoEditState(settings:sourceDefaultSettings) : nil
+        } catch { editSaveState = .failed(adjustmentErrorMessage(error)); return false }
+        guard let session = adjustmentSession else { return false }
         let outcome = session.commitEdit(expected: expected, state: candidate, displayName: sourceDisplayName,
-            defaultState:PhotoEditState(settings:sourceDefaultSettings),isCurrent:{ self.editorEditSource==source },
+            defaultState:defaults,isCurrent:{ self.editorEditSource==source },
             validateSource: adjustmentSourceValidator)
         if let saved = outcome.saved {
-            adjustmentReloadRequired = false
             if let state = saved.state { recordSavedLookChange(from: expected.state, to: state) }
             loadedEditRecord = saved
             retainEditMetadata(saved.state ?? candidate)
@@ -59,8 +63,8 @@ extension RawEditorViewModel {
             if outcome.status == .applied { setEditNotice(.saved) }
             return true
         }
-        adjustmentReloadRequired = outcome.status == .conflict
-        editSaveState = .failed(outcome.error?.localizedDescription ?? L10n.text("调整记录已恢复，请重新选择照片载入。"))
+        if let error = outcome.error { ErrorDiagnostics.log(error, operation: .editPersistence, stage: "saveEdits") }
+        editSaveState = .failed(outcome.error.map(adjustmentErrorMessage) ?? L10n.text("调整未保存，请重试。"))
         return false
     }
 
@@ -74,17 +78,50 @@ extension RawEditorViewModel {
         }
     }
 
+    private func requireEditPersistence() throws -> EditPersistence {
+        if editPersistence == nil { editPersistence = try openEditPersistence() }
+        guard let store = editPersistence else { throw EditPersistenceError.corruptStore }
+        if adjustmentSession == nil { adjustmentSession = IOSAdjustmentTransferSession(store: store) }
+        return store
+    }
+
+    func restoreCommittedSettings() throws -> RawSettings {
+        guard let source = editorEditSource else { throw EditPersistenceError.corruptStore }
+        let store = try requireEditPersistence()
+        let record = try loadedEditRecord ?? store.readState(for: source.identity)
+        guard record.identity == source.identity else { throw AdjustmentCommitError.photoChanged }
+        let restored = try record.state?.settings ?? sourceDefaultSettings
+        cancelQueuedSettingsSave()
+        pendingSettings = nil
+        failedDraftSource = nil
+        adjustmentInteraction = nil
+        adjustmentInteractionRejected = false
+        hasAdjustmentDraft = false
+        loadedEditRecord = record
+        retainEditMetadata(record.state ?? PhotoEditState(settings: restored, updatedAt: Date(timeIntervalSince1970: 0)))
+        persistedEditorSettings = PersistedEditorSettings(source: source, settings: restored)
+        committedPreviewSettings = restored
+        currentPreviewSettings = restored
+        setEditNotice(record.state == nil ? .idle : .restored)
+        return restored
+    }
+
     func retrySave(settings: RawSettings) {
-        if editPersistence == nil && pendingSettings == nil {
-            do {
-                editPersistence = try EditPersistence.appStore()
-                adjustmentSession = editPersistence.map(IOSAdjustmentTransferSession.init(store:))
+        do {
+            _ = try requireEditPersistence()
+            if loadedEditRecord == nil, editorEditSource != nil, pendingSettings == nil {
+                adjustmentRestoredSettings = try restoreCommittedSettings()
+                return
+            }
+            if pendingSettings == nil {
                 editSaveState = .idle
-                statusMessage = L10n.text("调整记录已恢复，请重新选择照片载入。")
-            } catch { editSaveState = .failed(error.localizedDescription) }
-            return
+                return
+            }
+            saveCurrentSettings(settings)
+        } catch {
+            ErrorDiagnostics.log(error, operation: .editPersistence, stage: "reopenStore")
+            editSaveState = .failed(adjustmentErrorMessage(error))
         }
-        saveCurrentSettings(settings)
     }
 
     func resetCurrentSettings() throws {
@@ -105,7 +142,23 @@ extension RawEditorViewModel {
 
     func exportJPEG(settings: RawSettings, longEdge: Int? = nil, keepHDR: Bool = true,
                     completion: @escaping (Result<Data, Error>) -> Void) {
+        exportPhoto(settings: settings, longEdge: longEdge, format: settings.isHDREditing && keepHDR ? .hdrJPEG : .jpeg,
+                    completion: completion)
+    }
+
+    func exportPhoto(settings: RawSettings, longEdge: Int?, format: BatchOutputFormat,
+                     completion: @escaping (Result<Data, Error>) -> Void) {
         dispatchPrecondition(condition: .onQueue(.main))
+        guard let hdrFormat = format.hdrPhotoFormat else {
+            completion(.failure(CocoaError(.fileWriteUnsupportedScheme)))
+            return
+        }
+        if format.requiresHDR && !settings.isHDREditing {
+            completion(.failure(BatchExportError.target(format.hdrRequiredMessage)))
+            return
+        }
+        do { try format.validateHDRHEIF() }
+        catch { completion(.failure(error)); return }
         guard !previewRendering, !previewResizePending, !previewFailed, !isBusy else {
             completion(.failure(BatchExportError.global(L10n.text("请等待预览完成后导出。"))))
             return
@@ -136,10 +189,11 @@ extension RawEditorViewModel {
                     let data: Data
 
                     if let hdr=settings.hdr,settings.isHDREditing {
-                        let output=FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-\(UUID().uuidString).jpg")
+                        let output=FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-\(UUID().uuidString).\(format.suffix)")
                         defer { try? FileManager.default.removeItem(at:output) }
                         try self.processor.exportHDR(url: sourceURL, settings: hdr, output: output, longEdge: longEdge,
-                            keepHDR: keepHDR, cancelled: { cancellation.isCancelled })
+                            proRAWDecodeVersion: settings.proRAWDecodeVersion, format: hdrFormat,
+                            cancelled: { cancellation.isCancelled })
                         data=try Data(contentsOf:output)
                     } else if sourceKind == .raw {
                         let result = try self.processor.processRaw(
@@ -153,7 +207,8 @@ extension RawEditorViewModel {
                             from: result.buffer,
                             sourceURL: sourceURL,
                             orientation: result.orientation,
-                            quality: 0.92
+                            quality: 0.92,
+                            sourceIsRaw: true
                         )
                         data = output
                     } else {
@@ -282,15 +337,15 @@ extension RawEditorViewModel {
                         from: fullResult.buffer,
                         sourceURL: url,
                         orientation: fullResult.orientation,
-                        quality: 0.92
+                        quality: 0.92,
+                        sourceIsRaw: true
                     )
 
                     DispatchQueue.main.async {
                         self.sourceFile = sourceFile
                         self.sourceKind = .raw
                         self.sourceIsHDR = false
-                        self.sourceSupportsCameraHDR = false
-                        self.sourceProRAW = nil
+                        self.rawHDRSource = nil
                         self.sourceDisplayName = url.lastPathComponent
                         self.sourceOrientation = previewResult.orientation ?? rawPreview.orientation
                         self.draftBuffer = rawPreview.buffer
@@ -326,8 +381,7 @@ extension RawEditorViewModel {
                         self.sourceFile = nil
                         self.sourceKind = nil
                         self.sourceIsHDR = false
-                        self.sourceSupportsCameraHDR = false
-                        self.sourceProRAW = nil
+                        self.rawHDRSource = nil
                         self.sourceDisplayName = nil
                         self.sourceOrientation = nil
                         self.rawLUTID = nil

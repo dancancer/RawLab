@@ -165,36 +165,37 @@ final class ViewingEditorUITests: XCTestCase {
         let app = launch(language: "en")
         XCTAssertEqual(receipt(app)["scenePhase"] as? String, "active", "The native test host must forward its active scene phase: \(receipt(app))")
         openAdjustmentAction("collection.open", app: app)
-        wait(app) { $0["collectionShowing"] as? Bool == true && ($0["collectionOrdered"] as? [String])?.count == 1 }
+        wait(app, for: "open the one-photo collection") { $0["collectionShowing"] as? Bool == true && ($0["collectionOrdered"] as? [String])?.count == 1 }
         let ordered = receipt(app)["collectionOrdered"] as! [String]
         XCTAssertEqual(receipt(app)["collectionSelected"] as? [String], ordered)
         XCTAssertFalse(app.buttons["collection.synchronize"].isEnabled, "The only source is excluded from synchronization")
         app.buttons["collection.edit.\(ordered[0])"].tap()
-        wait(app) { $0["collectionShowing"] as? Bool == false && $0["collectionCurrent"] as? String == ordered[0] }
+        wait(app, for: "edit the selected collection photo") { $0["collectionShowing"] as? Bool == false && $0["collectionCurrent"] as? String == ordered[0] }
         app.buttons["editor.group.light"].tap()
         setExposure("+0.75", app: app)
         app.buttons["collection.return"].tap()
-        wait(app) { $0["collectionShowing"] as? Bool == true }
+        wait(app, for: "return to the collection after the micro edit") { $0["collectionShowing"] as? Bool == true }
         XCTAssertEqual(receipt(app)["collectionOrdered"] as? [String], ordered)
         XCTAssertEqual(receipt(app)["collectionSelected"] as? [String], ordered)
         app.buttons["collection.export"].tap()
-        let start = app.buttons["collection.export.start"]
-        XCTAssertTrue(start.waitForExistence(timeout: 10), "Export configuration has one final start action")
         XCUIDevice.shared.orientation = .landscapeLeft
-        revealFormControl(start, app: app); XCTAssertTrue(start.isHittable)
+        wait(app, for: "landscape collection export layout") { _ in app.frame.width > app.frame.height }
+        let start = revealCollectionExportStart(app)
+        XCTAssertTrue(start.isHittable)
         capture(app, "collection-start-landscape")
         XCUIDevice.shared.orientation = .portrait
-        revealFormControl(start, app: app); start.tap()
-        wait(app) { $0["batchShowing"] as? Bool == true && $0["batchMode"] as? String == "per_target_frozen" }
+        wait(app, for: "portrait collection export layout") { _ in app.frame.height > app.frame.width }
+        revealCollectionExportStart(app).tap()
+        wait(app, for: "present the per-photo frozen batch") { $0["batchShowing"] as? Bool == true && $0["batchMode"] as? String == "per_target_frozen" }
         XCTAssertEqual(receipt(app)["batchFrozenExposure"] as? [Double], [0.75])
-        wait(app, timeout: 120) { $0["batchStatus"] as? String == "completed" && $0["batchCompleted"] as? Int == 1 }
+        wait(app, timeout: 120, for: "finish writing the one-photo batch to Photos") { $0["batchStatus"] as? String == "completed" && $0["batchCompleted"] as? Int == 1 }
         capture(app, "collection-one-action-export")
         app.buttons["Task Actions"].tap()
         app.buttons["Discard Task"].tap()
         app.buttons["Discard Task"].tap()
-        wait(app) { $0["batchMode"] as? String == "" }
+        wait(app, for: "discard the completed frozen batch") { $0["batchMode"] as? String == "" }
         openAdjustmentAction("collection.open", app: app)
-        wait(app) { $0["collectionShowing"] as? Bool == true }
+        wait(app, for: "reopen the original collection") { $0["collectionShowing"] as? Bool == true }
         XCTAssertEqual(receipt(app)["collectionOrdered"] as? [String], ordered)
         XCTAssertEqual(receipt(app)["collectionSelected"] as? [String], ordered)
         XCTAssertEqual(receipt(app)["sourceStoredExposure"] as? Double, 0.75)
@@ -207,8 +208,7 @@ final class ViewingEditorUITests: XCTestCase {
         }
         openAdjustmentAction("collection.open", app: app)
         app.buttons["collection.export"].tap()
-        let start = app.buttons["collection.export.start"]
-        revealFormControl(start, app: app)
+        let start = revealCollectionExportStart(app)
         let before = receipt(app)["batchJournalIDs"] as! [String]
         let drains = receipt(app)["adjustmentQueueDrains"] as! Int
         notify("com.rawlab.quick-preset.hold")
@@ -223,7 +223,7 @@ final class ViewingEditorUITests: XCTestCase {
 
         notify("com.rawlab.batch-flow.hold")
         wait(app) { $0["batchDeliveryHeld"] as? Bool == true }
-        revealFormControl(start, app: app); start.tap()
+        revealCollectionExportStart(app).tap()
         wait(app) { $0["pendingBatchDeliveries"] as? Int == 1 }
         let added = (receipt(app)["batchJournalIDs"] as! [String]).filter { !before.contains($0) }
         XCTAssertEqual(added.count, 1)
@@ -263,6 +263,25 @@ final class ViewingEditorUITests: XCTestCase {
         action.tap()
     }
 
+    @discardableResult
+    func revealCollectionExportStart(_ app: XCUIApplication) -> XCUIElement {
+        // Form 的辅助功能类型随系统变化；按表单标识定位，手势始终落在当前 sheet 内。
+        let form = app.descendants(matching: .any).matching(identifier: "collection.export.form").firstMatch
+        XCTAssertTrue(form.waitForExistence(timeout: 10), app.debugDescription)
+        let start = app.buttons["collection.export.start"]
+        for _ in 0..<8 {
+            let viewport = form.frame.intersection(app.frame).insetBy(dx: 1, dy: 1)
+            if start.exists && start.isHittable && viewport.contains(start.frame) { return start }
+            let down = start.exists && !start.frame.isEmpty && start.frame.midY < viewport.midY
+            let from = form.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: down ? 0.25 : 0.75))
+            let to = form.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: down ? 0.75 : 0.25))
+            from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.2)
+        }
+        capture(app, "collection-export-start-unreachable")
+        XCTFail("Unreachable collection export start: exists=\(start.exists), form=\(form.frame)\n\(app.debugDescription)")
+        return start
+    }
+
     func revealFormControl(_ element: XCUIElement, app: XCUIApplication) {
         for _ in 0..<8 {
             if element.exists && element.isHittable { return }
@@ -270,9 +289,6 @@ final class ViewingEditorUITests: XCTestCase {
                 let panel = app.scrollViews["editor.panel"]
                 if element.exists && element.frame.midY < panel.frame.midY { panel.swipeDown(velocity: .slow) }
                 else { panel.swipeUp(velocity: .slow) }
-            } else if element.exists && element.identifier.hasPrefix("collection.export."),
-                      app.collectionViews.containing(.button, identifier: element.identifier).firstMatch.exists {
-                app.collectionViews.containing(.button, identifier: element.identifier).firstMatch.swipeUp(velocity: .slow)
             } else { app.swipeUp(velocity: .slow) }
         }
         XCTFail("Unreachable form control: \(element)\n\(app.debugDescription)")
@@ -292,7 +308,7 @@ final class ViewingEditorUITests: XCTestCase {
         XCTAssertTrue(wheel.waitForExistence(timeout: 5))
         wheel.adjust(toPickerWheelValue: "Exposure, \(value) EV")
         app.buttons["adjustment.wheel.apply"].tap()
-        wait(app) { $0["ready"] as? Bool == true && $0["gestureActive"] as? Bool == false }
+        wait(app, for: "finish applying exposure \(value)") { $0["ready"] as? Bool == true && $0["gestureActive"] as? Bool == false }
     }
 
     func testAdjustmentGestureHistoryAndFrozenPaste() {
@@ -403,10 +419,10 @@ final class ViewingEditorUITests: XCTestCase {
         let undo = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "adjustment.transaction.undo.")).firstMatch
         revealFormControl(undo, app: app); undo.tap()
         wait(app) { abs(($0["sourceStoredExposure"] as? Double ?? -99) - 0.9) < 1e-9 }
-        let revisionAfterUndo = receipt(app)["sourceStoredRevision"] as! String
+        let snapshotAfterUndo = receipt(app)["sourceStoredSnapshot"] as! String
         revealFormControl(apply, app: app); apply.tap()
         wait(app) { $0["targetStoredExposure"] as? Double == 0.5 }
-        XCTAssertEqual(receipt(app)["sourceStoredRevision"] as? String, revisionAfterUndo,
+        XCTAssertEqual(receipt(app)["sourceStoredSnapshot"] as? String, snapshotAfterUndo,
                        "retrying B does not replay the cached successful A receipt after A was undone")
         XCTAssertEqual(receipt(app)["sourceStoredExposure"] as! Double, 0.9, accuracy: 1e-9)
         XCTAssertEqual(receipt(app)["targetStoredCrop"] as? Double, 0.6)
@@ -419,21 +435,16 @@ final class ViewingEditorUITests: XCTestCase {
         capture(app, "adjustment-multiple-target-redo")
     }
 
-    func testAdjustmentConflictReloadAndDraftCopyGuard() {
+    func testAdjustmentSaveStaysEditableAndDraftCopyGuard() {
         let app = launch(language: "en")
         app.buttons["editor.group.light"].tap()
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName("com.rawlab.iter03.external-edit" as CFString), nil, nil, true)
         wait(app) { $0["sourceStoredExposure"] as? Double == 1.3 }
         setExposure("+0.75", app: app)
-        wait(app) { ($0["saveState"] as? String ?? "").contains("failed") }
-        XCTAssertEqual(receipt(app)["sourceStoredExposure"] as? Double, 1.3)
-        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 0)
-        let retry = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "not saved")).firstMatch
-        XCTAssertTrue(retry.waitForExistence(timeout: 5)); retry.tap()
-        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
-        app.alerts.buttons["Reload Saved Adjustments"].tap()
-        wait(app) { $0["ready"] as? Bool == true && $0["exposure"] as? Double == 1.3 }
-        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 0, "reload is navigation, not an editing transaction")
+        wait(app) { $0["ready"] as? Bool == true && $0["sourceStoredExposure"] as? Double == 0.75 }
+        XCTAssertFalse((receipt(app)["saveState"] as? String ?? "").contains("failed"))
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 1)
+        XCTAssertFalse(app.buttons["Reload Saved Adjustments"].exists)
         selectGeometry(app)
         let corner = app.descendants(matching: .any).matching(identifier: "geometry.crop.bottomRight").firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         corner.press(forDuration: 0.05, thenDragTo: corner.withOffset(CGVector(dx: -16, dy: -12)))
@@ -442,17 +453,17 @@ final class ViewingEditorUITests: XCTestCase {
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
         app.alerts.buttons["Keep Editing"].tap()
         XCTAssertTrue(receipt(app)["draftChanged"] as! Bool)
-        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 0)
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 1)
         openAdjustmentAction("adjustment.copy.open", app: app)
         app.alerts.buttons["Apply"].tap()
         XCTAssertTrue(app.buttons["adjustment.copy.clear"].waitForExistence(timeout: 10))
         app.buttons["adjustment.transfer.close"].tap()
         wait(app) { $0["ready"] as? Bool == true && $0["draftActive"] as? Bool == false }
-        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 1)
+        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 2)
         XCTAssertLessThan(receipt(app)["crop"] as! Double, 0.8)
         openAdjustmentAction("adjustment.history.undo", app: app)
         wait(app) { $0["ready"] as? Bool == true && $0["crop"] as? Double == 0.8 }
-        capture(app, "adjustment-conflict-reload-draft-copy-guard")
+        capture(app, "adjustment-editable-save-draft-copy-guard")
     }
 
     func testAdjustmentCopyGermanLargeText() {
@@ -488,7 +499,7 @@ final class ViewingEditorUITests: XCTestCase {
             app.launchArguments += ["-UIPreferredContentSizeCategoryName", category]
         }
         app.launch()
-        wait(app) { $0["ready"] as? Bool == true }
+        wait(app, for: "finish loading the editor fixture") { $0["ready"] as? Bool == true }
         return app
     }
     func receipt(_ app: XCUIApplication) -> [String: Any] {
@@ -498,9 +509,12 @@ final class ViewingEditorUITests: XCTestCase {
               let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
         return result
     }
-    func wait(_ app: XCUIApplication, timeout: TimeInterval = 20, _ predicate: @escaping ([String: Any]) -> Bool) {
+    func wait(_ app: XCUIApplication, timeout: TimeInterval = 20, for condition: String = "editor condition",
+              file: StaticString = #filePath, line: UInt = #line, _ predicate: @escaping ([String: Any]) -> Bool) {
         let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in predicate(self.receipt(app)) }, object: app)
-        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: timeout), .completed, "Receipt: \(receipt(app))")
+        let result = XCTWaiter.wait(for: [expectation], timeout: timeout)
+        if result != .completed { capture(app, "wait-timeout-\(line)") }
+        XCTAssertEqual(result, .completed, "Waiting for \(condition). Receipt: \(receipt(app))", file: file, line: line)
     }
     func capture(_ app: XCUIApplication, _ name: String) {
         print("VIEWING_EDITOR \(name) \(receipt(app))")

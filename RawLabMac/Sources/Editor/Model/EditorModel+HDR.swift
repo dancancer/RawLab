@@ -3,13 +3,12 @@ import Foundation
 extension EditorModel {
     func referenceSource(_ url: URL) -> MacReferenceSource {
         MacReferenceSource(url,raster:RenderEngine.isRasterInput(url),
-            hdrFingerprint:(try? HDRSourceInfo.probe(url))?.fingerprint)
+            hdrFingerprint:(try? probeHDRSource(url, {}))?.fingerprint)
     }
     func setHDREditing(_ enabled: Bool) {
         guard sourceIsHDR || sourceSupportsCameraHDR, enabled != settings.isHDREditing, canExport, let file else { return }
         do {
             var candidate=try settings.withHDRMode(enabled,sourceIsHDR:sourceIsHDR,
-                hasLook:!selectedFilmID.isEmpty || settings.masterRecipeID != nil,
                 cameraRAW:sourceSupportsCameraHDR)
             if enabled, sourceSupportsCameraHDR, try HDRSourceInfo.probeRAW(file)?.proRAW != nil {
                 candidate.proRAWDecodeVersion = try ProRAWSource.validatedDecodeVersion(settings.proRAWDecodeVersion)
@@ -21,9 +20,17 @@ extension EditorModel {
             } else {
                 activateHDRMode(snapshot)
             }
-        } catch HDRSettings.ModeError.conflicts {
-            error=L10n.text("当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。")
         } catch { self.error=error.localizedDescription }
+    }
+
+    func applyHDRCameraDevelopment(_ development: HDRCameraDevelopmentSettings) {
+        guard settings.isHDREditing, sourceIsBayerHDR, canApplyHDRCameraDevelopment, let file, let hdr = settings.hdr,
+              development.isValid, development != hdr.cameraDevelopmentSettings,
+              saveEdits() else { return }
+        var candidate = settings
+        candidate.hdr?.cameraDevelopmentSettings = development
+        if development.fbddLevel != 0 || development.cameraProfile != nil { candidate.hdrCameraAIEnabled = false }
+        preflightCameraHDR(file, snapshot: editState(settings: candidate))
     }
 
     private func preflightCameraHDR(_ url: URL, snapshot: PhotoEditState) {
@@ -34,7 +41,9 @@ extension EditorModel {
         queue.async { [weak self] in
             let validation = Result {
                 let engine = try RenderEngine()
-                _ = try engine.render(url, settings: snapshot.settings, lut: nil, edge: edge)
+                var development = snapshot.settings
+                development.hdrCameraAIEnabled = false
+                _ = try engine.render(url, settings: development, lut: nil, edge: edge)
             }
             DispatchQueue.main.async {
                 guard let self, self.file == url, self.pendingOpenID == opening else { return }

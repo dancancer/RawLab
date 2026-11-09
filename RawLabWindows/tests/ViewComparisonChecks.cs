@@ -68,19 +68,19 @@ internal static class ViewComparisonChecks
             Click(window.InfoEntryButton);InteractionChecks.PumpUntil(()=>window.InfoOverlay.IsVisible);Click(window.InfoButton);Capture(window,output,"capture-info");
             check(Get<PhotoInfoMode>(window,"photoInfoMode")==PhotoInfoMode.Capture,"Photo corner and toolbar advance the same information mode");
             Click(window.InfoEntryButton);check(!window.InfoOverlay.IsVisible,"Photo corner completes the information cycle back to hidden");
-            Click(window.CompareSide);Ready(window);Click(window.AdjustToggleButton);window.LibraryColumn.Width=new GridLength(520);window.Width=1000;window.Height=780;window.UpdateLayout();Ready(window);Capture(window,output,"vertical-side");
-            check(window.PhotoArea.ActualHeight>window.PhotoArea.ActualWidth && Grid.GetRow(window.NeutralCanvas)==0 && Grid.GetRow(window.ResultCanvas)==1,"A tall narrow photo area stacks comparison without changing the dock budget");
+            Click(window.CompareSide);Ready(window);EditorShellChecks.ArrangeLayout(window,new Size(1230,980));Ready(window);Capture(window,output,"vertical-side");
+            check(window.PhotoArea.ActualHeight>window.PhotoArea.ActualWidth && Grid.GetRow(window.NeutralCanvas)==0 && Grid.GetRow(window.ResultCanvas)==1,"A tall narrow photo area stacks comparison without changing the inspector width");
             CheckLabels(window,check);
-            Click(window.AdjustToggleButton);window.LibraryColumn.Width=new GridLength(244);window.Width=1200;window.Height=800;window.UpdateLayout();Ready(window);
-            Click(window.CompareButton);var area=window.PhotoArea.RenderSize;var dock=window.DockRow.ActualHeight;Invoke(window,"Schedule",false);window.UpdateLayout();Capture(window,output,"busy");
-            check(window.BusyIndicator.IsVisible && window.BusyIndicator.ActualHeight==2 && window.PhotoArea.RenderSize==area && window.DockRow.ActualHeight==dock,"Latest-preview busy is a two-DIP photo overlay with no canvas or dock layout jump");Ready(window);
+            EditorShellChecks.ArrangeLayout(window,new Size(1200,800));Ready(window);
+            Click(window.CompareButton);var area=window.PhotoArea.RenderSize;var dock=window.AdjustmentPanel.ActualWidth;Invoke(window,"Schedule",false,false);window.UpdateLayout();Capture(window,output,"busy");
+            check(window.BusyIndicator.IsVisible && window.BusyIndicator.ActualHeight==2 && window.PhotoArea.RenderSize==area && window.AdjustmentPanel.ActualWidth==dock,"Latest-preview busy is a two-DIP photo overlay with no canvas or inspector layout jump");Ready(window);
             if(Environment.GetEnvironmentVariable("RAWLAB_TEST_NATIVE_POINTER")=="1")PointerChecks(window,output,check);
             else Console.WriteLine("NOT REACHED: native S3 pointer/keyboard checks require RAWLAB_TEST_NATIVE_POINTER=1 on the interactive input desktop");
             LayoutChecks(window,app,output,check);
             StatisticsFailureUi(window,output,check);
             check(initial.SameAs(Get<Adjustments>(window,"settings").Capture()) && revision==Get<long>(window,"editRevision") && !Get<bool>(window,"editDirty"),"Comparison, hold, info, margins and layout create no parameter edit or autosave");
             var image=Get<BitmapSource>(window.ResultCanvas,"image");var accepted=Get<RenderedImage>(window,"result");
-            var invalid=Path.Combine(output,"invalid.cube");File.WriteAllText(invalid,"invalid LUT");Set(window,"lut",invalid);Invoke(window,"Schedule",false);
+            var invalid=Path.Combine(output,"invalid.cube");File.WriteAllText(invalid,"invalid LUT");Set(window,"lut",invalid);Invoke(window,"Schedule",false,false);
             InteractionChecks.PumpUntil(()=>Get<bool>(window,"renderFailed") && !(bool)Get<object>(window,"scheduler").GetType().GetProperty("Busy")!.GetValue(Get<object>(window,"scheduler"))!);
             Capture(window,output,"failed-preview");
             check(ReferenceEquals(image,Get<BitmapSource>(window.ResultCanvas,"image")) && ReferenceEquals(accepted,Get<RenderedImage>(window,"result")) && window.RetryButton.IsVisible && !window.ExportPng.IsEnabled,"Failed latest preview keeps the last accepted pixels, marks outdated and offers retry without pretending exact");
@@ -89,7 +89,7 @@ internal static class ViewComparisonChecks
             window.OpenFile(source);Ready(window);
             var store=Get<EditStore>(window,"editStore");var blocked=Path.Combine(output,"blocked-save");Directory.CreateDirectory(Path.Combine(blocked,"edits.json"));Set(window,"editStore",new EditStore(blocked));
             var changed=Get<Adjustments>(window,"settings");changed.Set(Parameter.Exposure,changed[Parameter.Exposure]+.1);Invoke(window,"MarkEdited");Invoke(window,"SaveEdits");
-            Invoke(window,"Schedule",false);Ready(window);Capture(window,output,"save-error-after-preview");
+            Invoke(window,"Schedule",false,false);Ready(window);Capture(window,output,"save-error-after-preview");
             check(window.RetrySave.IsVisible && Get<bool>(window,"editDirty"),"Successful preview does not clear the independent unsaved-adjustment error");Set(window,"editStore",store);Invoke(window,"SaveEdits");
             check(!Get<bool>(window,"editDirty") && store.Find(source)!.Settings.SameAs(changed.Capture()),"Retry durably saves the changed value after storage is restored");
             NeutralChecks(raw,output,check);
@@ -102,17 +102,32 @@ internal static class ViewComparisonChecks
     private static void LayoutChecks(MainWindow window,Application app,string output,Action<bool,string> check)
     {
         var previous=Loc.Language;var size=(double)app.Resources["EditorBodySize"];var preference=Path.Combine(output,"language.txt");
+        var checkedInline=false;var checkedPopup=false;
         try {
             foreach(var language in new[]{"zh-Hans","en","de","fr","ja","es"})foreach(var font in new[]{13.0,26.0}) {
                 Loc.SetPreference(language,preference);app.Resources["EditorBodySize"]=font;window.FontSize=font;
-                window.Width=font==26 ? 1000 : 1200;window.Height=font==26 ? 720 : 800;window.UpdateLayout();
+                EditorShellChecks.ArrangeLayout(window,font==26 ? new Size(1000,720) : new Size(1200,800));
                 window.SetComparisonMode(true,true);Ready(window);window.UpdateLayout();
                 check(window.HistogramTitle.Text==Loc.Text("RGB 直方图") && window.HistogramSource.Text==Loc.Text("调整后"),"RGB title and comparison statistics source follow the active language: "+language);
-                foreach(var text in new[]{window.HistogramTitle,window.HistogramSource,window.ClipStats}) {
-                    var bounds=text.TransformToAncestor(window.PhotoArea).TransformBounds(new Rect(text.RenderSize));
-                    check(text.IsVisible && text.ActualHeight+text.Margin.Top+text.Margin.Bottom+.5>=text.DesiredSize.Height && System.Windows.Controls.Primitives.LayoutInformation.GetLayoutClip(text)==null && new Rect(window.PhotoArea.RenderSize).Contains(bounds),$"Histogram text fits the photo area: {language}/{font}/{text.Name}; actual={text.ActualHeight:0.##}, desired={text.DesiredSize.Height:0.##}, margin={text.Margin}, bounds={bounds}");
+                // 工作区会在调整栏和独立 Popup 之间移动直方图；检查用户实际看到的标题与容器。
+                var inline=window.HistogramSurface.IsVisible;
+                if(inline){if(!window.HistogramPanel.IsVisible)Click(window.HistogramInlineButton);}
+                else if(!window.HistogramPopup.IsOpen)Click(window.HistogramButton);
+                InteractionChecks.PumpUntil(()=>window.HistogramPanel.IsVisible && window.HistogramPanel.IsLoaded && (inline || window.HistogramPopup.IsOpen));window.UpdateLayout();
+                FrameworkElement host=inline ? window.HistogramSurface : window.HistogramPopupContent;
+                host.UpdateLayout();
+                var title=inline ? window.HistogramHeading : window.HistogramTitle;
+                check(title.Text==Loc.Text("RGB 直方图"),"Visible histogram heading follows the active language: "+language);
+                foreach(var text in new[]{title,window.HistogramSource,window.ClipStats}) {
+                    var bounds=text.TransformToAncestor(host).TransformBounds(new Rect(text.RenderSize));
+                    check(text.IsVisible && text.ActualHeight+text.Margin.Top+text.Margin.Bottom+.5>=text.DesiredSize.Height && System.Windows.Controls.Primitives.LayoutInformation.GetLayoutClip(text)==null && new Rect(host.RenderSize).Contains(bounds),$"Histogram text fits its visible host: {language}/{font}/{text.Name}; actual={text.ActualHeight:0.##}, desired={text.DesiredSize.Height:0.##}, margin={text.Margin}, bounds={bounds}");
                 }
+                if(inline){checkedInline=true;check(new Rect(window.AdjustmentPanel.RenderSize).Contains(host.TransformToAncestor(window.AdjustmentPanel).TransformBounds(new Rect(host.RenderSize))),"Inline histogram fits the visible inspector");}
+                else checkedPopup=true;
+                var histogramBitmap=new RenderTargetBitmap(Math.Max(1,(int)Math.Ceiling(host.ActualWidth)),Math.Max(1,(int)Math.Ceiling(host.ActualHeight)),96,96,PixelFormats.Pbgra32);histogramBitmap.Render(host);
+                var histogramEncoder=new PngBitmapEncoder();histogramEncoder.Frames.Add(BitmapFrame.Create(histogramBitmap));using(var stream=File.Create(Path.Combine(output,$"histogram-{language}-{font}.png")))histogramEncoder.Save(stream);
                 Capture(window,output,$"view-{language}-{window.Width}-{font}");CheckLabels(window,check);
+                window.HistogramPopup.IsOpen=false;
                 check(window.BusyIndicator.Height==2 && window.CompareButton.ActualWidth>=28 && window.CompareModeButton.ActualWidth>=28,
                     $"Viewing controls retain reachable targets and fixed progress thickness: {language}/{font}");
                 Click(window.CompareModeButton);var menu=window.CompareButton.ContextMenu!;
@@ -122,7 +137,8 @@ internal static class ViewComparisonChecks
                 var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));using(var stream=File.Create(Path.Combine(output,$"mode-menu-{language}-{font}.png")))encoder.Save(stream);
                 check(window.CompareSide.Header?.ToString()==Loc.Text("并排") && window.CompareSwipe.Header?.ToString()==Loc.Text("分割线"),"Mode menu follows the active language: "+language);menu.IsOpen=false;
             }
-        } finally {Loc.SetPreference(previous,preference);app.Resources["EditorBodySize"]=size;window.FontSize=size;window.Width=1200;window.Height=800;window.SetComparisonMode(false,false);window.UpdateLayout();Ready(window);}
+            check(checkedInline && checkedPopup,"Histogram layout checks cover both inline and compact popup presentations");
+        } finally {window.HistogramPopup.IsOpen=false;Loc.SetPreference(previous,preference);app.Resources["EditorBodySize"]=size;window.FontSize=size;EditorShellChecks.ArrangeLayout(window,new Size(1200,800));window.SetComparisonMode(false,false);window.UpdateLayout();Ready(window);}
     }
     private static void CheckLabels(MainWindow window,Action<bool,string> check)
     {
@@ -230,13 +246,13 @@ internal static class ViewComparisonChecks
         using var unavailable=new RenderEngine(0,statisticsAnalyzer:Analyze);
         Set(window,"engine",unavailable);
         try {
-            Invoke(window,"Schedule",false);Ready(window);window.UpdateLayout();
+            Invoke(window,"Schedule",false,false);Ready(window);window.UpdateLayout();
             var accepted=Get<RenderedImage>(window,"result");
             check(!ReferenceEquals(previous,accepted) && accepted.Image.PixelWidth>0 && window.Histogram.Bins==null && window.ClipStats.Text==Loc.Text("统计不可用") && !Get<bool>(window,"renderFailed"),"Actual WPF accepts a photo with unavailable statistics without keeping the prior bins or failing the photo");
             Capture(window,output,"statistics-unavailable");
-            fail=false;Invoke(window,"Schedule",false);Ready(window);
+            fail=false;Invoke(window,"Schedule",false,false);Ready(window);
             check(window.Histogram.Bins?.Length==768 && window.HistogramSource.Text==Loc.Text("调整后"),"Same-engine same-settings statistics retry restores current after bins");
-        } finally {Set(window,"engine",engine);Invoke(window,"Schedule",false);Ready(window);}
+        } finally {Set(window,"engine",engine);Invoke(window,"Schedule",false,false);Ready(window);}
     }
     internal static void SourceIdentityChecks(string output,Action<bool,string> check)
     {
@@ -254,7 +270,7 @@ internal static class ViewComparisonChecks
     {
         bool Current()=>(bool)typeof(MainWindow).GetProperty("ReferenceCurrent",Private)!.GetValue(window)!;
         var old=Get<RenderedImage>(window,"neutralResult");
-        File.SetLastWriteTimeUtc(source,File.GetLastWriteTimeUtc(source).AddSeconds(2));Invoke(window,"Schedule",false);Ready(window);
+        File.SetLastWriteTimeUtc(source,File.GetLastWriteTimeUtc(source).AddSeconds(2));Invoke(window,"Schedule",false,false);Ready(window);
         Capture(window,output,"source-replaced-after");
         check(!Current() && Get<RenderedImage?>(window,"neutralResult")==null,"An accepted after from a replaced same-path source releases the old neutral before reopening comparison");
         check(Get<object?>(Get<RenderEngine>(window,"engine"),"original")==null,"The same-source replacement also releases the obsolete engine reference while comparison is closed");
@@ -269,7 +285,7 @@ internal static class ViewComparisonChecks
     private static void Capture(MainWindow window,string output,string name)
     {
         window.UpdateLayout();object RectValue(Rect r)=>new {r.X,r.Y,r.Width,r.Height};
-        var state=new {photoArea=window.PhotoArea.RenderSize,dock=window.DockRow.ActualHeight,busy=window.BusyIndicator.ActualHeight,windowState=window.WindowState.ToString(),font=window.FontSize,dpi=VisualTreeHelper.GetDpi(window).DpiScaleX,
+        var state=new {photoArea=window.PhotoArea.RenderSize,dock=window.AdjustmentPanel.ActualWidth,busy=window.BusyIndicator.ActualHeight,windowState=window.WindowState.ToString(),font=window.FontSize,dpi=VisualTreeHelper.GetDpi(window).DpiScaleX,
             neutral=RectValue(window.NeutralCanvas.ImageBounds),result=RectValue(window.ResultCanvas.ImageBounds),split=window.ResultCanvas.Divider,
             labels=new[]{window.NeutralLabel,window.FilmLabel}.Select(label=>new {label.Name,visible=label.IsVisible,bounds=RectValue(label.TransformToAncestor(window.PhotoArea).TransformBounds(new Rect(label.RenderSize)))}),
             before=window.ResultCanvas.ShowingBefore,mode=Get<EditorViewState>(window,"view").PreferredMode.ToString()};

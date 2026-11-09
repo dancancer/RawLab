@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+typealias MacDCPOptionsPrompt = (URL, DCPCompilerError, @escaping (DCPImportOptions?) -> Void) -> Void
+
 extension EditorModel {
     func editState(settings: Adjustments) -> PhotoEditState {
         let filmID = selectedFilm.map { $0.managedID ?? "builtin:\($0.url.lastPathComponent)" } ?? selectedFilmID
@@ -290,7 +292,7 @@ extension EditorModel {
         let targets = Array(Set(urls.map { $0.resolvingSymlinksInPath().standardizedFileURL })).filter { $0.path != sourcePath }
         guard !targets.isEmpty else { return 0 }
         guard saveEdits(), let file else { throw AdjustmentTransferError.draftRequiresPreflight }
-        let payload = try MacAdjustmentTransfer.capture(scope: .standard, snapshot: editState(settings: settings),
+        let payload = try MacAdjustmentTransfer.capture(scope: .standard(isHDR: settings.isHDREditing), snapshot: editState(settings: settings),
             context: adjustmentTransferContext(for: file))
         let operation = try prepareAdjustmentPaste(payload: payload, targets: targets, excludingSource: sourcePath)
         applyAdjustmentPaste(operation)
@@ -310,7 +312,7 @@ extension EditorModel {
                 .filter { $0.resolvingSymlinksInPath().standardizedFileURL.path != sourcePath }
             guard !targets.isEmpty else { throw RenderError.failed(L10n.text("没有可处理目标，请重新选择照片。")) }
             guard ParameterValueField.resolvePendingInputs(), saveEdits() else { return }
-            adjustmentSheetPayload = try MacAdjustmentTransfer.capture(scope: .standard,
+            adjustmentSheetPayload = try MacAdjustmentTransfer.capture(scope: .standard(isHDR: settings.isHDREditing),
                 snapshot: editState(settings: settings), context: adjustmentTransferContext(for: file))
             adjustmentSheetTargets = targets
             adjustmentSheetExcludedSource = sourcePath
@@ -344,8 +346,8 @@ extension EditorModel {
     }
 
     func attachBatch(_ job: BatchExportJob) {
-        let preparer=job.settings.isHDREditing ? editStore.map { MacHDRBatchPreparation(source:job.source,settings:job.settings,store:$0,films:filmChoices) } : nil
-        let model = BatchExportModel(job: job, journal: batchJournal,hdrPreparation:preparer,onUsage: onUsage)
+        let preparer=job.settings.isHDREditing ? editStore.map { MacHDRBatchPreparation(source:job.source,settings:job.settings,store:$0,films:filmChoices,probeHDRSource:probeHDRSource) } : nil
+        let model = BatchExportModel(job: job, journal: batchJournal,hdrPreparation:preparer,probeHDRSource:probeHDRSource,onUsage: onUsage)
         model.sourceEditingGeometry = geometryDraft != nil
         model.onActivity = { [weak self] active in self?.exporting = active }
         model.onDiscard = { [weak self] in self?.batch = nil }
@@ -375,41 +377,57 @@ extension EditorModel {
         if [.colorGrading, .toneCurve].contains(adjustmentNavigation.tool) { cancelAdjustmentInteraction() }
         if scheduler.interacting { setInteracting(false) }
         guard saveEdits() else { return }
-        let restoredRecord: VersionedPhotoEdit
+        let restoredRecord: PhotoEditRecord
         do {
             _ = try requireAdjustmentSession()
-            restoredRecord = try editStore!.versionedState(for: url)
+            restoredRecord = try editStore!.readState(for: url)
         } catch {
             saveError = L10n.format("无法恢复调整：%@", String(describing: error.localizedDescription))
             return
         }
         let info: HDRSourceInfo?
-        do { info=try HDRSourceInfo.probe(url) }
+        var sdrFallback = false
+        do { info=try probeHDRSource(url, { sdrFallback = true }) }
         catch { self.error=error.localizedDescription; return }
-        var candidate=restoredRecord.state?.settings ?? Adjustments()
-        if restoredRecord.state==nil && RenderEngine.isRasterInput(url) { candidate.exposureMode = .sensor }
-        if info != nil && restoredRecord.state==nil { candidate.hdr=HDRSettings() }
-        let cameraHDR = info == nil && (try? HDRSourceInfo.probeRAW(url)) != nil
-        guard !candidate.isHDREditing || info != nil || cameraHDR else {
+        var candidate: Adjustments
+        do { candidate = try restoredRecord.state?.settings ?? RenderEngine.defaultSettings(for: url, sourceIsHDR: info != nil) }
+        catch { self.error=error.localizedDescription; return }
+        if sdrFallback { candidate.hdr?.mode = .sdr }
+        let cameraHDR = info == nil ? try? HDRSourceInfo.probeRAW(url) : nil
+        guard !candidate.isHDREditing || info != nil || cameraHDR != nil else {
             self.error=L10n.text("此照片没有可编辑的 HDR 增益图。")
             return
         }
         let opening=UUID(); pendingOpenID=opening
+        if candidate.isHDREditing && candidate.hdrCameraAIEnabled {
+            activateOpen(url, record: restoredRecord, settings: candidate, isHDR: info != nil, cameraHDR: cameraHDR)
+            return
+        }
         if info != nil || candidate.isHDREditing {
             importing=true
             let snapshot=candidate
+            let hdrEdge = snapshot.isHDREditing ? previewLongEdge : nil
+            let hdrSource = hdrEdge.map { _ in MacReferenceSource(url, raster: RenderEngine.isRasterInput(url),
+                                                               hdrFingerprint: info?.fingerprint) }
             let storedLook=restoredRecord.state?.filmID ?? ""
             let look=snapshot.masterRecipe?.lutURL() ?? films.first(where:{ $0.id==storedLook || "builtin:\($0.url.lastPathComponent)"==storedLook })?.url
             queue.async { [weak self] in
                 guard let self else { return }
                 do {
                     let engine=try RenderEngine()
-                    let neutral=try engine.render(url,settings:snapshot.neutralGeometrySettings,lut:nil,edge:2000)
-                    let result=try engine.render(url,settings:snapshot,lut:look,edge:2000)
+                    let neutralSettings = snapshot.neutralGeometrySettings
+                    let neutral=try engine.render(url,settings:neutralSettings,lut:nil,edge:hdrEdge ?? 2000)
+                    var preview = snapshot
+                    if snapshot.isHDREditing { preview.hdr = snapshot.hdr?.previewSettings() }
+                    let result=try engine.render(url,settings:preview,lut:look,edge:hdrEdge ?? 2000)
+                    if let hdrSource, let hdrEdge, let neutral, neutral.hdr != nil {
+                        self.geometryReferenceCache = (MacNeutralReferenceKey(source: hdrSource, settings: neutralSettings, edge: hdrEdge), neutral)
+                    }
                     DispatchQueue.main.async {
                         guard self.pendingOpenID==opening else { return }
                         self.importing=false
-                        self.activateOpen(url,record:restoredRecord,settings:snapshot,isHDR:info != nil,cameraHDR:cameraHDR,neutral:neutral,result:result)
+                        self.activateOpen(url,record:restoredRecord,settings:snapshot,isHDR:info != nil,cameraHDR:cameraHDR,
+                                          neutral:neutral,result:result,hdrEdge:hdrEdge,hdrSource:hdrSource)
                     }
                 } catch {
                     DispatchQueue.main.async {
@@ -421,11 +439,12 @@ extension EditorModel {
             return
         }
         importing=false
-        activateOpen(url,record:restoredRecord,settings:candidate,isHDR:false,cameraHDR:cameraHDR)
+        activateOpen(url,record:restoredRecord,settings:candidate,isHDR:false,cameraHDR:cameraHDR,sdrFallback:sdrFallback)
     }
 
-    private func activateOpen(_ url: URL,record restoredRecord: VersionedPhotoEdit,settings candidate: Adjustments,
-                              isHDR: Bool,cameraHDR: Bool,neutral stagedNeutral: RenderedImage? = nil,result stagedResult: RenderedImage? = nil) {
+    private func activateOpen(_ url: URL,record restoredRecord: PhotoEditRecord,settings candidate: Adjustments,
+                              isHDR: Bool,cameraHDR: HDRSourceInfo?,neutral stagedNeutral: RenderedImage? = nil,result stagedResult: RenderedImage? = nil,
+                              hdrEdge: Int? = nil,hdrSource: MacReferenceSource? = nil,sdrFallback: Bool = false) {
         resetAITask()
         cancelViewportResize()
         committedEdit = restoredRecord
@@ -433,7 +452,9 @@ extension EditorModel {
         editRevision = UUID()
         scheduler.setInteracting(false)
         sourceRevision = UUID()
-        file = url; sourceIsHDR=isHDR; sourceSupportsCameraHDR=cameraHDR; neutral=stagedNeutral; result=stagedResult
+        file = url; sourceIsHDR=isHDR; rawHDRSource=cameraHDR; neutral=stagedNeutral; result=stagedResult
+        pendingSDRFallbackNotice = sdrFallback
+        sourceUsesSDRFallback = sdrFallback
         error=nil; previewOutdated=false; statusState = .none
         pendingImportEvent = true
         updatingMetadata = true
@@ -454,23 +475,32 @@ extension EditorModel {
         if let stagedResult {
             scheduler.invalidatePending()
             acceptedOriginalSource=referenceSource(url)
+            if let hdrEdge, let hdrSource, hdrSource == acceptedOriginalSource, let stagedNeutral,
+               stagedResult.hdr != nil {
+                let work = renderWork(file: url, preview: settings, edge: hdrEdge, pass: .exact, verifiedSource: hdrSource)
+                exactPreviewCache.useScope(work.previewScope)
+                exactPreviewCache.store(neutral: stagedNeutral, result: stagedResult, for: work)
+            }
             statusState = .preview(stagedResult.image.width,stagedResult.image.height,original:false)
             pendingImportEvent=false; onUsage(.photoImported)
             if settings.isHDREditing { adjustmentNavigation.selectTool(.exposure) }
         } else { schedule() }
+        if settings.isHDREditing { error = settings.hdr?.missingResourceMessage }
     }
     func autoExposure() {
-        guard let file, result != nil, !settings.isHDREditing, !autoExposing, !exporting, geometryDraft == nil else { return }
+        guard let file, result != nil, !importing, !autoExposing, !exporting, geometryDraft == nil else { return }
         let snapshot = settings, revision = editRevision
+        let source = sourceRevision, opening = pendingOpenID
         autoExposing = true
         queue.async { [weak self] in
             let result = Result { try RenderEngine().autoExposure(file, settings: snapshot) }
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.autoExposing = false
-                guard self.file == file, self.editRevision == revision, self.settings == snapshot else { return }
+                guard self.file == file, self.sourceRevision == source, self.pendingOpenID == opening,
+                      self.editRevision == revision, self.settings == snapshot else { return }
                 switch result {
-                case .success(let ev): self.settings.exposure = ev
+                case .success(let ev): self.settings.set(.exposure, to: ev)
                 case .failure(let error): self.error = error.localizedDescription
                 }
             }
@@ -485,41 +515,69 @@ extension EditorModel {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
         if panel.runModal() == .OK {
-            importLooks(panel.urls)
+            importLooks(panel.urls, dcpOptionsPrompt: dcpOptionsPrompt())
         }
     }
 
     func importLook(_ url: URL) {
-        importLooks([url])
+        importLooks([url], dcpOptionsPrompt: dcpOptionsPrompt())
     }
 
-    func importLooks(_ urls: [URL]) {
+    func importLooks(_ urls: [URL], dcpOptionsPrompt: MacDCPOptionsPrompt? = nil) {
         guard !urls.isEmpty else { return }
         let previewPhoto = file.map { LUTPreviewSource(url: $0) }
         changeLookLibrary { library in
             var selectedID: String?
             var imported = 0
             var failures: [String] = []
-            for url in urls {
+            lookURL: for url in urls {
                 do {
                     let access = url.startAccessingSecurityScopedResource()
                     defer { if access { url.stopAccessingSecurityScopedResource() } }
                     do {
                         selectedID = try library.importLook(from: url).id
                     } catch {
-                        guard (error as? LookLibraryError)?.needsCompatibility == true else { throw error }
-                        guard let draft = try LUTCompatibility.inspect(url) else { throw error }
-                        let completion = DispatchSemaphore(value: 0)
-                        var confirmed: LUTCompatibility?
-                        DispatchQueue.main.async {
-                            LUTCompatibilityDialog.present(source: url, draft: draft, photo: previewPhoto) { value in
-                                confirmed = value
-                                completion.signal()
+                        if let dcpError = error as? DCPCompilerError,
+                           [.missingToneCurve, .automaticBlack].contains(dcpError),
+                           let dcpOptionsPrompt {
+                            var currentError = dcpError
+                            var previousOptions: DCPImportOptions?
+                            while true {
+                                let completion = DispatchSemaphore(value: 0)
+                                var chosen: DCPImportOptions?
+                                dcpOptionsPrompt(url, currentError) { value in
+                                    chosen = value
+                                    completion.signal()
+                                }
+                                completion.wait()
+                                guard let chosen else { continue lookURL }
+                                let options = DCPImportOptions(
+                                    toneCurveJSON: chosen.toneCurveJSON ?? previousOptions?.toneCurveJSON,
+                                    omitAutomaticBlack: chosen.omitAutomaticBlack || previousOptions?.omitAutomaticBlack == true)
+                                do {
+                                    selectedID = try library.importLook(from: url, dcpOptions: options).id
+                                    break
+                                } catch let nextError as DCPCompilerError
+                                            where [.missingToneCurve, .automaticBlack].contains(nextError) && nextError != currentError {
+                                    currentError = nextError
+                                    previousOptions = options
+                                }
                             }
+                        } else {
+                            guard (error as? LookLibraryError)?.needsCompatibility == true else { throw error }
+                            guard let draft = try LUTCompatibility.inspect(url) else { throw error }
+                            let completion = DispatchSemaphore(value: 0)
+                            var confirmed: LUTCompatibility?
+                            DispatchQueue.main.async {
+                                LUTCompatibilityDialog.present(source: url, draft: draft, photo: previewPhoto) { value in
+                                    confirmed = value
+                                    completion.signal()
+                                }
+                            }
+                            completion.wait()
+                            guard let confirmed else { continue }
+                            selectedID = try library.importLook(from: url, compatibility: confirmed).id
                         }
-                        completion.wait()
-                        guard let confirmed else { continue }
-                        selectedID = try library.importLook(from: url, compatibility: confirmed).id
                     }
                     imported += 1
                 } catch {
@@ -529,6 +587,14 @@ extension EditorModel {
             let report = failures.isEmpty ? nil :
                 L10n.format("已导入 %@ 个外观，%@ 个文件导入失败：\n", String(describing: imported), String(describing: failures.count)) + failures.joined(separator: "\n")
             return (selectedID, report)
+        }
+    }
+
+    private func dcpOptionsPrompt() -> MacDCPOptionsPrompt {
+        { source, reason, finish in
+            DispatchQueue.main.async {
+                DCPImportOptionsDialog.present(source: source, reason: reason, finish: finish)
+            }
         }
     }
 

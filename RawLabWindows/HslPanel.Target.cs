@@ -1,14 +1,13 @@
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 
 namespace RawLab.Windows;
 
 public sealed partial class HslPanel
 {
-    private readonly ToggleButton targetToggle=new();
-    private readonly ComboBox targetAxisPicker=new(){MinWidth=100,Margin=new(8,0,0,0)};
+    private readonly CheckBox targetToggle = new();
+    private readonly ComboBox targetAxisPicker = new() { Margin = new(0, 4, 0, 0) };
     private readonly TextBlock targetStatus=new(){TextWrapping=TextWrapping.Wrap,Margin=new(0,6,0,10)};
     private bool targetSyncing,targetWaiting;
     private HslTargetSample? targetSample;
@@ -19,7 +18,8 @@ public sealed partial class HslPanel
     internal event Action<bool,int>? TargetChanged;
     private void InitializeTargetControls()
     {
-        var bar=new StackPanel{Orientation=Orientation.Horizontal};
+        var bar = new StackPanel();
+        targetToggle.HorizontalAlignment = HorizontalAlignment.Left;
         bar.Children.Add(targetToggle);bar.Children.Add(targetAxisPicker);Children.Add(bar);Children.Add(targetStatus);
         targetStatus.SetResourceReference(TextBlock.ForegroundProperty,"Muted");
         AutomationProperties.SetAutomationId(targetToggle,"hsl.target");

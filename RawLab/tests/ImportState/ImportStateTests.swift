@@ -15,6 +15,45 @@ struct ImportStateTests {
         try check(Thread.isMainThread, "Completed results are manually released on the main thread")
         completions.forEach { $0() }
     }
+    private static func statusActionLifetime(_ model: RawEditorViewModel) throws {
+        model.statusMessage = "X3F import failed"
+        model.retryLegacyX3fImport = { _ in }
+        model.statusHasDiagnostics = true
+        model.statusMessage = nil
+        try check(model.retryLegacyX3fImport == nil && !model.statusHasDiagnostics,
+                  "Dismissing an error alert releases its retry and diagnostic actions")
+
+        model.statusMessage = "X3F import failed again"
+        model.retryLegacyX3fImport = { _ in }
+        model.statusMessage = "Saved to Photos."
+        try check(model.retryLegacyX3fImport == nil,
+                  "A replacement status never inherits a failed X3F import action")
+    }
+    private static func batchDiagnosticCauses() throws {
+        let photoKit = NSError(domain: "PHPhotosErrorDomain", code: 3302,
+                               userInfo: [NSUnderlyingErrorKey: CocoaError(.fileWriteNoPermission) as NSError])
+        let native = Sony2FujiProcessor.ProcessorError.outputIO
+        let photoAttempt = UUID()
+        let dngAttempt = UUID()
+        ErrorDiagnostics.log(BatchExportError.global("Photos write failed", underlying: photoKit),
+                             operation: .batchExport, stage: "publish", attemptID: photoAttempt)
+        ErrorDiagnostics.log(BatchExportError.global("DNG write failed", underlying: native),
+                             operation: .batchExport, stage: "render", attemptID: dngAttempt)
+        let data = try ErrorDiagnostics.app.reportData()!
+        let report = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let events = report["events"] as! [[String: Any]]
+        func failure(_ attempt: UUID) -> [String: Any] {
+            events.first { $0["attemptID"] as? String == attempt.uuidString }?["error"] as? [String: Any] ?? [:]
+        }
+        let photoCauses = failure(photoAttempt)["underlying"] as? [[String: Any]]
+        try check(photoCauses?.first?["domain"] as? String == photoKit.domain &&
+                  photoCauses?.first?["code"] as? Int == photoKit.code &&
+                  photoCauses?.last?["domain"] as? String == NSCocoaErrorDomain,
+                  "Batch diagnostics preserve PhotoKit and its underlying system error")
+        let dng = failure(dngAttempt)["native"] as? [String: Int]
+        try check(dng?["status"] == Int(SONY2FUJI_STATUS_OUTPUT_IO_ERROR.rawValue),
+                  "Batch diagnostics preserve the wrapped native DNG output status")
+    }
     private static func importCurrent(_ f: Fixture, url: URL, identity: PhotoIdentity,
                                       restored: ((RawSettings) -> Void)? = nil) throws {
         f.model.importImage(from: .raster(url), identity: identity, onSettingsRestored: restored)
@@ -391,6 +430,8 @@ struct ImportStateTests {
         guard (2...3).contains(CommandLine.arguments.count) else { throw TestFailure.message("Pass an isolated output directory and optional RAW fixture") }
         let root = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
         try check(Thread.isMainThread, "Import state harness starts on the main thread")
+        try statusActionLifetime(Fixture(directory: root.appendingPathComponent("status-actions")).model)
+        try batchDiagnosticCauses()
         try ImportCacheLifetimeTests.run(root: root.appendingPathComponent("cache-lifetime"))
         try PhotoSourceFileTests.run(root: root.appendingPathComponent("source-file"))
         try BatchSourceJournalTests.run(root: root.appendingPathComponent("source-journal"))

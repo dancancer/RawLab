@@ -64,6 +64,29 @@ int main() {
         passed = false;
     }
     sony2fuji_release_buffer(&output);
+    // These adjacent 16-bit grays both round to 40 at 8 bits. With +1 EV
+    // they fall on opposite sides of the 57/58 output quantization threshold.
+    unsigned char fineInput[] = {
+        0xb6, 0x27, 0xb6, 0x27, 0xb6, 0x27, 0xff, 0xff,
+        0xb7, 0x27, 0xb7, 0x27, 0xb7, 0x27, 0xff, 0xff
+    };
+    auto fine = request;
+    fine.input_pixels = fineInput;
+    fine.input_width = 2;
+    fine.input_pixel_format = SONY2FUJI_PIXEL_RGBA16;
+    if (sony2fuji_process(session, &fine, &output) != SONY2FUJI_STATUS_OK ||
+        output.size_bytes != 6 || static_cast<const unsigned char*>(output.data)[0] != 57 ||
+        static_cast<const unsigned char*>(output.data)[3] != 58) {
+        std::cerr << "FAIL 16-bit display input must retain precision before exposure\n";
+        passed = false;
+    }
+    sony2fuji_release_buffer(&output);
+    fineInput[6] = 0xfe;
+    if (sony2fuji_process(session, &fine, &output) != SONY2FUJI_STATUS_UNSUPPORTED) {
+        std::cerr << "FAIL 16-bit display input must reject non-opaque alpha\n";
+        passed = false;
+    }
+    sony2fuji_release_buffer(&output);
     const auto look = std::filesystem::temp_directory_path() /
         ("rawlab-protected-look-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".cube");
     { std::ofstream file(look); file << "protected look"; }

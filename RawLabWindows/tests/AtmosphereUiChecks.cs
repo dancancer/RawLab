@@ -54,7 +54,7 @@ internal static class AtmosphereUiChecks
             var expected = new AtmosphereSettings(37.251234, -42.5);
             check(Get<Adjustments>(window, "settings").Atmosphere == expected && session.Transactions.Count == count + 1,
                 "Dehaze commits once and preserves independent clarity");
-            check(store.VersionedState(photo).Edit!.Settings.Restore().Atmosphere == expected, "Atmosphere UI commits persist full values");
+            check(store.ReadState(photo).Edit!.Settings.Restore().Atmosphere == expected, "Atmosphere UI commits persist full values");
             window.UndoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
             check(Get<Adjustments>(window, "settings").Atmosphere == new AtmosphereSettings(37.251234, 0), "Undo restores only the last atmosphere edit");
             window.RedoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);

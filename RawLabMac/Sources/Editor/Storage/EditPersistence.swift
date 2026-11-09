@@ -19,15 +19,18 @@ struct OriginalFileIdentity: Codable, Equatable {
         self.modified = modified
         fileNumber = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
     }
+
+    func requireCurrent() throws {
+        guard try OriginalFileIdentity(URL(fileURLWithPath: path)) == self else { throw AdjustmentCommitError.photoChanged }
+    }
 }
 
-struct VersionedPhotoEdit: Equatable {
+struct PhotoEditRecord: Equatable {
     let identity: OriginalFileIdentity
     let state: PhotoEditState?
-    let revision: UUID?
 }
 
-enum EditPersistenceConflict: Error { case changed }
+enum AdjustmentCommitError: Error { case photoChanged, expired, historyOrder }
 
 final class EditPersistence {
     private struct Record: Codable {
@@ -37,8 +40,6 @@ final class EditPersistence {
     private struct Registry: Codable {
         var version = 1
         var records: [String: Record] = [:]
-        // 删除记录也保留新的 token，避免“修改后又恢复”绕过 prepared/history 守卫。
-        var revisions: [String: UUID]?
     }
 
     static var defaultDirectory: URL {
@@ -65,19 +66,18 @@ final class EditPersistence {
     }
 
     func state(for url: URL) throws -> PhotoEditState? {
-        try versionedState(for: url).state
+        try readState(for: url).state
     }
 
-    func versionedState(for url: URL) throws -> VersionedPhotoEdit {
+    func readState(for url: URL) throws -> PhotoEditRecord {
         let registry = try readRegistry()
         let identity = try OriginalFileIdentity(url)
         return snapshot(identity: identity, registry: registry)
     }
 
-    private func snapshot(identity: OriginalFileIdentity, registry: Registry) -> VersionedPhotoEdit {
+    private func snapshot(identity: OriginalFileIdentity, registry: Registry) -> PhotoEditRecord {
         let record = registry.records[identity.path]
-        return VersionedPhotoEdit(identity: identity, state: record?.identity == identity ? record?.state : nil,
-            revision: registry.revisions?[identity.path])
+        return PhotoEditRecord(identity: identity, state: record?.identity == identity ? record?.state : nil)
     }
 
     func save(_ url: URL, state: PhotoEditState) throws {
@@ -92,27 +92,22 @@ final class EditPersistence {
                 let identity = try OriginalFileIdentity(url)
                 if snapshot(identity: identity, registry: updated).state == state { continue }
                 updated.records[identity.path] = Record(identity: identity, state: state)
-                if updated.revisions == nil { updated.revisions = [:] }
-                updated.revisions?[identity.path] = UUID()
                 changed = true
             }
             if changed { try writeData(JSONEncoder().encode(updated), file) }
         }
     }
 
-    @discardableResult func compareAndSave(expected: VersionedPhotoEdit, state: PhotoEditState?) throws -> VersionedPhotoEdit {
+    @discardableResult func saveState(identity: OriginalFileIdentity, state: PhotoEditState?) throws -> PhotoEditRecord {
         try withWriteLock {
             var updated = try readRegistry()
-            let identity = try OriginalFileIdentity(URL(fileURLWithPath: expected.identity.path))
-            guard snapshot(identity: identity, registry: updated) == expected else { throw EditPersistenceConflict.changed }
-            if state == expected.state { return expected }
+            try identity.requireCurrent()
+            let current = snapshot(identity: identity, registry: updated)
+            guard current.state != state else { return current }
             if let state { updated.records[identity.path] = Record(identity: identity, state: state) }
             else { updated.records.removeValue(forKey: identity.path) }
-            let revision = UUID()
-            if updated.revisions == nil { updated.revisions = [:] }
-            updated.revisions?[identity.path] = revision
             try writeData(JSONEncoder().encode(updated), file)
-            return VersionedPhotoEdit(identity: identity, state: state, revision: revision)
+            return PhotoEditRecord(identity: identity, state: state)
         }
     }
 

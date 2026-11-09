@@ -45,7 +45,9 @@ typedef enum sony2fuji_input_type {
 
 typedef enum sony2fuji_pixel_format {
     SONY2FUJI_PIXEL_RGB8 = 0,
-    SONY2FUJI_PIXEL_RGBA8 = 1
+    SONY2FUJI_PIXEL_RGBA8 = 1,
+    // Tightly packed little-endian 16-bit RGBA; input only, for DISPLAY_BUFFER.
+    SONY2FUJI_PIXEL_RGBA16 = 2
 } sony2fuji_pixel_format;
 
 typedef enum sony2fuji_look_format {
@@ -371,6 +373,8 @@ typedef struct sony2fuji_session sony2fuji_session;
 
 // Independent from processing version. New sessions preserve legacy pixels.
 int32_t sony2fuji_x3f_available(void);
+// Identifies a source and chooses the renderer for a new edit.
+sony2fuji_status sony2fuji_x3f_default_mode(const char* input_path, sony2fuji_x3f_mode* mode);
 sony2fuji_status sony2fuji_session_set_x3f_mode(sony2fuji_session* session, sony2fuji_x3f_mode mode);
 // Last normal-X3F error on this session; owned by the session until its next render.
 const char* sony2fuji_session_x3f_error(const sony2fuji_session* session);
@@ -399,8 +403,8 @@ typedef struct sony2fuji_hsl_probe_result {
     uint32_t width, height;
     sony2fuji_hsl_probe_availability availability;
     sony2fuji_hsl_probe_quality quality;
-    float rgb[3]; // Display-encoded working sRGB, possibly outside [0,1].
-    float hsl[3]; // Hue degrees [0,360), saturation/lightness [0,1].
+    float rgb[3]; // Working sRGB outside [0,1] is allowed. HDR probes use linear values.
+    float hsl[3]; // Hue degrees [0,360), saturation and lightness coordinate [0,1].
     float weights[8]; // Same channel order as hsl_config; available samples sum to 1.
 } sony2fuji_hsl_probe_result;
 
@@ -442,10 +446,11 @@ sony2fuji_status sony2fuji_session_set_processing_version(
     sony2fuji_session* session, sony2fuji_processing_version version
 );
 
-// File adapters: single-frame opaque 8-bit SDR RGB.
+// File adapters: one opaque SDR RGB image.
 // macOS/iOS ImageIO accepts JPEG/PNG/TIFF/HEIF; Windows WIC accepts JPEG/PNG/TIFF.
+// Apple 与 Windows 也接受 16 位整数 RGB PNG/TIFF，返回 RGBA16。
 // Applies orientation and ICC -> sRGB once. Untagged RGB assumes sRGB.
-// Rejects transparency, high-bit-depth/HDR and unsupported encodings.
+// Rejects transparency, HDR and other unsupported encodings.
 // Pass a zero-initialized or previously returned buffer; release with
 // sony2fuji_release_buffer. Android clients decode validated files with the
 // platform decoder and pass DISPLAY_BUFFER; this file API returns UNSUPPORTED.
@@ -497,6 +502,14 @@ sony2fuji_status sony2fuji_compile_dcp(
     const void* data, size_t size_bytes, const char* source_name,
     sony2fuji_blob* out_blob, sony2fuji_dcp_error* out_reason
 );
+
+// A JSON array of x/y pairs may supply a missing ProfileToneCurve. Pass null
+// and zero to use the profile's curve. A nonzero omit_automatic_black opts out
+// of the profile's automatic black rendering.
+sony2fuji_status sony2fuji_compile_dcp_with_options(
+    const void* data, size_t size_bytes, const char* source_name,
+    const void* tone_curve_json, size_t tone_curve_size, uint32_t omit_automatic_black,
+    sony2fuji_blob* out_blob, sony2fuji_dcp_error* out_reason);
 
 void sony2fuji_release_blob(sony2fuji_blob* blob);
 

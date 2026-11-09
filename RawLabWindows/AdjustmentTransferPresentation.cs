@@ -4,6 +4,7 @@ internal static class AdjustmentTransferPresentation
 {
     private static readonly Dictionary<F,string> labels=new() {
         [F.Look]="外观",
+        [F.HdrLook]="外观",
         [F.Strength]="强度",
         [F.Exposure]="曝光",
         [F.ExposureMode]="曝光模式",
@@ -16,6 +17,8 @@ internal static class AdjustmentTransferPresentation
         [F.Temperature]="色温",
         [F.Tint]="色调",
         [F.HdrTemperature]="色温",
+        [F.HdrPeakLimit]="HDR 亮度上限", [F.HdrSDRExposure]="SDR 底图曝光",
+        [F.HdrSDRContrast]="SDR 底图对比度", [F.HdrSDRSaturation]="SDR 底图饱和度",
         [F.HdrTint]="色调",
         [F.Saturation]="饱和度",
         [F.BlackPoint]="黑场", [F.WhitePoint]="白场", [F.Vibrance]="鲜艳度", [F.Clarity]="清晰度", [F.Dehaze]="去朦胧",
@@ -49,6 +52,7 @@ internal static class AdjustmentTransferPresentation
     };
     internal static string Title(F field)
     {
+        if (field == F.HdrCameraDevelopment) return "HDR RAW";
         if(field.GradingZone() is {} zone)return Loc.Text("颜色分级")+" · "+Loc.Text(new[]{"阴影","中间调","高光"}[(int)zone]);
         if(field.HslIndex() is {} index)return Loc.Text(new[]{"红","橙","黄","绿","青","蓝","紫","洋红"}[index%8])+" · "+Loc.Text(new[]{"色相","饱和度","明度"}[index/8]);
         return Loc.Text(labels[field]);
@@ -60,10 +64,14 @@ internal static class AdjustmentTransferPresentation
     }
     internal static string Status(AdjustmentStatus status)=>Loc.Text(status switch {
         AdjustmentStatus.Applied=>"已保存",AdjustmentStatus.Unchanged=>"未变化",AdjustmentStatus.Skipped=>"已跳过",
-        AdjustmentStatus.Conflict=>"调整已变化",AdjustmentStatus.Failed=>"保存失败",_=>"待处理"
+        AdjustmentStatus.Conflict=>"操作已失效",AdjustmentStatus.Failed=>"保存失败",_=>"待处理"
     });
+    internal static string Detail(Exception error) => error is PhotoChangedException or AdjustmentOperationExpiredException or AdjustmentHistoryOrderException
+        ? Error(error) : error.Message;
     internal static string Error(Exception? error)=>Loc.Text(error switch {
-        EditPersistenceConflict=>"照片或调整已变化，请重新打开后重试。",
+        PhotoChangedException=>"原始文件已被替换，请重新选择照片。",
+        AdjustmentOperationExpiredException=>"此操作已过期，请重新操作。",
+        AdjustmentHistoryOrderException=>"请按历史顺序撤销或重做。",
         AdjustmentTransferException {Failure:AdjustmentFailure.EmptyScope}=>"请选择至少一项调整。",
         AdjustmentTransferException {Failure:AdjustmentFailure.Draft}=>"请先应用或放弃当前草稿。",
         AdjustmentTransferException {Failure:AdjustmentFailure.MissingLook}=>"目标缺少所选外观，请先导入外观。",

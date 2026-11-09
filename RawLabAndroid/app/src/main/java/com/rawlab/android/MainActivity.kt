@@ -4,6 +4,8 @@ import com.rawlab.android.editor.controls.HslTargetActions
 
 import android.os.Build
 import android.os.Bundle
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -39,7 +41,12 @@ import com.rawlab.android.analytics.setup.UsageAnalyticsRegistry
 import com.rawlab.android.batch.ui.BatchSelectionScreen
 import com.rawlab.android.batch.ui.BatchExportScreen
 import com.rawlab.android.editor.EditorViewModel
+import com.rawlab.android.photo.SystemPhotoIntent
+import com.rawlab.android.editor.PendingDcpImport
+import com.rawlab.android.editor.PendingLookCompatibility
+import com.rawlab.android.editor.ui.DcpImportDialog
 import com.rawlab.android.editor.ui.EditorScreen
+import com.rawlab.android.editor.ui.LUTCompatibilityDialog
 import com.rawlab.android.editor.ui.AdjustmentSheet
 import com.rawlab.android.editor.ui.AdjustmentTransferSheet
 import com.rawlab.android.editor.ui.AdjustmentPresetSheet
@@ -67,6 +74,28 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         usage.beginSession()
         setContent { RawLabTheme { RawLabApp(model, updates, usage) } }
+        if (savedInstanceState == null) receivePhotoIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        receivePhotoIntent(intent)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun receivePhotoIntent(intent: Intent) {
+        val streams = runCatching {
+            if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
+                if (Build.VERSION.SDK_INT >= 33) intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+                else intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
+            } else listOfNotNull(if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                                else intent.getParcelableExtra<android.os.Parcelable>(Intent.EXTRA_STREAM) as? Uri)
+        }.getOrDefault(emptyList())
+        val clip = intent.clipData?.let { data -> (0 until data.itemCount).mapNotNull { data.getItemAt(it).uri?.toString() } }.orEmpty()
+        val uris = SystemPhotoIntent.uris(intent.action, intent.dataString, streams.map { it.toString() }, clip)
+        val requestID = intent.getStringExtra(SystemPhotoForwarding.EXTRA_REQUEST_ID)
+        model.receiveSystemPhotos(uris.map(Uri::parse), requestID ?: java.util.UUID.randomUUID().toString())
     }
 }
 
@@ -111,8 +140,12 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     var album by rememberSaveable { mutableStateOf(false) }
     var collectionOpen by rememberSaveable { mutableStateOf(false) }
     val collection by model.collection.collectAsStateWithLifecycle()
+    val systemPhotoRequests by model.systemPhotoRequests.collectAsStateWithLifecycle()
     val batch by model.batch.collectAsStateWithLifecycle()
     val pendingBatch by model.pendingBatch.collectAsStateWithLifecycle()
+    LaunchedEffect(systemPhotoRequests.firstOrNull()?.id, batch, collection.busy) {
+        if (systemPhotoRequests.isNotEmpty() && batch == null && !collection.busy) { album = false; collectionOpen = false }
+    }
     val owner = LocalLifecycleOwner.current
     val context = LocalContext.current
     DisposableEffect(owner, model) {
@@ -137,6 +170,8 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     val openLook = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         model.importLooks(uris)
     }
+    val openHDRLook = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), model::finishHDRLookImport)
+    val openHDRCameraProfile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), model::finishHDRCameraProfileImport)
     val saveJpeg = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/jpeg")) {
         if (it == null) exportDialog = true else model.export(it, format, pendingExportLongEdgeText.toIntOrNull())
     }
@@ -165,13 +200,21 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
         }
         Box(Modifier.weight(1f)) {
         EditorScreen(state, onAlbum = { album = true }, onFile = { openFile.launch(arrayOf("*/*")) },
+            systemPhotoRequest = systemPhotoRequests.firstOrNull()?.takeUnless { collection.busy },
+            onSystemPhotoConsumed = model::consumeSystemPhotoRequest,
+            onSystemPhotoReady = { request, completed ->
+                if (!request.openAsCollection) model.importPhoto(request.uris.first(), completed)
+                else model.returnToCollection { accepted ->
+                    if (accepted) { model.addCollectionPhotos(request.uris); collectionOpen = true }
+                    completed(accepted)
+                }
+            },
             hslTarget = HslTargetActions(hslTarget, model::setHslTargetEnabled, model::setHslTargetAxis,
                 { x, y -> model.beginHslTarget(x, y) }, model::moveHslTarget, model::endHslTarget,
                 model::cancelHslTarget, model::keyHslTarget, model::rejectHslTarget),
             onEdit = model::edit, onRetry = model::retry, onSelectFilm = model::selectFilm,
             onPrepareReset = model::prepareReset, onCommitReset = model::commitReset,
             onSaveRetry = { model.retrySave() },
-            adjustmentReloadRequired = model.adjustmentReloadRequired, onReloadAdjustments = model::reloadSavedAdjustments,
             onCancelAdjustment = model::cancelAdjustmentInteraction,
             canUndoAdjustment = model.canUndoAdjustment, canRedoAdjustment = model.canRedoAdjustment,
             canPasteAdjustment = model.adjustmentClipboard != null,
@@ -210,7 +253,12 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             },
             onMessageDismiss = model::dismissMessage, onLicenses = { licenses = true }, onGpuChange = model::setGpuEnabled,
             onHDRChange = model::setHDRMode,
+            onHDRCameraDevelopment = model::applyHDRCameraDevelopment,
+            onHDRCameraDraftChange = model::changeHDRCameraDraft,
+            onImportHDRCameraProfile = { if (model.beginHDRCameraProfileImport()) openHDRCameraProfile.launch(arrayOf("*/*")) },
             onImportLook = { openLook.launch(arrayOf("*/*")) }, onRenameLook = model::renameLook,
+            onImportHDRLook = { if (model.beginHDRLookImport()) openHDRLook.launch(arrayOf("*/*")) },
+            onApplyHDRSilver = model::applyHDRSilver,
             onDeleteLook = model::deleteLook, onLookImportReportDismiss = model::dismissLookImportReport,
             onAbout = { about = true }, updateVersion = updateState.available?.version,
             onPreviewSizeChange = model::updatePreviewSize,
@@ -218,8 +266,13 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             onApplyDraft = model::applyDraft, onDiscardDraft = model::discardDraft,
             onGeometryRatio = model::chooseGeometryRatio, onGeometryLock = model::toggleGeometryLock,
             onGeometrySwap = model::swapGeometryRatio, onGeometryGrid = model::toggleGeometryGrid)
-        if (!state.lookCompatibilityPreparing) state.pendingLookCompatibility.firstOrNull()?.let { pending ->
-            com.rawlab.android.editor.ui.LUTCompatibilityDialog(pending, state.photo, model.storage, model::resolveLookCompatibility)
+        if (!state.lookImportPreparing) {
+            when (val pending = state.pendingLookImports.firstOrNull()) {
+                is PendingLookCompatibility ->
+                    LUTCompatibilityDialog(pending, state.photo, model.storage, model::resolveLookCompatibility)
+                is PendingDcpImport -> DcpImportDialog(pending, model::resolveDcpImport)
+                null -> Unit
+            }
         }
         }
         }
