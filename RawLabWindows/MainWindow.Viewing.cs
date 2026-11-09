@@ -73,10 +73,12 @@ public partial class MainWindow
     private void RefreshViewingFrames()
     {
         PrepareHDRFrames();
+        // 占位图只属于当前打开过程，不能充当显影结果或对比参考。
+        if(result!=null || file==null || closing || renderFailed)openingPreview=null;
         var reference=ReferenceCurrent ? neutralResult : null;
-        NeutralCanvas.SetImage(HDRPresentationBitmap(reference),reference?.Clipping);
+        NeutralCanvas.SetImage(HDRPresentationBitmap(reference) ?? openingPreview,reference?.Clipping);
         if (clippingOverlay is { } overlay && !ReferenceEquals(overlay.Source, result?.Image)) clippingOverlay = null;
-        ResultCanvas.SetImage(HDRPresentationBitmap(result),clippingOverlay?.Mask);
+        ResultCanvas.SetImage(HDRPresentationBitmap(result) ?? openingPreview,clippingOverlay?.Mask);
         ResultCanvas.SetComparison(HDRPresentationBitmap(reference),reference?.Clipping);
         ResultCanvas.ShowingBefore=view.HoldingBefore && reference!=null;
         var shown=view.HoldingBefore ? reference : result;

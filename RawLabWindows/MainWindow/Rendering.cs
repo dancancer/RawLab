@@ -15,11 +15,13 @@ using Microsoft.Win32;
 namespace RawLab.Windows;
 public partial class MainWindow
 {
+    private BitmapSource? openingPreview;
     internal void OpenFile(string path,BitmapSource? placeholder=null)
     {
         if(exporting || closing)return;
         CloseQuickPresets();
         CancelParameterInputs();
+        var sourceChanged=false;
         try
         {
             path=Collection.CanonicalPath(Path.GetFullPath(path));
@@ -33,7 +35,8 @@ public partial class MainWindow
             CancelViewingInput();view.SourceChanged();neutralResult=null;
             lastExportedPath=null;ExportRevealButton.Visibility=Visibility.Collapsed;
             previewResize.Stop();previewLongEdge=requestedPreviewLongEdge=2000;previewDeferred=false;
-            file=path;Collection.BeginEditing(Collection.Photos.FirstOrDefault(photo=>StringComparer.OrdinalIgnoreCase.Equals(photo.Path,path))?.ID ?? ""); interacting=false; exactReady=false; result=null; photoInfo=null; ++photoInfoRevision; syncing=true;viewport.Fit();
+            file=path;sourceChanged=true;openingPreview=placeholder;renderFailed=false;interacting=false;exactReady=false;result=null;photoInfo=null;++photoInfoRevision;syncing=true;
+            Collection.BeginEditing(Collection.Photos.FirstOrDefault(photo=>StringComparer.OrdinalIgnoreCase.Equals(photo.Path,path))?.ID ?? "");viewport.Fit();
             clippingOverlay=null;
             suspendedTransform = null;
             workspaceLayout.PhotoOpened();
@@ -41,7 +44,7 @@ public partial class MainWindow
             WorkspacePhotoOpened();
             RefreshComparisonToolTip();
             viewport.SetSourceSize(0,0);
-            NeutralCanvas.SetImage(placeholder,null); ResultCanvas.SetImage(placeholder,null);ResultCanvas.SetComparison(null,null); Histogram.Bins=null; Histogram.InvalidateVisual(); ClipStats.Text="";
+            RefreshViewingFrames();
             previewLongEdge=requestedPreviewLongEdge=ResultCanvas.PreviewLongEdge>0 ? ResultCanvas.PreviewLongEdge : 2000;
             syncing=false;
             RefreshPhotoInfo();
@@ -51,7 +54,7 @@ public partial class MainWindow
             _ = LoadPhotoInfo(path, photoInfoRevision);
             RefreshControls(); Schedule(initialPreview:true);QueueThumbnailRefresh();
         }
-        catch(Exception ex) { Report(ex); }
+        catch(Exception ex) { if(sourceChanged){syncing=false;exactReady=false;renderFailed=true;RefreshRenderLabels();UpdateBusy();}Report(ex); }
     }
     private async Task LoadPhotoInfo(string path, long revision)
     {
@@ -97,7 +100,7 @@ public partial class MainWindow
             if(viewport.SourceSize.Width==0)viewport.SetSourceSize(preview.Width,preview.Height);
             if(result==null && !renderFailed && preview.Image!=null)
             {
-                NeutralCanvas.SetImage(preview.Image,null);ResultCanvas.SetImage(preview.Image,null);ResultCanvas.SetComparison(null,null);
+                openingPreview=preview.Image;RefreshViewingFrames();
                 SetStatus(() => Loc.Text("相机内嵌预览 · 正在显影…"));
             }
         }
@@ -138,7 +141,7 @@ public partial class MainWindow
         renderFailed=false;
         var proxy=interacting || initialPreview;
         var previewSettings=settings.Clone();previewSettings.Geometry=PreviewGeometry;previewSettings.Lens=PreviewLens;
-        if(CurrentViewSource is not {} source) {exactReady=false;renderFailed=true;SetStatus(()=>Loc.Text("预览未更新"),true);UpdateBusy();return;}
+        if(CurrentViewSource is not {} source) {exactReady=false;renderFailed=true;RefreshRenderLabels();SetStatus(()=>Loc.Text("预览未更新"),true);UpdateBusy();return;}
         var referenceKey=new NeutralReferenceKey(source,PhotoInput.IsRaster(file),previewSettings.Processing,previewSettings.Geometry,previewSettings.Lens,RenderEdge(proxy),previewSettings.IsHDREditing,previewSettings.X3fMode,NeutralReference.HDRCameraSettings(previewSettings.IsHDREditing ? previewSettings.HDR : null));
         if(acceptedReference!=referenceKey){neutralResult=null;acceptedReference=null;RefreshViewingFrames();}
         var quiet=viewportOnly && exactReady && !scheduler.Busy && !proxy && !transform.Active;
