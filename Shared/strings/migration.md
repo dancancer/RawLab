@@ -1,5 +1,8 @@
 # RawLab 0.8.1 共享文案迁移记录
 
+本文保留 0.8.1 迁移时的历史结果，其中部分测试脚本已退役；当前验证入口见
+[本地化流程](../../docs/process/localization.md#focused-checks)。
+
 ## 范围与基线
 
 工作分支 `feature/shared-copy-source`，基线 `c74e3ea`。

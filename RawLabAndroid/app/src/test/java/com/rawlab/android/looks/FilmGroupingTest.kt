@@ -5,6 +5,7 @@ import org.junit.Test
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.Film
 import com.rawlab.android.settings.LookChoice
+import com.rawlab.android.settings.SettingsCodec
 
 class FilmGroupingTest {
     @Test fun flatGroupsKeepNeutralFirstAndImportedNamesIndependent() {
@@ -24,6 +25,7 @@ class FilmGroupingTest {
         filmStripItems(input, builtIns)
         assertEquals(ektar, settings.film)
         assertEquals(1.25f, settings.exposure, 0f)
+        assertEquals(settings, SettingsCodec.decode(SettingsCodec.encode(settings)))
     }
 
     @Test fun missingGroupsDoNotProduceLeadingOrRepeatedSeparators() {

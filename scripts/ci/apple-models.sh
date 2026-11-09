@@ -7,7 +7,6 @@ SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
 export SDKROOT
 case "${1:-}" in
     macos)
-        python3 RawLabMac/tests/test_photo_copy.py
         python3 RawLabMac/tests/test_build_environment.py
         python3 lutools/tests/test_lens_dependencies.py
         suites=(Shared/tests/hdr-settings.sh Shared/tests/hdr-native-request.sh Shared/tests/hdr-source-probe.sh Shared/tests/hdr-display.sh RawLabMac/tests/hdr-model.sh
@@ -27,6 +26,10 @@ case "${1:-}" in
         ;;
     *) echo "Usage: $0 macos|ios" >&2; exit 2 ;;
 esac
+# 仅复用本次运行的编译器模块；测试程序和结果仍由各脚本重新生成。
+MODEL_CACHE="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-apple-models.XXXXXX")"
+trap 'rm -rf "$MODEL_CACHE"' EXIT
+export RAWLAB_TRANSFER_MODULE_CACHE="$MODEL_CACHE/transfer"
 for suite in "${suites[@]}"; do
     printf '[model] %s\n' "$suite"
     bash "$suite"
