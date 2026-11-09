@@ -44,6 +44,32 @@ void numericAcceptance(NSURL* directory) {
         return {.8225929f*p[0]+.1775339f*p[1],.0331995f*p[0]+.9667835f*p[1],
             .0170854f*p[0]+.0723957f*p[1]+.9103015f*p[2]};
     };
+    // JPEG 各协议和 HEIF 用同一 A08 口径：色块内部、排除 2 像素边界、目标原色下的 RGB8。
+    auto measure=[&](sony2fuji_hdr_image_pair_v1& actual,uint32_t color,const std::string& label) {
+        std::vector<double> ev,rgb;
+        for (int y=2;y<height-2;++y) for (int x=2;x<width;++x) {
+            if (x%patchWidth<2 || x%patchWidth>=patchWidth-2) continue;
+            const auto* hp=reinterpret_cast<const float*>(static_cast<const uint8_t*>(actual.hdr.data)+y*actual.hdr.stride_bytes)+x*3;
+            const auto* sp=reinterpret_cast<const float*>(static_cast<const uint8_t*>(actual.sdr.data)+y*actual.sdr.stride_bytes)+x*3;
+            const double expectedY=luminance(h[y*width+x].data()),actualY=luminance(hp);
+            check(actualY>0 && std::isfinite(actualY),"A08 invalid luminance");
+            if (expectedY>=.01) ev.push_back(std::abs(std::log2(actualY/expectedY)));
+            const auto actualTarget=targetColor(sp,color),expectedTarget=targetColor(s[y*width+x].data(),color);
+            for (int c=0;c<3;++c) rgb.push_back(std::abs(gamma8(std::clamp(double(actualTarget[c]),0.0,1.0))-gamma8(expectedTarget[c])));
+        }
+        const double p95=percentile(ev,.95),mae=std::accumulate(rgb.begin(),rgb.end(),0.0)/rgb.size(),p99=percentile(rgb,.99);
+        std::cout<<"A08 color="<<color<<' '<<label<<" HDR_P95_EV="<<p95<<" SDR_MAE="<<mae<<" SDR_P99="<<p99<<'\n';
+        if (p95>.10 || mae>2 || p99>8) {
+            for (int patch=0;patch<16;++patch) {
+                const int x=patch*patchWidth+patchWidth/2,y=height/2;
+                const auto* hp=reinterpret_cast<const float*>(static_cast<const uint8_t*>(actual.hdr.data)+y*actual.hdr.stride_bytes)+x*3;
+                const auto* sp=reinterpret_cast<const float*>(static_cast<const uint8_t*>(actual.sdr.data)+y*actual.sdr.stride_bytes)+x*3;
+                std::cerr<<"patch="<<patch<<" hdr="<<hp[0]<<','<<hp[1]<<','<<hp[2]<<" sdr="<<sp[0]<<','<<sp[1]<<','<<sp[2]<<'\n';
+            }
+        }
+        sony2fuji_hdr_release_pair(&actual);
+        check(p95<=.10 && mae<=2 && p99<=8,"A08 HDR/SDR numerical acceptance failed");
+    };
     for (uint32_t color:{uint32_t(SONY2FUJI_HDR_COLOR_SRGB),uint32_t(SONY2FUJI_HDR_COLOR_DISPLAY_P3)}) {
         auto config=init<sony2fuji_hdr_export_config_v1>();
         config.jpeg_quality=95; config.base_color=color; config.metadata_policy=SONY2FUJI_HDR_METADATA_ISO_XMP;
@@ -77,29 +103,22 @@ void numericAcceptance(NSURL* directory) {
             auto actual=init<sony2fuji_hdr_image_pair_v1>();
             check(sony2fuji_hdr_decode(file.fileSystemRepresentation,&options,&actual,&diagnostic)==SONY2FUJI_STATUS_OK,
                 "A08 production FINAL decode failed");
-            std::vector<double> ev,rgb;
-            for (int y=2;y<height-2;++y) for (int x=2;x<width;++x) {
-                if (x%patchWidth<2 || x%patchWidth>=patchWidth-2) continue;
-                const auto* hp=reinterpret_cast<const float*>(static_cast<const uint8_t*>(actual.hdr.data)+y*actual.hdr.stride_bytes)+x*3;
-                const auto* sp=reinterpret_cast<const float*>(static_cast<const uint8_t*>(actual.sdr.data)+y*actual.sdr.stride_bytes)+x*3;
-                const double expectedY=luminance(h[y*width+x].data()),actualY=luminance(hp);
-                check(actualY>0 && std::isfinite(actualY),"A08 invalid luminance");
-                if (expectedY>=.01) ev.push_back(std::abs(std::log2(actualY/expectedY)));
-                const auto actualTarget=targetColor(sp,color),expectedTarget=targetColor(s[y*width+x].data(),color);
-                for (int c=0;c<3;++c) rgb.push_back(std::abs(gamma8(std::clamp(double(actualTarget[c]),0.0,1.0))-gamma8(expectedTarget[c])));
-            }
-            const double p95=percentile(ev,.95),mae=std::accumulate(rgb.begin(),rgb.end(),0.0)/rgb.size(),p99=percentile(rgb,.99);
-            std::cout<<"A08 color="<<color<<" protocol="<<protocol<<" HDR_P95_EV="<<p95<<" SDR_MAE="<<mae<<" SDR_P99="<<p99<<'\n';
-            if (p95>.10 || mae>2 || p99>8) {
-                for (int patch=0;patch<16;++patch) {
-                    const int x=patch*patchWidth+patchWidth/2,y=height/2;
-                    const auto* hp=reinterpret_cast<const float*>(static_cast<const uint8_t*>(actual.hdr.data)+y*actual.hdr.stride_bytes)+x*3;
-                    const auto* sp=reinterpret_cast<const float*>(static_cast<const uint8_t*>(actual.sdr.data)+y*actual.sdr.stride_bytes)+x*3;
-                    std::cerr<<"patch="<<patch<<" hdr="<<hp[0]<<','<<hp[1]<<','<<hp[2]<<" sdr="<<sp[0]<<','<<sp[1]<<','<<sp[2]<<'\n';
-                }
-            }
-            sony2fuji_hdr_release_pair(&actual);
-            check(p95<=.10 && mae<=2 && p99<=8,"A08 HDR/SDR numerical acceptance failed");
+            measure(actual,color,"protocol="+std::to_string(protocol));
+        }
+        if (sony2fuji_hdr_heif_export_available()) {
+            auto heifConfig=config; heifConfig.metadata_policy=SONY2FUJI_HDR_METADATA_ISO;
+            NSURL* heif=[directory URLByAppendingPathComponent:[NSString stringWithFormat:@"a08-%u.heic",color]];
+            check(sony2fuji_hdr_export_heif(&source,&heifConfig,heif.fileSystemRepresentation,&diagnostic)==SONY2FUJI_STATUS_OK,
+                "A08 HEIF encoding failed");
+            auto info=init<sony2fuji_hdr_source_info_v1>();
+            check(sony2fuji_hdr_probe(heif.fileSystemRepresentation,&info,&diagnostic)==SONY2FUJI_STATUS_OK &&
+                info.container==SONY2FUJI_HDR_CONTAINER_HEIF && info.protocol==SONY2FUJI_HDR_PROTOCOL_ISO &&
+                info.color_description==color,"A08 HEIF container/protocol/color identity mismatch");
+            auto options=init<sony2fuji_hdr_decode_options_v1>(); options.intent=SONY2FUJI_INTENT_FINAL;
+            auto actual=init<sony2fuji_hdr_image_pair_v1>();
+            check(sony2fuji_hdr_decode(heif.fileSystemRepresentation,&options,&actual,&diagnostic)==SONY2FUJI_STATUS_OK,
+                "A08 HEIF production FINAL decode failed");
+            measure(actual,color,"container=heif");
         }
     }
     check(h[0]==hdr[0] && s[0]==sdr[0],"A08 encoding changed caller-owned pixels");
