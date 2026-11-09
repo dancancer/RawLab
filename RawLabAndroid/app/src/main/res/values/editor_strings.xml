@@ -362,6 +362,13 @@
     <string name="preset_save">"Save Preset"</string>
     <string name="preset_save_as">"Save As"</string>
     <string name="preset_scope">"Adjustment Scope"</string>
+    <string name="processing_migration_completed">"Updated automatically. Original settings are saved."</string>
+    <string name="processing_migration_kept">"The appearance differs too much. The previous version is retained."</string>
+    <string name="processing_migration_matching">"Matching the original appearance…"</string>
+    <string name="processing_migration_rollback">"Restore original settings"</string>
+    <string name="processing_migration_rollback_warning">"All settings from before the update will be restored. Later changes will be replaced."</string>
+    <string name="processing_migration_rolled_back">"Restored. The previous version will be retained."</string>
+    <string name="processing_migration_unavailable">"This photo keeps its previous processing version."</string>
     <string name="remove_look_confirmation">"Remove \"%1$s\"?"</string>
     <string name="reset_all_body">"Keeps the current film. Clears the recipe and resets all other adjustments. Photos, looks and batch tasks are kept."</string>
     <string name="reset_all_title">"Reset all adjustments?"</string>

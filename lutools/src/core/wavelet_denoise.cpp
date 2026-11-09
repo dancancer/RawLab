@@ -715,7 +715,7 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
             diagnostics->estimate=state->estimate;
             for (int c=0;c<3;++c) { diagnostics->a[c]=model.a[c]; diagnostics->b[c]=model.b[c]; }
         }
-        if (options.processingVersion == ProcessingVersion::C5V2) {
+        if (usesC5Denoise(options.processingVersion)) {
             // C5 暂无 GPU 滤波后端，Force 不能把 CPU 结果当作 GPU 成功。
             if (gpuMode == GpuMode::Force)
                 return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::ProcessingError);

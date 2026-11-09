@@ -168,6 +168,8 @@ set(CORE_SOURCES
     src/core/hdr_look.cpp
     src/core/photo_color.cpp
     src/core/photo_tone_controls.cpp
+    src/core/photo_basic_controls_v3.cpp
+    src/core/processing_migration.cpp
     src/core/photo_atmosphere.cpp
     src/core/photo_color_grading.cpp
     src/core/photo_tone_curve.cpp
@@ -914,10 +916,19 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     target_link_libraries(tone_curve_recipe_tests rawlab_edit_protocol)
     add_test(NAME tone_curve_recipe COMMAND tone_curve_recipe_tests)
     add_executable(tone_controls_tests tests/tone_controls_tests.cpp src/core/photo_tone_controls.cpp)
+    add_executable(basic_controls_v3_tests tests/basic_controls_v3_tests.cpp
+        src/core/photo_basic_controls_v3.cpp src/core/photo_atmosphere.cpp)
+    add_test(NAME basic_controls_v3 COMMAND basic_controls_v3_tests)
+    add_executable(processing_migration_tests tests/processing_migration_tests.cpp src/core/processing_migration.cpp)
+    add_test(NAME processing_migration COMMAND processing_migration_tests)
+    add_executable(processing_migration_api_tests tests/processing_migration_api_tests.cpp)
+    target_link_libraries(processing_migration_api_tests sony2fuji_core)
+    add_test(NAME processing_migration_api COMMAND processing_migration_api_tests)
     add_executable(atmosphere_tests tests/atmosphere_tests.cpp src/core/photo_atmosphere.cpp)
     if(SONY2FUJI_DENOISE_LIBRARIES)
         target_link_libraries(atmosphere_tests ${SONY2FUJI_DENOISE_LIBRARIES})
         target_link_libraries(tone_controls_tests ${SONY2FUJI_DENOISE_LIBRARIES})
+        target_link_libraries(basic_controls_v3_tests ${SONY2FUJI_DENOISE_LIBRARIES})
     endif()
     target_include_directories(atmosphere_tests PRIVATE third_party)
     target_compile_definitions(atmosphere_tests PRIVATE

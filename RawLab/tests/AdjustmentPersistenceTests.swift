@@ -9,6 +9,7 @@ import Foundation
         throw NSError(domain: label, code: 1)
     }
     static func main() async throws {
+        try processingMigration()
         try refinedRecipe()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -56,6 +57,58 @@ import Foundation
         try transferableFallback(root.appendingPathComponent("transferable-fallback"))
         try legacyDeletionFallback(root.appendingPathComponent("legacy-deletion-fallback"))
         try await lazyTransferableFallback(root.appendingPathComponent("lazy-transferable-fallback"))
+    }
+
+    static func processingMigration() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try EditPersistence(directory: root)
+        let content = PhotoIdentity(contentIdentifier: "migration-content")
+        let photo = PhotoIdentity(resourceIdentifier: "migration-asset", contentIdentifier: "migration-content")
+        var old = RawSettings.default; old.processing = .c5; old.exposure = 0.5; old.highlights = 0.2
+        old.lutID = "saved-look"; old.clarity = 14
+        let before = PhotoEditState(settings: old, filmID: "exact-film-id", updatedAt: Date(timeIntervalSince1970: 42))
+        try store.save(content, state: before)
+        let expected = try store.readState(for: content)
+        var newer = old; newer.processing = .current; newer.highlights = 0.12
+        let candidate = before.replacing(settings: newer, preservingFilmID: before.filmID)
+        let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.003,
+            detailRMSE: 0.001, evaluations: 20)
+        let file = root.appendingPathComponent("edits.json"), bytes = try Data(contentsOf: file)
+        let failing = try EditPersistence(directory: root, writeData: { _, _ in throw NSError(domain: "injected write", code: 1) })
+        try rejects("Migration write failure is atomic") {
+            _ = try failing.commitProcessingMigration(expected: expected, candidate: candidate, quality: quality)
+        }
+        try check(try Data(contentsOf: file) == bytes, "Failed migration preserves old record bytes")
+        _ = try store.commitProcessingMigration(expected: expected, candidate: candidate, quality: quality)
+        let reopened = try EditPersistence(directory: root)
+        try check(try reopened.processingMigration(for: photo)?.original == before,
+            "PhotoKit content fallback retains migration rollback")
+        var later = newer; later.exposure = 1.5
+        try reopened.save(photo, state: before.replacing(settings: later, preservingFilmID: before.filmID))
+        try check(try reopened.processingMigration(for: photo)?.original == before,
+            "Creating a preferred resource record preserves the alias backup")
+        let restored = try reopened.rollbackProcessingMigration(expected: reopened.readState(for: photo))
+        try check(restored.state == before, "Restart-safe rollback restores full old state and exact film ID")
+        let receipt = try reopened.processingMigration(for: photo)!
+        try check(receipt.status == .rolledBack && !receipt.shouldAttempt(current: before, sourceVersion: 2),
+            "Rolled-back resource no longer automatically migrates")
+        try check(reopened.state(for: content) == candidate, "Resource rollback does not rewrite independent content record")
+
+        let rejected = PhotoIdentity(resourceIdentifier: "rejected")
+        try store.save(rejected, state: before)
+        let rejectedExpected = try store.readState(for: rejected)
+        _ = try store.commitProcessingMigration(expected: rejectedExpected, candidate: nil, quality: quality)
+        try check(try store.readState(for: rejected) == rejectedExpected, "Rejected migration retains old version and parameters")
+        try rejects("Unchanged rejected record is not repeatedly migrated") {
+            _ = try store.commitProcessingMigration(expected: rejectedExpected, candidate: nil, quality: quality)
+        }
+        let changed = before.replacing(settings: later, preservingFilmID: before.filmID)
+        try reopened.save(rejected, state: changed)
+        try rejects("Stale migration cannot overwrite another instance's edit") {
+            _ = try store.commitProcessingMigration(expected: rejectedExpected, candidate: candidate, quality: quality)
+        }
+        try check(store.state(for: rejected) == changed, "Concurrent saved state wins")
     }
 
     static func lazyTransferableFallback(_ directory: URL) async throws {

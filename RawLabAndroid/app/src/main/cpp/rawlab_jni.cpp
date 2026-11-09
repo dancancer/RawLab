@@ -1392,7 +1392,7 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
     jfloat vignetteAmount, jfloat vignetteMidpoint, jfloat vignetteRoundness, jfloat vignetteFeather,
     jfloat vignetteHighlights, jfloat grainAmount, jfloat grainSize, jfloat grainRoughness,
     jint exposureMode, jfloatArray hslValues, jboolean recipeActive, jint processingVersion, jint x3fMode, jintArray backendOut,
-    jlong sourceRevision, jlong requestRevision, jfloatArray hslProbe, jlong cancellationGeneration) {
+    jlong sourceRevision, jlong requestRevision, jfloatArray hslProbe, jlong cancellationGeneration, jfloatArray migrationValues) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         const auto found = sessions.find(id);
@@ -1424,15 +1424,16 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
         std::copy(hslData+16, hslData+24, hsl.lightness);
         check(sony2fuji_session_set_hsl(session, &hsl));
         const auto outputFormat = rawlab::parseExportFormat(format);
+        const int requestEdge = migrationValues ? 1 : edge;
         auto request = displayInput
             ? rawlab::makeDisplayRequest(in.chars, inputBytes.bytes, static_cast<uint32_t>(inputWidth),
                 static_cast<uint32_t>(inputHeight), static_cast<sony2fuji_pixel_format>(inputPixelFormat),
                 film.chars, out.chars, strength, exposure, effectiveCustom, temperature, tint,
-                highlights, shadows, contrast, toneCurve, saturation, sharpening, edge, outputFormat,
+                highlights, shadows, contrast, toneCurve, saturation, sharpening, requestEdge, outputFormat,
                 longEdge < 0 ? 0u : static_cast<uint32_t>(longEdge))
             : rawlab::makeRequest(in.chars, film.chars, out.chars, strength,
                 exposure, effectiveCustom, temperature, tint, highlights, shadows, contrast,
-                toneCurve, saturation, sharpening, edge, outputFormat,
+                toneCurve, saturation, sharpening, requestEdge, outputFormat,
                 longEdge < 0 ? 0u : static_cast<uint32_t>(longEdge));
         if (recipeActive) {
             request.exposure_ev *= strength;
@@ -1451,6 +1452,22 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
             vignetteFeather, vignetteHighlights, grainAmount, grainSize, grainRoughness};
         check(sony2fuji_session_set_photo_effects(session, &effects));
         check(sony2fuji_session_set_chroma_denoise(session, displayChromaDenoise));
+        if (migrationValues) {
+            if (env->GetArrayLength(migrationValues) != 20 || out.chars || hslProbe)
+                throw std::invalid_argument("Invalid processing migration output");
+            static_assert(sizeof(sony2fuji_processing_migration_result) == 80, "migration result ABI");
+            sony2fuji_processing_migration_result result{};
+            request.preview_long_edge = 0;
+            check(sony2fuji_session_migrate_processing(session, &request, &result), session);
+            check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
+            const jfloat values[] = {float(result.version), float(result.struct_size), float(result.source_version),
+                float(result.target_version), float(result.disposition), float(result.evaluation_count),
+                result.exposure_ev, result.contrast, result.highlights, result.shadows, result.saturation,
+                result.black_point, result.white_point, result.vibrance, result.clarity, result.dehaze,
+                result.rgb_rmse, result.p99_error, result.worst_tile_rmse, result.detail_rmse};
+            env->SetFloatArrayRegion(migrationValues, 0, 20, values);
+            return nullptr;
+        }
         if (hslProbe) {
             if (out.chars) throw std::invalid_argument("Invalid HSL probe output");
             sony2fuji_hsl_probe* snapshot = nullptr;

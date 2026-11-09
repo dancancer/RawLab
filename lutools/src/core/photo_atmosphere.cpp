@@ -128,7 +128,7 @@ uint64_t fingerprint(const ImageData& image) {
     }
     return hash;
 }
-void analyzeDehaze(const ImageData& image,DehazeAnalysis& result) {
+void analyzeDehaze(const ImageData& image,DehazeAnalysis& result,ProcessingVersion version) {
     const int width=image.width,height=image.height;
     const int radius=std::max(1,int(std::lround(std::max(width,height)*.0075)));
     std::vector<float> dark(image.pixels.size());
@@ -155,7 +155,8 @@ void analyzeDehaze(const ImageData& image,DehazeAnalysis& result) {
         dark[i]=std::min({p.r/result.airlight.r,p.g/result.airlight.g,p.b/result.airlight.b});
     }
     dark=minimum(dark,width,height,radius);
-    for(auto& v:dark) v=std::clamp(1-.85f*v,.5f,1.f);
+    const float minimumTransmission = version == ProcessingVersion::BasicV3 ? .2f : .5f;
+    for(auto& v:dark) v=std::clamp(1-.85f*v,minimumTransmission,1.f);
     const auto field=guided(lumaPlane(image),dark,width,height,2*radius,.001f);
     result.width=width; result.height=height; result.slope=field.slope; result.intercept=field.intercept;
     result.variance=field.variance;
@@ -186,20 +187,23 @@ RGB softBoundedMove(const RGB& p,const RGB& delta) {
 bool AtmosphereOptions::valid() const {
     return std::isfinite(clarity) && std::abs(clarity)<=1 && std::isfinite(dehaze) && std::abs(dehaze)<=1;
 }
-void applyClarity(ImageData& image,float amount,int sourceWidth,int sourceHeight) {
+void applyClarity(ImageData& image,float amount,int sourceWidth,int sourceHeight,ProcessingVersion version) {
     if(amount==0 || image.width<=0 || image.height<=0) return;
     if(sourceWidth<=0 || sourceHeight<=0) { sourceWidth=image.width; sourceHeight=image.height; }
     const auto analysis=analysisImage(image,sourceWidth,sourceHeight);
     const int width=analysis.width,height=analysis.height;
     const int radius=std::max(1,int(std::lround(std::max(width,height)*.01)));
-    const auto guide=lumaPlane(analysis);
-    const auto medium=mean(guide,width,height,std::max(1,radius/8));
-    const auto base=guided(medium,medium,width,height,radius,.001f);
+    const bool basicV3 = version == ProcessingVersion::BasicV3;
+    auto guide=lumaPlane(analysis);
+    if (basicV3) for (auto& value : guide) value = std::sqrt(std::max(value, 0.f));
+    const auto medium=basicV3 ? guide : mean(guide,width,height,std::max(1,radius/8));
+    const auto base=guided(medium,medium,width,height,radius,basicV3 ? .02f : .001f);
     std::vector<float> residual(guide.size());
     for(size_t i=0;i<guide.size();++i) {
         const float difference=medium[i]-(base.slope[i]*medium[i]+base.intercept[i]);
         const float edge=1/(1+base.variance[i]/.002f);
-        residual[i]=std::clamp(difference,-.08f,.08f)*edge*edge*smooth(std::abs(difference)/.001f);
+        residual[i]=basicV3 ? std::clamp(difference,-.15f,.15f) :
+            std::clamp(difference,-.08f,.08f)*edge*edge*smooth(std::abs(difference)/.001f);
     }
     parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
         for(size_t index=first;index<last;++index) {
@@ -208,6 +212,17 @@ void applyClarity(ImageData& image,float amount,int sourceWidth,int sourceHeight
             const bool bounded=inGamut(encodedPixel);
             const auto p=linear(encodedPixel); const float luma=luminance(p);
             const float ax=(x+.5f)*width/image.width-.5f,ay=(y+.5f)*height/image.height-.5f;
+            if (basicV3) {
+                if (luma <= 0) continue;
+                const float root = std::sqrt(luma);
+                const float weight = smooth(root / .1f) * (1 - .6f * smooth((root - .85f) / .15f));
+                const float strength = amount > 0 ? 1.36f * amount : -.8f * std::pow(-amount, .75f);
+                const float adjusted = std::max(0.f, root + strength * weight * sample(residual,width,height,ax,ay));
+                const float gain = adjusted * adjusted / luma - 1;
+                if (bounded) encodedPixel=encoded(boundedMove(p,RGB(p.r*gain,p.g*gain,p.b*gain)));
+                else if (gain<0) encodedPixel=encodedExtended(RGB(p.r*(1+gain),p.g*(1+gain),p.b*(1+gain)));
+                continue;
+            }
             const float coarse=sample(medium,width,height,ax,ay);
             const float fineGuard=1-smooth(std::abs(luma-coarse)/.08f);
             const float lightGuard=smooth((luma-.01f)/.12f)*(1-smooth((luma-.65f)/.3f));
@@ -220,15 +235,16 @@ void applyClarity(ImageData& image,float amount,int sourceWidth,int sourceHeight
         }
     });
 }
-void applyDehaze(ImageData& image,float amount,DehazeAnalysis* cache,int sourceWidth,int sourceHeight) {
+void applyDehaze(ImageData& image,float amount,DehazeAnalysis* cache,int sourceWidth,int sourceHeight,ProcessingVersion version) {
     if(amount==0 || image.width<=0 || image.height<=0) return;
     if(sourceWidth<=0 || sourceHeight<=0) { sourceWidth=image.width; sourceHeight=image.height; }
     const auto analysis=analysisImage(image,sourceWidth,sourceHeight);
     DehazeAnalysis local; auto& state=cache ? *cache : local;
+    const bool basicV3 = version == ProcessingVersion::BasicV3;
     const auto key=fingerprint(analysis);
-    if(state.slope.empty() || state.fingerprint!=key || state.sourceWidth!=sourceWidth || state.sourceHeight!=sourceHeight ||
+    if(state.slope.empty() || state.processingVersion!=version || state.fingerprint!=key || state.sourceWidth!=sourceWidth || state.sourceHeight!=sourceHeight ||
         state.workingWidth!=image.width || state.workingHeight!=image.height) {
-        analyzeDehaze(analysis,state); state.fingerprint=key;
+        analyzeDehaze(analysis,state,version); state.fingerprint=key; state.processingVersion=version;
         state.sourceWidth=sourceWidth;state.sourceHeight=sourceHeight;
         state.workingWidth=image.width;state.workingHeight=image.height;
     }
@@ -242,18 +258,19 @@ void applyDehaze(ImageData& image,float amount,DehazeAnalysis* cache,int sourceW
             const auto p=linear(encodedPixel); const float luma=luminance(p);
             const float ax=(x+.5f)*state.width/image.width-.5f,ay=(y+.5f)*state.height/image.height-.5f;
             const float t=std::clamp(sample(state.slope,state.width,state.height,ax,ay)*luma+
-                sample(state.intercept,state.width,state.height,ax,ay),.5f,1.f);
+                sample(state.intercept,state.width,state.height,ax,ay),basicV3 ? .2f : .5f,1.f);
             RGB delta;
             if(amount>0) {
                 const float variance=sample(state.variance,state.width,state.height,ax,ay);
                 const float flatBright=smooth((luma-.08f)/.22f)*(1-smooth(variance/.001f));
                 // 有理暗部权重避免 smoothstep 的陡导数在灰阶渐变里造成反转。
-                const float protect=(luma/(luma+.03f))*(1-.8f*smooth((luma-.5f)/.4f))*(1-.75f*flatBright);
-                const float effective=std::max(.5f,1-amount*protect*(1-t));
+                const float protect=basicV3 ? (luma/(luma+.015f))*(1-.4f*smooth((luma-.6f)/.35f)) :
+                    (luma/(luma+.03f))*(1-.8f*smooth((luma-.5f)/.4f))*(1-.75f*flatBright);
+                const float effective=std::max(basicV3 ? .2f : .5f,1-amount*protect*(1-t));
                 const float gain=1/effective-1;
                 delta=RGB((p.r-a.r)*gain,(p.g-a.g)*gain,(p.b-a.b)*gain);
             } else {
-                const float haze=-amount*.45f*(.25f+.75f*(1-t));
+                const float haze=basicV3 ? -amount*.6f*(.5f+.5f*(1-t)) : -amount*.45f*(.25f+.75f*(1-t));
                 delta=RGB((a.r-p.r)*haze,(a.g-p.g)*haze,(a.b-p.b)*haze);
             }
             if(std::max({std::abs(delta.r),std::abs(delta.g),std::abs(delta.b)})<1e-8f) continue;

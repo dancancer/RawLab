@@ -200,6 +200,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
         }
         Box(Modifier.weight(1f)) {
         EditorScreen(state, onAlbum = { album = true }, onFile = { openFile.launch(arrayOf("*/*")) },
+            onRollbackProcessing = model::rollbackProcessingMigration,
             systemPhotoRequest = systemPhotoRequests.firstOrNull()?.takeUnless { collection.busy },
             onSystemPhotoConsumed = model::consumeSystemPhotoRequest,
             onSystemPhotoReady = { request, completed ->

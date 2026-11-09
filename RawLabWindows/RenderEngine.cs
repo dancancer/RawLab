@@ -95,6 +95,29 @@ internal sealed partial class RenderEngine : IDisposable
         catch(Exception error) when(settings.ActiveAIDenoise && error is not OperationCanceledException && error is not AINotReadyException)
         {CaptureAIFailure(error);throw;}
     }
+
+    internal Native.ProcessingMigrationResult MigrateProcessing(string path, Adjustments settings, string? lut,
+        CancellationToken cancellationToken)
+    {
+        if (settings.IsHDREditing || settings.HDR != null || settings.ActiveAIDenoise || settings.MasterRecipeID != null ||
+            settings.Processing.Version is not (1 or 2))
+            throw new InvalidOperationException(Loc.Text("此照片不满足自动升级处理版本的条件。"));
+        cancellationToken.ThrowIfCancellationRequested();
+        var prepared=PrepareRequest(path,settings,lut,0,false,null,null,false);
+        try
+        {
+            SetCancellation(cancellationToken);
+            var result=new Native.ProcessingMigrationResult {
+                Version=1,StructSize=(uint)Marshal.SizeOf<Native.ProcessingMigrationResult>()
+            };
+            var status=Native.sony2fuji_session_migrate_processing(session,ref prepared.Item2,ref result);
+            if(status==7)throw new OperationCanceledException(cancellationToken);
+            Native.Check(status,session);
+            return result;
+        }
+        finally { ClearCancellation(); }
+    }
+
     private double AutoExposureCore(string path, Adjustments settings)
     {
         if (settings.HDR is { Mode: HDRMode.Hdr } hdr)

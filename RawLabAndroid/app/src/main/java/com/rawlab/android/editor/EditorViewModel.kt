@@ -214,9 +214,11 @@ class EditorViewModel @JvmOverloads constructor(
     private var currentRevision = 0L
     private var cameraHDRPreflightPending = false
     @Volatile private var sourceRevision = 0L
+        set(value) { if (field != value) cancelProcessingMigration(); field = value }
     private var pendingHDRLookImport: Pair<Long, Long>? = null
     private var pendingHDRCameraProfileImport: Pair<Long, Long>? = null
-    private var editRevision = 0L
+    @Volatile private var editRevision = 0L
+        set(value) { if (field != value) cancelProcessingMigration(); field = value }
     private var draftRevision = 0L
     private var durablePreview: EditorDurablePreview? = null
     private var failedDraftSave = false
@@ -252,6 +254,10 @@ class EditorViewModel @JvmOverloads constructor(
     internal var prepareAdjustmentOperation: (AdjustmentPreparationWork, () -> Boolean) -> AdjustmentPreparationResult = adjustmentPreparation::prepare
     private val adjustmentQueue = SerialWorkQueue(::releaseStorage)
     private val adjustmentPreparationQueue = SerialWorkQueue(::releaseStorage)
+    private val processingMigrationQueue = SerialWorkQueue(::releaseStorage)
+    @Volatile private var processingMigrationRun: UUID? = null
+    @Volatile private var processingMigrationEngine: NativeProcessor? = null
+    private var processingMigrationAttemptSource: Long? = null
 
     private fun <T> commitAdjustments(work: () -> T, completed: (Result<T>) -> Unit) {
         if (disposed || mutable.value.committingAdjustments) {
@@ -368,7 +374,8 @@ class EditorViewModel @JvmOverloads constructor(
                     collections.opened(value.photo.identity.value)
                     mutable.value = EditorStateReducer.renderFinished(mutable.value).copy(photo = value.photo,
                         edits = value.edits, preview = null, exact = false,
-                        saveState = EditSaveState.RESTORED, error = text(R.string.look_unavailable))
+                        saveState = EditSaveState.RESTORED, error = text(R.string.look_unavailable),
+                        processingMigration = runCatching { editStore.processingMigration(value.photo.identity) }.getOrNull())
                     includeIndependentRecipeLook(value.edits)
                     if (value.persistOnImport) persist(value.photo, value.edits) { saved ->
                         mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
@@ -432,6 +439,9 @@ class EditorViewModel @JvmOverloads constructor(
                     if (request.persistOnImport) persist(request.photo, settings) { saved ->
                         mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
                     }
+                    if (request.importing) mutable.value = mutable.value.copy(
+                        processingMigration = runCatching { editStore.processingMigration(request.photo.identity) }.getOrNull())
+                    startProcessingMigrationIfNeeded()
                 }
                 WorkResult.Export -> {
                     mutable.value = mutable.value.copy(operation = Operation.NONE, message = text(R.string.export_done))
@@ -583,7 +593,7 @@ class EditorViewModel @JvmOverloads constructor(
         durablePreview = null
         pendingPhotoImport.begin(PhotoIdentity(uri.toString()))
         mutable.value = mutable.value.copy(operation = Operation.IMPORT, rendering = true, error = null, retryLegacyX3f = false,
-            hdrCameraDraft = null)
+            hdrCameraDraft = null, processingMigration = null)
         // closeAdjustmentOperation 会释放延迟文件，先建立导入保护再移交恢复引用。
         failedX3fImport = null
         previewResizeJob?.cancel()
@@ -727,7 +737,7 @@ class EditorViewModel @JvmOverloads constructor(
         }
         durablePreview = null
         if (edits != current.edits) editRevision += 1
-        mutable.value = current.copy(edits = edits, rendering = true, exact = false, error = null,
+        mutable.value = current.copy(edits = edits, rendering = true, exact = false, error = null, matchingProcessing = false,
             previewResizePending = previewResizeJob != null,
             hdrCameraDraft = current.hdrCameraDraft?.retainedFor(edits.hdr?.cameraSettings))
         currentRevision = submitRender(Work.Preview(current.photo!!, edits, interactive, gpuMode(),
@@ -974,6 +984,97 @@ class EditorViewModel @JvmOverloads constructor(
         saveNotice = viewModelScope.launch {
             kotlinx.coroutines.delay(3000)
             if (mutable.value.saveState in setOf(EditSaveState.SAVED, EditSaveState.RESTORED)) mutable.value = mutable.value.copy(saveState = EditSaveState.NONE)
+        }
+    }
+
+    private fun cancelProcessingMigration() {
+        processingMigrationRun = null
+        processingMigrationEngine?.cancelPreview()
+        if (mutable.value.matchingProcessing) mutable.value = mutable.value.copy(matchingProcessing = false)
+    }
+
+    private fun startProcessingMigrationIfNeeded() {
+        val current = mutable.value
+        val photo = current.photo ?: return
+        val expected = adjustmentHistory.loaded ?: return
+        val original = expected.settings ?: return
+        if (disposed || current.rendering || !current.exact || !current.controlsEnabled || current.draft != null ||
+            current.saveState == EditSaveState.FAILED || current.edits.isHDREditing || current.edits.recipeID != null ||
+            current.edits.processing.version >= 3 || adjustmentHistory.interacting ||
+            processingMigrationAttemptSource == sourceRevision) return
+        if (current.processingMigration?.shouldAttempt(original, original.processing.version) == false) return
+        val validation = runCatching { adjustmentHistory.committedValidation(photo, current.edits) }.getOrNull() ?: return
+        val source = sourceRevision; val edit = editRevision; val snapshot = current.edits
+        val mode = gpuMode(); val ticket = UUID.randomUUID()
+        processingMigrationAttemptSource = source
+        processingMigrationRun = ticket
+        mutable.value = current.copy(matchingProcessing = true)
+        processingMigrationQueue.submit({
+            validation()
+            if (processingMigrationRun != ticket) throw AdjustmentOperationExpiredException()
+            NativeProcessor(mode, storage.lensDatabase()).use { engine ->
+                val generation = engine.cancellationGeneration()
+                processingMigrationEngine = engine
+                try {
+                    if (processingMigrationRun != ticket) throw AdjustmentOperationExpiredException()
+                    val outcome = engine.migrateProcessing(photo.file, storage.lookPath(original), original, photo.inputKind, generation)
+                    validation()
+                    outcome
+                } finally { if (processingMigrationEngine === engine) processingMigrationEngine = null }
+            }
+        }) { result -> renderDelivery.post {
+            if (processingMigrationRun == null && mutable.value.matchingProcessing)
+                mutable.value = mutable.value.copy(matchingProcessing = false)
+            if (disposed || processingMigrationRun != ticket || sourceRevision != source || editRevision != edit ||
+                mutable.value.photo?.identity != photo.identity || mutable.value.edits != snapshot) return@post
+            mutable.value = mutable.value.copy(matchingProcessing = false)
+            val outcome = result.getOrNull() ?: return@post
+            if (mutable.value.committingAdjustments || adjustmentHistory.interacting || mutable.value.draft != null ||
+                mutable.value.operation != Operation.NONE) return@post
+            commitAdjustments({
+                if (processingMigrationRun != ticket || sourceRevision != source || editRevision != edit)
+                    throw AdjustmentOperationExpiredException()
+                validation()
+                val saved = editStore.commitProcessingMigration(expected, outcome.candidate(original), outcome.quality)
+                editStore.adjustmentSession?.adoptProcessingMigration(saved)
+                saved to editStore.processingMigration(photo.identity)
+            }) { committed ->
+                if (sourceRevision != source || mutable.value.photo?.identity != photo.identity) return@commitAdjustments
+                committed.onSuccess { (saved, receipt) ->
+                    adjustmentHistory.acceptSaved(photo, saved)
+                    editRevision += 1
+                    mutable.value = mutable.value.copy(edits = saved.settings ?: snapshot, processingMigration = receipt,
+                        matchingProcessing = false, saveState = EditSaveState.SAVED, saveError = null)
+                    renderCommittedForNavigation()
+                }.onFailure { error -> mutable.value = mutable.value.copy(saveError = EditSaveResult(EditSaveState.FAILED, error).message) }
+            }
+        } }
+    }
+
+    fun rollbackProcessingMigration() {
+        val current = mutable.value
+        val photo = current.photo ?: return
+        val expected = adjustmentHistory.loaded ?: return
+        if (current.processingMigration?.status != com.rawlab.android.settings.ProcessingMigrationStatus.MIGRATED ||
+            !current.controlsEnabled || current.draft != null || adjustmentHistory.interacting) return
+        val validation = runCatching { adjustmentHistory.committedValidation(photo, current.edits) }.getOrNull() ?: return
+        cancelProcessingMigration()
+        val source = sourceRevision; val edit = editRevision
+        commitAdjustments({
+            if (sourceRevision != source || editRevision != edit) throw AdjustmentOperationExpiredException()
+            validation()
+            val saved = editStore.rollbackProcessingMigration(expected)
+            editStore.adjustmentSession?.adoptProcessingMigration(saved)
+            saved to editStore.processingMigration(photo.identity)
+        }) { result ->
+            if (sourceRevision != source || mutable.value.photo?.identity != photo.identity) return@commitAdjustments
+            result.onSuccess { (saved, receipt) ->
+                adjustmentHistory.acceptSaved(photo, saved)
+                editRevision += 1
+                mutable.value = mutable.value.copy(edits = requireNotNull(saved.settings), processingMigration = receipt,
+                    saveState = EditSaveState.SAVED, saveError = null)
+                renderCommittedForNavigation()
+            }.onFailure { error -> mutable.value = mutable.value.copy(saveError = EditSaveResult(EditSaveState.FAILED, error).message) }
         }
     }
 
@@ -1614,6 +1715,7 @@ class EditorViewModel @JvmOverloads constructor(
         else text(R.string.process_error) + "\n" + (error.message ?: error.javaClass.simpleName)
 
     override fun onCleared() {
+        cancelProcessingMigration()
         clearX3fRecovery()
         disposed = true
         adjustmentPreparationGeneration = UUID.randomUUID()
@@ -1624,12 +1726,13 @@ class EditorViewModel @JvmOverloads constructor(
         queue.close()
         adjustmentQueue.close()
         adjustmentPreparationQueue.close()
+        processingMigrationQueue.close()
     }
 
     private fun releaseStorage() {
         synchronized(this) {
             releases += 1
-            if (releases == 5) storage.close()
+            if (releases == 6) storage.close()
         }
     }
 }

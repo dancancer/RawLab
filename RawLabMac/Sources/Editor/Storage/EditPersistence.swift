@@ -40,6 +40,11 @@ final class EditPersistence {
     private struct Registry: Codable {
         var version = 1
         var records: [String: Record] = [:]
+        var processingMigrations: [String: StoredMigration]? = nil
+    }
+    private struct StoredMigration: Codable {
+        let identity: OriginalFileIdentity
+        var receipt: ProcessingMigrationReceipt<PhotoEditState>
     }
 
     static var defaultDirectory: URL {
@@ -73,6 +78,58 @@ final class EditPersistence {
         let registry = try readRegistry()
         let identity = try OriginalFileIdentity(url)
         return snapshot(identity: identity, registry: registry)
+    }
+
+    func processingMigration(for url: URL) throws -> ProcessingMigrationReceipt<PhotoEditState>? {
+        let registry = try readRegistry()
+        let identity = try OriginalFileIdentity(url)
+        guard let stored = registry.processingMigrations?[identity.path], stored.identity == identity else { return nil }
+        return stored.receipt
+    }
+
+    func commitProcessingMigration(expected: PhotoEditRecord, candidate: PhotoEditState?,
+                                   quality: ProcessingMigrationQuality) throws -> PhotoEditRecord {
+        try withWriteLock {
+            var updated = try readRegistry()
+            try expected.identity.requireCurrent()
+            guard snapshot(identity: expected.identity, registry: updated) == expected,
+                  let original = expected.state, original.settings.processing.version < 3,
+                  quality.isValid else { throw AdjustmentCommitError.expired }
+            if let previous = updated.processingMigrations?[expected.identity.path], previous.identity == expected.identity,
+               !previous.receipt.shouldAttempt(current: original, sourceVersion: original.settings.processing.version) {
+                throw AdjustmentCommitError.expired
+            }
+            if let candidate {
+                try candidate.settings.validateResetValues()
+                guard candidate.settings.processing == .current, quality.passes else { throw AdjustmentCommitError.expired }
+                updated.records[expected.identity.path] = Record(identity: expected.identity, state: candidate)
+            }
+            let receipt = ProcessingMigrationReceipt(status: candidate == nil ? .kept : .migrated,
+                original: original, quality: quality)
+            var migrations = updated.processingMigrations ?? [:]
+            migrations[expected.identity.path] = StoredMigration(identity: expected.identity, receipt: receipt)
+            updated.processingMigrations = migrations
+            try writeData(JSONEncoder().encode(updated), file)
+            return snapshot(identity: expected.identity, registry: updated)
+        }
+    }
+
+    func rollbackProcessingMigration(expected: PhotoEditRecord) throws -> PhotoEditRecord {
+        try withWriteLock {
+            var updated = try readRegistry()
+            try expected.identity.requireCurrent()
+            guard snapshot(identity: expected.identity, registry: updated) == expected,
+                  var stored = updated.processingMigrations?[expected.identity.path],
+                  stored.identity == expected.identity, stored.receipt.status == .migrated else {
+                throw AdjustmentCommitError.expired
+            }
+            try stored.receipt.original.settings.validateResetValues()
+            updated.records[expected.identity.path] = Record(identity: expected.identity, state: stored.receipt.original)
+            stored.receipt.status = .rolledBack
+            updated.processingMigrations?[expected.identity.path] = stored
+            try writeData(JSONEncoder().encode(updated), file)
+            return snapshot(identity: expected.identity, registry: updated)
+        }
     }
 
     private func snapshot(identity: OriginalFileIdentity, registry: Registry) -> PhotoEditRecord {

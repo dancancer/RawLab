@@ -28,11 +28,12 @@ public sealed record ProcessingIdentity(
     [property: JsonPropertyName("quality"), JsonRequired] string Quality)
 {
     public static readonly ProcessingIdentity Legacy = new("rawlab", 1, "standard");
-    public static readonly ProcessingIdentity Current = new("rawlab", 2, "standard");
+    public static readonly ProcessingIdentity C5 = new("rawlab", 2, "standard");
+    public static readonly ProcessingIdentity Current = new("rawlab", 3, "standard");
 
     public static ProcessingIdentity Require(ProcessingIdentity? value)
     {
-        if (value is not { Family: "rawlab", Version: 1 or 2, Quality: "standard" })
+        if (value is not { Family: "rawlab", Version: 1 or 2 or 3, Quality: "standard" })
             throw new InvalidDataException(Loc.Text("不支持此处理版本，原有记录未被覆盖。"));
         return value;
     }
@@ -145,7 +146,9 @@ public sealed class AdjustmentHistoryOrderException() : InvalidOperationExceptio
 
 public sealed class EditStore
 {
-    private sealed record Registry(int Version, Dictionary<string, SavedEdit> Records);
+    private sealed record Registry(int Version, Dictionary<string, SavedEdit> Records,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        Dictionary<string, ProcessingMigrationReceipt>? MigrationReceipts = null);
     public static string DefaultDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "Edits");
     private readonly string path;
     private readonly Action<string,object> write;
@@ -163,7 +166,17 @@ public sealed class EditStore
         var registry = AtomicJson.Read<Registry>(path);
         if (registry.Version != 1) throw new InvalidDataException(Loc.Text("无法读取此版本的调整记录。"));
         foreach (var entry in registry.Records.Values) _ = entry.Settings.Restore();
-        return new(1,new(registry.Records,StringComparer.OrdinalIgnoreCase));
+        var receipts = registry.MigrationReceipts == null ? null :
+            new Dictionary<string,ProcessingMigrationReceipt>(registry.MigrationReceipts,StringComparer.OrdinalIgnoreCase);
+        if (receipts != null)
+            foreach (var receipt in receipts.Values)
+            {
+                if (!receipt.IsKnownStatus || !receipt.IsValid || !receipt.Identity.SameFile(receipt.Before.Identity) ||
+                    !receipt.Identity.SameFile(receipt.After.Identity))
+                    throw new InvalidDataException(Loc.Text("本地记录损坏。"));
+                _ = receipt.Before.Settings.Restore(); _ = receipt.After.Settings.Restore();
+            }
+        return new(1,new(registry.Records,StringComparer.OrdinalIgnoreCase),receipts);
     }
 
     public SavedEdit? Find(string input)
@@ -185,6 +198,59 @@ public sealed class EditStore
         if(edit==null)registry.Records.Remove(identity.Path);else registry.Records[identity.Path]=edit.Copy();
         write(path,registry);
         return new(identity,edit?.Copy());
+    }
+
+    public ProcessingMigrationReceipt? ReadProcessingMigration(string input)
+    {
+        var identity = OriginalIdentity.Read(input);
+        var registry = ReadRegistry();
+        return registry.MigrationReceipts?.TryGetValue(identity.Path,out var receipt) == true &&
+            receipt.Identity.SameFile(identity) ? receipt.Copy() : null;
+    }
+
+    public PhotoEditState CommitProcessingMigration(OriginalIdentity expectedIdentity, SavedEdit expectedBefore,
+        SavedEdit candidate, string status)
+    {
+        if (!expectedIdentity.SameFile(expectedBefore.Identity) || !expectedIdentity.SameFile(candidate.Identity) ||
+            status is not (ProcessingMigrationReceipt.Migrated or ProcessingMigrationReceipt.Kept) ||
+            expectedBefore.Settings.Processing.Version is not (1 or 2))
+            throw new InvalidDataException(Loc.Text("调整记录无效，原有文件未被覆盖。"));
+        if (status == ProcessingMigrationReceipt.Migrated && candidate.Settings.Processing != ProcessingIdentity.Current)
+            throw new InvalidDataException(Loc.Text("调整记录无效，原有文件未被覆盖。"));
+        if (status == ProcessingMigrationReceipt.Kept && !candidate.SameAs(expectedBefore))
+            throw new InvalidDataException(Loc.Text("调整记录无效，原有文件未被覆盖。"));
+        _ = expectedBefore.Settings.Restore(); _ = candidate.Settings.Restore();
+        using var held=AcquireLock();
+        var registry=ReadRegistry();expectedIdentity.RequireCurrent();
+        var current=ReadRecord(registry,expectedIdentity);
+        if (!current.SameAs(new PhotoEditState(expectedIdentity,expectedBefore)))
+            throw new AdjustmentOperationExpiredException();
+        var records=new Dictionary<string,SavedEdit>(registry.Records,StringComparer.OrdinalIgnoreCase);
+        var receipts=registry.MigrationReceipts == null
+            ? new Dictionary<string,ProcessingMigrationReceipt>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string,ProcessingMigrationReceipt>(registry.MigrationReceipts,StringComparer.OrdinalIgnoreCase);
+        var receipt=new ProcessingMigrationReceipt(expectedIdentity,expectedBefore.Copy(),candidate.Copy(),status);
+        records[expectedIdentity.Path]=candidate.Copy();receipts[expectedIdentity.Path]=receipt;
+        write(path,new Registry(1,records,receipts));
+        return new(expectedIdentity,candidate.Copy());
+    }
+
+    public PhotoEditState RollbackProcessingMigration(OriginalIdentity identity, PhotoEditState expectedCurrent)
+    {
+        if (!identity.SameFile(expectedCurrent.Identity)) throw new PhotoChangedException();
+        using var held=AcquireLock();var registry=ReadRegistry();identity.RequireCurrent();
+        var storedReceipts=registry.MigrationReceipts;
+        if (storedReceipts == null || !storedReceipts.TryGetValue(identity.Path,out var receipt) ||
+            receipt.Status != ProcessingMigrationReceipt.Migrated)
+            throw new AdjustmentOperationExpiredException();
+        var current=ReadRecord(registry,identity);
+        if (!current.SameAs(expectedCurrent)) throw new AdjustmentOperationExpiredException();
+        var records=new Dictionary<string,SavedEdit>(registry.Records,StringComparer.OrdinalIgnoreCase);
+        var receipts=new Dictionary<string,ProcessingMigrationReceipt>(registry.MigrationReceipts!,StringComparer.OrdinalIgnoreCase);
+        records[identity.Path]=receipt.Before.Copy();
+        receipts[identity.Path]=receipt with { Status=ProcessingMigrationReceipt.RolledBack };
+        write(path,new Registry(1,records,receipts));
+        return new(identity,receipt.Before.Copy());
     }
 
     private FileStream AcquireLock()

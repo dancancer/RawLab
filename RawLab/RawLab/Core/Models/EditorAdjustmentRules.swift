@@ -328,7 +328,7 @@ enum EditorAdjustmentRules {
 
     static func valid(_ settings: RawSettings) -> Bool {
         let fields: [(Double, ClosedRange<Double>)] = [
-            (settings.exposure, -4...4), (settings.contrast, 0...2), (settings.saturation, 0...2),
+            (settings.exposure, -5...5), (settings.contrast, 0...2), (settings.saturation, 0...2),
             (settings.temperature, RawSettings.temperatureRange), (settings.tint, RawSettings.tintRange),
             (settings.highlights, -1...1), (settings.shadows, -1...1), (settings.toneCurve, -1...1),
             (settings.noiseReduction, 0...1), (settings.sharpening, 0...2),

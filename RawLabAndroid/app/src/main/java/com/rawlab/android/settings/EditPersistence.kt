@@ -63,6 +63,42 @@ class EditStore(private val directory: File,
 
     fun reset(identity: PhotoIdentity): PhotoEditState = save(identity, null)
 
+    fun processingMigration(identity: PhotoIdentity): ProcessingMigrationReceipt? = withStoreLock {
+        read().properties.getProperty(migrationKey(identity))?.let(ProcessingMigrationReceipt::decode)
+    }
+
+    fun commitProcessingMigration(expected: PhotoEditState, candidate: EditSettings?,
+        quality: ProcessingMigrationQuality): PhotoEditState = withStoreLock {
+        val current = read()
+        if (!current.record(expected.identity).sameAs(expected)) throw AdjustmentOperationExpiredException()
+        val before = requireNotNull(expected.settings)
+        require(before.processing.version in 1..2 && quality.isValid)
+        val previous = current.properties.getProperty(migrationKey(expected.identity))?.let(ProcessingMigrationReceipt::decode)
+        if (previous?.shouldAttempt(before, before.processing.version) == false) throw AdjustmentOperationExpiredException()
+        if (candidate != null) require(candidate.processing == ProcessingIdentity.CURRENT && quality.passes)
+        val records = current.records.toMutableMap()
+        records[expected.identity] = (candidate ?: before).canonicalZeros()
+        val updated = Snapshot(records, current.properties)
+        write(updated, expected.identity, ProcessingMigrationReceipt(
+            if (candidate == null) ProcessingMigrationStatus.KEPT else ProcessingMigrationStatus.MIGRATED, before, quality))
+        lastReadableRecords = records.toMap()
+        updated.record(expected.identity)
+    }
+
+    fun rollbackProcessingMigration(expected: PhotoEditState): PhotoEditState = withStoreLock {
+        val current = read()
+        if (!current.record(expected.identity).sameAs(expected)) throw AdjustmentOperationExpiredException()
+        val receipt = current.properties.getProperty(migrationKey(expected.identity))?.let(ProcessingMigrationReceipt::decode)
+            ?: throw AdjustmentOperationExpiredException()
+        if (receipt.status != ProcessingMigrationStatus.MIGRATED) throw AdjustmentOperationExpiredException()
+        val records = current.records.toMutableMap()
+        records[expected.identity] = receipt.original
+        val updated = Snapshot(records, current.properties)
+        write(updated, expected.identity, receipt.copy(status = ProcessingMigrationStatus.ROLLED_BACK))
+        lastReadableRecords = records.toMap()
+        updated.record(expected.identity)
+    }
+
     private fun <T> withStoreLock(action: () -> T): T = processLock.withLock {
         if (!directory.isDirectory) throw IOException("Edit store path is not a directory")
         RandomAccessFile(File(directory, ".edits.lock"), "rw").use { lockFile ->
@@ -99,6 +135,12 @@ class EditStore(private val directory: File,
             require(!values.startsWith("v2:") || parts[2] == "values") { "Conflicting structured edit fields" }
         }
         val records = linkedMapOf<PhotoIdentity, EditSettings>()
+        for (key in properties.stringPropertyNames().filter { it.startsWith("migration.") }) {
+            val encoded = key.removePrefix("migration.")
+            require(encoded.isNotEmpty() && !encoded.contains('.')) { "Unknown migration field" }
+            decodeIdentity(encoded)
+            ProcessingMigrationReceipt.decode(properties.getProperty(key))
+        }
         properties.stringPropertyNames().filter { it.startsWith("record.") && it.endsWith(".values") }.forEach { key ->
             val encoded = key.removePrefix("record.").removeSuffix(".values")
             val identity = decodeIdentity(encoded)
@@ -124,9 +166,12 @@ class EditStore(private val directory: File,
         .encodeToString(identity.value.toByteArray(StandardCharsets.UTF_8))
     private fun decodeIdentity(encoded: String) = PhotoIdentity(String(Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8))
 
-    private fun write(updated: Snapshot, identity: PhotoIdentity) {
+    private fun migrationKey(identity: PhotoIdentity) = "migration.${encodeIdentity(identity)}"
+
+    private fun write(updated: Snapshot, identity: PhotoIdentity, migration: ProcessingMigrationReceipt? = null) {
         val properties = Properties().apply { putAll(updated.properties) }
         properties.setProperty("format.version", "1")
+        migration?.let { properties.setProperty(migrationKey(identity), it.encode()) }
         val encoded = encodeIdentity(identity)
         // 旧文件中的 revision 只允许被读取，任何新写入都清理 revision 元数据。
         properties.stringPropertyNames().filter { it.startsWith("revision.") }.forEach(properties::remove)

@@ -687,7 +687,8 @@
           "type": "integer",
           "enum": [
             1,
-            2
+            2,
+            3
           ]
         },
         "quality": {

@@ -200,6 +200,7 @@
 "向左旋转 90°" = "Rotate left 90°";
 "四分之一灵敏度" = "Quarter Sensitivity";
 "四面体" = "Tetrahedral";
+"回到迁移前" = "Restore original settings";
 "圆度" = "Roundness";
 "在照片上取色并上下拖动" = "Sample the photo and drag up or down";
 "场景" = "Scene";
@@ -255,6 +256,7 @@
 "导出长边像素" = "Export Long Edge (Pixels)";
 "导出长边必须为 1-65535 像素。" = "The long edge must be 1-65535 pixels.";
 "将以下项目转为独立调整，以保留其他分组的当前效果：%@" = "The following will become independent adjustments to preserve the current appearance of other groups: %@";
+"将恢复迁移前的全部调整，之后的修改会被替换。" = "All settings from before the update will be restored. Later changes will be replaced.";
 "将按各自调整导出 %@ 张照片。" = "Export with individual adjustments · Photos: %@";
 "将按每张照片已保存的调整导出。跳过只影响本次导出。" = "Each photo uses its saved adjustments. Skipping only affects this export.";
 "将移除 RawLab 保存的外观副本，原始文件不会被删除。" = "The copy of the look saved by RawLab will be removed; the original file will not be deleted.";
@@ -278,6 +280,7 @@
 "已到下限" = "Minimum Reached";
 "已匹配镜头" = "Lens Matched";
 "已启用" = "Enabled";
+"已回退，保留旧版本。" = "Restored. The previous version will be retained.";
 "已在照片图库中确认保存" = "Confirmed Saved in Photos";
 "已处理 %@ / %@" = "Processed %@ / %@";
 "已导入 %@ 个外观，%@ 个文件导入失败：\n" = "Looks imported: %@; files not imported: %@\n";
@@ -294,6 +297,7 @@
 "已生成 %@ 个渲染型 DNG" = "Rendered DNG Files Created: %@";
 "已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Rendered DNG Files Created: %@ (Not Saved to the Selected Location)";
 "已生成渲染型 DNG，未另存到所选位置。" = "Rendered DNG Created, but Not Saved to the Selected Location.";
+"已自动升级，原设置已保留。" = "Updated automatically. Original settings are saved.";
 "已调整" = "Adjusted";
 "已跳过" = "Skipped";
 "已选 %@ 张" = "%@ selected";
@@ -487,6 +491,7 @@
 "正在准备导出…" = "Preparing export…";
 "正在准备照片…" = "Preparing Photos…";
 "正在加载胶片" = "Loading Films";
+"正在匹配原画面…" = "Matching the original appearance…";
 "正在取色…" = "Sampling…";
 "正在处理" = "Processing";
 "正在导入" = "Importing";
@@ -508,6 +513,7 @@
 "此照片或构建尚不能使用 AI 降噪。" = "AI denoising is unavailable for this photo or build.";
 "此照片没有可用的相机白平衡校准。" = "This photo has no usable camera white balance calibration.";
 "此照片没有可编辑的 HDR 增益图。" = "This photo has no editable HDR gain map.";
+"此照片的调整保留原处理版本。" = "This photo keeps its previous processing version.";
 "此设备暂不支持导出 HDR 模式下的 ProRAW 照片。" = "This device does not yet support exporting ProRAW photos in HDR editing mode.";
 "此输入不支持镜头校正" = "Lens Correction Unsupported for This Input";
 "此配置与预览照片类型不匹配，请更换照片或配置。" = "These settings do not match the preview photo type. Choose another photo or configuration.";
@@ -551,6 +557,7 @@
 "用户外观 · %@" = "User Look · %@";
 "电影叙事宽画幅质感，强反差光影切割，深邃暗部与聚光灯金光" = "Cinematic widescreen narrative, hard-cut light and shadow, deep blacks and spotlight gold";
 "电影夜景胶片色调，红色灯光与深邃冷青绿暗部" = "Cinematic night-film tones, red lights and deep cool cyan-green shadows";
+"画面差异较大，已保留旧版本。" = "The appearance differs too much. The previous version is retained.";
 "画面比例" = "Image Aspect Ratio";
 "畸变" = "Distortion";
 "畸变标定不可用" = "Distortion Calibration Unavailable";

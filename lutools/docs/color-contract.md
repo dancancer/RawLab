@@ -20,11 +20,12 @@ The scene-mode 0 EV baseline described below applies when that mode is selected.
 LibRaw performs black subtraction, active-area crop, white balance, demosaic and highlight blending in camera channels. WB must precede demosaic: the earlier no-auto-scale path produced a measurable difference from LibRaw's normal WB-before-demosaic processing. Histogram auto-bright, content-dependent maximum adjustment and integer output-color conversion remain disabled. `highlight=2` retains maximum-normalized WB before 16-bit demosaic and blends clipped highlight chroma after demosaic, before our camera matrix and LUT. The former `highlight=1` unclip mode preserved false magenta in saturated DSC06251 car-body highlights. Blending is not darktable's opposed-chroma reconstruction and cannot recover lost sensor detail; bright colors can become less saturated. We recover green-normalized camera RGB as `image16 / (65535 * post_scale_pre_mul[1])`, then apply the camera-to-sRGB matrix in float. Matrix negatives and values above 1 survive; we do not globally clamp scene RGB to 1. This is not an all-float demosaic: quantization and LibRaw's treatment of sensor-overrange values remain. The raw source is never written.
 
 Processing version 1 preserves LibRaw's released default interpolation choice
-(AHD for ordinary three-color Bayer); version 2 selects VNG. New C sessions and
+(AHD for ordinary three-color Bayer); versions 2 and 3 select VNG. New C sessions and
 public `RAWProcessOptions` retain version-1 behavior. Mac, Windows, iOS and Android new edits
-explicitly select version 2, while records missing processing identity select
+explicitly select version 3, while records missing processing identity select
 version 1. The additive `sony2fuji_session_set_processing_version` selects the
-whole RAW/denoise profile without changing request v2. C++ callers may also select
+whole RAW/denoise/tone profile without changing request v2. Version 3 retains v2
+demosaic and C5 while changing the SDR basic controls. C++ callers may also select
 `RAWProcessOptions::bayerDemosaic = BayerDemosaicMethod::DHT` as an explicit
 alternative; this is not an automatic fallback or an extra denoise stage.
 Desktop clients expose a processing-version choice, not a separate demosaic selector.
@@ -207,9 +208,17 @@ identity rules are in [the DualDn contract](../../docs/architecture/dualdn-inlin
 
 1. Decode RAW to linear RGB with the selected exposure baseline, or inverse-sRGB-decode an explicitly tagged raster buffer. Buffer inputs receive neither RAW metadata nor the +0.7 baseline.
 2. Run optional linear-sRGB wavelet denoising, then apply relative white balance and `2^exposure_ev * brightness` in linear sRGB. Custom RAW WB multipliers are applied once, during decode.
+   Processing v3 then applies its local highlight/shadow gain in scene-linear RGB, before the neutral or film look. It preserves channel ratios and super-white headroom; v1/v2 keep their display-domain tone stage. This versioned SDR path does not replace the separate HDR renderer.
 3. Generate the neutral reference with a fixed log-logistic display curve, then sRGB encode. For positive x the linear display value is `1 / (1 + ((1-g)/g) * (g/x)^1.5)`, with `g=0.1845`; black is 0 and highlights approach 1 smoothly. This independently implemented mathematical subset follows the same curve family as darktable sigmoid, but does not reproduce its primaries adjustment, hue-preservation or full default pipeline.
 4. For a film CUBE: start from the un-tonemapped linear input, transform to its declared F-Gamut or F-Gamut C and encode F-Log, F-Log2 or F-Log2C, then interpolate the CUBE. Named display outputs bypass the neutral curve. Explicit Log outputs are decoded back to linear BT.709/sRGB, then rendered with the neutral display curve. A compiled DCP `.rlook` instead evaluates its preserved matrix/HSV/tone stages directly from common linear sRGB, without F-Log2, an RGB CUBE or an extra neutral curve. Log encoding itself never normalizes exposure, and there is no linear clamp at 1 before it.
 5. Blend neutral and film outputs in the same display-encoded RGB convention. Strength 0 is continuous with the no-LUT rendering. Optional Dehaze precedes black/white endpoint controls and the tone/curve/contrast/saturation sequence. The curve slot selects either the unchanged legacy S scalar or the [custom PCHIP curve](tone-curve-v1.md), with custom identity bypassing all arithmetic; optional vibrance follows it, then HSL, color grading, optional display-chroma and legacy detail denoising, Clarity, sharpening, vignette and grain, optional geometry, and final resizing. Each new zero control bypasses arithmetic and clamping exactly. Versioned formulas and quality admission are in [tone controls v1](tone-controls-v1.md) and [atmosphere v1](atmosphere-v1.md). Active Clarity/Dehaze uses CPU; FINAL/export and previews without viewport reduction use the complete source. Viewport PREVIEW+BUFFER may compute on a reduced source with the full-source analysis scale, as described below. GPU Auto falls back for the whole path and Force returns unsupported. CPU parallel execution preserves output bytes for the same input and preview policy at any thread count.
+
+Processing v3 substitutes the contrast, black/white, vibrance, Clarity and Dehaze
+formulas described in [basic controls v3](basic-controls-v3.md). Active v3
+highlight/shadow processing follows the same full-source/viewport policy as
+Clarity/Dehaze. Active v3 tone controls use CPU with Auto fallback and Force
+unsupported; neutral, exposure-only and saturation-only requests retain their
+existing GPU admission. Legacy versions preserve their previous formulas.
 
 Geometry uses the oriented, lens-processed source: clockwise quarter turns,
 flips in that canvas, centered horizontal/vertical perspective, centered inscribed

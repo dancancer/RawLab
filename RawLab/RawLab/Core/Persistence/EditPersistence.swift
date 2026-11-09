@@ -115,6 +115,10 @@ enum EditPersistenceError: LocalizedError {
 }
 
 final class EditPersistence {
+    private struct StoredProcessingMigration: Codable {
+        let identity: PhotoIdentity
+        var receipt: ProcessingMigrationReceipt<PhotoEditState>
+    }
     private struct StoreFile: Codable {
         var version: Int?
         var records: [String: PhotoEditState]
@@ -124,6 +128,7 @@ final class EditPersistence {
         // A deletion marker keeps the PhotoKit content fallback from restoring
         // an edit after reset without reviving the old revision mechanism.
         var deleted: Set<String>?
+        var processingMigrations: [String: StoredProcessingMigration]?
     }
 
     let directory: URL
@@ -193,6 +198,56 @@ final class EditPersistence {
         return record(identity, from: store)
     }
 
+    func processingMigration(for identity: PhotoIdentity) throws -> ProcessingMigrationReceipt<PhotoEditState>? {
+        try validate(identity)
+        return storedMigration(identity, from: try readStore())?.receipt
+    }
+
+    func commitProcessingMigration(expected: PhotoEditRecord, candidate: PhotoEditState?,
+                                   quality: ProcessingMigrationQuality) throws -> PhotoEditRecord {
+        try validate(expected.identity)
+        return try withWriteLock {
+            var store = try readStore()
+            guard record(expected.identity, from: store) == expected, let original = expected.state,
+                  (1...2).contains(original.settings.processing.version), quality.isValid else {
+                throw AdjustmentCommitError.expired
+            }
+            if let previous = storedMigration(expected.identity, from: store),
+               !previous.receipt.shouldAttempt(current: original, sourceVersion: original.settings.processing.version) {
+                throw AdjustmentCommitError.expired
+            }
+            if let candidate {
+                guard candidate.settings.processing == .current, quality.passes else { throw AdjustmentCommitError.expired }
+                store.records[expected.identity.key] = candidate
+                store.deleted?.remove(expected.identity.key)
+            }
+            var receipts = store.processingMigrations ?? [:]
+            receipts[expected.identity.key] = StoredProcessingMigration(identity: expected.identity,
+                receipt: .init(status: candidate == nil ? .kept : .migrated, original: original, quality: quality))
+            store.processingMigrations = receipts
+            try persistStore(&store)
+            return record(expected.identity, from: store)
+        }
+    }
+
+    func rollbackProcessingMigration(expected: PhotoEditRecord) throws -> PhotoEditRecord {
+        try validate(expected.identity)
+        return try withWriteLock {
+            var store = try readStore()
+            guard record(expected.identity, from: store) == expected,
+                  var receipt = storedMigration(expected.identity, from: store)?.receipt,
+                  receipt.status == .migrated else { throw AdjustmentCommitError.expired }
+            store.records[expected.identity.key] = receipt.original
+            store.deleted?.remove(expected.identity.key)
+            receipt.status = .rolledBack
+            var receipts = store.processingMigrations ?? [:]
+            receipts[expected.identity.key] = StoredProcessingMigration(identity: expected.identity, receipt: receipt)
+            store.processingMigrations = receipts
+            try persistStore(&store)
+            return record(expected.identity, from: store)
+        }
+    }
+
     func resolvingLegacyContent(for identity: PhotoIdentity,
                                 load: () async -> String?) async -> PhotoIdentity {
         guard identity.resourceIdentifier != nil, identity.legacyContentIdentifier == nil,
@@ -224,6 +279,10 @@ final class EditPersistence {
     }
 
     private func record(_ identity: PhotoIdentity, from store: StoreFile) -> PhotoEditRecord {
+        .init(identity: identity, state: store.records[recordKey(identity, from: store)])
+    }
+
+    private func recordKey(_ identity: PhotoIdentity, from store: StoreFile) -> String {
         var key = identity.key
         // 删除标记也是主记录，不能在重置后重新载入旧的内容记录。
         if identity.resourceIdentifier != nil {
@@ -232,7 +291,14 @@ final class EditPersistence {
                 key = PhotoIdentity(contentIdentifier: content).key
             }
         }
-        return .init(identity: identity, state: store.records[key])
+        return key
+    }
+
+    private func storedMigration(_ identity: PhotoIdentity, from store: StoreFile) -> StoredProcessingMigration? {
+        let key = recordKey(identity, from: store)
+        guard let stored = store.processingMigrations?[key], stored.identity.key == key else { return nil }
+        if key == identity.key && stored.identity != identity { return nil }
+        return stored
     }
 
     private func readStore() throws -> StoreFile {
@@ -266,6 +332,12 @@ final class EditPersistence {
         if let previous = current.state, let state, previous.hasSameAdjustments(as: state) { return current }
         if current.state == nil && state == nil { return current }
         store.version = 1
+        // 从内容别名转成 PhotoKit 主记录时，迁移回退也跟随该照片，不能丢在旧入口下。
+        if store.processingMigrations?[identity.key] == nil, let previous = storedMigration(identity, from: store) {
+            var receipts = store.processingMigrations ?? [:]
+            receipts[identity.key] = StoredProcessingMigration(identity: identity, receipt: previous.receipt)
+            store.processingMigrations = receipts
+        }
         if let state {
             store.records[identity.key] = state
             store.deleted?.remove(identity.key)
@@ -273,6 +345,12 @@ final class EditPersistence {
             store.records.removeValue(forKey: identity.key)
             store.deleted = (store.deleted ?? []).union([identity.key])
         }
+        try persistStore(&store)
+        return record(identity, from: store)
+    }
+
+    private func persistStore(_ store: inout StoreFile) throws {
+        store.version = 1
         // Revisions are a legacy read-only field. The first normal write
         // rewrites the registry without carrying that map forward.
         store.revisions = nil
@@ -281,7 +359,6 @@ final class EditPersistence {
         encoder.outputFormatting = [.sortedKeys]
         try writeData(encoder.encode(store), fileURL)
         remember(store)
-        return record(identity, from: store)
     }
 
     private func remember(_ store: StoreFile) {

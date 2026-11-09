@@ -236,6 +236,9 @@
         A8F300000000000000000001 /* X3fRenderingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8F300000000000000000011; };
 		025457773222452EB536902E /* IOSLUTLibrarySelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82401F63082E43C6B11A2D97 /* IOSLUTLibrarySelection.swift */; };
 		4E29D1D654E1483A83C94DE9 /* IOSLUTCompatibilityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB5989AB770A48B8B6F7B0B0 /* IOSLUTCompatibilityView.swift */; };
+		8A3A7184026934D1CA19944B /* ProcessingMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD35CDDB9236C268363ED97D; };
+		FC6F4EC8E39EB3F76F188D65 /* ProcessingMigrationNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFA9E40BC0C5EEE673454CF3; };
+		DCB09DB35FA91EB64D2731A3 /* RawEditorViewModel+ProcessingMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CA9FA3A0CD1617F35B39A4E; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -611,6 +614,9 @@
         A8F300000000000000000011 /* X3fRenderingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/X3fRenderingUITests.swift; sourceTree = SOURCE_ROOT; };
 		82401F63082E43C6B11A2D97 /* IOSLUTLibrarySelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Looks/IOSLUTLibrarySelection.swift"; sourceTree = SOURCE_ROOT; };
 		AB5989AB770A48B8B6F7B0B0 /* IOSLUTCompatibilityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Panels/IOSLUTCompatibilityView.swift"; sourceTree = SOURCE_ROOT; };
+		CD35CDDB9236C268363ED97D /* ProcessingMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ProcessingMigration.swift"; path = "../Shared/ProcessingMigration.swift"; sourceTree = SOURCE_ROOT; };
+		CFA9E40BC0C5EEE673454CF3 /* ProcessingMigrationNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ProcessingMigrationNative.swift"; path = "../Shared/Native/ProcessingMigrationNative.swift"; sourceTree = SOURCE_ROOT; };
+		8CA9FA3A0CD1617F35B39A4E /* RawEditorViewModel+ProcessingMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RawEditorViewModel+ProcessingMigration.swift"; path = "RawLab/Core/ViewModel/RawEditorViewModel+ProcessingMigration.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -702,6 +708,8 @@
 				D14700000000000000000011,
 				D14800000000000000000011,
 				D14900000000000000000011,
+				CFA9E40BC0C5EEE673454CF3 /* ProcessingMigrationNative.swift */,
+				CD35CDDB9236C268363ED97D /* ProcessingMigration.swift */,
 				D00500000000000000000011,
 				1D8E964BDD254CC5B38B55CD,
 				D00600000000000000000011, 00A3E4C709437DACC0D1D46F, DD125F07D1C4D65DADBADB20, 121C57F16BC998BA385F1EA6, 8DAAAD88BE5F6F4ABA164EB9, 0324C679CADE139F72163211, 8D20BB7F1FC842F0DA927634, 4BD8A49A9293229AE363C138,
@@ -777,6 +785,7 @@
 			children = (
 				224CEF0627771E199495F46F /* RawEditorViewModel+AdjustmentTransfer.swift */,
 				3DEF2D58795BEAC7AE14A5A5 /* RawEditorViewModel+AdjustmentHistory.swift */,
+				8CA9FA3A0CD1617F35B39A4E /* RawEditorViewModel+ProcessingMigration.swift */,
 				AB2300000000000000000002 /* EditorResetTransaction.swift */,
 				5BBA826F203D41BCC1DF31C0,
 				893AFB855B8D4C46BF182760,
@@ -1264,6 +1273,9 @@
 				D14700000000000000000001,
 				D14800000000000000000001,
 				D14900000000000000000001,
+				DCB09DB35FA91EB64D2731A3 /* RawEditorViewModel+ProcessingMigration.swift in Sources */,
+				FC6F4EC8E39EB3F76F188D65 /* ProcessingMigrationNative.swift in Sources */,
+				8A3A7184026934D1CA19944B /* ProcessingMigration.swift in Sources */,
 				D00500000000000000000001,
 				B1536143952C400DB68B26A0,
 				D00600000000000000000001, 2DA4DF4798D881C25F72C798, 2413F38498878607A82822FF, B113946A33D6E7CA01F7A684, BA13EBD0673C922006A7B4B1, 2DCD5783547984E860773E97, B6C0A774BB3BFD64F1F06174, 591EBC8F57FFA39BB60C77B4,

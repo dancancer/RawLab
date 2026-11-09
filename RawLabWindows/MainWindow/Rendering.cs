@@ -31,7 +31,7 @@ public partial class MainWindow
             else if (PhotoInput.IsRaw(path)) PhotoInput.ProbeCameraRaw(path, out openedHDR);
             CancelViewingInput();
             if(!ResolveTransformDraft() || !SaveEdits())return;
-            ResetAITask();RestoreEdits(path); hdrSource = openedHDR;
+            ResetAITask();CancelProcessingMigration();RestoreEdits(path); hdrSource = openedHDR;
             CancelViewingInput();view.SourceChanged();neutralResult=null;
             lastExportedPath=null;ExportRevealButton.Visibility=Visibility.Collapsed;
             previewResize.Stop();previewLongEdge=requestedPreviewLongEdge=2000;previewDeferred=false;
@@ -52,7 +52,7 @@ public partial class MainWindow
             Title="RawLab · "+Path.GetFileName(path); Welcome.Visibility=Visibility.Collapsed;
             embeddedScheduler.Submit(new(path,++openRevision));PumpEmbedded();
             _ = LoadPhotoInfo(path, photoInfoRevision);
-            RefreshControls(); Schedule(initialPreview:true);QueueThumbnailRefresh();
+            RefreshControls(); Schedule(initialPreview:true);BeginProcessingMigration(path);QueueThumbnailRefresh();
         }
         catch(Exception ex) { if(sourceChanged){syncing=false;exactReady=false;renderFailed=true;RefreshRenderLabels();UpdateBusy();}Report(ex); }
     }
@@ -188,7 +188,7 @@ public partial class MainWindow
             work.Settings.IsHDREditing==settings.IsHDREditing && work.Settings.ActiveAIDenoise==settings.ActiveAIDenoise && work.Settings.X3fMode==settings.X3fMode &&
             (!work.Settings.ActiveAIDenoise || AIResultReady && work.AIIdentity==aiJob.Identity) && work.Settings.Geometry==PreviewGeometry && work.Settings.Lens==PreviewLens && work.TransformGeneration==transformGeneration && (!view.NeedsReference || work.Compare) && (current || (work.Interactive && interacting && work.Edge==RenderEdge(true))))
         {
-            if(failure!=null) { if(current){ClearPendingAllReset();exactReady=false;transformPreviewReady=false;renderFailed=true;RefreshCropDraft();RefreshRenderLabels();if(!HandleAIFailure(failure))SetStatus(()=>Loc.Text("预览未更新")+" · "+failure.Message,true);} }
+            if(failure!=null) { if(current){ClearPendingAllReset();exactReady=false;transformPreviewReady=false;renderFailed=true;RefreshCropDraft();RefreshRenderLabels();CancelProcessingMigration();if(!HandleAIFailure(failure))SetStatus(()=>Loc.Text("预览未更新")+" · "+failure.Message,true);} }
             else if(rendered!=null && neutral!=null)
             {
                 if(work.Settings.ActiveAIDenoise) { aiNotReadyIdentity=null;aiNotReadyAttempts=0; }
@@ -232,7 +232,7 @@ public partial class MainWindow
         }
         // A quick RAW proxy shortens the blank wait. Only its exact successor enables export.
         if(current && work.Refine && failure==null && work.File==file && !interacting)Schedule();
-        UpdateBusy(); Pump();QueuePendingReset();
+        UpdateBusy(); TryFinishPendingProcessingMigration(); Pump();QueuePendingReset();
     }
     private void ExposureModeChanged(object sender,SelectionChangedEventArgs e) { if(!ready || syncing || exporting || transform.Active)return;settings.ExposureMode=ExposureMode.SelectedIndex;MarkEdited();Schedule(); }
     private void X3fRenderingChanged(object sender,SelectionChangedEventArgs e)
@@ -244,8 +244,10 @@ public partial class MainWindow
     }
     private void ProcessingVersionChanged(object sender,SelectionChangedEventArgs e)
     {
-        if(!ready || syncing || exporting || transform.Active || file==null || ProcessingVersion.SelectedIndex is < 0 or > 1)return;
-        settings.Processing=ProcessingVersion.SelectedIndex==0 ? ProcessingIdentity.Legacy : ProcessingIdentity.Current;
+        if(!ready || syncing || exporting || transform.Active || file==null || ProcessingVersion.SelectedIndex is < 0 or > 2)return;
+        settings.Processing=ProcessingVersion.SelectedIndex switch {
+            0 => ProcessingIdentity.Legacy, 1 => ProcessingIdentity.C5, _ => ProcessingIdentity.Current
+        };
         MarkEdited();Schedule();
     }
     private void GpuModeChanged(object sender,SelectionChangedEventArgs e) { if(ready && !syncing && !exporting) {RefreshAIControls();Schedule();} }

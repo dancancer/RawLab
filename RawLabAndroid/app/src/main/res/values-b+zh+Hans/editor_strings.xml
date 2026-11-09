@@ -362,6 +362,13 @@
     <string name="preset_save">"保存预设"</string>
     <string name="preset_save_as">"另存"</string>
     <string name="preset_scope">"调整范围"</string>
+    <string name="processing_migration_completed">"已自动升级，原设置已保留。"</string>
+    <string name="processing_migration_kept">"画面差异较大，已保留旧版本。"</string>
+    <string name="processing_migration_matching">"正在匹配原画面…"</string>
+    <string name="processing_migration_rollback">"回到迁移前"</string>
+    <string name="processing_migration_rollback_warning">"将恢复迁移前的全部调整，之后的修改会被替换。"</string>
+    <string name="processing_migration_rolled_back">"已回退，保留旧版本。"</string>
+    <string name="processing_migration_unavailable">"此照片的调整保留原处理版本。"</string>
     <string name="remove_look_confirmation">"移除“%1$s”？"</string>
     <string name="reset_all_body">"保留当前普通胶片，清除配方并恢复其余默认值。照片、外观库和批量任务保留。"</string>
     <string name="reset_all_title">"重置所有调整？"</string>

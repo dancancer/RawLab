@@ -346,18 +346,19 @@ when the v4 parser and serializer are available.
 groups, and requires one additional root object:
 
 ```json
-"processing": { "family": "rawlab", "version": 2, "quality": "standard" }
+"processing": { "family": "rawlab", "version": 3, "quality": "standard" }
 ```
 
-The supported versions are `1` (released v0.8.2 RAW/SWT behavior) and `2`
-(Bayer VNG and C5 EAW denoising). Both use quality `standard`.
+The supported versions are `1` (released v0.8.2 RAW/SWT behavior), `2`
+(Bayer VNG and C5 EAW denoising), and `3` (v2 RAW/denoise with
+[basic controls v3](basic-controls-v3.md)). All use quality `standard`.
 Unknown members, families, versions or quality values are rejected before
 rendering or creating output. The processing version is independent of
 `schema_version`, the result protocol and request v2.
 
 Schemas 1–4 implicitly select processing version 1, continue rejecting the
 `processing` field, and normalize without adding it. An in-memory recipe with
-processing version 2 cannot be serialized as schema 1–4: the serializer throws
+processing version 2 or 3 cannot be serialized as schema 1–4: the serializer throws
 instead of discarding its identity. A schema 5 recipe can explicitly select
 version 1 without changing any edit values.
 

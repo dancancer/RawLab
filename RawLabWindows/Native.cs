@@ -196,6 +196,16 @@ internal static partial class Native
     [StructLayout(LayoutKind.Sequential)]
     internal struct ToneControlsConfig { public uint Version, StructSize; public float BlackPoint, WhitePoint, Vibrance; }
     [StructLayout(LayoutKind.Sequential)]
+    internal struct ProcessingMigrationResult
+    {
+        public uint Version, StructSize;
+        public int SourceVersion, TargetVersion, Disposition;
+        public uint EvaluationCount;
+        public float ExposureEv, Contrast, Highlights, Shadows, Saturation;
+        public float BlackPoint, WhitePoint, Vibrance, Clarity, Dehaze;
+        public float RgbRmse, P99Error, WorstTileRmse, DetailRmse;
+    }
+    [StructLayout(LayoutKind.Sequential)]
     internal struct ToneCurveConfig {
         public uint Version, StructSize; public int Mode; public uint Count;
         [MarshalAs(UnmanagedType.ByValArray, SizeConst=66)] public double[] Points;
@@ -328,6 +338,7 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_raw_exposure(Session session,out float baseline,out float metadata);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_raw_white_balance(Session session,out float temperature,out float tint);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_process(Session session,ref Request request,out Buffer buffer);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_migrate_processing(Session session,ref Request request,ref ProcessingMigrationResult result);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern void sony2fuji_release_buffer(ref Buffer buffer);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_analyze_image(ref Buffer buffer,int mode,[Out] uint[] bins,out uint shadows,out uint highlights,out Buffer mask);
     [DllImport(Dll, EntryPoint="sony2fuji_analyze_image", CallingConvention=CallingConvention.Cdecl)] internal static extern int AnalyzeWithoutMask(ref Buffer buffer,int mode,[Out] uint[] bins,out uint shadows,out uint highlights,IntPtr mask);

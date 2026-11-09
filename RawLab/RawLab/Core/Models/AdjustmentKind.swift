@@ -102,7 +102,7 @@ enum AdjustmentKind: String, CaseIterable, Identifiable {
         case .strength:
             return RawSettings.lutStrengthRange
         case .exposure:
-            return -4...4
+            return -5...5
         case .contrast, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze:
             return -100...100
         case .highlights:

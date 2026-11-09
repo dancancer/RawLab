@@ -362,6 +362,13 @@
     <string name="preset_save">"Vorgabe speichern"</string>
     <string name="preset_save_as">"Speichern unter"</string>
     <string name="preset_scope">"Anpassungsumfang"</string>
+    <string name="processing_migration_completed">"Automatisch aktualisiert. Ursprüngliche Einstellungen sind gespeichert."</string>
+    <string name="processing_migration_kept">"Die Bildabweichung ist zu groß. Die bisherige Version bleibt erhalten."</string>
+    <string name="processing_migration_matching">"Ursprüngliches Bild wird angeglichen…"</string>
+    <string name="processing_migration_rollback">"Ursprüngliche Einstellungen wiederherstellen"</string>
+    <string name="processing_migration_rollback_warning">"Alle Einstellungen vor der Aktualisierung werden wiederhergestellt. Spätere Änderungen werden ersetzt."</string>
+    <string name="processing_migration_rolled_back">"Wiederhergestellt. Die bisherige Version bleibt erhalten."</string>
+    <string name="processing_migration_unavailable">"Dieses Foto behält seine bisherige Verarbeitungsversion."</string>
     <string name="remove_look_confirmation">"„%1$s“ entfernen?"</string>
     <string name="reset_all_body">"Der aktuelle Film bleibt erhalten. Das Rezept und alle anderen Anpassungen werden zurückgesetzt. Fotos, Looks und Stapelaufträge bleiben erhalten."</string>
     <string name="reset_all_title">"Alle Anpassungen zurücksetzen?"</string>

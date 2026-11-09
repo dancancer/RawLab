@@ -124,7 +124,7 @@ func inspectRasterRecipe(_ data: Data, input: URL, label: String) throws -> [Str
               "\(label): agent emits schema_version 5")
     let processing = try dictionary(root["processing"], "processing")
     try check(processing["family"] as? String == "rawlab" && processing["quality"] as? String == "standard" &&
-              (processing["version"] as? NSNumber)?.intValue == 2, "\(label): raster also preserves processing identity")
+              (processing["version"] as? NSNumber)?.intValue == ProcessingIdentity.current.version, "\(label): raster also preserves processing identity")
     let inputObject = try dictionary(root["input"], "input")
     try check(inputObject["type"] as? String == "raster" &&
               inputObject["path"] as? String == input.standardizedFileURL.path,

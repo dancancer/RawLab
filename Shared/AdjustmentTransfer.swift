@@ -383,7 +383,7 @@ struct AdjustmentTransferPayload: Codable, Equatable {
             throw AdjustmentTransferError.invalidPayload("hdr context")
         }
         guard !values.isEmpty else { throw AdjustmentTransferError.emptyScope }
-        guard !source.identifier.isEmpty, [1, 2].contains(source.processingVersion) else {
+        guard !source.identifier.isEmpty, [1, 2, 3].contains(source.processingVersion) else {
             throw AdjustmentTransferError.invalidPayload("source")
         }
         if let recipe = source.recipe {

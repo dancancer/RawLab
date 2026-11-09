@@ -304,7 +304,9 @@
                     <TextBlock Text="{DynamicResource '照片处理设置'}" FontWeight="SemiBold" Margin="0,0,0,12" TextWrapping="Wrap"/>
                     <TextBlock x:Name="ActiveFilm" Foreground="{DynamicResource Muted}" Margin="0,0,0,12" TextWrapping="Wrap"/>
                     <TextBlock Text="{DynamicResource '处理版本'}" Margin="0,0,0,4"/>
-                    <ComboBox x:Name="ProcessingVersion" SelectedIndex="1" SelectionChanged="ProcessingVersionChanged" AutomationProperties.Name="{DynamicResource '处理版本'}"><ComboBoxItem Content="{DynamicResource '处理 v1（旧版）'}"/><ComboBoxItem Content="{DynamicResource '处理 v2'}"/></ComboBox>
+                    <ComboBox x:Name="ProcessingVersion" SelectedIndex="2" SelectionChanged="ProcessingVersionChanged" AutomationProperties.Name="{DynamicResource '处理版本'}"><ComboBoxItem Content="{DynamicResource '处理 v1（旧版）'}"/><ComboBoxItem Content="{DynamicResource '处理 v2'}"/><ComboBoxItem Content="{DynamicResource '处理 v3'}"/></ComboBox>
+                    <TextBlock x:Name="ProcessingMigrationState" Foreground="{DynamicResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite"/>
+                    <Button x:Name="RollbackProcessingMigrationButton" Content="{DynamicResource '回到迁移前'}" Click="RollbackProcessingMigrationClicked" Margin="0,8,0,0" Padding="8,3" Style="{StaticResource QuietButton}" Visibility="Collapsed"/>
                     <StackPanel x:Name="X3fSettingsPanel" Visibility="Collapsed">
                       <TextBlock Text="{DynamicResource 'X3F 显影'}" Margin="0,10,0,4"/>
                       <ComboBox x:Name="X3fRendering" SelectionChanged="X3fRenderingChanged" AutomationProperties.Name="{DynamicResource 'X3F 显影'}" AutomationProperties.AutomationId="x3f.mode">

@@ -88,6 +88,15 @@ final class IOSAdjustmentTransferSession {
         if knownRecords[identity.key] != nil { sourceValidators[identity.key] = validate }
     }
 
+    func adoptProcessingMigration(_ record: PhotoEditRecord) {
+        for index in transactions.indices {
+            transactions[index].parts.removeAll { $0.identity.key == record.identity.key }
+        }
+        transactions.removeAll { $0.parts.isEmpty }
+        setHistoryHead(nil, for: record.identity.key)
+        remember(record)
+    }
+
     @discardableResult
     func copy(scope: AdjustmentTransferScope, snapshot: PhotoEditState,
               context: IOSAdjustmentTransferContext) throws -> AdjustmentTransferPayload {

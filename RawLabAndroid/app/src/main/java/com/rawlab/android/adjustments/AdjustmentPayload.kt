@@ -58,7 +58,7 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
             valid(fields.none { it.isHDROnly }, "hdr context")
         }
         if (values.isEmpty()) throw AdjustmentTransferException(AdjustmentFailure.EMPTY_SCOPE)
-        valid(source.identifier.isNotEmpty() && source.processingVersion in 1..2, "source")
+        valid(source.identifier.isNotEmpty() && source.processingVersion in 1..3, "source")
         source.recipe?.let {
             valid(it.id.isNotEmpty() && it.strength.isFinite() && it.strength in 0.0..2.0 && it.settingsVersion in 2..4, "recipe")
             valid(this[AdjustmentField.STRENGTH]?.number?.let { strength -> strength == it.strength } != false, "recipe.strength")

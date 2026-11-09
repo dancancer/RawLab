@@ -362,6 +362,13 @@
     <string name="preset_save">"Guardar ajuste preestablecido"</string>
     <string name="preset_save_as">"Guardar como"</string>
     <string name="preset_scope">"Alcance de los ajustes"</string>
+    <string name="processing_migration_completed">"Actualizado automáticamente. Se conservan los ajustes originales."</string>
+    <string name="processing_migration_kept">"El aspecto difiere demasiado. Se mantiene la versión anterior."</string>
+    <string name="processing_migration_matching">"Ajustando al aspecto original…"</string>
+    <string name="processing_migration_rollback">"Restaurar ajustes originales"</string>
+    <string name="processing_migration_rollback_warning">"Se restaurarán todos los ajustes anteriores a la actualización. Se reemplazarán los cambios posteriores."</string>
+    <string name="processing_migration_rolled_back">"Restaurado. Se mantendrá la versión anterior."</string>
+    <string name="processing_migration_unavailable">"Esta foto conserva su versión de procesamiento anterior."</string>
     <string name="remove_look_confirmation">"¿Eliminar \"%1$s\"?"</string>
     <string name="reset_all_body">"Se conserva la película actual. Se elimina la receta y se restablecen los demás ajustes. Las fotos, estilos y tareas por lotes se conservan."</string>
     <string name="reset_all_title">"¿Restablecer todos los ajustes?"</string>

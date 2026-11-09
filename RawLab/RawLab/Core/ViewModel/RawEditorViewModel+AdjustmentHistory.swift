@@ -43,6 +43,7 @@ extension RawEditorViewModel {
 
     func acceptImportedEditRecord(_ record: PhotoEditRecord?, settings: RawSettings) {
         loadedEditRecord = record
+        processingMigrationReceipt = record.flatMap { try? editPersistence?.processingMigration(for: $0.identity) }
         adjustmentInteraction = nil
         adjustmentInteractionRejected = false
         adjustmentRestoredSettings = nil
@@ -58,6 +59,7 @@ extension RawEditorViewModel {
 
     @discardableResult
     func beginAdjustmentInteraction(settings: RawSettings) -> Bool {
+        cancelProcessingMigration()
         guard !isBusy, !hasAdjustmentDraft, adjustmentInteraction == nil, let source = editorEditSource else { return false }
         guard saveCurrentSettings(settings) else { adjustmentInteractionRejected = true; return false }
         adjustmentInteractionRejected = false

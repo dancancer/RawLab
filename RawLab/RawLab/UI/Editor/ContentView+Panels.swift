@@ -392,6 +392,15 @@ extension ContentView {
                 Form {
                     Text(selectedFilmName)
                     editSaveStatus
+                    if let status = viewModel.processingMigrationStatus {
+                        Text(L10n.text(status)).font(.caption).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("processing.migration.status")
+                    }
+                    if viewModel.processingMigrationReceipt?.status == .migrated {
+                        Button(L10n.text("回到迁移前")) { confirmingProcessingRollback = true }
+                            .disabled(isEditorDraftActive || editorBusy || viewModel.matchingProcessing)
+                            .accessibilityIdentifier("processing.migration.rollback")
+                    }
                     if viewModel.sourceIsHDR || viewModel.sourceSupportsCameraHDR {
                         Toggle(L10n.text("HDR 编辑"),isOn:Binding(
                             get:{ settings.isHDREditing || viewModel.cameraHDRPreflight },
@@ -440,6 +449,10 @@ extension ContentView {
                 .navigationTitle(L10n.text("照片处理设置"))
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.text("关闭")) { showingProcessingContext = false } } }
             }.presentationDetents([.medium, .large])
+                .alert(L10n.text("回到迁移前"), isPresented: $confirmingProcessingRollback) {
+                    Button(L10n.text("回到迁移前")) { viewModel.rollbackProcessingMigration(settings: settings) }
+                    Button(L10n.text("取消"), role: .cancel) { }
+                } message: { Text(L10n.text("将恢复迁移前的全部调整，之后的修改会被替换。")) }
     }
 
     private var parameterInputContext: AdjustmentInputContext {

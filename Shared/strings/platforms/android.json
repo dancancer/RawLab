@@ -5149,6 +5149,48 @@
       "formats": [],
       "source": "调整记录暂不可用，请稍后重试。",
       "types": []
+    },
+    "processing_migration_matching": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "正在匹配原画面…",
+      "types": []
+    },
+    "processing_migration_completed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "已自动升级，原设置已保留。",
+      "types": []
+    },
+    "processing_migration_kept": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "画面差异较大，已保留旧版本。",
+      "types": []
+    },
+    "processing_migration_rolled_back": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "已回退，保留旧版本。",
+      "types": []
+    },
+    "processing_migration_rollback": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "回到迁移前",
+      "types": []
+    },
+    "processing_migration_rollback_warning": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "将恢复迁移前的全部调整，之后的修改会被替换。",
+      "types": []
+    },
+    "processing_migration_unavailable": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "此照片的调整保留原处理版本。",
+      "types": []
     }
   },
   "overrides": {

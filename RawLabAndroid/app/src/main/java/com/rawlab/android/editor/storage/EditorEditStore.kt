@@ -47,6 +47,16 @@ internal class EditorEditStore(private val directory: File, private val createSt
     fun readState(identity: PhotoIdentity): PhotoEditState =
         (store ?: throw IOException("Edit store is unavailable")).readState(identity)
 
+    fun processingMigration(identity: PhotoIdentity) =
+        (store ?: throw IOException("Edit store is unavailable")).processingMigration(identity)
+
+    fun commitProcessingMigration(expected: PhotoEditState, candidate: EditSettings?,
+        quality: com.rawlab.android.settings.ProcessingMigrationQuality): PhotoEditState =
+        (store ?: throw IOException("Edit store is unavailable")).commitProcessingMigration(expected, candidate, quality)
+
+    fun rollbackProcessingMigration(expected: PhotoEditState): PhotoEditState =
+        (store ?: throw IOException("Edit store is unavailable")).rollbackProcessingMigration(expected)
+
     fun save(identity: PhotoIdentity, settings: EditSettings): EditSaveResult = try {
         if (store == null) {
             store = createStore(directory)

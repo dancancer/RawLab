@@ -274,6 +274,7 @@ extension RawEditorViewModel {
                                 self.failedDraftSource = nil
                                 if self.editPersistence != nil { self.setEditNotice(state == nil ? .idle : .restored) }
                                 onSettingsRestored?(restoredSettings)
+                                self.startProcessingMigrationIfNeeded(settings: restoredSettings)
                                 if x3fModeOverride != nil { self.queueSettingsSave(restoredSettings) }
                                 if self.hasImage && adjustedImage != nil {
                                     ErrorDiagnostics.app.recordImportSuccess(attemptID: importRevision, context: importContext)
@@ -336,6 +337,7 @@ extension RawEditorViewModel {
                                 self.failedDraftSource = nil
                                 if self.editPersistence != nil { self.setEditNotice(state == nil ? .idle : .restored) }
                                 onSettingsRestored?(restoredSettings)
+                                self.startProcessingMigrationIfNeeded(settings: restoredSettings)
                                 if self.hasImage && adjustedImage != nil {
                                     ErrorDiagnostics.app.recordImportSuccess(attemptID: importRevision, context: importContext)
                                     onImported?()

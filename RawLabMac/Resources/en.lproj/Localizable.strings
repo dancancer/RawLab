@@ -248,6 +248,7 @@
 "向左旋转 90°" = "Rotate left 90°";
 "向左滚动%@" = "Scroll %@ to the left";
 "四面体" = "Tetrahedral";
+"回到迁移前" = "Restore original settings";
 "圆度" = "Roundness";
 "在 Finder 中打开" = "Open in Finder";
 "在照片上取色并上下拖动" = "Sample the photo and drag up or down";
@@ -263,6 +264,7 @@
 "基础曝光偏移" = "Base exposure offset";
 "处理 v1（旧版）" = "Processing v1 (Legacy)";
 "处理 v2" = "Processing v2";
+"处理 v3" = "Processing v3";
 "处理失败：%@" = "Processing failed: %@";
 "处理版本" = "Processing version";
 "处理结果为空" = "The processing result is empty";
@@ -314,6 +316,7 @@
 "导出长边必须为 1-65535 像素。" = "The long edge must be 1-65535 pixels.";
 "将以下项目转为独立调整，以保留其他分组的当前效果：%@" = "The following will become independent adjustments to preserve the current appearance of other groups: %@";
 "将在下次正常退出时重新检查并安装" = "The update will be checked again and installed the next time you quit normally";
+"将恢复迁移前的全部调整，之后的修改会被替换。" = "All settings from before the update will be restored. Later changes will be replaced.";
 "将按每张照片已保存的调整导出。跳过只影响本次导出。" = "Each photo uses its saved adjustments. Skipping only affects this export.";
 "将替换目标照片的本机调整记录，不改写原始 RAW。" = "This replaces the target photos’ local adjustments without modifying the original RAW.";
 "将替换目标照片的本机调整记录，不改写原始文件。" = "The target photos’ local adjustment records will be replaced. Original files will not be modified.";
@@ -345,6 +348,7 @@
 "已匹配配置 · 校正尚未开启" = "Matched Profile · Correction Off";
 "已匹配镜头" = "Lens Matched";
 "已启用" = "Enabled";
+"已回退，保留旧版本。" = "Restored. The previous version will be retained.";
 "已导入 %@ 个外观，%@ 个文件导入失败：\n" = "Looks imported: %@; files not imported: %@\n";
 "已导出" = "Exported";
 "已导出 %@ 个渲染型 DNG" = "Rendered DNG Files Exported: %@";
@@ -367,6 +371,7 @@
 "已生成 %@ 个渲染型 DNG" = "Rendered DNG Files Created: %@";
 "已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Rendered DNG Files Created: %@ (Not Saved to the Selected Location)";
 "已生成渲染型 DNG，未另存到所选位置。" = "Rendered DNG Created, but Not Saved to the Selected Location.";
+"已自动升级，原设置已保留。" = "Updated automatically. Original settings are saved.";
 "已调整" = "Adjusted";
 "已跳过" = "Skipped";
 "已选" = "Selected";
@@ -626,6 +631,7 @@
 "正在准备 AI 降噪" = "Preparing AI denoise";
 "正在准备导出…" = "Preparing export…";
 "正在准备编辑画布…" = "Preparing Editing Canvas…";
+"正在匹配原画面…" = "Matching the original appearance…";
 "正在取色…" = "Sampling…";
 "正在处理 RAW 噪声" = "Processing RAW noise";
 "正在处理更新，编辑暂不可用。" = "An update is in progress. Editing is temporarily unavailable.";
@@ -667,6 +673,7 @@
 "此照片没有可编辑的 HDR 增益图。" = "This photo has no editable HDR gain map.";
 "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。" = "Editing this photo in HDR requires macOS 15. It will be exported in SDR.";
 "此照片的 HDR 需 macOS 15 才能编辑，已按 SDR 打开。" = "Editing this photo in HDR requires macOS 15. It was opened in SDR.";
+"此照片的调整保留原处理版本。" = "This photo keeps its previous processing version.";
 "此目录没有 RAW 照片。" = "This folder contains no RAW photos.";
 "此目录没有照片。" = "This folder contains no photos.";
 "此输入不支持镜头校正" = "Lens Correction Unsupported for This Input";
@@ -722,6 +729,7 @@
 "用户外观 · %@" = "User Look · %@";
 "电影叙事宽画幅质感，强反差光影切割，深邃暗部与聚光灯金光" = "Cinematic widescreen narrative, hard-cut light and shadow, deep blacks and spotlight gold";
 "电影夜景胶片色调，红色灯光与深邃冷青绿暗部" = "Cinematic night-film tones, red lights and deep cool cyan-green shadows";
+"画面差异较大，已保留旧版本。" = "The appearance differs too much. The previous version is retained.";
 "画面比例" = "Image Aspect Ratio";
 "畸变" = "Distortion";
 "畸变未应用" = "Distortion Correction Not Applied";

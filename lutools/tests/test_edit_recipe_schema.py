@@ -394,7 +394,7 @@ class EditRecipeSchema(unittest.TestCase):
         schema = json.loads((ROOT / "docs" / "edit-json-v5.schema.json").read_text())
         document = self.full()
         document["schema_version"] = 5
-        for version in (1, 2):
+        for version in (1, 2, 3):
             document["processing"] = {"family": "rawlab", "version": version, "quality": "standard"}
             normalized = self.normalize(document)
             self.assertEqual(normalized["processing"], document["processing"])

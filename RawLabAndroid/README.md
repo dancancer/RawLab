@@ -11,7 +11,9 @@
 
 Native Kotlin / Jetpack Compose RAW editor using the shared C++ pipeline through JNI.
 
-新编辑使用处理身份 `rawlab/2/standard`（C5），旧记录缺少身份时按版本 1 恢复。
+新编辑使用处理身份 `rawlab/3/standard`（C5 与基础调节 v3），已有版本 1/2 保持原身份，
+旧记录缺少身份时按版本 1 恢复。新基础调节及普通曝光 ±5 EV 见
+[基础调节契约](../lutools/docs/basic-controls-v3.md)。HDR 曝光保持 ±4 EV。
 预览、导出、自动曝光和批量快照均携带身份。C5 在 CPU 上分块处理，保留现有预览尺寸策略；
 Auto 可接续 GLES 显示渲染，Force 不支持需要执行 C5 的滤波。亮度、色度、粗色斑强度可调，
 由用户取舍细节和降噪；资源不足时报错，不静默替换算法。构建通过不等于设备内存或 GPU 验证通过。

@@ -53,7 +53,7 @@ inline sony2fuji_request makeRequest(const char* input, const char* lut, const c
     float sharpening, int edge, ExportFormat format, uint32_t longEdge = 0) {
     const auto nativeFormat = nativeOutputFormat(format);
     if (!input || !*input || !std::isfinite(strength) || strength < 0 || strength > 2 ||
-        !std::isfinite(exposure) || exposure < -4 || exposure > 4 ||
+        !std::isfinite(exposure) || exposure < -5 || exposure > 5 ||
         !std::isfinite(highlights) || highlights < -1 || highlights > 1 ||
         !std::isfinite(shadows) || shadows < -1 || shadows > 1 ||
         !std::isfinite(contrast) || contrast < -1 || contrast > 1 ||

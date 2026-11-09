@@ -98,7 +98,7 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, navig
     val rawOnly = state.photo?.inputKind == PhotoInputKind.RAW
     val scalar = when (index) {
         1 -> Triple(edits.strength * 100f, 100f, 0f..200f)
-        2 -> Triple(edits.exposure, 0f, -4f..4f)
+        2 -> Triple(edits.exposure, 0f, if (edits.isHDREditing) -4f..4f else -5f..5f)
         3 -> Triple(edits.highlights * 100f, 0f, -100f..100f)
         4 -> Triple(edits.shadows * 100f, 0f, -100f..100f)
         5 -> Triple(edits.contrast * 100f, 0f, -100f..100f)

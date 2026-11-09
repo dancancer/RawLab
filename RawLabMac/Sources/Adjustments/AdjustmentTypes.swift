@@ -13,9 +13,14 @@ struct ProcessingIdentity: Equatable, Hashable, Codable {
     let version: Int
     let quality: String
     static let legacy = ProcessingIdentity(version: 1)
-    static let current = ProcessingIdentity(version: 2)
+    static let c5 = ProcessingIdentity(version: 2)
+    static let current = ProcessingIdentity(version: 3)
     var core: sony2fuji_processing_version {
-        version == 1 ? SONY2FUJI_PROCESSING_LEGACY : SONY2FUJI_PROCESSING_C5_V2
+        switch version {
+        case 1: return SONY2FUJI_PROCESSING_LEGACY
+        case 2: return SONY2FUJI_PROCESSING_C5_V2
+        default: return SONY2FUJI_PROCESSING_BASIC_V3
+        }
     }
 
     private init(version: Int) {
@@ -41,7 +46,7 @@ struct ProcessingIdentity: Equatable, Hashable, Codable {
         family = try values.decode(String.self, forKey: .family)
         version = try values.decode(Int.self, forKey: .version)
         quality = try values.decode(String.self, forKey: .quality)
-        guard family == "rawlab", version == 1 || version == 2, quality == "standard" else {
+        guard family == "rawlab", (1...3).contains(version), quality == "standard" else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
                 debugDescription: "Unsupported processing identity"))
         }
@@ -528,6 +533,10 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
             return AdjustmentSpec(title: value.title, keyPath: value.keyPath, range: 0...1,
                 defaultValue: 0, step: 0.01, unit: "%", multiplier: 100)
         }
+        if settings.isHDREditing && self == .exposure {
+            return AdjustmentSpec(title: value.title, keyPath: value.keyPath, range: -4...4,
+                defaultValue: 0, step: value.step, unit: value.unit, decimals: value.decimals)
+        }
         if settings.isHDREditing { return value }
         if self == .temperature { value.defaultValue = settings.asShotWhiteBalance?.temperature ?? 6500 }
         if self == .tint { value.defaultValue = settings.masterRecipe != nil ? 0 : (settings.asShotWhiteBalance?.tint ?? 0) }
@@ -558,7 +567,7 @@ enum AdjustmentParameter: String, CaseIterable, Identifiable {
     var spec: AdjustmentSpec {
         switch self {
         case .strength: return AdjustmentSpec(title: L10n.text("强度"), keyPath: \.strength, range: 0...2, defaultValue: 1, step: 0.001, unit: "%", multiplier: 100, decimals: 1)
-        case .exposure: return AdjustmentSpec(title: L10n.text("曝光"), keyPath: \.exposure, range: -4...4, defaultValue: 0, step: 0.01, unit: "EV", decimals: 2)
+        case .exposure: return AdjustmentSpec(title: L10n.text("曝光"), keyPath: \.exposure, range: -5...5, defaultValue: 0, step: 0.01, unit: "EV", decimals: 2)
         case .temperature: return AdjustmentSpec(title: L10n.text("色温"), keyPath: \.temperature, range: 2000...50000, defaultValue: 6500, step: 10, unit: "K", reciprocalScale: true)
         case .tint: return AdjustmentSpec(title: L10n.text("色调"), keyPath: \.tint, range: -150...150, defaultValue: 0, step: 0.1, unit: "", decimals: 1)
         case .blackPoint: return AdjustmentSpec(title: L10n.text("黑场"), keyPath: \.blackPoint, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)

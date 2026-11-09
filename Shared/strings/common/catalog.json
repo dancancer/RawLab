@@ -975,6 +975,14 @@
     "ja": "処理 v2",
     "zh-Hans": "处理 v2"
   },
+  "处理 v3": {
+    "de": "Verarbeitung v3",
+    "en": "Processing v3",
+    "es": "Procesamiento v3",
+    "fr": "Traitement v3",
+    "ja": "処理 v3",
+    "zh-Hans": "处理 v3"
+  },
   "处理失败：{0}": {
     "de": "Verarbeitung fehlgeschlagen: {0}",
     "en": "Processing failed: {0}",
@@ -7414,5 +7422,61 @@
     "fr": "Les réglages enregistrés sont temporairement indisponibles. Réessayez plus tard.",
     "ja": "調整記録は一時的に利用できません。後でもう一度お試しください。",
     "zh-Hans": "调整记录暂不可用，请稍后重试。"
+  },
+  "正在匹配原画面…": {
+    "en": "Matching the original appearance…",
+    "de": "Ursprüngliches Bild wird angeglichen…",
+    "fr": "Correspondance avec le rendu original…",
+    "es": "Ajustando al aspecto original…",
+    "ja": "元の見た目に合わせています…",
+    "zh-Hans": "正在匹配原画面…"
+  },
+  "已自动升级，原设置已保留。": {
+    "en": "Updated automatically. Original settings are saved.",
+    "de": "Automatisch aktualisiert. Ursprüngliche Einstellungen sind gespeichert.",
+    "fr": "Mise à jour automatique. Les réglages d’origine sont conservés.",
+    "es": "Actualizado automáticamente. Se conservan los ajustes originales.",
+    "ja": "自動更新しました。元の設定は保存されています。",
+    "zh-Hans": "已自动升级，原设置已保留。"
+  },
+  "画面差异较大，已保留旧版本。": {
+    "en": "The appearance differs too much. The previous version is retained.",
+    "de": "Die Bildabweichung ist zu groß. Die bisherige Version bleibt erhalten.",
+    "fr": "Le rendu est trop différent. La version précédente est conservée.",
+    "es": "El aspecto difiere demasiado. Se mantiene la versión anterior.",
+    "ja": "見た目の差が大きいため、以前のバージョンを維持しています。",
+    "zh-Hans": "画面差异较大，已保留旧版本。"
+  },
+  "已回退，保留旧版本。": {
+    "en": "Restored. The previous version will be retained.",
+    "de": "Wiederhergestellt. Die bisherige Version bleibt erhalten.",
+    "fr": "Réglages restaurés. La version précédente est conservée.",
+    "es": "Restaurado. Se mantendrá la versión anterior.",
+    "ja": "復元しました。以前のバージョンを維持します。",
+    "zh-Hans": "已回退，保留旧版本。"
+  },
+  "回到迁移前": {
+    "en": "Restore original settings",
+    "de": "Ursprüngliche Einstellungen wiederherstellen",
+    "fr": "Restaurer les réglages d’origine",
+    "es": "Restaurar ajustes originales",
+    "ja": "移行前の設定に戻す",
+    "zh-Hans": "回到迁移前"
+  },
+  "将恢复迁移前的全部调整，之后的修改会被替换。": {
+    "en": "All settings from before the update will be restored. Later changes will be replaced.",
+    "de": "Alle Einstellungen vor der Aktualisierung werden wiederhergestellt. Spätere Änderungen werden ersetzt.",
+    "fr": "Tous les réglages antérieurs à la mise à jour seront restaurés. Les modifications ultérieures seront remplacées.",
+    "es": "Se restaurarán todos los ajustes anteriores a la actualización. Se reemplazarán los cambios posteriores.",
+    "ja": "移行前のすべての調整を復元します。移行後の変更は置き換えられます。",
+    "zh-Hans": "将恢复迁移前的全部调整，之后的修改会被替换。"
+  },
+  "此照片的调整保留原处理版本。": {
+    "en": "This photo keeps its previous processing version.",
+    "de": "Dieses Foto behält seine bisherige Verarbeitungsversion.",
+    "fr": "Cette photo conserve sa version de traitement précédente.",
+    "es": "Esta foto conserva su versión de procesamiento anterior.",
+    "ja": "この写真は以前の処理バージョンを維持します。",
+    "zh-Hans": "此照片的调整保留原处理版本。"
   }
 }

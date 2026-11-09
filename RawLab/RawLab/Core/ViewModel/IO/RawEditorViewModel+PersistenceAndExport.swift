@@ -10,6 +10,7 @@ extension RawEditorViewModel {
     }
 
     func queueSettingsSave(_ settings: RawSettings) {
+        cancelProcessingMigration()
         if quickPresetState.isPreparing { cancelQuickPreset() }
         guard let source = editorEditSource else { return }
         retainEditMetadata(currentEditState(settings: settings))

@@ -512,7 +512,7 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
             if (text(required(processing, "quality", "processing"), "processing.quality") != "standard")
                 throw std::invalid_argument("Unsupported processing.quality");
             parsed.processingVersion = static_cast<sony2fuji_processing_version>(
-                integer(required(processing, "version", "processing"), 1, 2, "processing.version"));
+                integer(required(processing, "version", "processing"), 1, 3, "processing.version"));
         }
         const auto& input = required(root, "input", "recipe");
         if (version >= 4) fields(input, "input", {"path", "type"});
@@ -655,7 +655,9 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
         throw std::invalid_argument("Normal X3F rendering requires schema_version 7");
     if (recipe.schemaVersion == 7 && recipe.rasterInput)
         throw std::invalid_argument("schema_version 7 requires an X3F raw input");
-    if (recipe.processingVersion != SONY2FUJI_PROCESSING_LEGACY && recipe.processingVersion != SONY2FUJI_PROCESSING_C5_V2)
+    if (recipe.processingVersion != SONY2FUJI_PROCESSING_LEGACY &&
+        recipe.processingVersion != SONY2FUJI_PROCESSING_C5_V2 &&
+        recipe.processingVersion != SONY2FUJI_PROCESSING_BASIC_V3)
         throw std::invalid_argument("Unsupported processing.version");
     if (recipe.schemaVersion < 5 && recipe.processingVersion != SONY2FUJI_PROCESSING_LEGACY)
         throw std::invalid_argument("processing.version requires schema_version 5");

@@ -73,6 +73,7 @@ struct ContentView: View {
     @State var geometryGrid = true
     @State var geometryPerspective = false
     @State var showingProcessingContext = false
+    @State var confirmingProcessingRollback = false
     @State var adjustmentSheet: IOSAdjustmentSheet?
     @State var pendingAdjustmentAction: IOSAdjustmentAction?
     @State var queuedPresetAction: IOSAdjustmentAction?
