@@ -36,8 +36,9 @@ release notes include assets, installation requirements and validation limits.
 - Neutral RAW camera fields blocking adjustment transfer to ordinary images.
 - Android JPEG video trailers/C2PA metadata.
 - Windows blank canvas before the first preview, the lens entry for ordinary
-  images, batch cancellation dropping the photo in progress and Reset All
-  reopening a stale geometry/lens draft.
+  images, batch cancellation dropping the photo in progress, Reset All
+  reopening a stale geometry/lens draft and Windows saves failing while edit
+  records were being read.
 - Opening photos with missing HDR looks or camera profiles.
 
 Version `0.10.0`, build `19`. See the
