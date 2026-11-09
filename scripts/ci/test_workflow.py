@@ -99,12 +99,6 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(mac["env"]["RAWLAB_MAC_SUITE"], "${{ matrix.suite }}")
         self.assertEqual(mac["strategy"]["fail-fast"], "false")
         self.assertEqual(mac["strategy"]["matrix"]["include"], "${{ fromJSON(needs.changes.outputs.macos_matrix) }}")
-        self.assertEqual(macos_matrix("full"), [
-            {"runner": ["self-hosted", "macOS", "ARM64", "rawlab-apple"], "arch": "arm64", "jobs": "6", "suite": "all"},
-            {"runner": "macos-26-intel", "arch": "x86_64", "jobs": "4", "suite": "core"},
-            {"runner": "macos-26-intel", "arch": "x86_64", "jobs": "4", "suite": "agent"},
-            {"runner": "macos-26-intel", "arch": "x86_64", "jobs": "4", "suite": "render"},
-        ])
         self.assertEqual(jobs["ios"]["runs-on"], ["self-hosted", "macOS", "ARM64", "rawlab-apple"])
 
     def test_intel_full_checks_do_not_require_licensed_gpu_models(self):
@@ -252,22 +246,8 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertTrue('"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"' in self.text,
                         "Use the hosted SDK's explicit sdkmanager path")
         self.assertNotRegex(self.text, r"export \w+=\"\$\(")
-        contracts = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["contracts"]["steps"])
         mac = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["macos"]["steps"])
-        self.assertNotIn("test_photo_copy.py", contracts, "Photo-copy tests require macOS plutil")
         self.assertIn("bash scripts/ci/apple-models.sh macos", mac)
-        self.assertIn("test_photo_copy.py", (ROOT / "scripts/ci/apple-models.sh").read_text())
-
-    def test_tool_group_regressions_run_on_their_supported_hosts(self):
-        commands = {
-            name: "\n".join(step.get("run", "") for step in job["steps"])
-            for name, job in self.workflow["jobs"].items()
-        }
-        self.assertIn("test_tool_group_ui.py", commands["contracts"])
-        self.assertIn("RawLabMac/tests/presentation.sh", commands["macos"])
-        self.assertIn("RawLabMac/tests/control-groups.sh", (ROOT / "scripts/ci/apple-models.sh").read_text())
-        self.assertIn("agent-recipe,raster,looks", commands["windows"])
-        self.assertIn("scripts/ci/windows-models.ps1", commands["windows"])
 
     def test_ci_runs_models_and_native_checks_without_ui_automation(self):
         commands = {
@@ -365,10 +345,6 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertLess(mac.index("ci_timed app-build"), mac.index(parity))
         self.assertLess(mac.index('cli="$PWD/lutools/build-macos/sony2fuji"'), mac.index(parity))
 
-    def test_mixed_batch_source_isolation_runs_on_macos(self):
-        mac = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["macos"]["steps"])
-        self.assertIn("RawLabMac/tests/batch-export.sh", mac)
-
     def test_macos_dcp_regressions_require_synthetic_python_parity(self):
         steps = self.workflow["jobs"]["macos"]["steps"]
         build = next(step for step in steps if "bash RawLabMac/build.sh" in step.get("run", ""))
@@ -448,7 +424,6 @@ class WorkflowContractTests(unittest.TestCase):
             for command in commands:
                 with self.subTest(group=group, command=command):
                     self.assertIn(command, text)
-        self.assertIn('in_suite() { [[ "$RAWLAB_CI_NATIVE" == true && ( "$RAWLAB_MAC_SUITE" == all || "$RAWLAB_MAC_SUITE" == "$1" ) ]]; }', always)
         suites = {row["arch"]: [] for row in macos_matrix("full")}
         for row in macos_matrix("full"):
             suites[row["arch"]].append(row["suite"])

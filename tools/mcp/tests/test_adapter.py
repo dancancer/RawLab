@@ -554,33 +554,34 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         adapter = self.adapter()
         await adapter.start()
         unsupported = OSError(errno.ENOTSUP, "operation unsupported")
-        copy_started = threading.Event()
+        loop = asyncio.get_running_loop()
+        copy_started = asyncio.Event()
         copy_finished = threading.Event()
         release = threading.Event()
         monitor_seen = asyncio.Event()
 
         def slow_copy(source, output):
-            copy_started.set()
+            loop.call_soon_threadsafe(copy_started.set)
+            # 超时只为错误的同步实现兜底；正常路径由事件循环确认后放行。
             release.wait(1)
             output.write(source.read())
             copy_finished.set()
 
         async def monitor_copy():
-            await asyncio.to_thread(copy_started.wait)
+            await copy_started.wait()
             if not copy_finished.is_set():
                 monitor_seen.set()
+            release.set()
 
         monitor = asyncio.create_task(monitor_copy())
-        release_timer = threading.Timer(0.2, release.set)
-        release_timer.start()
         try:
             with patch.object(adapter_module.os, "link", side_effect=unsupported), \
                     patch.object(adapter_module.shutil, "copyfileobj", side_effect=slow_copy):
                 result = await adapter.export_photo(self.recipe_path)
         finally:
             release.set()
-            release_timer.cancel()
-            await monitor
+            monitor.cancel()
+            await asyncio.gather(monitor, return_exceptions=True)
         self.assertTrue(result.ok, str(result.error))
         self.assertTrue(monitor_seen.is_set(), "fallback copy blocked the event loop")
 

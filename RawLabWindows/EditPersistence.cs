@@ -108,6 +108,9 @@ public sealed record OriginalIdentity(string Path, long Length, long Modified, l
 
 public static class AtomicJson
 {
+    // Windows 上替换正被打开的文件会短暂失败（访问被拒绝或共享冲突）；只在这个短窗口内重试。
+    private static readonly TimeSpan TransientLimit = TimeSpan.FromSeconds(2);
+
     public static void Write<T>(string path, T value)
     {
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
@@ -119,12 +122,29 @@ public static class AtomicJson
                 JsonSerializer.Serialize(stream, value);
                 stream.Flush(flushToDisk: true);
             }
-            File.Move(temporary, path, overwrite: true);
+            Retry(() => { File.Move(temporary, path, overwrite: true); return true; });
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 
-    public static T Read<T>(string path) => JsonSerializer.Deserialize<T>(File.ReadAllText(path)) ?? throw new InvalidDataException(Loc.Text("本地记录损坏。"));
+    // 读取不持存储锁：允许删除共享，写入方仍能原子替换，本次读取得到替换前的完整内容。
+    public static T Read<T>(string path) => Retry(() => {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        return JsonSerializer.Deserialize<T>(stream) ?? throw new InvalidDataException(Loc.Text("本地记录损坏。"));
+    });
+
+    private static TResult Retry<TResult>(Func<TResult> action)
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (true)
+        {
+            try { return action(); }
+            catch (Exception error) when (OperatingSystem.IsWindows() && Transient(error) && clock.Elapsed < TransientLimit) { Thread.Sleep(10); }
+        }
+    }
+
+    private static bool Transient(Exception error) => error is UnauthorizedAccessException ||
+        error is IOException and not FileNotFoundException and not DirectoryNotFoundException && (error.HResult & 0xffff) is 32 or 33;
 }
 
 public sealed record SavedEdit(OriginalIdentity Identity, AdjustmentSnapshot Settings, string? Look)

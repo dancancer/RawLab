@@ -10,9 +10,9 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>RawLab</AssemblyName>
-    <Version>0.9.3</Version>
-    <FileVersion>0.9.3.18</FileVersion>
-    <InformationalVersion>0.9.3+build.18</InformationalVersion>
+    <Version>0.10.0</Version>
+    <FileVersion>0.10.0.19</FileVersion>
+    <InformationalVersion>0.10.0+build.19</InformationalVersion>
     <RawLabUpdateTrustFile Condition="'$(RawLabUpdateTrustFile)' == ''">$(MSBuildThisFileDirectory)Updates/UpdateTrust.json</RawLabUpdateTrustFile>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
   </PropertyGroup>

@@ -14,8 +14,8 @@ RawLab 用于显影相机 RAW 文件、应用兼容的富士胶片模拟 LUT 和
 
 - RAW 显影，支持曝光、相机空间白平衡、明暗、色彩和锐化调整。
 - 四端支持 Sigma DP1S、Merrill 和 Quattro 范围内的 X3F 普通显影，旧编辑可保留传统模式。该显影使用 CPU，不承诺与 Sigma Photo Pro 完全一致；机型、参数与限制见 [X3F 显影说明](../lutools/docs/x3f-rendering.md)。
-- 支持普通不透明 RGB8 SDR 图像：四端均可输入 JPEG/PNG，macOS、iOS 和 Windows 另支持 TIFF，macOS/iOS 以及 Windows（使用随包 libheif）支持普通 SDR HEIF/HEIC。普通图像复用编辑与导出核心，不额外应用 RAW 显影曲线或相机专属设置；HDR、高位深、透明及多帧等不支持的输入会明确拒绝。格式与处理边界见[普通图像输入契约](../lutools/docs/color-contract.md#display-referred-raster-input)。
-- 四端支持手机增益图 HDR JPEG/HEIF，保留独立的 HDR/SDR 编辑，提供七项基础调整、几何、亮度监测、预设和选择性同步，导出 HDR JPEG 或明确的 SDR 成片。切到 SDR 编辑后可使用普通 LUT 预览。HDR 处理使用 CPU，显示取决于系统和屏幕能力，条件不足时使用 SDR 呈现；见[平台范围](design/hdr-photos/android-windows.md)。
+- 支持普通不透明 SDR 图像：四端均可输入 8 位 JPEG/PNG 和 16 位整数 RGB PNG，macOS、iOS 和 Windows 另支持 8/16 位 TIFF；macOS/iOS、Windows（使用随包 libheif）和 Android 9+ 支持普通 SDR HEIF/HEIC。普通图像复用编辑与导出核心，不额外应用 RAW 显影曲线或相机专属设置；浮点、其他高位深、透明及通用多帧输入会明确拒绝。格式、尺寸与处理边界见[普通图像输入契约](../lutools/docs/color-contract.md#display-referred-raster-input)。
+- 四端支持手机增益图 HDR JPEG/HEIF，保留独立的 HDR/SDR 编辑，提供自动曝光、曲线、HSL、颜色分级、细节、效果和几何调整，以及 HDR 亮度上限、独立 SDR 底图调整、HDR CUBE 外观、预设和选择性同步。可导出增益图 HDR JPEG 或明确的 SDR 成片；macOS/iOS 在系统支持时还可导出 HDR HEIF。切到 SDR 编辑后可使用普通 LUT 预览。HDR 处理使用 CPU，显示取决于系统和屏幕能力，条件不足时使用 SDR 呈现；本版范围与限制见[发布说明](releases/v0.10/v0.10.0.md)。
 - 四端为受支持的相机 RAW 和 Apple ProRAW 提供 HDR 显影，RAW 默认以 SDR 打开。HDR 与 SDR 分别保存调整，可导出增益图 HDR JPEG 或 SDR JPEG。支持范围见[相机 RAW](design/hdr-photos/camera-raw.md)和 [ProRAW](design/hdr-photos/proraw.md)。
 - 四端新照片默认使用“匹配内嵌预览”曝光基准，提供一次性自动曝光和八色 HSL 调整；保留旧照片已保存的曝光基准。
 - 内置胶片外观，强度范围为 0-200%，支持兼容 CUBE/RLOOK 导入及原图与调整效果对比。
@@ -30,7 +30,8 @@ RawLab 用于显影相机 RAW 文件、应用兼容的富士胶片模拟 LUT 和
 - 在支持的平台使用 Metal、Direct3D 11 或 OpenGL ES，HSL 接入平台 GPU 显影链路，并保留 GPU 失败时的自动 CPU 回退。RAW 解码和文件编码仍在 CPU 执行。
 - Apple Silicon macOS 和 Windows 提供仅使用硬件 GPU 的 AI 降噪；Windows 支持自动或指定 GPU 及本机诊断导出。Intel Mac、iOS 和 Android 不含 AI 降噪。模型保留独立的非商用许可，见[许可说明](reference/licensing.md)。
 - 共享 C++17 核心、命令行工具及桌面 LUT 准备工具。
-- 桌面 Agent 提供完整编辑参数、能力查询、预览和最终导出，与界面和冻结批量任务复用参数及处理核心。
+- 桌面 Agent 和 MCP 配方支持 RAW、普通图像和 HDR 来源，包括相机 RAW/ProRAW HDR；提供能力查询、SDR 预览和最终导出，与界面和冻结批量任务复用处理核心。
+- 四端提供系统打开或文件拖放入口；Android 另支持照片分享，Windows 将新打开的文件交给已运行的应用，多张照片进入集合。
 - 支持裁切、旋转、拉直、翻转和透视校正；打开照片默认仅显示预览图，按需开启前后对比。
 
 ## 支持平台
@@ -42,13 +43,13 @@ RawLab 用于显影相机 RAW 文件、应用兼容的富士胶片模拟 LUT 和
 | Android | Android 8.0+，ARM64 或 x86_64 |
 | iOS | iOS 18+，iPhone 和 iPad；下载的 IPA 需要自行重新签名 |
 
-Mac 的 HDR 编辑需要 macOS 15+。Android HDR 显示需要 API 34+ 及适当的屏幕和窗口能力，Windows 在支持时使用 FP16/scRGB；其他显示条件下仍可用 SDR 呈现编辑受支持的 HDR 照片。X3F、AI、更新及设备覆盖边界见 [0.9.3 兼容说明](releases/v0.9/v0.9.3.md#compatibility-and-known-limits)。
+Mac 的 HDR 编辑需要 macOS 15+。Android HDR 显示需要 API 34+ 及适当的屏幕和窗口能力，Windows 在支持时使用 FP16/scRGB；其他显示条件下仍可用 SDR 呈现编辑受支持的 HDR 照片。X3F、AI、更新及设备覆盖边界见 [0.10.0 兼容说明](releases/v0.10/v0.10.0.md#compatibility-and-known-limits)。
 
 ## 下载与文档
 
 - [文档索引](README.md)
 - [下载最新版本](https://github.com/dancancer/RawLab/releases/latest)
-- [v0.9.3 发布说明（构建 18）](releases/v0.9/v0.9.3.md)
+- [v0.10.0 发布说明（构建 19）](releases/v0.10/v0.10.0.md)
 - [安装与分发说明](guides/installation.md)
 - [将 RawLab 安装到自己的 iPhone](guides/ios-installation.zh-CN.md)
 - [更新日志](../CHANGELOG.md)
@@ -68,7 +69,7 @@ Mac 的 HDR 编辑需要 macOS 15+。Android HDR 显示需要 API 34+ 及适当�
 - [活动架构评审](architecture/architecture-and-performance-review-2026-10-18.md)和[跨相机路线图](architecture/cross-camera-presets-roadmap.md)
 - [本次迭代总需求](design/editing-iteration/requirements.md)与[总技术方案](design/editing-iteration/technical-design.md)：第一阶段收尾、第二阶段全量和桌面更新
 - [四端设计资产](design/README.md)、ITER-02 工作区的[详细子需求](design/editor-workspace/requirements.md)与[技术子方案](design/editor-workspace/technical-design.md)
-- [手机 HDR 照片技术方案](design/hdr-photos/technical-design.md)与[Android/Windows 平台范围](design/hdr-photos/android-windows.md)：四端增益图导入、基础编辑、双呈现与兼容 JPEG；支持系统与设备验证边界见 [0.9.3 发布说明](releases/v0.9/v0.9.3.md)
+- [手机 HDR 照片技术方案](design/hdr-photos/technical-design.md)与[Android/Windows 平台范围](design/hdr-photos/android-windows.md)：四端增益图导入、基础编辑、双呈现与兼容 JPEG；支持系统与设备验证边界见 [0.10.0 发布说明](releases/v0.10/v0.10.0.md)
 - [跨 PR 的发布、集成与评审历史](archive/README.md)；单个 PR 的过程证据放在 PR 描述，见[文档规则](../AGENTS.md#文档)。
 
 ## 许可

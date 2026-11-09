@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 BUILD="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-mac-hdr-model.XXXXXX")"
 trap 'rm -rf "$BUILD"' EXIT
-swiftc -swift-version 5 -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
+swiftc -whole-module-optimization -swift-version 5 -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "$ROOT/Shared/Localization.swift" "$ROOT/Shared/HDRSettings.swift" "$ROOT/Shared/GeometrySettings.swift" \
     "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/AtmosphereSettings.swift" \
