@@ -10,6 +10,7 @@ import Foundation
     }
     static func main() async throws {
         try processingMigration()
+        try await reopenedLegacyMigration()
         try refinedRecipe()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -139,6 +140,71 @@ import Foundation
             try check(try restarted.processingMigration(for: asset)?.original == before,
                 "Creating the resource record keeps its rejection receipt")
         }
+    }
+
+    static func reopenedLegacyMigration() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try EditPersistence(directory: root)
+        let legacy = PhotoIdentity(contentIdentifier: "migration-transferable")
+        let stable = PhotoIdentity(resourceIdentifier: "migration-resource", contentIdentifier: "original-bytes")
+        var settings = RawSettings.default; settings.processing = .c5; settings.exposure = 0.5
+        let original = PhotoEditState(settings: settings, filmID: "original-look", updatedAt: Date(timeIntervalSince1970: 42))
+        try store.save(legacy, state: original)
+        let resolved = await store.resolvingLegacyContent(for: stable) { legacy.contentIdentifier }
+        try check(resolved.legacyContentIdentifier == legacy.contentIdentifier,
+            "First open resolves the transferable alias before migration")
+        let expected = try store.readState(for: resolved)
+        settings.processing = .current
+        let candidate = original.replacing(settings: settings, preservingFilmID: original.filmID)
+        let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.003,
+            detailRMSE: 0.001, evaluations: 20)
+        _ = try store.commitProcessingMigration(expected: expected, candidate: candidate, quality: quality)
+        let reopened = try EditPersistence(directory: root)
+        var loads = 0
+        let current = await reopened.resolvingLegacyContent(for: stable) { loads += 1; return legacy.contentIdentifier }
+        try check(current.legacyContentIdentifier == nil && loads == 0,
+            "Reopening the migrated resource does not reload the legacy alias")
+        try check(try reopened.processingMigration(for: current)?.status == .migrated &&
+            reopened.processingMigration(for: current)?.original == original,
+            "Accepted migration retains rollback after the legacy lookup hint disappears")
+        let changedHint = PhotoIdentity(resourceIdentifier: stable.resourceIdentifier, contentIdentifier: stable.contentIdentifier,
+            legacyContentIdentifier: "another-transferable-hint")
+        try check(try reopened.processingMigration(for: changedHint)?.original == original,
+            "A changed legacy lookup hint does not change the original identity")
+
+        let changedContent = PhotoIdentity(resourceIdentifier: stable.resourceIdentifier, contentIdentifier: "changed-bytes")
+        try check(try reopened.processingMigration(for: changedContent) == nil,
+            "A changed original content identifier cannot reuse the old backup")
+        try check(try reopened.processingMigration(for: PhotoIdentity(resourceIdentifier: "migration-resource")) == nil,
+            "A missing content identifier cannot match a content-verified backup")
+        try rejects("Changed content cannot roll back the previous original") {
+            _ = try reopened.rollbackProcessingMigration(expected: reopened.readState(for: changedContent))
+        }
+        _ = try reopened.rollbackProcessingMigration(expected: reopened.readState(for: current))
+        let restarted = try EditPersistence(directory: root)
+        let again = await restarted.resolvingLegacyContent(for: stable) { loads += 1; return legacy.contentIdentifier }
+        let rolledBack = try restarted.processingMigration(for: again)
+        try check(again.legacyContentIdentifier == nil && loads == 0 && rolledBack?.status == .rolledBack &&
+            rolledBack?.shouldAttempt(current: original, sourceVersion: 2) == false &&
+            restarted.readState(for: again).state == original,
+            "Rollback marker survives reopening without the legacy lookup hint")
+        try rejects("Reopened rollback cannot migrate automatically again") {
+            _ = try restarted.commitProcessingMigration(expected: restarted.readState(for: again), candidate: candidate, quality: quality)
+        }
+        try check(restarted.state(for: legacy) == original, "Resource migration and rollback preserve the independent legacy record")
+
+        let direct = PhotoIdentity(resourceIdentifier: "rollback-before-reopen", contentIdentifier: "direct-original-bytes")
+        let directResolved = await restarted.resolvingLegacyContent(for: direct) { legacy.contentIdentifier }
+        let migrated = try restarted.commitProcessingMigration(expected: restarted.readState(for: directResolved),
+            candidate: candidate, quality: quality)
+        _ = try restarted.rollbackProcessingMigration(expected: migrated)
+        let directReopened = try EditPersistence(directory: root)
+        let directIdentity = await directReopened.resolvingLegacyContent(for: direct) { loads += 1; return legacy.contentIdentifier }
+        let directReceipt = try directReopened.processingMigration(for: directIdentity)
+        try check(directIdentity.legacyContentIdentifier == nil && loads == 0 && directReceipt?.status == .rolledBack &&
+            directReceipt?.shouldAttempt(current: original, sourceVersion: 2) == false,
+            "Rollback performed before closing survives the first reopen without a legacy hint")
     }
 
     static func lazyTransferableFallback(_ directory: URL) async throws {

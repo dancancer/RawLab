@@ -297,7 +297,10 @@ final class EditPersistence {
     private func storedMigration(_ identity: PhotoIdentity, from store: StoreFile) -> StoredProcessingMigration? {
         // 拒绝迁移只写回执，不创建资源编辑记录；先读取该照片自身的回执。
         if let stored = store.processingMigrations?[identity.key] {
-            return stored.identity == identity ? stored : nil
+            // legacyContentIdentifier 只帮助查找旧记录，建立资源记录后重开不会再补取。
+            guard stored.identity.resourceIdentifier == identity.resourceIdentifier,
+                  stored.identity.contentIdentifier == identity.contentIdentifier else { return nil }
+            return stored
         }
         let key = recordKey(identity, from: store)
         guard let stored = store.processingMigrations?[key], stored.identity.key == key else { return nil }

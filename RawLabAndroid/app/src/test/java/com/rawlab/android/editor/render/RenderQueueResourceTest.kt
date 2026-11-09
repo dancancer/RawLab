@@ -6,6 +6,34 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class RenderQueueResourceTest {
+    @Test fun invalidationDiscardsOldFramesWithoutStartingAnotherRender() {
+        val started = CountDownLatch(1); val resume = CountDownLatch(1); val cancelled = CountDownLatch(1)
+        val drained = CountDownLatch(1); val published = CountDownLatch(1)
+        val rendered = java.util.Collections.synchronizedList(mutableListOf<Int>())
+        val discarded = java.util.Collections.synchronizedList(mutableListOf<Int>())
+        val queue = RenderQueue<Int, Int>({ value, token ->
+            rendered += value
+            if (value == 1) { token.onCancel { cancelled.countDown() }; started.countDown(); resume.await() }
+            value
+        }, { _, result -> assertEquals(3, result.getOrThrow()); published.countDown() }, {},
+            discard = { discarded += it }, discardPending = { discarded += it })
+        try {
+            val first = queue.submit(1); assertTrue(started.await(5, TimeUnit.SECONDS))
+            queue.submit(2)
+            assertNotEquals(first, queue.invalidate())
+            assertTrue(cancelled.await(5, TimeUnit.SECONDS))
+            resume.countDown()
+            queue.performAfterPending { drained.countDown() }
+            assertTrue(drained.await(5, TimeUnit.SECONDS))
+            assertEquals(listOf(1), rendered)
+            assertEquals(setOf(1, 2), discarded.toSet())
+            assertEquals(1L, published.count)
+            queue.submit(3)
+            assertTrue(published.await(5, TimeUnit.SECONDS))
+            assertEquals(listOf(1, 3), rendered)
+        } finally { resume.countDown(); queue.close() }
+    }
+
     @Test fun replacedAndClosedPendingInputsAreReleasedWithoutRendering() {
         val started = CountDownLatch(1); val resume = CountDownLatch(1); val released = CountDownLatch(1)
         val discarded = java.util.Collections.synchronizedList(mutableListOf<Int>())

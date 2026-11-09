@@ -148,11 +148,17 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     }
     val owner = LocalLifecycleOwner.current
     val context = LocalContext.current
-    DisposableEffect(owner, model) {
+    val editorVisible = batch == null && !collectionOpen && !album
+    DisposableEffect(owner, model, editorVisible) {
+        fun updateEditorActivity() {
+            model.setEditorActive(editorVisible && owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+        }
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP && (context as? android.app.Activity)?.isChangingConfigurations != true) model.onBackground()
+            updateEditorActivity()
         }
         owner.lifecycle.addObserver(observer)
+        updateEditorActivity()
         onDispose { owner.lifecycle.removeObserver(observer) }
     }
     var exportDialog by rememberSaveable { mutableStateOf(false) }
@@ -164,8 +170,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     var licenses by rememberSaveable { mutableStateOf(false) }
     val screenState = rememberSaveableStateHolder()
     val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) album = false
-        model.importPhoto(uri)
+        model.importPhoto(uri) { accepted -> if (accepted) album = false }
     }
     val openLook = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         model.importLooks(uris)
@@ -187,8 +192,9 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
         BatchSelectionScreen(model, onBack = { collectionOpen = false }, onEdit = { collectionOpen = false })
     } else if (album) {
         screenState.SaveableStateProvider("album") {
-            AlbumScreen(model.storage, onBack = { album = false }, onFile = { openFile.launch(arrayOf("*/*")) },
-                onPhoto = { album = false; model.importPhoto(it) })
+            AlbumScreen(model.storage, onBack = { album = false },
+                onFile = { openFile.launch(arrayOf("*/*")) },
+                onPhoto = { uri -> model.importPhoto(uri) { accepted -> if (accepted) album = false } })
         }
     } else {
         Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -199,7 +205,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             }
         }
         Box(Modifier.weight(1f)) {
-        EditorScreen(state, onAlbum = { album = true }, onFile = { openFile.launch(arrayOf("*/*")) },
+        EditorScreen(state, onAlbum = { model.setEditorActive(false); album = true }, onFile = { openFile.launch(arrayOf("*/*")) },
             onRollbackProcessing = model::rollbackProcessingMigration,
             systemPhotoRequest = systemPhotoRequests.firstOrNull()?.takeUnless { collection.busy },
             onSystemPhotoConsumed = model::consumeSystemPhotoRequest,
