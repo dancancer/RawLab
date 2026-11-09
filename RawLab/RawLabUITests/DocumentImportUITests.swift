@@ -13,22 +13,22 @@ final class DocumentImportUITests: XCTestCase {
         let app = launchEditor()
         app.buttons["editor.import.file"].tap()
         cancelPicker(in: app)
-        openMenuImport("editor.import.file", in: app)
+        openMenuImport("Import from Files", in: app)
         cancelPicker(in: app)
         XCUIDevice.shared.orientation = .landscapeLeft
-        openMenuImport("editor.import.file", in: app)
+        openMenuImport("Import from Files", in: app)
         cancelPicker(in: app)
         XCTAssertTrue(app.buttons["editor.import.empty"].exists)
     }
 
     func testLookPickerCanBeCancelledAndReopened() {
         let app = launchEditor()
-        openMenuImport("editor.import.look", in: app)
+        openMenuImport("Import Look", in: app)
         cancelPicker(in: app)
-        openMenuImport("editor.import.file", in: app)
+        openMenuImport("Import from Files", in: app)
         cancelPicker(in: app)
         XCUIDevice.shared.orientation = .landscapeLeft
-        openMenuImport("editor.import.look", in: app)
+        openMenuImport("Import Look", in: app)
         cancelPicker(in: app)
     }
 
@@ -74,7 +74,7 @@ final class DocumentImportUITests: XCTestCase {
         waitUntil { film.value as? String == "RawLabImportFixture" }
         XCTAssertEqual(film.value as? String, "RawLabImportFixture", "The selected LUT must reach the look handler")
         XCTAssertTrue(photo.exists, "Importing a LUT must preserve the current photo")
-        openMenuImport("editor.import.file", in: app)
+        openMenuImport("Import from Files", in: app)
         cancelPicker(in: app)
         XCTAssertEqual(film.value as? String, "RawLabImportFixture")
         XCTAssertTrue(photo.exists)
@@ -135,13 +135,13 @@ final class DocumentImportUITests: XCTestCase {
 
     func testCompatibilityCancellationAllowsAnotherLookImport() {
         let app = launchEditor()
-        openMenuImport("editor.import.look", in: app)
+        openMenuImport("Import Look", in: app)
         selectFile("RawLabUnknownLook.cube", in: app)
         let confirm = app.buttons["look.compatibility.confirm"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 30), app.debugDescription)
         app.buttons["Cancel"].firstMatch.tap()
         waitUntil { !confirm.exists }
-        openMenuImport("editor.import.look", in: app)
+        openMenuImport("Import Look", in: app)
         cancelPicker(in: app)
     }
 
@@ -150,7 +150,7 @@ final class DocumentImportUITests: XCTestCase {
         let rejectedFile = "RawLabTextAsJPEG.jpeg"
         let unsupported = app.staticTexts["Selected Item Is Not a Supported Image."].firstMatch
 
-        openMenuImport("collection.open", in: app)
+        openMenuImport("Batch editing", in: app)
         app.buttons["collection.files"].tap()
         selectFile(rejectedFile, in: app)
         XCTAssertTrue(unsupported.waitForExistence(timeout: 15), app.debugDescription)
@@ -160,19 +160,19 @@ final class DocumentImportUITests: XCTestCase {
         selectFile("RawLabImportFixture.png", in: app)
         XCTAssertTrue(app.descendants(matching: .any)["editor.photo"].waitForExistence(timeout: 60))
         waitUntil { app.buttons["editor.export"].isEnabled }
-        openMenuImport("adjustment.copy.open", in: app)
+        openMenuImport("Copy Adjustments", in: app)
         let copy = app.buttons["adjustment.copy.confirm"]
         for _ in 0..<6 where !copy.isHittable { app.collectionViews.firstMatch.swipeUp() }
         XCTAssertTrue(copy.isHittable && copy.isEnabled, app.debugDescription)
         copy.tap()
         waitUntil { !copy.exists }
-        openMenuImport("adjustment.paste.open", in: app)
+        openMenuImport("Paste Adjustments", in: app)
         app.buttons["adjustment.paste.chooseFiles"].tap()
         selectFile(rejectedFile, in: app)
         XCTAssertTrue(unsupported.waitForExistence(timeout: 15), app.debugDescription)
         app.buttons["adjustment.transfer.close"].tap()
 
-        openMenuImport("diagnostics.export", in: app)
+        openMenuImport("Export Error Log", in: app)
         let save = app.buttons["Save"].firstMatch
         XCTAssertTrue(save.waitForExistence(timeout: 12), app.debugDescription)
         openLocalAppFolder(in: app)
@@ -189,33 +189,47 @@ final class DocumentImportUITests: XCTestCase {
         return app
     }
 
-    private func openMenuImport(_ identifier: String, in app: XCUIApplication) {
+    private func openMenuImport(_ label: String, in app: XCUIApplication) {
         app.buttons["editor.privacy"].tap()
-        let menu = app.collectionViews.containing(.button, identifier: identifier).firstMatch
-        XCTAssertTrue(menu.waitForExistence(timeout: 10), app.debugDescription)
-        let item = menu.buttons[identifier]
-        waitUntil { item.isEnabled }
-        func viewport() -> CGRect {
-            let width = menu.frame.width
-            return app.otherElements.containing(.button, identifier: identifier).allElementsBoundByIndex
-                .map(\.frame)
-                .filter { abs($0.width - width) < 1 && $0.height > 44 }
-                .min { $0.height < $1.height } ?? menu.frame.intersection(app.frame)
+        // 部分系统菜单行不暴露 identifier；本组固定英文，按本地化标签匹配。
+        let predicate = NSPredicate(format: "label == %@", label)
+        let anchor = NSPredicate(format: "identifier == %@ OR label == %@", "collection.open", "Batch editing")
+        var menuShown = app.collectionViews.containing(anchor).firstMatch.waitForExistence(timeout: 5)
+        if !menuShown {
+            // 旋转后的第一次点击可能落在布局动画中，菜单不会弹出；重试一次。
+            app.buttons["editor.privacy"].tap()
+            menuShown = app.collectionViews.containing(anchor).firstMatch.waitForExistence(timeout: 10)
         }
+        XCTAssertTrue(menuShown, app.debugDescription)
+        // 横屏时未滚到的行不在树中；按首行定位容器，再固定索引，避免首行滚出后查询失效。
+        guard let menu = app.collectionViews.allElementsBoundByIndex.first(where: {
+            $0.buttons.matching(anchor).firstMatch.exists
+        }) else {
+            XCTFail(app.debugDescription)
+            return
+        }
+        let item = menu.buttons.matching(predicate).firstMatch
+        let width = menu.frame.width
+        let viewport = (app.otherElements.containing(anchor).allElementsBoundByIndex
+            .map(\.frame)
+            .filter { abs($0.width - width) < 1 && $0.height > 44 }
+            .min { $0.height < $1.height } ?? menu.frame).intersection(app.frame)
+        let visible = viewport.insetBy(dx: 0, dy: 8)
         // 原生菜单会把滚动区域外的行也报为可点击，必须先确认实际可见范围。
         for _ in 0..<4 {
-            let visible = viewport().insetBy(dx: 0, dy: 8)
-            if visible.contains(CGPoint(x: item.frame.midX, y: item.frame.midY)) { break }
+            if item.exists && visible.contains(CGPoint(x: item.frame.midX, y: item.frame.midY)) { break }
             let start = app.coordinate(withNormalizedOffset: .zero).withOffset(
                 CGVector(dx: visible.midX, dy: visible.minY + visible.height * 0.75))
             let end = app.coordinate(withNormalizedOffset: .zero).withOffset(
                 CGVector(dx: visible.midX, dy: visible.minY + visible.height * 0.25))
             start.press(forDuration: 0.01, thenDragTo: end, withVelocity: .fast, thenHoldForDuration: 0)
         }
-        XCTAssertTrue(viewport().contains(CGPoint(x: item.frame.midX, y: item.frame.midY)), app.debugDescription)
+        XCTAssertTrue(item.exists, app.debugDescription)
+        waitUntil { item.isEnabled }
+        XCTAssertTrue(visible.contains(CGPoint(x: item.frame.midX, y: item.frame.midY)), app.debugDescription)
         XCTAssertTrue(item.isHittable)
         let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "menu-before-" + identifier
+        screenshot.name = "menu-before-" + label
         screenshot.lifetime = .keepAlways
         add(screenshot)
         item.tap()
@@ -246,22 +260,30 @@ final class DocumentImportUITests: XCTestCase {
     }
 
     private func openLocalAppFolder(in app: XCUIApplication) {
-        let cancel = app.buttons["Cancel"].firstMatch
-        XCTAssertTrue(cancel.waitForExistence(timeout: 12), app.debugDescription)
+        // 保存窗口在 iOS 27 不暴露 Cancel 按钮，以实际的 Save 操作确认窗口已打开。
+        let action = app.buttons.matching(NSPredicate(format: "label IN %@", ["Cancel", "Save"])).firstMatch
+        XCTAssertTrue(action.waitForExistence(timeout: 12), app.debugDescription)
+        let folder = app.cells.matching(NSPredicate(format: "identifier == %@ OR identifier BEGINSWITH %@",
+                                                   "RawLab", "RawLab, ")).firstMatch
         let local = app.cells.matching(NSPredicate(format: "identifier BEGINSWITH %@", "DOC.sidebar.item.On My ")).firstMatch
-        if !local.exists {
+        let location = app.buttons.matching(NSPredicate(format: "label IN %@", ["On My iPad", "On My iPhone"])).firstMatch
+        if !folder.exists && !local.exists {
             let browse = app.buttons["Browse"].firstMatch
             if browse.exists { browse.tap() }
         }
-        if local.waitForExistence(timeout: 5) {
-            local.tap()
-        } else {
-            let location = app.buttons.matching(NSPredicate(format: "label IN %@", ["On My iPad", "On My iPhone"])).firstMatch
-            XCTAssertTrue(location.waitForExistence(timeout: 10), app.debugDescription)
-            location.tap()
+        // Browse 可能恢复到本地根目录，此时位置名只是标题，RawLab 文件夹已可直接打开。
+        let destination = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            folder.exists || local.exists || location.exists
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [destination], timeout: 10), .completed, app.debugDescription)
+        if !folder.exists {
+            if local.exists {
+                local.tap()
+            } else {
+                XCTAssertTrue(location.exists, app.debugDescription)
+                location.tap()
+            }
         }
-        let folder = app.cells.matching(NSPredicate(format: "identifier == %@ OR identifier BEGINSWITH %@",
-                                                   "RawLab", "RawLab, ")).firstMatch
         XCTAssertTrue(folder.waitForExistence(timeout: 10), app.debugDescription)
         folder.tap()
     }
